@@ -1,0 +1,171 @@
+// Section 3 end-to-end tests: each algorithm runs inside a sender ->
+// lossy network -> receiver loop (tests/e2e/loss_sims.h) and must deliver a
+// measurable improvement over the unprotected baseline.
+#include "loss_sims.h"
+#include "sm_test.h"
+
+using namespace sm;
+using namespace sm::e2e;
+
+SM_TEST(E2E_NackRtx, RecoversRandomLossWithinDeadline) {
+  VideoSimParams p;
+  p.fwd.loss_rate = 0.05;
+  p.reverse_loss = 0.05;
+  p.one_way_delay = TimeDelta::Millis(40);
+  VideoSimParams base = p;
+  base.nack = false;
+  auto with = RunVideoSim(p);
+  auto without = RunVideoSim(base);
+  SM_RECORD("nack_on_time", with.on_time);
+  SM_RECORD("baseline_on_time", without.on_time);
+  SM_RECORD("nack_overhead", with.overhead);
+  SM_EXPECT_GE(with.on_time, 0.995);
+  SM_EXPECT_LE(without.on_time, 0.96);
+  SM_EXPECT_LE(with.overhead, 0.08);  // ~ loss rate, plus repeat requests.
+  SM_EXPECT_GT(with.retransmitted, 0u);
+}
+
+SM_TEST(E2E_NackRtx, TooLateAtHighRtt) {
+  // With 2*150 ms RTT and a 250 ms budget retransmissions arrive too late:
+  // the motivation for FEC.
+  VideoSimParams p;
+  p.fwd.loss_rate = 0.05;
+  p.one_way_delay = TimeDelta::Millis(150);
+  auto r = RunVideoSim(p);
+  SM_RECORD("nack_high_rtt_on_time", r.on_time);
+  SM_RECORD("nack_high_rtt_eventually", r.eventually);
+  SM_EXPECT_LE(r.on_time, 0.97);
+  SM_EXPECT_GE(r.eventually, 0.99);
+}
+
+SM_TEST(E2E_Fec, RandomLossHighRtt) {
+  VideoSimParams p;
+  p.fwd.loss_rate = 0.05;
+  p.one_way_delay = TimeDelta::Millis(150);
+  p.nack = false;
+  p.fec = {0.5, loss::FecMaskType::kBlock};
+  auto r = RunVideoSim(p);
+  VideoSimParams base = p;
+  base.fec.protection = 0;
+  auto b = RunVideoSim(base);
+  SM_RECORD("fec_frames_on_time", r.frames_on_time);
+  SM_RECORD("baseline_frames_on_time", b.frames_on_time);
+  SM_RECORD("fec_overhead", r.overhead);
+  SM_EXPECT_GE(r.frames_on_time, 0.97);
+  SM_EXPECT_LE(b.frames_on_time, 0.75);
+  SM_EXPECT_GT(r.fec_recovered, 0u);
+}
+
+SM_TEST(E2E_Fec, InterleavedBeatsBlockOnBursts) {
+  VideoSimParams p;
+  p.fwd.gilbert = true;
+  p.fwd.p_good_to_bad = 0.015;
+  p.fwd.p_bad_to_good = 0.4;
+  p.one_way_delay = TimeDelta::Millis(150);
+  p.nack = false;
+  p.fec = {0.5, loss::FecMaskType::kInterleaved};
+  auto inter = RunVideoSim(p);
+  p.fec.mask = loss::FecMaskType::kBlock;
+  auto block = RunVideoSim(p);
+  SM_RECORD("fec_burst_interleaved", inter.frames_on_time);
+  SM_RECORD("fec_burst_block", block.frames_on_time);
+  SM_EXPECT_GT(inter.frames_on_time, block.frames_on_time);
+}
+
+SM_TEST(E2E_Red, HalvesAudioLossAndMore) {
+  sim::LinkConfig cfg;
+  cfg.loss_rate = 0.10;
+  auto none = RunRedSim(0, cfg, 20000, 3);
+  auto d1 = RunRedSim(1, cfg, 20000, 3);
+  auto d2 = RunRedSim(2, cfg, 20000, 3);
+  SM_RECORD("red_raw_loss", none.residual_frame_loss);
+  SM_RECORD("red_d1_residual", d1.residual_frame_loss);
+  SM_RECORD("red_d2_residual", d2.residual_frame_loss);
+  SM_RECORD("red_d1_overhead", d1.overhead);
+  SM_EXPECT_NEAR(none.residual_frame_loss, 0.10, 0.01);
+  SM_EXPECT_LE(d1.residual_frame_loss, 0.02);   // ~p^2
+  SM_EXPECT_LE(d2.residual_frame_loss, 0.004);  // ~p^3
+  SM_EXPECT_NEAR(d1.overhead, 1.0, 0.05);
+}
+
+SM_TEST(E2E_Plc, SpeechOverLossyLink) {
+  sim::LinkConfig cfg;
+  cfg.loss_rate = 0.10;
+  auto r = RunPlcSim(cfg, 20.0, 11);
+  SM_RECORD("plc_loss", r.loss);
+  SM_RECORD("plc_snr_db", r.snr_plc_db);
+  SM_RECORD("zero_fill_snr_db", r.snr_zero_db);
+  SM_RECORD("plc_lost_frames_snr_db", r.lost_snr_plc_db);
+  SM_RECORD("plc_lost_level_ratio", r.lost_level_ratio);
+  SM_EXPECT_GT(r.snr_plc_db, r.snr_zero_db + 1.0);
+  SM_EXPECT_GT(r.lost_snr_plc_db, 1.0);
+  SM_EXPECT_GT(r.lost_level_ratio, 0.6);
+}
+
+SM_TEST(E2E_Keyframe, RecoversFromUnrepairableLoss) {
+  FrameSimParams p;
+  p.frame_loss = 0.02;
+  auto with = RunFrameSim(p);
+  p.keyframe_requests = false;
+  auto without = RunFrameSim(p);
+  SM_RECORD("kf_decodable", with.decodable_ratio);
+  SM_RECORD("kf_max_freeze_ms", with.max_freeze_ms);
+  SM_RECORD("kf_pli", with.pli);
+  SM_RECORD("no_kf_decodable", without.decodable_ratio);
+  // Each unrepairable loss costs ~repair window (200 ms) + RTT + keyframe
+  // transit ~= 10 frames; 2% loss -> ~20% undecodable is the design bound.
+  SM_EXPECT_GE(with.decodable_ratio, 0.78);
+  SM_EXPECT_LE(without.decodable_ratio, 0.10);
+  SM_EXPECT_LE(with.max_freeze_ms, 700.0);
+  // No request storm: at most a couple of PLIs per lost frame.
+  SM_EXPECT_LE(with.pli, static_cast<uint64_t>(0.02 * with.frames * 2.5) + 2);
+}
+
+SM_TEST(E2E_TemporalLayers, UpperLayerLossDoesNotBreakStream) {
+  FrameSimParams p;
+  p.frame_loss = 0.05;
+  p.temporal_layers = 1;
+  auto l1 = RunFrameSim(p);
+  p.temporal_layers = 3;
+  auto l3 = RunFrameSim(p);
+  SM_RECORD("l1t1_decodable", l1.decodable_ratio);
+  SM_RECORD("l1t3_decodable", l3.decodable_ratio);
+  SM_RECORD("l1t1_freeze_ms", l1.total_freeze_ms);
+  SM_RECORD("l1t3_freeze_ms", l3.total_freeze_ms);
+  SM_EXPECT_GT(l3.decodable_ratio, l1.decodable_ratio + 0.05);
+  SM_EXPECT_LT(l3.total_freeze_ms, l1.total_freeze_ms);
+}
+
+SM_TEST(E2E_TemporalLayers, SfuFiltersToTargetFramerate) {
+  loss::TemporalLayerScheduler s(3);
+  loss::TemporalLayerFilter f;
+  loss::KeyframeRequester rx;
+  f.SetTargetLayer(1);
+  int fwd = 0;
+  for (int i = 0; i < 300; ++i) {
+    auto fr = s.NextFrame();
+    if (f.ShouldForward(fr)) {
+      ++fwd;
+      rx.OnFrame(fr.info, Timestamp::Millis(i * 33));
+    }
+  }
+  SM_EXPECT_EQ(fwd, 150);  // T0 + T1 = 1/2 frame rate.
+  SM_EXPECT_EQ(rx.TakeDecodableFrames().size(), 150u);  // All decodable.
+}
+
+SM_TEST(E2E_Protection, AdaptiveAcrossRtt) {
+  for (int delay : {10, 40, 150}) {
+    VideoSimParams p;
+    p.fwd.loss_rate = 0.05;
+    p.reverse_loss = 0.05;
+    p.one_way_delay = TimeDelta::Millis(delay);
+    p.adaptive = true;
+    auto r = RunVideoSim(p);
+    std::string key = "adaptive_rtt" + std::to_string(2 * delay);
+    SM_RECORD((key + "_on_time").c_str(), r.on_time);
+    SM_RECORD((key + "_overhead").c_str(), r.overhead);
+    SM_EXPECT_GE(r.on_time, 0.985);
+    SM_EXPECT_LE(r.overhead, 0.45);
+    if (delay == 10) SM_EXPECT_LE(r.overhead, 0.08);  // NACK only at low RTT.
+  }
+}

@@ -1,0 +1,41 @@
+[ RUN  ] E2E_PacketBuffer.ReorderedDuplicatedStreamAssemblesEveryFrameOnce
+[metric] frames_assembled_once_ratio=1
+[metric] reordered_packets=4139
+[metric] duplicates_dropped=249
+[  OK  ] E2E_PacketBuffer.ReorderedDuplicatedStreamAssemblesEveryFrameOnce (2.7 ms)
+[ RUN  ] E2E_RtcpStats.MeasuresRttLossAndJitter
+[metric] rtt_min_ms=60.608
+[metric] rtt_smoothed_ms=65.625
+[metric] fraction_lost_mean=0.0505208
+[metric] jitter_ms=3.44864
+[  OK  ] E2E_RtcpStats.MeasuresRttLossAndJitter (0.4 ms)
+[ RUN  ] E2E_DelayManager.TargetFollowsJitterStep
+[metric] target_low_jitter_ms=20
+[metric] target_high_jitter_ms=80
+[  OK  ] E2E_DelayManager.TargetFollowsJitterStep (167.8 ms)
+[ RUN  ] E2E_TimeStretch.LatencyRecoversAfterStall
+[metric] stretch_recover_s=0.47
+[metric] stretch_final_level_ms=17.1875
+[metric] no_stretch_final_level_ms=600
+[  OK  ] E2E_TimeStretch.LatencyRecoversAfterStall (168.8 ms)
+[ RUN  ] E2E_AudioJitterBuffer.AdaptiveBeatsFixedBuffers
+[metric] adaptive_concealment=0.0268736
+[metric] adaptive_mean_delay_ms=43.3143
+[metric] fixed20_concealment=0.0173594
+[metric] fixed20_final_level_ms=80
+[metric] adaptive_final_level_ms=48.625
+[metric] fixed200_mean_delay_ms=164.952
+[  OK  ] E2E_AudioJitterBuffer.AdaptiveBeatsFixedBuffers (501.7 ms)
+[ RUN  ] E2E_VideoJitter.EstimatorPreventsLateFrames
+[metric] video_late_with_estimator=0.00109951
+[metric] video_late_without=0.33315
+[metric] video_mean_delay_ms=134.315
+[metric] video_mean_jitter_ms=74.1701
+[  OK  ] E2E_VideoJitter.EstimatorPreventsLateFrames (0.6 ms)
+[ RUN  ] E2E_ClockDrift.EstimateAndCompensate
+[metric] estimated_ppm=300.551
+[metric] compensated_max_level_err_ms=1.8075
+[metric] uncompensated_max_level_err_ms=46.4
+[  OK  ] E2E_ClockDrift.EstimateAndCompensate (24.0 ms)
+
+7 tests run, 7 passed, 0 failed

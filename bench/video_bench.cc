@@ -1,0 +1,119 @@
+// Section 7 benchmarks. Per-frame budgets are relative to a 30 fps frame
+// interval (33 ms); pixel operations are reported per frame at 720p.
+#include "sm/video/codec_fallback.h"
+#include "sm/video/codec_negotiation.h"
+#include "sm/video/content_policy.h"
+#include "sm/video/frame_scaler.h"
+#include "sm/video/frame_scheduler.h"
+#include "sm/video/freeze_detector.h"
+#include "sm/video/orientation.h"
+#include "sm/video/quality_scaler.h"
+#include "sm_bench.h"
+
+using namespace sm;
+using namespace sm::video;
+
+SM_BENCH(video, FreezeDetector_frame) {
+  FreezeDetector fd;
+  int64_t t = 0;
+  for (auto _ : st) {
+    fd.OnFrameRendered(Timestamp::Millis(t));
+    t += (t % 3000 == 0) ? 400 : 33;
+  }
+  st.BudgetNsPerItem(200);
+}
+
+SM_BENCH(video, CodecFallback_frame) {
+  CodecFallbackController c;
+  int64_t t = 0;
+  for (auto _ : st) {
+    c.OnFrameResult(t % 97 != 0, Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+    t += 33;
+  }
+  st.BudgetNsPerItem(200);
+}
+
+SM_BENCH(video, Orientation_rotate90_720p) {
+  I420Frame f = MakeTestFrame(1280, 720, 0);
+  for (auto _ : st) bench::DoNotOptimize(ApplyOrientation(f, {Rotation::k90, false, false}));
+  st.RequireRealtimeFactor(1.0 / 30, 5);
+}
+
+SM_BENCH(video, FrameChangeDetector_1080p) {
+  I420Frame f = MakeTestFrame(1920, 1080, 0);
+  FrameChangeDetector cd;
+  int64_t t = 0;
+  for (auto _ : st) {
+    f.Y(static_cast<int>(t % 1920), 500) ^= 1;
+    bench::DoNotOptimize(cd.ShouldEncode(f, Timestamp::Millis(t)));
+    t += 66;
+  }
+  st.RequireRealtimeFactor(1.0 / 15, 5);
+}
+
+SM_BENCH(video, CodecNegotiation_offer10) {
+  std::vector<CodecCapability> offer, local;
+  for (int i = 0; i < 10; ++i) {
+    offer.push_back({i % 2 ? "VP8" : "H264", 96 + i, {{"profile-level-id", "42e01f"}, {"packetization-mode", "1"}}, {"nack", "transport-cc"}});
+  }
+  local = {{"H264", 0, {{"profile-level-id", "42e028"}, {"packetization-mode", "1"}}, {"nack"}, true}, {"VP8", 0, {}, {"nack"}, false}};
+  for (auto _ : st) bench::DoNotOptimize(NegotiateCodecs(offer, local));
+  st.BudgetNsPerItem(50000);
+}
+
+SM_BENCH(video, Scale_720p_to_360p) {
+  I420Frame f = MakeTestFrame(1280, 720, 0);
+  for (auto _ : st) bench::DoNotOptimize(Scale(f, 640, 360));
+  st.RequireRealtimeFactor(1.0 / 30, 3);
+}
+
+SM_BENCH(video, Scale_360p_to_720p) {
+  I420Frame f = MakeTestFrame(640, 360, 0);
+  for (auto _ : st) bench::DoNotOptimize(Scale(f, 1280, 720));
+  st.RequireRealtimeFactor(1.0 / 30, 3);
+}
+
+SM_BENCH(video, FrameScheduler_frame) {
+  FrameScheduler s;
+  int64_t id = 0;
+  for (auto _ : st) {
+    s.Insert({id, Timestamp::Millis(100 + id * 33)});
+    bench::DoNotOptimize(s.Process(Timestamp::Millis(id * 33 + 100)));
+    ++id;
+  }
+  st.BudgetNsPerItem(500);
+}
+
+SM_BENCH(video, QualityScaler_frame) {
+  QualityScaler q;
+  int64_t t = 0;
+  for (auto _ : st) {
+    q.OnEncodedFrame(static_cast<int>(20 + t % 25));
+    bench::DoNotOptimize(q.Check(Timestamp::Millis(t)));
+    t += 33;
+  }
+  st.BudgetNsPerItem(100);
+}
+
+// --- Quality ------------------------------------------------------------------
+
+SM_BENCH_QUALITY(video, Q_Scaler_psnr_720p_via_360p) {
+  I420Frame f = MakeTestFrame(1280, 720, 5);
+  double psnr = PsnrY(f, Scale(Scale(f, 640, 360), 1280, 720));
+  st.Counter("psnr_db", psnr);
+  st.Require("psnr_db", psnr, ">", 28);
+}
+
+SM_BENCH_QUALITY(video, Q_ScreenShare_encode_ratio) {
+  FrameChangeDetector cd;
+  int encoded = 0, frames = 0;
+  for (int i = 0; i < 900; ++i) {  // 60 s at 15 fps, slide change every 10 s.
+    I420Frame f = MakeTestFrame(320, 180, (i / 150) * 50);
+    encoded += cd.ShouldEncode(f, Timestamp::Millis(i * 66));
+    ++frames;
+  }
+  double r = static_cast<double>(encoded) / frames;
+  st.Counter("encode_ratio", r);
+  st.Require("encode_ratio", r, "<", 0.1);
+}

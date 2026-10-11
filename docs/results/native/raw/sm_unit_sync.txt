@@ -1,0 +1,24 @@
+[ RUN  ] RtpToNtp.FitsLineAndHandlesWrap
+[  OK  ] RtpToNtp.FitsLineAndHandlesWrap (0.0 ms)
+[ RUN  ] RtpToNtp.RejectsOutliersThenResets
+[  OK  ] RtpToNtp.RejectsOutliersThenResets (0.0 ms)
+[ RUN  ] StreamSync.ConvergesAndPrefersRemovingDelay
+[  OK  ] StreamSync.ConvergesAndPrefersRemovingDelay (0.0 ms)
+[ RUN  ] StreamSync.StepIsBounded
+[  OK  ] StreamSync.StepIsBounded (0.0 ms)
+[ RUN  ] StreamSync.GroupsByCname
+[  OK  ] StreamSync.GroupsByCname (0.0 ms)
+[ RUN  ] CaptureTime.WireFormatAndInterpolation
+[  OK  ] CaptureTime.WireFormatAndInterpolation (0.0 ms)
+[ RUN  ] CaptureTime.SenderOmitsInterpolatableExtensions
+[  OK  ] CaptureTime.SenderOmitsInterpolatableExtensions (0.0 ms)
+[ RUN  ] CaptureTime.LatencyWithClockOffset
+[  OK  ] CaptureTime.LatencyWithClockOffset (0.0 ms)
+[ RUN  ] HeaderExtensions.OneAndTwoByteForms
+[  OK  ] HeaderExtensions.OneAndTwoByteForms (0.0 ms)
+[ RUN  ] HeaderExtensions.TypedAccessors
+[  OK  ] HeaderExtensions.TypedAccessors (0.0 ms)
+[ RUN  ] HeaderExtensions.DemuxRules
+[  OK  ] HeaderExtensions.DemuxRules (0.0 ms)
+
+11 tests run, 11 passed, 0 failed

@@ -1,0 +1,65 @@
+[  3%] Building CXX object src/CMakeFiles/sm_core.dir/core/metrics.cc.o
+[  3%] Built target sm_test_framework
+[  4%] Linking CXX static library libsm_core.a
+[  8%] Built target sm_core
+[  9%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/core_test.cc.o
+[ 17%] Built target sm_loss
+[ 19%] Building CXX object src/CMakeFiles/sm_video.dir/video/codec_negotiation.cc.o
+[ 19%] Building CXX object src/CMakeFiles/sm_video.dir/video/content_policy.cc.o
+[ 30%] Built target sm_cc
+[ 31%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/comfort_noise.cc.o
+[ 32%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/echo_canceller.cc.o
+[ 33%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/mixer.cc.o
+[ 33%] Building CXX object tests/CMakeFiles/sm_e2e_loss.dir/e2e/loss_e2e_test.cc.o
+[ 34%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/rtcp_stats.cc.o
+[ 35%] Linking CXX executable sm_unit_cc
+[ 36%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/plc_test.cc.o
+[ 39%] Built target sm_unit_cc
+[ 39%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/resampler.cc.o
+[ 40%] Building CXX object tests/CMakeFiles/sm_e2e_cc.dir/e2e/cc_e2e_test.cc.o
+[ 41%] Linking CXX static library libsm_timing.a
+[ 46%] Built target sm_timing
+[ 47%] Linking CXX executable sm_unit_loss
+[ 48%] Building CXX object tests/CMakeFiles/sm_e2e_timing.dir/e2e/timing_e2e_test.cc.o
+[ 49%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/capture_time.cc.o
+[ 50%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/audio_jitter_buffer_test.cc.o
+[ 51%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/time_stretch_test.cc.o
+[ 56%] Built target sm_unit_loss
+[ 57%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/clock_drift_test.cc.o
+[ 58%] Linking CXX static library libsm_video.a
+[ 59%] Linking CXX executable sm_unit_core
+[ 60%] Linking CXX static library libsm_audio.a
+[ 67%] Built target sm_video
+[ 67%] Built target sm_unit_core
+[ 68%] Linking CXX executable sm_unit_video
+[ 75%] Built target sm_audio
+[ 76%] Building CXX object tests/CMakeFiles/sm_e2e_video.dir/e2e/video_e2e_test.cc.o
+[ 77%] Built target sm_unit_video
+[ 78%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/filters_test.cc.o
+[ 79%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_e2e_test.cc.o
+[ 80%] Linking CXX static library libsm_sync.a
+[ 83%] Built target sm_sync
+[ 84%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/echo_test.cc.o
+[ 85%] Linking CXX executable sm_unit_sync
+[ 86%] Building CXX object tests/CMakeFiles/sm_e2e_sync.dir/e2e/sync_e2e_test.cc.o
+[ 87%] Built target sm_unit_sync
+[ 87%] Linking CXX executable sm_unit_timing
+[ 87%] Building CXX object examples/CMakeFiles/simulated_call.dir/simulated_call.cc.o
+[ 91%] Built target sm_unit_timing
+[ 92%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/dtx_level_mixer_test.cc.o
+[ 93%] Linking CXX executable sm_e2e_loss
+[ 93%] Built target sm_e2e_loss
+[ 94%] Linking CXX executable sm_e2e_timing
+[ 95%] Linking CXX executable sm_e2e_audio
+[ 95%] Built target sm_e2e_timing
+[ 95%] Built target sm_e2e_audio
+[ 96%] Linking CXX executable sm_e2e_video
+[ 97%] Linking CXX executable sm_unit_audio
+[ 97%] Built target sm_e2e_video
+[ 98%] Linking CXX executable sm_e2e_cc
+[ 98%] Built target sm_unit_audio
+[ 98%] Built target sm_e2e_cc
+[ 99%] Linking CXX executable sm_e2e_sync
+[100%] Linking CXX executable simulated_call
+[100%] Built target sm_e2e_sync
+[100%] Built target simulated_call

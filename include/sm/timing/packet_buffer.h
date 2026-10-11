@@ -1,0 +1,79 @@
+// 4.1 Packet buffer: reordering, de-duplication and frame assembly.
+//
+// Packets are stored by unwrapped sequence number in a bounded window. After
+// each insert the buffer checks whether the packet completed a frame: a run
+// of consecutive sequence numbers with the same RTP timestamp that starts
+// with a frame-start packet and ends with the marker bit. Complete frames are
+// returned immediately (possibly out of order; the frame scheduler orders
+// them by decodability). Duplicates and packets older than the window are
+// rejected and counted.
+#pragma once
+
+#include <cstdint>
+#include <map>
+#include <set>
+#include <vector>
+
+#include "sm/core/event_log.h"
+#include "sm/core/metrics.h"
+#include "sm/core/rtp_packet.h"
+#include "sm/core/seq_num.h"
+#include "sm/core/units.h"
+
+namespace sm::timing {
+
+enum class InsertResult { kInserted, kDuplicate, kTooOld };
+
+struct AssembledFrame {
+  int64_t first_seq = 0;  // Unwrapped.
+  int64_t last_seq = 0;
+  uint32_t timestamp = 0;
+  std::vector<RtpPacket> packets;
+  Timestamp last_arrival;
+  size_t size_bytes() const;
+};
+
+struct PacketBufferConfig {
+  size_t window = 2048;  // Packets of history kept for reordering and dedup.
+  EventSink* events = nullptr;
+};
+
+struct PacketBufferStats {
+  uint64_t inserted = 0;
+  uint64_t duplicates = 0;
+  uint64_t too_old = 0;
+  uint64_t reordered = 0;        // Arrived after a higher sequence number.
+  uint64_t frames_assembled = 0;
+  Histogram reorder_distance;    // Packets the late packet was behind.
+};
+
+class PacketBuffer : public MetricsSource {
+ public:
+  explicit PacketBuffer(PacketBufferConfig cfg = {});
+  // frame_start: the packetizer's "first packet of frame" flag (e.g. VP8 S
+  // bit, H.264 FU-A start); the end is the RTP marker bit.
+  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now);
+  std::vector<AssembledFrame> PopCompleteFrames();
+  size_t buffered_packets() const { return packets_.size(); }
+  const PacketBufferStats& stats() const { return stats_; }
+  void ExportMetrics(MetricsWriter& w) const override;
+
+ private:
+  struct Entry {
+    RtpPacket packet;
+    bool frame_start;
+    Timestamp arrival;
+  };
+  void TryAssemble(int64_t seq);
+  void Trim();
+
+  PacketBufferConfig cfg_;
+  SeqNumUnwrapper<uint16_t> unwrapper_;
+  std::map<int64_t, Entry> packets_;
+  std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
+  int64_t highest_ = INT64_MIN;
+  std::vector<AssembledFrame> ready_;
+  PacketBufferStats stats_;
+};
+
+}  // namespace sm::timing

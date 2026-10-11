@@ -1,0 +1,236 @@
+Test project /Users/danceone/job_interview/streaming_media/build-wasm
+        Start 111: bench.audio
+  1/113 Test #111: bench.audio ......................   Passed    4.12 sec
+        Start  77: e2e.E2E_EchoCanceller
+        Start  36: e2e.E2E_AudioJitterBuffer
+        Start  76: e2e.E2E_EchoDelay
+        Start  68: unit.EchoCanceller
+        Start  75: e2e.E2E_GainControl
+        Start  80: e2e.E2E_AudioLevel
+        Start  79: e2e.E2E_ComfortNoise
+        Start  72: e2e.E2E_HighPassFilter
+        Start  35: e2e.E2E_TimeStretch
+        Start  34: e2e.E2E_DelayManager
+  2/113 Test  #35: e2e.E2E_TimeStretch ..............   Passed    0.74 sec
+        Start  74: e2e.E2E_NoiseSuppressor
+  3/113 Test  #72: e2e.E2E_HighPassFilter ...........   Passed    0.77 sec
+        Start  73: e2e.E2E_Vad
+  4/113 Test  #34: e2e.E2E_DelayManager .............   Passed    0.81 sec
+        Start  78: e2e.E2E_TransientSuppressor
+  5/113 Test  #80: e2e.E2E_AudioLevel ...............   Passed    1.02 sec
+        Start  67: unit.EchoDelay
+  6/113 Test  #79: e2e.E2E_ComfortNoise .............   Passed    1.02 sec
+        Start  81: e2e.E2E_Mixer
+  7/113 Test  #75: e2e.E2E_GainControl ..............   Passed    1.42 sec
+        Start  94: e2e.E2E_ContentPolicy
+  8/113 Test  #68: unit.EchoCanceller ...............   Passed    1.48 sec
+        Start  64: unit.GainControl
+  9/113 Test  #74: e2e.E2E_NoiseSuppressor ..........   Passed    0.79 sec
+        Start  21: e2e.E2E_Plc
+ 10/113 Test  #73: e2e.E2E_Vad ......................   Passed    0.76 sec
+        Start  62: unit.Vad
+ 11/113 Test  #81: e2e.E2E_Mixer ....................   Passed    0.51 sec
+        Start  63: unit.NoiseSuppressor
+ 12/113 Test  #78: e2e.E2E_TransientSuppressor ......   Passed    0.83 sec
+        Start  38: e2e.E2E_ClockDrift
+ 13/113 Test  #63: unit.NoiseSuppressor .............   Passed    0.25 sec
+        Start  22: e2e.E2E_Keyframe
+ 14/113 Test  #67: unit.EchoDelay ...................   Passed    0.80 sec
+        Start  96: e2e.E2E_FrameScaler
+ 15/113 Test  #64: unit.GainControl .................   Passed    0.35 sec
+        Start  29: unit.AudioJitterBuffer
+ 16/113 Test  #62: unit.Vad .........................   Passed    0.31 sec
+        Start  20: e2e.E2E_Red
+ 17/113 Test  #76: e2e.E2E_EchoDelay ................   Passed    1.87 sec
+        Start  19: e2e.E2E_Fec
+ 18/113 Test  #38: e2e.E2E_ClockDrift ...............   Passed    0.23 sec
+        Start  24: e2e.E2E_Protection
+ 19/113 Test  #21: e2e.E2E_Plc ......................   Passed    0.36 sec
+        Start  55: e2e.E2E_Probing
+ 20/113 Test  #94: e2e.E2E_ContentPolicy ............   Passed    0.52 sec
+        Start  60: e2e.E2E_Outage
+ 21/113 Test  #22: e2e.E2E_Keyframe .................   Passed    0.24 sec
+ 22/113 Test  #29: unit.AudioJitterBuffer ...........   Passed    0.19 sec
+        Start  51: e2e.E2E_DelayBwe
+        Start  82: e2e.E2E_Resampler
+ 23/113 Test  #20: e2e.E2E_Red ......................   Passed    0.19 sec
+        Start  58: e2e.E2E_VideoAdaptation
+ 24/113 Test  #96: e2e.E2E_FrameScaler ..............   Passed    0.21 sec
+        Start  53: e2e.E2E_SendSideBwe
+ 25/113 Test  #19: e2e.E2E_Fec ......................   Passed    0.20 sec
+        Start  57: e2e.E2E_FrameDropper
+ 26/113 Test  #55: e2e.E2E_Probing ..................   Passed    0.19 sec
+        Start  54: e2e.E2E_Pacer
+ 27/113 Test  #60: e2e.E2E_Outage ...................   Passed    0.19 sec
+        Start  56: e2e.E2E_BitrateAllocator
+ 28/113 Test  #36: e2e.E2E_AudioJitterBuffer ........   Passed    2.15 sec
+        Start  52: e2e.E2E_LossBwe
+ 29/113 Test  #24: e2e.E2E_Protection ...............   Passed    0.28 sec
+        Start  66: unit.Resampler
+ 30/113 Test  #82: e2e.E2E_Resampler ................   Passed    0.17 sec
+        Start  88: unit.FrameScaler
+ 31/113 Test  #51: e2e.E2E_DelayBwe .................   Passed    0.18 sec
+        Start  18: e2e.E2E_NackRtx
+ 32/113 Test  #58: e2e.E2E_VideoAdaptation ..........   Passed    0.19 sec
+        Start  33: e2e.E2E_RtcpStats
+ 33/113 Test  #53: e2e.E2E_SendSideBwe ..............   Passed    0.20 sec
+        Start  69: unit.ComfortNoise
+ 34/113 Test  #54: e2e.E2E_Pacer ....................   Passed    0.20 sec
+        Start  61: unit.HighPassFilter
+ 35/113 Test  #57: e2e.E2E_FrameDropper .............   Passed    0.21 sec
+        Start  65: unit.TransientSuppressor
+ 36/113 Test  #66: unit.Resampler ...................   Passed    0.18 sec
+        Start  50: e2e.E2E_TransportFeedback
+ 37/113 Test  #56: e2e.E2E_BitrateAllocator .........   Passed    0.19 sec
+        Start  91: e2e.E2E_FreezeDetector
+ 38/113 Test  #52: e2e.E2E_LossBwe ..................   Passed    0.22 sec
+        Start  71: unit.Mixer
+ 39/113 Test  #33: e2e.E2E_RtcpStats ................   Passed    0.14 sec
+        Start  25: unit.PacketBuffer
+ 40/113 Test  #18: e2e.E2E_NackRtx ..................   Passed    0.17 sec
+        Start  97: e2e.E2E_FrameScheduler
+ 41/113 Test  #88: unit.FrameScaler .................   Passed    0.19 sec
+        Start  32: e2e.E2E_PacketBuffer
+ 42/113 Test  #69: unit.ComfortNoise ................   Passed    0.16 sec
+        Start  40: unit.DelayBwe
+ 43/113 Test  #65: unit.TransientSuppressor .........   Passed    0.15 sec
+        Start 106: e2e.E2E_HeaderExtensions
+ 44/113 Test  #61: unit.HighPassFilter ..............   Passed    0.15 sec
+        Start  83: unit.FreezeDetector
+ 45/113 Test  #91: e2e.E2E_FreezeDetector ...........   Passed    0.16 sec
+        Start  39: unit.TransportFeedback
+ 46/113 Test  #50: e2e.E2E_TransportFeedback ........   Passed    0.16 sec
+        Start  17: unit.Protection
+ 47/113 Test  #25: unit.PacketBuffer ................   Passed    0.15 sec
+        Start 103: e2e.E2E_RtpToNtp
+ 48/113 Test  #71: unit.Mixer .......................   Passed    0.16 sec
+        Start   9: unit.NetworkLink
+ 49/113 Test  #97: e2e.E2E_FrameScheduler ...........   Passed    0.16 sec
+        Start  27: unit.DelayManager
+ 50/113 Test  #32: e2e.E2E_PacketBuffer .............   Passed    0.15 sec
+        Start  41: unit.LossBwe
+ 51/113 Test  #40: unit.DelayBwe ....................   Passed    0.13 sec
+        Start  89: unit.FrameScheduler
+ 52/113 Test  #77: e2e.E2E_EchoCanceller ............   Passed    2.55 sec
+        Start  42: unit.SendSideBwe
+ 53/113 Test  #83: unit.FreezeDetector ..............   Passed    0.14 sec
+        Start  23: e2e.E2E_TemporalLayers
+ 54/113 Test #106: e2e.E2E_HeaderExtensions .........   Passed    0.16 sec
+        Start   2: unit.SeqNum
+ 55/113 Test  #39: unit.TransportFeedback ...........   Passed    0.15 sec
+        Start  30: unit.VideoJitter
+ 56/113 Test  #17: unit.Protection ..................   Passed    0.15 sec
+        Start  84: unit.CodecFallback
+ 57/113 Test #103: e2e.E2E_RtpToNtp .................   Passed    0.15 sec
+        Start  26: unit.RtcpStats
+ 58/113 Test   #9: unit.NetworkLink .................   Passed    0.15 sec
+        Start   7: unit.Dsp
+ 59/113 Test  #41: unit.LossBwe .....................   Passed    0.15 sec
+        Start   8: unit.RtpPacket
+ 60/113 Test  #27: unit.DelayManager ................   Passed    0.15 sec
+        Start  13: unit.Red
+ 61/113 Test  #89: unit.FrameScheduler ..............   Passed    0.16 sec
+        Start  14: unit.Plc
+ 62/113 Test  #42: unit.SendSideBwe .................   Passed    0.15 sec
+        Start  37: e2e.E2E_VideoJitter
+ 63/113 Test  #23: e2e.E2E_TemporalLayers ...........   Passed    0.15 sec
+        Start  43: unit.Pacer
+ 64/113 Test   #2: unit.SeqNum ......................   Passed    0.13 sec
+        Start  28: unit.TimeStretch
+ 65/113 Test  #84: unit.CodecFallback ...............   Passed    0.13 sec
+        Start  87: unit.CodecNegotiation
+ 66/113 Test  #30: unit.VideoJitter .................   Passed    0.13 sec
+        Start  45: unit.BitrateAllocator
+ 67/113 Test  #26: unit.RtcpStats ...................   Passed    0.13 sec
+        Start  93: e2e.E2E_Orientation
+ 68/113 Test   #8: unit.RtpPacket ...................   Passed    0.14 sec
+        Start 104: e2e.E2E_StreamSync
+ 69/113 Test   #7: unit.Dsp .........................   Passed    0.15 sec
+ 70/113 Test  #13: unit.Red .........................   Passed    0.14 sec
+        Start 105: e2e.E2E_CaptureTime
+        Start  90: unit.QualityScaler
+ 71/113 Test  #14: unit.Plc .........................   Passed    0.14 sec
+        Start  49: unit.Outage
+ 72/113 Test  #37: e2e.E2E_VideoJitter ..............   Passed    0.13 sec
+        Start  70: unit.AudioLevel
+ 73/113 Test  #28: unit.TimeStretch .................   Passed    0.14 sec
+        Start   4: unit.Metrics
+ 74/113 Test  #43: unit.Pacer .......................   Passed    0.14 sec
+        Start  59: e2e.E2E_LayerSelector
+ 75/113 Test  #87: unit.CodecNegotiation ............   Passed    0.14 sec
+        Start   5: unit.EventLog
+ 76/113 Test  #45: unit.BitrateAllocator ............   Passed    0.14 sec
+        Start  47: unit.VideoAdaptation
+ 77/113 Test  #93: e2e.E2E_Orientation ..............   Passed    0.13 sec
+        Start   6: unit.Fft
+ 78/113 Test  #90: unit.QualityScaler ...............   Passed    0.13 sec
+        Start  44: unit.Probing
+ 79/113 Test  #49: unit.Outage ......................   Passed    0.14 sec
+        Start  92: e2e.E2E_CodecFallback
+ 80/113 Test #105: e2e.E2E_CaptureTime ..............   Passed    0.14 sec
+        Start   3: unit.Histogram
+ 81/113 Test #104: e2e.E2E_StreamSync ...............   Passed    0.15 sec
+        Start   1: unit.Units
+ 82/113 Test  #70: unit.AudioLevel ..................   Passed    0.14 sec
+        Start  99: unit.RtpToNtp
+ 83/113 Test   #4: unit.Metrics .....................   Passed    0.14 sec
+        Start  86: unit.ContentPolicy
+ 84/113 Test  #59: e2e.E2E_LayerSelector ............   Passed    0.14 sec
+        Start  10: unit.NackTracker
+ 85/113 Test   #5: unit.EventLog ....................   Passed    0.15 sec
+        Start 101: unit.CaptureTime
+ 86/113 Test  #47: unit.VideoAdaptation .............   Passed    0.15 sec
+        Start  98: e2e.E2E_QualityScaler
+ 87/113 Test   #6: unit.Fft .........................   Passed    0.14 sec
+        Start  95: e2e.E2E_CodecNegotiation
+ 88/113 Test  #92: e2e.E2E_CodecFallback ............   Passed    0.13 sec
+        Start  48: unit.LayerSelector
+ 89/113 Test  #44: unit.Probing .....................   Passed    0.14 sec
+        Start  31: unit.ClockDrift
+ 90/113 Test   #3: unit.Histogram ...................   Passed    0.14 sec
+        Start  46: unit.FrameDropper
+ 91/113 Test  #99: unit.RtpToNtp ....................   Passed    0.14 sec
+        Start  15: unit.KeyframeRequest
+ 92/113 Test   #1: unit.Units .......................   Passed    0.14 sec
+        Start 102: unit.HeaderExtensions
+ 93/113 Test  #10: unit.NackTracker .................   Passed    0.14 sec
+        Start 100: unit.StreamSync
+ 94/113 Test  #86: unit.ContentPolicy ...............   Passed    0.14 sec
+        Start  11: unit.Rtx
+ 95/113 Test #101: unit.CaptureTime .................   Passed    0.15 sec
+        Start  85: unit.Orientation
+ 96/113 Test  #95: e2e.E2E_CodecNegotiation .........   Passed    0.13 sec
+        Start  12: unit.Fec
+ 97/113 Test  #98: e2e.E2E_QualityScaler ............   Passed    0.15 sec
+        Start  16: unit.TemporalLayers
+ 98/113 Test  #31: unit.ClockDrift ..................   Passed    0.14 sec
+ 99/113 Test  #48: unit.LayerSelector ...............   Passed    0.15 sec
+100/113 Test  #46: unit.FrameDropper ................   Passed    0.14 sec
+101/113 Test  #15: unit.KeyframeRequest .............   Passed    0.14 sec
+102/113 Test #102: unit.HeaderExtensions ............   Passed    0.14 sec
+103/113 Test  #11: unit.Rtx .........................   Passed    0.13 sec
+104/113 Test #100: unit.StreamSync ..................   Passed    0.13 sec
+105/113 Test  #85: unit.Orientation .................   Passed    0.11 sec
+106/113 Test  #16: unit.TemporalLayers ..............   Passed    0.11 sec
+107/113 Test  #12: unit.Fec .........................   Passed    0.12 sec
+        Start 109: bench.timing
+108/113 Test #109: bench.timing .....................   Passed    1.34 sec
+        Start 108: bench.loss
+109/113 Test #108: bench.loss .......................   Passed    1.05 sec
+        Start 110: bench.cc
+110/113 Test #110: bench.cc .........................   Passed    0.90 sec
+        Start 113: bench.sync
+111/113 Test #113: bench.sync .......................   Passed    0.77 sec
+        Start 107: bench.core
+112/113 Test #107: bench.core .......................   Passed    0.43 sec
+        Start 112: bench.video
+113/113 Test #112: bench.video ......................   Passed    1.23 sec
+
+100% tests passed out of 113
+
+Label Time Summary:
+bench    =   9.85 sec*proc (7 tests)
+e2e      =  21.95 sec*proc (48 tests)
+unit     =  10.82 sec*proc (58 tests)
+
+Total Test time (real) =  13.18 sec

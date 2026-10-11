@@ -1,0 +1,544 @@
+"""Catalog of the algorithms implemented for sections 3-8 of
+docs/02-webrtc-problems-solved.md. Used by tools/gen_docs.py.
+
+Each entry maps an algorithm to the problem rows it addresses, its code,
+its test suites and benchmarks, plus hand-written notes: the end-to-end
+scenario, design notes that go beyond the header comment, and what
+verification found (defects fixed, limitations, deviations from libwebrtc).
+"""
+
+SECTIONS = {
+    "3": ("Packet loss", "loss"),
+    "4": ("Jitter, reordering and timing", "timing"),
+    "5": ("Bandwidth, congestion and unstable links", "cc"),
+    "6": ("Audio quality (APM)", "audio"),
+    "7": ("Video quality and processing", "video"),
+    "8": ("Synchronization", "sync"),
+}
+
+ALGORITHMS = [
+    # ------------------------------------------------------------------ 3
+    dict(id="3.1", slug="nack-rtx", title="NACK + RTX retransmission",
+         problems=["Lost video packets -> NACK + RTX: selective retransmission on a separate SSRC"],
+         headers=["loss/nack_tracker.h", "loss/rtx.h"], unit=["NackTracker", "Rtx"], e2e=["E2E_NackRtx"],
+         bench=["loss/NackTracker_PacketWith5PctLoss", "loss/RtxSender_StoreAndResend", "loss/Q_NackRtx_5pct_rtt80"],
+         scenario="30 fps video (8 x 1000 B packets per frame) over a link with 5% random loss in both directions and "
+                  "40 ms one-way delay. The receiver's NackTracker sends NACKs over the lossy reverse link, the "
+                  "RtxSender answers with RTX packets. A packet counts as on time if it is available within a 250 ms "
+                  "playout budget. A second run at 150 ms one-way delay shows retransmissions arriving too late.",
+         notes="Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
+               "arrive; the sender also refuses to resend the same packet twice within one RTT, which protects "
+               "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
+               "the whole list, so a burst does not force an unnecessary keyframe.",
+         verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
+                      "selective retransmission."),
+    dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
+         problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
+         headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
+         bench=["loss/FecEncode_10pkt_frame_50pct", "loss/FecDecode_RecoverOne", "loss/Q_Fec_5pct_rtt300"],
+         scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
+                  "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
+                  "within the 250 ms budget.",
+         notes="Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
+               "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
+               "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
+               "logic is the same.",
+         verification="A unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
+                      "rebuilt from parity before its own late arrival, which is correct, so the expectation was "
+                      "fixed."),
+    dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
+         problems=["Lost audio frames -> RED redundancy for audio"],
+         headers=["loss/red.h"], unit=["Red"], e2e=["E2E_Red"],
+         bench=["loss/RedEncodeParse_d2", "loss/Q_Red_10pct"],
+         scenario="20 000 Opus-sized frames (60-90 B, 20 ms) over 10% random loss with redundancy distance 0, 1 "
+                  "and 2. Residual loss is counted after RED recovery.",
+         notes="Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
+               "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
+               "RFC 2198 header.",
+         verification="No defects found; results match the analytical p^2 and p^3."),
+    dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
+         problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
+         headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
+         bench=["loss/Plc_Conceal10ms_16k", "loss/Q_Plc_10pct_speech"],
+         scenario="20 s of synthetic voiced speech, 10 ms frames, 10% random loss. Compares the whole-signal SNR "
+                  "of the concealed output against zero insertion, and the SNR/level inside the lost frames.",
+         notes="Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
+               "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
+               "the 'expand' operation of the audio jitter buffer (4.5).",
+         verification="No defects found."),
+    dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
+         problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
+                   "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
+         headers=["loss/keyframe_request.h"], unit=["KeyframeRequest"], e2e=["E2E_Keyframe"],
+         bench=["loss/KeyframeRequester_Frame", "loss/Q_Keyframe_2pct_frame_loss"],
+         scenario="30 s of 30 fps video with an IPPP reference chain and 2% unrecoverable frame loss "
+                  "(after NACK). The sender answers each PLI with a keyframe. Measures the decodable-frame ratio, "
+                  "the longest freeze and the number of PLIs (no request storms).",
+         notes="The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
+               "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that.",
+         verification="Pass threshold derived analytically: each unrecoverable loss costs repair window + RTT + "
+                      "keyframe transit, about 10 frames, so 2% loss bounds decodability near 80%. Without "
+                      "keyframe requests only ~3% of frames decode."),
+    dict(id="3.6", slug="temporal-layers", title="Temporal scalability (L1T2/L1T3)",
+         problems=["A single loss breaking every later frame -> Temporal layers / SVC: dependent frames can be dropped safely"],
+         headers=["loss/temporal_layers.h"], unit=["TemporalLayers"], e2e=["E2E_TemporalLayers"],
+         bench=["loss/TemporalLayers_ScheduleAndFilter", "loss/Q_TemporalLayers_5pct"],
+         scenario="Same frame-loss simulation at 5% loss with L1T1 versus L1T3 (keyframe requests on), plus an "
+                  "SFU forwarding only T0+T1 and checking that every forwarded frame is decodable.",
+         notes="Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
+               "on T0) are where a receiver may switch up.",
+         verification="No defects found."),
+    dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
+         problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
+         headers=["loss/protection_controller.h"], unit=["Protection"], e2e=["E2E_Protection"],
+         bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
+         scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
+                  "loss and burstiness, at RTT 20, 80 and 300 ms with 5% loss.",
+         notes="The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
+               "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
+               "replacement for libwebrtc's lookup tables.",
+         verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
+                      "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead."),
+    # ------------------------------------------------------------------ 4
+    dict(id="4.1", slug="packet-buffer", title="Packet buffer: reordering, de-duplication, frame assembly",
+         problems=["Out-of-order packets -> sequence-number reordering in the packet buffer",
+                   "Duplicate packets -> dedup by sequence number"],
+         headers=["timing/packet_buffer.h"], unit=["PacketBuffer"], e2e=["E2E_PacketBuffer"],
+         bench=["timing/PacketBuffer_InsertAssemble"],
+         scenario="1 500 six-packet frames over a link with 8 ms Gaussian jitter (heavy reordering) and 3% "
+                  "duplication, with sequence numbers crossing the 16-bit wrap. Every frame must be assembled "
+                  "exactly once, with packets in order.",
+         notes="Frame boundaries come from the packetizer's start flag and the RTP marker bit; frames may complete "
+               "out of order and are ordered later by decodability (3.5) and the frame scheduler (7.7).",
+         verification="No defects found."),
+    dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
+         problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
+         headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
+         bench=["timing/ReceiveStatistics_OnPacket"],
+         scenario="60 s of 50 pps media over 30 ms + 5 ms jitter with 5% loss, with real SR/RR packets serialized "
+                  "and parsed in both directions. RTT, fraction lost and jitter are compared with the configured "
+                  "network.",
+         notes="Implements RFC 3550 A.3 (expected/lost/fraction) and A.8 (interarrival jitter, 1/16 gain) and "
+               "the SR/RR wire format. Transport-wide feedback and abs-send-time are in 5.1 and 8.4.",
+         verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
+    dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
+         problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
+         headers=["timing/delay_manager.h"], unit=["DelayManager"], e2e=["E2E_DelayManager"],
+         bench=["timing/DelayManager_Update"],
+         scenario="The audio jitter buffer simulation with jitter stepping from 5 ms to 40 ms half way; the target "
+                  "delay must follow.",
+         notes="A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
+               "packets, while falling jitter takes several seconds, so the buffer does not oscillate.",
+         verification="No defects found."),
+    dict(id="4.4", slug="time-stretch", title="Time stretching (WSOLA accelerate / preemptive expand)",
+         problems=["Variable packet arrival (audio) -> time-stretching: accelerate, preemptive expand",
+                   "Clock drift between sender and receiver -> NetEq stretching"],
+         headers=["timing/time_stretch.h"], unit=["TimeStretch"], e2e=["E2E_TimeStretch"],
+         bench=["timing/TimeStretch_Accelerate30ms_16k", "timing/Q_TimeStretch_stall600ms"],
+         scenario="Audio over a quiet network that stalls for 600 ms and then delivers the backlog at once. With "
+                  "stretching the buffer must return to its target; without it the extra 600 ms of latency stays "
+                  "for the rest of the call.",
+         notes="Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
+               "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
+               "audible.",
+         verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
+                      "ready, but WSOLA needs 30 ms, so stretching never ran and latency stayed at 600 ms after "
+                      "a stall. Fixed by decoding ahead only when a stretch is wanted (AudioJitterBuffer::"
+                      "MaybeStretch); recovery now takes ~0.5 s."),
+    dict(id="4.5", slug="audio-jitter-buffer", title="Adaptive audio jitter buffer (NetEq-lite)",
+         problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
+         headers=["timing/audio_jitter_buffer.h"], unit=["AudioJitterBuffer"], e2e=["E2E_AudioJitterBuffer"],
+         bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
+         scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
+                  "buffer is compared with a fixed 20 ms and a fixed 200 ms buffer.",
+         notes="Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
+               "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names.",
+         verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
+                      "buffer without acceleration does not conceal late packets, it waits for them, so its "
+                      "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
+                      "rate and delay against both fixed buffers."),
+    dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
+         problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
+         headers=["timing/video_jitter_estimator.h"], unit=["VideoJitter"], e2e=["E2E_VideoJitter"],
+         bench=["timing/VideoJitterEstimator_Update", "timing/Q_VideoJitter_late_frames"],
+         scenario="60 s of 30 fps video with 3-6 KB frames and a 25 KB keyframe every 2 s over a 2.5 Mbps "
+                  "bottleneck with 10 ms jitter. Each frame's render time comes from VideoTiming fed by the "
+                  "estimator; a frame is late if it arrives (plus decode time) after its render time.",
+         notes="Deviation from libwebrtc: the jitter term is 3 sigma with no offset, where libwebrtc uses "
+               "2.33 sigma - 30 ms (it compensates elsewhere with OS-jitter and render allowances). Both are "
+               "configurable.",
+         verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
+                      "network jitter, so about 600 of 1 800 frames arrived after their render time. With the new "
+                      "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay."),
+    dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
+         problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
+         headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
+         bench=["timing/DriftCompensator_10ms_16k", "timing/Q_ClockDrift_300ppm"],
+         scenario="120 s of audio from a sender whose clock is 300 ppm slow, over 40 ms + 5 ms jitter. The "
+                  "receiver plays 10 ms blocks from a FIFO; with compensation, the PI-controlled resampler holds "
+                  "the FIFO at 60 ms.",
+         notes="Using the per-window minimum transit time (lower envelope) instead of every packet makes the "
+               "drift fit almost immune to jitter. The resampler ratio is limited to +-0.5%.",
+         verification="Defect found: the first PI gains gave a ~500 s time constant (slow oscillation, 15.8 ms "
+                      "error). Retuned from the plant model (the buffer integrates at 10 ms per update) to a "
+                      "~3 s, near critically damped loop, with an EMA on the packet-granular level: the error "
+                      "fell to 1.8 ms."),
+    # ------------------------------------------------------------------ 5
+    dict(id="5.1", slug="transport-feedback", title="Transport-wide CC feedback (and REMB)",
+         problems=["Fine-grained per-packet feedback -> transport-cc (Transport-Wide CC) RTCP feedback",
+                   "Receiver-side bandwidth hints -> REMB (legacy)"],
+         headers=["cc/transport_feedback.h"], unit=["TransportFeedback"], e2e=["E2E_TransportFeedback"],
+         bench=["cc/TransportFeedback_Build100_SerializeParse"],
+         scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
+                  "real wire format, parsed and joined with the send history. Each packet must be reported once, "
+                  "with arrival-time error within the 250 us quantization.",
+         notes="Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
+               "vectors. A message is split when a delta overflows 16 bits.",
+         verification="No defects found; maximum arrival-time error 249 us."),
+    dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
+         problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
+         headers=["cc/delay_based_bwe.h"], unit=["DelayBwe"], e2e=["E2E_DelayBwe"],
+         bench=["cc/Gcc_OnFeedback_per_packet", "cc/Q_Gcc_capacity_steps"],
+         scenario="Full closed loop (encoder, pacer, transport-cc, GCC) over a bottleneck whose capacity steps "
+                  "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
+                  "delay are measured over the second half of each phase.",
+         notes="After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
+               "takes about 17 s, so the last phase has a lower utilization bar.",
+         verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
+                      "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
+                      "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "
+                      "regular overuse and held utilization near 50%; real WebRTC sends keyframes on request, "
+                      "and so does the simulator now. Utilization rose to ~80%, with queue p95 of 20-33 ms."),
+    dict(id="5.3", slug="loss-based-bwe", title="Loss-based bandwidth estimation",
+         problems=["Unknown or changing available bandwidth -> GCC: loss-based estimation"],
+         headers=["cc/loss_based_bwe.h"], unit=["LossBwe"], e2e=["E2E_LossBwe"],
+         bench=["cc/Q_LossBwe_15pct"],
+         scenario="An 8 Mbps link with 15% versus 1% random loss: heavy loss must push the rate far below "
+                  "capacity, light loss must not.",
+         notes="Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
+               "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up.",
+         verification="Defect found: loss was measured over 20-packet intervals, and a lucky interval with no "
+                      "loss (about 4% likely at 15% loss) let the estimate jump from 153 to 2 338 kbps. Now loss "
+                      "windows are at least 1 s and decisions are applied to the current target."),
+    dict(id="5.4", slug="gcc-controller", title="Send-side bandwidth estimation (GCC network controller)",
+         problems=["Unknown or changing available bandwidth -> GCC (delay-based and loss-based estimation)"],
+         headers=["cc/send_side_bwe.h"], unit=["SendSideBwe"], e2e=["E2E_SendSideBwe"],
+         bench=["cc/Gcc_OnFeedback_per_packet"],
+         scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
+                  "(decrease band). Each phase's target is compared with the previous one.",
+         notes="The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
+               "2.5 x target.",
+         verification="Covered by the 5.2 and 5.3 fixes."),
+    dict(id="5.5", slug="pacer", title="Pacer with priority queues",
+         problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
+                   "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
+         headers=["cc/pacer.h"], unit=["Pacer"], e2e=["E2E_Pacer"],
+         bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
+         scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
+                  "delay (p95) are compared.",
+         notes="Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
+               "so no packet waits longer than max_queue_time (2 s).",
+         verification="A unit test queued 10 s worth of data, which correctly triggers drain mode; the test now "
+                      "stays inside the queue-time limit. A priority test was rewritten so the retransmission is "
+                      "queued behind video before it is observed."),
+    dict(id="5.6", slug="probing", title="Bandwidth probing",
+         problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
+         headers=["cc/probing.h"], unit=["Probing"], e2e=["E2E_Probing"],
+         bench=["cc/Q_Probing_rampup_5mbps"],
+         scenario="A 5 Mbps link starting at 300 kbps: time for the target to reach 80% of capacity, with and "
+                  "without probing.",
+         notes="Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
+               "the estimator ignores clusters with too few packets or bytes.",
+         verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
+                      "within 30 s."),
+    dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",
+         problems=["Sharing bandwidth among streams -> bitrate allocator, with per-stream priority and min/max bitrate"],
+         headers=["cc/bitrate_allocator.h"], unit=["BitrateAllocator"], e2e=["E2E_BitrateAllocator"],
+         bench=["cc/BitrateAllocator_5streams", "cc/Q_Allocator_low_bandwidth"],
+         scenario="Audio (enforced 20-40 kbps), camera (150-2500 kbps) and screen share (250-1500 kbps, priority "
+                  "2) share a GCC target while capacity steps 3000 -> 450 -> 3000 kbps.",
+         notes="Paused streams resume only at min x 1.1 (hysteresis).",
+         verification="A unit-test expectation was wrong about how leftover bitrate is shared (it is split by "
+                      "priority between audio and screen); the expectation was corrected."),
+    dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
+         problems=["Encoder bitrate overshoot -> encoder rate control, frame dropper"],
+         headers=["cc/frame_dropper.h"], unit=["FrameDropper"], e2e=["E2E_FrameDropper"],
+         bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
+         scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
+                  "frame dropper; the sent video rate is compared with the target.",
+         notes="Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops.",
+         verification="No defects found."),
+    dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
+         problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
+                   "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
+         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation"], e2e=["E2E_VideoAdaptation"],
+         bench=["cc/Degradation_and_CpuDetector", "cc/Q_Adaptation_bandwidth_drop"],
+         scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
+                  "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
+                  "settle on a sustainable resolution without oscillating.",
+         notes="The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
+               "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
+         verification="No defects found after the 5.2 fixes."),
+    dict(id="5.10", slug="layer-selector", title="Simulcast/SVC layer selection (SFU)",
+         problems=["Heterogeneous receivers in group calls -> Simulcast and SVC; the SFU forwards a matching layer per receiver"],
+         headers=["cc/layer_selector.h"], unit=["LayerSelector"], e2e=["E2E_LayerSelector"],
+         bench=["cc/LayerSelector_frame"],
+         scenario="Three L1T3 simulcast encodings (150/500/1500 kbps); the receiver's bandwidth (+-10% noise) "
+                  "goes 2000 -> 700 -> 300 kbps. Checks decodability of every forwarded frame, the time spent over "
+                  "budget and the number of switches.",
+         notes="Spatial switches wait for a keyframe of the target encoding (and request one); temporal "
+               "up-switches wait for a layer-sync frame.",
+         verification="The e2e test was made self-contained (its own L1T3 pattern) so the congestion-control "
+                      "section builds and tests without the loss section."),
+    dict(id="5.11", slug="outage", title="Link outage detection and recovery",
+         problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
+         headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
+         bench=["cc/Q_Outage_recovery"],
+         scenario="A 2 Mbps call with a 7 s total outage (both directions) at 20 s; packets sent into the dead "
+                  "link, ICE restarts and time to recover 50% of capacity are measured.",
+         notes="On recovery the estimate is reset to half the last good rate and probing is restarted, because "
+               "the path may have changed.",
+         verification="No defects found."),
+    # ------------------------------------------------------------------ 6
+    dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
+         problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
+         headers=["audio/echo_canceller.h"], unit=["EchoCanceller"], e2e=["E2E_EchoCanceller"],
+         bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
+                "audio/Q_EchoCanceller_full_duplex_call"],
+         scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
+                  "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
+                  "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
+         notes="This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
+               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2.",
+         verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
+                      "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
+                      "'cancels' near speech for a few blocks and was then copied to the foreground. An "
+                      "ERLE-based double-talk detector was tried and rejected (it fired on 40% of far-end-only "
+                      "blocks). The final design uses Speex's statistical copy rule plus Valin's adaptive step "
+                      "size, which collapses during double talk (step 0.35 -> 0.002): near-end SNR went from "
+                      "-4 to +9 dB. (3) After an echo-path change the convergence state was not reset, so the "
+                      "adaptive step stayed near zero and ERLE never recovered (0 dB); it now recovers to "
+                      "25.6 dB."),
+    dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
+         problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
+         headers=["audio/echo_delay_estimator.h"], unit=["EchoDelay"], e2e=["E2E_EchoDelay"],
+         bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
+         scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
+                  "Bluetooth). The AEC must re-estimate the delay and re-converge.",
+         notes="The search range is 500 ms; updates run every 100 ms and only while the far end is active.",
+         verification="Defect found: with rectangular windows, the window edges correlated with each other and "
+                      "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
+                      "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
+                      "was also made physical (direct path dominant)."),
+    dict(id="6.3", slug="noise-suppression", title="Noise suppression",
+         problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
+         headers=["audio/noise_suppressor.h"], unit=["NoiseSuppressor"], e2e=["E2E_NoiseSuppressor"],
+         bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
+         scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
+                  "talker (passed through the same HPF) before and after.",
+         notes="Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
+               "plugged into the same 10 ms interface.",
+         verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
+                      "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
+                      "from 7.6 to 12.9 dB."),
+    dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
+         problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
+         headers=["audio/gain_control.h"], unit=["GainControl"], e2e=["E2E_GainControl"],
+         bench=["audio/Agc_10ms"],
+         scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
+                  "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
+         notes="As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
+               "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
+               "recommendation.",
+         verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
+                      "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
+                      "already modified in place."),
+    dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
+         problems=["Low-frequency rumble or DC offset -> high-pass filter"],
+         headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
+         bench=["audio/HighPassFilter_10ms"],
+         scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
+                  "the output are measured.",
+         notes="", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+    dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
+         problems=["Keyboard typing noise -> transient suppressor"],
+         headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],
+         bench=["audio/TransientSuppressor_10ms"],
+         scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
+                  "compared with and without suppression.",
+         notes="Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
+         verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
+                      "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
+                      "first millisecond, which holds most of a click's energy; attack is now instant. (3) A "
+                      "60 ms envelope still held the speech level right after a word, so a 4 ms envelope (onset "
+                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB."),
+    dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
+         problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
+                   "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
+         headers=["audio/comfort_noise.h"], unit=["ComfortNoise"], e2e=["E2E_ComfortNoise"],
+         bench=["audio/DtxController_10ms", "audio/ComfortNoise_10ms"],
+         scenario="A one-sided stretch of a call (talks 15 s, listens 15 s) at -50 dBFS background noise; "
+                  "speech frames and SIDs cross a 2%-loss link. Transmitted-frame ratio against the actual "
+                  "speech ratio, and comfort-noise level against the real noise in pauses.",
+         notes="SID reflection coefficients are interpolated between updates, so the synthesis filter is always "
+               "stable.",
+         verification="Defect found: SIDs were sent too often, because spectral-change detection used "
+                      "single-frame reflection coefficients (sigma about 0.08). The background description now "
+                      "comes from an averaged autocorrelation, and the transmit ratio fell from 0.65 to 0.49 "
+                      "(speech 0.43). A measurement bug that counted lost speech packets as silence was also "
+                      "fixed."),
+    dict(id="6.8", slug="vad", title="Voice activity detection",
+         problems=["Silence wasting bandwidth -> VAD", "Detecting who's talking -> voice activity"],
+         headers=["audio/vad.h"], unit=["Vad"], e2e=["E2E_Vad"],
+         bench=["audio/Vad_10ms"],
+         scenario="Speech in noise at about 10 dB SNR after noise suppression; recall and false-positive rate "
+                  "(beyond the intended 200 ms hangover).",
+         notes="", verification="Defects found: (1) residual 'musical noise' after NS looked voiced in a single "
+                                "frame (false-positive rate 27%), so flatness now uses a ~30 ms averaged spectrum "
+                                "(9%); (2) after a +20 dB noise step the floor rose only 3 dB/s, so noise-like "
+                                "frames now raise it at 30 dB/s. The unit-test metric was also changed to "
+                                "exclude the intended hangover."),
+    dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464) and active speaker detection",
+         problems=["Detecting who's talking -> audio level header extension (RFC 6464), voice activity"],
+         headers=["audio/audio_level.h"], unit=["AudioLevel"], e2e=["E2E_AudioLevel"],
+         bench=["audio/AudioLevel_and_ActiveSpeaker_20ms"],
+         scenario="Four participants take 5 s turns over background noise; the SFU sees only the RFC 6464 byte "
+                  "per 20 ms packet. Dominant-speaker accuracy (from 1.5 s into each turn) and switch count.",
+         notes="", verification="No defects found."),
+    dict(id="6.10", slug="mixer", title="Audio mixer (loudest N)",
+         problems=["Mixing several remote speakers -> audio mixer that picks the loudest N speakers"],
+         headers=["audio/mixer.h"], unit=["Mixer"], e2e=["E2E_Mixer"],
+         bench=["audio/Mixer_8sources_10ms"],
+         scenario="Six participants (three loud talkers, three noisy rooms) mixed to three; the share of frames "
+                  "in which exactly the talkers are mixed, and peak level.",
+         notes="", verification="No defects found."),
+    dict(id="6.11", slug="resampler", title="Sample-rate conversion",
+         problems=["Device sample-rate mismatch -> resampler"],
+         headers=["audio/resampler.h"], unit=["Resampler"], e2e=["E2E_Resampler"],
+         bench=["audio/Resampler_48k_to_16k_10ms", "audio/Resampler_44k1_to_48k_10ms"],
+         scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone; "
+                  "end-to-end SNR after fitting gain and phase, plus the output length.",
+         notes="The Audio Device Module (platform audio I/O, device switching) is platform glue rather than an "
+               "algorithm and is out of scope; the resampler is what bridges device and processing rates.",
+         verification="Defect found: when decimating, the filter used too few taps (transition band several kHz "
+                      "wide), so a 10 kHz tone aliased at only -36 dB into 48 -> 16 kHz output. Taps now scale "
+                      "with the decimation factor: 91 dB rejection, 107 dB SNR."),
+    # ------------------------------------------------------------------ 7
+    dict(id="7.1", slug="freeze-detector", title="Freeze detection",
+         problems=["Lost frame (decode impossible) -> freeze the last frame until recovery (measured as freezes)"],
+         headers=["video/freeze_detector.h"], unit=["FreezeDetector"], e2e=["E2E_FreezeDetector"],
+         bench=["video/FreezeDetector_frame"],
+         scenario="60 s of 30 fps video with 1% frame loss, two 600 ms outages and PLI-driven recovery; the "
+                  "detector's freeze count is compared with gaps counted directly from the render log.",
+         notes="Keyframe requests that end freezes are in 3.5.",
+         verification="A unit-test expectation was wrong about the harmonic frame rate: irregular 38/38/23 ms "
+                      "intervals give 28.97 fps, not 30.3, which is the point of the metric."),
+    dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
+         problems=["Decoder errors or corrupt bitstream -> decoder fallback (hardware -> software)",
+                   "Hardware encoder failure -> automatic fallback to a software encoder"],
+         headers=["video/codec_fallback.h"], unit=["CodecFallback"], e2e=["E2E_CodecFallback"],
+         bench=["video/CodecFallback_frame"],
+         scenario="A hardware encoder that starts failing 30% of frames at 10 s; checks that exactly one "
+                  "fallback happens with one keyframe, and that the longest gap between encoded frames stays "
+                  "small.",
+         notes="", verification="No defects found."),
+    dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
+         problems=["Rotated camera -> video orientation header extension (CVO)"],
+         headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
+         bench=["video/Orientation_rotate90_720p"],
+         scenario="A phone rotating through all 4 rotations, with and without mirroring; frames carry CVO in a "
+                  "real RTP header extension and the receiver must show the scene upright, bit-exact.",
+         notes="", verification="No defects found."),
+    dict(id="7.4", slug="content-policy", title="Content hints and screen-content variable frame rate",
+         problems=["Screen sharing (text must stay sharp) -> content hint, screen-content coding tools, variable framerate",
+                   "Talking head vs. motion -> content-type-aware rate control"],
+         headers=["video/content_policy.h"], unit=["ContentPolicy"], e2e=["E2E_ContentPolicy"],
+         bench=["video/FrameChangeDetector_1080p", "video/Q_ScreenShare_encode_ratio"],
+         scenario="60 s of screen sharing at 15 fps: a new slide every 10 s and a blinking cursor; every content "
+                  "change must be encoded immediately, while static frames are skipped.",
+         notes="Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
+               "only flags that they should be enabled.",
+         verification="No defects found."),
+    dict(id="7.5", slug="codec-negotiation", title="Codec negotiation",
+         problems=["Many codecs and devices -> codec negotiation (VP8, VP9, H.264, AV1, H.265 recently)"],
+         headers=["video/codec_negotiation.h"], unit=["CodecNegotiation"], e2e=["E2E_CodecNegotiation"],
+         bench=["video/CodecNegotiation_offer10"],
+         scenario="A browser-like offer (VP8, VP9, three H.264 profiles, AV1, RTX) against an embedded camera "
+                  "(hardware H.264 CB level 4.0, software VP8, no transport-cc), in both directions.",
+         notes="", verification="No defects found."),
+    dict(id="7.6", slug="frame-scaler", title="Resolution scaling and aspect handling",
+         problems=["Frame size and aspect changes -> resolution adaptation and scaling mid-stream"],
+         headers=["video/frame_scaler.h"], unit=["FrameScaler"], e2e=["E2E_FrameScaler"],
+         bench=["video/Scale_720p_to_360p", "video/Scale_360p_to_720p", "video/Q_Scaler_psnr_720p_via_360p"],
+         scenario="720p frames down-scaled along the adaptation ladder and up-scaled back for display (PSNR per "
+                  "step), plus a 4:3 camera shown in a 16:9 tile with crop and letterbox.",
+         notes="Portable scalar code, about 1.7 ms per 720p frame on the reference machine; a SIMD library "
+               "(libyuv) is the natural drop-in for production.",
+         verification="No defects found."),
+    dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
+         problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
+         headers=["video/frame_scheduler.h"], unit=["FrameScheduler"], e2e=["E2E_FrameScheduler"],
+         bench=["video/FrameScheduler_frame"],
+         scenario="30 fps over 15 ms jitter: VideoJitterEstimator + VideoTiming give render times and the "
+                  "scheduler presents frames. Render-interval jitter is compared with rendering on arrival.",
+         notes="", verification="Exposed the 4.6 jitter-offset defect (render-interval jitter 7.9 ms before the "
+                                "fix, 1.1 ms after)."),
+    dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
+         problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
+         headers=["video/quality_scaler.h"], unit=["QualityScaler"], e2e=["E2E_QualityScaler"],
+         bench=["video/QualityScaler_frame"],
+         scenario="An H.264-like encoder model (QP +6 per halving of bits per pixel) with bandwidth 2500 -> 300 "
+                  "-> 2500 kbps; resolution follows the QP signals.",
+         notes="Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
+         verification="An expectation was wrong: at 300 kbps, 640x360 already gives QP 33, which is inside the "
+                      "H.264 band, so not going lower is correct. The test now checks that QP returns inside the "
+                      "band."),
+    # ------------------------------------------------------------------ 8
+    dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
+         problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
+         headers=["sync/rtp_to_ntp.h"], unit=["RtpToNtp"], e2e=["E2E_RtpToNtp"],
+         bench=["sync/RtpToNtp_UpdateAndEstimate", "sync/RtpToNtp_Estimate"],
+         scenario="120 s with a sender audio clock 80 ppm off its NTP clock; SRs every second over a jittery "
+                  "link. Every 20 ms the estimated capture time of the current RTP timestamp is compared with "
+                  "the truth.",
+         notes="", verification="No algorithm defects; one unit test's reject counting was corrected."),
+    dict(id="8.2", slug="stream-sync", title="Audio/video synchronization and CNAME sync groups",
+         problems=["Lip-sync (A/V sync) -> the receiver aligns playout delay between streams",
+                   "Synchronizing multiple streams from one sender -> shared CNAME, MediaStream grouping"],
+         headers=["sync/stream_sync.h"], unit=["StreamSync"], e2e=["E2E_StreamSync"],
+         bench=["sync/StreamSync_Update"],
+         scenario="Audio (30 ms network, 60 ms buffer) and video (90 ms network, 40 ms decode/render) from one "
+                  "CNAME; at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after "
+                  "settling and after the route change.",
+         notes="The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
+         verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
+                      "(40 ms offset)."),
+    dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
+         problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
+         headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],
+         bench=["sync/AbsCaptureTime_SenderAndInterpolator"],
+         scenario="A sender 2.5 s ahead of the receiver; an SFU rewrites RTP timestamps but forwards "
+                  "abs-capture-time; the receiver learns the clock offset from SRs and measures capture-to-render "
+                  "latency for every frame.",
+         notes="", verification="Portability finding: interpolation used long double, which is software-emulated "
+                                "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
+                                "It now uses exact integer arithmetic."),
+    dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
+         problems=["Identifying streams -> SSRC, MID and RID header extensions"],
+         headers=["sync/header_extensions.h"], unit=["HeaderExtensions"], e2e=["E2E_HeaderExtensions"],
+         bench=["sync/HeaderExtensions_WriteParse4", "sync/RtpDemuxer_by_ssrc"],
+         scenario="One 5-tuple carrying audio, three simulcast video encodings and RTX (repaired RID) with "
+                  "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
+                  "mid-call. Routing accuracy.",
+         notes="", verification="No defects found."),
+]
+
+# Problem rows from sections 3-8 that are platform glue, codec internals or
+# covered as part of another algorithm. Listed in the coverage table.
+NOT_IMPLEMENTED = [
+    ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
+    ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
+    ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
+    ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
+    ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
+]

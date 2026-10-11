@@ -1,0 +1,74 @@
+[  2%] Built target sm_test_framework
+[  2%] Building CXX object bench/CMakeFiles/sm_bench_framework.dir/framework/sm_bench_main.cc.o
+[  3%] Building CXX object src/CMakeFiles/sm_core.dir/core/metrics.cc.o
+[  4%] Linking CXX static library libsm_core.a
+[  5%] Linking CXX static library libsm_bench_framework.a
+[  8%] Built target sm_core
+[  8%] Building CXX object tests/CMakeFiles/sm_unit_core.dir/unit/core/core_test.cc.o
+[  8%] Built target sm_bench_framework
+[ 15%] Built target sm_loss
+[ 16%] Building CXX object src/CMakeFiles/sm_video.dir/video/content_policy.cc.o
+[ 17%] Building CXX object src/CMakeFiles/sm_video.dir/video/codec_negotiation.cc.o
+[ 27%] Built target sm_cc
+[ 28%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/mixer.cc.o
+[ 29%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/echo_canceller.cc.o
+[ 30%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/comfort_noise.cc.o
+[ 31%] Building CXX object tests/CMakeFiles/sm_e2e_loss.dir/e2e/loss_e2e_test.cc.o
+[ 32%] Linking CXX executable sm_unit_cc.js
+[ 33%] Building CXX object src/CMakeFiles/sm_timing.dir/timing/rtcp_stats.cc.o
+[ 34%] Building CXX object tests/CMakeFiles/sm_unit_loss.dir/unit/loss/plc_test.cc.o
+[ 34%] Building CXX object src/CMakeFiles/sm_audio.dir/audio/resampler.cc.o
+[ 35%] Linking CXX static library libsm_timing.a
+[ 36%] Building CXX object tests/CMakeFiles/sm_e2e_cc.dir/e2e/cc_e2e_test.cc.o
+[ 41%] Built target sm_timing
+[ 42%] Building CXX object src/CMakeFiles/sm_sync.dir/sync/capture_time.cc.o
+[ 43%] Linking CXX executable sm_unit_loss.js
+[ 44%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/time_stretch_test.cc.o
+[ 45%] Linking CXX static library libsm_video.a
+[ 45%] Building CXX object tests/CMakeFiles/sm_e2e_timing.dir/e2e/timing_e2e_test.cc.o
+[ 51%] Built target sm_video
+[ 52%] Linking CXX executable sm_unit_video.js
+[ 53%] Linking CXX static library libsm_audio.a
+[ 54%] Linking CXX executable sm_unit_core.js
+[ 60%] Built target sm_audio
+[ 61%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/audio_jitter_buffer_test.cc.o
+[ 65%] Built target sm_unit_cc
+[ 66%] Building CXX object tests/CMakeFiles/sm_e2e_video.dir/e2e/video_e2e_test.cc.o
+[ 67%] Linking CXX static library libsm_sync.a
+[ 70%] Built target sm_sync
+[ 71%] Linking CXX executable sm_e2e_loss.js
+[ 72%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/filters_test.cc.o
+[ 73%] Building CXX object tests/CMakeFiles/sm_unit_timing.dir/unit/timing/clock_drift_test.cc.o
+[ 78%] Built target sm_unit_loss
+[ 79%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/echo_test.cc.o
+[ 79%] Built target sm_unit_core
+[ 80%] Building CXX object tests/CMakeFiles/sm_unit_audio.dir/unit/audio/dtx_level_mixer_test.cc.o
+[ 81%] Built target sm_unit_video
+[ 82%] Building CXX object tests/CMakeFiles/sm_e2e_audio.dir/e2e/audio_e2e_test.cc.o
+[ 83%] Linking CXX executable sm_unit_sync.js
+[ 83%] Linking CXX executable sm_unit_timing.js
+[ 84%] Linking CXX executable sm_e2e_timing.js
+[ 85%] Building CXX object tests/CMakeFiles/sm_e2e_sync.dir/e2e/sync_e2e_test.cc.o
+[ 85%] Built target sm_e2e_loss
+[ 86%] Building CXX object bench/CMakeFiles/sm_bench.dir/loss_bench.cc.o
+[ 86%] Building CXX object examples/CMakeFiles/simulated_call.dir/simulated_call.cc.o
+[ 87%] Linking CXX executable sm_e2e_cc.js
+[ 88%] Linking CXX executable sm_e2e_video.js
+[ 89%] Built target sm_unit_sync
+[ 90%] Building CXX object bench/CMakeFiles/sm_bench.dir/timing_bench.cc.o
+[ 90%] Linking CXX executable sm_unit_audio.js
+[ 90%] Linking CXX executable sm_e2e_audio.js
+[ 93%] Built target sm_unit_timing
+[ 94%] Building CXX object bench/CMakeFiles/sm_bench.dir/cc_bench.cc.o
+[ 94%] Built target sm_e2e_timing
+[ 94%] Building CXX object bench/CMakeFiles/sm_bench.dir/audio_bench.cc.o
+[ 94%] Built target sm_e2e_video
+[ 95%] Linking CXX executable simulated_call.js
+[ 96%] Linking CXX executable sm_e2e_sync.js
+[ 96%] Built target sm_e2e_cc
+[ 96%] Built target sm_unit_audio
+[ 96%] Built target sm_e2e_audio
+[ 97%] Linking CXX executable sm_bench.js
+[ 97%] Built target sm_e2e_sync
+[ 97%] Built target simulated_call
+[100%] Built target sm_bench

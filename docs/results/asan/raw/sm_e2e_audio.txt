@@ -1,0 +1,49 @@
+[ RUN  ] E2E_HighPassFilter.RemovesDcAndHumInFullChain
+[metric] hum_attenuation_db=25.6685
+[metric] dc_out=-7.33259e-06
+[  OK  ] E2E_HighPassFilter.RemovesDcAndHumInFullChain (3050.6 ms)
+[ RUN  ] E2E_Vad.DetectsSpeechAfterNoiseSuppression
+[metric] vad_recall=0.993827
+[metric] vad_fpr=0.0923077
+[  OK  ] E2E_Vad.DetectsSpeechAfterNoiseSuppression (3020.0 ms)
+[ RUN  ] E2E_NoiseSuppressor.ImprovesSnrInChain
+[metric] chain_snr_in_db=7.6143
+[metric] chain_snr_out_db=12.8859
+[  OK  ] E2E_NoiseSuppressor.ImprovesSnrInChain (3222.3 ms)
+[ RUN  ] E2E_GainControl.NormalizesQuietTalkerLeavesLoudToLimiter
+[metric] quiet_talker_in_dbfs=-33.26
+[metric] quiet_talker_out_dbfs=-17.1903
+[metric] loud_talker_in_dbfs=-13.5294
+[metric] loud_talker_out_dbfs=-14.8787
+[metric] peak=0.891251
+[  OK  ] E2E_GainControl.NormalizesQuietTalkerLeavesLoudToLimiter (4630.5 ms)
+[ RUN  ] E2E_EchoDelay.AecFollowsAudioRouteChange
+[metric] erle_before_change_db=29.5129
+[metric] erle_after_change_db=25.5978
+[metric] final_bulk_delay_ms=170.5
+[  OK  ] E2E_EchoDelay.AecFollowsAudioRouteChange (24570.1 ms)
+[ RUN  ] E2E_EchoCanceller.FullDuplexCall
+[metric] call_erle_db=30.2113
+[metric] call_double_talk_near_level_change_db=-0.464895
+[  OK  ] E2E_EchoCanceller.FullDuplexCall (32219.9 ms)
+[ RUN  ] E2E_TransientSuppressor.KeyboardDuringCall
+[metric] click_attenuation_in_pauses_db=13.5371
+[  OK  ] E2E_TransientSuppressor.KeyboardDuringCall (2468.5 ms)
+[ RUN  ] E2E_ComfortNoise.DtxSavesPacketsCngFillsSilence
+[metric] speech_ratio=0.434333
+[metric] dtx_tx_ratio=0.487
+[metric] cng_level_error_db=0.0627388
+[  OK  ] E2E_ComfortNoise.DtxSavesPacketsCngFillsSilence (3550.1 ms)
+[ RUN  ] E2E_AudioLevel.ActiveSpeakerFollowsTurns
+[metric] active_speaker_accuracy=1
+[metric] active_speaker_switches=4
+[  OK  ] E2E_AudioLevel.ActiveSpeakerFollowsTurns (1526.4 ms)
+[ RUN  ] E2E_Mixer.ConferenceMixOfLoudestThree
+[metric] mixer_talkers_selected_ratio=1
+[metric] mixer_peak=0.891251
+[  OK  ] E2E_Mixer.ConferenceMixOfLoudestThree (373.9 ms)
+[ RUN  ] E2E_Resampler.DeviceToProcessingToPlayout
+[metric] chain_44k_16k_48k_snr_db=94.6004
+[  OK  ] E2E_Resampler.DeviceToProcessingToPlayout (264.2 ms)
+
+11 tests run, 11 passed, 0 failed

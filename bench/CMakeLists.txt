@@ -1,0 +1,41 @@
+add_library(sm_bench_framework STATIC framework/sm_bench_main.cc)
+target_include_directories(sm_bench_framework PUBLIC framework)
+sm_configure_target(sm_bench_framework)
+
+set(SM_BENCH_SOURCES core_bench.cc)
+if(SM_WITH_LOSS)
+  list(APPEND SM_BENCH_SOURCES loss_bench.cc)
+endif()
+if(SM_WITH_TIMING)
+  list(APPEND SM_BENCH_SOURCES timing_bench.cc)
+endif()
+if(SM_WITH_CC)
+  list(APPEND SM_BENCH_SOURCES cc_bench.cc)
+endif()
+if(SM_WITH_AUDIO)
+  list(APPEND SM_BENCH_SOURCES audio_bench.cc)
+endif()
+if(SM_WITH_VIDEO)
+  list(APPEND SM_BENCH_SOURCES video_bench.cc)
+endif()
+if(SM_WITH_SYNC)
+  list(APPEND SM_BENCH_SOURCES sync_bench.cc)
+endif()
+
+add_executable(sm_bench ${SM_BENCH_SOURCES})
+target_link_libraries(sm_bench PRIVATE sm_bench_framework sm::sm)
+sm_configure_target(sm_bench)
+if(EMSCRIPTEN)
+  # Let --json=<path> write to the real file system when run under Node.
+  target_link_options(sm_bench PRIVATE -sNODERAWFS=1)
+endif()
+
+if(SM_BUILD_TESTS)
+  # Benchmarks double as tests: each section's benchmarks must meet their
+  # requirements. Short min-time keeps CI fast; scale budgets for slow targets.
+  foreach(s ${SM_SECTIONS})
+    add_test(NAME bench.${s} COMMAND sm_bench --filter=${s}/ --min-time=0.05)
+    # Speed budgets are meaningless under CPU contention: never run in parallel.
+    set_tests_properties(bench.${s} PROPERTIES LABELS bench RUN_SERIAL TRUE)
+  endforeach()
+endif()

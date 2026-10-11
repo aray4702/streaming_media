@@ -1,0 +1,40 @@
+[ RUN  ] E2E_FreezeDetector.MatchesGroundTruthGapsOverLossyLink
+[metric] freezes_detected=18
+[metric] freezes_ground_truth=18
+[metric] total_freeze_ms=7303
+[metric] harmonic_fps=11.4008
+[  OK  ] E2E_FreezeDetector.MatchesGroundTruthGapsOverLossyLink (1.8 ms)
+[ RUN  ] E2E_CodecFallback.HardwareFailureMidCallKeepsVideoFlowing
+[metric] fallbacks=1
+[metric] max_encoded_gap_ms=99
+[  OK  ] E2E_CodecFallback.HardwareFailureMidCallKeepsVideoFlowing (0.2 ms)
+[ RUN  ] E2E_Orientation.RotatingPhoneRendersUpright
+[metric] upright_frames_ratio=1
+[  OK  ] E2E_Orientation.RotatingPhoneRendersUpright (0.9 ms)
+[ RUN  ] E2E_ContentPolicy.ScreenShareEncodesOnlyChanges
+[metric] screen_encode_ratio=0.156667
+[metric] content_changes=96
+[  OK  ] E2E_ContentPolicy.ScreenShareEncodesOnlyChanges (153.1 ms)
+[ RUN  ] E2E_CodecNegotiation.BrowserAndDeviceAgreeBothDirections
+[  OK  ] E2E_CodecNegotiation.BrowserAndDeviceAgreeBothDirections (0.8 ms)
+[ RUN  ] E2E_FrameScaler.AdaptationLadderQualityAndAspect
+[metric] psnr_via_960=45.3766
+[metric] psnr_via_640=41.2819
+[metric] psnr_via_480=39.5362
+[metric] psnr_via_320=38.0369
+[  OK  ] E2E_FrameScaler.AdaptationLadderQualityAndAspect (38.5 ms)
+[ RUN  ] E2E_FrameScheduler.SmoothPlayoutOverJitteryNetwork
+[metric] render_interval_stdev_scheduled_ms=1.06732
+[metric] render_interval_stdev_on_arrival_ms=12.7518
+[metric] dropped_late_ratio=0
+[metric] freezes_scheduled=0
+[metric] freezes_on_arrival=0
+[  OK  ] E2E_FrameScheduler.SmoothPlayoutOverJitteryNetwork (1.4 ms)
+[ RUN  ] E2E_QualityScaler.ResolutionTracksBitrateViaQp
+[metric] width_high_bw=1280
+[metric] width_low_bw=640
+[metric] width_recovered=1280
+[metric] qp_low_bw_end=33
+[  OK  ] E2E_QualityScaler.ResolutionTracksBitrateViaQp (0.3 ms)
+
+8 tests run, 8 passed, 0 failed

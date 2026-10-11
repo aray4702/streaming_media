@@ -1,0 +1,55 @@
+[ RUN  ] E2E_NackRtx.RecoversRandomLossWithinDeadline
+[metric] nack_on_time=0.999794
+[metric] baseline_on_time=0.949959
+[metric] nack_overhead=0.0536478
+[  OK  ] E2E_NackRtx.RecoversRandomLossWithinDeadline (3.4 ms)
+[ RUN  ] E2E_NackRtx.TooLateAtHighRtt
+[metric] nack_high_rtt_on_time=0.949753
+[metric] nack_high_rtt_eventually=1
+[  OK  ] E2E_NackRtx.TooLateAtHighRtt (1.8 ms)
+[ RUN  ] E2E_Fec.RandomLossHighRtt
+[metric] fec_frames_on_time=0.973641
+[metric] baseline_frames_on_time=0.673806
+[metric] fec_overhead=0.508399
+[  OK  ] E2E_Fec.RandomLossHighRtt (6.1 ms)
+[ RUN  ] E2E_Fec.InterleavedBeatsBlockOnBursts
+[metric] fec_burst_interleaved=0.960461
+[metric] fec_burst_block=0.92257
+[  OK  ] E2E_Fec.InterleavedBeatsBlockOnBursts (9.3 ms)
+[ RUN  ] E2E_Red.HalvesAudioLossAndMore
+[metric] red_raw_loss=0.09635
+[metric] red_d1_residual=0.00805
+[metric] red_d2_residual=0.00075
+[metric] red_d1_overhead=0.999941
+[  OK  ] E2E_Red.HalvesAudioLossAndMore (27.3 ms)
+[ RUN  ] E2E_Plc.SpeechOverLossyLink
+[metric] plc_loss=0.095
+[metric] plc_snr_db=14.5741
+[metric] zero_fill_snr_db=10.4199
+[metric] plc_lost_frames_snr_db=5.35383
+[metric] plc_lost_level_ratio=0.980962
+[  OK  ] E2E_Plc.SpeechOverLossyLink (59.7 ms)
+[ RUN  ] E2E_Keyframe.RecoversFromUnrepairableLoss
+[metric] kf_decodable=0.826374
+[metric] kf_max_freeze_ms=528
+[metric] kf_pli=15
+[metric] no_kf_decodable=0.032967
+[  OK  ] E2E_Keyframe.RecoversFromUnrepairableLoss (19.3 ms)
+[ RUN  ] E2E_TemporalLayers.UpperLayerLossDoesNotBreakStream
+[metric] l1t1_decodable=0.674725
+[metric] l1t3_decodable=0.864835
+[metric] l1t1_freeze_ms=10626
+[metric] l1t3_freeze_ms=3102
+[  OK  ] E2E_TemporalLayers.UpperLayerLossDoesNotBreakStream (0.6 ms)
+[ RUN  ] E2E_TemporalLayers.SfuFiltersToTargetFramerate
+[  OK  ] E2E_TemporalLayers.SfuFiltersToTargetFramerate (0.0 ms)
+[ RUN  ] E2E_Protection.AdaptiveAcrossRtt
+[metric] adaptive_rtt20_on_time=1
+[metric] adaptive_rtt20_overhead=0.0536478
+[metric] adaptive_rtt80_on_time=1
+[metric] adaptive_rtt80_overhead=0.226359
+[metric] adaptive_rtt300_on_time=0.988468
+[metric] adaptive_rtt300_overhead=0.265751
+[  OK  ] E2E_Protection.AdaptiveAcrossRtt (11.1 ms)
+
+10 tests run, 10 passed, 0 failed

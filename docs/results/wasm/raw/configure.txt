@@ -1,0 +1,4 @@
+emcmake: cmake -S /Users/danceone/job_interview/streaming_media -B /Users/danceone/job_interview/streaming_media/build-wasm -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=/opt/homebrew/Cellar/emscripten/6.0.10_1/libexec/cmake/Modules/Platform/Emscripten.cmake -DCMAKE_CROSSCOMPILING_EMULATOR=/opt/homebrew/opt/node/bin/node in directory /Users/danceone/job_interview/streaming_media
+-- Configuring done (0.4s)
+-- Generating done (0.1s)
+-- Build files have been written to: /Users/danceone/job_interview/streaming_media/build-wasm

@@ -1,0 +1,70 @@
+[ RUN  ] HighPassFilter.FrequencyResponse
+[metric] hpf_gain_20hz_db=-48.1666
+[metric] hpf_gain_50hz_db=-16.4309
+[metric] hpf_gain_300hz_db=-0.000165939
+[  OK  ] HighPassFilter.FrequencyResponse (13.6 ms)
+[ RUN  ] HighPassFilter.RemovesDcOffset
+[  OK  ] HighPassFilter.RemovesDcOffset (0.8 ms)
+[ RUN  ] Vad.SpeechVersusNoise
+[metric] vad_recall=0.997546
+[metric] vad_false_positive_rate=0
+[  OK  ] Vad.SpeechVersusNoise (191.6 ms)
+[ RUN  ] Vad.NoiseLevelStepIsNotSpeech
+[metric] vad_frames_on_noise_step=0
+[  OK  ] Vad.NoiseLevelStepIsNotSpeech (54.4 ms)
+[ RUN  ] NoiseSuppressor.AttenuatesStationaryNoise
+[metric] ns_noise_reduction_db=16.5408
+[  OK  ] NoiseSuppressor.AttenuatesStationaryNoise (155.9 ms)
+[ RUN  ] NoiseSuppressor.ImprovesSnr
+[metric] ns_snr_in_db=6.39877
+[metric] ns_snr_out_db=14.7677
+[  OK  ] NoiseSuppressor.ImprovesSnr (393.9 ms)
+[ RUN  ] GainControl.LimiterNeverExceedsCeiling
+[  OK  ] GainControl.LimiterNeverExceedsCeiling (1.5 ms)
+[ RUN  ] GainControl.QuietSpeechReachesTarget
+[metric] agc_output_level_dbfs=-17.9858
+[metric] agc_gain_db=25.3885
+[  OK  ] GainControl.QuietSpeechReachesTarget (228.2 ms)
+[ RUN  ] GainControl.NoGainOnSilenceAndClippingRecommendation
+[  OK  ] GainControl.NoGainOnSilenceAndClippingRecommendation (9.1 ms)
+[ RUN  ] TransientSuppressor.AttenuatesClicksKeepsTone
+[metric] click_attenuation_db=20
+[  OK  ] TransientSuppressor.AttenuatesClicksKeepsTone (3.8 ms)
+[ RUN  ] Resampler.DownsampleQualityAndAliasRejection
+[metric] resampler_48_16_snr_db=107.327
+[metric] resampler_alias_rejection_db=90.9691
+[  OK  ] Resampler.DownsampleQualityAndAliasRejection (124.3 ms)
+[ RUN  ] Resampler.ArbitraryRatiosKeepRate
+[  OK  ] Resampler.ArbitraryRatiosKeepRate (178.4 ms)
+[ RUN  ] EchoDelay.FindsKnownDelay
+[metric] delay_confidence=21.243
+[  OK  ] EchoDelay.FindsKnownDelay (1503.9 ms)
+[ RUN  ] EchoDelay.TracksDelayChangeThroughRoom
+[  OK  ] EchoDelay.TracksDelayChangeThroughRoom (4851.6 ms)
+[ RUN  ] EchoCanceller.ConvergesOnFarEndOnly
+[metric] aec_erle_linear_db=31.819
+[metric] aec_erle_db=42.4191
+[metric] aec_bulk_delay_ms=50.5
+[  OK  ] EchoCanceller.ConvergesOnFarEndOnly (11802.1 ms)
+[ RUN  ] EchoCanceller.KeepsNearEndDuringDoubleTalk
+[metric] aec_double_talk_near_level_change_db=-0.747618
+[metric] aec_double_talk_snr_db=9.07956
+[  OK  ] EchoCanceller.KeepsNearEndDuringDoubleTalk (14210.7 ms)
+[ RUN  ] ComfortNoise.SidRoundTripAndLevel
+[  OK  ] ComfortNoise.SidRoundTripAndLevel (0.2 ms)
+[ RUN  ] ComfortNoise.GeneratedNoiseMatchesLevelAndSpectrum
+[metric] cng_level_error_db=0.335535
+[metric] cng_tilt_error_db=-0.353426
+[  OK  ] ComfortNoise.GeneratedNoiseMatchesLevelAndSpectrum (18.2 ms)
+[ RUN  ] ComfortNoise.DtxDecisions
+[  OK  ] ComfortNoise.DtxDecisions (6.6 ms)
+[ RUN  ] AudioLevel.ExtensionAndLevel
+[  OK  ] AudioLevel.ExtensionAndLevel (0.0 ms)
+[ RUN  ] AudioLevel.ActiveSpeakerHysteresis
+[  OK  ] AudioLevel.ActiveSpeakerHysteresis (0.3 ms)
+[ RUN  ] Mixer.LoudestNWithoutClipping
+[  OK  ] Mixer.LoudestNWithoutClipping (5.9 ms)
+[ RUN  ] Mixer.RampAvoidsClickOnJoin
+[  OK  ] Mixer.RampAvoidsClickOnJoin (2.2 ms)
+
+23 tests run, 23 passed, 0 failed

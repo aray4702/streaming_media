@@ -1,0 +1,14 @@
+# Cross-compile for 32-bit ARMv7 Linux with hardware float (older Raspberry
+# Pi, wearables and camera SoCs running embedded Linux).
+set(CMAKE_SYSTEM_NAME Linux)
+set(CMAKE_SYSTEM_PROCESSOR armv7)
+set(CMAKE_C_COMPILER arm-linux-gnueabihf-gcc)
+set(CMAKE_CXX_COMPILER arm-linux-gnueabihf-g++)
+set(CMAKE_CXX_FLAGS_INIT "-march=armv7-a -mfpu=neon-vfpv4 -mfloat-abi=hard")
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+find_program(SM_QEMU qemu-arm)
+if(SM_QEMU)
+  set(CMAKE_CROSSCOMPILING_EMULATOR ${SM_QEMU} -L /usr/arm-linux-gnueabihf)
+endif()

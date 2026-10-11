@@ -1,0 +1,60 @@
+# Builds and verifies the library on every platform family it targets.
+# Desktop/server and WebAssembly jobs run the full unit + e2e + benchmark
+# suites; mobile and embedded jobs cross-compile (and run the tests under
+# QEMU for Linux ARM). Benchmark speed budgets are scaled for slow runners.
+name: ci
+on: [push, pull_request]
+jobs:
+  host:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: ubuntu-24.04, cc: gcc-13, cxx: g++-13}
+          - {os: ubuntu-24.04, cc: clang-18, cxx: clang++-18}
+          - {os: macos-14, cc: clang, cxx: clang++}
+    runs-on: ${{ matrix.os }}
+    env: {CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}", SM_BENCH_BUDGET_SCALE: "4"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset native && cmake --build --preset native -j 4
+      - run: ctest --preset native -j 4
+  sanitizers:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset native-asan && cmake --build --preset native-asan -j 4
+      - run: ctest --preset native-asan -j 4
+  embedded-config:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset embedded && cmake --build --preset embedded -j 4
+  wasm:
+    runs-on: ubuntu-24.04
+    env: {SM_BENCH_BUDGET_SCALE: "4"}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: EMSCRIPTEN_ROOT=$EMSDK/upstream/emscripten cmake --preset wasm && cmake --build --preset wasm -j 4
+      - run: ctest --preset wasm -j 4
+  linux-aarch64:
+    runs-on: ubuntu-24.04
+    env: {SM_BENCH_BUDGET_SCALE: "20"}  # Emulated CPU.
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu qemu-user
+      - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
+      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure
+  android:
+    runs-on: ubuntu-24.04
+    strategy: {matrix: {preset: [android-arm64, android-armv7]}}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset ${{ matrix.preset }} -DSM_BUILD_TESTS=OFF -DSM_BUILD_BENCH=OFF -DSM_BUILD_EXAMPLES=OFF
+      - run: cmake --build out/${{ matrix.preset }} -j 4
+  ios:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset ios && cmake --build out/ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO

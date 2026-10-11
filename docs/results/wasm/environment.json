@@ -1,0 +1,9 @@
+{
+  "platform": "wasm",
+  "date": "2026-10-11T02:25:40Z",
+  "host": "Darwin arm64",
+  "cpu": "Apple M4",
+  "compiler": "emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.10-git",
+  "runtime": "node v26.10.0",
+  "ctest": "100% tests passed out of 113"
+}

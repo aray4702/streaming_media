@@ -1,0 +1,243 @@
+benchmark                                         ns/item        items/s  result
+core/Histogram_Add                                    3.4      298391334  PASS
+    require ns_per_item                      3.3513 <= 50  ok
+core/RealFft_256                                    638.2        1566813  PASS
+    require ns_per_item                      638.238 <= 10000  ok
+core/RtpPacket_SerializeParse                        78.4       12747221  PASS
+    require ns_per_item                      78.4485 <= 5000  ok
+loss/NackTracker_PacketWith5PctLoss                  30.8       32487511  PASS
+    require ns_per_item                      30.7811 <= 400  ok
+loss/RtxSender_StoreAndResend                        32.1       31154507  PASS
+    require ns_per_item                      32.0981 <= 1500  ok
+loss/FecEncode_10pkt_frame_50pct                    426.9        2342300  PASS
+    require ns_per_item                      426.931 <= 3000  ok
+loss/FecDecode_RecoverOne                           111.5        8971198  PASS
+    require ns_per_item                      111.468 <= 5000  ok
+loss/RedEncodeParse_d2                              481.9        2075332  PASS
+    require ns_per_item                      481.851 <= 3000  ok
+loss/Plc_Conceal10ms_16k                          23065.3          43355  PASS
+    realtime_factor                          433.6x
+    require realtime_factor                  433.552 >= 50  ok
+loss/KeyframeRequester_Frame                         87.5       11431990  PASS
+    require ns_per_item                      87.4738 <= 2000  ok
+loss/TemporalLayers_ScheduleAndFilter                19.6       51043065  PASS
+    require ns_per_item                      19.5913 <= 500  ok
+loss/ProtectionController_Update                    364.2        2745984  PASS
+    require ns_per_item                      364.168 <= 20000  ok
+loss/Q_NackRtx_5pct_rtt80                         quality         1.8 ms  PASS
+    on_time                                  0.999794
+    overhead                                 0.0536478
+    require on_time                          0.999794 >= 0.995  ok
+    require overhead                         0.0536478 <= 0.08  ok
+loss/Q_Fec_5pct_rtt300                            quality         4.5 ms  PASS
+    frames_on_time                           0.973641
+    overhead                                 0.508399
+    require frames_on_time                   0.973641 >= 0.97  ok
+loss/Q_Red_10pct                                  quality         9.4 ms  PASS
+    raw_loss                                 0.09635
+    residual_loss                            0.00805
+    require residual_loss                    0.00805 <= 0.02  ok
+loss/Q_Plc_10pct_speech                           quality        58.9 ms  PASS
+    snr_plc_db                               14.5741
+    snr_zero_fill_db                         10.4199
+    lost_frames_snr_db                       5.35383
+    require snr_gain_db                      4.15415 >= 1  ok
+loss/Q_Keyframe_2pct_frame_loss                   quality         0.3 ms  PASS
+    decodable                                0.826374
+    max_freeze_ms                            528
+    pli                                      15
+    require decodable                        0.826374 >= 0.78  ok
+    require max_freeze_ms                    528 <= 700  ok
+loss/Q_TemporalLayers_5pct                        quality         0.6 ms  PASS
+    l1t1_decodable                           0.674725
+    l1t3_decodable                           0.864835
+    require decodable_gain                   0.19011 >= 0.05  ok
+loss/Q_Protection_adaptive_rtt300                 quality         4.6 ms  PASS
+    on_time                                  0.988468
+    overhead                                 0.265751
+    require on_time                          0.988468 >= 0.985  ok
+    require overhead                         0.265751 <= 0.45  ok
+timing/PacketBuffer_InsertAssemble                  152.3        6564505  PASS
+    require ns_per_item                      152.334 <= 1500  ok
+timing/ReceiveStatistics_OnPacket                     2.5      393705011  PASS
+    require ns_per_item                      2.53997 <= 100  ok
+timing/DelayManager_Update                          142.1        7035249  PASS
+    require ns_per_item                      142.141 <= 2000  ok
+timing/TimeStretch_Accelerate30ms_16k              6619.9         151059  PASS
+    realtime_factor                          3021.2x
+    require realtime_factor                  3021.18 >= 50  ok
+timing/AudioJitterBuffer_10msPull_16k               128.0        7811830  PASS
+    realtime_factor                          78118.3x
+    require realtime_factor                  78118.3 >= 100  ok
+timing/VideoJitterEstimator_Update                   24.5       40759502  PASS
+    require ns_per_item                      24.5342 <= 500  ok
+timing/DriftCompensator_10ms_16k                    301.9        3312339  PASS
+    realtime_factor                          33123.4x
+    require realtime_factor                  33123.4 >= 200  ok
+timing/Q_AudioJitterBuffer_jitter25_loss2         quality       168.7 ms  PASS
+    concealment_ratio                        0.0268736
+    mean_buffer_delay_ms                     43.3143
+    p95_buffer_delay_ms                      60
+    require concealment_ratio                0.0268736 <= 0.05  ok
+    require mean_buffer_delay_ms             43.3143 <= 120  ok
+timing/Q_TimeStretch_stall600ms                   quality        84.6 ms  PASS
+    recover_s                                0.47
+    removed_ms                               606.812
+    require recover_s                        0.47 <= 8  ok
+    require recover_s                        0.47 > 0  ok
+timing/Q_VideoJitter_late_frames                  quality         0.3 ms  PASS
+    late_ratio                               0.00109951
+    mean_delay_ms                            134.315
+    require late_ratio                       0.00109951 <= 0.03  ok
+timing/Q_ClockDrift_300ppm                        quality        14.3 ms  PASS
+    estimated_ppm                            300.551
+    max_level_error_ms                       1.8075
+    require ppm_error                        0.550811 <= 30  ok
+    require max_level_error_ms               1.8075 <= 15  ok
+cc/TransportFeedback_Build100_SerializeParse         36.8       27171004  PASS
+    require ns_per_item                      36.8039 <= 400  ok
+cc/Gcc_OnFeedback_per_packet                        145.2        6888799  PASS
+    require ns_per_item                      145.163 <= 2000  ok
+cc/Pacer_EnqueueProcess                              23.5       42569272  PASS
+    require ns_per_item                      23.4911 <= 500  ok
+cc/BitrateAllocator_5streams                        614.1        1628333  PASS
+    require ns_per_item                      614.125 <= 10000  ok
+cc/FrameDropper_and_Overshoot                        24.5       40818252  PASS
+    require ns_per_item                      24.4988 <= 2000  ok
+cc/Degradation_and_CpuDetector                        4.2      238102852  PASS
+    require ns_per_item                      4.19987 <= 1000  ok
+cc/LayerSelector_frame                                4.3      234998843  PASS
+    require ns_per_item                      4.25534 <= 200  ok
+cc/Q_Gcc_capacity_steps                           quality         4.6 ms  PASS
+    min_steady_utilization                   0.808727
+    utilization_after_increase               0.682812
+    max_phase_queue_p95_ms                   33.39
+    loss_ratio                               0
+    require min_steady_utilization           0.808727 >= 0.75  ok
+    require utilization_after_increase       0.682812 >= 0.6  ok
+    require max_phase_queue_p95_ms           33.39 <= 200  ok
+cc/Q_LossBwe_15pct                                quality         2.0 ms  PASS
+    target_kbps                              404.118
+    require target_over_capacity             0.0505148 < 0.1  ok
+cc/Q_Pacer_audio_delay                            quality         2.9 ms  PASS
+    audio_p95_ms                             23.595
+    video_p95_ms                             26.089
+    require audio_p95_ms                     23.595 < 60  ok
+cc/Q_Probing_rampup_5mbps                         quality         2.7 ms  PASS
+    ramp_s                                   0.2
+    require ramp_s                           0.2 < 3  ok
+    require ramp_s                           0.2 > 0  ok
+cc/Q_Allocator_low_bandwidth                      quality         5.8 ms  PASS
+    min_audio_alloc_kbps                     20.938
+    low_screen_kbps                          310.814
+    require min_audio_alloc_kbps             20.938 >= 20  ok
+    require low_screen_kbps                  310.814 >= 250  ok
+cc/Q_FrameDropper_overshoot160                    quality         2.1 ms  PASS
+    sent_over_target                         1.06645
+    require sent_over_target                 1.06645 < 1.2  ok
+cc/Q_Adaptation_bandwidth_drop                    quality         4.6 ms  PASS
+    low_phase_width                          480
+    recovered_width                          1280
+    require low_phase_width                  480 <= 640  ok
+    require recovered_width                  1280 >= 1280  ok
+cc/Q_Outage_recovery                              quality         2.0 ms  PASS
+    recovery_s                               0.025
+    ice_restarts                             1
+    require recovery_s                       0.025 < 5  ok
+    require recovery_s                       0.025 > 0  ok
+audio/HighPassFilter_10ms                           878.6        1138206  PASS
+    realtime_factor                          11382.1x
+    require realtime_factor                  11382.1 >= 2000  ok
+audio/Vad_10ms                                     1129.5         885328  PASS
+    realtime_factor                          8853.3x
+    require realtime_factor                  8853.28 >= 500  ok
+audio/NoiseSuppressor_10ms                         3523.6         283799  PASS
+    realtime_factor                          2838.0x
+    require realtime_factor                  2837.99 >= 300  ok
+audio/Agc_10ms                                      281.5        3552425  PASS
+    realtime_factor                          35524.3x
+    require realtime_factor                  35524.3 >= 1000  ok
+audio/EchoDelayEstimator_10ms                     40721.8          24557  PASS
+    realtime_factor                          245.6x
+    require realtime_factor                  245.569 >= 50  ok
+audio/EchoCanceller_10ms_80ms_tail               101875.6           9816  PASS
+    realtime_factor                          98.2x
+    require realtime_factor                  98.1589 >= 20  ok
+audio/TransientSuppressor_10ms                      117.4        8514579  PASS
+    realtime_factor                          85145.8x
+    require realtime_factor                  85145.8 >= 2000  ok
+audio/DtxController_10ms                           1615.3         619099  PASS
+    realtime_factor                          6191.0x
+    require realtime_factor                  6190.99 >= 500  ok
+audio/ComfortNoise_10ms                            2058.1         485896  PASS
+    realtime_factor                          4859.0x
+    require realtime_factor                  4858.96 >= 500  ok
+audio/AudioLevel_and_ActiveSpeaker_20ms             170.2        5875055  PASS
+    realtime_factor                          117501.1x
+    require realtime_factor                  117501 >= 5000  ok
+audio/Mixer_8sources_10ms                          1079.8         926081  PASS
+    realtime_factor                          9260.8x
+    require realtime_factor                  9260.81 >= 500  ok
+audio/Resampler_48k_to_16k_10ms                   10565.5          94648  PASS
+    realtime_factor                          946.5x
+    require realtime_factor                  946.478 >= 200  ok
+audio/Resampler_44k1_to_48k_10ms                   3776.3         264807  PASS
+    realtime_factor                          2648.1x
+    require realtime_factor                  2648.07 >= 200  ok
+audio/FullCaptureChain_10ms                       99917.0          10008  PASS
+    realtime_factor                          100.1x
+    require realtime_factor                  100.083 >= 15  ok
+audio/Q_EchoCanceller_full_duplex_call            quality       609.1 ms  PASS
+    erle_db                                  30.2113
+    double_talk_near_level_change_db         -0.464895
+    require erle_db                          30.2113 > 25  ok
+    require double_talk_near_level_change_db -0.464895 > -6  ok
+audio/Q_EchoDelay_route_change                    quality       509.5 ms  PASS
+    erle_after_change_db                     25.5978
+    require erle_after_change_db             25.5978 > 20  ok
+audio/Q_NoiseSuppressor_7dB_snr                   quality       173.7 ms  PASS
+    snr_in_db                                7.6143
+    snr_out_db                               12.8859
+    require snr_gain_db                      5.27162 > 4  ok
+video/FreezeDetector_frame                            3.9      257106520  PASS
+    require ns_per_item                      3.88944 <= 200  ok
+video/CodecFallback_frame                             3.6      281234167  PASS
+    require ns_per_item                      3.55576 <= 200  ok
+video/Orientation_rotate90_720p                  556336.6           1797  PASS
+    realtime_factor                          59.9x
+    require realtime_factor                  59.9158 >= 5  ok
+video/FrameChangeDetector_1080p                 1624265.2            616  PASS
+    realtime_factor                          41.0x
+    require realtime_factor                  41.0442 >= 5  ok
+video/CodecNegotiation_offer10                      590.0        1694786  PASS
+    require ns_per_item                      590.045 <= 50000  ok
+video/Scale_720p_to_360p                        1672435.8            598  PASS
+    realtime_factor                          19.9x
+    require realtime_factor                  19.931 >= 3  ok
+video/Scale_360p_to_720p                        1779796.2            562  PASS
+    realtime_factor                          18.7x
+    require realtime_factor                  18.7287 >= 3  ok
+video/FrameScheduler_frame                           23.2       43035219  PASS
+    require ns_per_item                      23.2368 <= 500  ok
+video/QualityScaler_frame                             1.7      598843336  PASS
+    require ns_per_item                      1.66989 <= 100  ok
+video/Q_Scaler_psnr_720p_via_360p                 quality         5.2 ms  PASS
+    psnr_db                                  41.1946
+    require psnr_db                          41.1946 > 28  ok
+video/Q_ScreenShare_encode_ratio                  quality       120.1 ms  PASS
+    encode_ratio                             0.0666667
+    require encode_ratio                     0.0666667 < 0.1  ok
+sync/RtpToNtp_UpdateAndEstimate                      37.3       26800685  PASS
+    require ns_per_item                      37.3125 <= 3000  ok
+sync/RtpToNtp_Estimate                                1.3      785919122  PASS
+    require ns_per_item                      1.2724 <= 100  ok
+sync/StreamSync_Update                               11.5       87314775  PASS
+    require ns_per_item                      11.4528 <= 500  ok
+sync/AbsCaptureTime_SenderAndInterpolator             3.2      309548926  PASS
+    require ns_per_item                      3.23051 <= 200  ok
+sync/HeaderExtensions_WriteParse4                  1055.8         947119  PASS
+    require ns_per_item                      1055.83 <= 5000  ok
+sync/RtpDemuxer_by_ssrc                              87.2       11471274  PASS
+    require ns_per_item                      87.1743 <= 300  ok
+
+79 benchmarks run, 79 passed, 0 failed

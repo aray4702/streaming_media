@@ -1,0 +1,32 @@
+[ RUN  ] FreezeDetector.DetectsFreezesAndPauses
+[  OK  ] FreezeDetector.DetectsFreezesAndPauses (0.2 ms)
+[ RUN  ] FreezeDetector.SmoothPlaybackHasNoFreezes
+[  OK  ] FreezeDetector.SmoothPlaybackHasNoFreezes (0.1 ms)
+[ RUN  ] CodecFallback.InitFailureAndConsecutiveErrors
+[  OK  ] CodecFallback.InitFailureAndConsecutiveErrors (0.1 ms)
+[ RUN  ] CodecFallback.ErrorRateAndRetryBackoff
+[  OK  ] CodecFallback.ErrorRateAndRetryBackoff (0.0 ms)
+[ RUN  ] Orientation.CvoByteAndRotation
+[  OK  ] Orientation.CvoByteAndRotation (0.1 ms)
+[ RUN  ] Orientation.InverseRestoresAllEightCases
+[  OK  ] Orientation.InverseRestoresAllEightCases (0.2 ms)
+[ RUN  ] ContentPolicy.HintsMapToPolicies
+[  OK  ] ContentPolicy.HintsMapToPolicies (0.0 ms)
+[ RUN  ] ContentPolicy.ChangeDetectorSkipsStaticFrames
+[  OK  ] ContentPolicy.ChangeDetectorSkipsStaticFrames (0.8 ms)
+[ RUN  ] CodecNegotiation.H264ProfileLevelParsing
+[  OK  ] CodecNegotiation.H264ProfileLevelParsing (0.1 ms)
+[ RUN  ] CodecNegotiation.AnswerKeepsSupportedInLocalOrder
+[  OK  ] CodecNegotiation.AnswerKeepsSupportedInLocalOrder (0.6 ms)
+[ RUN  ] FrameScaler.DownUpRoundTripQuality
+[  OK  ] FrameScaler.DownUpRoundTripQuality (7.5 ms)
+[ RUN  ] FrameScaler.BoxFilterPreservesMeanAndAspectModes
+[  OK  ] FrameScaler.BoxFilterPreservesMeanAndAspectModes (1.8 ms)
+[ RUN  ] FrameScheduler.RendersOnTimeDropsLateWhenNewerWaiting
+[  OK  ] FrameScheduler.RendersOnTimeDropsLateWhenNewerWaiting (0.1 ms)
+[ RUN  ] FrameScheduler.FastForwardOnHugeBacklog
+[  OK  ] FrameScheduler.FastForwardOnHugeBacklog (0.1 ms)
+[ RUN  ] QualityScaler.ThresholdsAndSignals
+[  OK  ] QualityScaler.ThresholdsAndSignals (0.1 ms)
+
+15 tests run, 15 passed, 0 failed

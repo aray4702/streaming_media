@@ -1,0 +1,9 @@
+{
+  "platform": "noexc",
+  "date": "2026-10-11T02:28:51Z",
+  "host": "Darwin arm64",
+  "cpu": "Apple M4",
+  "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+  "runtime": "native",
+  "ctest": "100% tests passed out of 106"
+}

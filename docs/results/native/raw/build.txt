@@ -1,0 +1,24 @@
+[  3%] Built target sm_bench_framework
+[  3%] Built target sm_test_framework
+[  8%] Built target sm_core
+[  9%] Built target sm_unit_core
+[ 16%] Built target sm_loss
+[ 25%] Built target sm_video
+[ 35%] Built target sm_cc
+[ 45%] Built target sm_audio
+[ 47%] Built target sm_e2e_loss
+[ 49%] Built target sm_unit_video
+[ 51%] Built target sm_e2e_cc
+[ 52%] Built target sm_e2e_audio
+[ 55%] Built target sm_unit_audio
+[ 60%] Built target sm_unit_cc
+[ 67%] Built target sm_timing
+[ 74%] Built target sm_unit_loss
+[ 75%] Built target sm_e2e_timing
+[ 77%] Built target sm_e2e_video
+[ 82%] Built target sm_sync
+[ 88%] Built target sm_unit_timing
+[ 91%] Built target simulated_call
+[ 93%] Built target sm_unit_sync
+[ 93%] Built target sm_e2e_sync
+[100%] Built target sm_bench

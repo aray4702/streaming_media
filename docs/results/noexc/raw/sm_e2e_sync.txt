@@ -1,0 +1,22 @@
+[ RUN  ] E2E_RtpToNtp.MapsCaptureTimeDespiteDriftAndJitter
+[metric] max_capture_time_error_ms=0.014
+[metric] estimated_clock_hz=48003.8
+[  OK  ] E2E_RtpToNtp.MapsCaptureTimeDespiteDriftAndJitter (0.2 ms)
+[ RUN  ] E2E_StreamSync.LipSyncAcrossPathsAndRouteChange
+[metric] av_offset_before_sync_ms=40
+[metric] av_offset_settled_ms=18.847
+[metric] av_offset_after_route_change_ms=21.982
+[metric] audio_extra_delay_ms=138.018
+[  OK  ] E2E_StreamSync.LipSyncAcrossPathsAndRouteChange (0.4 ms)
+[ RUN  ] E2E_CaptureTime.GlassToGlassLatencyThroughSfu
+[metric] latency_error_max_ms=7.155
+[metric] extension_send_ratio=0.0324354
+[  OK  ] E2E_CaptureTime.GlassToGlassLatencyThroughSfu (0.2 ms)
+[ RUN  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx
+[metric] demux_accuracy=1
+[metric] demux_by_ssrc=3940
+[metric] demux_by_mid=60
+[metric] demux_unroutable=0
+[  OK  ] E2E_HeaderExtensions.BundleDemuxOfSimulcastAudioAndRtx (1.9 ms)
+
+4 tests run, 4 passed, 0 failed

@@ -1,0 +1,73 @@
+[ RUN  ] E2E_TransportFeedback.EveryPacketReportedOnceWithinQuantization
+[metric] reported_ratio=0.997467
+[metric] max_arrival_error_us=249
+[  OK  ] E2E_TransportFeedback.EveryPacketReportedOnceWithinQuantization (2.4 ms)
+[ RUN  ] E2E_DelayBwe.TracksCapacityStepsWithLowQueueing
+[metric] phase0_capacity_kbps=2000
+[metric] phase0_throughput_kbps=1617.45
+[metric] phase0_target_kbps=1536.98
+[metric] phase0_queue_p95_ms=21.676
+[metric] phase1_capacity_kbps=800
+[metric] phase1_throughput_kbps=650.542
+[metric] phase1_target_kbps=615.171
+[metric] phase1_queue_p95_ms=33.39
+[metric] phase2_capacity_kbps=2500
+[metric] phase2_throughput_kbps=1707.03
+[metric] phase2_target_kbps=1621.84
+[metric] phase2_queue_p95_ms=20.16
+[metric] loss_ratio=0
+[  OK  ] E2E_DelayBwe.TracksCapacityStepsWithLowQueueing (4.6 ms)
+[ RUN  ] E2E_LossBwe.BacksOffOnHeavyLossGrowsOnLight
+[metric] target_kbps_loss15=404.118
+[metric] target_kbps_loss1=4528.72
+[  OK  ] E2E_LossBwe.BacksOffOnHeavyLossGrowsOnLight (7.2 ms)
+[ RUN  ] E2E_SendSideBwe.CombinesDelayAndLossControllers
+[metric] clean_target_kbps=1269.97
+[metric] loss5_target_kbps=1236.19
+[metric] loss20_target_kbps=267.834
+[  OK  ] E2E_SendSideBwe.CombinesDelayAndLossControllers (4.7 ms)
+[ RUN  ] E2E_Pacer.SmoothsBurstsAndProtectsAudio
+[metric] paced_audio_p95_ms=23.595
+[metric] unpaced_audio_p95_ms=30.139
+[metric] paced_queue_p95_ms=25.777
+[metric] unpaced_queue_p95_ms=32.403
+[  OK  ] E2E_Pacer.SmoothsBurstsAndProtectsAudio (6.2 ms)
+[ RUN  ] E2E_Probing.FastRampUp
+[metric] ramp_s_probing=0.2
+[metric] ramp_s_no_probing=-1
+[  OK  ] E2E_Probing.FastRampUp (6.3 ms)
+[ RUN  ] E2E_BitrateAllocator.AudioProtectedVideoDegradesFirst
+[metric] min_audio_alloc_kbps=20.938
+[metric] low_phase_camera_kbps=0
+[metric] low_phase_screen_kbps=310.814
+[metric] high_phase_camera_kbps=628.365
+[  OK  ] E2E_BitrateAllocator.AudioProtectedVideoDegradesFirst (6.2 ms)
+[ RUN  ] E2E_FrameDropper.ContainsEncoderOvershoot
+[metric] sent_over_target_with_dropper=1.06645
+[metric] sent_over_target_without=1.68768
+[metric] drop_ratio=0.365934
+[  OK  ] E2E_FrameDropper.ContainsEncoderOvershoot (4.4 ms)
+[ RUN  ] E2E_VideoAdaptation.ResolutionFollowsBandwidth
+[metric] phase0_width=1280
+[metric] phase1_width=480
+[metric] phase2_width=1280
+[  OK  ] E2E_VideoAdaptation.ResolutionFollowsBandwidth (4.7 ms)
+[ RUN  ] E2E_VideoAdaptation.CpuOveruseConvergesToSustainableResolution
+[metric] cpu_final_width=960
+[metric] cpu_final_usage=0.628333
+[metric] cpu_format_changes=1
+[  OK  ] E2E_VideoAdaptation.CpuOveruseConvergesToSustainableResolution (0.0 ms)
+[ RUN  ] E2E_LayerSelector.SfuForwardsDecodableStreamWithinBandwidth
+[metric] sfu_switches_up=8
+[metric] sfu_switches_down=3
+[metric] sfu_over_budget_seconds=2
+[metric] sfu_decodable_ratio=1
+[  OK  ] E2E_LayerSelector.SfuForwardsDecodableStreamWithinBandwidth (0.4 ms)
+[ RUN  ] E2E_Outage.PausesDuringOutageAndRecovers
+[metric] video_packets_while_down_monitor=418
+[metric] video_packets_while_down_no_monitor=1446
+[metric] recovery_s=0.025
+[metric] ice_restarts=1
+[  OK  ] E2E_Outage.PausesDuringOutageAndRecovers (5.6 ms)
+
+12 tests run, 12 passed, 0 failed

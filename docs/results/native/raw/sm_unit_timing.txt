@@ -1,0 +1,70 @@
+[ RUN  ] PacketBuffer.AssemblesInOrderFrame
+[  OK  ] PacketBuffer.AssemblesInOrderFrame (0.0 ms)
+[ RUN  ] PacketBuffer.ReorderedPacketsCompleteFrame
+[  OK  ] PacketBuffer.ReorderedPacketsCompleteFrame (0.0 ms)
+[ RUN  ] PacketBuffer.DuplicatesAndTooOldRejected
+[  OK  ] PacketBuffer.DuplicatesAndTooOldRejected (0.0 ms)
+[ RUN  ] PacketBuffer.FramesAcrossSequenceWrap
+[  OK  ] PacketBuffer.FramesAcrossSequenceWrap (0.0 ms)
+[ RUN  ] PacketBuffer.MissingStartBlocksFrame
+[  OK  ] PacketBuffer.MissingStartBlocksFrame (0.0 ms)
+[ RUN  ] RtcpStats.NtpRoundTrip
+[  OK  ] RtcpStats.NtpRoundTrip (0.0 ms)
+[ RUN  ] RtcpStats.SenderAndReceiverReportWireFormat
+[  OK  ] RtcpStats.SenderAndReceiverReportWireFormat (0.0 ms)
+[ RUN  ] RtcpStats.FractionAndCumulativeLoss
+[  OK  ] RtcpStats.FractionAndCumulativeLoss (0.0 ms)
+[ RUN  ] RtcpStats.InterarrivalJitterRfc3550
+[  OK  ] RtcpStats.InterarrivalJitterRfc3550 (0.0 ms)
+[ RUN  ] RtcpStats.RttFromLsrDlsr
+[  OK  ] RtcpStats.RttFromLsrDlsr (0.0 ms)
+[ RUN  ] DelayManager.SteadyNetworkTargetsOnePacket
+[  OK  ] DelayManager.SteadyNetworkTargetsOnePacket (0.1 ms)
+[ RUN  ] DelayManager.TracksJitterQuantile
+[metric] target_ms_sigma20=40
+[  OK  ] DelayManager.TracksJitterQuantile (0.4 ms)
+[ RUN  ] DelayManager.IncreasesFastDecreasesSlowly
+[  OK  ] DelayManager.IncreasesFastDecreasesSlowly (0.2 ms)
+[ RUN  ] DelayManager.MinimumDelayAndMetrics
+[  OK  ] DelayManager.MinimumDelayAndMetrics (0.0 ms)
+[ RUN  ] TimeStretch.AccelerateRemovesWholePeriods
+[metric] accelerate_sine_snr_db=162.733
+[  OK  ] TimeStretch.AccelerateRemovesWholePeriods (0.0 ms)
+[ RUN  ] TimeStretch.ExpandInsertsWholePeriods
+[  OK  ] TimeStretch.ExpandInsertsWholePeriods (0.0 ms)
+[ RUN  ] TimeStretch.RejectsNoiseAcceptsSilence
+[  OK  ] TimeStretch.RejectsNoiseAcceptsSilence (0.0 ms)
+[ RUN  ] TimeStretch.TooShortInputIsCopied
+[  OK  ] TimeStretch.TooShortInputIsCopied (0.0 ms)
+[ RUN  ] AudioJitterBuffer.PerfectNetworkPlaysNormally
+[  OK  ] AudioJitterBuffer.PerfectNetworkPlaysNormally (8.1 ms)
+[ RUN  ] AudioJitterBuffer.LostPacketIsConcealedThenSkipped
+[  OK  ] AudioJitterBuffer.LostPacketIsConcealedThenSkipped (5.5 ms)
+[ RUN  ] AudioJitterBuffer.LatePacketMergesInsteadOfLoss
+[  OK  ] AudioJitterBuffer.LatePacketMergesInsteadOfLoss (0.1 ms)
+[ RUN  ] AudioJitterBuffer.BurstArrivalTriggersAccelerate
+[  OK  ] AudioJitterBuffer.BurstArrivalTriggersAccelerate (1.1 ms)
+[ RUN  ] AudioJitterBuffer.MinimumDelayHonoured
+[  OK  ] AudioJitterBuffer.MinimumDelayHonoured (0.0 ms)
+[ RUN  ] VideoJitter.SteadyArrivalsGiveSmallJitter
+[  OK  ] VideoJitter.SteadyArrivalsGiveSmallJitter (0.0 ms)
+[ RUN  ] VideoJitter.NoiseRaisesJitter
+[metric] jitter_quiet_ms=6.022
+[metric] jitter_noisy_ms=73.384
+[  OK  ] VideoJitter.NoiseRaisesJitter (0.0 ms)
+[ RUN  ] VideoJitter.LearnsCapacityFromFrameSizeDelay
+[metric] estimated_capacity_kbps=999.268
+[  OK  ] VideoJitter.LearnsCapacityFromFrameSizeDelay (0.0 ms)
+[ RUN  ] VideoJitter.TimingRenderTimeAndSmoothing
+[  OK  ] VideoJitter.TimingRenderTimeAndSmoothing (0.0 ms)
+[ RUN  ] ClockDrift.RlsFitsLine
+[  OK  ] ClockDrift.RlsFitsLine (0.0 ms)
+[ RUN  ] ClockDrift.EstimatesPpmUnderJitter
+[  OK  ] ClockDrift.EstimatesPpmUnderJitter (0.1 ms)
+[ RUN  ] ClockDrift.CompensatorRatioAndQuality
+[metric] compensator_snr_db=69.1036
+[  OK  ] ClockDrift.CompensatorRatioAndQuality (0.1 ms)
+[ RUN  ] ClockDrift.PiControllerDirection
+[  OK  ] ClockDrift.PiControllerDirection (0.9 ms)
+
+31 tests run, 31 passed, 0 failed
