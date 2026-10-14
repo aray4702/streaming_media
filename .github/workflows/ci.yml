@@ -54,13 +54,22 @@ jobs:
         with:
           path: out/wasm/web
   linux-aarch64:
+    # Cross toolchain + functional tests under QEMU. Speed gates are skipped
+    # here (they would time the emulator); linux-arm64 runs them natively.
     runs-on: ubuntu-24.04
-    env: {SM_BENCH_BUDGET_SCALE: "20"}  # Emulated CPU.
     steps:
       - uses: actions/checkout@v4
       - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu qemu-user
       - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
-      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure
+      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE bench
+  linux-arm64:
+    # Native Arm64 Linux (robots, Jetson, Graviton): full suite incl. speed gates.
+    runs-on: ubuntu-24.04-arm
+    env: {CC: gcc-13, CXX: g++-13, SM_BENCH_BUDGET_SCALE: "4"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset native && cmake --build --preset native -j 4
+      - run: ctest --preset native -j 4
   android:
     runs-on: ubuntu-24.04
     strategy: {matrix: {preset: [android-arm64, android-armv7]}}
@@ -107,7 +116,7 @@ jobs:
   ci-ok:
     # Single required status check: succeeds only if every job above did.
     if: always()
-    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, android, ios, testbench]
+    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench]
     runs-on: ubuntu-24.04
     steps:
       - run: |
