@@ -1,0 +1,8 @@
+name burst_loss
+describe 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms
+expect audio.concealed_pct < 5
+expect audio.interruptions <= 1
+expect video.longest_freeze_ms < 1200
+expect video.render_fps >= 25

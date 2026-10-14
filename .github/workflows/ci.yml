@@ -2,8 +2,19 @@
 # Desktop/server and WebAssembly jobs run the full unit + e2e + benchmark
 # suites; mobile and embedded jobs cross-compile (and run the tests under
 # QEMU for Linux ARM). Benchmark speed budgets are scaled for slow runners.
+# The test bench job compares every scenario against testbench/baseline.json;
+# `ci-ok` aggregates every job and is the required check for merging.
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions:
+  contents: read
 jobs:
   host:
     strategy:
@@ -38,6 +49,10 @@ jobs:
       - uses: mymindstorm/setup-emsdk@v14
       - run: EMSCRIPTEN_ROOT=$EMSDK/upstream/emscripten cmake --preset wasm && cmake --build --preset wasm -j 4
       - run: ctest --preset wasm -j 4
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        with:
+          path: out/wasm/web
   linux-aarch64:
     runs-on: ubuntu-24.04
     env: {SM_BENCH_BUDGET_SCALE: "20"}  # Emulated CPU.
@@ -58,3 +73,46 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: cmake --preset ios && cmake --build out/ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO
+  testbench:
+    # Canonical platform for testbench/baseline.json (same as the cloud agents).
+    runs-on: ubuntu-24.04
+    env: {CC: gcc-13, CXX: g++-13}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake --preset native -DSM_BUILD_BENCH=OFF && cmake --build --preset native -j 4 --target sm_testbench
+      - name: Run scenarios
+        run: out/native/testbench/sm_testbench --quiet --json=testbench-results.json testbench/scenarios/*.scn
+      - name: Compare with baseline
+        run: |
+          {
+            echo "## Test bench vs baseline"
+            python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json --markdown
+          } >> "$GITHUB_STEP_SUMMARY"
+          python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: testbench-results
+          path: testbench-results.json
+  pages:
+    # Publishes the browser demo (web/) built by the wasm job.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [wasm]
+    runs-on: ubuntu-24.04
+    permissions: {pages: write, id-token: write}
+    environment: {name: github-pages, url: "${{ steps.deploy.outputs.page_url }}"}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4
+  ci-ok:
+    # Single required status check: succeeds only if every job above did.
+    if: always()
+    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, android, ios, testbench]
+    runs-on: ubuntu-24.04
+    steps:
+      - run: |
+          echo '${{ toJSON(needs) }}' | python3 -c "
+          import json, sys
+          bad = {k: v['result'] for k, v in json.load(sys.stdin).items() if v['result'] != 'success'}
+          print('failed jobs:', bad) if bad else print('all jobs passed')
+          sys.exit(1 if bad else 0)"

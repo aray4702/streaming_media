@@ -26,6 +26,15 @@ Background research:
 
 The library:
 
+- [Program](program.md): how the library evolves itself. Tester, Fixer and
+  Reviewer agents find problems with the test bench, fix them and review
+  the fixes through GitHub issues and PRs.
+- [Test bench](testbench/README.md): a whole call through the library over
+  a scripted unreliable link (loss, bursts, jitter, outages, capacity
+  changes, bufferbloat, cross traffic), measured as user-experience metrics.
+  The scenario suite and its baseline are the regression gate.
+- [Browser port](web/): the library and test bench as a WebAssembly ES
+  module with a JS API, plus a demo page.
 - [Architecture](docs/design/architecture.md): layers, conventions,
   observability, and how the modules form a call.
 - [Portability](docs/design/portability.md): platforms, presets, what was
@@ -63,7 +72,12 @@ cmake --build --preset native
 ctest --preset native            # unit + e2e tests + benchmark gates
 out/native/bench/sm_bench        # all benchmarks; --filter=audio/ --json=out.json
 out/native/examples/simulated_call
+out/native/testbench/sm_testbench testbench/scenarios/*.scn   # call scenarios
 ```
+
+The `wasm` preset also builds `out/wasm/web/` (`sm_web.js`, `sm_web.wasm`
+and `index.html`). Serve that directory over HTTP to use the demo, or
+`import createSmModule from './sm_web.js'` in your own page or in Node.
 
 Other presets: `native-asan`, `embedded` (size-optimized, no
 exceptions/RTTI, metrics and events compiled out), `wasm` (set
@@ -113,7 +127,10 @@ src/{core,loss,timing,cc,audio,video,sync}/              implementation
 tests/{framework,unit,e2e}/                              tests and e2e simulations
 bench/                                                   benchmarks
 examples/                                                usage example
-tools/                                                   run_all.sh, gen_docs.py, catalog.py
+testbench/                                               call test bench, scenarios, baseline
+web/                                                     WebAssembly bindings and demo page
+agents/                                                  instructions for the Tester, Fixer and Reviewer agents
+tools/                                                   run_all.sh, gen_docs.py, catalog.py, testbench_compare.py
 docs/                                                    research, design, algorithms, results
 ```
 
