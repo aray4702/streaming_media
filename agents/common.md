@@ -9,8 +9,11 @@ practical details every role shares.
   `aray4702/streaming_media` with 4 cores, g++ 13, clang, cmake, ninja,
   python3, node, `gh`, jq and openssl. Emscripten is not installed, so the
   wasm build is checked only by CI.
-- Build:
+- Build (export `SM_BENCH_BUDGET_SCALE=4` first: this shared VM is slower
+  than a dedicated machine, and CI applies the same scale to its runners, so
+  a speed gate that fails only without it is host noise, not a regression):
   ```sh
+  export SM_BENCH_BUDGET_SCALE=4
   cmake --preset native -G Ninja && cmake --build --preset native -j 4
   ctest --preset native -j 4                      # unit + e2e + benchmark gates + scenarios
   cmake --preset native-asan -G Ninja && cmake --build --preset native-asan -j 4 && ctest --preset native-asan -j 4
