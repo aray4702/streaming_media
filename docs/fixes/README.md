@@ -9,7 +9,8 @@ Every problem found in the library (an issue labelled `agent-found`, `bug`,
    scenario then runs in CI forever (`ctest -L scenario`).
 2. **A fix record.** `docs/fixes/<N>-<slug>.md`, from
    [TEMPLATE.md](TEMPLATE.md): the issue, root cause, fix, regression tests,
-   and the results before and after.
+   and the results before and after. A partial fix (`status: partial`)
+   also says what remains, and its issue stays open.
 
 CI (`fix-record` job, `tools/check_fix_record.py`) enforces both on every
 PR that fixes such an issue, and checks that the new scenario fails when

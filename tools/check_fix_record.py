@@ -3,12 +3,14 @@
 regression test and a fix record. See program.md section 6.5.
 
 For every issue the PR body closes ("Fixes #N", "Closes #N", "Resolves #N")
-that is labelled agent-found, bug, ux or perf, the PR must:
+or partially fixes ("Refs #N", "Part of #N") that is labelled agent-found,
+bug, ux or perf, the PR must:
   1. add testbench/scenarios/issue_<N>_*.scn, which must FAIL when run with
      the sm_testbench built from the PR's base commit (proving it catches
      the problem; the normal suite proves it passes with the fix);
   2. add or update docs/fixes/<N>-*.md with front matter `issue: N` and the
-     sections Issue, Root cause, Fix, Regression tests, Results, and with
+     sections Issue, Root cause, Fix, Regression tests, Results (plus
+     Remaining and `status: partial` for a partial fix, else `status: fixed`), and with
      every file listed in `regression_tests` present in the PR head;
   3. keep docs/fixes/README.md in sync (tools/fixes_index.py --check).
 Outside pull_request events, or for PRs that close no such issue, it only
@@ -29,6 +31,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 FOUND_LABELS = {"agent-found", "bug", "ux", "perf"}
 SECTIONS = ["## Issue", "## Root cause", "## Fix", "## Regression tests", "## Results"]
 CLOSES = re.compile(r"(?i)\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#(\d+)\b")
+# Partial fixes reference the issue without closing it (program.md 6.5).
+PARTIAL = re.compile(r"(?i)\b(?:refs|part of)\s+#(\d+)\b")
 
 
 def run(cmd, **kw):
@@ -96,7 +100,9 @@ def main(argv):
     if run([sys.executable, "tools/fixes_index.py", "--check"]).returncode != 0:
         problems.append("docs/fixes/README.md is out of date: run `python3 tools/fixes_index.py` and commit it")
 
-    issues = sorted({int(n) for n in CLOSES.findall(body)})
+    closing = {int(n) for n in CLOSES.findall(body)}
+    partial = {int(n) for n in PARTIAL.findall(body)} - closing
+    issues = sorted(closing | partial)
     found = []
     for n in issues:
         try:
@@ -124,6 +130,12 @@ def main(argv):
             fm = front_matter(text)
             if fm.get("issue") != str(n):
                 problems.append(f"{rec}: front matter must say `issue: {n}`")
+            want = "partial" if n in partial else "fixed"
+            if fm.get("status") != want:
+                problems.append(f"{rec}: front matter must say `status: {want}` "
+                                f"({'Refs/Part of' if want == 'partial' else 'Fixes'} #{n} in the PR body)")
+            if want == "partial" and not re.search(r"^## Remaining\s*$", text, re.M):
+                problems.append(f"{rec}: a partial fix needs a '## Remaining' section (what is left and why)")
             for sec in SECTIONS:
                 if not re.search(rf"^{re.escape(sec)}\s*$", text, re.M):
                     problems.append(f"{rec}: missing section '{sec}'")
