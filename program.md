@@ -430,7 +430,7 @@ area it covered in each issue's notes:
 | Routines | Cloud environment `Default`, model `claude-sonnet-5-5`; each routine's prompt says "Read program.md and agents/<role>.md, then do one run." |
 | Cloud tooling | Linux x86_64, 4 cores, g++ 13, clang, cmake, ninja, node 22, `gh`, jq, openssl. No Emscripten (the wasm checks run in CI). |
 | GitHub access from routines | `git push` and REST (`gh api`) work as @aray4702 through the session proxy. GraphQL is blocked, so use REST. Auto-merge uses `PUT /repos/{o}/{r}/pulls/{n}/ccr/auto_merge`, and review threads use `/pulls/{n}/ccr/review_threads`. |
-| Reviewer identity | GitHub App `streaming-media-reviewer` with Pull requests: write, Contents: read, Issues: write, Checks: read, Metadata: read. Its App ID, installation ID and private key are routine environment variables. `tools/agents/gh_app_token.sh` turns them into a 1-hour installation token. |
+| Reviewer identity | GitHub App `streaming-media-reviewer`, installed on this repo only, with Pull requests: write, Contents: write (needed for its approval to count), Issues: write, Checks: read, Metadata: read. The cloud proxy replaces credentials and blocks the App token endpoint, so the Reviewer routine cannot authenticate as the App itself. It dispatches `.github/workflows/reviewer-relay.yml` (`tools/agents/reviewer_post.sh`), which holds the App key as Actions secrets (`SM_APP_ID`, `SM_APP_PRIVATE_KEY`) and posts the review as `streaming-media-reviewer[bot]`. Only the Owner's account can dispatch it. |
 | Repo settings | Auto-merge allowed, squash merges only, head branches deleted on merge. Branch protection on `main`: PR required, 1 approval, `ci-ok` required, stale approvals dismissed on new commits. |
 | Browser demo | GitHub Pages serves `web/` built with Emscripten in CI. |
 
@@ -450,10 +450,10 @@ area it covered in each issue's notes:
 
 ### Verification items for the first supervised runs
 
-- The App-authenticated Reviewer can reach `api.github.com` from a routine
-  (the session proxy must pass its token through), and its approval counts
-  toward branch protection. If either fails, the fallback is to run the
-  Reviewer's posting step in a GitHub Actions job that holds the App key.
+- Settled on 2026-10-14: the routine cannot use the App token (the proxy
+  blocks `/app/installations/...` and injects the Owner's credentials), so
+  reviews go through the `reviewer-relay` workflow. The App needs
+  `contents: write` for its approval to satisfy branch protection.
 - Auto-merge enabled through the `ccr/auto_merge` route merges once
   `ci-ok` passes and the App has approved.
 - Scenario results are close enough across compilers (GCC and Clang) for

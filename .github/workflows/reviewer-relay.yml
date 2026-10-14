@@ -1,0 +1,37 @@
+# Posts the Reviewer agent's output to GitHub as streaming-media-reviewer[bot].
+#
+# The Reviewer runs as a cloud routine whose GitHub proxy only carries the
+# owner's credentials, so it cannot authenticate as the App itself. Instead it
+# dispatches this workflow (tools/agents/reviewer_post.sh) with its review as
+# the payload; the App's private key lives only in this repository's Actions
+# secrets (SM_APP_ID, SM_APP_PRIVATE_KEY).
+name: reviewer-relay
+on:
+  workflow_dispatch:
+    inputs:
+      payload:
+        description: base64(gzip(JSON)) produced by tools/agents/reviewer_post.sh
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: reviewer-relay
+  cancel-in-progress: false
+jobs:
+  relay:
+    # Only the owner's account (which the Reviewer routine runs as) may relay.
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - id: app
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.SM_APP_ID }}
+          private-key: ${{ secrets.SM_APP_PRIVATE_KEY }}
+      - name: Post as the Reviewer App
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          PAYLOAD: ${{ inputs.payload }}
+          REPO: ${{ github.repository }}
+        run: python3 tools/agents/reviewer_relay.py

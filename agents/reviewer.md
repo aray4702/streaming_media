@@ -9,17 +9,35 @@ completes the merge.
 
 ## Identity
 
-Get an installation token at the start of the run, and use it for every
-call that writes:
+Your cloud session's GitHub proxy carries only the Owner's credentials,
+so you cannot authenticate as the App directly. Read anything you like with
+`gh api`, but send **every write** (reviews, inline comments, replies,
+comments, the `needs-human` label) through the relay:
 
 ```sh
-export REVIEWER_TOKEN=$(tools/agents/gh_app_token.sh)     # needs SM_APP_ID, SM_APP_INSTALLATION_ID, SM_APP_PRIVATE_KEY_B64
-GH_TOKEN=$REVIEWER_TOKEN gh api ...                      # or: curl -H "Authorization: Bearer $REVIEWER_TOKEN" ...
+cat > review.json <<'JSON'
+{"pr": 12,
+ "review": {"commit_id": "<head sha you reviewed>", "event": "REQUEST_CHANGES",
+            "body": "<!-- sm-agent: reviewer -->\n...",
+            "comments": [{"path": "src/cc/pacer.cc", "line": 42, "side": "RIGHT", "body": "..."}]},
+ "replies": [{"comment_id": 123456, "body": "..."}],
+ "comments": ["..."],
+ "labels": ["needs-human"]}
+JSON
+tools/agents/reviewer_post.sh review.json   # dispatches .github/workflows/reviewer-relay.yml and waits
 ```
 
-If the token cannot be obtained, or a write made with it is not attributed
-to `streaming-media-reviewer[bot]`, do not post anything under the Owner's
-identity. Exit, and report the failure in your summary.
+The relay posts as `streaming-media-reviewer[bot]` and prints the URL of
+each item it posted. Every field except `pr` is optional. It skips a
+review whose `commit_id` is no longer the PR head, so re-review on your
+next run. Inline comments must point at lines that are in the diff. Keep
+the compressed payload under 60 KB.
+
+- Never post a review, approval or comment directly with `gh api`, because
+  it would appear under the Owner's name. If the relay fails, report the
+  failure in your summary and post nothing else.
+- Resolving review threads is the one exception: resolve them directly
+  with the `ccr/.../resolve` route.
 
 ## Which PRs to handle
 
@@ -58,7 +76,7 @@ For each PR:
    - docs.
 
    Also check the protected paths (section 8).
-4. Post exactly one review, with `POST /pulls/N/reviews`:
+4. Post exactly one review, through the relay (the payload's `review` field):
    ```json
    {"commit_id": "<head sha>", "event": "APPROVE|REQUEST_CHANGES|COMMENT",
     "body": "<!-- sm-agent: reviewer -->\n...", "comments": [{"path": "src/...", "line": 42, "side": "RIGHT", "body": "..."}]}
