@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>streaming_media test bench</title>
+<style>
+  :root {
+    --bg: #fafaf9; --panel: #ffffff; --ink: #1c1917; --muted: #78716c; --line: #e7e5e4;
+    --accent: #2563eb; --good: #15803d; --bad: #b91c1c;
+    --s1: #2563eb; --s2: #ea580c; --s3: #16a34a; --s4: #9333ea; --s5: #78716c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09; --panel: #1c1917; --ink: #f5f5f4; --muted: #a8a29e; --line: #292524;
+      --accent: #60a5fa; --good: #4ade80; --bad: #f87171;
+      --s1: #60a5fa; --s2: #fb923c; --s3: #4ade80; --s4: #c084fc; --s5: #a8a29e;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header, main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+  header h1 { font-size: 20px; margin: 8px 0 4px; }
+  header p { margin: 0; color: var(--muted); }
+  main { display: grid; grid-template-columns: minmax(0, 380px) minmax(0, 1fr); gap: 16px; }
+  @media (max-width: 860px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  select, textarea, button { font: inherit; color: var(--ink); background: var(--bg);
+                             border: 1px solid var(--line); border-radius: 6px; }
+  select { width: 100%; padding: 6px; margin-bottom: 8px; }
+  textarea { width: 100%; height: 300px; padding: 8px; resize: vertical;
+             font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  button { padding: 8px 14px; background: var(--accent); color: #fff; border: none; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  #status { color: var(--muted); font-size: 12px; }
+  .verdict { font-weight: 600; }
+  .pass { color: var(--good); } .fail { color: var(--bad); }
+  .charts { display: grid; gap: 12px; }
+  .chart h3 { margin: 0 0 4px; font-size: 13px; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+  .legend i { display: inline-block; width: 10px; height: 3px; margin-right: 4px; vertical-align: middle; }
+  canvas { width: 100%; height: 160px; display: block; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+  td.v { text-align: right; font-variant-numeric: tabular-nums; }
+  .checks li { font-size: 12px; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>streaming_media test bench</h1>
+  <p>A full audio + video call through the library (compiled to WebAssembly) over a scripted unreliable link.
+     Pick or edit a scenario and run it; everything runs locally in your browser.</p>
+</header>
+<main>
+  <section class="panel">
+    <label for="preset">Scenario</label>
+    <select id="preset"></select>
+    <label for="scn">Scenario text (see testbench/README.md)</label>
+    <textarea id="scn" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="run" disabled>Run</button>
+      <span id="status">Loading WebAssembly…</span>
+    </div>
+    <div id="verdict" class="row"></div>
+    <ul id="checks" class="checks"></ul>
+    <details><summary>All user-experience metrics</summary><table id="metrics"></table></details>
+  </section>
+  <section class="charts">
+    <div class="panel chart"><h3>Bitrate (kbps)</h3><div class="legend" id="lg0"></div><canvas id="c0"></canvas></div>
+    <div class="panel chart"><h3>Delay (ms)</h3><div class="legend" id="lg1"></div><canvas id="c1"></canvas></div>
+    <div class="panel chart"><h3>Experience</h3><div class="legend" id="lg2"></div><canvas id="c2"></canvas></div>
+  </section>
+</main>
+<script type="module">
+import createSmModule from './sm_web.js';
+
+const PRESETS = ['clean_link', 'random_loss_5pct', 'burst_loss', 'high_jitter', 'capacity_drop', 'outage_3s',
+  'wifi_to_lte_handover', 'bufferbloat', 'cross_traffic', 'lossy_feedback', 'satellite', 'low_bandwidth',
+  'audio_only_lossy'];
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+const CHARTS = [
+  [['capacity_kbps', 'capacity', '--s5'], ['target_kbps', 'GCC target', '--s1'], ['goodput_kbps', 'delivered', '--s3']],
+  [['queue_ms', 'bottleneck queue', '--s5'], ['video_delay_ms', 'video capture→render', '--s1'],
+   ['audio_buffer_ms', 'audio jitter buffer', '--s2'], ['rtt_ms', 'RTT', '--s4']],
+  [['video_fps', 'video fps', '--s1'], ['audio_concealed_pct', 'audio concealed %', '--s2'], ['fec_pct', 'FEC %', '--s4']],
+];
+
+function draw(canvas, legend, cols, rows, series) {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = w * dpr; canvas.height = h * dpr;
+  const g = canvas.getContext('2d');
+  g.scale(dpr, dpr);
+  g.clearRect(0, 0, w, h);
+  const pad = { l: 44, r: 8, t: 6, b: 18 };
+  const tMax = rows.length ? rows[rows.length - 1][0] : 1;
+  let yMax = 1;
+  for (const [key] of series) {
+    const i = cols.indexOf(key);
+    for (const r of rows) if (r[i] > yMax) yMax = r[i];
+  }
+  yMax *= 1.08;
+  const X = (t) => pad.l + (w - pad.l - pad.r) * t / tMax;
+  const Y = (v) => h - pad.b - (h - pad.t - pad.b) * Math.max(0, v) / yMax;
+  g.strokeStyle = css('--line'); g.fillStyle = css('--muted'); g.font = '11px system-ui'; g.lineWidth = 1;
+  for (let k = 0; k <= 4; k++) {
+    const v = yMax * k / 4, y = Y(v);
+    g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke();
+    g.fillText(v >= 1000 ? (v / 1000).toFixed(1) + 'k' : v.toFixed(0), 4, y + 4);
+  }
+  for (let k = 0; k <= 5; k++) g.fillText((tMax * k / 5).toFixed(0) + 's', X(tMax * k / 5) - 8, h - 4);
+  legend.innerHTML = '';
+  for (const [key, name, color] of series) {
+    const i = cols.indexOf(key);
+    g.strokeStyle = css(color); g.lineWidth = 1.6; g.beginPath();
+    let started = false;
+    for (const r of rows) {
+      const v = r[i];
+      if (v < 0) { started = false; continue; }  // Unlimited capacity.
+      if (!started) { g.moveTo(X(r[0]), Y(v)); started = true; } else g.lineTo(X(r[0]), Y(v));
+    }
+    g.stroke();
+    legend.insertAdjacentHTML('beforeend', `<span><i style="background:${css(color)}"></i>${name}</span>`);
+  }
+}
+
+let last = null;
+function render(report) {
+  last = report;
+  const cols = report.timeseries.columns, rows = report.timeseries.rows;
+  CHARTS.forEach((s, k) => draw($('c' + k), $('lg' + k), cols, rows, s));
+  $('verdict').innerHTML = `<span class="verdict ${report.passed ? 'pass' : 'fail'}">${report.passed ? 'PASS' : 'FAIL'}</span>
+    <span>${report.description || report.scenario}</span>`;
+  $('checks').innerHTML = report.checks.map((c) =>
+    `<li class="${c.passed ? 'pass' : 'fail'}">${c.passed ? '✓' : '✗'} ${c.expect} <span style="color:var(--muted)">(actual ${c.actual})</span></li>`).join('');
+  $('metrics').innerHTML = Object.entries(report.metrics).map(([k, v]) =>
+    `<tr><td>${k}</td><td class="v">${Number.isInteger(v) ? v : v.toFixed(2)}</td></tr>`).join('');
+}
+
+const sm = await createSmModule();
+for (const p of PRESETS) $('preset').insertAdjacentHTML('beforeend', `<option>${p}</option>`);
+async function load(name) {
+  try {
+    $('scn').value = await (await fetch(`scenarios/${name}.scn`)).text();
+  } catch (e) {
+    $('scn').value = `# Could not load scenarios/${name}.scn\nname custom\nat 0s capacity=1500kbps delay=40ms loss=2%\n`;
+  }
+}
+async function run() {
+  const err = sm.checkScenario($('scn').value);
+  if (err) { $('status').textContent = err; return; }
+  $('run').disabled = true; $('status').textContent = 'Running…';
+  await new Promise((r) => setTimeout(r, 10));
+  const t0 = performance.now();
+  const report = JSON.parse(sm.runScenario($('scn').value, true));
+  $('status').textContent = `Simulated ${report.timeseries.rows.length / 10} s in ${(performance.now() - t0).toFixed(0)} ms`;
+  $('run').disabled = false;
+  render(report);
+}
+$('preset').addEventListener('change', async (e) => { await load(e.target.value); run(); });
+$('run').addEventListener('click', run);
+window.addEventListener('resize', () => last && render(last));
+await load(PRESETS[0]);
+$('run').disabled = false;
+run();
+</script>
+</body>
+</html>

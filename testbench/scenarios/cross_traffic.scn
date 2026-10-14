@@ -1,0 +1,9 @@
+name cross_traffic
+describe A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and leaves at 25 s
+duration 40s
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
+expect cc.unsettled == 0

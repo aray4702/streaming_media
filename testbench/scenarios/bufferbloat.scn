@@ -1,0 +1,7 @@
+name bufferbloat
+describe 1 Mbps uplink behind a 2 s deep router buffer
+duration 40s
+at 0s capacity=1000kbps delay=20ms queue=2s
+expect cc.queue_p95_ms < 100
+expect video.freeze_count == 0
+expect audio.mouth_to_ear_p95_ms < 200

@@ -72,7 +72,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedOnceWithinQuantization) {
       auto fb = ParseTransportFeedback(b);
       for (const auto& r : history.OnFeedback(*fb, now)) {
         ++reported[r.seq];
-        if (r.received()) max_err_us = std::max(max_err_us, std::llabs(r.receive_time.us() - true_arrival[r.seq].us()));
+        if (r.received()) max_err_us = std::max<int64_t>(max_err_us, std::llabs(r.receive_time.us() - true_arrival[r.seq].us()));
       }
     });
   }
