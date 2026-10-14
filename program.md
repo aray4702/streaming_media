@@ -9,6 +9,15 @@ run, and if this file and an agent's prompt disagree, this file wins.
 - Repository: https://github.com/aray4702/streaming_media (public)
 - Owner: @aray4702
 
+## 0. Vision and mission
+
+- **Vision:** people interact with AI using streaming audio and video.
+- **Mission:** develop and maintain an audio/video streaming library that
+  targets user experience on various platforms, devices and links.
+- **This program** exists to accomplish the mission: agents keep measuring
+  the user experience, find where it falls short, and fix it, under the
+  Owner's direction.
+
 ## 1. Goal
 
 Make real-time audio and video built on this library hold up for the people
@@ -18,6 +27,23 @@ same bandwidth, and no crashes or undefined behaviour, on every supported
 platform. Progress is measured, not asserted. Each change must improve the
 measurements or leave them unchanged, and each problem found becomes a test
 that keeps it fixed.
+
+Because the other side of the call is often an AI, the experience of a
+conversation matters as much as the quality of each stream:
+
+- **Quick responses:** the transport adds as little as possible to the time
+  between the user finishing speaking and hearing the AI's first audio.
+- **Interruptions work:** when the user talks over the AI (barge-in), the
+  AI's audio stops quickly and the user's speech still gets through.
+- **The AI hears the user clearly:** the user's speech reaches the AI with
+  few gaps, because lost or concealed speech hurts recognition even when it
+  would sound acceptable to a person.
+- **AI-generated media streams well:** speech and video that an AI produces
+  faster than real time, or in bursts, play out smoothly without building up
+  delay or queues.
+
+Work toward these goals that needs new test bench features is tracked as
+`roadmap` issues (section 5.1).
 
 ## 2. System overview
 
@@ -102,6 +128,15 @@ lists them all):
   after each link change, RTT.
 - **Repair:** overhead of RTX + FEC, packets recovered by each.
 
+Planned (`roadmap` issues), once the test bench runs a two-way
+conversation:
+
+- **Conversation:** response delay added by the transport (user's last
+  speech sample captured to the AI's first audio sample played, minus the
+  modelled AI thinking time), barge-in stop delay (user starts talking to
+  the AI's audio stopping at the user's ear), and speech lost or concealed
+  on the user-to-AI path while the user is speaking.
+
 ## 4. Roles
 
 | | Tester | Fixer | Reviewer | Owner (human) |
@@ -157,9 +192,13 @@ Each run:
    reply to each thread.
 2. **Failing CI.** For each Fixer PR whose CI is red, fix it or explain why
    in a comment.
-3. **New issues.** Take the oldest issue that has `agent-found` or `bug`
-   and is not `in-progress`, `needs-human` or `wontfix`. Handle one new
-   issue per run, unless the run finishes in well under 30 minutes. Then:
+3. **New issues.** Take the oldest issue that has `agent-found`, `bug` or
+   `roadmap` and is not `in-progress`, `needs-human` or `wontfix`. `sev:1`
+   and `sev:2` problems come before `roadmap` work, which comes before
+   `sev:3`. Handle one new issue per run, unless the run finishes in well
+   under 30 minutes. For a `roadmap` issue, steps 2 and 3 become: build what
+   the issue asks for, with tests and scenarios whose `expect` lines check
+   its acceptance criteria; split it into smaller PRs if it is large. Then:
    1. Label it `in-progress` and comment that work has started.
    2. Reproduce it with the command from the issue. If it does not
       reproduce, comment with the evidence, label it `cannot-reproduce` and
@@ -217,6 +256,7 @@ a comment addressed to it, or no review yet:
 | `needs-human` | An agent stopped and needs the Owner | Any |
 | `wontfix` | Owner decision | Owner |
 | `agent-log` | The Tester's run log issue (its memory between runs and the weekly summary) | Tester |
+| `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
 
 ### 5.2 Issue format (Tester)
 
@@ -320,6 +360,8 @@ CI runs the same, plus the other platforms.
 |---|---|
 | sev:1 | Crash, sanitizer error, hang, memory growth without bound; the call never recovers (no video for the rest of the call, audio silent); failure on `main` CI |
 | sev:2 | Problems users notice in conditions they will meet: freezes > 1 s or audio interruptions in moderate loss (≤ 5%) or jitter (≤ 50 ms); settle time > 10 s after a capacity change; mouth-to-ear delay > 400 ms on a 100 ms RTT link; target overshoot that keeps the queue > 200 ms |
+| sev:1 (conversation) | The AI never hears the user or the user never hears the AI's reply; barge-in never stops the AI's audio |
+| sev:2 (conversation) | On a 100 ms RTT link with ≤ 5% loss: transport adds > 500 ms to the response delay; barge-in stop delay > 500 ms; > 2% of the user's speech lost or concealed on the way to the AI |
 | sev:3 | Quality left on the table (utilization < 70% of usable capacity on a clean link), slow convergence, benchmark regressions > 10%, minor metric regressions against the baseline |
 
 ### 6.4 Baseline regressions
@@ -350,6 +392,10 @@ area it covered in each issue's notes:
    extreme inputs to public APIs (fuzz-style).
 7. **Platforms and performance:** benchmark regressions, wasm/browser
    behaviour (`web/`), the no-exceptions build, binary size.
+8. **Conversation with an AI** (once the test bench supports it; see
+   the `roadmap` issues): response delay, barge-in, the user's speech
+   reaching the AI intact, and AI media sent in faster-than-real-time
+   bursts, under each of the impairments above.
 
 ## 8. Guardrails
 

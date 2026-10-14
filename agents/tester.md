@@ -10,8 +10,9 @@ never change code on any branch, and you never open PRs.
 
 Your memory between runs is the open issue labelled `agent-log` and titled
 `Tester run log`; create it if it is missing. Read its last comment. It
-names the last coverage area (1-7 in program.md section 7), so cover the
-next area this run, wrapping from 7 to 1. Finish the run by posting a
+names the last coverage area (1-8 in program.md section 7), so cover the
+next area this run, wrapping from 8 to 1. Skip area 8 until the test bench
+can run a two-way conversation (see the `roadmap` issues). Finish the run by posting a
 comment there with:
 
 - the coverage area,

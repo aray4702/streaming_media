@@ -53,12 +53,16 @@ For each of your open PRs:
 
 Pick the oldest open issue that:
 
-- is labelled `agent-found` or `bug` (labels can only be applied by
-  collaborators),
+- is labelled `agent-found`, `bug` or `roadmap` (labels can only be
+  applied by collaborators),
 - has none of `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`,
 - has no open PR that references it.
 
-Prefer `sev:1`, then `sev:2`, then `sev:3`. Then:
+Prefer `sev:1`, then `sev:2`, then `roadmap`, then `sev:3`. A `roadmap`
+issue asks for a new capability rather than reporting a defect: skip step 2,
+and in step 3 write tests and scenarios whose `expect` lines check the
+issue's acceptance criteria. If it is large, deliver it in several PRs, each
+one complete and tested, and say in the issue what remains. Then:
 
 1. **Claim it.** Add the `in-progress` label, and comment that work has
    started.

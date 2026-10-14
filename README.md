@@ -1,7 +1,53 @@
 # streaming_media
 
-A real-time audio/video streaming library for embedded systems and internet
-video conferencing, designed to keep working over unstable data links.
+**Vision:** people interact with AI using streaming audio and video.
+
+**Mission:** develop and maintain an audio/video streaming library that
+targets user experience on various platforms, devices and links.
+
+streaming_media is a real-time audio/video streaming library, from servers
+and browsers to phones and embedded devices, designed to keep calls working
+over unstable links. It is developed by a program in which agents improve
+it continuously.
+
+## The program
+
+The library evolves through a loop that [program.md](program.md) defines,
+run by three AI agents with GitHub as the shared record:
+
+```
+ Tester ──files issues──> Fixer ──opens PRs──> CI + Reviewer ──approve──> main
+   ^                                                                       │
+   └──────────────── next run tests the improved main ─────────────────────┘
+```
+
+- **Tester** runs scripted calls in the [test bench](testbench/README.md)
+  over emulated bad links (loss, jitter, outages, bandwidth drops, queues,
+  cross traffic) and measures what users would notice: audio gaps, video
+  freezes, delay and recovery time. Each problem it finds is filed as an
+  issue that reproduces it in one command.
+- **Fixer** turns each issue into a failing test, fixes the root cause and
+  opens a PR. It also builds the `roadmap` features the Owner files.
+- **Reviewer**, a separate GitHub App identity, checks every PR for
+  correctness, tests, regressions against the
+  [baseline](testbench/baseline.json) and "gaming" (loosened thresholds).
+  A PR merges automatically once it has the Reviewer's approval and every
+  platform in CI is green.
+- **Owner** (a person) sets direction through `program.md` and `roadmap`
+  issues, and decides anything an agent labels `needs-human`.
+
+Progress is measured, not asserted: a change has to improve the
+user-experience metrics or leave them unchanged, and every problem found
+becomes a scenario that keeps it fixed. The goals, labels, quality gates
+and guardrails are in [program.md](program.md), and the agents'
+instructions are in [agents/](agents/).
+
+The current direction is conversation with AI. That means a two-way test
+bench, plus metrics for how quickly the AI responds, how well
+interruptions (barge-in) work, and how cleanly the user's speech reaches
+the AI ([program.md section 1](program.md#1-goal)).
+
+## The library
 
 The library implements, in portable C++20 with no dependencies, the
 resilience algorithms from sections 3-8 of
@@ -26,9 +72,8 @@ Background research:
 
 The library:
 
-- [Program](program.md): how the library evolves itself. Tester, Fixer and
-  Reviewer agents find problems with the test bench, fix them and review
-  the fixes through GitHub issues and PRs.
+- [Program](program.md): vision, goals, agent roles, quality gates and
+  guardrails of the self-evolution loop.
 - [Test bench](testbench/README.md): a whole call through the library over
   a scripted unreliable link (loss, bursts, jitter, outages, capacity
   changes, bufferbloat, cross traffic), measured as user-experience metrics.
