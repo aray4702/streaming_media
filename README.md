@@ -80,6 +80,8 @@ The library:
   a scripted unreliable link (loss, bursts, jitter, outages, capacity
   changes, bufferbloat, cross traffic), measured as user-experience metrics.
   The scenario suite and its baseline are the regression gate.
+- [Fix records](docs/fixes/README.md): every problem found and fixed, with
+  its root cause, fix, regression test and before/after results.
 - [Browser port](web/): the library and test bench as a WebAssembly ES
   module with a JS API, plus a demo page.
 - [Architecture](docs/design/architecture.md): layers, conventions,

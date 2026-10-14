@@ -103,6 +103,16 @@ jobs:
         with:
           name: testbench-results
           path: testbench-results.json
+  fix-record:
+    # PRs that fix a found problem must add a regression scenario that fails
+    # on the base commit, and a fix record (program.md section 6.5).
+    runs-on: ubuntu-24.04
+    permissions: {contents: read, issues: read, pull-requests: read}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - run: python3 tools/check_fix_record.py
+        env: {GH_TOKEN: "${{ github.token }}"}
   pages:
     # Publishes the browser demo (web/) built by the wasm job.
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -116,7 +126,7 @@ jobs:
   ci-ok:
     # Single required status check: succeeds only if every job above did.
     if: always()
-    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench]
+    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, fix-record]
     runs-on: ubuntu-24.04
     steps:
       - run: |

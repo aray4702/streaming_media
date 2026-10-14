@@ -64,6 +64,9 @@ For each PR:
    comparison.
 2. Check out the branch and verify claims you can verify cheaply:
    - the new scenario or test fails on `main` and passes on the branch;
+   - the fix record (`docs/fixes/<N>-*.md`) is accurate: its root cause
+     matches the diff, and its before/after numbers match what you measure
+     on the base commit and the branch;
    - the baseline file matches what the branch produces
      (`sm_testbench ... --json` plus `tools/testbench_compare.py`).
 3. Apply the checklist in `program.md` section 6.2:
