@@ -69,10 +69,13 @@ one complete and tested, and say in the issue what remains. Then:
 2. **Reproduce.** Build `main` and run the command from the issue. If it
    does not reproduce across the seeds mentioned, comment with your output,
    label it `cannot-reproduce`, remove `in-progress` and stop.
-3. **Write the failing test first.**
+3. **Write the regression test first** (required for every found problem;
+   CI's `fix-record` job rejects the PR without it):
    - Add `testbench/scenarios/issue_<N>_<slug>.scn` with the issue's
      scenario and `expect` lines that state the user-experience target.
-     Make it fail on `main`.
+     It must fail on `main` (CI builds the base commit and checks this), and
+     after the fix it must pass on every seed you tried. Record the failing
+     output; it goes in the fix record.
    - If the cause sits in one module, also add a unit or e2e test in
      `tests/` that pins the behaviour (follow the existing test style and
      register suites in `tests/*.cmake`).
@@ -102,12 +105,25 @@ one complete and tested, and say in the issue what remains. Then:
    ```
    Every regressed metric must be explained in the PR. If you cannot
    justify one, keep working; don't open the PR.
-7. **Docs.** If behaviour or design changed, update the header comments
-   and `tools/catalog.py` (the algorithm docs are generated from them). Add
-   a verification note describing the defect and the fix.
+7. **Document the fix** (required; CI checks it):
+   - Copy `docs/fixes/TEMPLATE.md` to `docs/fixes/<N>-<slug>.md` and fill
+     in every section:
+     - **Issue:** what the user experienced.
+     - **Root cause:** the mechanism, with code references.
+     - **Fix:** what changed and why.
+     - **Regression tests:** each test, with its result before and after.
+     - **Results:** the reproduction across seeds before and after, plus
+       the suite comparison from `testbench_compare.py --markdown`.
+
+     List the tests in the front matter's `regression_tests`.
+   - Run `python3 tools/fixes_index.py` to update `docs/fixes/README.md`.
+   - If behaviour or design changed, also update the header comments and
+     `tools/catalog.py` (the algorithm docs are generated from them), with
+     a verification note that links the fix record.
 8. **Open the PR.**
    - Push `fix/<N>-<slug>` and open the PR with the format in `program.md`
-     section 5.3 (`Fixes #N`, root cause, fix, tests, metrics table, risk).
+     section 5.3 (`Fixes #N`, root cause, fix, tests, metrics table, risk);
+     the body can summarize the fix record and link to it.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
      path (section 8).
    - Enable auto-merge with `PUT .../pulls/N/ccr/auto_merge` and

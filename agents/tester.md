@@ -37,8 +37,12 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
    - Anything failing on `main` is sev:1. File it before anything else,
      unless an open issue already covers it.
 2. **Verify fixes.** For each issue closed since your previous log entry,
-   rerun its reproduction. If it still reproduces or has regressed, reopen
-   it with the new evidence.
+   read its fix record (`docs/fixes/<N>-*.md`); its regression scenario is
+   `testbench/scenarios/issue_<N>_*.scn`. Run that scenario across more
+   seeds and nearby conditions than the Fixer tried, and rerun the
+   issue's original reproduction. If it still reproduces or has regressed,
+   reopen it with the new evidence. A problem that only moved to other
+   conditions is a new issue that links the old one.
 3. **Explore the coverage area.**
    - Write scenarios in a scratch directory (not in the repo tree). For
      each scenario, also run 5 seeds, and vary the key parameter to find
