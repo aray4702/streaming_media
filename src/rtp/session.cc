@@ -62,7 +62,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
   c.red_distance = a.red_distance;
-  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate});
+  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate, {}});
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   if (!send_has_padding_) {
     send_.SetPaddingSender(audio_send_.back().sender.get());
@@ -83,7 +83,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx = v.rtx;
   c.fec = v.fec;
   c.fec_config = v.fec_config;
-  video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
+  video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero(), {}});
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
@@ -165,10 +165,10 @@ void Session::Start(Timestamp now) {
 }
 
 void Session::LimitRetransmissions() {
-  // Resends may not take more than the target (libwebrtc's retransmission
-  // RateLimiter); the rest of the target is for new media.
+  // Resends may not take more than a multiple of the target (libwebrtc's
+  // retransmission RateLimiter); the rest of the target is for new media.
   for (auto& v : video_send_) {
-    v.sender->SetMaxRetransmissionRate(send_.target());
+    v.sender->SetMaxRetransmissionRate(send_.target() * cfg_.send_side.max_retransmission_factor);
     ApplyFecBudget(v);
   }
 }
@@ -437,7 +437,7 @@ SendRates Session::rates() const {
   for (const auto& a : audio_send_) audio = audio + a.nominal_rate;
   double protection = 0;
   for (const auto& v : video_send_) protection = std::max(protection, v.sender->fec_params().protection);
-  return send_.ComputeMeasuredRates(audio, protection);
+  return send_.ComputeRates(audio, protection);
 }
 
 void Session::ExportMetrics(MetricsWriter& w) const {

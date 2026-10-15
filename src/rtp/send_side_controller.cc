@@ -103,17 +103,12 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.send_time = now;
     gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
-    if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
-      repair_window_.push_back({now, sent.size.bytes(), r.kind});
-      (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();
-    }
     window_.emplace_back(now, sent.size.bytes());
     window_bytes_ += sent.size.bytes();
     ++stats_.released;
     stats_.released_bytes += sent.size.bytes();
     out.push_back(std::move(r));
   }
-  ExpireRepair(now);
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
     Apply(gcc_.OnProcessInterval(now, send_rate(now)));
@@ -173,11 +168,6 @@ SendRates SendSideController::ComputeRates(DataRate audio_wire_rate, double fec_
   out.target = target_;
   out.audio_rate = audio_wire_rate;
   out.video_target = std::clamp(r, cfg_.video_min, cfg_.video_max);
-  ApplyPushback(out);
-  return out;
-}
-
-void SendSideController::ApplyPushback(SendRates& out) const {
   // Pushback acts on the whole target; the encoder drops frames and takes
   // the matching share of the video target.
   const auto drop = cc::CongestionWindowPushback::FrameDropInterval(target_, cwnd_.reduce_ratio(), cfg_.video_min);
@@ -185,34 +175,6 @@ void SendSideController::ApplyPushback(SendRates& out) const {
     out.frame_drop_interval = drop.interval;
     out.video_target = std::clamp(out.video_target - out.video_target * (1.0 / drop.interval), cfg_.video_min, cfg_.video_max);
   }
-}
-
-void SendSideController::ExpireRepair(Timestamp now) {
-  while (!repair_window_.empty() && repair_window_.front().time <= now - cfg_.repair_window) {
-    const Released& f = repair_window_.front();
-    (f.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) -= f.bytes;
-    repair_window_.pop_front();
-  }
-}
-
-double SendSideController::repair_share() const {
-  // A window with repair but no video says nothing about what repair costs per
-  // video byte; counting it as 100% would pin the share at its cap and keep the
-  // encoder starved (issue #21 review).
-  if (video_bytes_ <= 0) return 0.0;
-  const int64_t total = video_bytes_ + repair_bytes_;
-  return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
-}
-
-SendRates SendSideController::ComputeMeasuredRates(DataRate audio_wire_rate, double fec_protection) const {
-  const double floor_share = fec_protection / (1.0 + fec_protection);
-  const double share = std::min(std::max(repair_share(), floor_share), cfg_.max_repair_share);
-  DataRate r = (target_ - audio_wire_rate) * (1.0 - share);
-  SendRates out;
-  out.target = target_;
-  out.audio_rate = audio_wire_rate;
-  out.video_target = std::clamp(r, cfg_.video_min, cfg_.video_max);
-  ApplyPushback(out);
   return out;
 }
 

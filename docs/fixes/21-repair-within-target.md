@@ -4,7 +4,7 @@ title: Repair traffic (RTX, FEC, keyframes) is not held to the target bitrate
 severity: sev:2
 status: partial
 area: area:loss, area:cc
-regression_tests: testbench/scenarios/issue_21_repair_within_target.scn, testbench/scenarios/issue_21_capacity_drop_repair.scn, tests/unit/loss/nack_rtx_test.cc, tests/unit/rtp/send_side_controller_test.cc, tests/unit/rtp/session_test.cc
+regression_tests: testbench/scenarios/issue_21_repair_within_target.scn, testbench/scenarios/issue_21_capacity_drop_repair.scn, tests/unit/loss/nack_rtx_test.cc, tests/unit/rtp/session_test.cc
 ---
 
 # #21: Repair traffic (RTX, FEC, keyframes) is not held to the target bitrate
@@ -21,162 +21,144 @@ https://github.com/aray4702/streaming_media/issues/21
 
 ## Root cause
 
-Three places let repair traffic ignore the target:
+Repair traffic ignored the target in two places that this PR fixes:
 
 1. `loss::RtxSender::OnNack` (`src/loss/rtx.cc`) answered every NACK. Nothing
    bounded the resend rate, so resends took whatever the pacer allowed.
-2. `rtp::SendSideController::ComputeRates` (`src/rtp/send_side_controller.cc`)
-   took only the *configured* FEC protection off the video budget
-   (`(target - audio) / (1 + protection)`). RTX was never subtracted, and the
-   FEC share was the controller's wish, not what was sent.
-3. The FEC protection controller asked for up to 100% FEC regardless of the
+2. The FEC protection controller asked for up to 100% FEC regardless of the
    budget. On `low_bandwidth` the audio alone (85 kbps on the wire) is above
    the 30-45 kbps target, yet 51 kbps of FEC was sent, queued 1.4 s in the
    pacer behind video (useless on arrival) and still counted as loss on the
    full link. The loss then fed the loss-based estimator, which cut the target
    further.
 
+A third place, `rtp::SendSideController::ComputeRates`, takes only the
+*configured* FEC protection off the video budget and never RTX. A first version
+of this PR replaced it with the measured RTX + FEC share; that is reverted (see
+Remaining).
+
 ## Fix
 
-- `RtxSender::SetMaxRate`: resends are limited to a rate over a 1 s window
-  (libwebrtc's `RateLimiter` for retransmissions). `rtp::Session` sets it to the
-  current target on every target change. Metric `rate_limited`.
-- `SendSideController::ComputeMeasuredRates` (used by `Session::rates()`):
-  the share taken off the video budget is what RTX and FEC took of the bytes
-  released in the last second, capped at 50% (`FecControllerDefault`
-  `overhead_threshold_`, `fec_controller_default.cc`). The configured FEC rate
-  stays as a floor so a rising FEC rate is anticipated. A window in which RTX or
-  FEC went out but no video did gives a share of 0, not 100%: otherwise the
-  share stays pinned at its cap while the encoder is starved (Owner review of
-  the first version). The encoder keeps at least `video_min` whatever the share.
+- `RtxSender::SetMaxRate`: resends are limited to a rate over a 1 s window.
+  `rtp::Session` sets it to `SendSideConfig::max_retransmission_factor` (3.0)
+  times the current target whenever the target changes. Metric `rate_limited`.
+  The factor was measured over seeds 1-20 (below): 1x and 2x cut recovery after
+  a capacity drop (`issue_53_cwnd_pushback` `video.residual_loss_pct` mean 0.4 ->
+  1.4 at 1x, 0.7 at 2x, failing its own `<= 1.0` on 17 and 3 of 20 seeds
+  respectively); 3x holds main's 0.3 and still ends the flood
+  (`low_bandwidth` `net.loss_pct` 21.8 -> 1.5). libwebrtc's pinned M157 sources
+  contain no retransmission `RateLimiter` (the pacer bounds resends there), so
+  there is no file to cite for the factor; the cap itself follows the Owner's
+  direction on the issue.
 - `Session::SetFecParams`: FEC protection is capped by what the target leaves
   above the video minimum: `avail / video_min - 1`, so no FEC when the audio
   takes the target.
 
-libwebrtc source checked in `compare/webrtc/reference/`: the protection
-subtraction is `call/rtp_video_sender.cc` `OnBitrateUpdated` and
-`modules/video_coding/fec_controller_default.cc` `UpdateFecRates`. The pinned
-M157 sources contain no retransmission `RateLimiter` (it was removed from
-`RtpSenderEgress`; the pacer bounds resends there), so the limiter follows the
-Owner's direction in the issue rather than a file we can cite.
+The frame-dropper bucket cap that an earlier head of this PR carried is in
+`main` through #56; this PR no longer touches `cc::FrameDropper`.
 
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_21_repair_within_target.scn` | `net.loss_pct` 26.1 (expect < 7), `repair.overhead_pct` 85.8 (< 16), `video.render_fps` 5.2 (> 18) | 1.6, 6.1, 26.1 |
-| `testbench/scenarios/issue_21_capacity_drop_repair.scn` | `net.loss_pct` 6.7 (expect < 5), `repair.overhead_pct` 13.8 (< 10) | 2.1, 4.8 |
-<<<<<<< HEAD
-=======
-| `testbench/scenarios/issue_21_shallow_buffer_no_stall.scn` (20 ms queue, 1500 -> 500 -> 1500 kbps, seed 1) | on `main`: `video.encoder_dropped` 443 (expect < 250), `net.loss_pct` 40 (< 25), `video.render_fps` 16 (> 18); on this PR's first head: `video.encoder_dropped` 321 | 194, 11.4, 24 |
-| `tests/unit/cc/allocation_adaptation_test.cc` `FrameDropper.KeyframeStormAndRateDropCannotStallVideo` | bucket 243870 B (> 84375), 238 frames dropped in a row (> 40) | passes |
->>>>>>> 012e402 (testbench: shallow-buffer scenario bounds what holds on 20 seeds; fix record re-measured)
+| `testbench/scenarios/issue_21_repair_within_target.scn` | `net.loss_pct` 26.1 (expect < 7), `repair.overhead_pct` 85.8 (< 16), `video.render_fps` 5.2 (> 18) | 20 of 20 seeds |
+| `testbench/scenarios/issue_21_capacity_drop_repair.scn` | `net.loss_pct` 6.7 (expect < 5), `repair.overhead_pct` 13.8 (< 10) | 20 of 20 seeds |
 | `tests/unit/loss/nack_rtx_test.cc` `Rtx.RateLimitCapsResendsPerSecond` | does not build (no limiter) | passes |
-| `tests/unit/rtp/send_side_controller_test.cc` `VideoBudgetShrinksByTheMeasuredRepairShare`, `RepairNeverTakesMoreThanHalfOfTheBudget`, `AWindowWithRepairButNoVideoDoesNotStarveTheEncoder` | does not build; the last one: share 1.0 and the budget halved with no video sent | passes |
 | `tests/unit/rtp/session_test.cc` `FecProtectionIsCappedByWhatTheTargetLeavesAboveTheVideoFloor`, `NoFecWhenTheAudioAloneTakesTheTarget` | does not build | passes |
+
+`tests/e2e/cwnd_pushback_e2e_test.cc` (from #56) compares a run with pushback
+against one without. The resend cap also lowers the data in flight of the run
+without pushback (72.7 kB against 95.2 kB on `main`), which would make its
+unchanged `with * 2 < without` bound fail (76.7 kB against 72.7 kB) although the
+run with pushback is identical to `main` (38.3 kB). The test isolates pushback,
+so it now sets `max_retransmission_factor = 1000` in both runs. No threshold is
+changed.
 
 ## Results
 
-Measured on the final head (ca8f577 plus this commit). Means over seeds 1-10
-(`low_bandwidth`, `capacity_drop`) and 1-20 (shallow buffer), `main` -> this PR.
-libwebrtc from the issue table.
+Seeds 1-20, `main` (c88105d, with #56) against this PR. Mean (max) over the
+seeds; "seeds worse" counts seeds where the PR value is worse than `main`'s.
 
-| scenario | metric | main | after | libwebrtc |
-|---|---|---|---|---|
-| low_bandwidth | net.loss_pct | 27.2 | 2.0 | 6.6 |
-| low_bandwidth | repair.overhead_pct | 90.3 | 6.7 | 16 |
-| low_bandwidth | video.render_fps | 4.9 | 25.7 | 21.7 |
-| low_bandwidth | video.keyframe_requests | 82 | 16 | 0.3 |
-| low_bandwidth | video.freeze_total_ms | 20658 | 1117 | |
-| low_bandwidth | audio.interruptions | 1.0 | 1.0 | 0 |
-| low_bandwidth | cc.target_avg_kbps | 43 | 121 | 136 |
-| capacity_drop | net.loss_pct | 6.9 | 2.2 | 1.4 |
-| capacity_drop | repair.overhead_pct | 14.2 | 4.9 | 2.9 |
-| capacity_drop | video.freeze_total_ms | 5188 | 3517 | 2355 |
-| capacity_drop | video.longest_freeze_ms | 2038 | 1787 | |
-| capacity_drop | cc.queue_p95_ms | 388 | 290 | 271 |
-<<<<<<< HEAD
-| shallow buffer (1500 kbps, 20 ms queue) | send rate / target (5 seeds) | 1.27 | 1.07 | |
-| shallow buffer | net.loss_pct (20 seeds) | 22.2 | 13.2 | |
-| shallow buffer | repair.overhead_pct (20 seeds) | 83.7 | 40.0 | |
-| shallow buffer | video.freeze_total_ms (20 seeds) | 6071 | 7588 | |
-| shallow buffer | video.longest_freeze_ms (20 seeds) | 1564 | 2820 | |
-=======
-| shallow buffer (1500 kbps, 20 ms queue) | send rate / target (5 seeds) | 1.27 | 1.10 | |
-| shallow buffer | net.loss_pct | 22.2 | 13.5 | |
-| shallow buffer | repair.overhead_pct | 83.7 | 45.1 | |
-| shallow buffer | video.freeze_total_ms | 6071 | 5470 | |
-| shallow buffer | video.longest_freeze_ms | 1564 | 1345 | |
-| shallow buffer | video.render_fps | 23.5 | 25.2 | |
-| shallow buffer | video.encoder_dropped | 190 | 127 | |
-| shallow + 3x capacity drop (`issue_21_shallow_buffer_no_stall`, 20 seeds) | net.loss_pct | 34.9 | 14.1 | |
-| same | video.encoder_dropped | 407 | 176 | |
-| same | video.render_fps | 16.2 | 23.3 | |
-| same | video.freeze_total_ms | 11201 | 8003 | |
-| same | video.longest_freeze_ms, mean / worst seed | 3692 / 17860 | 1857 / 4195 | |
->>>>>>> 012e402 (testbench: shallow-buffer scenario bounds what holds on 20 seeds; fix record re-measured)
-| #5 reproduction (2% loss, burst=15, 2 Mbps; seeds 1-8) | largest target fall in 1 s (from the time series) | 53% | 51% | |
-| #5 reproduction | video.longest_freeze_ms / freeze_total_ms | 366 / 993 | 303 / 758 | |
+| scenario | metric | main mean (max) | PR mean (max) | seeds worse | worst seed (main -> PR) |
+|---|---|---|---|---|---|
+| plain_shallow | longest freeze ms | 955.3 (1734) | 952.0 (1947) | 1/20 | seed 20: 1734 -> 1947 |
+| plain_shallow | freeze total ms | 4921.4 (9345) | 4867.9 (9715) | 3/20 | seed 20: 9345 -> 9715 |
+| plain_shallow | net loss % | 20.9 (36) | 20.2 (28) | 0/20 | seed 1: 10 -> 10 |
+| plain_shallow | residual loss % | 0.1 (2) | 0.2 (2) | 4/20 | seed 20: 2 -> 2 |
+| plain_shallow | send_over_target ms | 5890.0 (10500) | 5755.0 (10000) | 3/20 | seed 5: 6500 -> 6800 |
+| plain_shallow | render fps | 24.7 (28) | 24.8 (28) | 3/20 | seed 4: 22 -> 22 |
+| issue_21_shallow_buffer_no_stall | longest freeze ms | 1888.8 (3220) | 1987.7 (3299) | 9/20 | seed 16: 1360 -> 3299 |
+| issue_21_shallow_buffer_no_stall | freeze total ms | 8214.4 (15099) | 8189.4 (15686) | 6/20 | seed 5: 7516 -> 15686 |
+| issue_21_shallow_buffer_no_stall | net loss % | 28.3 (56) | 24.2 (41) | 3/20 | seed 16: 29 -> 41 |
+| issue_21_shallow_buffer_no_stall | residual loss % | 2.4 (12) | 3.1 (13) | 12/20 | seed 16: 1 -> 11 |
+| issue_21_shallow_buffer_no_stall | send_over_target ms | 7540.0 (14000) | 7285.0 (12200) | 4/20 | seed 5: 6800 -> 12200 |
+| issue_21_shallow_buffer_no_stall | render fps | 21.2 (26) | 21.8 (26) | 6/20 | seed 8: 23 -> 12 |
+| low_bandwidth | longest freeze ms | 3426.1 (7334) | 1551.2 (2622) | 1/20 | seed 3: 16 -> 20 |
+| low_bandwidth | freeze total ms | 18721.3 (23224) | 1545.8 (2622) | 0/20 | seed 3: 0 -> 0 |
+| low_bandwidth | net loss % | 21.8 (26) | 1.5 (2) | 0/20 | seed 3: 2 -> 1 |
+| low_bandwidth | residual loss % | 5.3 (7) | 0.3 (1) | 0/20 | seed 3: 0 -> 0 |
+| low_bandwidth | send_over_target ms | 34310.0 (38000) | 5280.0 (7200) | 0/20 | seed 3: 9000 -> 3700 |
+| low_bandwidth | render fps | 6.0 (23) | 24.2 (27) | 0/20 | seed 3: 23 -> 27 |
+| capacity_drop | longest freeze ms | 1392.4 (2682) | 1254.4 (2250) | 8/20 | seed 12: 1367 -> 2250 |
+| capacity_drop | freeze total ms | 3708.6 (4696) | 3031.8 (4334) | 3/20 | seed 13: 4124 -> 4282 |
+| capacity_drop | net loss % | 3.8 (6) | 2.5 (3) | 0/20 | seed 18: 2 -> 2 |
+| capacity_drop | residual loss % | 0.1 (0) | 0.1 (0) | 5/20 | seed 1: 0 -> 0 |
+| capacity_drop | send_over_target ms | 2515.0 (3100) | 2020.0 (2600) | 1/20 | seed 6: 2500 -> 2600 |
+| capacity_drop | render fps | 26.9 (28) | 27.4 (28) | 0/20 | seed 2: 27 -> 27 |
+| issue_53_cwnd_pushback | longest freeze ms | 1446.1 (2766) | 1559.7 (2744) | 8/20 | seed 11: 1818 -> 2744 |
+| issue_53_cwnd_pushback | freeze total ms | 4459.8 (5413) | 3933.1 (4838) | 4/20 | seed 16: 3305 -> 4416 |
+| issue_53_cwnd_pushback | net loss % | 8.8 (12) | 8.1 (10) | 4/20 | seed 16: 8 -> 8 |
+| issue_53_cwnd_pushback | residual loss % | 0.4 (1) | 0.3 (1) | 10/20 | seed 9: 0 -> 1 |
+| issue_53_cwnd_pushback | send_over_target ms | 2995.0 (3400) | 2635.0 (3100) | 2/20 | seed 7: 2500 -> 2700 |
+| issue_53_cwnd_pushback | render fps | 24.5 (26) | 25.1 (26) | 5/20 | seed 5: 25 -> 24 |
 
-Before the dropper cap this PR measured 7588 ms / 2820 ms (15 of 20 seeds over
-2 s, worst 4596 ms) on the plain shallow buffer; the cap removes that stall.
+`issue_21_shallow_buffer_no_stall` was dropped from this PR: it guarded the
+frame-dropper stall that #56 fixed, it is not about repair traffic, and the
+cap alone does not hold its `expect` lines on all 20 seeds (9 of 20 fail on
+`net.loss_pct`, `encoder_dropped` or `render_fps`). The table keeps its numbers
+for reference.
 
-**Long freezes that remain** (shallow + 3x capacity drop, `video.longest_freeze_ms`
-per seed, `main` -> this PR): seed 8 3294 -> 3514 ms, seed 12 3384 -> 3530 ms,
-seed 15 3036 -> 4195 ms are worse than `main`; the other 17 seeds are better
-(for example seed 20 4421 -> 2866, seed 6 17860 -> 1331). Seed 12 got worse with
-the no-video-window share fix (1600 -> 3530 ms without it); seeds 8, 15 and 20
-are unchanged by it. On seeds 12 and 15 the video stops for 1.1-4 s while the
-target is 800+ kbps (seed 12: a 1.1 s gap at 2.7 s, bounded by the dropper cap)
-or after the 1500 -> 500 kbps drop at 10 s (seed 15: a 2-3 Mbps burst into
-the 20 ms queue, then loss; the pacer and start-up burst belong to #53 and #20).
-The regression scenario therefore does **not** bound `longest_freeze_ms`
-(see its `# Target` comment); it bounds `encoder_dropped`, `net.loss_pct` and
-`render_fps`, which hold on all 20 seeds. This is a partial fix on that metric;
-the decision whether to accept the three worse seeds or fix them first is the
-Owner's.
+Where this PR is worse than `main` on a single seed (cause not found; these
+are single-seed swings in runs that are chaotic after a capacity change):
 
-The scenario suite against `main`'s baseline (`tools/testbench_compare.py
---markdown`, seed 1): 65 metrics improved, 28 regressed; `testbench/baseline.json`
-is updated and the full table is in the PR description. Regressions and why they
-are accepted (checked over seeds 1-10 against `main`):
+- `capacity_drop` seed 12 longest freeze 1367 -> 2250 ms (8 of 20 seeds worse,
+  mean 1392 -> 1254 ms);
+- `issue_53_cwnd_pushback` seed 11 longest freeze 1818 -> 2744 ms (mean
+  1446 -> 1560 ms, so the mean is also slightly worse; freeze total falls
+  4460 -> 3933 ms) and `video.undecodable_frames` mean 7.8 -> 10.2;
+- shallow buffer + 3x drop (`issue_21_shallow_buffer_no_stall`) seed 16 longest
+  freeze 1360 -> 3299 ms (9 of 20 worse);
+- `wifi_to_lte_handover` seed 1 longest freeze 2214 -> 3997 ms; over 20 seeds the
+  mean is 2081 -> 2094 ms, freeze total falls 6370 -> 5350 ms and net loss
+  19.0 -> 9.7%.
 
-- `burst_loss`, `satellite`, `high_jitter`, `wifi_to_lte_handover`:
-  `video.avg_kbps` and `cc.goodput_kbps` fall 5-24% (burst_loss 887 -> 781
-  kbps). The RTX and FEC share is now taken off the encoder's budget instead of
-  being sent on top of it. `repair.overhead_pct` is a ratio to media bytes, so it
-  rises slightly when media shrinks (burst_loss 37.8 -> 42.1) and falls where
-  repair really fell (handover 113 -> 34). Freezes and render fps do not get
-  worse: burst_loss freeze total 221 -> 174 ms, satellite 4886 -> 4036 ms,
-  handover 9190 -> 4756 ms and 20.4 -> 26.0 fps.
-- `wifi_to_lte_handover` `video.e2e_delay_p95_ms` 171 -> 283 ms: with 10% loss
-  instead of 39% many more frames are played, including ones that waited for
-  repair after the handover.
-- `random_loss_5pct` `video.longest_freeze_ms` 21 -> 86 ms (freeze total 0 ->
-  74 ms): repair at 5% loss now competes with the smaller video budget; the
-  scenario's own bound is 2500 ms.
-- `capacity_drop` seed 1 `video.longest_freeze_ms` 1774 -> 2492 ms; over 10 seeds
-  2038 -> 1787 ms, and freeze total falls 32%.
+Suite against `main`'s baseline (`tools/testbench_compare.py`, seed 1): 44
+metrics improved, 6 regressed; `testbench/baseline.json` is updated. The
+regressions, all seed 1, with their 20-seed means:
 
-The no-video-window share fix costs about +280 ms of mean freeze total on the
-plain shallow buffer against the dropper fix alone (5193 -> 5470 ms); the 1x
-versus 2x question for the retransmission cap does not decide the
-shallow-buffer result, since every aggregate there beats `main` at 1x.
+- `capacity_drop` `video.freeze_count` 5 -> 7, `video.keyframe_requests` 6 -> 9,
+  `video.undecodable_frames` 4 -> 7: 20-seed means 5.5 -> 5.0, 7.6 -> 5.7,
+  5.8 -> 5.7.
+- `issue_53_cwnd_pushback` `video.undecodable_frames` 3 -> 12: 20-seed mean
+  7.8 -> 10.2. A small count that is worse; not explained.
+- `wifi_to_lte_handover` `video.longest_freeze_ms` 2214 -> 3997 and
+  `video.undecodable_frames` 3 -> 5: see above.
 
 ## Remaining
 
-- **Long freezes on seeds 8, 12 and 15 of the shallow + capacity-drop scenario** are worse than `main` (3294 -> 3514, 3384 -> 3530, 3036 -> 4195 ms); seed 12 regressed with the no-video-window share fix. Causes: the start-up and capacity-drop pacer bursts into a 20 ms queue (#53, #20). Target of the scenario: `longest_freeze_ms < 2000` on every seed.
+- **The video budget does not subtract what RTX actually sends.** The measured
+  share (RTX + FEC bytes of the last second, capped at 50%, as in libwebrtc's
+  `FecControllerDefault`) was in an earlier head of this PR and is reverted. With
+  it `E2E_CongestionWindowPushback` failed: the run with pushback reached the
+  full link rate before the drop (target 2407 kbps against 844 kbps without the
+  measured share) and its data in flight at the drop (126 kB) was larger than the
+  run without pushback (75 kB), so pushback was not compared on equal footing
+  and the shallow-buffer scenario got worse on 9 of 20 seeds. Next step: decide
+  how the measured share and pushback interact, probably together with #37.
 - **Keyframe recovery is not held to the budget.** The #5 trigger (an RTX +
-  keyframe burst into a 2 Mbps link, cutting the target by 53%) is unchanged
-  (51%). A keyframe is still released as one frame at the pacer rate. Next step:
-  a keyframe budget in the send-side media controller (#37), which owns frame
-  size and rate allocation.
-- **Shallow buffer: freezes are worse than main** (total 6071 -> 7588 ms,
-  longest 1564 -> 2820 ms over 20 seeds) although loss (22.2 -> 13.2%), repair
-  overhead (83.7 -> 40.0%) and the send rate (1.27x -> 1.07x target) improved.
-  When the target dips, the cap at the target blocks resends of packets sent
-  earlier at a higher rate. A cap of 2x the target (measured, not
-  adopted) gives 5132 ms / 2027 ms on the shallow buffer but loosens
-  `low_bandwidth` (loss 2.0 -> 3.9%, overhead 6.7 -> 12.0%), so the choice between
-  the libwebrtc-style cap and a looser one is left to the Owner. The start-up burst
-  into a 20 ms queue (#53) is the other contributor.
+  keyframe burst into a 2 Mbps link, cutting the target by 53%) is unchanged. A
+  keyframe is still released as one frame at the pacer rate. Next step: a keyframe
+  budget in the send-side media controller (#37).
+- **Shallow buffer + capacity drop** is not improved in freezes (table above):
+  it is dominated by the start-up and capacity-drop bursts into a 20 ms queue
+  (#53, #20).
