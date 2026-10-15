@@ -67,7 +67,11 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
      scenarios with `--seeds=5 --dump=<dir>`. The dumps hold both
      libraries' timeseries, which show where the behaviour diverges. In
      the issue, give the `sm_testbench` reproduction and the `sm_compare`
-     command, plus a table of this library vs libwebrtc.
+     command, plus a table of this library vs libwebrtc. Differences count
+     in both directions (`program.md` section 7, area 9). Before filing,
+     read the roadmap issue #64 and `docs/design/libwebrtc-parity.md`. If
+     an item on the list or an approved deviation already covers the gap,
+     comment there instead.
    - For area 7 (platforms and performance), compare `sm_bench --json`
      against `docs/results/native/bench.json`. Look at binary size
      (`size out/native/src/*.a`) and at the wasm CI job.

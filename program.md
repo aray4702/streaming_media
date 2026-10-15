@@ -22,15 +22,26 @@ run, and if this file and an agent's prompt disagree, this file wins.
 
 The library grows in two stages. Each one is measured on the same test bench.
 
-1. **Baseline: what WebRTC handles.** These are the problems in sections 3-8 of
-   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): packet
-   loss, jitter and timing, congestion control, audio quality, video
-   quality and synchronization. The bar is parity with libwebrtc. Each
-   problem has a mechanism, and it handles the problem at least as well as
-   libwebrtc's current approach, not just an older or simpler variant.
-   One example is loss-based estimation that models inherent loss and
-   detects policers (#12) instead of using fixed loss bands. A gap against
-   libwebrtc is filed as a `roadmap` issue labelled `stage:baseline`.
+1. **Baseline: duplicate libwebrtc.** These are the problems in sections
+   3-8 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md):
+   packet loss, jitter and timing, congestion control, audio quality,
+   video quality and synchronization. The goal is to **do what libwebrtc
+   does**: the same algorithms, constants and default settings as
+   libwebrtc at the pinned commit (M157), read from
+   `compare/webrtc/reference/`, not an older, simpler or "better"
+   variant. For example, the loss-based estimator is `LossBasedBweV2`
+   (#12), not fixed loss bands.
+   - **Measured both ways.** Stage-1 work is judged by how close each
+     metric gets to libwebrtc's on the same scenario (`sm_compare`, the
+     CI `compare-webrtc` job). A metric that is *better* than libwebrtc's
+     is a difference too, not a goal.
+   - **Deviations** from libwebrtc's behaviour need an Owner decision.
+     Each one is recorded in `tools/catalog.py` with its reason, and in
+     the deviation inventory (`docs/design/libwebrtc-parity.md`).
+   - **Improvements beyond libwebrtc** are labelled `stage:later` and wait
+     until stage 1 is done.
+   - A gap against libwebrtc is filed as an issue labelled
+     `stage:baseline`, and the Owner places it on the roadmap (section 0.2).
 2. **Human-AI streaming.** Features are added one at a time for the
    problems that WebRTC was not designed for, because the other side of
    the call is an AI (section 1). Some examples are a two-way
@@ -42,7 +53,7 @@ The library grows in two stages. Each one is measured on the same test bench.
    `stage:ai`. It builds on the baseline and must not regress it, which
    the baseline comparison enforces (section 6.4).
 
-`stage:baseline` work comes before `stage:ai` work (section 4.2).
+`stage:baseline` work comes before `stage:ai` work (section 0.2).
 Sections 1, 2, 9 and 10 of that document (connectivity, security, data
 channels, observability APIs) are left to the stack that hosts the library.
 They are out of scope unless the Owner adds them.
@@ -73,6 +84,58 @@ Product decisions that bound both stages (Owner, 2026-10-15):
   an AI, or two people). Components that only an SFU or a multiparty call
   needs are removed, and new ones are not added unless the Owner changes
   this. BUNDLE demultiplexing stays, because one-to-one calls bundle too.
+
+### 0.2 Roadmap and work order
+
+The work order is the **roadmap issue #64** (pinned, titled "Stage 1
+roadmap"). It lists issues in order, grouped into phases that are also
+milestones. The order follows the call's control loop from the inside out,
+so that each step is measured on a `main` that already has its
+prerequisites:
+
+0. the yardstick (the libwebrtc comparison and parity report, test bench
+   metrics, the deviation inventory);
+1. the send path (encoder, frame dropper, pacer, RTX and FEC held to the
+   target);
+2. the repair and protection policies (keyframe requests, FEC amount and
+   format);
+3. the GoogCC network controller;
+4. receive timing and audio;
+5. measuring sections 6-8 against libwebrtc.
+
+Stage 2 (`stage:ai`) follows on the same list once the Owner declares
+stage 1 done.
+
+Rules:
+
+- **One item at a time, in order.** The Fixer may start only the first
+  unchecked item on the list whose issue is open. If that item is
+  `in-progress`, labelled `needs-human`, or has an open PR, the Fixer takes
+  no new issue. A `sev:1` issue (crash, sanitizer error, `main` broken)
+  comes first regardless.
+- **Off the list means not now.** An issue that is not on the list is not
+  worked on, whatever its labels. Tester findings, follow-ups and new
+  gaps wait until the Owner places them by editing the list.
+- **`needs-human` means a decision is needed.** It is not used to hold
+  work back for ordering; the list does that.
+- **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
+  component it names as a whole, citing the files in
+  `compare/webrtc/reference/`. If a needed file is missing, say so on #57
+  (or a new issue) instead of working from memory. A large port goes
+  behind a config switch (for example `cc v1|v2`) with the old behaviour as
+  the default, and a final PR makes it the default once it is judged
+  against libwebrtc as a whole.
+- **Acceptance is relative to libwebrtc.** Targets are libwebrtc's values
+  on the same scenarios, from the latest `main` comparison, within the
+  parity band the parity report defines (until it exists, `sm_compare`'s
+  tie tolerance). Numbers in an issue that were measured before earlier
+  items landed are context, not targets. Re-measure on the current `main`
+  first.
+- **Guard rails during a port.** A test or `expect` line whose threshold
+  encodes behaviour that libwebrtc does not have may change in a stage-1
+  port. The PR shows libwebrtc's value on the same scenario (or the
+  matching libwebrtc unit test), and is labelled `needs-human` for the
+  Owner's sign-off. Section 6.2 item 4 allows this case and no other.
 
 ## 1. Goal
 
@@ -249,12 +312,11 @@ Each run:
    reply to each thread.
 2. **Failing CI.** For each Fixer PR whose CI is red, fix it or explain why
    in a comment.
-3. **New issues.** Take the oldest issue that has `agent-found`, `bug` or
-   `roadmap` and is not `in-progress`, `needs-human` or `wontfix`. `sev:1`
-   and `sev:2` problems come before `roadmap` work, which comes before
-   `sev:3`. Within `roadmap`, `stage:baseline` comes before `stage:ai`
-   (section 0.1). Handle one new issue per run, unless the run finishes in well
-   under 30 minutes. For a `roadmap` issue, steps 2 and 3 become: build what
+3. **New issues.** Take the next item on the roadmap issue's work list
+   (section 0.2): an open `sev:1` issue first, otherwise the first
+   unchecked item whose issue is open, and nothing if that item is
+   `in-progress`, labelled `needs-human` or has an open PR. Handle one new
+   issue per run. For a `roadmap` issue, steps 2 and 3 become: build what
    the issue asks for, with tests and scenarios whose `expect` lines check
    its acceptance criteria; split it into smaller PRs if it is large. Then:
    1. Label it `in-progress` and comment that work has started.
@@ -313,11 +375,15 @@ a comment addressed to it, or no review yet:
 | `in-progress` | The Fixer is working on it | Fixer |
 | `cannot-reproduce` | The Fixer could not reproduce it | Fixer |
 | `agent-pr` | PR opened by the Fixer | Fixer |
-| `needs-human` | An agent stopped and needs the Owner | Any |
+| `needs-human` | A decision is needed from the Owner (not used to hold work for ordering; section 0.2) | Any |
 | `wontfix` | Owner decision | Owner |
 | `agent-log` | The Tester's run log issue (its memory between runs and the weekly summary) | Tester |
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
 | `stage:baseline` / `stage:ai` | The stage a `roadmap` issue belongs to (section 0.1) | Owner |
+| `stage:later` | An improvement beyond libwebrtc; waits until stage 1 is done | Owner |
+
+Milestones `Stage 1 · Phase N` group the roadmap issue's work list (section
+0.2). The list, not the milestone, sets the order.
 
 ### 5.2 Issue format (Tester)
 
@@ -412,13 +478,23 @@ CI runs the same, plus the other platforms.
 3. **No regressions:** the baseline comparison passes. Any metric that got
    worse is explained and justified.
 4. **No gaming:** expectations, thresholds, budgets and seeds are not
-   loosened or cherry-picked to make tests pass.
-5. **Library conventions:** C++20, no dependencies, time passed in as
+   loosened or cherry-picked to make tests pass. The one exception is a
+   stage-1 port (section 0.2, "Guard rails during a port"): the threshold
+   encodes behaviour libwebrtc does not have, the PR shows libwebrtc's
+   value, and the PR is labelled `needs-human`.
+5. **Duplicates libwebrtc (stage 1):** the PR cites the libwebrtc files
+   it follows, and the code does what they do, with the same constants
+   and defaults. Every difference that remains is listed in the PR and in
+   `tools/catalog.py`, as a deviation the Owner has approved or as
+   remaining work with its issue. Its metrics move toward libwebrtc's on
+   the latest comparison, in both directions, and the PR shows
+   libwebrtc's column.
+6. **Library conventions:** C++20, no dependencies, time passed in as
    `Timestamp now`, no exceptions/RTTI or `long double`, metrics and events
    for new decisions, works on wasm.
-6. **Scope:** fixes the linked issue and nothing unrelated; the public API
+7. **Scope:** fixes the linked issue and nothing unrelated; the public API
    is unchanged unless the change is labelled `needs-human`.
-7. **Docs:** algorithm docs change through `tools/catalog.py` or header
+8. **Docs:** algorithm docs change through `tools/catalog.py` or header
    comments (the docs are generated), and verification notes are updated.
 
 ### 6.3 Severity
@@ -509,13 +585,19 @@ area it covered in each issue's notes:
    reaching the AI intact, and AI media sent in faster-than-real-time
    bursts, under each of the impairments above.
 9. **Parity with libwebrtc:** run `sm_compare` on the suite and on the
-   scenarios of the other areas. A gap is a user-experience metric where
-   libwebrtc is better by more than `sm_compare`'s tie tolerance, on
-   every seed. Before filing, rule out the comparison itself: its
-   approximations (listed at the end of every `sm_compare` run) and
-   test-bench simplifications that only this library sees. File gaps with
-   `stage:baseline`, with the severity from section 6.3 applied to this
-   library's numbers, and libwebrtc's values as the expected ones.
+   scenarios of the other areas. A gap is a metric where this library
+   differs from libwebrtc by more than the parity band (section 0.2), in
+   either direction, on every seed. Before filing, rule out the
+   comparison itself: its approximations (listed at the end of every
+   `sm_compare` run) and test-bench simplifications that only this
+   library sees. Check the roadmap issue and the deviation inventory
+   first: a gap that an item on the list already owns, or an approved
+   deviation, gets a comment there, not a new issue. File new gaps with
+   `stage:baseline`. Use the severity from section 6.3 applied to this
+   library's numbers, and sev:3 at most where this library is the better
+   one. Give libwebrtc's values as the expected ones, and name the
+   libwebrtc code that behaves differently if you can find it. The
+   Owner places the issue on the roadmap.
 
 ## 8. Guardrails
 
