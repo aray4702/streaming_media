@@ -20,6 +20,10 @@ on #31):
 > **[verify]** are the ones most likely to have changed; the first
 > implementation PR must check them against the pinned libwebrtc that
 > `compare/` fetches before relying on them.
+> The Owner checked the marked items against the pinned libwebrtc (M157,
+> `b321f634`) on issue #32 and their results are applied below; the one
+> left (SR packet and octet counts) is settled by the interop check in
+> `compare/webrtc/rtcp_interop.cc`.
 
 ## 1. Where the library stands today
 
@@ -98,7 +102,7 @@ post-outage ramp, ULPFEC) that belongs in the library's sender and receiver.
 | `RTCPSender` | `RtcpEngine::Build*` | Compound by default, reduced-size (RFC 5506) negotiated by config. Interval and jitter rules in section 8. |
 | `RTCPReceiver` | `RtcpEngine::OnRtcp` | Parse and dispatch (section 8.3). |
 | `RtpVideoStreamReceiver2` | `RtpReceiver` (video) | RTP parse, RED/ULPFEC (`UlpfecReceiver`), RTX (`RtxReceiveStream`), `NackRequester`, packet buffer, `KeyFrameRequestSender`. |
-| `H26xPacketBuffer` (earlier `H264PacketBuffer` + `H264SpsPpsTracker`) **[verify]** | `timing::PacketBuffer` + `rtp::H264Depacketizer` | Section 6.4. |
+| `H26xPacketBuffer` (earlier `H264PacketBuffer` + `H264SpsPpsTracker`) | `timing::PacketBuffer` + `rtp::H264Depacketizer` | Section 6.4. |
 | `VideoStreamBufferController` / `FrameBuffer` / `VCMTiming` | `VideoJitterEstimator` + `VideoTiming` + `FrameScheduler` (existing) | Composed by the session's video receive stream (section 5.3). |
 | `RemoteEstimatorProxy` | `cc::TransportFeedbackBuilder` | Cadence configurable; default 50 ms to keep today's behaviour. |
 | `ChannelReceive` (audio) | `RtpReceiver` (audio) + `timing::AudioJitterBuffer` | libwebrtc decodes inside NetEq; here the app supplies a decoder (section 5.2). |
@@ -136,19 +140,19 @@ struct SessionConfig {
 
 struct AudioStreamConfig {            // Opus (RFC 7587) first.
   uint32_t ssrc;
-  uint8_t payload_type = 111;         // libwebrtc's offer default.
+  uint8_t payload_type = 111;         // Test bench value; the host sets it from SDP.
   std::optional<uint8_t> red_payload_type;  // RFC 2198 redundancy (audio/red).
   int ptime_ms = 20;
 };
 
 struct VideoStreamConfig {            // H.264 (RFC 6184) first.
   uint32_t ssrc;
-  uint8_t payload_type = 102;         // H.264 CB, packetization-mode=1 in libwebrtc's offer.
+  uint8_t payload_type = 102;         // H.264 CB, packetization-mode=1; test bench value.
   std::optional<uint32_t> rtx_ssrc;
   std::optional<uint8_t> rtx_payload_type;
-  std::optional<uint8_t> red_payload_type;      // 116 in libwebrtc.
-  std::optional<uint8_t> ulpfec_payload_type;   // 117 in libwebrtc (issue #29).
-  size_t max_payload_size = 1200 - 12;          // Whole packet <= 1200 bytes like libwebrtc **[verify]**.
+  std::optional<uint8_t> red_payload_type;      // 116 in the bench.
+  std::optional<uint8_t> ulpfec_payload_type;   // 117 in the bench (issue #29).
+  size_t max_payload_size = 1200 - 12;          // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu).
   VideoCodec codec = VideoCodec::kH264;
 };
 
@@ -370,11 +374,18 @@ fragments that arrive without a start) and counts malformed packets in metrics.
 
 Follow libwebrtc's `FakeH264Encoder` (`test/fake_encoder.cc`):
 
-- a key frame is `SPS (kSps) + PPS (kPps) + IDR slice (nal_unit_type 5)`; the
-  SPS and PPS are fixed, valid minimal byte strings (libwebrtc's fake uses
-  fixed `kSps`/`kPps` arrays; we reuse those bytes, which are tiny and not
-  copyrightable boilerplate **[verify licence terms before copying]**; if not,
-  we write our own minimal SPS/PPS);
+- a key frame is `SPS + PPS + IDR slice (nal_unit_type 5)`. Checked against
+  the pinned libwebrtc (M157, issue #32): `FakeH264Encoder` does not use
+  fixed valid parameter sets. It fills the buffer with a counter pattern
+  (`data[i] = i`) and writes only start codes and NAL header bytes: SPS
+  (`0x67`) is 8 bytes, PPS (`0x68`) 11 bytes, then the IDR (`0x65`) to the end
+  of the frame, on every 10th frame (`kIdrFrequency = 10`); every other frame
+  is one non-IDR NAL (`0x41`). There is no licence question. We follow it with
+  two deliberate differences: (a) the SPS/PPS/IDR frame is emitted when the
+  encoder model makes a key frame, not on a fixed 1-in-10 cycle (libwebrtc's
+  fake ignores key frame requests here); (b) the multi-slice split below is
+  ours, because libwebrtc's fake emits one NAL per frame, so keep it only if
+  needed to exercise STAP-A and FU-A (FU-A already occurs with one large NAL);
 - a delta frame is one non-IDR slice (type 1);
 - every NAL is padded with filler payload bytes so the NAL sizes add up to the
   modelled frame size (keyframe 4x, delta 0.8x to 1.2x of the per-frame
@@ -393,17 +404,19 @@ every supported fps) instead of the 64-bit frame id it hides in the payload now.
 
 ### 6.4 Frame boundaries, keyframes and dependencies (Owner question 3)
 
-What libwebrtc does for H.264 today, as best the author can state without
-fetching the source **[verify all of this against the pinned tree]**:
+What libwebrtc does for H.264 today (checked against the pinned tree, M157,
+by the Owner on issue #32):
 
 - **Frame boundary:** the RTP marker bit on the last packet of an access unit;
   the first packet of a frame is recognised from the previous frame's marker
   plus consecutive sequence numbers (and FU-A start / non-FU-A in the
   depacketizer). No frame marking or descriptor extension is required.
 - **Keyframe:** the depacketizer parses NAL types; a frame containing an IDR
-  slice (and, in `H26xPacketBuffer`, the SPS and PPS needed to decode it, which
-  may have arrived in this frame or earlier) is a key frame. Receiving an IDR
-  without its parameter sets keeps the frame from being released.
+  slice is a key frame. By default an IDR alone is a key frame:
+  `RtpVideoStreamReceiver2` builds `H26xPacketBuffer(!sps_pps_idr_is_h264_keyframe_)`,
+  so SPS+PPS+IDR is required only when the `sps-pps-idr-in-keyframe` fmtp is
+  negotiated or the `WebRTC-SpsPpsIdrIsH264Keyframe` field trial is on. The
+  library matches the default and offers the strict mode as an option.
 - **Dependencies:** without a descriptor, a delta frame is treated as
   depending on the immediately preceding frame. The packet buffer releases it
   only when all packets before it (back to the last key frame) have been
@@ -426,7 +439,7 @@ library derives, from sequence numbers alone:
   keyframe replaces them. When RTX recovers the missing frame its last
   sequence number is exactly the missing id, so references resolve with no
   extra bookkeeping.
-- keyframe = IDR seen with SPS/PPS available.
+- keyframe = IDR seen (strict option: SPS and PPS seen as well).
 
 This replaces the test bench's `frame_id - 1` reference model with one that
 works on bytes. `loss::KeyframeRequester` keeps its interface (`FrameInfo{
@@ -437,11 +450,14 @@ no change to `KeyframeRequester`. It is not needed for one-to-one calls
 without SVC, and not for SFU forwarding (out of scope).
 
 **Consequence for LNTF:** libwebrtc's `LossNotificationController` works on
-generic-descriptor frame ids and dependencies, so it is only active when a
-descriptor is present. With H.264 and no descriptor libwebrtc sends PLI (and
-NACK) only. The session therefore disables LNTF sending by default
-(`RtcpConfig::send_loss_notification = false`) and enables it only if a
-descriptor extension is configured. It still parses LNTF from the peer
+generic-descriptor frame ids and dependencies (`video_header.generic`); without
+a descriptor it gets `nullptr` and has nothing to report. LNTF runs when
+`goog-lntf` is negotiated (`config_.rtp.lntf.enabled`), not merely when a
+descriptor is present, so the rule is: send LNTF only if it is negotiated
+**and** frame information is present. With H.264 and no descriptor libwebrtc
+sends PLI (and NACK) only. The session therefore disables LNTF sending by
+default (`RtcpConfig::send_loss_notification = false`) and enables it only if
+a descriptor extension is configured and LNTF is negotiated. It still parses LNTF from the peer
 (informational, never causing a keyframe; #26). This changes test bench
 reverse-path bytes (fewer LNTF messages), which is called out in migration
 PR 6 and moves no media metric except the reverse-link load.
@@ -478,7 +494,9 @@ PR 6 and moves no media metric except the reverse-link load.
 `RtxSender` currently wraps a media `RtpPacket`. With RED video (needed by
 #29), the packet on the wire is a RED packet whose payload type is the RED
 type. libwebrtc retransmits the packet as sent (RED-wrapped) and the receiver's
-`RtxReceiveStream` restores it before RED/ULPFEC unwrapping **[verify]**. The
+`RtxReceiveStream` restores it before RED/ULPFEC unwrapping (confirmed in `call/rtx_receive_stream.cc`:
+the RTX payload type maps to the associated type, which is RED's when RTX is
+negotiated for RED, and the packet is marked recovered). The
 session stores the post-RED packet in history and restores into the RED
 receive path, so RTX works the same with and without RED. This is a pure
 ordering rule inside `RtpSender`/`RtpReceiver`; `RtxSender` is unchanged.
@@ -526,8 +544,9 @@ Follows `RTCPSender`:
   minimum intervals: PLI/FIR are rate limited by `KeyframeRequester`
   (existing), NACK by the tracker's RTT-based throttling (existing),
   transport-cc by its own cadence (default 50 ms, as `call.cc` uses;
-  libwebrtc's `RemoteEstimatorProxy` default is 100 ms, adaptive 50 to 250 ms
-  **[verify]**; the default stays 50 ms until a later PR measures a change).
+  libwebrtc's `TransportSequenceNumberFeedbackGenerator` defaults to 100 ms,
+  adaptive 50 to 250 ms, interval = report size / 5% of the estimate; the
+  default stays 50 ms until a later PR measures a change).
 
 **Behaviour-preserving mode.** `call.cc` sends SR at `t % 1000 == 500` and RR
 at `t % 1000 == 0`, no jitter. `RtcpConfig` therefore has
@@ -540,9 +559,9 @@ PR with its own baseline update) and explicit phase fields `sr_phase`,
 
 | RTCP | Source | Exists |
 |---|---|---|
-| SR (200) with report blocks | `timing::ReceiveStatistics` + sender counters (packets/octets sent) | `SerializeSenderReport` exists in `timing/rtcp_stats.h`; octet and packet counts to verify |
+| SR (200) with report blocks | `timing::ReceiveStatistics` + sender counters (packets/octets sent) | `SerializeSenderReport` exists in `timing/rtcp_stats.h`; counters are pushed in through `RtcpEngine::SetSenderState` and interop-checked against libwebrtc's `SenderReport` |
 | RR (201) | `ReceiveStatistics::MakeReportBlock` | exists |
-| SDES CNAME (+ MID when BUNDLE) | session config | **missing** |
+| SDES CNAME (+ MID when BUNDLE) | session config | exists (`rtp/rtcp_sdes_bye.h`, plan PR 1); CNAME sent by `RtcpEngine` |
 | Generic NACK (205/1), PLI (206/1), FIR (206/4), LNTF (206/15) | `NackTracker`, `KeyframeRequester` | exist (#28) |
 | transport-cc (205/15) | `TransportFeedbackBuilder` | exists |
 | REMB (206/15 "REMB") | optional receiver-side BWE feedback | parse path missing; GCC has `OnRemb`. Send side not planned (libwebrtc prefers transport-cc) |
@@ -591,8 +610,9 @@ test, none changes existing behaviour:
 ## 10. SSRCs, payload types and header extensions
 
 The session takes all of these as configuration (SDP stays with the host).
-The test bench uses libwebrtc's default-offer values so that a later
-`sm_compare` interop run needs no remapping:
+The values below are test bench configuration (libwebrtc assigns video payload
+types dynamically, `PayloadTypePicker` in `webrtc_video_engine.cc`, so there
+is no fixed default to match):
 
 | Stream | SSRC (bench) | Payload type |
 |---|---|---|

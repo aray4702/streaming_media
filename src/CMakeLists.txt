@@ -88,6 +88,7 @@ endif()
 
 if(SM_WITH_RTP)
   sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync SOURCES
+    rtp/rtcp_engine.cc
     rtp/rtcp_sdes_bye.cc)
   list(APPEND SM_SECTIONS rtp)
 endif()
