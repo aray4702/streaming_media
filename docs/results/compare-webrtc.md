@@ -40,28 +40,28 @@ fps higher is better; for every other column lower is better.
 
 ## Where libwebrtc is ahead
 
-1. **Needless keyframe requests.** This library requests 12-84 keyframes
-   per call in lossy scenarios, where libwebrtc requests 0-1 and recovers
-   with NACK. Under burst loss, residual loss and undecodable frames are
-   both 0, so the requests are not needed. Each keyframe is 4x a normal
-   frame, which adds to the repair overhead (41% vs 4% under burst loss,
-   136% vs 16% at 150 kbps) and lowers the video rate.
-2. **Bitrate under loss.** At 5% random loss, utilization is 35% vs 76%
-   and video is 375 vs 1355 kbps. The gap is similar under burst loss
-   (50% vs 83%) and on the satellite link (43% vs 83%). See #6 and #12.
-3. **High jitter collapses video.** With 40 ms jitter and reordering,
-   this library renders 18 fps with a 1.6 s video delay p95 and 3.4 s of
-   freezes. libwebrtc renders 29.7 fps with no freezes and a 142 ms delay
-   p95.
-4. **Recovery after outages.** After a 3 s outage, the queue p95 is
-   294 ms vs 39 ms, freezes total 9.4 s vs 3.2 s, and mouth-to-ear p95 is
-   613 ms vs 176 ms. After the Wi-Fi to LTE handover, 35% of packets are
-   lost vs 5.6%: this library overshoots the slower link once it comes
-   back.
-5. **Capacity drops and very low bandwidth.** At 150 kbps this library
-   renders 5 fps vs 22 fps, loses 25% of packets vs 6.6%, and has 2 audio
-   interruptions vs 0. When capacity drops 5x, video freezes total 4.3 s
-   vs 2.4 s. See #14 and #15 for slow recovery.
+1. **Keyframe requests (a test bench bug, #18).** The test bench requests
+   12-84 keyframes per call in lossy scenarios, where libwebrtc requests
+   0-1 and recovers with NACK. Most of these requests come from the test
+   bench itself: it sends every loss notification (LNTF) to the sender as
+   a PLI. Without that, burst_loss drops from 18 requests to 1 and from
+   1.3 s to 0.1 s of freezes, and random_loss_5pct goes from 35% to 60%
+   utilization with no freezes. The numbers in this table include the bug.
+2. **Bitrate under loss.** At 5% random loss utilization is 35% vs 76%
+   (60% vs 76% without #18), and video is 375 vs 1355 kbps. The satellite
+   link shows a similar gap (43% vs 83%). See #6, #7 and #12.
+3. **High jitter (#19).** With 40 ms jitter and reordering, the target
+   drops to about 160 kbps on a 3 Mbps link, and the video delay p95 is
+   1.5 s. libwebrtc has 1 Mbps and 142 ms.
+4. **Recovery after outages and handovers (#20).** After a 3 s outage the
+   queue p95 is 294 ms vs 39 ms, freezes total 9.4 s vs 3.2 s, and
+   mouth-to-ear p95 is 613 ms vs 176 ms. After the Wi-Fi to LTE handover,
+   35% of packets are lost vs 5.6%.
+5. **Overload (#21).** At 150 kbps, retransmissions, FEC and keyframes
+   fill the link while the target is only about 41 kbps. The result is 26%
+   loss, 5 fps and 2 audio interruptions, against 6.6% loss, 22 fps and
+   none for libwebrtc. The 5x capacity drop shows the same pattern on a
+   smaller scale. Slow recovery afterwards is #14 and #15.
 6. **Audio concealment under loss** is lower in libwebrtc (0.4% vs 1.7%
    at 10% loss). Part of this comes from Opus in-band FEC, which this
    library does not have.
