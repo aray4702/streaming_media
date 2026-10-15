@@ -377,9 +377,9 @@ void SenderToWebrtc() {
   map.Register(2, sm::sync::uri::kMid);
   map.Register(3, sm::sync::uri::kAbsSendTime);
   webrtc::RtpHeaderExtensionMap wmap;
-  wmap.Register<webrtc::TransportSequenceNumber>(1);
-  wmap.Register<webrtc::RtpMid>(2);
-  wmap.Register<webrtc::AbsoluteSendTime>(3);
+  wmap.Register<webrtc::TransportSequenceNumber>(webrtc::RtpHeaderExtensionId(1));
+  wmap.Register<webrtc::RtpMid>(webrtc::RtpHeaderExtensionId(2));
+  wmap.Register<webrtc::AbsoluteSendTime>(webrtc::RtpHeaderExtensionId(3));
 
   sm::rtp::RtpSenderConfig sc;
   sc.ssrc = 0x1111;
@@ -439,8 +439,8 @@ void WebrtcToSender() {
   map.Register(1, sm::sync::uri::kTransportCc);
   map.Register(2, sm::sync::uri::kMid);
   webrtc::RtpHeaderExtensionMap wmap;
-  wmap.Register<webrtc::TransportSequenceNumber>(1);
-  wmap.Register<webrtc::RtpMid>(2);
+  wmap.Register<webrtc::TransportSequenceNumber>(webrtc::RtpHeaderExtensionId(1));
+  wmap.Register<webrtc::RtpMid>(webrtc::RtpHeaderExtensionId(2));
   webrtc::RtpPacketReceived w(&wmap);
   w.SetPayloadType(96);
   w.SetSequenceNumber(4242);
