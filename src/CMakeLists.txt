@@ -87,9 +87,10 @@ if(SM_WITH_SYNC)
 endif()
 
 if(SM_WITH_RTP)
-  sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync SOURCES
+  sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync sm::video SOURCES
     rtp/rtcp_engine.cc
     rtp/rtcp_sdes_bye.cc
+    rtp/rtp_receiver.cc
     rtp/rtp_sender.cc
     rtp/send_side_controller.cc)
   list(APPEND SM_SECTIONS rtp)
