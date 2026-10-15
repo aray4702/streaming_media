@@ -214,14 +214,23 @@ tools/                                                   run_all.sh, gen_docs.py
 docs/                                                    research, design, algorithms, results
 ```
 
+## Decisions
+
+- **Wire formats:** everything the library sends must be standard
+  RTP/RTCP that any WebRTC-compatible stack can parse: RTP with RFC 8285
+  header extensions and abs-capture-time, RTCP SR/RR, generic NACK, PLI,
+  FIR, loss notification, transport-cc, REMB, RTX, RED, and ULPFEC over
+  RED. Two gaps remain: FEC still uses its own simple format
+  ([#29](https://github.com/aray4702/streaming_media/issues/29)), and NACK, PLI, FIR and loss notification have no wire
+  format yet ([#28](https://github.com/aray4702/streaming_media/issues/28)). Connecting to a browser (ICE, DTLS-SRTP,
+  SDP) is left to the stack that hosts the library.
+- **Call topology:** one-to-one calls only. The SFU and multiparty pieces
+  (layer selection, active speaker detection, the audio mixer) are being
+  removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
+  calls bundle too.
+
 ## Open questions
 
 - Target hardware: MCU or embedded Linux, and how much RAM and CPU? The
   algorithms need an FPU; the packet-level sections could also run on
   Cortex-M4F/M7-class MCUs.
-- Must browsers join calls directly (which requires WebRTC compatibility)?
-  The wire formats here (RTCP SR/RR, transport-cc, REMB, RED, RTX, RFC 8285
-  extensions, abs-capture-time) are the standard ones; FEC uses its own
-  simple format.
-- One-to-one calls only, or group calls through an SFU? The SFU-side pieces
-  (layer selection, active speaker, BUNDLE demux, mixer) are included.

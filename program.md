@@ -47,6 +47,21 @@ Sections 1, 2, 9 and 10 of that document (connectivity, security, data
 channels, observability APIs) are left to the stack that hosts the library.
 They are out of scope unless the Owner adds them.
 
+Product decisions that bound both stages (Owner, 2026-10-15):
+
+- **Standard wire formats.** Everything the library puts on the wire is
+  standard RTP/RTCP that libwebrtc can parse: RTP with RFC 8285 header
+  extensions, RTCP SR/RR, generic NACK, PLI, FIR, loss notification,
+  transport-cc, REMB, RTX, RED (RFC 2198), and ULPFEC (RFC 5109) over RED
+  as the only FEC format. A new wire format must be one of these or
+  another standard one, with an interop check against libwebrtc's parser.
+  Joining a browser directly (ICE, DTLS-SRTP, SDP) stays with the host
+  stack.
+- **One-to-one calls.** The library serves one-to-one calls (a person and
+  an AI, or two people). Components that only an SFU or a multiparty call
+  needs are removed, and new ones are not added unless the Owner changes
+  this. BUNDLE demultiplexing stays, because one-to-one calls bundle too.
+
 ## 1. Goal
 
 Make real-time audio and video built on this library hold up for the people
