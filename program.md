@@ -63,6 +63,12 @@ Product decisions that bound both stages (Owner, 2026-10-15):
   dispatch), so an app passes frames and packet bytes rather than wiring
   the building blocks itself. The test bench runs through it. Like every
   module, it takes `now`, starts no threads and reads no clocks.
+- **The library owns send-side adaptation.** Frame dropping, quality
+  scaling (resolution and frame-rate adaptation) and rate allocation
+  between audio, video and protection live in the library, as in
+  libwebrtc's `VideoStreamEncoder`. The app runs only the codecs: per
+  captured frame it asks the library whether to encode, at what rate and
+  resolution, and whether to make a keyframe.
 - **One-to-one calls.** The library serves one-to-one calls (a person and
   an AI, or two people). Components that only an SFU or a multiparty call
   needs are removed, and new ones are not added unless the Owner changes
