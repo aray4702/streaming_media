@@ -94,6 +94,9 @@ Background research:
    libwebrtc and lighter alternatives.
 4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through
    a one-on-one call, from setup through send, receive and the feedback loop.
+5. [Streaming options](docs/05-streaming-options.md): passthrough, bitrate
+   ladder, live re-encode and simulcast/SVC for streaming a video file, and
+   when each one fits.
 
 The library:
 
