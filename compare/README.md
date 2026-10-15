@@ -9,7 +9,7 @@ libwebrtc on the problems in sections 3-8.
 
 | Library | Status | Directory |
 |---|---|---|
-| libwebrtc (M157, prebuilt) | Working on macOS arm64; Ubuntu x86_64/arm64 builds are published but not yet tried | [webrtc/](webrtc/) |
+| libwebrtc (M157, prebuilt) | Working on macOS arm64 and Ubuntu 24.04 x86_64 (same results to rounding) | [webrtc/](webrtc/) |
 
 Latest results: [docs/results/compare-webrtc.md](../docs/results/compare-webrtc.md).
 
