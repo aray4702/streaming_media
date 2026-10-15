@@ -11,9 +11,11 @@
 //
 // Nothing is sent from here. Feedback comes out through TakeFeedback() for
 // the caller to queue on rtp::RtcpEngine, and received frames through
-// TakeFrames(). Payloads are opaque, as in the test bench today: a
-// VideoPayloadParser tells the receiver where a frame starts and whether it is
-// a keyframe (the H.264 depacketizer of plan PR 7 replaces the bench's parser).
+// TakeFrames(). A VideoPayloadParser tells the receiver where a frame starts
+// and what its packets hold (rtp::H264PayloadParser for H.264). Frame ids and
+// references come from sequence numbers, not from the bitstream (design 6.4):
+// a frame's id is the unwrapped sequence number of its last packet, and a
+// delta frame depends on the frame whose last packet precedes its first.
 // Takes `now`, reads no clock and starts no thread.
 #pragma once
 
@@ -45,15 +47,20 @@ namespace sm::rtp {
 // What the receiver needs to know about one video RTP packet.
 struct VideoPayloadInfo {
   bool valid = false;        // False: malformed payload, the packet is dropped.
-  bool frame_start = false;  // First packet of a frame.
-  bool keyframe = false;     // The frame is a keyframe (meaningful on the first packet).
-  int64_t frame_id = -1;     // Monotonic frame id (meaningful on the first packet).
+  bool frame_start = false;  // The packet can start a frame (see PacketBuffer).
+  bool idr = false;          // Carries (the start of) an IDR slice: picture data of a keyframe.
+  bool sps = false;          // Carries a sequence parameter set.
+  bool pps = false;          // Carries a picture parameter set.
 };
 
 class VideoPayloadParser {
  public:
   virtual ~VideoPayloadParser() = default;
   virtual VideoPayloadInfo Parse(const RtpPacket& p) const = 0;
+  // Appends the bitstream of a frame from its packets, in order. False if it
+  // cannot (not supported, or the packets are inconsistent): the frame is still
+  // delivered, without a bitstream.
+  virtual bool Reassemble(std::span<const RtpPacket>, std::vector<uint8_t>&) const { return false; }
 };
 
 // Told of every video media packet the receiver accepts: the original, an RTX
@@ -90,6 +97,11 @@ struct RtpReceiverConfig {
   VideoMediaObserver* media_observer = nullptr;  // Optional. Not owned.
   std::optional<uint32_t> rtx_ssrc;
   bool nack = true;  // Track gaps and ask for retransmissions.
+  // A keyframe needs SPS and PPS as well as the IDR slice (libwebrtc's
+  // sps-pps-idr-in-keyframe mode). Off: an IDR alone is a keyframe, which is
+  // libwebrtc's default.
+  bool keyframe_needs_parameter_sets = false;
+  bool deliver_bitstream = true;  // Rebuild each frame's bitstream (ReceivedFrame::bitstream).
   bool fec = false;
   loss::FecConfig fec_config;  // fec_config.fec_ssrc is the SSRC of the FEC packets.
   loss::NackConfig nack_config;
@@ -119,7 +131,8 @@ struct ReceivedFrame {
   bool render = false;
   Timestamp render_time;
   TimeDelta lateness;  // Positive = late.
-  size_t size_bytes = 0;
+  size_t size_bytes = 0;  // RTP payload bytes of the frame's packets.
+  std::vector<uint8_t> bitstream;  // The access unit (Annex-B for H.264); empty if not rebuilt.
 };
 
 // Feedback due toward the sender, for rtp::RtcpEngine.
@@ -143,6 +156,7 @@ struct RtpReceiverStats {
   uint64_t frames_received = 0;   // Assembled frames.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
+  uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
   // Gaps in the media sequence numbers as they arrive (recovered packets
   // included), for the protection controller (a real receiver reports this in
   // RTCP XR): runs of missing packets, and the packets in them.
@@ -219,6 +233,7 @@ class RtpReceiver : public MetricsSource {
     uint32_t rtp_timestamp;
     bool keyframe;
     size_t size_bytes;
+    std::vector<uint8_t> bitstream;
   };
   std::map<int64_t, FrameMeta> frames_;  // Frame id -> what the scheduler needs; bounded.
   std::vector<ReceivedFrame> out_frames_;

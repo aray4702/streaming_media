@@ -85,7 +85,9 @@ struct VideoStreamConfig {
   size_t max_payload_size = 1200 - 12;  // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu).
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.
-  const VideoPayloadParser* parser = nullptr;
+  const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
+  bool keyframe_needs_parameter_sets = false;  // See RtpReceiverConfig.
+  bool deliver_bitstream = true;               // See RtpReceiverConfig.
   VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;
   loss::NackConfig nack_config;
@@ -109,8 +111,10 @@ struct EncodedAudioFrame {  // One Opus packet.
 
 struct EncodedVideoFrame {
   uint32_t rtp_timestamp = 0;  // 90 kHz.
-  // Split evenly into packets of at most max_payload_size bytes. An empty
-  // frame sends nothing and is counted.
+  // One H.264 access unit as an Annex-B byte stream (SPS and PPS ahead of an
+  // IDR slice on a keyframe). It is packetized as RFC 6184 mode 1: single NAL
+  // unit, STAP-A and FU-A packets of at most max_payload_size bytes, marker on
+  // the last. An empty frame sends nothing and is counted.
   std::span<const uint8_t> data;
 };
 
@@ -171,8 +175,8 @@ class Session : public MetricsSource {
   // --- Egress -----------------------------------------------------------------
   void SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now);
   void SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now);
-  // A frame already split into packet payloads (the test bench builds the
-  // payloads itself until the H.264 packetizer exists).
+  // A frame already split into packet payloads: for another codec's
+  // packetizer, or for tests of malformed payloads.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now);
   // FEC protection level for the next frames of a video stream.

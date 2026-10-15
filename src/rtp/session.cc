@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "sm/rtp/h264.h"
+
 namespace sm::rtp {
 namespace {
 RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
@@ -122,6 +124,8 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.extensions = &cfg_.extensions;
   c.feedback = &tcc_;
   c.parser = v.parser;
+  c.keyframe_needs_parameter_sets = v.keyframe_needs_parameter_sets;
+  c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;
   c.rtx_ssrc = v.rtx_ssrc;
   c.nack = v.nack;
@@ -178,12 +182,7 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     ++stats_.empty_video_frames;
     return;
   }
-  std::vector<std::vector<uint8_t>> chunks;
-  size_t off = 0;
-  for (size_t n : SplitEvenly(f.data.size(), s.config().max_payload_size)) {
-    chunks.emplace_back(f.data.begin() + static_cast<std::ptrdiff_t>(off), f.data.begin() + static_cast<std::ptrdiff_t>(off + n));
-    off += n;
-  }
+  auto chunks = H264Packetizer::Packetize(f.data, s.config().max_payload_size);
   SendVideoChunks(id, chunks, f.rtp_timestamp, now);
 }
 

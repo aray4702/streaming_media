@@ -5,7 +5,11 @@
 // docs/design/rtp-session.md) and the datagrams of rtp::RtcpEngine: report
 // and feedback compounds with SR/RR, SDES, transport-cc and REMB (plan PR 2), and the RTP packets of rtp::RtpSender and
 // rtp::SendSideController with MID, transport-wide sequence number and
-// abs-send-time extensions, RTX and padding on the RTX SSRC (plan PR 3). Exits non-zero on any mismatch.
+// abs-send-time extensions, RTX and padding on the RTX SSRC (plan PR 3), and
+// the H.264 payload format (RFC 6184 mode 1): rtp::H264Packetizer against
+// libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (plan PR 7).
+// Exits non-zero on any mismatch.
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -25,9 +29,17 @@
 #include "api/rtp_header_extension_id.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
+#include "modules/rtp_rtcp/source/rtp_format.h"
+#include "modules/rtp_rtcp/source/rtp_format_h264.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "modules/rtp_rtcp/source/video_rtp_depacketizer_h264.h"
+#include "modules/video_coding/h26x_packet_buffer.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/loss/rtcp_feedback.h"
+#include "sm/rtp/fake_h264.h"
+#include "sm/rtp/h264.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtcp_sdes_bye.h"
@@ -456,6 +468,234 @@ void WebrtcToSender() {
             access.GetString(*p, sm::sync::uri::kMid) == std::optional<std::string>("video0");
   Check(ok, "libwebrtc packet with MID and transport-cc parsed");
 }
+// H.264 access units of the shapes the test bench produces (keyframe with SPS
+// and PPS, delta frames from one packet to many) and a few with several NAL
+// units, at the payload limit the bench uses.
+// libwebrtc's depacketizer parses SPS and PPS, so unlike the fake encoder's
+// filler these are real parameter sets (Constrained Baseline, 640x480).
+struct BitWriter {
+  Bytes out;
+  int used = 8;  // Bits used in the last byte; 8 means start a new one.
+  void Bit(int b) {
+    if (used == 8) {
+      out.push_back(0);
+      used = 0;
+    }
+    out.back() = static_cast<uint8_t>(out.back() | (b << (7 - used++)));
+  }
+  void Bits(uint32_t v, int n) {
+    for (int i = n - 1; i >= 0; --i) Bit((v >> i) & 1);
+  }
+  void Ue(uint32_t v) {
+    int len = 0;
+    while (((v + 1) >> (len + 1)) != 0) ++len;
+    Bits(0, len);
+    Bits(v + 1, len + 1);
+  }
+  void Se(int v) { Ue(v <= 0 ? static_cast<uint32_t>(-2 * v) : static_cast<uint32_t>(2 * v - 1)); }
+  Bytes Finish() {
+    Bit(1);  // rbsp_stop_one_bit; the rest of the byte is already zero.
+    return out;
+  }
+};
+
+Bytes RealSps() {
+  BitWriter w;
+  w.Bits(0x67, 8);
+  w.Bits(66, 8);    // profile_idc: Baseline
+  w.Bits(0xC0, 8);  // constraint_set0/1 flags
+  w.Bits(31, 8);    // level_idc 3.1
+  w.Ue(0);          // seq_parameter_set_id
+  w.Ue(0);          // log2_max_frame_num_minus4
+  w.Ue(0);          // pic_order_cnt_type
+  w.Ue(0);          // log2_max_pic_order_cnt_lsb_minus4
+  w.Ue(1);          // max_num_ref_frames
+  w.Bit(0);         // gaps_in_frame_num_value_allowed_flag
+  w.Ue(39);         // pic_width_in_mbs_minus1 (640)
+  w.Ue(29);         // pic_height_in_map_units_minus1 (480)
+  w.Bit(1);         // frame_mbs_only_flag
+  w.Bit(1);         // direct_8x8_inference_flag
+  w.Bit(0);         // frame_cropping_flag
+  w.Bit(0);         // vui_parameters_present_flag
+  return w.Finish();
+}
+
+Bytes RealPps() {
+  BitWriter w;
+  w.Bits(0x68, 8);
+  w.Ue(0);       // pic_parameter_set_id
+  w.Ue(0);       // seq_parameter_set_id
+  w.Bit(0);      // entropy_coding_mode_flag
+  w.Bit(0);      // bottom_field_pic_order_in_frame_present_flag
+  w.Ue(0);       // num_slice_groups_minus1
+  w.Ue(0);       // num_ref_idx_l0_default_active_minus1
+  w.Ue(0);       // num_ref_idx_l1_default_active_minus1
+  w.Bit(0);      // weighted_pred_flag
+  w.Bits(0, 2);  // weighted_bipred_idc
+  w.Se(0);       // pic_init_qp_minus26
+  w.Se(0);       // pic_init_qs_minus26
+  w.Se(0);       // chroma_qp_index_offset
+  w.Bit(1);      // deblocking_filter_control_present_flag
+  w.Bit(0);      // constrained_intra_pred_flag
+  w.Bit(0);      // redundant_pic_cnt_present_flag
+  return w.Finish();
+}
+
+// The fake encoder's frame with its SPS and PPS replaced by the real ones.
+Bytes WithRealParameterSets(const Bytes& fake) {
+  auto nals = sm::rtp::SplitAnnexB(fake);
+  Bytes out = {0, 0, 0, 1};
+  Bytes sps = RealSps(), pps = RealPps();
+  out.insert(out.end(), sps.begin(), sps.end());
+  out.insert(out.end(), {0, 0, 0, 1});
+  out.insert(out.end(), pps.begin(), pps.end());
+  out.insert(out.end(), {0, 0, 0, 1});
+  out.insert(out.end(), nals[2].begin(), nals[2].end());
+  return out;
+}
+
+std::vector<Bytes> H264Frames() {
+  std::vector<Bytes> frames;
+  for (size_t bytes : {200u, 1100u, 1300u, 2500u, 7000u, 30000u}) {
+    frames.push_back(WithRealParameterSets(sm::rtp::MakeFakeH264Frame(true, bytes)));
+    frames.push_back(sm::rtp::MakeFakeH264Frame(false, bytes));
+  }
+  // Many small slices: STAP-A with more than two units, then a split one.
+  Bytes slices;
+  for (int k = 0; k < 40; ++k) {
+    // Slice header: first_mb_in_slice (0, then 1), slice_type 1, pps id 0.
+    Bytes nal = {0, 0, 0, 1, 0x41, static_cast<uint8_t>(k == 0 ? 0xAA : 0x4A)};
+    for (int i = 0; i < 90; ++i) nal.push_back(static_cast<uint8_t>(0x30 + (i + k) % 100));
+    slices.insert(slices.end(), nal.begin(), nal.end());
+  }
+  frames.push_back(slices);
+  return frames;
+}
+
+constexpr size_t kH264Limit = 1188;
+
+// This library's packets are parsed by libwebrtc's depacketizer, and the frame
+// libwebrtc rebuilds is the one that went in.
+void H264SmToWebrtc() {
+  bool ok = true, key_seen = false, delta_seen = false, firsts_ok = true;
+  size_t frames = 0;
+  // The real receive path: Parse gives NAL payloads without start codes (and
+  // STAP-A as it came), and H26xPacketBuffer finds the frame, adds the start
+  // codes and returns its packets. One buffer for the whole sequence, as a
+  // receiver has; the first frame is a keyframe.
+  webrtc::H26xPacketBuffer buffer(/*h264_idr_only_keyframes_allowed=*/true);
+  webrtc::VideoRtpDepacketizerH264 dep;
+  int64_t seq = 1000;
+  uint32_t timestamp = 90000;
+  for (const Bytes& frame : H264Frames()) {
+    auto payloads = sm::rtp::H264Packetizer::Packetize(frame, kH264Limit);
+    bool frame_key = false;
+    Bytes rebuilt;
+    for (size_t i = 0; i < payloads.size(); ++i) {
+      ok = ok && payloads[i].size() <= kH264Limit;
+      auto parsed = dep.Parse(webrtc::CopyOnWriteBuffer(payloads[i].data(), payloads[i].size()));
+      if (!parsed) {
+        std::printf("    frame %zu (%zu bytes): packet %zu/%zu (%zu bytes, type %u) not parsed\n", frames, frame.size(), i,
+                    payloads.size(), payloads[i].size(), payloads[i][0] & 0x1F);
+        ok = false;
+        ++seq;
+        continue;
+      }
+      if (i == 0) firsts_ok = firsts_ok && parsed->video_header.is_first_packet_in_frame;
+      auto mine = sm::rtp::H264Depacketizer::Parse(payloads[i]);
+      if (mine.fu_continuation) firsts_ok = firsts_ok && !parsed->video_header.is_first_packet_in_frame;
+      frame_key = frame_key || parsed->video_header.frame_type == webrtc::VideoFrameType::kVideoFrameKey;
+      const bool last = i + 1 == payloads.size();
+      webrtc::RtpPacketReceived rtp;
+      rtp.SetPayloadType(96);
+      rtp.SetSequenceNumber(static_cast<uint16_t>(seq));
+      rtp.SetTimestamp(timestamp);
+      rtp.SetSsrc(0x1111);
+      rtp.SetMarker(last);
+      parsed->video_header.is_last_packet_in_frame = last;
+      auto packet = std::make_unique<webrtc::video_coding::PacketBuffer::Packet>(rtp, seq, parsed->video_header);
+      packet->video_payload = parsed->video_payload;
+      auto result = buffer.InsertPacket(std::move(packet));
+      for (const auto& released : result.packets)
+        rebuilt.insert(rebuilt.end(), released->video_payload.cdata(), released->video_payload.cdata() + released->video_payload.size());
+      ++seq;
+    }
+    timestamp += 3000;
+    const bool is_key = frame.size() > 5 && frame[4] == 0x67;
+    if (frame_key != is_key) std::printf("    frame %zu (%zu bytes): key=%d, libwebrtc says key=%d\n", frames, frame.size(), is_key, frame_key);
+    ok = ok && frame_key == is_key;
+    (is_key ? key_seen : delta_seen) = true;
+    // Same NAL units, whatever the start code length.
+    auto want = sm::rtp::SplitAnnexB(frame);
+    auto got = sm::rtp::SplitAnnexB(rebuilt);
+    bool same = want.size() == got.size();
+    // libwebrtc's depacketizer rewrites the SPS (it adds a VUI with
+    // bitstream_restriction so decoders do not delay output), so an SPS is
+    // compared by type only; every other unit byte for byte.
+    for (size_t k = 0; same && k < want.size(); ++k) {
+      if ((want[k][0] & 0x1F) == 7) {
+        same = (got[k][0] & 0x1F) == 7;
+      } else {
+        same = std::equal(want[k].begin(), want[k].end(), got[k].begin(), got[k].end());
+      }
+    }
+    if (!same) {
+      std::printf("    frame %zu (%zu bytes, %zu packets): H26xPacketBuffer gave %zu bytes in %zu NAL units, expected %zu units\n",
+                  frames, frame.size(), payloads.size(), rebuilt.size(), got.size(), want.size());
+    }
+    ok = ok && same;
+    ++frames;
+  }
+  Check(ok && key_seen && delta_seen && frames > 10, "H.264: packetized here, parsed and reassembled by libwebrtc");
+  Check(firsts_ok, "H.264: first-packet and FU-A continuation flags agree");
+}
+
+// libwebrtc's packets are parsed and reassembled by this library, and they
+// are the same payloads this packetizer makes (STAP-A, single NAL, FU-A).
+void H264WebrtcToSm() {
+  bool ok = true, same = true;
+  size_t frames = 0, packets = 0;
+  for (const Bytes& frame : H264Frames()) {
+    webrtc::RtpPacketizer::PayloadSizeLimits limits;
+    limits.max_payload_len = static_cast<int>(kH264Limit);
+    webrtc::RtpPacketizerH264 packetizer(std::span<const uint8_t>(frame), limits, webrtc::H264PacketizationMode::NonInterleaved);
+    std::vector<sm::RtpPacket> pkts;
+    const size_t n = packetizer.NumPackets();
+    for (size_t i = 0; i < n; ++i) {
+      webrtc::RtpPacketToSend out(nullptr);
+      if (!packetizer.NextPacket(&out)) {
+        ok = false;
+        break;
+      }
+      sm::RtpPacket p;
+      p.marker = out.Marker();
+      p.payload.assign(out.payload().begin(), out.payload().end());
+      ok = ok && p.payload.size() <= kH264Limit && p.marker == (i + 1 == n);
+      ok = ok && sm::rtp::H264Depacketizer::Parse(p.payload).valid;
+      pkts.push_back(std::move(p));
+    }
+    Bytes rebuilt;
+    ok = ok && sm::rtp::H264Depacketizer::Reassemble(pkts, rebuilt) && rebuilt == frame;
+    auto mine = sm::rtp::H264Packetizer::Packetize(frame, kH264Limit);
+    bool eq = mine.size() == pkts.size();
+    for (size_t i = 0; eq && i < mine.size(); ++i) eq = mine[i] == pkts[i].payload;
+    if (!eq) {
+      std::printf("    frame %zu (%zu bytes): this library %zu packets, libwebrtc %zu\n", frames, frame.size(), mine.size(), pkts.size());
+      for (size_t i = 0; i < std::min(mine.size(), pkts.size()); ++i) {
+        if (mine[i] != pkts[i].payload) {
+          std::printf("      first different payload %zu: %zu bytes (type %u) vs %zu bytes (type %u)\n", i, mine[i].size(),
+                      mine[i][0] & 0x1F, pkts[i].payload.size(), pkts[i].payload[0] & 0x1F);
+          break;
+        }
+      }
+    }
+    same = same && eq;
+    packets += pkts.size();
+    ++frames;
+  }
+  Check(ok && frames > 10 && packets > frames, "H.264: packetized by libwebrtc, parsed and reassembled here");
+  Check(same, "H.264: this packetizer makes the same payloads as libwebrtc's");
+}
 }  // namespace
 
 int main() {
@@ -465,6 +705,8 @@ int main() {
   WebrtcToEngine();
   SenderToWebrtc();
   WebrtcToSender();
+  H264SmToWebrtc();
+  H264WebrtcToSm();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
     return 1;

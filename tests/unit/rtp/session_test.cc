@@ -72,7 +72,7 @@ SM_TEST(Session, MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine) {
   Pair p;
   Bytes frame(60, 7);
   p.a.SendAudio(p.a_audio, {960, frame, false}, Timestamp::Millis(0));
-  auto chunks = test::MakeTestFrameChunks(0, true, 3000, 1188);
+  auto chunks = test::MakeTestFrameChunks(true, 3000, 1188);
   p.a.SendVideoChunks(p.a_video, chunks, 0, Timestamp::Millis(0));
   size_t audio = 0, video = 0, rtcp = 0;
   for (auto& o : Pump(p.a, 0, 1200)) {
@@ -99,22 +99,26 @@ SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
   SM_EXPECT_EQ(p.a.stats().empty_video_frames, 2u);
 }
 
-SM_TEST(Session, SendVideoSplitsTheFrameEvenlyWithinTheMtu) {
+SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   Pair p;
-  Bytes data(5000, 1);
-  p.a.SendVideo(p.a_video, {0, data}, Timestamp::Millis(0));
-  size_t total = 0, n = 0;
+  const Bytes frame = MakeFakeH264Frame(true, 5000);
+  p.a.SendVideo(p.a_video, {0, frame}, Timestamp::Millis(0));
+  std::vector<RtpPacket> sent;
   for (auto& o : Pump(p.a, 0, 500)) {
     if (o.kind != OutgoingKind::kVideo) continue;
     SM_EXPECT_LE(o.bytes.size(), 1200u);
-    total += RtpPacket::Parse(o.bytes)->payload.size();
-    ++n;
+    sent.push_back(*RtpPacket::Parse(o.bytes));
   }
-  SM_EXPECT_EQ(n, 5u);
-  SM_EXPECT_EQ(total, 5000u);
+  // SPS+PPS in a STAP-A, then the IDR slice in FU-A fragments; the marker is
+  // on the last packet only, and the payloads rebuild the access unit.
+  SM_ASSERT_GE(sent.size(), 5u);
+  SM_EXPECT_EQ(sent[0].payload[0] & 0x1F, kH264NalStapA);
+  for (size_t i = 0; i < sent.size(); ++i) SM_EXPECT_EQ(sent[i].marker, i + 1 == sent.size());
+  Bytes rebuilt;
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(sent, rebuilt));
+  SM_EXPECT_TRUE(rebuilt == frame);
   // Full-size chunks leave room for the header extensions.
-  Bytes big(1188 * 3, 2);
-  p.a.SendVideo(p.a_video, {3000, big}, Timestamp::Millis(500));
+  p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1188 * 3)}, Timestamp::Millis(500));
   for (auto& o : Pump(p.a, 500, 500)) {
     if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1200u);
   }
@@ -122,7 +126,7 @@ SM_TEST(Session, SendVideoSplitsTheFrameEvenlyWithinTheMtu) {
 
 SM_TEST(Session, NackFromThePeerIsAnsweredWithRtxOnTheRtxSsrc) {
   Pair p;
-  auto chunks = test::MakeTestFrameChunks(0, true, 3000, 1188);
+  auto chunks = test::MakeTestFrameChunks(true, 3000, 1188);
   p.a.SendVideoChunks(p.a_video, chunks, 0, Timestamp::Millis(0));
   std::vector<uint16_t> seqs;
   for (auto& o : Pump(p.a, 0, 300)) {
@@ -174,7 +178,7 @@ SM_TEST(Session, RandomAndTruncatedDatagramsNeverCrashAndAreCounted) {
   Random rng(7);
   // Real packets, truncated at every length and corrupted.
   p.a.SendAudio(p.a_audio, {0, Bytes(60, 1), false}, Timestamp::Millis(0));
-  p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(0, true, 2500, 1188), 0, Timestamp::Millis(0));
+  p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(true, 2500, 1188), 0, Timestamp::Millis(0));
   auto real = Pump(p.a, 0, 1200);
   SM_ASSERT_TRUE(!real.empty());
   uint64_t fed = 0;
@@ -247,7 +251,7 @@ std::vector<SessionEvent> Exchange(Pair& p, int64_t ms) {
   for (int64_t t = 0; t < ms; ++t) {
     const Timestamp now = Timestamp::Millis(t);
     if (t % 33 == 0) {
-      auto chunks = test::MakeTestFrameChunks(t / 33, t == 0, 1500, 1188);
+      auto chunks = test::MakeTestFrameChunks(t == 0, 1500, 1188);
       p.a.SendVideoChunks(p.a_video, chunks, static_cast<uint32_t>(t * 90), now);
     }
     p.a.Process(now);

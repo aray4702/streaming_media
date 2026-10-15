@@ -32,7 +32,7 @@ packet crosses a link as bytes, in both directions:
 ```
 sender                                   forward link                 receiver
 speech -> Session::SendAudio (RED) ---\                               Session::OnPacket -> RED -> NetEq-lite jitter buffer -> 10 ms playout
-video encoder model -> SendVideoChunks > pacer -> [capacity, queue, loss,  -> packet buffer -> keyframe requester ->
+video encoder model -> SendVideo (H.264) > pacer -> [capacity, queue, loss,  -> packet buffer -> keyframe requester ->
   (RTX history, FEC) in RtpSender    /            jitter, dup, outage,         jitter estimator + timing -> render scheduler -> freeze detector
 SendSideController (GCC, probes,         cross traffic]
   outage monitor)  <-------- reverse link <-------- RtcpEngine: transport-cc (50 ms), NACK, PLI/FIR, SR/RR + SDES
@@ -46,7 +46,7 @@ receiver.AddAudioReceive(audio_cfg, &decoder);
 auto video_in = receiver.AddVideoReceive(video_cfg);
 for (each millisecond) {
   sender.SendAudio(audio, {rtp_timestamp, frame_bytes}, now);       // every 20 ms
-  sender.SendVideoChunks(video, chunks, rtp_timestamp, now);         // every frame
+  sender.SendVideo(video, {rtp_timestamp, annexb_frame}, now);       // every frame
   sender.Process(now);
   for (auto& p : sender.TakeOutgoing()) forward.Send(now, p.bytes, p.wire_size);
   forward.ReceiveEach(now, [&](auto bytes, auto at) { receiver.OnPacket(bytes, at); });
@@ -72,16 +72,21 @@ link emulation and the measurement.
   rate (`Session::rates().video_target`: GCC target minus audio, divided by
   1 + FEC overhead) with ±20% variation, and keyframes are 4x larger. A
   keyframe is sent at the start, on PLI/FIR and on outage recovery. The
-  frame dropper skips frames when the encoder overshoots. Each frame
-  references the previous one, so one lost frame blocks decoding until the
-  next keyframe arrives. Payloads are opaque chunks with a private 9-byte
-  header (start flag, key flag, frame id) until the H.264 packetizer lands.
+  frame dropper skips frames when the encoder overshoots. The bitstream is
+  an Annex-B access unit from `rtp::MakeFakeH264Frame` (libwebrtc's
+  `FakeH264Encoder`): SPS, PPS and an IDR slice on a keyframe, one non-IDR
+  slice otherwise, packetized as RFC 6184 mode 1 (STAP-A for the parameter
+  sets, FU-A for the slices). The receiver finds frames and keyframes from
+  the NAL types and derives frame ids from sequence numbers, so each frame
+  depends on the one before it, and one lost frame blocks decoding until
+  it is repaired or the next keyframe arrives.
 - **Feedback** is real RTCP, built and parsed by `rtp::RtcpEngine`:
   - Transport-wide congestion control feedback every 50 ms.
   - NACKs as soon as the NACK tracker asks.
   - PLI/FIR from the keyframe requester or on NACK list overflow. No loss
-    notification is sent, because the private payload header is not a frame
-    descriptor.
+    notification is sent: it works on frame ids and dependencies from a
+    descriptor, which H.264 has none of, and libwebrtc sends PLI and NACK
+    only in that case (design 6.4).
   - Sender reports every second (first at 0.5 s) and receiver reports every
     second (first at 1 s), each compound with an SDES CNAME. These give the
     RTT, and the loss for the protection controller. An audio-only call

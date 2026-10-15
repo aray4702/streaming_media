@@ -16,6 +16,8 @@
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
 #include "sm/loss/protection_controller.h"
+#include "sm/rtp/fake_h264.h"
+#include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
@@ -30,7 +32,6 @@ constexpr uint32_t kSenderRtcpSsrc = 100, kReceiverRtcpSsrc = 200;
 constexpr uint8_t kAudioPt = 111, kAudioRedPt = 63, kVideoPt = 96, kRtxPt = 97;
 constexpr int64_t kUdpIpOverhead = 28;
 constexpr size_t kMaxVideoPayload = 1100;
-constexpr size_t kVideoHeader = 9;  // flags + 64-bit frame id (stands in for the codec descriptor).
 // WebRTC counts an audio interruption when concealment lasts over 150 ms
 // (RTCInboundRtpStreamStats.interruptionCount).
 constexpr int64_t kInterruptionMs = 150;
@@ -64,36 +65,6 @@ uint16_t RtpSeq(const std::vector<uint8_t>& b) { return static_cast<uint16_t>((b
 uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
-
-// The video payload carries a private header until the H.264 packetizer
-// exists (plan PR 7): start flag, key flag and a 64-bit frame id.
-std::vector<std::vector<uint8_t>> MakeFrame(int64_t id, bool key, size_t bytes) {
-  std::vector<std::vector<uint8_t>> chunks;
-  bool first = true;
-  for (size_t n : rtp::SplitEvenly(bytes, kMaxVideoPayload)) {
-    std::vector<uint8_t> c(std::max(n, kVideoHeader), 0);
-    c[0] = static_cast<uint8_t>((first ? 1 : 0) | (key ? 2 : 0));
-    for (size_t i = 0; i < 8; ++i) c[1 + i] = static_cast<uint8_t>(static_cast<uint64_t>(id) >> (8 * i));
-    chunks.push_back(std::move(c));
-    first = false;
-  }
-  return chunks;
-}
-
-class VideoHeaderParser : public rtp::VideoPayloadParser {
- public:
-  rtp::VideoPayloadInfo Parse(const RtpPacket& p) const override {
-    rtp::VideoPayloadInfo h;
-    if (p.payload.size() < kVideoHeader) return h;
-    h.valid = true;
-    h.frame_start = p.payload[0] & 1;
-    h.keyframe = p.payload[0] & 2;
-    uint64_t id = 0;
-    for (size_t i = 0; i < 8; ++i) id |= static_cast<uint64_t>(p.payload[1 + i]) << (8 * i);
-    h.frame_id = static_cast<int64_t>(id);
-    return h;
-  }
-};
 
 // The modelled audio codec: a frame is identified by its RTP timestamp, and
 // decodes to the matching 20 ms of the speech signal.
@@ -263,7 +234,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
               : DataRate::Zero();
   Random enc_rng(s.seed + 13);
   SpeechDecoder decoder(speech, frame_samples);
-  VideoHeaderParser parser;
+  rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
 
   // --- The two ends of the call ---------------------------------------------
@@ -304,9 +275,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.parser = &parser;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
-  // A loss notification needs a frame descriptor, which the bench's private
-  // payload header is not (libwebrtc sends LNTF only with one).
+  // A loss notification needs frame ids and dependencies from a generic
+  // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
+  // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
+  video_cfg.deliver_bitstream = false;  // The bench has no decoder.
 
   rtp::AudioSendId audio_send;
   rtp::VideoSendId video_send;
@@ -359,10 +332,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // --- State ----------------------------------------------------------------
   bool video_paused = false, keyframe_needed = true;
-  int64_t frame_id = 0, frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
+  int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
   Timestamp last_keyframe = Timestamp::MinusInfinity();
-  std::unordered_map<int64_t, Timestamp> frame_capture;  // Frame id -> capture time.
+  std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   int64_t media_bytes = 0, repair_bytes = 0;
   std::vector<int64_t> video_send_ms;  // By unwrapped media sequence number.
   SeqNumUnwrapper<uint16_t> video_sent_unwrap;
@@ -441,9 +414,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           ++keyframes_sent;
         }
         video_bytes_encoded += bytes;
-        int64_t id = frame_id++;
-        frame_capture[id] = now;
-        sender.SendVideoChunks(video_send, MakeFrame(id, key, static_cast<size_t>(bytes)), static_cast<uint32_t>(t * 90), now);
+        const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
+        frame_capture[rtp_ts] = now;
+        const auto frame = rtp::MakeFakeH264Frame(key, static_cast<size_t>(bytes));
+        sender.SendVideo(video_send, {rtp_ts, frame}, now);
       }
     }
 
@@ -497,7 +471,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         ++w_frames;
         if (!video_first.IsFinite()) video_first = now;
         last_render = now;
-        auto cap = frame_capture.find(f.frame_id);
+        auto cap = frame_capture.find(f.rtp_timestamp);
         if (cap != frame_capture.end()) {
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
           video_e2e.push_back(last_video_delay);
