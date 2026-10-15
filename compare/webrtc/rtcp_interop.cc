@@ -629,7 +629,16 @@ void H264SmToWebrtc() {
     auto want = sm::rtp::SplitAnnexB(frame);
     auto got = sm::rtp::SplitAnnexB(rebuilt);
     bool same = want.size() == got.size();
-    for (size_t k = 0; same && k < want.size(); ++k) same = std::equal(want[k].begin(), want[k].end(), got[k].begin(), got[k].end());
+    // libwebrtc's depacketizer rewrites the SPS (it adds a VUI with
+    // bitstream_restriction so decoders do not delay output), so an SPS is
+    // compared by type only; every other unit byte for byte.
+    for (size_t k = 0; same && k < want.size(); ++k) {
+      if ((want[k][0] & 0x1F) == 7) {
+        same = (got[k][0] & 0x1F) == 7;
+      } else {
+        same = std::equal(want[k].begin(), want[k].end(), got[k].begin(), got[k].end());
+      }
+    }
     if (!same) {
       std::printf("    frame %zu (%zu bytes, %zu packets): H26xPacketBuffer gave %zu bytes in %zu NAL units, expected %zu units\n",
                   frames, frame.size(), payloads.size(), rebuilt.size(), got.size(), want.size());
