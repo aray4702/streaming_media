@@ -203,15 +203,6 @@ regardless of the network.
 
 Without adaptation, quality collapses under constraint. With naive adaptation, the format oscillates around a
 threshold, visibly switching resolution every few seconds.""",
-    "5.10": """\
-In a group call, one sender's video goes to many receivers whose downlinks range from fibre to congested cellular.
-Encoding separately per receiver does not scale. With simulcast (several encodings) or SVC (layered encoding),
-the SFU can forward to each receiver the best layer it can handle. That decision is itself a small control loop:
-switching up too eagerly overloads the receiver, and switching on every bandwidth fluctuation causes visible
-flapping.
-
-Switches are also constrained by decodability: a receiver can only start a different simulcast encoding at one of
-its keyframes, and can only add a temporal layer where the new layer does not reference frames it never received.""",
     "5.11": """\
 Links drop out entirely: a tunnel, an elevator, a Wi-Fi to LTE handover, a NAT rebinding. During the outage nothing
 comes back from the far end. A sender that keeps encoding fills its queues (and the network's) with media that will
@@ -277,23 +268,17 @@ description of the background noise (level and spectral shape), updated only whe
 comfort noise that sounds like the real room.""",
     "6.8": """\
 Several components need to know whether someone is speaking. DTX transmits only during speech, AGC measures level
-only on speech, the transient suppressor protects speech, and active-speaker detection relies on it. Energy alone
+only on speech, the transient suppressor protects speech, and the audio level extension carries its result. Energy alone
 is not enough: a loud fan has more energy than a soft voice, and the background level changes during a call. A
 detector that confuses noise with speech wastes bandwidth and amplifies noise. One that misses speech clips the
 starts and ends of words.""",
     "6.9": """\
-An SFU in a group call has to pick who is speaking (for the "active speaker" layout, for forwarding only the
-relevant audio, for picking which video to send at high quality). It forwards encrypted audio and cannot decode it.
-The sender therefore attaches a one-byte level and voice flag to each packet.
+A receiver often wants to know how loud each speaker is, or whether the packet holds speech, without decoding
+it: for a level meter, or when the audio is encrypted end to end and only the sender can measure it. The sender
+therefore attaches a one-byte level and voice flag to each packet (the RFC 6464 header extension).
 
-Choosing the speaker from these levels is still subtle. Levels fluctuate every packet, people interject briefly,
-cough or laugh, and background noise has a level too. A naive "loudest now" choice makes the layout jump around
-constantly.""",
-    "6.10": """\
-A mixing server or device must combine many participants' audio into one stream. Summing everyone adds every
-participant's background noise: with 20 people, the noise floor rises by 13 dB. The sum of several loud speakers
-also exceeds full scale and clips. Selecting only the loudest few is better, but switching a participant in or out
-abruptly causes clicks. Re-ranking every 10 ms makes similar-level speakers swap constantly.""",
+The level has to be computed the same way on every device (RMS in -dBov, 127 for digital silence) and packed
+into seven bits next to the voice flag, so that any receiver, including libwebrtc, reads it correctly.""",
     "6.11": """\
 Audio hardware runs at whatever rate the device prefers: 44.1 kHz on many Macs and USB devices, 48 kHz on most
 phones, 16 kHz on some embedded codecs and Bluetooth headsets. Processing runs at 16 or 48 kHz, and codecs at their

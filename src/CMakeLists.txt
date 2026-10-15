@@ -43,7 +43,6 @@ if(SM_WITH_CC)
     cc/bitrate_allocator.cc
     cc/frame_dropper.cc
     cc/video_adaptation.cc
-    cc/layer_selector.cc
     cc/outage_monitor.cc)
   list(APPEND SM_SECTIONS cc)
 endif()
@@ -59,7 +58,6 @@ if(SM_WITH_AUDIO)
     audio/transient_suppressor.cc
     audio/comfort_noise.cc
     audio/audio_level.cc
-    audio/mixer.cc
     audio/resampler.cc)
   list(APPEND SM_SECTIONS audio)
 endif()

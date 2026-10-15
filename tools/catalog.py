@@ -279,17 +279,6 @@ ALGORITHMS = [
          notes="The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
          verification="No defects found after the 5.2 fixes."),
-    dict(id="5.10", slug="layer-selector", title="Simulcast/SVC layer selection (SFU)",
-         problems=["Heterogeneous receivers in group calls -> Simulcast and SVC; the SFU forwards a matching layer per receiver"],
-         headers=["cc/layer_selector.h"], unit=["LayerSelector"], e2e=["E2E_LayerSelector"],
-         bench=["cc/LayerSelector_frame"],
-         scenario="Three L1T3 simulcast encodings (150/500/1500 kbps); the receiver's bandwidth (+-10% noise) "
-                  "goes 2000 -> 700 -> 300 kbps. Checks decodability of every forwarded frame, the time spent over "
-                  "budget and the number of switches.",
-         notes="Spatial switches wait for a keyframe of the target encoding (and request one); temporal "
-               "up-switches wait for a layer-sync frame.",
-         verification="The e2e test was made self-contained (its own L1T3 pattern) so the congestion-control "
-                      "section builds and tests without the loss section."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -398,20 +387,14 @@ ALGORITHMS = [
                                 "(9%); (2) after a +20 dB noise step the floor rose only 3 dB/s, so noise-like "
                                 "frames now raise it at 30 dB/s. The unit-test metric was also changed to "
                                 "exclude the intended hangover."),
-    dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464) and active speaker detection",
-         problems=["Detecting who's talking -> audio level header extension (RFC 6464), voice activity"],
+    dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
+         problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
          headers=["audio/audio_level.h"], unit=["AudioLevel"], e2e=["E2E_AudioLevel"],
-         bench=["audio/AudioLevel_and_ActiveSpeaker_20ms"],
-         scenario="Four participants take 5 s turns over background noise; the SFU sees only the RFC 6464 byte "
-                  "per 20 ms packet. Dominant-speaker accuracy (from 1.5 s into each turn) and switch count.",
-         notes="", verification="No defects found."),
-    dict(id="6.10", slug="mixer", title="Audio mixer (loudest N)",
-         problems=["Mixing several remote speakers -> audio mixer that picks the loudest N speakers"],
-         headers=["audio/mixer.h"], unit=["Mixer"], e2e=["E2E_Mixer"],
-         bench=["audio/Mixer_8sources_10ms"],
-         scenario="Six participants (three loud talkers, three noisy rooms) mixed to three; the share of frames "
-                  "in which exactly the talkers are mixed, and peak level.",
-         notes="", verification="No defects found."),
+         bench=["audio/AudioLevel_20ms"],
+         scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
+                  "tones and silence must match.",
+         notes="", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+                      "the RFC 6464 codec and level are unchanged."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
          headers=["audio/resampler.h"], unit=["Resampler"], e2e=["E2E_Resampler"],

@@ -4,7 +4,6 @@
 #include <set>
 
 #include "cc_sims.h"
-#include "sm/cc/layer_selector.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -247,74 +246,6 @@ SM_TEST(E2E_VideoAdaptation, CpuOveruseConvergesToSustainableResolution) {
   SM_EXPECT_LT(deg.current().width, 1280);
   SM_EXPECT_LT(cpu.usage(), 0.85);
   SM_EXPECT_LE(changes, 6);
-}
-
-SM_TEST(E2E_LayerSelector, SfuForwardsDecodableStreamWithinBandwidth) {
-  // Three simulcast encodings, each L1T3.
-  std::vector<LayerOption> opts;
-  const double rates[3] = {150, 500, 1500};
-  const double tl_share[3] = {0.4, 0.6, 1.0};
-  for (int s = 0; s < 3; ++s) {
-    for (int tl = 0; tl < 3; ++tl) {
-      opts.push_back({s, tl, DataRate::KilobitsPerSec(static_cast<int64_t>(rates[s] * tl_share[tl]))});
-    }
-  }
-  std::sort(opts.begin(), opts.end(), [](auto& a, auto& b) { return a.bitrate < b.bitrate; });
-  LayerSelector sel(opts);
-  L1T3 sched[3];
-  std::set<int64_t> decoded;  // Receiver-side frame ids that decoded.
-  size_t decodable = 0;
-  Random rng(3);
-  bool pending_key[3] = {false, false, false};
-  int64_t forwarded_bits_window = 0, over_budget_seconds = 0, seconds = 0;
-  int64_t rx_id = 0;
-  std::map<std::pair<int, int64_t>, int64_t> id_map;  // (spatial, sender id) -> receiver id
-  uint64_t undecodable = 0;
-  for (int64_t t = 0; t < 120000; t += 33) {
-    Timestamp now = Timestamp::Millis(t);
-    // Receiver bandwidth: 2 Mbps, drops to 700 kbps for 40 s, then 300 kbps.
-    double bw = t < 40000 ? 2000 : (t < 80000 ? 700 : 300);
-    bw *= rng.Uniform(0.9, 1.1);
-    sel.OnBandwidth(DataRate::KilobitsPerSec(static_cast<int64_t>(bw)), now);
-    if (sel.TakeKeyframeRequest()) pending_key[sel.target().spatial] = true;
-    for (int s = 0; s < 3; ++s) {
-      auto f = sched[s].Next(pending_key[s]);
-      pending_key[s] = false;
-      double bits = rates[s] * 1000 / 30.0 * (f.key ? 3 : 1);
-      if (sel.ShouldForward(s, f.tid, f.key, f.sync)) {
-        forwarded_bits_window += static_cast<int64_t>(bits);
-        // Remap ids into one receiver-side stream; every reference must
-        // have been forwarded and decoded.
-        bool ok = true;
-        for (int64_t ref : f.refs) {
-          auto it = id_map.find({s, ref});
-          if (it == id_map.end() || !decoded.count(it->second)) {
-            ++undecodable;
-            ok = false;
-          }
-        }
-        if (ok) {
-          decoded.insert(rx_id);
-          ++decodable;
-        }
-        id_map[{s, f.id}] = rx_id++;
-      }
-    }
-    if (t % 1000 < 33) {
-      ++seconds;
-      if (forwarded_bits_window > bw * 1000 * 1.3) ++over_budget_seconds;
-      forwarded_bits_window = 0;
-    }
-  }
-
-  SM_RECORD("sfu_switches_up", sel.stats().switches_up);
-  SM_RECORD("sfu_switches_down", sel.stats().switches_down);
-  SM_RECORD("sfu_over_budget_seconds", over_budget_seconds);
-  SM_RECORD("sfu_decodable_ratio", static_cast<double>(decodable) / static_cast<double>(rx_id));
-  SM_EXPECT_EQ(undecodable, 0u);
-  SM_EXPECT_EQ(decodable, static_cast<size_t>(rx_id));
-  SM_EXPECT_LE(over_budget_seconds, seconds / 20);
-  SM_EXPECT_LE(sel.stats().switches_up + sel.stats().switches_down, 20u);
 }
 
 SM_TEST(E2E_Outage, PausesDuringOutageAndRecovers) {

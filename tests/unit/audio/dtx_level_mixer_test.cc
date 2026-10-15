@@ -1,10 +1,9 @@
-// Unit tests: DTX/CNG, audio level / active speaker, mixer.
+// Unit tests: DTX/CNG, audio level.
 #include <algorithm>
 #include <cmath>
 
 #include "sm/audio/audio_level.h"
 #include "sm/audio/comfort_noise.h"
-#include "sm/audio/mixer.h"
 #include "sm/core/dsp.h"
 #include "sm/sim/signals.h"
 #include "sm_test.h"
@@ -100,63 +99,4 @@ SM_TEST(AudioLevel, ExtensionAndLevel) {
   SM_EXPECT_EQ(ComputeLevel(sine), 23);
   std::vector<float> silence(160, 0.0f);
   SM_EXPECT_EQ(ComputeLevel(silence), 127);
-}
-
-SM_TEST(AudioLevel, ActiveSpeakerHysteresis) {
-  ActiveSpeakerDetector asd;
-  int64_t t = 0;
-  auto feed = [&](int frames, uint8_t a, uint8_t b) {
-    for (int i = 0; i < frames; ++i, t += 20) {
-      asd.OnLevel(1, {a, a < 60}, Timestamp::Millis(t));
-      asd.OnLevel(2, {b, b < 60}, Timestamp::Millis(t));
-    }
-  };
-  feed(100, 25, 127);  // Speaker 1 talks for 2 s.
-  SM_EXPECT_EQ(*asd.dominant(), 1u);
-  feed(10, 127, 25);   // 200 ms interjection: no switch.
-  SM_EXPECT_EQ(*asd.dominant(), 1u);
-  feed(100, 127, 25);  // Speaker 2 keeps talking: switch.
-  SM_EXPECT_EQ(*asd.dominant(), 2u);
-  SM_EXPECT_EQ(asd.switches(), 2u);
-}
-
-SM_TEST(Mixer, LoudestNWithoutClipping) {
-  MixerConfig cfg;
-  cfg.max_mixed = 3;
-  AudioMixer mixer(cfg);
-  std::vector<std::vector<float>> src;
-  const float amps[5] = {0.9f, 0.8f, 0.7f, 0.05f, 0.04f};
-  for (int i = 0; i < 5; ++i) src.push_back(sim::Sine(200 + 100 * i, 16000, 1.0, amps[i]));
-  std::vector<float> out(160);
-  float peak = 0;
-  for (size_t off = 0; off + 160 <= src[0].size(); off += 160) {
-    std::map<uint32_t, std::span<const float>> m;
-    for (uint32_t i = 0; i < 5; ++i) m[i] = std::span<const float>(src[i].data() + off, 160);
-    mixer.Mix(m, out);
-    for (float v : out) peak = std::max(peak, std::fabs(v));
-  }
-  auto mixed = mixer.mixed();
-  std::sort(mixed.begin(), mixed.end());
-  SM_ASSERT_EQ(mixed.size(), 3u);
-  SM_EXPECT_EQ(mixed[0], 0u);
-  SM_EXPECT_EQ(mixed[2], 2u);
-  SM_EXPECT_LE(peak, dsp::DbToLinear(-1.0f) + 1e-6f);
-}
-
-SM_TEST(Mixer, RampAvoidsClickOnJoin) {
-  AudioMixer mixer;
-  auto a = sim::Sine(300, 16000, 1.0, 0.3f);
-  std::vector<float> out(160);
-  float max_jump = 0, prev = 0;
-  for (size_t off = 0; off + 160 <= a.size(); off += 160) {
-    std::map<uint32_t, std::span<const float>> m;
-    if (off >= 8000) m[7] = std::span<const float>(a.data() + off, 160);  // Joins mid-way.
-    mixer.Mix(m, out);
-    for (float v : out) {
-      max_jump = std::max(max_jump, std::fabs(v - prev));
-      prev = v;
-    }
-  }
-  // Max per-sample slope of a 300 Hz, 0.3 amplitude sine is ~0.035.
-  SM_EXPECT_LT(max_jump, 0.05f);
 }
