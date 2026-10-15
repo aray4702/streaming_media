@@ -26,8 +26,9 @@ run by three AI agents with GitHub as the shared record:
 - **Tester** runs scripted calls in the [test bench](testbench/README.md)
   over emulated bad links (loss, jitter, outages, bandwidth drops, queues,
   cross traffic) and measures what users would notice: audio gaps, video
-  freezes, delay and recovery time. Each problem it finds is filed as an
-  issue that reproduces it in one command.
+  freezes, delay and recovery time. It also runs the same scenarios
+  through libwebrtc to find where this library falls short of it. Each
+  problem it finds is filed as an issue that reproduces it in one command.
 - **Fixer** turns each issue into a failing test, fixes the root cause and
   opens a PR. It also builds the `roadmap` features the Owner files.
 - **Reviewer**, a separate GitHub App identity, checks every PR for
@@ -44,14 +45,30 @@ becomes a scenario that keeps it fixed. The goals, labels, quality gates
 and guardrails are in [program.md](program.md), and the agents'
 instructions are in [agents/](agents/).
 
-The scope grows in two stages
-([program.md section 0.1](program.md#01-scope-and-stages)). The baseline
-handles what WebRTC handles (sections 3-8 of
-[Problems WebRTC solves](docs/02-webrtc-problems-solved.md)), at parity
-with libwebrtc. On top of it, features are added one at a time for
-problems specific to talking with an AI. Examples are a two-way test bench, metrics
-for how quickly the AI responds, how well interruptions (barge-in) work,
-and how cleanly the user's speech reaches the AI.
+## Scope
+
+The library grows in two stages, both measured on the same test bench
+([program.md section 0.1](program.md#01-scope-and-stages)):
+
+1. **Baseline: what WebRTC handles** (current stage). These are the
+   problems in sections 3-8 of
+   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): packet
+   loss, jitter and timing, congestion control, audio, video and
+   synchronization. The bar is parity with libwebrtc's current
+   mechanisms, not older or simpler variants. Parity is measured by
+   running every test bench scenario through both libraries over the
+   same emulated links ([comparison](docs/results/compare-webrtc.md)).
+   Each gap is an issue labelled `stage:baseline`.
+2. **Human-AI streaming.** Features for problems that arise because the
+   other side of the call is an AI, added one at a time on top of the
+   baseline without regressing it. Examples are a two-way conversation
+   test bench, metrics for response delay, barge-in and how cleanly the
+   user's speech reaches the AI, and AI media sent in faster-than-real-time
+   bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
+
+Baseline work comes before AI work. Connectivity, security, data channels
+and observability APIs (sections 1, 2, 9 and 10 of that document) are left
+to the stack that hosts the library.
 
 ## The library
 
@@ -119,6 +136,13 @@ and `-fno-exceptions -fno-rtti`: 213/213 test cases and 79/79 benchmarks
 pass ([details](docs/results/README.md)). iOS, Android and embedded Linux
 ARM are cross-built in CI. All six sections plus core compile to about
 350 KiB of code.
+
+**Stage 1 (parity with libwebrtc) is in progress.** In the first
+[comparison](docs/results/compare-webrtc.md) (2026-10-14), libwebrtc was
+better on 88 metric/scenario pairs, this library on 51, with 100 ties.
+The largest gaps are needless keyframe requests, repair traffic beyond
+the target bitrate, utilization under random loss, high jitter, and
+recovery after outages. Each one is a `stage:baseline` issue.
 
 ## Building
 
