@@ -118,6 +118,10 @@ struct RtcpStats {
 
 class RtcpEngine : public MetricsSource {
  public:
+  // Incoming FIR sequence numbers are remembered for at most this many
+  // (sender, media) pairs; the table is cleared when it fills.
+  static constexpr size_t kMaxFirTracked = 64;
+
   explicit RtcpEngine(RtcpConfig cfg = {});
 
   // --- Setup (before traffic) -------------------------------------------------
@@ -152,6 +156,7 @@ class RtcpEngine : public MetricsSource {
 
   const timing::RttEstimator& rtt() const { return rtt_; }
   const RtcpStats& stats() const { return stats_; }
+  size_t fir_tracked() const { return fir_seq_in_.size(); }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

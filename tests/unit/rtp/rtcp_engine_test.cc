@@ -388,3 +388,28 @@ SM_TEST(RtcpEngine, ExportsMetrics) {
   SM_EXPECT_TRUE(std::find(w.names.begin(), w.names.end(), "reports_sent") != w.names.end());
   SM_EXPECT_TRUE(std::find(w.names.begin(), w.names.end(), "rtt_ms") != w.names.end());
 }
+
+SM_TEST(RtcpEngine, FirStateIsBoundedAndOnlyTracksLocalStreams) {
+  auto fir_datagram = [](uint32_t sender, uint32_t media, uint8_t seq) {
+    loss::Fir f{sender, {{media, seq}}};
+    return loss::BuildCompoundRtcp(std::vector<Bytes>{timing::SerializeReceiverReport({sender, {}}),
+                                                     loss::SerializeFir(f)});
+  };
+  // With local SSRCs registered, requests for other streams are ignored and not tracked.
+  RtcpEngine local;
+  local.AddLocalMediaSsrc(10);
+  for (uint32_t i = 0; i < 1000; ++i)
+    SM_EXPECT_TRUE(local.OnRtcp(fir_datagram(i, 99, 0), Timestamp::Millis(i)).keyframe_requests.empty());
+  SM_EXPECT_EQ(local.fir_tracked(), 0u);
+  SM_EXPECT_EQ(local.OnRtcp(fir_datagram(1, 10, 3), Timestamp::Millis(0)).keyframe_requests.size(), 1u);
+  SM_EXPECT_EQ(local.OnRtcp(fir_datagram(1, 10, 3), Timestamp::Millis(1)).keyframe_requests.size(), 0u);
+  // Without registration every SSRC is accepted, but the table stays capped.
+  RtcpEngine open;
+  for (uint32_t i = 0; i < 1000; ++i) {
+    open.OnRtcp(fir_datagram(i, 5000 + i, 0), Timestamp::Millis(i));
+    SM_ASSERT_LE(open.fir_tracked(), RtcpEngine::kMaxFirTracked);
+  }
+  // A repeated seq_nr is still de-duplicated for a tracked pair.
+  SM_EXPECT_EQ(open.OnRtcp(fir_datagram(7, 77, 1), Timestamp::Millis(0)).keyframe_requests.size(), 1u);
+  SM_EXPECT_EQ(open.OnRtcp(fir_datagram(7, 77, 1), Timestamp::Millis(1)).keyframe_requests.size(), 0u);
+}

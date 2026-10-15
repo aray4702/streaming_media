@@ -247,6 +247,10 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
       case loss::RtcpType::kFir:
         if (auto fir = loss::ParseFir(p.data)) {
           for (const auto& e : fir->entries) {
+            // Like libwebrtc, ignore requests for streams we do not send.
+            if (!local_ssrcs_.empty() &&
+                std::find(local_ssrcs_.begin(), local_ssrcs_.end(), e.ssrc) == local_ssrcs_.end())
+              continue;
             auto key = std::make_pair(fir->sender_ssrc, e.ssrc);
             auto it = fir_seq_in_.find(key);
             // A repeated sequence number is a retransmitted request.
@@ -254,6 +258,9 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
               ++stats_.fir_duplicates;
               continue;
             }
+            // The key comes from the peer: bound the table. Forgetting the
+            // history only risks acting on one retransmitted request twice.
+            if (fir_seq_in_.size() >= kMaxFirTracked) fir_seq_in_.clear();
             fir_seq_in_[key] = e.seq_nr;
             ++stats_.fir_received;
             in.keyframe_requests.push_back(e.ssrc);
@@ -342,6 +349,7 @@ void RtcpEngine::ExportMetrics(MetricsWriter& w) const {
   w.Counter("remb_received", stats_.remb_received);
   w.Counter("sdes_received", stats_.sdes_received);
   w.Counter("bye_received", stats_.bye_received);
+  w.Gauge("fir_tracked", static_cast<double>(fir_seq_in_.size()));
   w.Gauge("queued_feedback", static_cast<double>(queue_.size()));
   rtt_.ExportMetrics(w);
 }
