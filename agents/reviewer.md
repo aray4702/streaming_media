@@ -78,6 +78,12 @@ For each PR:
    - tested;
    - no regressions;
    - no gaming (loosened expectations or budgets, changed seeds);
+   - duplicates libwebrtc, for stage-1 work: the PR cites the libwebrtc
+     files it follows and does what they do. Check the code against
+     `compare/webrtc/reference/`, not the PR's description of it. Every
+     remaining difference is listed as an approved deviation or as
+     remaining work, and the metrics move toward libwebrtc's, in either
+     direction;
    - library conventions;
    - scope;
    - docs.
