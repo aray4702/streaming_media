@@ -78,6 +78,73 @@ SM_TEST(DelayBwe, AimdIncreasesThenDecreasesToAcked) {
   SM_EXPECT_NEAR((after - before).kbps(), 48, 2);
 }
 
+namespace {
+// Received packets of `size` bytes at `kbps` from `from_ms` to `to_ms`.
+std::vector<PacketResult> Flow(int64_t from_ms, int64_t to_ms, double kbps, int64_t size = 1200) {
+  std::vector<PacketResult> v;
+  const double gap_ms = static_cast<double>(size) * 8 / kbps;
+  for (double t = static_cast<double>(from_ms); t < static_cast<double>(to_ms); t += gap_ms) {
+    PacketResult r;
+    r.seq = static_cast<int64_t>(v.size());
+    r.send_time = Timestamp::Micros(static_cast<int64_t>(t * 1000));
+    r.receive_time = r.send_time;
+    r.size = DataSize::Bytes(size);
+    v.push_back(r);
+  }
+  return v;
+}
+// Feeds the flow to `est` in 50 ms feedback chunks.
+void Feed(AcknowledgedBitrateEstimator& est, int64_t from_ms, int64_t to_ms, double kbps) {
+  for (int64_t t = from_ms; t < to_ms; t += 50) est.OnPacketResults(Flow(t, t + 50, kbps));
+}
+}  // namespace
+
+SM_TEST(DelayBwe, AckedRateStartsWithFullWindowAndSettlesOnSteadyRate) {
+  // A 3 Mbps probe burst for the first 300 ms, then the real 1 Mbps flow.
+  // As libwebrtc's BitrateEstimator, there is no estimate until one full
+  // 500 ms window has arrived, and the burst is folded away by 150 ms
+  // samples. The 500 ms sliding window of the old estimator still reported
+  // 1.25 Mbps one second into the call.
+  AcknowledgedBitrateEstimator est;
+  Feed(est, 0, 450, 3000);
+  SM_EXPECT_FALSE(est.bitrate().has_value());
+  Feed(est, 450, 1000, 1000);
+  SM_ASSERT_TRUE(est.bitrate().has_value());
+  SM_EXPECT_LT(est.bitrate()->kbps(), 1200);
+  SM_EXPECT_GT(est.bitrate()->kbps(), 1000);
+}
+
+SM_TEST(DelayBwe, StartupOveruseDoesNotSeedLinkEstimateFromProbeBurst) {
+  // The first overuse comes right after a probe burst, while the
+  // acknowledged rate still holds the ramp-up. It must not seed the
+  // link-capacity estimate from that inflated rate (which trapped the
+  // controller in additive increase, issue #15).
+  AcknowledgedBitrateEstimator est;
+  AimdRateController aimd;
+  aimd.SetEstimate(DataRate::KilobitsPerSec(600), Timestamp::Millis(0));
+  Feed(est, 0, 300, 3000);
+  Feed(est, 300, 350, 1000);
+  aimd.Update(BandwidthUsage::kOverusing, est.bitrate(), Timestamp::Millis(350));
+  if (aimd.link_capacity_kbps()) SM_EXPECT_LT(*aimd.link_capacity_kbps(), 1250);
+  // Growth continues multiplicatively (~8%/s), not additively (~1 kbps/s).
+  DataRate before = aimd.estimate();
+  DataRate after = aimd.Update(BandwidthUsage::kNormal, est.bitrate(), Timestamp::Millis(1350));
+  SM_EXPECT_GT((after - before).kbps(), 20);
+}
+
+SM_TEST(DelayBwe, StaleLinkEstimateIsResetOnDecrease) {
+  AimdRateController a;
+  a.SetEstimate(DataRate::KilobitsPerSec(2000), Timestamp::Millis(0));
+  a.SetRtt(TimeDelta::Millis(50));
+  a.Update(BandwidthUsage::kOverusing, DataRate::KilobitsPerSec(1900), Timestamp::Millis(100));
+  SM_ASSERT_TRUE(a.link_capacity_kbps().has_value());
+  SM_EXPECT_NEAR(*a.link_capacity_kbps(), 1900, 1);
+  // Throughput far below the estimate: the estimate is stale and is
+  // re-seeded from the new throughput instead of averaged into it.
+  a.Update(BandwidthUsage::kOverusing, DataRate::KilobitsPerSec(600), Timestamp::Millis(1000));
+  SM_EXPECT_NEAR(*a.link_capacity_kbps(), 600, 1);
+}
+
 SM_TEST(DelayBwe, EstimatorReactsToQueueBuildUp) {
   EventLog log;
   DelayBasedBwe::Config cfg;

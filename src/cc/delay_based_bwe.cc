@@ -120,20 +120,52 @@ void TrendlineEstimator::UpdateThreshold(double modified_trend, double now_ms) {
 // --- AcknowledgedBitrateEstimator ---------------------------------------------------
 
 void AcknowledgedBitrateEstimator::OnPacketResults(const std::vector<PacketResult>& results) {
+  std::vector<std::pair<Timestamp, int64_t>> rx;
   for (const auto& r : results) {
-    if (!r.received()) continue;
-    window_.emplace_back(r.receive_time, r.size.bytes());
+    if (r.received()) rx.emplace_back(r.receive_time, r.size.bytes());
   }
-  if (window_.empty()) return;
-  Timestamp newest = window_.back().first;
-  // 500 ms sliding window of acknowledged bytes.
-  while (window_.size() > 1 && newest - window_.front().first > TimeDelta::Millis(500)) window_.pop_front();
-  TimeDelta span = newest - window_.front().first;
-  if (span < TimeDelta::Millis(100)) return;
-  int64_t bytes = 0;
-  for (size_t i = 1; i < window_.size(); ++i) bytes += window_[i].second;
-  DataRate r = DataRate::FromSizeAndTime(DataSize::Bytes(bytes), span);
-  bitrate_ = bitrate_ ? DataRate::BitsPerSec(static_cast<int64_t>(0.7 * bitrate_->bps() + 0.3 * r.bps())) : r;
+  std::stable_sort(rx.begin(), rx.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+  for (const auto& [t, bytes] : rx) Update(t, bytes);
+}
+
+// libwebrtc's BitrateEstimator: non-overlapping windows (the long one only
+// for the first sample), each sample folded in with a Bayesian update whose
+// weight grows with how far the sample is from the estimate.
+void AcknowledgedBitrateEstimator::Update(Timestamp at, int64_t bytes) {
+  const int64_t now_ms = at.ms();
+  const int64_t window_ms = estimate_kbps_ < 0 ? kInitialWindowMs : kWindowMs;
+  if (now_ms < prev_ms_) {
+    prev_ms_ = -1;
+    sum_bytes_ = 0;
+    current_window_ms_ = 0;
+  }
+  if (prev_ms_ >= 0) {
+    current_window_ms_ += now_ms - prev_ms_;
+    if (now_ms - prev_ms_ > window_ms) {
+      sum_bytes_ = 0;
+      current_window_ms_ %= window_ms;
+    }
+  }
+  prev_ms_ = now_ms;
+  double sample_kbps = -1;
+  if (current_window_ms_ >= window_ms) {
+    sample_kbps = 8.0 * static_cast<double>(sum_bytes_) / static_cast<double>(window_ms);
+    current_window_ms_ -= window_ms;
+    sum_bytes_ = 0;
+  }
+  sum_bytes_ += bytes;
+  if (sample_kbps < 0) return;
+  if (estimate_kbps_ < 0) {
+    estimate_kbps_ = sample_kbps;
+  } else {
+    double uncertainty = 10.0 * std::fabs(estimate_kbps_ - sample_kbps) / estimate_kbps_;
+    double sample_var = uncertainty * uncertainty;
+    double pred_var = var_ + 5.0;
+    estimate_kbps_ = (sample_var * estimate_kbps_ + pred_var * sample_kbps) / (sample_var + pred_var);
+    var_ = sample_var * pred_var / (sample_var + pred_var);
+  }
+  estimate_kbps_ = std::max(estimate_kbps_, 0.0);
+  bitrate_ = DataRate::BitsPerSec(static_cast<int64_t>(estimate_kbps_ * 1000));
 }
 
 // --- AimdRateController ---------------------------------------------------------------
@@ -199,6 +231,9 @@ DataRate AimdRateController::Update(BandwidthUsage usage, std::optional<DataRate
     if (next > current_) next = current_ * cfg_.beta;  // Never increase on overuse.
     if (acked) {
       double a = acked->kbps();
+      // As libwebrtc's AimdRateControl: throughput far below the capacity
+      // estimate means the estimate is stale, so re-seed it from this decrease.
+      if (link_kbps_ > 0 && a < link_kbps_ - 3 * std::sqrt(link_var_ * link_kbps_)) link_kbps_ = -1;
       if (link_kbps_ < 0) {
         link_kbps_ = a;
       } else {

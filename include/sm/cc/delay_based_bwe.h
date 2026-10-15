@@ -14,7 +14,10 @@
 //                       estimate, additive near it), hold, or decrease to
 //                       0.85 x the acknowledged throughput on overuse.
 //   AcknowledgedBitrate throughput actually delivered, used to anchor
-//                       decreases and cap increases.
+//                       decreases and cap increases. Like libwebrtc's
+//                       BitrateEstimator: one 500 ms window for the first
+//                       sample, then non-overlapping 150 ms windows folded
+//                       in by a Bayesian update.
 #pragma once
 
 #include <deque>
@@ -96,7 +99,11 @@ class AcknowledgedBitrateEstimator {
   std::optional<DataRate> bitrate() const { return bitrate_; }
 
  private:
-  std::deque<std::pair<Timestamp, int64_t>> window_;  // (receive time, bytes)
+  static constexpr int64_t kInitialWindowMs = 500;  // First sample only.
+  static constexpr int64_t kWindowMs = 150;
+  void Update(Timestamp at, int64_t bytes);
+  int64_t prev_ms_ = -1, current_window_ms_ = 0, sum_bytes_ = 0;
+  double estimate_kbps_ = -1, var_ = 50;
   std::optional<DataRate> bitrate_;
 };
 
