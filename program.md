@@ -18,6 +18,35 @@ run, and if this file and an agent's prompt disagree, this file wins.
   the user experience, find where it falls short, and fix it, under the
   Owner's direction.
 
+### 0.1 Scope and stages
+
+The library grows in two stages. Each one is measured on the same test bench.
+
+1. **Baseline: what WebRTC handles.** These are the problems in sections 3-8 of
+   [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): packet
+   loss, jitter and timing, congestion control, audio quality, video
+   quality and synchronization. The bar is parity with libwebrtc. Each
+   problem has a mechanism, and it handles the problem at least as well as
+   libwebrtc's current approach, not just an older or simpler variant.
+   One example is loss-based estimation that models inherent loss and
+   detects policers (#12) instead of using fixed loss bands. A gap against
+   libwebrtc is filed as a `roadmap` issue labelled `stage:baseline`.
+2. **Human-AI streaming.** Features are added one at a time for the
+   problems that WebRTC was not designed for, because the other side of
+   the call is an AI (section 1). Some examples are a two-way
+   conversation test bench and conversation metrics (#2, #3), AI media
+   sent in faster-than-real-time bursts and cancelled on barge-in (#4),
+   echo control while the AI is speaking and the user interrupts, and
+   repairing the user's speech so that recognition works, not only so
+   that it sounds acceptable. Each feature is a `roadmap` issue labelled
+   `stage:ai`. It builds on the baseline and must not regress it, which
+   the baseline comparison enforces (section 6.4).
+
+`stage:baseline` work comes before `stage:ai` work (section 4.2).
+Sections 1, 2, 9 and 10 of that document (connectivity, security, data
+channels, observability APIs) are left to the stack that hosts the library.
+They are out of scope unless the Owner adds them.
+
 ## 1. Goal
 
 Make real-time audio and video built on this library hold up for the people
@@ -195,7 +224,8 @@ Each run:
 3. **New issues.** Take the oldest issue that has `agent-found`, `bug` or
    `roadmap` and is not `in-progress`, `needs-human` or `wontfix`. `sev:1`
    and `sev:2` problems come before `roadmap` work, which comes before
-   `sev:3`. Handle one new issue per run, unless the run finishes in well
+   `sev:3`. Within `roadmap`, `stage:baseline` comes before `stage:ai`
+   (section 0.1). Handle one new issue per run, unless the run finishes in well
    under 30 minutes. For a `roadmap` issue, steps 2 and 3 become: build what
    the issue asks for, with tests and scenarios whose `expect` lines check
    its acceptance criteria; split it into smaller PRs if it is large. Then:
@@ -259,6 +289,7 @@ a comment addressed to it, or no review yet:
 | `wontfix` | Owner decision | Owner |
 | `agent-log` | The Tester's run log issue (its memory between runs and the weekly summary) | Tester |
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
+| `stage:baseline` / `stage:ai` | The stage a `roadmap` issue belongs to (section 0.1) | Owner |
 
 ### 5.2 Issue format (Tester)
 
