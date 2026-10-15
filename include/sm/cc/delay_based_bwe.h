@@ -54,8 +54,11 @@ class InterArrival {
     int64_t size = 0;
     bool valid() const { return first_send.IsFinite(); }
   };
+  bool BelongsToBurst(Timestamp arrival, Timestamp send_time) const;
+  static constexpr int kReorderedResetThreshold = 3;
   TimeDelta group_length_;
   Group current_, prev_;
+  int reordered_ = 0;
 };
 
 struct TrendlineConfig {
@@ -123,6 +126,7 @@ class AimdRateController {
   DataRate estimate() const { return current_; }
   bool has_estimate() const { return has_estimate_; }
   std::optional<double> link_capacity_kbps() const;
+  bool TimeToReduceFurther(Timestamp now, DataRate acked) const;
 
  private:
   enum class State { kHold, kIncrease, kDecrease };

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 
 namespace sm::cc {
 
@@ -17,7 +19,9 @@ const char* ToString(BandwidthUsage u) {
 // --- InterArrival ----------------------------------------------------------------
 
 std::optional<InterArrival::Deltas> InterArrival::OnPacket(Timestamp send_time, Timestamp arrival, DataSize size) {
+  static const bool ia = getenv("SM_X_IA") != nullptr;
   std::optional<Deltas> out;
+  if (!ia) {
   if (!current_.valid()) {
     current_ = Group{send_time, send_time, arrival, arrival, size.bytes()};
     return out;
@@ -41,6 +45,49 @@ std::optional<InterArrival::Deltas> InterArrival::OnPacket(Timestamp send_time, 
   prev_ = current_;
   current_ = Group{send_time, send_time, arrival, arrival, size.bytes()};
   return out;
+  }
+  // libwebrtc's InterArrivalDelta.
+  if (!current_.valid()) {
+    current_ = Group{send_time, send_time, arrival, arrival, 0};
+  } else if (current_.first_send > send_time) {
+    return out;  // Reordered packet.
+  } else if (!BelongsToBurst(arrival, send_time) && send_time - current_.first_send > group_length_) {
+    // First packet of a later send burst: the previous group's sample is ready.
+    if (prev_.valid()) {
+      Deltas d;
+      d.send_delta = current_.last_send - prev_.last_send;
+      d.recv_delta = current_.last_arrival - prev_.last_arrival;
+      if (d.recv_delta < TimeDelta::Zero()) {
+        // The group arrived out of order after its local arrival time was taken.
+        if (++reordered_ >= kReorderedResetThreshold) {
+          prev_ = Group{};
+          current_ = Group{};
+        }
+        return out;
+      }
+      reordered_ = 0;
+      d.size_delta = current_.size - prev_.size;
+      out = d;
+    }
+    prev_ = current_;
+    current_ = Group{send_time, send_time, arrival, arrival, 0};
+  } else {
+    current_.last_send = std::max(current_.last_send, send_time);
+  }
+  current_.size += size.bytes();
+  current_.last_arrival = arrival;
+  return out;
+}
+
+// Packets that arrive in a tight train, faster than they were sent, belong to the group already open: they are
+// one burst (a probe cluster or a frame) that the bottleneck spread out, not separate groups.
+bool InterArrival::BelongsToBurst(Timestamp arrival, Timestamp send_time) const {
+  TimeDelta send_delta = send_time - current_.last_send;
+  if (send_delta.IsZero()) return true;
+  TimeDelta arrival_delta = arrival - current_.last_arrival;
+  TimeDelta propagation_delta = arrival_delta - send_delta;
+  return propagation_delta < TimeDelta::Zero() && arrival_delta <= TimeDelta::Millis(5) &&
+         arrival - current_.first_arrival < TimeDelta::Millis(100);
 }
 
 // --- TrendlineEstimator -------------------------------------------------------------
@@ -181,12 +228,49 @@ std::optional<double> AimdRateController::link_capacity_kbps() const {
   return link_kbps_;
 }
 
+bool AimdRateController::TimeToReduceFurther(Timestamp now, DataRate acked) const {
+  TimeDelta interval = Clamp(rtt_, TimeDelta::Millis(10), TimeDelta::Millis(200));
+  if (now - last_change_ >= interval) return true;
+  return has_estimate_ && acked < current_ * 0.5;
+}
+
 DataRate AimdRateController::Update(BandwidthUsage usage, std::optional<DataRate> acked, Timestamp now) {
   if (!last_change_.IsFinite()) last_change_ = now;
+  static const bool d4 = getenv("SM_X_D4") != nullptr, d2 = getenv("SM_X_D2") != nullptr,
+                    d5 = getenv("SM_X_D5") != nullptr;
+  static const bool dbg = getenv("SM_DBG") != nullptr;
+  if (dbg && usage == BandwidthUsage::kOverusing)
+    fprintf(stderr, "t=%.3f overuse acked=%.0f cur=%.0f last_change=%.3f link=%.0f\n", now.us() / 1e6, acked ? acked->kbps() : -1.0, current_.kbps(), last_change_.us() / 1e6, link_kbps_);
+  if (usage == BandwidthUsage::kOverusing && d4) {
+    // As libwebrtc's DelayBasedBwe::MaybeUpdateEstimate: an overuse acts only when the last rate change of any
+    // kind is one reduction interval old (or the delivered rate has collapsed); with no delivered rate yet it
+    // halves the estimate at that pace instead.
+    if (acked) {
+      if (!TimeToReduceFurther(now, *acked)) return current_;
+    } else if (getenv("SM_X_NOHALF")) {
+      TimeDelta interval = Clamp(rtt_, TimeDelta::Millis(10), TimeDelta::Millis(200));
+      if (last_decrease_.IsFinite() && now - last_decrease_ < interval) return current_;
+      last_decrease_ = now;
+      current_ = Clamp(current_ * cfg_.beta, cfg_.min_rate, cfg_.max_rate);
+      last_change_ = now;
+      state_ = State::kHold;
+      return current_;
+    } else {
+      if (!TimeToReduceFurther(now, current_ * 0.5 - DataRate::BitsPerSec(1))) return current_;
+      current_ = Clamp(current_ * 0.5, cfg_.min_rate, cfg_.max_rate);
+      last_change_ = now;
+      last_decrease_ = now;
+      state_ = State::kHold;
+      return current_;
+    }
+  }
   // State machine (GCC paper, Fig. 2).
   switch (usage) {
     case BandwidthUsage::kNormal:
-      if (state_ == State::kHold) state_ = State::kIncrease;
+      if (state_ == State::kHold) {
+        state_ = State::kIncrease;
+        if (d4) last_change_ = now;
+      }
       break;
     case BandwidthUsage::kOverusing:
       state_ = State::kDecrease;
@@ -204,9 +288,15 @@ DataRate AimdRateController::Update(BandwidthUsage usage, std::optional<DataRate
     }
     double inc_bps;
     if (link_kbps_ > 0) {
-      // Near convergence: additive, ~one 1200 B packet per response time.
+      // Near convergence: additive.
       double response_s = (rtt_ + TimeDelta::Millis(100)).seconds();
-      inc_bps = std::max(1000.0, 1200 * 8 * dt.seconds() / response_s);
+      if (d5) {
+        double frame_bytes = current_.bps() / 8.0 / 30.0;
+        double pkts = std::max(1.0, std::ceil(frame_bytes / 1200.0));
+        inc_bps = std::max(4000.0, frame_bytes / pkts * 8 / (2 * response_s)) * dt.seconds();
+      } else {
+        inc_bps = std::max(1000.0, 1200 * 8 * dt.seconds() / response_s);
+      }
     } else {
       inc_bps = std::max(1000.0, current_.bps() * (std::pow(1 + cfg_.multiplicative_per_s, dt.seconds()) - 1));
     }
@@ -215,25 +305,34 @@ DataRate AimdRateController::Update(BandwidthUsage usage, std::optional<DataRate
     // never decrease as a side effect of that cap.
     if (acked) next = std::min(next, std::max(current_, *acked * 1.5 + DataRate::KilobitsPerSec(10)));
   } else if (state_ == State::kDecrease) {
-    // Reduce at most once per RTT (clamped to [10, 200] ms) unless the
-    // delivered rate has collapsed below half the estimate: the previous
-    // decrease needs a round trip before its effect shows in the feedback.
-    TimeDelta interval = Clamp(rtt_, TimeDelta::Millis(10), TimeDelta::Millis(200));
-    bool collapsed = acked && *acked < current_ * 0.5;
-    if (last_decrease_.IsFinite() && now - last_decrease_ < interval && !collapsed) {
-      state_ = State::kHold;
-      last_change_ = now;
-      return current_;
+    if (!d4) {
+      // Reduce at most once per RTT (clamped to [10, 200] ms) unless the delivered rate has collapsed.
+      TimeDelta interval = Clamp(rtt_, TimeDelta::Millis(10), TimeDelta::Millis(200));
+      bool collapsed = acked && *acked < current_ * 0.5;
+      if (last_decrease_.IsFinite() && now - last_decrease_ < interval && !collapsed) {
+        state_ = State::kHold;
+        last_change_ = now;
+        return current_;
+      }
     }
     last_decrease_ = now;
     DataRate base = acked ? *acked : current_;
-    next = base * cfg_.beta;
-    if (next > current_) next = current_ * cfg_.beta;  // Never increase on overuse.
+    if (d2) {
+      // libwebrtc: beta*acked - 5 kbps; fall back to beta*link estimate if that would raise the rate;
+      // never raise on overuse, and with nothing to base it on, do not cut.
+      DataRate dec = base * cfg_.beta;
+      if (dec > DataRate::KilobitsPerSec(5)) dec = dec - DataRate::KilobitsPerSec(5);
+      if (dec > current_ && link_kbps_ > 0) dec = DataRate::BitsPerSec(static_cast<int64_t>(cfg_.beta * link_kbps_ * 1000));
+      if (dec < current_) next = dec;
+    } else {
+      next = base * cfg_.beta;
+      if (next > current_) next = current_ * cfg_.beta;  // Never increase on overuse.
+    }
     if (acked) {
       double a = acked->kbps();
       // As libwebrtc's AimdRateControl: throughput far below the capacity
       // estimate means the estimate is stale, so re-seed it from this decrease.
-      if (link_kbps_ > 0 && a < link_kbps_ - 3 * std::sqrt(link_var_ * link_kbps_)) link_kbps_ = -1;
+      if (!getenv("SM_X_NOD3") && link_kbps_ > 0 && a < link_kbps_ - 3 * std::sqrt(link_var_ * link_kbps_)) link_kbps_ = -1;
       if (link_kbps_ < 0) {
         link_kbps_ = a;
       } else {
@@ -257,7 +356,13 @@ DelayBasedBwe::DelayBasedBwe(Config cfg) : cfg_(cfg), trendline_(cfg.trendline),
 DataRate DelayBasedBwe::OnPacketResults(const std::vector<PacketResult>& results, std::optional<DataRate> acked,
                                         std::optional<DataRate> probe_estimate, Timestamp now) {
   ++stats_.feedbacks;
-  for (const auto& r : results) {
+  std::vector<PacketResult> sorted;
+  static const bool ia = getenv("SM_X_IA") != nullptr;
+  if (ia) {
+    for (const auto& r : results) if (r.received()) sorted.push_back(r);
+    std::stable_sort(sorted.begin(), sorted.end(), [](const auto& x, const auto& y) { return x.receive_time < y.receive_time; });
+  }
+  for (const auto& r : (ia ? sorted : results)) {
     if (!r.received()) continue;
     if (auto d = inter_arrival_.OnPacket(r.send_time, r.receive_time, r.size)) {
       trendline_.Update(d->recv_delta.ms_f(), d->send_delta.ms_f(), r.receive_time.us() / 1000.0);
