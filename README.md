@@ -163,7 +163,7 @@ Other presets: `native-asan`, `embedded` (size-optimized, no
 exceptions/RTTI, metrics and events compiled out), `wasm` (set
 `EMSCRIPTEN_ROOT`), `ios`, `ios-simulator`, `android-arm64`,
 `android-armv7` (set `ANDROID_NDK_HOME`), `linux-aarch64`, `linux-armv7`.
-Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC=OFF`.
+Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC|RTP=OFF`. `SM_WITH_RTP` (the RTP/RTCP session layer, in progress: issue #32) needs loss, timing, cc and sync.
 
 `tools/run_all.sh all` rebuilds every configuration, reruns everything and
 regenerates the algorithm and results documents.

@@ -25,7 +25,8 @@ std::vector<uint8_t> RtpPacket::Serialize() const {
   std::vector<uint8_t> b;
   b.reserve(size());
   bool has_ext = !extension.empty();
-  b.push_back(static_cast<uint8_t>(0x80 | (has_ext ? 0x10 : 0) | (csrcs.size() & 0x0f)));
+  b.push_back(static_cast<uint8_t>(0x80 | (padding_size > 0 ? 0x20 : 0) | (has_ext ? 0x10 : 0) |
+                                   (csrcs.size() & 0x0f)));
   b.push_back(static_cast<uint8_t>((marker ? 0x80 : 0) | (payload_type & 0x7f)));
   Put16(b, seq);
   Put32(b, timestamp);
@@ -39,6 +40,10 @@ std::vector<uint8_t> RtpPacket::Serialize() const {
     b.resize(b.size() + words * 4 - extension.size(), 0);
   }
   b.insert(b.end(), payload.begin(), payload.end());
+  if (padding_size > 0) {
+    b.resize(b.size() + padding_size - 1, 0);
+    b.push_back(padding_size);
+  }
   return b;
 }
 
@@ -70,6 +75,7 @@ std::optional<RtpPacket> RtpPacket::Parse(std::span<const uint8_t> d) {
     uint8_t pad = d[end - 1];
     if (pad == 0 || pad > end - off) return std::nullopt;
     end -= pad;
+    p.padding_size = pad;
   }
   p.payload.assign(d.begin() + static_cast<std::ptrdiff_t>(off), d.begin() + static_cast<std::ptrdiff_t>(end));
   return p;

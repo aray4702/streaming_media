@@ -86,6 +86,12 @@ if(SM_WITH_SYNC)
   list(APPEND SM_SECTIONS sync)
 endif()
 
+if(SM_WITH_RTP)
+  sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync SOURCES
+    rtp/rtcp_sdes_bye.cc)
+  list(APPEND SM_SECTIONS rtp)
+endif()
+
 # Umbrella target: link sm::sm to get every enabled section.
 add_library(sm_all INTERFACE)
 add_library(sm::sm ALIAS sm_all)

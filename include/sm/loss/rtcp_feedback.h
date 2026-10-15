@@ -16,6 +16,8 @@ namespace sm::loss {
 // RTCP packet types used by the library.
 inline constexpr uint8_t kRtcpSr = 200;
 inline constexpr uint8_t kRtcpRr = 201;
+inline constexpr uint8_t kRtcpSdes = 202;
+inline constexpr uint8_t kRtcpBye = 203;
 inline constexpr uint8_t kRtcpRtpfb = 205;  // Transport-layer feedback (NACK, transport-cc).
 inline constexpr uint8_t kRtcpPsfb = 206;   // Payload-specific feedback (PLI, FIR, LNTF, REMB).
 
@@ -89,6 +91,8 @@ enum class RtcpType {
   kFir,
   kLossNotification,
   kRemb,
+  kSdes,
+  kBye,
   kOther,  // Valid RTCP header, type the library does not interpret.
 };
 
@@ -107,7 +111,8 @@ std::optional<std::vector<RtcpPacketView>> SplitCompoundRtcp(std::span<const uin
 
 // Concatenates packets into a compound datagram. As libwebrtc does, the first
 // packet must be an SR or an RR (use an RR with no blocks if there is nothing
-// to report); otherwise returns an empty vector. Reduced-size RTCP
+// to report), and only the last packet may carry the padding bit (RFC 3550
+// 6.1); otherwise returns an empty vector. Reduced-size RTCP
 // (RFC 5506) is sent without this wrapper.
 std::vector<uint8_t> BuildCompoundRtcp(std::span<const std::vector<uint8_t>> packets);
 
