@@ -46,6 +46,9 @@ class RtxSender : public MetricsSource {
   void OnPacketSent(const RtpPacket& p, Timestamp now);
   // Returns ready-to-send RTX packets for the requested sequence numbers.
   std::vector<RtpPacket> OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt);
+  // Next sequence number of the RTX stream. Padding sent on the RTX SSRC
+  // (rtp::RtpSender) takes its numbers here so they never collide with resends.
+  uint16_t AllocateSeq() { return rtx_seq_++; }
   const RtxStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
