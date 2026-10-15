@@ -34,6 +34,15 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now) 
   return InsertResult::kInserted;
 }
 
+void PacketBuffer::NotePadding(uint16_t seq) {
+  int64_t s = unwrapper_.Unwrap(seq);
+  if (highest_ != INT64_MIN && s + static_cast<int64_t>(cfg_.window) <= highest_) return;
+  highest_ = std::max(highest_, s);
+  done_.insert(s);
+  ++stats_.padding;
+  Trim();
+}
+
 void PacketBuffer::TryAssemble(int64_t seq) {
   const uint32_t ts = packets_.at(seq).packet.timestamp;
   // Walk back to the frame start.
@@ -89,6 +98,7 @@ void PacketBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("inserted", stats_.inserted);
   w.Counter("duplicates", stats_.duplicates);
   w.Counter("too_old", stats_.too_old);
+  w.Counter("padding", stats_.padding);
   w.Counter("reordered", stats_.reordered);
   w.Counter("frames_assembled", stats_.frames_assembled);
   w.Gauge("buffered_packets", static_cast<double>(packets_.size()));

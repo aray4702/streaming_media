@@ -100,7 +100,15 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     return ReceivedKind::kUnknown;
   }
   if (PaddingOnly(p)) {
+    // Padding on the media SSRC (no RTX configured) holds a media sequence
+    // number: it is received, so it is no gap, no NACK and no loss in the RR.
     ++stats_.padding;
+    stats_rtp_.OnPacket(p.seq, p.timestamp, now);
+    if (cfg_.video) {
+      TrackSequence(p.seq);
+      if (cfg_.nack) nack_.OnReceivedPacket(p.seq, false, now);
+      packet_buffer_.NotePadding(p.seq);
+    }
     return ReceivedKind::kPadding;
   }
   ++stats_.media;
@@ -113,14 +121,8 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   return ReceivedKind::kMedia;
 }
 
-void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec) {
-  VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
-  if (!info.valid) {
-    ++stats_.invalid_payload;
-    SM_EVENT(cfg_.events, now, "rtp_receiver", "invalid_payload", p.seq, p.payload.size());
-    return;
-  }
-  const int64_t useq = unwrap_.Unwrap(p.seq);
+void RtpReceiver::TrackSequence(uint16_t seq) {
+  const int64_t useq = unwrap_.Unwrap(seq);
   if (useq > highest_seq_) {
     if (highest_seq_ >= 0 && useq > highest_seq_ + 1) {
       ++stats_.gaps;
@@ -128,6 +130,16 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     }
     highest_seq_ = useq;
   }
+}
+
+void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec) {
+  VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
+  if (!info.valid) {
+    ++stats_.invalid_payload;
+    SM_EVENT(cfg_.events, now, "rtp_receiver", "invalid_payload", p.seq, p.payload.size());
+    return;
+  }
+  TrackSequence(p.seq);
   if (cfg_.nack) nack_.OnReceivedPacket(p.seq, info.keyframe && info.frame_start, now);
   packet_buffer_.Insert(p, info.frame_start, now);
   if (feed_fec && cfg_.fec) {

@@ -42,6 +42,7 @@ struct PacketBufferStats {
   uint64_t inserted = 0;
   uint64_t duplicates = 0;
   uint64_t too_old = 0;
+  uint64_t padding = 0;          // Padding-only packets that held a sequence number.
   uint64_t reordered = 0;        // Arrived after a higher sequence number.
   uint64_t frames_assembled = 0;
   Histogram reorder_distance;    // Packets the late packet was behind.
@@ -53,6 +54,9 @@ class PacketBuffer : public MetricsSource {
   // frame_start: the packetizer's "first packet of frame" flag (e.g. VP8 S
   // bit, H.264 FU-A start); the end is the RTP marker bit.
   InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now);
+  // A padding-only packet occupied `seq`: it is received, there is nothing
+  // to assemble, and it must not look like a hole (or a duplicate later).
+  void NotePadding(uint16_t seq);
   std::vector<AssembledFrame> PopCompleteFrames();
   size_t buffered_packets() const { return packets_.size(); }
   const PacketBufferStats& stats() const { return stats_; }

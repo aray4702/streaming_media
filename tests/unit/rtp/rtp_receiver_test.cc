@@ -166,6 +166,42 @@ SM_TEST(RtpReceiver, PaddingOnlyPacketsAreNotMedia) {
   SM_EXPECT_EQ(r.stats().frames_received, 0u);
 }
 
+SM_TEST(RtpReceiver, PaddingOnTheMediaSsrcIsReceivedNotLost) {
+  RtpSenderConfig sc = SenderCfg();
+  sc.rtx_ssrc.reset();  // Padding then uses the media SSRC and a media sequence number.
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.rtx_ssrc.reset();
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  auto f0 = SendFrame(s, 0, true, 800, Timestamp::Millis(0));
+  SenderPacket pad = s.MakePadding(200, 3000, Timestamp::Millis(10));
+  SM_EXPECT_EQ(pad.packet.ssrc, kSsrc);
+  auto f1 = SendFrame(s, 1, false, 800, Timestamp::Millis(33));
+  SM_ASSERT_EQ(f0.size(), 1u);
+  SM_ASSERT_EQ(f1.size(), 1u);
+  SM_EXPECT_EQ(pad.packet.seq, static_cast<uint16_t>(RtpPacket::Parse(f0[0])->seq + 1));
+  r.OnPacket(f0[0], Timestamp::Millis(20));
+  SM_EXPECT_TRUE(r.OnPacket(pad.packet.Serialize(), Timestamp::Millis(21)) == ReceivedKind::kPadding);
+  r.OnPacket(f1[0], Timestamp::Millis(50));
+  r.Process(Timestamp::Millis(60));
+  SM_EXPECT_EQ(r.stats().gaps, 0u);
+  SM_EXPECT_EQ(r.stats().padding, 1u);
+  SM_EXPECT_EQ(r.nack().stats().missing_detected, 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 2u);
+  SM_EXPECT_EQ(r.packet_buffer().stats().padding, 1u);
+  SM_EXPECT_TRUE(r.TakeFeedback().empty());
+  // The report block counts the padding as received: three packets, none lost.
+  auto rb = r.receive_statistics()->MakeReportBlock(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(rb.cumulative_lost, 0);
+  SM_EXPECT_EQ(rb.extended_highest_seq & 0xffff, static_cast<uint32_t>(static_cast<uint16_t>(65530 + 2)));
+  // A later retransmission-less run stays quiet: no NACK for the padding seq.
+  for (int64_t t = 60; t < 600; ++t) {
+    r.Process(Timestamp::Millis(t));
+    SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  }
+}
+
 SM_TEST(RtpReceiver, UnknownSsrcAndInvalidPayloadAreCountedNotUsed) {
   RtpReceiver r(ReceiverCfg());
   RtpPacket other;
