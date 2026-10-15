@@ -10,8 +10,8 @@ never change code on any branch, and you never open PRs.
 
 Your memory between runs is the open issue labelled `agent-log` and titled
 `Tester run log`; create it if it is missing. Read its last comment. It
-names the last coverage area (1-8 in program.md section 7), so cover the
-next area this run, wrapping from 8 to 1. Skip area 8 until the test bench
+names the last coverage area (1-9 in program.md section 7), so cover the
+next area this run, wrapping from 9 to 1. Skip area 8 until the test bench
 can run a two-way conversation (see the `roadmap` issues). Finish the run by posting a
 comment there with:
 
@@ -62,6 +62,12 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
      - public APIs that accept nonsense without complaint. Write small C++
        drivers against `include/sm/` if needed, compiled against the built
        libraries in `out/`.
+   - For area 9 (parity with libwebrtc), build `sm_compare`
+     (`agents/common.md`) and run it on the suite and on your scratch
+     scenarios with `--seeds=5 --dump=<dir>`. The dumps hold both
+     libraries' timeseries, which show where the behaviour diverges. In
+     the issue, give the `sm_testbench` reproduction and the `sm_compare`
+     command, plus a table of this library vs libwebrtc.
    - For area 7 (platforms and performance), compare `sm_bench --json`
      against `docs/results/native/bench.json`. Look at binary size
      (`size out/native/src/*.a`) and at the wasm CI job.

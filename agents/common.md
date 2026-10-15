@@ -20,6 +20,17 @@ practical details every role shares.
   ```
   The test bench binary is `out/native/testbench/sm_testbench` (see
   `testbench/README.md`).
+- `sm_compare` (coverage area 9) needs clang 21 or newer, because it builds
+  against the libc++ that the prebuilt libwebrtc uses. Install it with
+  `wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21` if
+  `clang++-21` is missing. If that fails, say so in the run log and pick
+  the next area instead.
+  ```sh
+  compare/webrtc/fetch.sh                      # prebuilt libwebrtc + matching libc++, ~110 MB
+  CXX=clang++-21 cmake -S compare/webrtc -B out/compare -G Ninja -DCMAKE_BUILD_TYPE=Release
+  cmake --build out/compare -j 4
+  out/compare/sm_compare --seeds=5 testbench/scenarios/*.scn
+  ```
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
   for `testbench/baseline.json`, so numbers you measure here are the
   numbers CI will see.
