@@ -135,6 +135,21 @@ change, a design trade-off, security), comment on the issue with the
 options and your recommendation, label it `needs-human`, and remove
 `in-progress`.
 
+If you have fixed a real part of the problem, but reaching the issue's
+target needs another issue first or an Owner decision, land the part that
+is ready as a **partial fix** (`program.md` section 6.5). This applies only
+if that part improves the user-facing metric on every seed you tried and
+needs no trade-off decision itself:
+- The PR body says `Refs #N`, not `Fixes #N`.
+- The regression scenario's `expect` lines lock in the level reached, with
+  the issue's target kept as a `# Target (issue #N): ...` comment.
+- The fix record has `status: partial` and a `## Remaining` section.
+- Comment on the issue with what remains and what it depends on, and
+  remove `in-progress`.
+
+Escalate the remaining decision with `needs-human` in the same comment if
+one is needed.
+
 ## Limits
 
 - One new issue per run. You may start a second only if the first PR is

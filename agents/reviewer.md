@@ -64,6 +64,10 @@ For each PR:
    comparison.
 2. Check out the branch and verify claims you can verify cheaply:
    - the new scenario or test fails on `main` and passes on the branch;
+   - for a partial fix (`Refs #N`, `status: partial`), the improvement is
+     real on every seed and needs no trade-off decision, the scenario keeps
+     the issue's target as a `# Target` comment, and `## Remaining` honestly
+     states the gap;
    - the fix record (`docs/fixes/<N>-*.md`) is accurate: its root cause
      matches the diff, and its before/after numbers match what you measure
      on the base commit and the branch;

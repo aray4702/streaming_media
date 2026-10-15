@@ -2,10 +2,13 @@
 issue: 0
 title: <what the user experienced, as in the issue title>
 severity: sev:2
+status: fixed
 area: <area labels, comma separated>
 regression_tests: testbench/scenarios/issue_0_<slug>.scn, tests/unit/<section>/<file>_test.cc
 ---
-<!-- Copy to docs/fixes/<issue>-<slug>.md. Keep every section; CI checks they exist. -->
+<!-- Copy to docs/fixes/<issue>-<slug>.md. Keep every section; CI checks they exist.
+     status: fixed (PR says "Fixes #N") or partial (PR says "Refs #N"; add the
+     "## Remaining" section at the end). -->
 
 # #0: <title>
 
@@ -47,3 +50,9 @@ The scenario suite against the baseline (`tools/testbench_compare.py --markdown`
 |---|---|---|---|---|
 
 Anything that got worse and why that is acceptable.
+
+## Remaining
+
+Partial fixes only (delete this section when `status: fixed`): what still
+falls short of the issue's target, by how much, what causes it, and the
+next step or issue that addresses it.
