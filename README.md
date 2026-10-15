@@ -224,6 +224,11 @@ docs/                                                    research, design, algor
   ([#29](https://github.com/aray4702/streaming_media/issues/29)), and NACK, PLI, FIR and loss notification have no wire
   format yet ([#28](https://github.com/aray4702/streaming_media/issues/28)). Connecting to a browser (ICE, DTLS-SRTP,
   SDP) is left to the stack that hosts the library.
+- **RTP/RTCP in the library:** the library provides the RTP/RTCP session
+  layer (sender, receiver, the codecs' standard RTP payload formats, RTCP
+  scheduling and feedback dispatch), so an app passes encoded frames and
+  packet bytes instead of wiring the building blocks together
+  ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
 - **Call topology:** one-to-one calls only. The SFU and multiparty pieces
   (layer selection, active speaker detection, the audio mixer) are being
   removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
