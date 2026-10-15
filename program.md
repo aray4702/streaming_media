@@ -122,6 +122,7 @@ The loop is:
 | Scenario suite | `testbench/scenarios/*.scn` | The regression suite. Every scenario runs in CI; any failed expectation fails CI. |
 | Baseline results | `testbench/baseline.json` | Metrics of every scenario on `main`. CI compares each PR against it. |
 | Browser port | `web/` | WebAssembly build with a JS API (`runScenario`, plus bindings for library components) and a demo page that runs scenarios and plots them in the browser. |
+| Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](compare/README.md) and [the latest results](docs/results/compare-webrtc.md). |
 | CI | `.github/workflows/ci.yml` | Linux GCC/Clang, macOS, ASan+UBSan, no-exceptions/RTTI, WebAssembly (Node), Linux aarch64 under QEMU, Android and iOS cross-builds, test bench + baseline comparison. The aggregate job `ci-ok` is the required status check. |
 
 ### 3.1 Test bench link impairments
@@ -480,6 +481,14 @@ area it covered in each issue's notes:
    the `roadmap` issues): response delay, barge-in, the user's speech
    reaching the AI intact, and AI media sent in faster-than-real-time
    bursts, under each of the impairments above.
+9. **Parity with libwebrtc:** run `sm_compare` on the suite and on the
+   scenarios of the other areas. A gap is a user-experience metric where
+   libwebrtc is better by more than `sm_compare`'s tie tolerance, on
+   every seed. Before filing, rule out the comparison itself: its
+   approximations (listed at the end of every `sm_compare` run) and
+   test-bench simplifications that only this library sees. File gaps with
+   `stage:baseline`, with the severity from section 6.3 applied to this
+   library's numbers, and libwebrtc's values as the expected ones.
 
 ## 8. Guardrails
 
