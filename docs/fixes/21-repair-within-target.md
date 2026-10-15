@@ -62,7 +62,7 @@ The frame-dropper bucket cap that an earlier head of this PR carried is in
 | Test | Fails before the fix | Passes after |
 |---|---|---|
 | `testbench/scenarios/issue_21_repair_within_target.scn` | `net.loss_pct` 26.1 (expect < 7), `repair.overhead_pct` 85.8 (< 16), `video.render_fps` 5.2 (> 18) | 20 of 20 seeds |
-| `testbench/scenarios/issue_21_capacity_drop_repair.scn` | `net.loss_pct` 6.7 (expect < 5), `repair.overhead_pct` 13.8 (< 10) | 20 of 20 seeds |
+| `testbench/scenarios/issue_21_capacity_drop_repair.scn` | on `main` with #56, seed 1: `net.loss_pct` 4.6 (expect < 4), `repair.overhead_pct` 10.0 (< 8); the original bounds (< 5, < 10) no longer fail on `main`, so they were tightened to what the PR holds on seeds 1-20 (max 3.1 and 7.3) | 20 of 20 seeds |
 | `tests/unit/loss/nack_rtx_test.cc` `Rtx.RateLimitCapsResendsPerSecond` | does not build (no limiter) | passes |
 | `tests/unit/rtp/session_test.cc` `FecProtectionIsCappedByWhatTheTargetLeavesAboveTheVideoFloor`, `NoFecWhenTheAudioAloneTakesTheTarget` | does not build | passes |
 
