@@ -20,7 +20,7 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 3
     dict(id="3.1", slug="nack-rtx", title="NACK + RTX retransmission",
          problems=["Lost video packets -> NACK + RTX: selective retransmission on a separate SSRC"],
-         headers=["loss/nack_tracker.h", "loss/rtx.h"], unit=["NackTracker", "Rtx"], e2e=["E2E_NackRtx"],
+         headers=["loss/nack_tracker.h", "loss/rtx.h", "loss/rtcp_feedback.h"], unit=["NackTracker", "Rtx", "RtcpFeedback"], e2e=["E2E_NackRtx"],
          bench=["loss/NackTracker_PacketWith5PctLoss", "loss/RtxSender_StoreAndResend", "loss/Q_NackRtx_5pct_rtt80"],
          scenario="30 fps video (8 x 1000 B packets per frame) over a link with 5% random loss in both directions and "
                   "40 ms one-way delay. The receiver's NackTracker sends NACKs over the lossy reverse link, the "
@@ -29,7 +29,9 @@ ALGORITHMS = [
          notes="Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
                "arrive; the sender also refuses to resend the same packet twice within one RTT, which protects "
                "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
-               "the whole list, so a burst does not force an unnecessary keyframe.",
+               "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
+               "NACK (RFC 4585 6.2.1, PID+BLP items) from loss/rtcp_feedback.h, byte-compatible with libwebrtc's "
+               "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc).",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
@@ -69,13 +71,16 @@ ALGORITHMS = [
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
-         headers=["loss/keyframe_request.h"], unit=["KeyframeRequest"], e2e=["E2E_Keyframe"],
+         headers=["loss/keyframe_request.h", "loss/rtcp_feedback.h"], unit=["KeyframeRequest", "RtcpFeedback"], e2e=["E2E_Keyframe"],
          bench=["loss/KeyframeRequester_Frame", "loss/Q_Keyframe_2pct_frame_loss"],
          scenario="30 s of 30 fps video with an IPPP reference chain and 2% unrecoverable frame loss "
                   "(after NACK). The sender answers each PLI with a keyframe. Measures the decodable-frame ratio, "
                   "the longest freeze and the number of PLIs (no request storms).",
          notes="The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
-               "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that.",
+               "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that. Wire formats (loss/"
+               "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
+               "loss notification (LNTF, libwebrtc's goog-lntf application-layer feedback) and compound RTCP with "
+               "the report first; each is checked against libwebrtc's parsers in compare/webrtc/rtcp_interop.cc.",
          verification="Pass threshold derived analytically: each unrecoverable loss costs repair window + RTT + "
                       "keyframe transit, about 10 frames, so 2% loss bounds decodability near 80%. Without "
                       "keyframe requests only ~3% of frames decode."),

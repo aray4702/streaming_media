@@ -11,8 +11,8 @@ if(SM_WITH_LOSS)
   sm_add_test_exe(sm_unit_loss LABEL unit DEPS sm::loss
     SOURCES unit/loss/nack_rtx_test.cc unit/loss/fec_test.cc unit/loss/red_test.cc
             unit/loss/plc_test.cc unit/loss/keyframe_test.cc unit/loss/temporal_layers_test.cc
-            unit/loss/protection_test.cc
-    SUITES NackTracker Rtx Fec Red Plc KeyframeRequest TemporalLayers Protection)
+            unit/loss/protection_test.cc unit/loss/rtcp_feedback_test.cc
+    SUITES NackTracker Rtx Fec Red Plc KeyframeRequest TemporalLayers Protection RtcpFeedback)
   sm_add_test_exe(sm_e2e_loss LABEL e2e DEPS sm::loss
     SOURCES e2e/loss_e2e_test.cc
     SUITES E2E_NackRtx E2E_Fec E2E_Red E2E_Plc E2E_Keyframe E2E_TemporalLayers E2E_Protection)
