@@ -55,7 +55,13 @@ class PacketBuffer : public MetricsSource {
   explicit PacketBuffer(PacketBufferConfig cfg = {});
   // frame_start: the packetizer's "first packet of frame" flag (e.g. VP8 S
   // bit, H.264 FU-A start); the end is the RTP marker bit.
-  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now);
+  //
+  // `may_continue_frame`: the packet looks like a start but could follow
+  // earlier packets of the same frame (an H.264 IDR slice after its SPS and
+  // PPS). It then opens the frame only if the packet before it is known to
+  // belong to the previous frame; if that one is missing, the buffer waits
+  // for it (NACK recovers it) rather than hand over a frame without it.
+  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame = false);
   // A padding-only packet occupied `seq`: it is received, there is nothing
   // to assemble, and it must not look like a hole (or a duplicate later).
   void NotePadding(uint16_t seq);
@@ -71,6 +77,7 @@ class PacketBuffer : public MetricsSource {
   struct Entry {
     RtpPacket packet;
     bool frame_start;
+    bool may_continue_frame;
     Timestamp arrival;
   };
   void TryAssemble(int64_t seq);
@@ -82,6 +89,7 @@ class PacketBuffer : public MetricsSource {
   std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
   int64_t highest_ = INT64_MIN;
+  int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;
   PacketBufferStats stats_;
 };

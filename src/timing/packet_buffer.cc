@@ -12,7 +12,7 @@ size_t AssembledFrame::size_bytes() const {
 
 PacketBuffer::PacketBuffer(PacketBufferConfig cfg) : cfg_(cfg) {}
 
-InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now) {
+InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame) {
   int64_t s = unwrapper_.Unwrap(p.seq);
   if (highest_ != INT64_MIN && s + static_cast<int64_t>(cfg_.window) <= highest_) {
     ++stats_.too_old;
@@ -26,9 +26,10 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now) 
     ++stats_.reordered;
     stats_.reorder_distance.Add(static_cast<double>(highest_ - s));
   }
+  if (first_inserted_ == INT64_MIN) first_inserted_ = s;
   highest_ = std::max(highest_, s);
   ++stats_.inserted;
-  packets_.emplace(s, Entry{std::move(p), frame_start, now});
+  packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, now});
   TryAssemble(s);
   Trim();
   return InsertResult::kInserted;
@@ -61,6 +62,14 @@ void PacketBuffer::TryAssemble(int64_t seq) {
       continue;
     }
     if (!e.frame_start) return;
+    // A start that may continue a frame (the IDR slice after its parameter
+    // sets) opens it only if the packet before is known to belong to the
+    // previous frame. If that one is missing (lost or on its way) it may be
+    // the frame's own earlier packet, so wait for it: NACK recovers it, or the
+    // keyframe request follows if it never comes. The first packet ever
+    // inserted has nothing before it, and padding or a delivered frame ahead
+    // of it settles it too.
+    if (e.may_continue_frame && prev == packets_.end() && !done_.count(first - 1) && first != first_inserted_) return;
     break;
   }
   // Walk forward to the marker.

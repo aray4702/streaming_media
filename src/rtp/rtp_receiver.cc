@@ -144,7 +144,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
   // The NACK tracker wants to know where keyframes start: the packet that
   // opens a keyframe access unit carries the parameter sets or the IDR slice.
   if (cfg_.nack) nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
-  packet_buffer_.Insert(p, info.frame_start, now);
+  // An IDR slice that starts a packet (no parameter sets in it) may follow
+  // the parameter-set packet of the same access unit.
+  packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps);
   if (feed_fec && cfg_.fec) {
     for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false);
   }

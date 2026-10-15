@@ -221,6 +221,36 @@ SM_TEST(RtpReceiver, FrameIdsAndReferencesComeFromSequenceNumbers) {
   }
 }
 
+SM_TEST(RtpReceiver, ALostParameterSetPacketIsNackedAndNoKeyframeWithoutItIsDelivered) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  for (auto& b : SendFrame(s, 0, true, 3000, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  // The second keyframe loses its SPS+PPS packet (the first one).
+  auto key2 = SendFrame(s, 1, true, 3000, Timestamp::Millis(33));
+  auto lost = RtpPacket::Parse(key2[0]);
+  SM_ASSERT_TRUE(lost.has_value());
+  SM_EXPECT_EQ(lost->payload[0] & 0x1F, kH264NalStapA);
+  for (size_t i = 1; i < key2.size(); ++i) r.OnPacket(key2[i], Timestamp::Millis(50));
+  bool nacked = false;
+  std::vector<ReceivedFrame> frames;
+  for (int64_t t = 50; t < 400; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+    for (uint16_t n : r.TakeFeedback().nacks) nacked = nacked || n == lost->seq;
+  }
+  SM_EXPECT_TRUE(nacked);
+  SM_ASSERT_EQ(frames.size(), 1u);  // Only the first keyframe: the IDR alone is not handed over.
+  // The retransmission completes it.
+  r.OnPacket(key2[0], Timestamp::Millis(400));
+  for (int64_t t = 400; t < 700; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+  }
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[1].keyframe);
+}
+
 SM_TEST(RtpReceiver, PaddingOnlyPacketsAreNotMedia) {
   RtpSender s(SenderCfg());
   RtpReceiver r(ReceiverCfg());

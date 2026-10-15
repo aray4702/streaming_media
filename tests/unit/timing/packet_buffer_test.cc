@@ -93,12 +93,12 @@ SM_TEST(PacketBuffer, FrameWithSeveralStartPacketsStartsAtTheFirstOfThem) {
   SM_EXPECT_EQ(f[0].packets.size(), 3u);
 }
 
-SM_TEST(PacketBuffer, FlaggedStartWithoutAPredecessorStillAssembles) {
+SM_TEST(PacketBuffer, FirstPacketEverInsertedNeedsNoPredecessor) {
   PacketBuffer pb;
-  pb.Insert(Pkt(2, 7, false), true, T0());
+  pb.Insert(Pkt(2, 7, false), true, T0(), true);
   pb.Insert(Pkt(3, 7, true), false, T0());
-  // Packet 1 never arrived, but 2 is flagged as a start: the frame is taken
-  // from 2, as a flagged start without a predecessor always was.
+  // Packet 1 never arrived, but 2 is the first packet this buffer has seen:
+  // there is nothing before it to wait for.
   SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
 }
 
@@ -120,4 +120,51 @@ SM_TEST(PacketBuffer, PrecedingMediaSeqSkipsPadding) {
   SM_EXPECT_EQ(pb.PrecedingMediaSeq(4), 1);
   SM_EXPECT_EQ(pb.PrecedingMediaSeq(2), 1);
   SM_EXPECT_EQ(pb.PrecedingMediaSeq(1), 0);
+}
+
+SM_TEST(PacketBuffer, StartPacketWaitsForAMissingPredecessor) {
+  // The IDR packets of a frame arrive before its parameter-set packet.
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 6, true), true, T0());   // The previous frame, delivered.
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.Insert(Pkt(3, 7, false), true, T0(), true);  // IDR start (also looks like a start).
+  pb.Insert(Pkt(4, 7, true), false, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());  // Packet 2 may still come.
+  pb.Insert(Pkt(2, 7, false), true, T0());  // SPS+PPS, late or recovered by NACK.
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, 2);
+  SM_EXPECT_EQ(f[0].packets.size(), 3u);
+}
+
+SM_TEST(PacketBuffer, FrameWithoutItsLostFirstPacketIsNeverDelivered) {
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 6, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.Insert(Pkt(3, 7, false), true, T0(), true);
+  pb.Insert(Pkt(4, 7, true), false, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  // The next frame is unaffected: packet 4 ended frame 7, so 5 is a real start.
+  pb.Insert(Pkt(5, 8, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 8u);
+}
+
+SM_TEST(PacketBuffer, StartAfterPaddingIsARealStart) {
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 6, true), true, T0());
+  pb.NotePadding(2);
+  pb.Insert(Pkt(3, 7, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 2u);
+}
+
+SM_TEST(PacketBuffer, AnUnambiguousStartDoesNotWaitForAMissingPredecessor) {
+  // A frame whose predecessor was lost whole still assembles: it opens with a
+  // packet that can only be a frame's first, and the loss is NACK's to repair.
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 6, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.Insert(Pkt(5, 8, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
 }
