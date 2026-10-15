@@ -107,7 +107,11 @@ std::vector<PacedPacket> Pacer::Process(Timestamp now) {
   if (paused_) return sent;
   // Allow at most ~5 ms worth of burst per call.
   const DataRate rate = EffectiveRate(now);
-  const double burst_bytes = std::max(1500.0, rate.bps() / 8.0 * 0.005);
+  // A probe cluster is paced at its own rate with no burst allowance, so its
+  // send interval, and the rate measured from it, do not depend on how large
+  // the first packets happen to be (issue #48; libwebrtc's BitrateProber
+  // times each probe packet by the cluster rate).
+  const double burst_bytes = probes_.empty() ? std::max(1500.0, rate.bps() / 8.0 * 0.005) : 0.0;
   for (int guard = 0; guard < 10000; ++guard) {
     if (media_debt_bytes_ > burst_bytes) break;
     PacedPacket p;
@@ -141,7 +145,8 @@ std::vector<PacedPacket> Pacer::Process(Timestamp now) {
 Timestamp Pacer::NextSendTime(Timestamp now) const {
   if (QueuePackets() == 0 && probes_.empty()) return now + TimeDelta::Millis(5);
   if (media_debt_bytes_ <= 0) return now;
-  double secs = media_debt_bytes_ * 8.0 / std::max<double>(1.0, static_cast<double>(pacing_.bps()));
+  const DataRate rate = probes_.empty() ? pacing_ : probes_.front().c.rate;
+  double secs = media_debt_bytes_ * 8.0 / std::max<double>(1.0, static_cast<double>(rate.bps()));
   return now + TimeDelta::SecondsF(secs);
 }
 
