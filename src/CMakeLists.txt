@@ -92,7 +92,8 @@ if(SM_WITH_RTP)
     rtp/rtcp_sdes_bye.cc
     rtp/rtp_receiver.cc
     rtp/rtp_sender.cc
-    rtp/send_side_controller.cc)
+    rtp/send_side_controller.cc
+    rtp/session.cc)
   list(APPEND SM_SECTIONS rtp)
 endif()
 

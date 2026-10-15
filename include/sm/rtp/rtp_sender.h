@@ -121,6 +121,8 @@ class RtpSender : public MetricsSource {
 
   // Counters of the media stream for the RTCP sender report.
   RtcpSenderState SenderState() const;
+  // RTP timestamp of the last media packet; padding carries it, like libwebrtc.
+  uint32_t last_rtp_timestamp() const { return last_rtp_timestamp_; }
   const RtpSenderConfig& config() const { return cfg_; }
   const RtpSenderStats& stats() const { return stats_; }
   const loss::RtxSender& rtx() const { return rtx_; }

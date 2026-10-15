@@ -120,3 +120,32 @@ SM_TEST(SendSideController, SilentFeedbackPausesTheEncoderAndResumes) {
   SM_EXPECT_TRUE(paused);
   SM_EXPECT_FALSE(c.TakeActions().pause_encoder);  // Taking clears the flags.
 }
+
+SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccountedSize) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  map.Register(2, sync::uri::kAbsSendTime);
+  SendSideController c({}, &map);
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  sc.extensions = &map;
+  RtpSender sender(sc);
+  c.SetPaddingSender(&sender);
+  c.Start(Timestamp::Millis(0));
+  sender.SendVideoFrame(std::vector<std::vector<uint8_t>>{std::vector<uint8_t>(100, 1)}, 123456, Timestamp::Millis(0));
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  c.pacer().SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(300));
+  size_t padding = 0;
+  for (int t = 0; t < 300; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      if (r.kind != PacketKind::kPadding) continue;
+      auto p = RtpPacket::Parse(r.bytes);
+      SM_ASSERT_TRUE(p.has_value());
+      SM_EXPECT_EQ(p->timestamp, 123456u);
+      SM_EXPECT_LE(static_cast<int64_t>(r.bytes.size()) + 28, r.wire_size.bytes());
+      ++padding;
+    }
+  }
+  SM_EXPECT_GT(padding, 0u);
+}

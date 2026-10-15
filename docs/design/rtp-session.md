@@ -659,6 +659,18 @@ The test bench keeps running through its current glue until PR 6.
 | 6 | **Test bench switch**: `call.cc` replaces its glue with `Session`; every packet crosses the link as bytes; `Fwd`/`Rev` become `{bytes, kind}`; delete the replaced glue. The private video header is still in use here (payload chunks stay opaque), so numbers change only through real RTCP/RTP sizes, and LNTF no longer sent. Baseline updated and explained metric by metric. | Declared change: packet sizes. |
 | 7 | **H.264**: `H264Packetizer`/`H264Depacketizer`, the fake encoder, derived frame ids; `WriteVideoHeader`/`ReadVideoHeader` removed. Baseline updated; every change explained. | Declared change: real NAL framing overhead and frame-id derivation. |
 
+Status of PR 5 (as built): `rtp::Session` (`include/sm/rtp/session.h`) composes
+`RtcpEngine`, `RtpSender`, `SendSideController` and `RtpReceiver`, with one
+transport-cc builder and one `sync::RtpDemuxer` per session. Differences from
+the sketch in section 4.2, all because payloads are still opaque until PR 7:
+`SendVideo` splits a byte span evenly, `SendVideoChunks` takes payloads the app
+framed itself, `VideoStreamConfig` carries a `VideoPayloadParser`, and
+`TakeVideoFrames` returns the receiver's frame records without a bitstream.
+Audio and video senders each get a pacer slot through one shared
+`SendSideController`; padding goes on the video stream's RTX SSRC. The video
+payload limit leaves 16 bytes for the header extensions so the whole packet
+stays within 1200 bytes.
+
 Reason for ordering 7 after 6: the large refactor is isolated from the payload
 change, so a regression in either is attributable. If a PR in this series
 cannot be made behaviour-preserving, #32 says to stop and report; this plan
