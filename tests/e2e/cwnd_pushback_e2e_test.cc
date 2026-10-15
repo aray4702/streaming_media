@@ -24,9 +24,6 @@ SessionConfig MakeConfig(uint32_t ssrc, const char* cname, bool pushback) {
   c.extensions.Register(2, sync::uri::kAbsSendTime);
   c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(2000);
   c.send_side.cwnd.enabled = pushback;
-  // This test isolates pushback. The resend cap (issue #21) also lowers the data in flight
-  // of the run without pushback, so it is off in both runs.
-  c.send_side.max_retransmission_factor = 1000.0;
   return c;
 }
 
