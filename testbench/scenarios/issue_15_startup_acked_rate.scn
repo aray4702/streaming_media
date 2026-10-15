@@ -1,0 +1,14 @@
+name issue_15_startup_acked_rate
+describe Start-up overuse must not seed the AIMD link estimate from the ramp-up (cross_traffic, a seed where main overshoots)
+duration 40s
+seed 8
+# The first overuse at ~0.3 s used to cut the target to 0.85 x an acked rate that still held the
+# ramp-up and seeded the link-capacity estimate with it; the target then needed ~10 s to climb back
+# and the queue when the cross flow joins at 10 s depended on where it happened to be.
+# Target (issue #15): cc.queue_p95_ms < 250 on every seed 1..20 of cross_traffic (main: 4 of 20 fail).
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
+expect cc.unsettled == 0
