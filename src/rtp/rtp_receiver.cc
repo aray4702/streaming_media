@@ -139,6 +139,7 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     SM_EVENT(cfg_.events, now, "rtp_receiver", "invalid_payload", p.seq, p.payload.size());
     return;
   }
+  if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
   TrackSequence(p.seq);
   if (cfg_.nack) nack_.OnReceivedPacket(p.seq, info.keyframe && info.frame_start, now);
   packet_buffer_.Insert(p, info.frame_start, now);

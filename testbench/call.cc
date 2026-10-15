@@ -6,40 +6,28 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
-#include <functional>
 #include <optional>
 #include <set>
 #include <unordered_map>
 
-#include "sm/cc/frame_dropper.h"
-#include "sm/cc/outage_monitor.h"
-#include "sm/cc/pacer.h"
-#include "sm/cc/send_side_bwe.h"
-#include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/random.h"
+#include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
-#include "sm/loss/fec.h"
-#include "sm/loss/keyframe_request.h"
-#include "sm/loss/nack_tracker.h"
 #include "sm/loss/protection_controller.h"
-#include "sm/loss/red.h"
-#include "sm/loss/rtx.h"
+#include "sm/rtp/session.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
-#include "sm/timing/audio_jitter_buffer.h"
-#include "sm/timing/packet_buffer.h"
-#include "sm/timing/rtcp_stats.h"
-#include "sm/timing/video_jitter_estimator.h"
-#include "sm/video/frame_scheduler.h"
+#include "sm/cc/frame_dropper.h"
 #include "sm/video/freeze_detector.h"
 
 namespace sm::testbench {
 namespace {
 
 constexpr uint32_t kAudioSsrc = 1, kVideoSsrc = 2, kRtxSsrc = 3;
-constexpr uint8_t kAudioPt = 111, kVideoPt = 96, kRtxPt = 97;
+constexpr uint32_t kSenderRtcpSsrc = 100, kReceiverRtcpSsrc = 200;
+constexpr uint8_t kAudioPt = 111, kAudioRedPt = 63, kVideoPt = 96, kRtxPt = 97;
 constexpr int64_t kUdpIpOverhead = 28;
 constexpr size_t kMaxVideoPayload = 1100;
 constexpr size_t kVideoHeader = 9;  // flags + 64-bit frame id (stands in for the codec descriptor).
@@ -47,62 +35,93 @@ constexpr size_t kVideoHeader = 9;  // flags + 64-bit frame id (stands in for th
 // (RTCInboundRtpStreamStats.interruptionCount).
 constexpr int64_t kInterruptionMs = 150;
 
-enum class Kind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding, kSr, kCross };
+// What a datagram is on the link, for the accounting only: the receiver
+// session works from the bytes.
+enum class Kind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding, kRtcp, kCross };
 struct Fwd {
   Kind kind = Kind::kCross;
-  int32_t tseq = -1;  // Transport-wide sequence number, -1 = none.
-  RtpPacket rtp;
-  std::vector<uint8_t> rtcp;
-};
-
-enum class RKind : uint8_t { kFeedback, kNack, kPli, kLntf, kRr };
-struct Rev {
-  RKind kind = RKind::kFeedback;
   std::vector<uint8_t> bytes;
-  std::vector<uint16_t> nacks;
+};
+struct Rev {
+  std::vector<uint8_t> bytes;
 };
 
-void WriteVideoHeader(std::vector<uint8_t>& payload, bool start, bool key, int64_t frame_id) {
-  payload[0] = static_cast<uint8_t>((start ? 1 : 0) | (key ? 2 : 0));
-  for (int i = 0; i < 8; ++i) payload[1 + static_cast<size_t>(i)] = static_cast<uint8_t>(static_cast<uint64_t>(frame_id) >> (8 * i));
-}
-
-struct VideoHeader {
-  bool start = false, key = false;
-  int64_t frame_id = -1;
-};
-
-VideoHeader ReadVideoHeader(const std::vector<uint8_t>& payload) {
-  VideoHeader h;
-  if (payload.size() < kVideoHeader) return h;
-  h.start = payload[0] & 1;
-  h.key = payload[0] & 2;
-  uint64_t id = 0;
-  for (int i = 0; i < 8; ++i) id |= static_cast<uint64_t>(payload[1 + static_cast<size_t>(i)]) << (8 * i);
-  h.frame_id = static_cast<int64_t>(id);
-  return h;
-}
-
-// Sliding-window byte counter for rates.
-class RateWindow {
- public:
-  explicit RateWindow(TimeDelta window) : window_(window) {}
-  void Add(Timestamp now, int64_t bytes) {
-    q_.emplace_back(now, bytes);
-    sum_ += bytes;
+Kind ToKind(rtp::OutgoingKind k) {
+  switch (k) {
+    case rtp::OutgoingKind::kAudio: return Kind::kAudio;
+    case rtp::OutgoingKind::kVideo: return Kind::kVideo;
+    case rtp::OutgoingKind::kRtx: return Kind::kRtx;
+    case rtp::OutgoingKind::kFec: return Kind::kFec;
+    case rtp::OutgoingKind::kPadding: return Kind::kPadding;
+    case rtp::OutgoingKind::kRtcp: return Kind::kRtcp;
   }
-  DataRate Rate(Timestamp now) {
-    while (!q_.empty() && q_.front().first <= now - window_) {
-      sum_ -= q_.front().second;
-      q_.pop_front();
-    }
-    return DataRate::BitsPerSec(sum_ * 8 * 1000000 / window_.us());
+  return Kind::kVideo;
+}
+
+// RTP fixed header fields (RFC 3550 section 5.1), read from the bytes of a
+// datagram that is known to be RTP.
+uint16_t RtpSeq(const std::vector<uint8_t>& b) { return static_cast<uint16_t>((b[2] << 8) | b[3]); }
+uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
+  return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
+}
+
+// The video payload carries a private header until the H.264 packetizer
+// exists (plan PR 7): start flag, key flag and a 64-bit frame id.
+std::vector<std::vector<uint8_t>> MakeFrame(int64_t id, bool key, size_t bytes) {
+  std::vector<std::vector<uint8_t>> chunks;
+  bool first = true;
+  for (size_t n : rtp::SplitEvenly(bytes, kMaxVideoPayload)) {
+    std::vector<uint8_t> c(std::max(n, kVideoHeader), 0);
+    c[0] = static_cast<uint8_t>((first ? 1 : 0) | (key ? 2 : 0));
+    for (size_t i = 0; i < 8; ++i) c[1 + i] = static_cast<uint8_t>(static_cast<uint64_t>(id) >> (8 * i));
+    chunks.push_back(std::move(c));
+    first = false;
+  }
+  return chunks;
+}
+
+class VideoHeaderParser : public rtp::VideoPayloadParser {
+ public:
+  rtp::VideoPayloadInfo Parse(const RtpPacket& p) const override {
+    rtp::VideoPayloadInfo h;
+    if (p.payload.size() < kVideoHeader) return h;
+    h.valid = true;
+    h.frame_start = p.payload[0] & 1;
+    h.keyframe = p.payload[0] & 2;
+    uint64_t id = 0;
+    for (size_t i = 0; i < 8; ++i) id |= static_cast<uint64_t>(p.payload[1 + i]) << (8 * i);
+    h.frame_id = static_cast<int64_t>(id);
+    return h;
+  }
+};
+
+// The modelled audio codec: a frame is identified by its RTP timestamp, and
+// decodes to the matching 20 ms of the speech signal.
+class SpeechDecoder : public rtp::AudioDecoder {
+ public:
+  SpeechDecoder(const std::vector<float>& speech, size_t frame_samples) : speech_(speech), frame_samples_(frame_samples) {}
+  std::optional<std::vector<float>> Decode(std::span<const uint8_t>, uint32_t rtp_timestamp) override {
+    size_t off = rtp_timestamp;
+    if (off + frame_samples_ > speech_.size()) return std::nullopt;
+    return std::vector<float>(speech_.begin() + static_cast<std::ptrdiff_t>(off),
+                              speech_.begin() + static_cast<std::ptrdiff_t>(off + frame_samples_));
   }
 
  private:
-  TimeDelta window_;
-  std::deque<std::pair<Timestamp, int64_t>> q_;
-  int64_t sum_ = 0;
+  const std::vector<float>& speech_;
+  size_t frame_samples_;
+};
+
+// Records which video media sequence numbers the receiver ended up with
+// (originals, retransmissions and FEC recoveries).
+class ReceivedSeqs : public rtp::VideoMediaObserver {
+ public:
+  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { seqs_.insert(unwrap_.Unwrap(seq)); }
+  bool Has(int64_t useq) const { return seqs_.count(useq) > 0; }
+
+ private:
+  SeqNumUnwrapper<uint16_t> unwrap_;
+  std::set<int64_t> seqs_;
 };
 
 }  // namespace
@@ -145,7 +164,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
       {"cc.rtt_p50_ms", "Median RTT measured by RTCP"},
       {"net.loss_pct", "Forward link loss (random, burst, outage and queue drops)"},
-      {"repair.overhead_pct", "(RTX + FEC bytes) / media bytes"},
+      {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), headers included"},
       {"repair.nack_recovered", "Packets recovered by retransmission"},
       {"repair.fec_recovered", "Packets recovered by FEC"},
   };
@@ -233,79 +252,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
 
-  // --- Sender ---------------------------------------------------------------
-  cc::GccConfig gcfg;
-  gcfg.min_rate = s.min_rate;
-  gcfg.start_rate = s.start_rate;
-  gcfg.max_rate = s.max_rate;
-  gcfg.events = &events;
-  cc::GccController gcc(gcfg);
-  cc::PacerConfig pcfg;
-  pcfg.events = &events;
-  cc::Pacer pacer(pcfg);
-  cc::OutageConfig ocfg;
-  ocfg.events = &events;
-  cc::OutageMonitor outage(ocfg);
-  cc::FrameDropper dropper;
-  loss::RedEncoder red_enc(1);
-  loss::RtxConfig rtx_cfg;
-  rtx_cfg.rtx_ssrc = kRtxSsrc;
-  rtx_cfg.rtx_payload_type = kRtxPt;
-  rtx_cfg.events = &events;
-  loss::RtxSender rtx(rtx_cfg);
-  loss::FecConfig fec_cfg;
-  fec_cfg.events = &events;
-  loss::FecEncoder fec_enc(fec_cfg);
-  loss::ProtectionConfig prot_cfg;
-  prot_cfg.events = &events;
-  loss::ProtectionController protection(prot_cfg);
-  timing::RttEstimator rtt_est;
-  registry.Register("sender.gcc", &gcc);
-  registry.Register("sender.pacer", &pacer);
-  registry.Register("sender.outage", &outage);
-  registry.Register("sender.frame_dropper", &dropper);
-  registry.Register("sender.rtx", &rtx);
-  registry.Register("sender.fec", &fec_enc);
-  registry.Register("sender.protection", &protection);
-  registry.Register("sender.rtt", &rtt_est);
-
-  // --- Receiver -------------------------------------------------------------
-  cc::TransportFeedbackBuilder feedback;
-  loss::NackConfig nack_cfg;
-  nack_cfg.events = &events;
-  loss::NackTracker nack(nack_cfg);
-  loss::FecDecoder fec_dec(fec_cfg);
-  loss::RedReceiver red_rx;
-  timing::PacketBufferConfig pb_cfg;
-  pb_cfg.events = &events;
-  timing::PacketBuffer packet_buffer(pb_cfg);
-  loss::KeyframeRequestConfig kf_cfg;
-  kf_cfg.events = &events;
-  loss::KeyframeRequester keyframes(kf_cfg);
-  timing::VideoJitterEstimator vjitter;
-  timing::VideoTiming vtiming;
-  video::FrameSchedulerConfig fs_cfg;
-  fs_cfg.events = &events;
-  video::FrameScheduler scheduler(fs_cfg);
-  video::FreezeDetector freezes(&events);
-  timing::AudioJitterBufferConfig jb_cfg;
-  jb_cfg.sample_rate = s.audio_sample_rate;
-  jb_cfg.events = &events;
-  timing::AudioJitterBuffer jitter_buffer(jb_cfg);
-  timing::ReceiveStatistics video_stats(kVideoSsrc, 90000);
-  registry.Register("receiver.feedback", &feedback);
-  registry.Register("receiver.nack", &nack);
-  registry.Register("receiver.fec", &fec_dec);
-  registry.Register("receiver.red", &red_rx);
-  registry.Register("receiver.packet_buffer", &packet_buffer);
-  registry.Register("receiver.keyframes", &keyframes);
-  registry.Register("receiver.video_jitter", &vjitter);
-  registry.Register("receiver.video_timing", &vtiming);
-  registry.Register("receiver.frame_scheduler", &scheduler);
-  registry.Register("receiver.freezes", &freezes);
-  registry.Register("receiver.neteq", &jitter_buffer);
-  registry.Register("receiver.video_rtp", &video_stats);
-
   // --- Media sources --------------------------------------------------------
   const int sr = s.audio_sample_rate;
   const size_t frame_samples = static_cast<size_t>(sr / 50);  // 20 ms.
@@ -316,28 +262,111 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
               : DataRate::Zero();
   Random enc_rng(s.seed + 13);
+  SpeechDecoder decoder(speech, frame_samples);
+  VideoHeaderParser parser;
+  ReceivedSeqs received_seqs;
+
+  // --- The two ends of the call ---------------------------------------------
+  auto session_config = [&](uint32_t rtcp_ssrc, const char* cname) {
+    rtp::SessionConfig c;
+    c.local_ssrc = rtcp_ssrc;
+    c.cname = cname;
+    c.extensions.Register(1, sync::uri::kTransportCc);
+    c.rtcp.has_video = s.video;
+    c.send_side.gcc.min_rate = s.min_rate;
+    c.send_side.gcc.start_rate = s.start_rate;
+    c.send_side.gcc.max_rate = s.max_rate;
+    c.send_side.transport_overhead_bytes = kUdpIpOverhead;
+    c.send_side.video_min = s.video_min;
+    c.send_side.video_max = s.video_max;
+    c.events = &events;
+    return c;
+  };
+  rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
+  rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
+  // Receiver reports on the call's 1 s grid, half a period after the sender's.
+  if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
+  rtp::Session sender(sender_cfg), receiver(receiver_cfg);
+
+  rtp::AudioStreamConfig audio_cfg;
+  audio_cfg.ssrc = kAudioSsrc;
+  audio_cfg.payload_type = kAudioPt;
+  if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
+  audio_cfg.clock_rate = sr;
+  audio_cfg.nominal_rate = audio_wire_rate;
+  rtp::VideoStreamConfig video_cfg;
+  video_cfg.ssrc = kVideoSsrc;
+  video_cfg.payload_type = kVideoPt;
+  video_cfg.rtx_ssrc = kRtxSsrc;
+  video_cfg.rtx_payload_type = kRtxPt;
+  video_cfg.fec = s.fec;
+  video_cfg.max_payload_size = kMaxVideoPayload + 16;  // The session reserves 16 bytes for header extensions.
+  video_cfg.parser = &parser;
+  video_cfg.media_observer = &received_seqs;
+  video_cfg.nack = s.nack;
+  // A loss notification needs a frame descriptor, which the bench's private
+  // payload header is not (libwebrtc sends LNTF only with one).
+  video_cfg.keyframe.send_lntf = false;
+
+  rtp::AudioSendId audio_send;
+  rtp::VideoSendId video_send;
+  rtp::AudioRecvId audio_recv;
+  rtp::VideoRecvId video_recv;
+  if (s.audio) {
+    audio_send = sender.AddAudioSend(audio_cfg);
+    audio_recv = receiver.AddAudioReceive(audio_cfg, &decoder);
+  }
+  if (s.video) {
+    video_send = sender.AddVideoSend(video_cfg);
+    video_recv = receiver.AddVideoReceive(video_cfg);
+  }
+
+  // The encoder side: the frame dropper and the FEC protection decision.
+  cc::FrameDropper dropper;
+  loss::ProtectionConfig prot_cfg;
+  prot_cfg.events = &events;
+  loss::ProtectionController protection(prot_cfg);
+  video::FreezeDetector freezes(&events);
+  registry.Register("sender.session", &sender);
+  registry.Register("sender.send_side", &sender.send_side());
+  registry.Register("sender.gcc", &sender.send_side().gcc());
+  registry.Register("sender.pacer", &sender.send_side().pacer());
+  registry.Register("sender.outage", &sender.send_side().outage());
+  registry.Register("sender.rtcp", &sender.rtcp());
+  registry.Register("sender.frame_dropper", &dropper);
+  registry.Register("sender.protection", &protection);
+  registry.Register("receiver.session", &receiver);
+  registry.Register("receiver.rtcp", &receiver.rtcp());
+  registry.Register("receiver.freezes", &freezes);
+  if (s.video) {
+    registry.Register("sender.video", &sender.video_sender(video_send));
+    const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
+    registry.Register("receiver.video", &vr);
+    registry.Register("receiver.nack", &vr.nack());
+    registry.Register("receiver.fec", &vr.fec());
+    registry.Register("receiver.packet_buffer", &vr.packet_buffer());
+    registry.Register("receiver.keyframes", &vr.keyframes());
+    registry.Register("receiver.video_jitter", &vr.video_jitter());
+    registry.Register("receiver.video_timing", &vr.video_timing());
+    registry.Register("receiver.frame_scheduler", &vr.scheduler());
+  }
+  if (s.audio) {
+    registry.Register("sender.audio", &sender.audio_sender(audio_send));
+    registry.Register("receiver.audio", &receiver.audio_receiver(audio_recv));
+    registry.Register("receiver.red", &receiver.audio_receiver(audio_recv).red());
+    registry.Register("receiver.neteq", &receiver.audio_receiver(audio_recv).jitter_buffer());
+  }
 
   // --- State ----------------------------------------------------------------
-  std::unordered_map<uint64_t, Fwd> paced;  // Pacer id -> packet.
-  uint64_t next_id = 0;
-  uint16_t tseq = 0, audio_seq = 0, video_seq = 0;
-  DataRate target = s.start_rate;
-  TimeDelta rtt = TimeDelta::Millis(100);
   bool video_paused = false, keyframe_needed = true;
   int64_t frame_id = 0, frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
   Timestamp last_keyframe = Timestamp::MinusInfinity();
   std::unordered_map<int64_t, Timestamp> frame_capture;  // Frame id -> capture time.
-  std::unordered_map<int64_t, uint32_t> frame_rtp_ts;
   int64_t media_bytes = 0, repair_bytes = 0;
   std::vector<int64_t> video_send_ms;  // By unwrapped media sequence number.
-  std::set<int64_t> video_seqs_received;
-  SeqNumUnwrapper<uint16_t> video_unwrap;
-  RateWindow send_rate(TimeDelta::Millis(500));
-  // Receiver-side burst tracking for the protection controller (a real
-  // receiver would report this in RTCP XR).
-  int64_t highest_video_seq = -1;
-  uint64_t gaps = 0, missing = 0, last_gaps = 0, last_missing = 0;
+  SeqNumUnwrapper<uint16_t> video_sent_unwrap;
+  double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
   bool audio_started = false;
@@ -351,50 +380,30 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // Per-sample window counters.
   int64_t w_send = 0, w_good = 0, w_frames = 0, w_conceal = 0, w_played = 0;
   double last_video_delay = 0;
-
-  auto apply = [&](const cc::NetworkControlUpdate& u) {
-    target = u.target_rate;
-    pacer.SetPacingRates(u.pacing_rate, DataRate::Zero());
-    for (const auto& c : u.probes) pacer.AddProbeCluster(c);
-    outage.SetCurrentRate(target);
-  };
-  auto enqueue = [&](Fwd f, cc::PacketPriority prio, Timestamp now) {
-    int64_t size = static_cast<int64_t>(f.rtp.size()) + kUdpIpOverhead;
-    paced[next_id] = std::move(f);
-    pacer.Enqueue({next_id++, prio, DataSize::Bytes(size), now});
-  };
-  auto video_rate = [&]() {
-    DataRate r = target - audio_wire_rate;
-    r = r * (1.0 / (1.0 + fec_enc.params().protection));
-    return std::clamp(r, s.video_min, s.video_max);
-  };
-
-  // Receiver: a video media packet (original, retransmitted or FEC-recovered).
-  std::function<void(const RtpPacket&, Timestamp, bool)> on_video = [&](const RtpPacket& p, Timestamp at, bool feed_fec) {
-    VideoHeader h = ReadVideoHeader(p.payload);
-    int64_t useq = video_unwrap.Unwrap(p.seq);
-    video_seqs_received.insert(useq);
-    if (useq > highest_video_seq) {
-      if (highest_video_seq >= 0 && useq > highest_video_seq + 1) {
-        ++gaps;
-        missing += static_cast<uint64_t>(useq - highest_video_seq - 1);
-      }
-      highest_video_seq = useq;
-    }
-    if (s.nack) nack.OnReceivedPacket(p.seq, h.key && h.start, at);
-    packet_buffer.Insert(p, h.start, at);
-    if (feed_fec && s.fec) {
-      for (auto& r : fec_dec.OnMediaPacket(p)) on_video(r, at, false);
-    }
-  };
-
-  apply(gcc.Start(Timestamp::Micros(0)));
-  gcc.OnRttUpdate(rtt);
-  keyframes.OnStreamStart(Timestamp::Micros(0));
+  // Receiver-side burst tracking for the protection controller (a real
+  // receiver would report this in RTCP XR); read when a report block arrives.
+  uint64_t last_gaps = 0, last_missing = 0;
 
   const int64_t end_ms = s.duration.ms();
   int64_t next_frame_ms = 0;
-  double cross_debt = 0;
+
+  // Sends what a session has ready onto its link; returns nothing to count
+  // beyond the pacer-released bytes the caller tallies.
+  auto put_on_link = [&](rtp::Session& from, auto& link, auto make, Timestamp now, bool is_forward) {
+    for (auto& p : from.TakeOutgoing()) {
+      const Kind kind = ToKind(p.kind);
+      if (is_forward) {
+        if (kind == Kind::kAudio || kind == Kind::kVideo) media_bytes += static_cast<int64_t>(p.bytes.size());
+        if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
+        if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
+        if (kind == Kind::kVideo) {
+          video_send_ms.push_back(now.ms());
+          (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
+        }
+      }
+      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size);
+    }
+  };
 
   for (int64_t t = 0; t < end_ms; ++t) {
     const Timestamp now = Timestamp::Millis(t);
@@ -406,23 +415,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // --- Sender: audio --------------------------------------------------------
     if (s.audio && t % 20 == 0) {
-      uint32_t ts = static_cast<uint32_t>(t * sr / 1000);
       std::vector<uint8_t> frame(audio_frame_bytes, static_cast<uint8_t>(t / 20));
-      RtpPacket p;
-      p.ssrc = kAudioSsrc;
-      p.payload_type = kAudioPt;
-      p.seq = audio_seq++;
-      p.timestamp = ts;
-      p.payload = s.red ? red_enc.Encode(kAudioPt, ts, frame) : frame;
-      media_bytes += static_cast<int64_t>(audio_frame_bytes);
-      enqueue({Kind::kAudio, -1, std::move(p), {}}, cc::PacketPriority::kAudio, now);
+      sender.SendAudio(audio_send, {static_cast<uint32_t>(t * sr / 1000), frame, false}, now);
     }
 
     // --- Sender: video --------------------------------------------------------
     if (s.video && t >= next_frame_ms) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
-      DataRate vr = video_rate();
+      DataRate vr = sender.rates().video_target;
       dropper.SetRates(vr, s.video_fps);
       bool periodic = s.keyframe_interval.us() > 0 && now - last_keyframe >= s.keyframe_interval;
       bool key = keyframe_needed || periodic;
@@ -442,50 +443,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         video_bytes_encoded += bytes;
         int64_t id = frame_id++;
         frame_capture[id] = now;
-        uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
-        frame_rtp_ts[id] = rtp_ts;
-        size_t npkts = static_cast<size_t>((bytes + static_cast<int64_t>(kMaxVideoPayload) - 1) / static_cast<int64_t>(kMaxVideoPayload));
-        for (size_t i = 0; i < npkts; ++i) {
-          size_t len = static_cast<size_t>(bytes) / npkts + (i < static_cast<size_t>(bytes) % npkts ? 1 : 0);
-          RtpPacket p;
-          p.ssrc = kVideoSsrc;
-          p.payload_type = kVideoPt;
-          p.seq = video_seq++;
-          p.timestamp = rtp_ts;
-          p.marker = i + 1 == npkts;
-          p.payload.assign(std::max(len, kVideoHeader), 0);
-          WriteVideoHeader(p.payload, i == 0, key, id);
-          media_bytes += static_cast<int64_t>(p.payload.size());
-          video_send_ms.push_back(t);
-          rtx.OnPacketSent(p, now);
-          if (s.fec) {
-            for (RtpPacket& f : fec_enc.AddMediaPacket(p, p.marker)) {
-              repair_bytes += static_cast<int64_t>(f.payload.size());
-              enqueue({Kind::kFec, -1, std::move(f), {}}, cc::PacketPriority::kFec, now);
-            }
-          }
-          enqueue({Kind::kVideo, -1, std::move(p), {}}, cc::PacketPriority::kVideo, now);
-        }
+        sender.SendVideoChunks(video_send, MakeFrame(id, key, static_cast<size_t>(bytes)), static_cast<uint32_t>(t * 90), now);
       }
     }
 
-    // --- Sender: pacer and cross traffic ---------------------------------------
-    for (const auto& sent : pacer.Process(now)) {
-      Fwd w;
-      if (sent.is_padding) {
-        w.kind = Kind::kPadding;
-      } else {
-        auto it = paced.find(sent.id);
-        if (it == paced.end()) continue;
-        w = std::move(it->second);
-        paced.erase(it);
-      }
-      w.tseq = tseq;
-      gcc.OnPacketSent(tseq++, now, sent.size, sent.probe_cluster);
-      send_rate.Add(now, sent.size.bytes());
-      w_send += sent.size.bytes();
-      forward.Send(now, std::move(w), sent.size);
-    }
+    // --- Sender: pacer, RTCP and cross traffic ----------------------------------
+    sender.Process(now);
+    put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
     if (fwd_state.cross.bps() > 0) {
       cross_debt += static_cast<double>(fwd_state.cross.bps()) / 8 / 1000;
       while (cross_debt >= 1200) {
@@ -493,123 +457,59 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         forward.Send(now, Fwd{}, DataSize::Bytes(1200));
       }
     }
-    if (s.video && t % 1000 == 500) {  // RTCP sender report.
-      timing::SenderReport sr_msg;
-      sr_msg.ssrc = kVideoSsrc;
-      sr_msg.ntp = timing::NtpTime::FromTimestamp(now);
-      sr_msg.rtp_timestamp = static_cast<uint32_t>(t * 90);
-      Fwd w;
-      w.kind = Kind::kSr;
-      w.rtcp = timing::SerializeSenderReport(sr_msg);
-      int64_t size = static_cast<int64_t>(w.rtcp.size()) + kUdpIpOverhead;
-      forward.Send(now, std::move(w), DataSize::Bytes(size));
-    }
 
     // --- Receiver -----------------------------------------------------------
     forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
       if (w.kind == Kind::kCross) return;
-      if (w.tseq >= 0) feedback.OnPacket(static_cast<uint16_t>(w.tseq), at);
-      int64_t wire = static_cast<int64_t>(w.rtp.size()) + kUdpIpOverhead;
+      int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
       switch (w.kind) {
         case Kind::kAudio: {
           w_good += wire;
-          int64_t capture_ms = static_cast<int64_t>(w.rtp.timestamp) * 1000 / sr;
+          int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
           audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
-          std::vector<loss::RedBlock> blocks;
-          if (s.red) {
-            blocks = red_rx.OnPacket(w.rtp.payload, w.rtp.timestamp);
-          } else {
-            loss::RedBlock b;
-            b.timestamp = w.rtp.timestamp;
-            b.primary = true;
-            blocks.push_back(std::move(b));
-          }
-          for (const auto& b : blocks) {
-            size_t off = b.timestamp;
-            if (off + frame_samples > speech.size()) continue;
-            std::vector<float> pcm(speech.begin() + static_cast<std::ptrdiff_t>(off),
-                                   speech.begin() + static_cast<std::ptrdiff_t>(off + frame_samples));
-            jitter_buffer.InsertPacket(b.timestamp, std::move(pcm), at);
-            if (!audio_started) {
-              audio_started = true;
-              audio_first = at;
-            }
+          if (!audio_started) {
+            audio_started = true;
+            audio_first = at;
           }
           break;
         }
         case Kind::kVideo:
-          w_good += wire;
-          video_stats.OnPacket(w.rtp.seq, w.rtp.timestamp, at);
-          on_video(w.rtp, at, true);
-          break;
         case Kind::kRtx:
-          w_good += wire;
-          if (auto m = loss::RestoreFromRtx(w.rtp, kVideoSsrc, kVideoPt)) on_video(*m, at, true);
-          break;
         case Kind::kFec:
           w_good += wire;
-          if (s.fec) {
-            for (auto& r : fec_dec.OnFecPacket(w.rtp)) on_video(r, at, false);
-          }
-          break;
-        case Kind::kSr:
-          if (auto sr_msg = timing::ParseSenderReport(w.rtcp)) video_stats.OnSenderReport(*sr_msg, at);
           break;
         default:
           break;
       }
+      receiver.OnPacket(w.bytes, at);
     });
+    // The receiver learns the RTT the sender measured (a one-way receiver has
+    // no report blocks of its own to measure it from).
+    receiver.SetRtt(sender.rtt());
+    receiver.Process(now);
 
-    // Assemble, decode and render video.
-    for (auto& f : packet_buffer.PopCompleteFrames()) {
-      if (f.packets.empty()) continue;
-      VideoHeader h = ReadVideoHeader(f.packets.front().payload);
-      if (h.frame_id < 0) continue;
-      loss::FrameInfo info;
-      info.frame_id = h.frame_id;
-      info.keyframe = h.key;
-      if (!h.key && h.frame_id > 0) info.references.push_back(h.frame_id - 1);
-      keyframes.OnFrame(info, now);
-      vjitter.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
-      vtiming.IncomingTimestamp(f.timestamp, f.last_arrival);
-    }
-    keyframes.UpdateRtt(rtt);
-    for (const auto& msg : keyframes.Process(now)) {
-      // A loss notification is informational: the sender must not encode a
-      // keyframe for it (only PLI and FIR request one).
-      const RKind kind = msg.type == loss::FeedbackType::kLntf ? RKind::kLntf : RKind::kPli;
-      reverse.Send(now, Rev{kind, {}, {}}, DataSize::Bytes(12 + 8 + kUdpIpOverhead));
-    }
-    if (s.nack && nack.TakeKeyframeRequest()) {
-      reverse.Send(now, Rev{RKind::kPli, {}, {}}, DataSize::Bytes(12 + 8 + kUdpIpOverhead));
-    }
-    for (int64_t id : keyframes.TakeDecodableFrames()) {
-      auto ts = frame_rtp_ts.find(id);
-      if (ts == frame_rtp_ts.end()) continue;
-      vtiming.SetJitterDelay(vjitter.JitterDelay());
-      vtiming.AddDecodeTime(TimeDelta::Millis(5));
-      vtiming.UpdateCurrentDelay(now);
-      scheduler.Insert({id, vtiming.RenderTime(ts->second, now)});
-    }
-    for (const auto& a : scheduler.Process(now)) {
-      if (!a.render) continue;
-      freezes.OnFrameRendered(now);
-      ++frames_rendered;
-      ++w_frames;
-      if (!video_first.IsFinite()) video_first = now;
-      last_render = now;
-      auto cap = frame_capture.find(a.id);
-      if (cap != frame_capture.end()) {
-        last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
-        video_e2e.push_back(last_video_delay);
-        frame_capture.erase(cap);
-        frame_rtp_ts.erase(a.id);
+    // Render video.
+    if (s.video) {
+      for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+        if (!f.render) continue;
+        freezes.OnFrameRendered(now);
+        ++frames_rendered;
+        ++w_frames;
+        if (!video_first.IsFinite()) video_first = now;
+        last_render = now;
+        auto cap = frame_capture.find(f.frame_id);
+        if (cap != frame_capture.end()) {
+          last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
+          video_e2e.push_back(last_video_delay);
+          frame_capture.erase(cap);
+        }
       }
     }
+    receiver.TakeEvents();
 
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
-      auto op = jitter_buffer.GetAudio(audio_out, now);
+      auto op = receiver.GetAudio(audio_recv, audio_out, now);
       played_ms += 10;
       ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
@@ -627,84 +527,40 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       }
     }
 
-    // Receiver feedback.
-    if (s.nack && s.video) {
-      nack.UpdateRtt(rtt);
-      auto batch = nack.GetNackBatch(now);
-      if (!batch.empty()) {
-        int64_t size = 12 + 4 * static_cast<int64_t>(batch.size()) + kUdpIpOverhead;
-        reverse.Send(now, Rev{RKind::kNack, {}, std::move(batch)}, DataSize::Bytes(size));
-      }
-    }
-    if (t % 50 == 0) {
-      for (const auto& fb : feedback.Build()) {
-        auto bytes = cc::SerializeTransportFeedback(fb);
-        int64_t size = static_cast<int64_t>(bytes.size()) + kUdpIpOverhead;
-        reverse.Send(now, Rev{RKind::kFeedback, std::move(bytes), {}}, DataSize::Bytes(size));
-      }
-    }
-    if (s.video && t % 1000 == 0 && t > 0) {
-      timing::ReceiverReport rr;
-      rr.ssrc = 100;
-      rr.blocks.push_back(video_stats.MakeReportBlock(now));
-      auto bytes = timing::SerializeReceiverReport(rr);
-      int64_t size = static_cast<int64_t>(bytes.size()) + kUdpIpOverhead;
-      reverse.Send(now, Rev{RKind::kRr, std::move(bytes), {}}, DataSize::Bytes(size));
-    }
+    // Receiver feedback (NACK, keyframe requests, transport-cc, reports).
+    put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, now, false);
 
     // --- Sender: feedback -----------------------------------------------------
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp) {
-      switch (r.kind) {
-        case RKind::kFeedback:
-          if (auto fb = cc::ParseTransportFeedback(r.bytes)) {
-            apply(gcc.OnTransportFeedback(*fb, now));
-            outage.OnFeedback(now);
-          }
-          break;
-        case RKind::kNack:
-          for (RtpPacket& p : rtx.OnNack(r.nacks, now, rtt)) {
-            repair_bytes += static_cast<int64_t>(p.payload.size());
-            enqueue({Kind::kRtx, -1, std::move(p), {}}, cc::PacketPriority::kRetransmission, now);
-          }
-          break;
-        case RKind::kPli:
-          ++keyframe_requests;
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    for (const auto& e : sender.TakeEvents()) {
+      switch (e.type) {
+        case rtp::SessionEventType::kKeyframeRequested:
+          // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
+          if (e.ssrc != 0) ++keyframe_requests;
           keyframe_needed = true;
           break;
-        case RKind::kLntf:
+        case rtp::SessionEventType::kEncoderPause: video_paused = true; break;
+        case rtp::SessionEventType::kEncoderResume: video_paused = false; break;
+        case rtp::SessionEventType::kRttUpdated:
+          rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
           break;
-        case RKind::kRr:
-          if (auto rr = timing::ParseReceiverReport(r.bytes)) {
-            for (const auto& rb : rr->blocks) {
-              if (auto m = rtt_est.OnReportBlock(rb, now)) {
-                rtt = *m;
-                rtt_samples.push_back(static_cast<double>(rtt.us()) / 1000.0);
-                gcc.OnRttUpdate(rtt);
-              }
-              if (s.fec) {
-                uint64_t g = gaps - last_gaps, m = missing - last_missing;
-                last_gaps = gaps;
-                last_missing = missing;
-                loss::ProtectionInput in;
-                in.rtt = rtt;
-                in.loss_rate = rb.fraction_lost / 256.0;
-                in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
-                double pkts = std::max(1.0, static_cast<double>(video_rate().bps()) / 8 / s.video_fps / kMaxVideoPayload);
-                in.packets_per_frame = pkts;
-                fec_enc.SetParams(protection.Update(in, now).fec);
-              }
-            }
+        case rtp::SessionEventType::kReportBlock:
+          if (s.fec && s.video && e.ssrc == kVideoSsrc) {
+            const auto& rs = receiver.video_receiver(video_recv).stats();
+            uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
+            last_gaps = rs.gaps;
+            last_missing = rs.missing;
+            loss::ProtectionInput in;
+            in.rtt = sender.rtt();
+            in.loss_rate = e.loss_fraction;
+            in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
+            double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
+            in.packets_per_frame = pkts;
+            sender.SetFecParams(video_send, protection.Update(in, now).fec);
           }
           break;
+        case rtp::SessionEventType::kTargetRateChanged: break;
       }
-    });
-    if (t % 25 == 0) apply(gcc.OnProcessInterval(now, send_rate.Rate(now)));
-    if (t % 10 == 0) {
-      cc::OutageActions act = outage.Process(now);
-      if (act.pause_encoder) video_paused = true;
-      if (act.resume_encoder) video_paused = false;
-      if (act.request_keyframe) keyframe_needed = true;
-      if (act.reset_estimate) apply(gcc.ResetEstimate(act.reset_rate, now));
     }
 
     // --- Measurement ----------------------------------------------------------
@@ -714,16 +570,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;
       smp.capacity_kbps = fwd_state.cfg.down ? 0 : fwd_state.cfg.capacity.IsFinite() ? fwd_state.cfg.capacity.kbps() : -1;
-      smp.target_kbps = target.kbps();
+      smp.target_kbps = sender.rates().target.kbps();
       smp.send_kbps = static_cast<double>(w_send) * 8 / 100;
       smp.goodput_kbps = static_cast<double>(w_good) * 8 / 100;
       smp.queue_ms = queue_ms;
-      smp.rtt_ms = static_cast<double>(rtt.us()) / 1000.0;
-      smp.audio_buffer_ms = jitter_buffer.CurrentLevelMs();
+      smp.rtt_ms = static_cast<double>(sender.rtt().us()) / 1000.0;
+      smp.audio_buffer_ms = s.audio ? receiver.audio_receiver(audio_recv).jitter_buffer().CurrentLevelMs() : 0;
       smp.audio_concealed_pct = w_played ? 100.0 * static_cast<double>(w_conceal) / static_cast<double>(w_played) : 0;
       smp.video_fps = static_cast<double>(w_frames) * 10;
       smp.video_delay_ms = last_video_delay;
-      smp.fec_pct = fec_enc.params().protection * 100;
+      smp.fec_pct = s.video ? sender.video_sender(video_send).fec_params().protection * 100 : 0;
       rep.timeseries.push_back(smp);
       w_send = w_good = w_frames = w_conceal = w_played = 0;
     }
@@ -739,8 +595,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       interruption_ms += conceal_run;
     }
   }
-  const auto& jbs = jitter_buffer.stats();
   if (s.audio) {
+    const auto& jbs = receiver.audio_receiver(audio_recv).jitter_buffer().stats();
     m["audio.concealed_pct"] = played_ms ? 100.0 * static_cast<double>(concealed_ms) / static_cast<double>(played_ms) : 100.0;
     m["audio.interruptions"] = static_cast<double>(interruptions);
     m["audio.interruption_ms"] = static_cast<double>(interruption_ms);
@@ -754,6 +610,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["audio.time_to_first_ms"] = audio_first.IsFinite() ? static_cast<double>(audio_first.ms()) : static_cast<double>(end_ms);
   }
   if (s.video) {
+    const rtp::RtpReceiver& vrx = receiver.video_receiver(video_recv);
     const auto& fz = freezes.stats();
     double freeze_count = static_cast<double>(fz.freeze_count);
     double freeze_total = fz.total_freezes_ms;
@@ -785,19 +642,19 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(frames_skipped);
-    m["video.undecodable_frames"] = static_cast<double>(keyframes.stats().frames_dropped);
+    m["video.undecodable_frames"] = static_cast<double>(vrx.keyframes().stats().frames_dropped);
     {
       // Packets sent in the last second may still be in flight or under repair.
       int64_t counted = 0, lost = 0;
       for (size_t i = 0; i < video_send_ms.size(); ++i) {
         if (video_send_ms[i] > end_ms - 1000) break;
         ++counted;
-        lost += !video_seqs_received.count(static_cast<int64_t>(i));
+        lost += !received_seqs.Has(static_cast<int64_t>(i));
       }
       m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
     }
-    m["repair.nack_recovered"] = static_cast<double>(nack.stats().recovered);
-    m["repair.fec_recovered"] = static_cast<double>(fec_dec.stats().recovered);
+    m["repair.nack_recovered"] = static_cast<double>(vrx.nack().stats().recovered);
+    m["repair.fec_recovered"] = static_cast<double>(vrx.fec().stats().recovered);
   }
 
   // Congestion control: utilization, queueing and settle time.

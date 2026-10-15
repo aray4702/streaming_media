@@ -16,6 +16,9 @@ SoC's hardware codecs and the OS, as recommended in the
             +-----------------------------------------------------------+
  sections   |  loss (3)  timing (4)  cc (5)  audio (6)  video (7)  sync (8) |
             +-----------------------------------------------------------+
+ session    |  rtp: Session  RtcpEngine  RtpSender  RtpReceiver         |
+            |       SendSideController   (SM_WITH_RTP)                  |
+            +-----------------------------------------------------------+
  core       |  units  seq_num  metrics  event_log  fft  dsp  rtp_packet  |
             +-----------------------------------------------------------+
  test-only  |  sim/network_link  sim/signals  (header-only, installed)  |
@@ -35,6 +38,7 @@ are minimal and explicit:
 | `sm::audio` | core | |
 | `sm::video` | core | render times come in as plain `Timestamp`s |
 | `sm::sync` | timing | RTCP NTP time types |
+| `sm::rtp` | loss, timing, cc, sync, video | the session layer composes the sections into one endpoint of a call |
 
 Any section can be compiled out with `-DSM_WITH_<SECTION>=OFF`. The
 section tests build and pass on their own (verified for cc-only,
@@ -105,9 +109,15 @@ the smallest targets.
  bitrate allocator (5.7), protection (3.7), outage (5.11)              A/V sync (8.1, 8.2), latency (8.3), demux (8.4)
 ```
 
-`examples/simulated_call.cc` wires a subset of this together (G.711 +
-RED + NetEq-lite audio, GCC-paced video with NACK/RTX, metrics and
-events) over the network emulator.
+The session layer (`sm::rtp`, design in [rtp-session.md](rtp-session.md))
+does this wiring: an app passes encoded frames and datagram bytes to an
+`rtp::Session` and takes datagrams, decoded-ready frames and events out.
+`examples/simulated_call.cc` and the call-level test bench
+(`testbench/call.cc`, see its README) both run two sessions over the
+network emulator, and every packet crosses the emulated link as bytes. The
+bench keeps only what the library leaves to the app: media sources, the
+encoder model with its frame dropper, the audio device, measurement and
+the link emulation.
 
 ## What is out of scope
 

@@ -86,6 +86,7 @@ struct VideoStreamConfig {
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;
+  VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;
   loss::NackConfig nack_config;
   timing::PacketBufferConfig packet_buffer;
@@ -131,6 +132,7 @@ enum class SessionEventType : uint8_t {
   kEncoderResume,
   kTargetRateChanged,  // `rate` is the new target.
   kRttUpdated,         // `rtt` is the latest round-trip time.
+  kReportBlock,        // A report block about `ssrc` arrived; `loss_fraction` is its fraction lost (0 to 1).
 };
 
 struct SessionEvent {
@@ -139,6 +141,7 @@ struct SessionEvent {
   uint32_t ssrc = 0;  // Media SSRC for a keyframe request.
   DataRate rate = DataRate::Zero();
   TimeDelta rtt = TimeDelta::Zero();
+  double loss_fraction = 0;
 };
 
 struct SessionStats {
@@ -179,6 +182,12 @@ class Session : public MetricsSource {
   // One datagram, RTP or RTCP (RFC 5761 demux by the payload-type byte),
   // already decrypted by the host.
   void OnPacket(std::span<const uint8_t> bytes, Timestamp now);
+  // The round-trip time as learned outside RTCP, for an endpoint that only
+  // receives (its reports carry no RTT; the host may know it from ICE
+  // connectivity checks or from the peer). Feeds the receivers' NACK and
+  // keyframe throttles and the congestion controller, like an RTCP-measured
+  // RTT, but raises no event.
+  void SetRtt(TimeDelta rtt);
   // The decoder failed on a frame: ask the sender for a keyframe.
   void OnDecodeFailure(VideoRecvId id, Timestamp now);
 
@@ -230,6 +239,7 @@ class Session : public MetricsSource {
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;
   void Start(Timestamp now);
+  bool HasSendStreams() const { return !audio_send_.empty() || !video_send_.empty(); }
 
   SessionConfig cfg_;
   RtcpEngine rtcp_;

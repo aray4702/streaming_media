@@ -2,7 +2,7 @@
 # scripted link impairments, measured as user-experience metrics.
 add_library(sm_testbench_lib STATIC scenario.cc call.cc)
 target_include_directories(sm_testbench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::video)
+target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::video sm::rtp)
 sm_configure_target(sm_testbench_lib)
 
 add_executable(sm_testbench sm_testbench_main.cc)

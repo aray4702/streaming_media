@@ -24,15 +24,44 @@ around 0.1 s.
 
 ## The call
 
+Both ends are `rtp::Session` objects (`include/sm/rtp/session.h`, design in
+`docs/design/rtp-session.md`). The bench passes encoded frames in and moves
+datagram bytes between the two sessions over the emulated links, so every
+packet crosses a link as bytes, in both directions:
+
 ```
 sender                                   forward link                 receiver
-speech 16 kHz -> RED ---------\                                       RED -> NetEq-lite jitter buffer -> 10 ms playout
-video encoder model -> RTX     > pacer -> [capacity, queue, loss,  -> packet buffer -> keyframe requester ->
-  history, FEC (adaptive)    /            jitter, dup, outage,         jitter estimator + timing -> render scheduler -> freeze detector
-GCC (delay + loss BWE, probes)            cross traffic]
-outage monitor, frame dropper  <-------- reverse link <-------- transport-cc feedback (50 ms), NACK, PLI/FIR, RTCP RR (1 s)
-RTT (RTCP SR/RR), protection controller
+speech -> Session::SendAudio (RED) ---\                               Session::OnPacket -> RED -> NetEq-lite jitter buffer -> 10 ms playout
+video encoder model -> SendVideoChunks > pacer -> [capacity, queue, loss,  -> packet buffer -> keyframe requester ->
+  (RTX history, FEC) in RtpSender    /            jitter, dup, outage,         jitter estimator + timing -> render scheduler -> freeze detector
+SendSideController (GCC, probes,         cross traffic]
+  outage monitor)  <-------- reverse link <-------- RtcpEngine: transport-cc (50 ms), NACK, PLI/FIR, SR/RR + SDES
 ```
+
+```cpp
+rtp::Session sender(sender_cfg), receiver(receiver_cfg);
+auto audio = sender.AddAudioSend(audio_cfg);
+auto video = sender.AddVideoSend(video_cfg);
+receiver.AddAudioReceive(audio_cfg, &decoder);
+auto video_in = receiver.AddVideoReceive(video_cfg);
+for (each millisecond) {
+  sender.SendAudio(audio, {rtp_timestamp, frame_bytes}, now);       // every 20 ms
+  sender.SendVideoChunks(video, chunks, rtp_timestamp, now);         // every frame
+  sender.Process(now);
+  for (auto& p : sender.TakeOutgoing()) forward.Send(now, p.bytes, p.wire_size);
+  forward.ReceiveEach(now, [&](auto bytes, auto at) { receiver.OnPacket(bytes, at); });
+  receiver.Process(now);
+  for (auto& f : receiver.TakeVideoFrames(video_in)) { /* render f */ }
+  for (auto& p : receiver.TakeOutgoing()) reverse.Send(now, p.bytes, p.wire_size);
+  reverse.ReceiveEach(now, [&](auto bytes, auto at) { sender.OnPacket(bytes, at); });
+  for (auto& e : sender.TakeEvents()) { /* keyframe request, encoder pause, report block */ }
+}
+```
+
+The bench itself owns only what the library leaves to the app: the media
+sources, the video encoder model with its frame dropper, the FEC protection
+decision, the audio device (a pull every 10 ms), the freeze detector, the
+link emulation and the measurement.
 
 - **Audio** is 20 ms frames at the configured bitrate (default 32 kbps), with
   RED distance 1. There is no audio codec in the library, so the payload
@@ -40,22 +69,28 @@ RTT (RTCP SR/RR), protection controller
   speech samples for each frame it receives, which is what a lossless codec
   would decode.
 - **Video** is an encoder model. Each frame's size follows the allocated
-  rate (GCC target minus audio, divided by 1 + FEC overhead) with ±20%
-  variation, and keyframes are 4x larger. A keyframe is sent at the start,
-  on PLI/FIR and on outage recovery. The frame dropper skips frames when the
-  encoder overshoots. Each frame references the previous one, so one lost
-  frame blocks decoding until the next keyframe arrives.
-- **Feedback:**
+  rate (`Session::rates().video_target`: GCC target minus audio, divided by
+  1 + FEC overhead) with ±20% variation, and keyframes are 4x larger. A
+  keyframe is sent at the start, on PLI/FIR and on outage recovery. The
+  frame dropper skips frames when the encoder overshoots. Each frame
+  references the previous one, so one lost frame blocks decoding until the
+  next keyframe arrives. Payloads are opaque chunks with a private 9-byte
+  header (start flag, key flag, frame id) until the H.264 packetizer lands.
+- **Feedback** is real RTCP, built and parsed by `rtp::RtcpEngine`:
   - Transport-wide congestion control feedback every 50 ms.
   - NACKs as soon as the NACK tracker asks.
-  - PLI/FIR from the keyframe requester or on NACK list overflow.
-  - RTCP SR/RR every second; these give the RTT, and the loss for the
-    protection controller.
+  - PLI/FIR from the keyframe requester or on NACK list overflow. No loss
+    notification is sent, because the private payload header is not a frame
+    descriptor.
+  - Sender reports every second (first at 0.5 s) and receiver reports every
+    second (first at 1 s), each compound with an SDES CNAME. These give the
+    RTT, and the loss for the protection controller. An audio-only call
+    reports every 5 s.
 - **Simplifications:**
-  - The receiver uses the sender's RTT estimate for NACK timing; a real
-    receiver would measure it itself with RTCP XR.
-  - Loss burstiness is passed to the protection controller directly; a
-    real receiver would report it in XR.
+  - The receiver is given the sender's RTT estimate (`Session::SetRtt`) for
+    NACK timing; a real receiver would measure it itself with RTCP XR.
+  - Loss burstiness is read from the receiver directly; a real receiver
+    would report it in XR.
   - There is no decoder, and decode time is fixed at 5 ms.
 
 ## Scenario format

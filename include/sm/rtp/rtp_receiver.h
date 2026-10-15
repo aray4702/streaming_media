@@ -56,6 +56,14 @@ class VideoPayloadParser {
   virtual VideoPayloadInfo Parse(const RtpPacket& p) const = 0;
 };
 
+// Told of every video media packet the receiver accepts: the original, an RTX
+// restore or an FEC recovery. The test bench uses it to measure residual loss.
+class VideoMediaObserver {
+ public:
+  virtual ~VideoMediaObserver() = default;
+  virtual void OnVideoMediaPacket(uint16_t seq, Timestamp now) = 0;
+};
+
 // Audio decoding stays with the application (design section 4.2): the jitter
 // buffer holds decoded samples.
 class AudioDecoder {
@@ -79,6 +87,7 @@ struct RtpReceiverConfig {
 
   // --- Video ---
   const VideoPayloadParser* parser = nullptr;  // Required for video. Not owned.
+  VideoMediaObserver* media_observer = nullptr;  // Optional. Not owned.
   std::optional<uint32_t> rtx_ssrc;
   bool nack = true;  // Track gaps and ask for retransmissions.
   bool fec = false;

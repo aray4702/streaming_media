@@ -238,3 +238,70 @@ SM_TEST(Session, ExportsMetrics) {
   SM_EXPECT_TRUE(w.values().count("datagrams_in") == 1);
   SM_EXPECT_TRUE(w.values().count("target_kbps") == 1);
 }
+
+namespace {
+// Runs two sessions back to back (no loss, no delay) for `ms`, sending one
+// video frame every 33 ms from `a`, and returns a's events.
+std::vector<SessionEvent> Exchange(Pair& p, int64_t ms) {
+  std::vector<SessionEvent> events;
+  for (int64_t t = 0; t < ms; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 33 == 0) {
+      auto chunks = test::MakeTestFrameChunks(t / 33, t == 0, 1500, 1188);
+      p.a.SendVideoChunks(p.a_video, chunks, static_cast<uint32_t>(t * 90), now);
+    }
+    p.a.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) p.b.OnPacket(o.bytes, now);
+    p.b.Process(now);
+    for (auto& o : p.b.TakeOutgoing()) p.a.OnPacket(o.bytes, now);
+    for (auto& e : p.a.TakeEvents()) events.push_back(e);
+    p.b.TakeEvents();
+  }
+  return events;
+}
+}  // namespace
+
+SM_TEST(Session, ReportBlocksFromThePeerBecomeEventsWithTheLossFraction) {
+  Pair p;
+  auto events = Exchange(p, 1600);
+  size_t blocks = 0;
+  for (const auto& e : events) {
+    if (e.type != SessionEventType::kReportBlock) continue;
+    ++blocks;
+    SM_EXPECT_TRUE(e.ssrc == 0x100 || e.ssrc == 0x200);
+    SM_EXPECT_EQ(e.loss_fraction, 0.0);
+  }
+  SM_EXPECT_GE(blocks, 2u);  // One receiver report: an audio and a video block.
+}
+
+SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
+  Pair p;
+  p.b.SetRtt(TimeDelta::Millis(250));
+  SM_EXPECT_EQ(p.b.rtt().ms(), 250);
+  SM_EXPECT_TRUE(p.b.TakeEvents().empty());
+}
+
+SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
+  Session s(Cfg(2));
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioReceive(au, &dec);
+  s.AddVideoReceive(Video());
+  // Nothing ever answers: a send-side outage monitor would pause, degrade and
+  // ask for a keyframe within a few seconds.
+  std::vector<OutgoingPacket> out = Pump(s, 0, 6000);
+  for (const auto& o : out) SM_EXPECT_TRUE(o.kind == OutgoingKind::kRtcp);
+  SM_EXPECT_EQ(static_cast<int>(s.send_side().outage().state()), static_cast<int>(cc::LinkState::kUp));
+  SM_EXPECT_EQ(s.send_side().stats().released, 0u);
+  for (const auto& e : s.TakeEvents()) {
+    SM_EXPECT_TRUE(e.type != SessionEventType::kEncoderPause && e.type != SessionEventType::kKeyframeRequested);
+  }
+}
+
+SM_TEST(Session, AnUnknownAudioReceiveIdIsIgnored) {
+  Session s(Cfg(2));
+  std::vector<float> pcm(480);
+  SM_EXPECT_TRUE(s.GetAudio(AudioRecvId{}, pcm, Timestamp::Millis(0)) == timing::AudioOperation::kSilence);
+  SM_EXPECT_TRUE(s.GetAudio(AudioRecvId{7}, pcm, Timestamp::Millis(0)) == timing::AudioOperation::kSilence);
+}

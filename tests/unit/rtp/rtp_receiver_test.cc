@@ -377,3 +377,36 @@ SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
   SM_EXPECT_GT(w.Get("frames_received"), 1000.0);
   SM_EXPECT_GT(w.Get("frame_meta_evicted"), 0.0);
 }
+
+namespace {
+class SeqLog : public VideoMediaObserver {
+ public:
+  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { seqs.push_back(seq); }
+  std::vector<uint16_t> seqs;
+};
+}  // namespace
+
+SM_TEST(RtpReceiver, MediaObserverSeesOriginalsAndRtxRestoresButNotPadding) {
+  SeqLog log;
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.media_observer = &log;
+  RtpSender s(SenderCfg());
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  auto f0 = SendFrame(s, 0, true, 3000, Timestamp::Millis(0));
+  SM_ASSERT_GE(f0.size(), 3u);
+  for (size_t i = 0; i < f0.size(); ++i)
+    if (i != 1) r.OnPacket(f0[i], Timestamp::Millis(20));
+  SM_EXPECT_EQ(log.seqs.size(), f0.size() - 1);
+  auto lost = RtpPacket::Parse(f0[1]);
+  s.OnNack(std::vector<uint16_t>{lost->seq}, Timestamp::Millis(60), TimeDelta::Millis(40));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  r.OnPacket(rtx[0].packet.Serialize(), Timestamp::Millis(80));
+  SM_ASSERT_EQ(log.seqs.size(), f0.size());
+  SM_EXPECT_EQ(log.seqs.back(), lost->seq);  // The restored packet carries the original sequence number.
+  // A padding-only packet on the RTX SSRC is not media.
+  SenderPacket pad = s.MakePadding(200, 0, Timestamp::Millis(90));
+  r.OnPacket(pad.packet.Serialize(), Timestamp::Millis(90));
+  SM_EXPECT_EQ(log.seqs.size(), f0.size());
+}
