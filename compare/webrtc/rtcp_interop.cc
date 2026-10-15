@@ -9,6 +9,7 @@
 // the H.264 payload format (RFC 6184 mode 1): rtp::H264Packetizer against
 // libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (plan PR 7).
 // Exits non-zero on any mismatch.
+#include <algorithm>
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -498,11 +499,15 @@ void H264SmToWebrtc() {
     webrtc::VideoRtpDepacketizerH264 dep;
     std::vector<std::span<const uint8_t>> spans;
     bool frame_key = false;
+    bool frame_ok = true;
     for (size_t i = 0; i < payloads.size(); ++i) {
       ok = ok && payloads[i].size() <= kH264Limit;
       auto parsed = dep.Parse(webrtc::CopyOnWriteBuffer(payloads[i].data(), payloads[i].size()));
       if (!parsed) {
+        std::printf("    frame %zu (%zu bytes): packet %zu/%zu (%zu bytes, type %u) not parsed\n", frames, frame.size(), i,
+                    payloads.size(), payloads[i].size(), payloads[i][0] & 0x1F);
         ok = false;
+        frame_ok = false;
         continue;
       }
       if (i == 0) firsts_ok = firsts_ok && parsed->video_header.is_first_packet_in_frame;
@@ -512,10 +517,22 @@ void H264SmToWebrtc() {
       spans.emplace_back(payloads[i]);
     }
     const bool is_key = frame.size() > 5 && frame[4] == 0x67;
+    if (frame_key != is_key) {
+      std::printf("    frame %zu (%zu bytes): key=%d, libwebrtc says key=%d\n", frames, frame.size(), is_key, frame_key);
+      frame_ok = false;
+    }
     ok = ok && frame_key == is_key;
     (is_key ? key_seen : delta_seen) = true;
     auto rebuilt = dep.AssembleFrame(spans);
-    ok = ok && rebuilt && rebuilt->size() == frame.size() && std::equal(frame.begin(), frame.end(), rebuilt->data());
+    bool same = rebuilt && rebuilt->size() == frame.size() && std::equal(frame.begin(), frame.end(), rebuilt->data());
+    if (!same) {
+      size_t at = 0;
+      while (rebuilt && at < rebuilt->size() && at < frame.size() && rebuilt->data()[at] == frame[at]) ++at;
+      std::printf("    frame %zu (%zu bytes, %zu packets): rebuilt %zu bytes, first difference at %zu\n", frames, frame.size(),
+                  payloads.size(), rebuilt ? rebuilt->size() : 0, at);
+    }
+    (void)frame_ok;
+    ok = ok && same;
     ++frames;
   }
   Check(ok && key_seen && delta_seen && frames > 10, "H.264: packetized here, parsed and reassembled by libwebrtc");
@@ -551,6 +568,16 @@ void H264WebrtcToSm() {
     auto mine = sm::rtp::H264Packetizer::Packetize(frame, kH264Limit);
     bool eq = mine.size() == pkts.size();
     for (size_t i = 0; eq && i < mine.size(); ++i) eq = mine[i] == pkts[i].payload;
+    if (!eq) {
+      std::printf("    frame %zu (%zu bytes): this library %zu packets, libwebrtc %zu\n", frames, frame.size(), mine.size(), pkts.size());
+      for (size_t i = 0; i < std::min(mine.size(), pkts.size()); ++i) {
+        if (mine[i] != pkts[i].payload) {
+          std::printf("      first different payload %zu: %zu bytes (type %u) vs %zu bytes (type %u)\n", i, mine[i].size(),
+                      mine[i][0] & 0x1F, pkts[i].payload.size(), pkts[i].payload[0] & 0x1F);
+          break;
+        }
+      }
+    }
     same = same && eq;
     packets += pkts.size();
     ++frames;
