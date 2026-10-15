@@ -99,6 +99,9 @@ The library:
   verification notes).
 - [Verification results](docs/results/README.md): pass/fail and benchmark
   numbers per platform.
+- [Comparison with libwebrtc](docs/results/compare-webrtc.md): every test
+  bench scenario run through this library and a prebuilt libwebrtc over
+  the same links ([how](compare/README.md)).
 
 ## Status
 

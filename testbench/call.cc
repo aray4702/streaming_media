@@ -1,5 +1,7 @@
 #include "call.h"
 
+#include "call_common.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -59,64 +61,6 @@ struct Rev {
   std::vector<uint8_t> bytes;
   std::vector<uint16_t> nacks;
 };
-
-// Applies scenario link changes to an emulated link.
-struct LinkState {
-  sim::LinkConfig cfg;
-  TimeDelta queue = TimeDelta::Zero();
-  DataRate cross = DataRate::Zero();
-  double loss = 0, burst = 1;
-
-  void Apply(const LinkChange& c) {
-    if (c.capacity) cfg.capacity = *c.capacity;
-    if (c.delay) cfg.base_delay = *c.delay;
-    if (c.jitter) cfg.jitter_stddev = *c.jitter;
-    if (c.loss) loss = *c.loss;
-    if (c.burst_len) burst = *c.burst_len;
-    if (c.duplicate) cfg.duplicate_rate = *c.duplicate;
-    if (c.reorder) cfg.allow_reordering = *c.reorder;
-    if (c.queue) queue = *c.queue;
-    if (c.cross) cross = *c.cross;
-    if (c.down) cfg.down = *c.down;
-    // Loss: Bernoulli, or Gilbert-Elliott with the requested mean burst
-    // length and the same average loss rate.
-    if (burst > 1 && loss > 0 && loss < 1) {
-      cfg.gilbert = true;
-      cfg.p_bad_to_good = 1.0 / burst;
-      cfg.p_good_to_bad = loss * cfg.p_bad_to_good / (1 - loss);
-      cfg.loss_in_bad = 1.0;
-      cfg.loss_in_good = 0.0;
-    } else {
-      cfg.gilbert = false;
-      cfg.loss_rate = loss;
-    }
-    cfg.queue_limit = (cfg.capacity.IsFinite() && queue.us() > 0)
-                          ? std::max(DataSize::Bytes(1500), cfg.capacity * queue)
-                          : DataSize::Zero();
-  }
-};
-
-LinkState DefaultForward() {
-  LinkState l;
-  l.cfg.base_delay = TimeDelta::Millis(20);
-  return l;
-}
-
-double Percentile(std::vector<double> v, double p) {
-  if (v.empty()) return 0;
-  std::sort(v.begin(), v.end());
-  double idx = p / 100.0 * static_cast<double>(v.size() - 1);
-  size_t lo = static_cast<size_t>(std::floor(idx));
-  size_t hi = std::min(v.size() - 1, lo + 1);
-  return v[lo] + (v[hi] - v[lo]) * (idx - static_cast<double>(lo));
-}
-
-double Mean(const std::vector<double>& v) {
-  if (v.empty()) return 0;
-  double s = 0;
-  for (double x : v) s += x;
-  return s / static_cast<double>(v.size());
-}
 
 void WriteVideoHeader(std::vector<uint8_t>& payload, bool start, bool key, int64_t frame_id) {
   payload[0] = static_cast<uint8_t>((start ? 1 : 0) | (key ? 2 : 0));
@@ -208,6 +152,73 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
+void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
+  auto& m = rep.metrics;
+  std::vector<double> targets;
+  double good_sum = 0, usable_sum = 0;
+  for (const auto& smp : rep.timeseries) {
+    targets.push_back(smp.target_kbps);
+    if (smp.capacity_kbps > 0) {
+      good_sum += smp.goodput_kbps;
+      usable_sum += std::min(smp.capacity_kbps, demand_kbps);
+    }
+  }
+  m["cc.target_avg_kbps"] = Mean(targets);
+  double good_total = 0;
+  for (const auto& smp : rep.timeseries) good_total += smp.goodput_kbps;
+  m["cc.goodput_kbps"] = rep.timeseries.empty() ? 0 : good_total / static_cast<double>(rep.timeseries.size());
+  m["cc.utilization_pct"] = usable_sum > 0 ? 100.0 * good_sum / usable_sum : 0;
+  // Every forward change (including the start) opens a segment that lasts
+  // until the next change; the target must settle within it.
+  LinkState st = DefaultForward();
+  double max_settle = 0;
+  int unsettled = 0;
+  std::vector<std::pair<double, LinkState>> segs;
+  segs.emplace_back(0.0, st);
+  for (const auto& c : s.forward) {
+    st.Apply(c);
+    double at = c.at.seconds();
+    if (!segs.empty() && segs.back().first == at) segs.back().second = st;
+    else segs.emplace_back(at, st);
+  }
+  for (size_t i = 0; i < segs.size(); ++i) {
+    const auto& cfg = segs[i].second;
+    double seg_end = i + 1 < segs.size() ? segs[i + 1].first : s.duration.seconds();
+    if (cfg.cfg.down || !cfg.cfg.capacity.IsFinite() || seg_end <= segs[i].first) continue;
+    double usable = cfg.cfg.capacity.kbps() - cfg.cross.kbps();
+    if (usable <= 0) continue;
+    double lo = 0.5 * std::min(usable, demand_kbps), hi = usable;
+    std::optional<double> settled;
+    for (const auto& smp : rep.timeseries) {
+      if (smp.t_s <= segs[i].first || smp.t_s > seg_end) continue;
+      if (smp.target_kbps >= lo && smp.target_kbps <= hi) {
+        settled = smp.t_s - segs[i].first;
+        break;
+      }
+    }
+    if (!settled) {
+      ++unsettled;
+      settled = seg_end - segs[i].first;
+    }
+    max_settle = std::max(max_settle, *settled * 1000);
+  }
+  m["cc.max_settle_ms"] = max_settle;
+  m["cc.unsettled"] = unsettled;
+}
+
+void EvaluateExpectations(Report& rep) {
+  for (const auto& e : rep.scenario.expectations) {
+    CheckResult c;
+    c.expectation = e;
+    auto it = rep.metrics.find(e.metric);
+    c.found = it != rep.metrics.end();
+    c.actual = c.found ? it->second : 0;
+    c.passed = c.found && Evaluate(e.op, c.actual, e.value);
+    rep.passed = rep.passed && c.passed;
+    rep.checks.push_back(c);
+  }
+}
+
 Report RunCall(const Scenario& s, const RunOptions& opt) {
   Report rep;
   rep.scenario = s;
@@ -217,15 +228,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   MetricsRegistry registry;
 
   // --- Links ----------------------------------------------------------------
-  LinkState fwd_state = DefaultForward();
-  LinkState rev_state = DefaultForward();
-  size_t next_fwd_change = 0, next_rev_change = 0;
-  // An unset reverse link mirrors the forward link's initial delay.
-  if (s.reverse.empty() && !s.forward.empty() && s.forward[0].at.IsZero() && s.forward[0].delay) {
-    rev_state.cfg.base_delay = *s.forward[0].delay;
-  }
+  LinkTimeline links(s);
+  const LinkState& fwd_state = links.forward();
   sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
-  sim::NetworkLink<Rev> reverse(rev_state.cfg, s.seed + 1000003);
+  sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
 
   // --- Sender ---------------------------------------------------------------
   cc::GccConfig gcfg;
@@ -394,18 +400,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     const Timestamp now = Timestamp::Millis(t);
 
     // --- Link timeline ------------------------------------------------------
-    bool fwd_changed = false;
-    while (next_fwd_change < s.forward.size() && s.forward[next_fwd_change].at <= now - Timestamp::Micros(0)) {
-      fwd_state.Apply(s.forward[next_fwd_change++]);
-      fwd_changed = true;
-    }
+    auto [fwd_changed, rev_changed] = links.Advance(now - Timestamp::Micros(0));
     if (fwd_changed) forward.SetConfig(fwd_state.cfg);
-    bool rev_changed = false;
-    while (next_rev_change < s.reverse.size() && s.reverse[next_rev_change].at <= now - Timestamp::Micros(0)) {
-      rev_state.Apply(s.reverse[next_rev_change++]);
-      rev_changed = true;
-    }
-    if (rev_changed) reverse.SetConfig(rev_state.cfg);
+    if (rev_changed) reverse.SetConfig(links.reverse().cfg);
 
     // --- Sender: audio --------------------------------------------------------
     if (s.audio && t % 20 == 0) {
@@ -707,10 +704,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
 
     // --- Measurement ----------------------------------------------------------
-    double queue_ms = 0;
-    if (fwd_state.cfg.capacity.IsFinite() && fwd_state.cfg.capacity.bps() > 0) {
-      queue_ms = static_cast<double>(forward.QueuedBytes(now).bits()) * 1000.0 / static_cast<double>(fwd_state.cfg.capacity.bps());
-    }
+    double queue_ms = QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
     if (t % 100 == 99) {
       Sample smp;
@@ -803,21 +797,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
 
   // Congestion control: utilization, queueing and settle time.
-  std::vector<double> targets;
-  double good_sum = 0, usable_sum = 0;
   const double demand_kbps = (s.video ? s.video_max.kbps() : 0) + audio_wire_rate.kbps();
-  for (const auto& smp : rep.timeseries) {
-    targets.push_back(smp.target_kbps);
-    if (smp.capacity_kbps > 0) {
-      good_sum += smp.goodput_kbps;
-      usable_sum += std::min(smp.capacity_kbps, demand_kbps);
-    }
-  }
-  m["cc.target_avg_kbps"] = Mean(targets);
-  double good_total = 0;
-  for (const auto& smp : rep.timeseries) good_total += smp.goodput_kbps;
-  m["cc.goodput_kbps"] = rep.timeseries.empty() ? 0 : good_total / static_cast<double>(rep.timeseries.size());
-  m["cc.utilization_pct"] = usable_sum > 0 ? 100.0 * good_sum / usable_sum : 0;
+  AddCcMetrics(s, demand_kbps, rep);
   m["cc.queue_p95_ms"] = Percentile(queue_samples, 95);
   m["cc.queue_max_ms"] = queue_samples.empty() ? 0 : *std::max_element(queue_samples.begin(), queue_samples.end());
   {
@@ -825,59 +806,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     for (double q : queue_samples) over += q > 200;
     m["cc.queue_over_200ms_pct"] = queue_samples.empty() ? 0 : 100.0 * static_cast<double>(over) / static_cast<double>(queue_samples.size());
   }
-  {
-    // Every forward change (including the start) opens a segment that lasts
-    // until the next change; the target must settle within it.
-    LinkState st = DefaultForward();
-    double max_settle = 0;
-    int unsettled = 0;
-    std::vector<std::pair<double, LinkState>> segs;
-    segs.emplace_back(0.0, st);
-    for (const auto& c : s.forward) {
-      st.Apply(c);
-      double at = c.at.seconds();
-      if (!segs.empty() && segs.back().first == at) segs.back().second = st;
-      else segs.emplace_back(at, st);
-    }
-    for (size_t i = 0; i < segs.size(); ++i) {
-      const auto& cfg = segs[i].second;
-      double seg_end = i + 1 < segs.size() ? segs[i + 1].first : s.duration.seconds();
-      if (cfg.cfg.down || !cfg.cfg.capacity.IsFinite() || seg_end <= segs[i].first) continue;
-      double usable = cfg.cfg.capacity.kbps() - cfg.cross.kbps();
-      if (usable <= 0) continue;
-      double lo = 0.5 * std::min(usable, demand_kbps), hi = usable;
-      std::optional<double> settled;
-      for (const auto& smp : rep.timeseries) {
-        if (smp.t_s <= segs[i].first || smp.t_s > seg_end) continue;
-        if (smp.target_kbps >= lo && smp.target_kbps <= hi) {
-          settled = smp.t_s - segs[i].first;
-          break;
-        }
-      }
-      if (!settled) {
-        ++unsettled;
-        settled = seg_end - segs[i].first;
-      }
-      max_settle = std::max(max_settle, *settled * 1000);
-    }
-    m["cc.max_settle_ms"] = max_settle;
-    m["cc.unsettled"] = unsettled;
-  }
   m["cc.rtt_p50_ms"] = Percentile(rtt_samples, 50);
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
-  for (const auto& e : s.expectations) {
-    CheckResult c;
-    c.expectation = e;
-    auto it = m.find(e.metric);
-    c.found = it != m.end();
-    c.actual = c.found ? it->second : 0;
-    c.passed = c.found && Evaluate(e.op, c.actual, e.value);
-    rep.passed = rep.passed && c.passed;
-    rep.checks.push_back(c);
-  }
+  EvaluateExpectations(rep);
   if (opt.library_metrics) {
     MapMetricsWriter w;
     registry.Export(w);

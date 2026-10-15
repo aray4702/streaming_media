@@ -51,6 +51,15 @@ struct RunOptions {
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
 
+// Steps shared with other call implementations (compare/), so every
+// implementation reports the same metrics computed the same way.
+// Adds cc.target_avg_kbps, cc.goodput_kbps, cc.utilization_pct,
+// cc.max_settle_ms and cc.unsettled from rep.timeseries. `demand_kbps` is
+// the media's maximum wire rate (what the call would send on an unlimited link).
+void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
+// Checks rep.scenario's expectations against rep.metrics.
+void EvaluateExpectations(Report& rep);
+
 std::string ToJson(const Report& r, bool include_timeseries = true, bool include_library = false);
 std::string ToText(const Report& r);
 
