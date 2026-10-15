@@ -165,6 +165,8 @@ RtcpType Classify(std::span<const uint8_t> pkt, uint8_t pt, uint8_t fmt) {
   switch (pt) {
     case kRtcpSr: return RtcpType::kSenderReport;
     case kRtcpRr: return RtcpType::kReceiverReport;
+    case kRtcpSdes: return RtcpType::kSdes;
+    case kRtcpBye: return RtcpType::kBye;
     case kRtcpRtpfb:
       if (fmt == kFmtNack) return RtcpType::kNack;
       if (fmt == 15) return RtcpType::kTransportCc;
@@ -210,8 +212,10 @@ std::vector<uint8_t> BuildCompoundRtcp(std::span<const std::vector<uint8_t>> pac
   uint8_t first = packets[0][1];
   if (first != kRtcpSr && first != kRtcpRr) return {};
   std::vector<uint8_t> out;
-  for (const auto& p : packets) {
+  for (size_t i = 0; i < packets.size(); ++i) {
+    const auto& p = packets[i];
     if (p.size() < kHeaderBytes || p.size() % 4 != 0) return {};
+    if ((p[0] & 0x20) && i + 1 != packets.size()) return {};
     out.insert(out.end(), p.begin(), p.end());
   }
   return out;

@@ -188,6 +188,47 @@ SM_TEST(RtpPacket, SerializeParseRoundTrip) {
   SM_EXPECT_FALSE(RtpPacket::Parse(std::vector<uint8_t>{0x80, 0}).has_value());
 }
 
+SM_TEST(RtpPacket, PaddingOnlyAndPaddedPackets) {
+  // Padding-only packet (empty payload), as used to pad or probe a link.
+  RtpPacket pad;
+  pad.payload_type = 100;
+  pad.seq = 7;
+  pad.ssrc = 5;
+  pad.padding_size = 200;
+  auto b = pad.Serialize();
+  SM_EXPECT_EQ(b.size(), 12u + 200u);
+  SM_EXPECT_EQ(b.size(), pad.size());
+  SM_EXPECT_EQ(b[0] & 0x20, 0x20);  // P bit.
+  SM_EXPECT_EQ(b.back(), 200);
+  SM_EXPECT_EQ(b[b.size() - 2], 0);
+  auto q = RtpPacket::Parse(b);
+  SM_ASSERT_TRUE(q.has_value());
+  SM_EXPECT_TRUE(q->payload.empty());
+  SM_EXPECT_EQ(q->padding_size, 200);
+  // Payload plus the smallest padding: one byte, which is the count itself.
+  RtpPacket p;
+  p.payload = {9, 8, 7};
+  p.padding_size = 1;
+  auto pb = p.Serialize();
+  SM_EXPECT_EQ(pb.size(), 12u + 3u + 1u);
+  SM_EXPECT_EQ(pb.back(), 1);
+  auto pq = RtpPacket::Parse(pb);
+  SM_ASSERT_TRUE(pq.has_value());
+  SM_EXPECT_EQ(pq->payload, p.payload);
+  SM_EXPECT_EQ(pq->padding_size, 1);
+  // No padding: no P bit, parse reports zero.
+  RtpPacket plain;
+  plain.payload = {1};
+  SM_EXPECT_EQ(plain.Serialize()[0] & 0x20, 0);
+  SM_EXPECT_EQ(RtpPacket::Parse(plain.Serialize())->padding_size, 0);
+  // Padding count of zero or larger than the packet is malformed.
+  auto bad = b;
+  bad.back() = 0;
+  SM_EXPECT_FALSE(RtpPacket::Parse(bad).has_value());
+  bad.back() = 255;
+  SM_EXPECT_FALSE(RtpPacket::Parse(bad).has_value());
+}
+
 SM_TEST(NetworkLink, LossDelayAndCapacity) {
   sim::LinkConfig cfg;
   cfg.base_delay = TimeDelta::Millis(50);

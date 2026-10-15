@@ -195,6 +195,37 @@ SM_TEST(RtcpFeedback, CompoundRequiresReportFirst) {
   SM_EXPECT_FALSE(BuildCompoundRtcp(ok).empty());
 }
 
+SM_TEST(RtcpFeedback, CompoundBuildRejectsPaddingOnNonLastPacket) {
+  Bytes rr = {0x80, 201, 0x00, 0x01, 0x00, 0x00, 0x00, 77};
+  Bytes pli = SerializePli(Pli{77, 5});
+  Bytes padded_pli = pli;  // Valid padded packet: P bit, 4 pad bytes, length updated.
+  padded_pli[0] |= 0x20;
+  padded_pli.insert(padded_pli.end(), {0, 0, 0, 4});
+  padded_pli[3] = 3;
+  // Padding on the last packet is allowed and survives the round trip.
+  Bytes ok = BuildCompoundRtcp(std::vector<Bytes>{rr, padded_pli});
+  SM_EXPECT_FALSE(ok.empty());
+  SM_EXPECT_TRUE(SplitCompoundRtcp(ok).has_value());
+  // Padding on the first (report) packet or a middle one is refused.
+  Bytes padded_rr = rr;
+  padded_rr[0] |= 0x20;
+  padded_rr.insert(padded_rr.end(), {0, 0, 0, 4});
+  padded_rr[3] = 2;
+  SM_EXPECT_TRUE(BuildCompoundRtcp(std::vector<Bytes>{padded_rr, pli}).empty());
+  SM_EXPECT_TRUE(BuildCompoundRtcp(std::vector<Bytes>{rr, padded_pli, pli}).empty());
+}
+
+SM_TEST(RtcpFeedback, SdesAndByeAreClassified) {
+  Bytes rr = {0x80, 201, 0x00, 0x01, 0x00, 0x00, 0x00, 77};
+  Bytes sdes = {0x81, 202, 0x00, 0x03, 0, 0, 0, 77, 1, 2, 'a', 'b', 0, 0, 0, 0};
+  Bytes bye = {0x81, 203, 0x00, 0x01, 0, 0, 0, 77};
+  auto views = SplitCompoundRtcp(BuildCompoundRtcp(std::vector<Bytes>{rr, sdes, bye}));
+  SM_ASSERT_TRUE(views.has_value());
+  SM_ASSERT_EQ(views->size(), 3u);
+  SM_EXPECT_TRUE((*views)[1].type == RtcpType::kSdes);
+  SM_EXPECT_TRUE((*views)[2].type == RtcpType::kBye);
+}
+
 SM_TEST(RtcpFeedback, SplitRejectsMalformedCompound) {
   Bytes pli = SerializePli(Pli{1, 2});
   SM_EXPECT_FALSE(SplitCompoundRtcp(Bytes{}).has_value());
