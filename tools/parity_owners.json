@@ -1,0 +1,22 @@
+{
+  "comment": "Which issue owns a gap with libwebrtc (tools/parity_report.py). Rules match the scenario and metric with fnmatch patterns; every matching rule adds its issues. Keep it in step with the work list in roadmap issue #64 and the deviation inventory (docs/design/libwebrtc-parity.md). A gap with no owner needs an issue or an approved deviation.",
+  "rules": [
+    {"metric": "video.keyframe_requests", "issues": [23]},
+    {"metric": "video.e2e_delay_p95_ms", "issues": [24, 37]},
+    {"metric": "video.time_to_first_frame_ms", "issues": [24, 61]},
+    {"metric": "video.freeze_*", "issues": [5, 37, 24]},
+    {"metric": "video.longest_freeze_ms", "issues": [5, 37, 24]},
+    {"metric": "video.render_fps", "issues": [37, 24]},
+    {"metric": "video.avg_kbps", "issues": [37, 61]},
+    {"metric": "cc.utilization_pct", "issues": [19, 15, 48, 12, 61]},
+    {"metric": "cc.queue_p95_ms", "issues": [19, 15, 48, 12, 61]},
+    {"metric": "cc.max_settle_ms", "issues": [15, 48, 61, 20]},
+    {"metric": "cc.rtt_p50_ms", "issues": [61]},
+    {"metric": "net.loss_pct", "issues": [21, 61, 12]},
+    {"metric": "repair.overhead_pct", "issues": [21, 7, 29]},
+    {"metric": "audio.*", "issues": [62, 63]},
+    {"scenario": "wifi_to_lte_handover", "metric": "*", "issues": [20]},
+    {"scenario": "outage_*", "metric": "*", "issues": [20]},
+    {"scenario": "high_jitter", "metric": "*", "issues": [19, 24]}
+  ]
+}

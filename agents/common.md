@@ -38,12 +38,20 @@ practical details every role shares.
   file. Don't rely on memory. If a file you need is missing, say so in the
   issue and the Owner adds it.
 - **libwebrtc's numbers** for every scenario come from the `compare-webrtc`
-  CI job, even when `sm_compare` can't be built here. Download the artifact
-  of the latest `main` run:
-  `gh api repos/aray4702/streaming_media/actions/artifacts?name=compare-webrtc`
-  (take the newest `archive_download_url`, then unzip it), and read
-  `compare-webrtc.txt` (side by side, mean of 3 seeds) or
-  `compare-webrtc.json`.
+  CI job, even when `sm_compare` can't be built here. The Actions artifact
+  host and `github.io` are not reachable from the sandbox, so on every `main`
+  run the job publishes its results to the `parity-data` branch. Read them
+  with plain HTTPS (or `gh api repos/aray4702/streaming_media/contents/<file>?ref=parity-data`):
+  ```sh
+  B=https://raw.githubusercontent.com/aray4702/streaming_media/parity-data
+  curl -fsSL $B/parity.md                 # the parity report: every gap with libwebrtc, in both directions
+  curl -fsSL $B/compare-webrtc.txt        # side by side, mean of 10 seeds
+  curl -fsSL -O $B/compare-webrtc.json    # means and every seed's values, for tools/parity_report.py
+  ```
+  A gap is a metric whose means differ by more than the parity band
+  (`tools/parity_report.py` documents it); `tools/parity_owners.json` says
+  which issue owns it. To check a local change, build `sm_compare` and run
+  `tools/parity_report.py out.json --owners tools/parity_owners.json --base <main's compare-webrtc.json>`.
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
   for `testbench/baseline.json`, so numbers you measure here are the
   numbers CI will see.

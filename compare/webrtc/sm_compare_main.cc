@@ -8,7 +8,10 @@
 // DIR/<scenario>.<seed>.<sm|webrtc>.json (sm_testbench --json format).
 //
 // Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3);
-// the table shows the mean over seeds.
+// the table shows the mean over seeds. The JSON has the means ("sm", "webrtc"),
+// every seed's values for the shown metrics ("per_seed"), and each shown
+// metric's direction and tie floor ("shown"), which tools/parity_report.py
+// reads to find gaps in both directions.
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -63,6 +66,16 @@ const std::vector<Shown>& ShownMetrics() {
 
 using Metrics = std::map<std::string, double>;
 
+// Only the shown metrics of one run.
+Metrics ShownOf(const Report& r) {
+  Metrics m;
+  for (const auto& sh : ShownMetrics()) {
+    auto it = r.metrics.find(sh.metric);
+    if (it != r.metrics.end()) m[sh.metric] = it->second;
+  }
+  return m;
+}
+
 Metrics MeanOver(const std::vector<Report>& runs) {
   Metrics sum;
   std::map<std::string, int> n;
@@ -105,6 +118,18 @@ std::string JsonMetrics(const Metrics& m) {
   return o + "}";
 }
 
+std::string JsonShown() {
+  std::string o = "{";
+  bool first = true;
+  for (const auto& sh : ShownMetrics()) {
+    char buf[96];
+    std::snprintf(buf, sizeof(buf), "{\"better\": \"%s\", \"floor\": %g}", sh.better == Better::kLower ? "lower" : "higher", sh.floor);
+    o += std::string(first ? "" : ", ") + "\"" + sh.metric + "\": " + buf;
+    first = false;
+  }
+  return o + "}";
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -128,7 +153,7 @@ int main(int argc, char** argv) {
 
   std::printf("streaming_media vs libwebrtc %s, mean of %d seed(s)\n", sm::compare::WebrtcVersion().c_str(), seeds);
   std::string json = "{\n  \"webrtc_version\": \"" + sm::compare::WebrtcVersion() + "\",\n  \"seeds\": " +
-                     std::to_string(seeds) + ",\n  \"scenarios\": [";
+                     std::to_string(seeds) + ",\n  \"shown\": " + JsonShown() + ",\n  \"scenarios\": [";
   std::map<std::string, int> wins;
   bool first_scn = true;
   for (const auto& f : files) {
@@ -171,8 +196,13 @@ int main(int argc, char** argv) {
       ++wins[w];
       std::printf("  %-30s %12s %12s  %s\n", sh.metric, Num(ia->second).c_str(), Num(ib->second).c_str(), w);
     }
+    std::string per_seed;
+    for (size_t k = 0; k < ours.size(); ++k) {
+      per_seed += std::string(k ? ", " : "") + "{\"seed\": " + std::to_string(base.seed + k) + ", \"sm\": " +
+                  JsonMetrics(ShownOf(ours[k])) + ", \"webrtc\": " + JsonMetrics(ShownOf(theirs[k])) + "}";
+    }
     json += std::string(first_scn ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name + "\", \"sm\": " +
-            JsonMetrics(a) + ", \"webrtc\": " + JsonMetrics(b) + "}";
+            JsonMetrics(a) + ", \"webrtc\": " + JsonMetrics(b) + ",\n     \"per_seed\": [" + per_seed + "]}";
     first_scn = false;
   }
   std::printf("\nbetter: sm %d, webrtc %d, tie %d (of the metrics shown)\n", wins["sm"], wins["webrtc"], wins["="]);
