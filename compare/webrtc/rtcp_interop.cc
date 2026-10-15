@@ -34,6 +34,7 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
 #include "modules/rtp_rtcp/source/video_rtp_depacketizer_h264.h"
+#include "modules/video_coding/h26x_packet_buffer.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/loss/rtcp_feedback.h"
@@ -562,7 +563,8 @@ std::vector<Bytes> H264Frames() {
   // Many small slices: STAP-A with more than two units, then a split one.
   Bytes slices;
   for (int k = 0; k < 40; ++k) {
-    Bytes nal = {0, 0, 0, 1, 0x41, static_cast<uint8_t>(k == 0 ? 0x88 : 0x28)};
+    // Slice header: first_mb_in_slice (0, then 1), slice_type 1, pps id 0.
+    Bytes nal = {0, 0, 0, 1, 0x41, static_cast<uint8_t>(k == 0 ? 0xAA : 0x4A)};
     for (int i = 0; i < 90; ++i) nal.push_back(static_cast<uint8_t>(0x30 + (i + k) % 100));
     slices.insert(slices.end(), nal.begin(), nal.end());
   }
@@ -577,12 +579,18 @@ constexpr size_t kH264Limit = 1188;
 void H264SmToWebrtc() {
   bool ok = true, key_seen = false, delta_seen = false, firsts_ok = true;
   size_t frames = 0;
+  // The real receive path: Parse gives NAL payloads without start codes (and
+  // STAP-A as it came), and H26xPacketBuffer finds the frame, adds the start
+  // codes and returns its packets. One buffer for the whole sequence, as a
+  // receiver has; the first frame is a keyframe.
+  webrtc::H26xPacketBuffer buffer(/*h264_idr_only_keyframes_allowed=*/true);
+  webrtc::VideoRtpDepacketizerH264 dep;
+  int64_t seq = 1000;
+  uint32_t timestamp = 90000;
   for (const Bytes& frame : H264Frames()) {
     auto payloads = sm::rtp::H264Packetizer::Packetize(frame, kH264Limit);
-    webrtc::VideoRtpDepacketizerH264 dep;
-    Bytes rebuilt;  // libwebrtc's receive path joins the parsed payloads (start codes added by Parse).
     bool frame_key = false;
-    bool frame_ok = true;
+    Bytes rebuilt;
     for (size_t i = 0; i < payloads.size(); ++i) {
       ok = ok && payloads[i].size() <= kH264Limit;
       auto parsed = dep.Parse(webrtc::CopyOnWriteBuffer(payloads[i].data(), payloads[i].size()));
@@ -590,30 +598,42 @@ void H264SmToWebrtc() {
         std::printf("    frame %zu (%zu bytes): packet %zu/%zu (%zu bytes, type %u) not parsed\n", frames, frame.size(), i,
                     payloads.size(), payloads[i].size(), payloads[i][0] & 0x1F);
         ok = false;
-        frame_ok = false;
+        ++seq;
         continue;
       }
       if (i == 0) firsts_ok = firsts_ok && parsed->video_header.is_first_packet_in_frame;
       auto mine = sm::rtp::H264Depacketizer::Parse(payloads[i]);
       if (mine.fu_continuation) firsts_ok = firsts_ok && !parsed->video_header.is_first_packet_in_frame;
       frame_key = frame_key || parsed->video_header.frame_type == webrtc::VideoFrameType::kVideoFrameKey;
-      rebuilt.insert(rebuilt.end(), parsed->video_payload.cdata(), parsed->video_payload.cdata() + parsed->video_payload.size());
+      const bool last = i + 1 == payloads.size();
+      webrtc::RtpPacketReceived rtp;
+      rtp.SetPayloadType(96);
+      rtp.SetSequenceNumber(static_cast<uint16_t>(seq));
+      rtp.SetTimestamp(timestamp);
+      rtp.SetSsrc(0x1111);
+      rtp.SetMarker(last);
+      parsed->video_header.is_last_packet_in_frame = last;
+      auto packet = std::make_unique<webrtc::video_coding::PacketBuffer::Packet>(rtp, seq, parsed->video_header);
+      packet->video_payload = parsed->video_payload;
+      auto result = buffer.InsertPacket(std::move(packet));
+      for (const auto& released : result.packets)
+        rebuilt.insert(rebuilt.end(), released->video_payload.cdata(), released->video_payload.cdata() + released->video_payload.size());
+      ++seq;
     }
+    timestamp += 3000;
     const bool is_key = frame.size() > 5 && frame[4] == 0x67;
-    if (frame_key != is_key) {
-      std::printf("    frame %zu (%zu bytes): key=%d, libwebrtc says key=%d\n", frames, frame.size(), is_key, frame_key);
-      frame_ok = false;
-    }
+    if (frame_key != is_key) std::printf("    frame %zu (%zu bytes): key=%d, libwebrtc says key=%d\n", frames, frame.size(), is_key, frame_key);
     ok = ok && frame_key == is_key;
     (is_key ? key_seen : delta_seen) = true;
-    bool same = rebuilt == frame;
+    // Same NAL units, whatever the start code length.
+    auto want = sm::rtp::SplitAnnexB(frame);
+    auto got = sm::rtp::SplitAnnexB(rebuilt);
+    bool same = want.size() == got.size();
+    for (size_t k = 0; same && k < want.size(); ++k) same = std::equal(want[k].begin(), want[k].end(), got[k].begin(), got[k].end());
     if (!same) {
-      size_t at = 0;
-      while (at < rebuilt.size() && at < frame.size() && rebuilt[at] == frame[at]) ++at;
-      std::printf("    frame %zu (%zu bytes, %zu packets): rebuilt %zu bytes, first difference at %zu\n", frames, frame.size(),
-                  payloads.size(), rebuilt.size(), at);
+      std::printf("    frame %zu (%zu bytes, %zu packets): H26xPacketBuffer gave %zu bytes in %zu NAL units, expected %zu units\n",
+                  frames, frame.size(), payloads.size(), rebuilt.size(), got.size(), want.size());
     }
-    (void)frame_ok;
     ok = ok && same;
     ++frames;
   }
