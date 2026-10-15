@@ -92,6 +92,8 @@ Background research:
    the application. Sections 3-8 are implemented here.
 3. [WebRTC footprint](docs/03-webrtc-footprint.md): binary and RAM size of
    libwebrtc and lighter alternatives.
+4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through
+   a one-on-one call, from setup through send, receive and the feedback loop.
 
 The library:
 
