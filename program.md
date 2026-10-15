@@ -53,10 +53,16 @@ Product decisions that bound both stages (Owner, 2026-10-15):
   standard RTP/RTCP that libwebrtc can parse: RTP with RFC 8285 header
   extensions, RTCP SR/RR, generic NACK, PLI, FIR, loss notification,
   transport-cc, REMB, RTX, RED (RFC 2198), and ULPFEC (RFC 5109) over RED
-  as the only FEC format. A new wire format must be one of these or
-  another standard one, with an interop check against libwebrtc's parser.
-  Joining a browser directly (ICE, DTLS-SRTP, SDP) stays with the host
-  stack.
+  as the only FEC format. Media uses the codec's standard RTP payload
+  format (for example Opus RFC 7587, VP8 RFC 7741, H.264 RFC 6184, AV1).
+  A new wire format must be one of these or another standard one, with an
+  interop check against libwebrtc's parser. Joining a browser directly
+  (ICE, DTLS-SRTP, SDP) stays with the host stack.
+- **The library owns RTP/RTCP.** It provides the session layer (RTP
+  sender and receiver, packetizers, RTCP scheduling and feedback
+  dispatch), so an app passes frames and packet bytes rather than wiring
+  the building blocks itself. The test bench runs through it. Like every
+  module, it takes `now`, starts no threads and reads no clocks.
 - **One-to-one calls.** The library serves one-to-one calls (a person and
   an AI, or two people). Components that only an SFU or a multiparty call
   needs are removed, and new ones are not added unless the Owner changes
