@@ -247,6 +247,10 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
       case loss::RtcpType::kFir:
         if (auto fir = loss::ParseFir(p.data)) {
           for (const auto& e : fir->entries) {
+            // Like libwebrtc, ignore a FIR for a stream we do not send.
+            if (!local_ssrcs_.empty() &&
+                std::find(local_ssrcs_.begin(), local_ssrcs_.end(), e.ssrc) == local_ssrcs_.end())
+              continue;
             auto key = std::make_pair(fir->sender_ssrc, e.ssrc);
             auto it = fir_seq_in_.find(key);
             // A repeated sequence number is a retransmitted request.
@@ -254,6 +258,9 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
               ++stats_.fir_duplicates;
               continue;
             }
+            // Peer-controlled keys: keep the table bounded. Dropping an old entry
+            // only risks counting one retransmitted request twice.
+            if (it == fir_seq_in_.end() && fir_seq_in_.size() >= kMaxFirTracked) fir_seq_in_.erase(fir_seq_in_.begin());
             fir_seq_in_[key] = e.seq_nr;
             ++stats_.fir_received;
             in.keyframe_requests.push_back(e.ssrc);

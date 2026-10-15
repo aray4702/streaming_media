@@ -294,6 +294,25 @@ SM_TEST(RtcpEngine, RepeatedFirSequenceNumberIsIgnored) {
   SM_EXPECT_EQ(rx.OnRtcp(send(4), Timestamp::Millis(5)).keyframe_requests.size(), 1u);
 }
 
+SM_TEST(RtcpEngine, FirForForeignStreamsIsIgnoredAndStateStaysBounded) {
+  RtcpEngine rx;
+  rx.AddLocalMediaSsrc(7);
+  // FIRs for SSRCs we do not send are ignored.
+  loss::Fir foreign{1, {{999, 0}}};
+  SM_EXPECT_TRUE(rx.OnRtcp(loss::SerializeFir(foreign), Timestamp::Millis(0)).keyframe_requests.empty());
+  SM_EXPECT_EQ(rx.stats().fir_received, 0u);
+  // FIRs for our stream from many fresh sender SSRCs are all served, with bounded state.
+  for (uint32_t s = 1; s <= 5000; ++s) {
+    loss::Fir f{s, {{7, 1}}};
+    SM_EXPECT_EQ(rx.OnRtcp(loss::SerializeFir(f), Timestamp::Millis(s)).keyframe_requests.size(), 1u);
+  }
+  SM_EXPECT_EQ(rx.stats().fir_received, 5000u);
+  // A repeat from a recent sender is still recognised.
+  loss::Fir last{5000, {{7, 1}}};
+  SM_EXPECT_TRUE(rx.OnRtcp(loss::SerializeFir(last), Timestamp::Millis(6000)).keyframe_requests.empty());
+  SM_EXPECT_EQ(rx.stats().fir_duplicates, 1u);
+}
+
 SM_TEST(RtcpEngine, RttComesFromReportBlocksOfLocalStreams) {
   // The SR leaves at 500 ms and arrives at 550 ms. The receiver holds it for
   // 90 ms (DLSR) and the report arrives at 650 ms: RTT = 650 - 500 - 90 = 60 ms.

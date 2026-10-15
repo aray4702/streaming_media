@@ -176,6 +176,7 @@ class RtcpEngine : public MetricsSource {
   };
   std::vector<Queued> queue_;
   std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> next seq_nr
+  static constexpr size_t kMaxFirTracked = 64;
   std::map<std::pair<uint32_t, uint32_t>, uint8_t> fir_seq_in_;   // (sender, media) -> last seq_nr
   timing::RttEstimator rtt_;
   RtcpStats stats_;
