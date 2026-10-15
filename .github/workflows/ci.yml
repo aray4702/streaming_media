@@ -103,6 +103,29 @@ jobs:
         with:
           name: testbench-results
           path: testbench-results.json
+  compare-webrtc:
+    # sm_compare against a prebuilt libwebrtc (compare/README.md). Keeps the
+    # comparison building on the agents' platform and puts the table in the
+    # job summary. libc++ for the prebuilt binary needs clang >= 21.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: out/webrtc-deps
+          key: webrtc-deps-ubuntu-24.04-${{ hashFiles('compare/webrtc/fetch.sh') }}
+      - run: compare/webrtc/fetch.sh
+      - run: wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+      - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
+      - name: Compare
+        run: |
+          out/compare/sm_compare --json=compare-webrtc.json testbench/scenarios/*.scn | tee compare-webrtc.txt
+          { echo '## streaming_media vs libwebrtc'; echo '```'; cat compare-webrtc.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: compare-webrtc
+          path: compare-webrtc.*
   fix-record:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).
@@ -126,7 +149,7 @@ jobs:
   ci-ok:
     # Single required status check: succeeds only if every job above did.
     if: always()
-    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, fix-record]
+    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, compare-webrtc, fix-record]
     runs-on: ubuntu-24.04
     steps:
       - run: |
