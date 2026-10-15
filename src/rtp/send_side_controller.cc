@@ -196,6 +196,10 @@ void SendSideController::ExpireRepair(Timestamp now) {
 }
 
 double SendSideController::repair_share() const {
+  // A window with repair but no video says nothing about what repair costs per
+  // video byte; counting it as 100% would pin the share at its cap and keep the
+  // encoder starved (issue #21 review).
+  if (video_bytes_ <= 0) return 0.0;
   const int64_t total = video_bytes_ + repair_bytes_;
   return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
 }

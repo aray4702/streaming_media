@@ -179,9 +179,25 @@ SM_TEST(SendSideController, RepairNeverTakesMoreThanHalfOfTheBudget) {
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(2000);
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
+  c.Enqueue(Media(0, PacketKind::kVideo, cc::PacketPriority::kVideo, 100), Timestamp::Millis(0));
+  for (uint16_t i = 1; i < 11; ++i)
+    c.Enqueue(Media(i, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 500), Timestamp::Millis(0));
+  for (int t = 0; t < 200; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_GT(c.repair_share(), 0.9);
+  SM_EXPECT_NEAR(static_cast<double>(c.ComputeMeasuredRates(DataRate::Zero(), 0.0).video_target.bps()), 1000000.0, 1.0);
+}
+
+SM_TEST(SendSideController, AWindowWithRepairButNoVideoDoesNotStarveTheEncoder) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(2000);
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
   for (uint16_t i = 0; i < 10; ++i)
     c.Enqueue(Media(i, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 500), Timestamp::Millis(0));
   for (int t = 0; t < 200; ++t) c.Process(Timestamp::Millis(t));
-  SM_EXPECT_EQ(c.repair_share(), 1.0);
-  SM_EXPECT_NEAR(static_cast<double>(c.ComputeMeasuredRates(DataRate::Zero(), 0.0).video_target.bps()), 1000000.0, 1.0);
+  // Only repair went out: that is not evidence that repair costs half the budget.
+  SM_EXPECT_EQ(c.repair_share(), 0.0);
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::KilobitsPerSec(100), 0.0).video_target.bps(), 1900000);
+  // The encoder keeps at least video_min whatever the share.
+  SM_EXPECT_GE(c.ComputeMeasuredRates(DataRate::KilobitsPerSec(1990), 1.0).video_target.bps(), cfg.video_min.bps());
 }

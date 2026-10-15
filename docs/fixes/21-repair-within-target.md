@@ -45,7 +45,10 @@ Three places let repair traffic ignore the target:
   the share taken off the video budget is what RTX and FEC took of the bytes
   released in the last second, capped at 50% (`FecControllerDefault`
   `overhead_threshold_`, `fec_controller_default.cc`). The configured FEC rate
-  stays as a floor so a rising FEC rate is anticipated.
+  stays as a floor so a rising FEC rate is anticipated. A window in which RTX or
+  FEC went out but no video did gives a share of 0, not 100%: otherwise the
+  share stays pinned at its cap while the encoder is starved (Owner review of
+  the first version). The encoder keeps at least `video_min` whatever the share.
 - `Session::SetFecParams`: FEC protection is capped by what the target leaves
   above the video minimum: `avail / video_min - 1`, so no FEC when the audio
   takes the target.
@@ -115,6 +118,20 @@ accepted (checked over seeds 1-10 against `main`):
   scenario's own bound is 2500 ms.
 - `capacity_drop` seed 1 `video.longest_freeze_ms` 1774 -> 2492 ms; over 10 seeds
   2038 -> 2160 ms, within noise; freeze total falls 17%.
+
+### Re-measure after the review (both fixes together)
+
+Shallow buffer 1500 kbps / 20 ms queue, seeds 1-20, `main` -> this PR: loss
+22.2 -> 13.5%, repair overhead 83.7 -> 45.1%, freeze total 6071 -> 5470 ms,
+longest freeze 1564 -> 1345 ms, render fps 23.5 -> 25.2. Every aggregate is
+better than `main`, so the 1x versus 2x question for the retransmission cap does
+not decide the shallow-buffer result. The no-video-window share fix costs about
++280 ms of mean freeze total against the dropper fix alone (5193 -> 5470 ms).
+On `issue_21_shallow_buffer_no_stall` (shallow link with the 3x capacity drop)
+seeds 1-20 pass its `longest_freeze_ms < 2000` on 16; seeds 8, 15 and 20 fail
+with and without the share fix (3514, 4195, 2866 ms) and seed 12 fails only with
+it (1600 -> 3530 ms). The scenario's default seed passes with its numbers locked
+in.
 
 ## Remaining
 
