@@ -92,7 +92,7 @@ Result Run(const Options& o) {
     if (t % 33 == 0 && t < end_ms - 1000) {
       const bool key = key_needed;
       key_needed = false;
-      auto chunks = test::MakeTestFrameChunks(frame_id, key, key ? 6000 : 3000, sender.config().max_payload_size);
+      auto chunks = test::MakeTestFrameChunks(key, key ? 6000 : 3000, sender.config().max_payload_size);
       sender.SendVideoFrame(chunks, static_cast<uint32_t>(t * 90), now);
       ++frame_id;
       ++res.frames_sent;

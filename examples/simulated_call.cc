@@ -20,6 +20,8 @@
 
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
+#include "sm/rtp/fake_h264.h"
+#include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
@@ -44,37 +46,6 @@ float MuLawDecode(uint8_t u) {
   int t = ((u & 0x0f) << 3) + 0x84;
   t <<= (u & 0x70) >> 4;
   return static_cast<float>((u & 0x80) ? 0x84 - t : t - 0x84) / 32768.0f;
-}
-
-// Until the H.264 packetizer exists (plan PR 7), the video payload carries a
-// 9-byte header: start flag, key flag and a 64-bit frame id.
-constexpr size_t kVideoHeader = 9;
-class VideoHeaderParser : public rtp::VideoPayloadParser {
- public:
-  rtp::VideoPayloadInfo Parse(const RtpPacket& p) const override {
-    rtp::VideoPayloadInfo i;
-    if (p.payload.size() < kVideoHeader) return i;
-    i.valid = true;
-    i.frame_start = p.payload[0] & 1;
-    i.keyframe = p.payload[0] & 2;
-    uint64_t id = 0;
-    for (size_t b = 0; b < 8; ++b) id |= static_cast<uint64_t>(p.payload[1 + b]) << (8 * b);
-    i.frame_id = static_cast<int64_t>(id);
-    return i;
-  }
-};
-
-std::vector<std::vector<uint8_t>> MakeFrame(int64_t id, bool key, size_t bytes, size_t max_payload) {
-  std::vector<std::vector<uint8_t>> chunks;
-  bool first = true;
-  for (size_t n : rtp::SplitEvenly(bytes, max_payload)) {
-    std::vector<uint8_t> c(std::max(n, kVideoHeader), 0);
-    c[0] = static_cast<uint8_t>((first ? 1 : 0) | (key ? 2 : 0));
-    for (size_t b = 0; b < 8; ++b) c[1 + b] = static_cast<uint8_t>(static_cast<uint64_t>(id) >> (8 * b));
-    chunks.push_back(std::move(c));
-    first = false;
-  }
-  return chunks;
 }
 
 class MuLawDecoder : public rtp::AudioDecoder {
@@ -105,7 +76,7 @@ int main() {
     c.events = &events;
     return c;
   };
-  VideoHeaderParser parser;
+  rtp::H264PayloadParser parser;
   MuLawDecoder decoder;
   rtp::AudioStreamConfig audio_cfg;
   audio_cfg.ssrc = 1;
@@ -149,7 +120,6 @@ int main() {
 
   auto speech = sim::SpeechLike(8000, 31.0, 7, true);
   std::vector<float> out(80);  // 10 ms at 8 kHz.
-  int64_t frame_id = 0;
   bool keyframe_needed = true;
 
   for (int64_t t = 0; t < 30000; ++t) {
@@ -169,8 +139,10 @@ int main() {
     if (t % 33 == 0) {
       int64_t bytes = std::max<int64_t>(300, sender.rates().video_target.bps() / 8 / 30);
       if (keyframe_needed) bytes *= 4;
-      sender.SendVideoChunks(video_send, MakeFrame(frame_id++, keyframe_needed, static_cast<size_t>(bytes), 1100),
-                             static_cast<uint32_t>(t * 90), now);
+      // The fake encoder stands in for a codec: an Annex-B access unit with
+      // SPS, PPS and an IDR slice on a keyframe.
+      const auto frame = rtp::MakeFakeH264Frame(keyframe_needed, static_cast<size_t>(bytes));
+      sender.SendVideo(video_send, {static_cast<uint32_t>(t * 90), frame}, now);
       keyframe_needed = false;
     }
     sender.Process(now);

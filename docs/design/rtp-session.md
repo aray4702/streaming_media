@@ -686,6 +686,28 @@ transport-cc extension adds 8 bytes to every RTP packet, RTCP is real
 SR/RR+SDES compounds (also in audio-only calls), no LNTF is sent, and
 `repair.overhead_pct` counts whole packets.
 
+Status of PR 7 (as built): `rtp::H264Packetizer` and `rtp::H264Depacketizer`
+(`include/sm/rtp/h264.h`) implement RFC 6184 mode 1 (single NAL, STAP-A, FU-A);
+`rtp::H264PayloadParser` is the receiver's `VideoPayloadParser`. A packet
+starts a frame when it holds SPS, PPS, SEI or AUD, or a slice whose
+`first_mb_in_slice` is 0 (a leading 1 bit after the NAL header, as in
+libwebrtc's depacketizer). Because the parameter sets and the IDR slice both
+look like starts, `PacketBuffer` now assembles from the first of the
+contiguous same-timestamp packets, not from the nearest flagged one. The
+receiver derives `frame_id` (unwrapped sequence number of the frame's last
+packet) and the single reference (`PrecedingMediaSeq(first_seq)`, which skips
+padding-only packets) itself; `VideoPayloadInfo` lost its `frame_id` and
+`keyframe` fields and reports `idr`, `sps` and `pps` instead. A frame is a
+keyframe when it holds an IDR slice (and, with
+`keyframe_needs_parameter_sets`, SPS and PPS too). `ReceivedFrame::bitstream`
+is the rebuilt Annex-B access unit. `Session::SendVideo` takes an Annex-B
+access unit. `rtp::MakeFakeH264Frame` (`include/sm/rtp/fake_h264.h`) is the
+fake encoder; the multi-slice split of section 6.3 was not needed (STAP-A
+occurs with SPS+PPS, FU-A with any large slice), so it is not built. The
+bench's private 9-byte header and its parser are gone. LNTF stays off for
+H.264 as decided in section 6.4; it needs a generic descriptor, which is
+follow-up work (issue filed from the PR 7 description).
+
 Reason for ordering 7 after 6: the large refactor is isolated from the payload
 change, so a regression in either is attributable. If a PR in this series
 cannot be made behaviour-preserving, #32 says to stop and report; this plan

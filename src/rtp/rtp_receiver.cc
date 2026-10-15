@@ -141,7 +141,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
   TrackSequence(p.seq);
-  if (cfg_.nack) nack_.OnReceivedPacket(p.seq, info.keyframe && info.frame_start, now);
+  // The NACK tracker wants to know where keyframes start: the packet that
+  // opens a keyframe access unit carries the parameter sets or the IDR slice.
+  if (cfg_.nack) nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
   packet_buffer_.Insert(p, info.frame_start, now);
   if (feed_fec && cfg_.fec) {
     for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false);
@@ -169,19 +171,32 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
 void RtpReceiver::AssembleFrames(Timestamp now) {
   for (auto& f : packet_buffer_.PopCompleteFrames()) {
     if (f.packets.empty()) continue;
-    VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(f.packets.front()) : VideoPayloadInfo{};
-    if (!info.valid || info.frame_id < 0) continue;
+    bool idr = false, sps = false, pps = false;
+    for (const RtpPacket& pkt : f.packets) {
+      VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(pkt) : VideoPayloadInfo{};
+      idr = idr || info.idr;
+      sps = sps || info.sps;
+      pps = pps || info.pps;
+    }
+    const bool keyframe = idr && (!cfg_.keyframe_needs_parameter_sets || (sps && pps));
     ++stats_.frames_received;
     loss::FrameInfo fi;
-    fi.frame_id = info.frame_id;
-    fi.keyframe = info.keyframe;
-    // Without a descriptor a delta frame depends on the one before it
-    // (design 6.4; plan PR 7 derives the ids from sequence numbers).
-    if (!info.keyframe && info.frame_id > 0) fi.references.push_back(info.frame_id - 1);
+    fi.frame_id = f.last_seq;
+    fi.keyframe = keyframe;
+    // Without a descriptor a delta frame depends on the one before it: the
+    // frame whose last packet precedes this frame's first (design 6.4). If
+    // that frame was lost, its id never arrives and the frame waits for the
+    // repair or a keyframe.
+    if (!keyframe) fi.references.push_back(packet_buffer_.PrecedingMediaSeq(f.first_seq));
     keyframes_.OnFrame(fi, now);
     video_jitter_.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
     video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
-    frames_[info.frame_id] = {f.timestamp, info.keyframe, f.size_bytes()};
+    FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}};
+    if (cfg_.deliver_bitstream && cfg_.parser && !cfg_.parser->Reassemble(f.packets, meta.bitstream)) {
+      meta.bitstream.clear();
+      ++stats_.reassembly_failures;
+    }
+    frames_[f.last_seq] = std::move(meta);
     while (frames_.size() > kMaxFrameMeta) {
       frames_.erase(frames_.begin());
       ++stats_.frame_meta_evicted;
@@ -214,6 +229,7 @@ void RtpReceiver::Process(Timestamp now) {
     r.render_time = a.render_time;
     r.lateness = a.lateness;
     r.size_bytes = it->second.size_bytes;
+    r.bitstream = std::move(it->second.bitstream);
     out_frames_.push_back(r);
     frames_.erase(it);
   }
@@ -248,6 +264,7 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frames_received", stats_.frames_received);
   w.Counter("frames_scheduled", stats_.frames_scheduled);
   w.Counter("frame_meta_evicted", stats_.frame_meta_evicted);
+  w.Counter("reassembly_failures", stats_.reassembly_failures);
   w.Counter("gaps", stats_.gaps);
   w.Counter("missing", stats_.missing);
   w.Counter("audio_frames", stats_.audio_frames);

@@ -3,7 +3,9 @@
 // Packets are stored by unwrapped sequence number in a bounded window. After
 // each insert the buffer checks whether the packet completed a frame: a run
 // of consecutive sequence numbers with the same RTP timestamp that starts
-// with a frame-start packet and ends with the marker bit. Complete frames are
+// with a frame-start packet and ends with the marker bit. (A frame may open
+// with several start packets, e.g. H.264 parameter sets before the IDR slice:
+// it starts at the first of the contiguous packets that share its timestamp.) Complete frames are
 // returned immediately (possibly out of order; the frame scheduler orders
 // them by decodability). Duplicates and packets older than the window are
 // rejected and counted.
@@ -57,6 +59,9 @@ class PacketBuffer : public MetricsSource {
   // A padding-only packet occupied `seq`: it is received, there is nothing
   // to assemble, and it must not look like a hole (or a duplicate later).
   void NotePadding(uint16_t seq);
+  // The sequence number just before `first_seq` that is not a padding-only
+  // packet, i.e. the last packet of the preceding frame if it was received.
+  int64_t PrecedingMediaSeq(int64_t first_seq) const;
   std::vector<AssembledFrame> PopCompleteFrames();
   size_t buffered_packets() const { return packets_.size(); }
   const PacketBufferStats& stats() const { return stats_; }
@@ -74,6 +79,7 @@ class PacketBuffer : public MetricsSource {
   PacketBufferConfig cfg_;
   SeqNumUnwrapper<uint16_t> unwrapper_;
   std::map<int64_t, Entry> packets_;
+  std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
   int64_t highest_ = INT64_MIN;
   std::vector<AssembledFrame> ready_;

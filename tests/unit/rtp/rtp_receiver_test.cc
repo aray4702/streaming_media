@@ -36,7 +36,7 @@ RtpReceiverConfig ReceiverCfg() {
 
 // One frame through the sender: the serialized packets of it.
 std::vector<Bytes> SendFrame(RtpSender& s, int64_t id, bool key, size_t bytes, Timestamp now) {
-  auto chunks = test::MakeTestFrameChunks(id, key, bytes, s.config().max_payload_size);
+  auto chunks = test::MakeTestFrameChunks(key, bytes, s.config().max_payload_size);
   s.SendVideoFrame(chunks, static_cast<uint32_t>(id * 3000), now);
   std::vector<Bytes> out;
   for (auto& p : s.TakePackets()) out.push_back(p.packet.Serialize());
@@ -82,12 +82,16 @@ SM_TEST(RtpReceiver, FramesInOrderAreAssembledScheduledAndRendered) {
   SM_EXPECT_EQ(r.stats().gaps, 0u);
   SM_ASSERT_EQ(frames.size(), 6u);
   for (size_t i = 0; i < frames.size(); ++i) {
-    SM_EXPECT_EQ(frames[i].frame_id, static_cast<int64_t>(i));
+    if (i > 0) SM_EXPECT_TRUE(frames[i].frame_id > frames[i - 1].frame_id);
     SM_EXPECT_EQ(frames[i].keyframe, i == 0);
     SM_EXPECT_TRUE(frames[i].render);
     SM_EXPECT_EQ(frames[i].rtp_timestamp, static_cast<uint32_t>(i * 3000));
   }
-  SM_EXPECT_EQ(frames[0].size_bytes, 3000u);
+  // The keyframe is SPS + PPS + IDR in 3000 Annex-B bytes; the payloads carry
+  // the NAL units without start codes (3 x 4 bytes) and the IDR split into
+  // FU-A fragments of 2 header bytes each.
+  SM_EXPECT_TRUE(frames[0].keyframe);
+  SM_EXPECT_EQ(frames[0].bitstream.size(), 3000u);
   SM_EXPECT_TRUE(r.TakeFeedback().empty());
 }
 
@@ -127,7 +131,8 @@ SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   SM_EXPECT_EQ(r.nack().stats().recovered, 1u);
   auto frames = Run(r, 142, 800);
   SM_ASSERT_EQ(frames.size(), 3u);
-  SM_EXPECT_EQ(frames[2].frame_id, 2);
+  SM_EXPECT_TRUE(frames[2].frame_id > frames[1].frame_id);
+  SM_EXPECT_EQ(frames[1].rtp_timestamp, 3000u);
   SM_EXPECT_TRUE(r.TakeFeedback().keyframe.empty());
 }
 
@@ -147,6 +152,73 @@ SM_TEST(RtpReceiver, MissingFrameReferenceAsksForAKeyframe) {
     asked = asked || fb.pli;
   }
   SM_EXPECT_TRUE(asked);
+}
+
+namespace {
+// An access unit with only an IDR slice (no SPS or PPS).
+Bytes IdrOnlyFrame(size_t bytes) {
+  Bytes full = MakeFakeH264Frame(true, bytes);
+  auto nals = SplitAnnexB(full);
+  Bytes out = {0, 0, 0, 1};
+  out.insert(out.end(), nals.back().begin(), nals.back().end());
+  return out;
+}
+std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Bytes& annexb) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(cfg);
+  r.Start(Timestamp::Millis(0));
+  s.SendVideoFrame(H264Packetizer::Packetize(annexb, s.config().max_payload_size), 0, Timestamp::Millis(0));
+  for (auto& p : s.TakePackets()) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(10));
+  return Run(r, 10, 400);
+}
+}  // namespace
+
+SM_TEST(RtpReceiver, AnIdrAloneIsAKeyframeByDefault) {
+  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe).
+  auto frames = DeliverFrame(ReceiverCfg(), IdrOnlyFrame(2500));
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].keyframe);
+  SM_EXPECT_TRUE(frames[0].render);
+}
+
+SM_TEST(RtpReceiver, StrictModeNeedsParameterSetsForAKeyframe) {
+  RtpReceiverConfig strict = ReceiverCfg();
+  strict.keyframe_needs_parameter_sets = true;
+  SM_EXPECT_TRUE(DeliverFrame(strict, IdrOnlyFrame(2500)).empty());  // Not decodable: waits for a keyframe.
+  auto frames = DeliverFrame(strict, MakeFakeH264Frame(true, 2500));
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].keyframe);
+}
+
+SM_TEST(RtpReceiver, TheFrameBitstreamIsRebuiltFromThePackets) {
+  Bytes key = MakeFakeH264Frame(true, 4000);
+  auto frames = DeliverFrame(ReceiverCfg(), key);
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].bitstream == key);
+  RtpReceiverConfig off = ReceiverCfg();
+  off.deliver_bitstream = false;
+  frames = DeliverFrame(off, key);
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].bitstream.empty());
+}
+
+SM_TEST(RtpReceiver, FrameIdsAndReferencesComeFromSequenceNumbers) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  std::vector<int64_t> last_seq;
+  for (int64_t i = 0; i < 4; ++i) {
+    auto pkts = SendFrame(s, i, i == 0, 3000, Timestamp::Millis(i * 33));
+    last_seq.push_back(RtpPacket::Parse(pkts.back())->seq);
+    for (auto& b : pkts) r.OnPacket(b, Timestamp::Millis(i * 33 + 10));
+  }
+  auto frames = Run(r, 140, 800);
+  SM_ASSERT_EQ(frames.size(), 4u);
+  // The initial sequence number 65530 wraps: ids keep increasing across it, and
+  // each is the unwrapped sequence number of the frame's last packet.
+  for (size_t i = 1; i < frames.size(); ++i) {
+    SM_EXPECT_EQ(frames[i].frame_id - frames[i - 1].frame_id, (last_seq[i] - last_seq[i - 1] + 65536) % 65536);
+  }
 }
 
 SM_TEST(RtpReceiver, PaddingOnlyPacketsAreNotMedia) {
@@ -212,7 +284,7 @@ SM_TEST(RtpReceiver, UnknownSsrcAndInvalidPayloadAreCountedNotUsed) {
   RtpPacket shorty;
   shorty.ssrc = kSsrc;
   shorty.payload_type = 96;
-  shorty.payload = Bytes(3, 1);  // Shorter than the test header.
+  shorty.payload = {0x19, 1, 2};  // STAP-B (type 25) is mode 2: not accepted.
   SM_EXPECT_TRUE(r.OnPacket(shorty.Serialize(), Timestamp::Millis(1)) == ReceivedKind::kMedia);
   SM_EXPECT_EQ(r.stats().unknown_ssrc, 1u);
   SM_EXPECT_EQ(r.stats().invalid_payload, 1u);
@@ -258,7 +330,7 @@ SM_TEST(RtpReceiver, FecRecoversALostMediaPacket) {
   rc.fec_config.fec_ssrc = kFecSsrc;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
-  auto chunks = test::MakeTestFrameChunks(0, true, 4000, s.config().max_payload_size);
+  auto chunks = test::MakeTestFrameChunks(true, 4000, s.config().max_payload_size);
   s.SendVideoFrame(chunks, 0, Timestamp::Millis(0));
   auto out = s.TakePackets();
   size_t media = 0, fec = 0;
@@ -367,6 +439,7 @@ SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
   SM_EXPECT_EQ(rb.extended_highest_seq & 0xffff, 65530u);
   // Delta frames that depend on a frame that never arrives pile up in the
   // buffer; the receiver forgets old metadata instead of growing.
+  SendFrame(s, 1, false, 100, Timestamp::Millis(33));  // Lost on the way.
   for (int64_t i = 2; i < 2400; ++i) {
     for (auto& b : SendFrame(s, i, false, 100, Timestamp::Millis(i * 33))) r.OnPacket(b, Timestamp::Millis(i * 33 + 10));
     r.Process(Timestamp::Millis(i * 33 + 10));

@@ -80,3 +80,44 @@ SM_TEST(PacketBuffer, MissingStartBlocksFrame) {
   SM_EXPECT_EQ(f[0].timestamp, 0u);
   SM_EXPECT_EQ(CollectMetrics(pb)["buffered_packets"], 2.0);
 }
+
+SM_TEST(PacketBuffer, FrameWithSeveralStartPacketsStartsAtTheFirstOfThem) {
+  // H.264: the parameter sets and the IDR slice both look like starts.
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 7, false), true, T0());   // SPS+PPS
+  pb.Insert(Pkt(2, 7, false), true, T0());   // IDR start
+  pb.Insert(Pkt(3, 7, true), false, T0());   // IDR end
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, 1);
+  SM_EXPECT_EQ(f[0].packets.size(), 3u);
+}
+
+SM_TEST(PacketBuffer, FlaggedStartWithoutAPredecessorStillAssembles) {
+  PacketBuffer pb;
+  pb.Insert(Pkt(2, 7, false), true, T0());
+  pb.Insert(Pkt(3, 7, true), false, T0());
+  // Packet 1 never arrived, but 2 is flagged as a start: the frame is taken
+  // from 2, as a flagged start without a predecessor always was.
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+}
+
+SM_TEST(PacketBuffer, MarkerEndsTheWalkBackAtThePreviousFrame) {
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 7, true), true, T0());    // A one-packet frame.
+  pb.Insert(Pkt(2, 8, false), true, T0());
+  pb.Insert(Pkt(3, 8, true), false, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 2u);
+  SM_EXPECT_EQ(f[1].first_seq, 2);
+}
+
+SM_TEST(PacketBuffer, PrecedingMediaSeqSkipsPadding) {
+  PacketBuffer pb;
+  pb.Insert(Pkt(1, 7, true), true, T0());
+  pb.NotePadding(2);
+  pb.NotePadding(3);
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(4), 1);
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(2), 1);
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(1), 0);
+}
