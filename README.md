@@ -229,6 +229,9 @@ docs/                                                    research, design, algor
   scheduling and feedback dispatch), so an app passes encoded frames and
   packet bytes instead of wiring the building blocks together
   ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
+- **Send-side adaptation in the library:** frame dropping, quality
+  scaling and rate allocation are part of the library too, so the app only
+  runs its encoder and decoder ([#37](https://github.com/aray4702/streaming_media/issues/37)).
 - **Call topology:** one-to-one calls only. The SFU and multiparty pieces
   (layer selection, active speaker detection, the audio mixer) have been
   removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
