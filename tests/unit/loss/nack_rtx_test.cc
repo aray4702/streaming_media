@@ -156,3 +156,37 @@ SM_TEST(Rtx, HistoryResendThrottleAndEviction) {
   auto stale = s.OnNack(std::vector<uint16_t>{15}, Ms(5000), TimeDelta::Millis(50));
   SM_EXPECT_TRUE(stale.empty());
 }
+
+SM_TEST(Rtx, RateLimitCapsResendsPerSecond) {
+  RtxConfig cfg;
+  cfg.rtx_ssrc = 99;
+  RtxSender s(cfg);
+  for (uint16_t i = 0; i < 40; ++i) {
+    RtpPacket p;
+    p.seq = i;
+    p.payload.assign(1000, 1);
+    s.OnPacketSent(p, Ms(0));
+  }
+  // 80 kbps = 10 kB/s; each resend is 1014 bytes (header, payload, OSN), so 9 fit.
+  s.SetMaxRate(DataRate::KilobitsPerSec(80));
+  std::vector<uint16_t> req;
+  for (uint16_t i = 0; i < 20; ++i) req.push_back(i);
+  auto out = s.OnNack(req, Ms(10), TimeDelta::Millis(10));
+  SM_EXPECT_EQ(out.size(), 9u);
+  SM_EXPECT_EQ(s.stats().rate_limited, 11u);
+  SM_EXPECT_LE(s.resent_rate(Ms(10)).bps(), 80000);
+  // The window slides: after a second the budget is back.
+  auto later = s.OnNack(std::vector<uint16_t>{20, 21}, Ms(1100), TimeDelta::Millis(10));
+  SM_EXPECT_EQ(later.size(), 2u);
+  SM_EXPECT_EQ(s.resent_rate(Ms(1100)).bps(), 2 * 1014 * 8);
+  // Unlimited by default.
+  RtxSender u(cfg);
+  for (uint16_t i = 0; i < 40; ++i) {
+    RtpPacket p;
+    p.seq = i;
+    p.payload.assign(1000, 1);
+    u.OnPacketSent(p, Ms(0));
+  }
+  SM_EXPECT_EQ(u.OnNack(req, Ms(10), TimeDelta::Millis(10)).size(), 20u);
+  SM_EXPECT_EQ(u.stats().rate_limited, 0u);
+}

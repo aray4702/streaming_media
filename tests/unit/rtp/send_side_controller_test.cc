@@ -149,3 +149,39 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   }
   SM_EXPECT_GT(padding, 0u);
 }
+
+SM_TEST(SendSideController, VideoBudgetShrinksByTheMeasuredRepairShare) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(2000);
+  cfg.video_min = DataRate::KilobitsPerSec(50);
+  cfg.video_max = DataRate::KilobitsPerSec(5000);
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero(), 0.0).video_target.bps(), 2000000);  // Nothing sent yet.
+  // Three media packets for every resend: a quarter of the bytes is repair.
+  for (uint16_t i = 0; i < 12; ++i) {
+    c.Enqueue(Media(i, i % 4 == 3 ? PacketKind::kRtx : PacketKind::kVideo,
+                    i % 4 == 3 ? cc::PacketPriority::kRetransmission : cc::PacketPriority::kVideo, 500),
+              Timestamp::Millis(0));
+  }
+  for (int t = 0; t < 200; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_NEAR(c.repair_share(), 0.25, 0.01);
+  SM_EXPECT_NEAR(static_cast<double>(c.ComputeMeasuredRates(DataRate::Zero(), 0.0).video_target.bps()), 1500000.0, 20000.0);
+  // The configured FEC rate is a floor: 100% FEC takes half the budget.
+  SM_EXPECT_NEAR(static_cast<double>(c.ComputeMeasuredRates(DataRate::Zero(), 1.0).video_target.bps()), 1000000.0, 1.0);
+  // The share is measured over one second, so it is forgotten afterwards.
+  c.Process(Timestamp::Millis(1500));
+  SM_EXPECT_EQ(c.repair_share(), 0.0);
+}
+
+SM_TEST(SendSideController, RepairNeverTakesMoreThanHalfOfTheBudget) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(2000);
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  for (uint16_t i = 0; i < 10; ++i)
+    c.Enqueue(Media(i, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 500), Timestamp::Millis(0));
+  for (int t = 0; t < 200; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_EQ(c.repair_share(), 1.0);
+  SM_EXPECT_NEAR(static_cast<double>(c.ComputeMeasuredRates(DataRate::Zero(), 0.0).video_target.bps()), 1000000.0, 1.0);
+}

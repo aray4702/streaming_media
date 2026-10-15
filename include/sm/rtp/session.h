@@ -228,6 +228,7 @@ class Session : public MetricsSource {
   struct SendStream {
     std::unique_ptr<RtpSender> sender;
     DataRate nominal_rate = DataRate::Zero();
+    loss::FecParams requested_fec;  // What the protection controller asked for, before the budget cap.
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;
@@ -261,6 +262,8 @@ class Session : public MetricsSource {
   bool send_has_padding_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();
   DataRate last_target_ = DataRate::Zero();
+  void LimitRetransmissions();
+  void ApplyFecBudget(SendStream& v);
   TimeDelta rtt_ = TimeDelta::Millis(100);
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
   SessionStats stats_;

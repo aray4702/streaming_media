@@ -15,10 +15,12 @@
 // Padding and probes are real padding-only RTP packets made by the padding
 // stream registered with SetPaddingSender().
 //
-// ComputeRates() is the test bench's video_rate() arithmetic: target minus the
-// audio wire rate, divided by (1 + FEC protection) and clamped, then lowered by
-// congestion-window pushback (cc/congestion_window_pushback.h). Takes `now`, reads no clock and
-// starts no thread.
+// ComputeRates() is the test bench's original video_rate() arithmetic: target
+// minus the audio wire rate, divided by (1 + FEC protection) and clamped.
+// ComputeMeasuredRates() is what the session uses (issue #21): the share taken
+// off is what RTX and FEC actually used in the last second, as in libwebrtc's
+// FecControllerDefault. Both are then lowered by congestion-window pushback
+// (cc/congestion_window_pushback.h). Takes `now`, reads no clock and starts no thread.
 #pragma once
 
 #include <cstdint>
@@ -50,6 +52,10 @@ struct SendSideConfig {
   TimeDelta gcc_interval = TimeDelta::Millis(25);
   TimeDelta outage_interval = TimeDelta::Millis(10);
   TimeDelta send_rate_window = TimeDelta::Millis(500);
+  // Largest share of the sending rate repair traffic may take away from the
+  // video encoder (libwebrtc FecControllerDefault::overhead_threshold_).
+  double max_repair_share = 0.5;
+  TimeDelta repair_window = TimeDelta::Seconds(1);
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
   EventSink* events = nullptr;
@@ -121,6 +127,13 @@ class SendSideController : public MetricsSource {
   DataRate target() const { return target_; }
   DataRate send_rate(Timestamp now);
   SendRates ComputeRates(DataRate audio_wire_rate, double fec_protection) const;
+  // As above, but the protection share is what the sender actually spent on
+  // RTX and FEC in the last second, like libwebrtc's FecControllerDefault
+  // (sent_nack + sent_fec over the total, capped at `max_repair_share`);
+  // `fec_protection` is only a floor so a rising FEC rate is anticipated.
+  SendRates ComputeMeasuredRates(DataRate audio_wire_rate, double fec_protection) const;
+  // Share of the non-audio bytes released in the last `repair_window` (as of the last Process()) that were RTX or FEC.
+  double repair_share() const;
 
   cc::GccController& gcc() { return gcc_; }
   cc::Pacer& pacer() { return pacer_; }
@@ -132,6 +145,7 @@ class SendSideController : public MetricsSource {
  private:
   void Apply(const cc::NetworkControlUpdate& u);
   void UpdatePushback(Timestamp now, bool window);
+  void ApplyPushback(SendRates& out) const;
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;
 
   SendSideConfig cfg_;
@@ -146,6 +160,14 @@ class SendSideController : public MetricsSource {
   std::unordered_map<uint64_t, SenderPacket> queued_;
   uint64_t next_id_ = 1;
   uint16_t transport_seq_ = 0;
+  struct Released {
+    Timestamp time;
+    int64_t bytes;
+    PacketKind kind;
+  };
+  void ExpireRepair(Timestamp now);
+  std::deque<Released> repair_window_;
+  int64_t repair_bytes_ = 0, video_bytes_ = 0;
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
   Timestamp last_outage_ = Timestamp::MinusInfinity();

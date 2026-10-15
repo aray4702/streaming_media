@@ -32,9 +32,14 @@ ALGORITHMS = [
                "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
                "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
                "NACK (RFC 4585 6.2.1, PID+BLP items) from loss/rtcp_feedback.h, byte-compatible with libwebrtc's "
-               "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc).",
+               "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc). Resends are capped at the "
+               "congestion-control target over a 1 s window (RtxSender::SetMaxRate, set by rtp::Session), so repair "
+               "cannot fill a link whose target has collapsed; NACKs over the cap are not answered and the receiver "
+               "retries or asks for a keyframe.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
-                      "selective retransmission."),
+                      "selective retransmission. Issue #21 added the rate cap and takes the measured RTX and FEC share "
+                      "off the video budget (rtp::SendSideController::ComputeMeasuredRates); see "
+                      "docs/fixes/21-repair-within-target.md."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
