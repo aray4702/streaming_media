@@ -15,6 +15,7 @@ if(SM_WITH_LOSS)
     loss/red.cc
     loss/plc.cc
     loss/keyframe_request.cc
+    loss/rtcp_feedback.cc
     loss/temporal_layers.cc
     loss/protection_controller.cc)
   list(APPEND SM_SECTIONS loss)

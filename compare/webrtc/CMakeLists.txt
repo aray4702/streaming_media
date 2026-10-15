@@ -53,13 +53,26 @@ target_include_directories(sm_compare PRIVATE ${CMAKE_BINARY_DIR}/gen)
 target_link_libraries(sm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
 # libwebrtc.a contains the libc++ runtime.
 target_link_options(sm_compare PRIVATE -nostdlib++)
+# RTCP interop check (NACK, PLI, FIR, loss notification, compound): this
+# library's wire formats against libwebrtc's parsers and back. It runs after
+# every build, so the compare job fails if a format stops interoperating.
+add_executable(sm_rtcp_interop rtcp_interop.cc)
+target_include_directories(sm_rtcp_interop PRIVATE ${WEBRTC_DIR}/include ${WEBRTC_DIR}/include/third_party/abseil-cpp)
+target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_POSIX)
+target_link_libraries(sm_rtcp_interop PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
+target_link_options(sm_rtcp_interop PRIVATE -nostdlib++)
+add_custom_command(TARGET sm_rtcp_interop POST_BUILD COMMAND sm_rtcp_interop VERBATIM)
 if(APPLE)
   target_compile_definitions(sm_compare PRIVATE WEBRTC_MAC)
+  target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_MAC)
   foreach(fw Foundation CoreFoundation Security AudioToolbox CoreAudio CoreMedia CoreVideo VideoToolbox
              AVFoundation AppKit Metal MetalKit IOSurface QuartzCore ScreenCaptureKit OpenGL ApplicationServices)
     target_link_libraries(sm_compare PRIVATE "-framework ${fw}")
+    target_link_libraries(sm_rtcp_interop PRIVATE "-framework ${fw}")
   endforeach()
 else()
   target_compile_definitions(sm_compare PRIVATE WEBRTC_LINUX)
+  target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_LINUX)
   target_link_libraries(sm_compare PRIVATE pthread dl rt)
+  target_link_libraries(sm_rtcp_interop PRIVATE pthread dl rt)
 endif()
