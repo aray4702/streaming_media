@@ -61,7 +61,14 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     if (sent.is_padding) {
       if (!padding_sender_) continue;
       size_t room = static_cast<size_t>(std::max<int64_t>(0, sent.size.bytes() - cfg_.transport_overhead_bytes));
-      sp = padding_sender_->MakePadding(room, 0, now);
+      sp = padding_sender_->MakePadding(room, padding_sender_->last_rtp_timestamp(), now);
+      // The send extensions are written below: take their size off the
+      // padding so the packet stays within the size the pacer accounted.
+      WriteSendExtensions(sp.packet, 0, now);
+      const int64_t over = static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes - sent.size.bytes();
+      if (over > 0) {
+        sp.packet.padding_size = static_cast<uint8_t>(std::max<int64_t>(1, sp.packet.padding_size - over));
+      }
       ++stats_.padding;
     } else {
       auto it = queued_.find(sent.id);
