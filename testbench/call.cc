@@ -199,6 +199,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.queue_over_200ms_pct", "Share of time the bottleneck queue exceeded 200 ms"},
       {"cc.max_settle_ms", "Longest time after a link change until the target settles in [0.5, 1.0] x usable capacity"},
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
+      {"cc.target_max_drop_pct", "Largest fall of the target below its peak of the preceding 5 s, outside the first 5 s and the 5 s after each link change"},
       {"cc.rtt_p50_ms", "Median RTT measured by RTCP"},
       {"net.loss_pct", "Forward link loss (random, burst, outage and queue drops)"},
       {"repair.overhead_pct", "(RTX + FEC bytes) / media bytes"},
@@ -232,6 +233,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   gcfg.min_rate = s.min_rate;
   gcfg.start_rate = s.start_rate;
   gcfg.max_rate = s.max_rate;
+  gcfg.loss_bwe = s.loss_bwe == 2 ? cc::LossBweVersion::kV2 : cc::LossBweVersion::kV1;
   gcfg.events = &events;
   cc::GccController gcc(gcfg);
   cc::PacerConfig pcfg;
@@ -862,6 +864,22 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
     m["cc.max_settle_ms"] = max_settle;
     m["cc.unsettled"] = unsettled;
+  }
+  {
+    // A sharp cut of the target on a link that did not change (e.g. a loss
+    // burst read as congestion). Start-up and link changes are excluded
+    // because the target is expected to move there.
+    double max_drop = 0;
+    for (size_t i = 0; i < rep.timeseries.size(); ++i) {
+      const double t = rep.timeseries[i].t_s;
+      bool excluded = t < 5.0;
+      for (const auto& c : s.forward) excluded = excluded || (t >= c.at.seconds() && t < c.at.seconds() + 5.0);
+      if (excluded) continue;
+      double peak = 0;
+      for (size_t j = i + 1; j-- > 0 && rep.timeseries[j].t_s > t - 5.0;) peak = std::max(peak, rep.timeseries[j].target_kbps);
+      if (peak > 0) max_drop = std::max(max_drop, 100.0 * (1.0 - rep.timeseries[i].target_kbps / peak));
+    }
+    m["cc.target_max_drop_pct"] = max_drop;
   }
   m["cc.rtt_p50_ms"] = Percentile(rtt_samples, 50);
   const auto& ls = forward.stats();

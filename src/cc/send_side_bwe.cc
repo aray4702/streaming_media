@@ -19,6 +19,13 @@ LossBweConfig LossCfg(const GccConfig& g) {
   c.events = g.events;
   return c;
 }
+LossBweV2Config LossV2Cfg(const GccConfig& g) {
+  LossBweV2Config c;
+  c.min_rate = g.min_rate;
+  c.max_rate = g.max_rate;
+  c.events = g.events;
+  return c;
+}
 ProbeControllerConfig ProbeCfg(const GccConfig& g) {
   ProbeControllerConfig c;
   c.events = g.events;
@@ -27,11 +34,12 @@ ProbeControllerConfig ProbeCfg(const GccConfig& g) {
 }  // namespace
 
 GccController::GccController(GccConfig cfg)
-    : cfg_(cfg), delay_(DelayCfg(cfg)), loss_(LossCfg(cfg)), probe_ctrl_(ProbeCfg(cfg)), target_(cfg.start_rate) {}
+    : cfg_(cfg), delay_(DelayCfg(cfg)), loss_(LossCfg(cfg)), loss_v2_(LossV2Cfg(cfg)), probe_ctrl_(ProbeCfg(cfg)), target_(cfg.start_rate) {}
 
 NetworkControlUpdate GccController::Start(Timestamp now) {
   delay_.SetStartBitrate(cfg_.start_rate, now);
   loss_.Reset();
+  loss_v2_.Reset();
   target_ = cfg_.start_rate;
   std::vector<ProbeCluster> probes;
   if (cfg_.enable_probing) probes = probe_ctrl_.SetBitrates(cfg_.min_rate, cfg_.start_rate, cfg_.max_rate, now);
@@ -55,7 +63,15 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   for (const auto& r : results) probe_est_.OnPacketResult(r);
   std::optional<DataRate> probe = probe_est_.FetchAndResetLastEstimate();
   DataRate delay_est = delay_.OnPacketResults(results, acked_.bitrate(), probe, now);
-  DataRate loss_limit = loss_.OnPacketResults(results, target_, now);
+  DataRate loss_limit;
+  if (cfg_.loss_bwe == LossBweVersion::kV2) {
+    loss_v2_.SetAcknowledgedBitrate(acked_.bitrate());
+    loss_v2_.SetDelayBasedEstimate(delay_est);
+    loss_v2_.SetCurrentTarget(target_);
+    loss_limit = loss_v2_.OnPacketResults(results, now);
+  } else {
+    loss_limit = loss_.OnPacketResults(results, target_, now);
+  }
   target_ = std::min(delay_est, loss_limit);
   if (remb_) target_ = std::min(target_, *remb_);
   target_ = Clamp(target_, cfg_.min_rate, cfg_.max_rate);
@@ -77,6 +93,7 @@ NetworkControlUpdate GccController::OnProcessInterval(Timestamp now, DataRate se
 NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) {
   delay_.SetStartBitrate(rate, now);
   loss_.Reset();
+  loss_v2_.Reset();
   target_ = Clamp(rate, cfg_.min_rate, cfg_.max_rate);
   std::vector<ProbeCluster> probes;
   if (cfg_.enable_probing) probes = probe_ctrl_.SetBitrates(cfg_.min_rate, target_, cfg_.max_rate, now);
@@ -102,8 +119,16 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
 void GccController::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("target_kbps", target_.kbps());
   w.Gauge("delay_estimate_kbps", delay_.estimate().kbps());
-  w.Gauge("loss_limit_kbps", loss_.estimate().kbps());
-  w.Gauge("loss", loss_.last_loss());
+  w.Gauge("loss_limit_kbps", loss_limit().kbps());
+  if (cfg_.loss_bwe == LossBweVersion::kV2) {
+    w.Gauge("loss", loss_v2_.average_loss());
+    w.Gauge("loss_v2_inherent_loss", loss_v2_.inherent_loss());
+    w.Gauge("loss_v2_limited_bw_kbps", loss_v2_.loss_limited_bandwidth().kbps());
+    w.Gauge("loss_v2_cause", static_cast<double>(loss_v2_.cause()));
+    w.Gauge("loss_v2_policer", loss_v2_.policer_detected() ? 1 : 0);
+  } else {
+    w.Gauge("loss", loss_.last_loss());
+  }
   w.Gauge("in_flight_bytes", static_cast<double>(history_.InFlight().bytes()));
   if (acked_.bitrate()) w.Gauge("acked_kbps", acked_.bitrate()->kbps());
   w.Hist("target_changes_kbps", target_kbps_);

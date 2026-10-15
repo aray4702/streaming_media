@@ -4,7 +4,8 @@
 // estimator, the acknowledged-bitrate estimator and the probe machinery,
 // and produces the target rate for the encoders (min of delay-, loss- and
 // REMB-based estimates, clamped to [min, max]) plus a pacing rate
-// (target x pacing_factor) and any probe clusters to send.
+// (target x pacing_factor) and any probe clusters to send. GccConfig::loss_bwe
+// selects the loss-based estimator (5.3 v1 or v2).
 #pragma once
 
 #include <optional>
@@ -25,6 +26,9 @@ struct GccConfig {
   DataRate max_rate = DataRate::KilobitsPerSec(10000);
   double pacing_factor = 2.5;
   bool enable_probing = true;
+  // Loss-based estimator (5.3): v1 three-band rule (default) or v2
+  // inherent-loss model.
+  LossBweVersion loss_bwe = LossBweVersion::kV1;
   EventSink* events = nullptr;
 };
 
@@ -50,6 +54,9 @@ class GccController : public MetricsSource {
   DataRate target() const { return target_; }
   const DelayBasedBwe& delay_bwe() const { return delay_; }
   const LossBasedBwe& loss_bwe() const { return loss_; }
+  const LossBasedBweV2& loss_bwe_v2() const { return loss_v2_; }
+  // The active loss-based limit (max rate = not limiting).
+  DataRate loss_limit() const { return cfg_.loss_bwe == LossBweVersion::kV2 ? loss_v2_.estimate() : loss_.estimate(); }
   const SendHistory& history() const { return history_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -59,6 +66,7 @@ class GccController : public MetricsSource {
   SendHistory history_;
   DelayBasedBwe delay_;
   LossBasedBwe loss_;
+  LossBasedBweV2 loss_v2_;
   AcknowledgedBitrateEstimator acked_;
   ProbeController probe_ctrl_;
   ProbeBitrateEstimator probe_est_;

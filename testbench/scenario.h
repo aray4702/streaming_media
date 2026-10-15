@@ -74,6 +74,7 @@ struct Scenario {
   DataRate start_rate = DataRate::KilobitsPerSec(300);
   DataRate min_rate = DataRate::KilobitsPerSec(30);
   DataRate max_rate = DataRate::KilobitsPerSec(5000);
+  int loss_bwe = 1;                 // Loss-based estimator: 1 = three-band rule, 2 = inherent-loss model.
 
   std::vector<LinkChange> forward;
   std::vector<LinkChange> reverse;
