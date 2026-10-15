@@ -265,8 +265,19 @@ std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, T
       in_flight_ -= it->second.size;
       it->second.reported = true;
     }
+    highest_reported_ = std::max(highest_reported_, s);
     (p.received ? acked_ : lost_)++;
     out.push_back(r);
+  }
+  // A feedback covers a contiguous range of sequence numbers, so a packet below
+  // the highest one reported but never reported itself was in a feedback that
+  // was lost: it will not be reported later, and is no longer in flight.
+  for (auto it = sent_.lower_bound(forgotten_below_); it != sent_.end() && it->first < highest_reported_; ++it) {
+    if (!it->second.reported) {
+      in_flight_ -= it->second.size;
+      it->second.reported = true;
+    }
+    forgotten_below_ = it->first + 1;
   }
   // Drop entries older than 60 s.
   while (!sent_.empty() && now - sent_.begin()->second.time > TimeDelta::Seconds(60)) {

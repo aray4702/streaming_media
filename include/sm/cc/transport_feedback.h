@@ -98,6 +98,8 @@ class SendHistory : public MetricsSource {
   SeqNumUnwrapper<uint16_t> unwrapper_;
   std::map<int64_t, Sent> sent_;
   DataSize in_flight_;
+  int64_t highest_reported_ = INT64_MIN;
+  int64_t forgotten_below_ = INT64_MIN;  // Packets below this are settled for in_flight_.
   uint64_t lost_ = 0, acked_ = 0;
 };
 

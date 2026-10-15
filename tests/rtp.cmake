@@ -5,5 +5,5 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
   SUITES H264 RtcpEngine RtcpSdesBye RtpSender SendSideController RtpReceiver Session)
 sm_add_test_exe(sm_e2e_rtp LABEL e2e DEPS sm::rtp
   SOURCES e2e/rtp_sender_e2e_test.cc e2e/rtp_receiver_e2e_test.cc
-          e2e/rtp_session_e2e_test.cc
-  SUITES E2E_RtpSender E2E_RtpReceiver E2E_RtpSession)
+          e2e/rtp_session_e2e_test.cc e2e/cwnd_pushback_e2e_test.cc
+  SUITES E2E_RtpSender E2E_RtpReceiver E2E_RtpSession E2E_CongestionWindowPushback)

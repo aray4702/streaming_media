@@ -1,0 +1,16 @@
+name issue_53_cwnd_pushback
+describe Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shallow 100 ms buffer; the encoder must back off before the bottleneck drops its video (issue #53)
+duration 25s
+at 0s  capacity=2500kbps delay=30ms queue=100ms
+at 8s  capacity=500kbps
+# Congestion-window pushback (cc/congestion_window_pushback.h) drops frames while
+# the data in flight exceeds the window, so far less video overflows the buffer
+# and is lost for good. Without it 1.4-4.8% of the video packets are never
+# recovered on every seed 1-20; with it 0-0.84%.
+expect video.residual_loss_pct <= 1.0
+expect video.render_fps >= 22
+expect audio.interruptions <= 1
+# Target (issue #53): the send rate stays within 1.5x of the target from 1 s
+# after the target falls, so cc.send_over_target_ms stays near 0. Not yet met:
+# the pacer still drains a backlog of retransmissions (issue #21) at up to
+# 2 Mbps for about 2 s after the drop (cc.send_over_target_ms ~3000).
