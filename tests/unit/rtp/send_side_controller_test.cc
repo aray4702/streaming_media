@@ -1,3 +1,5 @@
+#include <algorithm>
+#include <optional>
 #include <vector>
 
 #include "sm/rtp/send_side_controller.h"
