@@ -671,6 +671,21 @@ Audio and video senders each get a pacer slot through one shared
 payload limit leaves 16 bytes for the header extensions so the whole packet
 stays within 1200 bytes.
 
+Status of PR 6 (as built): `testbench/call.cc` runs two `rtp::Session`
+objects; `Fwd` is `{kind, bytes}` and `Rev` is `{bytes}`, and the glue that the
+session replaced (sequence numbers, RTX/FEC/RED wiring, the pacer hand-off, SR
+and RR building, NACK and feedback dispatch) is deleted. Additions the switch
+needed in the library, none of them changing a decision: `SessionEventType::
+kReportBlock` (the bench feeds the FEC protection controller from it),
+`Session::SetRtt` (a receive-only endpoint has no report block to measure an
+RTT from, and the bench used to share the sender's estimate), a
+`VideoMediaObserver` hook on `RtpReceiver` (the residual-loss measurement), and
+no send-side controller on an endpoint without send streams (its idle outage
+monitor otherwise logged a phantom outage). Declared baseline changes: the
+transport-cc extension adds 8 bytes to every RTP packet, RTCP is real
+SR/RR+SDES compounds (also in audio-only calls), no LNTF is sent, and
+`repair.overhead_pct` counts whole packets.
+
 Reason for ordering 7 after 6: the large refactor is isolated from the payload
 change, so a regression in either is attributable. If a PR in this series
 cannot be made behaviour-preserving, #32 says to stop and report; this plan

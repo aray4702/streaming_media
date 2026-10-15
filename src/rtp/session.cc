@@ -122,6 +122,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.extensions = &cfg_.extensions;
   c.feedback = &tcc_;
   c.parser = v.parser;
+  c.media_observer = v.media_observer;
   c.rtx_ssrc = v.rtx_ssrc;
   c.nack = v.nack;
   c.fec = v.fec;
@@ -149,7 +150,12 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
 void Session::Start(Timestamp now) {
   if (started_) return;
   started_ = true;
+  // A receive-only endpoint has no congestion controller to run: its pacer,
+  // GCC and outage monitor would only log decisions about a link it never
+  // sends on.
+  if (!HasSendStreams()) return;
   send_.Start(now);
+  send_.OnRtt(rtt_);
   last_target_ = send_.target();
 }
 
@@ -197,6 +203,13 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
 void Session::SetFecParams(VideoSendId id, const loss::FecParams& p) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   video_send_[static_cast<size_t>(id.index)].sender->SetFecParams(p);
+}
+
+void Session::SetRtt(TimeDelta rtt) {
+  rtt_ = rtt;
+  send_.OnRtt(rtt_);
+  for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
+  for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
 }
 
 void Session::OnDecodeFailure(VideoRecvId id, Timestamp now) {
@@ -275,6 +288,14 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     e.rtt = rtt_;
     Emit(e);
   }
+  for (const auto& rb : in.report_blocks) {
+    SessionEvent e;
+    e.type = SessionEventType::kReportBlock;
+    e.time = now;
+    e.ssrc = rb.ssrc;
+    e.loss_fraction = rb.fraction_lost / 256.0;
+    Emit(e);
+  }
   for (const auto& n : in.nacks) {
     if (RtpSender* s = SenderForSsrc(n.media_ssrc)) {
       s->OnNack(n.seqs, now, rtt_);
@@ -331,8 +352,10 @@ void Session::Process(Timestamp now) {
     for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
   }
   // Paced media.
-  for (ReleasedPacket& r : send_.Process(now)) {
-    out_.push_back({std::move(r.bytes), ToOutgoing(r.kind), r.wire_size});
+  if (HasSendStreams()) {
+    for (ReleasedPacket& r : send_.Process(now)) {
+      out_.push_back({std::move(r.bytes), ToOutgoing(r.kind), r.wire_size});
+    }
   }
   ControllerActions act = send_.TakeActions();
   if (act.pause_encoder) Emit({SessionEventType::kEncoderPause, now, 0, DataRate::Zero(), TimeDelta::Zero()});
@@ -351,7 +374,8 @@ void Session::Process(Timestamp now) {
 }
 
 Timestamp Session::NextProcessTime(Timestamp now) const {
-  Timestamp next = std::min(send_.NextProcessTime(now), rtcp_.NextProcessTime(now));
+  Timestamp next = rtcp_.NextProcessTime(now);
+  if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
     next = std::min(next, last_tcc_ + cfg_.transport_feedback_interval);
@@ -378,6 +402,7 @@ std::vector<SessionEvent> Session::TakeEvents() {
 }
 
 timing::AudioOperation Session::GetAudio(AudioRecvId id, std::span<float> out, Timestamp now) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_recv_.size()) return timing::AudioOperation::kSilence;
   return audio_recv_[static_cast<size_t>(id.index)].receiver->GetAudio(out, now);
 }
 
