@@ -23,6 +23,11 @@ out/compare/sm_compare testbench/scenarios/*.scn                  # mean of 3 se
 out/compare/sm_compare --seeds=5 --json=r.json --dump=runs/ a.scn # JSON summary, full per-run reports
 ```
 
+The build needs clang 21 or newer (Apple clang 21 works): the libc++ the
+binary was built with rejects older compilers. On Ubuntu, install it with
+`wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21` and configure
+with `CXX=clang++-21`.
+
 The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
 20 s, and the same seed gives the same result.
 
