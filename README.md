@@ -165,7 +165,7 @@ Other presets: `native-asan`, `embedded` (size-optimized, no
 exceptions/RTTI, metrics and events compiled out), `wasm` (set
 `EMSCRIPTEN_ROOT`), `ios`, `ios-simulator`, `android-arm64`,
 `android-armv7` (set `ANDROID_NDK_HOME`), `linux-aarch64`, `linux-armv7`.
-Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC|RTP=OFF`. `SM_WITH_RTP` (the RTP/RTCP session layer, in progress: issue #32) needs loss, timing, cc, sync and video.
+Sections can be disabled with `-DSM_WITH_LOSS|TIMING|CC|AUDIO|VIDEO|SYNC|RTP=OFF`. `SM_WITH_RTP` (the RTP/RTCP session layer) needs loss, timing, cc, sync and video.
 
 `tools/run_all.sh all` rebuilds every configuration, reruns everything and
 regenerates the algorithm and results documents.
@@ -222,18 +222,28 @@ docs/                                                    research, design, algor
   RTP/RTCP that any WebRTC-compatible stack can parse: RTP with RFC 8285
   header extensions and abs-capture-time, RTCP SR/RR, generic NACK, PLI,
   FIR, loss notification, transport-cc, REMB, RTX, RED, and ULPFEC over
-  RED. Two gaps remain: FEC still uses its own simple format
-  ([#29](https://github.com/aray4702/streaming_media/issues/29)), and NACK, PLI, FIR and loss notification have no wire
-  format yet ([#28](https://github.com/aray4702/streaming_media/issues/28)). Connecting to a browser (ICE, DTLS-SRTP,
-  SDP) is left to the stack that hosts the library.
+  RED, with the standard payload formats for Opus (RFC 7587) and H.264
+  (RFC 6184, packetization mode 1). All of these are in place and checked
+  against libwebrtc M157 in CI, except FEC, which still uses its own
+  simple format ([#29](https://github.com/aray4702/streaming_media/issues/29)). H.264 is the only video format so far, and
+  loss notification stays off for it, as in libwebrtc ([#47](https://github.com/aray4702/streaming_media/issues/47)).
+  Connecting to a browser (ICE, DTLS-SRTP, SDP) is left to the stack that
+  hosts the library.
 - **RTP/RTCP in the library:** the library provides the RTP/RTCP session
   layer (sender, receiver, the codecs' standard RTP payload formats, RTCP
   scheduling and feedback dispatch), so an app passes encoded frames and
-  packet bytes instead of wiring the building blocks together
-  ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
+  packet bytes instead of wiring the building blocks together. Done: the
+  test bench runs every call through it ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
+- **Codecs:** the library contains no audio or video encoder or decoder.
+  The app passes encoded Opus frames and H.264 access units in, and
+  decodes audio through an `AudioDecoder` it supplies. The test bench
+  uses a synthetic encoder: correctly framed H.264 that hits its target
+  size, with no real picture or sound behind it.
 - **Send-side adaptation in the library:** frame dropping, quality
   scaling and rate allocation are part of the library too, so the app only
-  runs its encoder and decoder ([#37](https://github.com/aray4702/streaming_media/issues/37)).
+  runs its encoder and decoder. Planned ([#37](https://github.com/aray4702/streaming_media/issues/37)): the frame dropper,
+  quality scaler and resolution adaptation exist as building blocks, but
+  the session doesn't use them yet.
 - **Call topology:** one-to-one calls only. The SFU and multiparty pieces
   (layer selection, active speaker detection, the audio mixer) have been
   removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
