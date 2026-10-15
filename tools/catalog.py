@@ -14,6 +14,7 @@ SECTIONS = {
     "6": ("Audio quality (APM)", "audio"),
     "7": ("Video quality and processing", "video"),
     "8": ("Synchronization", "sync"),
+    "9": ("RTP/RTCP session layer", "rtp"),
 }
 
 ALGORITHMS = [
@@ -519,6 +520,73 @@ ALGORITHMS = [
                   "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
                   "mid-call. Routing accuracy.",
          notes="", verification="No defects found."),
+    # ------------------------------------------------------------------ 9
+    dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
+         problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
+                   "Early feedback (NACK, PLI, FIR, loss notification, transport-cc, REMB) -> compound packets sent at once"],
+         headers=["rtp/rtcp_engine.h", "rtp/rtcp_sdes_bye.h"], unit=["RtcpEngine", "RtcpSdesBye"], e2e=["E2E_RtpSession"],
+         bench=[],
+         scenario="Two sessions exchange bytes over sim::NetworkLink (tests/e2e/rtp_session_e2e_test.cc): reports "
+                  "flow in both directions at the scheduled intervals, RTT is measured from SR and RR, and feedback "
+                  "requests reach the module that acts on them.",
+         notes="Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
+               "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
+               "(SR or RR first, SDES CNAME after it). Differs in having one engine per session where libwebrtc has "
+               "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
+               "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
+         verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "
+                      "libwebrtc M157 (rtcp_sender.cc, video_send_stream.h, audio_send_stream.h), see the issue. "
+                      "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
+    dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
+         problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",
+                   "Pacing, transport-wide sequence numbers and congestion control hand-off -> SendSideController"],
+         headers=["rtp/rtp_sender.h", "rtp/send_side_controller.h"], unit=["RtpSender", "SendSideController"],
+         e2e=["E2E_RtpSender"], bench=[],
+         scenario="Frames go through RtpSender and SendSideController over sim::NetworkLink; the test checks the "
+                  "packet bytes, retransmission on NACK, pacing and that the transport-cc feedback drives the "
+                  "target rate.",
+         notes="RtpSender builds packets and never sends; every packet leaves through TakePackets() with a pacer "
+               "priority. SendSideController (one per transport) numbers, paces and serializes them. Padding and "
+               "probes are real padding-only RTP packets. RTX of RED is retransmitted as sent, as in libwebrtc's "
+               "RtxReceiveStream. Packet size is capped at 1200 bytes, libwebrtc's kVideoMtu. Interop for RTP with "
+               "MID, transport-cc and abs-send-time, RTX and padding is in compare/webrtc/rtcp_interop.cc.",
+         verification="Introduced by #32 plan PRs 3 and 5. Review notes from PR 3 (padding timestamp, padding size "
+                      "accounting, zero-byte frames) were fixed in PR 5. Per-suite results are recorded by ctest "
+                      "and CI; tools/run_all.sh does not run these suites yet."),
+    dict(id="9.3", slug="rtp-receiver", title="RTP receiver",
+         problems=["Parsing, demultiplexing and repair on the receive path -> RtpReceiver",
+                   "Frame assembly, keyframe requests and playout scheduling -> RtpReceiver"],
+         headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=[],
+         scenario="Video and audio streams over lossy, reordering links: RTX, FEC and NACK recover packets, the "
+                  "packet buffer releases decodable frames, and audio is unwrapped from RED into the jitter buffer.",
+         notes="Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
+               "sent only when negotiated and frame information is present, so it is off for H.264, as in "
+               "libwebrtc (follow-up #47).",
+         verification="Introduced by #32 plan PRs 4 and 6. Per-suite results are recorded by ctest and CI; "
+                      "tools/run_all.sh does not run these suites yet."),
+    dict(id="9.4", slug="session", title="RTP session facade",
+         problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
+         headers=["rtp/session.h"], unit=["Session"], e2e=["E2E_RtpSession"], bench=[],
+         scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
+                  "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
+         notes="Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
+               "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes.",
+         verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
+                      "through real packet sizes; each change is explained in PR #46. Per-suite results are "
+                      "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
+    dict(id="9.5", slug="h264", title="H.264 packetization (RFC 6184) and fake encoder",
+         problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A"],
+         headers=["rtp/h264.h", "rtp/fake_h264.h"], unit=["H264"], e2e=["E2E_RtpSession"], bench=[],
+         scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
+                  "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
+         notes="Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
+               "against H26xPacketBuffer). The fake encoder follows FakeH264Encoder and differs in making a keyframe "
+               "when asked and never writing a zero byte into the filler. An IDR alone counts as a keyframe, as in "
+               "libwebrtc by default.",
+         verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
+                      "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
+                      "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "
+                      "suites yet."),
 ]
 
 # Problem rows from sections 3-8 that are platform glue, codec internals or

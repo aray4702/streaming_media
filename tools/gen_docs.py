@@ -459,9 +459,14 @@ def render_index(plats):
                 p = plats.get(k)
                 if not p:
                     continue
-                ok = all(suite_status(p, s)[0] == "pass" for s in a["unit"] + a["e2e"])
+                sts = [suite_status(p, s)[0] for s in a["unit"] + a["e2e"]]
                 bok = all(p["bench"].get(b, {}).get("pass", True) for b in a["bench"]) if p["bench"] else True
-                cells.append("pass" if ok and bok else "**FAIL**")
+                if "FAIL" in sts or not bok:
+                    cells.append("**FAIL**")
+                elif "-" in sts:
+                    cells.append("not recorded")  # suite has no results from tools/run_all.sh yet
+                else:
+                    cells.append("pass")
             link = os.path.relpath(algo_path(a), os.path.join("docs", "algorithms"))
             out.append(f"| {a['id']} | [{a['title']}]({link}) | {u} | {e} | {len(a['bench'])} | " + " | ".join(cells) + " |")
         out.append("")

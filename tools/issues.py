@@ -370,4 +370,34 @@ must route every incoming packet to the right decoder. SSRCs are chosen randomly
 carried in header extensions (MID for the media section, RID for the simulcast layer). These extensions are only
 included in the first packets of each SSRC to save bytes, may be reordered, and use two different encodings
 depending on their size.""",
+    # ------------------------------------------------------------------ 9
+    "9.1": """\
+A call needs a steady side channel next to the media. The sender must tell the receiver how its RTP timestamps map
+to wall-clock time (sender reports) and the receiver must report loss, jitter and delay so the sender can measure the
+round trip. When something goes wrong the receiver must say so at once: which packets are missing, that a keyframe is
+needed, which packets arrived and when. These rules are easy to get subtly wrong: reports sent too often waste
+bandwidth, too rarely leave RTT stale, and every compound packet must start with a report and carry the CNAME that
+lets the receiver group audio and video for lip-sync.""",
+    "9.2": """\
+Without a sender component, every application turns encoded frames into packets itself: sequence numbers, payload
+types, timestamps, marker bits, RED wrapping for audio, a history for retransmission and the pacing that keeps a keyframe
+from leaving as one burst. Mistakes here are silent: a wrong sequence number breaks NACK, a packet missing from the
+history cannot be repaired, and an unpaced burst fills the bottleneck queue. The congestion controller also needs
+every packet numbered and timed in the same order in which it is sent, so packetizing and pacing have to agree.""",
+    "9.3": """\
+The receive path has to do many things in a fixed order with packets that arrive late, twice, out of order or not at
+all: parse, restore retransmitted packets, recover with FEC, track gaps for NACK, assemble frames, decide when a keyframe
+is needed and schedule each decodable frame for playout. An application that wires these modules by hand tends to get
+the order or the feedback throttles wrong, which shows up as extra freezes and as keyframe storms.""",
+    "9.4": """\
+The library provides the building blocks, but an app that passes frames and datagrams wants one object per call, not a
+wiring diagram. Without it, each integration repeats the wiring (and its bugs), and the test bench tests glue code
+that no real app shares. A session facade makes the tested path the same path an application uses, and
+lets every packet cross the simulated network as bytes.""",
+    "9.5": """\
+Video must be carried in RTP packets small enough to fit the path MTU. A keyframe is far larger than one packet, so the
+payload format decides how an access unit is split and how the receiver finds where a frame starts and ends. H.264
+(RFC 6184) defines single NAL unit packets, aggregation of small NAL units (STAP-A, typically SPS and PPS) and
+fragmentation of large ones (FU-A). A packetizer or depacketizer that disagrees with libwebrtc's makes the call fail
+to decode, so the format is checked against libwebrtc's own parser.""",
 }
