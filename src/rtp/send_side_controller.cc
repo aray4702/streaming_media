@@ -13,6 +13,10 @@ cc::PacerConfig WithEvents(cc::PacerConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
 }
+cc::CongestionWindowConfig WithEvents(cc::CongestionWindowConfig c, EventSink* e) {
+  if (!c.events) c.events = e;
+  return c;
+}
 cc::OutageConfig WithEvents(cc::OutageConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
@@ -25,6 +29,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       gcc_(WithEvents(cfg.gcc, cfg.events)),
       pacer_(WithEvents(cfg.pacer, cfg.events)),
       outage_(WithEvents(cfg.outage, cfg.events)),
+      cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       target_(cfg.gcc.start_rate) {}
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u) {
@@ -32,6 +37,15 @@ void SendSideController::Apply(const cc::NetworkControlUpdate& u) {
   pacer_.SetPacingRates(u.pacing_rate, DataRate::Zero());
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
   outage_.SetCurrentRate(target_);
+}
+
+// libwebrtc runs UpdateTargetBitrate() whenever the network state may have
+// changed: after feedback, on the process interval and for every sent packet.
+void SendSideController::UpdatePushback(Timestamp now, bool window) {
+  cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
+  cwnd_.UpdatePacingQueue(pacer_.QueueSize());
+  if (window) cwnd_.UpdateWindow(target_);
+  cwnd_.UpdateTargetBitrate(target_, now);
 }
 
 void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const {
@@ -88,6 +102,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.probe_cluster = sent.probe_cluster;
     r.send_time = now;
     gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
+    UpdatePushback(now, false);
     window_.emplace_back(now, sent.size.bytes());
     window_bytes_ += sent.size.bytes();
     ++stats_.released;
@@ -97,6 +112,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
     Apply(gcc_.OnProcessInterval(now, send_rate(now)));
+    UpdatePushback(now, true);
   }
   if (!last_outage_.IsFinite() || now - last_outage_ >= cfg_.outage_interval) {
     last_outage_ = now;
@@ -118,6 +134,8 @@ Timestamp SendSideController::NextProcessTime(Timestamp now) const {
 
 void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now) {
   Apply(gcc_.OnTransportFeedback(fb, now));
+  if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
+  UpdatePushback(now, true);
   outage_.OnFeedback(now);
 }
 
@@ -125,6 +143,14 @@ ControllerActions SendSideController::TakeActions() {
   ControllerActions a = actions_;
   actions_ = {};
   return a;
+}
+
+bool SendSideController::DropCapturedFrame() {
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  if (drop.interval == 0) return false;
+  if (cwnd_frame_counter_++ % static_cast<uint64_t>(drop.interval) != 0) return false;
+  ++cwnd_frames_dropped_;
+  return true;
 }
 
 DataRate SendSideController::send_rate(Timestamp now) {
@@ -142,6 +168,13 @@ SendRates SendSideController::ComputeRates(DataRate audio_wire_rate, double fec_
   out.target = target_;
   out.audio_rate = audio_wire_rate;
   out.video_target = std::clamp(r, cfg_.video_min, cfg_.video_max);
+  // Pushback acts on the whole target; the encoder drops frames and takes
+  // the matching share of the video target.
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  if (drop.interval > 0) {
+    out.frame_drop_interval = drop.interval;
+    out.video_target = std::clamp(out.video_target - out.video_target * (1.0 / drop.interval), cfg_.video_min, cfg_.video_max);
+  }
   return out;
 }
 
@@ -151,6 +184,7 @@ void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("unknown_ids", stats_.unknown_ids);
   w.Counter("released_bytes", static_cast<uint64_t>(stats_.released_bytes));
   w.Gauge("target_kbps", target_.kbps());
+  w.Counter("cwnd_frames_dropped", cwnd_frames_dropped_);
 }
 
 }  // namespace sm::rtp

@@ -233,8 +233,17 @@ ALGORITHMS = [
          scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
                   "(decrease band). Each phase's target is compared with the previous one.",
          notes="The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
-               "2.5 x target.",
-         verification="Covered by the 5.2 and 5.3 fixes."),
+               "2.5 x target. rtp::SendSideController adds congestion-window pushback "
+               "(cc/congestion_window_pushback.h, a port of libwebrtc's CongestionWindowPushbackController with "
+               "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
+               "the encoder drops every N-th captured frame (SendRates::frame_drop_interval, "
+               "SendSideController::DropCapturedFrame()). The pacing rate is not reduced.",
+         verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
+                      "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
+                      "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
+                      "settled once a later feedback is reported. The library default is on (libwebrtc enables it "
+                      "through the WebRTC-CongestionWindow field trial; rate_control_settings.cc, which holds the "
+                      "default, is not in compare/webrtc/reference)."),
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
@@ -272,8 +281,12 @@ ALGORITHMS = [
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
-         notes="Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops.",
-         verification="No defects found."),
+         notes="Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
+               "bucket and the pending keyframe bytes are capped at 1.5 s of the target rate (libwebrtc's "
+               "FrameDropper::CapAccumulator, which caps at 3 s).",
+         verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframes bypass ShouldDrop() "
+                      "but their bytes entered an uncapped bucket, so a run of keyframe requests made the dropper "
+                      "drop every delta frame for seconds; the cap fixes it."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],

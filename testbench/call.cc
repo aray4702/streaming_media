@@ -131,6 +131,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.queue_p95_ms", "95th percentile bottleneck queue delay (bufferbloat)"},
       {"cc.queue_max_ms", "Maximum bottleneck queue delay"},
       {"cc.queue_over_200ms_pct", "Share of time the bottleneck queue exceeded 200 ms"},
+      {"cc.send_over_target_ms", "Time after the first 2 s that the send rate (100 ms windows, all traffic) exceeded 1.5 x the GCC target"},
       {"cc.max_settle_ms", "Longest time after a link change until the target settles in [0.5, 1.0] x usable capacity"},
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
       {"cc.rtt_p50_ms", "Median RTT measured by RTCP"},
@@ -154,6 +155,13 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
     }
   }
   m["cc.target_avg_kbps"] = Mean(targets);
+  {
+    double over_ms = 0;
+    for (const auto& smp : rep.timeseries) {
+      if (smp.t_s > 2.0 && smp.send_kbps > 1.5 * smp.target_kbps) over_ms += 100;
+    }
+    m["cc.send_over_target_ms"] = over_ms;
+  }
   double good_total = 0;
   for (const auto& smp : rep.timeseries) good_total += smp.goodput_kbps;
   m["cc.goodput_kbps"] = rep.timeseries.empty() ? 0 : good_total / static_cast<double>(rep.timeseries.size());
@@ -400,7 +408,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       dropper.SetRates(vr, s.video_fps);
       bool periodic = s.keyframe_interval.us() > 0 && now - last_keyframe >= s.keyframe_interval;
       bool key = keyframe_needed || periodic;
-      if (video_paused || (!key && dropper.ShouldDrop())) {
+      // Congestion-window pushback drops captured frames before anything else
+      // (libwebrtc VideoStreamEncoder::OnFrame), keyframes included.
+      if (video_paused || sender.send_side().DropCapturedFrame() || (!key && dropper.ShouldDrop())) {
         ++frames_skipped;
       } else {
         ++frames_encoded;

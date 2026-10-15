@@ -50,6 +50,10 @@ void GccController::OnRttUpdate(TimeDelta rtt) {
 
 NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback& fb, Timestamp now) {
   std::vector<PacketResult> results = history_.OnFeedback(fb, now);
+  last_feedback_max_rtt_.reset();
+  for (const auto& r : results) {
+    if (r.received()) last_feedback_max_rtt_ = std::max(last_feedback_max_rtt_.value_or(TimeDelta::Zero()), now - r.send_time);
+  }
   if (results.empty()) return MakeUpdate(now, {});
   acked_.OnPacketResults(results);
   for (const auto& r : results) probe_est_.OnPacketResult(r);

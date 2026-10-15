@@ -24,6 +24,13 @@ namespace sm::cc {
 struct FrameDropperConfig {
   TimeDelta window = TimeDelta::Millis(500);  // Allowed accumulated overshoot.
   int keyframe_spread_frames = 15;
+  // The bucket and the pending keyframe bytes never hold more than this much
+  // of the target rate (libwebrtc FrameDropper::CapAccumulator caps at
+  // kAccumulatorCapBufferSizeSecs = 3 s; 1.5 s keeps the stall after a run of
+  // keyframes short on slow links). Keyframes bypass ShouldDrop() but their
+  // bytes enter the bucket: without a cap, a run of keyframe requests keeps it
+  // above its limit and every delta frame is dropped for seconds.
+  TimeDelta max_hold = TimeDelta::Millis(1500);
 };
 
 class FrameDropper : public MetricsSource {
@@ -39,7 +46,9 @@ class FrameDropper : public MetricsSource {
 
  private:
   FrameDropperConfig cfg_;
+  void CapBucket();
   double target_bytes_per_frame_ = 0;
+  double target_bps_ = 0;
   double max_bucket_ = 0;
   double bucket_ = 0;
   double keyframe_debt_ = 0;

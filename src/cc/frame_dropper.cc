@@ -5,8 +5,16 @@
 namespace sm::cc {
 
 void FrameDropper::SetRates(DataRate target, double fps) {
+  target_bps_ = static_cast<double>(target.bps());
   target_bytes_per_frame_ = fps > 0 ? target.bps() / 8.0 / fps : 0;
   max_bucket_ = target.bps() / 8.0 * cfg_.window.seconds();
+  CapBucket();
+}
+
+void FrameDropper::CapBucket() {
+  const double cap = target_bps_ / 8.0 * cfg_.max_hold.seconds();
+  bucket_ = std::min(bucket_, cap);
+  keyframe_debt_ = std::min(keyframe_debt_, cap);
 }
 
 bool FrameDropper::ShouldDrop() {
@@ -18,6 +26,7 @@ bool FrameDropper::ShouldDrop() {
     double add = std::min(keyframe_debt_, keyframe_leak_);
     keyframe_debt_ -= add;
     bucket_ += add;
+    CapBucket();
   }
   if (bucket_ > max_bucket_) {
     ++dropped_;
@@ -37,6 +46,7 @@ void FrameDropper::OnEncodedFrame(DataSize size, bool keyframe) {
   } else {
     bucket_ += s;
   }
+  CapBucket();
 }
 
 void FrameDropper::ExportMetrics(MetricsWriter& w) const {

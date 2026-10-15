@@ -48,6 +48,9 @@ class GccController : public MetricsSource {
   // Hard reset after a network route change / outage recovery.
   NetworkControlUpdate ResetEstimate(DataRate rate, Timestamp now);
   DataRate target() const { return target_; }
+  // Largest (feedback time - send time) among the packets the last feedback
+  // reported as received; nullopt if it reported none.
+  std::optional<TimeDelta> last_feedback_max_rtt() const { return last_feedback_max_rtt_; }
   const DelayBasedBwe& delay_bwe() const { return delay_; }
   const LossBasedBwe& loss_bwe() const { return loss_; }
   const SendHistory& history() const { return history_; }
@@ -65,6 +68,7 @@ class GccController : public MetricsSource {
   std::optional<DataRate> remb_;
   DataRate target_;
   DataRate last_reported_;
+  std::optional<TimeDelta> last_feedback_max_rtt_;
   Histogram target_kbps_;
 };
 

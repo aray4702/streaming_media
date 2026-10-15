@@ -71,6 +71,28 @@ SM_TEST(FrameDropper, KeyframeSpreadAvoidsDropBurst) {
   SM_EXPECT_LE(drops, 2);
 }
 
+// Keyframes skip ShouldDrop() but their bytes enter the bucket. A run of
+// keyframe requests used to leave it far above its limit, so every delta frame
+// was dropped for seconds (issue #53); the bucket is capped at 1.5 s of target.
+SM_TEST(FrameDropper, KeyframeRunDoesNotStallDeltaFramesForSeconds) {
+  FrameDropper d;
+  const DataRate target = DataRate::KilobitsPerSec(400);
+  d.SetRates(target, 30);
+  const int64_t per_frame = 400000 / 8 / 30;
+  for (int i = 0; i < 40; ++i) d.OnEncodedFrame(DataSize::Bytes(per_frame * 4), true);  // 40 forced keyframes.
+  int dropped = 0;
+  for (int i = 0; i < 300; ++i) {
+    d.SetRates(target, 30);
+    if (d.ShouldDrop()) {
+      ++dropped;
+    } else {
+      d.OnEncodedFrame(DataSize::Bytes(per_frame), false);
+    }
+  }
+  // Recovers within about 1.5 s (45 frames); uncapped it takes over 150 frames.
+  SM_EXPECT_LT(dropped, 60);
+}
+
 SM_TEST(FrameDropper, OvershootDetectorAdjustsTarget) {
   EncoderOvershootDetector od;
   od.SetTarget(Kbps(1000));

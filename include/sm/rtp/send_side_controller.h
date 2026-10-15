@@ -15,9 +15,9 @@
 // Padding and probes are real padding-only RTP packets made by the padding
 // stream registered with SetPaddingSender().
 //
-// ComputeRates() is the test bench's video_rate() arithmetic, moved here
-// unchanged: target minus the audio wire rate, divided by (1 + FEC protection)
-// and clamped. Issue #21 changes it later. Takes `now`, reads no clock and
+// ComputeRates() is the test bench's video_rate() arithmetic: target minus the
+// audio wire rate, divided by (1 + FEC protection) and clamped, then lowered by
+// congestion-window pushback (cc/congestion_window_pushback.h). Takes `now`, reads no clock and
 // starts no thread.
 #pragma once
 
@@ -26,6 +26,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "sm/cc/congestion_window_pushback.h"
 #include "sm/cc/outage_monitor.h"
 #include "sm/cc/pacer.h"
 #include "sm/cc/send_side_bwe.h"
@@ -42,6 +43,7 @@ struct SendSideConfig {
   cc::GccConfig gcc;
   cc::PacerConfig pacer;
   cc::OutageConfig outage;
+  cc::CongestionWindowConfig cwnd;
   // Bytes the transport adds to every datagram (UDP + IPv4), counted in the
   // pacer budget and in GCC's send history.
   int64_t transport_overhead_bytes = 28;
@@ -57,7 +59,11 @@ struct SendSideConfig {
 struct SendRates {
   DataRate target;       // GCC target for everything the session sends.
   DataRate audio_rate;   // Audio wire rate taken off first.
-  DataRate video_target; // What the video encoder may produce.
+  DataRate video_target; // What the video encoder may produce (after congestion-window pushback).
+  // Congestion-window pushback (issue #53): drop every N-th captured frame
+  // (0 = none); `video_target` is already lowered to match. See
+  // SendSideController::DropCapturedFrame().
+  int frame_drop_interval = 0;
 };
 
 // A datagram released by the pacer.
@@ -107,6 +113,11 @@ class SendSideController : public MetricsSource {
   // Decisions the outage monitor made since the last call.
   ControllerActions TakeActions();
 
+  // Encoder side of congestion-window pushback: call once per captured frame
+  // before encoding it; true means skip the frame (libwebrtc
+  // VideoStreamEncoder::OnFrame, cwnd_frame_drop).
+  bool DropCapturedFrame();
+
   DataRate target() const { return target_; }
   DataRate send_rate(Timestamp now);
   SendRates ComputeRates(DataRate audio_wire_rate, double fec_protection) const;
@@ -114,11 +125,13 @@ class SendSideController : public MetricsSource {
   cc::GccController& gcc() { return gcc_; }
   cc::Pacer& pacer() { return pacer_; }
   cc::OutageMonitor& outage() { return outage_; }
+  const cc::CongestionWindowPushback& congestion_window() const { return cwnd_; }
   const SendSideStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
   void Apply(const cc::NetworkControlUpdate& u);
+  void UpdatePushback(Timestamp now, bool window);
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;
 
   SendSideConfig cfg_;
@@ -126,6 +139,9 @@ class SendSideController : public MetricsSource {
   cc::GccController gcc_;
   cc::Pacer pacer_;
   cc::OutageMonitor outage_;
+  cc::CongestionWindowPushback cwnd_;
+  uint64_t cwnd_frame_counter_ = 0;
+  uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;
   std::unordered_map<uint64_t, SenderPacket> queued_;
   uint64_t next_id_ = 1;
