@@ -55,7 +55,7 @@ struct Fwd {
   std::vector<uint8_t> rtcp;
 };
 
-enum class RKind : uint8_t { kFeedback, kNack, kPli, kRr };
+enum class RKind : uint8_t { kFeedback, kNack, kPli, kLntf, kRr };
 struct Rev {
   RKind kind = RKind::kFeedback;
   std::vector<uint8_t> bytes;
@@ -575,8 +575,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
     keyframes.UpdateRtt(rtt);
     for (const auto& msg : keyframes.Process(now)) {
-      (void)msg;
-      reverse.Send(now, Rev{RKind::kPli, {}, {}}, DataSize::Bytes(12 + 8 + kUdpIpOverhead));
+      // A loss notification is informational: the sender must not encode a
+      // keyframe for it (only PLI and FIR request one).
+      const RKind kind = msg.type == loss::FeedbackType::kLntf ? RKind::kLntf : RKind::kPli;
+      reverse.Send(now, Rev{kind, {}, {}}, DataSize::Bytes(12 + 8 + kUdpIpOverhead));
     }
     if (s.nack && nack.TakeKeyframeRequest()) {
       reverse.Send(now, Rev{RKind::kPli, {}, {}}, DataSize::Bytes(12 + 8 + kUdpIpOverhead));
@@ -668,6 +670,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case RKind::kPli:
           ++keyframe_requests;
           keyframe_needed = true;
+          break;
+        case RKind::kLntf:
           break;
         case RKind::kRr:
           if (auto rr = timing::ParseReceiverReport(r.bytes)) {
