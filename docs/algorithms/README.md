@@ -6,11 +6,11 @@ One document per algorithm: problem, the issue it solves, design, implementation
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 3.1 | [NACK + RTX retransmission](3-loss/3.1-nack-rtx.md) | 9 | 2 | 3 | pass | pass | pass | pass |
+| 3.1 | [NACK + RTX retransmission](3-loss/3.1-nack-rtx.md) | 9 | 2 | 3 | not recorded | not recorded | not recorded | not recorded |
 | 3.2 | [Forward error correction (XOR, ULPFEC/FlexFEC style)](3-loss/3.2-fec.md) | 6 | 2 | 3 | pass | pass | pass | pass |
 | 3.3 | [RED audio redundancy (RFC 2198)](3-loss/3.3-red.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 4 | 1 | 2 | pass | pass | pass | pass |
-| 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | pass | pass | pass | pass |
+| 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 3.6 | [Temporal scalability (L1T2/L1T3)](3-loss/3.6-temporal-layers.md) | 4 | 2 | 2 | pass | pass | pass | pass |
 | 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 6 | 1 | 2 | pass | pass | pass | pass |
 
@@ -77,6 +77,16 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 8.2 | [Audio/video synchronization and CNAME sync groups](8-sync/8.2-stream-sync.md) | 3 | 1 | 1 | pass | pass | pass | pass |
 | 8.3 | [Absolute capture time and glass-to-glass latency](8-sync/8.3-capture-time.md) | 3 | 1 | 1 | pass | pass | pass | pass |
 | 8.4 | [Header extensions (RFC 8285) and BUNDLE demuxing](8-sync/8.4-header-extensions.md) | 3 | 1 | 2 | pass | pass | pass | pass |
+
+## 9. RTP/RTCP session layer
+
+| # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
+|---|---|---|---|---|---|---|---|---|
+| 9.1 | [RTCP engine, SDES and BYE](9-rtp/9.1-rtcp-engine.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.2 | [RTP sender and send-side controller](9-rtp/9.2-rtp-sender.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.3 | [RTP receiver](9-rtp/9.3-rtp-receiver.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.4 | [RTP session facade](9-rtp/9.4-session.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 9.5 | [H.264 packetization (RFC 6184) and fake encoder](9-rtp/9.5-h264.md) | 0 | 0 | 0 | not recorded | not recorded | not recorded | not recorded |
 
 ## Not implemented as separate algorithms
 
