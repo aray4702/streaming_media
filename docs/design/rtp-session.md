@@ -59,7 +59,7 @@ post-outage ramp, ULPFEC) that belongs in the library's sender and receiver.
 ## 2. Design summary (the recommendations)
 
 1. A new section library **`sm::rtp`** (`include/sm/rtp/`, `src/rtp/`, CMake
-   option `SM_WITH_RTP`, depends on core, loss, timing, cc and sync). It holds
+   option `SM_WITH_RTP`, depends on core, loss, timing, cc, sync and video, the last for the frame scheduler). It holds
    the session layer and the payload packetizers. Existing modules do not
    change their dependencies.
 2. A single facade, **`rtp::Session`**, for one call between two endpoints,
