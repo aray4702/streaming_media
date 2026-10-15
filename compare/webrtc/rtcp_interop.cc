@@ -3,7 +3,9 @@
 // rtcp_packet parsers, and libwebrtc's serialized packets are parsed by this
 // library. Also covers SDES, BYE and padded RTP packets (plan PR 1 of
 // docs/design/rtp-session.md) and the datagrams of rtp::RtcpEngine: report
-// and feedback compounds with SR/RR, SDES, transport-cc and REMB (plan PR 2). Exits non-zero on any mismatch.
+// and feedback compounds with SR/RR, SDES, transport-cc and REMB (plan PR 2), and the RTP packets of rtp::RtpSender and
+// rtp::SendSideController with MID, transport-wide sequence number and
+// abs-send-time extensions, RTX and padding on the RTX SSRC (plan PR 3). Exits non-zero on any mismatch.
 #include <cstdio>
 #include <memory>
 #include <vector>
@@ -20,11 +22,17 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/rtcp_engine.h"
+#include "sm/loss/rtx.h"
 #include "sm/rtp/rtcp_sdes_bye.h"
+#include "sm/rtp/rtp_sender.h"
+#include "sm/rtp/send_side_controller.h"
+#include "sm/sync/header_extensions.h"
 
 namespace {
 using Bytes = std::vector<uint8_t>;
@@ -360,6 +368,93 @@ void WebrtcToEngine() {
             in.keyframe_requests[0] == 0x7777 && e.stats().malformed == 0;
   Check(ok, "compound RR + SDES + NACK + PLI");
 }
+
+// Packets made by rtp::RtpSender and released by rtp::SendSideController are
+// parsed by libwebrtc's RtpPacketReceived with the same extension ids.
+void SenderToWebrtc() {
+  sm::sync::ExtensionMap map;
+  map.Register(1, sm::sync::uri::kTransportCc);
+  map.Register(2, sm::sync::uri::kMid);
+  map.Register(3, sm::sync::uri::kAbsSendTime);
+  webrtc::RtpHeaderExtensionMap wmap;
+  wmap.Register<webrtc::TransportSequenceNumber>(1);
+  wmap.Register<webrtc::RtpMid>(2);
+  wmap.Register<webrtc::AbsoluteSendTime>(3);
+
+  sm::rtp::RtpSenderConfig sc;
+  sc.ssrc = 0x1111;
+  sc.payload_type = 96;
+  sc.rtx_ssrc = 0x2222;
+  sc.rtx_payload_type = 97;
+  sc.mid = "video0";
+  sc.mid_packets = 10;
+  sc.extensions = &map;
+  sc.initial_seq = 65535;
+  sm::rtp::RtpSender sender(sc);
+  sm::rtp::SendSideController ctl({}, &map);
+  ctl.SetPaddingSender(&sender);
+  ctl.Start(sm::Timestamp::Millis(0));
+
+  std::vector<Bytes> chunks = {Bytes(300, 1), Bytes(200, 2)};
+  sender.SendVideoFrame(chunks, 90000, sm::Timestamp::Millis(0));
+  uint16_t want[] = {65535};
+  sender.OnNack(want, sm::Timestamp::Millis(30), sm::TimeDelta::Millis(10));
+  for (auto& p : sender.TakePackets()) ctl.Enqueue(std::move(p), sm::Timestamp::Millis(0));
+  ctl.pacer().SetPacingRates(sm::DataRate::KilobitsPerSec(2000), sm::DataRate::KilobitsPerSec(100));
+  std::vector<sm::rtp::ReleasedPacket> out;
+  for (int t = 0; t < 100; ++t)
+    for (auto& r : ctl.Process(sm::Timestamp::Millis(t))) out.push_back(std::move(r));
+  bool saw_media = false, saw_rtx = false, saw_padding = false;
+  bool ok = !out.empty();
+  for (const auto& r : out) {
+    webrtc::RtpPacketReceived w(&wmap);
+    bool parsed = w.Parse(r.bytes.data(), r.bytes.size());
+    uint16_t tseq = 0;
+    bool has_tseq = parsed && w.GetExtension<webrtc::TransportSequenceNumber>(&tseq);
+    ok = ok && parsed && has_tseq && tseq == r.transport_seq;
+    uint32_t abs = 0;
+    ok = ok && w.GetExtension<webrtc::AbsoluteSendTime>(&abs);
+    if (r.kind == sm::rtp::PacketKind::kVideo) {
+      saw_media = true;
+      std::string mid;
+      ok = ok && w.Ssrc() == 0x1111 && w.PayloadType() == 96 && w.GetExtension<webrtc::RtpMid>(&mid) && mid == "video0" &&
+           (w.payload_size() == 300 || w.payload_size() == 200);
+    } else if (r.kind == sm::rtp::PacketKind::kRtx) {
+      saw_rtx = true;
+      // RFC 4588: the first two payload bytes carry the original sequence number.
+      ok = ok && w.Ssrc() == 0x2222 && w.PayloadType() == 97 && w.payload_size() == 302 && w.payload()[0] == 0xFF &&
+           w.payload()[1] == 0xFF;
+    } else if (r.kind == sm::rtp::PacketKind::kPadding) {
+      saw_padding = true;
+      ok = ok && w.Ssrc() == 0x2222 && w.PayloadType() == 97 && w.payload_size() == 0 && w.padding_size() > 0;
+    }
+  }
+  Check(ok && saw_media && saw_rtx && saw_padding,
+        "RtpSender: media, RTX and padding with MID, transport-cc and abs-send-time");
+}
+
+// A libwebrtc packet with the same extensions is parsed by this library.
+void WebrtcToSender() {
+  sm::sync::ExtensionMap map;
+  map.Register(1, sm::sync::uri::kTransportCc);
+  map.Register(2, sm::sync::uri::kMid);
+  webrtc::RtpHeaderExtensionMap wmap;
+  wmap.Register<webrtc::TransportSequenceNumber>(1);
+  wmap.Register<webrtc::RtpMid>(2);
+  webrtc::RtpPacketReceived w(&wmap);
+  w.SetPayloadType(96);
+  w.SetSequenceNumber(4242);
+  w.SetTimestamp(90000);
+  w.SetSsrc(0x1111);
+  w.SetExtension<webrtc::TransportSequenceNumber>(777);
+  w.SetExtension<webrtc::RtpMid>("video0");
+  w.SetPayloadSize(10);
+  auto p = sm::RtpPacket::Parse(std::span<const uint8_t>(w.data(), w.size()));
+  sm::sync::ExtensionAccessor access(map);
+  bool ok = p && p->seq == 4242 && p->payload.size() == 10 && access.GetTransportSeq(*p) == std::optional<uint16_t>(777) &&
+            access.GetString(*p, sm::sync::uri::kMid) == std::optional<std::string>("video0");
+  Check(ok, "libwebrtc packet with MID and transport-cc parsed");
+}
 }  // namespace
 
 int main() {
@@ -367,6 +462,8 @@ int main() {
   WebrtcToSm();
   EngineToWebrtc();
   WebrtcToEngine();
+  SenderToWebrtc();
+  WebrtcToSender();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
     return 1;
