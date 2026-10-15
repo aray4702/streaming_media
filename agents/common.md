@@ -31,6 +31,19 @@ practical details every role shares.
   cmake --build out/compare -j 4
   out/compare/sm_compare --seeds=5 testbench/scenarios/*.scn
   ```
+- **libwebrtc's source** for the areas we follow (congestion control,
+  pacing, NACK/FEC, packet buffers, H.264, encoder adaptation) is checked in,
+  read-only, under `compare/webrtc/reference/` at the pinned commit (see its
+  README). When a task says to follow libwebrtc, read that code and cite the
+  file. Don't rely on memory. If a file you need is missing, say so in the
+  issue and the Owner adds it.
+- **libwebrtc's numbers** for every scenario come from the `compare-webrtc`
+  CI job, even when `sm_compare` can't be built here. Download the artifact
+  of the latest `main` run:
+  `gh api repos/aray4702/streaming_media/actions/artifacts?name=compare-webrtc`
+  (take the newest `archive_download_url`, then unzip it), and read
+  `compare-webrtc.txt` (side by side, mean of 3 seeds) or
+  `compare-webrtc.json`.
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
   for `testbench/baseline.json`, so numbers you measure here are the
   numbers CI will see.
