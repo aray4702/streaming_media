@@ -44,10 +44,14 @@ becomes a scenario that keeps it fixed. The goals, labels, quality gates
 and guardrails are in [program.md](program.md), and the agents'
 instructions are in [agents/](agents/).
 
-The current direction is conversation with AI. That means a two-way test
-bench, plus metrics for how quickly the AI responds, how well
-interruptions (barge-in) work, and how cleanly the user's speech reaches
-the AI ([program.md section 1](program.md#1-goal)).
+The scope grows in two stages
+([program.md section 0.1](program.md#01-scope-and-stages)). The baseline
+handles what WebRTC handles (sections 3-8 of
+[Problems WebRTC solves](docs/02-webrtc-problems-solved.md)), at parity
+with libwebrtc. On top of it, features are added one at a time for
+problems specific to talking with an AI. Examples are a two-way test bench, metrics
+for how quickly the AI responds, how well interruptions (barge-in) work,
+and how cleanly the user's speech reaches the AI.
 
 ## The library
 

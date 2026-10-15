@@ -58,7 +58,8 @@ Pick the oldest open issue that:
 - has none of `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`,
 - has no open PR that references it.
 
-Prefer `sev:1`, then `sev:2`, then `roadmap`, then `sev:3`. A `roadmap`
+Prefer `sev:1`, then `sev:2`, then `roadmap` (`stage:baseline` before
+`stage:ai`, program.md section 0.1), then `sev:3`. A `roadmap`
 issue asks for a new capability rather than reporting a defect: skip step 2,
 and in step 3 write tests and scenarios whose `expect` lines check the
 issue's acceptance criteria. If it is large, deliver it in several PRs, each
