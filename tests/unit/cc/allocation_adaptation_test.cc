@@ -1,6 +1,5 @@
 #include "sm/cc/bitrate_allocator.h"
 #include "sm/cc/frame_dropper.h"
-#include "sm/cc/layer_selector.h"
 #include "sm/cc/outage_monitor.h"
 #include "sm/cc/video_adaptation.h"
 #include "sm_test.h"
@@ -124,28 +123,6 @@ SM_TEST(VideoAdaptation, CpuOveruseSignalsAndResourceCap) {
   SM_EXPECT_FALSE(d.current() == before);
   d.OnResourceUnderuse();
   SM_EXPECT_TRUE(d.current() == before);
-}
-
-SM_TEST(LayerSelector, HysteresisAndKeyframeGating) {
-  LayerSelectorConfig cfg;
-  cfg.up_hold = TimeDelta::Millis(500);
-  LayerSelector s({{0, 2, Kbps(150)}, {1, 2, Kbps(500)}, {2, 2, Kbps(1500)}}, cfg);
-  s.OnBandwidth(Kbps(2000), Timestamp::Millis(0));
-  SM_EXPECT_EQ(s.target().spatial, 0);  // Up needs to be held.
-  s.OnBandwidth(Kbps(2000), Timestamp::Millis(600));
-  SM_EXPECT_EQ(s.target().spatial, 1);
-  s.OnBandwidth(Kbps(2000), Timestamp::Millis(700));
-  s.OnBandwidth(Kbps(2000), Timestamp::Millis(1300));
-  SM_EXPECT_EQ(s.target().spatial, 2);
-  SM_EXPECT_TRUE(s.TakeKeyframeRequest());
-  // Frames of layer 2 are dropped until its keyframe.
-  SM_EXPECT_FALSE(s.ShouldForward(2, 0, false, true));
-  SM_EXPECT_TRUE(s.ShouldForward(2, 0, true, true));
-  SM_EXPECT_FALSE(s.ShouldForward(0, 0, false, true));  // Other simulcast streams dropped.
-  // Drop: immediate target change.
-  s.OnBandwidth(Kbps(600), Timestamp::Millis(1400));
-  SM_EXPECT_EQ(s.target().spatial, 1);
-  SM_EXPECT_EQ(s.stats().switches_down, 1u);
 }
 
 SM_TEST(Outage, StatesAndRecoveryActions) {

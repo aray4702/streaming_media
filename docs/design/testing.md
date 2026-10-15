@@ -39,7 +39,7 @@ results on every platform.
 Typical e2e scenarios: 5% loss at three RTTs for NACK/FEC selection;
 capacity steps 2000 -> 800 -> 2500 kbps for GCC; a 600 ms network stall
 for time stretching; double talk and an audio route change for the echo
-canceller; an SFU with three simulcast encodings for layer selection.
+canceller; a call with a mid-call link outage for outage handling.
 Each algorithm's document describes its scenario.
 
 ### Choosing pass thresholds

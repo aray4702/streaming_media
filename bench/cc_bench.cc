@@ -1,6 +1,5 @@
 // Section 5 benchmarks.
 #include "../tests/e2e/cc_sims.h"
-#include "sm/cc/layer_selector.h"
 #include "sm_bench.h"
 
 using namespace sm;
@@ -96,17 +95,6 @@ SM_BENCH(cc, Degradation_and_CpuDetector) {
     t += 33;
   }
   st.BudgetNsPerItem(1000);
-}
-
-SM_BENCH(cc, LayerSelector_frame) {
-  LayerSelector s({{0, 2, DataRate::KilobitsPerSec(150)}, {1, 2, DataRate::KilobitsPerSec(500)}, {2, 2, DataRate::KilobitsPerSec(1500)}});
-  int64_t t = 0;
-  for (auto _ : st) {
-    s.OnBandwidth(DataRate::KilobitsPerSec(t % 3000), Timestamp::Millis(t));
-    bench::DoNotOptimize(s.ShouldForward(static_cast<int>(t % 3), static_cast<int>(t % 3), t % 90 == 0, true));
-    ++t;
-  }
-  st.BudgetNsPerItem(200);
 }
 
 // --- Quality ------------------------------------------------------------------

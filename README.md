@@ -74,7 +74,7 @@ to the stack that hosts the library.
 
 The library implements, in portable C++20 with no dependencies, the
 resilience algorithms from sections 3-8 of
-[Problems WebRTC solves](docs/02-webrtc-problems-solved.md): 48 algorithms
+[Problems WebRTC solves](docs/02-webrtc-problems-solved.md): 46 algorithms
 covering packet loss, jitter and timing, congestion control, audio
 processing, video adaptation and synchronization. Each one has unit tests,
 an end-to-end test over a simulated network, speed and quality benchmarks,
@@ -126,8 +126,8 @@ The library:
 |---|---|
 | 3. Packet loss | NACK/RTX, XOR FEC, RED, PLC, keyframe requests (PLI/FIR/LNTF), temporal layers, NACK/FEC protection selection |
 | 4. Jitter and timing | packet buffer, RTCP stats/RTT, delay manager, WSOLA time stretching, NetEq-lite audio jitter buffer, video jitter + render timing, clock drift |
-| 5. Congestion | transport-cc + REMB, GCC delay- and loss-based estimation, GCC controller, pacer, probing, bitrate allocator, frame dropper, resolution/CPU adaptation, SFU layer selection, outage handling |
-| 6. Audio (APM) | echo canceller, echo delay estimation, noise suppression, AGC + limiter, high-pass filter, transient suppression, DTX + comfort noise, VAD, audio level + active speaker, mixer, resampler |
+| 5. Congestion | transport-cc + REMB, GCC delay- and loss-based estimation, GCC controller, pacer, probing, bitrate allocator, frame dropper, resolution/CPU adaptation, outage handling |
+| 6. Audio (APM) | echo canceller, echo delay estimation, noise suppression, AGC + limiter, high-pass filter, transient suppression, DTX + comfort noise, VAD, audio level (RFC 6464), resampler |
 | 7. Video | freeze detection, HW->SW codec fallback, orientation (CVO), content hints + screen VFR, codec negotiation, scaling, render scheduling, quality scaler |
 | 8. Synchronization | RTP->NTP mapping, A/V lip sync with CNAME groups, absolute capture time / latency, header extensions + BUNDLE demux |
 
@@ -230,7 +230,7 @@ docs/                                                    research, design, algor
   packet bytes instead of wiring the building blocks together
   ([#31](https://github.com/aray4702/streaming_media/issues/31) design, [#32](https://github.com/aray4702/streaming_media/issues/32) implementation).
 - **Call topology:** one-to-one calls only. The SFU and multiparty pieces
-  (layer selection, active speaker detection, the audio mixer) are being
+  (layer selection, active speaker detection, the audio mixer) have been
   removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
   calls bundle too.
 

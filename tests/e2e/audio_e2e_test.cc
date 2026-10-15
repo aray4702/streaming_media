@@ -6,7 +6,6 @@
 
 #include "audio_sims.h"
 #include "sm/audio/audio_level.h"
-#include "sm/audio/mixer.h"
 #include "sm/audio/resampler.h"
 #include "sm/sim/network_link.h"
 #include "sm_test.h"
@@ -266,75 +265,37 @@ SM_TEST(E2E_ComfortNoise, DtxSavesPacketsCngFillsSilence) {
   SM_EXPECT_GT(n, 16000u);
 }
 
-SM_TEST(E2E_AudioLevel, ActiveSpeakerFollowsTurns) {
-  // Four participants take 5 s turns; everyone has some background noise.
-  const int fs = 16000, people = 4;
-  const double turn = 5.0;
-  std::vector<std::vector<float>> voice;
-  for (int p = 0; p < people; ++p) {
-    auto v = sim::SpeechLike(fs, turn * people, 10 + p, false, 0.25f);
-    auto noise = sim::WhiteNoise(fs, turn * people, 0.002f, 20 + p);
-    for (size_t i = 0; i < v.size(); ++i) {
-      bool talking = static_cast<int>(static_cast<double>(i) / fs / turn) == p;
-      v[i] = (talking ? v[i] : 0.0f) + noise[i];
-    }
-    voice.push_back(std::move(v));
-  }
-  std::vector<Vad> vads(people);
-  ActiveSpeakerDetector asd;
-  int correct = 0, judged = 0;
-  for (size_t f = 0; f + 1 < voice[0].size() / 320; ++f) {  // 20 ms packets.
-    Timestamp now = Timestamp::Millis(static_cast<int64_t>(f * 20));
-    for (int p = 0; p < people; ++p) {
-      std::span<const float> fr(voice[static_cast<size_t>(p)].data() + f * 320, 320);
-      bool v1 = vads[static_cast<size_t>(p)].Process(fr.first(160));
-      bool v2 = vads[static_cast<size_t>(p)].Process(fr.last(160));
-      bool v = v1 || v2;
-      // Sender writes the RFC 6464 byte; the SFU only reads that byte.
-      uint8_t ext = EncodeAudioLevelExtension({ComputeLevel(fr), v});
-      asd.OnLevel(static_cast<uint32_t>(p), DecodeAudioLevelExtension(ext), now);
-    }
-    double t = f * 0.02;
-    if (std::fmod(t, turn) > 1.5 && asd.dominant()) {
-      ++judged;
-      correct += static_cast<int>(*asd.dominant()) == static_cast<int>(t / turn);
-    }
-  }
-  SM_RECORD("active_speaker_accuracy", static_cast<double>(correct) / judged);
-  SM_RECORD("active_speaker_switches", asd.switches());
-  SM_EXPECT_GT(static_cast<double>(correct) / judged, 0.95);
-  SM_EXPECT_LE(asd.switches(), static_cast<uint64_t>(people + 2));
-}
-
-SM_TEST(E2E_Mixer, ConferenceMixOfLoudestThree) {
+SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
+  // The sender writes the RFC 6464 byte per 20 ms packet; the receiver reads
+  // only that byte. Speech must read louder than the room, and the voice flag
+  // must survive the round trip.
   const int fs = 16000;
-  std::vector<std::vector<float>> src;
-  for (int p = 0; p < 6; ++p) {
-    if (p < 3) {
-      src.push_back(sim::SpeechLike(fs, 10.0, 30 + p, false, 0.6f));  // Talkers.
-    } else {
-      src.push_back(sim::WhiteNoise(fs, 10.0, 0.003f, 40 + p));       // Muted-ish rooms.
+  auto speech = sim::SpeechLike(fs, 6.0, 10, false, 0.25f);
+  auto noise = sim::WhiteNoise(fs, 6.0, 0.002f, 20);
+  Vad vad;
+  double speech_level = 0, noise_level = 0;
+  int speech_n = 0, noise_n = 0, voiced_speech = 0, voiced_noise = 0;
+  for (size_t f = 0; f + 1 < speech.size() / 320; ++f) {
+    std::span<const float> fr(speech.data() + f * 320, 320);
+    std::span<const float> nz(noise.data() + f * 320, 320);
+    bool v = vad.Process(fr.first(160)) | vad.Process(fr.last(160));
+    auto rx = DecodeAudioLevelExtension(EncodeAudioLevelExtension({ComputeLevel(fr), v}));
+    if (f * 20 >= 1500 && rx.level < 60) {
+      speech_level += rx.level;
+      ++speech_n;
+      voiced_speech += rx.voice;
     }
+    auto rn = DecodeAudioLevelExtension(EncodeAudioLevelExtension({ComputeLevel(nz), false}));
+    noise_level += rn.level;
+    ++noise_n;
+    voiced_noise += rn.voice;
   }
-  AudioMixer mixer;
-  std::vector<float> out(160);
-  int frames = 0, ok = 0;
-  float peak = 0;
-  for (size_t off = 0; off + 160 <= src[0].size(); off += 160) {
-    std::map<uint32_t, std::span<const float>> m;
-    for (uint32_t p = 0; p < 6; ++p) m[p] = std::span<const float>(src[p].data() + off, 160);
-    mixer.Mix(m, out);
-    for (float v : out) peak = std::max(peak, std::fabs(v));
-    auto mixed = mixer.mixed();
-    ++frames;
-    int talkers = 0;
-    for (uint32_t id : mixed) talkers += id < 3;
-    ok += talkers == 3;
-  }
-  SM_RECORD("mixer_talkers_selected_ratio", static_cast<double>(ok) / frames);
-  SM_RECORD("mixer_peak", peak);
-  SM_EXPECT_GT(static_cast<double>(ok) / frames, 0.95);
-  SM_EXPECT_LE(peak, dsp::DbToLinear(-1.0f) + 1e-6f);
+  SM_RECORD("speech_level_dbov", speech_level / std::max(speech_n, 1));
+  SM_RECORD("noise_level_dbov", noise_level / noise_n);
+  SM_ASSERT_GT(speech_n, 0);
+  SM_EXPECT_LT(speech_level / speech_n, noise_level / noise_n - 10.0);
+  SM_EXPECT_GT(voiced_speech, speech_n / 2);
+  SM_EXPECT_EQ(voiced_noise, 0);
 }
 
 SM_TEST(E2E_Resampler, DeviceToProcessingToPlayout) {

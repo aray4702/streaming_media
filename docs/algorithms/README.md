@@ -39,7 +39,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 3 | 1 | 2 | pass | pass | pass | pass |
 | 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 3 | 2 | 2 | pass | pass | pass | pass |
-| 5.10 | [Simulcast/SVC layer selection (SFU)](5-cc/5.10-layer-selector.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 5.11 | [Link outage detection and recovery](5-cc/5.11-outage.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 
 ## 6. Audio quality (APM)
@@ -54,8 +53,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 6.7 | [DTX and comfort noise (RFC 3389)](6-audio/6.7-dtx-cng.md) | 3 | 1 | 2 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 6.9 | [Audio level (RFC 6464) and active speaker detection](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 6.10 | [Audio mixer (loudest N)](6-audio/6.10-mixer.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 
 ## 7. Video quality and processing

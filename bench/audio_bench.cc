@@ -5,7 +5,6 @@
 
 #include <algorithm>
 #include "sm/audio/audio_level.h"
-#include "sm/audio/mixer.h"
 #include "sm/audio/resampler.h"
 #include "sm_bench.h"
 
@@ -117,33 +116,17 @@ SM_BENCH(audio, ComfortNoise_10ms) {
   st.RequireRealtimeFactor(0.010, 500);
 }
 
-SM_BENCH(audio, AudioLevel_and_ActiveSpeaker_20ms) {
-  ActiveSpeakerDetector asd;
+SM_BENCH(audio, AudioLevel_20ms) {
   auto x = Speech();
   size_t off = 0;
   int64_t t = 0;
   for (auto _ : st) {
     AudioLevel l{ComputeLevel(std::span<const float>(x.data() + off, 320)), true};
-    asd.OnLevel(static_cast<uint32_t>(t % 8), DecodeAudioLevelExtension(EncodeAudioLevelExtension(l)), Timestamp::Millis(t * 20));
+    bench::DoNotOptimize(DecodeAudioLevelExtension(EncodeAudioLevelExtension(l)));
     off = (off + 320) % (x.size() - 320);
     ++t;
   }
   st.RequireRealtimeFactor(0.020, 5000);
-}
-
-SM_BENCH(audio, Mixer_8sources_10ms) {
-  AudioMixer m;
-  std::vector<std::vector<float>> src;
-  for (int i = 0; i < 8; ++i) src.push_back(sim::SpeechLike(16000, 1.0, 10 + static_cast<uint64_t>(i), true));
-  std::vector<float> out(160);
-  size_t off = 0;
-  for (auto _ : st) {
-    std::map<uint32_t, std::span<const float>> in;
-    for (uint32_t i = 0; i < 8; ++i) in[i] = std::span<const float>(src[i].data() + off, 160);
-    m.Mix(in, out);
-    off = (off + 160) % (src[0].size() - 160);
-  }
-  st.RequireRealtimeFactor(0.010, 500);
 }
 
 SM_BENCH(audio, Resampler_48k_to_16k_10ms) {

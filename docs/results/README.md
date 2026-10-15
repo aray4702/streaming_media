@@ -18,20 +18,6 @@ CTest has one entry per test suite (one unit and one end-to-end suite per algori
 - **ASan+UBSan (Debug)**: 213/213 test cases passed.
 - **-fno-exceptions -fno-rtti**: 213/213 test cases passed.
 
-## Footprint (native Release, code size per section)
-
-| Library | Code (`size` text) | Archive file |
-|---|---|---|
-| `sm_audio` | 62 KiB | 136 KiB |
-| `sm_cc` | 74 KiB | 170 KiB |
-| `sm_core` | 37 KiB | 76 KiB |
-| `sm_loss` | 61 KiB | 134 KiB |
-| `sm_sync` | 25 KiB | 61 KiB |
-| `sm_timing` | 42 KiB | 104 KiB |
-| `sm_video` | 52 KiB | 109 KiB |
-
-Each section is a separate static library and can be turned off with `SM_WITH_<SECTION>=OFF`; the linker keeps only what is used.
-
 ## Benchmarks
 
 | Benchmark | macOS arm64 (native) | WebAssembly (Node) |
