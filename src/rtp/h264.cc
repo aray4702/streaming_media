@@ -62,14 +62,15 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
     const auto nal = nals[i];
     if (nal.size() > max_payload) {
       // FU-A: the NAL header's F and NRI go in the indicator, its type in the
-      // FU header, and the rest of the unit is split about equally.
+      // FU header, and the rest of the unit is split about equally, the
+      // larger fragments last (libwebrtc's SplitAboutEqually).
       const uint8_t header = nal[0];
       const std::span<const uint8_t> rest = nal.subspan(1);
       const size_t room = max_payload - kFuAOverhead;
       const size_t n = (rest.size() + room - 1) / room;
       size_t off = 0;
       for (size_t k = 0; k < n; ++k) {
-        size_t len = rest.size() / n + (k < rest.size() % n ? 1 : 0);
+        size_t len = rest.size() / n + (k >= n - rest.size() % n ? 1 : 0);
         std::vector<uint8_t> p;
         p.reserve(len + kFuAOverhead);
         p.push_back(static_cast<uint8_t>((header & 0xE0) | kH264NalFuA));

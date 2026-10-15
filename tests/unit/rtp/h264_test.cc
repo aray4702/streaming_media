@@ -87,6 +87,8 @@ SM_TEST(H264, LargeNalIsFragmentedWithFuA) {
     hi = std::max(hi, payloads[k].size());
   }
   SM_EXPECT_LE(hi - lo, 1u);
+  // The remainder goes to the last fragments, as in libwebrtc.
+  SM_EXPECT_GE(payloads.back().size(), payloads[1].size());
   H264PayloadInfo first = H264Depacketizer::Parse(payloads[1]);
   SM_EXPECT_TRUE(first.valid && first.idr && first.fu_start && first.first_packet_in_frame);
   H264PayloadInfo mid = H264Depacketizer::Parse(payloads[2]);
