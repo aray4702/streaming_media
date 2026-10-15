@@ -21,6 +21,17 @@ case "$(uname -s)-$(uname -m)" in
   *) echo "unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 
+# chromium.googlesource.com sometimes answers 503; retry with backoff.
+retry() {
+  local n
+  for n in 1 2 3 4 5; do
+    "$@" && return 0
+    echo "attempt $n failed: $*" >&2
+    sleep $((n * 10))
+  done
+  return 1
+}
+
 mkdir -p "$DEST"
 if [ ! -f "$DEST/webrtc/lib/libwebrtc.a" ]; then
   echo "downloading $ASSET ($RELEASE)"
@@ -38,7 +49,7 @@ if [ ! -f "$DEST/libcxx/include/cstdio" ]; then
   echo "fetching libc++ $libcxx_commit"
   rm -rf "$DEST/libcxx"
   git init -q "$DEST/libcxx"
-  git -C "$DEST/libcxx" fetch -q --depth 1 \
+  retry git -C "$DEST/libcxx" fetch -q --depth 1 \
     https://chromium.googlesource.com/external/github.com/llvm/llvm-project/libcxx.git "$libcxx_commit"
   git -C "$DEST/libcxx" checkout -q FETCH_HEAD
 fi
@@ -46,8 +57,10 @@ fi
 mkdir -p "$DEST/libcxx-config"
 for f in __config_site __assertion_handler; do
   if [ ! -s "$DEST/libcxx-config/$f" ]; then
-    curl -fsL "https://chromium.googlesource.com/chromium/src/buildtools/+/$buildtools_commit/third_party/libc++/$f?format=TEXT" \
-      | base64 -d > "$DEST/libcxx-config/$f"
+    url="https://chromium.googlesource.com/chromium/src/buildtools/+/$buildtools_commit/third_party/libc++/$f?format=TEXT"
+    retry curl -fsL -o "$DEST/libcxx-config/$f.b64" "$url"
+    base64 -d < "$DEST/libcxx-config/$f.b64" > "$DEST/libcxx-config/$f"
+    rm "$DEST/libcxx-config/$f.b64"
   fi
 done
 
