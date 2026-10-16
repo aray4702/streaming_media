@@ -1,7 +1,8 @@
 name issue_76_rtx_v2_keyframe_flush
-describe RTX history with the pacer keyframe flush: a resend flushed by a keyframe must not stay pending (#76 group 2, review of PR #97)
-# NACKed packets are queued as resends; PacingController discards them when a keyframe starts.
-# The history must hear about it (RtpSender::OnPacketDropped), else the packet stays pending.
+describe pacer v2 + rtx v2 + keyframe v2 together under loss and a capacity drop (#76 group 2): end-to-end smoke test of the combination
+# Keyframes flush queued resends under pacer v2. This scenario only checks the combination stays healthy;
+# the flushed-resend wiring (RtpSender::OnPacketDropped) is pinned by the unit test
+# SendSideController.FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2.
 pacer v2
 keyframe v2
 rtx v2
