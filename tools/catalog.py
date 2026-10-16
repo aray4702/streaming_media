@@ -27,7 +27,8 @@ ALGORITHMS = [
                   "40 ms one-way delay. The receiver's NackTracker sends NACKs over the lossy reverse link, the "
                   "RtxSender answers with RTX packets. A packet counts as on time if it is available within a 250 ms "
                   "playout budget. A second run at 150 ms one-way delay shows retransmissions arriving too late.",
-         notes="Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
                "arrive; the sender also refuses to resend the same packet twice within one RTT, which protects "
                "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
                "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
@@ -42,7 +43,8 @@ ALGORITHMS = [
          scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
                   "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
                   "within the 250 ms budget.",
-         notes="Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
                "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
                "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
                "logic is the same.",
@@ -55,7 +57,8 @@ ALGORITHMS = [
          bench=["loss/RedEncodeParse_d2", "loss/Q_Red_10pct"],
          scenario="20 000 Opus-sized frames (60-90 B, 20 ms) over 10% random loss with redundancy distance 0, 1 "
                   "and 2. Residual loss is counted after RED recovery.",
-         notes="Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
          verification="No defects found; results match the analytical p^2 and p^3."),
@@ -65,7 +68,8 @@ ALGORITHMS = [
          bench=["loss/Plc_Conceal10ms_16k", "loss/Q_Plc_10pct_speech"],
          scenario="20 s of synthetic voiced speech, 10 ms frames, 10% random loss. Compares the whole-signal SNR "
                   "of the concealed output against zero insertion, and the SNR/level inside the lost frames.",
-         notes="Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
                "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
                "the 'expand' operation of the audio jitter buffer (4.5).",
          verification="No defects found."),
@@ -77,7 +81,8 @@ ALGORITHMS = [
          scenario="30 s of 30 fps video with an IPPP reference chain and 2% unrecoverable frame loss "
                   "(after NACK). The sender answers each PLI with a keyframe. Measures the decodable-frame ratio, "
                   "the longest freeze and the number of PLIs (no request storms).",
-         notes="The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
                "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that. Wire formats (loss/"
                "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
                "loss notification (LNTF, libwebrtc's goog-lntf application-layer feedback) and compound RTCP with "
@@ -91,7 +96,8 @@ ALGORITHMS = [
          bench=["loss/TemporalLayers_ScheduleAndFilter", "loss/Q_TemporalLayers_5pct"],
          scenario="Same frame-loss simulation at 5% loss with L1T1 versus L1T3 (keyframe requests on), plus an "
                   "SFU forwarding only T0+T1 and checking that every forwarded frame is decodable.",
-         notes="Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
                "on T0) are where a receiver may switch up.",
          verification="No defects found."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
@@ -100,7 +106,8 @@ ALGORITHMS = [
          bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
          scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
                   "loss and burstiness, at RTT 20, 80 and 300 ms with 5% loss.",
-         notes="The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
                "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
                "replacement for libwebrtc's lookup tables.",
          verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
