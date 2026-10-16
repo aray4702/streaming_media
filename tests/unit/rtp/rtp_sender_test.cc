@@ -2,6 +2,7 @@
 #include <set>
 #include <vector>
 
+#include "sm/audio/audio_level.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtp_sender.h"
@@ -225,4 +226,50 @@ SM_TEST(RtpSender, PaddingUsesTheRtxStreamAndKeepsSequenceNumbersApart) {
   SM_EXPECT_EQ(mp.packet.seq, 65534);
   m.SendVideoFrame(Chunks({5}), 1, Timestamp::Millis(1));
   SM_EXPECT_EQ(m.TakePackets()[0].packet.seq, 65535);
+}
+
+SM_TEST(RtpSender, AudioLevelByteIsWrittenWhenTheExtensionIsMapped) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  map.Register(2, sync::uri::kAudioLevel);
+  RtpSenderConfig c;
+  c.video = false;
+  c.extensions = &map;
+  RtpSender s(c);
+  const Bytes frame(60, 3);
+  s.SendAudio(frame, 960, false, Timestamp::Millis(0), audio::AudioLevel{37, true});
+  s.SendAudio(frame, 1920, false, Timestamp::Millis(20));  // No level given: none written.
+  auto out = s.TakePackets();
+  SM_ASSERT_EQ(out.size(), 2u);
+  auto level = sync::ExtensionAccessor(map).GetRaw(out[0].packet, sync::uri::kAudioLevel);
+  SM_ASSERT_TRUE(level.has_value());
+  SM_EXPECT_EQ((*level)[0], 0x80 | 37);
+  SM_EXPECT_FALSE(sync::ExtensionAccessor(map).GetRaw(out[1].packet, sync::uri::kAudioLevel).has_value());
+  SM_EXPECT_EQ(s.stats().audio_level_packets, 1u);
+
+  sync::ExtensionMap none;  // Not mapped: nothing is written.
+  RtpSenderConfig c2;
+  c2.video = false;
+  c2.extensions = &none;
+  RtpSender s2(c2);
+  s2.SendAudio(frame, 960, false, Timestamp::Millis(0), audio::AudioLevel{37, true});
+  SM_EXPECT_EQ(s2.stats().audio_level_packets, 0u);
+}
+
+SM_TEST(RtpSender, MediaHeaderSizeCountsTheExtensionsTheNextPacketCarries) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  map.Register(3, sync::uri::kAbsSendTime);
+  map.Register(4, sync::uri::kMid);
+  RtpSenderConfig c;
+  c.extensions = &map;
+  c.mid = "v";
+  c.mid_packets = 1;
+  RtpSender s(c);
+  // 12 + 4 (profile, length) + (1+2) + (1+3) + (1+1) = 12 + 4 + 9 -> padded to 12.
+  SM_EXPECT_EQ(s.MediaHeaderSize(), 12u + 4u + 12u);
+  auto chunks = Chunks({10});
+  s.SendVideoFrame(chunks, 9000, Timestamp::Millis(10));  // The one MID packet.
+  // MID is no longer repeated: 12 + 4 + (3 + 4 = 7 -> 8).
+  SM_EXPECT_EQ(s.MediaHeaderSize(), 12u + 4u + 8u);
 }

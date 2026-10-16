@@ -289,6 +289,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "rtcp") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: rtcp v1|v2");
       s.rtcp_v2 = tok[1] == "v2";
+    } else if (key == "packetization") {
+      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: packetization v1|v2");
+      s.packetization_v2 = tok[1] == "v2";
     } else if (key == "rtx") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: rtx v1|v2");
       s.rtx_v2 = tok[1] == "v2";
@@ -378,6 +381,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.tcc_v2 != d.tcc_v2) o += std::string("tcc ") + (s.tcc_v2 ? "v2" : "v1") + "\n";
   if (s.rtcp_v2 != d.rtcp_v2) o += std::string("rtcp ") + (s.rtcp_v2 ? "v2" : "v1") + "\n";
+  if (s.packetization_v2 != d.packetization_v2) o += std::string("packetization ") + (s.packetization_v2 ? "v2" : "v1") + "\n";
   if (s.rtx_v2 != d.rtx_v2) o += std::string("rtx ") + (s.rtx_v2 ? "v2" : "v1") + "\n";
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";

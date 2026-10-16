@@ -211,3 +211,65 @@ SM_TEST(H264, FakeEncoderFramesHaveTheStatedStructure) {
   for (size_t i = 4; i < delta.size(); ++i) zeros += delta[i] == 0;
   SM_EXPECT_EQ(zeros, 0);
 }
+
+// Ports the intent of libwebrtc's rtp_format_h264_unittest.cc (the reduction
+// cases): the first, last and single packet have less room.
+SM_TEST(H264, ReductionsShrinkTheFirstAndLastPacketOfAFrame) {
+  Bytes frame = Nal({0x41});
+  frame.resize(frame.size() + 1000, 0x55);  // One 1001-byte NAL unit.
+  PayloadSizeLimits limits;
+  limits.max_payload_len = 400;
+  limits.first_packet_reduction_len = 50;
+  limits.last_packet_reduction_len = 30;
+  limits.single_packet_reduction_len = 80;
+  auto payloads = H264Packetizer::Packetize(frame, limits);
+  SM_ASSERT_EQ(payloads.size(), 3u);
+  SM_EXPECT_LE(static_cast<int>(payloads.front().size()), 400 - 50);
+  SM_EXPECT_LE(static_cast<int>(payloads.back().size()), 400 - 30);
+  SM_EXPECT_LE(static_cast<int>(payloads[1].size()), 400);
+  Bytes out;
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(AsPackets(payloads), out));
+  SM_EXPECT_TRUE(out == frame);
+}
+
+SM_TEST(H264, SingleNalUsesTheSinglePacketReduction) {
+  Bytes frame = Nal({0x41});
+  frame.resize(frame.size() + 99, 0x55);  // A 100-byte NAL unit.
+  PayloadSizeLimits limits;
+  limits.max_payload_len = 120;
+  limits.single_packet_reduction_len = 0;
+  SM_EXPECT_EQ(H264Packetizer::Packetize(frame, limits).size(), 1u);
+  limits.single_packet_reduction_len = 30;  // 100 > 120 - 30: fragmented.
+  auto payloads = H264Packetizer::Packetize(frame, limits);
+  SM_ASSERT_EQ(payloads.size(), 2u);
+  SM_EXPECT_LE(static_cast<int>(payloads[0].size()), 120 - 30);
+  Bytes out;
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(AsPackets(payloads), out));
+  SM_EXPECT_TRUE(out == frame);
+}
+
+SM_TEST(H264, StapAHonoursTheLastPacketReduction) {
+  // Two 40-byte units: STAP-A is 1 + 2 + 40 + 2 + 40 = 85 bytes.
+  Bytes frame = Nal({0x61});
+  frame.resize(frame.size() + 39, 1);
+  Bytes second = Nal({0x41});
+  second.resize(second.size() + 39, 2);
+  frame.insert(frame.end(), second.begin(), second.end());
+  PayloadSizeLimits limits;
+  limits.max_payload_len = 90;
+  SM_EXPECT_EQ(H264Packetizer::Packetize(frame, limits).size(), 1u);
+  limits.single_packet_reduction_len = 10;  // Not the single packet: the unit is first and last in turn.
+  limits.last_packet_reduction_len = 10;    // 85 + 10 > 90: the last unit goes alone.
+  auto payloads = H264Packetizer::Packetize(frame, limits);
+  SM_ASSERT_EQ(payloads.size(), 2u);
+  SM_EXPECT_EQ(payloads[0].size(), 40u);
+  SM_EXPECT_EQ(payloads[1].size(), 40u);
+}
+
+SM_TEST(H264, NoRoomForAFuAHeaderGivesNoPackets) {
+  Bytes frame = Nal({0x41});
+  frame.resize(frame.size() + 50, 7);
+  PayloadSizeLimits limits;
+  limits.max_payload_len = 2;
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(frame, limits).empty());
+}

@@ -94,7 +94,19 @@ void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now
   out_.back().first_packet_of_frame = first;
 }
 
-void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now) {
+size_t RtpSender::MediaHeaderSize() const {
+  RtpPacket p;
+  if (cfg_.extensions) {
+    const sync::ExtensionAccessor access(*cfg_.extensions);
+    if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
+    if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
+    if (mid_remaining_ > 0 && !cfg_.mid.empty()) access.SetString(p, sync::uri::kMid, cfg_.mid);
+  }
+  return p.HeaderSize();
+}
+
+void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
+                          std::optional<audio::AudioLevel> level) {
   ++stats_.frames;
   RtpPacket p;
   if (cfg_.red_payload_type) {
@@ -103,6 +115,12 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
   } else {
     p = NewPacket(cfg_.payload_type, rtp_timestamp, marker);
     p.payload.assign(frame.begin(), frame.end());
+  }
+  if (level && cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) {
+    // RFC 6464: V bit and the level in -dBov.
+    const uint8_t byte = static_cast<uint8_t>((level->voice ? 0x80 : 0) | (level->level & 0x7F));
+    sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAudioLevel, {byte});
+    ++stats_.audio_level_packets;
   }
   StoreAndQueueMedia(std::move(p), true, now);
 }
@@ -175,6 +193,7 @@ void RtpSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("padding_packets", stats_.padding_packets);
   w.Counter("nacks_without_rtx", stats_.nacks_without_rtx);
   w.Counter("mid_packets", stats_.mid_packets);
+  w.Counter("audio_level_packets", stats_.audio_level_packets);
 }
 
 }  // namespace sm::rtp

@@ -315,6 +315,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.video_max = s.video_max;
     if (s.tcc_v2) c.transport_feedback_version = 2;
     if (s.rtx_v2) c.rtx_version = 2;
+    if (s.packetization_v2) c.packetization_version = 2;
     if (s.rtcp_v2) c.rtcp.version = 2;
     c.events = &events;
     return c;
@@ -338,6 +339,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.rtx_payload_type = kRtxPt;
   video_cfg.fec = s.fec;
   video_cfg.max_payload_size = kMaxVideoPayload + 16;  // The session reserves 16 bytes for header extensions.
+  // libwebrtc's default packet capacity (kVideoMtu 1200); the session subtracts the real header.
+  if (s.packetization_v2) video_cfg.max_payload_size = 1200 - 12;
   video_cfg.parser = &parser;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
