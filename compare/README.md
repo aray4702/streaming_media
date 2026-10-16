@@ -11,7 +11,7 @@ libwebrtc on the problems in sections 3-8.
 |---|---|---|
 | libwebrtc (M157, prebuilt) | Working on macOS arm64; Ubuntu x86_64/arm64 builds are published but not yet tried | [webrtc/](webrtc/) |
 
-Latest results: [docs/results/compare-webrtc.md](../docs/results/compare-webrtc.md).
+Latest results and the parity report: [docs/results/compare-webrtc.md](../docs/results/compare-webrtc.md).
 
 ## libwebrtc
 
@@ -19,8 +19,9 @@ Latest results: [docs/results/compare-webrtc.md](../docs/results/compare-webrtc.
 compare/webrtc/fetch.sh                      # ~300 MB download into out/webrtc-deps
 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release
 cmake --build out/compare -j
-out/compare/sm_compare testbench/scenarios/*.scn                  # mean of 3 seeds
-out/compare/sm_compare --seeds=5 --json=r.json --dump=runs/ a.scn # JSON summary, full per-run reports
+out/compare/sm_compare testbench/scenarios/*.scn                  # mean of 3 seeds (CI uses --seeds=10)
+out/compare/sm_compare --seeds=5 --json=r.json --dump=runs/ a.scn # JSON summary (means, per-seed values), full per-run reports
+python3 tools/parity_report.py r.json --owners tools/parity_owners.json   # gaps with libwebrtc, in both directions
 ```
 
 The build needs clang 21 or newer (Apple clang 21 works): the libc++ the

@@ -105,11 +105,18 @@ jobs:
           path: testbench-results.json
   compare-webrtc:
     # sm_compare against a prebuilt libwebrtc (compare/README.md). Keeps the
-    # comparison building on the agents' platform and puts the table in the
-    # job summary. libc++ for the prebuilt binary needs clang >= 21.
+    # comparison building on the agents' platform and puts the table and the
+    # parity report (tools/parity_report.py) in the job summary. libc++ for the
+    # prebuilt binary needs clang >= 21. On main the results are also published
+    # to the `parity-data` branch, which the agents read through
+    # raw.githubusercontent.com (the Actions artifact host and github.io are
+    # not reachable from their sandbox).
     runs-on: ubuntu-24.04
+    permissions: {contents: write}
+    env: {COMPARE_SEEDS: "10"}
     steps:
       - uses: actions/checkout@v4
+      - run: python3 tools/test_parity_report.py
       - uses: actions/cache@v4
         with:
           path: out/webrtc-deps
@@ -119,13 +126,37 @@ jobs:
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare
         run: |
-          out/compare/sm_compare --json=compare-webrtc.json testbench/scenarios/*.scn | tee compare-webrtc.txt
+          out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=compare-webrtc.json testbench/scenarios/*.scn | tee compare-webrtc.txt
           { echo '## streaming_media vs libwebrtc'; echo '```'; cat compare-webrtc.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Parity report
+        run: |
+          # On a PR, compare with the report published for main; without it the
+          # report still lists the gaps, only the closed/opened part is left out.
+          BASE=""
+          if [ "${{ github.event_name }}" = pull_request ] &&
+             curl -fsSL "https://raw.githubusercontent.com/${{ github.repository }}/parity-data/compare-webrtc.json" -o base-compare.json; then
+            BASE="--base base-compare.json"
+          fi
+          python3 tools/parity_report.py compare-webrtc.json --owners tools/parity_owners.json $BASE --markdown parity.md --json parity.json
+          cat parity.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: compare-webrtc
-          path: compare-webrtc.*
+          path: |
+            compare-webrtc.*
+            parity.*
+      - name: Publish to the parity-data branch
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          mkdir pub && cp compare-webrtc.json compare-webrtc.txt parity.json parity.md pub/
+          printf 'Latest `compare-webrtc` results and parity report for main @ %s (written by the ci workflow, one commit per run).\nSee tools/parity_report.py.\n' "$GITHUB_SHA" > pub/README.md
+          cd pub
+          git init -q -b parity-data
+          git add .
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "compare-webrtc and parity report for $GITHUB_SHA"
+          git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" parity-data
   fix-record:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).

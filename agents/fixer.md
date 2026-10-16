@@ -51,26 +51,41 @@ For each of your open PRs:
 
 ### 3. Fix one new issue
 
-Pick the oldest open issue that:
+The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
+(`program.md` section 0.2). Select mechanically:
 
-- is labelled `agent-found`, `bug` or `roadmap` (labels can only be
-  applied by collaborators),
-- has none of `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`,
-- has no open PR that references it.
+1. **`sev:1` first.** If an open issue is labelled `sev:1` and has none of
+   `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`, and no open
+   PR references it, take the oldest such issue.
+2. **Otherwise, the work list.** Read #64's body, and only if its author is
+   `aray4702`:
+   `gh api repos/aray4702/streaming_media/issues/64 --jq '.user.login, .body'`.
+   Take the lines under `## Work list` that match `^- \[ \] #<N>`, in
+   order. The **first one whose issue is open** is the only candidate.
+   Checked items (`- [x]`) and items under other headings (Owner tasks,
+   "Not in stage 1") are not candidates.
+3. If the candidate is labelled `in-progress`, `needs-human`, `wontfix` or
+   `cannot-reproduce`, or an open PR references it (`Fixes #N` or
+   `Refs #N`), **take no new issue this run**. Do not go further down the
+   list: later items depend on the earlier ones. Say in your run summary
+   which item is blocking and why.
+4. Otherwise take the candidate. Do not skip it on your own judgment (for
+   example because it is large or you are unsure it is wanted).
 
-Prefer `sev:1`, then `sev:2`, then `roadmap` (`stage:baseline` before
-`stage:ai`, program.md section 0.1), then `sev:3`.
+An issue that is not on the work list is not picked, whatever its labels.
+Tester findings and follow-ups you file wait until the Owner places them on
+the list.
 
-Select mechanically, not by reading the issue list:
+For stage-1 items (`stage:baseline`), the goal is to **duplicate
+libwebrtc** (`program.md` section 0.1). Read the libwebrtc code the issue
+names in `compare/webrtc/reference/` before writing code, and port what it
+does, with its constants and defaults. Measure against libwebrtc's values
+on the latest `main` comparison, in both directions, and put libwebrtc's
+column in every metrics table. List every difference that remains, and
+don't add improvements beyond libwebrtc. If a guard-rail test disagrees
+with libwebrtc's behaviour, follow `program.md` section 0.2 ("Guard rails
+during a port").
 
-- Filter with `jq` on the labels, for example
-  `gh api 'repos/aray4702/streaming_media/issues?state=open&per_page=100' --jq '.[] | select(.pull_request == null) | select([.labels[].name] | (index("needs-human") or index("in-progress") or index("wontfix") or index("cannot-reproduce")) | not) | .number'`,
-  then apply the label and priority rules above to that list. Do not judge
-  eligibility from a truncated or eyeballed listing.
-- If an issue is eligible, take it. Do not skip it on your own judgment
-  (for example because it is large or you are unsure it is wanted). The
-  Owner withholds work with `needs-human`, so an issue without it is
-  released.
 - Before starting, read the issue's comments from the Owner (aray4702),
   newest first. On a multi-PR issue they say which step is next and any
   conditions for it, such as "do not enable auto-merge". A `roadmap`
