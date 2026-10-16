@@ -97,7 +97,8 @@ if(SM_WITH_RTP)
     rtp/rtp_receiver.cc
     rtp/rtp_sender.cc
     rtp/send_side_controller.cc
-    rtp/session.cc)
+    rtp/session.cc
+    rtp/video_send_controller.cc)
   list(APPEND SM_SECTIONS rtp)
 endif()
 

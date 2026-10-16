@@ -1,7 +1,7 @@
 # Send-side media controller: API note (issue #37, PR 1 of 2)
 
-Status: **approved by the Owner (PR #81 comment), answers to section 9 applied.** No code changes in this PR.
-The behaviour-preserving move (PR 2) follows once this note is accepted.
+Status: **approved by the Owner (PR #81 comment), answers to section 9 applied.**
+PR 2 landed `rtp::VideoSendController` (section 10 lists where it differs from this note).
 
 Decision (Owner, 2026-10-15): the library owns encoder-side adaptation as
 well as RTP/RTCP, as `VideoStreamEncoder` does in libwebrtc. The app runs the
@@ -170,3 +170,23 @@ adding it in a separate PR, so PR 2 can cite it.
 2. The keyframe exemption from the frame dropper stays in PR 2 (behaviour
    preserving). It remains a listed deviation (section 6); #5 removes it.
 3. Name: `sm::rtp::VideoSendController`, header `sm/rtp/video_send_controller.h`.
+
+## 10. As built in PR 2
+
+The first cut keeps the test bench byte-identical (`testbench/baseline.json`
+unchanged) and differs from sections 3-5 in these ways:
+
+- It is built from the `Session` (not the `SendSideController`), so it reads
+  `Session::rates()`, which already includes the call-level audio wire rate.
+- The app forwards every `SessionEvent` to `OnSessionEvent()`. The controller
+  acts on `kEncoderPause`, `kEncoderResume` and `kKeyframeRequested`; the
+  session event queue is the app's, so the controller cannot consume the
+  actions itself.
+- `EncodeDecision` is `{encode, reason, keyframe, target, width, height,
+  fps}`; width, height and fps pass the captured frame and the configured
+  rate through. The quality scaler, CPU overuse detector, degradation ladder
+  and `EncoderOvershootDetector` are not wired (the fake encoder reports no
+  QP; the adjuster is a field trial). Their unit and e2e coverage and the
+  wiring remain for a follow-up PR on #37.
+- `EncodedFrameReport` carries `size` and `keyframe` only (no QP,
+  encode time or failure flag yet).
