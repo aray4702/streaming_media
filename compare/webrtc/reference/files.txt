@@ -69,3 +69,27 @@ call/rtp_video_sender.cc
 api/transport/network_types.h
 api/transport/network_control.h
 api/video/video_bitrate_allocation.h
+# Added for #57: field-trial defaults, A/V sync, audio send path, receive-side frame buffer.
+rtc_base/experiments/rate_control_settings.h
+rtc_base/experiments/rate_control_settings.cc
+experiments/field_trials.py
+video/stream_synchronization.h
+video/stream_synchronization.cc
+video/rtp_streams_synchronizer2.h
+video/rtp_streams_synchronizer2.cc
+modules/rtp_rtcp/include/remote_ntp_time_estimator.h
+modules/rtp_rtcp/source/remote_ntp_time_estimator.cc
+rtc_base/rtp_to_ntp_estimator.h
+rtc_base/rtp_to_ntp_estimator.cc
+modules/rtp_rtcp/source/ntp_time_util.h
+modules/rtp_rtcp/source/ntp_time_util.cc
+system_wrappers/include/ntp_time.h
+audio/audio_send_stream.h
+audio/audio_send_stream.cc
+modules/audio_coding/codecs/opus/audio_encoder_opus.h
+modules/audio_coding/codecs/opus/audio_encoder_opus.cc
+api/video/frame_buffer.h
+api/video/frame_buffer.cc
+video/video_stream_buffer_controller.h
+video/video_stream_buffer_controller.cc
+media/engine/webrtc_video_engine.cc

@@ -18,6 +18,10 @@ DIRS=(
   modules/pacing
   modules/video_coding/utility
   video/adaptation
+  modules/video_coding/timing
+  video/timing
+  modules/audio_coding/neteq
+  modules/audio_coding/codecs/red
 )
 
 for d in "${DIRS[@]}"; do

@@ -27,7 +27,8 @@ ALGORITHMS = [
                   "40 ms one-way delay. The receiver's NackTracker sends NACKs over the lossy reverse link, the "
                   "RtxSender answers with RTX packets. A packet counts as on time if it is available within a 250 ms "
                   "playout budget. A second run at 150 ms one-way delay shows retransmissions arriving too late.",
-         notes="Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
                "arrive; the sender also refuses to resend the same packet twice within one RTT, which protects "
                "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
                "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
@@ -42,7 +43,8 @@ ALGORITHMS = [
          scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
                   "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
                   "within the 250 ms budget.",
-         notes="Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
                "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
                "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
                "logic is the same.",
@@ -55,7 +57,8 @@ ALGORITHMS = [
          bench=["loss/RedEncodeParse_d2", "loss/Q_Red_10pct"],
          scenario="20 000 Opus-sized frames (60-90 B, 20 ms) over 10% random loss with redundancy distance 0, 1 "
                   "and 2. Residual loss is counted after RED recovery.",
-         notes="Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
          verification="No defects found; results match the analytical p^2 and p^3."),
@@ -65,7 +68,8 @@ ALGORITHMS = [
          bench=["loss/Plc_Conceal10ms_16k", "loss/Q_Plc_10pct_speech"],
          scenario="20 s of synthetic voiced speech, 10 ms frames, 10% random loss. Compares the whole-signal SNR "
                   "of the concealed output against zero insertion, and the SNR/level inside the lost frames.",
-         notes="Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
                "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
                "the 'expand' operation of the audio jitter buffer (4.5).",
          verification="No defects found."),
@@ -77,7 +81,8 @@ ALGORITHMS = [
          scenario="30 s of 30 fps video with an IPPP reference chain and 2% unrecoverable frame loss "
                   "(after NACK). The sender answers each PLI with a keyframe. Measures the decodable-frame ratio, "
                   "the longest freeze and the number of PLIs (no request storms).",
-         notes="The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
                "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that. Wire formats (loss/"
                "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
                "loss notification (LNTF, libwebrtc's goog-lntf application-layer feedback) and compound RTCP with "
@@ -91,7 +96,8 @@ ALGORITHMS = [
          bench=["loss/TemporalLayers_ScheduleAndFilter", "loss/Q_TemporalLayers_5pct"],
          scenario="Same frame-loss simulation at 5% loss with L1T1 versus L1T3 (keyframe requests on), plus an "
                   "SFU forwarding only T0+T1 and checking that every forwarded frame is decodable.",
-         notes="Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
                "on T0) are where a receiver may switch up.",
          verification="No defects found."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
@@ -100,7 +106,8 @@ ALGORITHMS = [
          bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
          scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
                   "loss and burstiness, at RTT 20, 80 and 300 ms with 5% loss.",
-         notes="The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
+               "The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
                "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
                "replacement for libwebrtc's lookup tables.",
          verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
@@ -198,7 +205,8 @@ ALGORITHMS = [
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
                   "real wire format, parsed and joined with the send history. Each packet must be reported once, "
                   "with arrival-time error within the 250 us quantization.",
-         notes="Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. A message is split when a delta overflows 16 bits.",
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
@@ -208,7 +216,8 @@ ALGORITHMS = [
          scenario="Full closed loop (encoder, pacer, transport-cc, GCC) over a bottleneck whose capacity steps "
                   "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
                   "delay are measured over the second half of each phase.",
-         notes="After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
                "takes about 17 s, so the last phase has a lower utilization bar.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
@@ -221,7 +230,8 @@ ALGORITHMS = [
          bench=["cc/Q_LossBwe_15pct"],
          scenario="An 8 Mbps link with 15% versus 1% random loss: heavy loss must push the rate far below "
                   "capacity, light loss must not.",
-         notes="Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
                "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up.",
          verification="Defect found: loss was measured over 20-packet intervals, and a lucky interval with no "
                       "loss (about 4% likely at 15% loss) let the estimate jump from 153 to 2 338 kbps. Now loss "
@@ -232,7 +242,8 @@ ALGORITHMS = [
          bench=["cc/Gcc_OnFeedback_per_packet"],
          scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
                   "(decrease band). Each phase's target is compared with the previous one.",
-         notes="The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
                "2.5 x target. rtp::SendSideController adds congestion-window pushback "
                "(cc/congestion_window_pushback.h, a port of libwebrtc's CongestionWindowPushbackController with "
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
@@ -251,7 +262,8 @@ ALGORITHMS = [
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
-         notes="Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
                "so no packet waits longer than max_queue_time (2 s).",
          verification="A unit test queued 10 s worth of data, which correctly triggers drain mode; the test now "
                       "stays inside the queue-time limit. A priority test was rewritten so the retransmission is "
@@ -262,7 +274,8 @@ ALGORITHMS = [
          bench=["cc/Q_Probing_rampup_5mbps"],
          scenario="A 5 Mbps link starting at 300 kbps: time for the target to reach 80% of capacity, with and "
                   "without probing.",
-         notes="Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
                "the estimator ignores clusters with too few packets or bytes.",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
                       "within 30 s."),
@@ -272,7 +285,8 @@ ALGORITHMS = [
          bench=["cc/BitrateAllocator_5streams", "cc/Q_Allocator_low_bandwidth"],
          scenario="Audio (enforced 20-40 kbps), camera (150-2500 kbps) and screen share (250-1500 kbps, priority "
                   "2) share a GCC target while capacity steps 3000 -> 450 -> 3000 kbps.",
-         notes="Paused streams resume only at min x 1.1 (hysteresis).",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Paused streams resume only at min x 1.1 (hysteresis).",
          verification="A unit-test expectation was wrong about how leftover bitrate is shared (it is split by "
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
@@ -281,7 +295,8 @@ ALGORITHMS = [
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
-         notes="Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
                "bucket and the pending keyframe bytes are capped at 1.5 s of the target rate (libwebrtc's "
                "FrameDropper::CapAccumulator, which caps at 3 s).",
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframes bypass ShouldDrop() "
@@ -295,7 +310,8 @@ ALGORITHMS = [
          scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
                   "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
                   "settle on a sustainable resolution without oscillating.",
-         notes="The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
          verification="No defects found after the 5.2 fixes."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
@@ -304,7 +320,8 @@ ALGORITHMS = [
          bench=["cc/Q_Outage_recovery"],
          scenario="A 2 Mbps call with a 7 s total outage (both directions) at 20 s; packets sent into the dead "
                   "link, ICE restarts and time to recover 50% of capacity are measured.",
-         notes="On recovery the estimate is reset to half the last good rate and probing is restarted, because "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "On recovery the estimate is reset to half the last good rate and probing is restarted, because "
                "the path may have changed.",
          verification="No defects found."),
     # ------------------------------------------------------------------ 6

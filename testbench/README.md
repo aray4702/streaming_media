@@ -152,6 +152,15 @@ Link keys (any subset; unset keys keep their previous value):
   to render), `time_to_first_frame_ms`, `avg_kbps`, `keyframes`,
   `keyframe_requests`, `encoder_dropped`, `undecodable_frames`,
   `residual_loss_pct`.
+  - Delay breakdown of each rendered frame: `delay_encode_ms` (mean
+    capture to handed to the sender; the bench's encoder is
+    instantaneous, so 0), `delay_pacer_p95_ms` (handed to the sender to
+    the last media packet leaving the pacer), `delay_network_p95_ms` (last
+    media packet sent to the frame complete at the receiver: propagation,
+    queue, jitter and any wait for a retransmission) and
+    `delay_jitter_buffer_p95_ms` (frame complete to rendered). The
+    p95 values are separate percentiles, so they need not add up to
+    `e2e_delay_p95_ms`.
 - **Congestion control:**
   - `cc.target_avg_kbps` and `cc.goodput_kbps`.
   - `cc.utilization_pct`: goodput divided by the usable capacity, which is
@@ -161,6 +170,13 @@ Link keys (any subset; unset keys keep their previous value):
   - `cc.max_settle_ms`: the time after each link change until the target
     is within [0.5, 1.0] x usable capacity. `cc.unsettled` counts link
     changes where it never got there.
+  - `cc.target_max_drop_pct`: the deepest fall of the target below its
+    peak of the preceding 5 s, outside the first 5 s and the 5 s after each
+    link change (a cut on a link that did not change).
+  - `cc.send_over_target_p95_pct`: the 95th percentile of how far the send
+    rate (100 ms windows after the first 2 s, all traffic) is above the
+    target, in % of the target. `cc.send_over_target_ms` counts the time
+    above 1.5 x the target.
   - `cc.rtt_p50_ms`.
 - **Network and repair:** `net.loss_pct`, `repair.overhead_pct`,
   `repair.nack_recovered`, `repair.fec_recovered`.
