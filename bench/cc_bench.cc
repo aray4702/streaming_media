@@ -150,9 +150,7 @@ SM_BENCH_QUALITY(cc, Q_Probing_rampup_5mbps) {
 
 SM_BENCH_QUALITY(cc, Q_Allocator_low_bandwidth) {
   e2e::CcSimParams p;
-  // phase lengthened for #70; #61 restores the original length (low phase 20-40 s, 60 s call)
-  p.capacity_kbps = {{0, 3000}, {20000, 450}, {44000, 3000}};
-  p.seconds = 64;
+  p.capacity_kbps = {{0, 3000}, {20000, 450}, {40000, 3000}};
   p.allocator = true;
   auto r = e2e::RunCcSim(p);
   st.Counter("min_audio_alloc_kbps", r.min_audio_alloc_kbps);
