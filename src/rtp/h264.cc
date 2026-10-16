@@ -103,6 +103,7 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
   std::vector<std::vector<uint8_t>> out;
   // PayloadSizeLimits::Sanitize.
   PayloadSizeLimits limits = in;
+  limits.max_payload_len = std::max(0, limits.max_payload_len);
   limits.single_packet_reduction_len = std::clamp(limits.single_packet_reduction_len, 0, limits.max_payload_len);
   limits.first_packet_reduction_len = std::clamp(limits.first_packet_reduction_len, 0, limits.max_payload_len);
   limits.last_packet_reduction_len = std::clamp(limits.last_packet_reduction_len, 0, limits.max_payload_len);

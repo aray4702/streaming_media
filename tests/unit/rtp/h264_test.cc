@@ -273,3 +273,16 @@ SM_TEST(H264, NoRoomForAFuAHeaderGivesNoPackets) {
   limits.max_payload_len = 2;
   SM_EXPECT_TRUE(H264Packetizer::Packetize(frame, limits).empty());
 }
+
+SM_TEST(H264, NegativeOrZeroPayloadLimitGivesNoPacketsWithoutUndefinedBehaviour) {
+  Bytes frame = Nal({0x41});
+  frame.resize(frame.size() + 50, 7);
+  PayloadSizeLimits limits;
+  limits.max_payload_len = -1;
+  limits.single_packet_reduction_len = 5;
+  limits.first_packet_reduction_len = 5;
+  limits.last_packet_reduction_len = 5;
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(frame, limits).empty());
+  limits.max_payload_len = 0;
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(frame, limits).empty());
+}

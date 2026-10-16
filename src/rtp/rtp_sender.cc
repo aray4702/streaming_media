@@ -117,8 +117,8 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
     p.payload.assign(frame.begin(), frame.end());
   }
   if (level && cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) {
-    // RFC 6464: V bit and the level in -dBov.
-    const uint8_t byte = static_cast<uint8_t>((level->voice ? 0x80 : 0) | (level->level & 0x7F));
+    // RFC 6464, as audio::EncodeAudioLevelExtension (sm_rtp does not link sm_audio, which is optional).
+    const uint8_t byte = static_cast<uint8_t>((level->voice ? 0x80 : 0) | std::min<int>(level->level, 127));
     sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAudioLevel, {byte});
     ++stats_.audio_level_packets;
   }
