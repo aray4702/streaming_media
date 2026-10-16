@@ -315,6 +315,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.video_max = s.video_max;
     if (s.tcc_v2) c.transport_feedback_version = 2;
     if (s.rtx_v2) c.rtx_version = 2;
+    if (s.rtcp_v2) c.rtcp.version = 2;
     c.events = &events;
     return c;
   };

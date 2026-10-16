@@ -71,6 +71,7 @@ struct Scenario {
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   bool tcc_v2 = false;  // `tcc v2`: libwebrtc's transport-cc feedback generator (issue #76; default v1).
+  bool rtcp_v2 = false;  // `rtcp v2`: libwebrtc's RTCP report timing (issue #76 group 3; default v1).
   bool rtx_v2 = false;  // `rtx v2`: libwebrtc's RtpPacketHistory (issue #76 group 2; default v1).
   bool keyframe_v2 = false;  // `keyframe v2`: libwebrtc's receiver keyframe-request policy (issue #23; default v1).
   bool pacer_v2 = false;  // `pacer v2`: libwebrtc's PacingController (default v1, the library's own pacer).

@@ -413,3 +413,37 @@ SM_TEST(RtcpEngine, FirStateIsBoundedAndOnlyTracksLocalStreams) {
   SM_EXPECT_EQ(open.OnRtcp(fir_datagram(7, 77, 1), Timestamp::Millis(0)).keyframe_requests.size(), 1u);
   SM_EXPECT_EQ(open.OnRtcp(fir_datagram(7, 77, 1), Timestamp::Millis(1)).keyframe_requests.size(), 0u);
 }
+
+// RTCPSender::ComputeTimeUntilNextReport (#76): [0.5, 1.5] x the minimum, and
+// a video sender above 72 kbit/s reports every 360 / kbit/s seconds.
+SM_TEST(RtcpEngine, V2ReportIntervalFollowsTheSendBitrateRule) {
+  auto gaps = [](int64_t bytes_per_ms) {
+    RtcpConfig c;
+    c.version = 2;
+    RtcpEngine e(c);
+    RtcpSenderState st;
+    st.ssrc = 7;
+    std::vector<int64_t> times;
+    for (int64_t t = 0; t <= 20000; ++t) {
+      st.octet_count = static_cast<uint32_t>(t * bytes_per_ms);
+      e.SetSenderState(st);
+      for (const auto& o : e.Process(Timestamp::Millis(t))) {
+        if (o.kind == RtcpOutKind::kReport) times.push_back(t);
+      }
+    }
+    std::vector<int64_t> g;
+    for (size_t i = 2; i < times.size(); ++i) g.push_back(times[i] - times[i - 1]);  // Skip start-up.
+    return g;
+  };
+  const auto fast = gaps(125);  // 1 Mbit/s: minimum 360 ms.
+  SM_ASSERT_TRUE(fast.size() > 20);
+  for (int64_t g : fast) SM_EXPECT_TRUE(g >= 150 && g <= 560);
+  const auto slow = gaps(5);  // 40 kbit/s: nominal 1 s.
+  SM_ASSERT_TRUE(slow.size() > 8);
+  bool varied = false;
+  for (int64_t g : slow) {
+    SM_EXPECT_TRUE(g >= 450 && g <= 1550);
+    varied = varied || g != slow.front();
+  }
+  SM_EXPECT_TRUE(varied);
+}

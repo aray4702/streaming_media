@@ -72,7 +72,7 @@ class ReceiveStatistics : public MetricsSource {
   // Builds a report block and starts a new fraction-lost interval.
   ReportBlock MakeReportBlock(Timestamp now);
   ReceiveStatsSnapshot Snapshot() const;
-  double jitter_ms() const { return jitter_ / 16.0 * 1000.0 / clock_rate_; }
+  double jitter_ms() const { return jitter_q4_ / 16.0 * 1000.0 / clock_rate_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
@@ -84,9 +84,9 @@ class ReceiveStatistics : public MetricsSource {
   uint32_t received_ = 0;
   int64_t expected_prior_ = 0;
   uint32_t received_prior_ = 0;
-  double jitter_ = 0;  // Scaled by 16 as in RFC 3550 A.8.
-  int64_t last_transit_ = 0;
-  bool have_transit_ = false;
+  int32_t jitter_q4_ = 0;  // RTP units scaled by 16 (RFC 3550 A.8, integer as libwebrtc).
+  uint32_t last_timestamp_ = 0;
+  Timestamp last_receive_time_ = Timestamp::MinusInfinity();
   uint8_t last_fraction_ = 0;
   uint32_t last_sr_compact_ = 0;
   Timestamp last_sr_arrival_ = Timestamp::MinusInfinity();

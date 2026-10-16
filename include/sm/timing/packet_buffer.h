@@ -24,7 +24,7 @@
 
 namespace sm::timing {
 
-enum class InsertResult { kInserted, kDuplicate, kTooOld };
+enum class InsertResult { kInserted, kDuplicate, kTooOld, kBufferCleared };
 
 struct AssembledFrame {
   int64_t first_seq = 0;  // Unwrapped.
@@ -37,6 +37,15 @@ struct AssembledFrame {
 
 struct PacketBufferConfig {
   size_t window = 2048;  // Packets of history kept for reordering and dedup.
+  // 1 = the bounded window above. 2 = libwebrtc's `video_coding::PacketBuffer`
+  // sizing (packet_buffer.cc, #76): the buffer starts at `start_size` slots and
+  // doubles up to `max_size` when a slot is taken by another sequence number;
+  // when it is full at `max_size` it is cleared and the caller asks for a
+  // keyframe (`kBufferCleared`); a packet `max_size / 2` or more behind the
+  // lowest sequence number seen restarts the buffer.
+  int version = 1;
+  size_t start_size = 512;
+  size_t max_size = 2048;
   EventSink* events = nullptr;
 };
 
@@ -44,6 +53,7 @@ struct PacketBufferStats {
   uint64_t inserted = 0;
   uint64_t duplicates = 0;
   uint64_t too_old = 0;
+  uint64_t cleared = 0;          // v2: the buffer was full at max_size and was cleared.
   uint64_t padding = 0;          // Padding-only packets that held a sequence number.
   uint64_t reordered = 0;        // Arrived after a higher sequence number.
   uint64_t frames_assembled = 0;
@@ -69,6 +79,7 @@ class PacketBuffer : public MetricsSource {
   // packet, i.e. the last packet of the preceding frame if it was received.
   int64_t PrecedingMediaSeq(int64_t first_seq) const;
   std::vector<AssembledFrame> PopCompleteFrames();
+  size_t capacity() const { return size_; }
   size_t buffered_packets() const { return packets_.size(); }
   const PacketBufferStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
@@ -82,6 +93,8 @@ class PacketBuffer : public MetricsSource {
   };
   void TryAssemble(int64_t seq);
   void Trim();
+  bool SlotTaken(int64_t seq) const;
+  void Clear();
 
   PacketBufferConfig cfg_;
   SeqNumUnwrapper<uint16_t> unwrapper_;
@@ -89,6 +102,8 @@ class PacketBuffer : public MetricsSource {
   std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
   int64_t highest_ = INT64_MIN;
+  size_t size_ = 0;                      // v2: current slot count.
+  int64_t first_seq_ = INT64_MIN;        // v2: lowest sequence number seen since the last clear.
   int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;
   PacketBufferStats stats_;

@@ -10,10 +10,53 @@ size_t AssembledFrame::size_bytes() const {
   return s;
 }
 
-PacketBuffer::PacketBuffer(PacketBufferConfig cfg) : cfg_(cfg) {}
+PacketBuffer::PacketBuffer(PacketBufferConfig cfg) : cfg_(cfg), size_(cfg.start_size) {}
+
+// A slot is taken when another unassembled packet maps to the same index
+// (`seq % size_`), PacketBuffer::InsertPacket's `buffer_[index] != nullptr`.
+bool PacketBuffer::SlotTaken(int64_t seq) const {
+  const int64_t n = static_cast<int64_t>(size_);
+  for (auto it = packets_.lower_bound(seq - static_cast<int64_t>(cfg_.max_size)); it != packets_.end(); ++it) {
+    if (it->first > seq + static_cast<int64_t>(cfg_.max_size)) break;
+    if (it->first != seq && ((it->first - seq) % n) == 0) return true;
+  }
+  return false;
+}
+
+void PacketBuffer::Clear() {
+  packets_.clear();
+  done_.clear();
+  padding_.clear();
+  highest_ = INT64_MIN;
+  first_inserted_ = INT64_MIN;
+  first_seq_ = INT64_MIN;
+  size_ = cfg_.start_size;
+}
 
 InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame) {
   int64_t s = unwrapper_.Unwrap(p.seq);
+  if (cfg_.version >= 2) {
+    if (first_seq_ == INT64_MIN) {
+      first_seq_ = s;
+    } else if (s < first_seq_) {
+      // Large backward jump: clear and treat this as the first packet.
+      if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
+      first_seq_ = s;
+    }
+    if (!packets_.count(s) && !done_.count(s)) {
+      // The packet buffer is full: grow it, and clear it at the maximum.
+      while (SlotTaken(s) && size_ < cfg_.max_size) {
+        size_ = std::min(cfg_.max_size, 2 * size_);
+        SM_EVENT(cfg_.events, now, "packet_buffer", "expanded", static_cast<double>(size_), s);
+      }
+      if (SlotTaken(s)) {
+        Clear();
+        ++stats_.cleared;
+        SM_EVENT(cfg_.events, now, "packet_buffer", "cleared", 0, s);
+        return InsertResult::kBufferCleared;
+      }
+    }
+  }
   if (highest_ != INT64_MIN && s + static_cast<int64_t>(cfg_.window) <= highest_) {
     ++stats_.too_old;
     return InsertResult::kTooOld;
@@ -123,6 +166,7 @@ void PacketBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("duplicates", stats_.duplicates);
   w.Counter("too_old", stats_.too_old);
   w.Counter("padding", stats_.padding);
+  w.Counter("cleared", stats_.cleared);
   w.Counter("reordered", stats_.reordered);
   w.Counter("frames_assembled", stats_.frames_assembled);
   w.Gauge("buffered_packets", static_cast<double>(packets_.size()));
