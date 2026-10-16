@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <optional>
 #include <span>
@@ -188,7 +189,7 @@ class RtcpEngine : public MetricsSource {
   std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> next seq_nr
   std::map<std::pair<uint32_t, uint32_t>, uint8_t> fir_seq_in_;   // (sender, media) -> last seq_nr
   void UpdateSendRate(Timestamp now);
-  std::vector<std::pair<Timestamp, uint32_t>> rate_samples_;
+  std::deque<std::pair<Timestamp, uint32_t>> rate_samples_;
   DataRate send_rate_ = DataRate::Zero();
   timing::RttEstimator rtt_;
   RtcpStats stats_;

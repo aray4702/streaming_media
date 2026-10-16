@@ -624,7 +624,7 @@ ALGORITHMS = [
                "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
                "(SR or RR first, SDES CNAME after it). Version 2 (`rtcp v2`, issue #76 group 3) times reports as "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s. Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "
