@@ -7,14 +7,44 @@ namespace sm::rtp {
 VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session& session)
     : cfg_(cfg), session_(session), adjuster_(cfg.adjuster) {}
 
+namespace {
+// FrameCadenceAdapterInterface::kFrameRateAveragingWindowSizeMs.
+constexpr int64_t kFrameRateWindowMs = (1000 / 30) * 90;
+}  // namespace
+
+// RateStatistics::Rate then ::Update, as FrameCadenceAdapterImpl does per frame
+// (rtc_base/rate_statistics.cc, not in reference/: written from the class).
+void VideoSendController::UpdateFrameRate(Timestamp now) {
+  const int64_t t = now.ms();
+  auto erase_old = [&](int64_t at) {
+    const int64_t oldest = at - kFrameRateWindowMs + 1;
+    while (!frame_times_ms_.empty() && frame_times_ms_.front() < oldest) frame_times_ms_.pop_front();
+  };
+  erase_old(t);
+  int64_t active = 0;
+  if (first_frame_ms_ != -1) active = first_frame_ms_ <= t - kFrameRateWindowMs ? kFrameRateWindowMs : t - first_frame_ms_ + 1;
+  const int64_t n = static_cast<int64_t>(frame_times_ms_.size());
+  if (n == 0 || active <= 1 || (n <= 1 && active < kFrameRateWindowMs)) {
+    input_fps_ = 0;
+  } else {
+    input_fps_ = static_cast<int>(static_cast<float>(n) * (1000.0f / static_cast<float>(active)) + 0.5f);
+  }
+  if (first_frame_ms_ == -1 || frame_times_ms_.empty()) first_frame_ms_ = t;
+  frame_times_ms_.push_back(t);
+}
+
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
+  UpdateFrameRate(now);
+  const double fps = input_fps();
   const SendRates& rates = session_.rates();
   const DataRate target = rates.video_target;
-  dropper_.SetRates(target, cfg_.fps);
-  // The link allocation of the video stream: the session target without the
-  // audio taken off first (not lowered by the congestion-window pushback).
-  const DataRate link = std::max(target, rates.target - rates.audio_rate);
-  const DataRate encoder_rate = cfg_.bitrate_adjuster ? adjuster_.AdjustRate(target, link, cfg_.fps, now) : target;
+  dropper_.SetRates(target, fps);
+  // VideoSendStreamImpl::OnBitrateUpdated: link_allocation =
+  // max(encoder_target, encoder_target - protection) = the encoder target, so
+  // the adjuster's headroom is only what the encoder adds (bandwidth_allocation
+  // - sum(allocation), zero here).
+  const DataRate link = target;
+  const DataRate encoder_rate = cfg_.bitrate_adjuster ? adjuster_.AdjustRate(target, link, fps, now) : target;
   // No keyframe sent yet: the first one is already due through keyframe_needed_.
   const bool periodic = cfg_.keyframe_interval.us() > 0 && last_keyframe_.IsFinite() &&
                         now - last_keyframe_ >= cfg_.keyframe_interval;
@@ -25,14 +55,14 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   d.target = encoder_rate;
   d.width = frame.width;
   d.height = frame.height;
-  d.fps = cfg_.fps;
+  d.fps = fps;
   // As VideoStreamEncoder::OnFrame: the outage pause, then congestion-window
   // pushback (keyframes included), then the frame dropper (keyframes included).
   if (paused_) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
-  } else if (dropper_.ShouldDrop(cfg_.fps)) {
+  } else if (dropper_.ShouldDrop(fps)) {
     d.reason = DropReason::kFrameDropper;
   } else {
     d.encode = true;

@@ -116,7 +116,7 @@ One directive per line, and `#` starts a comment.
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
-| `bitrate_adjuster on\|off` | off | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
+| `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
 | `pacer v1\|v2` | v1 | v1 is the library's own pacer; v2 is the port of libwebrtc's `PacingController` (#70) |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |
 | `reverse at <time> ...` | mirrors forward delay | Change the feedback link |
