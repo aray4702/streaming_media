@@ -42,7 +42,7 @@ Session::Session(SessionConfig cfg)
     : cfg_(std::move(cfg)),
       rtcp_(MakeRtcpConfig(cfg_)),
       send_(MakeSendConfig(cfg_), &cfg_.extensions),
-      tcc_(cfg_.local_ssrc, 0),
+      tcc_(cfg_.local_ssrc, 0, cc::FeedbackBuilderConfig{cfg_.transport_feedback_version}),
       demux_(cfg_.extensions) {}
 
 RtpSenderConfig Session::SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const {
@@ -374,8 +374,9 @@ void Session::Process(Timestamp now) {
     if (fb.pli) rtcp_.QueuePli(v.ssrc);
   }
   // Transport-wide feedback covers every stream of the transport.
+  UpdateTransportFeedbackRate();
   if (cfg_.transport_feedback_interval.us() > 0 &&
-      (!last_tcc_.IsFinite() || now - last_tcc_ >= cfg_.transport_feedback_interval)) {
+      (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
     last_tcc_ = now;
     for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
   }
@@ -401,12 +402,27 @@ void Session::Process(Timestamp now) {
   }
 }
 
+// Version 2 (libwebrtc): the generator's interval follows this endpoint's own
+// send estimate; a receive-only endpoint runs on the congestion controller's
+// start rate, as libwebrtc's Call does before any feedback.
+void Session::UpdateTransportFeedbackRate() {
+  if (cfg_.transport_feedback_version < 2) return;
+  const DataRate estimate = HasSendStreams() && started_ ? send_.target() : cfg_.send_side.gcc.start_rate;
+  if (estimate == last_tcc_estimate_) return;
+  last_tcc_estimate_ = estimate;
+  tcc_.OnSendBandwidthEstimateChanged(estimate);
+}
+
+TimeDelta Session::TransportFeedbackInterval() const {
+  return cfg_.transport_feedback_version < 2 ? cfg_.transport_feedback_interval : tcc_.Interval();
+}
+
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
-    next = std::min(next, last_tcc_ + cfg_.transport_feedback_interval);
+    next = std::min(next, last_tcc_ + TransportFeedbackInterval());
   }
   return std::max(next, now);
 }
