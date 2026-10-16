@@ -84,6 +84,14 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   - the audio jitter-buffer delay percentiles come from 10 ms averages;
   - `video.residual_loss_pct` ignores FEC recoveries;
   - `repair.fec_recovered` is not reported.
+- **The video delay breakdown is this library's only.**
+  `video.delay_encode_ms`, `video.delay_pacer_p95_ms`,
+  `video.delay_network_p95_ms` and `video.delay_jitter_buffer_p95_ms` need the
+  time each frame's packets left the sender's pacer and arrived, per frame.
+  libwebrtc's stats do not expose that, and `sm_compare` does not compute
+  them for it yet. `cc.target_max_drop_pct` and
+  `cc.send_over_target_p95_pct` come from `testbench::AddCcMetrics`, so
+  `sm_compare` reports them for both libraries.
 - **`cc.utilization_pct` can exceed 100%** for either library. Link jitter
   bunches deliveries into some 100 ms windows, and a queue built before a
   capacity drop drains after it.
