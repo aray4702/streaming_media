@@ -17,6 +17,8 @@
 //       (#61 makes it the default together with the cc v2 controller).
 #pragma once
 
+#include <memory>
+
 #include "sm/cc/pacer_types.h"
 #include "sm/cc/pacer_v1.h"
 #include "sm/cc/pacing_controller.h"
@@ -61,9 +63,11 @@ class Pacer : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  // Only the selected version is built, on the heap: each holds about 4 KB of
+  // statistics, which the Session on a small (wasm) stack does not need twice.
   bool v2_on_;
-  PacerV1 v1_;
-  PacingController v2_;
+  std::unique_ptr<PacerV1> v1_;
+  std::unique_ptr<PacingController> v2_;
 };
 
 }  // namespace sm::cc
