@@ -58,6 +58,34 @@ RtpSenderConfig Session::SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool
   return c;
 }
 
+bool PayloadTypeSupportsSkippingFecPackets(VideoCodecType codec, bool generic_picture_id_trial) {
+  if (codec == VideoCodecType::kVP8 || codec == VideoCodecType::kVP9) return true;
+  return codec == VideoCodecType::kGeneric && generic_picture_id_trial;
+}
+
+bool ShouldDisableRedAndUlpfec(const RedUlpfecDecisionInput& in) {
+  bool disable = false;
+  if (in.disable_ulpfec_experiment) disable = true;
+  if (in.flexfec_enabled) disable = true;  // FlexFEC takes priority.
+  // NACK + ULPFEC without a picture id wastes bandwidth: FEC packets must be retransmitted too.
+  if (in.nack_enabled && in.ulpfec_enabled &&
+      !PayloadTypeSupportsSkippingFecPackets(in.codec, in.generic_picture_id_trial)) {
+    disable = true;
+  }
+  if (in.ulpfec_enabled != in.red_enabled) disable = true;  // Only one of the two: both off.
+  return disable;
+}
+
+bool VideoFecEnabled(const VideoStreamConfig& v) {
+  if (!v.fec) return false;
+  RedUlpfecDecisionInput in;
+  in.nack_enabled = v.nack;
+  in.red_enabled = true;
+  in.ulpfec_enabled = true;
+  in.codec = v.codec;
+  return !ShouldDisableRedAndUlpfec(in);
+}
+
 AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
@@ -81,7 +109,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
   c.rtx = v.rtx;
-  c.fec = v.fec;
+  c.fec = VideoFecEnabled(v);
   c.fec_config = v.fec_config;
   video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
   rtcp_.AddLocalMediaSsrc(v.ssrc);
@@ -129,7 +157,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.media_observer = v.media_observer;
   c.rtx_ssrc = v.rtx_ssrc;
   c.nack = v.nack;
-  c.fec = v.fec;
+  c.fec = VideoFecEnabled(v);
   c.fec_config = v.fec_config;
   c.nack_config = v.nack_config;
   c.packet_buffer = v.packet_buffer;
@@ -144,7 +172,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
-  if (v.fec) pts.push_back(v.fec_config.fec_payload_type);
+  if (VideoFecEnabled(v)) pts.push_back(v.fec_config.fec_payload_type);
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(true, static_cast<int>(video_recv_.size()) - 1);
   demux_.AddSink(sink, cfg_.mid_video, "", std::move(pts));

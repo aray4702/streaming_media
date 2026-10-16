@@ -74,12 +74,18 @@ struct AudioStreamConfig {
   timing::AudioJitterBufferConfig jitter_buffer;
 };
 
+// Payload formats libwebrtc tells apart when it decides about video FEC.
+enum class VideoCodecType : uint8_t { kH264, kVP8, kVP9, kGeneric };
+
 struct VideoStreamConfig {
+  VideoCodecType codec = VideoCodecType::kH264;
   uint32_t ssrc = 2;
   uint8_t payload_type = 96;
   std::optional<uint32_t> rtx_ssrc;
   uint8_t rtx_payload_type = 97;
   loss::RtxConfig rtx;
+  // Video RED+ULPFEC (here: the FEC stream) requested. Whether it runs is
+  // VideoFecEnabled(): it is off beside NACK for a codec without a picture id.
   bool fec = false;
   loss::FecConfig fec_config;
   size_t max_payload_size = 1200 - 12;  // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu).
@@ -97,6 +103,30 @@ struct VideoStreamConfig {
   timing::VideoTimingConfig timing;
   TimeDelta decode_time = TimeDelta::Millis(5);
 };
+
+// libwebrtc call/rtp_video_sender.cc PayloadTypeSupportsSkippingFecPackets:
+// VP8 and VP9, and Generic only with the WebRTC-GenericPictureId trial.
+bool PayloadTypeSupportsSkippingFecPackets(VideoCodecType codec, bool generic_picture_id_trial = false);
+
+// libwebrtc call/rtp_video_sender.cc ShouldDisableRedAndUlpfec, with the
+// field trial WebRTC-DisableUlpFecExperiment as a parameter. True when video
+// RED and ULPFEC must not be sent: FlexFEC is on, the experiment is on, NACK is
+// on and the codec cannot skip FEC packets (ULPFEC would be retransmitted
+// too), or only one of RED and ULPFEC is configured.
+struct RedUlpfecDecisionInput {
+  bool nack_enabled = false;
+  bool red_enabled = false;
+  bool ulpfec_enabled = false;
+  bool flexfec_enabled = false;
+  bool disable_ulpfec_experiment = false;
+  bool generic_picture_id_trial = false;
+  VideoCodecType codec = VideoCodecType::kH264;
+};
+bool ShouldDisableRedAndUlpfec(const RedUlpfecDecisionInput& in);
+
+// Whether a video stream configured with `v` sends and expects FEC: v.fec
+// (both RED and ULPFEC) unless ShouldDisableRedAndUlpfec turns it off.
+bool VideoFecEnabled(const VideoStreamConfig& v);
 
 struct AudioSendId { int index = -1; };
 struct VideoSendId { int index = -1; };

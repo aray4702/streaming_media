@@ -309,3 +309,67 @@ SM_TEST(Session, AnUnknownAudioReceiveIdIsIgnored) {
   SM_EXPECT_TRUE(s.GetAudio(AudioRecvId{}, pcm, Timestamp::Millis(0)) == timing::AudioOperation::kSilence);
   SM_EXPECT_TRUE(s.GetAudio(AudioRecvId{7}, pcm, Timestamp::Millis(0)) == timing::AudioOperation::kSilence);
 }
+
+// libwebrtc call/rtp_video_sender.cc ShouldDisableRedAndUlpfec, the cases of
+// rtp_video_sender_unittest.cc that apply (NACK with and without a picture id,
+// FlexFEC priority, a single payload type, the disabling experiment).
+namespace {
+RedUlpfecDecisionInput Both(VideoCodecType codec, bool nack) {
+  RedUlpfecDecisionInput in;
+  in.codec = codec;
+  in.nack_enabled = nack;
+  in.red_enabled = true;
+  in.ulpfec_enabled = true;
+  return in;
+}
+}  // namespace
+
+SM_TEST(Session, VideoFecIsOffBesideNackForH264AndGeneric) {
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(Both(VideoCodecType::kH264, true)));
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(Both(VideoCodecType::kGeneric, true)));
+  auto g = Both(VideoCodecType::kGeneric, true);
+  g.generic_picture_id_trial = true;
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(g));
+}
+
+SM_TEST(Session, VideoFecStaysOnBesideNackForVp8AndVp9) {
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(Both(VideoCodecType::kVP8, true)));
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(Both(VideoCodecType::kVP9, true)));
+}
+
+SM_TEST(Session, VideoFecStaysOnWithoutNack) {
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(Both(VideoCodecType::kH264, false)));
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(Both(VideoCodecType::kGeneric, false)));
+}
+
+SM_TEST(Session, VideoFecOffForFlexfecExperimentOrOnlyOneOfRedAndUlpfec) {
+  auto f = Both(VideoCodecType::kVP8, false);
+  f.flexfec_enabled = true;
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(f));
+  auto e = Both(VideoCodecType::kVP8, false);
+  e.disable_ulpfec_experiment = true;
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(e));
+  auto only_red = Both(VideoCodecType::kVP8, false);
+  only_red.ulpfec_enabled = false;
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(only_red));
+  auto only_fec = Both(VideoCodecType::kVP8, false);
+  only_fec.red_enabled = false;
+  SM_EXPECT_TRUE(ShouldDisableRedAndUlpfec(only_fec));
+  auto none = Both(VideoCodecType::kH264, true);
+  none.red_enabled = none.ulpfec_enabled = false;
+  SM_EXPECT_TRUE(!ShouldDisableRedAndUlpfec(none));
+}
+
+SM_TEST(Session, VideoFecEnabledFollowsTheDecision) {
+  VideoStreamConfig v = Video();
+  v.fec = true;
+  v.nack = true;
+  SM_EXPECT_TRUE(!VideoFecEnabled(v));  // H.264 + NACK.
+  v.nack = false;
+  SM_EXPECT_TRUE(VideoFecEnabled(v));
+  v.nack = true;
+  v.codec = VideoCodecType::kVP8;
+  SM_EXPECT_TRUE(VideoFecEnabled(v));
+  v.fec = false;
+  SM_EXPECT_TRUE(!VideoFecEnabled(v));
+}

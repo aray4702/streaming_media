@@ -1,0 +1,9 @@
+name issue_7_no_fec_beside_nack
+describe 5% random loss, H.264 with NACK: libwebrtc (ShouldDisableRedAndUlpfec) sends no video FEC, so repair is RTX only
+duration 30s
+at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
+# libwebrtc on random_loss_5pct: repair overhead 8.7% (issue #7, parity data); ours was 46%.
+expect repair.overhead_pct < 15
+expect repair.fec_recovered == 0
+expect video.residual_loss_pct < 0.5
+expect video.longest_freeze_ms < 2500
