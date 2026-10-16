@@ -18,8 +18,8 @@ relative to that directory.
 - `n/a`: no libwebrtc counterpart or not in scope, with the reason.
 - `same`: checked and equal (listed where a reader would otherwise wonder).
 
-**Scope of this version.** Sections 3 (packet loss) and 5 (congestion
-control). Sections 4, 6, 7, 8 and the RTP session layer follow in separate
+**Scope of this version.** Sections 3 (packet loss), 4 (jitter and timing)
+and 5 (congestion control). Sections 6, 7, 8 and the RTP session layer follow in separate
 PRs; their headings are below with the state `not yet inventoried`.
 Rows were found by reading our code next to libwebrtc's. A constant listed as
 `same` was compared; a module not listed has not been compared yet. No code
@@ -92,6 +92,77 @@ Reference files: `modules/video_coding/nack_requester.*`,
 | Source rate after protection | `FecControllerDefault::UpdateFecRates` (overhead of NACK + FEC measured over the last second, capped at `kProtectionOverheadRateThreshold` 0.5) | Ported in PR #55 (measured share capped at 0.5). | port (in review) | #21 |
 | Input to the controller (`ProtectionInput`: loss, RTT, burst length, packets per frame) | `UpdateWithEncodedData` (packets per frame from the encoded size and the max payload, exponentially filtered with 0.9999 at start, separate for key frames), `SetEncodingData` (size, layers, payload size 1460 by default) | Ours takes packets per frame from the last frame; libwebrtc filters it per frame type with `ExpFilter`. The burst length input has no libwebrtc counterpart. | port | #7 |
 
+## 4. Jitter and timing
+
+Reference files: `video/timing/jitter_estimator.*`,
+`video/timing/frame_delay_variation_kalman_filter.*`,
+`video/timing/inter_frame_delay_variation_calculator.*`,
+`video/timing/rtt_filter.*`, `video/timing/timestamp_extrapolator.*`,
+`video/timing/default_video_jitter_timing.*`,
+`modules/video_coding/timing/timing.*`,
+`modules/video_coding/timing/decode_time_percentile_filter.*`,
+`modules/video_coding/packet_buffer.*`, `video/rtp_video_stream_receiver2.cc`,
+`modules/rtp_rtcp/source/receive_statistics_impl.cc`,
+`modules/audio_coding/neteq/*` (`delay_manager`, `underrun_optimizer`,
+`reorder_optimizer`, `histogram`, `decision_logic`, `delay_constraints`,
+`buffer_level_filter`, `packet_buffer`).
+
+### 4.1 Video jitter estimate (`VideoJitterEstimator`, `src/timing/video_jitter_estimator.cc`)
+
+The Kalman filter itself is the same model with the same constants. What
+differs is everything around it: which frames feed it, how the noise and the
+frame size are tracked, and how the estimate becomes a delay.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Kalman filter (`KalmanUpdate`) | `frame_delay_variation_kalman_filter.cc` | Constants **same**: initial slope `1/(512e3/8)`, covariance 1e-4 and 1e2, process noise 2.5e-10 and 1e-10, minimum slope `kMaxBandwidth` 1e-6, observation noise `(300 x exp(-abs(dS)/max_size) + 1) x sqrt(var_noise)` with a floor of 1. Cosmetic difference: ours divides by `max_frame_size + 1`; libwebrtc returns without updating when `max_frame_size < 1`. | same | #24 |
+| Frame-size statistics (`Update`) | `jitter_estimator.cc` `UpdateEstimate`: `kPhi` 0.97, `kPsi` 0.9999, `kInitialAvgAndMaxFrameSizeBytes` 500, `kFramesUntilSizeFiltering` 5 | `phi` and `psi` **same**. Different: (1) libwebrtc starts the average and the maximum at 500 bytes and sets the average to the mean of the first 5 frames; ours sets both to the first frame's size. (2) The average accepts a frame only if `size < old_avg + 2 x std`; ours tests against the *new* average and accepts every frame for the first 30. (3) libwebrtc updates the size variance on every frame (around the new average); ours only when the average was updated. (4) libwebrtc ignores a zero-size frame; ours does not. | port | #24 |
+| Which frames feed it (`RtpReceiver::AssembleFrames`, `src/rtp/rtp_receiver.cc:194`) | `default_video_jitter_timing.cc` `OnDecodableTemporalUnit`, `inter_frame_delay_variation_calculator.cc` | libwebrtc feeds the estimator when a frame becomes **decodable**, with that time, and **skips a frame that was retransmitted** (it calls `FrameNacked()` instead, which feeds the NACK term below). The calculator also drops a frame whose RTP timestamp is not newer than the previous one. Ours feeds every assembled frame with the arrival time of its last packet, retransmitted or not, and a frame with an older timestamp gives a negative RTP delta (`OnFrame`). So with reordering and repair, the delay samples include repair delay that libwebrtc leaves out. This is the first suspect for #24. | port | #24 |
+| Delay clamp and outlier rule (`Update`) | `UpdateEstimate`: `kNumStdDevDelayClamp` 3.5, `kNumStdDevDelayOutlier` 15, `kNumStdDevSizeOutlier` 3 | libwebrtc **clamps** the frame delay to +-(3.5 x sigma + 0.5 ms) before the Kalman update, and treats a sample as an outlier only if the deviation is beyond 15 sigma **and** the frame is not a positive size outlier (> avg + 3 x std); an outlier still updates the noise, clipped to +-15 sigma. Ours has no clamp; an outlier (>= 15 sigma, only after 30 frames) skips the Kalman update. | port | #24 |
+| Congestion rejection | `kCongestionRejectionFactor` -0.25 | libwebrtc skips the Kalman update when the frame is much smaller than the previous one (`delta_bytes <= -0.25 x max_frame_size`), because a delay increase after a size drop is queueing, not transmission time. Ours has no such rule. | port | #24 |
+| Noise estimate (`var_noise_`) | `EstimateRandomJitter`, `kAlphaCountMax` 400 | `alpha_count_max` **same**. Different: libwebrtc tracks the noise **mean** and takes the variance around it; ours assumes mean 0. libwebrtc also scales `alpha` by the measured frame rate (`rate_scale` = 30 fps / fps, with a ramp-in over the first 30 samples) so the time constant is the same at other frame rates; ours has a per-frame constant. The floor of 1 ms^2 is the same. | port | #24 |
+| `JitterDelay()` | `CalculateEstimate`, `GetEstimate`, `NoiseThreshold`: `kNoiseStdDevs` 2.33, `kNoiseStdDevOffset` 30 ms, `OPERATING_SYSTEM_JITTER` 10 ms, range 1 ms to 10 s | Different, and the largest constant gap: ours is `theta0 x (max - avg) + max(1, 3 x sigma - 0)`; the config comment says libwebrtc's 2.33 and 30 are "available through the config", but they are not the defaults. libwebrtc is `theta0 x (max - avg) + max(1, 2.33 x sigma - 30)`, **plus 10 ms** of OS jitter, and never lower than the value filtered after start-up (`filter_jitter_estimate_`). At 40 ms of jitter this is tens of ms of difference in the estimate before any other effect. The 10 s cap and "keep the previous estimate when below 1 ms" have no counterpart. | port | #24 |
+| NACK and RTT terms | `FrameNacked`, `UpdateRtt`, `rtt_filter.cc` (`kMaxRtt` 3 s, `kFilterFactorMax` 35, `kJumpStddev` 2.5, `kDriftStdDev` 3.5), `kNackLimit` 3, `kNackCountTimeout` 60 s, `kRttMult` 0.9, `kRttMultAddCap` 200 ms | libwebrtc adds `min(0.9 x filtered RTT, 200 ms)` to the jitter delay once 3 retransmitted frames were seen within 60 s, so a stream that depends on NACK buffers one more round trip. Ours has neither the RTT filter nor the term. | port | #24 |
+| Frame-rate scaling of the estimate | `GetEstimate`: `kJitterScaleLowThreshold` 5 Hz, `kJitterScaleHighThreshold` 10 Hz | libwebrtc returns 0 below 5 fps and scales linearly up to 10 fps; ours has no frame-rate dependence. Matters only for low-frame-rate streams. | port | #24 |
+| Median / percentile frame-size filters | `avg_frame_size_median`, `max_frame_size_percentile`, `frame_size_window` (field trial) | Off by default in libwebrtc (`std::nullopt`), so not part of the baseline. | n/a (field trial, off by default) | |
+
+### 4.2 Render timing (`VideoTiming`, same file)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Target delay (`TargetDelay`) | `VCMTiming::VideoDelayTimings::TargetDelay` = `max(min_playout_delay, minimum_delay + decode_time + render_delay)` | Same shape, and `render_delay` 10 ms is **same** (`kDefaultRenderDelay`). Different: `minimum_delay` is the jitter estimate of 4.1 (ours is larger, see above). Ours also clamps the result to a `max_playout_delay` of 10 s; libwebrtc applies the stream's playout-delay limits in `RenderTime`. | port | #24 |
+| Decode time estimate (`DecodeTimeP95`) | `decode_time_percentile_filter.cc`: percentile 0.95, `kTimeLimitMs` 10000 window, `kIgnoredSampleCount` 5 | Percentile **same** (0.95). Different: ours uses the last 64 samples (`decode_time_window`) and returns 5 ms with no samples; libwebrtc uses the samples of the last 10 s and ignores the first 5. | port | #24 |
+| Current delay (`UpdateCurrentDelay`) | `VCMTiming::UpdateCurrentDelay(render_time, actual_decode_time)` | Different mechanism. libwebrtc raises `current_delay` by the amount the frame was **late** relative to its render time (`delayed = decode_time - render_time + max_decode + render_delay`), capped at the target, and ignores a frame that is not late. Ours moves `current_delay` toward the target by at most 10% of wall time per second in both directions (`max_delay_change_per_s`), a smoothing that does not exist in libwebrtc. | port | #24 |
+| Local capture time (`IncomingTimestamp`, `LocalCaptureTime`) | `timestamp_extrapolator.cc`: 2-state recursive least squares of local time against the RTP timestamp (`kLambda` 1, `kP11` 1e10, `kStartResidualVariance` 3000^2, `kStartUpFilterDelayInPackets` 2), updated once per complete frame (`OnCompleteFrame`) and **not for retransmitted frames** | Different algorithm. Ours takes the lower envelope of `arrival - rtp_time` with a 5 us per frame leak, and also updates on retransmitted frames. libwebrtc fits a line through all frames (so it follows a clock-rate difference, and jitter averages out rather than being excluded) and resets on a large residual (`Reset`, threshold not compared). | port | #24 |
+| Low-latency rendering | `VideoDelayTimings::UseLowLatencyRendering` | If `min_playout_delay == 0` and `max_playout_delay <= 500 ms`, libwebrtc renders as soon as possible. Needs a playout-delay limit from the stream, which the harness does not send. | n/a (stream-signalled playout delay, not used in the harness) | |
+| Frame scheduling after the render time | `video_stream_buffer_controller.cc` (wait for decode, force-release of keyframes), `api/video/frame_buffer.*` | Our `FrameScheduler` (`src/video/frame_scheduler.cc`, section 7) is not compared here. | not compared | #24 |
+
+### 4.3 Video packet buffer and receive statistics
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `PacketBuffer` (`src/timing/packet_buffer.cc`) | `modules/video_coding/packet_buffer.cc` (H.264 also has `h26x_packet_buffer.cc`), `video/rtp_video_stream_receiver2.cc` `kPacketBufferStartSize` 512, `kPacketBufferMaxSize` 2048 | The window of 2048 packets matches the maximum. libwebrtc starts at 512 and doubles up to 2048 when full (at the maximum size it clears the buffer and requests a keyframe), and drops a packet more than half the buffer size behind the first sequence number; ours keeps a `std::map` window of 2048 with no growth step and drops packets 2048 behind the highest. Frame assembly: ours waits for the packet before an IDR slice that follows its parameter sets (`may_continue_frame`); libwebrtc's H.264 path handles this inside `h26x_packet_buffer.cc`, not compared in detail. | port (full-buffer behaviour and assembly rules: unplaced; compare when #23 is worked, as both feed keyframe requests) | #23 |
+| `ReceiverStatistics` jitter (`src/timing/rtcp_stats.cc`) | `receive_statistics_impl.cc` `UpdateJitter`: `jitter_q4_ += ((abs(D) << 4) - jitter_q4_ + 8) >> 4` | The RFC 3550 interarrival jitter filter (1/16) is **same**. Different: libwebrtc updates only for in-order packets with a new timestamp and skips retransmitted packets, skips jumps of more than 5 s of video clock, and adjusts when the payload frequency changes (`ReviseFrequencyAndJitter`); ours keeps the value in floating point and has none of these guards. Retransmissions do reach our statistics, so they can inflate `jitter_ms` on a lossy link. | port (guards) | unplaced |
+| `RttEstimator` | `rtcp_receiver.cc` report-block handling: `rtt = now - last_sr - delay_since_last_sr` | The measurement is **same** (compact NTP arithmetic). Ours keeps a 7/8 smoothed value and a minimum; how libwebrtc aggregates RTT for its consumers (`rtcp_receiver.cc`, `rtp_rtcp_impl2.cc`) was not read. The consumer in 4.1 is the `rtt_filter.cc` row above. | not compared (aggregation); filter: port | #24 |
+| `ClockDriftEstimator`, `RlsLineFit`, `DriftCompensator` (`src/timing/clock_drift.cc`) | `rtc_base/rtp_to_ntp_estimator.*`, `timestamp_extrapolator.cc` | Not compared yet; belongs with synchronization (section 8) and the extrapolator row in 4.2. | not compared | #63 |
+
+### 4.4 Audio jitter buffer (`AudioJitterBuffer`, `DelayManager`, `src/timing/audio_jitter_buffer.cc`, `delay_manager.cc`)
+
+NetEq is a much larger module than ours: delay estimation, a packet buffer,
+decision logic, a buffer-level filter and the DSP operations. The rows list
+the differences found in the files above. Each belongs to #62.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Target level (`DelayManager::Recompute`) | `delay_manager.cc`, `underrun_optimizer.cc`, `histogram.cc` | **Same**: 0.95 quantile, forget factor 0.983 per packet (Q15 in libwebrtc). Different: (1) libwebrtc has 100 buckets of 20 ms; ours 10 ms buckets up to 2000 ms. (2) Start-up forgetting (`start_forget_weight` 2: the histogram adapts faster for the first packets) has no counterpart. (3) libwebrtc registers the **maximum relative delay in each 500 ms interval** (`resample_interval_ms` 500), not every packet's delay. (4) Initial target 80 ms (`kStartDelayMs`) against ours 60 ms. (5) Ours rounds the target up to whole packets with a floor of one packet; libwebrtc applies `DelayConstraints` (minimum and maximum delay, and a cap of 75% of the packet buffer, `delay_constraints.cc`). (6) Relative delay: libwebrtc keeps a `PacketArrivalHistory` (`kPacketHistorySizeMs` 2000) and measures against the earliest arrival in that window; ours measures against the minimum transit in a 2 s window, a similar idea with different bookkeeping. | port | #62 |
+| Reorder optimizer | `reorder_optimizer.cc`, `use_reorder_optimizer` true, `reorder_forget_factor` 0.9993, `ms_per_loss_percent` 20 | Missing. libwebrtc weighs the cost of a late packet (loss) against extra delay and can pick a higher target than the underrun histogram gives. Ours uses only the quantile. | port | #62 |
+| Operation choice (`MaybeStretch`) | `decision_logic.cc` `ExpectedPacketAvailable`: `low_limit` = target, `high_limit` = target + max delay in the history + `kDelayAdjustmentGranularityMs` 20, fast accelerate at 4 x `high_limit`; `kPostponeDecodingLevel` 50; `kTargetLevelWindowMs` 100; `buffer_level_filter.cc` | Different thresholds. Ours accelerates above the target (or target + one packet) and expands below 75% of it, on an exponentially filtered level (0.8/0.2). libwebrtc accelerates above `target + max arrival delay + 20 ms`, expands below the target, fast-accelerates above 4 x that, and filters the level with `BufferLevelFilter` (level factor in Q8). Ours has no fast accelerate and no `TimescaleAllowed` rule. | port | #62 |
+| Concealment and merge (`plc_`, `kMerge`) | `expand.cc`, `merge.cc`, `background_noise.cc`, `normal.cc`, `comfort_noise.cc` | Different DSP. Ours uses `loss::Plc` (3.4) and a crossfade on the first good frame. libwebrtc's `Expand` builds a pitch-based extension with a background-noise fill, `Merge` re-aligns the next packet with the expanded signal by cross-correlation, and `Normal` fades the signal back in. Decay and mute ramp constants not compared. | port | #62 |
+| Time stretch (`TimeStretch`, `src/timing/time_stretch.cc`) | `time_stretch.cc`, `accelerate.cc`, `preemptive_expand.cc` | Ours is a floating-point WSOLA with `correlation_threshold` 0.75 and a -55 dBFS silence gate. libwebrtc's `TimeStretch::Process` works on a downsampled signal with a peak search and a background-noise test; its thresholds are not compared constant by constant. | port | #62 |
+| Packet buffer limits | `neteq/packet_buffer.cc` (`max_packets_in_buffer` from `NetEq::Config`; smart flush), `delay_constraints.cc` | Ours holds 100 packets and flushes all but 3 when over; libwebrtc has a configurable limit (the default is in `api/audio/neteq/neteq.h`, not in `reference/`, see the open questions), a smart flush tied to the target level, and discards old packets in the buffer. | port | #62 |
+| Comfort noise / DTX | `comfort_noise.cc`, `decision_logic.cc` `CngOperation`, `kCngTimeoutMs` 1000 | Ours has no CNG decoding in the jitter buffer. The scenarios use continuous audio, so it is not exercised. | not compared | #62 |
+| Decoder inside the buffer (Opus PLC, in-band FEC) | `neteq_impl.cc` decode loop, `audio_decoder_opus.cc` | Ours receives decoded PCM, not packets; there is no decoder in the buffer. Decoding (and Opus in-band FEC, decoder PLC) is a test bench model. See also 3.3 and 3.4. | port (model) | #62 |
+
 ## 5. Congestion control
 
 ### 5.1 Transport-wide feedback
@@ -163,8 +234,6 @@ Reference files: `modules/video_coding/nack_requester.*`,
 These areas will be added in separate PRs for #59, in this order. Their
 tables go in this file.
 
-- 4 Jitter and timing (packet buffer, RTCP statistics, delay manager, time
-  stretch, audio jitter buffer, video jitter estimator, render timing)
 - 6 Audio quality
 - 7 Video quality
 - 8 Synchronization
@@ -186,3 +255,8 @@ tables go in this file.
    For section 3: `modules/audio_coding/codecs/red/`, the Opus encoder
    wrapper and `modules/audio_coding/neteq/` are in PR #68; the rows marked
    "file needed" for them are re-checked once it merges.
+4. For section 4: `api/audio/neteq/neteq.h` (the default `max_packets_in_buffer`
+   and the other `NetEq::Config` defaults), `modules/audio_coding/neteq/packet_arrival_history.*`
+   is present, but `relative_arrival_delay_tracker.*` (named in #62) is not in
+   `reference/` and the 4.4 row on relative delay is read from
+   `packet_arrival_history.cc` and `delay_manager.cc` only. Add them through #57.
