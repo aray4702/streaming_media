@@ -114,3 +114,7 @@ modules/audio_processing/high_pass_filter.cc
 modules/audio_processing/audio_processing_impl.cc
 call/bitrate_allocator.h
 call/bitrate_allocator.cc
+rtc_base/numerics/exp_filter.h
+rtc_base/numerics/exp_filter.cc
+video/video_quality_observer2.h
+video/video_quality_observer2.cc
