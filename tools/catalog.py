@@ -579,8 +579,15 @@ ALGORITHMS = [
                "priority. SendSideController (one per transport) numbers, paces and serializes them. Padding and "
                "probes are real padding-only RTP packets. RTX of RED is retransmitted as sent, as in libwebrtc's "
                "RtxReceiveStream. Packet size is capped at 1200 bytes, libwebrtc's kVideoMtu. Interop for RTP with "
-               "MID, transport-cc and abs-send-time, RTX and padding is in compare/webrtc/rtcp_interop.cc.",
-         verification="Introduced by #32 plan PRs 3 and 5. Review notes from PR 3 (padding timestamp, padding size "
+               "MID, transport-cc and abs-send-time, RTX and padding is in compare/webrtc/rtcp_interop.cc. The encoder "
+               "budget (SendSideController::ComputeMeasuredRates) takes off the share of the last second's "
+               "non-audio bytes that was RTX or FEC, capped at 50%, exactly as libwebrtc's FecControllerDefault::"
+               "UpdateFecRates (compare/webrtc/reference/modules/video_coding/fec_controller_default.cc). There is no "
+               "retransmission rate cap, as in M157. Differences that remain: the FEC amount (#7, "
+               "FecControllerDefault's media_opt_util choice) and keyframe requests (#23); the encoder floor of 30 kbps "
+               "applies even when the audio alone exceeds the target (#37).",
+         verification="Introduced by #32 plan PRs 3 and 5. Issue #21 (partial) added the measured repair share; "
+                      "see docs/fixes/21-repair-within-target.md. Review notes from PR 3 (padding timestamp, padding size "
                       "accounting, zero-byte frames) were fixed in PR 5. Per-suite results are recorded by ctest "
                       "and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",

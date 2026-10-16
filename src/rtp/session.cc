@@ -408,9 +408,7 @@ timing::AudioOperation Session::GetAudio(AudioRecvId id, std::span<float> out, T
 SendRates Session::rates() const {
   DataRate audio = DataRate::Zero();
   for (const auto& a : audio_send_) audio = audio + a.nominal_rate;
-  double protection = 0;
-  for (const auto& v : video_send_) protection = std::max(protection, v.sender->fec_params().protection);
-  return send_.ComputeRates(audio, protection);
+  return send_.ComputeMeasuredRates(audio);
 }
 
 void Session::ExportMetrics(MetricsWriter& w) const {
