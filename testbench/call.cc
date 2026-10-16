@@ -115,7 +115,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.render_ratio_pct", "Rendered frames / encoded frames"},
       {"video.freeze_count", "Freezes: render gap > max(3 x avg frame duration, avg + 150 ms) (WebRTC freezeCount)"},
       {"video.freeze_total_ms", "Total frozen time, including a freeze still in progress at the end"},
-      {"video.longest_freeze_ms", "Longest gap between rendered frames (or call length if nothing rendered)"},
+      {"video.longest_freeze_ms", "Longest freeze or tail gap (or call length if nothing rendered); gaps of 5 s or more are pauses and are not included"},
+      {"video.pause_count", "Pauses: render gaps of 5 s or more (libwebrtc VideoQualityObserver pauses), including one still in progress at the end"},
+      {"video.pause_total_ms", "Total time in pauses: the video blackout that freeze_total_ms does not count"},
       {"video.e2e_delay_p50_ms", "Median capture -> render delay"},
       {"video.e2e_delay_p95_ms", "95th percentile capture -> render delay"},
       {"video.delay_encode_ms", "Mean capture -> frame handed to the sender (the bench's encoder is instantaneous, so 0)"},
@@ -666,6 +668,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     double freeze_total = fz.total_freezes_ms;
     double longest = fz.freeze_ms.count() ? fz.freeze_ms.max() : 0;
     double frame_ms = 1000.0 / s.video_fps;
+    // Pauses as libwebrtc's VideoQualityObserver counts them: a gap of 5 s or more is
+    // a pause, not a freeze. One still in progress at the end of the call is counted
+    // too, so a blackout that lasts to the end is visible.
+    double pause_count = static_cast<double>(fz.pause_count);
+    double pause_total = fz.total_pauses_ms;
     if (!last_render.IsFinite()) {
       freeze_count = 1;
       freeze_total = longest = static_cast<double>(end_ms);
@@ -677,6 +684,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         freeze_total += tail;
       }
       longest = std::max(longest, tail);
+      if (tail >= 5000) {
+        pause_count += 1;
+        pause_total += tail;
+      }
     }
     // Longest render gap also counts gaps below the freeze threshold.
     m["video.frames_rendered"] = static_cast<double>(frames_rendered);
@@ -685,6 +696,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.freeze_count"] = freeze_count;
     m["video.freeze_total_ms"] = freeze_total;
     m["video.longest_freeze_ms"] = longest;
+    m["video.pause_count"] = pause_count;
+    m["video.pause_total_ms"] = pause_total;
     m["video.e2e_delay_p50_ms"] = Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = Percentile(video_e2e, 95);
     {

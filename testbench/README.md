@@ -150,7 +150,9 @@ Link keys (any subset; unset keys keep their previous value):
   `stretch_pct`, `late_discards`, `time_to_first_ms`.
 - **Video:** `freeze_count`, `freeze_total_ms` and `longest_freeze_ms`
   (WebRTC freeze definition, including a freeze still in progress at the
-  end), `render_fps`, `render_ratio_pct`, `e2e_delay_p50/p95_ms` (capture
+  end), `pause_count` and `pause_total_ms` (render gaps of 5 s or more,
+  which libwebrtc's `VideoQualityObserver` counts as pauses, not freezes;
+  a pause still in progress at the end is included), `render_fps`, `render_ratio_pct`, `e2e_delay_p50/p95_ms` (capture
   to render), `time_to_first_frame_ms`, `avg_kbps`, `keyframes`,
   `keyframe_requests`, `encoder_dropped`, `undecodable_frames`,
   `residual_loss_pct`.

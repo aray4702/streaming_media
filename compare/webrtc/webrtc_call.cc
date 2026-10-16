@@ -781,6 +781,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     double freeze_total = fz.total_freezes_ms;
     double longest = fz.freeze_ms.count() ? fz.freeze_ms.max() : 0;
     double frame_ms = 1000.0 / s.video_fps;
+    // Pauses as libwebrtc's VideoQualityObserver counts them: a gap of 5 s or more is
+    // a pause, not a freeze. One still in progress at the end of the call is counted
+    // too, so a blackout that lasts to the end is visible.
+    double pause_count = static_cast<double>(fz.pause_count);
+    double pause_total = fz.total_pauses_ms;
     if (!last_render.IsFinite()) {
       freeze_count = 1;
       freeze_total = longest = static_cast<double>(end_ms);
@@ -791,6 +796,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         freeze_total += tail;
       }
       longest = std::max(longest, tail);
+      if (tail >= 5000) {
+        pause_count += 1;
+        pause_total += tail;
+      }
     }
     m["video.frames_rendered"] = static_cast<double>(frames_rendered);
     m["video.render_fps"] = static_cast<double>(frames_rendered) / s.duration.seconds();
@@ -799,6 +808,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.freeze_count"] = freeze_count;
     m["video.freeze_total_ms"] = freeze_total;
     m["video.longest_freeze_ms"] = longest;
+    m["video.pause_count"] = pause_count;
+    m["video.pause_total_ms"] = pause_total;
     m["video.e2e_delay_p50_ms"] = testbench::Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = testbench::Percentile(video_e2e, 95);
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
