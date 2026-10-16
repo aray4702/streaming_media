@@ -1,5 +1,5 @@
 name pacer_v2_capacity_drop
-describe capacity_drop with the libwebrtc PacingController (pacer v2, #70): the comparison stays reproducible
+describe capacity_drop with the libwebrtc PacingController (pacer v2): the comparison stays reproducible
 duration 40s
 pacer v2
 at 0s  capacity=2500kbps delay=30ms queue=400ms

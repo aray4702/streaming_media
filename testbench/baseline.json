@@ -721,7 +721,7 @@
   "scenario": "outage_3s"
  },
  {
-  "description": "capacity_drop with the libwebrtc PacingController (pacer v2,",
+  "description": "capacity_drop with the libwebrtc PacingController (pacer v2): the comparison stays reproducible",
   "metrics": {
    "audio.concealed_pct": 1.351,
    "audio.interruption_ms": 0,
