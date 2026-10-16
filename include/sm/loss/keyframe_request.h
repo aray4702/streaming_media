@@ -50,12 +50,17 @@ struct KeyframeRequestConfig {
   TimeDelta min_request_interval = TimeDelta::Millis(100);
   double request_rtt_factor = 1.5;                   // Throttle = max(min, rtt*f).
   bool send_lntf = true;
-  // Version 2 only. The decode time-out (VideoStreamBufferController's
-  // time-out tracker and VideoReceiveStream2::OnDecodableFrameTimeout) is NOT
-  // in compare/webrtc/reference/. The values are libwebrtc's defaults as
-  // remembered (200 ms before the first keyframe, 3 s afterwards, a stream
-  // with no packet for 5 s is idle) and must be checked when the file is added
-  // (#57).
+  // Version 2 only. The decode time-out, from compare/webrtc/reference/video/
+  // (added by PR #95):
+  //  - video_receive_stream2.h kMaxWaitForKeyFrame 200 ms and kMaxWaitForFrame
+  //    3 s (DetermineMaxWaitForFrame keeps them while the NACK history is the
+  //    default 1000 ms: 3 x 1000 ms is not below kMaxWaitForFrame);
+  //  - video_receive_stream_timeout_tracker.cc: the wait is the keyframe one
+  //    until the first frame is released, then the frame one, and it re-arms
+  //    for another wait after each firing (HandleTimeoutTask);
+  //  - video_receive_stream2.cc OnDecodableFrameTimeout: no request when no
+  //    packet came for kInactiveDuration (5 s) or while a keyframe packet
+  //    arrived within max_wait_for_keyframe (IsReceivingKeyFrame).
   TimeDelta max_wait_for_keyframe = TimeDelta::Millis(200);
   TimeDelta max_wait_for_frame = TimeDelta::Seconds(3);
   TimeDelta stream_inactive_after = TimeDelta::Seconds(5);
