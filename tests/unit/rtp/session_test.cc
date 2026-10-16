@@ -373,3 +373,38 @@ SM_TEST(Session, VideoFecEnabledFollowsTheDecision) {
   v.fec = false;
   SM_EXPECT_TRUE(!VideoFecEnabled(v));
 }
+
+namespace {
+// `a` sends one audio frame every 20 ms to a receive-only `b`; returns how many
+// transport-cc messages `b` built in 2 s.
+uint64_t FeedbacksIn2s(int version, DataRate start_rate) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  cb.transport_feedback_version = version;
+  cb.send_side.gcc.start_rate = start_rate;
+  Session a(ca), b(cb);
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  auto a_audio = a.AddAudioSend(au);
+  b.AddAudioReceive(au, &dec);
+  Bytes frame(60, 7);
+  for (int64_t t = 0; t < 2000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) a.SendAudio(a_audio, {960, frame, false}, now);
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    b.TakeOutgoing();
+  }
+  return b.transport_feedback().stats().feedbacks;
+}
+}  // namespace
+
+SM_TEST(Session, TransportFeedbackV2IntervalFollowsTheLocalSendEstimate) {
+  const uint64_t v1 = FeedbacksIn2s(1, DataRate::KilobitsPerSec(300));
+  const uint64_t fast = FeedbacksIn2s(2, DataRate::KilobitsPerSec(300));  // 50 ms.
+  const uint64_t slow = FeedbacksIn2s(2, DataRate::KilobitsPerSec(40));   // 250 ms.
+  SM_EXPECT_NEAR(static_cast<double>(v1), 40, 2);
+  SM_EXPECT_NEAR(static_cast<double>(fast), 40, 2);
+  SM_EXPECT_NEAR(static_cast<double>(slow), 8, 2);
+}

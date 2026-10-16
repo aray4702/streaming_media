@@ -283,6 +283,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "keyframe") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: keyframe v1|v2");
       s.keyframe_v2 = tok[1] == "v2";
+    } else if (key == "tcc") {
+      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: tcc v1|v2");
+      s.tcc_v2 = tok[1] == "v2";
     } else if (key == "pacer") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: pacer v1|v2");
       s.pacer_v2 = tok[1] == "v2";
@@ -367,6 +370,7 @@ std::string FormatScenario(const Scenario& s) {
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
+  if (s.tcc_v2 != d.tcc_v2) o += std::string("tcc ") + (s.tcc_v2 ? "v2" : "v1") + "\n";
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";

@@ -91,3 +91,136 @@ SM_TEST(TransportFeedback, RembRoundTrip) {
   SM_EXPECT_EQ(r->second.size(), 2u);
   SM_EXPECT_EQ(r->second[1], 22u);
 }
+
+// --- Version 2: libwebrtc's TransportSequenceNumberFeedbackGenenerator ---------
+// Ported from modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator_unittest.cc.
+
+namespace {
+constexpr uint16_t kBaseSeq = 10;
+const Timestamp kBaseTime = Timestamp::Millis(123);
+
+TransportFeedbackBuilder V2() { return TransportFeedbackBuilder(1, 456, FeedbackBuilderConfig{2}); }
+
+std::vector<int64_t> Seqs(const TransportFeedback& fb) {
+  std::vector<int64_t> v;
+  for (const auto& a : fb.ArrivalTimes()) v.push_back(a.first);
+  return v;
+}
+// Arrival times are quantised to 250 us ticks; the tests use whole ms.
+std::vector<int64_t> TimesMs(const TransportFeedback& fb) {
+  std::vector<int64_t> v;
+  for (const auto& a : fb.ArrivalTimes()) v.push_back(a.second.ms());
+  return v;
+}
+}  // namespace
+
+SM_TEST(TransportFeedbackV2, SinglePacketAndDuplicate) {
+  auto b = V2();
+  b.OnPacket(kBaseSeq, kBaseTime);
+  b.OnPacket(kBaseSeq, kBaseTime + TimeDelta::Seconds(1));  // Only the first arrival counts.
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].base_seq, kBaseSeq);
+  SM_EXPECT_EQ(f[0].media_ssrc, 456u);
+  SM_EXPECT_EQ(Seqs(f[0]).size(), 1u);
+  SM_EXPECT_EQ(TimesMs(f[0])[0], 123);
+}
+
+SM_TEST(TransportFeedbackV2, MissingStartAndNothingNewIsNotReported) {
+  auto b = V2();
+  b.OnPacket(kBaseSeq, kBaseTime);
+  b.OnPacket(kBaseSeq + 1, kBaseTime + TimeDelta::Seconds(1));
+  SM_EXPECT_EQ(b.Build().size(), 1u);
+  SM_EXPECT_TRUE(b.Build().empty());
+  b.OnPacket(kBaseSeq + 3, kBaseTime + TimeDelta::Seconds(3));  // kBaseSeq + 2 is missing.
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].base_seq, kBaseSeq + 2);
+  SM_ASSERT_EQ(Seqs(f[0]).size(), 1u);
+  SM_EXPECT_EQ(Seqs(f[0])[0], kBaseSeq + 3);
+  SM_EXPECT_EQ(f[0].packets.size(), 2u);  // The missing one and the received one.
+  SM_EXPECT_EQ(TimesMs(f[0])[0], 3123);
+}
+
+SM_TEST(TransportFeedbackV2, FragmentsWhenDeltaIsTooLarge) {
+  auto b = V2();
+  b.OnPacket(kBaseSeq, kBaseTime);
+  b.OnPacket(kBaseSeq + 1, kBaseTime + TimeDelta::Micros(250 * (1 << 16)));
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 2u);
+  SM_EXPECT_EQ(f[0].base_seq, kBaseSeq);
+  SM_EXPECT_EQ(Seqs(f[0]).size(), 1u);
+  SM_EXPECT_EQ(f[1].base_seq, kBaseSeq + 1);
+  SM_EXPECT_EQ(Seqs(f[1]).size(), 1u);
+}
+
+SM_TEST(TransportFeedbackV2, ReorderingAcrossTheWrap) {
+  auto b = V2();
+  b.OnPacket(kBaseSeq, kBaseTime);
+  b.OnPacket(62762, kBaseTime + TimeDelta::Seconds(1));  // Unwraps to before kBaseSeq.
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].base_seq, 62762);
+  SM_EXPECT_EQ(TimesMs(f[0])[0], 1123);
+  SM_EXPECT_EQ(TimesMs(f[0])[1], 123);
+}
+
+SM_TEST(TransportFeedbackV2, MalformedJumpsReportOnlyTheLastPackets) {
+  auto b = V2();
+  for (int i = 0; i < 10; ++i) {
+    b.OnPacket(static_cast<uint16_t>(kBaseSeq + i), kBaseTime + TimeDelta::Seconds(3 * i));
+    b.OnPacket(static_cast<uint16_t>(kBaseSeq + 20000 + i), kBaseTime + TimeDelta::Seconds(3 * i + 1));
+    b.OnPacket(static_cast<uint16_t>(kBaseSeq + 40000 + i), kBaseTime + TimeDelta::Seconds(3 * i + 2));
+  }
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_ASSERT_EQ(Seqs(f[0]).size(), 2u);
+  SM_EXPECT_EQ(static_cast<uint16_t>(Seqs(f[0])[0]), kBaseSeq + 20009);
+  SM_EXPECT_EQ(static_cast<uint16_t>(Seqs(f[0])[1]), kBaseSeq + 40009);
+  SM_EXPECT_EQ(TimesMs(f[0])[0], 123 + 28000);
+  SM_EXPECT_EQ(TimesMs(f[0])[1], 123 + 29000);
+}
+
+SM_TEST(TransportFeedbackV2, LateArrivalIsReportedAgainWithTheBackWindow) {
+  auto b = V2();
+  b.OnPacket(1, Timestamp::Millis(10));
+  b.OnPacket(3, Timestamp::Millis(12));
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].packets.size(), 3u);  // 1 received, 2 missing, 3 received.
+  // 2 arrives after the report: the window start moves back, and the next
+  // message covers 2 and 3 (3 is reported again, as libwebrtc does).
+  b.OnPacket(2, Timestamp::Millis(30));
+  f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].base_seq, 2);
+  SM_EXPECT_EQ(Seqs(f[0]).size(), 2u);
+  SM_EXPECT_EQ(b.stats().re_reported, 2u);  // 2 (late, not reported before) and 3 are below the previous report's end.
+  SM_EXPECT_TRUE(b.Build().empty());
+}
+
+SM_TEST(TransportFeedbackV2, OldArrivalsAreCulledAfterTheBackWindow) {
+  auto b = V2();
+  b.OnPacket(1, Timestamp::Millis(1000));
+  SM_EXPECT_EQ(b.Build().size(), 1u);
+  // 600 ms later the window start has caught up, so 1 is dropped when 2 arrives;
+  // a packet reordered before 2 and older than the window is then a fresh report.
+  b.OnPacket(2, Timestamp::Millis(1600));
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].base_seq, 2);
+  SM_EXPECT_EQ(Seqs(f[0]).size(), 1u);
+}
+
+SM_TEST(TransportFeedbackV2, IntervalFollowsFivePercentOfTheEstimate) {
+  auto b = V2();
+  SM_EXPECT_EQ(b.Interval().ms(), 100);  // Unknown estimate.
+  b.OnSendBandwidthEstimateChanged(DataRate::BitsPerSec(300000));
+  SM_EXPECT_EQ(b.Interval().ms(), 50);
+  b.OnSendBandwidthEstimateChanged(DataRate::BitsPerSec(0));
+  SM_EXPECT_EQ(b.Interval().ms(), 250);
+  b.OnSendBandwidthEstimateChanged(DataRate::BitsPerSec(20000));
+  SM_EXPECT_EQ(b.Interval().ms(), 250);
+  b.OnSendBandwidthEstimateChanged(DataRate::BitsPerSec(80000));
+  SM_EXPECT_EQ(b.Interval().ms(), 136);  // 68 B * 8 / (0.05 * 80 kbit/s).
+}

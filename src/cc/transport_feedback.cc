@@ -171,9 +171,77 @@ std::optional<std::pair<DataRate, std::vector<uint32_t>>> ParseRemb(std::span<co
 
 // --- TransportFeedbackBuilder ---------------------------------------------------
 
+namespace {
+// libwebrtc PacketArrivalTimeMap::kMaxNumberOfPackets and the generator's constants.
+constexpr int64_t kMaxNumberOfPackets = 1 << 15;
+constexpr TimeDelta kBackWindow = TimeDelta::Millis(500);
+constexpr TimeDelta kMinInterval = TimeDelta::Millis(50);
+constexpr TimeDelta kMaxInterval = TimeDelta::Millis(250);
+constexpr int64_t kMaxMissingSequenceNumbers = 0x7FFE;
+// kTwccReportSize: IPv4 20 + UDP 8 + SRTP 10 + average report 30 bytes.
+constexpr int64_t kTwccReportBytes = 20 + 8 + 10 + 30;
+}  // namespace
+
+void TransportFeedbackBuilder::AddArrival(int64_t s, Timestamp arrival) {
+  if (!seen_) {
+    seen_ = true;
+    arrivals_.clear();
+    begin_ = s;
+    end_ = s + 1;
+  } else if (s >= begin_ && s < end_) {
+    // Inside the span.
+  } else if (s < begin_) {
+    if (end_ - s > kMaxNumberOfPackets) return;  // Would drop newer packets.
+    begin_ = s;
+  } else {
+    const int64_t new_end = s + 1;
+    if (new_end >= end_ + kMaxNumberOfPackets) {
+      arrivals_.clear();
+      begin_ = s;
+    } else if (begin_ < new_end - kMaxNumberOfPackets) {
+      begin_ = new_end - kMaxNumberOfPackets;
+      arrivals_.erase(arrivals_.begin(), arrivals_.lower_bound(begin_));
+    }
+    end_ = new_end;
+  }
+  arrivals_[s] = arrival;
+}
+
+void TransportFeedbackBuilder::RemoveOldPackets(int64_t seq, Timestamp limit) {
+  const int64_t check_to = std::min(seq, end_);
+  while (begin_ < check_to) {
+    auto it = arrivals_.find(begin_);
+    if (it != arrivals_.end() && it->second > limit) break;  // A missing slot counts as old.
+    ++begin_;
+  }
+  arrivals_.erase(arrivals_.begin(), arrivals_.lower_bound(begin_));
+}
+
+void TransportFeedbackBuilder::OnSendBandwidthEstimateChanged(DataRate estimate) {
+  // Let the reports use 5% of the send estimate; kMinTwccRate = report size / kMaxInterval.
+  const int64_t twcc_bps = estimate.bps() / 20;
+  const int64_t min_twcc_bps = kTwccReportBytes * 8 * 1000000 / kMaxInterval.us();
+  if (twcc_bps <= min_twcc_bps) {
+    send_interval_ = kMaxInterval;
+  } else {
+    send_interval_ = std::max(TimeDelta::Micros(kTwccReportBytes * 8 * 1000000 / twcc_bps), kMinInterval);
+  }
+}
+
 void TransportFeedbackBuilder::OnPacket(uint16_t seq, Timestamp arrival) {
   int64_t s = unwrapper_.Unwrap(seq);
   ++stats_.packets;
+  if (cfg_.version >= 2) {
+    // MaybeCullOldPackets: when the window start has caught up with the end.
+    if (window_start_ && *window_start_ >= end_ && arrival.us() >= kBackWindow.us()) {
+      RemoveOldPackets(s, arrival - kBackWindow);
+    }
+    if (!window_start_ || s < *window_start_) window_start_ = s;
+    if (seen_ && s >= begin_ && s < end_ && arrivals_.count(s)) return;  // Only the first arrival counts.
+    AddArrival(s, arrival);
+    if (*window_start_ < begin_) window_start_ = begin_;
+    return;
+  }
   if (next_to_report_ != INT64_MIN && s < next_to_report_) {
     ++stats_.late_after_report;
     return;
@@ -181,7 +249,63 @@ void TransportFeedbackBuilder::OnPacket(uint16_t seq, Timestamp arrival) {
   arrivals_.emplace(s, arrival);
 }
 
+// SendPeriodicFeedbacks + MaybeBuildFeedbackPacket. Arrivals stay in the map
+// after a report; the window start says where the next report begins.
+std::vector<TransportFeedback> TransportFeedbackBuilder::BuildV2() {
+  std::vector<TransportFeedback> out;
+  if (!window_start_) return out;
+  const int64_t end = end_;
+  while (*window_start_ < end) {
+    const int64_t begin = *window_start_;
+    int64_t seq = std::clamp(begin, begin_, end_);
+    const int64_t end_seq = std::clamp(end, begin_, end_);
+    TransportFeedback fb;
+    bool started = false;
+    int64_t next = begin;
+    int64_t prev_us = 0;
+    for (auto it = arrivals_.lower_bound(seq); it != arrivals_.end() && it->first < end_seq; ++it) {
+      const int64_t s = it->first;
+      int64_t ticks = 0;
+      if (!started) {
+        // The base is the expected first sequence number; the reference time is the first arrival's.
+        next = std::max(begin, s - kMaxMissingSequenceNumbers);
+        fb.sender_ssrc = sender_ssrc_;
+        fb.media_ssrc = media_ssrc_;
+        fb.base_seq = static_cast<uint16_t>(next);
+        fb.feedback_count = fb_count_++;
+        const int64_t ref_units = it->second.us() / kRefUnitUs;
+        fb.reference_time = static_cast<int32_t>(ref_units & 0x7FFFFF);
+        prev_us = ref_units * kRefUnitUs;
+        started = true;
+      }
+      ticks = (it->second.us() - prev_us) / kTickUs;
+      // A message that cannot take another packet ends; the rest goes in the next one.
+      if (!fb.packets.empty() && (ticks < -32768 || ticks > 32767 || fb.packets.size() + static_cast<size_t>(s - next) + 1 > 0xFFFF)) break;
+      for (int64_t m = next; m < s; ++m) {
+        TransportFeedback::Packet p;
+        p.seq = static_cast<uint16_t>(m);
+        fb.packets.push_back(p);
+      }
+      TransportFeedback::Packet p;
+      p.seq = static_cast<uint16_t>(s);
+      p.received = true;
+      p.delta_ticks = ticks;
+      prev_us += ticks * kTickUs;
+      fb.packets.push_back(p);
+      if (s < reported_high_) ++stats_.re_reported;
+      next = s + 1;
+    }
+    if (!started) break;
+    reported_high_ = std::max(reported_high_, next);
+    window_start_ = next;
+    out.push_back(std::move(fb));
+    ++stats_.feedbacks;
+  }
+  return out;
+}
+
 std::vector<TransportFeedback> TransportFeedbackBuilder::Build() {
+  if (cfg_.version >= 2) return BuildV2();
   std::vector<TransportFeedback> out;
   if (arrivals_.empty()) return out;
   int64_t base = next_to_report_ == INT64_MIN ? arrivals_.begin()->first : next_to_report_;
@@ -228,6 +352,7 @@ void TransportFeedbackBuilder::ExportMetrics(MetricsWriter& w) const {
   w.Counter("packets", stats_.packets);
   w.Counter("late_after_report", stats_.late_after_report);
   w.Counter("feedbacks", stats_.feedbacks);
+  w.Counter("re_reported", stats_.re_reported);
 }
 
 // --- SendHistory --------------------------------------------------------------------
