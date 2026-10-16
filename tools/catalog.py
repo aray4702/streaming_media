@@ -323,7 +323,10 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
                "bucket and the pending keyframe bytes are capped at 1.5 s of the target rate (libwebrtc's "
-               "FrameDropper::CapAccumulator, which caps at 3 s).",
+               "FrameDropper::CapAccumulator, which caps at 3 s). The session layer's rtp::VideoSendController "
+               "(issue #37, docs/design/send-controller.md) drives it per captured frame; it keeps the "
+               "test bench's exemption of keyframes from the dropper, which libwebrtc does not have (deviation, "
+               "removed by #5).",
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframes bypass ShouldDrop() "
                       "but their bytes entered an uncapped bucket, so a run of keyframe requests made the dropper "
                       "drop every delta frame for seconds; the cap fixes it."),

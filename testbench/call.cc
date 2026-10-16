@@ -19,9 +19,9 @@
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
+#include "sm/rtp/video_send_controller.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
-#include "sm/cc/frame_dropper.h"
 #include "sm/video/freeze_detector.h"
 
 namespace sm::testbench {
@@ -359,7 +359,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
 
   // The encoder side: the frame dropper and the FEC protection decision.
-  cc::FrameDropper dropper;
+  rtp::VideoSendControllerConfig vsc_cfg;
+  vsc_cfg.keyframe_interval = s.keyframe_interval;
+  vsc_cfg.fps = s.video_fps;
+  rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;
   loss::ProtectionController protection(prot_cfg);
@@ -370,7 +373,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   registry.Register("sender.pacer", &sender.send_side().pacer());
   registry.Register("sender.outage", &sender.send_side().outage());
   registry.Register("sender.rtcp", &sender.rtcp());
-  registry.Register("sender.frame_dropper", &dropper);
+  registry.Register("sender.frame_dropper", &video_ctl.frame_dropper());
   registry.Register("sender.protection", &protection);
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
@@ -395,10 +398,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
 
   // --- State ----------------------------------------------------------------
-  bool video_paused = false, keyframe_needed = true;
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
-  Timestamp last_keyframe = Timestamp::MinusInfinity();
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
@@ -463,25 +464,19 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     if (s.video && t >= next_frame_ms) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
-      DataRate vr = sender.rates().video_target;
-      dropper.SetRates(vr, s.video_fps);
-      bool periodic = s.keyframe_interval.us() > 0 && now - last_keyframe >= s.keyframe_interval;
-      bool key = keyframe_needed || periodic;
-      // Congestion-window pushback drops captured frames before anything else
-      // (libwebrtc VideoStreamEncoder::OnFrame), keyframes included.
-      if (video_paused || sender.send_side().DropCapturedFrame() || (!key && dropper.ShouldDrop())) {
+      // The library decides: encode or drop, keyframe or not, and the rate.
+      const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({}, now);
+      const DataRate vr = dec.target;
+      const bool key = dec.keyframe;
+      if (!dec.encode) {
         ++frames_skipped;
       } else {
         ++frames_encoded;
         double per_frame = static_cast<double>(vr.bps()) / 8 / s.video_fps;
         int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
         bytes = std::max<int64_t>(bytes, 200);
-        dropper.OnEncodedFrame(DataSize::Bytes(bytes), key);
-        if (key) {
-          keyframe_needed = false;
-          last_keyframe = now;
-          ++keyframes_sent;
-        }
+        video_ctl.OnEncoded({DataSize::Bytes(bytes), key}, now);
+        if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
         frame_capture[rtp_ts] = now;
@@ -586,14 +581,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // --- Sender: feedback -----------------------------------------------------
     reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
     for (const auto& e : sender.TakeEvents()) {
+      video_ctl.OnSessionEvent(e);
       switch (e.type) {
         case rtp::SessionEventType::kKeyframeRequested:
           // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
           if (e.ssrc != 0) ++keyframe_requests;
-          keyframe_needed = true;
           break;
-        case rtp::SessionEventType::kEncoderPause: video_paused = true; break;
-        case rtp::SessionEventType::kEncoderResume: video_paused = false; break;
+        case rtp::SessionEventType::kEncoderPause:
+        case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
         case rtp::SessionEventType::kRttUpdated:
           rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
           break;

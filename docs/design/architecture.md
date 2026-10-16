@@ -116,8 +116,23 @@ does this wiring: an app passes encoded frames and datagram bytes to an
 (`testbench/call.cc`, see its README) both run two sessions over the
 network emulator, and every packet crosses the emulated link as bytes. The
 bench keeps only what the library leaves to the app: media sources, the
-encoder model with its frame dropper, the audio device, measurement and
-the link emulation.
+encoder model (which asks `rtp::VideoSendController` per captured frame
+whether to encode, whether to make a keyframe and at what rate, and reports
+the encoded size back), the audio device, measurement and the link emulation.
+The app's encoder loop is:
+
+```cpp
+rtp::VideoSendController ctl(cfg, session);          // one per video stream
+// per captured frame
+auto d = ctl.OnCapturedFrame({w, h}, now);           // encode or drop, keyframe, target
+if (d.encode) {
+  auto frame = encoder.Encode(picture, d.keyframe, d.target);
+  ctl.OnEncoded({frame.size, d.keyframe}, now);
+  session.SendVideo(stream, {rtp_ts, frame.data}, now);
+}
+// with the session events
+for (auto& e : session.TakeEvents()) ctl.OnSessionEvent(e);   // pause, resume, PLI/FIR
+```
 
 ## What is out of scope
 

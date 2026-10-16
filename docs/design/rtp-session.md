@@ -303,16 +303,18 @@ other modules (no ABI promise, source-compatible within a major version).
 | `cc::TransportFeedbackBuilder` | Session | One per transport (transport-wide sequence numbers span audio and video). |
 | `sync::RtpDemuxer`, `ExtensionMap` | Session | |
 | `timing::AudioJitterBuffer`, `VideoJitterEstimator`, `VideoTiming`, `video::FrameScheduler` | `RtpReceiver` | |
-| `cc::FrameDropper`, `video::QualityScaler`, adaptation, `bitrate_allocator` | **App** (encoder side) | libwebrtc keeps these in `VideoStreamEncoder`; the session only publishes the rates (`rates()`), as `BitrateAllocator` publishes to encoders. The test bench's encoder model owns a `FrameDropper`, as `call.cc` does now. |
+| `cc::FrameDropper` | Library (`rtp::VideoSendController`) | libwebrtc keeps it in `VideoStreamEncoder`; the controller (one per video stream, [send-controller.md](send-controller.md)) reads the session's `rates()` and decides encode or drop, keyframe, and target per captured frame. |
+| `video::QualityScaler`, adaptation, `bitrate_allocator` | **App** (encoder side), until wired into the controller | Not yet used by the controller or the test bench (#37 follow-up; no QP model). |
 | Encoder, decoder, audio device, socket, SRTP, SDP, ICE | **App / host stack** | |
 
 ### 5.2 Where the app's decisions meet the session
 
 - **Encoder.** Each frame the app reads `rates().video_target` (target minus
   audio, minus protection overhead; the `video_rate()` lambda in `call.cc`
-  becomes library code), asks its own `FrameDropper` whether to encode, and on
-  `kKeyframeRequested` (or periodic policy) emits an IDR. `kEncoderPause` /
-  `kEncoderResume` carry the outage monitor's actions.
+  becomes library code), asks `VideoSendController::OnCapturedFrame()` whether to encode (it
+  runs the frame dropper, the pushback drop and the keyframe policy), and
+  forwards the session events to `OnSessionEvent()`: `kKeyframeRequested`
+  and `kEncoderPause` / `kEncoderResume` (the outage monitor's actions).
 - **Decoder.** The app feeds `ReceivedVideoFrame::data` to the decoder at
   `render_time` and reports decode failures with
   `Session::OnDecodeFailure(VideoRecvId, now)`, which calls

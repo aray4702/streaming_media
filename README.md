@@ -244,9 +244,11 @@ docs/                                                    research, design, algor
   size, with no real picture or sound behind it.
 - **Send-side adaptation in the library:** frame dropping, quality
   scaling and rate allocation are part of the library too, so the app only
-  runs its encoder and decoder. Planned ([#37](https://github.com/aray4702/streaming_media/issues/37)): the frame dropper,
-  quality scaler and resolution adaptation exist as building blocks, but
-  the session doesn't use them yet.
+  runs its encoder and decoder. Done so far ([#37](https://github.com/aray4702/streaming_media/issues/37)):
+  `rtp::VideoSendController` runs the frame dropper, keyframe policy and
+  pause per captured frame (the encoder loop is in
+  [architecture.md](docs/design/architecture.md)); the quality scaler and
+  resolution adaptation exist as building blocks but aren't wired in yet.
 - **Call topology:** one-to-one calls only. The SFU and multiparty pieces
   (layer selection, active speaker detection, the audio mixer) have been
   removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
