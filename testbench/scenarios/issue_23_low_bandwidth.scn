@@ -7,3 +7,7 @@ keyframe v2
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 expect video.keyframe_requests <= 2
+# Freezes under v2 (seeds 1-5 worst case 5855 ms total, 4160 ms longest) are WORSE than v1 and than libwebrtc; the expect lines below lock the level reached so
+# it cannot get worse. Target (issue #23): not above v1 (longest freeze ~500), libwebrtc: 12936 total / 3279 longest. Needs the Owner's sign-off (PR label needs-human).
+expect video.freeze_total_ms < 6500
+expect video.longest_freeze_ms < 4500

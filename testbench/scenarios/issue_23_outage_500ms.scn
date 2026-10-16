@@ -11,3 +11,7 @@ reverse at 0s delay=20ms
 reverse at 10s down
 reverse at 10.5s up
 expect video.keyframe_requests <= 2
+# Freezes under v2 (seeds 1-5 worst case 2075 ms total, 1467 ms longest) are WORSE than v1 and than libwebrtc; the expect lines below lock the level reached so
+# it cannot get worse. Target (issue #23): not above v1 (longest freeze unmeasured on v1 here), libwebrtc: unmeasured. Needs the Owner's sign-off (PR label needs-human).
+expect video.freeze_total_ms < 2500
+expect video.longest_freeze_ms < 1800
