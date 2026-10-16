@@ -22,6 +22,13 @@ DIRS=(
   video/timing
   modules/audio_coding/neteq
   modules/audio_coding/codecs/red
+  modules/audio_processing/aec3
+  modules/audio_processing/ns
+  modules/audio_processing/agc2
+  modules/audio_processing/vad
+  modules/audio_processing/transient
+  common_audio/vad
+  common_audio/resampler
 )
 
 for d in "${DIRS[@]}"; do

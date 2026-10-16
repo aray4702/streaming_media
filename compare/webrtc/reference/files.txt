@@ -93,3 +93,22 @@ api/video/frame_buffer.cc
 video/video_stream_buffer_controller.h
 video/video_stream_buffer_controller.cc
 media/engine/webrtc_video_engine.cc
+# Added after #59's inventory: call glue, sync groups, capture time, demuxer, RTP packet, feedback adapter, APM top level.
+call/call.cc
+call/syncable.h
+call/rtp_demuxer.h
+call/rtp_demuxer.cc
+modules/rtp_rtcp/source/absolute_capture_time_sender.h
+modules/rtp_rtcp/source/absolute_capture_time_sender.cc
+modules/rtp_rtcp/source/absolute_capture_time_interpolator.h
+modules/rtp_rtcp/source/absolute_capture_time_interpolator.cc
+modules/rtp_rtcp/source/capture_clock_offset_updater.h
+modules/rtp_rtcp/source/capture_clock_offset_updater.cc
+modules/rtp_rtcp/source/rtp_packet.h
+modules/rtp_rtcp/source/rtp_packet.cc
+modules/rtp_rtcp/source/rtp_header_extension_map.cc
+modules/congestion_controller/rtp/transport_feedback_adapter.h
+modules/congestion_controller/rtp/transport_feedback_adapter.cc
+modules/audio_processing/high_pass_filter.h
+modules/audio_processing/high_pass_filter.cc
+modules/audio_processing/audio_processing_impl.cc
