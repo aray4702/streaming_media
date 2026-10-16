@@ -33,4 +33,7 @@ webrtc.googlesource.com.
 | Audio send path, Opus config, audio RED | `audio/audio_send_stream.*`, `modules/audio_coding/codecs/opus/audio_encoder_opus.*`, `modules/audio_coding/codecs/red/` | test bench audio model, `src/loss/red.cc` |
 | A/V sync | `video/stream_synchronization.*`, `video/rtp_streams_synchronizer2.*`, `modules/rtp_rtcp/source/remote_ntp_time_estimator.cc`, `rtc_base/rtp_to_ntp_estimator.*`, `ntp_time_util.*` | `src/sync/` |
 | Video engine defaults | `media/engine/webrtc_video_engine.cc` (default resolutions, bitrate limits) | test bench encoder model |
+| Audio processing (APM) | `modules/audio_processing/{aec3,ns,agc2,vad,transient}/`, `high_pass_filter.*`, `audio_processing_impl.cc`, `common_audio/{vad,resampler}/` | `src/audio/` |
+| Call glue, sync groups, demuxing | `call/call.cc`, `call/syncable.h`, `call/rtp_demuxer.*` | `src/sync/stream_sync.cc`, `src/rtp/session.cc` |
+| Capture time, RTP packet and extensions, transport feedback adapter | `modules/rtp_rtcp/source/absolute_capture_time_{sender,interpolator}.*`, `capture_clock_offset_updater.*`, `rtp_packet.*`, `rtp_header_extension_map.cc`, `modules/congestion_controller/rtp/transport_feedback_adapter.*` | `src/sync/capture_time.cc`, `src/core/rtp_packet.cc`, `src/cc/transport_feedback.cc` |
 | Glue | `call/rtp_transport_controller_send.*`, `call/rtp_video_sender.*`, `video/rtp_video_stream_receiver2.*`, `api/transport/`, `api/video/video_bitrate_allocation.h` | `src/rtp/session.cc` |
