@@ -118,6 +118,10 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.longest_freeze_ms", "Longest gap between rendered frames (or call length if nothing rendered)"},
       {"video.e2e_delay_p50_ms", "Median capture -> render delay"},
       {"video.e2e_delay_p95_ms", "95th percentile capture -> render delay"},
+      {"video.delay_encode_ms", "Mean capture -> frame handed to the sender (the bench's encoder is instantaneous, so 0)"},
+      {"video.delay_pacer_p95_ms", "95th percentile frame handed to the sender -> its last media packet leaves the pacer"},
+      {"video.delay_network_p95_ms", "95th percentile last media packet sent -> frame complete at the receiver (propagation, queue, jitter and waits for RTX)"},
+      {"video.delay_jitter_buffer_p95_ms", "95th percentile frame complete -> rendered (video jitter buffer and render timing)"},
       {"video.time_to_first_frame_ms", "Call start -> first rendered frame"},
       {"video.avg_kbps", "Average encoded video bitrate (quality proxy)"},
       {"video.keyframes", "Keyframes encoded"},
@@ -132,6 +136,8 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.queue_max_ms", "Maximum bottleneck queue delay"},
       {"cc.queue_over_200ms_pct", "Share of time the bottleneck queue exceeded 200 ms"},
       {"cc.send_over_target_ms", "Time after the first 2 s that the send rate (100 ms windows, all traffic) exceeded 1.5 x the GCC target"},
+      {"cc.send_over_target_p95_pct", "95th percentile of how far the send rate (100 ms windows after the first 2 s) is above the GCC target, in % of the target (0 when at or below)"},
+      {"cc.target_max_drop_pct", "Largest fall of the target below its peak of the preceding 5 s, outside the first 5 s and the 5 s after each link change"},
       {"cc.max_settle_ms", "Longest time after a link change until the target settles in [0.5, 1.0] x usable capacity"},
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
       {"cc.rtt_p50_ms", "Median RTT measured by RTCP"},
@@ -161,6 +167,29 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
       if (smp.t_s > 2.0 && smp.send_kbps > 1.5 * smp.target_kbps) over_ms += 100;
     }
     m["cc.send_over_target_ms"] = over_ms;
+  }
+  {
+    std::vector<double> over;
+    for (const auto& smp : rep.timeseries) {
+      if (smp.t_s > 2.0 && smp.target_kbps > 0) over.push_back(std::max(0.0, 100.0 * (smp.send_kbps / smp.target_kbps - 1.0)));
+    }
+    m["cc.send_over_target_p95_pct"] = Percentile(over, 95);
+  }
+  {
+    // A sharp cut of the target on a link that did not change (for example a
+    // loss burst read as congestion). Start-up and link changes are excluded
+    // because the target is expected to move there.
+    double max_drop = 0;
+    for (size_t i = 0; i < rep.timeseries.size(); ++i) {
+      const double t = rep.timeseries[i].t_s;
+      bool excluded = t < 5.0;
+      for (const auto& c : s.forward) excluded = excluded || (t >= c.at.seconds() && t < c.at.seconds() + 5.0);
+      if (excluded) continue;
+      double peak = 0;
+      for (size_t j = i + 1; j-- > 0 && rep.timeseries[j].t_s > t - 5.0;) peak = std::max(peak, rep.timeseries[j].target_kbps);
+      if (peak > 0) max_drop = std::max(max_drop, 100.0 * (1.0 - rep.timeseries[i].target_kbps / peak));
+    }
+    m["cc.target_max_drop_pct"] = max_drop;
   }
   double good_total = 0;
   for (const auto& smp : rep.timeseries) good_total += smp.goodput_kbps;
@@ -202,6 +231,29 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
   }
   m["cc.max_settle_ms"] = max_settle;
   m["cc.unsettled"] = unsettled;
+}
+
+void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Report& rep) {
+  std::vector<double> encode, pacer, network, jitter;
+  auto ms = [](TimeDelta d) { return static_cast<double>(d.us()) / 1000.0; };
+  for (const auto& f : frames) {
+    if (!f.rendered.IsFinite() || !f.capture.IsFinite() || !f.submitted.IsFinite() || !f.last_sent.IsFinite() ||
+        !f.complete.IsFinite()) {
+      continue;
+    }
+    encode.push_back(ms(f.submitted - f.capture));
+    pacer.push_back(ms(f.last_sent - f.submitted));
+    // A frame completed by a retransmission arrives after its last original
+    // packet was sent; a frame completed by FEC can look complete before it.
+    network.push_back(std::max(0.0, ms(f.complete - f.last_sent)));
+    jitter.push_back(ms(f.rendered - f.complete));
+  }
+  if (encode.empty()) return;
+  auto& m = rep.metrics;
+  m["video.delay_encode_ms"] = Mean(encode);
+  m["video.delay_pacer_p95_ms"] = Percentile(pacer, 95);
+  m["video.delay_network_p95_ms"] = Percentile(network, 95);
+  m["video.delay_jitter_buffer_p95_ms"] = Percentile(jitter, 95);
 }
 
 void EvaluateExpectations(Report& rep) {
@@ -344,6 +396,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int64_t video_bytes_encoded = 0;
   Timestamp last_keyframe = Timestamp::MinusInfinity();
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
+  std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
   std::vector<int64_t> video_send_ms;  // By unwrapped media sequence number.
   SeqNumUnwrapper<uint16_t> video_sent_unwrap;
@@ -379,6 +432,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kVideo) {
           video_send_ms.push_back(now.ms());
+          auto ft = frame_times.find(RtpTimestamp(p.bytes));
+          if (ft != frame_times.end()) ft->second.last_sent = now;
           (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
@@ -426,6 +481,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
         frame_capture[rtp_ts] = now;
+        frame_times[rtp_ts].capture = now;
+        frame_times[rtp_ts].submitted = now;
         const auto frame = rtp::MakeFakeH264Frame(key, static_cast<size_t>(bytes));
         sender.SendVideo(video_send, {rtp_ts, frame}, now);
       }
@@ -459,9 +516,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
         case Kind::kVideo:
         case Kind::kRtx:
-        case Kind::kFec:
+        case Kind::kFec: {
           w_good += wire;
+          // The last media or RTX packet of a frame (RFC 4588 keeps the
+          // original RTP timestamp) before it renders marks it complete.
+          if (w.kind != Kind::kFec) {
+            auto ft = frame_times.find(RtpTimestamp(w.bytes));
+            if (ft != frame_times.end() && !ft->second.rendered.IsFinite()) ft->second.complete = at;
+          }
           break;
+        }
         default:
           break;
       }
@@ -481,6 +545,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         ++w_frames;
         if (!video_first.IsFinite()) video_first = now;
         last_render = now;
+        if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
         auto cap = frame_capture.find(f.rtp_timestamp);
         if (cap != frame_capture.end()) {
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
@@ -621,6 +686,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.longest_freeze_ms"] = longest;
     m["video.e2e_delay_p50_ms"] = Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = Percentile(video_e2e, 95);
+    {
+      std::vector<VideoFrameTimes> all;
+      all.reserve(frame_times.size());
+      for (const auto& [ts, ft] : frame_times) all.push_back(ft);
+      AddVideoDelayMetrics(all, rep);
+    }
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
