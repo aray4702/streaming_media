@@ -485,7 +485,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         frame_times[rtp_ts].capture = now;
         frame_times[rtp_ts].submitted = now;
         const auto frame = rtp::MakeFakeH264Frame(key, static_cast<size_t>(bytes));
-        sender.SendVideo(video_send, {rtp_ts, frame}, now);
+        sender.SendVideo(video_send, {rtp_ts, frame, key}, now);
       }
     }
 

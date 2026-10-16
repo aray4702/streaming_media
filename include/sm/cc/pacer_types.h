@@ -20,6 +20,10 @@ struct PacedPacket {
   Timestamp enqueue_time;
   int probe_cluster = -1;  // Set by the pacer when sent as part of a probe.
   bool is_padding = false;
+  // Set by the sender on video media packets (PacingController::EnqueuePacket
+  // reads RtpPacketToSend::is_key_frame() and is_first_packet_of_frame()).
+  bool is_key_frame = false;
+  bool first_packet_of_frame = false;
 };
 
 struct PacerStats {
@@ -29,6 +33,8 @@ struct PacerStats {
   uint64_t drain_boosts = 0;  // Times the queue raised the rate above the pacing rate.
   uint64_t keepalives = 0;       // v2.
   uint64_t circuit_breaks = 0;   // v2.
+  uint64_t keyframe_flushes = 0;  // v2: keyframes that flushed the video queue.
+  uint64_t flushed_packets = 0;   // v2: packets discarded by those flushes.
   std::array<Histogram, 5> queue_delay_ms;
 };
 

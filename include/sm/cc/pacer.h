@@ -49,6 +49,8 @@ class Pacer : public MetricsSource {
   // NextSendTime().
   std::vector<PacedPacket> Process(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
+  // v2 only: packets a keyframe flushed from the queue (see PacingController).
+  std::vector<PacedPacket> TakeFlushed();
   void Pause();
   void Resume();
   bool paused() const;

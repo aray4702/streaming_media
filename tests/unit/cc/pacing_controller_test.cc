@@ -309,3 +309,72 @@ SM_TEST(PacingController, PauseHoldsVideo) {
   SM_EXPECT_EQ(CollectMetrics(p)["sent_packets_video"], 1.0);
 }
 
+
+namespace {
+PacedPacket KeyPkt(uint64_t id, bool first, Timestamp t) {
+  PacedPacket p = Pkt(id, PacketPriority::kVideo, 1000, t);
+  p.is_key_frame = true;
+  p.first_packet_of_frame = first;
+  return p;
+}
+}  // namespace
+
+// KeyframeFlushesQueuedPackets (PacingController::EnqueuePacket): the first
+// packet of a keyframe discards the video stream's queued packets, video, FEC
+// and retransmissions, and keeps audio.
+SM_TEST(PacingController, KeyframeFlushesTheQueuedVideoPackets) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(100), DataRate::Zero());
+  const Timestamp t0 = Timestamp::Millis(1000);
+  pacer.Enqueue(Pkt(1, PacketPriority::kVideo, 1000, t0));
+  pacer.Enqueue(Pkt(2, PacketPriority::kVideo, 1000, t0));
+  pacer.Enqueue(Pkt(3, PacketPriority::kFec, 500, t0));
+  pacer.Enqueue(Pkt(4, PacketPriority::kRetransmission, 1000, t0));
+  pacer.Enqueue(Pkt(5, PacketPriority::kAudio, 100, t0));  // Not paced: leaves with the first Process().
+  SM_ASSERT_EQ(pacer.QueuePackets(), 5u);
+  pacer.Enqueue(KeyPkt(6, true, t0 + TimeDelta::Millis(10)));
+  auto flushed = pacer.TakeFlushed();
+  SM_ASSERT_EQ(flushed.size(), 4u);  // 1-4; the audio packet stays.
+  SM_EXPECT_EQ(pacer.QueuePackets(), 2u);
+  SM_EXPECT_EQ(pacer.QueueSize().bytes(), 1100);
+  SM_EXPECT_EQ(pacer.stats().keyframe_flushes, 1u);
+  SM_EXPECT_EQ(pacer.stats().flushed_packets, 4u);
+  SM_EXPECT_TRUE(pacer.TakeFlushed().empty());
+}
+
+// Only the first packet of a keyframe flushes, and not while the queue already
+// holds keyframe packets (HasKeyframePackets), so one keyframe is not cut by
+// its own later packets.
+SM_TEST(PacingController, KeyframeFlushOnlyOnTheFirstPacketAndOnlyOnce) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(100), DataRate::Zero());
+  const Timestamp t0 = Timestamp::Millis(1000);
+  pacer.Enqueue(Pkt(1, PacketPriority::kVideo, 1000, t0));
+  pacer.Enqueue(KeyPkt(2, true, t0));
+  SM_EXPECT_EQ(pacer.TakeFlushed().size(), 1u);
+  pacer.Enqueue(KeyPkt(3, false, t0));  // Not the first packet of the frame.
+  pacer.Enqueue(KeyPkt(4, true, t0));   // A keyframe is already queued.
+  SM_EXPECT_TRUE(pacer.TakeFlushed().empty());
+  SM_EXPECT_EQ(pacer.QueuePackets(), 3u);
+  PacedPacket delta = Pkt(5, PacketPriority::kVideo, 1000, t0);  // A delta frame never flushes.
+  delta.first_packet_of_frame = true;
+  pacer.Enqueue(delta);
+  SM_EXPECT_TRUE(pacer.TakeFlushed().empty());
+}
+
+// The queue accounting stays consistent after a flush: what is left drains.
+SM_TEST(PacingController, QueueDrainsAfterAKeyframeFlush) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(400), DataRate::Zero());
+  Timestamp now = Timestamp::Millis(1000);
+  for (uint64_t i = 0; i < 10; ++i) pacer.Enqueue(Pkt(i, PacketPriority::kVideo, 1000, now));
+  pacer.Enqueue(KeyPkt(100, true, now));
+  pacer.Enqueue(KeyPkt(101, false, now));
+  SM_EXPECT_EQ(pacer.TakeFlushed().size(), 10u);
+  auto sent = Run(pacer, now, now + TimeDelta::Seconds(2));
+  SM_ASSERT_EQ(sent.size(), 2u);
+  SM_EXPECT_EQ(sent[0].p.id, 100u);
+  SM_EXPECT_EQ(pacer.QueuePackets(), 0u);
+  SM_EXPECT_EQ(pacer.QueueSize().bytes(), 0);
+  SM_EXPECT_EQ(pacer.OldestQueueTime(now).us(), 0);
+}
