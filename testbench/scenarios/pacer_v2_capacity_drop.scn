@@ -1,0 +1,10 @@
+name pacer_v2_capacity_drop
+describe capacity_drop with the libwebrtc PacingController (pacer v2): the comparison stays reproducible
+duration 40s
+pacer v2
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+# Known gap: the target does not ramp back up after the capacity returns at 25 s.
+expect audio.interruptions <= 1
+expect video.longest_freeze_ms < 4000

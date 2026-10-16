@@ -34,6 +34,7 @@ struct CcSimParams {
   DataSize queue_limit = DataSize::Bytes(200000);
   double seconds = 60;
   bool use_pacer = true;
+  bool pacer_v2 = false;  // libwebrtc's PacingController instead of the library's own pacer.
   bool probing = true;
   bool audio = true;
   DataRate start_rate = DataRate::KilobitsPerSec(300);
@@ -108,7 +109,9 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
   gcfg.enable_probing = p.probing;
   GccController gcc(gcfg);
   gcc.OnRttUpdate(p.one_way * 2);
-  Pacer pacer;
+  PacerConfig pacer_cfg;
+  if (p.pacer_v2) pacer_cfg.version = PacerVersion::kV2;
+  Pacer pacer(pacer_cfg);
   TransportFeedbackBuilder fb_builder;
   FrameDropper dropper;
   DegradationConfig dcfg;

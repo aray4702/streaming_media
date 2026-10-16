@@ -268,16 +268,31 @@ ALGORITHMS = [
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
-         headers=["cc/pacer.h"], unit=["Pacer"], e2e=["E2E_Pacer"],
+         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController"], e2e=["E2E_Pacer"],
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
-               "so no packet waits longer than max_queue_time (2 s).",
-         verification="A unit test queued 10 s worth of data, which correctly triggers drain mode; the test now "
-                      "stays inside the queue-time limit. A priority test was rewritten so the retransmission is "
-                      "queued behind video before it is observed."),
+               "Two versions sit behind `PacerConfig::version` (test bench directive `pacer v1|v2`): v1, the library's "
+               "own media-debt pacer (5 ms burst, drain on the oldest packet), is the default; v2 is a port of "
+               "libwebrtc's PacingController and PrioritizedPacketQueue (M157, issue #70) and becomes the default "
+               "together with the GoogCC port (#61), because with v1 estimator it gives a result neither has. v2: a 40 ms "
+               "burst interval (capped at 63 kB), media debt capped at 500 ms of the rate, 2 s cap on the time "
+               "credited, a queue-time limit of 2 s judged on the average queue time, audio unpaced but "
+               "accounted, queue levels audio / retransmission / video+FEC / padding, keep-alive padding every "
+               "500 ms while paused or congested, and padding at the padding rate 5 ms at a time. Remaining "
+               "differences: flushing the queued packets of a stream when a keyframe arrives (needs the sender "
+               "to mark keyframes; #5), round-robin between SSRCs of one level (one stream per kind in a "
+               "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
+               "congestion window (pushback stays on the encoder), and `BitrateProber` (#48): a probe cluster is "
+               "still sent in 5 ms bursts at the probe rate.",
+         verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
+                      "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
+                      "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "
+                      "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
+                      "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "
+                      "pacer_v2_capacity_drop scenario keeps the v2 run reproducible. See "
+                      "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
          headers=["cc/probing.h"], unit=["Probing"], e2e=["E2E_Probing"],

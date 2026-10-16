@@ -1,54 +1,42 @@
 // 5.5 Packet pacer with priority queues.
 //
-// Encoders emit a whole frame at once; sending it as a line-rate burst
-// fills router queues (bufferbloat) and causes self-inflicted loss. The
-// pacer releases packets at the pacing rate (usually 2.5 x the target) using
-// a "media debt" leaky bucket. Packets are queued per priority:
-//   audio > retransmission > video > FEC > padding
-// so audio is never stuck behind a keyframe, and video degrades first.
-// Large queues are drained faster so no packet waits longer than
-// max_queue_time. Probe clusters are sent at their own rate and tagged so
-// the probe estimator can find them; padding fills a probe (or a requested
+// Encoders emit a whole frame at once; sending it as a line-rate burst fills
+// router queues (bufferbloat) and causes self-inflicted loss. The pacer
+// releases packets at the pacing rate (usually 2.5 x the target) and queues
+// them per priority so audio is never stuck behind a keyframe and video
+// degrades first. Probe clusters are sent at their own rate and tagged so the
+// probe estimator can find them; padding fills a probe (or a requested
 // padding rate) when there is no media to send.
+//
+// Two versions sit behind one interface (`PacerConfig::version`, issue #70):
+//   v1  the library's own pacer (cc/pacer_v1.h): a media-debt leaky bucket
+//       with a 5 ms burst allowance; the default.
+//   v2  libwebrtc's PacingController and PrioritizedPacketQueue, ported as
+//       they are (cc/pacing_controller.h). It is not the default because its
+//       results are only meaningful next to the rest of libwebrtc's GoogCC
+//       (#61 makes it the default together with the cc v2 controller).
 #pragma once
 
-#include <array>
-#include <cstdint>
-#include <deque>
-#include <optional>
-#include <vector>
+#include <memory>
 
-#include "sm/cc/probing.h"
-#include "sm/core/event_log.h"
-#include "sm/core/metrics.h"
-#include "sm/core/units.h"
+#include "sm/cc/pacer_types.h"
+#include "sm/cc/pacer_v1.h"
+#include "sm/cc/pacing_controller.h"
 
 namespace sm::cc {
 
-enum class PacketPriority : int { kAudio = 0, kRetransmission = 1, kVideo = 2, kFec = 3, kPadding = 4 };
-
-struct PacedPacket {
-  uint64_t id = 0;  // Caller's handle.
-  PacketPriority priority = PacketPriority::kVideo;
-  DataSize size;
-  Timestamp enqueue_time;
-  int probe_cluster = -1;  // Set by the pacer when sent as part of a probe.
-  bool is_padding = false;
-};
+enum class PacerVersion { kV1, kV2 };
 
 struct PacerConfig {
+  PacerVersion version = PacerVersion::kV1;
+  // v1 (see PacerV1Config).
   TimeDelta max_queue_time = TimeDelta::Millis(2000);
   bool bypass_audio = true;  // Audio is sent immediately, never queued behind budget.
+  // Both versions: wire size of one padding packet.
   DataSize padding_packet = DataSize::Bytes(224);
   EventSink* events = nullptr;
-};
-
-struct PacerStats {
-  std::array<uint64_t, 5> sent_packets{};
-  std::array<int64_t, 5> sent_bytes{};
-  uint64_t probe_packets = 0;
-  uint64_t drain_boosts = 0;
-  std::array<Histogram, 5> queue_delay_ms;
+  // v2 (see PacingControllerConfig); its padding_packet and events are taken from above.
+  PacingControllerConfig v2;
 };
 
 class Pacer : public MetricsSource {
@@ -61,38 +49,25 @@ class Pacer : public MetricsSource {
   // NextSendTime().
   std::vector<PacedPacket> Process(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
-  void Pause() { paused_ = true; }
-  void Resume() { paused_ = false; }
-  bool paused() const { return paused_; }
+  void Pause();
+  void Resume();
+  bool paused() const;
+  // v2 only (PacingController::SetCongested); ignored by v1.
+  void SetCongested(bool congested);
 
-  DataSize QueueSize() const { return queue_bytes_; }
+  PacerVersion version() const { return v2_on_ ? PacerVersion::kV2 : PacerVersion::kV1; }
+  DataSize QueueSize() const;
   size_t QueuePackets() const;
   TimeDelta OldestQueueTime(Timestamp now) const;
-  const PacerStats& stats() const { return stats_; }
+  const PacerStats& stats() const;
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  bool PopNext(Timestamp now, PacedPacket* out);
-  void Drain(Timestamp now);
-  DataRate EffectiveRate(Timestamp now);
-
-  PacerConfig cfg_;
-  std::array<std::deque<PacedPacket>, 5> queues_;
-  DataSize queue_bytes_;
-  DataRate pacing_ = DataRate::KilobitsPerSec(750);
-  DataRate padding_rate_;
-  double media_debt_bytes_ = 0;
-  double padding_debt_bytes_ = 0;
-  Timestamp last_process_ = Timestamp::MinusInfinity();
-  bool paused_ = false;
-  struct ActiveProbe {
-    ProbeCluster c;
-    int sent_probes = 0;
-    int64_t sent_bytes = 0;
-  };
-  std::deque<ActiveProbe> probes_;
-  uint64_t next_padding_id_ = 1ull << 62;
-  PacerStats stats_;
+  // Only the selected version is built, on the heap: each holds about 4 KB of
+  // statistics, which the Session on a small (wasm) stack does not need twice.
+  bool v2_on_;
+  std::unique_ptr<PacerV1> v1_;
+  std::unique_ptr<PacingController> v2_;
 };
 
 }  // namespace sm::cc
