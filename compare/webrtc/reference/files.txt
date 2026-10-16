@@ -112,3 +112,5 @@ modules/congestion_controller/rtp/transport_feedback_adapter.cc
 modules/audio_processing/high_pass_filter.h
 modules/audio_processing/high_pass_filter.cc
 modules/audio_processing/audio_processing_impl.cc
+call/bitrate_allocator.h
+call/bitrate_allocator.cc
