@@ -280,9 +280,10 @@ ALGORITHMS = [
                "burst interval (capped at 63 kB), media debt capped at 500 ms of the rate, 2 s cap on the time "
                "credited, a queue-time limit of 2 s judged on the average queue time, audio unpaced but "
                "accounted, queue levels audio / retransmission / video+FEC / padding, keep-alive padding every "
-               "500 ms while paused or congested, and padding at the padding rate 5 ms at a time. Remaining "
-               "differences: flushing the queued packets of a stream when a keyframe arrives (needs the sender "
-               "to mark keyframes; #5), round-robin between SSRCs of one level (one stream per kind in a "
+               "500 ms while paused or congested, and padding at the padding rate 5 ms at a time. The first "
+               "packet of a keyframe flushes the queued video, FEC and retransmission packets, as "
+               "`PacingController::EnqueuePacket` does (the sender marks keyframes and first-of-frame packets; "
+               "#5). Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
                "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
                "congestion window (pushback stays on the encoder), and `BitrateProber` (#48): a probe cluster is "
                "still sent in 5 ms bursts at the probe rate.",
@@ -291,7 +292,8 @@ ALGORITHMS = [
                       "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "
                       "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "
-                      "pacer_v2_capacity_drop scenario keeps the v2 run reproducible. See "
+                      "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
+                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],

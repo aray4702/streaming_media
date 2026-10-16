@@ -211,11 +211,11 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     return;
   }
   auto chunks = H264Packetizer::Packetize(f.data, s.config().max_payload_size);
-  SendVideoChunks(id, chunks, f.rtp_timestamp, now);
+  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe);
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
-                              Timestamp now) {
+                              Timestamp now, bool keyframe) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   if (chunks.empty()) {
     ++stats_.empty_video_frames;
@@ -223,7 +223,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   }
   Start(now);
   RtpSender& s = *video_send_[static_cast<size_t>(id.index)].sender;
-  s.SendVideoFrame(chunks, rtp_timestamp, now);
+  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
   EnqueueSenderPackets(s, now);
 }
 

@@ -150,6 +150,37 @@ bool PacingController::Pop(PacedPacket* out, Timestamp now) {
   return false;
 }
 
+bool PacingController::HasKeyframePackets() const {
+  for (const auto& level : levels_) {
+    for (const Queued& q : level) {
+      if (q.p.is_key_frame) return true;
+    }
+  }
+  return false;
+}
+
+void PacingController::FlushVideo() {
+  // The levels that hold the video stream's packets: retransmission (1) and
+  // video and FEC (3). Audio and padding are other streams.
+  for (PacketPriority prio : {PacketPriority::kRetransmission, PacketPriority::kVideo}) {
+    auto& level = levels_[static_cast<size_t>(Level(prio))];
+    for (Queued& q : level) {
+      queue_bytes_ -= q.p.size;
+      --queue_packets_;
+      queue_time_sum_ -= queue_update_time_ - q.enqueue_time - pause_time_sum_;
+      enqueue_times_.erase(q.oldest_it);
+      flushed_.push_back(q.p);
+    }
+    level.clear();
+  }
+}
+
+std::vector<PacedPacket> PacingController::TakeFlushed() {
+  std::vector<PacedPacket> out;
+  out.swap(flushed_);
+  return out;
+}
+
 TimeDelta PacingController::OldestQueueTime(Timestamp now) const {
   return enqueue_times_.empty() ? TimeDelta::Zero() : now - *enqueue_times_.begin();
 }
@@ -261,6 +292,15 @@ Timestamp PacingController::NextSendTime(Timestamp now) const {
 
 void PacingController::Enqueue(PacedPacket p) {
   const Timestamp now = Cur(p.enqueue_time);
+  if (p.is_key_frame && p.first_packet_of_frame && p.priority == PacketPriority::kVideo && !HasKeyframePackets() &&
+      queue_packets_ > 0) {
+    const size_t before = flushed_.size();
+    UpdateAverageQueueTime(now);
+    FlushVideo();
+    ++stats_.keyframe_flushes;
+    stats_.flushed_packets += flushed_.size() - before;
+    SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);
+  }
   if (queue_packets_ == 0) {
     // Fast-forward the last process time, so that time that has passed is not
     // used as budget for the first new packet.
@@ -429,6 +469,8 @@ void PacingController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("drain_boosts", stats_.drain_boosts);
   w.Counter("keepalives", stats_.keepalives);
   w.Counter("circuit_breaks", stats_.circuit_breaks);
+  w.Counter("keyframe_flushes", stats_.keyframe_flushes);
+  w.Counter("flushed_packets", stats_.flushed_packets);
   w.Gauge("queue_bytes", static_cast<double>(queue_bytes_.bytes()));
   w.Gauge("media_debt_bytes", static_cast<double>(media_debt_.bytes()));
   w.Gauge("avg_queue_ms", AverageQueueTime().ms_f());

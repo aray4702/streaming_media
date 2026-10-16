@@ -54,7 +54,7 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
   out_.push_back({std::move(p), kind, prio});
 }
 
-void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now) {
+void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe, bool first) {
   ++stats_.media_packets;
   stats_.media_payload_bytes += static_cast<int64_t>(p.payload.size());
   sr_packets_ += 1;
@@ -73,6 +73,8 @@ void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now
   }
   Queue(std::move(p), cfg_.video ? PacketKind::kVideo : PacketKind::kAudio,
         cfg_.video ? cc::PacketPriority::kVideo : cc::PacketPriority::kAudio);
+  out_.back().is_key_frame = keyframe;
+  out_.back().first_packet_of_frame = first;
 }
 
 void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now) {
@@ -88,14 +90,15 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
   StoreAndQueueMedia(std::move(p), true, now);
 }
 
-void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now) {
+void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+                               bool keyframe) {
   if (chunks.empty()) return;
   ++stats_.frames;
   for (size_t i = 0; i < chunks.size(); ++i) {
     bool last = i + 1 == chunks.size();
     RtpPacket p = NewPacket(cfg_.payload_type, rtp_timestamp, last);
     p.payload = chunks[i];
-    StoreAndQueueMedia(std::move(p), last, now);
+    StoreAndQueueMedia(std::move(p), last, now, keyframe, i == 0);
   }
 }
 

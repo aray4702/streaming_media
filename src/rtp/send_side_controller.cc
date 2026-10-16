@@ -64,8 +64,16 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   int64_t size = static_cast<int64_t>(p.packet.size()) + cfg_.transport_overhead_bytes;
   cc::PacketPriority prio = p.priority;
   uint64_t id = next_id_++;
+  cc::PacedPacket pp{id, prio, DataSize::Bytes(size), now};
+  pp.is_key_frame = p.is_key_frame;
+  pp.first_packet_of_frame = p.first_packet_of_frame;
   queued_[id] = std::move(p);
-  pacer_.Enqueue({id, prio, DataSize::Bytes(size), now});
+  pacer_.Enqueue(pp);
+  // A keyframe flushed the video stream's queue: those packets are never sent.
+  for (const cc::PacedPacket& f : pacer_.TakeFlushed()) {
+    queued_.erase(f.id);
+    ++stats_.flushed;
+  }
 }
 
 std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
@@ -217,6 +225,7 @@ void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("released", stats_.released);
   w.Counter("padding", stats_.padding);
   w.Counter("unknown_ids", stats_.unknown_ids);
+  w.Counter("flushed", stats_.flushed);
   w.Counter("released_bytes", static_cast<uint64_t>(stats_.released_bytes));
   w.Gauge("target_kbps", target_.kbps());
   w.Counter("cwnd_frames_dropped", cwnd_frames_dropped_);

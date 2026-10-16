@@ -146,6 +146,9 @@ struct EncodedVideoFrame {
   // unit, STAP-A and FU-A packets of at most max_payload_size bytes, marker on
   // the last. An empty frame sends nothing and is counted.
   std::span<const uint8_t> data;
+  // An IDR frame: the pacer flushes the stream's queued packets when it starts
+  // (libwebrtc PacingController::EnqueuePacket).
+  bool keyframe = false;
 };
 
 enum class OutgoingKind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding, kRtcp };
@@ -208,7 +211,7 @@ class Session : public MetricsSource {
   // A frame already split into packet payloads: for another codec's
   // packetizer, or for tests of malformed payloads.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
-                       Timestamp now);
+                       Timestamp now, bool keyframe = false);
   // FEC protection level for the next frames of a video stream.
   void SetFecParams(VideoSendId id, const loss::FecParams& p);
 

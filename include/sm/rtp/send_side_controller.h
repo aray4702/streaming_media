@@ -92,6 +92,7 @@ struct SendSideStats {
   uint64_t released = 0;
   uint64_t padding = 0;
   uint64_t unknown_ids = 0;
+  uint64_t flushed = 0;  // Packets a keyframe flushed from the pacer queue.
   int64_t released_bytes = 0;
 };
 

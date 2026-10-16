@@ -199,3 +199,33 @@ SM_TEST(SendSideController, AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc) {
   // The encoder keeps at least video_min whatever the share.
   SM_EXPECT_GE(c.ComputeMeasuredRates(DataRate::KilobitsPerSec(1990)).video_target.bps(), cfg.video_min.bps());
 }
+
+// The keyframe's first packet flushes the queued video packets under pacer v2
+// (PacingController::EnqueuePacket); the flushed packets are never released
+// and leave nothing behind in the controller.
+SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
+  SendSideConfig cfg;
+  cfg.pacer.version = cc::PacerVersion::kV2;
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  const Timestamp t0 = Timestamp::Millis(0);
+  for (uint16_t i = 0; i < 20; ++i) c.Enqueue(Media(i, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), t0);
+  SenderPacket key = Media(100, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100);
+  key.is_key_frame = true;
+  key.first_packet_of_frame = true;
+  c.Enqueue(key, t0);
+  SM_EXPECT_GT(c.stats().flushed, 0u);
+  uint64_t released_ids = 0;
+  std::vector<uint16_t> seqs;
+  for (int t = 0; t < 2000; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      ++released_ids;
+      auto p = RtpPacket::Parse(r.bytes);
+      if (p && r.kind == PacketKind::kVideo) seqs.push_back(p->seq);
+    }
+  }
+  SM_EXPECT_EQ(c.stats().unknown_ids, 0u);
+  // The keyframe packet goes out; the flushed ones never do.
+  SM_EXPECT_TRUE(std::find(seqs.begin(), seqs.end(), 100) != seqs.end());
+  SM_EXPECT_EQ(released_ids + c.stats().flushed, 21u);
+}

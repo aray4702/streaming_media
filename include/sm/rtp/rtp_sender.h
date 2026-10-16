@@ -38,6 +38,8 @@ struct SenderPacket {
   RtpPacket packet;
   PacketKind kind = PacketKind::kVideo;
   cc::PacketPriority priority = cc::PacketPriority::kVideo;
+  bool is_key_frame = false;  // Video media packet of a keyframe.
+  bool first_packet_of_frame = false;
 };
 
 struct RtpSenderConfig {
@@ -97,7 +99,9 @@ class RtpSender : public MetricsSource {
   void SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now);
   // Video: one packetized frame. The marker is set on the last chunk. FEC
   // groups end at the frame boundary.
-  void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now);
+  // `keyframe` marks its media packets for the pacer (keyframe flush).
+  void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+                      bool keyframe = false);
 
   // NACK from the peer (RtcpIncoming::nacks). The RTX packets are queued for
   // the pacer at retransmission priority.
@@ -131,7 +135,7 @@ class RtpSender : public MetricsSource {
  private:
   RtpPacket NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker);
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
-  void StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now);
+  void StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe = false, bool first = false);
 
   RtpSenderConfig cfg_;
   loss::RtxSender rtx_;

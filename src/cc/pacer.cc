@@ -38,6 +38,7 @@ void Pacer::AddProbeCluster(const ProbeCluster& c) {
 }
 std::vector<PacedPacket> Pacer::Process(Timestamp now) { return v2_on_ ? v2_->Process(now) : v1_->Process(now); }
 Timestamp Pacer::NextSendTime(Timestamp now) const { return v2_on_ ? v2_->NextSendTime(now) : v1_->NextSendTime(now); }
+std::vector<PacedPacket> Pacer::TakeFlushed() { return v2_on_ ? v2_->TakeFlushed() : std::vector<PacedPacket>{}; }
 void Pacer::Pause() {
   if (v2_on_) v2_->Pause();
   else v1_->Pause();

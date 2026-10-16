@@ -12,6 +12,8 @@
 //   - the time that is credited since the last send is capped at 2 s;
 //   - a queue that cannot drain within `queue_time_limit` (2 s, judged on the
 //     average queue time, not the oldest packet) raises the rate;
+//   - the first packet of a keyframe flushes the queued packets of the video
+//     stream (video, FEC, retransmissions), as EnqueuePacket does;
 //   - padding fills a requested padding rate, 5 ms of it at a time.
 // Packets are queued per priority level, as PrioritizedPacketQueue does:
 //   0 audio, 1 retransmission, 3 video and FEC (one FIFO), 4 padding
@@ -62,6 +64,11 @@ class PacingController : public MetricsSource {
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call at NextSendTime() or sooner.
   std::vector<PacedPacket> Process(Timestamp now);
+  // Packets that Enqueue() discarded from the queue since the last call: the
+  // first packet of a keyframe flushes the video stream's queued packets
+  // (PacingController::EnqueuePacket), so the keyframe leaves as soon as it can.
+  // The caller drops whatever it kept for them; they are never sent.
+  std::vector<PacedPacket> TakeFlushed();
   Timestamp NextSendTime(Timestamp now) const;
   void Pause();
   void Resume();
@@ -109,6 +116,10 @@ class PacingController : public MetricsSource {
   static int Level(PacketPriority p);
   void Push(Timestamp now, PacedPacket p);
   bool Pop(PacedPacket* out, Timestamp now);
+  // PrioritizedPacketQueue::RemovePacketsForSsrc for the video stream: the
+  // video, FEC and retransmission levels.
+  void FlushVideo();
+  bool HasKeyframePackets() const;
   void UpdateAverageQueueTime(Timestamp now);
   void SetQueuePauseState(bool paused, Timestamp now);
   TimeDelta AverageQueueTime() const;
@@ -146,6 +157,7 @@ class PacingController : public MetricsSource {
   std::deque<ActiveProbe> probes_;
   DataSize probe_debt_;
   uint64_t next_padding_id_ = 1ull << 62;
+  std::vector<PacedPacket> flushed_;
   PacerStats stats_;
 };
 
