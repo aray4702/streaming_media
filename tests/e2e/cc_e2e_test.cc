@@ -154,11 +154,25 @@ SM_TEST(E2E_Pacer, SmoothsBurstsAndProtectsAudio) {
   SM_RECORD("unpaced_audio_p95_ms", burst.audio_p95_ms);
   SM_RECORD("paced_queue_p95_ms", paced.queue_p95_ms);
   SM_RECORD("unpaced_queue_p95_ms", burst.queue_p95_ms);
-  // libwebrtc's PacingController lets 40 ms of the pacing rate (2.5 x target) out
-  // in one burst and does not pace audio, so frames of this size leave in one
-  // burst either way (issue #70, libwebrtc's pacing_controller_unittest
-  // SendsPacketsInBurstImmediately / HighPrioDoesntAffectBudget): the paced run
-  // is no better than the unpaced one, but never worse.
+  SM_EXPECT_LT(paced.audio_p95_ms, burst.audio_p95_ms);
+  SM_EXPECT_LT(paced.audio_p95_ms, 60);
+}
+
+// Pacer v2 is libwebrtc's PacingController: it lets 40 ms of the pacing rate
+// out in one burst and does not pace audio (pacing_controller_unittest.cc
+// SendsPacketsInBurstImmediately, HighPrioDoesntAffectBudget), so frames of
+// this size leave in one burst either way: the paced run is no better than the
+// unpaced one, but never worse (program.md 0.2, signed off by the Owner on #80).
+SM_TEST(E2E_Pacer, LibwebrtcPacerV2DoesNotPaceAudio) {
+  CcSimParams p;
+  p.capacity_kbps = {{0, 2500}};
+  p.seconds = 30;
+  p.pacer_v2 = true;
+  auto paced = RunCcSim(p);
+  p.use_pacer = false;
+  auto burst = RunCcSim(p);
+  SM_RECORD("v2_paced_audio_p95_ms", paced.audio_p95_ms);
+  SM_RECORD("v2_unpaced_audio_p95_ms", burst.audio_p95_ms);
   SM_EXPECT_LE(paced.audio_p95_ms, burst.audio_p95_ms + 1);
   SM_EXPECT_LT(paced.audio_p95_ms, 60);
 }

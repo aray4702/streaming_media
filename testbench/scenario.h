@@ -69,6 +69,7 @@ struct Scenario {
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
+  bool pacer_v2 = false;  // `pacer v2`: libwebrtc's PacingController (default v1, the library's own pacer).
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

@@ -308,6 +308,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.start_rate = s.start_rate;
     c.send_side.gcc.max_rate = s.max_rate;
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
+    if (s.pacer_v2) c.send_side.pacer.version = cc::PacerVersion::kV2;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
     c.events = &events;

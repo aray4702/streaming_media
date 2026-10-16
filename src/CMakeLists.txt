@@ -40,6 +40,8 @@ if(SM_WITH_CC)
     cc/loss_based_bwe.cc
     cc/send_side_bwe.cc
     cc/pacer.cc
+    cc/pacer_v1.cc
+    cc/pacing_controller.cc
     cc/probing.cc
     cc/bitrate_allocator.cc
     cc/frame_dropper.cc
