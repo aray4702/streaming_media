@@ -52,6 +52,16 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
 
 void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
   out_.push_back({std::move(p), kind, prio});
+  out_.back().sender = this;
+}
+
+void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
+  if (!cfg_.rtx_ssrc || cfg_.rtx.version < 2) return;
+  if (p.kind == PacketKind::kAudio || p.kind == PacketKind::kVideo) {
+    rtx_.OnPacketSent(p.packet, now);
+  } else if (p.kind == PacketKind::kRtx && p.packet.payload.size() >= 2) {
+    rtx_.MarkPacketAsSent(static_cast<uint16_t>((p.packet.payload[0] << 8) | p.packet.payload[1]), now);
+  }
 }
 
 void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe, bool first) {
@@ -63,7 +73,7 @@ void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now
   last_media_time_ = now;
   // The history holds the packet as it goes out (design 7.1), RED-wrapped
   // when RED is in use, so a resend is identical apart from the RTX header.
-  if (cfg_.rtx_ssrc) rtx_.OnPacketSent(p, now);
+  if (cfg_.rtx_ssrc && cfg_.rtx.version < 2) rtx_.OnPacketSent(p, now);
   if (cfg_.fec) {
     for (RtpPacket& f : fec_.AddMediaPacket(p, end_of_group)) {
       ++stats_.fec_packets;

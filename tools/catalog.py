@@ -33,7 +33,14 @@ ALGORITHMS = [
                "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
                "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
                "NACK (RFC 4585 6.2.1, PID+BLP items) from loss/rtcp_feedback.h, byte-compatible with libwebrtc's "
-               "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc).",
+               "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc). "
+               "RTX history version 2 (`rtx v2`, issue #76 group 2) is libwebrtc's RtpPacketHistory: a packet enters when "
+               "the pacer sends it, stays max(3 x RTT, 1 s) and is culled after three times that (or when 600 are held "
+               "and the oldest is past the retention, at most 9600), leaves when transport feedback acknowledges it, and a "
+               "request is ignored while a resend is queued or within one RTT of the last send. Remaining differences: "
+               "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "
+               "no payload padding from the history (GetPayloadPaddingPacket), and retransmitted-flush settings are off as in "
+               "the libwebrtc default. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",

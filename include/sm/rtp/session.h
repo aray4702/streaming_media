@@ -62,6 +62,9 @@ struct SessionConfig {
   // send estimate (5% of it, 50-250 ms, 100 ms before the first), arrivals are
   // kept 500 ms and late ones reported again. Zero interval still turns it off.
   int transport_feedback_version = 1;
+  // 1: the RTX packet history of loss::RtxConfig v1 (a ring filled at queue time). 2: libwebrtc's
+  // RtpPacketHistory (stored when the pacer sends, RTT-based retention, culled on acknowledgement).
+  int rtx_version = 1;
   uint64_t seed = 1;
   EventSink* events = nullptr;
 };

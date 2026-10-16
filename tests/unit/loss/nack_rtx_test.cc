@@ -190,3 +190,104 @@ SM_TEST(NackTracker, V2ListOverflowClearsEverythingAndRequestsKeyframe) {
   SM_EXPECT_TRUE(n.TakeKeyframeRequest());
   SM_EXPECT_FALSE(n.TakeKeyframeRequest());
 }
+
+namespace {
+RtpPacket Pkt(uint16_t seq) {
+  RtpPacket p;
+  p.seq = seq;
+  p.ssrc = 1;
+  p.payload = {static_cast<uint8_t>(seq)};
+  return p;
+}
+RtxSender MakeV2() {
+  RtxConfig cfg;
+  cfg.version = 2;
+  cfg.rtx_ssrc = 99;
+  return RtxSender(cfg);
+}
+}  // namespace
+
+SM_TEST(RtxV2, ResendsOnlyAfterSendAndOnceWhilePending) {
+  // RtpPacketHistory::GetPacketAndMarkAsPending: a request for a packet the pacer has not sent is
+  // not found; a second request while the resend is still queued is ignored (pending_transmission_).
+  RtxSender s = MakeV2();
+  s.OnPacketSent(Pkt(1), Ms(0));
+  auto out = s.OnNack(std::vector<uint16_t>{1, 2}, Ms(100), TimeDelta::Millis(50));
+  SM_EXPECT_EQ(out.size(), 1u);
+  SM_EXPECT_EQ(s.stats().not_found, 1u);
+  SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(300), TimeDelta::Zero()).empty());
+  SM_EXPECT_EQ(s.stats().throttled, 1u);
+  // The pacer sent it: a repeat is allowed once one RTT has passed since that send.
+  s.SetRtt(TimeDelta::Millis(100), Ms(300));
+  s.MarkPacketAsSent(1, Ms(400));
+  SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(499), TimeDelta::Zero()).empty());
+  SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(500), TimeDelta::Zero()).size(), 1u);
+}
+
+SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat) {
+  // CullOldPackets: kept for max(3 x RTT, 1 s); with fewer than number_to_store packets they stay until
+  // 3 x that. With the store full (number_to_store) they leave once past the retention.
+  RtxConfig cfg;
+  cfg.version = 2;
+  cfg.rtx_ssrc = 99;
+  cfg.number_to_store = 2;
+  RtxSender s(cfg);
+  s.OnPacketSent(Pkt(1), Ms(0));
+  s.OnPacketSent(Pkt(2), Ms(10));
+  s.OnPacketSent(Pkt(3), Ms(20));  // Three held (>= 2 to store), none 1 s old yet.
+  SM_EXPECT_EQ(s.history_size(), 3u);
+  s.OnPacketSent(Pkt(4), Ms(1005));  // 1 and 2 are past 1 s and the store is over its size.
+  SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(1100), TimeDelta::Zero()).empty());
+  SM_EXPECT_EQ(s.stats().not_found, 1u);
+  // A longer RTT lengthens the retention: 3 x 500 ms.
+  RtxConfig cfg2 = cfg;
+  cfg2.number_to_store = 1;
+  RtxSender t(cfg2);
+  t.SetRtt(TimeDelta::Millis(500), Ms(0));
+  t.OnPacketSent(Pkt(1), Ms(0));
+  t.OnPacketSent(Pkt(2), Ms(1400));  // Packet 1 is 1.4 s old, inside 1.5 s.
+  SM_EXPECT_EQ(t.OnNack(std::vector<uint16_t>{1}, Ms(1400), TimeDelta::Zero()).size(), 1u);
+  // With room to spare a packet stays until 3 x the retention.
+  RtxSender u = MakeV2();
+  u.OnPacketSent(Pkt(1), Ms(0));
+  u.OnPacketSent(Pkt(2), Ms(2999));
+  SM_EXPECT_EQ(u.history_size(), 2u);
+  u.OnPacketSent(Pkt(3), Ms(3000));
+  SM_EXPECT_EQ(u.history_size(), 2u);  // 1 timed out at 3 s.
+}
+
+SM_TEST(RtxV2, HistoryNeverExceedsMaxCapacity) {
+  RtxConfig cfg;
+  cfg.version = 2;
+  cfg.rtx_ssrc = 99;
+  RtxSender s(cfg);
+  for (int i = 0; i < 12000; ++i) s.OnPacketSent(Pkt(static_cast<uint16_t>(i)), Ms(0));
+  SM_EXPECT_EQ(s.history_size(), 9600u);
+}
+
+SM_TEST(RtxV2, AcknowledgedPacketsLeaveAndSequenceNumbersWrap) {
+  RtxSender s = MakeV2();
+  for (uint16_t seq : {65534, 65535, 0, 1}) s.OnPacketSent(Pkt(seq), Ms(0));
+  s.CullAcknowledged(std::vector<uint16_t>{65535, 0});
+  SM_EXPECT_EQ(s.stats().culled_acked, 2u);
+  auto out = s.OnNack(std::vector<uint16_t>{65534, 65535, 0, 1}, Ms(10), TimeDelta::Zero());
+  SM_EXPECT_EQ(out.size(), 2u);  // 65534 and 1.
+  SM_EXPECT_EQ(s.stats().not_found, 2u);
+  auto back = RestoreFromRtx(out[1], 1, 96);
+  SM_ASSERT_TRUE(back.has_value());
+  SM_EXPECT_EQ(back->seq, 1);
+}
+
+SM_TEST(NackTracker, V2RetriesOnTheTwentyMillisecondProcessTick) {
+  // NackPeriodicProcessor: the time-based retry is decided every 20 ms, so it leaves up to 20 ms after
+  // the RTT has passed (the first request for a gap is immediate).
+  NackConfig cfg;
+  cfg.version = 2;
+  NackTracker n(cfg);
+  n.UpdateRtt(TimeDelta::Millis(50));
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(1));
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(1)).size(), 1u);  // First request, and the first tick.
+  for (int t = 2; t < 61; ++t) SM_EXPECT_TRUE(n.GetNackBatch(Ms(t)).empty());  // RTT passed at 51, tick at 21, 41, 61.
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(61)).size(), 1u);
+}

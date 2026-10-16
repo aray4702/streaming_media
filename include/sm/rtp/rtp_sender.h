@@ -33,6 +33,8 @@ namespace sm::rtp {
 
 enum class PacketKind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding };
 
+class RtpSender;
+
 // One RTP packet on its way to the pacer.
 struct SenderPacket {
   RtpPacket packet;
@@ -40,6 +42,7 @@ struct SenderPacket {
   cc::PacketPriority priority = cc::PacketPriority::kVideo;
   bool is_key_frame = false;  // Video media packet of a keyframe.
   bool first_packet_of_frame = false;
+  RtpSender* sender = nullptr;  // The stream that made it, told when the pacer sends it.
 };
 
 struct RtpSenderConfig {
@@ -102,6 +105,14 @@ class RtpSender : public MetricsSource {
   // `keyframe` marks its media packets for the pacer (keyframe flush).
   void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
                       bool keyframe = false);
+
+  // The pacer sent `p` (SendSideController::Process). With `rtx.version` 2 the history
+  // takes media packets here and learns that a resend left the queue.
+  void OnPacketReleased(const SenderPacket& p, Timestamp now);
+  // A measured RTT (v2 history retention).
+  void SetRtt(TimeDelta rtt, Timestamp now) { rtx_.SetRtt(rtt, now); }
+  // Packets the peer acknowledged by transport-wide feedback leave the v2 history.
+  void OnAcknowledged(std::span<const uint16_t> seqs) { rtx_.CullAcknowledged(seqs); }
 
   // NACK from the peer (RtcpIncoming::nacks). The RTX packets are queued for
   // the pacer at retransmission priority.

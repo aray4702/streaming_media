@@ -61,6 +61,7 @@ class NackTracker : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  Timestamp last_process_ = Timestamp::MinusInfinity();  // Version 2: the last 20 ms retry tick.
   struct Info {
     Timestamp detected;
     Timestamp last_sent = Timestamp::MinusInfinity();
