@@ -3,17 +3,26 @@
 // Real encoders miss their target: scene changes and keyframes overshoot,
 // and some hardware encoders run persistently hot. Two complementary tools:
 //
-// FrameDropper (leaky bucket on encoded bytes): every encoded frame adds its
-// size; the bucket leaks target/fps bytes per frame. When the bucket holds
-// more than `window` worth of the target rate, the next frame is dropped
-// before encoding. Keyframe bytes are spread over the following frames so a
-// single keyframe does not cause a run of drops.
+// FrameDropper: a port of libwebrtc's
+// modules/video_coding/utility/frame_dropper.{h,cc} (M157), with its constants
+// and defaults. A leaky bucket (the accumulator, in kbits) is filled by every
+// encoded frame and leaks target/fps per captured frame. Above half a second of
+// the target rate it raises a smoothed drop ratio (ExpFilter) and DropFrame()
+// spreads the drops over time, at most 4 s of frames in a row. Keyframes and
+// unusually large delta frames (> 3x the running average) are not added at
+// once but spread over 0.5 s of frames. The accumulator is capped at 3 s of the
+// target rate, and rescaled by new/old target when the target drops
+// (SetRates). The caller order per captured frame is as VideoStreamEncoder:
+// Leak(fps), then DropFrame(); SetRates() on a rate update; Fill() after each
+// encoded frame. Keyframes are not exempt, as in libwebrtc.
 //
 // EncoderOvershootDetector: measures actual/target utilization over a
 // sliding window and returns an adjusted target (target / utilization) to
 // feed back into the encoder's rate control, removing systematic overshoot.
 #pragma once
 
+#include <cmath>
+#include <cstdint>
 #include <deque>
 
 #include "sm/core/metrics.h"
@@ -21,38 +30,71 @@
 
 namespace sm::cc {
 
-struct FrameDropperConfig {
-  TimeDelta window = TimeDelta::Millis(500);  // Allowed accumulated overshoot.
-  int keyframe_spread_frames = 15;
-  // The bucket and the pending keyframe bytes never hold more than this much
-  // of the target rate (libwebrtc FrameDropper::CapAccumulator caps at
-  // kAccumulatorCapBufferSizeSecs = 3 s; 1.5 s keeps the stall after a run of
-  // keyframes short on slow links). Keyframes bypass ShouldDrop() but their
-  // bytes enter the bucket: without a cap, a run of keyframe requests keeps it
-  // above its limit and every delta frame is dropped for seconds.
-  TimeDelta max_hold = TimeDelta::Millis(1500);
+// rtc_base/numerics/exp_filter.{h,cc}: filtered = a^exp * filtered + (1 - a^exp) * sample,
+// seeded by the first sample, optionally capped at `max`. Not in
+// compare/webrtc/reference (reported on #57); written from the upstream class.
+class ExpFilter {
+ public:
+  static constexpr float kValueUndefined = -1.0f;
+  explicit ExpFilter(float alpha, float max = kValueUndefined) : alpha_(alpha), max_(max) {}
+  void Reset(float alpha) {
+    alpha_ = alpha;
+    filtered_ = kValueUndefined;
+  }
+  float Apply(float exp, float sample) {
+    if (filtered_ == kValueUndefined) {
+      filtered_ = sample;
+    } else {
+      const float alpha = std::pow(alpha_, exp);
+      filtered_ = alpha * filtered_ + (1 - alpha) * sample;
+    }
+    if (max_ != kValueUndefined && filtered_ > max_) filtered_ = max_;
+    return filtered_;
+  }
+  void UpdateBase(float alpha) { alpha_ = alpha; }
+  float filtered() const { return filtered_; }
+
+ private:
+  float alpha_;
+  float filtered_ = kValueUndefined;
+  float max_;
 };
 
 class FrameDropper : public MetricsSource {
  public:
-  explicit FrameDropper(FrameDropperConfig cfg = {}) : cfg_(cfg) {}
+  FrameDropper();
+  // Back to the initial state (target 300 kbps, 30 fps).
+  void Reset();
+  // The caller's per-frame sequence, as VideoStreamEncoder::OnFrame:
+  // Leak(fps) then DropFrame(). Returns true if the frame is to be dropped.
+  bool ShouldDrop(double input_fps);
+  void Leak(uint32_t input_framerate);
+  bool DropFrame();
+  // `target` is rounded to whole kbps as VideoStreamEncoder::OnBitrateUpdated does.
   void SetRates(DataRate target, double fps);
-  // Before encoding: should this frame be skipped?
-  bool ShouldDrop();
   // After encoding.
   void OnEncodedFrame(DataSize size, bool keyframe);
-  double bucket_bytes() const { return bucket_; }
+  double bucket_bytes() const { return accumulator_ * 1000.0 / 8.0; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  FrameDropperConfig cfg_;
-  void CapBucket();
-  double target_bytes_per_frame_ = 0;
-  double target_bps_ = 0;
-  double max_bucket_ = 0;
-  double bucket_ = 0;
-  double keyframe_debt_ = 0;
-  double keyframe_leak_ = 0;
+  void UpdateRatio();
+  void CapAccumulator();
+
+  ExpFilter key_frame_ratio_;
+  ExpFilter delta_frame_size_avg_kbits_;
+  float large_frame_accumulation_spread_ = 0;
+  int large_frame_accumulation_count_ = 0;
+  float large_frame_accumulation_chunk_size_ = 0;
+  float accumulator_ = 0;
+  float accumulator_max_ = 0;
+  float target_bitrate_ = 0;  // kbps
+  bool drop_next_ = false;
+  ExpFilter drop_ratio_;
+  int drop_count_ = 0;
+  float incoming_frame_rate_ = 0;
+  bool was_below_max_ = true;
+  const float max_drop_duration_secs_ = 4.0f;
   uint64_t frames_ = 0, dropped_ = 0;
 };
 

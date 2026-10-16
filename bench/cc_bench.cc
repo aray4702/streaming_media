@@ -75,7 +75,7 @@ SM_BENCH(cc, FrameDropper_and_Overshoot) {
   od.SetTarget(DataRate::KilobitsPerSec(1000));
   int64_t t = 0;
   for (auto _ : st) {
-    if (!d.ShouldDrop()) d.OnEncodedFrame(DataSize::Bytes(5000), false);
+    if (!d.ShouldDrop(30)) d.OnEncodedFrame(DataSize::Bytes(5000), false);
     od.OnEncodedFrame(DataSize::Bytes(5000), Timestamp::Millis(t));
     bench::DoNotOptimize(od.AdjustedTarget(Timestamp::Millis(t)));
     t += 33;

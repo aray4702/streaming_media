@@ -321,15 +321,19 @@ ALGORITHMS = [
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
-               "bucket and the pending keyframe bytes are capped at 1.5 s of the target rate (libwebrtc's "
-               "FrameDropper::CapAccumulator, which caps at 3 s). The session layer's rtp::VideoSendController "
-               "(issue #37, docs/design/send-controller.md) drives it per captured frame; it keeps the "
-               "test bench's exemption of keyframes from the dropper, which libwebrtc does not have (deviation, "
-               "removed by #5).",
-         verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframes bypass ShouldDrop() "
-                      "but their bytes entered an uncapped bucket, so a run of keyframe requests made the dropper "
-                      "drop every delta frame for seconds; the cap fixes it."),
+               "FrameDropper is a port of libwebrtc's modules/video_coding/utility/frame_dropper.cc (M157) with its "
+               "constants: 0.5 s leaky bucket, accumulator cap 3 s, drop-ratio, key-frame-ratio and frame-size ExpFilters, "
+               "keyframes and delta frames over 3x the average spread over 0.5 s of frames, at most 4 s of frames dropped "
+               "in a row, and the accumulator rescaled by new/old target when the target drops. Keyframes are not "
+               "exempt, as in VideoStreamEncoder::OnFrame. The session layer's rtp::VideoSendController "
+               "(issue #37, docs/design/send-controller.md) drives it per captured frame (Leak, DropFrame, SetRates, Fill). "
+               "Remaining differences (issue #5): the input frame rate is the configured one, not measured; "
+               "ExpFilter (rtc_base/numerics/exp_filter) is not in compare/webrtc/reference and was written from the "
+               "upstream class (reported on #57).",
+         verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframe bytes entered an uncapped "
+                      "bucket and a run of keyframe requests made the dropper drop every delta frame for seconds. "
+                      "Issue #5 ([fix record](../../fixes/5-frame-dropper-port.md)): replaced by the libwebrtc "
+                      "port (3 s cap, rescale on a rate drop); the 1.5 s cap and the keyframe exemption are gone."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],

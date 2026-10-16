@@ -3,7 +3,7 @@
 namespace sm::rtp {
 
 VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session& session)
-    : cfg_(cfg), session_(session), dropper_(cfg.dropper) {}
+    : cfg_(cfg), session_(session) {}
 
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
   const DataRate target = session_.rates().video_target;
@@ -20,12 +20,12 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   d.height = frame.height;
   d.fps = cfg_.fps;
   // As VideoStreamEncoder::OnFrame: the outage pause, then congestion-window
-  // pushback (keyframes included), then the frame dropper (keyframes exempt).
+  // pushback (keyframes included), then the frame dropper (keyframes included).
   if (paused_) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
-  } else if (!key && dropper_.ShouldDrop()) {
+  } else if (dropper_.ShouldDrop(cfg_.fps)) {
     d.reason = DropReason::kFrameDropper;
   } else {
     d.encode = true;

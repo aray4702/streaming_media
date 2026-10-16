@@ -52,8 +52,8 @@ SM_TEST(FrameDropper, OnTargetNoDropsOvershootDrops) {
   hot.SetRates(Kbps(1000), 30);
   int ok_drops = 0, hot_drops = 0;
   for (int i = 0; i < 600; ++i) {
-    if (ok.ShouldDrop()) ++ok_drops; else ok.OnEncodedFrame(DataSize::Bytes(4166), false);
-    if (hot.ShouldDrop()) ++hot_drops; else hot.OnEncodedFrame(DataSize::Bytes(8333), false);
+    if (ok.ShouldDrop(30)) ++ok_drops; else ok.OnEncodedFrame(DataSize::Bytes(4166), false);
+    if (hot.ShouldDrop(30)) ++hot_drops; else hot.OnEncodedFrame(DataSize::Bytes(8333), false);
   }
   SM_EXPECT_EQ(ok_drops, 0);
   // 2x overshoot: about half the frames must go.
@@ -66,12 +66,12 @@ SM_TEST(FrameDropper, KeyframeSpreadAvoidsDropBurst) {
   d.OnEncodedFrame(DataSize::Bytes(4166 * 8), true);  // Big keyframe.
   int drops = 0;
   for (int i = 0; i < 30; ++i) {
-    if (d.ShouldDrop()) ++drops; else d.OnEncodedFrame(DataSize::Bytes(4000), false);
+    if (d.ShouldDrop(30)) ++drops; else d.OnEncodedFrame(DataSize::Bytes(4000), false);
   }
   SM_EXPECT_LE(drops, 2);
 }
 
-// Keyframes skip ShouldDrop() but their bytes enter the bucket. A run of
+// Keyframes skip ShouldDrop(30) but their bytes enter the bucket. A run of
 // keyframe requests used to leave it far above its limit, so every delta frame
 // was dropped for seconds (issue #53); the bucket is capped at 1.5 s of target.
 SM_TEST(FrameDropper, KeyframeRunDoesNotStallDeltaFramesForSeconds) {
@@ -83,14 +83,14 @@ SM_TEST(FrameDropper, KeyframeRunDoesNotStallDeltaFramesForSeconds) {
   int dropped = 0;
   for (int i = 0; i < 300; ++i) {
     d.SetRates(target, 30);
-    if (d.ShouldDrop()) {
+    if (d.ShouldDrop(30)) {
       ++dropped;
     } else {
       d.OnEncodedFrame(DataSize::Bytes(per_frame), false);
     }
   }
-  // Recovers within about 1.5 s (45 frames); uncapped it takes over 150 frames.
-  SM_EXPECT_LT(dropped, 60);
+  // Recovers within the 3 s cap (90 frames); uncapped it takes over 150 frames.
+  SM_EXPECT_LT(dropped, 90);
 }
 
 SM_TEST(FrameDropper, OvershootDetectorAdjustsTarget) {
@@ -165,4 +165,42 @@ SM_TEST(Outage, StatesAndRecoveryActions) {
   SM_EXPECT_TRUE(a.reset_estimate);
   SM_EXPECT_EQ(a.reset_rate.kbps(), 500.0);
   SM_EXPECT_NEAR(CollectMetrics(m)["outage_ms.max"], 6000, 600);
+}
+
+// libwebrtc frame_dropper_unittest.cc: on a rate drop the accumulator is
+// rescaled by new/old target, so a stale bucket does not drop frames for
+// seconds (issue #5: the target fell 853 -> 187 kbps within 2 s and the
+// pre-port dropper kept dropping every frame for 1.4 s).
+SM_TEST(FrameDropper, RateDropRescalesAccumulatorSoDropsStayShort) {
+  FrameDropper d;
+  d.SetRates(Kbps(850), 30);
+  // Run hot (about 1.4x target) for 4 s so the bucket is full.
+  for (int i = 0; i < 120; ++i) {
+    if (!d.ShouldDrop(30)) d.OnEncodedFrame(DataSize::Bytes(850000 / 8 / 30 * 1.4), false);
+  }
+  d.SetRates(Kbps(187), 30);
+  int run = 0, longest = 0;
+  for (int i = 0; i < 90; ++i) {
+    if (d.ShouldDrop(30)) {
+      longest = std::max(longest, ++run);
+    } else {
+      run = 0;
+      d.OnEncodedFrame(DataSize::Bytes(187000 / 8 / 30), false);
+    }
+  }
+  // Pre-port: every frame for ~42 frames. Ported: the rescaled bucket is back
+  // under its limit within a few frames.
+  SM_EXPECT_LT(longest, 15);
+}
+
+// Keyframes are spread over the next frames (large_frame_accumulation) rather
+// than added at once, and the first keyframe of a call does not trigger drops.
+SM_TEST(FrameDropper, DefaultsMatchLibwebrtc) {
+  FrameDropper d;  // Target 300 kbps, 30 fps, bucket 150 kbit.
+  int drops = 0;
+  for (int i = 0; i < 90; ++i) {
+    if (d.ShouldDrop(30)) ++drops; else d.OnEncodedFrame(DataSize::Bytes(300000 / 8 / 30), i == 0);
+  }
+  SM_EXPECT_EQ(drops, 0);
+  SM_EXPECT_NEAR(d.bucket_bytes(), 0.0, 3000.0);
 }

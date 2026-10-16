@@ -68,7 +68,7 @@ SM_TEST(VideoSendController, OutagePauseDropsFramesAndResumeWithKeyframe) {
   SM_EXPECT_TRUE(d.keyframe);
 }
 
-SM_TEST(VideoSendController, FrameDropperDropsDeltaFramesNotKeyframes) {
+SM_TEST(VideoSendController, FrameDropperDropsFramesKeyframesIncluded) {
   Session s(Cfg());
   VideoSendController c({}, s);
   const DataRate target = c.OnCapturedFrame({}, At(0)).target;
@@ -81,11 +81,20 @@ SM_TEST(VideoSendController, FrameDropperDropsDeltaFramesNotKeyframes) {
   auto d = c.OnCapturedFrame({}, At(66));
   SM_EXPECT_FALSE(d.encode);
   SM_EXPECT_TRUE(d.reason == DropReason::kFrameDropper);
-  // A keyframe request bypasses the dropper (kept from the test bench; #5).
-  c.RequestKeyframe();
-  d = c.OnCapturedFrame({}, At(99));
-  SM_EXPECT_TRUE(d.encode);
-  SM_EXPECT_TRUE(d.keyframe);
+  // As VideoStreamEncoder::OnFrame, a keyframe request does not bypass the
+  // dropper (issue #5): while the bucket is over its limit a requested
+  // keyframe is dropped too, and the request stays pending.
+  int dropped = 0;
+  for (int i = 0; i < 5; ++i) {
+    c.RequestKeyframe();
+    d = c.OnCapturedFrame({}, At(99 + 33 * i));
+    if (!d.encode) {
+      ++dropped;
+      SM_EXPECT_TRUE(d.reason == DropReason::kFrameDropper);
+      SM_EXPECT_FALSE(d.keyframe);
+    }
+  }
+  SM_EXPECT_GE(dropped, 1);
 }
 
 SM_TEST(VideoSendController, DroppedFramesAreCounted) {

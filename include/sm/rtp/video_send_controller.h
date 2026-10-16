@@ -13,9 +13,8 @@
 //
 // Not wired yet (note section 6): the quality scaler, CPU overuse detection and
 // the degradation ladder (the test bench's fake encoder reports no QP) and the
-// encoder bitrate adjuster (a field trial in libwebrtc). The keyframe
-// exemption from the frame dropper is kept, as the test bench had it; #5
-// removes it.
+// encoder bitrate adjuster (a field trial in libwebrtc). The frame dropper is
+// libwebrtc's, applied to keyframes too (issue #5).
 #pragma once
 
 #include <cstdint>
@@ -29,7 +28,6 @@
 namespace sm::rtp {
 
 struct VideoSendControllerConfig {
-  cc::FrameDropperConfig dropper;
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Periodic keyframe; zero = off.
   double fps = 30;                                  // Input frame rate fed to the dropper.
   EventSink* events = nullptr;
