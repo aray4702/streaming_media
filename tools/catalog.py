@@ -121,7 +121,8 @@ ALGORITHMS = [
          scenario="1 500 six-packet frames over a link with 8 ms Gaussian jitter (heavy reordering) and 3% "
                   "duplication, with sequence numbers crossing the 16-bit wrap. Every frame must be assembled "
                   "exactly once, with packets in order.",
-         notes="Frame boundaries come from the packetizer's start flag and the RTP marker bit; frames may complete "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "Frame boundaries come from the packetizer's start flag and the RTP marker bit; frames may complete "
                "out of order and are ordered later by decodability (3.5) and the frame scheduler (7.7).",
          verification="No defects found."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
@@ -131,7 +132,8 @@ ALGORITHMS = [
          scenario="60 s of 50 pps media over 30 ms + 5 ms jitter with 5% loss, with real SR/RR packets serialized "
                   "and parsed in both directions. RTT, fraction lost and jitter are compared with the configured "
                   "network.",
-         notes="Implements RFC 3550 A.3 (expected/lost/fraction) and A.8 (interarrival jitter, 1/16 gain) and "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "Implements RFC 3550 A.3 (expected/lost/fraction) and A.8 (interarrival jitter, 1/16 gain) and "
                "the SR/RR wire format. Transport-wide feedback and abs-send-time are in 5.1 and 8.4.",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
@@ -140,7 +142,8 @@ ALGORITHMS = [
          bench=["timing/DelayManager_Update"],
          scenario="The audio jitter buffer simulation with jitter stepping from 5 ms to 40 ms half way; the target "
                   "delay must follow.",
-         notes="A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
                "packets, while falling jitter takes several seconds, so the buffer does not oscillate.",
          verification="No defects found."),
     dict(id="4.4", slug="time-stretch", title="Time stretching (WSOLA accelerate / preemptive expand)",
@@ -151,7 +154,8 @@ ALGORITHMS = [
          scenario="Audio over a quiet network that stalls for 600 ms and then delivers the backlog at once. With "
                   "stretching the buffer must return to its target; without it the extra 600 ms of latency stays "
                   "for the rest of the call.",
-         notes="Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
                "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
                "audible.",
          verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
@@ -164,7 +168,8 @@ ALGORITHMS = [
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
                   "buffer is compared with a fixed 20 ms and a fixed 200 ms buffer.",
-         notes="Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
                "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names.",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
@@ -177,7 +182,8 @@ ALGORITHMS = [
          scenario="60 s of 30 fps video with 3-6 KB frames and a 25 KB keyframe every 2 s over a 2.5 Mbps "
                   "bottleneck with 10 ms jitter. Each frame's render time comes from VideoTiming fed by the "
                   "estimator; a frame is late if it arrives (plus decode time) after its render time.",
-         notes="Deviation from libwebrtc: the jitter term is 3 sigma with no offset, where libwebrtc uses "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
+               "Deviation from libwebrtc: the jitter term is 3 sigma with no offset, where libwebrtc uses "
                "2.33 sigma - 30 ms (it compensates elsewhere with OS-jitter and render allowances). Both are "
                "configurable.",
          verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
