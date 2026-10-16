@@ -1,0 +1,14 @@
+name issue_76_rtx_v2_keyframe_flush
+describe pacer v2 + rtx v2 + keyframe v2 together under loss and a capacity drop (#76 group 2): end-to-end smoke test of the combination
+# Keyframes flush queued resends under pacer v2. This scenario only checks the combination stays healthy;
+# the flushed-resend wiring (RtpSender::OnPacketDropped) is pinned by the unit test
+# SendSideController.FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2.
+pacer v2
+keyframe v2
+rtx v2
+duration 40s
+at 0s  capacity=2500kbps delay=30ms queue=400ms loss=2%
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+expect video.freeze_total_ms < 4000
+expect video.residual_loss_pct < 1

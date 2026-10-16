@@ -109,6 +109,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
   c.rtx = v.rtx;
+  c.rtx.version = std::max(c.rtx.version, cfg_.rtx_version);
   c.fec = VideoFecEnabled(v);
   c.fec_config = v.fec_config;
   video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
@@ -310,6 +311,8 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     send_.OnRtt(rtt_);
     for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
     for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
+    for (auto& v : video_send_) v.sender->SetRtt(rtt_, now);
+    for (auto& a : audio_send_) a.sender->SetRtt(rtt_, now);
     SessionEvent e;
     e.type = SessionEventType::kRttUpdated;
     e.time = now;

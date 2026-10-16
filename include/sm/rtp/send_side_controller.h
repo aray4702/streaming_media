@@ -159,6 +159,13 @@ class SendSideController : public MetricsSource {
   uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;
   std::unordered_map<uint64_t, SenderPacket> queued_;
+  // Media packets sent with a v2 RTX history, by transport-wide sequence number, so that
+  // feedback can cull the acknowledged ones (RtpVideoSender::OnPacketFeedbackVector).
+  struct SentMedia {
+    RtpSender* sender;
+    uint16_t seq;
+  };
+  std::unordered_map<uint16_t, SentMedia> sent_media_;
   uint64_t next_id_ = 1;
   uint16_t transport_seq_ = 0;
   struct Released {

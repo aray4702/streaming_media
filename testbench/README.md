@@ -119,6 +119,7 @@ One directive per line, and `#` starts a comment.
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
 | `pacer v1\|v2` | v1 | v1 is the library's own pacer; v2 is the port of libwebrtc's `PacingController` (#70) |
 | `tcc v1\|v2` | v1 | v1 sends transport-cc feedback every 50 ms, each arrival once; v2 is libwebrtc's generator (interval from 5% of the send estimate, 100 ms to start, arrivals kept 500 ms and late ones re-reported; #76) |
+| `rtx v1\|v2` | v1 | v1 keeps the last 1024 packets, stored when queued, for 2 s; v2 is libwebrtc's `RtpPacketHistory` (stored when the pacer sends, kept max(3 RTT, 1 s), culled on acknowledgement, no resend while a resend is queued; #76) |
 | `keyframe v1\|v2` | v1 | v1 is the original receiver keyframe-request policy; v2 is libwebrtc's (`NackRequester` give-up and overflow rules, `RtpVideoStreamReceiver2` triggers, decode time-out; #23) |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |
 | `reverse at <time> ...` | mirrors forward delay | Change the feedback link |

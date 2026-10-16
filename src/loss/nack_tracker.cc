@@ -5,6 +5,7 @@
 namespace sm::loss {
 namespace {
 constexpr int kLibwebrtcMaxRetries = 100;  // nack_requester.cc kMaxNackRetries
+constexpr TimeDelta kProcessInterval = TimeDelta::Millis(20);  // NackPeriodicProcessor::kUpdateInterval
 }  // namespace
 
 NackTracker::NackTracker(NackConfig cfg) : cfg_(cfg), rtt_(cfg.initial_rtt) {}
@@ -125,10 +126,18 @@ std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
   std::vector<uint16_t> out;
   const TimeDelta retry = std::max(rtt_ * cfg_.retry_rtt_factor, cfg_.min_retry_interval);
   const int max_retries = cfg_.version >= 2 && cfg_.max_retries == 10 ? kLibwebrtcMaxRetries : cfg_.max_retries;
+  // Version 2: a retry is decided by NackPeriodicProcessor, every kUpdateInterval (20 ms), not at
+  // every call (nack_requester.h). A retry therefore leaves up to 20 ms after the RTT has passed,
+  // which is what keeps it from arriving just short of the sender's one-RTT repeat guard.
+  bool tick = true;
+  if (cfg_.version >= 2) {
+    tick = !last_process_.IsFinite() || now - last_process_ >= kProcessInterval;
+    if (tick) last_process_ = now;
+  }
   for (auto it = missing_.begin(); it != missing_.end();) {
     Info& info = it->second;
     bool due = info.retries == 0 ? (now - info.detected >= cfg_.reorder_wait)
-                                 : (now - info.last_sent >= retry);
+                                 : (tick && now - info.last_sent >= retry);
     if (due && info.retries >= max_retries) {
       ++stats_.abandoned;
       SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);

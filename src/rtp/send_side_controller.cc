@@ -71,7 +71,11 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   pacer_.Enqueue(pp);
   // A keyframe flushed the video stream's queue: those packets are never sent.
   for (const cc::PacedPacket& f : pacer_.TakeFlushed()) {
-    queued_.erase(f.id);
+    auto it = queued_.find(f.id);
+    if (it != queued_.end()) {
+      if (it->second.sender) it->second.sender->OnPacketDropped(it->second);
+      queued_.erase(it);
+    }
     ++stats_.flushed;
   }
 }
@@ -109,6 +113,14 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.wire_size = sent.size;
     r.probe_cluster = sent.probe_cluster;
     r.send_time = now;
+    if (sp.sender) {
+      sp.sender->OnPacketReleased(sp, now);
+      if (sp.sender->config().rtx.version >= 2 && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
+        sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
+        // Feedback never covers more than a few seconds; bound the table.
+        sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));
+      }
+    }
     gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
@@ -146,6 +158,17 @@ Timestamp SendSideController::NextProcessTime(Timestamp now) const {
 }
 
 void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now) {
+  if (!sent_media_.empty()) {
+    std::unordered_map<RtpSender*, std::vector<uint16_t>> acked;
+    for (const auto& p : fb.packets) {
+      if (!p.received) continue;
+      auto it = sent_media_.find(p.seq);
+      if (it == sent_media_.end()) continue;
+      acked[it->second.sender].push_back(it->second.seq);
+      sent_media_.erase(it);
+    }
+    for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
+  }
   Apply(gcc_.OnTransportFeedback(fb, now));
   if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
   UpdatePushback(now, true);

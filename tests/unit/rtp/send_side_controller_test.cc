@@ -229,3 +229,44 @@ SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
   SM_EXPECT_TRUE(std::find(seqs.begin(), seqs.end(), 100) != seqs.end());
   SM_EXPECT_EQ(released_ids + c.stats().flushed, 21u);
 }
+
+// A resend that a keyframe flushes from the pacer never reaches the history's MarkPacketAsSent:
+// the controller must tell the sender (RtpSender::OnPacketDropped), else the v2 history keeps the
+// packet pending and a later NACK for it is ignored for the rest of the call.
+SM_TEST(SendSideController, FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2) {
+  SendSideConfig cfg;
+  cfg.pacer.version = cc::PacerVersion::kV2;
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  sc.rtx.version = 2;
+  RtpSender sender(sc);
+  Timestamp now = Timestamp::Millis(0);
+  const std::vector<uint8_t> chunk(300, 1);
+  sender.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000, now);
+  auto media = sender.TakePackets();
+  SM_ASSERT_EQ(media.size(), 1u);
+  const uint16_t seq = media[0].packet.seq;
+  for (auto& p : media) c.Enqueue(std::move(p), now);
+  for (int t = 0; t < 100; ++t) c.Process(Timestamp::Millis(t));  // The pacer sends it: the history stores it.
+  now = Timestamp::Millis(300);
+  const TimeDelta rtt = TimeDelta::Millis(50);
+  sender.SetRtt(rtt, now);
+  sender.OnNack(std::vector<uint16_t>{seq}, now, rtt);
+  auto resend = sender.TakePackets();
+  SM_ASSERT_EQ(resend.size(), 1u);
+  SM_EXPECT_TRUE(resend[0].kind == PacketKind::kRtx);
+  for (auto& p : resend) c.Enqueue(std::move(p), now);  // Queued, not yet sent.
+  // A keyframe starts: the pacer discards the queued resend.
+  SenderPacket key = Media(100, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100);
+  key.is_key_frame = true;
+  key.first_packet_of_frame = true;
+  c.Enqueue(key, now);
+  SM_ASSERT_GT(c.stats().flushed, 0u);
+  // Asked again later, the sender answers: the flushed resend is not pending any more.
+  now = Timestamp::Millis(900);
+  sender.OnNack(std::vector<uint16_t>{seq}, now, rtt);
+  SM_EXPECT_EQ(sender.TakePackets().size(), 1u);
+}
