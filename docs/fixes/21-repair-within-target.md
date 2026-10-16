@@ -180,15 +180,15 @@ more than 5% worse than `main`. Metrics that are identical are omitted.
 | high_jitter | video.render_fps | 25.4 (27) | 24.9 (27) | 29.8 | 0/20 | no |
 | high_jitter | video.e2e_delay_p95_ms | 1536.2 (1546) | 1538.5 (1546) | 136.3 | 0/20 | no |
 | high_jitter | cc.queue_p95_ms | 1.3 (3) | 0.9 (2) | 4.6 | 1/20 | no |
-| issue_18_lntf_not_pli | video.freeze_total_ms | 21.6 (220) | 33.2 (230) | 1862.8 | 3/20 | yes |
-| issue_18_lntf_not_pli | video.longest_freeze_ms | 39.5 (220) | 49.1 (230) | 356.9 | 11/20 | yes |
-| issue_18_lntf_not_pli | net.loss_pct | 4.9 (6) | 4.9 (6) | 4.8 | 0/20 | yes |
-| issue_18_lntf_not_pli | repair.overhead_pct | 47.1 (62) | 48.8 (63) | 8.6 | 9/20 | no |
-| issue_18_lntf_not_pli | cc.utilization_pct | 61.1 (78) | 56.8 (73) | 77.5 | 11/20 | no |
-| issue_18_lntf_not_pli | video.avg_kbps | 759.3 (1081) | 689.4 (969) | 1382.4 | 11/20 | no |
-| issue_18_lntf_not_pli | video.render_fps | 29.7 (30) | 29.6 (30) | 29.9 | 0/20 | no |
-| issue_18_lntf_not_pli | video.e2e_delay_p95_ms | 194.0 (233) | 194.8 (268) | 209.5 | 5/20 | yes |
-| issue_18_lntf_not_pli | cc.queue_p95_ms | 13.1 (19) | 13.0 (20) | 29.5 | 8/20 | no |
+| issue_18_random_loss_keyframes | video.freeze_total_ms | 21.6 (220) | 33.2 (230) | 1862.8 | 3/20 | yes |
+| issue_18_random_loss_keyframes | video.longest_freeze_ms | 39.5 (220) | 49.1 (230) | 356.9 | 11/20 | yes |
+| issue_18_random_loss_keyframes | net.loss_pct | 4.9 (6) | 4.9 (6) | 4.8 | 0/20 | yes |
+| issue_18_random_loss_keyframes | repair.overhead_pct | 47.1 (62) | 48.8 (63) | 8.6 | 9/20 | no |
+| issue_18_random_loss_keyframes | cc.utilization_pct | 61.1 (78) | 56.8 (73) | 77.5 | 11/20 | no |
+| issue_18_random_loss_keyframes | video.avg_kbps | 759.3 (1081) | 689.4 (969) | 1382.4 | 11/20 | no |
+| issue_18_random_loss_keyframes | video.render_fps | 29.7 (30) | 29.6 (30) | 29.9 | 0/20 | no |
+| issue_18_random_loss_keyframes | video.e2e_delay_p95_ms | 194.0 (233) | 194.8 (268) | 209.5 | 5/20 | yes |
+| issue_18_random_loss_keyframes | cc.queue_p95_ms | 13.1 (19) | 13.0 (20) | 29.5 | 8/20 | no |
 | issue_53_cwnd_pushback | video.freeze_total_ms | 4459.8 (5413) | 3824.4 (5348) | 3190.5 | 4/20 | yes |
 | issue_53_cwnd_pushback | video.longest_freeze_ms | 1446.1 (2766) | 1418.1 (2652) | 1139.5 | 8/20 | yes |
 | issue_53_cwnd_pushback | net.loss_pct | 8.8 (12) | 8.6 (12) | 6.2 | 3/20 | yes |
@@ -275,11 +275,11 @@ FEC amount comes from `media_opt_util` and is a later item.
 | high_jitter | repair.overhead_pct | 13.42 | 9.363 | improved |
 | high_jitter | video.avg_kbps | 104.6 | 79.85 | REGRESSED |
 | high_jitter | video.freeze_total_ms | 437 | 234 | improved |
-| issue_18_lntf_not_pli | cc.goodput_kbps | 1171 | 1267 | improved |
-| issue_18_lntf_not_pli | cc.target_avg_kbps | 1072 | 1255 | improved |
-| issue_18_lntf_not_pli | cc.utilization_pct | 58.55 | 63.35 | improved |
-| issue_18_lntf_not_pli | repair.overhead_pct | 39.76 | 42.75 | REGRESSED |
-| issue_18_lntf_not_pli | video.avg_kbps | 760.5 | 810.9 | improved |
+| issue_18_random_loss_keyframes | cc.goodput_kbps | 1171 | 1267 | improved |
+| issue_18_random_loss_keyframes | cc.target_avg_kbps | 1072 | 1255 | improved |
+| issue_18_random_loss_keyframes | cc.utilization_pct | 58.55 | 63.35 | improved |
+| issue_18_random_loss_keyframes | repair.overhead_pct | 39.76 | 42.75 | REGRESSED |
+| issue_18_random_loss_keyframes | video.avg_kbps | 760.5 | 810.9 | improved |
 | issue_21_shallow_drop_repair | (new scenario) | - | - | new |
 | issue_53_cwnd_pushback | audio.stretch_pct | 2.163 | 3.806 | REGRESSED |
 | issue_53_cwnd_pushback | repair.overhead_pct | 23.79 | 25.33 | REGRESSED |

@@ -160,7 +160,7 @@ Seed-1 comparison against the old baseline (`tools/testbench_compare.py --markdo
 | clean_link | cc.send_over_target_ms | - | 0 | added |
 | cross_traffic | cc.send_over_target_ms | - | 0 | added |
 | high_jitter | cc.send_over_target_ms | - | 1.89e+04 | added |
-| issue_18_lntf_not_pli | cc.send_over_target_ms | - | 0 | added |
+| issue_18_random_loss_keyframes | cc.send_over_target_ms | - | 0 | added |
 | issue_53_cwnd_pushback | (new scenario) | - | - | new |
 | lossy_feedback | cc.send_over_target_ms | - | 0 | added |
 | low_bandwidth | audio.concealed_pct | 3.329 | 4.881 | REGRESSED |

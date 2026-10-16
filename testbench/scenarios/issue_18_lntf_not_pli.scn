@@ -1,7 +1,0 @@
-name issue_18_lntf_not_pli
-describe 5% random loss: loss notifications (LNTF) must not make the sender encode keyframes
-duration 30s
-at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
-expect video.keyframe_requests <= 3
-expect video.freeze_total_ms < 1000
-expect audio.interruptions == 0

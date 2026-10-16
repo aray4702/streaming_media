@@ -13,6 +13,7 @@ constexpr size_t kMaxFrameMeta = 1024;
 
 loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
   loss::NackConfig n = c.nack_config;
+  if (c.keyframe.version >= 2) n.version = 2;  // One switch for the receiver's repair policy.
   if (!n.events) n.events = c.events;
   return n;
 }
@@ -140,6 +141,7 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     return;
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
+  keyframes_.OnMediaPacket(now, info.idr || info.sps || info.pps);
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that
   // opens a keyframe access unit carries the parameter sets or the IDR slice.
@@ -209,8 +211,11 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
 void RtpReceiver::Process(Timestamp now) {
   if (!cfg_.video) return;
   AssembleFrames(now);
+  if (cfg_.nack && cfg_.keyframe.version >= 2 && nack_.TakeKeyframeRequest()) {
+    keyframes_.OnExternalRequest(now, "trigger_nack_list_full");
+  }
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
-  if (cfg_.nack && nack_.TakeKeyframeRequest()) feedback_.pli = true;
+  if (cfg_.nack && cfg_.keyframe.version < 2 && nack_.TakeKeyframeRequest()) feedback_.pli = true;
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
     auto it = frames_.find(id);
     if (it == frames_.end()) continue;

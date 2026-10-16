@@ -1,0 +1,13 @@
+name issue_23_outage_500ms
+describe 0.5 s outage on a 2 Mbps link: one keyframe is enough (Tester run 4 on #23: v1 asked for 6-8)
+# Issue #23 (partial): libwebrtc asks for 0-1 keyframes here.
+# Target (issue #23): within 2x of libwebrtc or within 2 requests, without raising video.longest_freeze_ms.
+keyframe v2
+duration 30s
+at 0s  capacity=2000kbps delay=20ms queue=300ms
+at 10s down
+at 10.5s up
+reverse at 0s delay=20ms
+reverse at 10s down
+reverse at 10.5s up
+expect video.keyframe_requests <= 2

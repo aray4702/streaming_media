@@ -18,9 +18,13 @@
 namespace sm::loss {
 
 struct NackConfig {
+  // 1 = the library's original policy. 2 = libwebrtc's NackRequester: giving up
+  // after kMaxNackRetries (100) asks for no keyframe, and a full list is
+  // cleared and asks for one (issue #23). Default 1 until the final PR.
+  int version = 1;
   int max_packet_age = 10000;       // Forget gaps older than newest - age.
   size_t max_nack_list = 1000;      // Overflow -> drop to next keyframe.
-  int max_retries = 10;
+  int max_retries = 10;             // Version 2 uses libwebrtc's kMaxNackRetries (100) when left at 10.
   TimeDelta min_retry_interval = TimeDelta::Millis(20);
   double retry_rtt_factor = 1.0;    // Retry after max(rtt * factor, min).
   TimeDelta reorder_wait = TimeDelta::Zero();  // Delay before the first NACK.
@@ -63,6 +67,7 @@ class NackTracker : public MetricsSource {
     int retries = 0;
   };
   void AddMissing(int64_t from, int64_t to, Timestamp now);
+  void AddMissingV2(int64_t from, int64_t to, Timestamp now);
   void TrimOld(Timestamp now);
   bool RecoverKeyframeSpace(Timestamp now);
 

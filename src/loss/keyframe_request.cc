@@ -14,6 +14,15 @@ bool KeyframeRequester::IsDecodable(const FrameInfo& f) const {
 
 void KeyframeRequester::OnFrame(const FrameInfo& f, Timestamp now) {
   ++stats_.frames_received;
+  if (cfg_.version >= 2 && !has_received_frame_) {
+    // RtpVideoStreamReceiver2::OnAssembledFrame: frames that arrive before a
+    // keyframe cannot be decoded, so ask for one right away.
+    has_received_frame_ = true;
+    if (!f.keyframe) {
+      need_request_ = true;
+      SM_EVENT(cfg_.events, now, "keyframe", "trigger_first_frame_delta", 0, f.frame_id);
+    }
+  }
   last_received_ = std::max(last_received_, f.frame_id);
   if (f.keyframe) {
     // A keyframe resets the dependency chain; older blocked frames are dead.
@@ -31,11 +40,13 @@ void KeyframeRequester::OnFrame(const FrameInfo& f, Timestamp now) {
     first_request_ = Timestamp::MinusInfinity();
   }
   if (IsDecodable(f)) {
+    timeout_base_ = now;
+    decoded_any_ = true;
     decodable_.insert(f.frame_id);
     ready_.push_back(f.frame_id);
     ++stats_.frames_decodable;
     last_decodable_ = std::max(last_decodable_, f.frame_id);
-    Propagate();
+    Propagate(now);
   } else {
     waiting_.emplace(f.frame_id, std::make_pair(f, now));
     if (cfg_.send_lntf && waiting_.size() == 1) lntf_pending_ = true;
@@ -47,13 +58,14 @@ void KeyframeRequester::OnFrame(const FrameInfo& f, Timestamp now) {
   }
 }
 
-void KeyframeRequester::Propagate() {
+void KeyframeRequester::Propagate(Timestamp now) {
   bool progress = true;
   while (progress) {
     progress = false;
     for (auto it = waiting_.begin(); it != waiting_.end(); ++it) {
       if (IsDecodable(it->second.first)) {
         int64_t id = it->first;
+        timeout_base_ = now;
         decodable_.insert(id);
         ready_.push_back(id);
         ++stats_.frames_decodable;
@@ -68,14 +80,26 @@ void KeyframeRequester::Propagate() {
 
 void KeyframeRequester::OnFrameLost(int64_t frame_id, Timestamp now) {
   last_received_ = std::max(last_received_, frame_id);
-  need_request_ = true;
+  // libwebrtc does not turn a lost frame into a keyframe request: NACK keeps
+  // repairing it, and the decode time-out is the backstop.
+  if (cfg_.version < 2) need_request_ = true;
   if (cfg_.send_lntf) lntf_pending_ = true;
   SM_EVENT(cfg_.events, now, "keyframe", "frame_lost", 0, frame_id);
 }
 
 void KeyframeRequester::OnDecoderError(Timestamp now) {
   need_request_ = true;
-  SM_EVENT(cfg_.events, now, "keyframe", "decoder_error", 0, last_received_);
+  SM_EVENT(cfg_.events, now, "keyframe", cfg_.version >= 2 ? "trigger_decoder_error" : "decoder_error", 0, last_received_);
+}
+
+void KeyframeRequester::OnMediaPacket(Timestamp now, bool keyframe_packet) {
+  last_packet_ = now;
+  if (keyframe_packet) last_keyframe_packet_ = now;
+}
+
+void KeyframeRequester::OnExternalRequest(Timestamp now, const char* reason) {
+  need_request_ = true;
+  SM_EVENT(cfg_.events, now, "keyframe", reason, 0, last_received_);
 }
 
 void KeyframeRequester::OnStreamStart(Timestamp now) {
@@ -108,6 +132,31 @@ std::vector<FeedbackMessage> KeyframeRequester::Process(Timestamp now) {
     m.last_decodable = last_decodable_;
     m.last_received = last_received_;
     out.push_back(m);
+  }
+  if (cfg_.version >= 2) {
+    // No repair window, no retry timer and no receiver-side throttle in
+    // libwebrtc (RtcpFeedbackBuffer coalesces the triggers of one pass). A
+    // blocked frame is repaired by NACK; no decodable frame for max_wait_for_*
+    // on an active stream that is not receiving a keyframe asks for one.
+    if (!timeout_base_.IsFinite()) timeout_base_ = now;
+    const TimeDelta wait = decoded_any_ ? cfg_.max_wait_for_frame : cfg_.max_wait_for_keyframe;
+    if (now - timeout_base_ >= wait) {
+      const bool active = last_packet_.IsFinite() && now - last_packet_ < cfg_.stream_inactive_after;
+      const bool receiving_key = last_keyframe_packet_.IsFinite() && now - last_keyframe_packet_ < cfg_.max_wait_for_keyframe;
+      if (active && !receiving_key) {
+        need_request_ = true;
+        SM_EVENT(cfg_.events, now, "keyframe", "trigger_decode_timeout", wait.ms_f(), last_decodable_);
+      }
+      timeout_base_ = now;  // Re-arms after each firing.
+    }
+    if (need_request_) {
+      const bool fir = need_fir_;
+      RequestKeyframe(now, fir, fir ? "fir" : "pli");
+      FeedbackMessage m{fir ? FeedbackType::kFir : FeedbackType::kPli};
+      m.fir_seq = fir_seq_;
+      out.push_back(m);
+    }
+    return out;
   }
   // Frames blocked longer than the repair window are not going to be fixed by NACK.
   const TimeDelta window = std::max(cfg_.repair_window, rtt_ * cfg_.repair_rtt_factor);

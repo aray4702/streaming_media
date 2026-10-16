@@ -1,0 +1,9 @@
+name issue_23_low_bandwidth
+describe 150 kbps link: audio must stay clean, video degrades gracefully: the receiver asks for keyframes as libwebrtc does
+# Issue #23 (partial): the receiver asks for a keyframe only where libwebrtc does (NackRequester + RtpVideoStreamReceiver2).
+# Target (issue #23): video.keyframe_requests within 2x of libwebrtc or within 2 requests (libwebrtc: 0.3) on seeds 1-5
+# without raising video.longest_freeze_ms; this scenario locks the request count only (see docs/fixes/23-libwebrtc-keyframe-policy.md, Remaining).
+keyframe v2
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+expect video.keyframe_requests <= 2

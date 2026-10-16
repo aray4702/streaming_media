@@ -156,3 +156,37 @@ SM_TEST(Rtx, HistoryResendThrottleAndEviction) {
   auto stale = s.OnNack(std::vector<uint16_t>{15}, Ms(5000), TimeDelta::Millis(50));
   SM_EXPECT_TRUE(stale.empty());
 }
+
+SM_TEST(NackTracker, V2GivesUpAfter100RetriesWithoutKeyframeRequest) {
+  // NackRequester: kMaxNackRetries 100, and the entry is only erased.
+  NackConfig cfg;
+  cfg.version = 2;
+  cfg.min_retry_interval = TimeDelta::Millis(10);
+  NackTracker n(cfg);
+  n.UpdateRtt(TimeDelta::Millis(10));
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(0));
+  int sent = 0;
+  for (int t = 0; t <= 2000; t += 10) sent += static_cast<int>(n.GetNackBatch(Ms(t)).size());
+  SM_EXPECT_EQ(sent, 100);
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_EQ(n.stats().abandoned, 1u);
+  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
+}
+
+SM_TEST(NackTracker, V2ListOverflowClearsEverythingAndRequestsKeyframe) {
+  // AddPacketsToNack: no attempt to keep the gaps after a keyframe.
+  NackConfig cfg;
+  cfg.version = 2;
+  cfg.max_nack_list = 10;
+  NackTracker n(cfg);
+  n.OnReceivedPacket(0, true, Ms(0));
+  n.OnReceivedPacket(8, false, Ms(0));   // 7 missing.
+  n.OnReceivedPacket(9, true, Ms(0));    // A keyframe at 9 changes nothing.
+  SM_EXPECT_EQ(n.pending(), 7u);
+  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
+  n.OnReceivedPacket(15, false, Ms(0));  // +5 would make 12 > 10: clear.
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_TRUE(n.TakeKeyframeRequest());
+  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
+}

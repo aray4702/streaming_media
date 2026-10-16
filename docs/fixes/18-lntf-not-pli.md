@@ -4,7 +4,7 @@ title: Test bench sends every loss notification (LNTF) as a PLI, so the sender e
 severity: sev:2
 status: fixed
 area: area:loss, area:testbench
-regression_tests: testbench/scenarios/issue_18_lntf_not_pli.scn
+regression_tests: testbench/scenarios/issue_18_random_loss_keyframes.scn
 ---
 
 # #18: Test bench sends every loss notification (LNTF) as a PLI
@@ -35,7 +35,7 @@ and FIR still request a keyframe. No library or API change.
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_18_lntf_not_pli.scn` | `video.keyframe_requests` 12 (expect <= 3), `video.freeze_total_ms` 1340 (expect < 1000) | 1 and 0 |
+| `testbench/scenarios/issue_18_random_loss_keyframes.scn` | `video.keyframe_requests` 12 (expect <= 3), `video.freeze_total_ms` 1340 (expect < 1000) | 1 and 0 |
 
 ## Results
 
@@ -85,7 +85,7 @@ Suite against the previous baseline (`tools/testbench_compare.py --markdown`):
 | high_jitter | video.keyframe_requests | 57 | 1 | improved |
 | high_jitter | video.longest_freeze_ms | 1886 | 499 | improved |
 | high_jitter | video.render_fps | 17.8 | 26.13 | improved |
-| issue_18_lntf_not_pli | (new scenario) | - | - | new |
+| issue_18_random_loss_keyframes | (new scenario) | - | - | new |
 | low_bandwidth | audio.jb_delay_p95_ms | 416 | 352 | improved |
 | low_bandwidth | audio.mouth_to_ear_p95_ms | 954.6 | 890.9 | improved |
 | low_bandwidth | video.e2e_delay_p50_ms | 1520 | 1597 | REGRESSED |
