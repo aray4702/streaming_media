@@ -198,7 +198,8 @@ ALGORITHMS = [
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
                   "real wire format, parsed and joined with the send history. Each packet must be reported once, "
                   "with arrival-time error within the 250 us quantization.",
-         notes="Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. A message is split when a delta overflows 16 bits.",
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
@@ -208,7 +209,8 @@ ALGORITHMS = [
          scenario="Full closed loop (encoder, pacer, transport-cc, GCC) over a bottleneck whose capacity steps "
                   "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
                   "delay are measured over the second half of each phase.",
-         notes="After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
                "takes about 17 s, so the last phase has a lower utilization bar.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
@@ -221,7 +223,8 @@ ALGORITHMS = [
          bench=["cc/Q_LossBwe_15pct"],
          scenario="An 8 Mbps link with 15% versus 1% random loss: heavy loss must push the rate far below "
                   "capacity, light loss must not.",
-         notes="Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
                "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up.",
          verification="Defect found: loss was measured over 20-packet intervals, and a lucky interval with no "
                       "loss (about 4% likely at 15% loss) let the estimate jump from 153 to 2 338 kbps. Now loss "
@@ -232,7 +235,8 @@ ALGORITHMS = [
          bench=["cc/Gcc_OnFeedback_per_packet"],
          scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
                   "(decrease band). Each phase's target is compared with the previous one.",
-         notes="The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
                "2.5 x target. rtp::SendSideController adds congestion-window pushback "
                "(cc/congestion_window_pushback.h, a port of libwebrtc's CongestionWindowPushbackController with "
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
@@ -251,7 +255,8 @@ ALGORITHMS = [
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
-         notes="Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
                "so no packet waits longer than max_queue_time (2 s).",
          verification="A unit test queued 10 s worth of data, which correctly triggers drain mode; the test now "
                       "stays inside the queue-time limit. A priority test was rewritten so the retransmission is "
@@ -262,7 +267,8 @@ ALGORITHMS = [
          bench=["cc/Q_Probing_rampup_5mbps"],
          scenario="A 5 Mbps link starting at 300 kbps: time for the target to reach 80% of capacity, with and "
                   "without probing.",
-         notes="Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
                "the estimator ignores clusters with too few packets or bytes.",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
                       "within 30 s."),
@@ -272,7 +278,8 @@ ALGORITHMS = [
          bench=["cc/BitrateAllocator_5streams", "cc/Q_Allocator_low_bandwidth"],
          scenario="Audio (enforced 20-40 kbps), camera (150-2500 kbps) and screen share (250-1500 kbps, priority "
                   "2) share a GCC target while capacity steps 3000 -> 450 -> 3000 kbps.",
-         notes="Paused streams resume only at min x 1.1 (hysteresis).",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Paused streams resume only at min x 1.1 (hysteresis).",
          verification="A unit-test expectation was wrong about how leftover bitrate is shared (it is split by "
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
@@ -281,7 +288,8 @@ ALGORITHMS = [
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
-         notes="Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "Keyframe bytes are spread over 15 frames so one keyframe does not cause a run of drops. The "
                "bucket and the pending keyframe bytes are capped at 1.5 s of the target rate (libwebrtc's "
                "FrameDropper::CapAccumulator, which caps at 3 s).",
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframes bypass ShouldDrop() "
@@ -295,7 +303,8 @@ ALGORITHMS = [
          scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
                   "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
                   "settle on a sustainable resolution without oscillating.",
-         notes="The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
          verification="No defects found after the 5.2 fixes."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
@@ -304,7 +313,8 @@ ALGORITHMS = [
          bench=["cc/Q_Outage_recovery"],
          scenario="A 2 Mbps call with a 7 s total outage (both directions) at 20 s; packets sent into the dead "
                   "link, ICE restarts and time to recover 50% of capacity are measured.",
-         notes="On recovery the estimate is reset to half the last good rate and probing is restarted, because "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
+               "On recovery the estimate is reset to half the last good rate and probing is restarted, because "
                "the path may have changed.",
          verification="No defects found."),
     # ------------------------------------------------------------------ 6
