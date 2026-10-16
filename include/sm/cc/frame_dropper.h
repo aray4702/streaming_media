@@ -43,6 +43,8 @@ class ExpFilter {
   float Apply(float exp, float sample) {
     if (filtered_ == kValueUndefined) {
       filtered_ = sample;
+    } else if (exp == 1.0f) {
+      filtered_ = alpha_ * filtered_ + (1 - alpha_) * sample;
     } else {
       const float alpha = std::pow(alpha_, exp);
       filtered_ = alpha * filtered_ + (1 - alpha) * sample;
@@ -74,6 +76,7 @@ class FrameDropper : public MetricsSource {
   // After encoding.
   void OnEncodedFrame(DataSize size, bool keyframe);
   double bucket_bytes() const { return accumulator_ * 1000.0 / 8.0; }
+  double incoming_frame_rate() const { return incoming_frame_rate_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

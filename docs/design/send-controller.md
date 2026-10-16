@@ -19,7 +19,7 @@ libwebrtc sources are cited from `compare/webrtc/reference/` (M157).
 | Outage pause / resume / keyframe | `ControllerActions`, `kEncoderPause`, `kKeyframeRequested` | library |
 | Frame dropper | `cc::FrameDropper`, driven from `testbench/call.cc` (`SetRates`, `ShouldDrop`, `OnEncodedFrame`) | **app glue** |
 | Keyframe on request or periodically | `keyframe_needed`, `periodic` in `call.cc` | **app glue** |
-| Encoder overshoot correction | `cc::EncoderBitrateAdjuster` + `cc::EncoderOvershootDetector`, inside `VideoSendController` behind `bitrate_adjuster` (off by default; #5 PR 2) | library |
+| Encoder overshoot correction | `cc::EncoderBitrateAdjuster` + `cc::EncoderOvershootDetector`, inside `VideoSendController` (on by default as in M157; #5) | library |
 | Quality scaler, CPU overuse, degradation ladder | `video::QualityScaler`, `cc::CpuOveruseDetector`, `cc::DegradationController` (unused by `call.cc`) | library, unwired |
 | Audio vs video allocation | `cc::BitrateAllocator` (unused by the session) | library, unwired |
 
@@ -124,9 +124,9 @@ video target after pushback, drop interval). The controller derives
 `EncoderBitrateAdjuster` correction when `VideoSendControllerConfig::bitrate_adjuster`
 is on (libwebrtc M157 has it on by default, `RateControlSettings::bitrate_adjuster`).
 The adjuster is the port of `video/encoder_bitrate_adjuster.cc` and
-`encoder_overshoot_detector.cc` (issue #5, PR 2). It is off by default because
-with it on the test bench moves away from libwebrtc on clean links, which comes
-from the missing link-allocation headroom (see the parity inventory 5.6). The
+`encoder_overshoot_detector.cc` (issue #5, PR 2). It is on by default
+(issue #5, final PR); the link allocation is the encoder target, as in
+`VideoSendStreamImpl::OnBitrateUpdated`, so it has no headroom. The
 frame dropper keeps the unadjusted target, as in `VideoStreamEncoder::OnBitrateUpdated`.
 
 The audio encoder rate is not on this controller. In libwebrtc it comes from
@@ -143,7 +143,7 @@ is wired). In PR 2 it stays the session's existing audio wire rule.
 | Frame dropper arithmetic (accumulator, `Leak`/`Fill`, 1.5 s cap vs 3 s) | `frame_dropper.cc` | custom leaky bucket | #5 |
 | Quality scaler / degradation ladder unused by the test bench | active when a stream has QP | wired but the fake encoder reports no QP, so inactive | PR 2 keeps it inactive; an AI-camera scenario needs a QP model |
 | Initial frame drop, `DropDueToSize` | present | absent | later issue, if a scenario needs it |
-| Encoder bitrate adjuster | field-trial gated | off | later issue |
+| Encoder bitrate adjuster | on (`RateControlSettings`) | on | resolved by #5 |
 | Simulcast / SVC | supported | one stream | out of scope (one-to-one calls) |
 
 ## 7. Missing reference

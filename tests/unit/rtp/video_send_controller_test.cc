@@ -111,6 +111,7 @@ SM_TEST(VideoSendController, BitrateAdjusterLowersTheEncoderRateNotTheDropperTar
   VideoSendControllerConfig on;
   on.bitrate_adjuster = true;
   VideoSendControllerConfig off;
+  off.bitrate_adjuster = false;
   VideoSendController a(on, s);
   VideoSendController b(off, s);
   const DataRate target = s.rates().video_target;
@@ -121,4 +122,46 @@ SM_TEST(VideoSendController, BitrateAdjusterLowersTheEncoderRateNotTheDropperTar
   // libwebrtc assumes a 20% overshoot until 30 frames were encoded.
   SM_EXPECT_NEAR(da.target.kbps(), target.kbps() / 1.2, 0.1);
   SM_EXPECT_NEAR(a.bitrate_adjuster().adjusted().kbps(), target.kbps() / 1.2, 0.1);
+}
+
+SM_TEST(VideoSendController, BitrateAdjusterIsOnByDefaultAsInM157) {
+  SM_EXPECT_TRUE(VideoSendControllerConfig{}.bitrate_adjuster);
+}
+
+// VideoStreamEncoder::GetInputFramerateFps: the measured rate of captured
+// frames (FrameCadenceAdapter's RateStatistics, 2970 ms window), the configured
+// maximum while unavailable.
+SM_TEST(VideoSendController, InputFrameRateIsMeasuredNotConfigured) {
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.fps = 30;
+  VideoSendController c(cfg, s);
+  // Unavailable for the first frames: the configured maximum.
+  SM_EXPECT_NEAR(c.OnCapturedFrame({}, At(0)).fps, 30.0, 0.0);
+  SM_EXPECT_NEAR(c.OnCapturedFrame({}, At(50)).fps, 30.0, 0.0);
+  EncodeDecision d;
+  for (int t = 100; t <= 4000; t += 50) d = c.OnCapturedFrame({}, At(t));
+  SM_EXPECT_NEAR(d.fps, 20.0, 1.0);
+  // The frame dropper is fed the same rate.
+  SM_EXPECT_NEAR(c.frame_dropper().incoming_frame_rate(), 20.0, 1.0);
+  // Frames dropped by the controller still count as captured: the rate follows
+  // the camera, not what was encoded.
+  for (int t = 4050; t <= 8000; t += 100) d = c.OnCapturedFrame({}, At(t));
+  SM_EXPECT_NEAR(d.fps, 10.0, 1.0);
+}
+
+// VideoSendStreamImpl::OnBitrateUpdated: link_allocation equals the encoder
+// target, so the adjuster sees no headroom from the session's audio share.
+SM_TEST(VideoSendController, LinkAllocationEqualsTheEncoderTarget) {
+  Session s(Cfg());
+  VideoSendController c({}, s);
+  const DataRate target = s.rates().video_target;
+  for (int t = 0; t < 3000; t += 33) {
+    const auto d = c.OnCapturedFrame({}, At(t));
+    SM_EXPECT_TRUE(d.encode);
+    // Encoder output exactly on target: no overshoot, so the adjusted rate
+    // never exceeds the target (no headroom to grow into).
+    c.OnEncoded({DataSize::Bytes(target.bps() / 8 / 30), false}, At(t));
+    SM_EXPECT_TRUE(d.target <= target);
+  }
 }

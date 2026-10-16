@@ -12,8 +12,8 @@
 // Takes `now`, reads no clock, starts no thread, has no callbacks.
 //
 // The encoder bitrate adjuster (cc::EncoderBitrateAdjuster, on by default in
-// libwebrtc M157, behind `bitrate_adjuster` here) lowers the rate `EncodeDecision::target` by the encoder's
-// measured overshoot (issue #5); the frame dropper keeps working on the
+// libwebrtc M157, also here; `bitrate_adjuster` switches it off) lowers the
+// rate `EncodeDecision::target` by the encoder's measured overshoot (issue #5); the frame dropper keeps working on the
 // unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated.
 //
 // Not wired yet (note section 6): the quality scaler, CPU overuse detection and
@@ -22,6 +22,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 
 #include "sm/cc/encoder_bitrate_adjuster.h"
 #include "sm/cc/frame_dropper.h"
@@ -34,11 +35,13 @@ namespace sm::rtp {
 
 struct VideoSendControllerConfig {
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Periodic keyframe; zero = off.
-  double fps = 30;                                  // Input frame rate fed to the dropper.
-  // RateControlSettings bitrate_adjuster (true in M157; off here until it is
-  // judged against libwebrtc as a whole, issue #5); `adjuster_use_headroom` and
-  // the codec minimum bitrate are in `adjuster`.
-  bool bitrate_adjuster = false;
+  // The configured maximum frame rate (VideoStreamEncoder::max_framerate_). The
+  // dropper and the bitrate adjuster get the measured input rate instead; this
+  // is the fallback while it is unavailable (GetInputFramerateFps).
+  double fps = 30;
+  // RateControlSettings bitrate_adjuster (true in M157, issue #5);
+  // `adjuster_use_headroom` and the codec minimum bitrate are in `adjuster`.
+  bool bitrate_adjuster = true;
   cc::EncoderBitrateAdjusterConfig adjuster;
   EventSink* events = nullptr;
 };
@@ -55,7 +58,7 @@ struct EncodeDecision {
   bool keyframe = false;
   DataRate target;  // Rate to configure the encoder with (after the bitrate adjuster).
   int width = 0, height = 0;
-  double fps = 0;
+  double fps = 0;  // Measured input frame rate (GetInputFramerateFps).
 };
 
 struct EncodedFrameReport {
@@ -80,6 +83,10 @@ class VideoSendController : public MetricsSource {
   const cc::FrameDropper& frame_dropper() const { return dropper_; }
   const cc::EncoderBitrateAdjuster& bitrate_adjuster() const { return adjuster_; }
   bool paused() const { return paused_; }
+  // VideoStreamEncoder::GetInputFramerateFps: the rate of captured frames over
+  // the last 2970 ms (FrameCadenceAdapter's RateStatistics), or the configured
+  // maximum while it is unavailable or zero.
+  double input_fps() const { return input_fps_ > 0 ? input_fps_ : cfg_.fps; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
@@ -87,6 +94,11 @@ class VideoSendController : public MetricsSource {
   Session& session_;
   cc::FrameDropper dropper_;
   cc::EncoderBitrateAdjuster adjuster_;
+  // RateStatistics (window 2970 ms, scale 1000) over captured frames.
+  void UpdateFrameRate(Timestamp now);
+  std::deque<int64_t> frame_times_ms_;
+  int64_t first_frame_ms_ = -1;
+  int input_fps_ = 0;  // Rate before the current frame was counted; 0 = unavailable.
   bool paused_ = false;
   bool keyframe_needed_ = true;  // The first frame is a keyframe.
   Timestamp last_keyframe_ = Timestamp::MinusInfinity();
