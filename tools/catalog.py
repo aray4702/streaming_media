@@ -526,7 +526,7 @@ ALGORITHMS = [
          scenario="120 s with a sender audio clock 80 ppm off its NTP clock; SRs every second over a jittery "
                   "link. Every 20 ms the estimated capture time of the current RTP timestamp is compared with "
                   "the truth.",
-         notes="", verification="No algorithm defects; one unit test's reject counting was corrected."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected."),
     dict(id="8.2", slug="stream-sync", title="Audio/video synchronization and CNAME sync groups",
          problems=["Lip-sync (A/V sync) -> the receiver aligns playout delay between streams",
                    "Synchronizing multiple streams from one sender -> shared CNAME, MediaStream grouping"],
@@ -535,7 +535,7 @@ ALGORITHMS = [
          scenario="Audio (30 ms network, 60 ms buffer) and video (90 ms network, 40 ms decode/render) from one "
                   "CNAME; at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after "
                   "settling and after the route change.",
-         notes="The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
          verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
                       "(40 ms offset)."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
@@ -545,7 +545,7 @@ ALGORITHMS = [
          scenario="A sender 2.5 s ahead of the receiver; an SFU rewrites RTP timestamps but forwards "
                   "abs-capture-time; the receiver learns the clock offset from SRs and measures capture-to-render "
                   "latency for every frame.",
-         notes="", verification="Portability finding: interpolation used long double, which is software-emulated "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="Portability finding: interpolation used long double, which is software-emulated "
                                 "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
                                 "It now uses exact integer arithmetic."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
@@ -555,7 +555,7 @@ ALGORITHMS = [
          scenario="One 5-tuple carrying audio, three simulcast video encodings and RTX (repaired RID) with "
                   "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
                   "mid-call. Routing accuracy.",
-         notes="", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No defects found."),
     # ------------------------------------------------------------------ 9
     dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",

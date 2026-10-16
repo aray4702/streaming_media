@@ -18,8 +18,8 @@ relative to that directory.
 - `n/a`: no libwebrtc counterpart or not in scope, with the reason.
 - `same`: checked and equal (listed where a reader would otherwise wonder).
 
-**Scope of this version.** Sections 3 (packet loss), 4 (jitter and timing)
-and 5 (congestion control). Sections 6, 7, 8 and the RTP session layer follow in separate
+**Scope of this version.** Sections 3 (packet loss), 4 (jitter and timing),
+5 (congestion control) and 8 (synchronization). Sections 6, 7 and the RTP session layer follow in separate
 PRs; their headings are below with the state `not yet inventoried`.
 Rows were found by reading our code next to libwebrtc's. A constant listed as
 `same` was compared; a module not listed has not been compared yet. No code
@@ -229,6 +229,94 @@ the differences found in the files above. Each belongs to #62.
 | `cc/outage_monitor.cc` ICE-restart request | ICE belongs to the host stack (`program.md` 0.1). Request signalling only. | n/a |
 | Metrics / `SM_EVENT` hooks in every module | Library convention. | n/a |
 
+## 8. Synchronization
+
+Reference files: `video/stream_synchronization.*`, `video/rtp_streams_synchronizer2.*`,
+`rtc_base/rtp_to_ntp_estimator.*`, `modules/rtp_rtcp/source/remote_ntp_time_estimator.cc`,
+`modules/rtp_rtcp/source/ntp_time_util.*`, `modules/rtp_rtcp/source/rtp_sender_video.cc`
+(abs-capture-time on send), `video/rtp_video_stream_receiver2.cc` (abs-capture-time on
+receive, `GetSyncInfo`), `audio/audio_send_stream.cc` (extension registration),
+`media/engine/webrtc_video_engine.cc` (base minimum playout delay).
+
+**Where it runs.** The section 8 modules are used by their unit, e2e and bench
+tests only. The test bench call (`testbench/call.cc`) registers the transport-cc
+extension and nothing else from section 8: it does not map RTP to NTP, does not
+run `StreamSynchronization` and sends no abs-capture-time. The comparison harness
+(`compare/webrtc/webrtc_call.cc`) registers the same one extension and sets no
+sync group, so **neither side synchronizes audio and video in any `sm_compare`
+scenario today**. Section 8 parity is therefore not measured; #63 owns the metric
+(`sync.av_offset_p95_ms`), and wiring the modules into the session layer is
+unplaced (see the last table).
+
+### 8.1 RTP timestamp to NTP (`RtpToNtpEstimator`, `src/sync/rtp_to_ntp.cc`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Regression and window | `rtc_base/rtp_to_ntp_estimator.cc` (`UpdateParameters`, `kNumRtcpReportsToUse` 20) | **Same**: least squares of NTP on the unwrapped RTP timestamp over the last 20 SRs, slope gives the media clock rate (`EstimatedFrequencyKhz`). Ours works in milliseconds as `double`; libwebrtc in NTP units (2^-32 s) as `double`, and rounds the estimate with `+ 0.5`. The difference is far below a microsecond. libwebrtc computes the line from 2 points; ours also requires `slope > 0` before it is valid. | same | #63 |
+| Duplicate measurement | `UpdateMeasurements` (`kSameMeasurement`) | **Same** rule (equal NTP or equal unwrapped RTP). Ours tests `py == y` after converting to milliseconds, so two NTP values less than a microsecond apart count as the same; libwebrtc compares exact NTP values. | same | #63 |
+| Rejecting a bad SR | `UpdateMeasurements` (`invalid_sample`, `kMaxInvalidSamples` 3, `kMaxAllowedRtcpNtpInterval` 1 h, RTP jump limit `1 << 25`) | Different rule. libwebrtc compares the new SR with the **newest** stored one: NTP must move forward and by less than 1 h, RTP must move forward and by less than `1 << 25` ticks; after 3 consecutive invalid samples it clears the history. Ours predicts the new point from the **fitted line** and rejects a point more than `max_deviation` **30 ms** off (once 3 points exist); after 3 consecutive rejections it resets. Ours therefore rejects SRs delayed in the sender by more than 30 ms, which libwebrtc accepts, and does not check direction or the 1 h and `1 << 25` limits. Also: libwebrtc keeps the history sorted newest first and a new measurement older than the front in RTP is invalid (ours unwraps with `SeqNumUnwrapper` and would accept it if it fits the line). | port | unplaced |
+| `Estimate` of a timestamp | `Estimate` | libwebrtc unwraps with the same unwrapper that `UpdateMeasurements` advances (`unwrapper_.Unwrap`); ours uses `PeekUnwrap`, which does not move it. Equal for normal use. | same | |
+
+### 8.2 Audio/video synchronization (`StreamSynchronization`, `src/sync/stream_sync.cc`)
+
+libwebrtc splits the work between `RtpStreamsSynchronizer` (`rtp_streams_synchronizer2.cc`,
+what to measure and when) and `StreamSynchronization` (`stream_synchronization.cc`, the
+filter and the delay rule). Ours is one class and the caller decides when to call `Update`.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Constants | `kMaxChangeMs` 80, `kMaxDeltaDelayMs` 10000, `kFilterLength` 4, `kMinDeltaMs` 30 | **Same** values: tolerance 30 ms, step limit 80 ms, filter weight 1/4 (`filter = 0.25`), maximum extra delay 10 s. | same | |
+| Relative delay | `ComputeRelativeDelay` | **Same** formula: `(video_receive - audio_receive) - (video_capture - audio_capture)`, capture times from the two RTP-to-NTP maps. Different: libwebrtc returns "no update" when the result is beyond +-10000 ms; ours has no such check. The receive times are those of the **latest received RTP packet** of each stream (`GetSyncInfo`: `last_received_rtp_system_time_`, the matching RTP timestamp), where ours is given the arrival of the last audio packet and the last video **frame** (`OnVideoFrame`). | port | unplaced |
+| Offset filter | `ComputeDelays` (`avg_diff_ms_`, integer arithmetic) | Different: (1) libwebrtc starts the average at **0** and filters from the first sample (`(3 x avg + cur) / 4`), so the first update sees one quarter of the offset; ours starts at the first sample. (2) After a correction libwebrtc **resets the average to 0**; ours subtracts the applied step, keeping the remainder. (3) libwebrtc uses integer milliseconds (truncating division); ours uses `double`. (4) The measured input differs in what it contains: libwebrtc's `current_diff = current_video_delay - current_audio_delay + relative_delay`, where `current_video_delay` is the video target delay passed in (the previous output when it applied one), and the audio delay is the current audio delay; ours adds the *extra delays it applied itself* to the caller's delays. Whether the two inputs are the same quantity depends on what `VideoReceiveStream2` reports as `current_delay`, and that file is not in `reference/`. | port | unplaced |
+| Delay rule | `ComputeDelays` (`audio_delay_`/`video_delay_` with `extra_ms` and `last_ms`) | Different: libwebrtc changes **one stream at a time**. Video late: lower the video extra delay if it is above the base target, otherwise raise the audio extra delay, and set the other stream's extra delay back to the base target. Video early: lower the audio extra delay if any, otherwise raise the video's. The output is `extra_ms` for the stream that moved and **`last_ms`** (the previous output) for the other, each capped at base + 10 s and with video never below base. Ours moves video then audio in one step (`from_video`, remainder to audio), so both extra delays can change in one update, and clamps each extra delay to 0..10 s. | port | unplaced |
+| What the output means | `rtp_streams_synchronizer2.cc` `UpdateDelay` | libwebrtc passes the result to `SetMinimumPlayoutDelay(target_ms)` of the audio and video streams: a **minimum total playout delay** (audio `target_audio_delay_ms` starts at 0, video at its current delay). Ours returns `SyncDelays` as **extra delay to add** to the current delay. The two are equal only when the caller adds the extra delay to the current delay and re-reads it; the library has no caller that does either (see "Where it runs"). | port | unplaced |
+| When it runs | `kSyncInterval` 1 s repeating task; skipped when no new audio packet **and** no new video packet arrived since the last run, when either stream has no SR yet, or when `RtpToNtpEstimator` is not valid | Ours has no schedule and no "new packet" rule; the caller chooses. It returns nothing until both streams have an estimate. | port | unplaced |
+| Failed delay change | `ReduceAudioDelay`, `ReduceVideoDelay` (extra delay x 0.9 when `SetMinimumPlayoutDelay` returns false) | No counterpart. | port | unplaced |
+| Base target delay | `SetTargetBufferingDelay`, `base_target_delay_ms_`; the engine's `SetBaseMinimumPlayoutDelayMs` (`webrtc_video_engine.cc`) | No counterpart: ours has no base delay that both streams are lifted to. | port | unplaced |
+| Which streams are paired | `RtpStreamsSynchronizer::ConfigureSync(Syncable* audio)` called per **sync group** by `Call` (`call/call.cc`, not in `reference/`) | `MediaSyncGroups` pairs by **CNAME** and takes the lowest SSRC of each kind. libwebrtc pairs by the `sync_group` string of the receive stream configuration (the stream id from SDP), one audio stream per video stream. Same purpose, different key; `call/call.cc` and `call/syncable.h` are needed to confirm. | file needed (#57) | unplaced |
+| Stream offset stat | `GetStreamSyncOffsetInMs` (video playout NTP vs audio playout NTP, estimated frequency) | No counterpart: ours reports `av_offset_ms` computed inside `Update`. This is the quantity #63's metric needs. | port | #63 |
+
+### 8.3 Capture time and glass-to-glass latency (`src/sync/capture_time.cc`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `AbsoluteCaptureTimeSender` | `absolute_capture_time_sender.*`, called from `rtp_sender_video.cc` line ~695 | libwebrtc builds the extension for **video** from the frame's capture time when the caller gave none (NTP of the capture time, estimated clock offset 0) and puts it on the **first packet of a frame only**, and only when its `OnSendPacket` returns a value. The sender's constants (resend interval, interpolation error limit) are in `absolute_capture_time_sender.cc`, which is not in `reference/`, so ours (1 s, 1 ms) is not compared. Different in structure: ours decides per packet; libwebrtc per frame (first packet). The audio send path only registers the extension (`audio_send_stream.cc`). | file needed (#57) | unplaced |
+| `AbsoluteCaptureTimeInterpolator` | `absolute_capture_time_interpolator.*`, called from `rtp_video_stream_receiver2.cc` line ~781 (video clock rate 90 kHz) | The interpolation rule and its time limit are in a file that is not in `reference/` (ours: 5 s). libwebrtc also adjusts the received offset with a `CaptureClockOffsetUpdater` (`capture_clock_offset_updater`, file needed); ours has no counterpart. | file needed (#57) | unplaced |
+| Wire format of the extension | WebRTC experimental extension `http://www.webrtc.org/experiments/rtp-hdrext/abs-capture-time`, 8 or 16 bytes | **Same** layout (UQ32.32 capture time, optional Q32.32 offset). Interop with libwebrtc's parser has not been run. | same (interop check unplaced) | unplaced |
+| `LatencyEstimator` (SR clock offset) | `RemoteNtpTimeEstimator` (`UpdateRtcpTimestamp`, `EstimateRemoteToLocalClockOffset`) | Same input: SR NTP time, arrival NTP time and RTT/2 as the delivery time. Different filter: libwebrtc keeps the last `kClocksOffsetSmoothingWindow` **7** offsets and uses their **median** (`MovingMedianFilter`), and reports an offset only after `kMinimumNumberOfSamples` **3**; ours takes the **minimum** and leaks 5% of the gap upward per SR, with no minimum count. Ours is biased low by design (least-queued SR), the median is not. | port | unplaced |
+| Where capture time becomes a latency | `rtp_video_stream_receiver2.cc` line ~1037: only when the field trial `WebRTC-UseAbsCapTimeForG2gMetric` is enabled (not default; it is a retiring trial in `experiments/field_trials.py`) is the absolute capture time (plus the local clock offset) used, for the glass-to-glass (g2g) metric. | `LatencyEstimator::OnRendered` exposes the latency as a library metric (`capture_to_render_ms`). libwebrtc does not report it by default, so there is no libwebrtc value to compare with in `sm_compare`. | n/a (library extra; deviation to be decided) | unplaced |
+
+### 8.4 Header extensions and BUNDLE demultiplexing (`src/sync/header_extensions.cc`)
+
+No libwebrtc source for this area is in `reference/`: the RFC 8285 parser and writer
+(`rtp_packet.cc`, `rtp_header_extensions.cc`), `RtpHeaderExtensionMap` and the
+BUNDLE demuxer (`call/rtp_demuxer.cc`, `call/rtp_stream_receiver_controller.*`) are
+missing. The table records what can be said without them.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| One- and two-byte extension forms, `ExtensionMap` | `rtp_packet.cc`, `rtp_header_extension_map.cc` | Not compared (file needed). Our `WriteHeaderExtensions` picks the one-byte form when all elements fit. Interop with libwebrtc's parser is covered for transport-cc and MID in `compare/webrtc/rtcp_interop.cc`; other extensions are not. | file needed (#57) | unplaced |
+| `RtpDemuxer` order (MID(+RID), known SSRC, unique payload type) | `call/rtp_demuxer.cc` (`ResolveSink`: SSRC sinks, then MID + RSID, then payload type) | Not compared (file needed). The one-to-one product decision keeps BUNDLE demultiplexing (`program.md` 0.1), but simulcast RID routing is only needed by an SFU. | file needed (#57) | unplaced |
+| Extensions the harness registers | `webrtc_call.cc` | Only transport-wide sequence number. MID, abs-send-time and abs-capture-time are never on the wire in a comparison scenario. | n/a | |
+
+### 8.5 Items for the Owner to place
+
+Rows marked `unplaced` above fall into three groups; none has an issue yet:
+
+1. **Port `StreamSynchronization` and `RtpStreamsSynchronizer` as libwebrtc has
+   them** (8.1 rejection rule, 8.2 filter, delay rule, schedule, `ReduceDelay`,
+   base delay). Needs a place on the work list after #63 builds the metric, since
+   the library does not use the module today.
+2. **Wire sync into the session layer** (`src/rtp`): SR to `RtpToNtpEstimator`,
+   `GetSyncInfo`-like inputs, `SetMinimumPlayoutDelay` on the audio jitter buffer
+   and video timing. Without it no scenario can show a sync gap.
+3. **Add to #57:** `modules/rtp_rtcp/source/absolute_capture_time_sender.*`,
+   `absolute_capture_time_interpolator.*`, `capture_clock_offset_updater.*`,
+   `call/call.cc` (`ConfigureSync`), `call/syncable.h`,
+   `video/video_receive_stream2.cc` (`GetInfo`, `current_delay`),
+   `call/rtp_demuxer.cc`, `modules/rtp_rtcp/source/rtp_packet.cc`,
+   `rtp_header_extensions.cc`, `rtp_header_extension_map.cc`.
+
 ## Not yet inventoried
 
 These areas will be added in separate PRs for #59, in this order. Their
@@ -236,7 +324,6 @@ tables go in this file.
 
 - 6 Audio quality
 - 7 Video quality
-- 8 Synchronization
 - RTP session layer (`src/rtp`)
 
 ## Open questions for the Owner
@@ -260,3 +347,8 @@ tables go in this file.
    is present, but `relative_arrival_delay_tracker.*` (named in #62) is not in
    `reference/` and the 4.4 row on relative delay is read from
    `packet_arrival_history.cc` and `delay_manager.cc` only. Add them through #57.
+5. For section 8: the files listed in 8.5 item 3 (abs-capture-time sender and
+   interpolator, `call/call.cc`, `video_receive_stream2.cc`, the demuxer and the
+   RTP packet parser) are missing; the rows that need them say "file needed".
+   Should the library wire A/V sync into the session layer before #63's metric
+   exists (8.5 items 1 and 2)?
