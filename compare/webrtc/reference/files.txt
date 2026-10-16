@@ -122,3 +122,5 @@ video/video_send_stream_impl.h
 video/video_send_stream_impl.cc
 video/rate_utilization_tracker.h
 video/rate_utilization_tracker.cc
+rtc_base/rate_statistics.h
+rtc_base/rate_statistics.cc
