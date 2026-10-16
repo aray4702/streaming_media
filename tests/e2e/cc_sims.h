@@ -213,7 +213,7 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
       double fps = 30;
       DataRate enc_target = video_target;
       if (p.frame_dropper) dropper.SetRates(enc_target, fps);
-      if (p.frame_dropper && dropper.ShouldDrop()) {
+      if (p.frame_dropper && dropper.ShouldDrop(fps)) {
         ++r.frames_dropped;
       } else {
         bool key = force_keyframe || (p.keyframe_interval_ms > 0 && t % p.keyframe_interval_ms < 33);
