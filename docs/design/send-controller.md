@@ -1,6 +1,6 @@
 # Send-side media controller: API note (issue #37, PR 1 of 2)
 
-Status: **proposal, for the Owner to merge.** No code changes in this PR.
+Status: **approved by the Owner (PR #81 comment), answers to section 9 applied.** No code changes in this PR.
 The behaviour-preserving move (PR 2) follows once this note is accepted.
 
 Decision (Owner, 2026-10-15): the library owns encoder-side adaptation as
@@ -42,18 +42,17 @@ libwebrtc sources are cited from `compare/webrtc/reference/` (M157).
 
 ## 3. API
 
-A new `sm::rtp::SendController` (header `include/sm/rtp/send_controller.h`),
+A new `sm::rtp::VideoSendController` (header `include/sm/rtp/video_send_controller.h`),
 one per video stream, owned by the app next to the encoder and attached to a
 `SendSideController` (not owned). It composes the existing modules; it adds no
 new algorithm.
 
 ```cpp
-struct SendControllerConfig {
+struct VideoSendControllerConfig {
   cc::FrameDropperConfig dropper;
   cc::DegradationConfig degradation;        // input format, preference, limits
   video::QualityScalerConfig quality;       // thresholds per codec
   cc::CpuOveruseConfig cpu;
-  DataRate audio_min, audio_max;            // Opus range, for allocation
   TimeDelta keyframe_interval;              // periodic IDR; zero = off
   EventSink* events = nullptr;
 };
@@ -75,9 +74,9 @@ struct EncodedFrameReport {
   bool failed = false;
 };
 
-class SendController : public MetricsSource {
+class VideoSendController : public MetricsSource {
  public:
-  SendController(SendControllerConfig, SendSideController& send_side);
+  VideoSendController(VideoSendControllerConfig, SendSideController& send_side);
 
   // Per captured frame, before encoding.
   EncodeDecision OnCapturedFrame(const CapturedFrame&, Timestamp now);
@@ -85,8 +84,6 @@ class SendController : public MetricsSource {
   void OnEncoded(const EncodedFrameReport&, Timestamp now);
   // The app saw SessionEventType::kKeyframeRequested (PLI, FIR, outage monitor).
   void RequestKeyframe();
-  // Audio: bitrate to configure the Opus encoder with.
-  DataRate AudioBitrate() const;
 };
 ```
 
@@ -130,9 +127,11 @@ video target after pushback, drop interval). The controller derives
 module is wired but off, so test bench numbers are unchanged. Turning it on is
 a separate, measured step.
 
-`BitrateAllocator` (audio vs video) is wired for `AudioBitrate()` only. The
-session's existing audio wire rate stays the rule until the allocator is
-checked against `call/bitrate_allocator.cc` (not in the reference tree).
+The audio encoder rate is not on this controller. In libwebrtc it comes from
+`BitrateAllocator` through `AudioSendStream::OnBitrateUpdated`
+(`audio/audio_send_stream.cc`) at the call level. Here it is exposed at the
+call level (`SendSideController` or the session, wherever `BitrateAllocator`
+is wired). In PR 2 it stays the session's existing audio wire rule.
 
 ## 6. Deviations and open points (for `tools/catalog.py` once the code lands)
 
@@ -147,12 +146,12 @@ checked against `call/bitrate_allocator.cc` (not in the reference tree).
 
 ## 7. Missing reference
 
-`call/bitrate_allocator.cc` is not in the reference tree (`frame_dropper.cc` is). Reported on #57. Until it is added the
-allocator mapping above is by name only, and PR 2 does not change it.
+`call/bitrate_allocator.{h,cc}` was not in the reference tree; the Owner is
+adding it in a separate PR, so PR 2 can cite it.
 
 ## 8. PR 2 plan (behaviour-preserving)
 
-1. Add `SendController` and its unit tests (drop reasons, sticky keyframe,
+1. Add `VideoSendController` and its unit tests (drop reasons, sticky keyframe,
    pause/resume, pushback interval, failed encode).
 2. `testbench/call.cc` calls `OnCapturedFrame()` / `OnEncoded()`; the
    `dropper`, `keyframe_needed`, `periodic` and `video_paused` glue is deleted.
@@ -161,16 +160,13 @@ allocator mapping above is by name only, and PR 2 does not change it.
    difference explained.
 5. Update `docs/design/architecture.md` and the README usage example; move the
    `cc::FrameDropper...` row of `docs/design/rtp-session.md` section 5.1 from
-   "App" to "Library (`SendController`)".
+   "App" to "Library (`VideoSendController`)".
 6. Builds: native, ASan, no-exceptions, wasm (CI), embedded.
 
-## 9. Questions for the Owner
+## 9. Owner decisions (recorded)
 
-1. One `SendController` per video stream, or one per call with audio inside?
-   Recommendation: per video stream, with `AudioBitrate()` on the same object
-   only while there is a single audio stream.
-2. Keep the keyframe exemption from the frame dropper in PR 2 (recommended,
-   keeps metrics identical) or follow libwebrtc immediately?
-3. Is a header named `sm/rtp/send_controller.h` acceptable next to the existing
-   `send_side_controller.h`, given the similar names? Alternative:
-   `sm/rtp/encoder_controller.h`.
+1. One controller per video stream, as libwebrtc has one `VideoStreamEncoder`
+   per stream. Audio is not on it: the audio rate is exposed at the call level.
+2. The keyframe exemption from the frame dropper stays in PR 2 (behaviour
+   preserving). It remains a listed deviation (section 6); #5 removes it.
+3. Name: `sm::rtp::VideoSendController`, header `sm/rtp/video_send_controller.h`.
