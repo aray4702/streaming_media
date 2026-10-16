@@ -45,6 +45,11 @@ struct RtcpConfig {
   // libwebrtc draws each interval uniformly from 0.5 to 1.5 times the
   // nominal one. Off keeps the reports on a fixed grid.
   bool randomize_intervals = false;
+  // 2 = libwebrtc's `RTCPSender::ComputeTimeUntilNextReport` (#76): every
+  // interval is a whole number of milliseconds drawn from [0.5, 1.5] x the
+  // minimum, at least 1 ms, and a video sender above 72 kbit/s uses
+  // min(360 / kbit/s s, interval) (RFC 3550 6.2). Implies randomization.
+  int version = 1;
   // Reduced-size RTCP (RFC 5506): early feedback is sent without the leading
   // SR/RR. Only when the peer negotiated it.
   bool reduced_size = false;
@@ -182,6 +187,9 @@ class RtcpEngine : public MetricsSource {
   std::vector<Queued> queue_;
   std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> next seq_nr
   std::map<std::pair<uint32_t, uint32_t>, uint8_t> fir_seq_in_;   // (sender, media) -> last seq_nr
+  void UpdateSendRate(Timestamp now);
+  std::vector<std::pair<Timestamp, uint32_t>> rate_samples_;
+  DataRate send_rate_ = DataRate::Zero();
   timing::RttEstimator rtt_;
   RtcpStats stats_;
 };

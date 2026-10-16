@@ -20,7 +20,32 @@ void RtcpEngine::AddLocalMediaSsrc(uint32_t ssrc) { local_ssrcs_.push_back(ssrc)
 TimeDelta RtcpEngine::Interval() {
   TimeDelta nominal = cfg_.report_interval.IsZero() ? (cfg_.has_video ? kVideoReportInterval : kAudioReportInterval)
                                                     : cfg_.report_interval;
+  if (cfg_.version >= 2) {
+    TimeDelta min_interval = nominal;
+    if (cfg_.has_video && sender_ && send_rate_ > DataRate::BitsPerSec(72'000)) {
+      min_interval = std::min(TimeDelta::Millis(360'000 / (send_rate_.bps() / 1000)), nominal);
+    }
+    const int64_t m = min_interval.ms();
+    const int64_t lo = m * 1 / 2, hi = m * 3 / 2;
+    const int64_t ms = lo + static_cast<int64_t>(rng_.Uniform(0.0, 1.0) * static_cast<double>(hi - lo + 1));
+    return TimeDelta::Millis(std::max<int64_t>(std::min(ms, hi), 1));
+  }
   return cfg_.randomize_intervals ? nominal * rng_.Uniform(0.5, 1.5) : nominal;
+}
+
+// The sender's bitrate over the last second, from the SR octet counter
+// (libwebrtc feeds the interval rule with the RTP module's send bitrate).
+void RtcpEngine::UpdateSendRate(Timestamp now) {
+  rate_samples_.push_back({now, sender_->octet_count});
+  while (rate_samples_.size() > 2 && now - rate_samples_[1].first >= TimeDelta::Seconds(1)) {
+    rate_samples_.erase(rate_samples_.begin());
+  }
+  const auto& a = rate_samples_.front();
+  const TimeDelta dt = now - a.first;
+  if (dt >= TimeDelta::Millis(100)) {
+    send_rate_ = DataRate::BitsPerSec(static_cast<int64_t>(static_cast<uint32_t>(sender_->octet_count - a.second)) * 8 *
+                                      1000000 / dt.us());
+  }
 }
 
 // --- Egress -------------------------------------------------------------------
@@ -123,6 +148,7 @@ void RtcpEngine::Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind k
 
 std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   std::vector<RtcpOutgoing> out;
+  if (sender_) UpdateSendRate(now);
   if (!started_) {
     started_ = true;
     TimeDelta first = cfg_.first_report_delay;

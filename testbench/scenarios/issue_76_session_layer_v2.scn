@@ -1,0 +1,13 @@
+name issue_76_session_layer_v2
+describe Jittery lossy link with the RTP session layer as libwebrtc: RTCP report timing, RTT floor, receive-statistics jitter guards, packet buffer sizing (#76 groups 3-6)
+# Groups 3-6 are parity-only on this scenario: no metric moves against `rtcp v1`/`keyframe v1`.
+# Target (#76): the call holds up with libwebrtc's report timing and packet buffer.
+seed 1
+keyframe v2
+rtcp v2
+duration 30s
+at 0s capacity=3000kbps delay=40ms jitter=15ms reorder=on loss=1% queue=200ms
+reverse at 0s delay=40ms
+expect video.longest_freeze_ms < 2500
+expect video.residual_loss_pct < 1
+expect audio.concealed_pct < 4

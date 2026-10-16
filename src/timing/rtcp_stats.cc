@@ -114,21 +114,30 @@ std::optional<ReceiverReport> ParseReceiverReport(std::span<const uint8_t> d) {
 
 void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival) {
   int64_t s = unwrapper_.Unwrap(seq);
-  if (!started_) {
+  const bool first = !started_;
+  if (first) {
     started_ = true;
     base_seq_ = max_seq_ = s;
   }
-  max_seq_ = std::max(max_seq_, s);
   ++received_;
-  // Interarrival jitter (RFC 3550 A.8): J += (|D| - J) / 16, in RTP units.
-  int64_t arrival_rtp = arrival.us() * clock_rate_ / 1000000;
-  int64_t transit = arrival_rtp - static_cast<int64_t>(rtp_ts);
-  if (have_transit_) {
-    int64_t d = std::llabs(transit - last_transit_);
-    jitter_ += static_cast<double>(d) - (jitter_ + 8) / 16.0;
+  // StreamStatisticianImpl::UpdateCounters: only an in-order packet moves the
+  // jitter state, and only one with a new timestamp after the first.
+  if (!first && s <= max_seq_) return;
+  max_seq_ = std::max(max_seq_, s);
+  if (!first && rtp_ts != last_timestamp_) {
+    // UpdateJitter: the receive gap in RTP units against the timestamp gap,
+    // Q4 integer filter; a jump of 5 s of 90 kHz video clock is skipped.
+    constexpr int32_t kJumpLimit = 5 * 90000;
+    int64_t receive_diff_us = (arrival - last_receive_time_).us();
+    uint32_t receive_diff_rtp = static_cast<uint32_t>(receive_diff_us * clock_rate_ / 1000000);
+    int32_t time_diff_samples = static_cast<int32_t>(receive_diff_rtp - (rtp_ts - last_timestamp_));
+    if (time_diff_samples < kJumpLimit && time_diff_samples > -kJumpLimit) {
+      int32_t jitter_diff_q4 = (std::abs(time_diff_samples) << 4) - jitter_q4_;
+      jitter_q4_ += (jitter_diff_q4 + 8) >> 4;
+    }
   }
-  last_transit_ = transit;
-  have_transit_ = true;
+  last_timestamp_ = rtp_ts;
+  last_receive_time_ = arrival;
 }
 
 void ReceiveStatistics::OnSenderReport(const SenderReport& sr, Timestamp arrival) {
@@ -161,7 +170,7 @@ ReportBlock ReceiveStatistics::MakeReportBlock(Timestamp now) {
   last_fraction_ = rb.fraction_lost;
   rb.cumulative_lost = static_cast<int32_t>(expected - received_);
   rb.extended_highest_seq = static_cast<uint32_t>(max_seq_);
-  rb.jitter = static_cast<uint32_t>(jitter_ / 16.0);
+  rb.jitter = static_cast<uint32_t>(jitter_q4_ >> 4);
   if (last_sr_arrival_.IsFinite()) {
     rb.last_sr = last_sr_compact_;
     rb.delay_since_last_sr = static_cast<uint32_t>(((now - last_sr_arrival_).us() << 16) / 1000000);
@@ -183,8 +192,11 @@ std::optional<TimeDelta> RttEstimator::OnReportBlock(const ReportBlock& rb, Time
   if (rb.last_sr == 0) return std::nullopt;
   uint32_t a = NtpTime::FromTimestamp(arrival).Compact();
   uint32_t rtt_compact = a - rb.last_sr - rb.delay_since_last_sr;
-  if (rtt_compact > 0x7FFFFFFF) rtt_compact = 0;  // Clock glitch: clamp.
-  TimeDelta rtt = CompactNtpToDelta(rtt_compact);
+  // CompactNtpRttToTimeDelta: a value past half the range is a negative
+  // interval from a non-monotonic clock, and anything below 1 ms is too good
+  // to be true; both count as 1 ms.
+  TimeDelta rtt = rtt_compact > 0x80000000u ? TimeDelta::Zero() : CompactNtpToDelta(rtt_compact);
+  rtt = std::max(rtt, TimeDelta::Millis(1));
   last_ = rtt;
   smoothed_ = samples_ == 0 ? rtt : smoothed_ * 0.875 + rtt * 0.125;
   min_ = std::min(min_, rtt);

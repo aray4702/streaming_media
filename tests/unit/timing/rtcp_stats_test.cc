@@ -91,3 +91,40 @@ SM_TEST(RtcpStats, RttFromLsrDlsr) {
   SM_EXPECT_NEAR(r->ms_f(), 80, 0.1);
   SM_EXPECT_FALSE(rtt.OnReportBlock(ReportBlock{}, Timestamp::Millis(0)).has_value());
 }
+
+// CompactNtpRttToTimeDelta (ntp_time_util.cc): 1 ms floor, a negative compact
+// interval counts as 1 ms.
+SM_TEST(RtcpStats, RttFloorsAtOneMillisecond) {
+  Timestamp sr_sent = Timestamp::Millis(5000);
+  SenderReport sr;
+  sr.ntp = NtpTime::FromTimestamp(sr_sent);
+  ReceiveStatistics rs(1, 90000);
+  rs.OnPacket(0, 0, Timestamp::Millis(5000));
+  rs.OnSenderReport(sr, sr_sent);
+  ReportBlock rb = rs.MakeReportBlock(sr_sent + TimeDelta::Millis(100));
+  RttEstimator zero;
+  auto r = zero.OnReportBlock(rb, sr_sent + TimeDelta::Millis(100));  // 0 ms measured.
+  SM_ASSERT_TRUE(r.has_value());
+  SM_EXPECT_NEAR(r->ms_f(), 1.0, 0.01);
+  RttEstimator negative;
+  auto n = negative.OnReportBlock(rb, sr_sent + TimeDelta::Millis(50));  // Arrival before the delay: negative.
+  SM_ASSERT_TRUE(n.has_value());
+  SM_EXPECT_NEAR(n->ms_f(), 1.0, 0.01);
+}
+
+// receive_statistics_impl.cc UpdateJitter: in-order packets with a new
+// timestamp only, and a jump of more than 5 s of video clock is skipped.
+SM_TEST(RtcpStats, JitterIgnoresOutOfOrderSameTimestampAndJumps) {
+  ReceiveStatistics steady(1, 90000);
+  for (uint16_t s = 0; s < 50; ++s) steady.OnPacket(s, s * 3000u, Timestamp::Millis(s * 33 + (s % 2) * 8));
+  const double base = steady.jitter_ms();
+  SM_EXPECT_TRUE(base > 0);
+  // More packets of an old frame (out of order) and of the same timestamp leave it alone.
+  steady.OnPacket(10, 10 * 3000u, Timestamp::Millis(50 * 33 + 40));
+  steady.OnPacket(50, 50 * 3000u, Timestamp::Millis(50 * 33));
+  const double after_frame = steady.jitter_ms();
+  steady.OnPacket(51, 50 * 3000u, Timestamp::Millis(50 * 33 + 500));  // Same timestamp: skipped.
+  SM_EXPECT_NEAR(steady.jitter_ms(), after_frame, 1e-9);
+  steady.OnPacket(52, 50 * 3000u + 6 * 90000u, Timestamp::Millis(50 * 33 + 510));  // Jump of 6 s: skipped.
+  SM_EXPECT_NEAR(steady.jitter_ms(), after_frame, 1e-9);
+}

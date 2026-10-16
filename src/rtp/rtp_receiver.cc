@@ -25,6 +25,7 @@ loss::FecConfig FecCfg(const RtpReceiverConfig& c) {
 timing::PacketBufferConfig PacketBufferCfg(const RtpReceiverConfig& c) {
   timing::PacketBufferConfig p = c.packet_buffer;
   if (!p.events) p.events = c.events;
+  if (c.keyframe.version >= 2) p.version = 2;  // The packet buffer is part of libwebrtc's keyframe policy.
   return p;
 }
 loss::KeyframeRequestConfig KeyframeCfg(const RtpReceiverConfig& c) {
@@ -148,7 +149,10 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
   if (cfg_.nack) nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
   // An IDR slice that starts a packet (no parameter sets in it) may follow
   // the parameter-set packet of the same access unit.
-  packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps);
+  if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps) ==
+      timing::InsertResult::kBufferCleared) {
+    keyframes_.OnExternalRequest(now, "trigger_packet_buffer_cleared");
+  }
   if (feed_fec && cfg_.fec) {
     for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false);
   }
