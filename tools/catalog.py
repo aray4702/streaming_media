@@ -273,11 +273,22 @@ ALGORITHMS = [
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Budget is a media-debt leaky bucket with at most 5 ms of burst. Large queues are drained faster "
-               "so no packet waits longer than max_queue_time (2 s).",
-         verification="A unit test queued 10 s worth of data, which correctly triggers drain mode; the test now "
-                      "stays inside the queue-time limit. A priority test was rewritten so the retransmission is "
-                      "queued behind video before it is observed."),
+               "A port of libwebrtc's PacingController and PrioritizedPacketQueue (M157, issue #70): a 40 ms "
+               "burst interval (capped at 63 kB), media debt capped at 500 ms of the rate, 2 s cap on the time "
+               "credited, a queue-time limit of 2 s judged on the average queue time, audio unpaced but "
+               "accounted, queue levels audio / retransmission / video+FEC / padding, keep-alive padding every "
+               "500 ms while paused or congested, and padding at the padding rate 5 ms at a time. Remaining "
+               "differences: flushing the queued packets of a stream when a keyframe arrives (needs the sender "
+               "to mark keyframes; #5), round-robin between SSRCs of one level (one stream per kind in a "
+               "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
+               "congestion window (pushback stays on the encoder), and `BitrateProber` (#48): a probe cluster is "
+               "still sent in 5 ms bursts at the probe rate.",
+         verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
+                      "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
+                      "congestion keep-alives). With the 40 ms burst a frame leaves in one burst, so the "
+                      "E2E_Pacer expectation that the paced run beats the unpaced one on audio delay no longer "
+                      "holds (audio is not paced in libwebrtc either); the new expectation is that it is not "
+                      "worse. See docs/design/libwebrtc-parity.md 5.5 and issue #70 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
          headers=["cc/probing.h"], unit=["Probing"], e2e=["E2E_Probing"],
