@@ -316,7 +316,7 @@ ALGORITHMS = [
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
          problems=["Encoder bitrate overshoot -> encoder rate control, frame dropper"],
-         headers=["cc/frame_dropper.h"], unit=["FrameDropper"], e2e=["E2E_FrameDropper"],
+         headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster"], e2e=["E2E_FrameDropper"],
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
@@ -329,7 +329,15 @@ ALGORITHMS = [
                "(issue #37, docs/design/send-controller.md) drives it per captured frame (Leak, DropFrame, SetRates, Fill). "
                "Remaining differences (issue #5): the input frame rate is the configured one, not measured; "
                "ExpFilter (rtc_base/numerics/exp_filter) is not in compare/webrtc/reference and was written from the "
-               "upstream class (reported on #57).",
+               "upstream class (reported on #57). The encoder's overshoot correction is a port of libwebrtc's "
+               "video/encoder_overshoot_detector.cc and encoder_bitrate_adjuster.cc (cc/encoder_bitrate_adjuster.h; "
+               "issue #5, PR 2): the encoder is configured with the target lowered by the measured overshoot, spare "
+               "link headroom pays for part of it. It runs in VideoSendController behind `bitrate_adjuster`, off by "
+               "default (libwebrtc: on) because it moves the test bench away from libwebrtc on clean links until the "
+               "link allocation has its per-packet overhead headroom. Differences: the media utilization factor comes "
+               "from the detector, not RateUtilizationTracker (rtc_base/rate_utilization_tracker, not in "
+               "compare/webrtc/reference, reported on #57); one stream with one temporal layer; rates adjusted per "
+               "captured frame.",
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframe bytes entered an uncapped "
                       "bucket and a run of keyframe requests made the dropper drop every delta frame for seconds. "
                       "Issue #5 ([fix record](../../fixes/5-frame-dropper-port.md)): replaced by the libwebrtc "

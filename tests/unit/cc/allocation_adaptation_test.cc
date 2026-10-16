@@ -93,15 +93,6 @@ SM_TEST(FrameDropper, KeyframeRunDoesNotStallDeltaFramesForSeconds) {
   SM_EXPECT_LT(dropped, 90);
 }
 
-SM_TEST(FrameDropper, OvershootDetectorAdjustsTarget) {
-  EncoderOvershootDetector od;
-  od.SetTarget(Kbps(1000));
-  for (int i = 0; i < 90; ++i) od.OnEncodedFrame(DataSize::Bytes(5000), Timestamp::Millis(i * 33));
-  Timestamp now = Timestamp::Millis(89 * 33);
-  SM_EXPECT_NEAR(od.Utilization(now), 1.2, 0.05);
-  SM_EXPECT_NEAR(od.AdjustedTarget(now).kbps(), 833, 40);
-}
-
 SM_TEST(VideoAdaptation, LaddersFollowPreference) {
   DegradationConfig fr;
   fr.preference = DegradationPreference::kMaintainFramerate;

@@ -186,30 +186,4 @@ void FrameDropper::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("drop_ratio", frames_ ? static_cast<double>(dropped_) / static_cast<double>(frames_) : 0.0);
 }
 
-void EncoderOvershootDetector::OnEncodedFrame(DataSize size, Timestamp now) {
-  frames_.emplace_back(now, size.bytes());
-  last_now_ = now;
-  while (!frames_.empty() && now - frames_.front().first > window_) frames_.pop_front();
-}
-
-double EncoderOvershootDetector::Utilization(Timestamp now) const {
-  if (frames_.size() < 2 || target_.bps() <= 0) return 1.0;
-  int64_t bytes = 0;
-  for (const auto& f : frames_) bytes += f.second;
-  TimeDelta span = std::max(now - frames_.front().first, TimeDelta::Millis(100));
-  DataRate actual = DataRate::FromSizeAndTime(DataSize::Bytes(bytes), span);
-  return actual / target_;
-}
-
-DataRate EncoderOvershootDetector::AdjustedTarget(Timestamp now) const {
-  double u = Utilization(now);
-  // Only correct overshoot; undershoot is left to the encoder.
-  return u > 1.0 ? target_ * (1.0 / u) : target_;
-}
-
-void EncoderOvershootDetector::ExportMetrics(MetricsWriter& w) const {
-  w.Gauge("utilization", Utilization(last_now_));
-  w.Gauge("target_kbps", target_.kbps());
-}
-
 }  // namespace sm::cc

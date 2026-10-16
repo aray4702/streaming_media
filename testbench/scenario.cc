@@ -283,6 +283,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "pacer") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: pacer v1|v2");
       s.pacer_v2 = tok[1] == "v2";
+    } else if (key == "bitrate_adjuster") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
+      s.bitrate_adjuster = tok[1] == "on";
     } else if (key == "keyframe_interval") {
       if (!need(2) || !ParseTime(tok[1], &s.keyframe_interval)) return fail("usage: keyframe_interval <time>");
     } else if (key == "at") {
@@ -360,6 +363,7 @@ std::string FormatScenario(const Scenario& s) {
   rate("min_rate", s.min_rate, d.min_rate);
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
+  if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";

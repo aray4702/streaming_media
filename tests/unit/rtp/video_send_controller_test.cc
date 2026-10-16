@@ -105,3 +105,20 @@ SM_TEST(VideoSendController, DroppedFramesAreCounted) {
   c.OnCapturedFrame({}, At(33));
   SM_EXPECT_EQ(CollectMetrics(c).at("dropped_paused"), 2.0);
 }
+
+SM_TEST(VideoSendController, BitrateAdjusterLowersTheEncoderRateNotTheDropperTarget) {
+  Session s(Cfg());
+  VideoSendControllerConfig on;
+  on.bitrate_adjuster = true;
+  VideoSendControllerConfig off;
+  VideoSendController a(on, s);
+  VideoSendController b(off, s);
+  const DataRate target = s.rates().video_target;
+  SM_EXPECT_TRUE(target.bps() > 0);
+  const auto da = a.OnCapturedFrame({}, At(0));
+  const auto db = b.OnCapturedFrame({}, At(0));
+  SM_EXPECT_EQ(db.target.bps(), target.bps());
+  // libwebrtc assumes a 20% overshoot until 30 frames were encoded.
+  SM_EXPECT_NEAR(da.target.kbps(), target.kbps() / 1.2, 0.1);
+  SM_EXPECT_NEAR(a.bitrate_adjuster().adjusted().kbps(), target.kbps() / 1.2, 0.1);
+}

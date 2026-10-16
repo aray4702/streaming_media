@@ -362,6 +362,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   rtp::VideoSendControllerConfig vsc_cfg;
   vsc_cfg.keyframe_interval = s.keyframe_interval;
   vsc_cfg.fps = s.video_fps;
+  vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;
@@ -374,6 +375,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   registry.Register("sender.outage", &sender.send_side().outage());
   registry.Register("sender.rtcp", &sender.rtcp());
   registry.Register("sender.frame_dropper", &video_ctl.frame_dropper());
+  registry.Register("sender.bitrate_adjuster", &video_ctl.bitrate_adjuster());
   registry.Register("sender.protection", &protection);
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());

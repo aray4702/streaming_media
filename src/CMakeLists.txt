@@ -45,6 +45,7 @@ if(SM_WITH_CC)
     cc/probing.cc
     cc/bitrate_allocator.cc
     cc/frame_dropper.cc
+    cc/encoder_bitrate_adjuster.cc
     cc/congestion_window_pushback.cc
     cc/video_adaptation.cc
     cc/outage_monitor.cc)
