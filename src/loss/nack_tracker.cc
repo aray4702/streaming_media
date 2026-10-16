@@ -3,6 +3,9 @@
 #include <algorithm>
 
 namespace sm::loss {
+namespace {
+constexpr int kLibwebrtcMaxRetries = 100;  // nack_requester.cc kMaxNackRetries
+}  // namespace
 
 NackTracker::NackTracker(NackConfig cfg) : cfg_(cfg), rtt_(cfg.initial_rtt) {}
 
@@ -38,6 +41,12 @@ void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now
     return;
   }
   // Newer packet: everything between newest_ and s is missing.
+  if (cfg_.version >= 2) {
+    // NackRequester::AddPacketsToNack: no keyframe bookkeeping, no partial keep.
+    if (s > newest_ + 1) AddMissingV2(newest_ + 1, s, now);
+    newest_ = s;
+    return;
+  }
   if (s - newest_ > cfg_.max_packet_age) {
     // Huge jump: the old state is useless.
     stats_.abandoned += missing_.size();
@@ -64,6 +73,28 @@ void NackTracker::AddMissing(int64_t from, int64_t to, Timestamp now) {
       break;
     }
   }
+}
+
+// NackRequester::AddPacketsToNack: forget gaps older than the age limit; if the
+// list would pass the limit, clear it all and ask for a keyframe.
+void NackTracker::AddMissingV2(int64_t from, int64_t to, Timestamp now) {
+  const int64_t oldest = to - cfg_.max_packet_age;
+  while (!missing_.empty() && missing_.begin()->first < oldest) {
+    missing_.erase(missing_.begin());
+    ++stats_.abandoned;
+  }
+  if (missing_.size() + static_cast<size_t>(to - from) > cfg_.max_nack_list) {
+    stats_.abandoned += missing_.size();
+    missing_.clear();
+    keyframe_needed_ = true;
+    SM_EVENT(cfg_.events, now, "nack", "list_full", static_cast<double>(to - from), from);
+    return;
+  }
+  for (int64_t i = from; i < to; ++i) {
+    missing_.emplace(i, Info{now});
+    ++stats_.missing_detected;
+  }
+  SM_EVENT(cfg_.events, now, "nack", "gap", static_cast<double>(to - from), from);
 }
 
 // Drops missing entries older than the newest keyframe after the first one.
@@ -93,15 +124,16 @@ void NackTracker::TrimOld(Timestamp now) {
 std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
   std::vector<uint16_t> out;
   const TimeDelta retry = std::max(rtt_ * cfg_.retry_rtt_factor, cfg_.min_retry_interval);
+  const int max_retries = cfg_.version >= 2 && cfg_.max_retries == 10 ? kLibwebrtcMaxRetries : cfg_.max_retries;
   for (auto it = missing_.begin(); it != missing_.end();) {
     Info& info = it->second;
     bool due = info.retries == 0 ? (now - info.detected >= cfg_.reorder_wait)
                                  : (now - info.last_sent >= retry);
-    if (due && info.retries >= cfg_.max_retries) {
+    if (due && info.retries >= max_retries) {
       ++stats_.abandoned;
       SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);
       it = missing_.erase(it);
-      keyframe_needed_ = true;
+      if (cfg_.version < 2) keyframe_needed_ = true;  // libwebrtc gives up without a request.
       continue;
     }
     if (due) {

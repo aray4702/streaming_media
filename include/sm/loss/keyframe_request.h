@@ -38,11 +38,32 @@ struct FeedbackMessage {
 };
 
 struct KeyframeRequestConfig {
+  // 1 = the library's original policy (repair window, retry timer, throttle).
+  // 2 = libwebrtc's RtpVideoStreamReceiver2 triggers (issue #23): the first
+  // assembled frame is not a keyframe, a decoder error, the triggers other
+  // modules report (OnExternalRequest) and the decode time-out below. No
+  // request at stream start, no repair window, no retry timer, no throttle.
+  // Default 1 until the final PR makes 2 the default.
+  int version = 1;
   TimeDelta repair_window = TimeDelta::Millis(200);  // Wait for NACK repair.
   double repair_rtt_factor = 2.0;                    // window = max(w, rtt*f).
   TimeDelta min_request_interval = TimeDelta::Millis(100);
   double request_rtt_factor = 1.5;                   // Throttle = max(min, rtt*f).
   bool send_lntf = true;
+  // Version 2 only. The decode time-out, from compare/webrtc/reference/video/
+  // (added by PR #95):
+  //  - video_receive_stream2.h kMaxWaitForKeyFrame 200 ms and kMaxWaitForFrame
+  //    3 s (DetermineMaxWaitForFrame keeps them while the NACK history is the
+  //    default 1000 ms: 3 x 1000 ms is not below kMaxWaitForFrame);
+  //  - video_receive_stream_timeout_tracker.cc: the wait is the keyframe one
+  //    until the first frame is released, then the frame one, and it re-arms
+  //    for another wait after each firing (HandleTimeoutTask);
+  //  - video_receive_stream2.cc OnDecodableFrameTimeout: no request when no
+  //    packet came for kInactiveDuration (5 s) or while a keyframe packet
+  //    arrived within max_wait_for_keyframe (IsReceivingKeyFrame).
+  TimeDelta max_wait_for_keyframe = TimeDelta::Millis(200);
+  TimeDelta max_wait_for_frame = TimeDelta::Seconds(3);
+  TimeDelta stream_inactive_after = TimeDelta::Seconds(5);
   size_t max_tracked_frames = 512;
   EventSink* events = nullptr;
 };
@@ -67,6 +88,13 @@ class KeyframeRequester : public MetricsSource {
   // Packets of a frame are permanently lost (NACK gave up).
   void OnFrameLost(int64_t frame_id, Timestamp now);
   void OnDecoderError(Timestamp now);
+  // Version 2: a media packet arrived (`keyframe_packet`: it belongs to a
+  // keyframe). Feeds the decode time-out, which does not fire while a keyframe
+  // is arriving or when the stream is idle.
+  void OnMediaPacket(Timestamp now, bool keyframe_packet);
+  // Version 2: a trigger decided elsewhere (the NACK list overflowed). Merged
+  // with the other triggers of the same Process(). `reason` is an event name.
+  void OnExternalRequest(Timestamp now, const char* reason);
   // New receiver or stream switch: needs a FIR (full intra request).
   void OnStreamStart(Timestamp now);
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
@@ -82,7 +110,7 @@ class KeyframeRequester : public MetricsSource {
 
  private:
   bool IsDecodable(const FrameInfo& f) const;
-  void Propagate();
+  void Propagate(Timestamp now);
   void RequestKeyframe(Timestamp now, bool fir, const char* reason);
 
   KeyframeRequestConfig cfg_;
@@ -92,6 +120,11 @@ class KeyframeRequester : public MetricsSource {
   std::vector<int64_t> ready_;
   int64_t last_received_ = -1;
   int64_t last_decodable_ = -1;
+  bool has_received_frame_ = false;
+  bool decoded_any_ = false;
+  Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last decodable frame, or the first Process().
+  Timestamp last_packet_ = Timestamp::MinusInfinity();
+  Timestamp last_keyframe_packet_ = Timestamp::MinusInfinity();
   bool need_request_ = false;
   bool need_fir_ = false;
   bool request_pending_ = false;

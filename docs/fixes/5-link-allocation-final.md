@@ -87,14 +87,14 @@ libwebrtc (`parity-data` `compare-webrtc.json`), selected cells:
 | issue_21_shallow_drop_repair | `video.freeze_total_ms` | 5796 | 4350 | 7143 |
 | low_bandwidth | `cc.rtt_p50_ms` | 283.2 | 197.2 | 505.1 |
 | high_jitter | `cc.max_settle_ms` | 2.701e+04 | 3e+04 | 2.315e+04 |
-| issue_18_lntf_not_pli | `video.e2e_delay_p95_ms` | 310.8 | 327.4 | 209.5 |
+| issue_18_random_loss_keyframes | `video.e2e_delay_p95_ms` | 310.8 | 327.4 | 209.5 |
 | wifi_to_lte_handover | `video.keyframe_requests` | 15 | 16.7 | 0 |
 
 Counting every shown metric of the parity report where the mean moves by more than half its band: 62 cells move toward
 libwebrtc and 25 away. Most of the 25 are cells where we were already ahead of libwebrtc and move further
 (`cross_traffic` delays and queue, lower is better); the ones that really leave libwebrtc's value
 are `cross_traffic` video rate (1611 -> 1546, libwebrtc 1779) and utilization (68.7 -> 66.1, 74.2),
-`high_jitter` settle time (27.0 -> 30.0 s, libwebrtc 23.2 s), `issue_18_lntf_not_pli`/`issue_7`/`random_loss_5pct`
+`high_jitter` settle time (27.0 -> 30.0 s, libwebrtc 23.2 s), `issue_18_random_loss_keyframes`/`issue_7`/`random_loss_5pct`
 video delay p95 (311 -> 327 ms, libwebrtc 210) and the keyframe requests of `low_bandwidth`, `issue_53`
 and `wifi_to_lte_handover` (+2 to +3 each, libwebrtc 0; owned by #23). With the adjuster off but the other two changes
 the suite is unchanged (0 cells toward, 3 away, all within noise), so the movement is the adjuster's.

@@ -110,7 +110,7 @@ Suite against the baseline (`testbench_compare.py --markdown`, one seed):
 | high_jitter | video.encoder_dropped | 37 | 18 | improved |
 | high_jitter | video.freeze_total_ms | 234 | 422 | REGRESSED |
 | high_jitter | video.longest_freeze_ms | 234 | 213 | improved |
-| issue_18_lntf_not_pli | video.encoder_dropped | 7 | 1 | improved |
+| issue_18_random_loss_keyframes | video.encoder_dropped | 7 | 1 | improved |
 | issue_21_shallow_drop_repair | audio.mouth_to_ear_p95_ms | 73.02 | 94.71 | REGRESSED |
 | issue_21_shallow_drop_repair | cc.goodput_kbps | 614.4 | 736.8 | improved |
 | issue_21_shallow_drop_repair | cc.max_settle_ms | 3700 | 7300 | REGRESSED |

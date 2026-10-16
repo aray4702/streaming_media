@@ -118,6 +118,7 @@ One directive per line, and `#` starts a comment.
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
 | `pacer v1\|v2` | v1 | v1 is the library's own pacer; v2 is the port of libwebrtc's `PacingController` (#70) |
+| `keyframe v1\|v2` | v1 | v1 is the original receiver keyframe-request policy; v2 is libwebrtc's (`NackRequester` give-up and overflow rules, `RtpVideoStreamReceiver2` triggers, decode time-out; #23) |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |
 | `reverse at <time> ...` | mirrors forward delay | Change the feedback link |
 | `expect <metric> <op> <number>` | | Pass criterion; `op` is one of `< <= > >= ==` |
