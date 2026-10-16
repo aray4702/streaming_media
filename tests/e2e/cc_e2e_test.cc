@@ -179,7 +179,9 @@ SM_TEST(E2E_Probing, FastRampUp) {
 
 SM_TEST(E2E_BitrateAllocator, AudioProtectedVideoDegradesFirst) {
   CcSimParams p;
-  p.capacity_kbps = {{0, 3000}, {20000, 450}, {40000, 3000}};
+  // phase lengthened for #70; #61 restores the original length (low phase 20-40 s, 60 s call)
+  p.capacity_kbps = {{0, 3000}, {20000, 450}, {44000, 3000}};
+  p.seconds = 64;
   p.allocator = true;
   auto r = RunCcSim(p);
   const auto& low = r.phases[1].alloc_kbps;
