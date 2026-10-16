@@ -112,11 +112,6 @@ class RtpSender : public MetricsSource {
   // The peer acknowledged the MID: stop repeating it.
   void AcknowledgeMid() { mid_remaining_ = 0; }
 
-  // Upper bound on the bytes resent per second (issue #21). The session sets
-  // it to the congestion-control target, so retransmissions cannot fill the
-  // link when the target collapses.
-  void SetMaxRetransmissionRate(DataRate max) { rtx_.SetMaxRate(max); }
-
   // FEC protection level for the next frames (loss::ProtectionController).
   void SetFecParams(const loss::FecParams& p) { fec_.SetParams(p); }
   const loss::FecParams& fec_params() const { return fec_.params(); }

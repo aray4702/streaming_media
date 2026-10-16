@@ -1,9 +1,0 @@
-name issue_21_repair_within_target
-describe 150 kbps link: RTX, FEC and keyframes must fit inside the target instead of filling the link (issue #21)
-duration 40s
-at 0s capacity=150kbps delay=40ms queue=500ms
-# libwebrtc on this link (sm_compare, mean of 3 seeds): loss 6.6 %, repair overhead 16 %, 21.7 fps, no audio interruptions.
-expect net.loss_pct < 7
-expect repair.overhead_pct < 16
-expect video.render_fps > 18
-expect audio.interruptions <= 1

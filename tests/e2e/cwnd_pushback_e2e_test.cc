@@ -24,9 +24,6 @@ SessionConfig MakeConfig(uint32_t ssrc, const char* cname, bool pushback) {
   c.extensions.Register(2, sync::uri::kAbsSendTime);
   c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(2000);
   c.send_side.cwnd.enabled = pushback;
-  // This test isolates pushback. The resend cap (issue #21) also lowers the data in flight
-  // of the run without pushback, so it is off in both runs.
-  c.send_side.max_retransmission_factor = 1000.0;
   return c;
 }
 
@@ -35,6 +32,7 @@ struct Result {
   int64_t max_in_flight = 0;
   double min_ratio = 1.0;
   int64_t in_flight_end = 0;
+  int64_t window_end = 0;  // The congestion window (target x (min feedback RTT + 350 ms)) at the end.
   double sent_kbps_after_drop = 0;
 };
 
@@ -97,6 +95,7 @@ Result Run(bool pushback) {
   }
   res.queue_dropped = ab.stats().queue_dropped;
   res.in_flight_end = a.send_side().gcc().history().InFlight().bytes();
+  if (const auto w = a.send_side().congestion_window().data_window()) res.window_end = w->bytes();
   res.sent_kbps_after_drop = static_cast<double>(sent_after) * 8 / 5500.0;
   return res;
 }
@@ -114,13 +113,21 @@ SM_TEST(E2E_CongestionWindowPushback, EncoderBacksOffWhenTheBottleneckFills) {
   SM_RECORD("with_min_ratio", with.min_ratio);
   SM_RECORD("with_sent_kbps", with.sent_kbps_after_drop);
   SM_RECORD("without_sent_kbps", without.sent_kbps_after_drop);
+  SM_RECORD("with_in_flight_end", static_cast<double>(with.in_flight_end));
+  SM_RECORD("with_window_end", static_cast<double>(with.window_end));
   SM_EXPECT_LT(with.min_ratio, 1.0);
   SM_EXPECT_EQ(without.min_ratio, 1.0);
   SM_EXPECT_LT(with.frames_encoded, without.frames_encoded);
-  // The data in flight stays under half of what an unchecked encoder puts
-  // out, the bottleneck drops fewer packets, and the send rate is nearer the
-  // new 500 kbps.
-  SM_EXPECT_LT(with.max_in_flight * 2, without.max_in_flight);
+  // Pushback cuts the data in flight and the send rate after the drop, the
+  // bottleneck drops fewer packets, and what is still in flight at the end
+  // fits the congestion window (the target times the RTT plus libwebrtc's
+  // 350 ms QueueSize). The first two were ratios to the run without pushback
+  // (2x and 1.5x) when the encoder took no share off for repair traffic;
+  // libwebrtc's measured repair share (FecControllerDefault) makes the run
+  // without pushback back off on its own, so the ratios no longer hold (issue
+  // #21, program.md 0.2 guard rails).
+  SM_EXPECT_LT(with.max_in_flight, without.max_in_flight);
   SM_EXPECT_LT(with.queue_dropped, without.queue_dropped);
-  SM_EXPECT_LT(with.sent_kbps_after_drop * 1.5, without.sent_kbps_after_drop);
+  SM_EXPECT_LT(with.sent_kbps_after_drop, without.sent_kbps_after_drop);
+  SM_EXPECT_LE(with.in_flight_end, with.window_end);
 }

@@ -62,7 +62,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
   c.red_distance = a.red_distance;
-  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate, {}});
+  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate});
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   if (!send_has_padding_) {
     send_.SetPaddingSender(audio_send_.back().sender.get());
@@ -83,7 +83,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx = v.rtx;
   c.fec = v.fec;
   c.fec_config = v.fec_config;
-  video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero(), {}});
+  video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
@@ -161,16 +161,6 @@ void Session::Start(Timestamp now) {
   send_.Start(now);
   send_.OnRtt(rtt_);
   last_target_ = send_.target();
-  LimitRetransmissions();
-}
-
-void Session::LimitRetransmissions() {
-  // Resends may not take more than a multiple of the target (libwebrtc's
-  // retransmission RateLimiter); the rest of the target is for new media.
-  for (auto& v : video_send_) {
-    v.sender->SetMaxRetransmissionRate(send_.target() * cfg_.send_side.max_retransmission_factor);
-    ApplyFecBudget(v);
-  }
 }
 
 void Session::EnqueueSenderPackets(RtpSender& s, Timestamp now) {
@@ -211,23 +201,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
 
 void Session::SetFecParams(VideoSendId id, const loss::FecParams& p) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
-  SendStream& v = video_send_[static_cast<size_t>(id.index)];
-  v.requested_fec = p;
-  ApplyFecBudget(v);
-}
-
-void Session::ApplyFecBudget(SendStream& v) {
-  // FEC is paid for out of the target: the video encoder gets
-  // (target - audio) / (1 + protection), and may not go below `video_min`. So
-  // protection can only use what is left above that floor, and none when the
-  // audio alone takes the target (issue #21).
-  DataRate audio = DataRate::Zero();
-  for (const auto& a : audio_send_) audio = audio + a.nominal_rate;
-  loss::FecParams p = v.requested_fec;
-  const double vmin = static_cast<double>(std::max<int64_t>(1, cfg_.send_side.video_min.bps()));
-  const double avail = static_cast<double>((send_.target() - audio).bps());
-  p.protection = std::min(p.protection, std::max(0.0, avail / vmin - 1.0));
-  v.sender->SetFecParams(p);
+  video_send_[static_cast<size_t>(id.index)].sender->SetFecParams(p);
 }
 
 void Session::SetRtt(TimeDelta rtt) {
@@ -388,7 +362,6 @@ void Session::Process(Timestamp now) {
   if (act.request_keyframe) Emit({SessionEventType::kKeyframeRequested, now, 0, DataRate::Zero(), TimeDelta::Zero()});
   if (send_.target() != last_target_) {
     last_target_ = send_.target();
-    LimitRetransmissions();
     Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
   }
   // RTCP: reports and queued feedback.
@@ -435,9 +408,7 @@ timing::AudioOperation Session::GetAudio(AudioRecvId id, std::span<float> out, T
 SendRates Session::rates() const {
   DataRate audio = DataRate::Zero();
   for (const auto& a : audio_send_) audio = audio + a.nominal_rate;
-  double protection = 0;
-  for (const auto& v : video_send_) protection = std::max(protection, v.sender->fec_params().protection);
-  return send_.ComputeRates(audio, protection);
+  return send_.ComputeMeasuredRates(audio);
 }
 
 void Session::ExportMetrics(MetricsWriter& w) const {

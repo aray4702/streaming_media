@@ -36,22 +36,6 @@ void RtxSender::OnPacketSent(const RtpPacket& p, Timestamp now) {
   ++stats_.packets_stored;
 }
 
-namespace {
-constexpr TimeDelta kRateWindow = TimeDelta::Seconds(1);
-}
-
-void RtxSender::Expire(Timestamp now) {
-  while (!window_.empty() && window_.front().first <= now - kRateWindow) {
-    window_bytes_ -= window_.front().second;
-    window_.pop_front();
-  }
-}
-
-DataRate RtxSender::resent_rate(Timestamp now) {
-  Expire(now);
-  return DataRate::BitsPerSec(window_bytes_ * 8);
-}
-
 std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
   std::vector<RtpPacket> out;
   for (uint16_t seq : seqs) {
@@ -65,15 +49,7 @@ std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timesta
       ++stats_.throttled;
       continue;
     }
-    Expire(now);
-    const int64_t size = static_cast<int64_t>(s.packet.size()) + 2;
-    if (max_rate_.IsFinite() && (window_bytes_ + size) * 8 > max_rate_.bps()) {
-      ++stats_.rate_limited;
-      continue;
-    }
     s.last_resent = now;
-    window_.emplace_back(now, size);
-    window_bytes_ += size;
     out.push_back(MakeRtxPacket(s.packet, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++));
     ++stats_.retransmitted;
     stats_.bytes_retransmitted += static_cast<int64_t>(out.back().size());
@@ -88,7 +64,6 @@ void RtxSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("retransmitted", stats_.retransmitted);
   w.Counter("not_found", stats_.not_found);
   w.Counter("throttled", stats_.throttled);
-  w.Counter("rate_limited", stats_.rate_limited);
   w.Counter("bytes_retransmitted", static_cast<uint64_t>(stats_.bytes_retransmitted));
 }
 
