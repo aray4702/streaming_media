@@ -29,7 +29,11 @@ void VideoSendController::UpdateFrameRate(Timestamp now) {
   } else {
     input_fps_ = static_cast<int>(static_cast<float>(n) * (1000.0f / static_cast<float>(active)) + 0.5f);
   }
-  if (first_frame_ms_ == -1 || frame_times_ms_.empty()) first_frame_ms_ = t;
+  // RateStatistics::Update keeps the window start if the newest sample was
+  // recent (younger than 1.5 windows); Rate() above has already erased the old
+  // samples, as in FrameCadenceAdapter, so this matches it in that call order.
+  const bool last_sample_is_recent = !frame_times_ms_.empty() && frame_times_ms_.back() > t - kFrameRateWindowMs * 3 / 2;
+  if (first_frame_ms_ == -1 || (frame_times_ms_.empty() && !last_sample_is_recent)) first_frame_ms_ = t;
   frame_times_ms_.push_back(t);
 }
 
