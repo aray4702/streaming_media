@@ -108,5 +108,5 @@ which over 10 seeds are unchanged within noise (`clean_link` utilization 82.7 ->
 
 None for the Owner's three items. Differences from libwebrtc that stay (PR list "Remaining differences"):
 `RateUtilizationTracker` for the media factor (the detector's is used); rates are adjusted per captured frame,
-not per bitrate update; one stream, one temporal layer; `RateStatistics` and `ExpFilter` written from the upstream
-classes (not in `reference/`, #57). The issue's `freeze_count <= 2` is not reached; the freezes left are NACK/keyframe repair (#23).
+not per bitrate update; one stream, one temporal layer; `RateStatistics` and `ExpFilter` were written from the upstream
+classes and are now checked against `reference/rtc_base/rate_statistics.cc` and `numerics/exp_filter.cc` (#57). The issue's `freeze_count <= 2` is not reached; the freezes left are NACK/keyframe repair (#23).

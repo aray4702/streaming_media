@@ -43,6 +43,8 @@ class ExpFilter {
   float Apply(float exp, float sample) {
     if (filtered_ == kValueUndefined) {
       filtered_ = sample;
+    } else if (exp == 1.0f) {
+      filtered_ = alpha_ * filtered_ + (1 - alpha_) * sample;
     } else {
       const float alpha = std::pow(alpha_, exp);
       filtered_ = alpha * filtered_ + (1 - alpha) * sample;
