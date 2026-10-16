@@ -11,14 +11,19 @@
 // (SendSideController, issue #21/#53), the drop decision from cc::FrameDropper.
 // Takes `now`, reads no clock, starts no thread, has no callbacks.
 //
+// The encoder bitrate adjuster (cc::EncoderBitrateAdjuster, on by default in
+// libwebrtc M157, behind `bitrate_adjuster` here) lowers the rate `EncodeDecision::target` by the encoder's
+// measured overshoot (issue #5); the frame dropper keeps working on the
+// unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated.
+//
 // Not wired yet (note section 6): the quality scaler, CPU overuse detection and
-// the degradation ladder (the test bench's fake encoder reports no QP) and the
-// encoder bitrate adjuster (a field trial in libwebrtc). The frame dropper is
-// libwebrtc's, applied to keyframes too (issue #5).
+// the degradation ladder (the test bench's fake encoder reports no QP). The
+// frame dropper is libwebrtc's, applied to keyframes too (issue #5).
 #pragma once
 
 #include <cstdint>
 
+#include "sm/cc/encoder_bitrate_adjuster.h"
 #include "sm/cc/frame_dropper.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
@@ -30,6 +35,11 @@ namespace sm::rtp {
 struct VideoSendControllerConfig {
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Periodic keyframe; zero = off.
   double fps = 30;                                  // Input frame rate fed to the dropper.
+  // RateControlSettings bitrate_adjuster (true in M157; off here until it is
+  // judged against libwebrtc as a whole, issue #5); `adjuster_use_headroom` and
+  // the codec minimum bitrate are in `adjuster`.
+  bool bitrate_adjuster = false;
+  cc::EncoderBitrateAdjusterConfig adjuster;
   EventSink* events = nullptr;
 };
 
@@ -43,7 +53,7 @@ struct EncodeDecision {
   bool encode = false;
   DropReason reason = DropReason::kNone;  // Why the frame is dropped.
   bool keyframe = false;
-  DataRate target;  // Rate to configure the encoder with.
+  DataRate target;  // Rate to configure the encoder with (after the bitrate adjuster).
   int width = 0, height = 0;
   double fps = 0;
 };
@@ -68,6 +78,7 @@ class VideoSendController : public MetricsSource {
   void RequestKeyframe() { keyframe_needed_ = true; }
 
   const cc::FrameDropper& frame_dropper() const { return dropper_; }
+  const cc::EncoderBitrateAdjuster& bitrate_adjuster() const { return adjuster_; }
   bool paused() const { return paused_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -75,6 +86,7 @@ class VideoSendController : public MetricsSource {
   VideoSendControllerConfig cfg_;
   Session& session_;
   cc::FrameDropper dropper_;
+  cc::EncoderBitrateAdjuster adjuster_;
   bool paused_ = false;
   bool keyframe_needed_ = true;  // The first frame is a keyframe.
   Timestamp last_keyframe_ = Timestamp::MinusInfinity();

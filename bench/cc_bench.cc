@@ -1,5 +1,6 @@
 // Section 5 benchmarks.
 #include "../tests/e2e/cc_sims.h"
+#include "sm/cc/encoder_bitrate_adjuster.h"
 #include "sm_bench.h"
 
 using namespace sm;
@@ -70,14 +71,14 @@ SM_BENCH(cc, BitrateAllocator_5streams) {
 
 SM_BENCH(cc, FrameDropper_and_Overshoot) {
   FrameDropper d;
-  EncoderOvershootDetector od;
+  EncoderBitrateAdjuster od;
   d.SetRates(DataRate::KilobitsPerSec(1000), 30);
-  od.SetTarget(DataRate::KilobitsPerSec(1000));
   int64_t t = 0;
   for (auto _ : st) {
     if (!d.ShouldDrop(30)) d.OnEncodedFrame(DataSize::Bytes(5000), false);
     od.OnEncodedFrame(DataSize::Bytes(5000), Timestamp::Millis(t));
-    bench::DoNotOptimize(od.AdjustedTarget(Timestamp::Millis(t)));
+    bench::DoNotOptimize(od.AdjustRate(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(1200), 30,
+                                       Timestamp::Millis(t)));
     t += 33;
   }
   st.BudgetNsPerItem(2000);

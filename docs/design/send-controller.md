@@ -19,7 +19,7 @@ libwebrtc sources are cited from `compare/webrtc/reference/` (M157).
 | Outage pause / resume / keyframe | `ControllerActions`, `kEncoderPause`, `kKeyframeRequested` | library |
 | Frame dropper | `cc::FrameDropper`, driven from `testbench/call.cc` (`SetRates`, `ShouldDrop`, `OnEncodedFrame`) | **app glue** |
 | Keyframe on request or periodically | `keyframe_needed`, `periodic` in `call.cc` | **app glue** |
-| Encoder overshoot correction | `cc::EncoderOvershootDetector` (unused by `call.cc`) | library, unwired |
+| Encoder overshoot correction | `cc::EncoderBitrateAdjuster` + `cc::EncoderOvershootDetector`, inside `VideoSendController` behind `bitrate_adjuster` (off by default; #5 PR 2) | library |
 | Quality scaler, CPU overuse, degradation ladder | `video::QualityScaler`, `cc::CpuOveruseDetector`, `cc::DegradationController` (unused by `call.cc`) | library, unwired |
 | Audio vs video allocation | `cc::BitrateAllocator` (unused by the session) | library, unwired |
 
@@ -121,11 +121,13 @@ As `VideoStreamEncoder::OnFrame` + `MaybeEncodeVideoFrame`:
 `SendRates` stays the single source of the split (target, audio wire rate,
 video target after pushback, drop interval). The controller derives
 `EncodeDecision::target` as `SendRates::video_target`, after the
-`EncoderOvershootDetector` correction (libwebrtc
-`EncoderBitrateAdjuster`). The overshoot correction is **not** enabled in PR 2
-(libwebrtc enables it through a field trial, `UseEncoderBitrateAdjuster`); the
-module is wired but off, so test bench numbers are unchanged. Turning it on is
-a separate, measured step.
+`EncoderBitrateAdjuster` correction when `VideoSendControllerConfig::bitrate_adjuster`
+is on (libwebrtc M157 has it on by default, `RateControlSettings::bitrate_adjuster`).
+The adjuster is the port of `video/encoder_bitrate_adjuster.cc` and
+`encoder_overshoot_detector.cc` (issue #5, PR 2). It is off by default because
+with it on the test bench moves away from libwebrtc on clean links, which comes
+from the missing link-allocation headroom (see the parity inventory 5.6). The
+frame dropper keeps the unadjusted target, as in `VideoStreamEncoder::OnBitrateUpdated`.
 
 The audio encoder rate is not on this controller. In libwebrtc it comes from
 `BitrateAllocator` through `AudioSendStream::OnBitrateUpdated`
@@ -185,8 +187,7 @@ unchanged) and differs from sections 3-5 in these ways:
 - `EncodeDecision` is `{encode, reason, keyframe, target, width, height,
   fps}`; width, height and fps pass the captured frame and the configured
   rate through. The quality scaler, CPU overuse detector, degradation ladder
-  and `EncoderOvershootDetector` are not wired (the fake encoder reports no
-  QP; the adjuster is a field trial). Their unit and e2e coverage and the
-  wiring remain for a follow-up PR on #37.
+  are not wired (the fake encoder reports no QP). Their unit and e2e coverage
+  and the wiring remain for a follow-up PR on #37.
 - `EncodedFrameReport` carries `size` and `keyframe` only (no QP,
   encode time or failure flag yet).

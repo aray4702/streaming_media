@@ -16,9 +16,8 @@
 // Leak(fps), then DropFrame(); SetRates() on a rate update; Fill() after each
 // encoded frame. Keyframes are not exempt, as in libwebrtc.
 //
-// EncoderOvershootDetector: measures actual/target utilization over a
-// sliding window and returns an adjusted target (target / utilization) to
-// feed back into the encoder's rate control, removing systematic overshoot.
+// The encoder's overshoot correction (EncoderOvershootDetector and
+// EncoderBitrateAdjuster) is in encoder_bitrate_adjuster.h.
 #pragma once
 
 #include <cmath>
@@ -96,24 +95,6 @@ class FrameDropper : public MetricsSource {
   bool was_below_max_ = true;
   const float max_drop_duration_secs_ = 4.0f;
   uint64_t frames_ = 0, dropped_ = 0;
-};
-
-class EncoderOvershootDetector : public MetricsSource {
- public:
-  explicit EncoderOvershootDetector(TimeDelta window = TimeDelta::Seconds(2)) : window_(window) {}
-  void SetTarget(DataRate target) { target_ = target; }
-  void OnEncodedFrame(DataSize size, Timestamp now);
-  // Actual / target over the window (1.0 = on target).
-  double Utilization(Timestamp now) const;
-  // Target to configure the encoder with to land on SetTarget().
-  DataRate AdjustedTarget(Timestamp now) const;
-  void ExportMetrics(MetricsWriter& w) const override;
-
- private:
-  TimeDelta window_;
-  DataRate target_;
-  std::deque<std::pair<Timestamp, int64_t>> frames_;
-  Timestamp last_now_ = Timestamp::Micros(0);
 };
 
 }  // namespace sm::cc
