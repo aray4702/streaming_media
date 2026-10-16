@@ -147,9 +147,7 @@ checked against `call/bitrate_allocator.cc` (not in the reference tree).
 
 ## 7. Missing reference
 
-`call/bitrate_allocator.cc` and `modules/video_coding/utility/frame_dropper.*`
-callers are not both in the reference tree: `frame_dropper.cc` is, but
-`bitrate_allocator.cc` is not. Reported on #57. Until it is added the
+`call/bitrate_allocator.cc` is not in the reference tree (`frame_dropper.cc` is). Reported on #57. Until it is added the
 allocator mapping above is by name only, and PR 2 does not change it.
 
 ## 8. PR 2 plan (behaviour-preserving)
