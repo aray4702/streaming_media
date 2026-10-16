@@ -339,6 +339,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
+  // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
+  // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
+  const bool video_fec = s.video && rtp::VideoFecEnabled(video_cfg);
   video_cfg.deliver_bitstream = false;  // The bench has no decoder.
 
   rtp::AudioSendId audio_send;
@@ -594,7 +597,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
           break;
         case rtp::SessionEventType::kReportBlock:
-          if (s.fec && s.video && e.ssrc == kVideoSsrc) {
+          if (video_fec && e.ssrc == kVideoSsrc) {
             const auto& rs = receiver.video_receiver(video_recv).stats();
             uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
             last_gaps = rs.gaps;
