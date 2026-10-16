@@ -339,7 +339,7 @@ ALGORITHMS = [
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
-         notes="This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
                "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
@@ -356,7 +356,7 @@ ALGORITHMS = [
          bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="The search range is 500 ms; updates run every 100 ms and only while the far end is active.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active.",
          verification="Defect found: with rectangular windows, the window edges correlated with each other and "
                       "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
                       "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
@@ -367,7 +367,7 @@ ALGORITHMS = [
          bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
-         notes="Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
                "plugged into the same 10 ms interface.",
          verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
                       "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
@@ -378,7 +378,7 @@ ALGORITHMS = [
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
-         notes="As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
                "recommendation.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
@@ -390,14 +390,14 @@ ALGORITHMS = [
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth."),
     dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
          problems=["Keyboard typing noise -> transient suppressor"],
          headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],
          bench=["audio/TransientSuppressor_10ms"],
          scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
                   "compared with and without suppression.",
-         notes="Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
          verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
                       "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
                       "first millisecond, which holds most of a click's energy; attack is now instant. (3) A "
@@ -411,7 +411,7 @@ ALGORITHMS = [
          scenario="A one-sided stretch of a call (talks 15 s, listens 15 s) at -50 dBFS background noise; "
                   "speech frames and SIDs cross a 2%-loss link. Transmitted-frame ratio against the actual "
                   "speech ratio, and comfort-noise level against the real noise in pauses.",
-         notes="SID reflection coefficients are interpolated between updates, so the synthesis filter is always "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. SID reflection coefficients are interpolated between updates, so the synthesis filter is always "
                "stable.",
          verification="Defect found: SIDs were sent too often, because spectral-change detection used "
                       "single-frame reflection coefficients (sigma about 0.08). The background description now "
@@ -424,7 +424,7 @@ ALGORITHMS = [
          bench=["audio/Vad_10ms"],
          scenario="Speech in noise at about 10 dB SNR after noise suppression; recall and false-positive rate "
                   "(beyond the intended 200 ms hangover).",
-         notes="", verification="Defects found: (1) residual 'musical noise' after NS looked voiced in a single "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="Defects found: (1) residual 'musical noise' after NS looked voiced in a single "
                                 "frame (false-positive rate 27%), so flatness now uses a ~30 ms averaged spectrum "
                                 "(9%); (2) after a +20 dB noise step the floor rose only 3 dB/s, so noise-like "
                                 "frames now raise it at 30 dB/s. The unit-test metric was also changed to "
@@ -435,7 +435,7 @@ ALGORITHMS = [
          bench=["audio/AudioLevel_20ms"],
          scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
                   "tones and silence must match.",
-         notes="", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
                       "the RFC 6464 codec and level are unchanged."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
@@ -443,7 +443,7 @@ ALGORITHMS = [
          bench=["audio/Resampler_48k_to_16k_10ms", "audio/Resampler_44k1_to_48k_10ms"],
          scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone; "
                   "end-to-end SNR after fitting gain and phase, plus the output length.",
-         notes="The Audio Device Module (platform audio I/O, device switching) is platform glue rather than an "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The Audio Device Module (platform audio I/O, device switching) is platform glue rather than an "
                "algorithm and is out of scope; the resampler is what bridges device and processing rates.",
          verification="Defect found: when decimating, the filter used too few taps (transition band several kHz "
                       "wide), so a 10 kHz tone aliased at only -36 dB into 48 -> 16 kHz output. Taps now scale "
@@ -455,7 +455,7 @@ ALGORITHMS = [
          bench=["video/FreezeDetector_frame"],
          scenario="60 s of 30 fps video with 1% frame loss, two 600 ms outages and PLI-driven recovery; the "
                   "detector's freeze count is compared with gaps counted directly from the render log.",
-         notes="Keyframe requests that end freezes are in 3.5.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Keyframe requests that end freezes are in 3.5.",
          verification="A unit-test expectation was wrong about the harmonic frame rate: irregular 38/38/23 ms "
                       "intervals give 28.97 fps, not 30.3, which is the point of the metric."),
     dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
@@ -466,14 +466,14 @@ ALGORITHMS = [
          scenario="A hardware encoder that starts failing 30% of frames at 10 s; checks that exactly one "
                   "fallback happens with one keyframe, and that the longest gap between encoded frames stays "
                   "small.",
-         notes="", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
     dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
          problems=["Rotated camera -> video orientation header extension (CVO)"],
          headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
          bench=["video/Orientation_rotate90_720p"],
          scenario="A phone rotating through all 4 rotations, with and without mirroring; frames carry CVO in a "
                   "real RTP header extension and the receiver must show the scene upright, bit-exact.",
-         notes="", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
     dict(id="7.4", slug="content-policy", title="Content hints and screen-content variable frame rate",
          problems=["Screen sharing (text must stay sharp) -> content hint, screen-content coding tools, variable framerate",
                    "Talking head vs. motion -> content-type-aware rate control"],
@@ -481,7 +481,7 @@ ALGORITHMS = [
          bench=["video/FrameChangeDetector_1080p", "video/Q_ScreenShare_encode_ratio"],
          scenario="60 s of screen sharing at 15 fps: a new slide every 10 s and a blinking cursor; every content "
                   "change must be encoded immediately, while static frames are skipped.",
-         notes="Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
          verification="No defects found."),
     dict(id="7.5", slug="codec-negotiation", title="Codec negotiation",
@@ -490,14 +490,14 @@ ALGORITHMS = [
          bench=["video/CodecNegotiation_offer10"],
          scenario="A browser-like offer (VP8, VP9, three H.264 profiles, AV1, RTX) against an embedded camera "
                   "(hardware H.264 CB level 4.0, software VP8, no transport-cc), in both directions.",
-         notes="", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
     dict(id="7.6", slug="frame-scaler", title="Resolution scaling and aspect handling",
          problems=["Frame size and aspect changes -> resolution adaptation and scaling mid-stream"],
          headers=["video/frame_scaler.h"], unit=["FrameScaler"], e2e=["E2E_FrameScaler"],
          bench=["video/Scale_720p_to_360p", "video/Scale_360p_to_720p", "video/Q_Scaler_psnr_720p_via_360p"],
          scenario="720p frames down-scaled along the adaptation ladder and up-scaled back for display (PSNR per "
                   "step), plus a 4:3 camera shown in a 16:9 tile with crop and letterbox.",
-         notes="Portable scalar code, about 1.7 ms per 720p frame on the reference machine; a SIMD library "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Portable scalar code, about 1.7 ms per 720p frame on the reference machine; a SIMD library "
                "(libyuv) is the natural drop-in for production.",
          verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
@@ -506,7 +506,7 @@ ALGORITHMS = [
          bench=["video/FrameScheduler_frame"],
          scenario="30 fps over 15 ms jitter: VideoJitterEstimator + VideoTiming give render times and the "
                   "scheduler presents frames. Render-interval jitter is compared with rendering on arrival.",
-         notes="", verification="Exposed the 4.6 jitter-offset defect (render-interval jitter 7.9 ms before the "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="Exposed the 4.6 jitter-offset defect (render-interval jitter 7.9 ms before the "
                                 "fix, 1.1 ms after)."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
@@ -514,7 +514,7 @@ ALGORITHMS = [
          bench=["video/QualityScaler_frame"],
          scenario="An H.264-like encoder model (QP +6 per halving of bits per pixel) with bandwidth 2500 -> 300 "
                   "-> 2500 kbps; resolution follows the QP signals.",
-         notes="Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
          verification="An expectation was wrong: at 300 kbps, 640x360 already gives QP 33, which is inside the "
                       "H.264 band, so not going lower is correct. The test now checks that QP returns inside the "
                       "band."),
@@ -565,7 +565,7 @@ ALGORITHMS = [
          scenario="Two sessions exchange bytes over sim::NetworkLink (tests/e2e/rtp_session_e2e_test.cc): reports "
                   "flow in both directions at the scheduled intervals, RTT is measured from SR and RR, and feedback "
                   "requests reach the module that acts on them.",
-         notes="Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
                "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
                "(SR or RR first, SDES CNAME after it). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
@@ -581,7 +581,7 @@ ALGORITHMS = [
          scenario="Frames go through RtpSender and SendSideController over sim::NetworkLink; the test checks the "
                   "packet bytes, retransmission on NACK, pacing and that the transport-cc feedback drives the "
                   "target rate.",
-         notes="RtpSender builds packets and never sends; every packet leaves through TakePackets() with a pacer "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. RtpSender builds packets and never sends; every packet leaves through TakePackets() with a pacer "
                "priority. SendSideController (one per transport) numbers, paces and serializes them. Padding and "
                "probes are real padding-only RTP packets. RTX of RED is retransmitted as sent, as in libwebrtc's "
                "RtxReceiveStream. Packet size is capped at 1200 bytes, libwebrtc's kVideoMtu. Interop for RTP with "
@@ -602,7 +602,7 @@ ALGORITHMS = [
          headers=["rtp/rtp_receiver.h"], unit=["RtpReceiver"], e2e=["E2E_RtpReceiver"], bench=[],
          scenario="Video and audio streams over lossy, reordering links: RTX, FEC and NACK recover packets, the "
                   "packet buffer releases decodable frames, and audio is unwrapped from RED into the jitter buffer.",
-         notes="Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
                "sent only when negotiated and frame information is present, so it is off for H.264, as in "
                "libwebrtc (follow-up #47).",
          verification="Introduced by #32 plan PRs 4 and 6. Per-suite results are recorded by ctest and CI; "
@@ -612,7 +612,7 @@ ALGORITHMS = [
          headers=["rtp/session.h"], unit=["Session"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
-         notes="Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
                "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes.",
          verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
@@ -622,7 +622,7 @@ ALGORITHMS = [
          headers=["rtp/h264.h", "rtp/fake_h264.h"], unit=["H264"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
                   "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
-         notes="Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
                "against H26xPacketBuffer). The fake encoder follows FakeH264Encoder and differs in making a keyframe "
                "when asked and never writing a zero byte into the filler. An IDR alone counts as a keyframe, as in "
                "libwebrtc by default.",
