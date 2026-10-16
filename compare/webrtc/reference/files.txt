@@ -124,3 +124,7 @@ video/rate_utilization_tracker.h
 video/rate_utilization_tracker.cc
 rtc_base/rate_statistics.h
 rtc_base/rate_statistics.cc
+video/video_receive_stream2.h
+video/video_receive_stream2.cc
+video/video_receive_stream_timeout_tracker.h
+video/video_receive_stream_timeout_tracker.cc
