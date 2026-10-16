@@ -18,10 +18,9 @@ relative to that directory.
 - `n/a`: no libwebrtc counterpart or not in scope, with the reason.
 - `same`: checked and equal (listed where a reader would otherwise wonder).
 
-**Scope of this version.** Sections 3 (packet loss), 4 (jitter and timing),
-5 (congestion control) and 8 (synchronization). Sections 6, 7 and the RTP session layer follow in separate
-PRs; their headings are below with the state `not yet inventoried`.
-Rows were found by reading our code next to libwebrtc's. A constant listed as
+**Scope.** Sections 3 (packet loss), 4 (jitter and timing), 5 (congestion
+control), 6 (audio quality), 7 (video quality), 8 (synchronization) and the RTP
+session layer (numbered 9, as in the algorithm catalog). Rows were found by reading our code next to libwebrtc's. A constant listed as
 `same` was compared; a module not listed has not been compared yet. No code
 is changed by this document.
 
@@ -59,8 +58,8 @@ Reference files: `modules/video_coding/nack_requester.*`,
 
 | Our module | libwebrtc | Difference | Status | Issue |
 |---|---|---|---|---|
-| `RedEncoder`, `RedReceiver`, `ParseRed` (RFC 2198, distance 1) | `modules/audio_coding/codecs/red/audio_encoder_copy_red.*` and the NetEq RED splitter (not in `reference/`) | Libwebrtc's audio RED (payload type 63 in the harness) repeats the previous Opus frame once. Ours is distance 1 by default (`RedEncoder(distance)`), with a 1023-byte cap on redundant blocks. Wire format RFC 2198 in both. The libwebrtc settings (when redundancy is dropped at a bitrate, the 1023-byte limit) cannot be checked without the file. | cannot compare: file needed | list on #57 |
-| Opus in-band FEC use | `modules/audio_coding/codecs/opus/audio_encoder_opus.cc` (not in `reference/`) | The harness asks libwebrtc for `useinbandfec=1`; the codec is not in this library (the bench sends modelled payloads). | cannot compare: file needed | #62 |
+| `RedEncoder`, `RedReceiver`, `ParseRed` (RFC 2198, distance 1) | `modules/audio_coding/codecs/red/audio_encoder_copy_red.*` and the NetEq RED splitter (not in `reference/`) | Libwebrtc's audio RED (payload type 63 in the harness) repeats the previous Opus frame once. Ours is distance 1 by default (`RedEncoder(distance)`), with a 1023-byte cap on redundant blocks. Wire format RFC 2198 in both. Re-checked against `audio_encoder_copy_red.cc` (now in `reference/`): redundancy 1, 1024-byte and 14-bit offset limits are the same; see 6.1. | same (see 6.1) | |
+| Opus in-band FEC use | `modules/audio_coding/codecs/opus/audio_encoder_opus.cc` (not in `reference/`) | The harness asks libwebrtc for `useinbandfec=1`; the codec is not in this library (the bench sends modelled payloads). `audio_encoder_opus.cc` is now in `reference/`; the loss-rate input that drives it is the gap, see 6.1. | port (see 6.1) | #62 |
 
 ### 3.4 Packet loss concealment
 
@@ -170,7 +169,7 @@ the differences found in the files above. Each belongs to #62.
 | Our module | libwebrtc | Difference | Status | Issue |
 |---|---|---|---|---|
 | `cc/transport_feedback.cc` `SendHistory`, `PacketResult` (send history joined with feedback) | `api/transport/network_types.h` (`PacketResult`, `TransportPacketsFeedback`); libwebrtc's `TransportFeedbackAdapter` is not in `reference/` | Ours drops history entries after 60 s. libwebrtc's adapter (feedback ordering, in-flight accounting, packets of lost feedback) is not in the reference set, so it cannot be compared. | cannot compare: file needed | list on #57 |
-| `cc/transport_feedback.h` `TransportFeedback` (parse/serialise of the transport-cc message) | `modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.*`, `congestion_control_feedback_generator.*` (RFC 8888 variant) | Wire format is the draft-holmer message, interop-checked in `compare/webrtc/rtcp_interop.cc`. libwebrtc's receiver-side feedback generator (send interval, which packets are reported) is a separate component; ours is in `src/rtp`. Interval and content not compared here. | unplaced (belongs with the RTP session inventory) | unplaced |
+| `cc/transport_feedback.h` `TransportFeedback` (parse/serialise of the transport-cc message) | `modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.*`, `congestion_control_feedback_generator.*` (RFC 8888 variant) | Wire format is the draft-holmer message, interop-checked in `compare/webrtc/rtcp_interop.cc`. libwebrtc's receiver-side feedback generator (send interval, which packets are reported) is a separate component; ours is in `src/rtp`. Interval and content not compared here. | port (interval and content: see 9.2) | unplaced |
 | REMB (`GccController::OnRemb`) | `modules/remote_bitrate_estimator/remote_bitrate_estimator_*.cc`, `send_side_bandwidth_estimation.cc` (`receiver_limit_`, `GetUpperLimit`) | libwebrtc applies the REMB value as `receiver_limit_` in the upper limit of `SendSideBandwidthEstimation`; ours takes `min(target, remb)` after the other estimates. Equivalent in effect, different place. | port with #61 | #61 |
 
 ### 5.2 Delay-based estimator
@@ -228,6 +227,113 @@ the differences found in the files above. Each belongs to #62.
 |---|---|---|
 | `cc/outage_monitor.cc` ICE-restart request | ICE belongs to the host stack (`program.md` 0.1). Request signalling only. | n/a |
 | Metrics / `SM_EVENT` hooks in every module | Library convention. | n/a |
+
+## 6. Audio quality
+
+Reference files: `audio/audio_send_stream.*`, `modules/audio_coding/codecs/opus/audio_encoder_opus.*`,
+`modules/audio_coding/codecs/red/audio_encoder_copy_red.*`, `modules/audio_coding/neteq/*` (receive side,
+see 4.4). **Not in `reference/`:** `modules/audio_processing/` (echo canceller, noise suppressor, gain
+control, high-pass filter, voice activity, transient suppression), `common_audio/` (resampler, VAD),
+`audio/audio_level.*`, `modules/audio_coding/codecs/cng/`, `audio/channel_send.cc`. Every row that needs one
+of them says "file needed" and is listed in the open questions.
+
+**Where it runs.** The ten modules in `src/audio/` (6.1 to 6.9, 6.11) are used by their unit, e2e and bench
+tests only. Neither the test bench call (`testbench/call.cc`) nor the comparison harness
+(`compare/webrtc/webrtc_call.cc`) processes audio samples: both send a modelled Opus-sized payload every 20 ms
+and measure the receive side. The harness registers only the transport-cc extension, so the audio-level
+extension is not on the wire either. **Audio processing parity is therefore not measured today**; #63 owns
+that measurement, and the rows below that need it point at #63 and otherwise say `unplaced`.
+
+### 6.1 Send path and codec settings (the app runs the codec)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Opus encoder settings: bitrate, frame length, complexity, application mode | `audio_encoder_opus.cc`: default bitrate by playback rate (`kOpusBitrateNbBps` 12000, `Wb` 20000, `Fb` 32000 per channel), 20 ms default frame (`kDefaultFrameSizeMs`), supported frame lengths 10/20/40/60 ms, complexity with a threshold-and-window hysteresis (`GetNewComplexity`), `kVoip` for mono | The library has no codec; the app supplies frames and `AudioStreamConfig::nominal_rate`. | n/a (the app runs only the codecs, `program.md` 0.1) | |
+| Uplink loss fraction to the encoder's expected loss rate | `audio_encoder_opus.cc` `OnReceivedUplinkPacketLossFraction` -> `PacketLossFractionSmoother` (exponential filter, `kAlphaForPacketLossFractionSmoother` 0.9999, a time constant of 10 s) -> `SetProjectedPacketLossRate` (clamped to `kMaxPacketLossFraction` 0.2, set as a whole percent with `WebRtcOpus_SetPacketLossRate`) | Ours passes the report block's fraction lost to the app as `SessionEventType::kReportBlock` and does nothing with it: no smoothing, no clamp, no rule that says how in-band FEC reacts. The harness asks libwebrtc for `useinbandfec=1`, so libwebrtc's audio protection follows the loss it sees and ours is whatever the app does. | port | #62 |
+| In-band FEC and DTX defaults | `audio_encoder_opus.cc` default format `{"minptime","10"},{"useinbandfec","1"}`, `usedtx` read from the format (absent means off) | Codec parameters negotiated in SDP; the SDP and the codec stay with the host. Only the loss input above is the library's. | n/a | |
+| Audio rate in the allocation | `audio_send_stream.cc` `ConfigureBitrateObserver`: registers with `BitrateAllocator` with `min`/`max` from the encoder's `TargetAudioBitrateConstraints`, `pad_up_bitrate_bps` 0, `priority_bitrate` plus the per-packet overhead at the longest frame length (`WebRTC-Audio-PriorityBitrate` on by default), `enforce_min_bitrate` true, rate elasticity `kCanContributeUnusedRate`; audio joins the allocation only with transport-wide feedback (`WebRTC-Audio-ABWENoTWCC` off) | Ours takes `nominal_rate` off the target before video is allocated and has no min, max, priority or overhead rule. The comparison of `BitrateAllocator` itself is in 5.6; `call/bitrate_allocator.cc` is not in `reference/`. | port (file needed) | place under #37; file on #57 |
+| Per-packet overhead given to the encoder | `audio_send_stream.cc` `UpdateOverheadPerPacket` (transport overhead from `NetworkAvailability`/`OnTargetTransferRate` plus the RTP header and extensions) | Ours has `SendSideConfig::transport_overhead_bytes`, a constant. Whether the app can read the current overhead is not specified. | port | #37 |
+| Audio network adaptor (ANA) | `audio_send_stream.cc` `audio_network_adaptor_config` | Off unless configured; the harness does not configure it. | n/a | |
+| Audio RED | `audio_encoder_copy_red.cc` (`kRedNumberOfRedundantEncodings` 1, 1024-byte and 14-bit timestamp limits, `WebRTC-Audio-Red-For-Opus` field trial) | See 3.3. The two limits are the same in ours (`max_redundant_bytes` 1023, offset below 2^14). Ours repeats the previous frame (distance 1), as libwebrtc's default does. | same (details in 3.3) | |
+| Extensions registered on the audio stream | `audio_send_stream.cc` (`kAudioLevelUri`, `abs_send_time`, transport-wide sequence number, MID) | Ours registers only what `SessionConfig::extensions` lists; the harness registers transport-cc only. The audio-level byte is produced by `EncodeAudioLevelExtension` but no session path writes it. | port (wire-in) | unplaced |
+
+### 6.2 Audio processing (`src/audio`)
+
+libwebrtc's counterparts are in `modules/audio_processing/` and are not in `reference/`, so none of these
+rows can be compared in detail. What can be said comes from our own header comments: each module here is a
+different algorithm from the one libwebrtc ships (for example an NLMS partitioned-block filter with a two-filter
+double-talk test instead of AEC3's matched-filter delay estimate and adaptive filter), with its own constants.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `EchoCanceller` (6.1) | AEC3 (`modules/audio_processing/aec3/`) | Different algorithm (PBFDAF/MDF with Valin's step rule and a residual STFT stage). Constants not comparable without the files. | port (file needed) | #63 measures, then unplaced |
+| `EchoDelayEstimator` (6.2) | AEC3 `EchoPathDelayEstimator` / matched filter | GCC-PHAT with a partial phase transform here. | port (file needed) | #63, then unplaced |
+| `NoiseSuppressor` (6.3) | `modules/audio_processing/ns/` | STFT Wiener with decision-directed SNR and a minimum-tracking noise PSD (18 dB maximum attenuation). | port (file needed) | #63, then unplaced |
+| `AutomaticGainControl`, `Limiter` (6.4) | `modules/audio_processing/agc2/` | Same idea (adaptive digital gain plus a limiter). Target -18 dBFS, 30 dB maximum gain, 6 dB/s gain change here; libwebrtc's values unread. | port (file needed) | #63, then unplaced |
+| `HighPassFilter` (6.5) | `modules/audio_processing/high_pass_filter.*` | 4th-order Butterworth at 80 Hz here. | port (file needed) | #63, then unplaced |
+| `TransientSuppressor` (6.6) | `modules/audio_processing/transient/` | Energy-onset detector here. | port (file needed) | #63, then unplaced |
+| `Vad` (6.8) | `modules/audio_processing/vad/`, `common_audio/vad/` | Energy and spectral-flatness detector here. Where libwebrtc uses a VAD: AGC and the Opus encoder's own DTX decision (`info.speech`, `audio_encoder_opus.cc`). | port (file needed) | #63, then unplaced |
+| `Resampler` (6.11) | `common_audio/resampler/`, `PushSincResampler` | Polyphase Kaiser-windowed sinc here (cutoff 0.92 of the lower Nyquist). | port (file needed) | #63, then unplaced |
+| `ComputeLevel`, audio-level extension (6.9) | `audio/audio_level.*` (not in `reference/`), `audio_send_stream.cc` calls `ComputeLevel` per frame; extension URI `kAudioLevelUri` | The RFC 6464 byte format is the same standard. The level computation (RMS window, full-range level) is not comparable without the file. | same (wire format); computation: file needed | list on #57 |
+
+### 6.3 Items for the Owner to place
+
+1. **`DtxController` and the comfort-noise generator (6.7) have no libwebrtc counterpart on the Opus path.**
+   libwebrtc's Opus encoder does its own DTX (off unless the SDP has `usedtx=1`), and its separate CNG
+   (`modules/audio_coding/codecs/cng/`, not in `reference/`) is for codecs without DTX. Ours sends RFC 3389 SIDs
+   from a VAD decision. Keep as a deviation, or remove?
+2. **Which of 6.2 stay in the library at all.** In libwebrtc the audio processing module belongs to the audio
+   device and send pipeline, not to RTP. If the host app already runs one, these ten modules duplicate it.
+3. **Add to #57:** `modules/audio_processing/` (aec3, ns, agc2, `high_pass_filter.*`, transient, vad),
+   `common_audio/` (resampler, vad), `audio/audio_level.*`, `audio/channel_send.cc`,
+   `modules/audio_coding/codecs/cng/`, `call/bitrate_allocator.cc`.
+
+## 7. Video quality and processing
+
+Reference files: `modules/video_coding/utility/quality_scaler.*`, `bandwidth_quality_scaler.*`,
+`video/adaptation/*`, `video/video_stream_encoder.*`, `video/video_stream_buffer_controller.*`,
+`modules/video_coding/timing/timing.*`, `media/engine/webrtc_video_engine.cc`,
+`modules/rtp_rtcp/source/rtp_sender_video.cc`. **Not in `reference/`:** `video/frame_decode_timing.*` and
+`video/frame_decode_scheduler*` (the decode-time and late-frame rules), `video/receive_statistics_proxy.cc`
+(freeze statistics), `video/video_receive_stream2.cc`, `api/video_codecs/` (SDP codec lists, the encoder's QP
+thresholds), `modules/video_coding/codecs/` (VP8 and H.264 encoder wrappers), libyuv.
+
+**Where it runs.** The test bench uses `FreezeDetector` and, through the session layer, `FrameScheduler`; the
+other modules of this section (`QualityScaler`, `ContentSettings`, `FrameChangeDetector`, `CodecFallbackController`,
+codec negotiation, `Scale`, orientation) and `DegradationController`/`CpuOveruseDetector` (5.6) are not on any
+scenario's path. The harness configures libwebrtc with `DegradationPreference::DISABLED`
+(`webrtc_call.cc`), so **neither side adapts resolution or frame rate in any `sm_compare` scenario**; the
+quality-scaler and overuse rows below cannot show up in a metric until #37 puts adaptation in the call and the
+harness enables it. The freeze metric is the same on both sides by construction: the harness feeds
+libwebrtc's rendered frames to this library's `FreezeDetector`.
+
+### 7.1 Receive side
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `FreezeDetector` (7.1) | `video/receive_statistics_proxy.cc` (not in `reference/`): W3C `freezeCount` definition `max(3 x avg frame duration, avg + 150 ms)` | Ours implements the W3C definition (30-frame average, 5 s pause threshold). Whether libwebrtc's proxy uses the same window and pause rule cannot be read here. The comparison does not depend on it (same detector on both sides). | cannot compare: file needed | list on #57 |
+| `FrameScheduler` (7.7): decode `decode_time` before render time, render if at most `max_late` (10 ms) late or the newest frame, fast-forward past `max_queue` 30 | `video/video_stream_buffer_controller.cc` + `frame_decode_timing.cc` (not in `reference/`): `VCMTiming::MaxWaitingTime`, `kDefaultRenderDelay` 10 ms, frames with no schedule are dropped (`DropNextDecodableTemporalUnit`), `kZeroPlayoutDelayMaxDecodeQueueSize` 8, `kMaxFramesBuffered` 800, `kMaxFramesHistory` 8192 | Different mechanism. libwebrtc waits for the next decodable temporal unit, computes `MaxWaitingTime` from `VCMTiming` (render time less decode time less render delay), drops a unit that has no schedule, and holds at most 800 frames; ours renders late frames within 10 ms and jumps ahead after 30 queued. The decode-time constant (ours 5 ms fixed; libwebrtc `VCMTiming` keeps a percentile filter of measured decode times) and the render-delay constant (10 ms) are different. | port (file needed for the schedule rule) | #24 |
+| Time-out when no frame decodes | `video_stream_buffer_controller.cc` `timeout_tracker_` (`max_wait_for_keyframe`, `max_wait_for_frame`, `SetMaxWaits`) | Ours has no such time-out in the scheduler; keyframe requests come from `KeyframeRequester` (3.5). What libwebrtc does when the time-out fires is in `video_receive_stream2.cc`, not in `reference/`. | port (file needed) | #23 |
+
+### 7.2 Send side and adaptation
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| `QualityScaler` (7.8): EMA of QP (weight 0.15), check every 1.5 s, at least 15 frames, adapt down when average QP is above `high` or more than 60% of frames were dropped, adapt up when below `low` | `quality_scaler.cc`: average QP over a moving window of 150 frames (`5 * 30`, rounded down); drop rate over the last 150 frames; checks every `kMeasureMs` 2 s while `fast_rampup_` (until the first adapt-down), then every 2 s x `kSamplePeriodScaleFactor` 2.5 = 5 s; `kMinFramesNeededToScale` 60; drop rate `>= kFramedropPercentThreshold` 60 reports high QP; average `> high` reports high QP; **average `<= low` reports low QP**; all samples cleared after every report | Constants differ: the QP filter (EMA against a 150-frame window), minimum frames (15 against 60), the check cadence (1.5 s fixed against 2 s, then 5 s after the first adapt-down), the edges (`>` against `>=` for the drop rate, `<` against `<=` for low QP) and the drop-rate window. Thresholds per codec: ours VP8 29/95, VP9 120/180, AV1 145/205, H.264 24/37; in libwebrtc they come from the encoder wrapper's `ScalingSettings` (`api/video_codecs/`, not in `reference/`), so they cannot be confirmed. The `QualityScalingExperiment` field-trial path (separate high and low smoothers) is configured outside `reference/` and is not compared. | port | #37 |
+| `CpuOveruseDetector` (5.9) | `overuse_frame_detector.cc`: `high_encode_usage_threshold_percent` 85, `low` = (85 - 1) / 2 = **42**, `high_threshold_consecutive_count` 2, `min_frame_samples` 120, `min_process_count` 3, `frame_timeout_interval_ms` 1500, a check every `kCheckForOveruseIntervalMs` 5000 (the first after 100 ms), usage from `SendProcessingUsage1` (processing time filtered with weights that depend on the frame spacing, starting midway between the thresholds), up-steps spaced by `kQuickRampUpDelayMs` 10 s right after an up-step, otherwise a ramp-up delay of `kStandardRampUpDelayMs` 40 s that doubles (`kRampUpBackoffFactor` 2.0, up to `kMaxRampUpDelayMs` 240 s) when an overuse follows an up-step within 40 s or after more than `kMaxOverusesBeforeApplyRampupDelay` 4 detections | 85 %, 42 %, 5 s and two consecutive checks are **same**. Different: ours filters encode time per frame with a fixed weight 0.1 and has no minimum frame or process count; the underuse wait is 1 to 16 checks of 5 s (5 to 80 s), doubled after an up-step that overused, where libwebrtc waits 10 s, then 40 s backing off to 240 s. The 5.6 row names the detector; this row adds the constants. | port | #37 |
+| `DegradationController` (5.9): bits-per-pixel ladder (0.04 down, 0.06 up) | `video/adaptation/bitrate_constraint.cc`, `balanced_constraint.cc`, `video_stream_encoder_resource_manager.cc` | See 5.6. The harness runs with adaptation disabled. | port | #37 |
+| `SettingsFor(hint, is_screencast)` (7.4): `motion` -> maintain frame rate; `detail`/`text` -> maintain resolution; no hint -> maintain resolution for screencast, **balanced** otherwise; plus a QP ceiling (40 detail, 32 text) and frame-rate floors (15, 2, 1) | `webrtc_video_engine.cc` `GetDegradationPreference`: with CPU overuse detection off, no adaptation (`MAINTAIN_FRAMERATE_AND_RESOLUTION`); otherwise the track's preference; else `kFluid` -> `MAINTAIN_FRAMERATE`, screencast or `kDetailed` or `kText` -> `MAINTAIN_RESOLUTION`, and `BALANCED` only with the `WebRTC-Video-BalancedDegradation` trial, **default `MAINTAIN_FRAMERATE`** ("until BALANCED has been tuned for all codecs"); content type is `kScreen` or `kRealtimeVideo` only | The hint-to-preference mapping is the same for motion, detail, text and screencast. Different: the default for camera video (ours balanced, libwebrtc maintain frame rate), and the QP ceilings and frame-rate floors, which libwebrtc does not derive from the hint in the files read. | port (default) / deviation to decide (ceilings, floors) | #37 |
+| `FrameChangeDetector` (variable frame rate for static screen content) | `video/frame_cadence_adapter.cc` (`ZeroHertzAdapterMode`) | Block-hash change detection here. libwebrtc's counterpart is the zero-hertz mode of `FrameCadenceAdapter` (repeats the last frame for static screenshare content, with its own idle repeat period). Only for screen sharing; compared by purpose, not by constants. | n/a unless screen sharing is in scope (Owner) | |
+| Frame packetization limits | `rtp_sender_video.cc` lines 745-835: `single_packet_reduction_len`, `first_packet_reduction_len`, `last_packet_reduction_len` taken from the header-extension sizes of the first, last and only packet | See 9.4. | port | unplaced |
+
+### 7.3 Items with no libwebrtc counterpart in this repository, or outside the library
+
+| Our module | Reason | Status |
+|---|---|---|
+| `CodecFallbackController` (7.2) | libwebrtc's `VideoEncoderSoftwareFallbackWrapper`/decoder fallback is codec-wrapper code (`api/video_codecs/`, not in `reference/`); the app runs the codecs in this program. | n/a (file needed to confirm) |
+| `NegotiateCodecs`, `ParseH264ProfileLevelId` (7.5) | SDP offer/answer stays with the host stack (`program.md` 0.1); `webrtc_video_engine.cc` holds libwebrtc's codec lists. | n/a; the Owner may remove the module |
+| `Scale`, `ScaleToFit`, `Crop` (7.6) | libwebrtc scales with libyuv (`I420Buffer::Scale`, not in `reference/`); frames are the app's. | n/a (file needed to compare filters) |
+| `VideoOrientation`, CVO byte (7.3) | The wire format is 3GPP TS 26.114 in both (`rtp_sender_video.cc` writes `VideoOrientation`); rotation at render time is the host's. | same (wire format) |
 
 ## 8. Synchronization
 
@@ -317,14 +423,76 @@ Rows marked `unplaced` above fall into three groups; none has an issue yet:
    `call/rtp_demuxer.cc`, `modules/rtp_rtcp/source/rtp_packet.cc`,
    `rtp_header_extensions.cc`, `rtp_header_extension_map.cc`.
 
-## Not yet inventoried
+## 9. RTP session layer
 
-These areas will be added in separate PRs for #59, in this order. Their
-tables go in this file.
+Reference files: `modules/rtp_rtcp/source/rtcp_sender.*`, `rtcp_receiver.*`, `rtp_sender_video.cc`,
+`rtp_sender_egress.cc`, `rtp_format_h264.*`, `video_rtp_depacketizer_h264.*`, `ntp_time_util.*`,
+`modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.*`,
+`congestion_control_feedback_generator.*`, `call/rtp_transport_controller_send.*`, `call/rtp_video_sender.*`.
+**Not in `reference/`:** `modules/rtp_rtcp/source/rtp_sender.cc`, `rtp_packet.cc`, `rtp_header_extensions.cc`,
+`rtp_rtcp_interface.h` (configuration defaults), `call/video_send_stream_config` (`kDefaultMaxPacketSize`),
+`video/video_receive_stream2.cc`.
 
-- 6 Audio quality
-- 7 Video quality
-- RTP session layer (`src/rtp`)
+**Where it runs.** The test bench call is built on `rtp::Session` (`testbench/call.cc`), so every module here
+runs in every scenario. The comparison harness runs libwebrtc's own RTP stack, which is the reference.
+
+### 9.1 RTCP engine (`src/rtp/rtcp_engine.cc`, `rtcp_sdes_bye.cc`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Nominal report interval (1 s with video, 5 s audio only) | `rtcp_sender.cc` `kDefaultVideoReportInterval` 1 s, `kDefaultAudioReportInterval` 5 s | **Same.** | same | |
+| First report at half the interval | `rtcp_sender.cc` lines 171 and 189 `SetNextRtcpSendEvaluationDuration(report_interval_ / 2)` | **Same** (the test bench overrides it with `first_report_delay`, to keep its report phases). | same | |
+| Random spacing of reports and the video bandwidth rule | `RTCPSender::ComputeTimeUntilNextReport`: each interval drawn from [0.5, 1.5] x the minimum interval; for a sending video stream above 72 kbit/s the minimum interval is `min(360 s / send kbit/s, report interval)` (RFC 3550 6.2) | Ours is off by default (`randomize_intervals` false, fixed grid) and has no bandwidth rule, so the report interval stays 1 s at any rate; libwebrtc's falls below 1 s above 360 kbit/s (about 0.2 s at 1.8 Mbit/s). RTCP load and the frequency of RTT samples differ on every scenario above 360 kbit/s. | port | unplaced |
+| SR ahead of a keyframe | `rtcp_sender.cc` `TimeToSendRTCPReport(send_keyframe_before_rtp)`: for video, a report due within 100 ms is sent before a keyframe | Not in ours. | port | unplaced |
+| RTT from a report block | `rtcp_receiver.cc` lines 552-571, `ntp_time_util.cc` `CompactNtpRttToTimeDelta` (floor of **1 ms**, a negative compact value counts as 1 ms); `rtp_transport_controller_send.cc` line 571 rounds the RTT it gives the network controller to whole milliseconds | The arithmetic is the same (4.3). Ours clamps a negative value to **0** (not 1 ms), has no 1 ms floor, and passes the RTT to the controller unrounded. On a link with RTT below 1 ms ours can report 0. | port | unplaced |
+| Which report blocks give an RTT | `rtcp_receiver.cc`: every block with a non-zero last-SR field gives `packet_information->rtt`; only blocks about the local media SSRC enter the average/last RTT (`rtts_`) | Ours filters by `AddLocalMediaSsrc` when any is registered, otherwise every block counts. Not compared further. | same (assumed) | |
+| Datagram size | `rtcp_sender.cc` `max_packet_size_` is `IP_PACKET_SIZE - 28` by default and is set to the RTP packet size by `SetMaxRtpPacketSize(rtp_config.max_packet_size)` (`rtp_video_sender.cc` line 272) | Ours 1200 (the RTP size). The value of `rtp_config.max_packet_size` is in `video_send_stream_config`, not in `reference/`. | same (assumed; file needed) | list on #57 |
+| Reduced-size RTCP | `webrtc_video_engine.cc` lines 1229 and 1968: `RtcpMode::kReducedSize` only if `rtcp.reduced_size` was negotiated | Ours: `reduced_size` set by the host from the negotiation. | same | |
+| No-RR time-outs | `rtcp_receiver.cc` `kRrTimeoutIntervals` 3: logs a warning only | No counterpart; no behaviour depends on it. | n/a | |
+| SDES CNAME in each report, BYE on leaving, FIR sequence numbers, loss notification, REMB | `rtcp_sender.cc`, `rtcp_receiver.cc` | Packet formats are interop-checked (`compare/webrtc/rtcp_interop.cc`). The rules for when each is sent (feedback rate limits, BYE on stop) were not read in detail. | not compared | |
+
+### 9.2 Transport-cc feedback generator (`Session::Process`, `cc::TransportFeedbackBuilder`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Feedback interval | `transport_sequence_number_feedback_generator.cc`: `kDefaultInterval` **100 ms**; `OnSendBandwidthEstimateChanged` sets the interval so that feedback uses 5% of the local send estimate: `max(kTwccReportSize (20 + 8 + 10 + 30 = 68 bytes) / (0.05 x estimate), kMinInterval 50 ms)`, and `kMaxInterval` **250 ms** when 5% of the estimate is below `kMinTwccRate` (68 B / 250 ms) | Ours is fixed: `transport_feedback_interval` 50 ms. libwebrtc's interval is 50 ms for a send estimate above about 218 kbit/s (544 bits / (0.05 x estimate) is below 50 ms), 109 ms at 100 kbit/s, 250 ms below about 44 kbit/s, and **100 ms until the first estimate arrives**. So the two agree on fast links after start-up; they differ at call start and on slow links (`low_bandwidth`), where ours sends up to 5 times as many feedback messages. | port | unplaced |
+| Content of a feedback message | same file: arrivals stay in `packet_arrival_times_` after a report and are erased only once older than `kBackWindow` 500 ms; `periodic_window_start_seq_` moves back when a reordered packet arrives behind it, so a late packet is reported in the next message; a gap older than `kMaxMissingSequenceNumbers` 0x7FFE before the newest packet is not reported; a message that cannot take another packet ends and a new one starts | Ours reports every arrival since the previous call (`next_to_report_`) and splits when deltas do not fit; it counts `late_after_report` and keeps arrivals in a `std::map`. Whether a packet that arrives behind an already sent report is reported again, as libwebrtc does, and how long arrivals are kept, were not checked. | port | unplaced |
+| Feedback on request (`SendFeedbackOnRequest`, transport sequence number extension V2) | same file | Not used by the harness (extension V1 only); not in ours. | n/a | |
+| RFC 8888 feedback | `congestion_control_feedback_generator.cc` (`min_send_delta` 25 ms, `max_send_delta` 250 ms, `kMaxFeedbackRate` 500 kbit/s) | Not negotiated by Chrome-style SDP in the harness and not in ours. | n/a | |
+
+The generator sits between 5.1 and the delay-based estimator: its cadence sets how stale the arrival times are
+when GoogCC sees them. The Owner may want it in Phase 3 before #19.
+
+### 9.3 RTP sender and receiver (`rtp_sender.cc`, `rtp_receiver.cc`, `send_side_controller.cc`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| RTX, packet history, NACK handling | `rtp_packet_history.cc`, `rtp_sender_egress.cc` | See 3.1. | see 3.1 | |
+| FEC, RED | `ulpfec_generator.cc`, `audio_encoder_copy_red.cc` | See 3.2 and 3.3. | see 3.2, 3.3 | |
+| Payload size limit | `rtp_sender_video.cc` lines 728-760: `max_payload_len = packet_capacity - middle_packet->headers_size()`, where the header sizes are those of the packets actually built (first, middle, last, single) with the extensions each carries | Ours takes a fixed `max_payload_size` (`1200 - 12`) and the test bench subtracts 16 bytes for extensions; no per-packet-position reduction. | port | unplaced |
+| Header extensions written | `rtp_sender_video.cc` `AddRtpHeaderExtensions`: transport-wide sequence number, abs-send-time, video orientation, content type, video timing, playout delay, abs-capture-time, dependency descriptor, MID on the first packets until acknowledged, and others | Ours writes transport-cc and MID only (`SessionConfig::extensions`); see 8.4 for the rest. | see 8.4 | |
+| Sequence-number start, SSRC and timestamp offsets | `rtp_sender.cc` (not in `reference/`) | Ours starts at `initial_seq` (0 by default). Whether libwebrtc randomizes could not be read. | cannot compare: file needed | list on #57 |
+| Padding packets | `rtp_sender_egress.cc`, `rtp_sender.cc` (padding size) | See 5.5. | see 5.5 | |
+| `SendSideController` composition (pacer, transport-wide numbering, GCC, in-flight accounting) | `call/rtp_transport_controller_send.cc`, `rtp_video_sender.cc` | The components are compared in section 5. The wiring (which signal reaches which module, `OnNetworkAvailability`, the pacer queue update every `kPacerQueueUpdateInterval` 25 ms, `SetQueueTimeLimit`) was not read here. | not compared | |
+| `RtpReceiver` (demux by MID/SSRC/payload type, NACK, keyframe requests, jitter, timing, scheduler) | `video/rtp_video_stream_receiver2.cc`, `video_stream_buffer_controller.cc` | The parts are in 3.1, 3.5, 4.1 to 4.4 and 7.1. | see those | |
+
+### 9.4 H.264 packetization (`src/rtp/h264.cc`)
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| FU-A fragmentation | `rtp_format_h264.cc` `PacketizeFuA`, `SplitAboutEqually` | **Same**: the unit minus its header is split about equally, larger fragments last, F/NRI in the indicator, S/E bits in the FU header. | same | |
+| STAP-A aggregation | `PacketizeStapA`: aggregates while the next unit fits, counting the 1-byte header and 2-byte length fields | **Same** rule (greedy fit); libwebrtc also subtracts the first/last/single-packet reduction for the packet that holds the first or last unit; ours has no reduction (see 9.3). | port (reductions) | unplaced |
+| Packetization modes | `RtpPacketizerH264` accepts `NonInterleaved` and `SingleNalUnit` | Ours is mode 1 only; STAP-B, MTAP and FU-B are rejected, as in libwebrtc (mode 2 is not negotiated). `SingleNalUnit` (mode 0) is not offered. | n/a (mode 0 if the host negotiates it: Owner) | |
+| Depacketizer | `video_rtp_depacketizer_h264.cc`, `h26x_packet_buffer.cc` | Interop checked by test (`compare/webrtc/rtcp_interop.cc`). Its handling of SPS/PPS, missing parameter sets and keyframe detection was not compared line by line; the packet buffer is in 4.3. | not compared | |
+
+### 9.5 Items for the Owner to place
+
+1. **Port `RTCPSender`'s report timing**: random interval, the 360/bitrate rule above 72 kbit/s, the SR before a
+   keyframe, and the RTT floor/rounding (9.1). Small, self-contained; no roadmap issue holds it.
+2. **Port `TransportSequenceNumberFeedbackGenenerator`'s interval and window** (9.2), preferably before #19.
+3. **Payload size limits from the real header sizes**, with the first/last/single-packet reductions (9.3, 9.4).
+4. **Add to #57:** `modules/rtp_rtcp/source/rtp_sender.cc`, `rtp_packet.cc`, `rtp_header_extensions.cc`,
+   `rtp_rtcp_interface.h`, `call/video_send_stream_config` (`kDefaultMaxPacketSize`), `video/video_receive_stream2.cc`.
 
 ## Open questions for the Owner
 
@@ -352,3 +520,14 @@ tables go in this file.
    RTP packet parser) are missing; the rows that need them say "file needed".
    Should the library wire A/V sync into the session layer before #63's metric
    exists (8.5 items 1 and 2)?
+6. For sections 6, 7 and 9: the files named in 6.3 item 3 (audio processing,
+   `common_audio/`, `audio/audio_level.*`, CNG, `call/bitrate_allocator.cc`), in 7
+   (`video/frame_decode_timing.*`, `video/receive_statistics_proxy.cc`,
+   `video/video_receive_stream2.cc`, `api/video_codecs/`, libyuv) and in 9.5 item 4
+   (`rtp_sender.cc`, `rtp_packet.cc`, `rtp_header_extensions.cc`,
+   `rtp_rtcp_interface.h`, `video_send_stream_config`). The rows that need them say
+   "file needed".
+7. Keep `DtxController` and comfort noise (6.3 item 1), codec negotiation (7.3) and the
+   screen-content change detector (7.2) as deviations, or remove them as having no
+   libwebrtc counterpart in a one-to-one call?
+8. Which of the ten audio-processing modules stay in the library (6.3 item 2)?
