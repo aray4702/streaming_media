@@ -111,7 +111,7 @@ ALGORITHMS = [
                "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
                "replacement for libwebrtc's lookup tables.",
          verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
-                      "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead."
+                      "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead. "
                       "Video RED+ULPFEC is off beside NACK for H.264 and Generic, as libwebrtc's "
                       "`ShouldDisableRedAndUlpfec` decides (`rtp::ShouldDisableRedAndUlpfec`, "
                       "[fix record #7](../../fixes/7-no-fec-beside-nack.md)); the controller only runs where "
