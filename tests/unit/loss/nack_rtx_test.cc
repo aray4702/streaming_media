@@ -224,6 +224,18 @@ SM_TEST(RtxV2, ResendsOnlyAfterSendAndOnceWhilePending) {
   SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(500), TimeDelta::Zero()).size(), 1u);
 }
 
+SM_TEST(RtxV2, FlushedResendIsNotPendingForever) {
+  // A queued resend that the pacer flushes (keyframe) never reaches MarkPacketAsSent: ClearPending
+  // lets the packet be requested again and lets the history cull it.
+  RtxSender s = MakeV2();
+  s.SetRtt(TimeDelta::Millis(100), Ms(0));
+  s.OnPacketSent(Pkt(1), Ms(0));
+  SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(200), TimeDelta::Zero()).size(), 1u);
+  SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(400), TimeDelta::Zero()).empty());
+  s.ClearPending(1);
+  SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(600), TimeDelta::Zero()).size(), 1u);
+}
+
 SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat) {
   // CullOldPackets: kept for max(3 x RTT, 1 s); with fewer than number_to_store packets they stay until
   // 3 x that. With the store full (number_to_store) they leave once past the retention.

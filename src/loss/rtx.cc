@@ -109,6 +109,11 @@ void RtxSender::MarkPacketAsSent(uint16_t original_seq, Timestamp now) {
   ++s->times_retransmitted;
 }
 
+void RtxSender::ClearPending(uint16_t original_seq) {
+  if (cfg_.version < 2) return;
+  if (Stored* s = V2Get(original_seq)) s->pending = false;
+}
+
 void RtxSender::CullAcknowledged(std::span<const uint16_t> seqs) {
   if (cfg_.version < 2) return;
   for (uint16_t seq : seqs) {

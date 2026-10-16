@@ -71,7 +71,11 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   pacer_.Enqueue(pp);
   // A keyframe flushed the video stream's queue: those packets are never sent.
   for (const cc::PacedPacket& f : pacer_.TakeFlushed()) {
-    queued_.erase(f.id);
+    auto it = queued_.find(f.id);
+    if (it != queued_.end()) {
+      if (it->second.sender) it->second.sender->OnPacketDropped(it->second);
+      queued_.erase(it);
+    }
     ++stats_.flushed;
   }
 }
