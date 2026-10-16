@@ -6,6 +6,7 @@
     {"metric": "video.time_to_first_frame_ms", "issues": [24, 61]},
     {"metric": "video.freeze_*", "issues": [5, 37, 24]},
     {"metric": "video.longest_freeze_ms", "issues": [5, 37, 24]},
+    {"metric": "video.pause_*", "issues": [5, 37, 24]},
     {"metric": "video.render_fps", "issues": [37, 24]},
     {"metric": "video.avg_kbps", "issues": [37, 61]},
     {"metric": "cc.utilization_pct", "issues": [19, 15, 48, 12, 61]},

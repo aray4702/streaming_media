@@ -49,6 +49,8 @@ const std::vector<Shown>& ShownMetrics() {
       {"video.freeze_count", Better::kLower, 0.5},
       {"video.freeze_total_ms", Better::kLower, 100},
       {"video.longest_freeze_ms", Better::kLower, 100},
+      {"video.pause_count", Better::kLower, 0.5},
+      {"video.pause_total_ms", Better::kLower, 100},
       {"video.render_fps", Better::kHigher, 0.5},
       {"video.e2e_delay_p95_ms", Better::kLower, 10},
       {"video.time_to_first_frame_ms", Better::kLower, 50},
