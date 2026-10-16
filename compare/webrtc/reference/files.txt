@@ -120,5 +120,5 @@ video/video_quality_observer2.h
 video/video_quality_observer2.cc
 video/video_send_stream_impl.h
 video/video_send_stream_impl.cc
-rtc_base/rate_utilization_tracker.h
-rtc_base/rate_utilization_tracker.cc
+video/rate_utilization_tracker.h
+video/rate_utilization_tracker.cc
