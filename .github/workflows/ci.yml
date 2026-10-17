@@ -108,7 +108,8 @@ jobs:
     # comparison building on the agents' platform and puts the table and the
     # parity report (tools/parity_report.py) in the job summary. libc++ for the
     # prebuilt binary needs clang >= 21. On main the results are also published
-    # to the `parity-data` branch, which the agents read through
+    # to the `parity-data` branch, and on a PR to `parity-data-pr` under
+    # pr/<number>/; the agents read both through
     # raw.githubusercontent.com (the Actions artifact host and github.io are
     # not reachable from their sandbox).
     runs-on: ubuntu-24.04
@@ -157,6 +158,35 @@ jobs:
           git add .
           git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "compare-webrtc and parity report for $GITHUB_SHA"
           git push -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" parity-data
+      - name: Publish PR results to the parity-data-pr branch
+        # Same files for a PR, under pr/<number>/ on a branch of their own
+        # (main's force-push above would wipe them), so agents can read
+        # libwebrtc's column for scenarios a PR adds. Same-repo PRs only: a
+        # fork's token can't push.
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          PR: "${{ github.event.pull_request.number }}"
+          HEAD_SHA: "${{ github.event.pull_request.head.sha }}"
+        run: |
+          git init -q pub-pr && cd pub-pr
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3 4 5; do
+            if git fetch -q --depth=1 origin parity-data-pr 2>/dev/null; then
+              git checkout -q -f -B parity-data-pr FETCH_HEAD
+            else
+              git checkout -q --orphan parity-data-pr
+              printf 'compare-webrtc results and parity report for pull requests, one directory per PR (pr/<number>/, HEAD names the commit), written by the ci workflow.\nResults for main are on the parity-data branch.\n' > README.md
+            fi
+            rm -rf "pr/$PR" && mkdir -p "pr/$PR"
+            cp ../compare-webrtc.json ../compare-webrtc.txt ../parity.json ../parity.md "pr/$PR/"
+            printf 'PR #%s @ %s\n' "$PR" "$HEAD_SHA" > "pr/$PR/HEAD"
+            git add -A
+            git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "compare-webrtc for PR #$PR @ $HEAD_SHA" || exit 0
+            git push -q origin parity-data-pr && exit 0
+            sleep $((attempt * 5))
+          done
+          echo "could not publish to parity-data-pr after 5 attempts"; exit 1
   fix-record:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).
