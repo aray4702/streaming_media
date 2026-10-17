@@ -65,6 +65,11 @@ struct SessionConfig {
   // 1: the RTX packet history of loss::RtxConfig v1 (a ring filled at queue time). 2: libwebrtc's
   // RtpPacketHistory (stored when the pacer sends, RTT-based retention, culled on acknowledgement).
   int rtx_version = 1;
+  // 1: video payloads are sized for a fixed 16 bytes of header extensions.
+  // 2: libwebrtc's RtpSenderVideo: the payload room is the packet capacity
+  // less the header (with the extensions the next packet will carry), and the
+  // packetizer applies the first, last and single packet reductions.
+  int packetization_version = 1;
   uint64_t seed = 1;
   EventSink* events = nullptr;
 };
@@ -215,6 +220,8 @@ class Session : public MetricsSource {
 
   // --- Egress -----------------------------------------------------------------
   void SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now);
+  // With the audio level of the frame (RFC 6464), written when the session maps the extension.
+  void SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optional<audio::AudioLevel> level, Timestamp now);
   void SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now);
   // A frame already split into packet payloads: for another codec's
   // packetizer, or for tests of malformed payloads.

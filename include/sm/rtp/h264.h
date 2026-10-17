@@ -38,8 +38,26 @@ inline constexpr uint8_t kH264NalFuA = 28;
 // holding all of it, so a bare NAL unit is accepted too.
 std::vector<std::span<const uint8_t>> SplitAnnexB(std::span<const uint8_t> annexb);
 
+// libwebrtc's RtpPacketizer::PayloadSizeLimits (rtp_format.h): the payload
+// room of a middle packet, and how much less the first, the last and a
+// single packet of the frame have, because their headers carry more
+// extensions.
+struct PayloadSizeLimits {
+  int max_payload_len = 1200 - 12;
+  int first_packet_reduction_len = 0;
+  int last_packet_reduction_len = 0;
+  int single_packet_reduction_len = 0;
+};
+
 class H264Packetizer {
  public:
+  // RtpPacketizerH264 (rtp_format_h264.cc) with the reductions of `limits`:
+  // a unit larger than the room of its packet is split by FU-A with
+  // SplitAboutEqually, the rest are aggregated by STAP-A. Empty when the frame
+  // cannot be packetized (max_payload_len of 2 or less for an FU-A, or no room
+  // for a byte in the first or last packet).
+  static std::vector<std::vector<uint8_t>> Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& limits);
+
   // The payloads of the RTP packets of one access unit, in order, each at most
   // `max_payload` bytes (at least 3 is needed for FU-A; smaller is raised).
   // Empty input gives no payloads.

@@ -21,6 +21,7 @@
 #include "sm/cc/pacer.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
+#include "sm/audio/audio_level.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/units.h"
 #include "sm/loss/fec.h"
@@ -87,6 +88,7 @@ struct RtpSenderStats {
   uint64_t padding_packets = 0;
   uint64_t nacks_without_rtx = 0;
   uint64_t mid_packets = 0;
+  uint64_t audio_level_packets = 0;
 };
 
 // Splits `bytes` into the fewest chunks of at most `max_payload` bytes, as
@@ -99,7 +101,15 @@ class RtpSender : public MetricsSource {
   explicit RtpSender(RtpSenderConfig cfg = {});
 
   // Audio: one frame becomes one packet (RED-wrapped when configured).
-  void SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now);
+  // With `level` and the audio-level extension (RFC 6464) mapped, the packet
+  // carries it, as libwebrtc's ChannelSend does when the level id is set.
+  void SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
+                 std::optional<audio::AudioLevel> level = std::nullopt);
+  // Header bytes of the next media packet with the extensions it will carry
+  // (transport-cc, abs-send-time and, while it is repeated, MID): what
+  // libwebrtc's RtpSenderVideo reads from the packet templates to size the
+  // payload (rtp_sender_video.cc, `max_payload_len`).
+  size_t MediaHeaderSize() const;
   // Video: one packetized frame. The marker is set on the last chunk. FEC
   // groups end at the frame boundary.
   // `keyframe` marks its media packets for the pacer (keyframe flush).

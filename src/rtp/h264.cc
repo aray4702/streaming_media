@@ -54,27 +54,100 @@ std::vector<std::span<const uint8_t>> SplitAnnexB(std::span<const uint8_t> b) {
   return out;
 }
 
+namespace {
+// RtpPacketizer::SplitAboutEqually (rtp_format.cc).
+std::vector<int> SplitAboutEqually(size_t payload_size, const PayloadSizeLimits& limits) {
+  std::vector<int> result;
+  const int payload_len = static_cast<int>(payload_size);
+  if (limits.max_payload_len >= limits.single_packet_reduction_len + payload_len) {
+    result.push_back(payload_len);
+    return result;
+  }
+  if (limits.max_payload_len - limits.first_packet_reduction_len < 1 || limits.max_payload_len - limits.last_packet_reduction_len < 1) {
+    return result;
+  }
+  const int total_bytes = payload_len + limits.first_packet_reduction_len + limits.last_packet_reduction_len;
+  int num_packets_left = (total_bytes + limits.max_payload_len - 1) / limits.max_payload_len;
+  if (num_packets_left == 1) num_packets_left = 2;
+  if (payload_len < num_packets_left) return result;
+
+  const int bytes_per_packet_base = total_bytes / num_packets_left;
+  const int num_larger_packets = total_bytes % num_packets_left;
+  int bytes_per_packet = bytes_per_packet_base;
+  int remaining_data = payload_len;
+  bool first_packet = true;
+  while (remaining_data > 0) {
+    if (num_packets_left == num_larger_packets) ++bytes_per_packet;
+    int current = bytes_per_packet;
+    if (first_packet) {
+      current = current > limits.first_packet_reduction_len + 1 ? current - limits.first_packet_reduction_len : 1;
+    }
+    if (current > remaining_data) current = remaining_data;
+    if (num_packets_left == 2 && current == remaining_data) --current;
+    result.push_back(current);
+    remaining_data -= current;
+    --num_packets_left;
+    first_packet = false;
+  }
+  return result;
+}
+}  // namespace
+
 std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint8_t> annexb, size_t max_payload) {
+  PayloadSizeLimits limits;
+  limits.max_payload_len = static_cast<int>(std::max<size_t>(max_payload, kFuAOverhead + 1));
+  return Packetize(annexb, limits);
+}
+
+std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& in) {
   std::vector<std::vector<uint8_t>> out;
-  max_payload = std::max<size_t>(max_payload, kFuAOverhead + 1);
+  // PayloadSizeLimits::Sanitize.
+  PayloadSizeLimits limits = in;
+  limits.max_payload_len = std::max(0, limits.max_payload_len);
+  limits.single_packet_reduction_len = std::clamp(limits.single_packet_reduction_len, 0, limits.max_payload_len);
+  limits.first_packet_reduction_len = std::clamp(limits.first_packet_reduction_len, 0, limits.max_payload_len);
+  limits.last_packet_reduction_len = std::clamp(limits.last_packet_reduction_len, 0, limits.max_payload_len);
   const auto nals = SplitAnnexB(annexb);
-  for (size_t i = 0; i < nals.size();) {
+  const size_t count = nals.size();
+  for (size_t i = 0; i < count;) {
     const auto nal = nals[i];
-    if (nal.size() > max_payload) {
-      // FU-A: the NAL header's F and NRI go in the indicator, its type in the
-      // FU header, and the rest of the unit is split about equally, the
-      // larger fragments last (libwebrtc's SplitAboutEqually).
+    int capacity = limits.max_payload_len;
+    if (count == 1) {
+      capacity -= limits.single_packet_reduction_len;
+    } else if (i == 0) {
+      capacity -= limits.first_packet_reduction_len;
+    } else if (i + 1 == count) {
+      capacity -= limits.last_packet_reduction_len;
+    }
+    if (static_cast<int>(nal.size()) > capacity) {
+      // FU-A (PacketizeFuA): the NAL header's F and NRI go in the indicator,
+      // its type in the FU header, and the rest of the unit is split about
+      // equally, the larger fragments last.
+      if (limits.max_payload_len <= static_cast<int>(kFuAOverhead)) return {};
+      PayloadSizeLimits fu = limits;
+      fu.max_payload_len -= static_cast<int>(kFuAOverhead);
+      if (count != 1) {
+        if (i == count - 1) {
+          fu.single_packet_reduction_len = limits.last_packet_reduction_len;
+        } else if (i == 0) {
+          fu.single_packet_reduction_len = limits.first_packet_reduction_len;
+        } else {
+          fu.single_packet_reduction_len = 0;
+        }
+      }
+      if (i != 0) fu.first_packet_reduction_len = 0;
+      if (i != count - 1) fu.last_packet_reduction_len = 0;
       const uint8_t header = nal[0];
       const std::span<const uint8_t> rest = nal.subspan(1);
-      const size_t room = max_payload - kFuAOverhead;
-      const size_t n = (rest.size() + room - 1) / room;
+      const std::vector<int> sizes = SplitAboutEqually(rest.size(), fu);
+      if (sizes.empty()) return {};
       size_t off = 0;
-      for (size_t k = 0; k < n; ++k) {
-        size_t len = rest.size() / n + (k >= n - rest.size() % n ? 1 : 0);
+      for (size_t k = 0; k < sizes.size(); ++k) {
+        const size_t len = static_cast<size_t>(sizes[k]);
         std::vector<uint8_t> p;
         p.reserve(len + kFuAOverhead);
         p.push_back(static_cast<uint8_t>((header & 0xE0) | kH264NalFuA));
-        p.push_back(static_cast<uint8_t>((k == 0 ? 0x80 : 0) | (k + 1 == n ? 0x40 : 0) | (header & 0x1F)));
+        p.push_back(static_cast<uint8_t>((k == 0 ? 0x80 : 0) | (k + 1 == sizes.size() ? 0x40 : 0) | (header & 0x1F)));
         p.insert(p.end(), rest.begin() + static_cast<std::ptrdiff_t>(off), rest.begin() + static_cast<std::ptrdiff_t>(off + len));
         off += len;
         out.push_back(std::move(p));
@@ -82,19 +155,40 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
       ++i;
       continue;
     }
-    // Aggregate this unit with the ones after it while the STAP-A fits.
-    size_t total = 1 + 2 + nal.size();
-    size_t j = i + 1;
-    while (j < nals.size() && nals[j].size() <= max_payload && total + 2 + nals[j].size() <= max_payload) {
-      total += 2 + nals[j].size();
+    // STAP-A (PacketizeStapA): aggregate while the next unit fits, counting
+    // the reduction of the packet that would hold the first or last unit.
+    const bool has_first = i == 0;
+    size_t left = static_cast<size_t>(limits.max_payload_len);
+    size_t headers = 0;
+    size_t j = i;
+    auto needed = [&](size_t k) {
+      const bool has_last = k == count - 1;
+      int reduction = 0;
+      if (has_first && has_last) {
+        reduction = limits.single_packet_reduction_len;
+      } else if (has_first) {
+        reduction = limits.first_packet_reduction_len;
+      } else if (has_last) {
+        reduction = limits.last_packet_reduction_len;
+      }
+      return nals[k].size() + headers + static_cast<size_t>(reduction);
+    };
+    while (j < count && left >= needed(j)) {
+      left -= nals[j].size() + headers;
+      headers = headers == 0 ? 2 + 1 + 2 : 2;
       ++j;
     }
+    if (j == i) return {};  // The first unit does not fit (libwebrtc: RTC_CHECK).
     std::vector<uint8_t> p;
     if (j == i + 1) {
       p.assign(nal.begin(), nal.end());  // Single NAL unit packet.
     } else {
       uint8_t nri = 0;
-      for (size_t k = i; k < j; ++k) nri = std::max<uint8_t>(nri, nals[k][0] & 0x60);
+      size_t total = 1;
+      for (size_t k = i; k < j; ++k) {
+        nri = std::max<uint8_t>(nri, nals[k][0] & 0x60);
+        total += 2 + nals[k].size();
+      }
       p.reserve(total);
       p.push_back(static_cast<uint8_t>(nri | kH264NalStapA));
       for (size_t k = i; k < j; ++k) {
