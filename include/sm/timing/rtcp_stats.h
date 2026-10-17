@@ -68,11 +68,17 @@ class ReceiveStatistics : public MetricsSource {
  public:
   ReceiveStatistics(uint32_t ssrc, int clock_rate) : ssrc_(ssrc), clock_rate_(clock_rate) {}
   void OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival);
+  // As above for a stream whose payload type changes the RTP clock rate:
+  // `payload_frequency` is the rate of this packet (libwebrtc's
+  // `payload_type_frequency()`); the jitter is rescaled when it changes
+  // (`StreamStatisticianImpl::ReviseFrequencyAndJitter`).
+  void OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival, int payload_frequency);
   void OnSenderReport(const SenderReport& sr, Timestamp arrival);
   // Builds a report block and starts a new fraction-lost interval.
   ReportBlock MakeReportBlock(Timestamp now);
   ReceiveStatsSnapshot Snapshot() const;
   double jitter_ms() const { return jitter_q4_ / 16.0 * 1000.0 / clock_rate_; }
+  int jitter_frequency() const { return clock_rate_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

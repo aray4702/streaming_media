@@ -305,3 +305,20 @@ SM_TEST(DelayBweV2, FeedbackWithOnlyLostPacketsLeavesTheEstimate) {
   DataRate r = bwe.OnPacketResults(lost, DataRate::KilobitsPerSec(500), std::nullopt, Timestamp::Millis(1000));
   SM_EXPECT_EQ(r.bps(), 1000000);
 }
+
+// RtpTransportControllerSend::OnRttUpdate (#101): `cc v2` gives the controller
+// the RTT rounded to whole milliseconds and drops a zero one.
+SM_TEST(GccController, V2RoundsTheRttToWholeMillisecondsAndDropsZero) {
+  GccConfig c2;
+  c2.version = 2;
+  GccController v2(c2);
+  v2.OnRttUpdate(TimeDelta::Micros(49600));
+  SM_EXPECT_EQ(v2.last_rtt().us(), 50000);
+  v2.OnRttUpdate(TimeDelta::Micros(50400));
+  SM_EXPECT_EQ(v2.last_rtt().us(), 50000);
+  v2.OnRttUpdate(TimeDelta::Micros(300));  // Rounds to zero: not passed on.
+  SM_EXPECT_EQ(v2.last_rtt().us(), 50000);
+  GccController v1;
+  v1.OnRttUpdate(TimeDelta::Micros(49600));
+  SM_EXPECT_EQ(v1.last_rtt().us(), 49600);
+}

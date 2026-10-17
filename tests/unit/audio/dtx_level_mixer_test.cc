@@ -100,3 +100,36 @@ SM_TEST(AudioLevel, ExtensionAndLevel) {
   std::vector<float> silence(160, 0.0f);
   SM_EXPECT_EQ(ComputeLevel(silence), 127);
 }
+
+// audio/audio_level.cc (voe::AudioLevel, #101): the level is the maximum
+// absolute sample, refreshed every 11th frame, and decays to a quarter.
+SM_TEST(AudioLevelMeter, RefreshesEvery11thFrameAndDecaysToAQuarter) {
+  AudioLevelMeter m;
+  for (int i = 0; i < 10; ++i) {
+    m.ComputeLevel(static_cast<int16_t>(1000), 0.01);
+    SM_EXPECT_EQ(m.LevelFullRange(), 0);  // Not refreshed yet.
+  }
+  m.ComputeLevel(static_cast<int16_t>(4000), 0.01);  // The 11th call.
+  SM_EXPECT_EQ(m.LevelFullRange(), 4000);
+  // The maximum decays by 4 after the refresh: a quiet next window reports 1000.
+  for (int i = 0; i < 10; ++i) m.ComputeLevel(static_cast<int16_t>(0), 0.01);
+  SM_EXPECT_EQ(m.LevelFullRange(), 4000);
+  m.ComputeLevel(static_cast<int16_t>(0), 0.01);
+  SM_EXPECT_EQ(m.LevelFullRange(), 1000);
+}
+
+SM_TEST(AudioLevelMeter, EnergyUsesTheLevelNotTheFrameAndMutedIsZero) {
+  AudioLevelMeter m;
+  for (int i = 0; i < 11; ++i) m.ComputeLevel(static_cast<int16_t>(32767), 0.01);
+  // Ten frames at level 0, one at full scale: only the 11th adds energy.
+  SM_EXPECT_NEAR(m.TotalEnergy(), 0.01, 1e-9);
+  SM_EXPECT_NEAR(m.TotalDuration(), 0.11, 1e-9);
+  m.Reset();
+  SM_EXPECT_EQ(m.LevelFullRange(), 0);
+  SM_EXPECT_EQ(m.TotalEnergy(), 0.0);
+  std::vector<int16_t> pcm(160, 0);
+  pcm[3] = -32768;  // |-32768| saturates to 32767.
+  m.ComputeLevel(pcm, 0.01);
+  for (int i = 0; i < 10; ++i) m.ComputeLevel(std::span<const int16_t>(pcm.data(), 0), 0.01);
+  SM_EXPECT_EQ(m.LevelFullRange(), 32767);
+}

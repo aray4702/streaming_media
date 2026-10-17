@@ -78,6 +78,11 @@ class PacketBuffer : public MetricsSource {
   // The sequence number just before `first_seq` that is not a padding-only
   // packet, i.e. the last packet of the preceding frame if it was received.
   int64_t PrecedingMediaSeq(int64_t first_seq) const;
+  // v2, `PacketBuffer::ClearTo`: the frame ending at `seq` was decoded, so
+  // every packet up to and including it is dropped, the lowest sequence number
+  // moves past it, and a packet behind it that arrives later is ignored
+  // (`kTooOld`) rather than treated as a backward jump. No effect in v1.
+  void ClearTo(int64_t seq);
   std::vector<AssembledFrame> PopCompleteFrames();
   size_t capacity() const { return size_; }
   size_t buffered_packets() const { return packets_.size(); }
@@ -103,6 +108,7 @@ class PacketBuffer : public MetricsSource {
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
   int64_t highest_ = INT64_MIN;
   size_t size_ = 0;                      // v2: current slot count.
+  bool cleared_to_first_seq_ = false;    // v2: ClearTo moved first_seq_; older packets are ignored.
   int64_t first_seq_ = INT64_MIN;        // v2: lowest sequence number seen since the last clear.
   int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;

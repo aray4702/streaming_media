@@ -113,6 +113,10 @@ std::optional<ReceiverReport> ParseReceiverReport(std::span<const uint8_t> d) {
 // --- ReceiveStatistics -------------------------------------------------------
 
 void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival) {
+  OnPacket(seq, rtp_ts, arrival, clock_rate_);
+}
+
+void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival, int payload_frequency) {
   int64_t s = unwrapper_.Unwrap(seq);
   const bool first = !started_;
   if (first) {
@@ -129,8 +133,15 @@ void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arriva
     // Q4 integer filter; a jump of 5 s of 90 kHz video clock is skipped.
     constexpr int32_t kJumpLimit = 5 * 90000;
     int64_t receive_diff_us = (arrival - last_receive_time_).us();
-    uint32_t receive_diff_rtp = static_cast<uint32_t>(receive_diff_us * clock_rate_ / 1000000);
+    uint32_t receive_diff_rtp = static_cast<uint32_t>(receive_diff_us * payload_frequency / 1000000);
     int32_t time_diff_samples = static_cast<int32_t>(receive_diff_rtp - (rtp_ts - last_timestamp_));
+    // ReviseFrequencyAndJitter: the jitter is a number of samples, so a new clock rate rescales it
+    // (everything before and including this packet counts as computed at the packet's rate).
+    if (payload_frequency != clock_rate_ && payload_frequency != 0) {
+      jitter_q4_ = static_cast<int32_t>(static_cast<uint64_t>(jitter_q4_) * static_cast<uint64_t>(payload_frequency) /
+                                        static_cast<uint64_t>(clock_rate_));
+      clock_rate_ = payload_frequency;
+    }
     if (time_diff_samples < kJumpLimit && time_diff_samples > -kJumpLimit) {
       int32_t jitter_diff_q4 = (std::abs(time_diff_samples) << 4) - jitter_q4_;
       jitter_q4_ += (jitter_diff_q4 + 8) >> 4;

@@ -129,6 +129,12 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
 }
 
 void GccController::OnRttUpdate(TimeDelta rtt) {
+  if (cfg_.version >= 2) {
+    // RtpTransportControllerSend::OnRttUpdate: `rtt.RoundTo(1 ms)`, and a zero RTT is not passed on.
+    rtt = TimeDelta::Millis((rtt.us() + 500) / 1000);
+    if (rtt.IsZero()) return;
+  }
+  last_rtt_ = rtt;
   delay_.SetRtt(rtt);
   loss_.SetRtt(rtt);
   if (cfg_.version >= 2) ssbe_.UpdateRtt(rtt, last_now_);

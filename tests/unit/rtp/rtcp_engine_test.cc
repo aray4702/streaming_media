@@ -447,3 +447,32 @@ SM_TEST(RtcpEngine, V2ReportIntervalFollowsTheSendBitrateRule) {
   }
   SM_EXPECT_TRUE(varied);
 }
+
+// RTCPSender::TimeToSendRTCPReport(send_keyframe_before_rtp) (#101): a video
+// report due within 100 ms goes out before the keyframe; audio gets no margin.
+SM_TEST(RtcpEngine, V2ReportDueWithin100msIsSentBeforeAKeyframe) {
+  RtcpConfig c;
+  c.version = 2;
+  c.first_report_delay = TimeDelta::Millis(1000);
+  RtcpEngine e(c);
+  e.Process(Timestamp::Millis(0));
+  SM_EXPECT_FALSE(e.ReportDue(Timestamp::Millis(800), false));
+  SM_EXPECT_FALSE(e.ReportDue(Timestamp::Millis(800), true));   // 200 ms early.
+  SM_EXPECT_TRUE(e.ReportDue(Timestamp::Millis(900), true));    // Exactly 100 ms.
+  SM_EXPECT_FALSE(e.ReportDue(Timestamp::Millis(900), false));
+  auto out = e.SendReport(Timestamp::Millis(900));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_TRUE(out[0].kind == RtcpOutKind::kReport);
+  // The next one is an interval from now, so the old slot does not report again.
+  SM_EXPECT_FALSE(e.ReportDue(Timestamp::Millis(1000), false));
+  RtcpConfig a = c;
+  a.has_video = false;
+  RtcpEngine audio(a);
+  audio.Process(Timestamp::Millis(0));
+  SM_EXPECT_FALSE(audio.ReportDue(Timestamp::Millis(900), true));
+  RtcpConfig v1;
+  v1.first_report_delay = TimeDelta::Millis(1000);
+  RtcpEngine old(v1);
+  old.Process(Timestamp::Millis(0));
+  SM_EXPECT_FALSE(old.ReportDue(Timestamp::Millis(900), true));  // v1 has no margin.
+}

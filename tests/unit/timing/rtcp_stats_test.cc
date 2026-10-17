@@ -128,3 +128,23 @@ SM_TEST(RtcpStats, JitterIgnoresOutOfOrderSameTimestampAndJumps) {
   steady.OnPacket(52, 50 * 3000u + 6 * 90000u, Timestamp::Millis(50 * 33 + 510));  // Jump of 6 s: skipped.
   SM_EXPECT_NEAR(steady.jitter_ms(), after_frame, 1e-9);
 }
+
+// StreamStatisticianImpl::ReviseFrequencyAndJitter (#101): the jitter is a
+// count of samples, so a new payload frequency rescales it.
+SM_TEST(RtcpStats, JitterIsRescaledWhenThePayloadFrequencyChanges) {
+  ReceiveStatistics rs(1, 48000);
+  for (uint16_t s = 0; s < 60; ++s) rs.OnPacket(s, s * 960u, Timestamp::Millis(s * 20 + (s % 2) * 6), 48000);
+  const double before = rs.jitter_ms();
+  SM_EXPECT_TRUE(before > 1.0);
+  // Same timing on a 16 kHz payload: the stored sample count shrinks to a third, so the
+  // jitter in milliseconds stays close rather than jumping to 3x.
+  rs.OnPacket(60, 60 * 960u, Timestamp::Millis(60 * 20), 16000);
+  rs.OnPacket(61, 60 * 960u + 320u, Timestamp::Millis(60 * 20 + 20 + 6), 16000);
+  SM_EXPECT_EQ(rs.jitter_frequency(), 16000);
+  SM_EXPECT_TRUE(rs.jitter_ms() < before * 1.5 && rs.jitter_ms() > before * 0.3);
+  // An unchanged frequency leaves it alone.
+  ReceiveStatistics same(1, 90000);
+  same.OnPacket(0, 0, Timestamp::Millis(0), 90000);
+  same.OnPacket(1, 3000, Timestamp::Millis(40), 90000);
+  SM_EXPECT_EQ(same.jitter_frequency(), 90000);
+}

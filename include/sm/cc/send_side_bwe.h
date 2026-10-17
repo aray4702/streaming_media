@@ -53,6 +53,8 @@ class GccController : public MetricsSource {
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
+  // The RTT the controller last took (rounded to whole ms with `cc v2`).
+  TimeDelta last_rtt() const { return last_rtt_; }
   void OnRemb(DataRate remb);
   // `cc v2`: GoogCcNetworkController::OnTransportLossReport. The loss and packet
   // counts are the deltas between two receiver reports (summed over the report
@@ -108,6 +110,7 @@ class GccController : public MetricsSource {
   DataRate target_;
   DataRate last_reported_;
   std::optional<TimeDelta> last_feedback_max_rtt_;
+  TimeDelta last_rtt_ = TimeDelta::Zero();
   Histogram target_kbps_;
 };
 
