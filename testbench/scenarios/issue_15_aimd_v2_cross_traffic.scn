@@ -1,0 +1,13 @@
+name issue_15_aimd_v2_cross_traffic
+describe A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and leaves at 25 s, `cc v2` (#15)
+# Utilization: `cc v1` 64-69 %, `cc v2` 71-79 %, libwebrtc 74.2 % (parity-data, 10 seeds). Queue p95 stays
+# under the suite's limit (v2 79-171 ms; libwebrtc 264 ms).
+cc v2
+duration 40s
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
+expect cc.unsettled == 0
+expect cc.utilization_pct >= 68

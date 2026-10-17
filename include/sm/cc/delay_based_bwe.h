@@ -23,6 +23,7 @@
 #include <optional>
 #include <vector>
 
+#include "sm/cc/aimd_rate_control.h"
 #include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
@@ -32,6 +33,11 @@ namespace sm::cc {
 
 enum class BandwidthUsage { kNormal, kUnderusing, kOverusing };
 const char* ToString(BandwidthUsage u);
+
+// TransportPacketsFeedback::SortedByReceiveTime: the received packets,
+// ordered by (receive time, send time, sequence number) as
+// PacketResult::ReceiveTimeOrder.
+std::vector<PacketResult> SortedByReceiveTime(const std::vector<PacketResult>& results);
 
 class InterArrival {
  public:
@@ -188,18 +194,20 @@ class DelayBasedBwe : public MetricsSource {
     EventSink* events = nullptr;
     // 1: the original estimator. 2 (`cc v2`): libwebrtc's DelayBasedBwe
     // front end: feedback sorted by receive time, InterArrivalDelta, 2 s
-    // stream time-out. The rate control is still the same in both.
+    // stream time-out, and (#15) libwebrtc's AimdRateControl with the
+    // MaybeUpdateEstimate decision logic.
     int version = 1;
   };
   DelayBasedBwe() : DelayBasedBwe(Config{}) {}
   explicit DelayBasedBwe(Config cfg);
-  void SetStartBitrate(DataRate r, Timestamp now) { aimd_.SetEstimate(r, now); }
-  void SetRtt(TimeDelta rtt) { aimd_.SetRtt(rtt); }
-  void SetMinRate(DataRate r) { aimd_.SetMinRate(r); }
+  void SetStartBitrate(DataRate r, Timestamp now);
+  void SetRtt(TimeDelta rtt);
+  void SetMinRate(DataRate r);
   // Results must be sorted by send time / sequence number.
   DataRate OnPacketResults(const std::vector<PacketResult>& results, std::optional<DataRate> acked,
                            std::optional<DataRate> probe_estimate, Timestamp now);
-  DataRate estimate() const { return aimd_.estimate(); }
+  DataRate estimate() const { return cfg_.version >= 2 ? rc2_.LatestEstimate() : aimd_.estimate(); }
+  const AimdRateControl& rate_control_v2() const { return rc2_; }
   BandwidthUsage usage() const { return trendline_.State(); }
   const TrendlineEstimator& trendline() const { return trendline_; }
   const DelayBweStats& stats() const { return stats_; }
@@ -208,11 +216,14 @@ class DelayBasedBwe : public MetricsSource {
  private:
   Config cfg_;
   void OnPacketResultsV2(const std::vector<PacketResult>& results, Timestamp now);
+  // libwebrtc DelayBasedBwe::MaybeUpdateEstimate.
+  DataRate MaybeUpdateEstimateV2(std::optional<DataRate> acked, std::optional<DataRate> probe, Timestamp now);
   InterArrival inter_arrival_;
   InterArrivalDelta inter_arrival_delta_{TimeDelta::Millis(5)};
   Timestamp last_seen_packet_ = Timestamp::MinusInfinity();
   TrendlineEstimator trendline_;
   AimdRateController aimd_;
+  AimdRateControl rc2_;
   BandwidthUsage last_usage_ = BandwidthUsage::kNormal;
   DelayBweStats stats_;
 };
