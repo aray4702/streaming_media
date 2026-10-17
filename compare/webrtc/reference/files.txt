@@ -131,3 +131,5 @@ video/video_receive_stream_timeout_tracker.cc
 audio/audio_level.h
 audio/audio_level.cc
 api/transport/network_types.cc
+modules/rtp_rtcp/source/rtp_sender.cc
+modules/rtp_rtcp/source/rtp_sender.h
