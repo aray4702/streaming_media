@@ -50,7 +50,15 @@ practical details every role shares.
   ```
   A gap is a metric whose means differ by more than the parity band
   (`tools/parity_report.py` documents it); `tools/parity_owners.json` says
-  which issue owns it. To check a local change, build `sm_compare` and run
+  which issue owns it.
+  For a PR (for example one that adds scenarios), every PR run publishes the
+  same files to the `parity-data-pr` branch under `pr/<number>/`. `HEAD`
+  there names the commit they belong to, so check it against the PR's head:
+  ```sh
+  P=https://raw.githubusercontent.com/aray4702/streaming_media/parity-data-pr/pr/<number>
+  curl -fsSL $P/HEAD; curl -fsSL $P/compare-webrtc.txt; curl -fsSL $P/parity.md
+  ```
+  To check a local change, build `sm_compare` and run
   `tools/parity_report.py out.json --owners tools/parity_owners.json --base <main's compare-webrtc.json>`.
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
   for `testbench/baseline.json`, so numbers you measure here are the
