@@ -251,9 +251,10 @@ ALGORITHMS = [
                "`AimdRateControl` (`aimd_rate_control.h`: near-max additive increase, decrease with `beta x "
                "throughput - 5 kbps`, `LinkCapacityEstimator`, `TimeToReduceFurther`, `bitrate_is_initialized_`) and "
                "`DelayBasedBwe::MaybeUpdateEstimate` (halve every `clamp(rtt, 10, 200)` ms when overusing without an "
-               "acked rate; a probe result sets the estimate as is). Remaining differences: no `AlrDetector` (ALR "
-               "end does not call `ExpectFastRateChange`, `in_alr` is never set; #48), `prior_unacked_data` is zero, "
-               "no `NetworkStateEstimate`.",
+               "acked rate; a probe result sets the estimate as is). #48 adds `AlrDetector` (`alr_detector.h`: the "
+               "ALR state marks the acked-rate estimator, and the end of an ALR calls `ExpectFastRateChange`), "
+               "the probe controller and probe estimator (5.6), and `recovered_from_overuse`, which requests a probe "
+               "after a big drop. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "
@@ -310,8 +311,12 @@ ALGORITHMS = [
                "`PacingController::EnqueuePacket` does (the sender marks keyframes and first-of-frame packets; "
                "#5). Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
                "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
-               "congestion window (pushback stays on the encoder), and `BitrateProber` (#48): a probe cluster is "
-               "still sent in 5 ms bursts at the probe rate.",
+               "congestion window (pushback stays on the encoder). `BitrateProber` (#48, `bitrate_prober.h`) times "
+               "the probe bursts: a cluster starts when a media packet of at least min(`rate x min_probe_delta`, "
+               "200 B) is enqueued, begins with a small padding packet, sends `rate x min_probe_delta` bytes per "
+               "burst (padding fills it when there is no media), times the next burst by the bytes sent at the "
+               "cluster rate and drops a cluster whose burst is more than 10 ms late (at most 5 pending, 5 s "
+               "old).",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
                       "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "
@@ -322,13 +327,24 @@ ALGORITHMS = [
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
-         headers=["cc/probing.h"], unit=["Probing"], e2e=["E2E_Probing"],
+         headers=["cc/probing.h", "cc/bitrate_prober.h", "cc/alr_detector.h"],
+         unit=["Probing", "BitrateProber", "PacingControllerProbing", "AlrDetector", "ProbeControllerV2", "ProbeBitrateEstimatorV2", "GccV2Probing"],
+         e2e=["E2E_Probing"],
          bench=["cc/Q_Probing_rampup_5mbps"],
          scenario="A 5 Mbps link starting at 300 kbps: time for the target to reach 80% of capacity, with and "
                   "without probing.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
-               "the estimator ignores clusters with too few packets or bytes.",
+               "the estimator ignores clusters with too few packets or bytes. `cc v2` (#48) is libwebrtc's code: "
+               "`ProbeControllerV2` (`ProbeController`: clusters at 3x and 6x the start rate, further probes at 2x "
+               "a result above 0.7 of the last probe, probes when the max or max allocated bitrate rises, "
+               "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes only when "
+               "the stream requests them, none while the estimate is limited by delay increase or loss), "
+               "`ProbeBitrateEstimator` in libwebrtc mode (receive/send ratio over 2 rejected, clusters expire "
+               "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in `pacer v2`). "
+               "Remaining differences: the loss-based state and the RTT limit do not yet limit probing (#12), "
+               "no `NetworkStateEstimate`, the padding sizes of `RTPSender::GeneratePadding` come from memory "
+               "(`rtp_sender.cc` is not in `reference/`, #57), and `cc v1` keeps the old controller until #61.",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
                       "within 30 s."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",

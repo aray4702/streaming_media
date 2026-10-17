@@ -117,10 +117,10 @@ One directive per line, and `#` starts a comment.
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
-| `pacer v1\|v2` | v1 | v1 is the library's own pacer; v2 is the port of libwebrtc's `PacingController` (#70) |
+| `pacer v1\|v2` | v1 | v1 is the library's own pacer; v2 is the port of libwebrtc's `PacingController` (#70) with its `BitrateProber` (#48) |
 | `tcc v1\|v2` | v1 | v1 sends transport-cc feedback every 50 ms, each arrival once; v2 is libwebrtc's generator (interval from 5% of the send estimate, 100 ms to start, arrivals kept 500 ms and late ones re-reported; #76) |
 | `rtx v1\|v2` | v1 | v1 keeps the last 1024 packets, stored when queued, for 2 s; v2 is libwebrtc's `RtpPacketHistory` (stored when the pacer sends, kept max(3 RTT, 1 s), culled on acknowledgement, no resend while a resend is queued; #76) |
-| `cc v1\|v2` | v1 | v2 is libwebrtc's GoogCC, ported in stages behind this switch (#61). So far: the delay detector's front end, `InterArrivalDelta` with feedback sorted by receive time and the 2 s stream time-out (#19) |
+| `cc v1\|v2` | v1 | v2 is libwebrtc's GoogCC, ported in stages behind this switch (#61). So far: the delay detector's front end, `InterArrivalDelta` with feedback sorted by receive time and the 2 s stream time-out (#19), the acked-rate estimator and `AimdRateControl` (#15), and the `AlrDetector`, `ProbeController` and `ProbeBitrateEstimator` (#48; the `BitrateProber` is in `pacer v2`) |
 | `allocator v1\|v2` | v1 | v1 takes the audio rate off the target and clamps the video to its range; v2 is libwebrtc's `BitrateAllocator` (`call/bitrate_allocator.cc`) and the sum of the enforced minimums as the target's lower bound (#104) |
 | `keyframe v1\|v2` | v1 | v1 is the original receiver keyframe-request policy; v2 is libwebrtc's (`NackRequester` give-up and overflow rules, `RtpVideoStreamReceiver2` triggers, decode time-out; #23) |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |

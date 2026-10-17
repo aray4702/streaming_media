@@ -15,6 +15,7 @@ constexpr TimeDelta kMaxDebtInTime = TimeDelta::Millis(500);
 constexpr TimeDelta kMaxElapsedTime = TimeDelta::Seconds(2);
 constexpr TimeDelta kTargetPaddingDuration = TimeDelta::Millis(5);
 constexpr TimeDelta kMaxPaddingReplayDuration = TimeDelta::Millis(50);
+constexpr TimeDelta kMaxEarlyProbeProcessing = TimeDelta::Millis(1);
 constexpr DataSize kMaxBurstSize = DataSize::Bytes(63 * 1000);
 
 // libwebrtc's unit arithmetic: DataRate * TimeDelta rounds to nearest;
@@ -33,7 +34,7 @@ DataSize Min(DataSize a, DataSize b) { return a < b ? a : b; }
 }  // namespace
 
 PacingController::PacingController(PacingControllerConfig cfg)
-    : cfg_(cfg), send_burst_interval_(cfg.send_burst_interval), queue_time_limit_(cfg.queue_time_limit) {}
+    : cfg_(cfg), send_burst_interval_(cfg.send_burst_interval), queue_time_limit_(cfg.queue_time_limit), prober_(cfg.prober) {}
 
 void PacingController::Start(Timestamp now) {
   started_ = true;
@@ -82,7 +83,7 @@ void PacingController::SetCongested(bool congested) {
   }
 }
 
-void PacingController::AddProbeCluster(const ProbeCluster& c) { probes_.push_back(ActiveProbe{c}); }
+void PacingController::AddProbeCluster(const ProbeCluster& c) { prober_.CreateProbeCluster(c); }
 
 // --- Prioritized packet queue ----------------------------------------------
 
@@ -254,6 +255,12 @@ Timestamp PacingController::NextUnpacedSendTime() const {
 Timestamp PacingController::NextSendTimeAt(Timestamp now) const {
   if (paused_) return last_send_time_ + kCongestedPacketInterval;
 
+  // If probing is active, that always takes priority.
+  if (prober_.is_probing() && !probing_send_failure_) {
+    const Timestamp probe_time = prober_.NextProbeTime(now);
+    if (probe_time != Timestamp::PlusInfinity()) return probe_time == Timestamp::MinusInfinity() ? now : probe_time;
+  }
+
   // A packet that is not paced leaves at the time it was enqueued.
   const Timestamp unpaced = NextUnpacedSendTime();
   if (unpaced.IsFinite()) return unpaced;
@@ -283,10 +290,6 @@ Timestamp PacingController::NextSendTimeAt(Timestamp now) const {
 
 Timestamp PacingController::NextSendTime(Timestamp now) const {
   if (!started_) return now + kCongestedPacketInterval;
-  if (!probes_.empty() && !paused_) {
-    const DataRate rate = probes_.front().c.rate;
-    return std::max(now, last_process_time_ + Div(probe_debt_, rate));
-  }
   return NextSendTimeAt(now);
 }
 
@@ -301,6 +304,7 @@ void PacingController::Enqueue(PacedPacket p) {
     stats_.flushed_packets += flushed_.size() - before;
     SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);
   }
+  prober_.OnIncomingPacket(p.size);
   if (queue_packets_ == 0) {
     // Fast-forward the last process time, so that time that has passed is not
     // used as budget for the first new packet.
@@ -315,18 +319,27 @@ void PacingController::Enqueue(PacedPacket p) {
   MaybeUpdateMediaRateDueToLongQueue(now);
 }
 
-DataSize PacingController::PaddingToAdd(DataSize data_sent) const {
-  (void)data_sent;
+DataSize PacingController::PaddingToAdd(DataSize recommended_probe_size, DataSize data_sent) const {
   if (queue_packets_ > 0) return DataSize::Zero();  // Real payload is available.
-  if (congested_) return DataSize::Zero();
+  if (congested_) return DataSize::Zero();  // Not even for a probe.
+  if (recommended_probe_size > DataSize::Zero()) {
+    return recommended_probe_size > data_sent ? recommended_probe_size - data_sent : DataSize::Zero();
+  }
   if (padding_rate_ > DataRate::Zero() && padding_debt_ == DataSize::Zero()) return Mul(padding_rate_, kTargetPaddingDuration);
   return DataSize::Zero();
 }
 
-bool PacingController::GetPendingPacket(Timestamp target_send_time, Timestamp now, PacedPacket* out) {
+bool PacingController::GetPendingPacket(const ProbeSendInfo& pacing_info, Timestamp target_send_time, Timestamp now, PacedPacket* out) {
+  const bool is_probe = pacing_info.cluster_id >= 0;
+  // The first packet of a probe is a small padding packet, so the estimate has a
+  // more reliable start window.
+  if (is_probe && pacing_info.bytes_sent == 0) {
+    *out = MakePadding(cfg_.probe_start_padding, now);
+    return true;
+  }
   if (queue_packets_ == 0) return false;
-  // Unpaced packets are exempt from the send checks.
-  if (!NextUnpacedSendTime().IsFinite()) {
+  // Unpaced packets and probes are exempt from the send checks.
+  if (!NextUnpacedSendTime().IsFinite() && !is_probe) {
     if (congested_) return false;
     if (now <= target_send_time && send_burst_interval_.IsZero()) {
       // Sending slightly early is allowed if the debt would have drained by the target time.
@@ -337,44 +350,26 @@ bool PacingController::GetPendingPacket(Timestamp target_send_time, Timestamp no
   return Pop(out, now);
 }
 
-void PacingController::Account(PacedPacket& p, Timestamp now, std::vector<PacedPacket>& sent) {
+void PacingController::Account(PacedPacket& p, Timestamp now, const ProbeSendInfo& pacing_info, std::vector<PacedPacket>& sent) {
   const size_t i = static_cast<size_t>(p.priority);
   ++stats_.sent_packets[i];
   stats_.sent_bytes[i] += p.size.bytes();
   if (!p.is_padding) stats_.queue_delay_ms[i].Add((now - p.enqueue_time).ms_f());
-  if (!probes_.empty()) {
-    ActiveProbe& ap = probes_.front();
-    p.probe_cluster = ap.c.id;
-    ++ap.sent_probes;
-    ap.sent_bytes += p.size.bytes();
+  if (pacing_info.cluster_id >= 0) {
+    p.probe_cluster = pacing_info.cluster_id;
     ++stats_.probe_packets;
-    if (ap.sent_probes >= ap.c.min_probes && ap.sent_bytes >= ap.c.min_bytes.bytes()) probes_.pop_front();
   }
   sent.push_back(p);
 }
 
-void PacingController::ProcessProbe(Timestamp now, std::vector<PacedPacket>& sent) {
-  const TimeDelta elapsed = UpdateTimeAndGetElapsed(now);
-  if (elapsed > TimeDelta::Zero()) UpdateBudgetWithElapsedTime(elapsed);
-  const DataRate rate = probes_.front().c.rate;
-  probe_debt_ -= Min(probe_debt_, Mul(rate, std::min(elapsed, TimeDelta::Millis(30))));
-  // At most ~5 ms worth of the probe rate per call; BitrateProber (#48) will replace this.
-  const DataSize burst = DataSize::Bytes(std::max<int64_t>(1500, Mul(rate, TimeDelta::Millis(5)).bytes()));
-  for (int guard = 0; guard < 10000 && !probes_.empty(); ++guard) {
-    if (probe_debt_ > burst) break;
-    PacedPacket p;
-    if (!Pop(&p, now)) {
-      p = PacedPacket{};
-      p.id = next_padding_id_++;
-      p.priority = PacketPriority::kPadding;
-      p.size = cfg_.padding_packet;
-      p.enqueue_time = now;
-      p.is_padding = true;
-    }
-    probe_debt_ += p.size;
-    OnPacketSent(p.priority, p.size, now);
-    Account(p, now, sent);
-  }
+PacedPacket PacingController::MakePadding(DataSize size, Timestamp now) {
+  PacedPacket p;
+  p.id = next_padding_id_++;
+  p.priority = PacketPriority::kPadding;
+  p.size = size;
+  p.enqueue_time = now;
+  p.is_padding = true;
+  return p;
 }
 
 std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
@@ -384,68 +379,76 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
   if (ShouldSendKeepalive(now)) {
     DataSize keepalive;
     if (seen_first_packet_) {
-      PacedPacket p;
-      p.id = next_padding_id_++;
-      p.priority = PacketPriority::kPadding;
-      p.size = cfg_.padding_packet;
-      p.enqueue_time = now;
-      p.is_padding = true;
+      PacedPacket p = MakePadding(cfg_.padding_packet, now);
       keepalive = p.size;
-      Account(p, now, sent);
+      Account(p, now, ProbeSendInfo{}, sent);
       ++stats_.keepalives;
     }
     OnPacketSent(PacketPriority::kPadding, keepalive, now);
   }
   if (paused_) return sent;
 
-  if (!probes_.empty()) {
-    ProcessProbe(now, sent);
-    MaybeUpdateMediaRateDueToLongQueue(Cur(now));
-    return sent;
-  }
-
+  // Probing is allowed to be processed up to kMaxEarlyProbeProcessing early.
+  const TimeDelta early_execute_margin = prober_.is_probing() ? kMaxEarlyProbeProcessing : TimeDelta::Zero();
   Timestamp target_send_time = NextSendTimeAt(now);
-  if (now < target_send_time) {
-    // Too early; still let the debt drain.
+  if (now + early_execute_margin < target_send_time) {
+    // Too early, but if the queue is empty still let the debt drain.
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(now));
     return sent;
   }
   const TimeDelta elapsed = UpdateTimeAndGetElapsed(target_send_time);
   if (elapsed > TimeDelta::Zero()) UpdateBudgetWithElapsedTime(elapsed);
 
+  ProbeSendInfo pacing_info;
+  DataSize recommended_probe_size;
+  bool is_probing = prober_.is_probing();
+  if (is_probing) {
+    // Probe timing is sensitive and handled by BitrateProber, so the actual
+    // send time is used rather than the target.
+    if (auto c = prober_.CurrentCluster(now)) {
+      pacing_info = *c;
+      recommended_probe_size = prober_.RecommendedMinProbeSize();
+    } else {
+      // No valid probe cluster returned, the probe might have timed out.
+      is_probing = false;
+    }
+  }
+
   DataSize data_sent;
   int iteration = 0;
   for (; iteration < cfg_.circuit_breaker_iterations; ++iteration) {
     PacedPacket p;
-    if (!GetPendingPacket(target_send_time, now, &p)) {
+    if (!GetPendingPacket(pacing_info, target_send_time, now, &p)) {
       // No packet to send: see if padding is due.
       if (now - target_send_time > kMaxPaddingReplayDuration) {
         // The target is far behind the clock: replay at most 50 ms of padding.
         target_send_time = now - kMaxPaddingReplayDuration;
         last_process_time_ = std::max(last_process_time_, target_send_time);
       }
-      const DataSize pad = PaddingToAdd(data_sent);
+      const DataSize pad = PaddingToAdd(recommended_probe_size, data_sent);
       if (pad > DataSize::Zero()) {
         const int64_t n = (pad.bytes() + cfg_.padding_packet.bytes() - 1) / cfg_.padding_packet.bytes();
-        for (int64_t k = 0; k < n; ++k) {
-          PacedPacket pp;
-          pp.id = next_padding_id_++;
-          pp.priority = PacketPriority::kPadding;
-          pp.size = cfg_.padding_packet;
-          pp.is_padding = true;
-          Push(now, pp);
-        }
+        for (int64_t k = 0; k < n; ++k) Push(now, MakePadding(cfg_.padding_packet, now));
         continue;  // Send the padding that was just queued.
       }
       break;
     }
     data_sent += p.size;
     OnPacketSent(p.priority, p.size, now);
-    Account(p, now, sent);
+    Account(p, now, is_probing ? pacing_info : ProbeSendInfo{}, sent);
+
+    if (is_probing) {
+      pacing_info.bytes_sent += p.size.bytes();
+      // Stop the send loop when the burst has reached its target size.
+      if (data_sent >= recommended_probe_size) break;
+    }
 
     // More packets may be late: look at the new target time.
     target_send_time = NextSendTimeAt(now);
-    if (target_send_time > now) break;
+    if (target_send_time > now) {
+      if (!is_probing) break;
+      target_send_time = now;
+    }
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target_send_time));
   }
   if (iteration >= cfg_.circuit_breaker_iterations) {
@@ -453,6 +456,10 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
     last_send_time_ = now;
     last_process_time_ = now;
     return sent;
+  }
+  if (is_probing) {
+    probing_send_failure_ = data_sent == DataSize::Zero();
+    if (!probing_send_failure_) prober_.ProbeSent(Cur(now), data_sent);
   }
   MaybeUpdateMediaRateDueToLongQueue(Cur(now));
   return sent;

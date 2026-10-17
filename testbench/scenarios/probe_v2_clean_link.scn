@@ -1,0 +1,14 @@
+name probe_v2_clean_link
+describe 2.5 Mbps link, no impairments, `cc v2` and `pacer v2`: the start-up probes of libwebrtc's ProbeController and BitrateProber (#48)
+# libwebrtc (parity-data, 10 seeds): utilization 91.6 %, video 2142 kbps, queue p95 77 ms, e2e delay p95 125 ms,
+# no freeze. This library with the port: 92.6 %, 2131 kbps, queue p95 101 ms, e2e delay p95 140 ms.
+cc v2
+pacer v2
+duration 30s
+at 0s capacity=2500kbps delay=25ms queue=300ms
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect cc.utilization_pct >= 88
+expect cc.queue_p95_ms < 150
+expect video.e2e_delay_p95_ms < 180
+expect cc.unsettled == 0

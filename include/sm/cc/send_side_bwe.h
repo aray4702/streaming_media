@@ -10,6 +10,7 @@
 #include <optional>
 #include <vector>
 
+#include "sm/cc/alr_detector.h"
 #include "sm/cc/delay_based_bwe.h"
 #include "sm/cc/loss_based_bwe.h"
 #include "sm/cc/probing.h"
@@ -26,8 +27,13 @@ struct GccConfig {
   double pacing_factor = 2.5;
   bool enable_probing = true;
   // 1: the original controller. 2 (`cc v2`): libwebrtc's GoogCC, ported in
-  // stages (#61); so far the delay detector's front end (#19).
+  // stages (#61); so far the delay detector's front end (#19), the acked-rate
+  // estimator and AimdRateControl (#15), and the AlrDetector, ProbeController
+  // and ProbeBitrateEstimator (#48; the BitrateProber is in `pacer v2`).
   int version = 1;
+  // `cc v2`: StreamsConfig::requests_alr_probing, which a screen-share stream
+  // sets; periodic ALR probes are off otherwise.
+  bool periodic_alr_probing = false;
   EventSink* events = nullptr;
 };
 
@@ -46,6 +52,11 @@ class GccController : public MetricsSource {
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
   void OnRemb(DataRate remb) { remb_ = remb; }
+  // `cc v2`: StreamsConfig::max_total_allocated_bitrate, the sum of the maximum
+  // bitrates the allocator hands out: a rise probes up to twice that rate, and
+  // it caps every probe at twice that rate. Returns the clusters to send. No
+  // effect with `cc v1`.
+  std::vector<ProbeCluster> OnMaxTotalAllocatedBitrate(DataRate max_total_allocated_bitrate, Timestamp now);
   // The sum of the minimums the bitrate allocator must fund is a lower bound for
   // the estimates and the target (GoogCC use_min_allocatable_as_lower_bound_,
   // ClampConstraints). Never below the configured minimum.
@@ -59,12 +70,16 @@ class GccController : public MetricsSource {
   // reported as received; nullopt if it reported none.
   std::optional<TimeDelta> last_feedback_max_rtt() const { return last_feedback_max_rtt_; }
   const DelayBasedBwe& delay_bwe() const { return delay_; }
+  const AlrDetector& alr_detector() const { return alr_; }
+  const ProbeControllerV2& probe_controller_v2() const { return probe2_; }
   const LossBasedBwe& loss_bwe() const { return loss_; }
   const SendHistory& history() const { return history_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
   NetworkControlUpdate MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes);
+  std::vector<ProbeCluster> RegisterProbes(std::vector<ProbeCluster> probes);
+  NetworkControlUpdate OnTransportFeedbackV2(const std::vector<PacketResult>& results, Timestamp now);
   GccConfig cfg_;
   DataRate configured_min_;
   SendHistory history_;
@@ -73,7 +88,12 @@ class GccController : public MetricsSource {
   AcknowledgedBitrateEstimator acked_;
   AckedBitrateEstimatorV2 acked_v2_;
   ProbeController probe_ctrl_;
+  ProbeControllerV2 probe2_;
+  AlrDetector alr_;
   ProbeBitrateEstimator probe_est_;
+  bool first_feedback_received_ = false;
+  bool previously_in_alr_ = false;
+  bool last_is_bandwidth_limited_ = true;
   std::optional<DataRate> remb_;
   DataRate target_;
   DataRate last_reported_;
