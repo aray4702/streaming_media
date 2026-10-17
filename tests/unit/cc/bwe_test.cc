@@ -289,3 +289,19 @@ SM_TEST(DelayBweV2, StreamTimeoutResetsDetector) {
   bwe.OnPacketResults(res, DataRate::KilobitsPerSec(960), std::nullopt, res.back().receive_time);  // > 2 s later.
   SM_EXPECT_EQ(bwe.stats().stream_resets, 1u);
 }
+
+SM_TEST(DelayBweV2, FeedbackWithOnlyLostPacketsLeavesTheEstimate) {
+  // libwebrtc IncomingPacketFeedbackVector: no received packet -> empty Result, no rate update.
+  DelayBasedBwe::Config cfg;
+  cfg.version = 2;
+  DelayBasedBwe bwe(cfg);
+  bwe.SetStartBitrate(DataRate::KilobitsPerSec(1000), Timestamp::Millis(0));
+  std::vector<PacketResult> lost(5);
+  for (size_t i = 0; i < lost.size(); ++i) {
+    lost[i].seq = static_cast<int64_t>(i);
+    lost[i].send_time = Timestamp::Millis(static_cast<int64_t>(i) * 10);
+    lost[i].size = DataSize::Bytes(1200);
+  }
+  DataRate r = bwe.OnPacketResults(lost, DataRate::KilobitsPerSec(500), std::nullopt, Timestamp::Millis(1000));
+  SM_EXPECT_EQ(r.bps(), 1000000);
+}

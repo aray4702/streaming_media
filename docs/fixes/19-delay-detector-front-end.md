@@ -37,7 +37,7 @@ fires. Seeds 1-5 of `high_jitter` with `tcc v2`: 17-28 overuse signals in 30 s.
 (`.../goog_cc/inter_arrival_delta.{h,cc}`): feedback sorted by receive time (then send time, then sequence), `BelongsToBurst`
 (5 ms, 100 ms), reordered packets dropped, reset after 3 reordered groups or a 3 s arrival-clock jump, a 2 s stream time-out that
 resets the grouping and the trendline. The trendline estimator was compared line by line with `trendline_estimator.cc` and is equal;
-v2 passes it integer-millisecond arrival times as libwebrtc does. The rate control is unchanged (that is #15).
+v2 passes it integer-millisecond arrival times as libwebrtc does.  A feedback with no received packet returns without a rate update, as libwebrtc's empty `Result`. The rate control is unchanged (that is #15).
 `PacketResult::ReceiveTimeOrder` is not in `compare/webrtc/reference/` (see #57); the ordering is from memory of `api/transport/network_types.cc`.
 
 ## Regression tests
@@ -68,6 +68,8 @@ that the feedback has not yet reported count as lost) is what pins the target no
 Suite: `main` baseline unchanged (v1 is the default); one new scenario.
 
 ## Remaining
+
+- Scenario guard: the `expect cc.target_avg_kbps > 120` line holds on the suite's seed 1 only (v1 80, v2 170 kbps); on seeds 1-5 v1 gives 64-124 and v2 96-222 kbps.
 
 - The target and utilization acceptance of #19 (within the parity band on `high_jitter`) needs #12 (`LossBasedBweV2`), and #15/#48
   for the rest of GoogCC; they are later on the work list.

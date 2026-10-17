@@ -295,6 +295,11 @@ DataRate DelayBasedBwe::OnPacketResults(const std::vector<PacketResult>& results
                                         std::optional<DataRate> probe_estimate, Timestamp now) {
   ++stats_.feedbacks;
   if (cfg_.version >= 2) {
+    // "Very late feedback received": libwebrtc returns an empty Result without
+    // running MaybeUpdateEstimate when no packet in the feedback was received.
+    bool any_received = false;
+    for (const auto& r : results) any_received |= r.received();
+    if (!any_received) return aimd_.estimate();
     OnPacketResultsV2(results, now);
   } else {
     for (const auto& r : results) {
