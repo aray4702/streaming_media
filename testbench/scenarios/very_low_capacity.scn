@@ -1,0 +1,16 @@
+name very_low_capacity
+describe 100 kbps link (audio 32 kbps + video): the stage-1 checkpoint for very low capacity
+duration 40s
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Checkpoint for issue #74 (roadmap #64). The expect lines lock in what main does
+# today on seeds 1-5 (the worst seed is in the comment); they are not targets.
+# The stage-1 target is libwebrtc's behaviour on this link, which sm_compare
+# (CI compare-webrtc) reports once this scenario is on main.
+# Seeds 1-5 at the time of writing: concealed 12.0-15.2 %, render fps 0.9-1.5,
+# loss 34.1-36.7 %, keyframe requests 194-235, send over target the whole call.
+# Target (issue #74): video.render_fps > 5, audio.concealed_pct < 3,
+# net.loss_pct < 10, cc.send_over_target_ms < 5000, keyframe requests near 0.
+expect video.render_fps > 0.5
+expect audio.concealed_pct < 20
+expect net.loss_pct < 45
+expect video.keyframe_requests < 300
