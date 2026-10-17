@@ -6,7 +6,7 @@ at 0s capacity=100kbps delay=30ms queue=300ms
 # today on seeds 1-5 (the worst seed is in the comment); they are not targets.
 # The stage-1 target is libwebrtc's behaviour on this link, which sm_compare
 # (CI compare-webrtc) reports once this scenario is on main.
-# Seeds 1-5 at the time of writing: concealed 12.0-15.2 %, render fps 0.9-1.5,
+# Seeds 1-5 on main when this was added: concealed 12.0-15.2 %, render fps 0.9-1.5,
 # loss 34.1-36.7 %, keyframe requests 194-235, send over target the whole call.
 # Target (issue #74): video.render_fps > 5, audio.concealed_pct < 3,
 # net.loss_pct < 10, cc.send_over_target_ms < 5000, keyframe requests near 0.
