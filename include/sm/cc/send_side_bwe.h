@@ -71,6 +71,7 @@ class GccController : public MetricsSource {
   DelayBasedBwe delay_;
   LossBasedBwe loss_;
   AcknowledgedBitrateEstimator acked_;
+  AckedBitrateEstimatorV2 acked_v2_;
   ProbeController probe_ctrl_;
   ProbeBitrateEstimator probe_est_;
   std::optional<DataRate> remb_;

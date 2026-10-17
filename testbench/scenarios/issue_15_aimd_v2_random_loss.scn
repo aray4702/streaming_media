@@ -1,0 +1,11 @@
+name issue_15_aimd_v2_random_loss
+describe 5% random loss on a 2 Mbps link, `cc v2`: the delay-based rate is not cut by loss (#15)
+# Utilization: `cc v1` 50-75 % (seeds 1-5), `cc v2` 64-79 %, libwebrtc 77.5 % (parity-data, 10 seeds).
+# Video: v1 841-1297 kbps, v2 1108-1379, libwebrtc 1382. The loss-based estimate (#12) is still v1's.
+cc v2
+duration 30s
+at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect cc.utilization_pct >= 60
+expect video.avg_kbps >= 1050

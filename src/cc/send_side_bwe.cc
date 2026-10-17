@@ -65,10 +65,15 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
     if (r.received()) last_feedback_max_rtt_ = std::max(last_feedback_max_rtt_.value_or(TimeDelta::Zero()), now - r.send_time);
   }
   if (results.empty()) return MakeUpdate(now, {});
-  acked_.OnPacketResults(results);
+  if (cfg_.version >= 2) {
+    acked_v2_.OnPacketResults(results);
+  } else {
+    acked_.OnPacketResults(results);
+  }
+  std::optional<DataRate> acked = cfg_.version >= 2 ? acked_v2_.bitrate() : acked_.bitrate();
   for (const auto& r : results) probe_est_.OnPacketResult(r);
   std::optional<DataRate> probe = probe_est_.FetchAndResetLastEstimate();
-  DataRate delay_est = delay_.OnPacketResults(results, acked_.bitrate(), probe, now);
+  DataRate delay_est = delay_.OnPacketResults(results, acked, probe, now);
   DataRate loss_limit = loss_.OnPacketResults(results, target_, now);
   target_ = std::min(delay_est, loss_limit);
   if (remb_) target_ = std::min(target_, *remb_);
@@ -119,7 +124,8 @@ void GccController::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("loss_limit_kbps", loss_.estimate().kbps());
   w.Gauge("loss", loss_.last_loss());
   w.Gauge("in_flight_bytes", static_cast<double>(history_.InFlight().bytes()));
-  if (acked_.bitrate()) w.Gauge("acked_kbps", acked_.bitrate()->kbps());
+  auto acked = cfg_.version >= 2 ? acked_v2_.bitrate() : acked_.bitrate();
+  if (acked) w.Gauge("acked_kbps", acked->kbps());
   w.Hist("target_changes_kbps", target_kbps_);
   delay_.ExportMetrics(w);
 }

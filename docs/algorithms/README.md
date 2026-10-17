@@ -31,7 +31,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 5.1 | [Transport-wide CC feedback (and REMB)](5-cc/5.1-transport-feedback.md) | 5 | 1 | 1 | pass | pass | pass | pass |
-| 5.2 | [Delay-based bandwidth estimation (GCC)](5-cc/5.2-delay-based-bwe.md) | 5 | 1 | 2 | pass | pass | pass | pass |
+| 5.2 | [Delay-based bandwidth estimation (GCC)](5-cc/5.2-delay-based-bwe.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.3 | [Loss-based bandwidth estimation](5-cc/5.3-loss-based-bwe.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 5.4 | [Send-side bandwidth estimation (GCC network controller)](5-cc/5.4-gcc-controller.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 5.5 | [Pacer with priority queues](5-cc/5.5-pacer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |

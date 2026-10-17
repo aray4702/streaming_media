@@ -235,7 +235,7 @@ ALGORITHMS = [
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
-         headers=["cc/delay_based_bwe.h"], unit=["DelayBwe"], e2e=["E2E_DelayBwe"],
+         headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
          bench=["cc/Gcc_OnFeedback_per_packet", "cc/Q_Gcc_capacity_steps"],
          scenario="Full closed loop (encoder, pacer, transport-cc, GCC) over a bottleneck whose capacity steps "
                   "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
@@ -246,7 +246,14 @@ ALGORITHMS = [
                "`cc v2` (`GccConfig::version`, issue #19) starts the port of libwebrtc's GoogCC as a unit (#61): the "
                "detector's front end is `DelayBasedBwe::IncomingPacketFeedbackVector` with `InterArrivalDelta` "
                "(`BelongsToBurst`, reordered groups, feedback sorted by receive time, 2 s stream time-out). The "
-               "trendline detector was already libwebrtc's. The rate control is still the original one until #15.",
+               "trendline detector was already libwebrtc's. #15 adds the rest of the overuse path to `cc v2`: the "
+               "acknowledged rate from `BitrateEstimator` (500 ms first window, then 150 ms Bayesian windows), "
+               "`AimdRateControl` (`aimd_rate_control.h`: near-max additive increase, decrease with `beta x "
+               "throughput - 5 kbps`, `LinkCapacityEstimator`, `TimeToReduceFurther`, `bitrate_is_initialized_`) and "
+               "`DelayBasedBwe::MaybeUpdateEstimate` (halve every `clamp(rtt, 10, 200)` ms when overusing without an "
+               "acked rate; a probe result sets the estimate as is). Remaining differences: no `AlrDetector` (ALR "
+               "end does not call `ExpectFastRateChange`, `in_alr` is never set; #48), `prior_unacked_data` is zero, "
+               "no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "

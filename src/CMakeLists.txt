@@ -37,6 +37,7 @@ if(SM_WITH_CC)
   sm_add_library(cc DEPS sm::core SOURCES
     cc/transport_feedback.cc
     cc/delay_based_bwe.cc
+    cc/aimd_rate_control.cc
     cc/loss_based_bwe.cc
     cc/send_side_bwe.cc
     cc/pacer.cc
