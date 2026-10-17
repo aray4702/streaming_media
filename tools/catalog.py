@@ -242,7 +242,11 @@ ALGORITHMS = [
                   "delay are measured over the second half of each phase.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
-               "takes about 17 s, so the last phase has a lower utilization bar.",
+               "takes about 17 s, so the last phase has a lower utilization bar. "
+               "`cc v2` (`GccConfig::version`, issue #19) starts the port of libwebrtc's GoogCC as a unit (#61): the "
+               "detector's front end is `DelayBasedBwe::IncomingPacketFeedbackVector` with `InterArrivalDelta` "
+               "(`BelongsToBurst`, reordered groups, feedback sorted by receive time, 2 s stream time-out). The "
+               "trendline detector was already libwebrtc's. The rate control is still the original one until #15.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "

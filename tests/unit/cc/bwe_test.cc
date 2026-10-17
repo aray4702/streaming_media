@@ -153,3 +153,155 @@ SM_TEST(SendSideBwe, StartProbesAndRembCap) {
   auto m = CollectMetrics(gcc);
   SM_EXPECT_EQ(m["target_kbps"], 200.0);
 }
+
+// --- cc v2: libwebrtc InterArrivalDelta (inter_arrival_delta_unittest-style cases) ---
+
+namespace {
+struct Pkt { int64_t send, arrival; };
+// Feeds packets, returns the deltas produced at each call (nullopt if none).
+std::optional<InterArrivalDelta::Deltas> Feed(InterArrivalDelta& ia, Pkt p, size_t size = 100) {
+  return ia.ComputeDeltas(Timestamp::Millis(p.send), Timestamp::Millis(p.arrival), Timestamp::Millis(p.arrival), size);
+}
+}  // namespace
+
+SM_TEST(DelayBweV2, InterArrivalDeltaGroupsAndDeltas) {
+  InterArrivalDelta ia(TimeDelta::Millis(5));
+  SM_EXPECT_FALSE(Feed(ia, {0, 17}).has_value());
+  SM_EXPECT_FALSE(Feed(ia, {2, 19}).has_value());   // Same group.
+  SM_EXPECT_FALSE(Feed(ia, {20, 40}).has_value());  // Second group starts: one complete group only.
+  auto d = Feed(ia, {40, 62});                      // Third group: deltas of group 2 vs 1.
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->send_delta.ms(), 18);     // 20 - 2
+  SM_EXPECT_EQ(d->arrival_delta.ms(), 21);  // 40 - 19
+  SM_EXPECT_EQ(d->size_delta, -100);
+}
+
+SM_TEST(DelayBweV2, InterArrivalDeltaBurstStaysInGroup) {
+  // Packets sent 10 ms apart that arrive back to back (a burst the link
+  // released at once; propagation delta < 0, arrival delta <= 5 ms) belong
+  // to the group, even though their send times are more than 5 ms apart.
+  InterArrivalDelta ia(TimeDelta::Millis(5));
+  SM_EXPECT_FALSE(Feed(ia, {0, 100}).has_value());
+  SM_EXPECT_FALSE(Feed(ia, {10, 102}).has_value());  // arrival delta 2 < send delta 10: burst.
+  SM_EXPECT_FALSE(Feed(ia, {20, 104}).has_value());
+  SM_EXPECT_FALSE(Feed(ia, {30, 140}).has_value());  // arrival delta 36 > 5 ms: new group.
+  auto d = Feed(ia, {60, 170});
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->send_delta.ms(), 10);      // Group {30} send 30 vs. group {0,10,20} send 20.
+  SM_EXPECT_EQ(d->arrival_delta.ms(), 36);   // 140 - 104
+}
+
+SM_TEST(DelayBweV2, InterArrivalDeltaIgnoresReorderedPacket) {
+  InterArrivalDelta ia(TimeDelta::Millis(5));
+  Feed(ia, {100, 150});
+  SM_EXPECT_FALSE(Feed(ia, {90, 152}).has_value());  // Send time before the group's first: dropped.
+  Feed(ia, {120, 170});
+  auto d = Feed(ia, {140, 190});
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->send_delta.ms(), 20);
+  SM_EXPECT_EQ(d->arrival_delta.ms(), 20);
+}
+
+SM_TEST(DelayBweV2, InterArrivalDeltaBurstIsCappedAt100ms) {
+  // Back-to-back arrivals (arrival delta <= 5 ms, propagation delta < 0) only
+  // extend a group for kMaxBurstDuration (100 ms) after its first arrival.
+  InterArrivalDelta ia(TimeDelta::Millis(5));
+  auto f = [&](int64_t send, int64_t arrival) {
+    return ia.ComputeDeltas(Timestamp::Millis(send), Timestamp::Millis(arrival), Timestamp::Millis(arrival), 100);
+  };
+  f(0, 1000);
+  for (int i = 1; i <= 24; ++i) f(i * 10, 1000 + i * 4);  // Arrives 4 ms apart, sent 10 ms apart: one burst.
+  // Packet 25 arrives 100 ms after the group's first arrival: no longer a burst member,
+  // so it starts the second group (still no delta); packet 26 starts the third.
+  SM_EXPECT_FALSE(f(250, 1100).has_value());
+  auto d = f(500, 1300);
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->send_delta.ms(), 10);      // {250} vs {240}.
+  SM_EXPECT_EQ(d->arrival_delta.ms(), 4);    // 1100 - 1096
+}
+
+SM_TEST(DelayBweV2, InterArrivalDeltaResetsOnClockOffsetJump) {
+  InterArrivalDelta ia(TimeDelta::Millis(5));
+  auto f = [&](int64_t send, int64_t arrival, int64_t sys) {
+    return ia.ComputeDeltas(Timestamp::Millis(send), Timestamp::Millis(arrival), Timestamp::Millis(sys), 100);
+  };
+  f(0, 100, 100);
+  f(20, 120, 120);
+  SM_EXPECT_TRUE(f(40, 140, 140).has_value());
+  f(60, 160 + 5000, 160);                         // Arrival clock jumped 5 s against the system clock.
+  SM_EXPECT_FALSE(f(80, 180 + 5000, 180).has_value());  // Reset: nothing yet.
+}
+
+SM_TEST(DelayBweV2, JitterAndReorderingReadAsOveruseLessOften) {
+  // 40 ms of uniform jitter on a link with no queue: packets sent every 5 ms
+  // arrive out of order. A feedback every 50 ms reports the packets that have
+  // arrived by then (as the transport-cc generator does), in sequence order.
+  // v1 grouping reads the shuffle as delay growth; libwebrtc's InterArrivalDelta
+  // fed in receive-time order rarely does (testbench high_jitter, seeds 1-5:
+  // 17-28 overuse signals with v1, 2-5 with v2).
+  auto run = [](int version) {
+    DelayBasedBwe::Config cfg;
+    cfg.version = version;
+    DelayBasedBwe bwe(cfg);
+    bwe.SetStartBitrate(DataRate::KilobitsPerSec(1000), Timestamp::Millis(0));
+    uint32_t rng = 12345;
+    auto rnd = [&] { rng = rng * 1664525u + 1013904223u; return static_cast<double>(rng >> 8) / 16777216.0; };
+    std::vector<PacketResult> all;
+    for (int64_t seq = 0; seq < 4000; ++seq) {
+      PacketResult r;
+      r.seq = seq;
+      r.send_time = Timestamp::Millis(seq * 5);
+      r.receive_time = r.send_time + TimeDelta::MillisF(30 + 40 * rnd());
+      r.size = DataSize::Bytes(1200);
+      all.push_back(r);
+    }
+    size_t reported_upto = 0;
+    std::vector<bool> reported(all.size(), false);
+    for (int64_t t = 100; t < 20000; t += 50) {
+      std::vector<PacketResult> v;
+      for (size_t i = reported_upto; i < all.size() && all[i].send_time.ms() <= t; ++i) {
+        if (!reported[i] && all[i].receive_time.ms() <= t) {
+          v.push_back(all[i]);
+          reported[i] = true;
+        }
+      }
+      while (reported_upto < all.size() && reported[reported_upto]) ++reported_upto;
+      if (!v.empty()) bwe.OnPacketResults(v, DataRate::KilobitsPerSec(1000), std::nullopt, Timestamp::Millis(t));
+    }
+    return bwe.stats().overuse_signals;
+  };
+  uint64_t v1 = run(1), v2 = run(2);
+  SM_EXPECT_GT(v1, v2);
+  SM_EXPECT_LE(v2, 5u);
+}
+
+SM_TEST(DelayBweV2, StreamTimeoutResetsDetector) {
+  DelayBasedBwe::Config cfg;
+  cfg.version = 2;
+  DelayBasedBwe bwe(cfg);
+  bwe.SetStartBitrate(DataRate::KilobitsPerSec(1000), Timestamp::Millis(0));
+  for (int k = 0; k < 10; ++k) {
+    auto res = Results(k * 10, 10, 0.0);
+    bwe.OnPacketResults(res, DataRate::KilobitsPerSec(960), std::nullopt, res.back().receive_time);
+  }
+  SM_EXPECT_EQ(bwe.stats().stream_resets, 0u);
+  auto res = Results(500, 10, 0.0);
+  bwe.OnPacketResults(res, DataRate::KilobitsPerSec(960), std::nullopt, res.back().receive_time);  // > 2 s later.
+  SM_EXPECT_EQ(bwe.stats().stream_resets, 1u);
+}
+
+SM_TEST(DelayBweV2, FeedbackWithOnlyLostPacketsLeavesTheEstimate) {
+  // libwebrtc IncomingPacketFeedbackVector: no received packet -> empty Result, no rate update.
+  DelayBasedBwe::Config cfg;
+  cfg.version = 2;
+  DelayBasedBwe bwe(cfg);
+  bwe.SetStartBitrate(DataRate::KilobitsPerSec(1000), Timestamp::Millis(0));
+  std::vector<PacketResult> lost(5);
+  for (size_t i = 0; i < lost.size(); ++i) {
+    lost[i].seq = static_cast<int64_t>(i);
+    lost[i].send_time = Timestamp::Millis(static_cast<int64_t>(i) * 10);
+    lost[i].size = DataSize::Bytes(1200);
+  }
+  DataRate r = bwe.OnPacketResults(lost, DataRate::KilobitsPerSec(500), std::nullopt, Timestamp::Millis(1000));
+  SM_EXPECT_EQ(r.bps(), 1000000);
+}

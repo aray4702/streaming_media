@@ -10,6 +10,7 @@ DelayBasedBwe::Config DelayCfg(const GccConfig& g) {
   c.aimd.min_rate = g.min_rate;
   c.aimd.max_rate = g.max_rate;
   c.events = g.events;
+  c.version = g.version;
   return c;
 }
 LossBweConfig LossCfg(const GccConfig& g) {

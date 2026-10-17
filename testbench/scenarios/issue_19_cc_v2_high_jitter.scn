@@ -1,0 +1,14 @@
+name issue_19_cc_v2_high_jitter
+describe 40 ms jitter with reordering, no queue: GoogCC's delay detector front end as libwebrtc's (#19)
+# `cc v2` reads feedback sorted by receive time and groups with libwebrtc's InterArrivalDelta
+# (BelongsToBurst, reordered groups dropped), so jitter and reordering are not read as overuse.
+cc v2
+duration 30s
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect audio.interruptions == 0
+expect audio.concealed_pct < 2
+# Locks in the level reached on the suite's seed (1): `cc v1` gives 80 kbps, `cc v2` 170 kbps. Other seeds
+# overlap (v1 64-124, v2 96-222 kbps), so this is a guard for the front end, not a measure of the target.
+expect cc.target_avg_kbps > 120
+# Target (issue #19): cc.target_avg_kbps and cc.utilization_pct within the parity band of libwebrtc
+# (about 1000 kbps, 39 %); needs the loss-based estimate (#12) as well.

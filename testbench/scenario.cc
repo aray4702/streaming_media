@@ -298,6 +298,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "pacer") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: pacer v1|v2");
       s.pacer_v2 = tok[1] == "v2";
+    } else if (key == "cc") {
+      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: cc v1|v2");
+      s.cc_v2 = tok[1] == "v2";
     } else if (key == "allocator") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: allocator v1|v2");
       s.allocator_v2 = tok[1] == "v2";
@@ -388,6 +391,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.rtx_v2 != d.rtx_v2) o += std::string("rtx ") + (s.rtx_v2 ? "v2" : "v1") + "\n";
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
+  if (s.cc_v2 != d.cc_v2) o += std::string("cc ") + (s.cc_v2 ? "v2" : "v1") + "\n";
   if (s.allocator_v2 != d.allocator_v2) o += std::string("allocator ") + (s.allocator_v2 ? "v2" : "v1") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
