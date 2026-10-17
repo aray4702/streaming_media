@@ -1,0 +1,10 @@
+name issue_12_lossbwe_burst_loss
+describe 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way: a loss burst must not cut the target (#5, #12)
+# 5 seeds (cc v2): utilization 70.4-86.0 %, longest freeze 0-385 ms. `cc v1`: 54-64 %. libwebrtc (CI compare-webrtc, burst_loss): 80 %.
+cc v2
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms
+expect cc.utilization_pct >= 65
+expect video.longest_freeze_ms < 600
+expect audio.concealed_pct < 5
+expect audio.interruptions <= 1

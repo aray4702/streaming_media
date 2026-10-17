@@ -30,11 +30,23 @@ ProbeControllerV2Config ProbeCfg2(const GccConfig& g) {
   c.events = g.events;
   return c;
 }
-// GetBandwidthLimitedCause. The loss-based state and the RTT limit are not part
-// of this controller yet (#12), so only the delay detector limits probing.
-BandwidthLimitedCause LimitedCause(BandwidthUsage usage) {
+// GoogCcNetworkController GetBandwidthLimitedCause.
+BandwidthLimitedCause LimitedCause(LossBasedState loss_based_state, bool is_rtt_above_limit, BandwidthUsage usage) {
   if (usage == BandwidthUsage::kOverusing || usage == BandwidthUsage::kUnderusing) {
     return BandwidthLimitedCause::kDelayBasedLimitedDelayIncreased;
+  } else if (is_rtt_above_limit) {
+    return BandwidthLimitedCause::kRttBasedBackOffHighRtt;
+  }
+  switch (loss_based_state) {
+    case LossBasedState::kDecreasing:
+    case LossBasedState::kIncreaseUsingPadding:
+      // Probes may not be sent in these states.
+      return BandwidthLimitedCause::kLossLimitedBwe;
+    case LossBasedState::kIncreasing:
+      // Probes may be sent in this state.
+      return BandwidthLimitedCause::kLossLimitedBweIncreasing;
+    case LossBasedState::kDelayBasedEstimate:
+      break;
   }
   return BandwidthLimitedCause::kDelayBasedLimited;
 }
@@ -48,6 +60,7 @@ GccController::GccController(GccConfig cfg)
       configured_min_(cfg.min_rate),
       delay_(DelayCfg(cfg)),
       loss_(LossCfg(cfg)),
+      ssbe_(cfg.events),
       probe_ctrl_(ProbeCfg(cfg)),
       probe2_(ProbeCfg2(cfg)),
       probe_est_(cfg.version >= 2),
@@ -64,8 +77,11 @@ NetworkControlUpdate GccController::Start(Timestamp now) {
   delay_.SetStartBitrate(cfg_.start_rate, now);
   loss_.Reset();
   target_ = cfg_.start_rate;
+  last_now_ = now;
   std::vector<ProbeCluster> probes;
   if (cfg_.version >= 2) {
+    ssbe_.SetBitrates(cfg_.start_rate, cfg_.min_rate, cfg_.max_rate, now);
+    target_ = ssbe_.target_rate();
     if (cfg_.enable_probing) {
       // OnNetworkAvailability(true), then the first ResetConstraints.
       probes = probe2_.OnNetworkAvailability(true, now);
@@ -88,6 +104,11 @@ void GccController::SetMinAllocatable(DataRate r) {
   if (cfg_.max_rate < cfg_.min_rate) cfg_.max_rate = cfg_.min_rate;
   delay_.SetMinRate(cfg_.min_rate);
   loss_.SetMinRate(cfg_.min_rate);
+  if (cfg_.version >= 2) {
+    ssbe_.SetMinMaxBitrate(cfg_.min_rate, cfg_.max_rate);
+    ssbe_.UpdateDelayBasedEstimate(last_now_, ssbe_.delay_based_limit().IsFinite() ? ssbe_.delay_based_limit() : DataRate::Zero());
+    target_ = ssbe_.target_rate();
+  }
   target_ = std::max(target_, cfg_.min_rate);
   cfg_.start_rate = std::max(cfg_.start_rate, cfg_.min_rate);
 }
@@ -98,15 +119,40 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
     // GoogCcNetworkController::OnSentPacket.
     alr_.OnBytesSent(size, t);
     acked_v2_.SetAlr(alr_.GetApplicationLimitedRegionStartTime().has_value());
+    if (!first_packet_sent_) {
+      first_packet_sent_ = true;
+      // Initialise the feedback time to the send time to allow an RTT estimate until the first feedback.
+      ssbe_.UpdatePropagationRtt(t, TimeDelta::Zero());
+    }
+    ssbe_.OnSentPacket(t);
   }
 }
 
 void GccController::OnRttUpdate(TimeDelta rtt) {
   delay_.SetRtt(rtt);
   loss_.SetRtt(rtt);
+  if (cfg_.version >= 2) ssbe_.UpdateRtt(rtt, last_now_);
+}
+
+void GccController::OnRemb(DataRate remb) {
+  remb_ = remb;
+  if (cfg_.version >= 2) {
+    ssbe_.UpdateReceiverEstimate(last_now_, remb);
+    target_ = ssbe_.target_rate();
+  }
+}
+
+// GoogCcNetworkController::OnTransportLossReport.
+NetworkControlUpdate GccController::OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
+  last_now_ = now;
+  if (cfg_.version < 2) return MakeUpdate(now, {});
+  ssbe_.UpdatePacketsLost(packets_lost_delta, packets_delta, now);
+  target_ = ssbe_.target_rate();
+  return MakeUpdate(now, {});
 }
 
 NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback& fb, Timestamp now) {
+  last_now_ = now;
   std::vector<PacketResult> results = history_.OnFeedback(fb, now);
   last_feedback_max_rtt_.reset();
   for (const auto& r : results) {
@@ -131,6 +177,21 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
 // GoogCcNetworkController::OnTransportPacketsFeedback.
 NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<PacketResult>& results, Timestamp now) {
   first_feedback_received_ = true;
+  {
+    // min propagation RTT: the feedback RTT less the time the packet waited for later arrivals in the report.
+    Timestamp max_recv_time = Timestamp::MinusInfinity();
+    for (const auto& r : results) {
+      if (r.received()) max_recv_time = std::max(max_recv_time, r.receive_time);
+    }
+    TimeDelta min_propagation_rtt = TimeDelta::PlusInfinity();
+    bool any = false;
+    for (const auto& r : results) {
+      if (!r.received()) continue;
+      any = true;
+      min_propagation_rtt = std::min(min_propagation_rtt, (now - r.send_time) - (max_recv_time - r.receive_time));
+    }
+    if (any) ssbe_.UpdatePropagationRtt(now, min_propagation_rtt);
+  }
   const std::optional<Timestamp> alr_start_time = alr_.GetApplicationLimitedRegionStartTime();
   if (previously_in_alr_ && !alr_start_time) {
     acked_v2_.SetAlrEndedTime(now);
@@ -139,6 +200,7 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
   previously_in_alr_ = alr_start_time.has_value();
   acked_v2_.OnPacketResults(results);
   std::optional<DataRate> acked = acked_v2_.bitrate();
+  ssbe_.SetAcknowledgedRate(acked, now);
   for (const auto& r : SortedByReceiveTime(results)) {
     if (r.probe_cluster >= 0) probe_est_.OnPacketResult(r);
   }
@@ -151,10 +213,13 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
   }
   DataRate delay_est = delay_.OnPacketResults(results, acked, probe, now);
   const DelayBasedBwe::Result result = delay_.last_result();
-  DataRate loss_limit = loss_.OnPacketResults(results, target_, now);
-  target_ = std::min(delay_est, loss_limit);
-  if (remb_) target_ = std::min(target_, *remb_);
-  target_ = Clamp(target_, cfg_.min_rate, cfg_.max_rate);
+  if (result.updated) {
+    if (result.probe) ssbe_.SetSendBitrate(delay_est, now);
+    // SetSendBitrate resets the delay-based limit, so this comes after it.
+    ssbe_.UpdateDelayBasedEstimate(now, delay_est);
+  }
+  ssbe_.UpdateLossBasedEstimator(results, alr_start_time.has_value(), now);
+  target_ = ssbe_.target_rate();
   std::vector<ProbeCluster> probes;
   NetworkControlUpdate u = MakeUpdate(now, {});
   probes = std::move(u.probes);
@@ -168,8 +233,11 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
 }
 
 NetworkControlUpdate GccController::OnProcessInterval(Timestamp now, DataRate send_rate) {
+  last_now_ = now;
   std::vector<ProbeCluster> probes;
   if (cfg_.version >= 2) {
+    ssbe_.UpdateEstimate(now);
+    target_ = ssbe_.target_rate();
     // Avoid ALR probing before the first transport feedback is received.
     probe2_.SetAlrStartTime(first_feedback_received_ ? alr_.GetApplicationLimitedRegionStartTime() : std::nullopt);
     if (cfg_.enable_probing) probes = probe2_.Process(now);
@@ -185,8 +253,13 @@ NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) 
   delay_.SetStartBitrate(rate, now);
   loss_.Reset();
   target_ = Clamp(rate, cfg_.min_rate, cfg_.max_rate);
+  last_now_ = now;
   std::vector<ProbeCluster> probes;
   if (cfg_.version >= 2) {
+    // OnNetworkRouteChange: the send-side estimation starts over.
+    ssbe_.OnRouteChange();
+    ssbe_.SetBitrates(target_, cfg_.min_rate, cfg_.max_rate, now);
+    target_ = ssbe_.target_rate();
     // RouteChange: a new probe estimator, and the probe controller starts over.
     probe_est_ = ProbeBitrateEstimator(true);
     probe2_.Reset(now);
@@ -213,7 +286,7 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
       last_is_bandwidth_limited_ = is_bandwidth_limited;
       alr_.SetEstimatedBitrate(target_);
       if (cfg_.enable_probing) {
-        auto more = probe2_.SetEstimatedBitrate(target_, LimitedCause(delay_.usage()), now);
+        auto more = probe2_.SetEstimatedBitrate(target_, LimitedCause(ssbe_.loss_based_state(), ssbe_.IsRttAboveLimit(), delay_.usage()), now);
         u.probes.insert(u.probes.end(), more.begin(), more.end());
       }
     }
@@ -229,8 +302,14 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
 void GccController::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("target_kbps", target_.kbps());
   w.Gauge("delay_estimate_kbps", delay_.estimate().kbps());
-  w.Gauge("loss_limit_kbps", loss_.estimate().kbps());
-  w.Gauge("loss", loss_.last_loss());
+  if (cfg_.version >= 2) {
+    if (auto limited = ssbe_.loss_based().loss_limited_bandwidth()) w.Gauge("loss_limit_kbps", limited->kbps());
+    w.Gauge("loss", ssbe_.loss_based().average_reported_loss_ratio());
+    ssbe_.ExportMetrics(w);
+  } else {
+    w.Gauge("loss_limit_kbps", loss_.estimate().kbps());
+    w.Gauge("loss", loss_.last_loss());
+  }
   w.Gauge("in_flight_bytes", static_cast<double>(history_.InFlight().bytes()));
   if (cfg_.version >= 2) w.Gauge("alr", alr_.GetApplicationLimitedRegionStartTime().has_value() ? 1 : 0);
   auto acked = cfg_.version >= 2 ? acked_v2_.bitrate() : acked_.bitrate();
