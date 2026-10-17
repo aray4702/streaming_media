@@ -1,0 +1,13 @@
+name issue_12_lossbwe_congestive
+describe Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 15 s behind a 60 ms drop-tail queue (#12)
+cc v2
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
+# 5 seeds (cc v2): net.loss_pct 9.4-11.2, freeze_total_ms 2664-3530, queue p95 54.5-55.4 ms, utilization 85-88 %.
+# `cc v1` is better on loss and freezes here (loss 6.3-8.8 %, freezes 2.4-2.9 s) and lower on utilization (80-82 %);
+# libwebrtc's numbers for this scenario are not in the CI comparison yet (see the PR).
+expect net.loss_pct < 12
+expect video.freeze_total_ms < 4000
+expect cc.queue_p95_ms < 60
+expect audio.interruptions <= 3

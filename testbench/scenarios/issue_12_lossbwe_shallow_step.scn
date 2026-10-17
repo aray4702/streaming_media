@@ -1,0 +1,11 @@
+name issue_12_lossbwe_shallow_step
+describe Shallow buffer with a capacity step 2 Mbps -> 1.2 Mbps at 15 s (#12)
+cc v2
+duration 40s
+at 0s capacity=2000kbps delay=30ms queue=20ms
+at 15s capacity=1200kbps
+# 5 seeds (cc v2): net.loss_pct 9.2-12.7, freeze_total_ms 507-1552, longest freeze 254-962 ms. `cc v1`: loss 14.3-25.5 %, up to 4.9 s of freezes.
+expect net.loss_pct < 14
+expect video.freeze_total_ms < 2000
+expect video.longest_freeze_ms < 1200
+expect audio.interruptions <= 3
