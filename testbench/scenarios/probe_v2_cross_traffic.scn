@@ -1,0 +1,15 @@
+name probe_v2_cross_traffic
+describe A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and leaves at 25 s, `cc v2` and `pacer v2` (#48)
+# libwebrtc (parity-data, 10 seeds): utilization 74.2 %, video 1779 kbps, queue p95 264 ms, 3.9 freezes.
+# This library with the port: 74.7 %, 1759 kbps, queue p95 121 ms, no freeze (the earlier cc v1 queue target of
+# about 100 ms is not a goal: libwebrtc has 264 ms).
+cc v2
+pacer v2
+duration 40s
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
+expect cc.unsettled == 0
+expect cc.utilization_pct >= 68

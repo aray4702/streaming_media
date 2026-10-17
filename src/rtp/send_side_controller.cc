@@ -75,6 +75,8 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     allocator_.AddObserver("video", v, [this](DataRate alloc) { return alloc * std::min(repair_share(), cfg_.max_repair_share); });
   }
   gcc_.SetMinAllocatable(allocator_.limits().min_allocatable);
+  // SetAllocatedSendBitrateLimits: streams_config.max_total_allocated_bitrate.
+  for (const auto& c : gcc_.OnMaxTotalAllocatedBitrate(allocator_.limits().max_allocatable, Timestamp::Micros(0))) pacer_.AddProbeCluster(c);
   target_ = std::max(target_, gcc_.target());
 }
 

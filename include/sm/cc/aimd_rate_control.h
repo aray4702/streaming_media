@@ -13,10 +13,14 @@
 //                       beta 0.85, reduce again only after clamp(rtt, 10,
 //                       200) ms, increase limited to 1.5 x acked + 10 kbps.
 //
-// Differences that remain (see tools/catalog.py 5.2): ALR is not tracked (no
-// AlrDetector yet, #48), so ExpectFastRateChange on ALR end and
-// SetInApplicationLimitedRegion are not called; PacketResult has no
-// prior_unacked_data (always zero here); no NetworkStateEstimate.
+// The ALR state (cc/alr_detector.h, #48) reaches the estimator as in libwebrtc:
+// SetAlr and, when the region ends, SetAlrEndedTime, after which the first
+// packet sent later calls ExpectFastRateChange.
+//
+// Differences that remain (see tools/catalog.py 5.2): PacketResult has no
+// prior_unacked_data (always zero here); no NetworkStateEstimate;
+// SetInApplicationLimitedRegion of the rate control only matters with a field
+// trial that is off by default.
 #pragma once
 
 #include <optional>
@@ -52,9 +56,13 @@ class AckedBitrateEstimatorV2 {
   void OnPacketResults(const std::vector<PacketResult>& results);
   std::optional<DataRate> bitrate() const { return estimator_.bitrate(); }
   std::optional<DataRate> PeekRate() const { return estimator_.PeekRate(); }
+  void SetAlr(bool in_alr) { in_alr_ = in_alr; }
+  void SetAlrEndedTime(Timestamp alr_ended_time) { alr_ended_time_ = alr_ended_time; }
 
  private:
   BitrateEstimator estimator_;
+  bool in_alr_ = false;
+  std::optional<Timestamp> alr_ended_time_;
 };
 
 class LinkCapacityEstimator {

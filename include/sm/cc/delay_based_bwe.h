@@ -206,6 +206,13 @@ class DelayBasedBwe : public MetricsSource {
   // Results must be sorted by send time / sequence number.
   DataRate OnPacketResults(const std::vector<PacketResult>& results, std::optional<DataRate> acked,
                            std::optional<DataRate> probe_estimate, Timestamp now);
+  // DelayBasedBwe::Result of the last OnPacketResults (`cc v2`).
+  struct Result {
+    bool updated = false;
+    bool probe = false;
+    bool recovered_from_overuse = false;
+  };
+  const Result& last_result() const { return last_result_; }
   DataRate estimate() const { return cfg_.version >= 2 ? rc2_.LatestEstimate() : aimd_.estimate(); }
   const AimdRateControl& rate_control_v2() const { return rc2_; }
   BandwidthUsage usage() const { return trendline_.State(); }
@@ -225,6 +232,8 @@ class DelayBasedBwe : public MetricsSource {
   AimdRateController aimd_;
   AimdRateControl rc2_;
   BandwidthUsage last_usage_ = BandwidthUsage::kNormal;
+  bool recovered_from_overuse_ = false;
+  Result last_result_;
   DelayBweStats stats_;
 };
 

@@ -326,10 +326,13 @@ void DelayBasedBwe::SetMinRate(DataRate r) {
 DataRate DelayBasedBwe::MaybeUpdateEstimateV2(std::optional<DataRate> acked, std::optional<DataRate> probe, Timestamp now) {
   const BandwidthUsage usage = trendline_.State();
   DataRate before = rc2_.LatestEstimate();
+  last_result_ = {};
   if (usage == BandwidthUsage::kOverusing) {
     if (acked && rc2_.TimeToReduceFurther(now, *acked)) {
       rc2_.Update(usage, acked, now);
+      last_result_.updated = true;
     } else if (!acked && rc2_.ValidEstimate() && rc2_.InitialTimeToReduceFurther(now)) {
+      last_result_.updated = true;
       // Overusing before there is an acknowledged rate: halve every
       // clamp(rtt, 10, 200) ms.
       rc2_.SetEstimate(rc2_.LatestEstimate() * 0.5, now);
@@ -337,9 +340,13 @@ DataRate DelayBasedBwe::MaybeUpdateEstimateV2(std::optional<DataRate> acked, std
     }
   } else if (probe) {
     rc2_.SetEstimate(*probe, now);
+    last_result_.updated = true;
+    last_result_.probe = true;
     SM_EVENT(cfg_.events, now, "gcc", "probe_jump", probe->bps(), 0);
   } else {
     rc2_.Update(usage, acked, now);
+    last_result_.updated = true;
+    last_result_.recovered_from_overuse = recovered_from_overuse_;
   }
   DataRate r = rc2_.LatestEstimate();
   if (r < before) {
@@ -357,7 +364,10 @@ DataRate DelayBasedBwe::OnPacketResults(const std::vector<PacketResult>& results
     // running MaybeUpdateEstimate when no packet in the feedback was received.
     bool any_received = false;
     for (const auto& r : results) any_received |= r.received();
-    if (!any_received) return rc2_.LatestEstimate();
+    if (!any_received) {
+      last_result_ = {};
+      return rc2_.LatestEstimate();
+    }
     OnPacketResultsV2(results, now);
   } else {
     for (const auto& r : results) {
@@ -400,6 +410,8 @@ void DelayBasedBwe::OnPacketResultsV2(const std::vector<PacketResult>& results, 
   // TransportPacketsFeedback::SortedByReceiveTime (PacketResult::ReceiveTimeOrder).
   std::vector<PacketResult> sorted = SortedByReceiveTime(results);
   if (sorted.empty()) return;  // "Very late feedback received."
+  recovered_from_overuse_ = false;
+  BandwidthUsage prev_detector_state = trendline_.State();
   for (const auto& r : sorted) {
     // Reset if the stream has timed out.
     if (!last_seen_packet_.IsFinite() || now - last_seen_packet_ > kStreamTimeOut) {
@@ -413,6 +425,10 @@ void DelayBasedBwe::OnPacketResultsV2(const std::vector<PacketResult>& results, 
     // libwebrtc passes integer milliseconds as the arrival time.
     trendline_.Update(d->arrival_delta.ms_f(), d->send_delta.ms_f(), std::round(r.receive_time.us() / 1000.0));
     stats_.trend.Add(std::fabs(trendline_.modified_trend()));
+    if (prev_detector_state == BandwidthUsage::kUnderusing && trendline_.State() == BandwidthUsage::kNormal) {
+      recovered_from_overuse_ = true;
+    }
+    prev_detector_state = trendline_.State();
   }
 }
 

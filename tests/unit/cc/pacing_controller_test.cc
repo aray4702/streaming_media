@@ -287,6 +287,9 @@ SM_TEST(PacingController, ProbeClusterTagsAndPads) {
   p.SetPacingRates(DataRate::KilobitsPerSec(300), DataRate::Zero());
   ProbeCluster c{7, DataRate::KilobitsPerSec(2000), 5, DataSize::Bytes(3750)};
   p.AddProbeCluster(c);
+  // BitrateProber (#48): a probe starts when a media packet of a useful size is
+  // enqueued; padding then fills the bursts.
+  p.Enqueue(Pkt(1, PacketPriority::kVideo, 1200, Timestamp::Millis(0)));
   int tagged = 0, padding = 0;
   for (int t = 0; t < 50; ++t) {
     for (auto& s : p.Process(Timestamp::Millis(t))) {

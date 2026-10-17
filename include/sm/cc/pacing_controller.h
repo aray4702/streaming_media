@@ -21,8 +21,9 @@
 // prioritised, which libwebrtc does not do by default). Audio is not paced
 // (it leaves at its enqueue time) but is counted in the debt, as a call with
 // audio in the congestion-control allocation does. Probe clusters are sent at
-// their own rate and tagged so the probe estimator can find them; padding
-// fills a probe when there is no media. BitrateProber is #48's.
+// their own rate and tagged so the probe estimator can find them (#48): the
+// BitrateProber times each burst by the cluster rate, a burst starts with a
+// small padding packet, and padding fills a burst when there is no media.
 #pragma once
 
 #include <array>
@@ -32,6 +33,7 @@
 #include <set>
 #include <vector>
 
+#include "sm/cc/bitrate_prober.h"
 #include "sm/cc/pacer_types.h"
 #include "sm/cc/probing.h"
 #include "sm/core/event_log.h"
@@ -52,6 +54,11 @@ struct PacingControllerConfig {
   bool account_for_audio = true;
   // Wire size of one padding packet (RTPSender::GeneratePadding, kMaxPaddingLength).
   DataSize padding_packet = DataSize::Bytes(224);
+  // Wire size of the small padding packet that starts every probe burst
+  // (GeneratePadding(1 byte): the RTP sender pads at least 50 bytes; plus the
+  // 12-byte RTP header, the header extensions and the 28 bytes of UDP/IPv4).
+  DataSize probe_start_padding = DataSize::Bytes(102);
+  BitrateProberConfig prober;
   int circuit_breaker_iterations = 1 << 16;
   EventSink* events = nullptr;
 };
@@ -103,14 +110,14 @@ class PacingController : public MetricsSource {
   void UpdateBudgetWithElapsedTime(TimeDelta delta);
   void UpdateBudgetWithSentData(DataSize size);
   void UpdatePaddingBudgetWithSentData(DataSize size);
-  DataSize PaddingToAdd(DataSize data_sent) const;
+  DataSize PaddingToAdd(DataSize recommended_probe_size, DataSize data_sent) const;
   void OnPacketSent(PacketPriority prio, DataSize size, Timestamp send_time);
   void MaybeUpdateMediaRateDueToLongQueue(Timestamp now);
   Timestamp NextUnpacedSendTime() const;
   Timestamp NextSendTimeAt(Timestamp now) const;
-  bool GetPendingPacket(Timestamp target_send_time, Timestamp now, PacedPacket* out);
-  void ProcessProbe(Timestamp now, std::vector<PacedPacket>& sent);
-  void Account(PacedPacket& p, Timestamp now, std::vector<PacedPacket>& sent);
+  bool GetPendingPacket(const ProbeSendInfo& pacing_info, Timestamp target_send_time, Timestamp now, PacedPacket* out);
+  void Account(PacedPacket& p, Timestamp now, const ProbeSendInfo& pacing_info, std::vector<PacedPacket>& sent);
+  PacedPacket MakePadding(DataSize size, Timestamp now);
 
   // PrioritizedPacketQueue.
   static int Level(PacketPriority p);
@@ -149,13 +156,8 @@ class PacingController : public MetricsSource {
   Timestamp queue_update_time_ = Timestamp::MinusInfinity();
   bool queue_paused_ = false;
 
-  struct ActiveProbe {
-    ProbeCluster c;
-    int sent_probes = 0;
-    int64_t sent_bytes = 0;
-  };
-  std::deque<ActiveProbe> probes_;
-  DataSize probe_debt_;
+  BitrateProber prober_;
+  bool probing_send_failure_ = false;
   uint64_t next_padding_id_ = 1ull << 62;
   std::vector<PacedPacket> flushed_;
   PacerStats stats_;

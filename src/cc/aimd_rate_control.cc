@@ -82,7 +82,13 @@ void BitrateEstimator::ExpectFastRateChange() {
 }
 
 void AckedBitrateEstimatorV2::OnPacketResults(const std::vector<PacketResult>& results) {
-  for (const auto& r : SortedByReceiveTime(results)) estimator_.Update(r.receive_time, r.size, /*in_alr=*/false);
+  for (const auto& r : SortedByReceiveTime(results)) {
+    if (alr_ended_time_ && r.send_time > *alr_ended_time_) {
+      estimator_.ExpectFastRateChange();
+      alr_ended_time_.reset();
+    }
+    estimator_.Update(r.receive_time, r.size, in_alr_);
+  }
 }
 
 // --- LinkCapacityEstimator (goog_cc/link_capacity_estimator.cc) -----------------

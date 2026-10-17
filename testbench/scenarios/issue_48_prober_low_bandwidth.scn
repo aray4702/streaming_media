@@ -1,0 +1,18 @@
+name issue_48_prober_low_bandwidth
+describe 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (#48)
+# The start-up clusters (900 and 1800 kbps) are sent into a 150 kbps link. Before the prober, `pacer v2`
+# released a whole cluster in one burst of at least 1500 bytes, which overflowed the 500 ms queue: 3-16
+# keyframe requests (mean 10.5, 12 seeds), 0-2 freezes, queue p95 427-473 ms, 3-9 % repair overhead.
+# With BitrateProber the bursts are timed by the cluster rate: 3 keyframe requests (the start), no freeze,
+# queue p95 146-196 ms, 1.3-1.7 % overhead on seeds 1-12. libwebrtc (parity-data, 10 seeds, `low_bandwidth`):
+# queue p95 484 ms, 17.8 freezes, 16.9 % overhead, 0.7 keyframe requests: its encoder and allocator are
+# not what this scenario judges (#104, #61 own that gap).
+cc v2
+pacer v2
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+expect audio.concealed_pct < 5
+expect video.freeze_count == 0
+expect video.keyframe_requests <= 4
+expect cc.queue_p95_ms < 300
+expect repair.overhead_pct < 3
