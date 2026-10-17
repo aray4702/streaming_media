@@ -207,3 +207,46 @@ SM_TEST(PacketBuffer, V1KeepsFixedWindow) {
   pb.Insert(Pkt(512, 2, false), false, T0());
   SM_EXPECT_EQ(pb.buffered_packets(), 2u);
 }
+
+// PacketBuffer::ClearTo (#101): after the decoder consumed a frame the packets
+// up to its last one are dropped and a late copy of an older packet is ignored,
+// not mistaken for a backward jump.
+SM_TEST(PacketBuffer, V2ClearToDropsOldPacketsAndIgnoresLateOnes) {
+  PacketBufferConfig cfg;
+  cfg.version = 2;
+  PacketBuffer pb(cfg);
+  pb.Insert(Pkt(10, 100, true), true, T0());  // A complete one-packet frame.
+  SM_ASSERT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.Insert(Pkt(12, 200, false), false, T0());  // Waits for 11 / a start; stays held.
+  SM_EXPECT_EQ(pb.buffered_packets(), 1u);
+  pb.ClearTo(12);
+  SM_EXPECT_EQ(pb.buffered_packets(), 0u);
+  // Behind the cleared-to point: silently ignored even though it is 'a large jump back' (it is not).
+  SM_EXPECT_EQ(pb.Insert(Pkt(11, 200, false), false, T0()), InsertResult::kTooOld);
+  SM_EXPECT_EQ(pb.buffered_packets(), 0u);
+  // Ahead of it still works.
+  SM_EXPECT_EQ(pb.Insert(Pkt(13, 300, true), true, T0()), InsertResult::kInserted);
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  // v1 ignores ClearTo.
+  PacketBuffer v1;
+  v1.Insert(Pkt(5, 1, false), false, T0());
+  v1.ClearTo(5);
+  SM_EXPECT_EQ(v1.buffered_packets(), 1u);
+}
+
+// received_padding_ is dropped once it falls more than a quarter of the buffer behind
+// the packets being inserted, and padding inside a found frame is dropped with it.
+SM_TEST(PacketBuffer, V2PaddingOnlyMattersNearTheInsertedPackets) {
+  PacketBufferConfig cfg;
+  cfg.version = 2;
+  PacketBuffer pb(cfg);  // 512 slots: padding more than 128 behind goes.
+  pb.Insert(Pkt(1000, 1, true), true, T0());
+  pb.PopCompleteFrames();
+  pb.NotePadding(1001);
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(1002), 1000);
+  pb.Insert(Pkt(1002, 2, true), true, T0());
+  pb.PopCompleteFrames();
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(1002), 1000);  // Still known near the front.
+  pb.Insert(Pkt(1200, 9, false), false, T0());     // 198 ahead: 1001 is outside size / 4.
+  SM_EXPECT_EQ(pb.PrecedingMediaSeq(1002), 1001);
+}

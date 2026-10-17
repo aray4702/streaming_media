@@ -148,6 +148,37 @@ void RtcpEngine::Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind k
   packets.clear();
 }
 
+void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
+  std::vector<std::vector<uint8_t>> packets;
+  packets.push_back(BuildReport(now));
+  if (!cfg_.cname.empty()) {
+    SdesChunk c;
+    c.ssrc = sender_ && sender_->ssrc ? sender_->ssrc : cfg_.local_ssrc;
+    c.items.push_back({kSdesCname, cfg_.cname});
+    auto sdes = SerializeSdes(std::span<const SdesChunk>(&c, 1));
+    if (!sdes.empty()) packets.push_back(std::move(sdes));
+  }
+  ++stats_.reports_sent;
+  SM_EVENT(cfg_.events, now, "rtcp", sender_ ? "sr" : "rr", packets[0].size(), cfg_.local_ssrc);
+  Flush(packets, RtcpOutKind::kReport, out);
+}
+
+bool RtcpEngine::ReportDue(Timestamp now, bool keyframe_before_rtp) const {
+  if (!started_) return false;
+  // For video, a report due within 100 ms goes out before the keyframe.
+  if (cfg_.has_video && keyframe_before_rtp && cfg_.version >= 2) now += TimeDelta::Millis(100);
+  return now >= next_report_;
+}
+
+std::vector<RtcpOutgoing> RtcpEngine::SendReport(Timestamp now) {
+  std::vector<RtcpOutgoing> out;
+  if (!started_) return out;
+  if (sender_ && cfg_.version >= 2) UpdateSendRate(now);
+  EmitReport(now, out);
+  next_report_ = now + Interval();
+  return out;
+}
+
 std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   std::vector<RtcpOutgoing> out;
   if (sender_ && cfg_.version >= 2) UpdateSendRate(now);
@@ -160,18 +191,7 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
 
   // Regular report: SR or RR, then SDES, then feedback that is already due.
   if (now >= next_report_) {
-    std::vector<std::vector<uint8_t>> packets;
-    packets.push_back(BuildReport(now));
-    if (!cfg_.cname.empty()) {
-      SdesChunk c;
-      c.ssrc = sender_ && sender_->ssrc ? sender_->ssrc : cfg_.local_ssrc;
-      c.items.push_back({kSdesCname, cfg_.cname});
-      auto sdes = SerializeSdes(std::span<const SdesChunk>(&c, 1));
-      if (!sdes.empty()) packets.push_back(std::move(sdes));
-    }
-    ++stats_.reports_sent;
-    SM_EVENT(cfg_.events, now, "rtcp", sender_ ? "sr" : "rr", packets[0].size(), cfg_.local_ssrc);
-    Flush(packets, RtcpOutKind::kReport, out);
+    EmitReport(now, out);
     // Skip over missed slots rather than bursting reports.
     do {
       next_report_ += Interval();

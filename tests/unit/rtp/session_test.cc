@@ -408,3 +408,28 @@ SM_TEST(Session, TransportFeedbackV2IntervalFollowsTheLocalSendEstimate) {
   SM_EXPECT_NEAR(static_cast<double>(fast), 40, 2);
   SM_EXPECT_NEAR(static_cast<double>(slow), 8, 2);
 }
+
+// RtpRtcpImpl2::OnSendingRtpFrame (#101): with `rtcp v2` a report due within
+// 100 ms is sent ahead of a keyframe, not on the next Process tick.
+SM_TEST(Session, V2SendsADueSenderReportAheadOfAKeyframe) {
+  auto run = [](int version, bool keyframe) {
+    SessionConfig c = Cfg(1);
+    c.rtcp.version = version;
+    c.rtcp.first_report_delay = TimeDelta::Millis(1000);
+    Session s(c);
+    AudioStreamConfig au;
+    au.ssrc = 0x100;
+    s.AddAudioSend(au);
+    VideoSendId v = s.AddVideoSend(Video());
+    s.Process(Timestamp::Millis(0));
+    s.TakeOutgoing();
+    auto chunks = test::MakeTestFrameChunks(keyframe, 3000, 1188);
+    s.SendVideoChunks(v, chunks, 0, Timestamp::Millis(950), keyframe);
+    size_t rtcp = 0;
+    for (auto& o : s.TakeOutgoing()) rtcp += o.kind == OutgoingKind::kRtcp;
+    return rtcp;
+  };
+  SM_EXPECT_EQ(run(2, true), 1u);
+  SM_EXPECT_EQ(run(2, false), 0u);
+  SM_EXPECT_EQ(run(1, true), 0u);
+}

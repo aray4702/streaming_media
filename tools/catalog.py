@@ -138,7 +138,8 @@ ALGORITHMS = [
                "Version 2 (under `keyframe v2`, issue #76 group 6) sizes the buffer as libwebrtc's PacketBuffer: 512 slots "
                "doubling to 2048 when another unassembled packet maps to a slot, a clear plus a keyframe request when it is "
                "full at 2048, and a restart when a packet is 1024 behind the lowest sequence number. Packets leave at "
-               "frame assembly rather than at ClearTo after decode, so slots free earlier than in libwebrtc.",
+               "frame assembly, and the receiver also calls ClearTo(last sequence number) when a frame leaves the scheduler (issue #101): "
+               "it drops the packets up to it and ignores older ones; padding is kept only within a quarter of the buffer behind an insert.",
          verification="No defects found."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
@@ -152,7 +153,7 @@ ALGORITHMS = [
                "the SR/RR wire format. Transport-wide feedback and abs-send-time are in 5.1 and 8.4. "
                "As libwebrtc's StreamStatisticianImpl (issue #76 group 5) the jitter filter runs in Q4 integers, only on "
                "in-order packets with a new timestamp, and skips a jump of 5 s of video clock; the RTT is floored at 1 ms "
-               "(CompactNtpRttToTimeDelta, group 4).",
+               "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101).",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
@@ -543,7 +544,7 @@ ALGORITHMS = [
          bench=["audio/AudioLevel_20ms"],
          scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
                   "tones and silence must match.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. ComputeLevel stays the RFC 6464 header level (RMS in -dBov). ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
                       "the RFC 6464 codec and level are unchanged."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
@@ -677,7 +678,7 @@ ALGORITHMS = [
                "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
                "(SR or RR first, SDES CNAME after it). Version 2 (`rtcp v2`, issue #76 group 3) times reports as "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). With `rtcp v2` a report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "

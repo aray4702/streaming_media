@@ -243,6 +243,8 @@ void RtpReceiver::Process(Timestamp now) {
     r.bitstream = std::move(it->second.bitstream);
     out_frames_.push_back(r);
     frames_.erase(it);
+    // RtpVideoStreamReceiver2::FrameDecoded: the packet buffer drops what the decoded frame used.
+    packet_buffer_.ClearTo(a.id);
   }
   if (cfg_.nack) {
     auto batch = nack_.GetNackBatch(now);

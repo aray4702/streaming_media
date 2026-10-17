@@ -152,6 +152,14 @@ class RtcpEngine : public MetricsSource {
   // Announces that the local sources leave the session (RFC 3550 6.6).
   void QueueBye(std::span<const uint32_t> ssrcs, std::string reason = {});
 
+  // `RTCPSender::TimeToSendRTCPReport(send_keyframe_before_rtp)`: a report is
+  // due. With a keyframe about to be sent on a video stream (version 2) a
+  // report due within 100 ms counts, so it goes out before the large frame.
+  bool ReportDue(Timestamp now, bool keyframe_before_rtp = false) const;
+  // Sends the report now (`SendRTCP(kRtcpReport)`) and schedules the next one
+  // an interval from `now`. Returns nothing before the first Process.
+  std::vector<RtcpOutgoing> SendReport(Timestamp now);
+
   // Emits the report if one is due and all queued feedback.
   std::vector<RtcpOutgoing> Process(Timestamp now);
   // When Process must run next: now if feedback is queued, else the next report.
@@ -168,6 +176,7 @@ class RtcpEngine : public MetricsSource {
  private:
   TimeDelta Interval();
   std::vector<uint8_t> BuildReport(Timestamp now);
+  void EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out);
   std::vector<uint8_t> LeadingReport() const;
   void Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind kind, std::vector<RtcpOutgoing>& out);
 

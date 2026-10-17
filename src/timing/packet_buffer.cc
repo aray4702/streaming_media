@@ -27,6 +27,7 @@ void PacketBuffer::Clear() {
   packets_.clear();
   done_.clear();
   padding_.clear();
+  cleared_to_first_seq_ = false;
   highest_ = INT64_MIN;
   first_inserted_ = INT64_MIN;
   first_seq_ = INT64_MIN;
@@ -39,6 +40,11 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     if (first_seq_ == INT64_MIN) {
       first_seq_ = s;
     } else if (s < first_seq_) {
+      // Cleared past this packet by ClearTo: it is old, ignore it.
+      if (cleared_to_first_seq_) {
+        ++stats_.too_old;
+        return InsertResult::kTooOld;
+      }
       // Large backward jump: clear and treat this as the first packet.
       if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
       first_seq_ = s;
@@ -73,9 +79,21 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
   highest_ = std::max(highest_, s);
   ++stats_.inserted;
   packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, now});
+  // received_padding_.erase(begin, lower_bound(seq - buffer_.size() / 4)): padding only matters
+  // near the packets being inserted.
+  if (cfg_.version >= 2) padding_.erase(padding_.begin(), padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
   TryAssemble(s);
   Trim();
   return InsertResult::kInserted;
+}
+
+void PacketBuffer::ClearTo(int64_t seq) {
+  if (cfg_.version < 2 || first_seq_ == INT64_MIN || first_seq_ > seq) return;
+  ++seq;
+  packets_.erase(packets_.begin(), packets_.lower_bound(seq));
+  padding_.erase(padding_.begin(), padding_.lower_bound(seq));
+  first_seq_ = seq;
+  cleared_to_first_seq_ = true;
 }
 
 void PacketBuffer::NotePadding(uint16_t seq) {
@@ -137,6 +155,8 @@ void PacketBuffer::TryAssemble(int64_t seq) {
     packets_.erase(it);
     done_.insert(i);
   }
+  // A found frame drops the padding from the packet that completed it through its last packet.
+  if (cfg_.version >= 2) padding_.erase(padding_.lower_bound(seq), padding_.upper_bound(last));
   ++stats_.frames_assembled;
   SM_EVENT(cfg_.events, f.last_arrival, "packet_buffer", "frame", static_cast<double>(last - first + 1), first);
   ready_.push_back(std::move(f));

@@ -248,6 +248,15 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   Start(now);
   RtpSender& s = *video_send_[static_cast<size_t>(id.index)].sender;
   s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
+  // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
+  // before a keyframe instead of queueing behind it.
+  if (keyframe && cfg_.rtcp.version >= 2 && rtcp_.ReportDue(now, true)) {
+    UpdateSenderState();
+    for (RtcpOutgoing& o : rtcp_.SendReport(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
   EnqueueSenderPackets(s, now);
 }
 
