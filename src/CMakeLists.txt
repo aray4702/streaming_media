@@ -44,6 +44,7 @@ if(SM_WITH_CC)
     cc/pacing_controller.cc
     cc/probing.cc
     cc/bitrate_allocator.cc
+    cc/bitrate_allocator_v2.cc
     cc/frame_dropper.cc
     cc/encoder_bitrate_adjuster.cc
     cc/congestion_window_pushback.cc

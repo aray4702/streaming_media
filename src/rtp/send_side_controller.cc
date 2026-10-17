@@ -30,10 +30,12 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       pacer_(WithEvents(cfg.pacer, cfg.events)),
       outage_(WithEvents(cfg.outage, cfg.events)),
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
+      allocator_(cfg.events),
       target_(cfg.gcc.start_rate) {}
 
-void SendSideController::Apply(const cc::NetworkControlUpdate& u) {
+void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
+  if (allocation_configured_) allocator_.OnTargetChanged(target_, now);
   pacer_.SetPacingRates(u.pacing_rate, DataRate::Zero());
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
   outage_.SetCurrentRate(target_);
@@ -55,7 +57,28 @@ void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_se
   if (extensions_->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, now);
 }
 
-void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now)); }
+void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool video) {
+  if (cfg_.allocator_version < 2) return;
+  allocation_configured_ = true;
+  if (audio_wire_rate > DataRate::Zero()) {
+    cc::StreamAllocationConfig a;
+    a.min = a.max = a.priority_rate = audio_wire_rate;
+    a.enforce_min = true;
+    allocator_.AddObserver("audio", a, [](DataRate) { return DataRate::Zero(); });
+  }
+  if (video) {
+    cc::StreamAllocationConfig v;
+    v.min = cfg_.video_min;
+    v.max = cfg_.video_max;
+    v.enforce_min = true;
+    // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
+    allocator_.AddObserver("video", v, [this](DataRate alloc) { return alloc * std::min(repair_share(), cfg_.max_repair_share); });
+  }
+  gcc_.SetMinAllocatable(allocator_.limits().min_allocatable);
+  target_ = std::max(target_, gcc_.target());
+}
+
+void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
 
 void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   // Reserve the extensions written at release, so the pacer budgets the size
@@ -136,7 +159,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   ExpireRepair(now);
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
-    Apply(gcc_.OnProcessInterval(now, send_rate(now)));
+    Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
     UpdatePushback(now, true);
   }
   if (!last_outage_.IsFinite() || now - last_outage_ >= cfg_.outage_interval) {
@@ -145,7 +168,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     if (act.pause_encoder) actions_.pause_encoder = true;
     if (act.resume_encoder) actions_.resume_encoder = true;
     if (act.request_keyframe) actions_.request_keyframe = true;
-    if (act.reset_estimate) Apply(gcc_.ResetEstimate(act.reset_rate, now));
+    if (act.reset_estimate) Apply(gcc_.ResetEstimate(act.reset_rate, now), now);
   }
   return out;
 }
@@ -169,7 +192,7 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }
-  Apply(gcc_.OnTransportFeedback(fb, now));
+  Apply(gcc_.OnTransportFeedback(fb, now), now);
   if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
   UpdatePushback(now, true);
   outage_.OnFeedback(now);
@@ -232,7 +255,20 @@ double SendSideController::repair_share() const {
   return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
 }
 
+SendRates SendSideController::AllocatedRates() const {
+  // VideoSendStreamImpl::OnBitrateUpdated: the encoder gets the allocation less
+  // the protection bitrate, at most its maximum. A paused stream gets nothing.
+  SendRates out;
+  out.target = target_;
+  out.audio_rate = allocator_.allocation("audio");
+  const DataRate alloc = allocator_.allocation("video");
+  out.video_target = std::min(cfg_.video_max, alloc * (1.0 - std::min(repair_share(), cfg_.max_repair_share)));
+  ApplyPushback(out);
+  return out;
+}
+
 SendRates SendSideController::ComputeMeasuredRates(DataRate audio_wire_rate) const {
+  if (allocation_configured_) return AllocatedRates();
   // Capped at kProtectionOverheadRateThreshold (0.5), as in FecControllerDefault.
   const double share = std::min(repair_share(), cfg_.max_repair_share);
   DataRate r = (target_ - audio_wire_rate) * (1.0 - share);

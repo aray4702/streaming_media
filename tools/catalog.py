@@ -322,12 +322,18 @@ ALGORITHMS = [
                       "within 30 s."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",
          problems=["Sharing bandwidth among streams -> bitrate allocator, with per-stream priority and min/max bitrate"],
-         headers=["cc/bitrate_allocator.h"], unit=["BitrateAllocator"], e2e=["E2E_BitrateAllocator"],
+         headers=["cc/bitrate_allocator.h", "cc/bitrate_allocator_v2.h"], unit=["BitrateAllocator", "BitrateAllocatorV2"], e2e=["E2E_BitrateAllocator"],
          bench=["cc/BitrateAllocator_5streams", "cc/Q_Allocator_low_bandwidth"],
          scenario="Audio (enforced 20-40 kbps), camera (150-2500 kbps) and screen share (250-1500 kbps, priority "
                   "2) share a GCC target while capacity steps 3000 -> 450 -> 3000 kbps.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Paused streams resume only at min x 1.1 (hysteresis).",
+               "Paused streams resume only at min x 1.1 (hysteresis). "
+               "`allocator v2` (`SendSideConfig::allocator_version`, issue #104) is the port of libwebrtc's `BitrateAllocator` "
+               "(`call/bitrate_allocator.cc`): `LowRateAllocation` / `NormalRateAllocation` / `MaxRateAllocation` with min + max(10 %, 20 kbps) "
+               "and the protection share to resume, and the sum of the enforced minimums (audio, and video as `suspend_below_min_bitrate` is off) is "
+               "the lower bound of GCC's target (`min_total_allocated_bitrate`, `use_min_allocatable_as_lower_bound_`). "
+               "Remaining: the elastic allocation (off by default in libwebrtc), the padding limit (`max_padding_rate`, with the prober, #48), "
+               "the per-packet overhead libwebrtc takes off the video payload rate, and the audio min and max from Opus's frame-length range (not in `reference/`, #57).",
          verification="A unit-test expectation was wrong about how leftover bitrate is shared (it is split by "
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",

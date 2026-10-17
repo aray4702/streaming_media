@@ -311,6 +311,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.max_rate = s.max_rate;
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
     if (s.pacer_v2) c.send_side.pacer.version = cc::PacerVersion::kV2;
+    if (s.allocator_v2) c.send_side.allocator_version = 2;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
     if (s.tcc_v2) c.transport_feedback_version = 2;
@@ -332,6 +333,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
   audio_cfg.clock_rate = sr;
   audio_cfg.nominal_rate = audio_wire_rate;
+  // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
+  audio_cfg.allocation_rate = s.audio ? DataRate::BitsPerSec(s.audio_bitrate.bps() + (12 + 4 + kUdpIpOverhead) * 8 * 50) : DataRate::Zero();
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;

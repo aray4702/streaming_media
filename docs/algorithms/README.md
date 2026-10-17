@@ -36,7 +36,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 5.4 | [Send-side bandwidth estimation (GCC network controller)](5-cc/5.4-gcc-controller.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 5.5 | [Pacer with priority queues](5-cc/5.5-pacer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 3 | 1 | 1 | pass | pass | pass | pass |
-| 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 3 | 2 | 2 | pass | pass | pass | pass |
 | 5.11 | [Link outage detection and recovery](5-cc/5.11-outage.md) | 1 | 1 | 1 | pass | pass | pass | pass |

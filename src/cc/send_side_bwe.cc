@@ -27,7 +27,7 @@ ProbeControllerConfig ProbeCfg(const GccConfig& g) {
 }  // namespace
 
 GccController::GccController(GccConfig cfg)
-    : cfg_(cfg), delay_(DelayCfg(cfg)), loss_(LossCfg(cfg)), probe_ctrl_(ProbeCfg(cfg)), target_(cfg.start_rate) {}
+    : cfg_(cfg), configured_min_(cfg.min_rate), delay_(DelayCfg(cfg)), loss_(LossCfg(cfg)), probe_ctrl_(ProbeCfg(cfg)), target_(cfg.start_rate) {}
 
 NetworkControlUpdate GccController::Start(Timestamp now) {
   delay_.SetStartBitrate(cfg_.start_rate, now);
@@ -37,6 +37,15 @@ NetworkControlUpdate GccController::Start(Timestamp now) {
   if (cfg_.enable_probing) probes = probe_ctrl_.SetBitrates(cfg_.min_rate, cfg_.start_rate, cfg_.max_rate, now);
   for (const auto& p : probes) probe_est_.SetClusterInfo(p);
   return MakeUpdate(now, std::move(probes));
+}
+
+void GccController::SetMinAllocatable(DataRate r) {
+  cfg_.min_rate = std::max(configured_min_, r);
+  if (cfg_.max_rate < cfg_.min_rate) cfg_.max_rate = cfg_.min_rate;
+  delay_.SetMinRate(cfg_.min_rate);
+  loss_.SetMinRate(cfg_.min_rate);
+  target_ = std::max(target_, cfg_.min_rate);
+  cfg_.start_rate = std::max(cfg_.start_rate, cfg_.min_rate);
 }
 
 void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int probe_cluster) {

@@ -90,7 +90,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
   c.red_distance = a.red_distance;
-  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate});
+  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate, a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate});
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   if (!send_has_padding_) {
     send_.SetPaddingSender(audio_send_.back().sender.get());
@@ -192,6 +192,9 @@ void Session::Start(Timestamp now) {
   // GCC and outage monitor would only log decisions about a link it never
   // sends on.
   if (!HasSendStreams()) return;
+  DataRate audio = DataRate::Zero();
+  for (const auto& a : audio_send_) audio = audio + a.allocation_rate;
+  send_.ConfigureAllocation(audio, !video_send_.empty());
   send_.Start(now);
   send_.OnRtt(rtt_);
   last_target_ = send_.target();
