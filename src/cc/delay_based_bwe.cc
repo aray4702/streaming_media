@@ -43,6 +43,78 @@ std::optional<InterArrival::Deltas> InterArrival::OnPacket(Timestamp send_time, 
   return out;
 }
 
+// --- InterArrivalDelta ------------------------------------------------------------------
+
+namespace {
+constexpr TimeDelta kBurstDeltaThreshold = TimeDelta::Millis(5);
+constexpr TimeDelta kMaxBurstDuration = TimeDelta::Millis(100);
+}  // namespace
+
+std::optional<InterArrivalDelta::Deltas> InterArrivalDelta::ComputeDeltas(Timestamp send_time, Timestamp arrival_time,
+                                                                          Timestamp system_time, size_t packet_size) {
+  std::optional<Deltas> out;
+  if (current_.IsFirstPacket()) {
+    // Not enough data yet: store it until two groups are complete.
+    current_.send_time = send_time;
+    current_.first_send_time = send_time;
+    current_.first_arrival = arrival_time;
+  } else if (current_.first_send_time > send_time) {
+    return std::nullopt;  // Reordered packet.
+  } else if (NewTimestampGroup(arrival_time, send_time)) {
+    if (prev_.complete_time.IsFinite()) {
+      Deltas d;
+      d.send_delta = current_.send_time - prev_.send_time;
+      d.arrival_delta = current_.complete_time - prev_.complete_time;
+      TimeDelta system_time_delta = current_.last_system_time - prev_.last_system_time;
+      if (d.arrival_delta - system_time_delta >= kArrivalTimeOffsetThreshold) {
+        Reset();
+        return std::nullopt;
+      }
+      if (d.arrival_delta < TimeDelta::Zero()) {
+        // The group was reordered after its local arrival timestamp.
+        ++num_consecutive_reordered_packets_;
+        if (num_consecutive_reordered_packets_ >= kReorderedResetThreshold) Reset();
+        return std::nullopt;
+      }
+      num_consecutive_reordered_packets_ = 0;
+      d.size_delta = static_cast<int>(current_.size) - static_cast<int>(prev_.size);
+      out = d;
+    }
+    prev_ = current_;
+    current_.first_send_time = send_time;
+    current_.send_time = send_time;
+    current_.first_arrival = arrival_time;
+    current_.size = 0;
+  } else {
+    current_.send_time = std::max(current_.send_time, send_time);
+  }
+  current_.size += packet_size;
+  current_.complete_time = arrival_time;
+  current_.last_system_time = system_time;
+  return out;
+}
+
+bool InterArrivalDelta::NewTimestampGroup(Timestamp arrival_time, Timestamp send_time) const {
+  if (current_.IsFirstPacket()) return false;
+  if (BelongsToBurst(arrival_time, send_time)) return false;
+  return send_time - current_.first_send_time > send_time_group_length_;
+}
+
+bool InterArrivalDelta::BelongsToBurst(Timestamp arrival_time, Timestamp send_time) const {
+  TimeDelta arrival_time_delta = arrival_time - current_.complete_time;
+  TimeDelta send_time_delta = send_time - current_.send_time;
+  if (send_time_delta == TimeDelta::Zero()) return true;
+  TimeDelta propagation_delta = arrival_time_delta - send_time_delta;
+  return propagation_delta < TimeDelta::Zero() && arrival_time_delta <= kBurstDeltaThreshold &&
+         arrival_time - current_.first_arrival < kMaxBurstDuration;
+}
+
+void InterArrivalDelta::Reset() {
+  num_consecutive_reordered_packets_ = 0;
+  current_ = SendTimeGroup();
+  prev_ = SendTimeGroup();
+}
+
 // --- TrendlineEstimator -------------------------------------------------------------
 
 void TrendlineEstimator::Update(double recv_delta_ms, double send_delta_ms, double arrival_ms) {
@@ -222,11 +294,15 @@ DelayBasedBwe::DelayBasedBwe(Config cfg) : cfg_(cfg), trendline_(cfg.trendline),
 DataRate DelayBasedBwe::OnPacketResults(const std::vector<PacketResult>& results, std::optional<DataRate> acked,
                                         std::optional<DataRate> probe_estimate, Timestamp now) {
   ++stats_.feedbacks;
-  for (const auto& r : results) {
-    if (!r.received()) continue;
-    if (auto d = inter_arrival_.OnPacket(r.send_time, r.receive_time, r.size)) {
-      trendline_.Update(d->recv_delta.ms_f(), d->send_delta.ms_f(), r.receive_time.us() / 1000.0);
-      stats_.trend.Add(std::fabs(trendline_.modified_trend()));
+  if (cfg_.version >= 2) {
+    OnPacketResultsV2(results, now);
+  } else {
+    for (const auto& r : results) {
+      if (!r.received()) continue;
+      if (auto d = inter_arrival_.OnPacket(r.send_time, r.receive_time, r.size)) {
+        trendline_.Update(d->recv_delta.ms_f(), d->send_delta.ms_f(), r.receive_time.us() / 1000.0);
+        stats_.trend.Add(std::fabs(trendline_.modified_trend()));
+      }
     }
   }
   BandwidthUsage usage = trendline_.State();
@@ -253,6 +329,36 @@ DataRate DelayBasedBwe::OnPacketResults(const std::vector<PacketResult>& results
   return r;
 }
 
+// libwebrtc DelayBasedBwe::IncomingPacketFeedbackVector / IncomingPacketFeedback.
+void DelayBasedBwe::OnPacketResultsV2(const std::vector<PacketResult>& results, Timestamp now) {
+  constexpr TimeDelta kStreamTimeOut = TimeDelta::Seconds(2);
+  constexpr TimeDelta kSendTimeGroupLength = TimeDelta::Millis(5);
+  // TransportPacketsFeedback::SortedByReceiveTime (PacketResult::ReceiveTimeOrder).
+  std::vector<PacketResult> sorted;
+  for (const auto& r : results)
+    if (r.received()) sorted.push_back(r);
+  std::sort(sorted.begin(), sorted.end(), [](const PacketResult& a, const PacketResult& b) {
+    if (a.receive_time != b.receive_time) return a.receive_time < b.receive_time;
+    if (a.send_time != b.send_time) return a.send_time < b.send_time;
+    return a.seq < b.seq;
+  });
+  if (sorted.empty()) return;  // "Very late feedback received."
+  for (const auto& r : sorted) {
+    // Reset if the stream has timed out.
+    if (!last_seen_packet_.IsFinite() || now - last_seen_packet_ > kStreamTimeOut) {
+      if (last_seen_packet_.IsFinite()) ++stats_.stream_resets;
+      inter_arrival_delta_ = InterArrivalDelta(kSendTimeGroupLength);
+      trendline_ = TrendlineEstimator(cfg_.trendline);
+    }
+    last_seen_packet_ = now;
+    auto d = inter_arrival_delta_.ComputeDeltas(r.send_time, r.receive_time, now, static_cast<size_t>(r.size.bytes()));
+    if (!d) continue;
+    // libwebrtc passes integer milliseconds as the arrival time.
+    trendline_.Update(d->arrival_delta.ms_f(), d->send_delta.ms_f(), std::round(r.receive_time.us() / 1000.0));
+    stats_.trend.Add(std::fabs(trendline_.modified_trend()));
+  }
+}
+
 void DelayBasedBwe::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("estimate_kbps", aimd_.estimate().kbps());
   w.Gauge("trend", trendline_.trend());
@@ -262,6 +368,7 @@ void DelayBasedBwe::ExportMetrics(MetricsWriter& w) const {
   w.Counter("overuse_signals", stats_.overuse_signals);
   w.Counter("underuse_signals", stats_.underuse_signals);
   w.Counter("decreases", stats_.decreases);
+  w.Counter("stream_resets", stats_.stream_resets);
   w.Hist("abs_modified_trend", stats_.trend);
 }
 

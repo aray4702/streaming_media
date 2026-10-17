@@ -57,6 +57,44 @@ class InterArrival {
   Group current_, prev_;
 };
 
+// libwebrtc modules/congestion_controller/goog_cc/inter_arrival_delta.{h,cc}
+// (`cc v2`). Groups packets by send time (a group spans at most
+// `send_time_group_length` from its first packet; packets that arrive as a
+// burst stay in the group, BelongsToBurst), drops packets reordered across
+// groups, resets after 3 consecutive groups with a negative arrival delta or
+// a 3 s jump of arrival time against the system clock.
+class InterArrivalDelta {
+ public:
+  static constexpr int kReorderedResetThreshold = 3;
+  static constexpr TimeDelta kArrivalTimeOffsetThreshold = TimeDelta::Seconds(3);
+  explicit InterArrivalDelta(TimeDelta send_time_group_length) : send_time_group_length_(send_time_group_length) {}
+  struct Deltas {
+    TimeDelta send_delta;
+    TimeDelta arrival_delta;
+    int size_delta = 0;
+  };
+  // Returns the deltas between the last two completed groups when the packet
+  // starts a new group.
+  std::optional<Deltas> ComputeDeltas(Timestamp send_time, Timestamp arrival_time, Timestamp system_time, size_t packet_size);
+
+ private:
+  struct SendTimeGroup {
+    size_t size = 0;
+    Timestamp first_send_time = Timestamp::MinusInfinity();
+    Timestamp send_time = Timestamp::MinusInfinity();
+    Timestamp first_arrival = Timestamp::MinusInfinity();
+    Timestamp complete_time = Timestamp::MinusInfinity();
+    Timestamp last_system_time = Timestamp::MinusInfinity();
+    bool IsFirstPacket() const { return !complete_time.IsFinite(); }
+  };
+  bool NewTimestampGroup(Timestamp arrival_time, Timestamp send_time) const;
+  bool BelongsToBurst(Timestamp arrival_time, Timestamp send_time) const;
+  void Reset();
+  TimeDelta send_time_group_length_;
+  SendTimeGroup current_, prev_;
+  int num_consecutive_reordered_packets_ = 0;
+};
+
 struct TrendlineConfig {
   size_t window = 20;
   double smoothing = 0.9;
@@ -134,6 +172,7 @@ class AimdRateController {
 };
 
 struct DelayBweStats {
+  uint64_t stream_resets = 0;  // v2: kStreamTimeOut (2 s without feedback) resets.
   uint64_t feedbacks = 0;
   uint64_t overuse_signals = 0;
   uint64_t underuse_signals = 0;
@@ -147,6 +186,10 @@ class DelayBasedBwe : public MetricsSource {
     AimdConfig aimd;
     TrendlineConfig trendline;
     EventSink* events = nullptr;
+    // 1: the original estimator. 2 (`cc v2`): libwebrtc's DelayBasedBwe
+    // front end: feedback sorted by receive time, InterArrivalDelta, 2 s
+    // stream time-out. The rate control is still the same in both.
+    int version = 1;
   };
   DelayBasedBwe() : DelayBasedBwe(Config{}) {}
   explicit DelayBasedBwe(Config cfg);
@@ -164,7 +207,10 @@ class DelayBasedBwe : public MetricsSource {
 
  private:
   Config cfg_;
+  void OnPacketResultsV2(const std::vector<PacketResult>& results, Timestamp now);
   InterArrival inter_arrival_;
+  InterArrivalDelta inter_arrival_delta_{TimeDelta::Millis(5)};
+  Timestamp last_seen_packet_ = Timestamp::MinusInfinity();
   TrendlineEstimator trendline_;
   AimdRateController aimd_;
   BandwidthUsage last_usage_ = BandwidthUsage::kNormal;

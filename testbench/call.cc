@@ -312,6 +312,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
     if (s.pacer_v2) c.send_side.pacer.version = cc::PacerVersion::kV2;
     if (s.allocator_v2) c.send_side.allocator_version = 2;
+    if (s.cc_v2) c.send_side.gcc.version = 2;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
     if (s.tcc_v2) c.transport_feedback_version = 2;
