@@ -2,10 +2,8 @@
 
 # streaming_media
 
-**Vision:** people interact with AI using streaming audio and video.
-
-**Mission:** develop and maintain an audio/video streaming library that
-targets user experience on various platforms, devices and links.
+Human interacts with AI using streaming audio and video. This project will develop and maintain an audio/video streaming library that
+targets human-AI experience on various platforms, devices and links.
 
 streaming_media is a real-time audio/video streaming library, from servers
 and browsers to phones and embedded devices, designed to keep calls working
