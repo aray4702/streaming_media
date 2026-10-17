@@ -82,6 +82,10 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
 
 void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
 
+void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
+  Apply(gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now), now);
+}
+
 void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   // Reserve the extensions written at release, so the pacer budgets the size
   // that goes on the wire.

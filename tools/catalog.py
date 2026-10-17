@@ -262,16 +262,36 @@ ALGORITHMS = [
                       "and so does the simulator now. Utilization rose to ~80%, with queue p95 of 20-33 ms."),
     dict(id="5.3", slug="loss-based-bwe", title="Loss-based bandwidth estimation",
          problems=["Unknown or changing available bandwidth -> GCC: loss-based estimation"],
-         headers=["cc/loss_based_bwe.h"], unit=["LossBwe"], e2e=["E2E_LossBwe"],
+         headers=["cc/loss_based_bwe.h", "cc/loss_based_bwe_v2.h", "cc/send_side_bandwidth_estimation.h"],
+         unit=["LossBwe", "LossBweV2", "SendSideBweV2", "GccV2Loss"], e2e=["E2E_LossBwe"],
          bench=["cc/Q_LossBwe_15pct"],
          scenario="An 8 Mbps link with 15% versus 1% random loss: heavy loss must push the rate far below "
                   "capacity, light loss must not.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
-               "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up.",
+               "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up. "
+               "`cc v2` (#12) is libwebrtc's code instead: `LossBasedBweV2` (`loss_based_bwe_v2.h`, CreateConfig's "
+               "defaults) fits the loss model p = q + (1 - q)(R - B)/R to 15 observations of at least 250 ms "
+               "(byte loss rate, weights 0.9^age) by one Newton step per candidate bandwidth (current x 1.02 / "
+               "1.0 / 0.95, the acked rate, a higher delay-based estimate), bounds the result by the instant upper "
+               "bound 100 kbps / (loss - 5%) and the acked rate, holds after a decrease (300 ms doubling to 60 s), "
+               "limits increases to 1.3x per 300 ms and 1.5x the acked rate, and reports the state the probe "
+               "controller reads. A packet counts as lost only when a feedback covers it and reports it not "
+               "received; a later report as received removes it again. `SendSideBandwidthEstimation` "
+               "(`send_side_bandwidth_estimation.h`) owns the target: it takes the loss-based result once three "
+               "observations exist, trusts the delay-based estimate in the first 2 s after the first receiver "
+               "report, falls back to the receiver-report loss rule before that, and cuts x0.8 per second when "
+               "the propagation RTT is above 3 s. Remaining differences: the report-block loss deltas come from "
+               "`rtp::Session` (not libwebrtc's `RtpTransportControllerSend`, which is not in `reference/`, #57), "
+               "no field trials, and `ProbeController` reads the loss-based state but not "
+               "`LossBasedState::kIncreaseUsingPadding` padding (the pacer sends probes, not loss-based padding).",
          verification="Defect found: loss was measured over 20-packet intervals, and a lucky interval with no "
                       "loss (about 4% likely at 15% loss) let the estimate jump from 153 to 2 338 kbps. Now loss "
-                      "windows are at least 1 s and decisions are applied to the current target."),
+                      "windows are at least 1 s and decisions are applied to the current target. `cc v2`: the "
+                      "unit tests port libwebrtc's `loss_based_bwe_v2_test.cc` cases with their numbers; the "
+                      "scenarios `issue_12_lossbwe_*` check 5% random loss (utilization 76-82% against libwebrtc's "
+                      "76%), burst loss, a policer, a shallow buffer and congestive loss, and a lossless jittery "
+                      "link."),
     dict(id="5.4", slug="gcc-controller", title="Send-side bandwidth estimation (GCC network controller)",
          problems=["Unknown or changing available bandwidth -> GCC (delay-based and loss-based estimation)"],
          headers=["cc/send_side_bwe.h"], unit=["SendSideBwe"], e2e=["E2E_SendSideBwe"],
@@ -342,8 +362,8 @@ ALGORITHMS = [
                "the stream requests them, none while the estimate is limited by delay increase or loss), "
                "`ProbeBitrateEstimator` in libwebrtc mode (receive/send ratio over 2 rejected, clusters expire "
                "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in `pacer v2`). "
-               "Remaining differences: the loss-based state and the RTT limit do not yet limit probing (#12), "
-               "no `NetworkStateEstimate`, the padding sizes of `RTPSender::GeneratePadding` come from memory "
+               "The loss-based state and the RTT limit decide the bandwidth-limited cause (#12, `GetBandwidthLimitedCause`). "
+               "Remaining differences: no `NetworkStateEstimate`, the padding sizes of `RTPSender::GeneratePadding` come from memory "
                "(`rtp_sender.cc` is not in `reference/`, #57), and `cc v1` keeps the old controller until #61.",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
                       "within 30 s."),

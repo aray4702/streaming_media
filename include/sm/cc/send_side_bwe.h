@@ -14,6 +14,7 @@
 #include "sm/cc/delay_based_bwe.h"
 #include "sm/cc/loss_based_bwe.h"
 #include "sm/cc/probing.h"
+#include "sm/cc/send_side_bandwidth_estimation.h"
 #include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
@@ -29,7 +30,8 @@ struct GccConfig {
   // 1: the original controller. 2 (`cc v2`): libwebrtc's GoogCC, ported in
   // stages (#61); so far the delay detector's front end (#19), the acked-rate
   // estimator and AimdRateControl (#15), and the AlrDetector, ProbeController
-  // and ProbeBitrateEstimator (#48; the BitrateProber is in `pacer v2`).
+  // and ProbeBitrateEstimator (#48; the BitrateProber is in `pacer v2`), and
+  // SendSideBandwidthEstimation with LossBasedBweV2 (#12).
   int version = 1;
   // `cc v2`: StreamsConfig::requests_alr_probing, which a screen-share stream
   // sets; periodic ALR probes are off otherwise.
@@ -51,7 +53,11 @@ class GccController : public MetricsSource {
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
-  void OnRemb(DataRate remb) { remb_ = remb; }
+  void OnRemb(DataRate remb);
+  // `cc v2`: GoogCcNetworkController::OnTransportLossReport. The loss and packet
+  // counts are the deltas between two receiver reports (summed over the report
+  // blocks). Used for the loss rate until LossBasedBweV2 has three observations.
+  NetworkControlUpdate OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
   // `cc v2`: StreamsConfig::max_total_allocated_bitrate, the sum of the maximum
   // bitrates the allocator hands out: a rise probes up to twice that rate, and
   // it caps every probe at twice that rate. Returns the clusters to send. No
@@ -73,6 +79,7 @@ class GccController : public MetricsSource {
   const AlrDetector& alr_detector() const { return alr_; }
   const ProbeControllerV2& probe_controller_v2() const { return probe2_; }
   const LossBasedBwe& loss_bwe() const { return loss_; }
+  const SendSideBandwidthEstimation& send_side_bwe() const { return ssbe_; }
   const SendHistory& history() const { return history_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -85,6 +92,7 @@ class GccController : public MetricsSource {
   SendHistory history_;
   DelayBasedBwe delay_;
   LossBasedBwe loss_;
+  SendSideBandwidthEstimation ssbe_;  // `cc v2`.
   AcknowledgedBitrateEstimator acked_;
   AckedBitrateEstimatorV2 acked_v2_;
   ProbeController probe_ctrl_;
@@ -94,6 +102,8 @@ class GccController : public MetricsSource {
   bool first_feedback_received_ = false;
   bool previously_in_alr_ = false;
   bool last_is_bandwidth_limited_ = true;
+  bool first_packet_sent_ = false;
+  Timestamp last_now_ = Timestamp::Micros(0);
   std::optional<DataRate> remb_;
   DataRate target_;
   DataRate last_reported_;

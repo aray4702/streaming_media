@@ -26,6 +26,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -320,6 +321,13 @@ class Session : public MetricsSource {
   void UpdateTransportFeedbackRate();
   DataRate last_target_ = DataRate::Zero();
   TimeDelta rtt_ = TimeDelta::Millis(100);
+  // Last report block per reported SSRC, for the loss between two reports (RtpTransportControllerSend::
+  // OnReceivedRtcpReceiverReportBlocks).
+  struct LastReportBlock {
+    uint32_t extended_highest_seq = 0;
+    int32_t cumulative_lost = 0;
+  };
+  std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
   SessionStats stats_;
 };

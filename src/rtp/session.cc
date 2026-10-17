@@ -341,6 +341,20 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     e.rtt = rtt_;
     Emit(e);
   }
+  {
+    // Loss from all report blocks since their previous report.
+    int64_t packets_delta = 0, lost_delta = 0;
+    for (const auto& rb : in.report_blocks) {
+      auto [it, inserted] = last_report_blocks_.try_emplace(rb.ssrc);
+      if (!inserted) {
+        packets_delta += static_cast<int32_t>(rb.extended_highest_seq - it->second.extended_highest_seq);
+        lost_delta += rb.cumulative_lost - it->second.cumulative_lost;
+      }
+      it->second.extended_highest_seq = rb.extended_highest_seq;
+      it->second.cumulative_lost = rb.cumulative_lost;
+    }
+    if (packets_delta > 0) send_.OnLossReport(lost_delta, packets_delta, now);
+  }
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;
     e.type = SessionEventType::kReportBlock;
