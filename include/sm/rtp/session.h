@@ -83,6 +83,12 @@ struct AudioStreamConfig {
   // Send side: nominal wire rate taken off the target before video is
   // allocated (rates().audio_rate).
   DataRate nominal_rate = DataRate::Zero();
+  // Send side, allocator version 2: the rate the stream registers with the bitrate
+  // allocator as both its minimum and maximum. libwebrtc registers the codec's
+  // payload rate plus the per-packet overhead at the packet interval
+  // (AudioSendStream::GetMinMaxBitrateConstraints); redundancy is not counted.
+  // Zero means `nominal_rate`.
+  DataRate allocation_rate = DataRate::Zero();
   // Receive side.
   timing::AudioJitterBufferConfig jitter_buffer;
 };
@@ -276,6 +282,7 @@ class Session : public MetricsSource {
   struct SendStream {
     std::unique_ptr<RtpSender> sender;
     DataRate nominal_rate = DataRate::Zero();
+    DataRate allocation_rate = DataRate::Zero();
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;

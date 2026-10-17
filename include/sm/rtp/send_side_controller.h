@@ -28,6 +28,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "sm/cc/bitrate_allocator_v2.h"
 #include "sm/cc/congestion_window_pushback.h"
 #include "sm/cc/outage_monitor.h"
 #include "sm/cc/pacer.h"
@@ -58,6 +59,12 @@ struct SendSideConfig {
   TimeDelta repair_window = TimeDelta::Seconds(1);
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
+  // 1: the audio wire rate comes off the target and the video gets the rest,
+  // clamped to [video_min, video_max]. 2: libwebrtc's BitrateAllocator
+  // (call/bitrate_allocator.cc, issue #104) shares the target between the audio
+  // and video streams, and the sum of their minimums is the lower bound of the
+  // target (see ConfigureAllocation()).
+  int allocator_version = 1;
   EventSink* events = nullptr;
 };
 
@@ -104,6 +111,16 @@ class SendSideController : public MetricsSource {
 
   void Start(Timestamp now);
 
+  // allocator_version 2: registers the streams with the allocator, as
+  // AudioSendStream::ConfigureBitrateObserver and VideoSendStreamImpl::
+  // GetAllocationConfig do, and lifts the network controller's lower bound to the
+  // sum of the enforced minimums. Call before Start(). `audio_wire_rate` is the
+  // fixed audio rate (min = max = priority rate, enforce_min true, as for a
+  // constant-bitrate Opus stream); zero means no audio stream. The video stream
+  // (min `video_min`, max `video_max`, enforce_min true: suspend_below_min_bitrate
+  // is off by default) is registered when `video` is true.
+  void ConfigureAllocation(DataRate audio_wire_rate, bool video);
+
   // The stream whose SSRC pads and probes. Not owned.
   void SetPaddingSender(RtpSender* sender) { padding_sender_ = sender; }
 
@@ -136,6 +153,7 @@ class SendSideController : public MetricsSource {
   // Share of the non-audio bytes released in the last `repair_window` (as of the last Process()) that were RTX or FEC.
   double repair_share() const;
 
+  const cc::BitrateAllocatorV2& allocator() const { return allocator_; }
   cc::GccController& gcc() { return gcc_; }
   cc::Pacer& pacer() { return pacer_; }
   cc::OutageMonitor& outage() { return outage_; }
@@ -144,7 +162,8 @@ class SendSideController : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  void Apply(const cc::NetworkControlUpdate& u);
+  void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
+  SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
   void ApplyPushback(SendRates& out) const;
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;
@@ -155,6 +174,8 @@ class SendSideController : public MetricsSource {
   cc::Pacer pacer_;
   cc::OutageMonitor outage_;
   cc::CongestionWindowPushback cwnd_;
+  cc::BitrateAllocatorV2 allocator_;
+  bool allocation_configured_ = false;
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;

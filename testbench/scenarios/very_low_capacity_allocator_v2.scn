@@ -1,0 +1,20 @@
+name very_low_capacity_allocator_v2
+describe 100 kbps link with libwebrtc's BitrateAllocator: the sum of the minimums is the target's lower bound (issue #104)
+duration 40s
+allocator v2
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Acceptance for issue #104 (roadmap #64), the very_low_capacity link with
+# `allocator v2`. The target stays on its floor, the sum of the audio minimum
+# (codec rate plus the headers of one packet per 20 ms) and the video minimum,
+# as libwebrtc's does (libwebrtc cc.target_avg_kbps 97.8, send over target for 19.7 s).
+# Seeds 1-5 when this was added: target_avg 104.7-107.1 kbps, send over target
+# 25.3-26.3 s, concealed 1.2-1.6 %, loss 25.9-26.9 %, render fps 1.0-1.6.
+# libwebrtc on the same link (parity-data, mean of 10 seeds): concealed 0.5 %, loss 29.6 %,
+# render fps 6.0, keyframe requests 3.3. What is left is owned by other items:
+# audio concealment by NetEq (#62), render fps and keyframe requests by #23/#37/#24.
+# Target (issue #104): audio.concealed_pct within 0.7 of libwebrtc's, render_fps and loss within the parity band.
+expect cc.target_avg_kbps > 90
+expect cc.target_avg_kbps < 125
+expect cc.send_over_target_ms < 30000
+expect audio.concealed_pct < 3
+expect net.loss_pct < 35

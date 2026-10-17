@@ -43,6 +43,10 @@ class GccController : public MetricsSource {
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
   void OnRemb(DataRate remb) { remb_ = remb; }
+  // The sum of the minimums the bitrate allocator must fund is a lower bound for
+  // the estimates and the target (GoogCC use_min_allocatable_as_lower_bound_,
+  // ClampConstraints). Never below the configured minimum.
+  void SetMinAllocatable(DataRate r);
   // Periodic tick (e.g. every 25 ms): ALR probing and outage handling.
   NetworkControlUpdate OnProcessInterval(Timestamp now, DataRate current_send_rate);
   // Hard reset after a network route change / outage recovery.
@@ -59,6 +63,7 @@ class GccController : public MetricsSource {
  private:
   NetworkControlUpdate MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes);
   GccConfig cfg_;
+  DataRate configured_min_;
   SendHistory history_;
   DelayBasedBwe delay_;
   LossBasedBwe loss_;

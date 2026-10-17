@@ -270,3 +270,30 @@ SM_TEST(SendSideController, FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2
   sender.OnNack(std::vector<uint16_t>{seq}, now, rtt);
   SM_EXPECT_EQ(sender.TakePackets().size(), 1u);
 }
+
+// Issue #104: the sum of the enforced minimums (audio + video) is the lower bound
+// of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
+// not run below what it must send.
+SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
+  SendSideConfig cfg;
+  cfg.allocator_version = 2;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
+  cfg.video_min = DataRate::KilobitsPerSec(50);
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);
+  c.Start(Timestamp::Millis(0));
+  SM_EXPECT_GE(c.target().kbps(), 100.0);
+  const SendRates r = c.ComputeMeasuredRates(DataRate::KilobitsPerSec(50));
+  SM_EXPECT_NEAR(r.audio_rate.kbps(), 50.0, 0.01);
+  SM_EXPECT_NEAR(r.video_target.kbps(), 50.0, 0.01);  // Its minimum, with no repair traffic yet.
+  SM_EXPECT_EQ(c.allocator().limits().min_allocatable.kbps(), 100.0);
+}
+
+SM_TEST(SendSideController, AllocatorV1KeepsTheConfiguredMinimum) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);  // No effect on version 1.
+  c.Start(Timestamp::Millis(0));
+  SM_EXPECT_NEAR(c.target().kbps(), 60.0, 0.01);
+}
