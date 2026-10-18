@@ -17,7 +17,8 @@ if(SM_BUILD_TESTS)
   # Unit tests of the bench's own metric computations.
   sm_add_test_exe(sm_unit_testbench LABEL unit DEPS sm_testbench_lib
     SOURCES ${PROJECT_SOURCE_DIR}/tests/unit/testbench/testbench_metrics_test.cc
-    SUITES TestbenchMetrics)
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/opus_model_test.cc
+    SUITES TestbenchMetrics OpusModel)
   # One CTest entry per scenario; a failed expectation fails the test.
   file(GLOB SM_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scn)
   foreach(scn ${SM_SCENARIOS})

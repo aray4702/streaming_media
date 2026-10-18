@@ -259,6 +259,8 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "seed") {
       if (!need(2)) return fail("usage: seed <integer>");
       s.seed = std::strtoull(tok[1].c_str(), nullptr, 10);
+    } else if (key == "audio" && tok.size() == 2 && (tok[1] == "v1" || tok[1] == "v2")) {
+      s.audio_v2 = tok[1] == "v2";  // `audio v1|v2`: the Opus send path (issue #126); `audio on|off` is the stream.
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: " + key + " on|off");
@@ -392,6 +394,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
   if (s.cc_v2 != d.cc_v2) o += std::string("cc ") + (s.cc_v2 ? "v2" : "v1") + "\n";
+  if (s.audio_v2 != d.audio_v2) o += std::string("audio ") + (s.audio_v2 ? "v2" : "v1") + "\n";
   if (s.allocator_v2 != d.allocator_v2) o += std::string("allocator ") + (s.allocator_v2 ? "v2" : "v1") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";

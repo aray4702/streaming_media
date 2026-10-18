@@ -10,6 +10,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "opus_model.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/random.h"
@@ -361,6 +362,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
               : DataRate::Zero();
   Random enc_rng(s.seed + 13);
+  // `audio v2`: Opus's encoded size follows the signal (testbench/opus_model.h); v1 is a constant frame.
+  OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
   SpeechDecoder decoder(speech, frame_samples);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
@@ -543,7 +546,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // --- Sender: audio --------------------------------------------------------
     if (s.audio && t % 20 == 0) {
-      std::vector<uint8_t> frame(audio_frame_bytes, static_cast<uint8_t>(t / 20));
+      size_t frame_bytes = audio_frame_bytes;
+      if (s.audio_v2) {
+        const size_t off = static_cast<size_t>(t / 20) * frame_samples;
+        const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
+        frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
+      }
+      std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(t / 20));
       sender.SendAudio(audio_send, {static_cast<uint32_t>(t * sr / 1000), frame, false}, now);
     }
 

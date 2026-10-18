@@ -69,7 +69,11 @@ ALGORITHMS = [
                "Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
-         verification="No defects found; results match the analytical p^2 and p^3."),
+         verification="No defects found; results match the analytical p^2 and p^3. The test bench's `audio v2` (issue #126) "
+                      "feeds it frames the size of libwebrtc's Opus output (`testbench/opus_model.h`): speech of 72 B on "
+                      "average, digital silence of 3-35 B. Deviation: the sizes are a model fitted to libwebrtc's forward-link "
+                      "trace, not libopus; the encoder defaults (20 ms, 32 kbps, VBR, DTX off, 6-510 kbps) follow "
+                      "`audio_encoder_opus_config.h`."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
          headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
