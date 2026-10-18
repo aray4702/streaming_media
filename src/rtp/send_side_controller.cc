@@ -101,6 +101,28 @@ void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packet
   Apply(gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now), now);
 }
 
+void SendSideController::SetPaddingSender(RtpSender* sender) {
+  padding_sender_ = sender;
+  // With `pacer v2` and `rtx v2` padding is made as libwebrtc's RTPSender::GeneratePadding does:
+  // RTX payload padding from the history, then empty padding, each packet with its real size.
+  // Otherwise the pacer keeps fixed-size placeholders that MakePadding() fills in when sent.
+  if (!sender || pacer_.version() != cc::PacerVersion::kV2 || !sender->config().rtx_ssrc || sender->config().rtx.version < 2) {
+    pacer_.SetPaddingGenerator(nullptr);
+    return;
+  }
+  pacer_.SetPaddingGenerator([this](DataSize target, Timestamp now) {
+    std::vector<cc::PacedPacket> out;
+    for (SenderPacket& sp : padding_sender_->GeneratePadding(static_cast<size_t>(target.bytes()), padding_sender_->last_rtp_timestamp(), now)) {
+      WriteSendExtensions(sp.packet, 0, now);  // Reserve the extensions written at release.
+      const uint64_t id = next_id_++;
+      out.push_back({id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now});
+      queued_[id] = std::move(sp);
+      ++stats_.padding;
+    }
+    return out;
+  });
+}
+
 void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   // Reserve the extensions written at release, so the pacer budgets the size
   // that goes on the wire.

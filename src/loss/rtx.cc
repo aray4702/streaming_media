@@ -35,6 +35,8 @@ constexpr size_t kMaxCapacity = 9600;
 constexpr TimeDelta kMinPacketDuration = TimeDelta::Seconds(1);
 constexpr int kMinPacketDurationRtt = 3;
 constexpr int kPacketCullingDelayFactor = 3;
+constexpr size_t kOldPayloadPaddingSizeHysteresis = 100;
+constexpr uint16_t kMaxOldPayloadPaddingSequenceNumber = 1 << 13;
 }  // namespace
 
 RtxSender::RtxSender(RtxConfig cfg)
@@ -135,6 +137,12 @@ void RtxSender::OnPacketSent(const RtpPacket& p, Timestamp now) {
     }
     for (; index < 0; ++index) v2_.emplace_front();
     while (static_cast<int>(v2_.size()) <= index) v2_.emplace_back();
+    // PaddingMode::kRecentLargePacket.
+    if (!large_payload_packet_ ||
+        p.payload.size() + kOldPayloadPaddingSizeHysteresis > large_payload_packet_->payload.size() ||
+        AheadOf<uint16_t>(p.seq, static_cast<uint16_t>(large_payload_packet_->seq + kMaxOldPayloadPaddingSequenceNumber))) {
+      large_payload_packet_ = p;
+    }
     Stored& s = v2_[static_cast<size_t>(index)];
     s.packet = p;
     s.send_time = now;
@@ -149,6 +157,13 @@ void RtxSender::OnPacketSent(const RtpPacket& p, Timestamp now) {
   s.sent = now;
   s.last_resent = Timestamp::MinusInfinity();
   ++stats_.packets_stored;
+}
+
+std::optional<RtpPacket> RtxSender::GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept) {
+  if (cfg_.version < 2 || !large_payload_packet_) return std::nullopt;
+  if (!accept(*large_payload_packet_)) return std::nullopt;
+  ++stats_.payload_padding;
+  return MakeRtxPacket(*large_payload_packet_, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++);
 }
 
 std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
@@ -201,6 +216,7 @@ void RtxSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("not_found", stats_.not_found);
   w.Counter("throttled", stats_.throttled);
   w.Counter("culled_acked", stats_.culled_acked);
+  w.Counter("payload_padding", stats_.payload_padding);
   w.Counter("bytes_retransmitted", static_cast<uint64_t>(stats_.bytes_retransmitted));
 }
 

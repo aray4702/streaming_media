@@ -334,8 +334,16 @@ bool PacingController::GetPendingPacket(const ProbeSendInfo& pacing_info, Timest
   // The first packet of a probe is a small padding packet, so the estimate has a
   // more reliable start window.
   if (is_probe && pacing_info.bytes_sent == 0) {
-    *out = MakePadding(cfg_.probe_start_padding, now);
-    return true;
+    if (padding_generator_) {
+      std::vector<PacedPacket> padding = padding_generator_(DataSize::Bytes(1), now);
+      if (!padding.empty()) {
+        *out = std::move(padding.front());
+        return true;
+      }
+    } else {
+      *out = MakePadding(cfg_.probe_start_padding, now);
+      return true;
+    }
   }
   if (queue_packets_ == 0) return false;
   // Unpaced packets and probes are exempt from the send checks.
@@ -354,7 +362,7 @@ void PacingController::Account(PacedPacket& p, Timestamp now, const ProbeSendInf
   const size_t i = static_cast<size_t>(p.priority);
   ++stats_.sent_packets[i];
   stats_.sent_bytes[i] += p.size.bytes();
-  if (!p.is_padding) stats_.queue_delay_ms[i].Add((now - p.enqueue_time).ms_f());
+  if (p.priority != PacketPriority::kPadding) stats_.queue_delay_ms[i].Add((now - p.enqueue_time).ms_f());
   if (pacing_info.cluster_id >= 0) {
     p.probe_cluster = pacing_info.cluster_id;
     ++stats_.probe_packets;
@@ -379,10 +387,13 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
   if (ShouldSendKeepalive(now)) {
     DataSize keepalive;
     if (seen_first_packet_) {
-      PacedPacket p = MakePadding(cfg_.padding_packet, now);
-      keepalive = p.size;
-      Account(p, now, ProbeSendInfo{}, sent);
-      ++stats_.keepalives;
+      // GeneratePadding(1 byte), sent at once.
+      for (PacedPacket& p : padding_generator_ ? padding_generator_(DataSize::Bytes(1), now)
+                                               : std::vector<PacedPacket>{MakePadding(cfg_.padding_packet, now)}) {
+        keepalive += p.size;
+        Account(p, now, ProbeSendInfo{}, sent);
+        ++stats_.keepalives;
+      }
     }
     OnPacketSent(PacketPriority::kPadding, keepalive, now);
   }
@@ -426,7 +437,14 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
         last_process_time_ = std::max(last_process_time_, target_send_time);
       }
       const DataSize pad = PaddingToAdd(recommended_probe_size, data_sent);
-      if (pad > DataSize::Zero()) {
+      if (pad > DataSize::Zero() && padding_generator_) {
+        std::vector<PacedPacket> padding = padding_generator_(pad, now);
+        if (!padding.empty()) {
+          for (PacedPacket& g : padding) Push(now, std::move(g));
+          continue;  // Send the padding that was just queued.
+        }
+        UpdatePaddingBudgetWithSentData(pad);  // Can't generate padding: still charge the budget.
+      } else if (pad > DataSize::Zero()) {
         const int64_t n = (pad.bytes() + cfg_.padding_packet.bytes() - 1) / cfg_.padding_packet.bytes();
         for (int64_t k = 0; k < n; ++k) Push(now, MakePadding(cfg_.padding_packet, now));
         continue;  // Send the padding that was just queued.

@@ -86,6 +86,7 @@ struct RtpSenderStats {
   int64_t fec_payload_bytes = 0;
   uint64_t rtx_packets = 0;
   uint64_t padding_packets = 0;
+  uint64_t payload_padding_packets = 0;  // RTX payload padding (GeneratePadding), a subset of padding_packets.
   uint64_t nacks_without_rtx = 0;
   uint64_t mid_packets = 0;
   uint64_t audio_level_packets = 0;
@@ -135,6 +136,18 @@ class RtpSender : public MetricsSource {
   // padding). On the RTX SSRC when RTX is configured, like libwebrtc's
   // RTPSender::GeneratePadding, else on the media SSRC.
   SenderPacket MakePadding(size_t total_bytes, uint32_t rtp_timestamp, Timestamp now);
+
+  // RTPSender::GeneratePadding (rtp_sender.cc:418-459), for a sender with RTX and
+  // `rtx v2`: `target_bytes` of padding for the pacer, as a list of packets with their real
+  // sizes. A video sender first answers with RTX payload padding, the newest large packet of
+  // the history resent on the RTX SSRC (AppendPayloadPadding: only while at least
+  // kMinPayloadPaddingBytes (50) are left, and never a packet that takes the total over
+  // kMaxPaddingSizeFactor (3.0) x the target); the remainder is empty padding on the RTX
+  // SSRC, packets of kMaxPaddingLength (255) bytes (an audio sender: of the bytes left, at
+  // least kMinAudioPaddingLength (50)). Like libwebrtc, with RTX the empty padding waits for
+  // a media packet unless transport-cc or abs-send-time is registered. All of them are
+  // PacketKind::kPadding at padding priority; nothing is queued, the caller enqueues them.
+  std::vector<SenderPacket> GeneratePadding(size_t target_bytes, uint32_t rtp_timestamp, Timestamp now);
 
   // The peer acknowledged the MID: stop repeating it.
   void AcknowledgeMid() { mid_remaining_ = 0; }

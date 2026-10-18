@@ -25,6 +25,12 @@ loss::FecConfig MakeFecConfig(const RtpSenderConfig& c) {
   if (!f.events) f.events = c.events;
   return f;
 }
+// rtp_sender.cc:54-62 and rtp_sender.h:44.
+constexpr size_t kMinAudioPaddingLength = 50;
+constexpr size_t kMinPayloadPaddingBytes = 50;
+constexpr double kMaxPaddingSizeFactor = 3.0;
+constexpr size_t kMaxPaddingLength = 255;
+constexpr size_t kRtxHeaderSize = 2;
 }  // namespace
 
 RtpSender::RtpSender(RtpSenderConfig cfg)
@@ -167,6 +173,52 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
   return {std::move(p), PacketKind::kPadding, cc::PacketPriority::kPadding};
 }
 
+std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32_t rtp_timestamp, Timestamp now) {
+  std::vector<SenderPacket> out;
+  if (!cfg_.rtx_ssrc || cfg_.rtx.version < 2) return out;
+  size_t bytes_left = target_bytes;
+  const bool bwe_extension =
+      cfg_.extensions && (cfg_.extensions->IdOf(sync::uri::kTransportCc) || cfg_.extensions->IdOf(sync::uri::kAbsSendTime));
+  // SupportsRtxPayloadPadding: a video stream (kRtxRedundantPayloads) that has a BWE extension.
+  if (cfg_.video && bwe_extension) {
+    // AppendPayloadPadding.
+    while (bytes_left >= kMinPayloadPaddingBytes) {
+      const size_t max_overshoot = static_cast<size_t>((kMaxPaddingSizeFactor - 1.0) * static_cast<double>(target_bytes) + 0.5);
+      const size_t room = max_overshoot + bytes_left;
+      std::optional<RtpPacket> r = rtx_.GetPayloadPaddingPacket(
+          [&](const RtpPacket& original) { return original.payload.size() + kRtxHeaderSize <= room; });
+      if (!r) break;
+      bytes_left -= std::min(bytes_left, r->payload.size());
+      ++stats_.padding_packets;
+      ++stats_.payload_padding_packets;
+      SM_EVENT(cfg_.events, now, "rtp_sender", "payload_padding", r->payload.size(), r->ssrc);
+      out.push_back({std::move(*r), PacketKind::kPadding, cc::PacketPriority::kPadding});
+      out.back().sender = this;
+    }
+  }
+  // Without abs-send-time or transport-cc a media packet must go first, so the timestamps
+  // used for estimation are right.
+  if (!bwe_extension && stats_.media_packets == 0) return out;
+  const size_t padding_bytes_in_packet =
+      cfg_.video ? std::min(cfg_.max_payload_size, kMaxPaddingLength)
+                 : std::clamp(bytes_left, kMinAudioPaddingLength, std::min(cfg_.max_payload_size, kMaxPaddingLength));
+  while (bytes_left > 0) {
+    // BuildPaddingPacket on the RTX SSRC.
+    RtpPacket p;
+    p.timestamp = rtp_timestamp;
+    p.ssrc = *cfg_.rtx_ssrc;
+    p.payload_type = cfg_.rtx_payload_type;
+    p.seq = rtx_.AllocateSeq();
+    p.padding_size = static_cast<uint8_t>(padding_bytes_in_packet);
+    ++stats_.padding_packets;
+    SM_EVENT(cfg_.events, now, "rtp_sender", "padding", p.padding_size, p.ssrc);
+    out.push_back({std::move(p), PacketKind::kPadding, cc::PacketPriority::kPadding});
+    out.back().sender = this;
+    bytes_left -= std::min(bytes_left, padding_bytes_in_packet);
+  }
+  return out;
+}
+
 std::vector<SenderPacket> RtpSender::TakePackets() {
   std::vector<SenderPacket> out;
   out.swap(out_);
@@ -191,6 +243,7 @@ void RtpSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("fec_packets", stats_.fec_packets);
   w.Counter("rtx_packets", stats_.rtx_packets);
   w.Counter("padding_packets", stats_.padding_packets);
+  w.Counter("payload_padding_packets", stats_.payload_padding_packets);
   w.Counter("nacks_without_rtx", stats_.nacks_without_rtx);
   w.Counter("mid_packets", stats_.mid_packets);
   w.Counter("audio_level_packets", stats_.audio_level_packets);

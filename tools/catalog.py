@@ -39,8 +39,9 @@ ALGORITHMS = [
                "and the oldest is past the retention, at most 9600), leaves when transport feedback acknowledges it, and a "
                "request is ignored while a resend is queued or within one RTT of the last send. Remaining differences: "
                "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "
-               "no payload padding from the history (GetPayloadPaddingPacket), and retransmitted-flush settings are off as in "
-               "the libwebrtc default. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
+               "and retransmitted-flush settings are off as in the libwebrtc default. With `pacer v2` the history also gives payload "
+               "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
+               "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
@@ -330,7 +331,10 @@ ALGORITHMS = [
                "500 ms while paused or congested, and padding at the padding rate 5 ms at a time. The first "
                "packet of a keyframe flushes the queued video, FEC and retransmission packets, as "
                "`PacingController::EnqueuePacket` does (the sender marks keyframes and first-of-frame packets; "
-               "#5). Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
+               "#5). With `rtx v2` the padding is made by `RtpSender::GeneratePadding` (`PacketRouter::GeneratePadding`): RTX payload "
+               "padding from the history first, then 255-byte empty padding packets on the RTX SSRC, each with its real size "
+               "in the pacer queue; the keep-alive and the first packet of a probe ask for 1 byte (#120). Without it the pacer "
+               "queues 224 B placeholders. Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
                "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
                "congestion window (pushback stays on the encoder). `BitrateProber` (#48, `bitrate_prober.h`) times "
                "the probe bursts: a cluster starts when a media packet of at least min(`rate x min_probe_delta`, "
@@ -364,8 +368,7 @@ ALGORITHMS = [
                "`ProbeBitrateEstimator` in libwebrtc mode (receive/send ratio over 2 rejected, clusters expire "
                "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in `pacer v2`). "
                "The loss-based state and the RTT limit decide the bandwidth-limited cause (#12, `GetBandwidthLimitedCause`). "
-               "Remaining differences: no `NetworkStateEstimate`, the padding sizes of `RTPSender::GeneratePadding` come from memory "
-               "(`rtp_sender.cc` is not in `reference/`, #57), and `cc v1` keeps the old controller until #61. "
+               "Remaining differences: no `NetworkStateEstimate`, and `cc v1` keeps the old controller until #61. "
                "The `GoogCcNetworkController` glue (#61) is in `cc v2`: `GetPacingRates` (2.5 x the target until the first "
                "feedback, 1.1 x after; padding rate), the packet-overhead rate off the video allocation "
                "(`RtpVideoSender::OnBitrateUpdated`) and the congestion-window frame drop against the video target. With "

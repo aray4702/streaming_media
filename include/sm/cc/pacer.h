@@ -44,6 +44,8 @@ class Pacer : public MetricsSource {
   explicit Pacer(PacerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
   void Enqueue(PacedPacket p);
+  // v2 only (see PacingController::SetPaddingGenerator); ignored by v1.
+  void SetPaddingGenerator(PaddingGenerator g) { if (v2_) v2_->SetPaddingGenerator(std::move(g)); }
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call every few ms or at
   // NextSendTime().

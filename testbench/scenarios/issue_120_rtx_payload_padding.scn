@@ -1,0 +1,20 @@
+name issue_120_rtx_payload_padding
+describe Wi-Fi to LTE handover with `cc v2`, `pacer v2` and `rtx v2`: padding is RTX payload padding first, as libwebrtc's RTPSender::GeneratePadding (#120)
+# libwebrtc (CI compare-webrtc, issue_23_handover, 10 seeds): net.padding_kbps 0.6, net.rtx_kbps 460, freezes 4.3 (4528 ms).
+# Before #120 the pacer queued 224 B placeholders that the sender filled with empty padding: 14.6 kbps of padding.
+# Acceptance (issue #120): net.padding_kbps and net.rtx_kbps within the parity band of libwebrtc's. The freeze gap is not shown to
+# come from padding and stays with #116.
+cc v2
+pacer v2
+rtx v2
+keyframe v2
+duration 40s
+at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
+at 15s down
+at 16.5s up capacity=1200kbps delay=60ms jitter=15ms loss=1%
+reverse at 0s delay=15ms
+reverse at 15s down
+reverse at 16.5s up delay=60ms
+expect net.padding_kbps < 2
+expect net.rtx_kbps >= 380
+expect net.rtx_kbps <= 600

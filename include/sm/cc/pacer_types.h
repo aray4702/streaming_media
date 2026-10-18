@@ -3,6 +3,8 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
+#include <vector>
 
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
@@ -25,6 +27,13 @@ struct PacedPacket {
   bool is_key_frame = false;
   bool first_packet_of_frame = false;
 };
+
+// PacketRouter::GeneratePadding, as the pacer sees it (pacer v2): the packets that make about
+// `target` of padding, each with its real wire size, `priority` kPadding and an `id` the caller
+// can recognise when the pacer sends it. Empty when no padding can be made. The pacer queues
+// them at the padding level; without a generator it makes fixed-size placeholders
+// (PacingControllerConfig::padding_packet) that the caller fills in when they are sent.
+using PaddingGenerator = std::function<std::vector<PacedPacket>(DataSize target, Timestamp now)>;
 
 struct PacerStats {
   std::array<uint64_t, 5> sent_packets{};
