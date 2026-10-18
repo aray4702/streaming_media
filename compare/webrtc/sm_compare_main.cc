@@ -73,6 +73,11 @@ const std::vector<const char*>& InfoMetrics() {
   static const std::vector<const char*> k = {
       "net.audio_kbps",  "net.video_kbps",  "net.rtx_kbps",       "net.padding_kbps",    "net.fec_kbps",
       "net.audio_loss_pct", "net.video_loss_pct", "net.rtx_loss_pct", "net.padding_loss_pct",
+      // Issue #119: packet sizes offered to the link, and queue drops, per kind.
+      "net.audio_size_p50_b", "net.audio_size_p90_b", "net.audio_size_max_b", "net.audio_queue_drops",
+      "net.video_size_p50_b", "net.video_size_p90_b", "net.video_size_max_b", "net.video_queue_drops",
+      "net.rtx_size_p50_b", "net.rtx_size_p90_b", "net.rtx_size_max_b", "net.rtx_queue_drops",
+      "net.padding_size_p50_b", "net.padding_size_p90_b", "net.padding_size_max_b", "net.padding_queue_drops",
   };
   return k;
 }

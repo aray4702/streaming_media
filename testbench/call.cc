@@ -161,6 +161,10 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"net.video_loss_pct", "Forward link loss of video media packets"},
       {"net.rtx_loss_pct", "Forward link loss of RTX packets that carry a retransmission"},
       {"net.padding_loss_pct", "Forward link loss of padding-only packets (RTP padding, or RTX with no payload)"},
+      {"net.<kind>_queue_drops", "Packets of a kind (audio, video, rtx, padding) dropped by the forward link's drop-tail queue"},
+      {"net.<kind>_size_p50_b / _p90_b / _max_b", "Wire size (payload, RTP/RTCP headers and the modelled UDP/IP overhead) "
+                                                  "of the packets of a kind offered to the forward link: median, 90th percentile "
+                                                  "(nearest rank) and maximum"},
       {"net.audio_kbps", "Audio sent on the forward link, wire rate averaged over the call"},
       {"net.video_kbps", "Video media sent on the forward link, wire rate averaged over the call"},
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
@@ -189,6 +193,13 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
     if (r.loss) {
       rep.metrics[std::string("net.") + r.name + "_loss_pct"] =
           k.sent ? 100.0 * static_cast<double>(k.lost + k.queue_dropped) / static_cast<double>(k.sent) : 0;
+    }
+    if (r.loss) {
+      const std::string base = std::string("net.") + r.name;
+      rep.metrics[base + "_queue_drops"] = static_cast<double>(k.queue_dropped);
+      rep.metrics[base + "_size_p50_b"] = static_cast<double>(k.SizePercentile(50));
+      rep.metrics[base + "_size_p90_b"] = static_cast<double>(k.SizePercentile(90));
+      rep.metrics[base + "_size_max_b"] = static_cast<double>(k.max_size);
     }
   }
 }
