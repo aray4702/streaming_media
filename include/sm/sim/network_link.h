@@ -45,6 +45,24 @@ struct LinkKindStats {
   uint64_t lost = 0;           // Random/burst loss and outage.
   uint64_t queue_dropped = 0;  // Drop-tail overflow.
   int64_t bytes_sent = 0;
+  // Sizes of the packets offered to Send (issue #119): a histogram by wire
+  // size, with sizes of kMaxTrackedSize or more counted in the last bucket
+  // (max_size is exact), so memory stays bounded however long the call.
+  static constexpr size_t kMaxTrackedSize = 2048;
+  std::vector<uint32_t> size_hist;  // Allocated on the first packet; links often live on the stack.
+  int64_t max_size = 0;
+  // Nearest-rank size percentile in bytes (0 when nothing was sent).
+  int64_t SizePercentile(double pct) const {
+    if (sent == 0) return 0;
+    uint64_t rank = static_cast<uint64_t>(pct / 100.0 * static_cast<double>(sent) + 0.999999);
+    if (rank < 1) rank = 1;
+    uint64_t seen = 0;
+    for (size_t i = 0; i < size_hist.size(); ++i) {
+      seen += size_hist[i];
+      if (seen >= rank) return i == kMaxTrackedSize ? max_size : static_cast<int64_t>(i);
+    }
+    return max_size;
+  }
 };
 
 struct LinkStats {
@@ -78,6 +96,9 @@ class NetworkLink {
     ++stats_.sent;
     ++ks.sent;
     ks.bytes_sent += size.bytes();
+    if (ks.size_hist.empty()) ks.size_hist.assign(LinkKindStats::kMaxTrackedSize + 1, 0);
+    ++ks.size_hist[static_cast<size_t>(std::clamp<int64_t>(size.bytes(), 0, LinkKindStats::kMaxTrackedSize))];
+    ks.max_size = std::max<int64_t>(ks.max_size, size.bytes());
     if (cfg_.down) {
       ++stats_.lost;
       ++ks.lost;
