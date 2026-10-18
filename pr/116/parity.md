@@ -214,7 +214,7 @@ Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | capacity_drop | `video.freeze_total_ms` | 3436 | 2538 | ±362 | behind | 7/10 | #5, #37, #24 |
 | capacity_drop | `video.render_fps` | 27.1 | 28.8 | ±1.4 | behind | 4/10 | #37, #24 |
 | capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
@@ -233,7 +233,7 @@ Opened:
 | issue_21_shallow_drop_repair | `video.freeze_total_ms` | 1486 | 7143 | ±3468 | ahead | 10/10 | #5, #37, #24 |
 | issue_21_shallow_drop_repair | `video.longest_freeze_ms` | 452 | 2281 | ±1098 | ahead | 10/10 | #5, #37, #24 |
 | issue_21_shallow_drop_repair | `video.render_fps` | 28.2 | 24.5 | ±2.2 | ahead | 7/10 | #37, #24 |
-| issue_23_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| issue_23_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | issue_23_capacity_drop | `video.freeze_count` | 3.2 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
 | issue_23_capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
 | issue_23_handover | `audio.concealed_pct` | 4.7 | 4.2 | ±0.5 | behind | 5/10 | #62, #63 |
@@ -336,7 +336,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | burst_loss | `audio.concealed_pct` | 1.2 | 0.7 (closer) |
 | burst_loss | `video.freeze_count` | 5.2 | 3.8 (closer) |
 | burst_loss | `video.freeze_total_ms` | 1217 | 824 (closer) |
-| capacity_drop | `audio.jb_delay_p95_ms` | 153 | 172 (further) |
+| capacity_drop | `audio.jb_delay_p95_ms` | 153 | 173 (further) |
 | capacity_drop | `video.freeze_count` | 1.4 | 1 (closer) |
 | capacity_drop | `cc.queue_p95_ms` | 101 | 89.5 (closer) |
 | clean_link | `audio.jb_delay_p95_ms` | 101 | 42.4 (closer) |
@@ -379,7 +379,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_21_shallow_drop_repair | `video.e2e_delay_p95_ms` | 1575 | 1990 (further) |
 | issue_21_shallow_drop_repair | `video.avg_kbps` | 97.3 | 74.7 (closer) |
 | issue_21_shallow_drop_repair | `cc.utilization_pct` | 14.1 | 10.1 (closer) |
-| issue_23_capacity_drop | `audio.jb_delay_p95_ms` | 140 | 172 (further) |
+| issue_23_capacity_drop | `audio.jb_delay_p95_ms` | 140 | 173 (further) |
 | issue_23_capacity_drop | `video.freeze_total_ms` | 2038 | 898 (closer) |
 | issue_23_capacity_drop | `video.render_fps` | 2.4 | 1.7 (closer) |
 | issue_23_capacity_drop | `cc.queue_p95_ms` | 99.8 | 89.5 (closer) |
@@ -406,7 +406,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_5_adjuster_default | `cc.queue_p95_ms` | 116 | 157 (further) |
 | issue_5_bitrate_adjuster | `video.avg_kbps` | 434 | 205 (closer) |
 | issue_5_bitrate_adjuster | `cc.utilization_pct` | 28.4 | 12.5 (closer) |
-| issue_5_keyframe_flush | `audio.mouth_to_ear_p95_ms` | 107 | 94.1 (closer) |
+| issue_5_keyframe_flush | `audio.mouth_to_ear_p95_ms` | 107 | 94.7 (closer) |
 | issue_5_keyframe_flush | `audio.jb_delay_p95_ms` | 152 | 184 (further) |
 | issue_5_keyframe_flush | `cc.queue_p95_ms` | 37.3 | 78.3 (further) |
 | issue_76_packetization_v2 | `audio.concealed_pct` | 1.0 | 0.6 (closer) |
@@ -437,10 +437,10 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | low_bandwidth | `repair.overhead_pct` | 7.4 | 9.5 (further) |
 | outage_3s | `audio.mouth_to_ear_p95_ms` | 43.6 | 33.7 (closer) |
 | outage_3s | `video.e2e_delay_p95_ms` | 37.1 | 68.0 (further) |
-| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 99.9 | 71.4 (closer) |
-| pacer_v2_capacity_drop | `audio.jb_delay_p95_ms` | 147 | 172 (further) |
+| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 99.9 | 72.0 (closer) |
+| pacer_v2_capacity_drop | `audio.jb_delay_p95_ms` | 147 | 173 (further) |
 | pacer_v2_capacity_drop | `cc.queue_p95_ms` | 40.9 | 89.5 (further) |
-| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 61.1 | 71.4 (further) |
+| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 61.1 | 72.0 (further) |
 | probe_v2_capacity_drop | `video.freeze_total_ms` | 650 | 898 (further) |
 | probe_v2_capacity_drop | `video.render_fps` | 1.5 | 1.7 (further) |
 | probe_v2_clean_link | `video.e2e_delay_p95_ms` | 20.0 | 28.9 (further) |
@@ -480,8 +480,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | burst_loss | `cc.queue_p95_ms` | 74.3 | 46.8 | ±15.9 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | burst_loss | `video.freeze_count` | 2.4 | 6.2 | ±2.0 | ahead | 10/10 | #5, #37, #24 |
 | burst_loss | `video.freeze_total_ms` | 608 | 1432 | ±500 | ahead | 8/10 | #5, #37, #24 |
-| capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±35.6 | ahead | 10/10 | #62, #63 |
-| capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±34.8 | ahead | 10/10 | #62, #63 |
+| capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | capacity_drop | `cc.queue_p95_ms` | 373 | 283 | ±26.9 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
 | capacity_drop | `video.freeze_count` | 3.2 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
@@ -527,7 +527,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_12_lossbwe_policer | `video.pause_count` | 0 | 1.6 | ±1.1 | ahead | 8/10 | #5, #37, #24 |
 | issue_12_lossbwe_policer | `video.pause_total_ms` | 0 | 9637 | ±6521 | ahead | 8/10 | #5, #37, #24 |
 | issue_12_lossbwe_policer | `video.render_fps` | 29.4 | 17.8 | ±3.6 | ahead | 10/10 | #37, #24 |
-| issue_12_lossbwe_random_loss | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
+| issue_12_lossbwe_random_loss | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 7/10 | #62, #63 |
 | issue_12_lossbwe_random_loss | `cc.queue_p95_ms` | 41.0 | 29.5 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_12_lossbwe_random_loss | `video.e2e_delay_p95_ms` | 324 | 209 | ±22.1 | behind | 10/10 | #24, #37 |
 | issue_12_lossbwe_random_loss | `video.freeze_count` | 0.2 | 7.5 | ±1.7 | ahead | 10/10 | #5, #37, #24 |
@@ -556,13 +556,13 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_15_aimd_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 286 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
 | issue_15_aimd_v2_cross_traffic | `cc.queue_p95_ms` | 107 | 264 | ±21.6 | ahead | 10/10 | #19, #15, #48, #12, #61 |
 | issue_15_aimd_v2_cross_traffic | `video.longest_freeze_ms` | 10.2 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
-| issue_15_aimd_v2_random_loss | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
+| issue_15_aimd_v2_random_loss | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 7/10 | #62, #63 |
 | issue_15_aimd_v2_random_loss | `cc.queue_p95_ms` | 41.0 | 29.5 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_15_aimd_v2_random_loss | `video.e2e_delay_p95_ms` | 324 | 209 | ±22.1 | behind | 10/10 | #24, #37 |
 | issue_15_aimd_v2_random_loss | `video.freeze_count` | 0.2 | 7.5 | ±1.7 | ahead | 10/10 | #5, #37, #24 |
 | issue_15_aimd_v2_random_loss | `video.freeze_total_ms` | 52 | 1863 | ±436 | ahead | 10/10 | #5, #37, #24 |
 | issue_15_aimd_v2_random_loss | `video.longest_freeze_ms` | 72 | 357 | ±100 | ahead | 10/10 | #5, #37, #24 |
-| issue_18_random_loss_keyframes | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
+| issue_18_random_loss_keyframes | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 7/10 | #62, #63 |
 | issue_18_random_loss_keyframes | `cc.queue_p95_ms` | 41.0 | 29.5 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_18_random_loss_keyframes | `video.e2e_delay_p95_ms` | 324 | 209 | ±22.1 | behind | 10/10 | #24, #37 |
 | issue_18_random_loss_keyframes | `video.freeze_count` | 0.2 | 7.5 | ±1.7 | ahead | 10/10 | #5, #37, #24 |
@@ -584,8 +584,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_21_shallow_drop_repair | `video.keyframe_requests` | 0 | 0.9 | ±0.6 | ahead | 8/10 | #23 |
 | issue_21_shallow_drop_repair | `video.longest_freeze_ms` | 452 | 2281 | ±1098 | ahead | 10/10 | #5, #37, #24 |
 | issue_21_shallow_drop_repair | `video.render_fps` | 28.2 | 24.5 | ±2.2 | ahead | 7/10 | #37, #24 |
-| issue_23_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±35.6 | ahead | 10/10 | #62, #63 |
-| issue_23_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| issue_23_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±34.8 | ahead | 10/10 | #62, #63 |
+| issue_23_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | issue_23_capacity_drop | `cc.queue_p95_ms` | 373 | 283 | ±26.9 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | issue_23_capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
 | issue_23_capacity_drop | `video.freeze_count` | 3.2 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
@@ -643,8 +643,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_5_bitrate_adjuster | `video.avg_kbps` | 974 | 1179 | ±59.0 | behind | 10/10 | #37, #61 |
 | issue_5_bitrate_adjuster | `video.e2e_delay_p95_ms` | 159 | 141 | ±10 | behind | 10/10 | #24, #37 |
 | issue_5_burst15_freeze | `audio.jb_delay_p95_ms` | 86.8 | 128 | ±28.6 | ahead | 7/10 | #62, #63 |
-| issue_5_keyframe_flush | `audio.jb_delay_p95_ms` | 320 | 504 | ±34.7 | ahead | 10/10 | #62, #63 |
-| issue_5_keyframe_flush | `audio.mouth_to_ear_p95_ms` | 716 | 811 | ±45.5 | ahead | 9/10 | #62, #63 |
+| issue_5_keyframe_flush | `audio.jb_delay_p95_ms` | 320 | 504 | ±33.7 | ahead | 10/10 | #62, #63 |
+| issue_5_keyframe_flush | `audio.mouth_to_ear_p95_ms` | 716 | 811 | ±45.0 | ahead | 9/10 | #62, #63 |
 | issue_5_keyframe_flush | `cc.queue_p95_ms` | 367 | 289 | ±23.3 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | issue_5_keyframe_flush | `video.e2e_delay_p95_ms` | 512 | 271 | ±226 | behind | 8/10 | #24, #37 |
 | issue_5_keyframe_flush | `video.freeze_total_ms` | 3396 | 2570 | ±359 | behind | 6/10 | #5, #37, #24 |
@@ -690,7 +690,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_76_tcc_v2_high_jitter | `repair.overhead_pct` | 39.3 | 43.4 | ±4.0 | ahead | 6/10 | #21, #7, #29 |
 | issue_76_tcc_v2_high_jitter | `video.e2e_delay_p95_ms` | 246 | 136 | ±12.3 | behind | 10/10 | #24, #37 |
 | issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 221 | 92.7 | ±50 | behind | 8/10 | #24, #61 |
-| issue_7_no_fec_beside_nack | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
+| issue_7_no_fec_beside_nack | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 7/10 | #62, #63 |
 | issue_7_no_fec_beside_nack | `cc.queue_p95_ms` | 41.0 | 29.5 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_7_no_fec_beside_nack | `video.e2e_delay_p95_ms` | 324 | 209 | ±22.1 | behind | 10/10 | #24, #37 |
 | issue_7_no_fec_beside_nack | `video.freeze_count` | 0.2 | 7.5 | ±1.7 | ahead | 10/10 | #5, #37, #24 |
@@ -721,15 +721,15 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | outage_3s | `video.e2e_delay_p95_ms` | 173 | 105 | ±13.7 | behind | 10/10 | #24, #37, #20 |
 | outage_3s | `video.freeze_count` | 2 | 1 | ±0.5 | behind | 10/10 | #5, #37, #24, #20 |
 | outage_3s | `video.freeze_total_ms` | 3868 | 3222 | ±193 | behind | 10/10 | #5, #37, #24, #20 |
-| pacer_v2_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±35.6 | ahead | 10/10 | #62, #63 |
-| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| pacer_v2_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±34.8 | ahead | 10/10 | #62, #63 |
+| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | pacer_v2_capacity_drop | `cc.queue_p95_ms` | 373 | 283 | ±26.9 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | pacer_v2_capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
 | pacer_v2_capacity_drop | `video.freeze_count` | 3.2 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
 | pacer_v2_capacity_drop | `video.freeze_total_ms` | 3436 | 2538 | ±362 | behind | 7/10 | #5, #37, #24 |
 | pacer_v2_capacity_drop | `video.render_fps` | 27.1 | 28.8 | ±1.4 | behind | 4/10 | #37, #24 |
-| probe_v2_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±35.6 | ahead | 10/10 | #62, #63 |
-| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 800 | ±50.4 | ahead | 8/10 | #62, #63 |
+| probe_v2_capacity_drop | `audio.jb_delay_p95_ms` | 326 | 499 | ±34.8 | ahead | 10/10 | #62, #63 |
+| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 729 | 801 | ±50.0 | ahead | 8/10 | #62, #63 |
 | probe_v2_capacity_drop | `cc.queue_p95_ms` | 373 | 283 | ±26.9 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | probe_v2_capacity_drop | `video.e2e_delay_p95_ms` | 524 | 249 | ±227 | behind | 9/10 | #24, #37 |
 | probe_v2_capacity_drop | `video.freeze_count` | 3.2 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
@@ -742,7 +742,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | probe_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 286 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
 | probe_v2_cross_traffic | `cc.queue_p95_ms` | 107 | 264 | ±21.6 | ahead | 10/10 | #19, #15, #48, #12, #61 |
 | probe_v2_cross_traffic | `video.longest_freeze_ms` | 10.2 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
-| random_loss_5pct | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
+| random_loss_5pct | `audio.concealed_pct` | 1.0 | 0.4 | ±0.5 | behind | 7/10 | #62, #63 |
 | random_loss_5pct | `cc.queue_p95_ms` | 41.0 | 29.5 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | random_loss_5pct | `video.e2e_delay_p95_ms` | 324 | 209 | ±22.1 | behind | 10/10 | #24, #37 |
 | random_loss_5pct | `video.freeze_count` | 0.2 | 7.5 | ±1.7 | ahead | 10/10 | #5, #37, #24 |
