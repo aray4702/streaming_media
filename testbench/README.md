@@ -188,7 +188,13 @@ Link keys (any subset; unset keys keep their previous value):
     above 1.5 x the target.
   - `cc.rtt_p50_ms`.
 - **Network and repair:** `net.loss_pct`, `repair.overhead_pct`,
-  `repair.nack_recovered`, `repair.fec_recovered`.
+  `repair.nack_recovered`, `repair.fec_recovered`. Per kind on the forward
+  link (information only, issue #117): `net.audio_kbps`, `net.video_kbps`,
+  `net.rtx_kbps`, `net.padding_kbps`, `net.fec_kbps` (wire rate sent,
+  averaged over the call) and `net.audio_loss_pct`, `net.video_loss_pct`,
+  `net.rtx_loss_pct`, `net.padding_loss_pct` (random, burst, outage and
+  queue drops). `sm_compare` counts libwebrtc's the same way, by SSRC;
+  padding is a packet with no payload.
 
 ## The suite and the baseline
 
