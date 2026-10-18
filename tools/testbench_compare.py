@@ -26,6 +26,9 @@ INFO = {
     # Per kind on the forward link (issue #117): information only.
     "net.audio_loss_pct", "net.video_loss_pct", "net.rtx_loss_pct", "net.padding_loss_pct",
     "net.audio_kbps", "net.video_kbps", "net.rtx_kbps", "net.padding_kbps", "net.fec_kbps",
+    # Per kind packet sizes and queue drops (issue #119): information only.
+    *(f"net.{k}_{m}" for k in ("audio", "video", "rtx", "padding")
+      for m in ("size_p50_b", "size_p90_b", "size_max_b", "queue_drops")),
 }
 REL_TOL = 0.05
 

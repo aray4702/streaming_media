@@ -194,7 +194,10 @@ Link keys (any subset; unset keys keep their previous value):
   averaged over the call) and `net.audio_loss_pct`, `net.video_loss_pct`,
   `net.rtx_loss_pct`, `net.padding_loss_pct` (random, burst, outage and
   queue drops). `sm_compare` counts libwebrtc's the same way, by SSRC;
-  padding is a packet with no payload.
+  padding is a packet with no payload. Also per kind (audio, video, rtx,
+  padding; issue #119, information only): `net.<kind>_size_p50_b`,
+  `_size_p90_b`, `_size_max_b` (wire size of the packets offered to the
+  link, nearest rank) and `net.<kind>_queue_drops`.
 
 ## The suite and the baseline
 

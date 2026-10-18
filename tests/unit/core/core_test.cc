@@ -280,6 +280,24 @@ SM_TEST(NetworkLink, CountsSentLostAndDroppedPerKind) {
   SM_EXPECT_EQ(out.stats().of(sim::LinkKind::kRtx).sent, 1u);
 }
 
+SM_TEST(NetworkLink, TracksPacketSizePercentilesPerKind) {
+  sim::NetworkLink<int> link(sim::LinkConfig{}, 1);
+  for (int i = 0; i < 10; ++i) {
+    link.Send(Timestamp::Millis(0), i, DataSize::Bytes(i < 9 ? 200 : 1200), sim::LinkKind::kVideo);
+  }
+  link.Send(Timestamp::Millis(0), 0, DataSize::Bytes(213), sim::LinkKind::kAudio);
+  link.Send(Timestamp::Millis(0), 0, DataSize::Bytes(5000), sim::LinkKind::kRtx);
+  const auto& v = link.stats().of(sim::LinkKind::kVideo);
+  SM_EXPECT_EQ(v.SizePercentile(50), 200);
+  SM_EXPECT_EQ(v.SizePercentile(90), 200);
+  SM_EXPECT_EQ(v.SizePercentile(100), 1200);
+  SM_EXPECT_EQ(v.max_size, 1200);
+  SM_EXPECT_EQ(link.stats().of(sim::LinkKind::kAudio).SizePercentile(50), 213);
+  // Sizes beyond the histogram land in the last bucket; the maximum stays exact.
+  SM_EXPECT_EQ(link.stats().of(sim::LinkKind::kRtx).SizePercentile(90), 5000);
+  SM_EXPECT_EQ(link.stats().of(sim::LinkKind::kPadding).SizePercentile(50), 0);
+}
+
 SM_TEST(NetworkLink, GilbertBurstsAreLongerThanBernoulli) {
   sim::LinkConfig cfg;
   cfg.gilbert = true;
