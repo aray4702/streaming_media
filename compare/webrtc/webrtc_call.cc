@@ -355,6 +355,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   testbench::LinkTimeline links(s);
   const testbench::LinkState& fwd_state = links.forward();
   sim::NetworkLink<Pkt> forward(fwd_state.cfg, s.seed);
+  if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Pkt> reverse(links.reverse().cfg, s.seed + 1000003);
 
   // --- Calls ------------------------------------------------------------------
@@ -411,6 +412,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     const int64_t wire = static_cast<int64_t>(data.size()) + kUdpIpOverhead;
     // Counted the way the test bench counts: by SSRC, and padding is a packet with no payload.
     sm::sim::LinkKind link_kind = sm::sim::LinkKind::kOther;
+    int32_t trace_seq = -1;
     if (!rtcp && !IsRtcp(data)) {
       w::SentPacketInfo sent(o.packet_id, now.ms());
       sent.info.included_in_feedback = o.included_in_feedback;
@@ -420,6 +422,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       sender_q->PostTask([&, sent] { send_call->OnSentPacket(sent); });
       w_send += wire;
       RtpInfo r = ParseRtp(data);
+      if (r.ok) trace_seq = r.seq;
       if (r.ok && r.payload_len == 0 && (r.ssrc == kAudioSsrc || r.ssrc == kVideoSsrc || r.ssrc == kRtxSsrc)) {
         link_kind = sm::sim::LinkKind::kPadding;
       }
@@ -448,7 +451,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       }
     }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
-                 DataSize::Bytes(wire), link_kind);
+                 DataSize::Bytes(wire), link_kind, trace_seq);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
@@ -861,6 +864,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   testbench::AddLinkKindMetrics(ls, s, rep);
+  if (opt.link_trace) rep.link_trace = forward.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   testbench::EvaluateExpectations(rep);

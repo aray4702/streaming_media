@@ -177,6 +177,18 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
+std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
+  static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
+  static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
+           std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
+           kOutcomes[static_cast<size_t>(r.outcome)] + "\n";
+  }
+  return out;
+}
+
 void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& rep) {
   struct Row {
     const char* name;
@@ -336,6 +348,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   LinkTimeline links(s);
   const LinkState& fwd_state = links.forward();
   sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
+  if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
 
   // --- Media sources --------------------------------------------------------
@@ -515,7 +528,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
-      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind));
+      const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
     }
   };
 
@@ -809,6 +823,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   AddLinkKindMetrics(ls, s, rep);
+  if (opt.link_trace) rep.link_trace = forward.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   EvaluateExpectations(rep);

@@ -2,7 +2,7 @@
 // libwebrtc over the same emulated links and prints the user-experience
 // metrics side by side.
 //
-//   sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] scenario.scn...
+//   sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] [--trace=NAME,...] [--trace-dir=DIR] scenario.scn...
 //
 // --dump writes every run's full report, with its 100 ms timeseries, to
 // DIR/<scenario>.<seed>.<sm|webrtc>.json (sm_testbench --json format).
@@ -12,6 +12,12 @@
 // every seed's values for the shown metrics ("per_seed"), and each shown
 // metric's direction and tie floor ("shown"), which tools/parity_report.py
 // reads to find gaps in both directions.
+//
+// --trace=NAME,... records every packet offered to the forward link, for this
+// library and for libwebrtc, on the first seed of the named scenarios (issue
+// #125; default very_low_capacity_allocator_v2, "none" disables). The CSVs go
+// into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
+// diff them with tools/link_trace.py.
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -80,6 +86,32 @@ const std::vector<const char*>& InfoMetrics() {
       "net.padding_size_p50_b", "net.padding_size_p90_b", "net.padding_size_max_b", "net.padding_queue_drops",
   };
   return k;
+}
+
+// Scenarios whose first seed is traced packet by packet on the forward link
+// (issue #125), for both stacks, when --trace is not given. The traces go into
+// the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
+const char* const kDefaultTraced = "very_low_capacity_allocator_v2";
+
+std::string JsonString(const std::string& s) {
+  std::string o = "\"";
+  for (char c : s) {
+    if (c == '"' || c == '\\') o += '\\';
+    if (c == '\n') o += "\\n";
+    else o += c;
+  }
+  return o + "\"";
+}
+
+bool Traced(const std::string& names, const std::string& scenario) {
+  size_t pos = 0;
+  while (pos <= names.size()) {
+    size_t end = names.find(',', pos);
+    if (end == std::string::npos) end = names.size();
+    if (names.compare(pos, end - pos, scenario) == 0 && end - pos == scenario.size()) return true;
+    pos = end + 1;
+  }
+  return false;
 }
 
 using Metrics = std::map<std::string, double>;
@@ -152,20 +184,25 @@ std::string JsonShown() {
 
 int main(int argc, char** argv) {
   int seeds = 3;
-  std::string json_path, dump_dir;
+  std::string json_path, dump_dir, trace_names = kDefaultTraced, trace_dir, traces_json;
   std::vector<std::string> files;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a.rfind("--seeds=", 0) == 0) seeds = std::max(1, std::atoi(a.c_str() + 8));
     else if (a.rfind("--json=", 0) == 0) json_path = a.substr(7);
     else if (a.rfind("--dump=", 0) == 0) dump_dir = a.substr(7);
+    else if (a.rfind("--trace=", 0) == 0) trace_names = a.substr(8);
+    else if (a.rfind("--trace-dir=", 0) == 0) trace_dir = a.substr(12);
     else if (a == "-h" || a == "--help") {
-      std::printf("usage: sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] scenario.scn...\n");
+      std::printf("usage: sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] [--trace=NAME,...] [--trace-dir=DIR] scenario.scn...\n"
+                  "  --trace   scenarios whose first seed is traced packet by packet (default %s; none to disable)\n"
+                  "  --trace-dir  also write <scenario>.<seed>.{sm,webrtc}.trace.csv there\n",
+                  kDefaultTraced);
       return 0;
     } else files.push_back(a);
   }
   if (files.empty()) {
-    std::fprintf(stderr, "usage: sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] scenario.scn...\n");
+    std::fprintf(stderr, "usage: sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] [--trace=NAME,...] [--trace-dir=DIR] scenario.scn...\n");
     return 2;
   }
 
@@ -195,8 +232,21 @@ int main(int argc, char** argv) {
     for (int k = 0; k < seeds; ++k) {
       Scenario s = base;
       s.seed = base.seed + static_cast<uint64_t>(k);
+      opt.link_trace = k == 0 && Traced(trace_names, base.name);
       ours.push_back(sm::testbench::RunCall(s, opt));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
+      if (opt.link_trace) {
+        const std::string sm_csv = sm::testbench::LinkTraceCsv(ours.back().link_trace);
+        const std::string rtc_csv = sm::testbench::LinkTraceCsv(theirs.back().link_trace);
+        traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
+                       "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
+                       ", \"webrtc\": " + JsonString(rtc_csv) + "}";
+        if (!trace_dir.empty()) {
+          const std::string stem = trace_dir + "/" + base.name + "." + std::to_string(s.seed);
+          std::ofstream(stem + ".sm.trace.csv") << sm_csv;
+          std::ofstream(stem + ".webrtc.trace.csv") << rtc_csv;
+        }
+      }
       if (!dump_dir.empty()) {
         std::string stem = dump_dir + "/" + base.name + "." + std::to_string(s.seed);
         std::ofstream(stem + ".sm.json") << sm::testbench::ToJson(ours.back());
@@ -232,7 +282,9 @@ int main(int argc, char** argv) {
   std::printf("\nbetter: sm %d, webrtc %d, tie %d (of the metrics shown)\n", wins["sm"], wins["webrtc"], wins["="]);
   std::printf("\nMetrics measured differently for libwebrtc:\n");
   for (const auto& [k, v] : sm::compare::WebrtcMetricNotes()) std::printf("  %s: %s\n", k.c_str(), v.c_str());
-  json += "\n  ]\n}\n";
+  json += "\n  ]";
+  if (!traces_json.empty()) json += ",\n  \"traces\": [" + traces_json + "\n  ]";
+  json += "\n}\n";
   if (!json_path.empty()) {
     std::ofstream out(json_path);
     out << json;

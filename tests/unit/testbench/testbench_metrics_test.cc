@@ -1,5 +1,7 @@
 // The parity metrics of the test bench (issue #60): the video delay
 // breakdown, the largest target cut and the send rate over the target.
+#include <cmath>
+
 #include "call.h"
 #include "scenario.h"
 #include "sm_test.h"
@@ -134,4 +136,46 @@ SM_TEST(TestbenchMetrics, ACallReportsTheNewMetricsAndTheBreakdownAddsUp) {
   SM_EXPECT_LE(m.at("video.delay_jitter_buffer_p95_ms"), e2e);
   SM_EXPECT_LE(e2e, m.at("video.delay_pacer_p95_ms") + m.at("video.delay_network_p95_ms") +
                         m.at("video.delay_jitter_buffer_p95_ms") + 1.0);
+}
+
+// The forward-link trace (issue #125): one record per packet offered to the link.
+SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
+  std::vector<sim::LinkTraceRecord> trace;
+  trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered});
+  trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop});
+  trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
+  SM_EXPECT_EQ(LinkTraceCsv(trace),
+               "time_us,size,kind,seq,queue_bytes,outcome\n"
+               "0,213,audio,7,0,delivered\n"
+               "20000,1200,rtx,65535,450,queue_drop\n"
+               "20500,60,other,-1,0,lost\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome\n");
+}
+
+SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {
+  auto parsed = ParseScenario("name trace\nduration 4s\nat 0s capacity=300kbps delay=30ms queue=200ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).link_trace.empty());
+  opt.link_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_ASSERT_TRUE(!rep.link_trace.empty());
+  uint64_t audio = 0, audio_drops = 0, video_bytes = 0;
+  int64_t prev = 0;
+  for (const auto& r : rep.link_trace) {
+    SM_EXPECT_GE(r.time_us, prev);  // In the order the link was offered the packets.
+    prev = r.time_us;
+    if (r.kind == sim::LinkKind::kAudio) {
+      ++audio;
+      audio_drops += r.outcome == sim::LinkOutcome::kQueueDrop;
+      SM_EXPECT_GE(r.seq, 0);
+    }
+    if (r.kind == sim::LinkKind::kVideo) video_bytes += static_cast<uint64_t>(r.size);
+  }
+  SM_EXPECT_TRUE(audio > 0);
+  // The trace and the per-kind metrics describe the same packets.
+  SM_EXPECT_EQ(static_cast<double>(audio_drops), rep.metrics.at("net.audio_queue_drops"));
+  const double video_kbps = rep.metrics.at("net.video_kbps");
+  SM_EXPECT_TRUE(std::abs(static_cast<double>(video_bytes) * 8 / 1000.0 / 4.0 - video_kbps) < 0.01);
 }
