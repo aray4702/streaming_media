@@ -7,6 +7,7 @@
 #pragma once
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <queue>
@@ -34,7 +35,21 @@ struct LinkConfig {
   bool down = false;  // Outage: drop everything.
 };
 
+// What a packet is, for the per-kind counters in LinkStats. The link does not
+// look at it; the caller tags each packet it sends (default kOther).
+enum class LinkKind : uint8_t { kOther, kAudio, kVideo, kRtx, kPadding, kFec, kCount };
+
+// Counters of one LinkKind (wire bytes as passed to Send).
+struct LinkKindStats {
+  uint64_t sent = 0;
+  uint64_t lost = 0;           // Random/burst loss and outage.
+  uint64_t queue_dropped = 0;  // Drop-tail overflow.
+  int64_t bytes_sent = 0;
+};
+
 struct LinkStats {
+  LinkKindStats by_kind[static_cast<size_t>(LinkKind::kCount)];
+  const LinkKindStats& of(LinkKind k) const { return by_kind[static_cast<size_t>(k)]; }
   uint64_t sent = 0;
   uint64_t lost = 0;           // Random/burst loss and outage.
   uint64_t queue_dropped = 0;  // Drop-tail overflow.
@@ -58,16 +73,21 @@ class NetworkLink {
     return cfg_.capacity * (link_free_ - now);
   }
 
-  void Send(Timestamp now, T packet, DataSize size) {
+  void Send(Timestamp now, T packet, DataSize size, LinkKind kind = LinkKind::kOther) {
+    LinkKindStats& ks = stats_.by_kind[static_cast<size_t>(kind)];
     ++stats_.sent;
+    ++ks.sent;
+    ks.bytes_sent += size.bytes();
     if (cfg_.down) {
       ++stats_.lost;
+      ++ks.lost;
       return;
     }
     Timestamp depart = now;
     if (cfg_.capacity.IsFinite() && cfg_.capacity.bps() > 0) {
       if (cfg_.queue_limit.bytes() > 0 && QueuedBytes(now) + size > cfg_.queue_limit) {
         ++stats_.queue_dropped;
+        ++ks.queue_dropped;
         return;
       }
       Timestamp start = std::max(now, link_free_);
@@ -76,6 +96,7 @@ class NetworkLink {
     }
     if (IsLost()) {
       ++stats_.lost;
+      ++ks.lost;
       return;
     }
     Enqueue(depart, packet, size);

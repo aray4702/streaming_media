@@ -66,6 +66,17 @@ const std::vector<Shown>& ShownMetrics() {
   return k;
 }
 
+// Information only (issue #117): what the forward link carried and lost per
+// kind. Shown after the table, never counted as better or worse and not part
+// of the parity gaps.
+const std::vector<const char*>& InfoMetrics() {
+  static const std::vector<const char*> k = {
+      "net.audio_kbps",  "net.video_kbps",  "net.rtx_kbps",       "net.padding_kbps",    "net.fec_kbps",
+      "net.audio_loss_pct", "net.video_loss_pct", "net.rtx_loss_pct", "net.padding_loss_pct",
+  };
+  return k;
+}
+
 using Metrics = std::map<std::string, double>;
 
 // Only the shown metrics of one run.
@@ -197,6 +208,12 @@ int main(int argc, char** argv) {
       const char* w = Winner(sh, ia->second, ib->second);
       ++wins[w];
       std::printf("  %-30s %12s %12s  %s\n", sh.metric, Num(ia->second).c_str(), Num(ib->second).c_str(), w);
+    }
+    std::printf("  forward link per kind (information only)\n");
+    for (const char* name : InfoMetrics()) {
+      auto ia = a.find(name), ib = b.find(name);
+      if (ia == a.end() || ib == b.end()) continue;
+      std::printf("  %-30s %12s %12s\n", name, Num(ia->second).c_str(), Num(ib->second).c_str());
     }
     std::string per_seed;
     for (size_t k = 0; k < ours.size(); ++k) {

@@ -251,6 +251,35 @@ SM_TEST(NetworkLink, LossDelayAndCapacity) {
   SM_EXPECT_EQ(bottleneck.Receive(Timestamp::Millis(1000)).size(), 63u);
 }
 
+SM_TEST(NetworkLink, CountsSentLostAndDroppedPerKind) {
+  // 80 kbps with a 1000 B queue: 100 B packets leave every 10 ms.
+  sim::LinkConfig cfg;
+  cfg.capacity = DataRate::KilobitsPerSec(80);
+  cfg.queue_limit = DataSize::Bytes(1000);
+  sim::NetworkLink<int> link(cfg, 1);
+  for (int i = 0; i < 20; ++i) {
+    link.Send(Timestamp::Millis(0), i, DataSize::Bytes(100), i % 2 ? sim::LinkKind::kAudio : sim::LinkKind::kVideo);
+  }
+  link.Send(Timestamp::Millis(0), 0, DataSize::Bytes(50));
+  const auto& st = link.stats();
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kAudio).sent, 10u);
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kVideo).sent, 10u);
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kAudio).bytes_sent, 1000);
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kOther).sent, 1u);
+  // The first ten packets fill the queue; the other ten (five of each kind) overflow it.
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kAudio).queue_dropped, 5u);
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kVideo).queue_dropped, 5u);
+  SM_EXPECT_EQ(st.of(sim::LinkKind::kOther).queue_dropped, 1u);
+  SM_EXPECT_EQ(st.queue_dropped, 11u);
+
+  sim::LinkConfig down;
+  down.down = true;
+  sim::NetworkLink<int> out(down, 1);
+  out.Send(Timestamp::Millis(0), 0, DataSize::Bytes(10), sim::LinkKind::kRtx);
+  SM_EXPECT_EQ(out.stats().of(sim::LinkKind::kRtx).lost, 1u);
+  SM_EXPECT_EQ(out.stats().of(sim::LinkKind::kRtx).sent, 1u);
+}
+
 SM_TEST(NetworkLink, GilbertBurstsAreLongerThanBernoulli) {
   sim::LinkConfig cfg;
   cfg.gilbert = true;

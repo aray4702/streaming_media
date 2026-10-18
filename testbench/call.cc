@@ -47,6 +47,19 @@ struct Rev {
   std::vector<uint8_t> bytes;
 };
 
+sim::LinkKind LinkKindOf(Kind k) {
+  switch (k) {
+    case Kind::kAudio: return sim::LinkKind::kAudio;
+    case Kind::kVideo: return sim::LinkKind::kVideo;
+    case Kind::kRtx: return sim::LinkKind::kRtx;
+    case Kind::kFec: return sim::LinkKind::kFec;
+    case Kind::kPadding: return sim::LinkKind::kPadding;
+    case Kind::kRtcp:
+    case Kind::kCross: break;
+  }
+  return sim::LinkKind::kOther;
+}
+
 Kind ToKind(rtp::OutgoingKind k) {
   switch (k) {
     case rtp::OutgoingKind::kAudio: return Kind::kAudio;
@@ -144,11 +157,40 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
       {"cc.rtt_p50_ms", "Median RTT measured by RTCP"},
       {"net.loss_pct", "Forward link loss (random, burst, outage and queue drops)"},
+      {"net.audio_loss_pct", "Forward link loss of audio packets (random, burst, outage and queue drops)"},
+      {"net.video_loss_pct", "Forward link loss of video media packets"},
+      {"net.rtx_loss_pct", "Forward link loss of RTX packets that carry a retransmission"},
+      {"net.padding_loss_pct", "Forward link loss of padding-only packets (RTP padding, or RTX with no payload)"},
+      {"net.audio_kbps", "Audio sent on the forward link, wire rate averaged over the call"},
+      {"net.video_kbps", "Video media sent on the forward link, wire rate averaged over the call"},
+      {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
+      {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
+      {"net.fec_kbps", "FEC packets sent on the forward link, wire rate averaged over the call"},
       {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), headers included"},
       {"repair.nack_recovered", "Packets recovered by retransmission"},
       {"repair.fec_recovered", "Packets recovered by FEC"},
   };
   return k;
+}
+
+void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& rep) {
+  struct Row {
+    const char* name;
+    sim::LinkKind kind;
+    bool loss;
+  };
+  static const Row rows[] = {{"audio", sim::LinkKind::kAudio, true}, {"video", sim::LinkKind::kVideo, true},
+                             {"rtx", sim::LinkKind::kRtx, true},     {"padding", sim::LinkKind::kPadding, true},
+                             {"fec", sim::LinkKind::kFec, false}};
+  const double seconds = std::max(1e-3, static_cast<double>(s.duration.ms()) / 1000.0);
+  for (const Row& r : rows) {
+    const sim::LinkKindStats& k = stats.of(r.kind);
+    rep.metrics[std::string("net.") + r.name + "_kbps"] = static_cast<double>(k.bytes_sent) * 8 / 1000.0 / seconds;
+    if (r.loss) {
+      rep.metrics[std::string("net.") + r.name + "_loss_pct"] =
+          k.sent ? 100.0 * static_cast<double>(k.lost + k.queue_dropped) / static_cast<double>(k.sent) : 0;
+    }
+  }
 }
 
 void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
@@ -457,7 +499,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
-      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size);
+      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind));
     }
   };
 
@@ -750,6 +792,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   m["cc.rtt_p50_ms"] = Percentile(rtt_samples, 50);
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
+  AddLinkKindMetrics(ls, s, rep);
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   EvaluateExpectations(rep);

@@ -315,6 +315,9 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
                                   "FEC-recovered packets), so it overstates residual loss when FEC recovers packets"},
       {"video.undecodable_frames", "VideoReceiveStream frames_dropped"},
       {"repair.fec_recovered", "Not reported: libwebrtc does not expose it"},
+      {"net.<kind>_kbps / _loss_pct", "Counted at the forward link by SSRC: audio, video media, RTX with a payload, "
+                                      "FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload "
+                                      "after RTP padding is removed, including RTX with only its sequence number)"},
       {"cc.goodput_kbps", "Excludes padding-only packets but includes RTX packets libwebrtc sends as padding"},
   };
   return k;
@@ -406,6 +409,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   LinkTransport send_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions& o) {
     const w::Timestamp now = sim.Now();
     const int64_t wire = static_cast<int64_t>(data.size()) + kUdpIpOverhead;
+    // Counted the way the test bench counts: by SSRC, and padding is a packet with no payload.
+    sm::sim::LinkKind link_kind = sm::sim::LinkKind::kOther;
     if (!rtcp && !IsRtcp(data)) {
       w::SentPacketInfo sent(o.packet_id, now.ms());
       sent.info.included_in_feedback = o.included_in_feedback;
@@ -415,14 +420,19 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       sender_q->PostTask([&, sent] { send_call->OnSentPacket(sent); });
       w_send += wire;
       RtpInfo r = ParseRtp(data);
+      if (r.ok && r.payload_len == 0 && (r.ssrc == kAudioSsrc || r.ssrc == kVideoSsrc || r.ssrc == kRtxSsrc)) {
+        link_kind = sm::sim::LinkKind::kPadding;
+      }
       if (r.ok && r.payload_len > 0) {
         const uint8_t* payload = data.data() + r.payload_off;
         if (r.ssrc == kAudioSsrc) {
           media_bytes += static_cast<int64_t>(r.pt == kAudioRedPt ? RedPrimaryBytes(payload, r.payload_len) : r.payload_len);
           if (!audio_ts0) audio_ts0 = r.ts;
+          link_kind = sm::sim::LinkKind::kAudio;
         } else if (r.ssrc == kVideoSsrc) {
           bool fec = r.pt == kRedPt && (payload[0] & 0x7f) == kUlpfecPt;
           int64_t bytes = static_cast<int64_t>(r.payload_len) - (r.pt == kRedPt ? 1 : 0);
+          link_kind = fec ? sm::sim::LinkKind::kFec : sm::sim::LinkKind::kVideo;
           if (fec) {
             repair_bytes += bytes;
           } else {
@@ -431,11 +441,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           }
         } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
           repair_bytes += static_cast<int64_t>(r.payload_len) - 2;
+          link_kind = sm::sim::LinkKind::kRtx;
+        } else if (r.ssrc == kRtxSsrc) {
+          link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }
       }
     }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
-                 DataSize::Bytes(wire));
+                 DataSize::Bytes(wire), link_kind);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
@@ -847,6 +860,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   m["cc.rtt_p50_ms"] = testbench::Percentile(rtt_samples, 50);
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
+  testbench::AddLinkKindMetrics(ls, s, rep);
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   testbench::EvaluateExpectations(rep);
