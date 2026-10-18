@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <span>
 #include <vector>
@@ -48,6 +49,7 @@ struct RtxStats {
   uint64_t not_found = 0;   // Evicted from history or too old.
   uint64_t throttled = 0;   // Requested again before rtt elapsed (v2: or already pending in the pacer).
   uint64_t culled_acked = 0;  // v2: removed because the peer acknowledged them.
+  uint64_t payload_padding = 0;  // v2: RTX packets handed out as payload padding.
   int64_t bytes_retransmitted = 0;
 };
 
@@ -70,6 +72,13 @@ class RtxSender : public MetricsSource {
   void ClearPending(uint16_t original_seq);
   // The peer acknowledged these sequence numbers (RtpPacketHistory::CullAcknowledgedPackets).
   void CullAcknowledged(std::span<const uint16_t> seqs);
+  // v2 only: RtpPacketHistory::GetPayloadPaddingPacket in PaddingMode::kRecentLargePacket (the
+  // mode ModuleRtpRtcpImpl2 builds its history with). The packet is the most recent large
+  // payload seen by OnPacketSent(), kept for padding even after it has left the history. It is
+  // RTX-encapsulated only if `accept` takes the original (RTPSender::AppendPayloadPadding
+  // refuses one that would overshoot the padding target), so a refused packet uses no RTX
+  // sequence number.
+  std::optional<RtpPacket> GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept);
   size_t history_size() const { return v2_.size(); }
   // Next sequence number of the RTX stream. Padding sent on the RTX SSRC
   // (rtp::RtpSender) takes its numbers here so they never collide with resends.
@@ -99,6 +108,7 @@ class RtxSender : public MetricsSource {
   RtxConfig cfg_;
   std::vector<Slot> slots_;
   std::deque<Stored> v2_;
+  std::optional<RtpPacket> large_payload_packet_;  // v2: RtpPacketHistory::large_payload_packet_.
   TimeDelta rtt_ = TimeDelta::MinusInfinity();
   uint16_t rtx_seq_ = 0;
   RtxStats stats_;

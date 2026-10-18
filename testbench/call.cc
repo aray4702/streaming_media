@@ -498,7 +498,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // beyond the pacer-released bytes the caller tallies.
   auto put_on_link = [&](rtp::Session& from, auto& link, auto make, Timestamp now, bool is_forward) {
     for (auto& p : from.TakeOutgoing()) {
-      const Kind kind = ToKind(p.kind);
+      Kind kind = ToKind(p.kind);
+      // Counted by what is on the wire, as sm_compare counts libwebrtc: an RTX packet that carries
+      // a payload is a retransmission, also when it was sent as payload padding (#120).
+      if (is_forward && kind == Kind::kPadding) {
+        if (auto q = RtpPacket::Parse(p.bytes); q && q->ssrc == kRtxSsrc && q->payload.size() > 2) kind = Kind::kRtx;
+      }
       if (is_forward) {
         if (kind == Kind::kAudio || kind == Kind::kVideo) media_bytes += static_cast<int64_t>(p.bytes.size());
         if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
