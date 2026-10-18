@@ -12,8 +12,8 @@ reverse at 0s delay=15ms
 reverse at 15s down
 reverse at 16.5s up delay=60ms
 expect video.keyframe_requests <= 2
-# Freezes under v2 (seeds 1-5 worst case 6632 ms total, 4210 ms longest) are WORSE than v1 and than libwebrtc; the expect lines below lock the level reached so
-# it cannot get worse. Target (issue #23): not above v1 (longest freeze ~2100), libwebrtc: 4528 / 1917. Needs the Owner's sign-off (PR label needs-human).
+# Freezes with every v2 switch on are worse than libwebrtc (4528 total / 1917 longest). Held by the Owner at the old values (PR #116): the 9800 line below
+# is a provisional lock that the Owner has NOT signed off; the old line was `video.freeze_total_ms < 7000`.
 # Flip (#61, needs-human): was `video.freeze_total_ms < 7000`; seeds 1-5 with every v2 switch on: 5127-9215 ms; libwebrtc 4528 ms (10 seeds).
 # Target: the original line, once the item that owns the gap lands.
 expect video.freeze_total_ms < 9800
