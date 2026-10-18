@@ -273,3 +273,161 @@ SM_TEST(RtpSender, MediaHeaderSizeCountsTheExtensionsTheNextPacketCarries) {
   // MID is no longer repeated: 12 + 4 + (3 + 4 = 7 -> 8).
   SM_EXPECT_EQ(s.MediaHeaderSize(), 12u + 4u + 8u);
 }
+
+// RTPSender::GeneratePadding (compare/webrtc/reference/modules/rtp_rtcp/source/rtp_sender.cc:418-459) and
+// RtpPacketHistory::GetPayloadPaddingPacket (rtp_packet_history.cc:261-320), the cases of
+// rtp_sender_unittest.cc and rtp_packet_history_unittest.cc about payload padding (#120).
+namespace {
+sync::ExtensionMap TccExtensions() {
+  sync::ExtensionMap m;
+  m.Register(1, sync::uri::kTransportCc);
+  return m;
+}
+RtpSenderConfig PaddingCfg(const sync::ExtensionMap* ext, bool video = true) {
+  RtpSenderConfig c = VideoCfg();
+  c.video = video;
+  c.rtx.version = 2;
+  c.extensions = ext;
+  return c;
+}
+// Sends one frame of `sizes` and lets the pacer release it, so the v2 history holds it.
+void SendAndRelease(RtpSender& s, std::initializer_list<size_t> sizes, uint32_t ts, Timestamp now) {
+  auto chunks = Chunks(sizes);
+  s.SendVideoFrame(chunks, ts, now);
+  for (const SenderPacket& p : s.TakePackets()) s.OnPacketReleased(p, now);
+}
+size_t PaddingTotal(const std::vector<SenderPacket>& v) {
+  size_t n = 0;
+  for (const auto& p : v) n += p.packet.payload.size() + p.packet.padding_size;
+  return n;
+}
+}  // namespace
+
+// GeneratePadding: empty padding is full 255-byte packets on the RTX SSRC (kMaxPaddingLength), so the
+// total is the target rounded up, and every packet is padding at padding priority.
+SM_TEST(RtpSender, GeneratePaddingEmptyPacketsAreFullOnTheRtxSsrc) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  auto out = s.GeneratePadding(600, 777, Timestamp::Millis(5));
+  SM_ASSERT_EQ(out.size(), 3u);  // 255 + 255 + 255 >= 600
+  uint16_t prev_seq = out[0].packet.seq;
+  for (size_t i = 0; i < out.size(); ++i) {
+    SM_EXPECT_EQ(out[i].packet.ssrc, 0x2222u);
+    SM_EXPECT_EQ(out[i].packet.payload_type, 97);
+    SM_EXPECT_EQ(out[i].packet.padding_size, 255);
+    SM_EXPECT_TRUE(out[i].packet.payload.empty());
+    SM_EXPECT_EQ(out[i].packet.timestamp, 777u);
+    SM_EXPECT_TRUE(out[i].kind == PacketKind::kPadding);
+    SM_EXPECT_TRUE(out[i].priority == cc::PacketPriority::kPadding);
+    if (i > 0) SM_EXPECT_EQ(out[i].packet.seq, static_cast<uint16_t>(prev_seq + 1));
+    prev_seq = out[i].packet.seq;
+  }
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 0u);
+}
+
+// AppendPayloadPadding: the newest large packet of the history goes out again on the RTX SSRC, with the OSN
+// in front of the payload, while at least kMinPayloadPaddingBytes (50) of the target are left.
+SM_TEST(RtpSender, GeneratePaddingResendsTheNewestLargePacketAsPayload) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  SendAndRelease(s, {900}, 9000, Timestamp::Millis(1));
+  const uint16_t osn = 65534;
+  auto out = s.GeneratePadding(1000, 9000, Timestamp::Millis(2));
+  // 902 of the 1000 bytes are covered and 98 are left (>= 50). The same packet again stays within
+  // 3 x the target (902 <= 2000 + 98), so it goes out again.
+  SM_ASSERT_GE(out.size(), 2u);
+  SM_EXPECT_EQ(out[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(out[0].packet.padding_size, 0);
+  SM_ASSERT_EQ(out[0].packet.payload.size(), 902u);
+  SM_EXPECT_EQ((out[0].packet.payload[0] << 8) | out[0].packet.payload[1], osn);
+  SM_EXPECT_TRUE(out[0].kind == PacketKind::kPadding);
+  SM_EXPECT_EQ(out[0].packet.timestamp, 9000u);
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 2u);
+  // The RTX sequence numbers are used in order.
+  SM_EXPECT_EQ(out[1].packet.seq, static_cast<uint16_t>(out[0].packet.seq + 1));
+}
+
+// kMaxPaddingSizeFactor: a packet that would take the total over 3 x the target is not used; the
+// empty padding fills the target instead.
+SM_TEST(RtpSender, GeneratePaddingNeverOvershootsThreeTimesTheTarget) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  SendAndRelease(s, {1000}, 9000, Timestamp::Millis(1));
+  // Target 300: the overshoot allowed is 2 x 300 = 600, 1002 > 600 + 300.
+  auto out = s.GeneratePadding(300, 9000, Timestamp::Millis(2));
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 0u);
+  SM_ASSERT_EQ(out.size(), 2u);
+  SM_EXPECT_EQ(out[0].packet.padding_size, 255);
+  // Target 500: 1002 <= 1000 + 500, so the payload goes once, and nothing is left.
+  out = s.GeneratePadding(500, 9000, Timestamp::Millis(3));
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 1u);
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.payload.size(), 1002u);
+  SM_EXPECT_GE(PaddingTotal(out), 500u);
+}
+
+// kMinPayloadPaddingBytes: below 50 bytes left, no payload is resent.
+SM_TEST(RtpSender, GeneratePaddingBelowTheMinimumUsesEmptyPadding) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  SendAndRelease(s, {100}, 9000, Timestamp::Millis(1));
+  auto out = s.GeneratePadding(49, 9000, Timestamp::Millis(2));
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 0u);
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.padding_size, 255);
+  out = s.GeneratePadding(50, 9000, Timestamp::Millis(3));
+  SM_EXPECT_EQ(s.stats().payload_padding_packets, 1u);
+}
+
+// RtpPacketHistory kRecentLargePacket: a small packet does not replace a large one that is recent
+// (hysteresis 100 bytes), a packet within 100 bytes of it does.
+SM_TEST(RtpSender, PayloadPaddingKeepsTheRecentLargePacket) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  SendAndRelease(s, {1000}, 9000, Timestamp::Millis(1));  // seq 65534
+  SendAndRelease(s, {200}, 9100, Timestamp::Millis(2));   // 200 + 100 < 1000: not taken
+  auto out = s.GeneratePadding(1100, 9100, Timestamp::Millis(3));
+  SM_ASSERT_GE(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.payload.size(), 1002u);
+  SM_EXPECT_EQ((out[0].packet.payload[0] << 8) | out[0].packet.payload[1], 65534);
+  SendAndRelease(s, {950}, 9200, Timestamp::Millis(4));   // 950 + 100 > 1000: taken
+  out = s.GeneratePadding(1100, 9200, Timestamp::Millis(5));
+  SM_ASSERT_GE(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.payload.size(), 952u);
+}
+
+// Audio has no payload padding (no kRtxRedundantPayloads), and its empty padding may be small
+// (kMinAudioPaddingLength).
+SM_TEST(RtpSender, GeneratePaddingAudioIsEmptyAndMaySendSmallPackets) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext, /*video=*/false));
+  auto out = s.GeneratePadding(120, 0, Timestamp::Millis(1));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.padding_size, 120);
+  out = s.GeneratePadding(10, 0, Timestamp::Millis(2));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_EQ(out[0].packet.padding_size, 50);
+}
+
+// Without RTX, or with the v1 history, the sender makes no padding here (MakePadding stays).
+SM_TEST(RtpSender, GeneratePaddingNeedsRtxV2) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = PaddingCfg(&ext);
+  c.rtx.version = 1;
+  RtpSender v1(c);
+  SM_EXPECT_TRUE(v1.GeneratePadding(500, 0, Timestamp::Millis(1)).empty());
+  c = PaddingCfg(&ext);
+  c.rtx_ssrc.reset();
+  RtpSender none(c);
+  SM_EXPECT_TRUE(none.GeneratePadding(500, 0, Timestamp::Millis(1)).empty());
+}
+
+// With RTX and no abs-send-time or transport-cc, a media packet must be sent first.
+SM_TEST(RtpSender, GeneratePaddingWithoutBweExtensionWaitsForMedia) {
+  const sync::ExtensionMap none;
+  RtpSender s(PaddingCfg(&none));
+  SM_EXPECT_TRUE(s.GeneratePadding(500, 0, Timestamp::Millis(1)).empty());
+  auto chunks = Chunks({100});
+  s.SendVideoFrame(chunks, 9000, Timestamp::Millis(2));
+  SM_EXPECT_FALSE(s.GeneratePadding(500, 9000, Timestamp::Millis(3)).empty());
+}

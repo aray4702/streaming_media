@@ -1,0 +1,14 @@
+name issue_120_rtx_payload_padding_capacity_drop
+describe Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at 25 s, `cc v2`, `pacer v2` and `rtx v2`: RTX payload padding as libwebrtc (#120)
+# libwebrtc (CI compare-webrtc, probe_v2_capacity_drop, 10 seeds): net.padding_kbps 0.3, net.rtx_kbps 29.6, freezes 2.2 (2538 ms).
+# Before #120 (main, seeds 1-5): padding 0.55-1.99 kbps of empty 224 B placeholders, RTX 29-41 kbps; after: padding 0.24-0.79, RTX 29-41.
+# Acceptance (issue #120): net.padding_kbps and net.rtx_kbps within the parity band of libwebrtc's.
+cc v2
+pacer v2
+rtx v2
+duration 40s
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+expect net.padding_kbps < 1
+expect net.rtx_kbps < 55

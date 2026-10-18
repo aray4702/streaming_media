@@ -67,6 +67,11 @@ class PacingController : public MetricsSource {
  public:
   explicit PacingController(PacingControllerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  // Where padding comes from (PacketRouter::GeneratePadding): keep-alives, the first packet of
+  // a probe and the padding rate ask it for packets, and the pacer accounts their real sizes.
+  // Unset: fixed-size placeholders. A generator that returns nothing for the padding rate
+  // only charges the padding budget (PacingController::ProcessPackets).
+  void SetPaddingGenerator(PaddingGenerator g) { padding_generator_ = std::move(g); }
   void Enqueue(PacedPacket p);
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call at NextSendTime() or sooner.
@@ -132,6 +137,7 @@ class PacingController : public MetricsSource {
   TimeDelta AverageQueueTime() const;
 
   PacingControllerConfig cfg_;
+  PaddingGenerator padding_generator_;
   bool started_ = false;
   Timestamp last_timestamp_ = Timestamp::MinusInfinity();
   bool paused_ = false;

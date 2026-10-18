@@ -381,3 +381,90 @@ SM_TEST(PacingController, QueueDrainsAfterAKeyframeFlush) {
   SM_EXPECT_EQ(pacer.QueueSize().bytes(), 0);
   SM_EXPECT_EQ(pacer.OldestQueueTime(now).us(), 0);
 }
+
+// PacketRouter::GeneratePadding in PacingController::ProcessPackets (pacing_controller.cc:480-510, 629-641,
+// 420-433), #120: the padding comes from the sender with its real sizes, and the pacer accounts those.
+SM_TEST(PacingController, PaddingGeneratorSizesAreAccounted) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(800));
+  std::vector<int64_t> asked;
+  uint64_t next_id = 1;
+  pacer.SetPaddingGenerator([&](DataSize target, Timestamp now) {
+    asked.push_back(target.bytes());
+    std::vector<PacedPacket> out;
+    // One packet of 303 bytes whatever the target, like a sender that pads in full packets.
+    out.push_back(Pkt(next_id++, PacketPriority::kPadding, 303, now));
+    return out;
+  });
+  Timestamp now = Timestamp::Millis(1000);
+  pacer.Enqueue(Pkt(100, PacketPriority::kVideo, 1000, now));
+  Timestamp until = now + TimeDelta::Millis(500);
+  int64_t padding_bytes = 0;
+  size_t padding_packets = 0;
+  while (now < until) {
+    now = std::max(now + TimeDelta::Millis(1), pacer.NextSendTime(now));
+    for (auto& p : pacer.Process(now)) {
+      if (p.priority == PacketPriority::kPadding) {
+        SM_EXPECT_EQ(p.size.bytes(), 303);  // Not the 224 bytes of a placeholder.
+        SM_EXPECT_FALSE(p.is_padding);
+        padding_bytes += p.size.bytes();
+        ++padding_packets;
+      }
+    }
+  }
+  SM_ASSERT_GT(padding_packets, 0u);
+  SM_EXPECT_FALSE(asked.empty());
+  // 800 kbps of padding for ~0.5 s is ~50 kB: the real sizes keep the rate, not the packet count of 224 B pieces.
+  SM_EXPECT_LE(padding_bytes, 60000);
+  SM_EXPECT_GE(padding_bytes, 30000);
+}
+
+// A generator that makes nothing still charges the padding budget (UpdatePaddingBudgetWithSentData), so the
+// pacer does not ask again before the budget has drained: 5 ms of 800 kbps is 500 bytes, drained in 5 ms.
+SM_TEST(PacingController, EmptyPaddingGeneratorChargesTheBudget) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(800));
+  std::vector<Timestamp> asks;
+  pacer.SetPaddingGenerator([&](DataSize target, Timestamp now) {
+    SM_EXPECT_EQ(target.bytes(), 500);
+    asks.push_back(now);
+    return std::vector<PacedPacket>{};
+  });
+  Timestamp now = Timestamp::Millis(1000);
+  pacer.Enqueue(Pkt(1, PacketPriority::kVideo, 200, now));
+  for (int i = 0; i < 100; ++i) {
+    now = std::max(now + TimeDelta::Millis(1), pacer.NextSendTime(now));
+    for (auto& p : pacer.Process(now)) SM_EXPECT_TRUE(p.priority != PacketPriority::kPadding);
+  }
+  SM_ASSERT_GT(asks.size(), 10u);
+  for (size_t i = 1; i < asks.size(); ++i) SM_EXPECT_GE((asks[i] - asks[i - 1]).ms(), 5);
+}
+
+// The first packet of a probe comes from GeneratePadding(1 byte) too.
+SM_TEST(PacingController, ProbeStartsWithGeneratedPadding) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::Zero());
+  uint64_t next_id = 1;
+  std::vector<int64_t> asked;
+  pacer.SetPaddingGenerator([&](DataSize target, Timestamp now) {
+    asked.push_back(target.bytes());
+    return std::vector<PacedPacket>{Pkt(next_id++, PacketPriority::kPadding, 150, now)};
+  });
+  ProbeCluster c{7, DataRate::KilobitsPerSec(2000), 5, DataSize::Bytes(3750)};
+  Timestamp now = Timestamp::Millis(1000);
+  pacer.AddProbeCluster(c);
+  pacer.Enqueue(Pkt(100, PacketPriority::kVideo, 1000, now));
+  bool saw_start = false;
+  for (int i = 0; i < 300 && !saw_start; ++i) {
+    now = std::max(now + TimeDelta::Millis(1), pacer.NextSendTime(now));
+    for (auto& p : pacer.Process(now)) {
+      if (p.probe_cluster == 7 && p.priority == PacketPriority::kPadding) {
+        SM_EXPECT_EQ(p.size.bytes(), 150);
+        saw_start = true;
+      }
+    }
+  }
+  SM_EXPECT_TRUE(saw_start);
+  SM_EXPECT_FALSE(asked.empty());
+  SM_EXPECT_EQ(asked.front(), 1);
+}

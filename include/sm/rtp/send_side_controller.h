@@ -129,7 +129,7 @@ class SendSideController : public MetricsSource {
   void ConfigureAllocation(DataRate audio_wire_rate, bool video);
 
   // The stream whose SSRC pads and probes. Not owned.
-  void SetPaddingSender(RtpSender* sender) { padding_sender_ = sender; }
+  void SetPaddingSender(RtpSender* sender);
 
   void Enqueue(SenderPacket p, Timestamp now);
   // Releases due packets, and runs the GCC and outage timers.

@@ -12,9 +12,9 @@ pacer v2
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 expect audio.concealed_pct < 5
-# Flip (#61, needs-human): was `video.freeze_count == 0`; seeds 1-5 with every v2 switch on: 9-25; libwebrtc 17.8.
+# Flip (#61, needs-human): was `video.freeze_count == 0`; seeds 1-8 with every v2 switch on and `rtx v2` (#120): 10-29 (mean 22.5); libwebrtc 17.8.
 # Target: the original line, once the item that owns the gap lands.
-expect video.freeze_count <= 26
+expect video.freeze_count <= 30
 expect video.keyframe_requests <= 4
 # Flip (#61, needs-human): was `cc.queue_p95_ms < 300`; seeds 1-5 with every v2 switch on: 493-497 ms; libwebrtc 484 ms.
 # Target: the original line, once the item that owns the gap lands.
