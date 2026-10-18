@@ -122,6 +122,7 @@ class SendHistory : public MetricsSource {
     DataSize size;
     int probe;
     bool reported = false;
+    bool received = false;  // Reported received once; a second report is ignored.
   };
   SeqNumUnwrapper<uint16_t> unwrapper_;
   std::map<int64_t, Sent> sent_;

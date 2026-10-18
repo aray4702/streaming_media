@@ -224,3 +224,32 @@ SM_TEST(TransportFeedbackV2, IntervalFollowsFivePercentOfTheEstimate) {
   b.OnSendBandwidthEstimateChanged(DataRate::BitsPerSec(80000));
   SM_EXPECT_EQ(b.Interval().ms(), 136);  // 68 B * 8 / (0.05 * 80 kbit/s).
 }
+
+// libwebrtc's TransportFeedbackAdapter erases a packet from its history once
+// it is reported received ("packet reported received more than once"), so a
+// re-report is ignored and never feeds the estimators a receive time that goes
+// backwards.
+SM_TEST(TransportFeedback, PacketReportedReceivedTwiceIsIgnored) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 4; ++s) h.OnPacketSent(s, Timestamp::Millis(1000 + s), DataSize::Bytes(1000));
+  TransportFeedbackBuilder b(0, 0, FeedbackBuilderConfig{2});
+  b.OnPacket(0, Timestamp::Micros(1040000));
+  b.OnPacket(1, Timestamp::Micros(1041000));
+  b.OnPacket(3, Timestamp::Micros(1043000));
+  auto fbs = b.Build();
+  SM_ASSERT_EQ(fbs.size(), 1u);
+  auto first = h.OnFeedback(*ParseTransportFeedback(SerializeTransportFeedback(fbs[0])), Timestamp::Millis(1100));
+  SM_EXPECT_EQ(first.size(), 4u);  // 0, 1 and 3 received, 2 reported lost.
+  // Packet 2 arrives late; the generator reports it again along with 3.
+  b.OnPacket(2, Timestamp::Micros(1060000));
+  b.OnPacket(3, Timestamp::Micros(1060500));
+  auto fbs2 = b.Build();
+  SM_ASSERT_EQ(fbs2.size(), 1u);
+  auto second = h.OnFeedback(*ParseTransportFeedback(SerializeTransportFeedback(fbs2[0])), Timestamp::Millis(1120));
+  int received = 0;
+  for (const auto& r : second) {
+    SM_EXPECT_TRUE(r.seq == 2 || !r.received());
+    if (r.received()) ++received;
+  }
+  SM_EXPECT_EQ(received, 1);
+}

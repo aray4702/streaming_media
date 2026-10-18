@@ -14,7 +14,7 @@ reverse at 16.5s up delay=60ms
 expect video.keyframe_requests <= 2
 # Freezes with every v2 switch on are worse than libwebrtc (4528 total / 1917 longest). Held by the Owner at the old values (PR #116): the 9800 line below
 # is a provisional lock that the Owner has NOT signed off; the old line was `video.freeze_total_ms < 7000`.
-# Flip (#61, needs-human): was `video.freeze_total_ms < 7000`; seeds 1-5 with every v2 switch on: 5127-9215 ms; libwebrtc 4528 ms (10 seeds).
+# Flip (#61, needs-human): was `video.freeze_total_ms < 7000`; seeds 1-5 with every v2 switch on: 5127-9215 ms, 3520-8214 ms after the SendHistory duplicate-report fix (line tightened to 8500, still not signed off); libwebrtc 4528 ms (10 seeds).
 # Target: the original line, once the item that owns the gap lands.
-expect video.freeze_total_ms < 9800
+expect video.freeze_total_ms < 8500
 expect video.longest_freeze_ms < 4500

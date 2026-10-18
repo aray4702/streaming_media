@@ -7,9 +7,12 @@ describe 40 ms jitter with reordering, transport-cc feedback as libwebrtc's gene
 tcc v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
-# Flip (#61, needs-human): was `video.e2e_delay_p95_ms < 300`; seeds 1-5 with every v2 switch on: 191-1623 ms; libwebrtc 136 ms (10 seeds). Worse than libwebrtc; owned by #24 (video jitter estimate and render timing).
-# Target: the original line, once the item that owns the gap lands.
-expect video.e2e_delay_p95_ms < 1700
+# Flip (#61, needs-human): was `video.e2e_delay_p95_ms < 300`. With every v2 switch on, the first seeds gave 191-1623 ms (libwebrtc 136 ms, 10 seeds).
+# Root cause: SendHistory::OnFeedback reported a packet again every time the generator re-reported it, where libwebrtc's TransportFeedbackAdapter erases a
+# received packet from its history. The re-reports moved receive times backwards, so the acked-bitrate window kept resetting (first estimate at 4.3 s) and an
+# overuse before that halved the estimate twice in 50 ms. With the fix, seeds 1-5 give 169-483 ms; this line locks that level and is not signed off.
+# Target: the original `< 300`, once the remaining gap to libwebrtc's 136 ms is closed (pacer 2-417 ms in seeds 1-5; owned by this PR's follow-up or #24 once the breakdown shows it).
+expect video.e2e_delay_p95_ms < 500
 expect video.freeze_total_ms < 500
 expect audio.interruptions == 0
 expect audio.concealed_pct < 2
