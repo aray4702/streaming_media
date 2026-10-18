@@ -23,6 +23,9 @@ HIGHER = {
 INFO = {
     "net.loss_pct", "repair.nack_recovered", "repair.fec_recovered", "video.keyframes",
     "cc.rtt_p50_ms",
+    # Per kind on the forward link (issue #117): information only.
+    "net.audio_loss_pct", "net.video_loss_pct", "net.rtx_loss_pct", "net.padding_loss_pct",
+    "net.audio_kbps", "net.video_kbps", "net.rtx_kbps", "net.padding_kbps", "net.fec_kbps",
 }
 REL_TOL = 0.05
 

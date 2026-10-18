@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "scenario.h"
+#include "sm/sim/network_link.h"
 
 namespace sm::testbench {
 
@@ -58,6 +59,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt = {});
 // the media's maximum wire rate (what the call would send on an unlimited link).
 void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
 // Also adds cc.target_max_drop_pct and cc.send_over_target_p95_pct.
+// Adds the forward link's per-kind counters (issue #117): net.<kind>_kbps
+// (wire rate sent over the call) for audio, video, rtx, padding and fec, and
+// net.<kind>_loss_pct (random, burst, outage and queue drops) for audio,
+// video, rtx and padding. `stats` come from a link whose packets the caller
+// tagged with sim::LinkKind; both implementations tag the same way.
+void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& rep);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
