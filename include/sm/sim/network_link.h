@@ -65,6 +65,21 @@ struct LinkKindStats {
   }
 };
 
+// What happened to a packet offered to the link (issue #125 trace).
+enum class LinkOutcome : uint8_t { kDelivered, kQueueDrop, kLost, kDown };
+
+// One packet offered to the link, for the per-packet trace (issue #125). Both
+// harnesses write the same record so a trace of this library and of libwebrtc
+// can be diffed directly.
+struct LinkTraceRecord {
+  int64_t time_us = 0;      // Time the packet was offered to the link.
+  int32_t size = 0;         // Wire size in bytes.
+  LinkKind kind = LinkKind::kOther;
+  int32_t seq = -1;         // RTP sequence number, or -1 when the packet has none.
+  int32_t queue_bytes = 0;  // Bytes in the bottleneck queue at this arrival, before the packet.
+  LinkOutcome outcome = LinkOutcome::kDelivered;
+};
+
 struct LinkStats {
   LinkKindStats by_kind[static_cast<size_t>(LinkKind::kCount)];
   const LinkKindStats& of(LinkKind k) const { return by_kind[static_cast<size_t>(k)]; }
@@ -91,7 +106,17 @@ class NetworkLink {
     return cfg_.capacity * (link_free_ - now);
   }
 
-  void Send(Timestamp now, T packet, DataSize size, LinkKind kind = LinkKind::kOther) {
+  // Records every packet offered to Send (opt-in; memory grows with the call).
+  void EnableTrace() { trace_on_ = true; }
+  const std::vector<LinkTraceRecord>& trace() const { return trace_; }
+
+  // `seq` is the packet's RTP sequence number (-1 when it has none); it is
+  // only written to the trace.
+  void Send(Timestamp now, T packet, DataSize size, LinkKind kind = LinkKind::kOther, int32_t seq = -1) {
+    if (trace_on_) {
+      trace_.push_back({now.us(), static_cast<int32_t>(size.bytes()), kind, seq,
+                        static_cast<int32_t>(QueuedBytes(now).bytes()), LinkOutcome::kDelivered});
+    }
     LinkKindStats& ks = stats_.by_kind[static_cast<size_t>(kind)];
     ++stats_.sent;
     ++ks.sent;
@@ -102,6 +127,7 @@ class NetworkLink {
     if (cfg_.down) {
       ++stats_.lost;
       ++ks.lost;
+      Mark(LinkOutcome::kDown);
       return;
     }
     Timestamp depart = now;
@@ -109,6 +135,7 @@ class NetworkLink {
       if (cfg_.queue_limit.bytes() > 0 && QueuedBytes(now) + size > cfg_.queue_limit) {
         ++stats_.queue_dropped;
         ++ks.queue_dropped;
+        Mark(LinkOutcome::kQueueDrop);
         return;
       }
       Timestamp start = std::max(now, link_free_);
@@ -118,6 +145,7 @@ class NetworkLink {
     if (IsLost()) {
       ++stats_.lost;
       ++ks.lost;
+      Mark(LinkOutcome::kLost);
       return;
     }
     Enqueue(depart, packet, size);
@@ -169,6 +197,10 @@ class NetworkLink {
     }
   };
 
+  void Mark(LinkOutcome o) {
+    if (trace_on_) trace_.back().outcome = o;
+  }
+
   bool IsLost() {
     if (cfg_.gilbert) {
       if (bad_) {
@@ -196,6 +228,8 @@ class NetworkLink {
   LinkConfig cfg_;
   Random rng_;
   LinkStats stats_;
+  bool trace_on_ = false;
+  std::vector<LinkTraceRecord> trace_;
   bool bad_ = false;
   Timestamp link_free_ = Timestamp::Micros(0);
   Timestamp last_arrival_ = Timestamp::Micros(0);

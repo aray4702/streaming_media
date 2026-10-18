@@ -21,6 +21,7 @@ cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release
 cmake --build out/compare -j
 out/compare/sm_compare testbench/scenarios/*.scn                  # mean of 3 seeds (CI uses --seeds=10)
 out/compare/sm_compare --seeds=5 --json=r.json --dump=runs/ a.scn # JSON summary (means, per-seed values), full per-run reports
+out/compare/sm_compare --trace=NAME --trace-dir=tr/ a.scn          # per-packet forward-link trace, ours and libwebrtc's (below)
 python3 tools/parity_report.py r.json --owners tools/parity_owners.json   # gaps with libwebrtc, in both directions
 ```
 
@@ -98,3 +99,25 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
 - **No decoder, no capture device.** Both sides use fakes: the video
   decoder only returns a frame, and audio goes in and out through
   `AudioTransport` every 10 ms.
+
+## Forward-link packet trace (issue #125)
+
+For the first seed of the scenarios named by `--trace` (default
+`very_low_capacity_allocator_v2`; `--trace=none` disables it), `sm_compare`
+records every packet either stack offers to the forward link, in the same
+CSV: `time_us,size,kind,seq,queue_bytes,outcome` (wire size, kind as the
+per-kind counters tag it, RTP sequence number or -1, bytes in the bottleneck
+queue before the packet, and whether the link delivered, dropped or lost it).
+The traces are in `compare-webrtc.json` under `"traces"`, so CI publishes them
+with the other results (`parity-data`, and `parity-data-pr/pr/<N>/`).
+`--trace-dir=DIR` also writes them as CSV files. `sm_testbench --link-trace=DIR`
+writes our side alone.
+
+```sh
+python3 tools/link_trace.py compare-webrtc.json         # per kind, ours and libwebrtc's side by side
+python3 tools/link_trace.py sm.trace.csv webrtc.trace.csv --duration 40
+```
+
+The summary shows, per kind, the offered kbps, the wire-size percentiles and
+histogram, the gaps between sends, the queue at arrival, and the drops (by
+cause, and as a share of all drops).

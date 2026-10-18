@@ -43,11 +43,14 @@ struct Report {
   std::vector<Sample> timeseries;
   std::map<std::string, double> library;  // Every module's own metrics.
   std::map<std::string, int> events;      // Event counts by module/name.
+  // Every packet offered to the forward link, when RunOptions::link_trace is set (issue #125).
+  std::vector<sim::LinkTraceRecord> link_trace;
 };
 
 struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
+  bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
@@ -65,6 +68,13 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
 // video, rtx and padding. `stats` come from a link whose packets the caller
 // tagged with sim::LinkKind; both implementations tag the same way.
 void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& rep);
+// The forward-link trace as CSV (issue #125), identical for both
+// implementations: a header line, then one line per packet offered to the
+// link: time_us,size,kind,seq,queue_bytes,outcome. `kind` is audio, video,
+// rtx, padding, fec or other (RTCP, cross traffic); `seq` is the RTP sequence
+// number or -1; `queue_bytes` is the bottleneck queue before the packet;
+// `outcome` is delivered, queue_drop, lost or down.
+std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

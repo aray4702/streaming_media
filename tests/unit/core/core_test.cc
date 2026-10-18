@@ -317,3 +317,45 @@ SM_TEST(NetworkLink, GilbertBurstsAreLongerThanBernoulli) {
   double mean_burst = static_cast<double>(lost) / bursts;
   SM_EXPECT_GT(mean_burst, 3.0);
 }
+
+SM_TEST(NetworkLink, TraceRecordsEveryOfferedPacketWithItsOutcome) {
+  sim::LinkConfig cfg;
+  cfg.capacity = DataRate::KilobitsPerSec(80);  // 10 bytes per ms.
+  cfg.queue_limit = DataSize::Bytes(300);
+  cfg.base_delay = TimeDelta::Millis(10);
+  sim::NetworkLink<int> link(cfg, 1);
+  link.Send(Timestamp::Millis(0), 1, DataSize::Bytes(100), sim::LinkKind::kAudio, 5);  // Queue: 0.
+  SM_EXPECT_TRUE(link.trace().empty());  // Off unless enabled.
+  link.EnableTrace();
+  link.Send(Timestamp::Millis(0), 2, DataSize::Bytes(200), sim::LinkKind::kVideo, 6);   // Queue: 100 -> 300.
+  link.Send(Timestamp::Millis(0), 3, DataSize::Bytes(100), sim::LinkKind::kRtx, 7);     // 300 + 100 > 300: dropped.
+  link.Send(Timestamp::Millis(10), 4, DataSize::Bytes(50), sim::LinkKind::kOther);      // Queue drained by 100 B: 200.
+  const auto& t = link.trace();
+  SM_ASSERT_EQ(t.size(), 3u);
+  SM_EXPECT_EQ(t[0].queue_bytes, 100);
+  SM_EXPECT_EQ(t[0].seq, 6);
+  SM_EXPECT_TRUE(t[0].outcome == sim::LinkOutcome::kDelivered);
+  SM_EXPECT_EQ(t[1].queue_bytes, 300);
+  SM_EXPECT_TRUE(t[1].kind == sim::LinkKind::kRtx);
+  SM_EXPECT_TRUE(t[1].outcome == sim::LinkOutcome::kQueueDrop);
+  SM_EXPECT_EQ(t[2].time_us, 10000);
+  SM_EXPECT_EQ(t[2].queue_bytes, 200);
+  SM_EXPECT_EQ(t[2].seq, -1);
+  // The counters agree with the trace.
+  SM_EXPECT_EQ(link.stats().of(sim::LinkKind::kRtx).queue_dropped, 1u);
+}
+
+SM_TEST(NetworkLink, TraceMarksOutageAndRandomLoss) {
+  sim::LinkConfig cfg;
+  cfg.down = true;
+  sim::NetworkLink<int> link(cfg, 1);
+  link.EnableTrace();
+  link.Send(Timestamp::Millis(0), 1, DataSize::Bytes(100), sim::LinkKind::kAudio, 1);
+  cfg.down = false;
+  cfg.loss_rate = 1.0;
+  link.SetConfig(cfg);
+  link.Send(Timestamp::Millis(1), 2, DataSize::Bytes(100), sim::LinkKind::kAudio, 2);
+  SM_ASSERT_EQ(link.trace().size(), 2u);
+  SM_EXPECT_TRUE(link.trace()[0].outcome == sim::LinkOutcome::kDown);
+  SM_EXPECT_TRUE(link.trace()[1].outcome == sim::LinkOutcome::kLost);
+}
