@@ -133,3 +133,19 @@ audio/audio_level.cc
 api/transport/network_types.cc
 modules/rtp_rtcp/source/rtp_sender.cc
 modules/rtp_rtcp/source/rtp_sender.h
+
+# Added for #57 / #126: the rest of the audio send chain (channel, RTP audio sender, Opus config defaults, voice engine).
+audio/channel_send.h
+audio/channel_send.cc
+audio/audio_state.cc
+modules/rtp_rtcp/source/rtp_sender_audio.h
+modules/rtp_rtcp/source/rtp_sender_audio.cc
+api/audio_codecs/audio_encoder.h
+api/audio_codecs/opus/audio_encoder_opus_config.h
+api/audio_codecs/opus/audio_encoder_opus_config.cc
+api/audio_codecs/opus/audio_encoder_opus.cc
+modules/audio_coding/codecs/opus/opus_interface.cc
+modules/audio_coding/acm2/audio_coding_module.cc
+media/engine/webrtc_voice_engine.h
+media/engine/webrtc_voice_engine.cc
+media/base/media_constants.cc
