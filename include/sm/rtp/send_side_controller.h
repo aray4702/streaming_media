@@ -43,8 +43,8 @@
 namespace sm::rtp {
 
 struct SendSideConfig {
-  cc::GccConfig gcc;
-  cc::PacerConfig pacer;
+  cc::GccConfig gcc = [] { cc::GccConfig c; c.version = 2; return c; }();  // #61: libwebrtc's GoogCC.
+  cc::PacerConfig pacer = [] { cc::PacerConfig c; c.version = cc::PacerVersion::kV2; return c; }();  // #61: libwebrtc's PacingController.
   cc::OutageConfig outage;
   cc::CongestionWindowConfig cwnd;
   // Bytes the transport adds to every datagram (UDP + IPv4), counted in the
@@ -64,7 +64,7 @@ struct SendSideConfig {
   // (call/bitrate_allocator.cc, issue #104) shares the target between the audio
   // and video streams, and the sum of their minimums is the lower bound of the
   // target (see ConfigureAllocation()).
-  int allocator_version = 1;
+  int allocator_version = 2;
   // `cc v2`/`allocator v2` (RtpVideoSender::OnBitrateUpdated): the packet size
   // the overhead rate is computed for (RTP max_packet_size; the transport
   // overhead is added) and the RTP header bytes of a media packet (12 plus the

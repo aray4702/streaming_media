@@ -310,15 +310,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.start_rate = s.start_rate;
     c.send_side.gcc.max_rate = s.max_rate;
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
-    if (s.pacer_v2) c.send_side.pacer.version = cc::PacerVersion::kV2;
-    if (s.allocator_v2) c.send_side.allocator_version = 2;
-    if (s.cc_v2) c.send_side.gcc.version = 2;
+    c.send_side.pacer.version = s.pacer_v2 ? cc::PacerVersion::kV2 : cc::PacerVersion::kV1;
+    c.send_side.allocator_version = s.allocator_v2 ? 2 : 1;
+    c.send_side.gcc.version = s.cc_v2 ? 2 : 1;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
-    if (s.tcc_v2) c.transport_feedback_version = 2;
-    if (s.rtx_v2) c.rtx_version = 2;
+    c.transport_feedback_version = s.tcc_v2 ? 2 : 1;
+    c.rtx_version = s.rtx_v2 ? 2 : 1;
     if (s.packetization_v2) c.packetization_version = 2;
-    if (s.rtcp_v2) c.rtcp.version = 2;
+    c.rtcp.version = s.rtcp_v2 ? 2 : 1;
     c.events = &events;
     return c;
   };
@@ -352,7 +352,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
-  if (s.keyframe_v2) video_cfg.keyframe.version = 2;
+  video_cfg.keyframe.version = s.keyframe_v2 ? 2 : 1;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
   const bool video_fec = s.video && rtp::VideoFecEnabled(video_cfg);

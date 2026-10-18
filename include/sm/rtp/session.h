@@ -54,7 +54,7 @@ struct SessionConfig {
   // peer's first packet carrying a MID acknowledges it.
   int mid_packets = 8;
   sync::ExtensionMap extensions;  // Negotiated id <-> URI (SDP stays with the host).
-  RtcpConfig rtcp;                // local_ssrc, cname and seed are filled in; has_video stays as set.
+  RtcpConfig rtcp = [] { RtcpConfig c; c.version = 2; return c; }();                // local_ssrc, cname and seed are filled in; has_video stays as set.
   SendSideConfig send_side;
   // Interval between transport-cc feedback messages; zero turns it off.
   TimeDelta transport_feedback_interval = TimeDelta::Millis(50);
@@ -62,10 +62,10 @@ struct SessionConfig {
   // TransportSequenceNumberFeedbackGenenerator: the interval follows the local
   // send estimate (5% of it, 50-250 ms, 100 ms before the first), arrivals are
   // kept 500 ms and late ones reported again. Zero interval still turns it off.
-  int transport_feedback_version = 1;
+  int transport_feedback_version = 2;
   // 1: the RTX packet history of loss::RtxConfig v1 (a ring filled at queue time). 2: libwebrtc's
   // RtpPacketHistory (stored when the pacer sends, RTT-based retention, culled on acknowledgement).
-  int rtx_version = 1;
+  int rtx_version = 2;
   // 1: video payloads are sized for a fixed 16 bytes of header extensions.
   // 2: libwebrtc's RtpSenderVideo: the payload room is the packet capacity
   // less the header (with the extensions the next packet will carry), and the
@@ -118,7 +118,7 @@ struct VideoStreamConfig {
   bool nack = true;
   loss::NackConfig nack_config;
   timing::PacketBufferConfig packet_buffer;
-  loss::KeyframeRequestConfig keyframe;
+  loss::KeyframeRequestConfig keyframe = [] { loss::KeyframeRequestConfig c; c.version = 2; return c; }();  // #61: libwebrtc's receiver policy.
   video::FrameSchedulerConfig scheduler;
   timing::VideoTimingConfig timing;
   TimeDelta decode_time = TimeDelta::Millis(5);

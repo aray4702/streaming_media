@@ -63,7 +63,10 @@ SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
 }
 
 SM_TEST(SendSideController, PaddingIsARealPaddingOnlyPacket) {
-  SendSideController c;
+  SendSideConfig v1;
+  v1.gcc.version = 1;  // v2 pads through the prober and the pacing controller (see the cc v2 tests).
+  v1.pacer.version = cc::PacerVersion::kV1;
+  SendSideController c(v1);
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
@@ -125,7 +128,10 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);
   map.Register(2, sync::uri::kAbsSendTime);
-  SendSideController c({}, &map);
+  SendSideConfig v1;
+  v1.gcc.version = 1;  // v2 pads through the prober and the pacing controller (see the cc v2 tests).
+  v1.pacer.version = cc::PacerVersion::kV1;
+  SendSideController c(v1, &map);
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
@@ -276,6 +282,7 @@ SM_TEST(SendSideController, FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2
 // not run below what it must send.
 SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
   SendSideConfig cfg;
+  cfg.gcc.version = 1;
   cfg.allocator_version = 2;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   cfg.video_min = DataRate::KilobitsPerSec(50);
@@ -291,6 +298,8 @@ SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
 
 SM_TEST(SendSideController, AllocatorV1KeepsTheConfiguredMinimum) {
   SendSideConfig cfg;
+  cfg.gcc.version = 1;
+  cfg.allocator_version = 1;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   SendSideController c(cfg);
   c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);  // No effect on version 1.
