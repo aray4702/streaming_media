@@ -53,6 +53,11 @@ BandwidthLimitedCause LimitedCause(LossBasedState loss_based_state, bool is_rtt_
 // GoogCcNetworkController::limit_probes_lower_than_throughput_estimate_: limit
 // the backoff of a probe result to something slightly below the acked rate.
 constexpr double kProbeDropThroughputFraction = 0.85;
+// Pacing rate relative to the target: kDefaultPaceMultiplier until the first
+// transport feedback, kDefaultPaceMultiplierWithSendSideBwe after it
+// (goog_cc_network_control.cc).
+constexpr double kDefaultPaceMultiplier = 2.5;
+constexpr double kDefaultPaceMultiplierWithSendSideBwe = 1.1;
 }  // namespace
 
 GccController::GccController(GccConfig cfg)
@@ -111,6 +116,21 @@ void GccController::SetMinAllocatable(DataRate r) {
   }
   target_ = std::max(target_, cfg_.min_rate);
   cfg_.start_rate = std::max(cfg_.start_rate, cfg_.min_rate);
+}
+
+void GccController::SetPacingLimits(DataRate min_total_allocated, DataRate max_padding) {
+  min_total_allocated_ = min_total_allocated;
+  max_padding_ = max_padding;
+}
+
+// GoogCcNetworkController::GetPacingRates. Based on the target before the
+// congestion-window pushback, so the pacer builds no queue when pushback occurs.
+DataRate GccController::PacingRate() const {
+  return std::max(min_total_allocated_, target_) * (first_feedback_received_ ? kDefaultPaceMultiplierWithSendSideBwe : kDefaultPaceMultiplier);
+}
+
+DataRate GccController::PaddingRate() const {
+  return ssbe_.loss_based_state() == LossBasedState::kIncreaseUsingPadding ? std::max(max_padding_, target_) : max_padding_;
 }
 
 void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int probe_cluster) {

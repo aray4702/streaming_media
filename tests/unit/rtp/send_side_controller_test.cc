@@ -297,3 +297,19 @@ SM_TEST(SendSideController, AllocatorV1KeepsTheConfiguredMinimum) {
   c.Start(Timestamp::Millis(0));
   SM_EXPECT_NEAR(c.target().kbps(), 60.0, 0.01);
 }
+
+// RtpVideoSender::OnBitrateUpdated (#61 glue): with `cc v2` the packet-overhead
+// rate comes off the video allocation before the protection share does.
+SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) {
+  SendSideConfig cfg;
+  cfg.gcc.version = 2;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  cfg.allocator_version = 2;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+  // 1 Mbps / (1228 bytes x 8) = 102 packets/s (rounded up), each with 24 + 28 bytes of overhead.
+  const int64_t overhead = 102 * (24 + 28) * 8;
+  SM_EXPECT_EQ(r.video_target.bps(), c.allocator().allocation("video").bps() - overhead);
+}
