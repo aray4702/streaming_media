@@ -65,6 +65,13 @@ struct SendSideConfig {
   // and video streams, and the sum of their minimums is the lower bound of the
   // target (see ConfigureAllocation()).
   int allocator_version = 1;
+  // `cc v2`/`allocator v2` (RtpVideoSender::OnBitrateUpdated): the packet size
+  // the overhead rate is computed for (RTP max_packet_size; the transport
+  // overhead is added) and the RTP header bytes of a media packet (12 plus the
+  // transport-wide sequence number and abs-send-time extensions; libwebrtc's
+  // ExpectedPerPacketOverhead is the header the sender actually builds).
+  int64_t max_packet_size = 1200;
+  int64_t rtp_overhead_bytes = 24;
   EventSink* events = nullptr;
 };
 
@@ -168,6 +175,12 @@ class SendSideController : public MetricsSource {
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
   void ApplyPushback(SendRates& out) const;
+  // `allocator v2`: the video allocation less the packet-overhead rate and the
+  // protection share, at most the video maximum: the encoder target before the
+  // congestion-window frame dropping (VideoStreamEncoder::UpdateTargetBitrate).
+  DataRate AllocatedVideoTarget(DataRate alloc) const;
+  // RtpVideoSender::CalculateOverheadRate (frame-rate option off).
+  DataRate OverheadRate(DataRate rate, int64_t packet_size_bytes) const;
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;
 
   SendSideConfig cfg_;
@@ -178,6 +191,7 @@ class SendSideController : public MetricsSource {
   cc::CongestionWindowPushback cwnd_;
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
+  DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;

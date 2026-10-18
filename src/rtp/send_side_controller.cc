@@ -31,12 +31,19 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       outage_(WithEvents(cfg.outage, cfg.events)),
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       allocator_(cfg.events),
-      target_(cfg.gcc.start_rate) {}
+      target_(cfg.gcc.start_rate),
+      pushback_target_(cfg.gcc.start_rate) {}
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
   if (allocation_configured_) allocator_.OnTargetChanged(target_, now);
-  pacer_.SetPacingRates(u.pacing_rate, DataRate::Zero());
+  if (cfg_.gcc.version >= 2 && cfg_.pacer.version == cc::PacerVersion::kV2) {
+    // GetPacingRates: the padding rate never exceeds the pushback target.
+    if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
+    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+  } else {
+    pacer_.SetPacingRates(u.pacing_rate, DataRate::Zero());
+  }
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
   outage_.SetCurrentRate(target_);
 }
@@ -47,7 +54,8 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   cwnd_.UpdatePacingQueue(pacer_.QueueSize());
   if (window) cwnd_.UpdateWindow(target_);
-  cwnd_.UpdateTargetBitrate(target_, now);
+  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
+  pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
 }
 
 void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const {
@@ -72,7 +80,14 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     v.max = cfg_.video_max;
     v.enforce_min = true;
     // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
-    allocator_.AddObserver("video", v, [this](DataRate alloc) { return alloc * std::min(repair_share(), cfg_.max_repair_share); });
+    allocator_.AddObserver("video", v, [this](DataRate alloc) {
+      // OnBitrateUpdated: protection = target - (encoder target + its packet overhead).
+      const DataRate encoder = AllocatedVideoTarget(alloc);
+      const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
+      DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
+      enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
+      return std::max(DataRate::Zero(), alloc - (encoder + enc_overhead));
+    });
   }
   gcc_.SetMinAllocatable(allocator_.limits().min_allocatable);
   // SetAllocatedSendBitrateLimits: streams_config.max_total_allocated_bitrate.
@@ -211,7 +226,8 @@ ControllerActions SendSideController::TakeActions() {
 }
 
 bool SendSideController::DropCapturedFrame() {
-  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  const DataRate base = allocation_configured_ && cfg_.gcc.version >= 2 ? AllocatedVideoTarget(allocator_.allocation("video")) : target_;
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(base, cwnd_.reduce_ratio(), cfg_.video_min);
   if (drop.interval == 0) return false;
   if (cwnd_frame_counter_++ % static_cast<uint64_t>(drop.interval) != 0) return false;
   ++cwnd_frames_dropped_;
@@ -240,7 +256,9 @@ SendRates SendSideController::ComputeRates(DataRate audio_wire_rate, double fec_
 void SendSideController::ApplyPushback(SendRates& out) const {
   // Pushback acts on the whole target; the encoder drops frames and takes
   // the matching share of the video target.
-  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  // The allocator passes the reduce ratio to the video stream (cwnd_reduce_ratio
+  // in BitrateAllocationUpdate), so the encoder takes it against its own target.
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(allocation_configured_ && cfg_.gcc.version >= 2 ? out.video_target : target_, cwnd_.reduce_ratio(), cfg_.video_min);
   if (drop.interval > 0) {
     out.frame_drop_interval = drop.interval;
     out.video_target = std::clamp(out.video_target - out.video_target * (1.0 / drop.interval), cfg_.video_min, cfg_.video_max);
@@ -261,6 +279,21 @@ double SendSideController::repair_share() const {
   return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
 }
 
+DataRate SendSideController::OverheadRate(DataRate rate, int64_t packet_size_bytes) const {
+  if (cfg_.gcc.version < 2 || packet_size_bytes <= 0) return DataRate::Zero();
+  // packet_rate = rate / packet_size, rounded up to whole Hz; times the overhead per packet.
+  const int64_t pkt_bits = packet_size_bytes * 8;
+  const int64_t packets_per_sec = (rate.bps() + pkt_bits - 1) / pkt_bits;
+  return DataRate::BitsPerSec(packets_per_sec * (cfg_.rtp_overhead_bytes + cfg_.transport_overhead_bytes) * 8);
+}
+
+DataRate SendSideController::AllocatedVideoTarget(DataRate alloc) const {
+  const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
+  // has_packet_feedback_: the payload rate is the allocation less the overhead rate.
+  const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, cfg_.max_packet_size + cfg_.transport_overhead_bytes));
+  return std::min(cfg_.video_max, payload * keep);
+}
+
 SendRates SendSideController::AllocatedRates() const {
   // VideoSendStreamImpl::OnBitrateUpdated: the encoder gets the allocation less
   // the protection bitrate, at most its maximum. A paused stream gets nothing.
@@ -268,7 +301,7 @@ SendRates SendSideController::AllocatedRates() const {
   out.target = target_;
   out.audio_rate = allocator_.allocation("audio");
   const DataRate alloc = allocator_.allocation("video");
-  out.video_target = std::min(cfg_.video_max, alloc * (1.0 - std::min(repair_share(), cfg_.max_repair_share)));
+  out.video_target = AllocatedVideoTarget(alloc);
   ApplyPushback(out);
   return out;
 }

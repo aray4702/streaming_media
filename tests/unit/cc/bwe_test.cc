@@ -322,3 +322,20 @@ SM_TEST(GccController, V2RoundsTheRttToWholeMillisecondsAndDropsZero) {
   v1.OnRttUpdate(TimeDelta::Micros(49600));
   SM_EXPECT_EQ(v1.last_rtt().us(), 49600);
 }
+
+// GoogCcNetworkController::GetPacingRates (#61 glue): 2.5 x the target until the
+// first transport feedback, 1.1 x after it, never below the allocator's minimum.
+SM_TEST(GccController, V2PacingRateFollowsGetPacingRates) {
+  GccConfig c;
+  c.version = 2;
+  c.start_rate = DataRate::KilobitsPerSec(300);
+  GccController g(c);
+  g.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(g.PacingRate().bps(), 750000);
+  g.SetPacingLimits(DataRate::KilobitsPerSec(400), DataRate::KilobitsPerSec(120));
+  SM_EXPECT_EQ(g.PacingRate().bps(), 1000000);  // max(min allocatable, target) x 2.5.
+  SM_EXPECT_EQ(g.PaddingRate().bps(), 120000);
+  GccController v1;
+  v1.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(v1.Start(Timestamp::Millis(0)).pacing_rate.bps(), 750000);  // cc v1 and the update keep 2.5 x.
+}

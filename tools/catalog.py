@@ -365,7 +365,12 @@ ALGORITHMS = [
                "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in `pacer v2`). "
                "The loss-based state and the RTT limit decide the bandwidth-limited cause (#12, `GetBandwidthLimitedCause`). "
                "Remaining differences: no `NetworkStateEstimate`, the padding sizes of `RTPSender::GeneratePadding` come from memory "
-               "(`rtp_sender.cc` is not in `reference/`, #57), and `cc v1` keeps the old controller until #61.",
+               "(`rtp_sender.cc` is not in `reference/`, #57), and `cc v1` keeps the old controller until #61. "
+               "The `GoogCcNetworkController` glue (#61) is in `cc v2`: `GetPacingRates` (2.5 x the target until the first "
+               "feedback, 1.1 x after; padding rate), the packet-overhead rate off the video allocation "
+               "(`RtpVideoSender::OnBitrateUpdated`) and the congestion-window frame drop against the video target. With "
+               "libwebrtc's default `CongestionWindowConfig` the window never reaches the pacer (`SetCongested` stays "
+               "false), as in libwebrtc.",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
                       "within 30 s."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",

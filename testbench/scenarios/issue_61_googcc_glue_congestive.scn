@@ -1,0 +1,19 @@
+name issue_61_googcc_glue_congestive
+describe Congestive loss with every v2 switch on: GoogCC's glue (pacing 1.1 x target, padding, overhead rate, cwnd drop through the allocator) keeps the sender at its target (#61)
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
+# Seeds 1-5, all v2 switches: net.loss_pct main 11.0 -> 4.3 (libwebrtc 4.5), cc.send_over_target_ms 3860 -> 100
+# (libwebrtc 60), cc.utilization_pct 82 -> 91 (libwebrtc 91), video.avg_kbps 1015 -> 1148 (libwebrtc 1182).
+# Freezes rise (2.4 -> 3.2 s; libwebrtc 2.1 s) and are owned by #61's flip (keyframe/NACK recovery).
+expect net.loss_pct < 7
+expect cc.send_over_target_ms < 1000
+expect cc.utilization_pct > 86
+expect video.avg_kbps > 1080
