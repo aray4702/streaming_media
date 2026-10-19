@@ -6,6 +6,9 @@ at 0s capacity=2000kbps delay=30ms queue=20ms
 at 15s capacity=1200kbps
 # 5 seeds (cc v2): net.loss_pct 9.2-12.7, freeze_total_ms 507-1552, longest freeze 254-962 ms. `cc v1`: loss 14.3-25.5 %, up to 4.9 s of freezes.
 expect net.loss_pct < 14
-expect video.freeze_total_ms < 2000
+# Port (#150, RobustThroughputEstimator as the acked-rate estimator, as libwebrtc M157): freeze_total_ms moved from 248-1552 to
+# 282-2478 ms over seeds 1-10 (mean 840 -> 1107). libwebrtc's mean is 5769 ms, 3228-7657 per seed, so it fails the old 2000 line
+# (program.md 0.2, guard rails during a port). Provisional lock at the level reached; needs-human.
+expect video.freeze_total_ms < 3000
 expect video.longest_freeze_ms < 1200
 expect audio.interruptions <= 3

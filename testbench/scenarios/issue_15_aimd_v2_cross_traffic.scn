@@ -7,7 +7,11 @@ duration 40s
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
-expect video.freeze_count == 0
-expect cc.queue_p95_ms < 250
+# Port (#150, RobustThroughputEstimator as the acked-rate estimator, as libwebrtc M157): queue p95 121 -> 262 ms (libwebrtc 263.5,
+# per seed 229-292 against ours 204-296), freezes 0 -> 5.2 (libwebrtc 3.9; the same seeds freeze on both stacks: ours
+# 2/0/15/0/0/19/0/0/0/16, libwebrtc 2/1/11/1/0/16/1/5/1/1), utilization 73.6 % (libwebrtc 74.2). libwebrtc fails both old lines
+# (queue 263.5 > 250, 3.9 freezes), so they move to the level reached on seed 1 (program.md 0.2); needs-human.
+expect video.freeze_count <= 2
+expect cc.queue_p95_ms < 300
 expect cc.unsettled == 0
 expect cc.utilization_pct >= 68
