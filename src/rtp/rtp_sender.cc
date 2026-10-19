@@ -45,7 +45,10 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
   RtpPacket p;
   p.ssrc = cfg_.ssrc;
   p.payload_type = pt;
-  p.seq = next_seq_++;
+  // `rtx v2`: libwebrtc assigns the sequence number when the pacer releases the packet
+  // (PacketRouter::SendPacket -> ModuleRtpRtcpImpl2::AssignSequenceNumber), so a packet
+  // the pacer discards leaves no gap. AssignSequenceNumber() does it here.
+  p.seq = DefersSequenceNumbers() ? 0 : next_seq_++;
   p.timestamp = rtp_timestamp;
   p.marker = marker;
   if (mid_remaining_ > 0 && !cfg_.mid.empty() && cfg_.extensions) {
@@ -59,6 +62,18 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
 void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
   out_.push_back({std::move(p), kind, prio});
   out_.back().sender = this;
+}
+
+bool RtpSender::DefersSequenceNumbers() const {
+  // FEC packets name the media sequence numbers they protect when they are made, so a sender with
+  // FEC keeps assigning at packetization.
+  return cfg_.rtx.version >= 2 && !cfg_.fec;
+}
+
+void RtpSender::AssignSequenceNumber(SenderPacket& p) {
+  if (!DefersSequenceNumbers()) return;
+  if (p.kind != PacketKind::kAudio && p.kind != PacketKind::kVideo) return;
+  p.packet.seq = next_seq_++;
 }
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
