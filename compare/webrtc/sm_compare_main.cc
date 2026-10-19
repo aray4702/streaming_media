@@ -15,7 +15,7 @@
 //
 // --trace=NAME,... records every packet offered to the forward link, for this
 // library and for libwebrtc, on the first seed of the named scenarios (issue
-// #125; default very_low_capacity_allocator_v2, "none" disables). The CSVs go
+// #125; default very_low_capacity_allocator_v2 and issue_124_clean_link_v2, "none" disables). The CSVs go
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
 // diff them with tools/link_trace.py. The same runs also write the sender's
 // per-second video decisions (issue #131; "sm_video", "webrtc_video").
@@ -92,7 +92,7 @@ const std::vector<const char*>& InfoMetrics() {
 // Scenarios whose first seed is traced packet by packet on the forward link
 // (issue #125), for both stacks, when --trace is not given. The traces go into
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
-const char* const kDefaultTraced = "very_low_capacity_allocator_v2";
+const char* const kDefaultTraced = "very_low_capacity_allocator_v2,issue_124_clean_link_v2";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
