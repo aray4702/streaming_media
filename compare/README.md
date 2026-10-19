@@ -171,7 +171,7 @@ libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 | `delay_based` | `RtcEventBweUpdateDelayBased` (`delay_based_bwe.cc`): AIMD estimate and trendline state, when either changes | `GccController::TraceDelayBased`, same condition |
 | `loss_based` | `RtcEventBweUpdateLossBased` (`send_side_bandwidth_estimation.cc`): the send-side target, fraction lost and packets, when the target or fraction changes, and every 5 s | `GccController::TraceLossBased`, same condition |
 | `target` | `Call::Stats::send_bandwidth_bps` every 100 ms, when it changes | the controller's target, when it changes |
-| `rtt` (`rtt_us`, issue #152) | `Call::Stats::rtt_ms` every 100 ms, when it changes (CallStats' last processed RTT, the value `RtpTransportControllerSend::OnRttUpdate` receives) | `GccController::OnRttUpdate`, the RTT rounded to 1 ms that the delay-based and loss-based estimators hold, when it changes |
+| `rtt` (`rtt_us`, issue #152) | `Call::Stats::rtt_ms` every 100 ms, when it changes (CallStats' last processed RTT, a 1 s average: a proxy, not the per-report-block RTT `RtpTransportControllerSend::OnRttUpdate` hands to GoogCC, which has no public accessor) | `GccController::OnRttUpdate`, the RTT rounded to 1 ms that the delay-based and loss-based estimators hold, when it changes |
 
 `loss_state`, `loss_limit_bps` and `instant_ub_bps` (`LossBasedBweV2`'s state,
 loss-limited estimate and instant upper bound) are filled for this library only:
