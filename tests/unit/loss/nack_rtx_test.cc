@@ -174,6 +174,30 @@ SM_TEST(NackTracker, V2GivesUpAfter100RetriesWithoutKeyframeRequest) {
   SM_EXPECT_FALSE(n.TakeKeyframeRequest());
 }
 
+SM_TEST(NackTracker, V2ClearUpToForgetsRequestsBeforeAContinuousFrame) {
+  // NackRequester::ClearUpTo(seq): erases the entries with a sequence number below `seq`.
+  NackConfig cfg;
+  cfg.version = 2;
+  NackTracker n(cfg);
+  n.OnReceivedPacket(65530, true, Ms(0));
+  n.OnReceivedPacket(65534, false, Ms(0));  // 65531-65533 missing.
+  n.OnReceivedPacket(4, false, Ms(0));      // 65535, 0-3 missing (wrap).
+  SM_EXPECT_EQ(n.pending(), 8u);
+  n.ClearUpTo(0);                           // Drops 65531-65535, keeps 0-3.
+  SM_EXPECT_EQ(n.pending(), 4u);
+  n.ClearUpTo(4);
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(1000)).empty());
+}
+
+SM_TEST(NackTracker, V1ClearUpToIsANoOp) {
+  NackTracker n;
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(5, false, Ms(0));
+  n.ClearUpTo(5);
+  SM_EXPECT_EQ(n.pending(), 3u);
+}
+
 SM_TEST(NackTracker, V2ListOverflowClearsEverythingAndRequestsKeyframe) {
   // AddPacketsToNack: no attempt to keep the gaps after a keyframe.
   NackConfig cfg;

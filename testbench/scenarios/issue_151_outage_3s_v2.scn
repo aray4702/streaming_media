@@ -1,0 +1,28 @@
+name issue_151_outage_3s_v2
+describe 3 s outage with all v2 switches on: the receiver stops NACKing what a keyframe made moot (issue #151)
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+seed 1
+duration 30s
+at 0s  capacity=1500kbps delay=30ms queue=300ms
+at 12s down
+at 15s up
+reverse at 0s delay=30ms
+reverse at 12s down
+reverse at 15s up
+# Receiver NACK give-up (issue #151). Before the fix the receiver re-requested the ~60 packets lost in the outage
+# every 20 ms for 2 s after the keyframe had been decoded (100 NACK batches, 47 useless retransmissions that
+# queued behind the recovery keyframe); libwebrtc's NackRequester::ClearUpTo drops them at the first continuous
+# frame (one burst, 17 RTX).
+# Seeds 1-3 on main 3179f13: repair.overhead_pct 1.44 / 1.75 / 1.61, video.freeze_total_ms 4093 / 4084 / 4118;
+# with the fix 1.34 / 1.37 / 1.33 and 4070 / 4034 / 4072.
+# Target (issue #151): cc.queue_p95_ms < 40 (libwebrtc 39), freeze total within the parity band of libwebrtc (3217).
+expect repair.overhead_pct < 1.4
+expect video.freeze_total_ms < 4080
