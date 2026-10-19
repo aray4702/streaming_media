@@ -59,6 +59,16 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   cwnd_.UpdatePacingQueue(pacer_.QueueSize());
   if (window) cwnd_.UpdateWindow(target_);
+  if (cfg_.gcc.version >= 2 && cfg_.pacer.version == cc::PacerVersion::kV2) {
+    // RtpTransportControllerSend::UpdateCongestedState: the pacer stops sending media while the data in
+    // flight is at the congestion window (GetOutstandingData() >= congestion_window_size_).
+    const auto window_size = cwnd_.data_window();
+    const bool congested = window_size && gcc_.history().InFlight() >= *window_size;
+    if (congested != is_congested_) {
+      is_congested_ = congested;
+      pacer_.SetCongested(congested);
+    }
+  }
   // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
 }
@@ -211,7 +221,9 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
     UpdatePushback(now, true);
   }
-  if (!last_outage_.IsFinite() || now - last_outage_ >= cfg_.outage_interval) {
+  // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
+  // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. cc v2 does the same.
+  if (cfg_.gcc.version < 2 && (!last_outage_.IsFinite() || now - last_outage_ >= cfg_.outage_interval)) {
     last_outage_ = now;
     cc::OutageActions act = outage_.Process(now);
     if (act.pause_encoder) actions_.pause_encoder = true;
@@ -232,7 +244,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
 Timestamp SendSideController::NextProcessTime(Timestamp now) const {
   Timestamp next = pacer_.NextSendTime(now);
   if (last_gcc_.IsFinite()) next = std::min(next, last_gcc_ + cfg_.gcc_interval);
-  if (last_outage_.IsFinite()) next = std::min(next, last_outage_ + cfg_.outage_interval);
+  if (cfg_.gcc.version < 2 && last_outage_.IsFinite()) next = std::min(next, last_outage_ + cfg_.outage_interval);
   return std::max(next, now);
 }
 

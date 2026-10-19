@@ -189,6 +189,7 @@ class SendSideController : public MetricsSource {
   cc::Pacer pacer_;
   cc::OutageMonitor outage_;
   cc::CongestionWindowPushback cwnd_;
+  bool is_congested_ = false;  // RtpTransportControllerSend::is_congested_
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
