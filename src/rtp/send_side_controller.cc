@@ -176,6 +176,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
       sp = std::move(it->second);
       queued_.erase(it);
     }
+    if (sp.sender) sp.sender->AssignSequenceNumber(sp);
     ReleasedPacket r;
     r.transport_seq = transport_seq_++;
     WriteSendExtensions(sp.packet, r.transport_seq, now);
