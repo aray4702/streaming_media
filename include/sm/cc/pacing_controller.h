@@ -97,6 +97,9 @@ class PacingController : public MetricsSource {
   // QueueSizeData() / adjusted rate.
   TimeDelta ExpectedQueueTime() const;
   DataRate pacing_rate() const { return adjusted_media_rate_; }
+  // PacingController::pacing_rate(): the rate set by SetPacingRates, before the long-queue boost.
+  DataRate configured_pacing_rate() const { return pacing_rate_; }
+  bool probing() const { return prober_.is_probing(); }
   const PacerStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

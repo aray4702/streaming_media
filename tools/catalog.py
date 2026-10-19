@@ -345,7 +345,11 @@ ALGORITHMS = [
                "200 B) is enqueued, begins with a small padding packet, sends `rate x min_probe_delta` bytes per "
                "burst (padding fills it when there is no media), times the next burst by the bytes sent at the "
                "cluster rate and drops a cluster whose burst is more than 10 ms late (at most 5 pending, 5 s "
-               "old).",
+               "old). With `cc v2` the pacer is also scheduled as `TaskQueuePacedSender` does (`Pacer::ProcessV2`, #123): a "
+               "pass runs only when a packet, a rate or the pause state changed or the timer of the last pass is due, "
+               "and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
+               "`PacingController` every millisecond lets the early-return branch of `ProcessPackets` re-base its "
+               "debt every call and sends queued packets between the audio packets instead of with them.",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
                       "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "

@@ -13,6 +13,11 @@ cc::PacerConfig WithEvents(cc::PacerConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
 }
+// The pacer v2 runs behind TaskQueuePacedSender's scheduling together with GoogCC (cc v2).
+cc::PacerConfig WithScheduling(cc::PacerConfig c, int gcc_version) {
+  c.task_queue_scheduling = c.task_queue_scheduling && gcc_version >= 2;
+  return c;
+}
 cc::CongestionWindowConfig WithEvents(cc::CongestionWindowConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
@@ -27,7 +32,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
     : cfg_(cfg),
       extensions_(extensions),
       gcc_(WithEvents(cfg.gcc, cfg.events)),
-      pacer_(WithEvents(cfg.pacer, cfg.events)),
+      pacer_(WithEvents(WithScheduling(cfg.pacer, cfg.gcc.version), cfg.events)),
       outage_(WithEvents(cfg.outage, cfg.events)),
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       allocator_(cfg.events),

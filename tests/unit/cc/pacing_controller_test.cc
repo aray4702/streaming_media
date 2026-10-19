@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <vector>
 
+#include "sm/cc/pacer.h"
 #include "sm/cc/pacing_controller.h"
 #include "sm/cc/probing.h"
 #include "sm_test.h"
@@ -467,4 +468,52 @@ SM_TEST(PacingController, ProbeStartsWithGeneratedPadding) {
   SM_EXPECT_TRUE(saw_start);
   SM_EXPECT_FALSE(asked.empty());
   SM_EXPECT_EQ(asked.front(), 1);
+}
+
+// TaskQueuePacedSender runs the PacingController only when a packet or a rate changes, or when the timer
+// set by the last pass is due and NextSendTime() has come. Polling it every millisecond must therefore
+// not change when a saturated pacer sends: with audio counted in the debt and a queue behind it, the
+// next send time is beyond the next audio packet, so the queued packets leave with the audio ones
+// (the libwebrtc forward-link trace of very_low_capacity_allocator_v2 shows 99 % of them in the same
+// millisecond as an audio packet, issue #123).
+namespace {
+struct Polled {
+  int non_audio = 0, with_audio = 0;
+};
+Polled PollEveryMs(bool task_queue_scheduling) {
+  PacerConfig cfg;
+  cfg.version = PacerVersion::kV2;
+  cfg.task_queue_scheduling = task_queue_scheduling;
+  Pacer pacer(cfg);
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(110), DataRate::Zero());
+  Polled r;
+  uint64_t id = 1;
+  Timestamp t0 = Timestamp::Millis(1000);
+  for (int ms = 0; ms < 10000; ++ms) {
+    const Timestamp now = t0 + TimeDelta::Millis(ms);
+    if (ms % 20 == 0) pacer.Enqueue(Pkt(id++, PacketPriority::kAudio, 215, now));
+    if (ms % 40 == 0) pacer.Enqueue(Pkt(id++, PacketPriority::kVideo, 250, now));  // 50 kbps of video.
+    bool audio = false;
+    int other = 0;
+    for (const PacedPacket& p : pacer.Process(now)) {
+      if (p.priority == PacketPriority::kAudio) audio = true;
+      else ++other;
+    }
+    r.non_audio += other;
+    if (audio) r.with_audio += other;
+  }
+  return r;
+}
+}  // namespace
+
+SM_TEST(PacingController, QueuedPacketsLeaveWithAudioWhenSaturated) {
+  const Polled on = PollEveryMs(true);
+  SM_EXPECT_TRUE(on.non_audio > 50);
+  SM_EXPECT_EQ(on.with_audio, on.non_audio);
+}
+
+SM_TEST(PacingController, PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPackets) {
+  const Polled off = PollEveryMs(false);
+  SM_EXPECT_TRUE(off.non_audio > 50);
+  SM_EXPECT_TRUE(off.with_audio < off.non_audio);
 }
