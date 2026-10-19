@@ -1,17 +1,37 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-67 scenarios, mean of 10 seeds. **539 gaps**: 283 behind libwebrtc, 256 ahead of it; 0 without an owner.
+69 scenarios, mean of 10 seeds. **559 gaps**: 296 behind libwebrtc, 263 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-529 gaps on `main`, 539 here: **0 closed, 10 opened**, 0 changed direction.
+529 gaps on `main`, 559 here: **0 closed, 30 opened**, 0 changed direction.
 
 Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
+| issue_127_all_v2_no_stall | `audio.concealed_pct` | 0.9 | 0.2 | ±0.5 | behind | 9/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.mouth_to_ear_p95_ms` | 298 | 347 | ±30.3 | ahead | 8/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 96 | 158 | ±28.6 | ahead | 10/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `video.freeze_count` | 4.1 | 65.8 | ±6.5 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 1386 | 19132 | ±1879 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.e2e_delay_p95_ms` | 488 | 443 | ±24.4 | behind | 6/10 | #24, #37 |
+| issue_127_all_v2_no_stall | `video.time_to_first_frame_ms` | 268 | 181 | ±50 | behind | 7/10 | #24, #61 |
+| issue_127_all_v2_no_stall | `cc.queue_p95_ms` | 45.0 | 31.7 | ±10 | behind | 7/10 | #19, #15, #48, #12, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.concealed_pct` | 0.9 | 0.1 | ±0.5 | behind | 9/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.mouth_to_ear_p95_ms` | 170 | 190 | ±10 | ahead | 9/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.jb_delay_p95_ms` | 72 | 99 | ±10 | ahead | 10/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_count` | 4.9 | 1.8 | ±1.6 | behind | 8/10 | #5, #37, #24 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_total_ms` | 1149 | 425 | ±357 | behind | 8/10 | #5, #37, #24 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.render_fps` | 26.3 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.e2e_delay_p95_ms` | 2322 | 174 | ±116 | behind | 10/10 | #24, #37 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.avg_kbps` | 86.5 | 917 | ±186 | behind | 10/10 | #37, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.keyframe_requests` | 1.7 | 0.6 | ±0.5 | behind | 7/10 | #23 |
+| issue_127_pacer_v2_jitter_reorder_loss | `cc.utilization_pct` | 7.4 | 56.8 | ±12.4 | behind | 10/10 | #19, #15, #48, #12, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `cc.max_settle_ms` | 40000 | 15910 | ±9723 | behind | 10/10 | #15, #48, #61, #20 |
+| issue_127_pacer_v2_jitter_reorder_loss | `repair.overhead_pct` | 9.5 | 47.9 | ±4.0 | ahead | 10/10 | #21, #7, #29 |
 | issue_151_outage_3s_v2 | `audio.concealed_pct` | 12.2 | 10.2 | ±0.6 | behind | 10/10 | #62, #63 |
 | issue_151_outage_3s_v2 | `audio.longest_interruption_ms` | 3560 | 2977 | ±178 | behind | 10/10 | #62, #63 |
 | issue_151_outage_3s_v2 | `audio.mouth_to_ear_p95_ms` | 1511 | 170 | ±75.5 | behind | 10/10 | #62, #63 |
@@ -114,6 +134,26 @@ Opened:
 | issue_126_audio_v2 | `audio.mouth_to_ear_p95_ms` | 59.8 | 71.1 | ±10 | ahead | 6/10 | #62, #63 |
 | issue_126_audio_v2 | `cc.rtt_p50_ms` | 73.4 | 62.8 | ±10 | behind | 8/10 | #61 |
 | issue_126_audio_v2 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 10/10 | #23 |
+| issue_127_all_v2_no_stall | `audio.concealed_pct` | 0.9 | 0.2 | ±0.5 | behind | 9/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 96 | 158 | ±28.6 | ahead | 10/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.mouth_to_ear_p95_ms` | 298 | 347 | ±30.3 | ahead | 8/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `cc.queue_p95_ms` | 45.0 | 31.7 | ±10 | behind | 7/10 | #19, #15, #48, #12, #61 |
+| issue_127_all_v2_no_stall | `video.e2e_delay_p95_ms` | 488 | 443 | ±24.4 | behind | 6/10 | #24, #37 |
+| issue_127_all_v2_no_stall | `video.freeze_count` | 4.1 | 65.8 | ±6.5 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 1386 | 19132 | ±1879 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.time_to_first_frame_ms` | 268 | 181 | ±50 | behind | 7/10 | #24, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.concealed_pct` | 0.9 | 0.1 | ±0.5 | behind | 9/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.jb_delay_p95_ms` | 72 | 99 | ±10 | ahead | 10/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `audio.mouth_to_ear_p95_ms` | 170 | 190 | ±10 | ahead | 9/10 | #62, #63 |
+| issue_127_pacer_v2_jitter_reorder_loss | `cc.max_settle_ms` | 40000 | 15910 | ±9723 | behind | 10/10 | #15, #48, #61, #20 |
+| issue_127_pacer_v2_jitter_reorder_loss | `cc.utilization_pct` | 7.4 | 56.8 | ±12.4 | behind | 10/10 | #19, #15, #48, #12, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `repair.overhead_pct` | 9.5 | 47.9 | ±4.0 | ahead | 10/10 | #21, #7, #29 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.avg_kbps` | 86.5 | 917 | ±186 | behind | 10/10 | #37, #61 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.e2e_delay_p95_ms` | 2322 | 174 | ±116 | behind | 10/10 | #24, #37 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_count` | 4.9 | 1.8 | ±1.6 | behind | 8/10 | #5, #37, #24 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_total_ms` | 1149 | 425 | ±357 | behind | 8/10 | #5, #37, #24 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.keyframe_requests` | 1.7 | 0.6 | ±0.5 | behind | 7/10 | #23 |
+| issue_127_pacer_v2_jitter_reorder_loss | `video.render_fps` | 26.3 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_12_lossbwe_burst_loss | `audio.concealed_pct` | 2.7 | 1.5 | ±0.5 | behind | 10/10 | #62, #63 |
 | issue_12_lossbwe_burst_loss | `video.avg_kbps` | 1347 | 1461 | ±89.1 | behind | 7/10 | #37, #61 |
 | issue_12_lossbwe_burst_loss | `video.freeze_count` | 1.5 | 6.2 | ±2.0 | ahead | 10/10 | #5, #37, #24 |

@@ -1291,6 +1291,298 @@
    ]
   },
   {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "audio.concealed_pct",
+   "sm": 0.862211,
+   "webrtc": 0.162102,
+   "band": 0.5,
+   "direction": "behind",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "audio.mouth_to_ear_p95_ms",
+   "sm": 297.608,
+   "webrtc": 346.801,
+   "band": 30.321160978212344,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 96,
+   "webrtc": 158,
+   "band": 28.596814119369622,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "video.freeze_count",
+   "sm": 4.1,
+   "webrtc": 65.8,
+   "band": 6.477310827461929,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "video.freeze_total_ms",
+   "sm": 1385.8,
+   "webrtc": 19131.5,
+   "band": 1879.2582650550662,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "video.e2e_delay_p95_ms",
+   "sm": 487.5,
+   "webrtc": 442.605,
+   "band": 24.375,
+   "direction": "behind",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    24,
+    37
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "video.time_to_first_frame_ms",
+   "sm": 268.1,
+   "webrtc": 181,
+   "band": 50,
+   "direction": "behind",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    24,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_127_all_v2_no_stall",
+   "metric": "cc.queue_p95_ms",
+   "sm": 44.967,
+   "webrtc": 31.687,
+   "band": 10,
+   "direction": "behind",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "audio.concealed_pct",
+   "sm": 0.871647,
+   "webrtc": 0.0851591,
+   "band": 0.5,
+   "direction": "behind",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "audio.mouth_to_ear_p95_ms",
+   "sm": 170.426,
+   "webrtc": 189.838,
+   "band": 10,
+   "direction": "ahead",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 72,
+   "webrtc": 99,
+   "band": 10,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    62,
+    63
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.freeze_count",
+   "sm": 4.9,
+   "webrtc": 1.8,
+   "band": 1.6193277068654826,
+   "direction": "behind",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.freeze_total_ms",
+   "sm": 1149.4,
+   "webrtc": 425.07,
+   "band": 356.66268057724295,
+   "direction": "behind",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.render_fps",
+   "sm": 26.255,
+   "webrtc": 29.87,
+   "band": 1.4935,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.e2e_delay_p95_ms",
+   "sm": 2322.28,
+   "webrtc": 173.598,
+   "band": 116.11400000000002,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    24,
+    37
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.avg_kbps",
+   "sm": 86.5001,
+   "webrtc": 917.018,
+   "band": 186.24123257526927,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    37,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "video.keyframe_requests",
+   "sm": 1.7,
+   "webrtc": 0.6,
+   "band": 0.5163977794943223,
+   "direction": "behind",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    23
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "cc.utilization_pct",
+   "sm": 7.44153,
+   "webrtc": 56.8059,
+   "band": 12.35147367563887,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "cc.max_settle_ms",
+   "sm": 40000,
+   "webrtc": 15910,
+   "band": 9722.762524669164,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    15,
+    48,
+    61,
+    20
+   ]
+  },
+  {
+   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
+   "metric": "repair.overhead_pct",
+   "sm": 9.51257,
+   "webrtc": 47.8683,
+   "band": 3.9949482286869373,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    21,
+    7,
+    29
+   ]
+  },
+  {
    "scenario": "issue_12_lossbwe_burst_loss",
    "metric": "audio.concealed_pct",
    "sm": 2.72895,
