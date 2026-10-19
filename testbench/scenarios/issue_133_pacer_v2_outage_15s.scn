@@ -1,0 +1,15 @@
+name issue_133_pacer_v2_outage_15s
+describe Video-only call, 15 s outage at 10 s: video must come back after link-up (issue #133)
+# Before the fix the outage monitor paused the encoder, nothing was sent, no feedback came back and the
+# video never resumed (frames_rendered 300, one 30 s pause). libwebrtc keeps the link alive with
+# PacingController::ShouldSendKeepalive: a padding packet every 500 ms while the pacer is paused.
+# With the fix video resumes ~0.3 s after link-up (seed 1: 15 s outage -> pause/freeze about 15.3 s).
+seed 1
+duration 40s
+audio off
+pacer v2
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s down
+at 25s up
+expect video.frames_rendered > 650
+expect video.pause_total_ms < 16500

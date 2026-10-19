@@ -210,6 +210,13 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     cc::OutageActions act = outage_.Process(now);
     if (act.pause_encoder) actions_.pause_encoder = true;
     if (act.resume_encoder) actions_.resume_encoder = true;
+    if (pacer_.version() == cc::PacerVersion::kV2) {
+      // The encoder pause leaves nothing to send, and nothing on the wire means no feedback to resume
+      // from. A paused pacer sends libwebrtc's keep-alive (PacingController::ShouldSendKeepalive, a
+      // padding packet every 500 ms), so the receiver's feedback tells the monitor the link is back.
+      if (act.pause_encoder) pacer_.Pause();
+      if (act.resume_encoder) pacer_.Resume();
+    }
     if (act.request_keyframe) actions_.request_keyframe = true;
     if (act.reset_estimate) Apply(gcc_.ResetEstimate(act.reset_rate, now), now);
   }
