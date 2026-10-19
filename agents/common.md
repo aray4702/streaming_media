@@ -81,7 +81,9 @@ practical details every role shares.
   - Put the scenarios to trace in `kDefaultTraced`. A scenario copy with
     `seed 5` traces another seed.
   - Open the PR as a draft titled `yardstick: …`, labelled `agent-pr`, with
-    auto-merge off.
+    auto-merge off. Write `For #N` in its body, not `Refs #N`: a `Refs` PR
+    marks the item busy, and then no Fixer picks the item up when the data
+    is ready.
   - Poll `ci-ok` (about 25 min) in the same run, read the traces and continue.
   - Merge it only if the instrumentation is generally useful (as #156 was);
     otherwise close it when done.
