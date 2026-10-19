@@ -330,7 +330,7 @@ DataRate DelayBasedBwe::MaybeUpdateEstimateV2(std::optional<DataRate> acked, std
   if (usage == BandwidthUsage::kOverusing) {
     if (acked && rc2_.TimeToReduceFurther(now, *acked)) {
       rc2_.Update(usage, acked, now);
-      last_result_.updated = true;
+      last_result_.updated = rc2_.ValidEstimate();  // UpdateEstimate returns ValidEstimate().
     } else if (!acked && rc2_.ValidEstimate() && rc2_.InitialTimeToReduceFurther(now)) {
       last_result_.updated = true;
       // Overusing before there is an acknowledged rate: halve every
@@ -345,7 +345,7 @@ DataRate DelayBasedBwe::MaybeUpdateEstimateV2(std::optional<DataRate> acked, std
     SM_EVENT(cfg_.events, now, "gcc", "probe_jump", probe->bps(), 0);
   } else {
     rc2_.Update(usage, acked, now);
-    last_result_.updated = true;
+    last_result_.updated = rc2_.ValidEstimate();
     last_result_.recovered_from_overuse = recovered_from_overuse_;
   }
   DataRate r = rc2_.LatestEstimate();

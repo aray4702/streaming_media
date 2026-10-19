@@ -23,6 +23,7 @@
 // trial that is off by default.
 #pragma once
 
+#include <deque>
 #include <optional>
 #include <vector>
 
@@ -63,6 +64,40 @@ class AckedBitrateEstimatorV2 {
   BitrateEstimator estimator_;
   bool in_alr_ = false;
   std::optional<Timestamp> alr_ended_time_;
+};
+
+// goog_cc/robust_throughput_estimator.{h,cc} with RobustThroughputEstimatorSettings'
+// defaults. M157 uses it as the acknowledged-bitrate estimator by default
+// (`enabled = true`, acknowledged_bitrate_estimator_interface.h): the rate of
+// the smallest window with at least 20 packets and 1 s of arrivals (at most 500
+// packets or 5 s), without its largest receive gap, capped by the send rate.
+// PacketResult has no prior_unacked_data, so that term is zero (as in
+// AckedBitrateEstimatorV2). Not yet used by SendSideBwe (#166).
+class RobustThroughputEstimator {
+ public:
+  // RobustThroughputEstimatorSettings (field trial WebRTC-Bwe-RobustThroughputEstimatorSettings)
+  // with its defaults.
+  struct Settings {
+    size_t window_packets = 20;
+    size_t max_window_packets = 500;
+    size_t required_packets = 10;
+    TimeDelta min_window_duration = TimeDelta::Seconds(1);
+    TimeDelta max_window_duration = TimeDelta::Seconds(5);
+  };
+  RobustThroughputEstimator() = default;
+  explicit RobustThroughputEstimator(Settings settings) : settings_(settings) {}
+  // `results` must be sorted by receive time (SortedByReceiveTime).
+  void OnPacketResults(const std::vector<PacketResult>& results);
+  std::optional<DataRate> bitrate() const;
+  std::optional<DataRate> PeekRate() const { return bitrate(); }
+  void SetAlr(bool) {}
+  void SetAlrEndedTime(Timestamp) {}
+
+ private:
+  bool FirstPacketOutsideWindow() const;
+  Settings settings_;
+  std::deque<PacketResult> window_;
+  Timestamp latest_discarded_send_time_ = Timestamp::MinusInfinity();
 };
 
 class LinkCapacityEstimator {
