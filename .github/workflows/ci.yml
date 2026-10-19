@@ -127,7 +127,13 @@ jobs:
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare
         run: |
-          out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=compare-webrtc.json testbench/scenarios/*.scn | tee compare-webrtc.txt
+          # On main, also trace every scenario's first seed (published as traces/
+          # below). PR runs don't, since parity-data-pr keeps every PR's files.
+          TRACE_ALL=""
+          if [ "${{ github.event_name }}" = push ] && [ "${{ github.ref }}" = refs/heads/main ]; then
+            mkdir -p traces && TRACE_ALL="--trace-all-dir=traces"
+          fi
+          out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=compare-webrtc.json $TRACE_ALL testbench/scenarios/*.scn | tee compare-webrtc.txt
           { echo '## streaming_media vs libwebrtc'; echo '```'; cat compare-webrtc.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Parity report
         run: |
@@ -152,6 +158,7 @@ jobs:
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
           mkdir pub && cp compare-webrtc.json compare-webrtc.txt parity.json parity.md pub/
+          cp -r traces pub/ && (cd pub/traces && ls *.csv > index.txt)
           printf 'Latest `compare-webrtc` results and parity report for main @ %s (written by the ci workflow, one commit per run).\nSee tools/parity_report.py.\n' "$GITHUB_SHA" > pub/README.md
           cd pub
           git init -q -b parity-data

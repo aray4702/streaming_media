@@ -51,6 +51,19 @@ practical details every role shares.
   A gap is a metric whose means differ by more than the parity band
   (`tools/parity_report.py` documents it); `tools/parity_owners.json` says
   which issue owns it.
+  `traces/` there holds the per-packet forward-link trace and the per-second
+  video send trace of **every** scenario's first seed, for both stacks
+  (`<scenario>.<seed>.{sm,webrtc}.{trace,video}.csv`; `traces/index.txt`
+  lists them). Read libwebrtc's side from there instead of opening a PR that
+  adds a scenario to `--trace`, and write ours locally with
+  `sm_testbench --link-trace=DIR`:
+  ```sh
+  curl -fsSL $B/traces/index.txt
+  curl -fsSL -O $B/traces/burst_loss.1.webrtc.trace.csv
+  python3 tools/link_trace.py <ours>.trace.csv burst_loss.1.webrtc.trace.csv
+  ```
+  PR runs don't publish `traces/`; a PR that changes a scenario or the
+  libwebrtc model gets the new trace on `main` after it merges.
   For a PR (for example one that adds scenarios), every PR run publishes the
   same files to the `parity-data-pr` branch under `pr/<number>/`. `HEAD`
   there names the commit they belong to, so check it against the PR's head:

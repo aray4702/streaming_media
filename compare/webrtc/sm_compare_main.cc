@@ -21,6 +21,12 @@
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
 // diff them with tools/link_trace.py. The same runs also write the sender's
 // per-second video decisions (issue #131; "sm_video", "webrtc_video").
+//
+// --trace-all-dir=DIR traces the first seed of every scenario the same way and
+// writes only the CSV files, <scenario>.<seed>.{sm,webrtc}.{trace,video}.csv,
+// to DIR; the JSON keeps only the --trace scenarios. CI runs it on main and
+// publishes DIR as traces/ on the parity-data branch, so libwebrtc's trace of
+// any scenario is there without a PR that adds it to --trace.
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -188,7 +194,7 @@ std::string JsonShown() {
 
 int main(int argc, char** argv) {
   int seeds = 3;
-  std::string json_path, dump_dir, trace_names = kDefaultTraced, trace_dir, traces_json;
+  std::string json_path, dump_dir, trace_names = kDefaultTraced, trace_dir, trace_all_dir, traces_json;
   std::vector<std::string> files;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
@@ -197,10 +203,12 @@ int main(int argc, char** argv) {
     else if (a.rfind("--dump=", 0) == 0) dump_dir = a.substr(7);
     else if (a.rfind("--trace=", 0) == 0) trace_names = a.substr(8);
     else if (a.rfind("--trace-dir=", 0) == 0) trace_dir = a.substr(12);
+    else if (a.rfind("--trace-all-dir=", 0) == 0) trace_all_dir = a.substr(16);
     else if (a == "-h" || a == "--help") {
       std::printf("usage: sm_compare [--seeds=N] [--json=FILE] [--dump=DIR] [--trace=NAME,...] [--trace-dir=DIR] scenario.scn...\n"
                   "  --trace   scenarios whose first seed is traced packet by packet (default %s; none to disable)\n"
-                  "  --trace-dir  also write <scenario>.<seed>.{sm,webrtc}.trace.csv there\n",
+                  "  --trace-dir  also write <scenario>.<seed>.{sm,webrtc}.trace.csv there\n"
+                  "  --trace-all-dir  trace the first seed of every scenario, CSV files to this directory only\n",
                   kDefaultTraced);
       return 0;
     } else files.push_back(a);
@@ -237,7 +245,8 @@ int main(int argc, char** argv) {
     for (int k = 0; k < scn_seeds; ++k) {
       Scenario s = base;
       s.seed = base.seed + static_cast<uint64_t>(k);
-      opt.link_trace = k == 0 && Traced(trace_names, base.name);
+      const bool named = k == 0 && Traced(trace_names, base.name);
+      opt.link_trace = named || (k == 0 && !trace_all_dir.empty());
       opt.video_trace = opt.link_trace;
       ours.push_back(sm::testbench::RunCall(s, opt));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
@@ -247,12 +256,15 @@ int main(int argc, char** argv) {
         // The per-second video send decisions (issue #131), same scenario and seed.
         const std::string sm_video = sm::testbench::VideoTraceCsv(ours.back().video_trace);
         const std::string rtc_video = sm::testbench::VideoTraceCsv(theirs.back().video_trace);
-        traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
-                       "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
-                       ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
-                       ", \"webrtc_video\": " + JsonString(rtc_video) + "}";
-        if (!trace_dir.empty()) {
-          const std::string stem = trace_dir + "/" + base.name + "." + std::to_string(s.seed);
+        if (named) {
+          traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
+                         "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
+                         ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
+                         ", \"webrtc_video\": " + JsonString(rtc_video) + "}";
+        }
+        for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
+          if (dir.empty()) continue;
+          const std::string stem = dir + "/" + base.name + "." + std::to_string(s.seed);
           std::ofstream(stem + ".sm.trace.csv") << sm_csv;
           std::ofstream(stem + ".webrtc.trace.csv") << rtc_csv;
           std::ofstream(stem + ".sm.video.csv") << sm_video;

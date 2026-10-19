@@ -113,6 +113,13 @@ with the other results (`parity-data`, and `parity-data-pr/pr/<N>/`).
 `--trace-dir=DIR` also writes them as CSV files. `sm_testbench --link-trace=DIR`
 writes our side alone.
 
+`--trace-all-dir=DIR` traces the first seed of **every** scenario and writes
+only the CSV files to DIR (the JSON keeps the `--trace` ones). CI runs it on
+`main` and publishes DIR as `traces/` on the `parity-data` branch, with
+`traces/index.txt` listing the files, so libwebrtc's trace of any scenario is
+readable without a PR that adds it to `--trace`. PR runs don't, because
+`parity-data-pr` keeps every PR's files in its history.
+
 ```sh
 python3 tools/link_trace.py compare-webrtc.json         # per kind, ours and libwebrtc's side by side
 python3 tools/link_trace.py sm.trace.csv webrtc.trace.csv --duration 40
