@@ -817,11 +817,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (opt.video_trace && video_send) {
           // The sender's half of the 100 ms repair row (issue #151): retransmissions sent and keyframes encoded.
           w::VideoSendStream::Stats vs = video_send->GetStats();
+          // Retransmissions are summed over every substream: the RTX stream may carry its own counters.
+          repair_tx_rtx = 0;
+          for (const auto& [ssrc, sub] : vs.substreams) repair_tx_rtx += static_cast<int64_t>(sub.rtp_stats.retransmitted.packets);
           auto it = vs.substreams.find(kVideoSsrc);
-          if (it != vs.substreams.end()) {
-            repair_tx_rtx = static_cast<int64_t>(it->second.rtp_stats.retransmitted.packets);
-            repair_tx_key = it->second.frame_counts.key_frames;
-          }
+          if (it != vs.substreams.end()) repair_tx_key = it->second.frame_counts.key_frames;
           const int64_t t_ms = static_cast<int64_t>(smp.t_s * 1000 + 0.5);
           // The receiver's half, then the row (the receiver queue runs after this one at the same time).
           receiver_q->PostTask([&, t_ms] {
