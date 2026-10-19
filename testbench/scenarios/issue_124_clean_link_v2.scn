@@ -3,10 +3,15 @@ describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch on: the q
 # `clean_link` with every v2 switch on, the configuration PR #116 makes the default. sm_compare traces
 # this scenario packet by packet for both stacks (kDefaultTraced), so libwebrtc's send rate and
 # bottleneck queue over time can be read from parity-data (tools/link_trace.py) and diffed with ours.
-# Measured on main 2039b72, seeds 1-10 (ours / libwebrtc, parity-data of main, 10 seeds):
+# Measured on main 2039b72 without `packetization v2` and `audio v2`, seeds 1-10 (ours / libwebrtc, parity-data of main):
 #   cc.queue_p95_ms 84-185 (mean 119) / 45-107 (mean 76.7)
 #   video.e2e_delay_p95_ms 123-214 (mean 157) / 105-148 (mean 125)
 #   cc.utilization_pct 91.0-93.7 (mean 92.4) / 89.9-92.9 (mean 91.6)
+# With the two switches on, and the test bench's video packet capacity at the 1458 B libwebrtc's trace shows
+# (video wire size p50/p90/max 1375/1463/1486 B ours against 1374/1462/1486 B), seeds 1-10:
+#   cc.queue_p95_ms 69-132 (mean 89) ; video.e2e_delay_p95_ms 107-168 (mean 126) ; cc.utilization_pct 91-93 (mean 92)
+# Left (seeds 4 and 5): the target keeps rising about 25 kbps/s past the 2.5 Mbps link and overuse is signalled only
+# when the queue is near 150 ms, so e2e p95 is 167 and 151 ms there.
 # Target (issue #124): cc.queue_p95_ms, video.e2e_delay_p95_ms and cc.utilization_pct within the parity band
 # of libwebrtc, and `video.e2e_delay_p95_ms < 150` on every seed (the line `clean_link` carries).
 cc v2
@@ -16,6 +21,8 @@ rtx v2
 rtcp v2
 keyframe v2
 allocator v2
+packetization v2
+audio v2
 duration 30s
 at 0s capacity=2500kbps delay=25ms queue=300ms
 expect audio.interruptions == 0

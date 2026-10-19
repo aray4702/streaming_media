@@ -1,5 +1,5 @@
 name issue_76_packetization_v2
-describe Video payloads sized from the real header as libwebrtc's RtpSenderVideo, 1200-byte packets (#76 group 7)
+describe Video payloads sized from the real header as libwebrtc's RtpSenderVideo, 1458-byte packets as the libwebrtc under comparison sends (#76 group 7, #124)
 # Group 7 is parity-only: the call must hold up with libwebrtc's packet capacity.
 # Target (#76): no metric worse than `packetization v1` on this link.
 seed 1
