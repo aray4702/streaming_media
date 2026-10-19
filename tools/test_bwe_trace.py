@@ -9,18 +9,18 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import bwe_trace as bt  # noqa: E402
 
-HEAD = "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n"
+HEAD = "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,rtt_us\n"
 SM = (HEAD +
-      "100000,delay_based,1500000,normal,,,,,\n"
-      "100000,loss_based,1500000,,0,30,increasing,,5000000\n"
-      "1200000,delay_based,1800000,normal,,,,,\n"
-      "1200000,loss_based,1600000,,8,25,decreasing,1600000,5000000\n"
-      "1250000,target,1600000,,,,,,\n")
+      "100000,delay_based,1500000,normal,,,,,,\n"
+      "100000,loss_based,1500000,,0,30,increasing,,5000000,\n"
+      "1200000,delay_based,1800000,normal,,,,,,\n"
+      "1200000,loss_based,1600000,,8,25,decreasing,1600000,5000000,\n"
+      "1250000,target,1600000,,,,,,,\n")
 RTC = (HEAD +
-       "100000,delay_based,1400000,normal,,,,,\n"
-       "100000,loss_based,1400000,,0,30,,,\n"
-       "1300000,delay_based,1900000,overusing,,,,,\n"
-       "1300000,loss_based,1500000,,9,28,,,\n")
+       "100000,delay_based,1400000,normal,,,,,,\n"
+       "100000,loss_based,1400000,,0,30,,,,\n"
+       "1300000,delay_based,1900000,overusing,,,,,,\n"
+       "1300000,loss_based,1500000,,9,28,,,,\n")
 
 
 class Parse(unittest.TestCase):
@@ -29,6 +29,17 @@ class Parse(unittest.TestCase):
         self.assertEqual(rows[0]["fraction_loss"], None)
         self.assertEqual(rows[1]["loss_state"], "increasing")
         self.assertEqual(rows[3]["loss_limit_bps"], 1600000)
+
+
+class Rtt(unittest.TestCase):
+    def test_the_rtt_row_fills_a_column_and_old_files_without_it_still_parse(self):
+        rows = bt.parse(HEAD + "100000,rtt,0,,,,,,,60000\n" + "1300000,rtt,0,,,,,,,200000\n")
+        self.assertEqual(rows[0]["rtt_us"], 60000)
+        sec = bt.per_second(rows, 0, 1)
+        self.assertEqual([r["rtt_ms"] for r in sec], [60.0, 200.0])
+        old = bt.parse("time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n"
+                       "100000,target,900000,,,,,,\n")
+        self.assertEqual(old[0]["rtt_us"], None)
 
 
 class Bound(unittest.TestCase):

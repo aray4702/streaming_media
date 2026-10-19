@@ -17,7 +17,8 @@
 // --trace=NAME,... records every packet offered to the forward link, for this
 // library and for libwebrtc, on the first seed of the named scenarios (issue
 // #125; default very_low_capacity_allocator_v2, issue_124_clean_link_v2,
-// issue_124_bufferbloat_v2 and issue_124_burst_loss_v2, "none" disables). The CSVs go
+// issue_124_bufferbloat_v2, issue_124_burst_loss_v2, issue_152_capacity_drop_v2 and
+// issue_152_cross_traffic_v2, "none" disables). The CSVs go
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
 // diff them with tools/link_trace.py. The same runs also write the sender's
 // per-second video decisions (issue #131; "sm_video", "webrtc_video") and the
@@ -105,7 +106,7 @@ const std::vector<const char*>& InfoMetrics() {
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,yardstick_150_high_jitter_seed5,yardstick_150_high_jitter_seed10,"
-    "yardstick_150_random_loss_5pct_v2";
+    "yardstick_150_random_loss_5pct_v2,issue_152_capacity_drop_v2,issue_152_cross_traffic_v2";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";

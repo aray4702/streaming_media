@@ -1,0 +1,18 @@
+name issue_152_capacity_drop_v2
+describe capacity_drop with every v2 switch on, traced next to libwebrtc (yardstick for issue #152)
+# Same link as capacity_drop. Queue p95 is 353 ms against libwebrtc's 283 (issue #152); the expect lines are capacity_drop's.
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 40s
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+expect audio.interruptions <= 1
+expect video.longest_freeze_ms < 4000

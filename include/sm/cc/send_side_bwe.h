@@ -27,7 +27,7 @@ namespace sm::cc {
 // testbench/call.h), so tools/bwe_trace.py can lay the two stacks side by side.
 // -1 marks a column the event does not have.
 struct BweTraceRow {
-  enum class Kind { kDelayBased, kLossBased, kTarget };
+  enum class Kind { kDelayBased, kLossBased, kTarget, kRtt };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -37,6 +37,7 @@ struct BweTraceRow {
   int loss_state = -1;          // LossBasedState (this library's loss-based rows only).
   int64_t loss_limit_bps = -1;  // LossBasedBweV2's loss-limited estimate (this library only).
   int64_t instant_ub_bps = -1;  // LossBasedBweV2's instant upper bound (this library only).
+  int64_t rtt_us = -1;          // The RTT the controller holds (rtt rows; issue #152).
 };
 
 struct GccConfig {
@@ -57,7 +58,7 @@ struct GccConfig {
   EventSink* events = nullptr;
   // `cc v2`: when set, rows are appended as libwebrtc's RtcEventLog would log them
   // (delay-based and loss-based updates when they change) and the target when it
-  // changes. The test bench sets it for --link-trace.
+  // changes, and the RTT it holds when that changes. The test bench sets it for --link-trace.
   std::vector<BweTraceRow>* bwe_trace = nullptr;
 };
 
@@ -156,6 +157,7 @@ class GccController : public MetricsSource {
   int trace_loss_fraction_ = -1;
   Timestamp trace_loss_time_ = Timestamp::MinusInfinity();
   int64_t trace_target_bps_ = -1;
+  int64_t trace_rtt_us_ = -1;
 };
 
 }  // namespace sm::cc
