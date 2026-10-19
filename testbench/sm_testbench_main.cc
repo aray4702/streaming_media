@@ -91,6 +91,7 @@ int main(int argc, char** argv) {
     opt.timeseries = timeseries;
     opt.library_metrics = library;
     opt.link_trace = !trace_dir.empty();
+    opt.video_trace = opt.link_trace;
     auto t0 = std::chrono::steady_clock::now();
     auto report = sm::testbench::RunCall(*parsed.scenario, opt);
     double wall_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -100,6 +101,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.trace.csv",
                     std::ios::binary)
           << sm::testbench::LinkTraceCsv(report.link_trace);
+      // The per-second video send decisions (issue #131).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.video.csv",
+                    std::ios::binary)
+          << sm::testbench::VideoTraceCsv(report.video_trace);
     }
     if (!quiet) {
       std::printf("%s", sm::testbench::ToText(report).c_str());

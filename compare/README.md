@@ -121,3 +121,33 @@ python3 tools/link_trace.py sm.trace.csv webrtc.trace.csv --duration 40
 The summary shows, per kind, the offered kbps, the wire-size percentiles and
 histogram, the gaps between sends, the queue at arrival, and the drops (by
 cause, and as a share of all drops).
+
+## Video send trace (issue #131)
+
+The same runs that write the packet trace also write one row per simulated
+second of the sender's video decisions, for this library and for libwebrtc, in
+one CSV: `t_s,encoder_target_bps,alloc_target_bps,captured,encoded,`
+`dropped_capturer,dropped_encoder_queue,dropped_rate_limiter,`
+`dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms`.
+They are in `compare-webrtc.json` under `"sm_video"` and `"webrtc_video"` of
+each `"traces"` entry (so CI publishes them to `parity-data` and
+`parity-data-pr/pr/<N>/`), and `--trace-dir` writes
+`<scenario>.<seed>.{sm,webrtc}.video.csv`. `sm_testbench --link-trace=DIR`
+writes our side alone.
+
+For libwebrtc the counts are deltas of `VideoSendStream::Stats`
+(`frames_dropped_by_*`, `target_media_bitrate_bps`, `suspended`) and of
+`Call::Stats::pacer_delay_ms`; the encoder target is the last `SetRates` of the
+model encoder. This library maps its drop points onto the same reasons:
+
+| libwebrtc reason | this library |
+|---|---|
+| `rate_limiter` (`kMediaOptimization`, the frame dropper) | `DropReason::kFrameDropper` |
+| `congestion_window` | `DropReason::kCongestionWindow` |
+| `encoder_queue` (`EncoderPaused`, `DropDueToSize`, a newer pending frame) | `DropReason::kPaused` only |
+| `capturer`, `encoder` | no counterpart (always 0) |
+
+```sh
+python3 tools/video_trace.py compare-webrtc.json --series    # totals by reason, then the per-second series
+python3 tools/video_trace.py sm.video.csv webrtc.video.csv
+```

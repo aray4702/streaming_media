@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Summarise and compare the sender's per-second video decisions (issue #131).
+
+`sm_compare` records, for the first seed of the scenarios named by --trace
+(default very_low_capacity_allocator_v2), one row per simulated second of the
+video send path, in the same CSV for this library and for libwebrtc:
+
+  t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
+  dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
+  dropped_encoder,paused,encoded_bytes,pacer_queue_ms
+
+The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
+maps its drop points onto them (frame dropper -> dropped_rate_limiter,
+congestion-window pushback -> dropped_congestion_window, paused encoder ->
+dropped_encoder_queue) and has no counterpart for dropped_capturer, the
+DropDueToSize path or dropped_encoder, which stay 0. CI publishes the traces
+in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
+--trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
+
+  tools/video_trace.py compare-webrtc.json [--scenario NAME] [--series]
+  tools/video_trace.py sm.video.csv webrtc.video.csv
+"""
+import argparse
+import csv
+import io
+import json
+import os
+import sys
+
+DROPS = ["dropped_capturer", "dropped_encoder_queue", "dropped_rate_limiter",
+         "dropped_congestion_window", "dropped_encoder"]
+INTS = ["t_s", "encoder_target_bps", "alloc_target_bps", "captured", "encoded", *DROPS, "paused", "encoded_bytes"]
+
+
+def parse(text):
+    """Rows of a video trace CSV as dicts of numbers."""
+    rows = []
+    for r in csv.DictReader(io.StringIO(text)):
+        row = {k: int(r[k]) for k in INTS}
+        row["pacer_queue_ms"] = float(r["pacer_queue_ms"])
+        rows.append(row)
+    return rows
+
+
+def summarize(rows):
+    """Totals over the call, drops by reason, and rates per second."""
+    secs = max(len(rows), 1)
+    total = {k: sum(r[k] for r in rows) for k in ["captured", "encoded", "encoded_bytes", *DROPS]}
+    dropped = sum(total[k] for k in DROPS)
+    return {
+        "seconds": len(rows),
+        "captured": total["captured"],
+        "encoded": total["encoded"],
+        "dropped": dropped,
+        "drops": {k: total[k] for k in DROPS},
+        "encoded_fps": total["encoded"] / secs,
+        "encoded_kbps": total["encoded_bytes"] * 8 / 1000.0 / secs,
+        "encoder_target_kbps_mean": sum(r["encoder_target_bps"] for r in rows) / 1000.0 / secs,
+        "alloc_target_kbps_mean": sum(r["alloc_target_bps"] for r in rows) / 1000.0 / secs,
+        "paused_seconds": sum(r["paused"] for r in rows),
+        "pacer_queue_ms_max": max((r["pacer_queue_ms"] for r in rows), default=0.0),
+    }
+
+
+def fmt(v):
+    return "%.1f" % v if isinstance(v, float) else str(v)
+
+
+def render(named):
+    names = list(named)
+    lines = ["%-32s" % "" + "".join("%14s" % n for n in names)]
+    rows = [("seconds", "seconds"), ("frames captured", "captured"), ("frames encoded", "encoded"),
+            ("frames dropped", "dropped"), ("encoded fps", "encoded_fps"), ("encoded kbps", "encoded_kbps"),
+            ("encoder target kbps (mean)", "encoder_target_kbps_mean"),
+            ("allocator video target kbps (mean)", "alloc_target_kbps_mean"),
+            ("paused/suspended seconds", "paused_seconds"), ("pacer queue max ms", "pacer_queue_ms_max")]
+    for label, key in rows:
+        lines.append("%-32s" % label + "".join("%14s" % fmt(named[n][key]) for n in names))
+    lines.append("dropped by reason")
+    for k in DROPS:
+        lines.append("  %-30s" % k[len("dropped_"):] + "".join("%14s" % named[n]["drops"][k] for n in names))
+    return "\n".join(lines)
+
+
+def series(named_rows):
+    """Per-second encoder target against frames encoded, one pair of columns per stack."""
+    names = list(named_rows)
+    n = max(len(r) for r in named_rows.values())
+    head = "%4s" % "t_s" + "".join("%12s%8s%8s%8s" % (nm + " kbps", "enc", "drop", "pace") for nm in names)
+    lines = [head]
+    for i in range(n):
+        cols = []
+        for nm in names:
+            rows = named_rows[nm]
+            if i < len(rows):
+                r = rows[i]
+                cols.append("%12.0f%8d%8d%8.0f" % (r["encoder_target_bps"] / 1000.0, r["encoded"],
+                                                    sum(r[k] for k in DROPS), r["pacer_queue_ms"]))
+            else:
+                cols.append("%12s%8s%8s%8s" % ("-", "-", "-", "-"))
+        lines.append("%4d" % (i + 1) + "".join(cols))
+    return "\n".join(lines)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("inputs", nargs="+", help="compare-webrtc.json, or one or two video trace CSVs (sm, then webrtc)")
+    ap.add_argument("--scenario", help="only this scenario (JSON input)")
+    ap.add_argument("--series", action="store_true", help="also print the per-second series")
+    ap.add_argument("--json", dest="json_out", help="also write the summaries as JSON")
+    a = ap.parse_args(argv)
+
+    sets = []
+    if a.inputs[0].endswith(".json"):
+        with open(a.inputs[0]) as f:
+            data = json.load(f)
+        found = [t for t in data.get("traces", []) if "sm_video" in t and a.scenario in (None, t["scenario"])]
+        if not found:
+            raise SystemExit("no video traces in the JSON (sm_compare --trace=NAME records them)")
+        for t in found:
+            sets.append(("%s, seed %d" % (t["scenario"], t["seed"]),
+                         {"sm": parse(t["sm_video"]), "webrtc": parse(t["webrtc_video"])}))
+    else:
+        named = {}
+        for path, name in zip(a.inputs, ("sm", "webrtc")):
+            with open(path) as f:
+                named[name if len(a.inputs) > 1 else os.path.basename(path)] = parse(f.read())
+        sets.append((", ".join(a.inputs), named))
+
+    result = {}
+    for title, named in sets:
+        summaries = {n: summarize(rows) for n, rows in named.items()}
+        print(title)
+        print(render(summaries))
+        if a.series:
+            print()
+            print(series(named))
+        print()
+        result[title] = summaries
+    if a.json_out:
+        with open(a.json_out, "w") as f:
+            json.dump(result, f, indent=1)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
