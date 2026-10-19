@@ -155,6 +155,14 @@ void GccController::OnRttUpdate(TimeDelta rtt) {
     if (rtt.IsZero()) return;
   }
   last_rtt_ = rtt;
+  if (cfg_.bwe_trace && cfg_.version >= 2 && rtt.us() != trace_rtt_us_) {
+    BweTraceRow r;
+    r.time_us = last_now_.us();
+    r.kind = BweTraceRow::Kind::kRtt;
+    r.rtt_us = rtt.us();
+    cfg_.bwe_trace->push_back(r);
+    trace_rtt_us_ = rtt.us();
+  }
   delay_.SetRtt(rtt);
   loss_.SetRtt(rtt);
   if (cfg_.version >= 2) ssbe_.UpdateRtt(rtt, last_now_);

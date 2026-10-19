@@ -639,6 +639,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   int64_t next_frame_ms = 0;
   double cross_debt = 0;
   bool stopping = false;
+  int64_t last_bwe_rtt_ms = -1;      // Last RTT written to rep.bwe_trace (issue #152).
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
@@ -786,6 +787,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           r.bitrate_bps = cs.send_bandwidth_bps;
           rep.bwe_trace.push_back(r);
           last_bwe_target_bps = cs.send_bandwidth_bps;
+        }
+        if (opt.bwe_trace && cs.rtt_ms >= 0 && cs.rtt_ms != last_bwe_rtt_ms) {
+          // Call::Stats::rtt_ms (CallStats' last processed RTT, which RtpTransportControllerSend gets as
+          // OnRttUpdate), sampled every 100 ms, when it changed (issue #152).
+          cc::BweTraceRow r;
+          r.time_us = static_cast<int64_t>(smp.t_s * 1e6 + 0.5);
+          r.kind = cc::BweTraceRow::Kind::kRtt;
+          r.rtt_us = cs.rtt_ms * 1000;
+          rep.bwe_trace.push_back(r);
+          last_bwe_rtt_ms = cs.rtt_ms;
         }
         if (opt.video_trace && video_send && static_cast<int64_t>(smp.t_s * 1000 + 0.5) % 1000 == 0) {
           // Once per simulated second (issue #131): VideoSendStream::Stats counters, as deltas.

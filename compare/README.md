@@ -162,7 +162,7 @@ python3 tools/video_trace.py sm.video.csv webrtc.video.csv
 ### The bandwidth-estimate trace (issue #149)
 
 The same runs record the sender's GoogCC estimates in one CSV for both stacks:
-`time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps`.
+`time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,rtt_us`.
 libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 (`BweTraceLog` in `webrtc_call.cc`):
 
@@ -171,6 +171,7 @@ libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 | `delay_based` | `RtcEventBweUpdateDelayBased` (`delay_based_bwe.cc`): AIMD estimate and trendline state, when either changes | `GccController::TraceDelayBased`, same condition |
 | `loss_based` | `RtcEventBweUpdateLossBased` (`send_side_bandwidth_estimation.cc`): the send-side target, fraction lost and packets, when the target or fraction changes, and every 5 s | `GccController::TraceLossBased`, same condition |
 | `target` | `Call::Stats::send_bandwidth_bps` every 100 ms, when it changes | the controller's target, when it changes |
+| `rtt` (`rtt_us`, issue #152) | `Call::Stats::rtt_ms` every 100 ms, when it changes (CallStats' last processed RTT, the value `RtpTransportControllerSend::OnRttUpdate` receives) | `GccController::OnRttUpdate`, the RTT rounded to 1 ms that the delay-based and loss-based estimators hold, when it changes |
 
 `loss_state`, `loss_limit_bps` and `instant_ub_bps` (`LossBasedBweV2`'s state,
 loss-limited estimate and instant upper bound) are filled for this library only:
