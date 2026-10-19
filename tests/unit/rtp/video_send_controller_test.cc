@@ -165,3 +165,27 @@ SM_TEST(VideoSendController, LinkAllocationEqualsTheEncoderTarget) {
     SM_EXPECT_TRUE(d.target <= target);
   }
 }
+
+// SimulcastRateAllocator::DistributeAllocationToSimulcastLayers (single
+// stream): the encoder is configured with max(minBitrate, min(target, max)),
+//; the frame dropper still gets the target (VideoStreamEncoder::OnBitrateUpdated).
+SM_TEST(VideoSendController, AllocationIsRaisedToTheCodecMinimum) {
+  Session s(Cfg());
+  const DataRate target = s.rates().video_target;
+  SM_EXPECT_TRUE(target.bps() > 0);
+  VideoSendControllerConfig cfg;
+  cfg.bitrate_adjuster = false;
+  cfg.allocation_min_bitrate = target * 2;
+  VideoSendController raised(cfg, s);
+  SM_EXPECT_TRUE(raised.OnCapturedFrame({}, At(0)).target == target * 2);
+  // A maximum below the target caps it; the minimum still wins over the maximum.
+  cfg.allocation_min_bitrate = DataRate::BitsPerSec(1);
+  cfg.allocation_max_bitrate = target * 0.5;
+  VideoSendController capped(cfg, s);
+  SM_EXPECT_TRUE(capped.OnCapturedFrame({}, At(0)).target == target * 0.5);
+  // Off (the default): the encoder gets the target as before.
+  cfg = {};
+  cfg.bitrate_adjuster = false;
+  VideoSendController off(cfg, s);
+  SM_EXPECT_TRUE(off.OnCapturedFrame({}, At(0)).target == target);
+}

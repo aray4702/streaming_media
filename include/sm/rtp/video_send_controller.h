@@ -43,6 +43,13 @@ struct VideoSendControllerConfig {
   // `adjuster_use_headroom` and the codec minimum bitrate are in `adjuster`.
   bool bitrate_adjuster = true;
   cc::EncoderBitrateAdjusterConfig adjuster;
+  // SimulcastRateAllocator::DistributeAllocationToSimulcastLayers for a single
+  // stream (modules/video_coding/utility/simulcast_rate_allocator.cc): the
+  // encoder is configured with max(minBitrate, min(target, maxBitrate)), so a
+  // target below the codec minimum is raised to it (the frame dropper still gets
+  // the target). 0 = off (the v1 behaviour; `allocator v2` turns it on).
+  DataRate allocation_min_bitrate;
+  DataRate allocation_max_bitrate = DataRate::KilobitsPerSec(10000);
   EventSink* events = nullptr;
 };
 

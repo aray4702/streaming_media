@@ -47,8 +47,15 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   // max(encoder_target, encoder_target - protection) = the encoder target, so
   // the adjuster's headroom is only what the encoder adds (bandwidth_allocation
   // - sum(allocation), zero here).
-  const DataRate link = target;
-  const DataRate encoder_rate = cfg_.bitrate_adjuster ? adjuster_.AdjustRate(target, link, fps, now) : target;
+  // VideoStreamEncoder::UpdateBitrateAllocation: the allocator may raise the
+  // allocation to the codec minimum, and the bandwidth allocation is at least
+  // that (the dropper above has already been given the unraised target).
+  DataRate allocation = target;
+  if (cfg_.allocation_min_bitrate.bps() > 0 && target.bps() > 0) {
+    allocation = std::max(cfg_.allocation_min_bitrate, std::min(target, cfg_.allocation_max_bitrate));
+  }
+  const DataRate link = std::max(target, allocation);
+  const DataRate encoder_rate = cfg_.bitrate_adjuster ? adjuster_.AdjustRate(allocation, link, fps, now) : allocation;
   // No keyframe sent yet: the first one is already due through keyframe_needed_.
   const bool periodic = cfg_.keyframe_interval.us() > 0 && last_keyframe_.IsFinite() &&
                         now - last_keyframe_ >= cfg_.keyframe_interval;
