@@ -108,11 +108,15 @@ stage 1 done.
 
 Rules:
 
-- **One item at a time, in order.** The Fixer may start only the first
-  unchecked item on the list whose issue is open. If that item is
-  `in-progress`, labelled `needs-human`, or has an open PR, the Fixer takes
-  no new issue. A `sev:1` issue (crash, sanitizer error, `main` broken)
-  comes first regardless.
+- **In order; in parallel only where marked.** The Fixer may start the
+  first unchecked item on the list whose issue is open. If that item is
+  `in-progress`, labelled `needs-human`, or has an open PR, the Fixer may go
+  further down only to items labelled `parallel-ok`: it takes the first
+  free one, and stops at the first free item that is not `parallel-ok`. The
+  Owner (or the coordinator) sets `parallel-ok` on items that depend on
+  nothing above them that is unfinished. At most 3 list items are
+  `in-progress` at once. A `sev:1` issue (crash, sanitizer error, `main`
+  broken) comes first regardless.
 - **Off the list means not now.** An issue that is not on the list is not
   worked on, whatever its labels. Tester findings, follow-ups and new
   gaps wait until the Owner places them by editing the list.
@@ -314,8 +318,9 @@ Each run:
    in a comment.
 3. **New issues.** Take the next item on the roadmap issue's work list
    (section 0.2): an open `sev:1` issue first, otherwise the first
-   unchecked item whose issue is open, and nothing if that item is
-   `in-progress`, labelled `needs-human` or has an open PR. Handle one new
+   unchecked item whose issue is open; if that item is `in-progress`,
+   labelled `needs-human` or has an open PR, the first free `parallel-ok`
+   item below it as section 0.2 says, or nothing. Handle one new
    issue per run. For a `roadmap` issue, steps 2 and 3 become: build what
    the issue asks for, with tests and scenarios whose `expect` lines check
    its acceptance criteria; split it into smaller PRs if it is large. Then:

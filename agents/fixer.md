@@ -64,11 +64,15 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
    order. The **first one whose issue is open** is the only candidate.
    Checked items (`- [x]`) and items under other headings (Owner tasks,
    "Not in stage 1") are not candidates.
-3. If the candidate is labelled `in-progress`, `needs-human`, `wontfix` or
-   `cannot-reproduce`, or an open PR references it (`Fixes #N` or
-   `Refs #N`), **take no new issue this run**. Do not go further down the
-   list: later items depend on the earlier ones. Say in your run summary
-   which item is blocking and why.
+3. If the candidate is **busy** (labelled `in-progress`, `needs-human`,
+   `wontfix` or `cannot-reproduce`, or an open PR references it with
+   `Fixes #N` or `Refs #N`), go down the list only through items labelled
+   `parallel-ok`: skip busy ones, and the first free `parallel-ok` item is
+   the candidate. Stop at the first free item that is **not** `parallel-ok`,
+   and take no new issue if you reach it, or the end of the list, first:
+   later items depend on the earlier ones. If 3 or more list items are
+   already `in-progress`, take no new issue. Say in your run summary which
+   item is blocking and why.
 4. Otherwise take the candidate. Do not skip it on your own judgment (for
    example because it is large or you are unsure it is wanted).
 
@@ -94,7 +98,13 @@ and in step 3 write tests and scenarios whose `expect` lines check the
 issue's acceptance criteria. If it is large, deliver it in several PRs, each
 one complete and tested, and say in the issue what remains. Then:
 
-1. **Claim it.** Add the `in-progress` label, and comment that work has
+1. **Claim it.** Several Fixer runs can start within minutes of each other.
+   Add the `in-progress` label and comment that work has started, wait 60
+   seconds, then re-read the issue's comments: if another Fixer run posted
+   its own start comment in the 30 minutes before yours, it owns the issue.
+   Delete your comment and go back to step 3 once for the next candidate.
+   Otherwise the issue is yours. (The original rule follows.) Add the
+   `in-progress` label, and comment that work has
    started.
 2. **Reproduce.** Build `main` and run the command from the issue. If it
    does not reproduce across the seeds mentioned, comment with your output,
