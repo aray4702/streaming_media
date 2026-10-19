@@ -230,6 +230,36 @@ SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
   SM_EXPECT_EQ(released_ids + c.stats().flushed, 21u);
 }
 
+// Issue #127/#154: with `rtx v2` the RTP sequence number is assigned when the pacer releases the
+// packet (libwebrtc's PacketRouter), so packets a keyframe flushes leave no gap for the receiver to NACK.
+SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
+  SendSideConfig cfg;
+  cfg.pacer.version = cc::PacerVersion::kV2;
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  sc.rtx.version = 2;
+  RtpSender sender(sc);
+  const Timestamp t0 = Timestamp::Millis(0);
+  const std::vector<std::vector<uint8_t>> frame(10, std::vector<uint8_t>(1100, 1));
+  sender.SendVideoFrame(frame, 9000, t0);
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), t0);
+  sender.SendVideoFrame(frame, 12000, t0, true);  // A keyframe: its first packet flushes the queue.
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), t0);
+  SM_ASSERT_GT(c.stats().flushed, 0u);
+  std::vector<uint16_t> seqs;
+  for (int t = 0; t < 3000; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      auto p = RtpPacket::Parse(r.bytes);
+      if (p && r.kind == PacketKind::kVideo) seqs.push_back(p->seq);
+    }
+  }
+  SM_ASSERT_GE(seqs.size(), 10u);
+  for (size_t i = 1; i < seqs.size(); ++i) SM_EXPECT_EQ(static_cast<uint16_t>(seqs[i]), static_cast<uint16_t>(seqs[i - 1] + 1));
+}
+
 // A resend that a keyframe flushes from the pacer never reaches the history's MarkPacketAsSent:
 // the controller must tell the sender (RtpSender::OnPacketDropped), else the v2 history keeps the
 // packet pending and a later NACK for it is ignored for the rest of the call.

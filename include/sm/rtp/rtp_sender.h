@@ -117,6 +117,11 @@ class RtpSender : public MetricsSource {
   void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
                       bool keyframe = false);
 
+  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). With
+  // `rtx.version` 2 and no FEC the media packet gets its RTP sequence number here, as
+  // libwebrtc's PacketRouter does (modules/pacing/packet_router.cc:217,
+  // rtp_rtcp_impl2.cc:352); until then it carries 0. Otherwise the number was set when packetized.
+  void AssignSequenceNumber(SenderPacket& p);
   // The pacer sent `p` (SendSideController::Process). With `rtx.version` 2 the history
   // takes media packets here and learns that a resend left the queue.
   void OnPacketReleased(const SenderPacket& p, Timestamp now);
@@ -170,6 +175,7 @@ class RtpSender : public MetricsSource {
 
  private:
   RtpPacket NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker);
+  bool DefersSequenceNumbers() const;
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
   void StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe = false, bool first = false);
 
