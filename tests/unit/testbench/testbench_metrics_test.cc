@@ -296,3 +296,30 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
     SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);
   }
 }
+
+SM_TEST(TestbenchMetrics, FeedbackTraceSummarisesEachTransportFeedbackTheSenderReceives) {
+  cc::TransportFeedback fb;
+  fb.feedback_count = 7;
+  fb.base_seq = 100;
+  fb.reference_time = 2;  // 128 ms.
+  // 100 arrives, 101 is lost, 103 arrives 1 ms before 102 (tick = 250 us).
+  fb.packets = {{100, true, 4}, {101, false, 0}, {102, true, 8}, {103, true, -4}};
+  std::vector<FeedbackTraceRow> rows;
+  AppendFeedbackTrace(rows, cc::SerializeTransportFeedback(fb), 5000);
+  SM_ASSERT_EQ(rows.size(), 1u);
+  const FeedbackTraceRow& r = rows[0];
+  SM_EXPECT_EQ(r.time_us, 5000);
+  SM_EXPECT_EQ(r.feedback_count, 7);
+  SM_EXPECT_EQ(r.base_seq, 100);
+  SM_EXPECT_EQ(r.status_count, 4);
+  SM_EXPECT_EQ(r.received, 3);
+  SM_EXPECT_EQ(r.lost, 1);
+  SM_EXPECT_EQ(r.reordered, 1);
+  SM_EXPECT_EQ(r.first_arrival_us, 128000 + 1000);
+  SM_EXPECT_EQ(r.last_arrival_us, 128000 + 3000);
+  const std::string csv = FeedbackTraceCsv(rows);
+  SM_EXPECT_TRUE(csv.find("5000,7,100,4,3,1,1,129000,131000\n") != std::string::npos);
+  std::vector<FeedbackTraceRow> none;
+  AppendFeedbackTrace(none, std::vector<uint8_t>{0x80, 201, 0, 1, 0, 0, 0, 1}, 0);  // An empty RR.
+  SM_EXPECT_TRUE(none.empty());
+}

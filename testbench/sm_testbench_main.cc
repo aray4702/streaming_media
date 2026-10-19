@@ -93,6 +93,7 @@ int main(int argc, char** argv) {
     opt.link_trace = !trace_dir.empty();
     opt.video_trace = opt.link_trace;
     opt.bwe_trace = opt.link_trace;
+    opt.feedback_trace = opt.link_trace;
     auto t0 = std::chrono::steady_clock::now();
     auto report = sm::testbench::RunCall(*parsed.scenario, opt);
     double wall_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
@@ -110,6 +111,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.bwe.csv",
                     std::ios::binary)
           << sm::testbench::BweTraceCsv(report.bwe_trace);
+      // The transport-cc feedback the sender receives (issue #150).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.fb.csv",
+                    std::ios::binary)
+          << sm::testbench::FeedbackTraceCsv(report.feedback_trace);
     }
     if (!quiet) {
       std::printf("%s", sm::testbench::ToText(report).c_str());
