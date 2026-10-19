@@ -1,0 +1,24 @@
+name issue_124_clean_link_v2
+describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch on: the queue the flip (#61) leaves on a clean link (issue #124)
+# `clean_link` with every v2 switch on, the configuration PR #116 makes the default. sm_compare traces
+# this scenario packet by packet for both stacks (kDefaultTraced), so libwebrtc's send rate and
+# bottleneck queue over time can be read from parity-data (tools/link_trace.py) and diffed with ours.
+# Measured on main 2039b72, seeds 1-10 (ours / libwebrtc, parity-data of main, 10 seeds):
+#   cc.queue_p95_ms 84-185 (mean 119) / 45-107 (mean 76.7)
+#   video.e2e_delay_p95_ms 123-214 (mean 157) / 105-148 (mean 125)
+#   cc.utilization_pct 91.0-93.7 (mean 92.4) / 89.9-92.9 (mean 91.6)
+# Target (issue #124): cc.queue_p95_ms, video.e2e_delay_p95_ms and cc.utilization_pct within the parity band
+# of libwebrtc, and `video.e2e_delay_p95_ms < 150` on every seed (the line `clean_link` carries).
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+duration 30s
+at 0s capacity=2500kbps delay=25ms queue=300ms
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect cc.unsettled == 0
+expect cc.utilization_pct >= 86
