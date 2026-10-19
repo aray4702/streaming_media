@@ -243,7 +243,7 @@ ALGORITHMS = [
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
-         headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
+         headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
          bench=["cc/Gcc_OnFeedback_per_packet", "cc/Q_Gcc_capacity_steps"],
          scenario="Full closed loop (encoder, pacer, transport-cc, GCC) over a bottleneck whose capacity steps "
                   "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
@@ -262,7 +262,12 @@ ALGORITHMS = [
                "acked rate; a probe result sets the estimate as is). #48 adds `AlrDetector` (`alr_detector.h`: the "
                "ALR state marks the acked-rate estimator, and the end of an ALR calls `ExpectFastRateChange`), "
                "the probe controller and probe estimator (5.6), and `recovered_from_overuse`, which requests a probe "
-               "after a big drop. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
+               "after a big drop. #166 ports `delay_based_bwe_unittest.cc` (20 cases, `DelayBweLibwebrtc`; found that `Result.updated` "
+               "is `ValidEstimate()`, not always true) and `robust_throughput_estimator_unittest.cc`. M157's acknowledged-bitrate "
+               "estimator is `RobustThroughputEstimator` (`RobustThroughputEstimatorSettings::enabled = true`); it is ported as "
+               "a unit but `cc v2` still feeds the `BitrateEstimator` (open difference, see #124). Not ported, because we use "
+               "transport-cc with send-side estimation: the receive-side `remote_bitrate_estimator_*`, `inter_arrival`, "
+               "`overuse_detector` and `congestion_control_feedback_*` tests. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "

@@ -278,3 +278,99 @@ void AimdRateControl::ChangeState(BandwidthUsage usage, Timestamp at_time) {
 }
 
 }  // namespace sm::cc
+
+namespace sm::cc {
+
+// --- RobustThroughputEstimator (goog_cc/robust_throughput_estimator.cc) ---------------
+
+bool RobustThroughputEstimator::FirstPacketOutsideWindow() const {
+  if (window_.empty()) return false;
+  if (window_.size() > settings_.max_window_packets) return true;
+  const TimeDelta current_window_duration = window_.back().receive_time - window_.front().receive_time;
+  if (current_window_duration > settings_.max_window_duration) return true;
+  return window_.size() > settings_.window_packets && current_window_duration > settings_.min_window_duration;
+}
+
+void RobustThroughputEstimator::OnPacketResults(const std::vector<PacketResult>& results) {
+  for (const auto& packet : results) {
+    // Packets without valid send or receive times are ignored.
+    if (!packet.receive_time.IsFinite() || !packet.send_time.IsFinite()) continue;
+    window_.push_back(packet);
+    // Feedback packets may be reordered: keep the window sorted by receive time.
+    for (size_t i = window_.size() - 1; i > 0 && window_[i].receive_time < window_[i - 1].receive_time; i--) {
+      std::swap(window_[i], window_[i - 1]);
+    }
+    constexpr TimeDelta kMaxReorderingTime = TimeDelta::Seconds(1);
+    if (window_.back().receive_time - packet.receive_time > kMaxReorderingTime) {
+      // Severe packet re-ordering or the timestamp offset changed.
+      window_.clear();
+      latest_discarded_send_time_ = Timestamp::MinusInfinity();
+    }
+  }
+  while (FirstPacketOutsideWindow()) {
+    latest_discarded_send_time_ = std::max(latest_discarded_send_time_, window_.front().send_time);
+    window_.pop_front();
+  }
+}
+
+std::optional<DataRate> RobustThroughputEstimator::bitrate() const {
+  if (window_.empty() || window_.size() < settings_.required_packets) return std::nullopt;
+
+  TimeDelta largest_recv_gap = TimeDelta::Zero();
+  TimeDelta second_largest_recv_gap = TimeDelta::Zero();
+  for (size_t i = 1; i < window_.size(); i++) {
+    const TimeDelta gap = window_[i].receive_time - window_[i - 1].receive_time;
+    if (gap > largest_recv_gap) {
+      second_largest_recv_gap = largest_recv_gap;
+      largest_recv_gap = gap;
+    } else if (gap > second_largest_recv_gap) {
+      second_largest_recv_gap = gap;
+    }
+  }
+
+  Timestamp first_send_time = Timestamp::PlusInfinity();
+  Timestamp last_send_time = Timestamp::MinusInfinity();
+  Timestamp first_recv_time = Timestamp::PlusInfinity();
+  Timestamp last_recv_time = Timestamp::MinusInfinity();
+  DataSize recv_size = DataSize::Bytes(0);
+  DataSize send_size = DataSize::Bytes(0);
+  DataSize first_recv_size = DataSize::Bytes(0);
+  DataSize last_send_size = DataSize::Bytes(0);
+  size_t num_sent_packets_in_window = 0;
+  for (const auto& packet : window_) {
+    if (packet.receive_time < first_recv_time) {
+      first_recv_time = packet.receive_time;
+      first_recv_size = packet.size;
+    }
+    last_recv_time = std::max(last_recv_time, packet.receive_time);
+    recv_size += packet.size;
+
+    // A packet sent before one already dropped from the window was reordered;
+    // its send time would underestimate the send rate.
+    if (packet.send_time < latest_discarded_send_time_) continue;
+    if (packet.send_time > last_send_time) {
+      last_send_time = packet.send_time;
+      last_send_size = packet.size;
+    }
+    first_send_time = std::min(first_send_time, packet.send_time);
+    send_size += packet.size;
+    ++num_sent_packets_in_window;
+  }
+
+  // N packets of size S every T ms span (N-1)*T: drop one packet's size (the
+  // first received, the last sent).
+  recv_size -= first_recv_size;
+  send_size -= last_send_size;
+
+  // Replace the largest receive gap by the second largest, so a delay spike
+  // does not pull the estimate down; the send rate caps any overestimate.
+  TimeDelta recv_duration = (last_recv_time - first_recv_time) - largest_recv_gap + second_largest_recv_gap;
+  recv_duration = std::max(recv_duration, TimeDelta::Millis(1));
+  if (num_sent_packets_in_window < settings_.required_packets) return DataRate::FromSizeAndTime(recv_size, recv_duration);
+
+  TimeDelta send_duration = last_send_time - first_send_time;
+  send_duration = std::max(send_duration, TimeDelta::Millis(1));
+  return std::min(DataRate::FromSizeAndTime(send_size, send_duration), DataRate::FromSizeAndTime(recv_size, recv_duration));
+}
+
+}  // namespace sm::cc
