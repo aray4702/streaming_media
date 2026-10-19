@@ -179,3 +179,48 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
   const double video_kbps = rep.metrics.at("net.video_kbps");
   SM_EXPECT_TRUE(std::abs(static_cast<double>(video_bytes) * 8 / 1000.0 / 4.0 - video_kbps) < 0.01);
 }
+
+// The per-second video send trace (issue #131).
+SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
+  std::vector<VideoTraceRow> trace(2);
+  trace[0].t_ms = 1000;
+  trace[0].encoder_target_bps = 50000;
+  trace[0].alloc_target_bps = 60000;
+  trace[0].captured = 30;
+  trace[0].encoded = 24;
+  trace[0].dropped_rate_limiter = 6;
+  trace[0].encoded_bytes = 9000;
+  trace[0].pacer_queue_ms = 12.54;
+  trace[1].t_ms = 2000;
+  trace[1].dropped_congestion_window = 2;
+  trace[1].dropped_encoder_queue = 1;
+  trace[1].paused = 1;
+  SM_EXPECT_EQ(VideoTraceCsv(trace),
+               "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
+               "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0\n");
+}
+
+SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
+  auto parsed = ParseScenario("name vtrace\nduration 6s\nat 0s capacity=150kbps delay=30ms queue=200ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).video_trace.empty());
+  opt.video_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_ASSERT_EQ(rep.video_trace.size(), static_cast<size_t>(6));
+  int64_t dropped = 0, bytes = 0;
+  for (size_t i = 0; i < rep.video_trace.size(); ++i) {
+    const VideoTraceRow& r = rep.video_trace[i];
+    SM_EXPECT_EQ(r.t_ms, static_cast<int64_t>((i + 1) * 1000));
+    // Every captured frame is encoded or dropped for exactly one reason.
+    SM_EXPECT_EQ(r.captured, r.encoded + r.dropped_capturer + r.dropped_encoder_queue + r.dropped_rate_limiter +
+                                 r.dropped_congestion_window + r.dropped_encoder);
+    dropped += r.captured - r.encoded;
+    bytes += r.encoded_bytes;
+  }
+  SM_EXPECT_EQ(static_cast<double>(dropped), rep.metrics.at("video.encoder_dropped"));
+  SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
+}

@@ -17,7 +17,8 @@
 // library and for libwebrtc, on the first seed of the named scenarios (issue
 // #125; default very_low_capacity_allocator_v2, "none" disables). The CSVs go
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
-// diff them with tools/link_trace.py.
+// diff them with tools/link_trace.py. The same runs also write the sender's
+// per-second video decisions (issue #131; "sm_video", "webrtc_video").
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -233,18 +234,25 @@ int main(int argc, char** argv) {
       Scenario s = base;
       s.seed = base.seed + static_cast<uint64_t>(k);
       opt.link_trace = k == 0 && Traced(trace_names, base.name);
+      opt.video_trace = opt.link_trace;
       ours.push_back(sm::testbench::RunCall(s, opt));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
       if (opt.link_trace) {
         const std::string sm_csv = sm::testbench::LinkTraceCsv(ours.back().link_trace);
         const std::string rtc_csv = sm::testbench::LinkTraceCsv(theirs.back().link_trace);
+        // The per-second video send decisions (issue #131), same scenario and seed.
+        const std::string sm_video = sm::testbench::VideoTraceCsv(ours.back().video_trace);
+        const std::string rtc_video = sm::testbench::VideoTraceCsv(theirs.back().video_trace);
         traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                        "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
-                       ", \"webrtc\": " + JsonString(rtc_csv) + "}";
+                       ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
+                       ", \"webrtc_video\": " + JsonString(rtc_video) + "}";
         if (!trace_dir.empty()) {
           const std::string stem = trace_dir + "/" + base.name + "." + std::to_string(s.seed);
           std::ofstream(stem + ".sm.trace.csv") << sm_csv;
           std::ofstream(stem + ".webrtc.trace.csv") << rtc_csv;
+          std::ofstream(stem + ".sm.video.csv") << sm_video;
+          std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
         }
       }
       if (!dump_dir.empty()) {

@@ -178,6 +178,23 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
+std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
+  std::string out =
+      "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
+      "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms\n";
+  char ms[32];
+  for (const auto& r : trace) {
+    std::snprintf(ms, sizeof(ms), "%.1f", r.pacer_queue_ms);
+    out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
+           std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
+           std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
+           std::to_string(r.dropped_rate_limiter) + "," + std::to_string(r.dropped_congestion_window) + "," +
+           std::to_string(r.dropped_encoder) + "," + std::to_string(r.paused) + "," + std::to_string(r.encoded_bytes) +
+           "," + ms + "\n";
+  }
+  return out;
+}
+
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
@@ -484,6 +501,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
+  VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
@@ -564,13 +582,22 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({}, now);
       const DataRate vr = dec.target;
       const bool key = dec.keyframe;
+      ++vt_row.captured;
+      vt_row.encoder_target_bps = vr.bps();
       if (!dec.encode) {
         ++frames_skipped;
+        switch (dec.reason) {
+          case rtp::DropReason::kFrameDropper: ++vt_row.dropped_rate_limiter; break;
+          case rtp::DropReason::kCongestionWindow: ++vt_row.dropped_congestion_window; break;
+          default: ++vt_row.dropped_encoder_queue; break;  // Paused: libwebrtc's EncoderPaused path.
+        }
       } else {
+        ++vt_row.encoded;
         ++frames_encoded;
         double per_frame = static_cast<double>(vr.bps()) / 8 / s.video_fps;
         int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
         bytes = std::max<int64_t>(bytes, 200);
+        vt_row.encoded_bytes += bytes;
         video_ctl.OnEncoded({DataSize::Bytes(bytes), key}, now);
         if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
@@ -710,6 +737,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // --- Measurement ----------------------------------------------------------
     double queue_ms = QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.video_trace && t % 1000 == 999) {
+      vt_row.t_ms = t + 1;
+      vt_row.alloc_target_bps = sender.rates().video_target.bps();
+      vt_row.paused = video_ctl.paused() ? 1 : 0;
+      vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now).us()) / 1000.0;
+      rep.video_trace.push_back(vt_row);
+      vt_row = VideoTraceRow{};
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;

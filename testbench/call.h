@@ -35,6 +35,21 @@ struct CheckResult {
   bool passed = false;
 };
 
+// One second of the sender's video decisions (issue #131), the same record for
+// this library and for libwebrtc. Counts are for the second ending at `t_ms`.
+// Drops use libwebrtc's VideoSendStream::Stats reasons; see VideoTraceCsv.
+struct VideoTraceRow {
+  int64_t t_ms = 0;
+  int64_t encoder_target_bps = 0;  // Rate the encoder is configured with.
+  int64_t alloc_target_bps = 0;    // The allocator's video target.
+  int captured = 0, encoded = 0;
+  int dropped_capturer = 0, dropped_encoder_queue = 0, dropped_rate_limiter = 0, dropped_congestion_window = 0,
+      dropped_encoder = 0;
+  int paused = 0;  // 1 when the encoder is paused or suspended at the end of the second.
+  int64_t encoded_bytes = 0;
+  double pacer_queue_ms = 0;
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -45,11 +60,14 @@ struct Report {
   std::map<std::string, int> events;      // Event counts by module/name.
   // Every packet offered to the forward link, when RunOptions::link_trace is set (issue #125).
   std::vector<sim::LinkTraceRecord> link_trace;
+  // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
+  std::vector<VideoTraceRow> video_trace;
 };
 
 struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
+  bool video_trace = false;  // Fill Report::video_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
 };
 
@@ -74,6 +92,18 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // rtx, padding, fec or other (RTCP, cross traffic); `seq` is the RTP sequence
 // number or -1; `queue_bytes` is the bottleneck queue before the packet;
 // `outcome` is delivered, queue_drop, lost or down.
+// The per-second video send trace as CSV (issue #131), identical for both
+// implementations: a header line, then one line per second:
+// t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
+// dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
+// dropped_encoder,paused,encoded_bytes,pacer_queue_ms. The drop columns are
+// libwebrtc's VideoSendStream::Stats reasons. This library maps its drop
+// points onto them: the frame dropper is dropped_rate_limiter (libwebrtc's
+// kMediaOptimization), congestion-window pushback is dropped_congestion_window
+// and a paused encoder is dropped_encoder_queue (libwebrtc's EncoderPaused
+// path). It has no counterpart for dropped_capturer, DropDueToSize or
+// dropped_encoder, so those stay 0.
+std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);

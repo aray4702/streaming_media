@@ -62,6 +62,7 @@ namespace w = webrtc;
 using testbench::Report;
 using testbench::Sample;
 using testbench::Scenario;
+using testbench::VideoTraceRow;
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
 // Payload types as Chrome offers them (red/ulpfec/rtx as in its default SDP).
@@ -126,6 +127,7 @@ struct VideoModel {
   Random rng;
   int64_t frames_captured = 0, frames_encoded = 0, keyframes = 0, bytes = 0;
   int64_t last_key_us = INT64_MIN / 2;
+  int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;  // Filled by the decoder.
 };
 
@@ -144,7 +146,10 @@ class ModelEncoder final : public w::VideoEncoder {
     cb_ = nullptr;
     return WEBRTC_VIDEO_CODEC_OK;
   }
-  void SetRates(const RateControlParameters& p) override { rate_bps_ = p.bitrate.get_sum_bps(); }
+  void SetRates(const RateControlParameters& p) override {
+    rate_bps_ = p.bitrate.get_sum_bps();
+    m_->encoder_rate_bps = rate_bps_;
+  }
   int32_t Encode(const w::VideoFrame& frame, const std::vector<w::VideoFrameType>* types) override {
     if (!cb_) return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
     const int64_t capture_us = frame.timestamp_us();
@@ -584,6 +589,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   int64_t next_frame_ms = 0;
   double cross_debt = 0;
   bool stopping = false;
+  // Counters at the last per-second video trace row (issue #131).
+  struct VideoTracePrev {
+    int64_t captured = 0, encoded = 0;
+    uint32_t capturer = 0, queue = 0, rate = 0, cwnd = 0, encoder = 0;
+    int64_t bytes = 0;
+  } vt_prev;
 
   std::function<void(int64_t)> tick = [&](int64_t t) {
     if (stopping || t >= end_ms) return;
@@ -716,6 +727,28 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       sender_q->PostTask([&, smp]() mutable {
         w::Call::Stats cs = send_call->GetStats();
         smp.target_kbps = static_cast<double>(cs.send_bandwidth_bps) / 1000.0;
+        if (opt.video_trace && video_send && static_cast<int64_t>(smp.t_s * 1000 + 0.5) % 1000 == 0) {
+          // Once per simulated second (issue #131): VideoSendStream::Stats counters, as deltas.
+          w::VideoSendStream::Stats vs = video_send->GetStats();
+          VideoTraceRow r;
+          r.t_ms = static_cast<int64_t>(smp.t_s * 1000 + 0.5);
+          r.encoder_target_bps = model.encoder_rate_bps;
+          r.alloc_target_bps = vs.target_media_bitrate_bps;
+          r.captured = static_cast<int>(model.frames_captured - vt_prev.captured);
+          r.encoded = static_cast<int>(model.frames_encoded - vt_prev.encoded);
+          r.dropped_capturer = static_cast<int>(vs.frames_dropped_by_capturer - vt_prev.capturer);
+          r.dropped_encoder_queue = static_cast<int>(vs.frames_dropped_by_encoder_queue - vt_prev.queue);
+          r.dropped_rate_limiter = static_cast<int>(vs.frames_dropped_by_rate_limiter - vt_prev.rate);
+          r.dropped_congestion_window = static_cast<int>(vs.frames_dropped_by_congestion_window - vt_prev.cwnd);
+          r.dropped_encoder = static_cast<int>(vs.frames_dropped_by_encoder - vt_prev.encoder);
+          r.paused = vs.suspended ? 1 : 0;
+          r.encoded_bytes = model.bytes - vt_prev.bytes;
+          r.pacer_queue_ms = static_cast<double>(cs.pacer_delay_ms);
+          vt_prev = {model.frames_captured, model.frames_encoded, vs.frames_dropped_by_capturer, vs.frames_dropped_by_encoder_queue,
+                     vs.frames_dropped_by_rate_limiter, vs.frames_dropped_by_congestion_window,
+                     vs.frames_dropped_by_encoder, model.bytes};
+          rep.video_trace.push_back(r);
+        }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;
         if (cs.rtt_ms > 0) rtt_samples.push_back(static_cast<double>(cs.rtt_ms));
         rep.timeseries.push_back(smp);
