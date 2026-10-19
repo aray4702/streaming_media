@@ -60,6 +60,12 @@ void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now
   TrimOld(now);
 }
 
+void NackTracker::ClearUpTo(uint16_t seq) {
+  if (cfg_.version < 2 || !initialized_) return;
+  const auto end = missing_.lower_bound(unwrapper_.PeekUnwrap(seq));
+  for (auto it = missing_.begin(); it != end; it = missing_.erase(it)) ++stats_.cleared;
+}
+
 void NackTracker::AddMissing(int64_t from, int64_t to, Timestamp now) {
   for (int64_t i = from; i < to; ++i) {
     missing_.emplace(i, Info{now});
@@ -172,6 +178,7 @@ void NackTracker::ExportMetrics(MetricsWriter& w) const {
   w.Counter("nack_requests", stats_.nack_requests);
   w.Counter("recovered", stats_.recovered);
   w.Counter("abandoned", stats_.abandoned);
+  w.Counter("cleared", stats_.cleared);
   w.Counter("keyframe_requests", stats_.keyframe_requests);
   w.Gauge("pending", static_cast<double>(missing_.size()));
   w.Gauge("rtt_ms", rtt_.ms_f());

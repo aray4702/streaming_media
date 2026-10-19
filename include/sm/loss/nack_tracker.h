@@ -40,6 +40,7 @@ struct NackStats {
   uint64_t nack_requests = 0;       // Sequence numbers sent in NACKs (incl. retries).
   uint64_t recovered = 0;           // Gaps later filled.
   uint64_t abandoned = 0;           // Gave up after max_retries or age.
+  uint64_t cleared = 0;             // Requests dropped by ClearUpTo.
   uint64_t keyframe_requests = 0;
   Histogram recovery_time_ms;       // Gap detected -> packet arrived.
   Histogram retries_per_recovery;
@@ -53,6 +54,10 @@ class NackTracker : public MetricsSource {
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
   // Sequence numbers to put in a NACK now. Each call counts as one attempt.
   std::vector<uint16_t> GetNackBatch(Timestamp now);
+  // NackRequester::ClearUpTo (version 2): forgets the requests for every sequence number before `seq`. The
+  // receiver calls it for each continuous frame (RtpVideoStreamReceiver2::FrameContinuous), so a keyframe
+  // that follows an outage ends the repair of the packets lost during it.
+  void ClearUpTo(uint16_t seq);
   // True once if the tracker gave up and a keyframe is needed.
   bool TakeKeyframeRequest();
 
