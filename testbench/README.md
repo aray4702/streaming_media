@@ -13,7 +13,7 @@ out/native/testbench/sm_testbench --quiet testbench/scenarios/*.scn       # PASS
 out/native/testbench/sm_testbench --json=r.json --timeseries a.scn       # machine-readable, 100 ms samples
 out/native/testbench/sm_testbench --library a.scn --json=-               # plus every module's own metrics
 out/native/testbench/sm_testbench --metrics                               # metric names and meanings
-out/native/testbench/sm_testbench --link-trace=DIR a.scn                  # every packet offered to the forward link, as CSV (tools/link_trace.py)
+out/native/testbench/sm_testbench --link-trace=DIR a.scn                  # every packet offered to the forward link, as CSV (tools/link_trace.py); also the video send trace and the GoogCC estimate trace (tools/bwe_trace.py)
 ctest --preset native -L scenario                                         # the suite as CTest entries
 python3 tools/testbench_compare.py testbench/baseline.json r.json         # regressions against main
 ```

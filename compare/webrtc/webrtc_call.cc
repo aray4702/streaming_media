@@ -42,6 +42,9 @@
 #include "call/call_config.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
+#include "api/rtc_event_log/rtc_event_log.h"
+#include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
+#include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
@@ -63,6 +66,46 @@ using testbench::Report;
 using testbench::Sample;
 using testbench::Scenario;
 using testbench::VideoTraceRow;
+
+// Records the sender's GoogCC events (issue #149) in this library's BweTraceRow layout:
+// RtcEventBweUpdateDelayBased (delay_based_bwe.cc) and RtcEventBweUpdateLossBased
+// (send_side_bandwidth_estimation.cc). LossBasedBweV2's own state (LossBasedState, the
+// loss-limited estimate) has no event or public accessor in the prebuilt libwebrtc, so
+// those columns stay empty here.
+class BweTraceLog final : public w::RtcEventLog {
+ public:
+  BweTraceLog(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows) : now_us_(std::move(now_us)), rows_(rows) {}
+  bool StartLogging(std::unique_ptr<w::RtcEventLogOutput>, int64_t) override { return true; }
+  void StopLogging() override {}
+  void Log(std::unique_ptr<w::RtcEvent> event) override {
+    cc::BweTraceRow r;
+    r.time_us = now_us_();
+    switch (event->GetType()) {
+      case w::RtcEvent::Type::BweUpdateDelayBased: {
+        const auto* e = static_cast<const w::RtcEventBweUpdateDelayBased*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kDelayBased;
+        r.bitrate_bps = e->bitrate_bps();
+        r.detector = static_cast<int>(e->detector_state());  // kBwNormal, kBwUnderusing, kBwOverusing: as BandwidthUsage here.
+        break;
+      }
+      case w::RtcEvent::Type::BweUpdateLossBased: {
+        const auto* e = static_cast<const w::RtcEventBweUpdateLossBased*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kLossBased;
+        r.bitrate_bps = e->bitrate_bps();
+        r.fraction_loss = e->fraction_loss();
+        r.packets = e->total_packets();
+        break;
+      }
+      default:
+        return;
+    }
+    rows_->push_back(r);
+  }
+
+ private:
+  std::function<int64_t()> now_us_;
+  std::vector<cc::BweTraceRow>* rows_;
+};
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
 // Payload types as Chrome offers them (red/ulpfec/rtx as in its default SDP).
@@ -342,6 +385,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   env_factory.Set(sim.clock());
   env_factory.Set(static_cast<w::TaskQueueFactory*>(&sim));
   const w::Environment env = env_factory.Create();
+  // The sender's Environment carries the event log sink that records its GoogCC updates.
+  BweTraceLog bwe_log([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace);
+  w::EnvironmentFactory sender_env_factory;
+  sender_env_factory.Set(sim.clock());
+  sender_env_factory.Set(static_cast<w::TaskQueueFactory*>(&sim));
+  if (opt.bwe_trace) sender_env_factory.Set(static_cast<w::RtcEventLog*>(&bwe_log));
+  const w::Environment sender_env = sender_env_factory.Create();
 
   auto sender_q = sim.CreateTaskQueue("sender", w::TaskQueueFactory::Priority::kNormal);
   auto receiver_q = sim.CreateTaskQueue("receiver", w::TaskQueueFactory::Priority::kNormal);
@@ -375,16 +425,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::scoped_refptr<w::AudioState> recv_audio_state = make_audio_state(&recv_adm);
 
   std::unique_ptr<w::Call> send_call, recv_call;
-  auto make_call = [&](w::scoped_refptr<w::AudioState> audio_state) {
-    w::CallConfig c = w::CallConfig::CreateSingleThreaded(env);
+  auto make_call = [&](const w::Environment& call_env, w::scoped_refptr<w::AudioState> audio_state) {
+    w::CallConfig c = w::CallConfig::CreateSingleThreaded(call_env);
     c.bitrate_config.min_bitrate_bps = static_cast<int>(s.min_rate.bps());
     c.bitrate_config.start_bitrate_bps = static_cast<int>(s.start_rate.bps());
     c.bitrate_config.max_bitrate_bps = static_cast<int>(s.max_rate.bps());
     c.audio_state = audio_state;
     return w::Call::Create(std::move(c));
   };
-  run_on(sender_q.get(), [&] { send_call = make_call(send_audio_state); });
-  run_on(receiver_q.get(), [&] { recv_call = make_call(recv_audio_state); });
+  run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
+  run_on(receiver_q.get(), [&] { recv_call = make_call(env, recv_audio_state); });
 
   const std::vector<w::RtpExtension> extensions = {
       w::RtpExtension(w::RtpExtension::kTransportSequenceNumberUri, kTransportSeqExtId)};
@@ -589,6 +639,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   int64_t next_frame_ms = 0;
   double cross_debt = 0;
   bool stopping = false;
+  int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
@@ -727,6 +778,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       sender_q->PostTask([&, smp]() mutable {
         w::Call::Stats cs = send_call->GetStats();
         smp.target_kbps = static_cast<double>(cs.send_bandwidth_bps) / 1000.0;
+        if (opt.bwe_trace && cs.send_bandwidth_bps != last_bwe_target_bps) {
+          // The Call's target (Call::Stats::send_bandwidth_bps), sampled every 100 ms, when it changed.
+          cc::BweTraceRow r;
+          r.time_us = static_cast<int64_t>(smp.t_s * 1e6 + 0.5);
+          r.kind = cc::BweTraceRow::Kind::kTarget;
+          r.bitrate_bps = cs.send_bandwidth_bps;
+          rep.bwe_trace.push_back(r);
+          last_bwe_target_bps = cs.send_bandwidth_bps;
+        }
         if (opt.video_trace && video_send && static_cast<int64_t>(smp.t_s * 1000 + 0.5) % 1000 == 0) {
           // Once per simulated second (issue #131): VideoSendStream::Stats counters, as deltas.
           w::VideoSendStream::Stats vs = video_send->GetStats();

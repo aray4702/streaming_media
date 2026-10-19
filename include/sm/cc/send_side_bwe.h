@@ -21,6 +21,24 @@
 
 namespace sm::cc {
 
+// One row of the BWE trace (issue #149): what libwebrtc's RtcEventLog records as
+// RtcEventBweUpdateDelayBased and RtcEventBweUpdateLossBased, plus the final
+// target. sm_compare writes libwebrtc's rows in the same layout (BweTraceCsv in
+// testbench/call.h), so tools/bwe_trace.py can lay the two stacks side by side.
+// -1 marks a column the event does not have.
+struct BweTraceRow {
+  enum class Kind { kDelayBased, kLossBased, kTarget };
+  int64_t time_us = 0;
+  Kind kind = Kind::kTarget;
+  int64_t bitrate_bps = 0;
+  int detector = -1;            // BandwidthUsage as an int (delay-based rows).
+  int fraction_loss = -1;       // 0-255 (loss-based rows).
+  int packets = -1;             // Packets in the loss report (loss-based rows).
+  int loss_state = -1;          // LossBasedState (this library's loss-based rows only).
+  int64_t loss_limit_bps = -1;  // LossBasedBweV2's loss-limited estimate (this library only).
+  int64_t instant_ub_bps = -1;  // LossBasedBweV2's instant upper bound (this library only).
+};
+
 struct GccConfig {
   DataRate min_rate = DataRate::KilobitsPerSec(30);
   DataRate start_rate = DataRate::KilobitsPerSec(300);
@@ -37,6 +55,10 @@ struct GccConfig {
   // sets; periodic ALR probes are off otherwise.
   bool periodic_alr_probing = false;
   EventSink* events = nullptr;
+  // `cc v2`: when set, rows are appended as libwebrtc's RtcEventLog would log them
+  // (delay-based and loss-based updates when they change) and the target when it
+  // changes. The test bench sets it for --link-trace.
+  std::vector<BweTraceRow>* bwe_trace = nullptr;
 };
 
 struct NetworkControlUpdate {
@@ -98,6 +120,8 @@ class GccController : public MetricsSource {
 
  private:
   NetworkControlUpdate MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes);
+  void TraceDelayBased(Timestamp now, DataRate delay_est, bool updated);
+  void TraceLossBased(Timestamp now);
   std::vector<ProbeCluster> RegisterProbes(std::vector<ProbeCluster> probes);
   NetworkControlUpdate OnTransportFeedbackV2(const std::vector<PacketResult>& results, Timestamp now);
   GccConfig cfg_;
@@ -125,6 +149,13 @@ class GccController : public MetricsSource {
   std::optional<TimeDelta> last_feedback_max_rtt_;
   TimeDelta last_rtt_ = TimeDelta::Zero();
   Histogram target_kbps_;
+  // BWE trace state (bwe_trace): the last values logged, as libwebrtc keeps them.
+  DataRate trace_delay_bitrate_ = DataRate::Zero();
+  BandwidthUsage trace_delay_state_ = BandwidthUsage::kNormal;
+  int64_t trace_loss_target_bps_ = -1;
+  int trace_loss_fraction_ = -1;
+  Timestamp trace_loss_time_ = Timestamp::MinusInfinity();
+  int64_t trace_target_bps_ = -1;
 };
 
 }  // namespace sm::cc

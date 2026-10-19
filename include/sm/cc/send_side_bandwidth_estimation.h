@@ -60,6 +60,7 @@ class SendSideBandwidthEstimation : public MetricsSource {
   LossBasedState loss_based_state() const { return loss_based_state_; }
   bool IsRttAboveLimit() const { return rtt_backoff_.IsRttAboveLimit(); }
   uint8_t fraction_loss() const { return last_fraction_loss_; }
+  int64_t expected_packets_since_last_loss_update() const { return expected_packets_since_last_loss_update_; }
   DataRate delay_based_limit() const { return delay_based_limit_; }
 
   void UpdateReceiverEstimate(Timestamp at_time, DataRate bandwidth);
