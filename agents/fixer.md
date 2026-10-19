@@ -98,14 +98,12 @@ and in step 3 write tests and scenarios whose `expect` lines check the
 issue's acceptance criteria. If it is large, deliver it in several PRs, each
 one complete and tested, and say in the issue what remains. Then:
 
-1. **Claim it.** Several Fixer runs can start within minutes of each other.
-   Add the `in-progress` label and comment that work has started, wait 60
-   seconds, then re-read the issue's comments: if another Fixer run posted
-   its own start comment in the 30 minutes before yours, it owns the issue.
-   Delete your comment and go back to step 3 once for the next candidate.
-   Otherwise the issue is yours. (The original rule follows.) Add the
-   `in-progress` label, and comment that work has
-   started.
+1. **Claim it.** Add the `in-progress` label, and comment that work has
+   started. Several Fixer runs can start within minutes of each other, so
+   wait 60 seconds and re-read the issue's comments: if another Fixer run
+   posted its start comment in the 30 minutes before yours, that run owns
+   the issue. Delete your comment, and go back to step 3 once for the next
+   candidate.
 2. **Reproduce.** Build `main` and run the command from the issue. If it
    does not reproduce across the seeds mentioned, comment with your output,
    label it `cannot-reproduce`, remove `in-progress` and stop.
