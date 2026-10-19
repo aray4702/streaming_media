@@ -212,11 +212,11 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
-           kOutcomes[static_cast<size_t>(r.outcome)] + "\n";
+           kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "\n";
   }
   return out;
 }

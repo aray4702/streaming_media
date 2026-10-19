@@ -39,6 +39,7 @@ def parse(text):
         rows.append({
             "time_us": int(r["time_us"]), "size": int(r["size"]), "kind": r["kind"],
             "seq": int(r["seq"]), "queue_bytes": int(r["queue_bytes"]), "outcome": r["outcome"],
+            "arrival_us": int(r.get("arrival_us") or -1),  # absent in traces from before #124's yardstick
         })
     return rows
 
