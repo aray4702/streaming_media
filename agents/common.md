@@ -71,6 +71,20 @@ practical details every role shares.
   P=https://raw.githubusercontent.com/aray4702/streaming_media/parity-data-pr/pr/<number>
   curl -fsSL $P/HEAD; curl -fsSL $P/compare-webrtc.txt; curl -fsSL $P/parity.md
   ```
+  **When you need libwebrtc-side data that isn't published** (another seed,
+  or a new trace column such as detector state or the NACK list), build the
+  yardstick yourself in a draft PR. Don't release the item for lack of data.
+  The PR's `compare-webrtc` job builds `sm_compare` from your branch and
+  publishes to `parity-data-pr/pr/<N>/`:
+  - Add the instrumentation in `compare/webrtc/` (libwebrtc side) and in
+    `testbench/` (ours).
+  - Put the scenarios to trace in `kDefaultTraced`. A scenario copy with
+    `seed 5` traces another seed.
+  - Open the PR as a draft titled `yardstick: …`, labelled `agent-pr`, with
+    auto-merge off.
+  - Poll `ci-ok` (about 25 min) in the same run, read the traces and continue.
+  - Merge it only if the instrumentation is generally useful (as #156 was);
+    otherwise close it when done.
   To check a local change, build `sm_compare` and run
   `tools/parity_report.py out.json --owners tools/parity_owners.json --base <main's compare-webrtc.json>`.
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
