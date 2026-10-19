@@ -12,6 +12,11 @@ describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch on: the q
 #   cc.queue_p95_ms 69-132 (mean 89) ; video.e2e_delay_p95_ms 107-168 (mean 126) ; cc.utilization_pct 91-93 (mean 92)
 # Left (seeds 4 and 5): the target keeps rising about 25 kbps/s past the 2.5 Mbps link and overuse is signalled only
 # when the queue is near 150 ms, so e2e p95 is 167 and 151 ms there.
+# Seeds 11-40 (this run, main 74266b3): queue p95 mean 91.5, e2e p95 mean 129.7, utilization mean 91.9; e2e p95 >= 150 ms on 4 of 40 seeds
+# (seeds 4, 5, 29 and 36), libwebrtc's 10 seeds top out at 148. The trendline, InterArrivalDelta, delay-detector, AIMD and feedback
+# constants match the reference; the late seeds are slow ramps (about 25 kbps/s) that cross the link by 5-7% before the trendline
+# slope reaches the 6 ms threshold floor, so the cycle between overuses is 22-25 s here against about 16 s in libwebrtc's seed-1 trace.
+# The lines below lock the level reached on seeds 1-40; they do not replace the target.
 # Target (issue #124): cc.queue_p95_ms, video.e2e_delay_p95_ms and cc.utilization_pct within the parity band
 # of libwebrtc, and `video.e2e_delay_p95_ms < 150` on every seed (the line `clean_link` carries).
 cc v2
@@ -29,3 +34,5 @@ expect audio.interruptions == 0
 expect video.freeze_count == 0
 expect cc.unsettled == 0
 expect cc.utilization_pct >= 86
+expect video.e2e_delay_p95_ms < 190
+expect cc.queue_p95_ms < 160

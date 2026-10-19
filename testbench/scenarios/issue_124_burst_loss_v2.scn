@@ -1,0 +1,25 @@
+name issue_124_burst_loss_v2
+describe 3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's burst_loss cell next to libwebrtc (issue #124)
+# `burst_loss` with the configuration PR #116 makes the default. Measured on main 74266b3, seeds 1-10 (ours / libwebrtc, parity-data of main):
+#   cc.queue_p95_ms 45-108 (mean 73.5) / 46.8 ; video.e2e_delay_p95_ms 188-241 (mean 210.7) / 213.0
+#   cc.utilization_pct 81.1-87.0 (mean 84.0) / 80.4 ; cc.target_avg_kbps 1787 / 1757 ; video.freeze_total_ms 640 / 1433
+# Left: the queue p95 is 27 ms above libwebrtc's mean (the same excess shows on bufferbloat); the lines below lock the level reached.
+# Target (issue #124): cc.queue_p95_ms within the parity band of libwebrtc (46.8 ms).
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms
+expect audio.concealed_pct < 5
+expect audio.interruptions <= 1
+expect video.longest_freeze_ms < 1200
+expect video.render_fps >= 25
+expect cc.queue_p95_ms < 120
+expect video.e2e_delay_p95_ms < 260
+expect cc.utilization_pct >= 78
