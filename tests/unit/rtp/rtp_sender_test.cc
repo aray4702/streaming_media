@@ -294,7 +294,10 @@ RtpSenderConfig PaddingCfg(const sync::ExtensionMap* ext, bool video = true) {
 void SendAndRelease(RtpSender& s, std::initializer_list<size_t> sizes, uint32_t ts, Timestamp now) {
   auto chunks = Chunks(sizes);
   s.SendVideoFrame(chunks, ts, now);
-  for (const SenderPacket& p : s.TakePackets()) s.OnPacketReleased(p, now);
+  for (SenderPacket& p : s.TakePackets()) {
+    s.AssignSequenceNumber(p);  // What the pacer's release does under `rtx v2`.
+    s.OnPacketReleased(p, now);
+  }
 }
 size_t PaddingTotal(const std::vector<SenderPacket>& v) {
   size_t n = 0;

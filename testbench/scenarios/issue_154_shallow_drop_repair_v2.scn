@@ -1,0 +1,23 @@
+name issue_154_shallow_drop_repair_v2
+describe Shallow bottleneck (20 ms) with a 3x capacity drop, every v2 switch on: no video packet stays unrepaired (issue #154, #127)
+duration 40s
+at 0s  capacity=1500kbps delay=30ms queue=20ms
+at 10s capacity=500kbps
+at 25s capacity=1500kbps
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+# Root cause: the RTP sequence number was assigned at packetization (RtpSender::NewPacket), but under
+# `pacer v2` the first packet of a keyframe flushes the queued video packets
+# (PacingController::EnqueuePacket). Each flushed packet left a sequence gap the receiver NACKed until
+# it gave up (nack/abandon 78 = pacer.flushed_packets 78 on seed 1), counted as video.residual_loss_pct.
+# libwebrtc assigns the number when the pacer releases the packet (packet_router.cc:217 ->
+# rtp_rtcp_impl2.cc:352), so a discarded packet leaves no gap; `rtx v2` now does the same.
+# Before the fix seeds 1-10 had 2.2-8.0 % (8 of 10 above 3 %); after, at most 0.6 %. libwebrtc: 0.1 %.
+expect video.residual_loss_pct < 1
