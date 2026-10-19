@@ -158,3 +158,33 @@ model encoder. This library maps its drop points onto the same reasons:
 python3 tools/video_trace.py compare-webrtc.json --series    # totals by reason, then the per-second series
 python3 tools/video_trace.py sm.video.csv webrtc.video.csv
 ```
+
+### The bandwidth-estimate trace (issue #149)
+
+The same runs record the sender's GoogCC estimates in one CSV for both stacks:
+`time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps`.
+libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
+(`BweTraceLog` in `webrtc_call.cc`):
+
+| event | libwebrtc | this library (`cc v2` only) |
+|---|---|---|
+| `delay_based` | `RtcEventBweUpdateDelayBased` (`delay_based_bwe.cc`): AIMD estimate and trendline state, when either changes | `GccController::TraceDelayBased`, same condition |
+| `loss_based` | `RtcEventBweUpdateLossBased` (`send_side_bandwidth_estimation.cc`): the send-side target, fraction lost and packets, when the target or fraction changes, and every 5 s | `GccController::TraceLossBased`, same condition |
+| `target` | `Call::Stats::send_bandwidth_bps` every 100 ms, when it changes | the controller's target, when it changes |
+
+`loss_state`, `loss_limit_bps` and `instant_ub_bps` (`LossBasedBweV2`'s state,
+loss-limited estimate and instant upper bound) are filled for this library only:
+the prebuilt libwebrtc logs no event for them and has no public accessor, so
+those columns are empty on its side. The files are `"sm_bwe"` and `"webrtc_bwe"` in
+each `"traces"` entry, `<scenario>.<seed>.{sm,webrtc}.bwe.csv` with `--trace-dir` and
+`--trace-all-dir` (so `main` publishes them in `parity-data/traces/`), and
+`sm_testbench --link-trace=DIR` writes ours alone.
+
+```sh
+python3 tools/bwe_trace.py compare-webrtc.json --scenario issue_124_burst_loss_v2 --from 4 --to 16
+python3 tools/bwe_trace.py sm.bwe.csv webrtc.bwe.csv
+```
+
+For each second it shows both stacks' delay-based estimate and detector state, the
+send-side target, the loss fraction, and whether the target is held by the
+delay-based estimate or by the loss side.

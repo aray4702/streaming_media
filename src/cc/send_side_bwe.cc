@@ -174,6 +174,7 @@ NetworkControlUpdate GccController::OnTransportLossReport(int64_t packets_lost_d
   if (cfg_.version < 2) return MakeUpdate(now, {});
   ssbe_.UpdatePacketsLost(packets_lost_delta, packets_delta, now);
   target_ = ssbe_.target_rate();
+  TraceLossBased(now);
   return MakeUpdate(now, {});
 }
 
@@ -239,6 +240,7 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
   }
   DataRate delay_est = delay_.OnPacketResults(results, acked, probe, now);
   const DelayBasedBwe::Result result = delay_.last_result();
+  TraceDelayBased(now, delay_est, result.updated);
   if (result.updated) {
     if (result.probe) ssbe_.SetSendBitrate(delay_est, now);
     // SetSendBitrate resets the delay-based limit, so this comes after it.
@@ -246,6 +248,7 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
   }
   ssbe_.UpdateLossBasedEstimator(results, alr_start_time.has_value(), now);
   target_ = ssbe_.target_rate();
+  TraceLossBased(now);
   std::vector<ProbeCluster> probes;
   NetworkControlUpdate u = MakeUpdate(now, {});
   probes = std::move(u.probes);
@@ -264,6 +267,7 @@ NetworkControlUpdate GccController::OnProcessInterval(Timestamp now, DataRate se
   if (cfg_.version >= 2) {
     ssbe_.UpdateEstimate(now);
     target_ = ssbe_.target_rate();
+    TraceLossBased(now);
     // Avoid ALR probing before the first transport feedback is received.
     probe2_.SetAlrStartTime(first_feedback_received_ ? alr_.GetApplicationLimitedRegionStartTime() : std::nullopt);
     if (cfg_.enable_probing) probes = probe2_.Process(now);
@@ -297,9 +301,59 @@ NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) 
   return MakeUpdate(now, RegisterProbes(std::move(probes)));
 }
 
+// DelayBasedBwe::MaybeUpdateEstimate's RtcEventBweUpdateDelayBased: logged when the
+// estimate changed or the detector state did.
+void GccController::TraceDelayBased(Timestamp now, DataRate delay_est, bool updated) {
+  if (!cfg_.bwe_trace) return;
+  const BandwidthUsage state = delay_.usage();
+  if ((updated && trace_delay_bitrate_ != delay_est) || state != trace_delay_state_) {
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kDelayBased;
+    r.bitrate_bps = (updated ? delay_est : trace_delay_bitrate_).bps();
+    r.detector = static_cast<int>(state);
+    cfg_.bwe_trace->push_back(r);
+    trace_delay_bitrate_ = updated ? delay_est : trace_delay_bitrate_;
+    trace_delay_state_ = state;
+  }
+}
+
+// SendSideBandwidthEstimation::MaybeLogLossBasedEvent's RtcEventBweUpdateLossBased: the
+// send-side target, logged when it or the loss fraction changed, or every 5 s.
+void GccController::TraceLossBased(Timestamp now) {
+  if (!cfg_.bwe_trace) return;
+  const DataRate target = ssbe_.target_rate();
+  const int fraction = ssbe_.fraction_loss();
+  if (target.bps() != trace_loss_target_bps_ || fraction != trace_loss_fraction_ ||
+      now - trace_loss_time_ > TimeDelta::Millis(5000)) {
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kLossBased;
+    r.bitrate_bps = target.bps();
+    r.fraction_loss = fraction;
+    r.packets = static_cast<int>(ssbe_.expected_packets_since_last_loss_update());
+    const LossBasedBweV2& lb = ssbe_.loss_based();
+    r.loss_state = static_cast<int>(ssbe_.loss_based_state());
+    r.loss_limit_bps = lb.loss_limited_bandwidth() ? lb.loss_limited_bandwidth()->bps() : -1;
+    r.instant_ub_bps = lb.instant_upper_bound().bps();
+    cfg_.bwe_trace->push_back(r);
+    trace_loss_target_bps_ = target.bps();
+    trace_loss_fraction_ = fraction;
+    trace_loss_time_ = now;
+  }
+}
+
 NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes) {
   NetworkControlUpdate u;
   u.target_rate = target_;
+  if (cfg_.bwe_trace && cfg_.version >= 2 && target_.bps() != trace_target_bps_) {
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kTarget;
+    r.bitrate_bps = target_.bps();
+    cfg_.bwe_trace->push_back(r);
+    trace_target_bps_ = target_.bps();
+  }
   u.pacing_rate = target_ * cfg_.pacing_factor;
   u.probes = std::move(probes);
   u.changed = target_ != last_reported_;

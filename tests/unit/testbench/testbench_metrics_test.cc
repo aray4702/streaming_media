@@ -240,3 +240,59 @@ SM_TEST(TestbenchMetrics, CompareSeedsIsParsedForSmCompareAndRangeChecked) {
   SM_ASSERT_TRUE(plain.scenario.has_value());
   SM_EXPECT_EQ(with.metrics.at("video.avg_kbps"), RunCall(*plain.scenario, opt).metrics.at("video.avg_kbps"));
 }
+
+// The GoogCC estimate trace (issue #149).
+SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumnsEmpty) {
+  using Kind = cc::BweTraceRow::Kind;
+  std::vector<cc::BweTraceRow> trace(3);
+  trace[0].time_us = 150000;
+  trace[0].kind = Kind::kDelayBased;
+  trace[0].bitrate_bps = 924666;
+  trace[0].detector = 2;
+  trace[1].time_us = 150000;
+  trace[1].kind = Kind::kLossBased;
+  trace[1].bitrate_bps = 900000;
+  trace[1].fraction_loss = 13;
+  trace[1].packets = 40;
+  trace[1].loss_state = 2;
+  trace[1].loss_limit_bps = 880000;
+  trace[1].instant_ub_bps = 5000000;
+  trace[2].time_us = 200000;
+  trace[2].bitrate_bps = 900000;
+  SM_EXPECT_EQ(BweTraceCsv(trace),
+               "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n"
+               "150000,delay_based,924666,overusing,,,,,\n"
+               "150000,loss_based,900000,,13,40,decreasing,880000,5000000\n"
+               "200000,target,900000,,,,,,\n");
+}
+
+SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
+  const std::string link = "duration 6s\nat 0s capacity=800kbps delay=30ms queue=200ms\nat 3s loss=3%\n";
+  RunOptions opt;
+  opt.library_metrics = false;
+  for (const bool v2 : {false, true}) {
+    auto parsed = ParseScenario(std::string("name bwetrace\n") + (v2 ? "cc v2\n" : "") + link);
+    SM_ASSERT_TRUE(parsed.scenario.has_value());
+    opt.bwe_trace = false;
+    SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).bwe_trace.empty());
+    opt.bwe_trace = true;
+    const Report rep = RunCall(*parsed.scenario, opt);
+    if (!v2) {
+      SM_EXPECT_TRUE(rep.bwe_trace.empty());
+      continue;
+    }
+    SM_ASSERT_TRUE(!rep.bwe_trace.empty());
+    int delay = 0, loss = 0, target = 0;
+    int64_t prev = 0;
+    for (const auto& r : rep.bwe_trace) {
+      SM_EXPECT_GE(r.time_us, prev);
+      prev = r.time_us;
+      switch (r.kind) {
+        case cc::BweTraceRow::Kind::kDelayBased: ++delay; SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2); break;
+        case cc::BweTraceRow::Kind::kLossBased: ++loss; SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.loss_state >= 0); break;
+        case cc::BweTraceRow::Kind::kTarget: ++target; break;
+      }
+    }
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);
+  }
+}

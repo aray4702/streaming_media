@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "scenario.h"
+#include "sm/cc/send_side_bwe.h"
 #include "sm/sim/network_link.h"
 
 namespace sm::testbench {
@@ -62,6 +63,8 @@ struct Report {
   std::vector<sim::LinkTraceRecord> link_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
+  // The sender's GoogCC updates (`cc v2` only), when RunOptions::bwe_trace is set (issue #149).
+  std::vector<cc::BweTraceRow> bwe_trace;
 };
 
 struct RunOptions {
@@ -69,6 +72,7 @@ struct RunOptions {
   bool library_metrics = true;
   bool video_trace = false;  // Fill Report::video_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
+  bool bwe_trace = false;   // Fill Report::bwe_trace.
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
@@ -105,6 +109,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
+// time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
+// event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
+std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
