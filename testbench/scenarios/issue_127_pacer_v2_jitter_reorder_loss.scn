@@ -1,0 +1,14 @@
+name issue_127_pacer_v2_jitter_reorder_loss
+describe pacer v2 with rtx v2 on a 4 Mbps link with 30 ms jitter (reordering) and 2% loss: no repeated 2.5 s freezes (issue #139, #127)
+duration 40s
+pacer v2
+rtx v2
+at 0s capacity=4000kbps delay=40ms jitter=30ms loss=2% queue=150ms
+# #139's repro. Before #159 (sequence number assigned at queue time) seeds 1-5 had longest freeze 2474-2612 ms,
+# 20-47 keyframe requests and 1.2-9.4 % residual loss, because the pacer's keyframe flush
+# (PacingController::EnqueuePacket) left sequence gaps that NACK chased until nack/abandon.
+# libwebrtc numbers its packets when the pacer releases them (packet_router.cc:217), so a flush leaves no gap.
+# Seeds 1-5 on main d2461d5 with `rtx v2`: longest freeze 220-392 ms, 1-4 keyframe requests, 0 % residual loss.
+expect video.longest_freeze_ms < 1000
+expect video.keyframe_requests < 10
+expect video.residual_loss_pct < 1
