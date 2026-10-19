@@ -50,6 +50,48 @@ SM_TEST(DelayBwe, TrendlineDetectsOveruseAndUnderuse) {
   SM_EXPECT_NEAR(up.trend(), 0.2, 0.05);
 }
 
+// Ports of goog_cc/trendline_estimator_unittest.cc (issue #152): 25 packets 20 ms apart, delivered at the
+// same pace (Normal), 10% slower (Overusing: the state changes once, to overusing) or 15% faster (Underusing).
+namespace {
+BandwidthUsage RunTrendline(double recv_spacing_ms, int* changes, int* count_out) {
+  constexpr int kPacketCount = 25;
+  TrendlineEstimator est;
+  BandwidthUsage prev = est.State();
+  *changes = 0;
+  for (int i = 1; i < kPacketCount; ++i) {
+    const double recv_t = 987654321.0 + recv_spacing_ms * i;
+    est.Update(recv_spacing_ms, 20.0, recv_t);
+    if (est.State() != prev) {
+      ++*changes;
+      prev = est.State();
+    }
+    *count_out = i + 1;
+  }
+  return est.State();
+}
+}  // namespace
+
+SM_TEST(DelayBwe, TrendlineMatchesLibwebrtcUnitTestNormal) {
+  int changes = 0, count = 0;
+  SM_EXPECT_TRUE(RunTrendline(20.0, &changes, &count) == BandwidthUsage::kNormal);
+  SM_EXPECT_EQ(changes, 0);
+  SM_EXPECT_EQ(count, 25);
+}
+
+SM_TEST(DelayBwe, TrendlineMatchesLibwebrtcUnitTestOverusing) {
+  int changes = 0, count = 0;
+  SM_EXPECT_TRUE(RunTrendline(1.1 * 20, &changes, &count) == BandwidthUsage::kOverusing);
+  SM_EXPECT_EQ(changes, 1);
+  SM_EXPECT_EQ(count, 25);
+}
+
+SM_TEST(DelayBwe, TrendlineMatchesLibwebrtcUnitTestUnderusing) {
+  int changes = 0, count = 0;
+  SM_EXPECT_TRUE(RunTrendline(0.85 * 20, &changes, &count) == BandwidthUsage::kUnderusing);
+  SM_EXPECT_EQ(changes, 1);
+  SM_EXPECT_EQ(count, 25);
+}
+
 SM_TEST(DelayBwe, AdaptiveThresholdBounds) {
   TrendlineEstimator t;
   for (int i = 0; i < 2000; ++i) t.Update(10 + (i % 2 ? 0.3 : -0.3), 10, i * 10.0);
