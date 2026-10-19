@@ -114,7 +114,7 @@ Rules:
   further down only to items labelled `parallel-ok`: it takes the first
   free one, and stops at the first free item that is not `parallel-ok`. The
   Owner (or the coordinator) sets `parallel-ok` on items that depend on
-  nothing above them that is unfinished. At most 3 list items are
+  nothing above them that is unfinished. At most 5 list items are
   `in-progress` at once. A `sev:1` issue (crash, sanitizer error, `main`
   broken) comes first regardless.
 - **Off the list means not now.** An issue that is not on the list is not

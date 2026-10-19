@@ -70,7 +70,7 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
    `parallel-ok`: skip busy ones, and the first free `parallel-ok` item is
    the candidate. Stop at the first free item that is **not** `parallel-ok`,
    and take no new issue if you reach it, or the end of the list, first:
-   later items depend on the earlier ones. If 3 or more list items are
+   later items depend on the earlier ones. If 5 or more list items are
    already `in-progress`, take no new issue. Say in your run summary which
    item is blocking and why.
 4. Otherwise take the candidate. Do not skip it on your own judgment (for
