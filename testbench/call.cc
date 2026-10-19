@@ -195,6 +195,16 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   return out;
 }
 
+std::string RepairTraceCsv(const std::vector<RepairTraceRow>& trace) {
+  std::string out = "t_ms,rtx_packets,key_frames_encoded,nack_requests,unique_nack_requests,plis,key_frames_decoded,frames_rendered\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.t_ms) + "," + std::to_string(r.rtx_packets) + "," + std::to_string(r.key_frames_encoded) + "," +
+           std::to_string(r.nack_requests) + "," + std::to_string(r.unique_nack_requests) + "," + std::to_string(r.plis) + "," +
+           std::to_string(r.key_frames_decoded) + "," + std::to_string(r.frames_rendered) + "\n";
+  }
+  return out;
+}
+
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
   static const char* const kKinds[] = {"delay_based", "loss_based", "target"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
@@ -525,6 +535,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  int64_t keyframes_decoded = 0;  // Keyframes the receiver delivered (issue #151).
+  struct RepairPrev {
+    uint64_t rtx = 0, nack = 0, unique = 0, pli = 0;
+    int64_t key_encoded = 0, key_decoded = 0, rendered = 0;
+  } repair_prev;
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
@@ -684,6 +699,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Render video.
     if (s.video) {
       for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+        if (f.keyframe) ++keyframes_decoded;
         if (!f.render) continue;
         freezes.OnFrameRendered(now);
         ++frames_rendered;
@@ -767,6 +783,23 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now).us()) / 1000.0;
       rep.video_trace.push_back(vt_row);
       vt_row = VideoTraceRow{};
+    }
+    if (opt.video_trace && s.video && t % 100 == 99) {
+      const rtp::RtpReceiver& vrx = receiver.video_receiver(video_recv);
+      const uint64_t rtx = sender.video_sender(video_send).stats().rtx_packets;
+      const uint64_t nack = vrx.nack().stats().nack_requests, unique = vrx.nack().stats().missing_detected;
+      const uint64_t pli = vrx.keyframes().stats().pli_sent + vrx.keyframes().stats().fir_sent;
+      RepairTraceRow r;
+      r.t_ms = t + 1;
+      r.rtx_packets = static_cast<int>(rtx - repair_prev.rtx);
+      r.key_frames_encoded = static_cast<int>(keyframes_sent - repair_prev.key_encoded);
+      r.nack_requests = static_cast<int>(nack - repair_prev.nack);
+      r.unique_nack_requests = static_cast<int>(unique - repair_prev.unique);
+      r.plis = static_cast<int>(pli - repair_prev.pli);
+      r.key_frames_decoded = static_cast<int>(keyframes_decoded - repair_prev.key_decoded);
+      r.frames_rendered = static_cast<int>(frames_rendered - repair_prev.rendered);
+      repair_prev = {rtx, nack, unique, pli, keyframes_sent, keyframes_decoded, frames_rendered};
+      rep.repair_trace.push_back(r);
     }
     if (t % 100 == 99) {
       Sample smp;

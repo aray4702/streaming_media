@@ -646,6 +646,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     uint32_t capturer = 0, queue = 0, rate = 0, cwnd = 0, encoder = 0;
     int64_t bytes = 0;
   } vt_prev;
+  // Counters at the last 100 ms repair trace row (issue #151).
+  struct RepairPrev {
+    int64_t rtx = 0, key_encoded = 0, nack = 0, unique = 0, pli = 0, key_decoded = 0, rendered = 0;
+  } repair_prev;
+  int64_t repair_tx_rtx = 0, repair_tx_key = 0;  // Sender-side counters, read on the sender queue.
 
   std::function<void(int64_t)> tick = [&](int64_t t) {
     if (stopping || t >= end_ms) return;
@@ -808,6 +813,35 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                      vs.frames_dropped_by_rate_limiter, vs.frames_dropped_by_congestion_window,
                      vs.frames_dropped_by_encoder, model.bytes};
           rep.video_trace.push_back(r);
+        }
+        if (opt.video_trace && video_send) {
+          // The sender's half of the 100 ms repair row (issue #151): retransmissions sent and keyframes encoded.
+          w::VideoSendStream::Stats vs = video_send->GetStats();
+          auto it = vs.substreams.find(kVideoSsrc);
+          if (it != vs.substreams.end()) {
+            repair_tx_rtx = static_cast<int64_t>(it->second.rtp_stats.retransmitted.packets);
+            repair_tx_key = it->second.frame_counts.key_frames;
+          }
+          const int64_t t_ms = static_cast<int64_t>(smp.t_s * 1000 + 0.5);
+          // The receiver's half, then the row (the receiver queue runs after this one at the same time).
+          receiver_q->PostTask([&, t_ms] {
+            if (!video_recv) return;
+            w::VideoReceiveStreamInterface::Stats rs = video_recv->GetStats();
+            const int64_t nack = rs.rtcp_packet_type_counts.nack_requests, unique = rs.rtcp_packet_type_counts.unique_nack_requests;
+            const int64_t pli = static_cast<int64_t>(rs.rtcp_packet_type_counts.pli_packets) + rs.rtcp_packet_type_counts.fir_packets;
+            const int64_t key_decoded = rs.key_frames_decoded, rendered = rs.frames_rendered;
+            testbench::RepairTraceRow r;
+            r.t_ms = t_ms;
+            r.rtx_packets = static_cast<int>(repair_tx_rtx - repair_prev.rtx);
+            r.key_frames_encoded = static_cast<int>(repair_tx_key - repair_prev.key_encoded);
+            r.nack_requests = static_cast<int>(nack - repair_prev.nack);
+            r.unique_nack_requests = static_cast<int>(unique - repair_prev.unique);
+            r.plis = static_cast<int>(pli - repair_prev.pli);
+            r.key_frames_decoded = static_cast<int>(key_decoded - repair_prev.key_decoded);
+            r.frames_rendered = static_cast<int>(rendered - repair_prev.rendered);
+            repair_prev = {repair_tx_rtx, repair_tx_key, nack, unique, pli, key_decoded, rendered};
+            rep.repair_trace.push_back(r);
+          });
         }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;
         if (cs.rtt_ms > 0) rtt_samples.push_back(static_cast<double>(cs.rtt_ms));

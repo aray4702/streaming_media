@@ -188,3 +188,20 @@ python3 tools/bwe_trace.py sm.bwe.csv webrtc.bwe.csv
 For each second it shows both stacks' delay-based estimate and detector state, the
 send-side target, the loss fraction, and whether the target is held by the
 delay-based estimate or by the loss side.
+
+### The repair and keyframe trace (issue #151)
+
+The same runs write one row per 100 ms of repair and keyframe activity,
+`<scenario>.<seed>.{sm,webrtc}.repair.csv` (and `"sm_repair"`, `"webrtc_repair"` in
+the JSON's `traces`): retransmissions the sender sent, keyframes it encoded, NACKed
+sequence numbers the receiver requested (all, and first requests), PLI and FIR it sent,
+keyframes it completed and frames it rendered. libwebrtc's side comes from
+`VideoSendStream::Stats` and `VideoReceiveStreamInterface::Stats`; the congestion window
+and the NACK list size are not public there, so the trace shows what leaves the
+receiver and the sender, not the state behind it. `tools/repair_trace.py` lays the two
+side by side in steps.
+
+```sh
+python3 tools/repair_trace.py compare-webrtc.json --scenario issue_151_outage_3s_v2 --from 14 --to 20
+python3 tools/repair_trace.py sm.repair.csv webrtc.repair.csv
+```

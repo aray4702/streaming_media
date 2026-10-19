@@ -51,6 +51,21 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
 };
 
+// The repair and keyframe machinery in one 100 ms step (issue #151), the same record for this
+// library and for libwebrtc. Counts are for the step ending at `t_ms`. libwebrtc's side comes
+// from VideoSendStream::Stats (rtp_stats.retransmitted, frame_counts) and
+// VideoReceiveStreamInterface::Stats (rtcp_packet_type_counts, key_frames_decoded, frames_rendered).
+struct RepairTraceRow {
+  int64_t t_ms = 0;
+  int rtx_packets = 0;           // Retransmissions the sender sent.
+  int key_frames_encoded = 0;    // Keyframes the sender encoded.
+  int nack_requests = 0;         // Sequence numbers the receiver requested (retries included).
+  int unique_nack_requests = 0;  // Sequence numbers requested for the first time.
+  int plis = 0;                  // PLI and FIR sent by the receiver.
+  int key_frames_decoded = 0;    // Keyframes the receiver completed.
+  int frames_rendered = 0;
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -63,6 +78,8 @@ struct Report {
   std::vector<sim::LinkTraceRecord> link_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
+  // One row per 100 ms of repair and keyframe activity, when RunOptions::video_trace is set (issue #151).
+  std::vector<RepairTraceRow> repair_trace;
   // The sender's GoogCC updates (`cc v2` only), when RunOptions::bwe_trace is set (issue #149).
   std::vector<cc::BweTraceRow> bwe_trace;
 };
@@ -108,6 +125,8 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // path). It has no counterpart for dropped_capturer, DropDueToSize or
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
+// t_ms,rtx_packets,key_frames_encoded,nack_requests,unique_nack_requests,plis,key_frames_decoded,frames_rendered
+std::string RepairTraceCsv(const std::vector<RepairTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).

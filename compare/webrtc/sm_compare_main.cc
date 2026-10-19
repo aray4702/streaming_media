@@ -104,7 +104,7 @@ const std::vector<const char*>& InfoMetrics() {
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2";
+    "issue_124_burst_loss_v2,issue_151_outage_3s_v2,outage_3s";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -260,6 +260,9 @@ int main(int argc, char** argv) {
         // The per-second video send decisions (issue #131), same scenario and seed.
         const std::string sm_video = sm::testbench::VideoTraceCsv(ours.back().video_trace);
         const std::string rtc_video = sm::testbench::VideoTraceCsv(theirs.back().video_trace);
+        // Repair and keyframe activity per 100 ms (issue #151), same scenario and seed.
+        const std::string sm_repair = sm::testbench::RepairTraceCsv(ours.back().repair_trace);
+        const std::string rtc_repair = sm::testbench::RepairTraceCsv(theirs.back().repair_trace);
         // The GoogCC estimates per update (issue #149), same scenario and seed.
         const std::string sm_bwe = sm::testbench::BweTraceCsv(ours.back().bwe_trace);
         const std::string rtc_bwe = sm::testbench::BweTraceCsv(theirs.back().bwe_trace);
@@ -268,7 +271,8 @@ int main(int argc, char** argv) {
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
                          ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
-                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + "}";
+                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) +
+                         ", \"sm_repair\": " + JsonString(sm_repair) + ", \"webrtc_repair\": " + JsonString(rtc_repair) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -279,6 +283,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
           std::ofstream(stem + ".sm.bwe.csv") << sm_bwe;
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
+          std::ofstream(stem + ".sm.repair.csv") << sm_repair;
+          std::ofstream(stem + ".webrtc.repair.csv") << rtc_repair;
         }
       }
       if (!dump_dir.empty()) {

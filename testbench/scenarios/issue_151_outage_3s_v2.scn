@@ -1,0 +1,23 @@
+name issue_151_outage_3s_v2
+describe 3 s outage with every v2 switch on: repair and keyframe trace next to libwebrtc's (yardstick for issue #151)
+# `outage_3s` with the configuration PR #116 makes the default. Measured on main 7545e8a, seeds 1-5 (ours / libwebrtc 2977, 3222):
+#   audio.longest_interruption_ms 3560 / 2977 ; video.longest_freeze_ms 3.7 s / 3.2 s ; cc.queue_p95_ms 78-100 / 38.6
+# The lines below lock the level reached. Target (issue #151): audio gap and longest freeze at libwebrtc's, queue p95 within its band.
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 30s
+at 0s  capacity=1500kbps delay=30ms queue=300ms
+at 12s down
+at 15s up
+reverse at 0s delay=30ms
+reverse at 12s down
+reverse at 15s up
+expect audio.longest_interruption_ms < 3700
+expect video.longest_freeze_ms < 4000
