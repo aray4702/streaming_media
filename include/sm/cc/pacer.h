@@ -37,6 +37,15 @@ struct PacerConfig {
   EventSink* events = nullptr;
   // v2 (see PacingControllerConfig); its padding_packet and events are taken from above.
   PacingControllerConfig v2;
+  // v2 only: TaskQueuePacedSender's scheduling around the PacingController. It runs a pass only
+  // when a packet, a rate or the pause state changed, or when a timer set by the last pass is
+  // due, and only if NextSendTime() has come; consecutive timer passes are at least
+  // `hold_back_window` apart. Without it every Process() call is a pass, and the early-return
+  // branch of ProcessPackets then re-bases the leaky bucket on every call. SendSideController turns it
+  // on only with `cc v2`; a bare Pacer has it on.
+  bool task_queue_scheduling = true;
+  TimeDelta hold_back_window = TimeDelta::Millis(5);  // RtpTransportControllerSend: 5 ms, 3 packets.
+  int hold_back_packets = 3;
 };
 
 class Pacer : public MetricsSource {
@@ -48,7 +57,7 @@ class Pacer : public MetricsSource {
   void SetPaddingGenerator(PaddingGenerator g) { if (v2_) v2_->SetPaddingGenerator(std::move(g)); }
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call every few ms or at
-  // NextSendTime().
+  // NextSendTime(). v2 with task_queue_scheduling runs a pass only when TaskQueuePacedSender would.
   std::vector<PacedPacket> Process(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
   // v2 only: packets a keyframe flushed from the queue (see PacingController).
@@ -69,9 +78,18 @@ class Pacer : public MetricsSource {
  private:
   // Only the selected version is built, on the heap: each holds about 4 KB of
   // statistics, which the Session on a small (wasm) stack does not need twice.
+  std::vector<PacedPacket> ProcessV2(Timestamp now);
+
   bool v2_on_;
+  bool task_queue_;
+  TimeDelta hold_back_window_;
+  int hold_back_packets_;
   std::unique_ptr<PacerV1> v1_;
   std::unique_ptr<PacingController> v2_;
+  // TaskQueuePacedSender state.
+  bool kick_ = true;                                          // A MaybeProcessPackets(-inf) is pending.
+  Timestamp next_process_time_ = Timestamp::MinusInfinity();  // The scheduled timer.
+  double packet_size_ = -1;                                   // ExpFilter(0.95) of the enqueued sizes.
 };
 
 }  // namespace sm::cc
