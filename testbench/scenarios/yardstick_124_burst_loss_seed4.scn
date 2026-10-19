@@ -1,0 +1,17 @@
+name yardstick_124_burst_loss_seed4
+describe issue_124_burst_loss_v2 with seed 4: a traced copy so the forward-link trace with arrival times for this seed is on parity-data (issue #124)
+# Yardstick only (no expectations): sm_compare traces this scenario (kDefaultTraced), one seed, both stacks.
+# Seeds 1, 3 and 4 are the ones the Owner named on #124 (our queue p95 is above libwebrtc's on 9 of 10 seeds).
+seed 4
+compare_seeds 1
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms

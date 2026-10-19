@@ -141,15 +141,15 @@ SM_TEST(TestbenchMetrics, ACallReportsTheNewMetricsAndTheBreakdownAddsUp) {
 // The forward-link trace (issue #125): one record per packet offered to the link.
 SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
-  trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered});
+  trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered, 52000});
   trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome\n"
-               "0,213,audio,7,0,delivered\n"
-               "20000,1200,rtx,65535,450,queue_drop\n"
-               "20500,60,other,-1,0,lost\n");
-  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us\n"
+               "0,213,audio,7,0,delivered,52000\n"
+               "20000,1200,rtx,65535,450,queue_drop,-1\n"
+               "20500,60,other,-1,0,lost,-1\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,arrival_us\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {
@@ -171,6 +171,9 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
       audio_drops += r.outcome == sim::LinkOutcome::kQueueDrop;
       SM_EXPECT_GE(r.seq, 0);
     }
+    // A packet that is delivered arrives after it was offered; one that is not has no arrival.
+    if (r.outcome == sim::LinkOutcome::kDelivered) SM_EXPECT_GE(r.arrival_us, r.time_us + 30000);
+    else SM_EXPECT_EQ(r.arrival_us, int64_t{-1});
     if (r.kind == sim::LinkKind::kVideo) video_bytes += static_cast<uint64_t>(r.size);
   }
   SM_EXPECT_TRUE(audio > 0);

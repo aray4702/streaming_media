@@ -78,6 +78,7 @@ struct LinkTraceRecord {
   int32_t seq = -1;         // RTP sequence number, or -1 when the packet has none.
   int32_t queue_bytes = 0;  // Bytes in the bottleneck queue at this arrival, before the packet.
   LinkOutcome outcome = LinkOutcome::kDelivered;
+  int64_t arrival_us = -1;  // Time the packet reaches the receiver; -1 when it is dropped or lost.
 };
 
 struct LinkStats {
@@ -148,7 +149,8 @@ class NetworkLink {
       Mark(LinkOutcome::kLost);
       return;
     }
-    Enqueue(depart, packet, size);
+    const Timestamp arrival = Enqueue(depart, packet, size);
+    if (trace_on_) trace_.back().arrival_us = arrival.us();
     if (cfg_.duplicate_rate > 0 && rng_.Bernoulli(cfg_.duplicate_rate)) {
       ++stats_.duplicated;
       Enqueue(depart, std::move(packet), size);
@@ -213,7 +215,7 @@ class NetworkLink {
     return cfg_.loss_rate > 0 && rng_.Bernoulli(cfg_.loss_rate);
   }
 
-  void Enqueue(Timestamp depart, T packet, DataSize size) {
+  Timestamp Enqueue(Timestamp depart, T packet, DataSize size) {
     TimeDelta jitter = TimeDelta::Zero();
     if (cfg_.jitter_stddev.us() > 0) {
       jitter = TimeDelta::Micros(static_cast<int64_t>(
@@ -223,6 +225,7 @@ class NetworkLink {
     if (!cfg_.allow_reordering) arrival = std::max(arrival, last_arrival_);
     last_arrival_ = arrival;
     in_flight_.push(Item{arrival, order_++, size.bytes(), std::move(packet)});
+    return arrival;
   }
 
   LinkConfig cfg_;

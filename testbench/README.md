@@ -14,6 +14,7 @@ out/native/testbench/sm_testbench --json=r.json --timeseries a.scn       # machi
 out/native/testbench/sm_testbench --library a.scn --json=-               # plus every module's own metrics
 out/native/testbench/sm_testbench --metrics                               # metric names and meanings
 out/native/testbench/sm_testbench --link-trace=DIR a.scn                  # every packet offered to the forward link, as CSV (tools/link_trace.py); also the video send trace and the GoogCC estimate trace (tools/bwe_trace.py)
+out/native/testbench/sm_gcc_replay trace.csv > replay.bwe.csv  # our GoogCC (cc v2) run open loop over a forward-link trace of either stack (issue #150); same layout as the bwe trace
 ctest --preset native -L scenario                                         # the suite as CTest entries
 python3 tools/testbench_compare.py testbench/baseline.json r.json         # regressions against main
 ```

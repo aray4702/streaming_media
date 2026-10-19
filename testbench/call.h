@@ -92,10 +92,11 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
 void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& rep);
 // The forward-link trace as CSV (issue #125), identical for both
 // implementations: a header line, then one line per packet offered to the
-// link: time_us,size,kind,seq,queue_bytes,outcome. `kind` is audio, video,
+// link: time_us,size,kind,seq,queue_bytes,outcome,arrival_us. `kind` is audio, video,
 // rtx, padding, fec or other (RTCP, cross traffic); `seq` is the RTP sequence
 // number or -1; `queue_bytes` is the bottleneck queue before the packet;
-// `outcome` is delivered, queue_drop, lost or down.
+// `outcome` is delivered, queue_drop, lost or down; `arrival_us` is when the
+// packet reaches the receiver, or -1 when it does not (a duplicate counts once).
 // The per-second video send trace as CSV (issue #131), identical for both
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,

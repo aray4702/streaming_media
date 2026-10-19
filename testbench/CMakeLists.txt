@@ -8,6 +8,10 @@ sm_configure_target(sm_testbench_lib)
 add_executable(sm_testbench sm_testbench_main.cc)
 target_link_libraries(sm_testbench PRIVATE sm_testbench_lib)
 sm_configure_target(sm_testbench)
+# Open-loop replay of the GoogCC controller over a forward-link trace (issue #150).
+add_executable(sm_gcc_replay gcc_replay_main.cc)
+target_link_libraries(sm_gcc_replay PRIVATE sm_testbench_lib)
+sm_configure_target(sm_gcc_replay)
 if(EMSCRIPTEN)
   # Read scenario files from the host file system when run under Node.
   target_link_options(sm_testbench PRIVATE -sNODERAWFS=1)
