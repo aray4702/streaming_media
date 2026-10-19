@@ -47,7 +47,8 @@ For each of your open PRs:
 
 - Remove `in-progress` from any issue that has had no activity for 24
   hours and has no open PR from you, with a comment saying so.
-- Count your open PRs. If there are 5 or more, stop after step 1.
+- Count your open non-draft PRs (yardstick drafts don't count). If there
+  are 8 or more, stop after step 1.
 
 ### 3. Fix one new issue
 
