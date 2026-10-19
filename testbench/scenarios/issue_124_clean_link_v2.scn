@@ -19,6 +19,8 @@ describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch on: the q
 # The lines below lock the level reached on seeds 1-40; they do not replace the target.
 # Target (issue #124): cc.queue_p95_ms, video.e2e_delay_p95_ms and cc.utilization_pct within the parity band
 # of libwebrtc, and `video.e2e_delay_p95_ms < 150` on every seed (the line `clean_link` carries).
+# sm_compare runs 40 seeds of both stacks here (the Owner's 13:16 UTC brief on #124), to judge the "every seed" line against libwebrtc's own distribution.
+compare_seeds 40
 cc v2
 pacer v2
 tcc v2

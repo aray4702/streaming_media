@@ -7,7 +7,8 @@
 // --dump writes every run's full report, with its 100 ms timeseries, to
 // DIR/<scenario>.<seed>.<sm|webrtc>.json (sm_testbench --json format).
 //
-// Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3);
+// Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3, or the
+// scenario's own `compare_seeds N` directive);
 // the table shows the mean over seeds. The JSON has the means ("sm", "webrtc"),
 // every seed's values for the shown metrics ("per_seed"), and each shown
 // metric's direction and tie floor ("shown"), which tools/parity_report.py
@@ -232,7 +233,8 @@ int main(int argc, char** argv) {
     sm::testbench::RunOptions opt;
     opt.timeseries = !dump_dir.empty();
     opt.library_metrics = false;
-    for (int k = 0; k < seeds; ++k) {
+    const int scn_seeds = base.compare_seeds > 0 ? base.compare_seeds : seeds;  // `compare_seeds N` in the .scn
+    for (int k = 0; k < scn_seeds; ++k) {
       Scenario s = base;
       s.seed = base.seed + static_cast<uint64_t>(k);
       opt.link_trace = k == 0 && Traced(trace_names, base.name);

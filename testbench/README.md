@@ -108,6 +108,7 @@ One directive per line, and `#` starts a comment.
 | `name <id>` | `unnamed` | Scenario name (also the CTest name) |
 | `describe <text>` | | One line describing what the user experiences |
 | `duration <time>` | `30s` | Call length (up to 1 hour) |
+| `compare_seeds <N>` | `--seeds` | Read only by `sm_compare`: seeds to run for this scenario (1-200), overriding `--seeds`; `sm_testbench` ignores it |
 | `seed <n>` | `1` | Seed for every random process |
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |

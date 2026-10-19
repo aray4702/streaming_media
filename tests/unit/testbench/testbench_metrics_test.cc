@@ -224,3 +224,19 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
   SM_EXPECT_EQ(static_cast<double>(dropped), rep.metrics.at("video.encoder_dropped"));
   SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
 }
+
+SM_TEST(TestbenchMetrics, CompareSeedsIsParsedForSmCompareAndRangeChecked) {
+  auto parsed = ParseScenario("name seeds\ncompare_seeds 40\nduration 2s\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  SM_EXPECT_EQ(parsed.scenario->compare_seeds, 40);
+  SM_EXPECT_EQ(ParseScenario("duration 2s\n").scenario->compare_seeds, 0);
+  SM_EXPECT_TRUE(!ParseScenario("compare_seeds 0\n").scenario.has_value());
+  SM_EXPECT_TRUE(!ParseScenario("compare_seeds 201\n").scenario.has_value());
+  // sm_testbench runs the scenario the same with or without the directive.
+  RunOptions opt;
+  opt.library_metrics = false;
+  const Report with = RunCall(*parsed.scenario, opt);
+  auto plain = ParseScenario("name seeds\nduration 2s\n");
+  SM_ASSERT_TRUE(plain.scenario.has_value());
+  SM_EXPECT_EQ(with.metrics.at("video.avg_kbps"), RunCall(*plain.scenario, opt).metrics.at("video.avg_kbps"));
+}
