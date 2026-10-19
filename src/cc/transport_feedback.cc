@@ -380,6 +380,13 @@ std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, T
       arrival = arrivals[ai++].second;
     }
     if (it == sent_.end()) continue;
+    // libwebrtc's TransportFeedbackAdapter erases a packet from its history
+    // once it is reported received, so "a packet reported received more than
+    // once" fails the lookup and is ignored. The receiver's generator re-reports
+    // packets that arrive behind a sent report; counting them again feeds the
+    // estimators receive times that go backwards.
+    if (it->second.received) continue;
+    if (p.received) it->second.received = true;
     PacketResult r;
     r.seq = s;
     r.send_time = it->second.time;

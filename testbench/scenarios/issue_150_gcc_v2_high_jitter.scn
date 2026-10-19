@@ -1,0 +1,29 @@
+name issue_150_gcc_v2_high_jitter
+describe 3 Mbps link, 40 ms jitter with reordering, every v2 switch on: the target libwebrtc's GoogCC holds there (issue #150)
+# `high_jitter` with every v2 switch on, the configuration PR #116 makes the default.
+# Root cause: SendHistory::OnFeedback reported a packet again each time `tcc v2`'s generator re-reported it
+# (libwebrtc's TransportFeedbackAdapter erases a received packet from its history, so a second report fails the lookup).
+# The repeated, earlier receive times moved the acked-bitrate window backwards, which resets it, so the first
+# acknowledged rate arrived after the first overuse and AimdRateControl halved the 1116 kbps probe result twice in 50 ms.
+# Seed 1, main 4dbe631: cc.target_avg_kbps 503, cc.utilization_pct 19.5, video.avg_kbps 323.
+# Seeds 1-10 after the fix: cc.utilization_pct 29-65 (mean 41.7), video.avg_kbps 478-1008 (mean 669), cc.queue_p95_ms 7-24.
+# libwebrtc (parity-data, 10 seeds): cc.utilization_pct 25-48 (mean 37.1), video.avg_kbps 400-742 (mean 584), queue p95 1-8 ms.
+# The lines below lock the level reached on seeds 1-5.
+# Target (issue #150): cc.target_avg_kbps, cc.utilization_pct, video.avg_kbps and cc.queue_p95_ms within the parity band of libwebrtc.
+# Left: seeds 5 and 10 reach 64-65 % utilization where libwebrtc's seeds reach 31-43 %.
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 30s
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect cc.utilization_pct >= 30
+expect video.avg_kbps >= 450
+expect cc.queue_p95_ms < 40
