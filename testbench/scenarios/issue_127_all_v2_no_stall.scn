@@ -1,0 +1,16 @@
+name issue_127_all_v2_no_stall
+describe every v2 switch on, 1200 kbps, 120 ms delay, 30 ms jitter (reordering) and 2% loss for 60 s: no render stall without an outage (issue #139, #127)
+duration 60s
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+audio v2
+at 0s capacity=1200kbps delay=120ms jitter=30ms loss=2% queue=150ms
+# #139: seeds 7, 9 and 12 of 12 had an 8-13 s render stall (pause_count > 0) with no outage; the default stack had none.
+# Seeds 1-12 on main d2461d5: video.pause_count 0 on all, longest freeze 225-1444 ms.
+expect video.pause_count == 0
+expect video.residual_loss_pct < 1
