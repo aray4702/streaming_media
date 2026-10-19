@@ -104,7 +104,8 @@ const std::vector<const char*>& InfoMetrics() {
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2";
+    "issue_124_burst_loss_v2,yardstick_150_high_jitter_seed5,yardstick_150_high_jitter_seed10,"
+    "yardstick_150_random_loss_5pct_v2";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -252,6 +253,7 @@ int main(int argc, char** argv) {
       opt.link_trace = named || (k == 0 && !trace_all_dir.empty());
       opt.video_trace = opt.link_trace;
       opt.bwe_trace = opt.link_trace;
+      opt.feedback_trace = opt.link_trace;
       ours.push_back(sm::testbench::RunCall(s, opt));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
       if (opt.link_trace) {
@@ -263,12 +265,16 @@ int main(int argc, char** argv) {
         // The GoogCC estimates per update (issue #149), same scenario and seed.
         const std::string sm_bwe = sm::testbench::BweTraceCsv(ours.back().bwe_trace);
         const std::string rtc_bwe = sm::testbench::BweTraceCsv(theirs.back().bwe_trace);
+        // The transport-cc feedback the sender receives (issue #150), same scenario and seed.
+        const std::string sm_fb = sm::testbench::FeedbackTraceCsv(ours.back().feedback_trace);
+        const std::string rtc_fb = sm::testbench::FeedbackTraceCsv(theirs.back().feedback_trace);
         if (named) {
           traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
                          ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
-                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + "}";
+                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_fb\": " + JsonString(sm_fb) +
+                         ", \"webrtc_fb\": " + JsonString(rtc_fb) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -279,6 +285,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
           std::ofstream(stem + ".sm.bwe.csv") << sm_bwe;
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
+          std::ofstream(stem + ".sm.fb.csv") << sm_fb;
+          std::ofstream(stem + ".webrtc.fb.csv") << rtc_fb;
         }
       }
       if (!dump_dir.empty()) {

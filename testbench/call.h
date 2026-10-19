@@ -51,6 +51,18 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
 };
 
+// One transport-cc feedback packet as the sender receives it (issue #150), for this library and
+// libwebrtc. Arrival times are the receiver's clock, so two stacks compare differences, not values.
+struct FeedbackTraceRow {
+  int64_t time_us = 0;         // Sender's receive time.
+  int feedback_count = 0;      // The packet's feedback packet count (8 bit).
+  int base_seq = 0;            // First transport sequence number it covers.
+  int status_count = 0;        // Packets it covers.
+  int received = 0, lost = 0;  // Of those.
+  int reordered = 0;           // Received packets that arrived before the previous sequence number.
+  int64_t first_arrival_us = 0, last_arrival_us = 0;  // Earliest and latest arrival it reports.
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -65,6 +77,8 @@ struct Report {
   std::vector<VideoTraceRow> video_trace;
   // The sender's GoogCC updates (`cc v2` only), when RunOptions::bwe_trace is set (issue #149).
   std::vector<cc::BweTraceRow> bwe_trace;
+  // Every transport-cc feedback the sender receives, when RunOptions::feedback_trace is set (issue #150).
+  std::vector<FeedbackTraceRow> feedback_trace;
 };
 
 struct RunOptions {
@@ -73,6 +87,7 @@ struct RunOptions {
   bool video_trace = false;  // Fill Report::video_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
+  bool feedback_trace = false;  // Fill Report::feedback_trace.
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
@@ -111,6 +126,9 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
+// Appends a row for each transport-cc feedback in the RTCP datagram `rtcp` that the sender received at `at_us`.
+void AppendFeedbackTrace(std::vector<FeedbackTraceRow>& rows, std::span<const uint8_t> rtcp, int64_t at_us);
+std::string FeedbackTraceCsv(const std::vector<FeedbackTraceRow>& trace);
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);

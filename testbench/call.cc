@@ -8,6 +8,7 @@
 #include <deque>
 #include <optional>
 #include <set>
+#include <span>
 #include <unordered_map>
 
 #include "opus_model.h"
@@ -16,7 +17,9 @@
 #include "sm/core/random.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
+#include "sm/cc/transport_feedback.h"
 #include "sm/loss/protection_controller.h"
+#include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
@@ -205,6 +208,44 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
     out += std::to_string(r.time_us) + "," + kKinds[static_cast<size_t>(r.kind)] + "," + std::to_string(r.bitrate_bps) + "," +
            (r.detector < 0 ? "" : kDetector[r.detector]) + "," + num(r.fraction_loss) + "," + num(r.packets) + "," +
            (r.loss_state < 0 ? "" : kLossState[r.loss_state]) + "," + num(r.loss_limit_bps) + "," + num(r.instant_ub_bps) + "\n";
+  }
+  return out;
+}
+
+void AppendFeedbackTrace(std::vector<FeedbackTraceRow>& rows, std::span<const uint8_t> rtcp, int64_t at_us) {
+  auto packets = loss::SplitCompoundRtcp(rtcp);
+  if (!packets) return;
+  for (const auto& pk : *packets) {
+    if (pk.packet_type != 205 || pk.fmt != 15) continue;
+    auto fb = cc::ParseTransportFeedback(pk.data);
+    if (!fb) continue;
+    FeedbackTraceRow r;
+    r.time_us = at_us;
+    r.feedback_count = fb->feedback_count;
+    r.base_seq = fb->base_seq;
+    r.status_count = static_cast<int>(fb->packets.size());
+    const auto arrivals = fb->ArrivalTimes();
+    r.received = static_cast<int>(arrivals.size());
+    r.lost = r.status_count - r.received;
+    int64_t prev_us = 0;
+    for (size_t k = 0; k < arrivals.size(); ++k) {
+      const int64_t a = arrivals[k].second.us();
+      if (k == 0) r.first_arrival_us = r.last_arrival_us = a;
+      r.first_arrival_us = std::min(r.first_arrival_us, a);
+      r.last_arrival_us = std::max(r.last_arrival_us, a);
+      if (k > 0 && a < prev_us) ++r.reordered;
+      prev_us = a;
+    }
+    rows.push_back(r);
+  }
+}
+
+std::string FeedbackTraceCsv(const std::vector<FeedbackTraceRow>& trace) {
+  std::string out = "time_us,feedback_count,base_seq,status_count,received,lost,reordered,first_arrival_us,last_arrival_us\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.time_us) + "," + std::to_string(r.feedback_count) + "," + std::to_string(r.base_seq) + "," +
+           std::to_string(r.status_count) + "," + std::to_string(r.received) + "," + std::to_string(r.lost) + "," +
+           std::to_string(r.reordered) + "," + std::to_string(r.first_arrival_us) + "," + std::to_string(r.last_arrival_us) + "\n";
   }
   return out;
 }
@@ -725,7 +766,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, now, false);
 
     // --- Sender: feedback -----------------------------------------------------
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) {
+      if (opt.feedback_trace) AppendFeedbackTrace(rep.feedback_trace, r.bytes, at.us());
+      sender.OnPacket(r.bytes, at);
+    });
     for (const auto& e : sender.TakeEvents()) {
       video_ctl.OnSessionEvent(e);
       switch (e.type) {

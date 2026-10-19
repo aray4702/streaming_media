@@ -716,8 +716,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                                                 [](const w::RtpPacketReceived&) { return false; });
       });
     });
-    reverse.ReceiveEach(now, [&](Pkt p, sm::Timestamp) {
+    reverse.ReceiveEach(now, [&](Pkt p, sm::Timestamp at) {
       if (p.cross || !p.rtcp) return;
+      if (opt.feedback_trace) testbench::AppendFeedbackTrace(rep.feedback_trace, p.data, at.us());
       sender_q->PostTask([&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
     });
 
