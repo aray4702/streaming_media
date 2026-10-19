@@ -1,0 +1,15 @@
+name yardstick_150_random_loss_5pct_40seeds
+describe yardstick for #150: random_loss_5pct with every v2 switch on, 40 seeds on both stacks (parity data only, no expectations)
+# Not a regression test. `compare_seeds 40` gives libwebrtc's per-seed queue spread (cc.queue_p95_ms 44 vs 29.5 over 10 seeds).
+compare_seeds 40
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 30s
+at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
