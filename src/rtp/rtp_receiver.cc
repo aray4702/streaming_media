@@ -221,6 +221,9 @@ void RtpReceiver::Process(Timestamp now) {
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
   if (cfg_.nack && cfg_.keyframe.version < 2 && nack_.TakeKeyframeRequest()) feedback_.pli = true;
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
+    // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before it,
+    // so a keyframe that follows an outage drops the requests for the packets lost during it.
+    if (cfg_.nack && cfg_.keyframe.version >= 2) nack_.ClearUpTo(static_cast<uint16_t>(id));
     auto it = frames_.find(id);
     if (it == frames_.end()) continue;
     video_timing_.SetJitterDelay(video_jitter_.JitterDelay());

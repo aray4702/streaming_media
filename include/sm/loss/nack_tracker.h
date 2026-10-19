@@ -53,6 +53,9 @@ class NackTracker : public MetricsSource {
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
   // Sequence numbers to put in a NACK now. Each call counts as one attempt.
   std::vector<uint16_t> GetNackBatch(Timestamp now);
+  // NackRequester::ClearUpTo: forgets the requests for every sequence number before `seq` (version 2; the
+  // receiver calls it for each continuous frame, RtpVideoStreamReceiver2::FrameContinuous).
+  void ClearUpTo(uint16_t seq);
   // True once if the tracker gave up and a keyframe is needed.
   bool TakeKeyframeRequest();
 

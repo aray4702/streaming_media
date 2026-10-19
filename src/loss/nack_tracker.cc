@@ -60,6 +60,11 @@ void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now
   TrimOld(now);
 }
 
+void NackTracker::ClearUpTo(uint16_t seq) {
+  if (!initialized_) return;
+  missing_.erase(missing_.begin(), missing_.lower_bound(unwrapper_.PeekUnwrap(seq)));
+}
+
 void NackTracker::AddMissing(int64_t from, int64_t to, Timestamp now) {
   for (int64_t i = from; i < to; ++i) {
     missing_.emplace(i, Info{now});
