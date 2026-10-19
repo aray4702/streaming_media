@@ -221,10 +221,11 @@ void RtpReceiver::Process(Timestamp now) {
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
   if (cfg_.nack && cfg_.keyframe.version < 2 && nack_.TakeKeyframeRequest()) feedback_.pli = true;
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
-    // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before its
-    // last packet (a no-op for version 1).
-    if (cfg_.nack) nack_.ClearUpTo(static_cast<uint16_t>(id));
     auto it = frames_.find(id);
+    // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before its
+    // last packet (a no-op for version 1). Only a keyframe is continuous here whatever came before it; for a
+    // delta frame our decodable test is looser than FrameBuffer's continuity, so it clears nothing.
+    if (cfg_.nack && it != frames_.end() && it->second.keyframe) nack_.ClearUpTo(static_cast<uint16_t>(id));
     if (it == frames_.end()) continue;
     video_timing_.SetJitterDelay(video_jitter_.JitterDelay());
     video_timing_.AddDecodeTime(cfg_.decode_time);
