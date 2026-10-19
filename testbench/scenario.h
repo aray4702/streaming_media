@@ -56,6 +56,7 @@ struct Scenario {
   std::string description;
   TimeDelta duration = TimeDelta::Seconds(30);
   uint64_t seed = 1;
+  int compare_seeds = 0;  // `compare_seeds N`: read only by sm_compare, overrides its --seeds for this scenario (0 = use --seeds).
 
   // Media.
   bool audio = true;

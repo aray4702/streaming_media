@@ -259,6 +259,10 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "seed") {
       if (!need(2)) return fail("usage: seed <integer>");
       s.seed = std::strtoull(tok[1].c_str(), nullptr, 10);
+    } else if (key == "compare_seeds") {
+      int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
+      if (v < 1 || v > 200) return fail("usage: compare_seeds <1..200> (read only by sm_compare)");
+      s.compare_seeds = v;
     } else if (key == "audio" && tok.size() == 2 && (tok[1] == "v1" || tok[1] == "v2")) {
       s.audio_v2 = tok[1] == "v2";  // `audio v1|v2`: the Opus send path (issue #126); `audio on|off` is the stream.
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
