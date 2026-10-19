@@ -1,0 +1,28 @@
+name issue_123_v2_allocation_min
+describe 100 kbps link with every v2 switch plus audio v2: the encoder is configured at the codec minimum, as libwebrtc's SimulcastRateAllocator does (issue #123)
+duration 40s
+allocator v2
+pacer v2
+rtx v2
+cc v2
+tcc v2
+keyframe v2
+audio v2
+at 0s capacity=100kbps delay=30ms queue=300ms
+# First part of #123 (roadmap #64): VideoStreamEncoder::UpdateBitrateAllocation, through
+# SimulcastRateAllocator::DistributeAllocationToSimulcastLayers, raises the encoder allocation
+# to VideoCodec::minBitrate (50 kbps here) while the frame dropper keeps the unraised target
+# (about 28 kbps). Without it our encoder target fell to 21 kbps, below the minimum, and the
+# dropper let 27 fps through. libwebrtc (compare/webrtc/reference/video/video_stream_encoder.cc
+# 1709-1745, 2502; modules/video_coding/utility/simulcast_rate_allocator.cc 94-100) holds the
+# encoder target at 50.0 kbps and drops 435 of 1200 frames (parity-data, seed 1).
+# Seeds 1-10 with this change: encoder_dropped 150-301 (mean 225; before 138), audio loss
+# 11-31 % (mean 24; before 26), concealed 3.3-8.9 % (mean 7.2; before 8.4).
+# Target (issue #123): net.audio_loss_pct within the parity band of libwebrtc's 0.6 %,
+# audio.concealed_pct 0.52 %, video.encoder_dropped 420, net.video_kbps 31.8. What is left: our
+# frame dropper target (alloc_target 38 kbps) is above libwebrtc's 28 kbps because the repair
+# share that is taken off the video target is 0.26 here and capped at 0.5 there, which follows
+# from libwebrtc retransmitting each lost packet about 3 times against our 1.3.
+expect video.encoder_dropped > 140
+expect audio.concealed_pct < 10
+expect net.audio_loss_pct < 33

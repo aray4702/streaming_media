@@ -462,6 +462,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.keyframe_interval = s.keyframe_interval;
   vsc_cfg.fps = s.video_fps;
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
+  if (s.allocator_v2 && s.cc_v2) {
+    // `allocator v2` with `cc v2` (the stack #61 flips together): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
+    // (VideoCodec::minBitrate = the stream's min_bitrate_bps), and the bitrate adjuster
+    // never pushes the target below it.
+    vsc_cfg.allocation_min_bitrate = s.video_min;
+    vsc_cfg.allocation_max_bitrate = s.video_max;
+    vsc_cfg.adjuster.min_bitrate = s.video_min;
+  }
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;
