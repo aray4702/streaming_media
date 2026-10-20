@@ -229,8 +229,8 @@ ALGORITHMS = [
                       "DecodeTimePercentileFilter and VCMTiming with their defaults (2.33 sigma - 30 ms, 10 ms OS "
                       "jitter, +0.9 x RTT after 3 NACKed frames); libwebrtc's JitterEstimator SteadyStateConvergence "
                       "test gives its 54 ms here. With every v2 switch on, `high_jitter` video e2e delay p95 is "
-                      "130-199 ms on seeds 1-10 (timing v1 162-313, libwebrtc 122-152) and p50 83-98 ms "
-                      "(libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. Default stays v1 until the flip."),
+                      "130-199 ms on seeds 1-10 (timing v1 162-313, libwebrtc 122-152) and p50 95-157 ms "
+                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. Default stays v1 until the flip."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
@@ -724,7 +724,7 @@ ALGORITHMS = [
                                 "VideoStreamBufferController and FrameDecodeTiming do. A late frame is skipped only "
                                 "when a later temporal unit (here a keyframe) is decodable, so the 10 ms late-drop "
                                 "rule is gone: with every v2 switch on, `issue_53_cwnd_pushback`'s link renders "
-                                "29.0-29.4 fps on seeds 1-10 (timing v1 16.0-20.8, libwebrtc 27-28); "
+                                "28.8-29.2 fps on seeds 1-10 (timing v1 16.0-20.8, libwebrtc 27-28); "
                                 "`issue_24_timing_v2_render_fps` locks it in."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],

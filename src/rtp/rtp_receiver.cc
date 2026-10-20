@@ -290,7 +290,7 @@ void RtpReceiver::Process(Timestamp now) {
     packet_buffer_.ClearTo(id);
   };
   if (cfg_.timing.version >= 2) {
-    if (have_rtt_ && now - last_rtt_update_ >= kRttUpdateInterval) {
+    if (have_rtt_ && (!last_rtt_update_.IsFinite() || now - last_rtt_update_ >= kRttUpdateInterval)) {
       vcm_timing_.OnNetworkUpdate(rtt_);
       last_rtt_update_ = now;
     }

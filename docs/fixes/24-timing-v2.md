@@ -79,8 +79,8 @@ overrides are not ported.
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_24_timing_v2_render_fps.scn` | base commit: `timing v2` is not a switch (exit 1). With `timing v1`: `video.render_fps` 16.0-20.8 on seeds 1-10 (expect >= 28) | 29.0-29.4 on seeds 1-10 |
-| `testbench/scenarios/issue_24_timing_v2_high_jitter.scn` | base commit: exit 1. With `timing v1`: `video.e2e_delay_p50_ms` 158-245 (expect < 120), p95 162-313 (expect < 250) | p50 83-98, p95 130-199 on seeds 1-10 |
+| `testbench/scenarios/issue_24_timing_v2_render_fps.scn` | base commit: `timing v2` is not a switch (exit 1). With `timing v1`: `video.render_fps` 16.0-20.8 on seeds 1-10 (expect >= 28) | 28.8-29.2 on seeds 1-10 |
+| `testbench/scenarios/issue_24_timing_v2_high_jitter.scn` | base commit: exit 1. With `timing v1`: `video.e2e_delay_p50_ms` 158-245 (expect < 170), p95 162-313 (expect < 250) | p50 95-157, p95 130-199 on seeds 1-10 |
 | `tests/unit/timing/vcm_timing_test.cc` `VcmTiming.*` (28 cases) | new | pass. Ported from libwebrtc's `jitter_estimator`, `rtt_filter`, `timestamp_extrapolator`, `timing` and `decode_time_percentile_filter` unit tests (`JitterSteadyStateConvergence` gives libwebrtc's 54 ms), plus release-rule tests |
 
 ## Results
@@ -90,12 +90,12 @@ Seeds 1-10, local runs on this branch; libwebrtc from `parity-data`
 
 | scenario (switches) | metric | timing v1 | timing v2 | libwebrtc |
 |---|---|---|---|---|
-| `issue_53_cwnd_pushback` link, all v2 | `video.render_fps` mean | 18.2 | 29.1 | 27.5 |
-| | `video.freeze_total_ms` mean | 4679 | 3339 | 2830 |
-| | `video.e2e_delay_p95_ms` mean | 1607 | 2256 | 1868 |
-| | `video.e2e_delay_p50_ms` mean | 184 | 922 | 416 |
-| `high_jitter` link, all v2 | `video.e2e_delay_p95_ms` mean | 202 | 143 | 135 |
-| | `video.e2e_delay_p50_ms` mean | 175 | 91 | 92 |
+| `issue_53_cwnd_pushback` link, all v2 | `video.render_fps` mean | 18.2 | 29.0 | 27.5 |
+| | `video.freeze_total_ms` mean | 4679 | 2968 | 2830 |
+| | `video.e2e_delay_p95_ms` mean | 1607 | 2354 | 1868 |
+| | `video.e2e_delay_p50_ms` mean | 184 | 996 | 416 |
+| `high_jitter` link, all v2 | `video.e2e_delay_p95_ms` mean | 202 | 152 | 135 |
+| | `video.e2e_delay_p50_ms` mean | 175 | 131 | 92 |
 | `issue_151_outage_3s_v2` | `video.freeze_total_ms` seed 3 | 3965 | 3201 | 3202 |
 | | `video.freeze_total_ms` seed 5 | 4251 | 4244 | 3256 |
 | | `repair.overhead_pct` mean | 1.0 | 0.8 | 0.5 |
@@ -117,11 +117,23 @@ added to `testbench/baseline.json`.
   timing. With every v2 switch on the same link meets libwebrtc's level
   (above), so the line can be restored when the flip turns `cc v2` on.
 - **`issue_53` delay.** With late frames now rendered, the median delay on
-  the all-v2 `issue_53` link is 922 ms against libwebrtc's 416 ms, and render
-  fps is 1.6 above libwebrtc's. The delay sits in the pacer queue after the
+  the all-v2 `issue_53` link is 996 ms against libwebrtc's 416 ms, and render
+  fps is 1.5 above libwebrtc's. The delay sits in the pacer queue after the
   drop (`video.delay_pacer_p95_ms` about 1.5 s), which is send-side work
   (#152, #21), and in a jitter estimate fed by those delayed frames.
 - **`issue_151_outage_3s_v2` seed 5** still freezes 1 s longer than
   libwebrtc (4244 against 3256 ms), with 4.1% repair overhead.
 - **`clean_link`** delay rises toward libwebrtc's but stays 48 ms below at
   p95; the send side (v1 there) is the rest.
+- **RTT at a one-way receiver (Owner decision).** The port uses the RTT
+  when the receiver has one, as libwebrtc does (`JitterEstimator::GetEstimate`
+  adds min(0.9 x RTT, 200 ms) once 3 frames within 60 s were NACKed; under
+  jitter with reordering, reordered packets get NACKed). The test bench gives
+  the receiver the sender's RTT every tick (`testbench/call.cc`,
+  `receiver.SetRtt`), but libwebrtc's receive-only `Call` in `sm_compare`
+  has no RTT (no send stream and no XR RRTR), so `CallStats` never calls
+  `OnRttUpdate` and the term is 0 there. On `high_jitter` with every v2
+  switch this costs about 40 ms of median delay: p50 131 ms with the term,
+  91 without, libwebrtc 92. Withholding the RTT from the receiver's timing in
+  the bench would match `sm_compare`; it is a test-bench model choice, so it
+  is left to the Owner.
