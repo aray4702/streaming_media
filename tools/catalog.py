@@ -331,7 +331,7 @@ ALGORITHMS = [
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
-         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController", "PrioritizedPacketQueue"], e2e=["E2E_Pacer"],
+         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController", "PrioritizedPacketQueue", "PacketRouter"], e2e=["E2E_Pacer"],
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
@@ -368,6 +368,19 @@ ALGORITHMS = [
                       "(audio-retransmission priority, `fast_retransmissions`, the per-level TTLs) or the round robin "
                       "between SSRCs, which a one-to-one call does not need. Queue sizes are wire sizes, where libwebrtc's "
                       "`SizeInPayloadBytes` counts payload and padding only (it feeds the long-queue drain rate). "
+                      "`PacketRouter` (#166) ports packet_router_unittest.cc against `rtp::SendSideController`, "
+                      "`rtp::RtpSender` and `rtp::Session`, which share the router's work: padding with no stream, RTX "
+                      "payload padding on the RTX SSRC, video preferred over audio for padding, RTP sequence numbers at "
+                      "release, and transport-wide sequence numbers. The port found two differences, now fixed behind "
+                      "`pacer v2`: numbering starts at 1 (`transport_seq_(1)`), and a packet without the transport-cc "
+                      "extension gets no number and is not reported to GCC (`NotifyBweOfPacedSentPacket`); neither "
+                      "changes a scenario, which all map the extension. Not ported: RFC 8888 numbering "
+                      "(`SetGenerateTransportSequenceNumbers`), `allow_sending` and ECT(1), which are off by default; "
+                      "REMB and RTCP routing (`SendRemb`, `SendCombinedRtcpPacket`; the session's `RtcpEngine` sends "
+                      "from its one local SSRC); module registration and its death tests, `PadsOnLastActiveMediaStream`, "
+                      "`OnBatchComplete` and `GetRtxSsrcForMedia` between modules, which only matter with several send "
+                      "streams of one kind (a one-to-one call has one audio and one video stream); and "
+                      "`OnAbortedRetransmissions`, which M157's pacer never calls. "
                       "With the 40 ms burst a v2 frame leaves in one burst, so the "
                       "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "

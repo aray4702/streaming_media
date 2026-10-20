@@ -36,6 +36,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       outage_(WithEvents(cfg.outage, cfg.events)),
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       allocator_(cfg.events),
+      transport_seq_(cfg.pacer.version == cc::PacerVersion::kV2 ? 1 : 0),
       target_(cfg.gcc.start_rate),
       pushback_target_(cfg.gcc.start_rate) {}
 
@@ -176,7 +177,11 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     }
     if (sp.sender) sp.sender->AssignSequenceNumber(sp);
     ReleasedPacket r;
-    r.transport_seq = transport_seq_++;
+    // `pacer v2` (PacketRouter::SendPacket, packet_router.cc:213-228): only a packet that carries the
+    // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
+    // reported to the bandwidth estimator (RtpTransportControllerSend::NotifyBweOfPacedSentPacket).
+    const bool numbered = pacer_.version() != cc::PacerVersion::kV2 || (extensions_ && extensions_->IdOf(sync::uri::kTransportCc));
+    if (numbered) r.transport_seq = transport_seq_++;
     WriteSendExtensions(sp.packet, r.transport_seq, now);
     r.bytes = sp.packet.Serialize();
     r.kind = sp.kind;
@@ -185,13 +190,13 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.send_time = now;
     if (sp.sender) {
       sp.sender->OnPacketReleased(sp, now);
-      if (sp.sender->config().rtx.version >= 2 && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
+      if (numbered && sp.sender->config().rtx.version >= 2 && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
         sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
         // Feedback never covers more than a few seconds; bound the table.
         sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));
       }
     }
-    gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
+    if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
