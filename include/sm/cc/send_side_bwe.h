@@ -162,6 +162,11 @@ class GccController : public MetricsSource {
   bool first_feedback_received_ = false;
   bool previously_in_alr_ = false;
   bool last_is_bandwidth_limited_ = true;
+  // `cc v2`: the rest of MaybeTriggerOnNetworkChanged's change check (the
+  // target and is_bandwidth_limited are the other two).
+  LossBasedState last_loss_based_state_ = LossBasedState::kDelayBasedEstimate;
+  uint8_t last_fraction_loss_ = 0;
+  TimeDelta last_round_trip_time_ = TimeDelta::PlusInfinity();
   bool first_packet_sent_ = false;
   DataRate min_total_allocated_;
   DataRate max_padding_;

@@ -383,12 +383,22 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
   u.probes = std::move(probes);
   u.changed = target_ != last_reported_;
   if (cfg_.version >= 2) {
-    // MaybeTriggerOnNetworkChanged: when the target or the bandwidth-limited
-    // state changes, the ALR detector gets the new rate and the probe controller
-    // the new estimate (which may start the next exponential probe).
+    // MaybeTriggerOnNetworkChanged: when the target, the loss-based state, the
+    // loss fraction, the RTT or the bandwidth-limited state changes, the ALR
+    // detector gets the loss-based target and the probe controller the new
+    // estimate and limiting cause (which may start the next exponential probe).
+    // SendSideController applies the congestion-window pushback after this, and
+    // the detector takes the target before it, as libwebrtc's does.
     const bool is_bandwidth_limited = !alr_.GetApplicationLimitedRegionStartTime().has_value();
-    if (u.changed || is_bandwidth_limited != last_is_bandwidth_limited_) {
+    const LossBasedState loss_based_state = ssbe_.loss_based_state();
+    const uint8_t fraction_loss = ssbe_.fraction_loss();
+    const TimeDelta round_trip_time = ssbe_.round_trip_time();
+    if (u.changed || loss_based_state != last_loss_based_state_ || fraction_loss != last_fraction_loss_ ||
+        round_trip_time != last_round_trip_time_ || is_bandwidth_limited != last_is_bandwidth_limited_) {
       last_is_bandwidth_limited_ = is_bandwidth_limited;
+      last_loss_based_state_ = loss_based_state;
+      last_fraction_loss_ = fraction_loss;
+      last_round_trip_time_ = round_trip_time;
       alr_.SetEstimatedBitrate(target_);
       if (cfg_.enable_probing) {
         auto more = probe2_.SetEstimatedBitrate(target_, LimitedCause(ssbe_.loss_based_state(), ssbe_.IsRttAboveLimit(), delay_.usage()), now);

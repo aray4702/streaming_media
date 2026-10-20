@@ -389,6 +389,30 @@ SM_TEST(AlrDetector, BandwidthEstimateChanges) {
   SM_EXPECT_TRUE(!d.GetApplicationLimitedRegionStartTime());
 }
 
+SM_TEST(AlrDetector, SubMillisecondGapsRoundToNearest) {
+  // #152: OnBytesSent passes delta_time.ms() to IncreaseBudget, and
+  // TimeDelta::ms() rounds to the nearest millisecond, so packets 0.6 ms apart
+  // credit 1 ms each. Truncating credited nothing and the detector never
+  // entered ALR while the link sat idle between back-to-back packets.
+  AlrDetector d;
+  d.SetEstimatedBitrate(kEstimatedBitrate);
+  Timestamp now = Timestamp::Seconds(1);
+  for (int i = 0; i < 1000; ++i) {
+    now += TimeDelta::Micros(600);
+    d.OnBytesSent(DataSize::Bytes(0), now);
+  }
+  SM_EXPECT_TRUE(d.GetApplicationLimitedRegionStartTime().has_value());
+  // Gaps under 0.5 ms round down to 0 ms and credit nothing.
+  AlrDetector e;
+  e.SetEstimatedBitrate(kEstimatedBitrate);
+  now = Timestamp::Seconds(1);
+  for (int i = 0; i < 1000; ++i) {
+    now += TimeDelta::Micros(400);
+    e.OnBytesSent(DataSize::Bytes(0), now);
+  }
+  SM_EXPECT_TRUE(!e.GetApplicationLimitedRegionStartTime());
+}
+
 SM_TEST(AlrDetector, IntervalBudget) {
   // interval_budget_unittest.cc: the budget refills with time, and unused budget
   // is not carried over unless the budget can build up underuse.
