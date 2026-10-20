@@ -36,10 +36,13 @@ enum class BandwidthUsage;
 
 class BitrateEstimator {
  public:
-  void Update(Timestamp at_time, DataSize amount, bool in_alr);
-  std::optional<DataRate> bitrate() const;
+  virtual ~BitrateEstimator() = default;
+  // Virtual as in libwebrtc, so a test can stand in for the estimator behind
+  // AckedBitrateEstimatorV2 (acknowledged_bitrate_estimator_unittest.cc mocks it).
+  virtual void Update(Timestamp at_time, DataSize amount, bool in_alr);
+  virtual std::optional<DataRate> bitrate() const;
   std::optional<DataRate> PeekRate() const;
-  void ExpectFastRateChange();
+  virtual void ExpectFastRateChange();
 
  private:
   float UpdateWindow(int64_t now_ms, int bytes, int rate_window_ms, bool* is_small_sample);
@@ -54,14 +57,20 @@ class BitrateEstimator {
 // packet, in receive-time order, updates the estimator.
 class AckedBitrateEstimatorV2 {
  public:
+  AckedBitrateEstimatorV2() = default;
+  // Uses `estimator` (not owned, must outlive this) instead of the built-in one.
+  explicit AckedBitrateEstimatorV2(BitrateEstimator* estimator) : injected_(estimator) {}
   void OnPacketResults(const std::vector<PacketResult>& results);
-  std::optional<DataRate> bitrate() const { return estimator_.bitrate(); }
-  std::optional<DataRate> PeekRate() const { return estimator_.PeekRate(); }
+  std::optional<DataRate> bitrate() const { return Estimator().bitrate(); }
+  std::optional<DataRate> PeekRate() const { return Estimator().PeekRate(); }
   void SetAlr(bool in_alr) { in_alr_ = in_alr; }
   void SetAlrEndedTime(Timestamp alr_ended_time) { alr_ended_time_ = alr_ended_time; }
 
  private:
+  BitrateEstimator& Estimator() { return injected_ ? *injected_ : estimator_; }
+  const BitrateEstimator& Estimator() const { return injected_ ? *injected_ : estimator_; }
   BitrateEstimator estimator_;
+  BitrateEstimator* injected_ = nullptr;
   bool in_alr_ = false;
   std::optional<Timestamp> alr_ended_time_;
 };
