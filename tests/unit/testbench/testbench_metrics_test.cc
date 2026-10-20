@@ -255,7 +255,7 @@ SM_TEST(TestbenchMetrics, CompareSeedsIsParsedForSmCompareAndRangeChecked) {
 // The GoogCC estimate trace (issue #149).
 SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumnsEmpty) {
   using Kind = cc::BweTraceRow::Kind;
-  std::vector<cc::BweTraceRow> trace(3);
+  std::vector<cc::BweTraceRow> trace(4);
   trace[0].time_us = 150000;
   trace[0].kind = Kind::kDelayBased;
   trace[0].bitrate_bps = 924666;
@@ -270,11 +270,23 @@ SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumn
   trace[1].instant_ub_bps = 5000000;
   trace[2].time_us = 200000;
   trace[2].bitrate_bps = 900000;
+  trace[3].time_us = 200000;  // Issue #152.
+  trace[3].kind = Kind::kDetector;
+  trace[3].detector = 0;
+  trace[3].packets = 91;
+  trace[3].modified_trend = -0.25;
+  trace[3].threshold = 6.19079;
+  trace[3].send_delta_ms = 5;
+  trace[3].recv_delta_ms = 7.75;
+  trace[3].send_ms = 3592;
+  trace[3].arrival_ms = 3659;
   SM_EXPECT_EQ(BweTraceCsv(trace),
-               "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n"
-               "150000,delay_based,924666,overusing,,,,,\n"
-               "150000,loss_based,900000,,13,40,decreasing,880000,5000000\n"
-               "200000,target,900000,,,,,,\n");
+               "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,"
+               "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms\n"
+               "150000,delay_based,924666,overusing,,,,,,,,,,,\n"
+               "150000,loss_based,900000,,13,40,decreasing,880000,5000000,,,,,,\n"
+               "200000,target,900000,,,,,,,,,,,,\n"
+               "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,3659\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
@@ -293,7 +305,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
       continue;
     }
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0;
+    int delay = 0, loss = 0, target = 0, detector = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -302,8 +314,13 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
         case cc::BweTraceRow::Kind::kDelayBased: ++delay; SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2); break;
         case cc::BweTraceRow::Kind::kLossBased: ++loss; SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.loss_state >= 0); break;
         case cc::BweTraceRow::Kind::kTarget: ++target; break;
+        case cc::BweTraceRow::Kind::kDetector:
+          ++detector;
+          SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2 && r.packets > 0);
+          SM_EXPECT_TRUE(std::isfinite(r.modified_trend) && r.threshold > 0 && std::isfinite(r.send_delta_ms));
+          break;
       }
     }
-    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0);
   }
 }

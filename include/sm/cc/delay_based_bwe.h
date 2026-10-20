@@ -21,6 +21,7 @@
 
 #include <deque>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "sm/cc/aimd_rate_control.h"
@@ -119,6 +120,7 @@ class TrendlineEstimator {
   double trend() const { return trend_; }
   double modified_trend() const { return modified_trend_; }
   double threshold() const { return threshold_; }
+  size_t num_deltas() const { return num_deltas_; }
 
  private:
   void Detect(double send_delta_ms, double now_ms);
@@ -186,6 +188,16 @@ struct DelayBweStats {
   Histogram trend;
 };
 
+// One TrendlineEstimator::Update with calculated deltas (`cc v2`), for the BWE
+// trace's detector rows (issue #152).
+struct DetectorSample {
+  double recv_delta_ms = 0, send_delta_ms = 0;  // The group deltas.
+  double send_ms = 0, arrival_ms = 0;           // The times Update was given.
+  double modified_trend = 0, threshold = 0;     // After the update.
+  BandwidthUsage state = BandwidthUsage::kNormal;
+  size_t num_deltas = 0;
+};
+
 class DelayBasedBwe : public MetricsSource {
  public:
   struct Config {
@@ -197,6 +209,8 @@ class DelayBasedBwe : public MetricsSource {
     // stream time-out, and (#15) libwebrtc's AimdRateControl with the
     // MaybeUpdateEstimate decision logic.
     int version = 1;
+    // `cc v2`: record every trendline update with calculated deltas (TakeDetectorTrace).
+    bool trace_detector = false;
   };
   DelayBasedBwe() : DelayBasedBwe(Config{}) {}
   explicit DelayBasedBwe(Config cfg);
@@ -217,6 +231,8 @@ class DelayBasedBwe : public MetricsSource {
   const AimdRateControl& rate_control_v2() const { return rc2_; }
   BandwidthUsage usage() const { return trendline_.State(); }
   const TrendlineEstimator& trendline() const { return trendline_; }
+  // The detector samples recorded since the last call (Config::trace_detector).
+  std::vector<DetectorSample> TakeDetectorTrace() { return std::exchange(detector_trace_, {}); }
   const DelayBweStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -235,6 +251,7 @@ class DelayBasedBwe : public MetricsSource {
   bool recovered_from_overuse_ = false;
   Result last_result_;
   DelayBweStats stats_;
+  std::vector<DetectorSample> detector_trace_;
 };
 
 }  // namespace sm::cc
