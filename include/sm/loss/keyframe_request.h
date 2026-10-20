@@ -103,6 +103,10 @@ class KeyframeRequester : public MetricsSource {
   std::vector<FeedbackMessage> Process(Timestamp now);
   // Frames that became decodable, in order. Safe to pass to the decoder.
   std::vector<int64_t> TakeDecodableFrames();
+  // Version 2: a frame left the frame scheduler for the decoder. The decode time-out runs from here,
+  // as libwebrtc's does from VideoStreamBufferController::OnFrameReady (OnEncodedFrameReleased), not
+  // from the frame becoming decodable: the scheduler's wait for the render time comes first.
+  void OnFrameReleased(Timestamp now);
 
   bool waiting_for_keyframe() const { return request_pending_; }
   const KeyframeRequestStats& stats() const { return stats_; }
@@ -122,7 +126,7 @@ class KeyframeRequester : public MetricsSource {
   int64_t last_decodable_ = -1;
   bool has_received_frame_ = false;
   bool decoded_any_ = false;
-  Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last decodable frame, or the first Process().
+  Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last frame released, or the first Process().
   Timestamp last_packet_ = Timestamp::MinusInfinity();
   Timestamp last_keyframe_packet_ = Timestamp::MinusInfinity();
   bool need_request_ = false;
