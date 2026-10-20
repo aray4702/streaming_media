@@ -649,6 +649,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
           repair_bytes += static_cast<int64_t>(r.payload_len) - 2;
           link_kind = sm::sim::LinkKind::kRtx;
+          // An RTX row carries the original sequence number, as the test bench's (#217).
+          trace_seq = (payload[0] << 8) | payload[1];
         } else if (r.ssrc == kRtxSsrc) {
           link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }

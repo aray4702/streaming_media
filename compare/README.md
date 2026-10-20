@@ -114,7 +114,8 @@ For the first seed of the scenarios named by `--trace` (default
 `very_low_capacity_allocator_v2`; `--trace=none` disables it), `sm_compare`
 records every packet either stack offers to the forward link, in the same
 CSV: `time_us,size,kind,seq,queue_bytes,outcome` (wire size, kind as the
-per-kind counters tag it, RTP sequence number or -1, bytes in the bottleneck
+per-kind counters tag it, RTP sequence number or -1 (for `rtx`, the original
+sequence number from the RTX payload, #217), bytes in the bottleneck
 queue before the packet, and whether the link delivered, dropped or lost it).
 The traces are in `compare-webrtc.json` under `"traces"`, so CI publishes them
 with the other results (`parity-data`, and `parity-data-pr/pr/<N>/`).
