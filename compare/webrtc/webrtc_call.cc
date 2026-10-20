@@ -749,6 +749,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (s.video) {
       w::VideoReceiveStreamInterface::Config c(&recv_transport);
       c.rtp.remote_ssrc = kVideoSsrc;
+      // The receiver measures the RTT as a receive-only endpoint does: RRTR in its reports, DLRR in the sender's
+      // (rtcp_sender.cc BuildExtendedReports, rtcp_receiver.cc HandleXrDlrrReportBlock). ModuleRtpRtcpImpl2::
+      // PeriodicUpdate gives it to CallStats, which feeds VideoReceiveStream2::OnRttUpdate, so the jitter estimator's
+      // RTT term and NackRequester see a round trip, as in a real call where the receiver also sends (issue #24).
+      // Without it this one-way Call has no RTT at all, while the test bench gives its receiver the sender's.
+      c.rtp.rtcp_xr.receiver_reference_time_report = true;
       if (s.nack) {
         c.rtp.nack.rtp_history_ms = 1000;
         c.rtp.rtx_ssrc = kRtxSsrc;
