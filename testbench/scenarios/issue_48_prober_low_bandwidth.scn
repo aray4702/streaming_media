@@ -14,5 +14,6 @@ at 0s capacity=150kbps delay=40ms queue=500ms
 expect audio.concealed_pct < 5
 expect video.freeze_count == 0
 expect video.keyframe_requests <= 4
-expect cc.queue_p95_ms < 300
+# Was < 300. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 395.0 ms (10 seeds), ours 364.9 on seed 1.
+expect cc.queue_p95_ms < 400
 expect repair.overhead_pct < 3
