@@ -27,7 +27,7 @@ class FakeDecoder : public AudioDecoder {
 };
 
 struct Endpoint {
-  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red)
+  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red, int keyframe_version = 2)
       : session(std::move(c)) {
     AudioStreamConfig a;
     a.ssrc = kAudioSsrc;
@@ -36,6 +36,7 @@ struct Endpoint {
     VideoStreamConfig v;
     v.ssrc = kVideoSsrc;
     v.rtx_ssrc = kRtxSsrc;
+    v.keyframe.version = keyframe_version;
     v.parser = parser;
     audio_send = session.AddAudioSend(a);
     video_send = session.AddVideoSend(v);
@@ -69,6 +70,7 @@ struct Options {
   bool outage = false;
   bool mid = true;
   bool red = false;
+  int keyframe_version = 2;  // 1: the original requester (asks right after an outage); 2: libwebrtc's (after the decode time-out).
   uint64_t seed = 1;
 };
 
@@ -85,8 +87,8 @@ struct Result {
 Result Run(const Options& o) {
   const test::TestVideoParser parser;
   FakeDecoder dec_a, dec_b;
-  Endpoint a(MakeConfig(10, "alice", o.mid), &parser, &dec_a, o.red);
-  Endpoint b(MakeConfig(20, "bob", o.mid), &parser, &dec_b, o.red);
+  Endpoint a(MakeConfig(10, "alice", o.mid), &parser, &dec_a, o.red, o.keyframe_version);
+  Endpoint b(MakeConfig(20, "bob", o.mid), &parser, &dec_b, o.red, o.keyframe_version);
 
   sim::LinkConfig lc;
   lc.base_delay = TimeDelta::Millis(25);
@@ -220,6 +222,7 @@ SM_TEST(E2E_RtpSession, NackAndRtxRecoverLossThroughTheSession) {
 SM_TEST(E2E_RtpSession, OutageEndsWithAKeyframeRequestEventAndVideoResumes) {
   Options o;
   o.outage = true;
+  o.keyframe_version = 1;  // Pins the v1 requester; libwebrtc's waits for the decode time-out.
   Result r = Run(o);
   SM_EXPECT_GT(r.keyframe_events, 0u);
   SM_EXPECT_GE(r.keyframes_sent, 2);
