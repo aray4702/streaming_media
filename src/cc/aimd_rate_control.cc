@@ -84,10 +84,10 @@ void BitrateEstimator::ExpectFastRateChange() {
 void AckedBitrateEstimatorV2::OnPacketResults(const std::vector<PacketResult>& results) {
   for (const auto& r : SortedByReceiveTime(results)) {
     if (alr_ended_time_ && r.send_time > *alr_ended_time_) {
-      estimator_.ExpectFastRateChange();
+      Estimator().ExpectFastRateChange();
       alr_ended_time_.reset();
     }
-    estimator_.Update(r.receive_time, r.size, in_alr_);
+    Estimator().Update(r.receive_time, r.size, in_alr_);
   }
 }
 
