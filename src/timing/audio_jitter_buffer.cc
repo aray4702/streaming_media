@@ -36,7 +36,8 @@ AudioJitterBuffer::AudioJitterBuffer(AudioJitterBufferConfig cfg)
       stretcher_(StretchFor(cfg.sample_rate)),
       plc_(PlcFor(cfg.sample_rate)),
       expand_(cfg.sample_rate),
-      merge_(cfg.sample_rate) {
+      merge_(cfg.sample_rate),
+      time_stretch_(cfg.sample_rate) {
   delay_.SetPacketDurationMs(cfg_.packet_ms);
   neteq_delay_.SetSampleRate(cfg_.sample_rate);
   decision_.SetSampleRate(cfg_.sample_rate);
@@ -365,28 +366,50 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     case NetEqOperation::kAccelerate:
     case NetEqOperation::kPreemptiveExpand: {
       const bool accelerate = op == NetEqOperation::kAccelerate;
+      // NetEqImpl::DoAccelerate / DoPreemptiveExpand: the decoded audio, or
+      // 30 ms with the missing samples borrowed from the end of the sync
+      // buffer, its future part first and then played samples (which
+      // preemptive expand leaves unchanged; accelerate never reaches them,
+      // as it needs 30 ms past the overlap).
+      const size_t decoded = static_cast<size_t>(extracted);
+      const size_t input_length = std::max(decoded, static_cast<size_t>(samples_30_ms));
+      const size_t borrowed = input_length - decoded;
+      const size_t future_before = sync_.size() - decoded;
+      const size_t old = borrowed > future_before ? borrowed - future_before : 0;
+      // NetEq's sync buffer starts out as zeros.
+      const size_t real = played_.size() + sync_.size();
+      if (real < input_length) played_.insert(played_.begin(), input_length - real, 0.0f);
+      const size_t from_played = input_length > sync_.size() ? input_length - sync_.size() : 0;
+      const size_t from_sync = input_length - from_played;
+      sync_scratch_.assign(played_.end() - static_cast<std::ptrdiff_t>(from_played), played_.end());
+      sync_scratch_.insert(sync_scratch_.end(), sync_.end() - static_cast<std::ptrdiff_t>(from_sync), sync_.end());
+      scratch_.clear();
       size_t changed = 0;
-      // Accelerate and PreemptiveExpand work on 30 ms of audio.
-      const int64_t have = static_cast<int64_t>(sync_.size());
-      if (have >= samples_30_ms) {
-        changed = accelerate ? stretcher_.Accelerate(sync_, scratch_) : stretcher_.PreemptiveExpand(sync_, scratch_);
-        if (changed) sync_.swap(scratch_);
-      } else if (!accelerate && static_cast<int64_t>(played_.size()) >= samples_30_ms - have) {
-        // NetEqImpl::DoPreemptiveExpand borrows the missing samples from the
-        // sync buffer's played part, and inserts the period after them.
-        const size_t old = static_cast<size_t>(samples_30_ms - have);
-        std::vector<float> in(played_.end() - static_cast<std::ptrdiff_t>(old), played_.end());
-        in.insert(in.end(), sync_.begin(), sync_.end());
-        changed = stretcher_.PreemptiveExpand(in, scratch_, old);
-        if (changed) sync_.assign(scratch_.begin() + static_cast<std::ptrdiff_t>(old), scratch_.end());
-      }
+      const NetEqTimeStretch::Result r =
+          accelerate ? time_stretch_.Accelerate(sync_scratch_, false, expand_.background_noise(), scratch_, &changed)
+                     : time_stretch_.PreemptiveExpand(sync_scratch_, old, expand_.overlap_length(),
+                                                      expand_.background_noise(), scratch_, &changed);
+      // The stretched audio replaces the input and the play position stays.
+      // (On kError libwebrtc's GetAudioInternal fails the call; here the
+      // input is kept as it is.)
+      played_.resize(played_.size() - from_played);
+      sync_.resize(sync_.size() - from_sync);
+      const size_t back = std::min(from_played, scratch_.size());
+      played_.insert(played_.end(), scratch_.begin(), scratch_.begin() + static_cast<std::ptrdiff_t>(back));
+      sync_.insert(sync_.end(), scratch_.begin() + static_cast<std::ptrdiff_t>(back), scratch_.end());
+      const bool success = r == NetEqTimeStretch::Result::kSuccess;
+      const bool low_energy = r == NetEqTimeStretch::Result::kSuccessLowEnergy;
       if (accelerate) {
         stats_.removed_samples_for_acceleration += changed;
-        last_mode_ = changed ? NetEqMode::kAccelerateSuccess : NetEqMode::kAccelerateFail;
+        last_mode_ = success      ? NetEqMode::kAccelerateSuccess
+                     : low_energy ? NetEqMode::kAccelerateLowEnergy
+                                  : NetEqMode::kAccelerateFail;
         if (changed) result = AudioOperation::kAccelerate;
       } else {
         stats_.inserted_samples_for_deceleration += changed;
-        last_mode_ = changed ? NetEqMode::kPreemptiveExpandSuccess : NetEqMode::kPreemptiveExpandFail;
+        last_mode_ = success      ? NetEqMode::kPreemptiveExpandSuccess
+                     : low_energy ? NetEqMode::kPreemptiveExpandLowEnergy
+                                  : NetEqMode::kPreemptiveExpandFail;
         if (changed) result = AudioOperation::kPreemptiveExpand;
       }
       expand_.Reset();  // DoAccelerate and DoPreemptiveExpand.
