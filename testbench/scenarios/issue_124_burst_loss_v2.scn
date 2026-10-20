@@ -23,5 +23,7 @@ expect audio.interruptions <= 1
 expect video.longest_freeze_ms < 1200
 expect video.render_fps >= 25
 expect cc.queue_p95_ms < 75
-expect video.e2e_delay_p95_ms < 260
+# Was < 260. Owner plan on PR #216 (program.md 0.2, 2026-10-20 22:07 UTC): just above libwebrtc's worst seed in 1-10.
+# libwebrtc seeds 1-10: 305.95 304.60 296.60 243.00 239.25 236.72 288.35 314.08 285.63 236.00 (mean 275.0); ours seed 1 304.4 (timing v2).
+expect video.e2e_delay_p95_ms < 320
 expect cc.utilization_pct >= 78

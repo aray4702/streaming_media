@@ -315,7 +315,14 @@ ALGORITHMS = [
                       "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
                       "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
                       "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
-                      "at `< 300` (130-199 ms, libwebrtc 130-218) and `issue_24_timing_v2_default` locks the default in."),
+                      "at `< 300` (130-199 ms, libwebrtc 130-218) and `issue_24_timing_v2_default` locks the default in. "
+                      "Explained difference (Owner, PR #216), tracked to #224: on congestive links "
+                      "(`issue_61_googcc_glue_congestive`, `issue_12_lossbwe_congestive`) video e2e delay p95 is 808 ms "
+                      "against libwebrtc's 420. Timing v2 renders the frames timing v1 dropped as late (1194 rendered, "
+                      "libwebrtc 1195), and those waited longest in the sender's pacer (pacer p95 of rendered frames 609 ms); "
+                      "e2e p50 matches (204 vs 196). "
+                      "Owner plan on PR #216: `issue_12_lossbwe_policer` (`net.loss_pct < 16`, `video.freeze_total_ms < 16000`) "
+                      "and `issue_124_burst_loss_v2` (`video.e2e_delay_p95_ms < 320`) sit just above libwebrtc's worst seed in 1-10."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
