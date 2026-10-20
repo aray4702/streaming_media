@@ -37,7 +37,7 @@ ALGORITHMS = [
                "RTX history version 2 (`rtx v2`, issue #76 group 2) is libwebrtc's RtpPacketHistory: a packet enters when "
                "the pacer sends it, stays max(3 x RTT, 1 s) and is culled after three times that (or when 600 are held "
                "and the oldest is past the retention, at most 9600), leaves when transport feedback acknowledges it, and a "
-               "request is ignored while a resend is queued or within one RTT of the last send. With `rtx v2` and no FEC the RTP sequence number is "
+               "request is ignored while a resend is queued or within one RTT of the last send. A queued resend that a keyframe flush discards stays pending, so later requests for it are ignored, as libwebrtc's flush leaves its history entry (issue #151). With `rtx v2` and no FEC the RTP sequence number is "
                "assigned when the pacer releases the packet (`RtpSender::AssignSequenceNumber`, as `PacketRouter` / `AssignSequenceNumber` do), so a packet a "
                "keyframe flush discards leaves no gap (issues #127, #154, [fix record](../../fixes/154-sequence-at-pacer-release.md)). Remaining differences: "
                "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "

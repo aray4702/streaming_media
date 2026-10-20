@@ -40,8 +40,6 @@ void KeyframeRequester::OnFrame(const FrameInfo& f, Timestamp now) {
     first_request_ = Timestamp::MinusInfinity();
   }
   if (IsDecodable(f)) {
-    timeout_base_ = now;
-    decoded_any_ = true;
     decodable_.insert(f.frame_id);
     ready_.push_back(f.frame_id);
     ++stats_.frames_decodable;
@@ -65,7 +63,6 @@ void KeyframeRequester::Propagate(Timestamp now) {
     for (auto it = waiting_.begin(); it != waiting_.end(); ++it) {
       if (IsDecodable(it->second.first)) {
         int64_t id = it->first;
-        timeout_base_ = now;
         decodable_.insert(id);
         ready_.push_back(id);
         ++stats_.frames_decodable;
@@ -121,6 +118,12 @@ void KeyframeRequester::RequestKeyframe(Timestamp now, bool fir, const char* rea
     ++stats_.pli_sent;
   }
   SM_EVENT(cfg_.events, now, "keyframe", reason, fir ? 1 : 0, last_decodable_);
+}
+
+void KeyframeRequester::OnFrameReleased(Timestamp now) {
+  // VideoReceiveStreamTimeoutTracker::OnEncodedFrameReleased: the next wait is the frame one, from now.
+  timeout_base_ = now;
+  decoded_any_ = true;
 }
 
 std::vector<FeedbackMessage> KeyframeRequester::Process(Timestamp now) {

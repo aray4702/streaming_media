@@ -67,9 +67,6 @@ class RtxSender : public MetricsSource {
   void SetRtt(TimeDelta rtt, Timestamp now);
   // The pacer sent the RTX packet for `original_seq` (RtpPacketHistory::MarkPacketAsSent).
   void MarkPacketAsSent(uint16_t original_seq, Timestamp now);
-  // The queued RTX packet for `original_seq` left the pacer without being sent (a keyframe flushed
-  // it; libwebrtc has no such flush). Clears `pending` so the packet can be resent and culled.
-  void ClearPending(uint16_t original_seq);
   // The peer acknowledged these sequence numbers (RtpPacketHistory::CullAcknowledgedPackets).
   void CullAcknowledged(std::span<const uint16_t> seqs);
   // v2 only: RtpPacketHistory::GetPayloadPaddingPacket in PaddingMode::kRecentLargePacket (the
@@ -96,7 +93,7 @@ class RtxSender : public MetricsSource {
   struct Stored {
     std::optional<RtpPacket> packet;  // Empty: a hole left by a removed packet.
     Timestamp send_time = Timestamp::MinusInfinity();
-    bool pending = false;             // A resend is in the pacer queue.
+    bool pending = false;             // A resend went to the pacer and has not been sent (a flushed one stays pending).
     int times_retransmitted = 0;
   };
   int V2Index(uint16_t seq) const;
