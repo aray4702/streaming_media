@@ -424,6 +424,18 @@ void DelayBasedBwe::OnPacketResultsV2(const std::vector<PacketResult>& results, 
     if (!d) continue;
     // libwebrtc passes integer milliseconds as the arrival time.
     trendline_.Update(d->arrival_delta.ms_f(), d->send_delta.ms_f(), std::round(r.receive_time.us() / 1000.0));
+    if (cfg_.trace_detector) {
+      DetectorSample x;
+      x.recv_delta_ms = d->arrival_delta.ms_f();
+      x.send_delta_ms = d->send_delta.ms_f();
+      x.send_ms = std::round(r.send_time.us() / 1000.0);
+      x.arrival_ms = std::round(r.receive_time.us() / 1000.0);
+      x.modified_trend = trendline_.modified_trend();
+      x.threshold = trendline_.threshold();
+      x.state = trendline_.State();
+      x.num_deltas = trendline_.num_deltas();
+      detector_trace_.push_back(x);
+    }
     stats_.trend.Add(std::fabs(trendline_.modified_trend()));
     if (prev_detector_state == BandwidthUsage::kUnderusing && trendline_.State() == BandwidthUsage::kNormal) {
       recovered_from_overuse_ = true;

@@ -11,6 +11,7 @@ DelayBasedBwe::Config DelayCfg(const GccConfig& g) {
   c.aimd.max_rate = g.max_rate;
   c.events = g.events;
   c.version = g.version;
+  c.trace_detector = g.bwe_trace != nullptr && g.version >= 2;
   return c;
 }
 LossBweConfig LossCfg(const GccConfig& g) {
@@ -244,6 +245,7 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
   }
   DataRate delay_est = delay_.OnPacketResults(results, acked, probe, now);
   const DelayBasedBwe::Result result = delay_.last_result();
+  TraceDetector(now);
   TraceDelayBased(now, delay_est, result.updated);
   if (result.updated) {
     if (result.probe) ssbe_.SetSendBitrate(delay_est, now);
@@ -303,6 +305,25 @@ NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) 
   }
   SM_EVENT(cfg_.events, now, "gcc", "reset", rate.bps(), 0);
   return MakeUpdate(now, RegisterProbes(std::move(probes)));
+}
+
+// The trendline updates of this feedback, one row per send-time group (issue #152).
+void GccController::TraceDetector(Timestamp now) {
+  if (!cfg_.bwe_trace) return;
+  for (const DetectorSample& x : delay_.TakeDetectorTrace()) {
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kDetector;
+    r.detector = static_cast<int>(x.state);
+    r.packets = static_cast<int>(x.num_deltas);
+    r.modified_trend = x.modified_trend;
+    r.threshold = x.threshold;
+    r.send_delta_ms = x.send_delta_ms;
+    r.recv_delta_ms = x.recv_delta_ms;
+    r.send_ms = x.send_ms;
+    r.arrival_ms = x.arrival_ms;
+    cfg_.bwe_trace->push_back(r);
+  }
 }
 
 // DelayBasedBwe::MaybeUpdateEstimate's RtcEventBweUpdateDelayBased: logged when the
