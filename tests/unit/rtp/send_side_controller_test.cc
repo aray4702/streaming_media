@@ -362,3 +362,22 @@ SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) 
   const int64_t overhead = 102 * (24 + 28) * 8;
   SM_EXPECT_EQ(r.video_target.bps(), c.allocator().allocation("video").bps() - overhead);
 }
+
+// RtpVideoSender::OnBitrateUpdated computes the overhead rate for its
+// rtp_config_.max_packet_size (1460 by default, rtp_rtcp_impl2.cc:149), the
+// packet size `packetization v2` sends (issue #151). libwebrtc's per-second
+// video trace on `issue_151_outage_3s_v2` (parity-data, seed 1, t = 5 s) has a
+// 1197256 bps encoder target for a 1240936 bps video allocation: 105 packets/s
+// (1240936 / (1488 x 8), rounded up) of 24 + 28 bytes.
+SM_TEST(SendSideController, V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc) {
+  SendSideConfig cfg;
+  cfg.gcc.version = 2;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.allocator_version = 2;
+  cfg.max_packet_size = 1460;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256);
+}
