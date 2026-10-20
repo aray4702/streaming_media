@@ -121,6 +121,25 @@ SM_TEST(SendSideController, SilentFeedbackPausesTheEncoderAndResumes) {
   SM_EXPECT_FALSE(c.TakeActions().pause_encoder);  // Taking clears the flags.
 }
 
+SM_TEST(SendSideController, SilentFeedbackDoesNothingUnderGccV2) {
+  // libwebrtc has no outage monitor (issue #151): on a feedback time-out GoogCC backs the target off and the
+  // congestion window drops frames, but the encoder keeps running, the pacer keeps sending and no keyframe is
+  // asked for; the receiver's decode time-out asks for one after the link is back.
+  SendSideConfig cfg;
+  cfg.gcc.version = 2;
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  c.gcc().OnRttUpdate(TimeDelta::Millis(50));
+  for (int t = 0; t < 8000; t += 10) {
+    c.Process(Timestamp::Millis(t));
+    if (t < 7000) c.outage().OnFeedback(Timestamp::Millis(t < 1000 ? t : 999));
+    ControllerActions a = c.TakeActions();
+    SM_EXPECT_FALSE(a.pause_encoder);
+    SM_EXPECT_FALSE(a.resume_encoder);
+    SM_EXPECT_FALSE(a.request_keyframe);
+  }
+}
+
 SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccountedSize) {
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);

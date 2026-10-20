@@ -45,8 +45,8 @@ ALGORITHMS = [
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
-                      "selective retransmission. Provisional lock (Owner, PR #180): `issue_151_outage_3s_v2` holds "
-                      "the freeze total at < 4100 ms (libwebrtc 3217 ms) until #151 closes the outage-recovery gap."),
+                      "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
+                      "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
@@ -498,8 +498,14 @@ ALGORITHMS = [
                   "link, ICE restarts and time to recover 50% of capacity are measured.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "On recovery the estimate is reset to half the last good rate and probing is restarted, because "
-               "the path may have changed.",
-         verification="No defects found."),
+               "the path may have changed. libwebrtc has no outage monitor, so with `cc v2` the "
+               "`SendSideController` does not run it (issue #151): the encoder keeps running, the congestion "
+               "window drops frames, the pacer keeps sending, and the receiver's decode time-out asks for the "
+               "keyframe once the link is back.",
+         verification="No defects found. Under `cc v2` (issue #151, PR pending Owner sign-off) "
+                      "`issue_151_outage_3s_v2` seed 1 lands on libwebrtc (freeze 3229 vs 3221 ms, longest audio "
+                      "gap 2980 vs 2977 ms); `issue_133_all_v2_outage_15s` `video.pause_total_ms` moves to < 18500 "
+                      "(libwebrtc 18218 on seed 1)."),
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],

@@ -585,6 +585,42 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     if (fwd_changed) forward.SetConfig(fwd_state.cfg);
     if (rev_changed) reverse.SetConfig(links.reverse().cfg);
 
+    // --- Sender: feedback -----------------------------------------------------
+    // Before the capture: feedback that arrived during the last millisecond happened before this tick's frame,
+    // as on libwebrtc's event clock. After the outage in issue #151 a NACK and the recovery keyframe meet in the
+    // same tick; libwebrtc queues the NACK's resends first and the keyframe flushes them.
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    for (const auto& e : sender.TakeEvents()) {
+      video_ctl.OnSessionEvent(e);
+      switch (e.type) {
+        case rtp::SessionEventType::kKeyframeRequested:
+          // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
+          if (e.ssrc != 0) ++keyframe_requests;
+          break;
+        case rtp::SessionEventType::kEncoderPause:
+        case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
+        case rtp::SessionEventType::kRttUpdated:
+          rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
+          break;
+        case rtp::SessionEventType::kReportBlock:
+          if (video_fec && e.ssrc == kVideoSsrc) {
+            const auto& rs = receiver.video_receiver(video_recv).stats();
+            uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
+            last_gaps = rs.gaps;
+            last_missing = rs.missing;
+            loss::ProtectionInput in;
+            in.rtt = sender.rtt();
+            in.loss_rate = e.loss_fraction;
+            in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
+            double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
+            in.packets_per_frame = pkts;
+            sender.SetFecParams(video_send, protection.Update(in, now).fec);
+          }
+          break;
+        case rtp::SessionEventType::kTargetRateChanged: break;
+      }
+    }
+
     // --- Sender: audio --------------------------------------------------------
     // Frame k (20 ms from 20k ms) leaves the encoder at 20k + 10 ms. That is the
     // phase libwebrtc's audio send path has in sm_compare: the ADM delivers 10 ms
@@ -729,39 +765,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // Receiver feedback (NACK, keyframe requests, transport-cc, reports).
     put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, now, false);
-
-    // --- Sender: feedback -----------------------------------------------------
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
-    for (const auto& e : sender.TakeEvents()) {
-      video_ctl.OnSessionEvent(e);
-      switch (e.type) {
-        case rtp::SessionEventType::kKeyframeRequested:
-          // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
-          if (e.ssrc != 0) ++keyframe_requests;
-          break;
-        case rtp::SessionEventType::kEncoderPause:
-        case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
-        case rtp::SessionEventType::kRttUpdated:
-          rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
-          break;
-        case rtp::SessionEventType::kReportBlock:
-          if (video_fec && e.ssrc == kVideoSsrc) {
-            const auto& rs = receiver.video_receiver(video_recv).stats();
-            uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
-            last_gaps = rs.gaps;
-            last_missing = rs.missing;
-            loss::ProtectionInput in;
-            in.rtt = sender.rtt();
-            in.loss_rate = e.loss_fraction;
-            in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
-            double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
-            in.packets_per_frame = pkts;
-            sender.SetFecParams(video_send, protection.Update(in, now).fec);
-          }
-          break;
-        case rtp::SessionEventType::kTargetRateChanged: break;
-      }
-    }
 
     // --- Measurement ----------------------------------------------------------
     double queue_ms = QueueDelayMs(forward, fwd_state, now);

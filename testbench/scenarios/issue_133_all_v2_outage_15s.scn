@@ -17,4 +17,8 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 25s up
 expect video.frames_rendered > 650
-expect video.pause_total_ms < 16500
+# Guard rail moved in the #151 port (program.md 0.2, needs the Owner's sign-off): under cc v2 there is no outage
+# monitor, as in libwebrtc, so video comes back on the receiver's decode time-out keyframe. libwebrtc's pause total
+# on this scenario is bimodal over seeds 1-10 (15235-15241 or 18218-18220 ms); seed 1 is 18218 (parity-data
+# compare-webrtc.json), above the old < 16500. Ours on seed 1: 18244.
+expect video.pause_total_ms < 18500
