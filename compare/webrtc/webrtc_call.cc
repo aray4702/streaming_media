@@ -125,6 +125,13 @@ class AllocationLimitsLog final : public w::LogSink {
     std::lock_guard<std::mutex> lock(mu_);
     if (updates_++ == 0) first_ = {min, pad, max};
     last_ = {min, pad, max};
+    all_.push_back({min, pad, max});
+  }
+  std::vector<std::pair<int64_t, int64_t>> AllMinMax() {
+    std::lock_guard<std::mutex> lock(mu_);
+    std::vector<std::pair<int64_t, int64_t>> v;
+    for (const Limits& l : all_) v.push_back({l.min, l.max});
+    return v;
   }
   struct Limits {
     int64_t min = -1, pad = -1, max = -1;
@@ -155,6 +162,7 @@ class AllocationLimitsLog final : public w::LogSink {
   std::mutex mu_;
   int updates_ = 0;
   Limits first_, last_;
+  std::vector<Limits> all_;
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
@@ -1040,6 +1048,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["yardstick.alloc_min_total_bps_last"] = static_cast<double>(last.min);
     m["yardstick.alloc_pad_total_bps_last"] = static_cast<double>(last.pad);
     m["yardstick.alloc_max_total_bps_last"] = static_cast<double>(last.max);
+    const auto all = alloc_log.AllMinMax();
+    for (size_t i = 0; i < all.size() && i < 8; ++i) {
+      m["yardstick.alloc_min_total_bps_" + std::to_string(i + 1)] = static_cast<double>(all[i].first);
+      m["yardstick.alloc_max_total_bps_" + std::to_string(i + 1)] = static_cast<double>(all[i].second);
+    }
     if (!audio_overhead_bytes.empty()) {
       m["yardstick.audio_overhead_bytes_first"] = audio_overhead_bytes.front();
       m["yardstick.audio_overhead_bytes_last"] = audio_overhead_bytes.back();
