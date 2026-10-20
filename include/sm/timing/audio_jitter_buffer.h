@@ -129,6 +129,7 @@ class AudioJitterBuffer : public MetricsSource {
   loss::PacketLossConcealer plc_;
   NetEqExpand expand_;
   NetEqMerge merge_;
+  NetEqTimeStretch time_stretch_;  // Version 2's accelerate and preemptive expand.
   uint64_t concealed_samples_correction_ = 0;
   SeqNumUnwrapper<uint32_t> unwrapper_;
   struct Packet {
