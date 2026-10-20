@@ -98,6 +98,12 @@ void RtcpEngine::QueueBye(std::span<const uint32_t> ssrcs, std::string reason) {
   if (!bytes.empty()) queue_.push_back({Tag::kBye, 1, std::move(bytes)});
 }
 
+// Transport-cc and REMB go out through RTCPSender::SendCombinedRtcpPacket,
+// which adds no report; everything else is a compound RTCP packet.
+bool RtcpEngine::CarriesReport(Tag tag) {
+  return tag == Tag::kNack || tag == Tag::kPli || tag == Tag::kFir || tag == Tag::kLntf;
+}
+
 std::vector<uint8_t> RtcpEngine::BuildReport(Timestamp now) {
   std::vector<timing::ReportBlock> blocks;
   for (auto* s : receive_stats_) {
@@ -148,8 +154,8 @@ void RtcpEngine::Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind k
   packets.clear();
 }
 
-void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
-  std::vector<std::vector<uint8_t>> packets;
+// The SR or RR with its report blocks, then SDES CNAME (RTCPSender::PrepareReport).
+void RtcpEngine::AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& packets) {
   packets.push_back(BuildReport(now));
   if (!cfg_.cname.empty()) {
     SdesChunk c;
@@ -158,6 +164,11 @@ void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
     auto sdes = SerializeSdes(std::span<const SdesChunk>(&c, 1));
     if (!sdes.empty()) packets.push_back(std::move(sdes));
   }
+}
+
+void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
+  std::vector<std::vector<uint8_t>> packets;
+  AppendReport(now, packets);
   ++stats_.reports_sent;
   SM_EVENT(cfg_.events, now, "rtcp", sender_ ? "sr" : "rr", packets[0].size(), cfg_.local_ssrc);
   Flush(packets, RtcpOutKind::kReport, out);
@@ -206,9 +217,17 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
       Flush(packets, RtcpOutKind::kFeedback, out);
       bytes = 0;
     }
-    if (packets.empty()) {
-      if (!cfg_.reduced_size) packets.push_back(LeadingReport());
-      bytes = cfg_.reduced_size ? 0 : packets.front().size();
+    if (packets.empty() && !cfg_.reduced_size) {
+      if (cfg_.version >= 2 && CarriesReport(q.tag)) {
+        // RTCPSender::SendCompoundRTCP in compound mode (#178): PrepareReport
+        // adds the full SR/RR (report blocks) and SDES to NACK, PLI, FIR and
+        // loss notification, and restarts the report timer.
+        AppendReport(now, packets);
+        next_report_ = now + Interval();
+      } else {
+        packets.push_back(LeadingReport());
+      }
+      for (const auto& p : packets) bytes += p.size();
     }
     bytes += q.bytes.size();
     switch (q.tag) {
