@@ -40,7 +40,10 @@ struct L1T3 {
 };
 }  // namespace
 
-SM_TEST(E2E_TransportFeedback, EveryPacketReportedOnceWithinQuantization) {
+// libwebrtc's generator reports a reordered packet again once it arrives, so
+// a packet first reported lost can come back received; it is never reported
+// received twice (SendHistory drops a second report, as TransportFeedbackAdapter).
+SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization) {
   sim::LinkConfig f;
   f.base_delay = TimeDelta::Millis(25);
   f.jitter_stddev = TimeDelta::Millis(3);
@@ -50,7 +53,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedOnceWithinQuantization) {
   TransportFeedbackBuilder builder;
   SendHistory history;
   std::map<int64_t, Timestamp> true_arrival;
-  std::map<int64_t, int> reported;
+  std::map<int64_t, int> reported, received;
   int64_t max_err_us = 0;
   uint16_t seq = 0;
   for (int64_t t = 0; t < 30000; ++t) {
@@ -71,12 +74,13 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedOnceWithinQuantization) {
       auto fb = ParseTransportFeedback(b);
       for (const auto& r : history.OnFeedback(*fb, now)) {
         ++reported[r.seq];
+        if (r.received()) ++received[r.seq];
         if (r.received()) max_err_us = std::max<int64_t>(max_err_us, std::llabs(r.receive_time.us() - true_arrival[r.seq].us()));
       }
     });
   }
   int dup = 0;
-  for (auto& [s, n] : reported) dup += n > 1;
+  for (auto& [s, n] : received) dup += n > 1;
   SM_RECORD("reported_ratio", static_cast<double>(reported.size()) / seq);
   SM_RECORD("max_arrival_error_us", max_err_us);
   SM_EXPECT_EQ(dup, 0);

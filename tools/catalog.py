@@ -324,11 +324,16 @@ ALGORITHMS = [
          headers=["cc/transport_feedback.h"], unit=["TransportFeedback"], e2e=["E2E_TransportFeedback"],
          bench=["cc/TransportFeedback_Build100_SerializeParse"],
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
-                  "real wire format, parsed and joined with the send history. Each packet must be reported once, "
-                  "with arrival-time error within the 250 us quantization.",
+                  "real wire format, parsed and joined with the send history. Each packet must be reported received "
+                  "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
+                  "re-reports it), with arrival-time error within the 250 us quantization.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
-               "vectors. A message is split when a delta overflows 16 bits.",
+               "vectors. The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "
+               "reordered packet moves the window start back and is reported again, no gap older than 0x7FFE is "
+               "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
+               "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "
+               "`tcc` switch were deleted in #167.",
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
@@ -423,10 +428,11 @@ ALGORITHMS = [
                "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
                "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc. "
                "**Default (#61):** a `rtp::Session` runs libwebrtc's components: `SessionConfig` and `SendSideConfig` "
-               "default to `cc`, `pacer`, `tcc`, `rtcp`, `rtx`, `allocator` and `packetization` v2, `VideoStreamConfig` to "
+               "default to `cc`, `pacer`, `rtx`, `allocator` and `packetization` v2, `VideoStreamConfig` to "
                "`keyframe` v2, and the test bench also to `audio` v2. v1 stays selectable per field (test bench `cc v1` etc.) "
-               "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, `RtcpConfig`, "
-               "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. "
+               "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, "
+               "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. `tcc` and `rtcp` v1 "
+               "are deleted (#167): transport-cc feedback and RTCP report timing are libwebrtc's only. "
                "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
                "Approved deviation: the Opus frame-size model of `audio v2` (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
@@ -886,9 +892,10 @@ ALGORITHMS = [
                   "requests reach the module that acts on them.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
                "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
-               "(SR or RR first, SDES CNAME after it). Version 2 (`rtcp v2`, issue #76 group 3) times reports as "
+               "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
+               "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). With `rtcp v2` a report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). With `rtcp v2` NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "

@@ -45,7 +45,7 @@ Session::Session(SessionConfig cfg)
     : cfg_(std::move(cfg)),
       rtcp_(MakeRtcpConfig(cfg_)),
       send_(MakeSendConfig(cfg_), &cfg_.extensions),
-      tcc_(cfg_.local_ssrc, 0, cc::FeedbackBuilderConfig{cfg_.transport_feedback_version}),
+      tcc_(cfg_.local_ssrc, 0),
       demux_(cfg_.extensions) {}
 
 RtpSenderConfig Session::SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const {
@@ -256,7 +256,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
-  if (keyframe && cfg_.rtcp.version >= 2 && rtcp_.ReportDue(now, true)) {
+  if (keyframe && rtcp_.ReportDue(now, true)) {
     UpdateSenderState();
     for (RtcpOutgoing& o : rtcp_.SendReport(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
@@ -456,11 +456,10 @@ void Session::Process(Timestamp now) {
   }
 }
 
-// Version 2 (libwebrtc): the generator's interval follows this endpoint's own
+// libwebrtc: the generator's interval follows this endpoint's own
 // send estimate; a receive-only endpoint runs on the congestion controller's
 // start rate, as libwebrtc's Call does before any feedback.
 void Session::UpdateTransportFeedbackRate() {
-  if (cfg_.transport_feedback_version < 2) return;
   const DataRate estimate = HasSendStreams() && started_ ? send_.target() : cfg_.send_side.gcc.start_rate;
   if (estimate == last_tcc_estimate_) return;
   last_tcc_estimate_ = estimate;
@@ -468,7 +467,7 @@ void Session::UpdateTransportFeedbackRate() {
 }
 
 TimeDelta Session::TransportFeedbackInterval() const {
-  return cfg_.transport_feedback_version < 2 ? cfg_.transport_feedback_interval : tcc_.Interval();
+  return tcc_.Interval();
 }
 
 Timestamp Session::NextProcessTime(Timestamp now) const {
