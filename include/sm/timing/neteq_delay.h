@@ -199,4 +199,99 @@ class NetEqDelayManager : public MetricsSource {
   Histogram relative_delay_ms_;
 };
 
+// buffer_level_filter.cc: the packet buffer's level in samples, filtered in
+// Q8 with a factor that follows the target level.
+class BufferLevelFilter {
+ public:
+  BufferLevelFilter() { Reset(); }
+  void Reset();
+  // `time_stretched_samples` is subtracted from the filtered value directly.
+  void Update(size_t buffer_size_samples, int time_stretched_samples);
+  void SetFilteredBufferLevel(int buffer_size_samples);
+  void SetTargetBufferLevel(int target_buffer_level_ms);
+  // Rounded to the nearest whole sample.
+  int filtered_current_level() const { return static_cast<int>((int64_t{filtered_current_level_} + (1 << 7)) >> 8); }
+  int level_factor() const { return level_factor_; }
+
+ private:
+  int level_factor_ = 253;           // Q8.
+  int filtered_current_level_ = 0;  // Q8.
+};
+
+// NetEq::Mode and NetEq::Operation, the values a receiver without DTMF,
+// comfort noise or codec PLC reaches.
+enum class NetEqMode {
+  kNormal,
+  kExpand,
+  kMerge,
+  kAccelerateSuccess,
+  kAccelerateLowEnergy,
+  kAccelerateFail,
+  kPreemptiveExpandSuccess,
+  kPreemptiveExpandLowEnergy,
+  kPreemptiveExpandFail,
+};
+enum class NetEqOperation { kNormal, kMerge, kExpand, kAccelerate, kFastAccelerate, kPreemptiveExpand, kUndefined };
+const char* ToString(NetEqOperation op);
+bool IsTimestretch(NetEqMode mode);
+
+// NetEqController::NetEqStatus. RTP timestamps are unwrapped. The last
+// three fields are what DecisionLogic reads from its delay manager and
+// packet-arrival history (NetEqDelayManager here).
+struct NetEqStatus {
+  NetEqMode last_mode = NetEqMode::kNormal;
+  int64_t target_timestamp = 0;  // The sync buffer's end timestamp.
+  std::optional<int64_t> next_packet_timestamp;
+  int64_t span_samples = 0;            // PacketBuffer::GetSpanSamples(.., false).
+  int64_t span_samples_wait_time = 0;  // PacketBuffer::GetSpanSamples(.., true).
+  int64_t generated_noise_samples = 0;
+  int64_t sync_buffer_samples = 0;  // SyncBuffer::FutureLength().
+  int expand_mutefactor = 16384;    // Q14.
+  int target_level_ms = 0;          // DecisionLogic::TargetLevelMs().
+  int playout_delay_ms = 0;         // GetDelayMs(target_timestamp - sync_buffer_samples).
+  int max_delay_ms = 0;             // PacketArrivalHistory::GetMaxDelayMs().
+};
+
+// decision_logic.cc, the GetDecision half (PacketArrived is in
+// NetEqDelayManager). Time is NetEq's TickTimer: one tick per GetAudio.
+class NetEqDecisionLogic {
+ public:
+  NetEqDecisionLogic() { SoftReset(0); }
+  void SoftReset(int64_t tick);
+  void SetSampleRate(int fs_hz) { sample_rate_khz_ = fs_hz / 1000; }
+  NetEqOperation GetDecision(const NetEqStatus& status, int64_t tick);
+
+  void AddSampleMemory(int value) { sample_memory_ += value; }
+  void set_sample_memory(int value) { sample_memory_ = value; }
+  void set_prev_time_scale(bool value) { prev_time_scale_ = value; }
+  // PacketArrivedInfo::buffer_flush.
+  void NotifyBufferFlush() { buffer_flush_ = true; }
+  int GetFilteredBufferLevel() const { return buffer_level_filter_.filtered_current_level(); }
+  const BufferLevelFilter& buffer_level_filter() const { return buffer_level_filter_; }
+
+  // decision_logic.cc constants.
+  static constexpr int kMinTimescaleInterval = 5;  // Ticks; about 100 ms/s of stretching at most.
+  static constexpr int kPostponeDecodingLevel = 50;
+  static constexpr int kTargetLevelWindowMs = 100;
+  static constexpr int kDelayAdjustmentGranularityMs = 20;
+
+ private:
+  void FilterBufferLevel(int64_t buffer_size_samples, int target_level_ms);
+  NetEqOperation NoPacket(const NetEqStatus& s) const;
+  NetEqOperation ExpectedPacketAvailable(const NetEqStatus& s, int64_t tick) const;
+  NetEqOperation FuturePacketAvailable(const NetEqStatus& s);
+  bool PostponeDecode(const NetEqStatus& s) const;
+  bool PacketTooEarly(const NetEqStatus& s) const;
+  bool TimescaleAllowed(int64_t tick) const { return tick - countdown_start_ >= countdown_ticks_; }
+
+  BufferLevelFilter buffer_level_filter_;
+  int sample_rate_khz_ = 16;
+  int sample_memory_ = 0;
+  bool prev_time_scale_ = false;
+  bool buffer_flush_ = false;
+  // TickTimer::Countdown.
+  int64_t countdown_start_ = 0;
+  int64_t countdown_ticks_ = 0;
+};
+
 }  // namespace sm::timing

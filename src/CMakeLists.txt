@@ -27,6 +27,7 @@ if(SM_WITH_TIMING)
     timing/rtcp_stats.cc
     timing/delay_manager.cc
     timing/neteq_delay.cc
+    timing/neteq_expand.cc
     timing/time_stretch.cc
     timing/audio_jitter_buffer.cc
     timing/video_jitter_estimator.cc

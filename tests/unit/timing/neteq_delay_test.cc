@@ -281,3 +281,194 @@ SM_TEST(AudioJitterBufferNetEqV2, TargetFromNetEqDelayManager) {
   jb.SetMinimumDelayMs(100);
   SM_EXPECT_EQ(jb.TargetDelayMs(), 100);
 }
+
+// buffer_level_filter_unittest.cc.
+SM_TEST(NetEqBufferLevelFilter, CreateAndDestroy) {
+  BufferLevelFilter filter;
+  SM_EXPECT_EQ(0, filter.filtered_current_level());
+}
+
+SM_TEST(NetEqBufferLevelFilter, ConvergenceTest) {
+  BufferLevelFilter filter;
+  for (int times = 10; times <= 50; times += 10) {
+    for (int value = 100; value <= 200; value += 10) {
+      filter.Reset();
+      filter.SetTargetBufferLevel(20);  // Coefficient 251/256.
+      for (int i = 0; i < times; ++i) filter.Update(static_cast<size_t>(value), 0);
+      // (1 - (251/256) ^ times) * value, within the filter's rounding.
+      const int expected = static_cast<int>((1 - std::pow(251.0 / 256.0, times)) * value);
+      SM_EXPECT_NEAR(expected, filter.filtered_current_level(), 1);
+    }
+  }
+}
+
+SM_TEST(NetEqBufferLevelFilter, FilterFactor) {
+  BufferLevelFilter filter;
+  filter.SetTargetBufferLevel(60);  // 252/256.
+  for (int i = 0; i < 10; ++i) filter.Update(100, 0);
+  SM_EXPECT_EQ(15, filter.filtered_current_level());
+  filter.Reset();
+  filter.SetTargetBufferLevel(140);  // 253/256.
+  for (int i = 0; i < 10; ++i) filter.Update(100, 0);
+  SM_EXPECT_EQ(11, filter.filtered_current_level());
+  filter.Reset();
+  filter.SetTargetBufferLevel(160);  // 254/256.
+  for (int i = 0; i < 10; ++i) filter.Update(100, 0);
+  SM_EXPECT_EQ(8, filter.filtered_current_level());
+}
+
+SM_TEST(NetEqBufferLevelFilter, TimeStretchedSamples) {
+  BufferLevelFilter filter;
+  filter.SetTargetBufferLevel(20);  // 251/256.
+  for (int i = 0; i < 10; ++i) filter.Update(100, 0);
+  const int kExpectedValue = 18;
+  SM_EXPECT_EQ(kExpectedValue, filter.filtered_current_level());
+  // With the input equal to the filtered value, only the stretch counts.
+  filter.Update(static_cast<size_t>(filter.filtered_current_level()), 3);
+  SM_EXPECT_EQ(kExpectedValue - 3, filter.filtered_current_level());
+  filter.Update(static_cast<size_t>(filter.filtered_current_level()), -3);
+  SM_EXPECT_EQ(kExpectedValue, filter.filtered_current_level());
+}
+
+// decision_logic_unittest.cc: the mocked delay manager and arrival history
+// become NetEqStatus's target_level_ms, playout_delay_ms and max_delay_ms.
+namespace {
+constexpr int kDlSampleRate = 8000;
+constexpr int kDlSamplesPerMs = kDlSampleRate / 1000;
+
+NetEqStatus CreateNetEqStatus(NetEqMode last_mode, int current_delay_ms) {
+  NetEqStatus s;
+  s.last_mode = last_mode;
+  s.target_timestamp = 1234;
+  s.generated_noise_samples = 0;
+  s.expand_mutefactor = 0;
+  s.span_samples = current_delay_ms * kDlSamplesPerMs;
+  s.span_samples_wait_time = current_delay_ms * kDlSamplesPerMs;
+  s.next_packet_timestamp = s.target_timestamp;
+  s.sync_buffer_samples = 0;
+  return s;
+}
+
+NetEqDecisionLogic CreateDecisionLogic() {
+  NetEqDecisionLogic logic;
+  logic.SetSampleRate(kDlSampleRate);
+  return logic;
+}
+}  // namespace
+
+SM_TEST(NetEqDecisionLogic, NormalOperation) {
+  auto logic = CreateDecisionLogic();
+  auto s = CreateNetEqStatus(NetEqMode::kNormal, 100);
+  s.target_level_ms = 100;
+  s.playout_delay_ms = 100;
+  s.max_delay_ms = 0;
+  SM_EXPECT_TRUE(logic.GetDecision(s, NetEqDecisionLogic::kMinTimescaleInterval + 1) == NetEqOperation::kNormal);
+}
+
+SM_TEST(NetEqDecisionLogic, Accelerate) {
+  auto logic = CreateDecisionLogic();
+  auto s = CreateNetEqStatus(NetEqMode::kNormal, 100);
+  s.target_level_ms = 100;
+  s.playout_delay_ms = 150;
+  SM_EXPECT_TRUE(logic.GetDecision(s, NetEqDecisionLogic::kMinTimescaleInterval + 1) == NetEqOperation::kAccelerate);
+}
+
+SM_TEST(NetEqDecisionLogic, FastAccelerate) {
+  auto logic = CreateDecisionLogic();
+  auto s = CreateNetEqStatus(NetEqMode::kNormal, 100);
+  s.target_level_ms = 100;
+  s.playout_delay_ms = 500;
+  SM_EXPECT_TRUE(logic.GetDecision(s, NetEqDecisionLogic::kMinTimescaleInterval + 1) ==
+                 NetEqOperation::kFastAccelerate);
+}
+
+SM_TEST(NetEqDecisionLogic, PreemptiveExpand) {
+  auto logic = CreateDecisionLogic();
+  auto s = CreateNetEqStatus(NetEqMode::kNormal, 100);
+  s.target_level_ms = 100;
+  s.playout_delay_ms = 50;
+  SM_EXPECT_TRUE(logic.GetDecision(s, NetEqDecisionLogic::kMinTimescaleInterval + 1) ==
+                 NetEqOperation::kPreemptiveExpand);
+}
+
+SM_TEST(NetEqDecisionLogic, PostponeDecodeAfterExpand) {
+  auto logic = CreateDecisionLogic();
+  // Below 50 % of the target delay.
+  auto s = CreateNetEqStatus(NetEqMode::kExpand, 200);
+  s.target_level_ms = 500;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kExpand);
+  // Above it.
+  s = CreateNetEqStatus(NetEqMode::kExpand, 250);
+  s.target_level_ms = 500;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kNormal);
+}
+
+// Not in libwebrtc's tests: TimeStrechComfortNoise's target window, for an
+// expand instead of codec-internal CNG (FuturePacketAvailable).
+SM_TEST(NetEqDecisionLogic, ExpandUntilGapCoveredOrAboveTargetWindow) {
+  auto logic = CreateDecisionLogic();
+  // The next packet is 400 ms ahead and 200 ms has been concealed: keep
+  // expanding while the buffer is within the target window...
+  auto s = CreateNetEqStatus(NetEqMode::kExpand, 300);
+  s.target_level_ms = 500;
+  s.expand_mutefactor = 16384;
+  s.generated_noise_samples = 200 * kDlSamplesPerMs;
+  s.next_packet_timestamp = s.target_timestamp + 400 * kDlSamplesPerMs;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kExpand);
+  // ...and merge once it is above it (500 + 50 ms).
+  s.span_samples_wait_time = 600 * kDlSamplesPerMs;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kMerge);
+  // Or once the expand has covered the gap.
+  s.span_samples_wait_time = 300 * kDlSamplesPerMs;
+  s.generated_noise_samples = 400 * kDlSamplesPerMs;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kMerge);
+  // A missing packet after normal playout starts an expand.
+  s.last_mode = NetEqMode::kNormal;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 0) == NetEqOperation::kExpand);
+}
+
+// Not in libwebrtc's tests: kMinTimescaleInterval. After a successful
+// stretch the next one waits 5 ticks; a failed one does not start the wait.
+SM_TEST(NetEqDecisionLogic, MinTimescaleInterval) {
+  auto logic = CreateDecisionLogic();
+  auto s = CreateNetEqStatus(NetEqMode::kNormal, 100);
+  s.target_level_ms = 100;
+  s.playout_delay_ms = 50;
+  // The countdown from SoftReset is 6 ticks.
+  SM_EXPECT_TRUE(logic.GetDecision(s, 5) == NetEqOperation::kNormal);
+  SM_EXPECT_TRUE(logic.GetDecision(s, 6) == NetEqOperation::kPreemptiveExpand);
+  logic.set_prev_time_scale(true);
+  s.last_mode = NetEqMode::kPreemptiveExpandSuccess;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 7) == NetEqOperation::kNormal);
+  s.last_mode = NetEqMode::kNormal;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 11) == NetEqOperation::kNormal);
+  SM_EXPECT_TRUE(logic.GetDecision(s, 12) == NetEqOperation::kPreemptiveExpand);
+  logic.set_prev_time_scale(true);
+  s.last_mode = NetEqMode::kPreemptiveExpandFail;
+  SM_EXPECT_TRUE(logic.GetDecision(s, 13) == NetEqOperation::kPreemptiveExpand);
+}
+
+// The jitter buffer under version 2 plays the first packet at once (NetEq's
+// new codec) and reaches the 80 ms start target by preemptive expand.
+SM_TEST(AudioJitterBufferNetEqV2, StartsAtFirstPacketAndExpandsToTarget) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  AudioJitterBuffer jb(cfg);
+  std::vector<float> out(160);
+  auto tone = [](int i) {
+    std::vector<float> pcm(320);
+    for (int n = 0; n < 320; ++n) pcm[static_cast<size_t>(n)] = 0.3f * std::sin(2 * 3.14159265 * 200 * (i * 320 + n) / 16000.0);
+    return pcm;
+  };
+  jb.InsertPacket(0, tone(0), Timestamp::Millis(0));
+  SM_EXPECT_TRUE(jb.GetAudio(out, Timestamp::Millis(0)) == AudioOperation::kNormal);
+  uint64_t stretched = 0;
+  for (int i = 1; i < 100; ++i) {
+    jb.InsertPacket(static_cast<uint32_t>(i * 320), tone(i), Timestamp::Millis(i * 20));
+    if (jb.GetAudio(out, Timestamp::Millis(i * 20 - 10)) == AudioOperation::kPreemptiveExpand) ++stretched;
+    if (jb.GetAudio(out, Timestamp::Millis(i * 20)) == AudioOperation::kPreemptiveExpand) ++stretched;
+  }
+  SM_EXPECT_GT(stretched, 0u);
+  SM_EXPECT_GT(jb.stats().inserted_samples_for_deceleration, 0u);
+  SM_EXPECT_EQ(jb.stats().concealed_samples, 0u);
+}

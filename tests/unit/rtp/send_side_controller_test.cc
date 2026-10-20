@@ -19,12 +19,22 @@ SenderPacket Media(uint16_t seq, PacketKind kind, cc::PacketPriority prio, size_
   p.priority = prio;
   return p;
 }
+
+// The controller with the library's own components (v1). The session defaults
+// are libwebrtc's since #61; these tests pin the v1 behaviour they name.
+SendSideConfig V1Config() {
+  SendSideConfig c;
+  c.gcc.version = 1;
+  c.pacer.version = cc::PacerVersion::kV1;
+  c.allocator_version = 1;
+  return c;
+}
 }  // namespace
 
 SM_TEST(SendSideController, ReleasesWithTransportSequenceNumbersInPriorityOrder) {
   sync::ExtensionMap map;
   map.Register(3, sync::uri::kTransportCc);
-  SendSideController c({}, &map);
+  SendSideController c(V1Config(), &map);  // v2 numbers from 1 (see PacketRouter).
   c.Start(Timestamp::Millis(0));
   Timestamp now = Timestamp::Millis(0);
   c.Enqueue(Media(10, PacketKind::kVideo, cc::PacketPriority::kVideo), now);
@@ -63,7 +73,7 @@ SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
 }
 
 SM_TEST(SendSideController, PaddingIsARealPaddingOnlyPacket) {
-  SendSideController c;
+  SendSideController c(V1Config());  // v2 pads through the prober and the pacing controller (see the cc v2 tests).
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
@@ -106,7 +116,9 @@ SM_TEST(SendSideController, ComputeRatesDividesOutProtectionAndClamps) {
 }
 
 SM_TEST(SendSideController, SilentFeedbackPausesTheEncoderAndResumes) {
-  SendSideController c;
+  SendSideConfig cfg;
+  cfg.gcc.version = 1;  // The outage monitor runs only under cc v1 (issue #151).
+  SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   c.gcc().OnRttUpdate(TimeDelta::Millis(50));
   bool paused = false;
@@ -144,7 +156,7 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);
   map.Register(2, sync::uri::kAbsSendTime);
-  SendSideController c({}, &map);
+  SendSideController c(V1Config(), &map);  // v2 pads through the prober and the pacing controller.
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
@@ -324,7 +336,7 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
 // of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
 // not run below what it must send.
 SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
-  SendSideConfig cfg;
+  SendSideConfig cfg = V1Config();  // cc v1: no packet-overhead rate off the video allocation.
   cfg.allocator_version = 2;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   cfg.video_min = DataRate::KilobitsPerSec(50);
@@ -339,7 +351,7 @@ SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
 }
 
 SM_TEST(SendSideController, AllocatorV1KeepsTheConfiguredMinimum) {
-  SendSideConfig cfg;
+  SendSideConfig cfg = V1Config();
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   SendSideController c(cfg);
   c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);  // No effect on version 1.

@@ -12,11 +12,24 @@
 // arrival delay), so the buffer tracks the network's jitter instead of
 // using a fixed size. With `version = 2` (the test bench's `neteq v2`,
 // issue #62) it comes from NetEqDelayManager, libwebrtc M157's NetEq
-// DelayManager and its packet-arrival history, instead.
+// DelayManager and its packet-arrival history, instead, and the operation
+// is chosen as NetEq's DecisionLogic and NetEqImpl::GetDecision do
+// (NetEqDecisionLogic): playout starts with the first packet; accelerate
+// when the playout delay of the arrival history reaches the target plus
+// its largest arrival delay plus 20 ms, preemptive expand below the target,
+// at most one of them every 5 ticks; decoding is postponed after an expand
+// while the buffer holds less than half the target; and an expand ends in
+// a merge once it has covered the gap to the next packet. Version 2
+// conceals with NetEq's Expand (NetEqExpand): whole pitch periods until the
+// sync buffer holds the output plus Expand's overlap, the mute factor that
+// DecisionLogic reads, and Normal's unmute and 1 ms crossfade on the first
+// decode after it. Merge's alignment search is not ported yet: a merge is
+// joined the way Normal joins a decode after an expand.
 #pragma once
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -26,6 +39,7 @@
 #include "sm/loss/plc.h"
 #include "sm/timing/delay_manager.h"
 #include "sm/timing/neteq_delay.h"
+#include "sm/timing/neteq_expand.h"
 #include "sm/timing/time_stretch.h"
 
 namespace sm::timing {
@@ -39,7 +53,7 @@ struct AudioJitterBufferConfig {
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
-  int version = 1;  // 2: the target delay as libwebrtc's NetEq (NetEqDelayManager).
+  int version = 1;  // 2: the target delay and the operations as libwebrtc's NetEq.
   NetEqDelayConfig neteq_delay;
   EventSink* events = nullptr;
 };
@@ -80,23 +94,38 @@ class AudioJitterBuffer : public MetricsSource {
 
  private:
   int64_t SpanSamples() const;
-  AudioOperation DecodeNext(Timestamp now);
+  // Decodes the next packet into `dst` (the sync buffer when null).
+  AudioOperation DecodeNext(Timestamp now, std::vector<float>* dst = nullptr);
   bool NextPacketReady() const;
   AudioOperation MaybeStretch(Timestamp now);
+  // NetEqImpl::GetAudioInternal and GetDecision (version 2).
+  AudioOperation GetAudioV2(std::span<float> out, Timestamp now);
+  // Expand::Process on the sync buffer (played_ then sync_); appends to `out`.
+  size_t ExpandOnce(std::vector<float>& out);
+  // Normal::Process after an expand (version 2): one more expansion to
+  // crossfade from, and the decoded audio unmuted from the mute factor.
+  void JoinAfterExpand(std::vector<float>& decoded, bool merge);
+  // PacketBuffer::GetSpanSamples.
+  int64_t PacketSpanSamples(bool count_waiting_time) const;
 
   AudioJitterBufferConfig cfg_;
   DelayManager delay_;
   NetEqDelayManager neteq_delay_;
+  NetEqDecisionLogic decision_;
+  NetEqMode last_mode_ = NetEqMode::kNormal;
+  std::optional<int64_t> noise_start_tick_;  // NetEqImpl::generated_noise_stopwatch_.
   // NetEq's TickTimer: 10 ms per GetAudio call (version 2).
   static constexpr int64_t kMsPerTick = 10;
   int64_t ticks_ = 0;
   bool neteq_reset_done_ = false;
   TimeStretcher stretcher_;
   loss::PacketLossConcealer plc_;
+  NetEqExpand expand_;
   SeqNumUnwrapper<uint32_t> unwrapper_;
   struct Packet {
     std::vector<float> pcm;
     Timestamp arrival;
+    int64_t insert_tick = 0;  // Packet::waiting_time.
   };
   std::map<int64_t, Packet> queue_;
   std::vector<float> sync_;          // Decoded samples waiting for playout.
@@ -108,6 +137,10 @@ class AudioJitterBuffer : public MetricsSource {
   int min_delay_ms_ = 0;
   AudioJitterBufferStats stats_;
   std::vector<float> scratch_;
+  // The played part of the sync buffer (version 2): 30 ms for preemptive
+  // expand to borrow, and Expand's history.
+  std::vector<float> played_;
+  std::vector<float> sync_scratch_, decoded_, expanded_;
 };
 
 }  // namespace sm::timing

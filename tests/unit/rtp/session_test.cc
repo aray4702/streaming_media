@@ -456,3 +456,21 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
   SM_EXPECT_EQ(pacing_bps(false, true), 750000);  // Audio only: GoogCC's 2.5 x.
   SM_EXPECT_EQ(pacing_bps(true, false), 750000);  // No transport-cc: no override.
 }
+
+// #61: a session runs libwebrtc's components unless a field selects v1. The
+// component configs on their own keep v1, so their unit tests test what they name.
+SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
+  const SessionConfig c;
+  SM_EXPECT_EQ(c.send_side.gcc.version, 2);
+  SM_EXPECT_TRUE(c.send_side.pacer.version == cc::PacerVersion::kV2);
+  SM_EXPECT_EQ(c.send_side.allocator_version, 2);
+  SM_EXPECT_EQ(c.transport_feedback_version, 2);
+  SM_EXPECT_EQ(c.rtcp.version, 2);
+  SM_EXPECT_EQ(c.rtx_version, 2);
+  SM_EXPECT_EQ(c.packetization_version, 2);
+  SM_EXPECT_EQ(VideoStreamConfig{}.keyframe.version, 2);
+  SM_EXPECT_EQ(cc::GccConfig{}.version, 1);
+  SM_EXPECT_TRUE(cc::PacerConfig{}.version == cc::PacerVersion::kV1);
+  SM_EXPECT_EQ(RtcpConfig{}.version, 1);
+  SM_EXPECT_EQ(loss::KeyframeRequestConfig{}.version, 1);
+}
