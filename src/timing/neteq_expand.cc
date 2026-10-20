@@ -146,7 +146,200 @@ float Dot(const float* a, const float* b, size_t n) {
   return static_cast<float>(s);
 }
 
+// WebRtcSpl_NormW32: the left shifts that normalize a 32-bit value.
+int NormW32(int32_t a) {
+  if (a == 0) return 0;
+  const uint32_t v = static_cast<uint32_t>(a < 0 ? ~a : a);
+  return std::countl_zero(v) - 1;
+}
+
+// WEBRTC_SPL_SHIFT_W32.
+int32_t ShiftW32(int32_t x, int c) { return c >= 0 ? static_cast<int32_t>(static_cast<uint32_t>(x) << c) : x >> -c; }
+
+// WebRtcSpl_SqrtFloor.
+int32_t SqrtFloor(int32_t value) {
+  if (value <= 0) return 0;
+  int32_t r = static_cast<int32_t>(std::sqrt(static_cast<double>(value)));
+  while (static_cast<int64_t>(r) * r > value) --r;
+  while (static_cast<int64_t>(r + 1) * (r + 1) <= value) ++r;
+  return r;
+}
+
+int16_t SaturateInt16(int64_t v) {
+  return static_cast<int16_t>(std::clamp<int64_t>(v, std::numeric_limits<int16_t>::min(), std::numeric_limits<int16_t>::max()));
+}
+
+int16_t ToInt16(float v) { return SaturateInt16(std::lround(v * kInt16Scale)); }
+
 }  // namespace
+
+void NetEqBackgroundNoise::Reset() {
+  initialized_ = false;
+  energy_ = 2500;
+  max_energy_ = 0;
+  energy_update_threshold_ = 500000;
+  low_energy_update_threshold_ = 0;
+  filter_state_.fill(0);
+  filter_.fill(0);
+  filter_[0] = 4096;
+  mute_factor_ = 0;
+  scale_ = 20000;
+  scale_shift_ = 24;
+}
+
+bool NetEqBackgroundNoise::Update(std::span<const float> sync) {
+  int16_t temp_signal_array[kVecLen + kMaxLpcOrder] = {0};
+  int16_t* temp_signal = &temp_signal_array[kMaxLpcOrder];
+  const size_t have = std::min(kVecLen, sync.size());
+  for (size_t i = 0; i < have; ++i) temp_signal[kVecLen - have + i] = ToInt16(sync[sync.size() - have + i]);
+
+  // CalculateAutoCorrelation: CrossCorrelationWithAutoShift with step -1.
+  int32_t max_abs = 0;
+  for (size_t i = 0; i < kVecLen; ++i) max_abs = std::max(max_abs, std::abs(static_cast<int32_t>(temp_signal[i])));
+  const int64_t max_value = static_cast<int64_t>(max_abs) * max_abs * static_cast<int64_t>(kVecLen);
+  const int32_t factor = static_cast<int32_t>(max_value >> 31);
+  const int correlation_scale = factor == 0 ? 0 : 31 - NormW32(factor);
+  int32_t auto_correlation[kMaxLpcOrder + 1];
+  for (size_t k = 0; k <= kMaxLpcOrder; ++k) {
+    int32_t sum = 0;
+    for (size_t i = 0; i < kVecLen; ++i) {
+      sum += (static_cast<int32_t>(temp_signal[i]) * temp_signal[static_cast<std::ptrdiff_t>(i) - static_cast<std::ptrdiff_t>(k)]) >>
+             correlation_scale;
+    }
+    auto_correlation[k] = sum;
+  }
+  constexpr int kLogVecLen = 8;
+  const int32_t sample_energy = auto_correlation[0] >> (kLogVecLen - correlation_scale);
+
+  if (sample_energy >= energy_update_threshold_) {
+    // Not low enough: raise the threshold by 4x in 4 seconds.
+    IncrementEnergyThreshold(sample_energy);
+    return false;
+  }
+  if (auto_correlation[0] <= 0) return false;
+  // A low-energy signal was seen, whether or not the filter is updated.
+  energy_update_threshold_ = std::max(sample_energy, 1);
+  low_energy_update_threshold_ = 0;
+
+  // WebRtcSpl_LevinsonDurbin: only a stable filter is used.
+  double r[kMaxLpcOrder + 1], a[kMaxLpcOrder + 1], k[kMaxLpcOrder] = {};
+  for (size_t i = 0; i <= kMaxLpcOrder; ++i) r[i] = auto_correlation[i];
+  const double err = dsp::LevinsonDurbin(r, static_cast<int>(kMaxLpcOrder), a, k);
+  bool stable = err > 0;
+  for (double ki : k) stable = stable && std::fabs(ki) < 1;
+  if (!stable) return false;
+  int16_t lpc_coefficients[kMaxLpcOrder + 1];
+  for (size_t i = 0; i <= kMaxLpcOrder; ++i) lpc_coefficients[i] = SaturateInt16(std::lround(a[i] * 4096.0));
+
+  // The gain from the residual energy (WebRtcSpl_FilterMAFastQ12).
+  int64_t residual = 0;
+  const int16_t* x = temp_signal + kVecLen - kResidualLength;
+  for (size_t n = 0; n < kResidualLength; ++n) {
+    int32_t o = 0;
+    for (size_t j = 0; j <= kMaxLpcOrder; ++j) o += lpc_coefficients[j] * x[static_cast<std::ptrdiff_t>(n) - static_cast<std::ptrdiff_t>(j)];
+    const int16_t out = SaturateInt16((static_cast<int64_t>(o) + 2048) >> 12);
+    residual += static_cast<int32_t>(out) * out;
+  }
+  const int32_t residual_energy = static_cast<int32_t>(std::min<int64_t>(residual, std::numeric_limits<int32_t>::max()));
+
+  // Spectral flatness: the residual variance against the signal's.
+  if (sample_energy > 0 && int64_t{5} * residual_energy >= int64_t{16} * sample_energy) {
+    SaveParameters(lpc_coefficients, temp_signal + kVecLen - kMaxLpcOrder, sample_energy, residual_energy);
+    return true;
+  }
+  return false;
+}
+
+void NetEqBackgroundNoise::GenerateBackgroundNoise(const int16_t* random_vector, size_t n, int16_t* out) {
+  if (!initialized_) {
+    std::fill(out, out + n, int16_t{0});
+    return;
+  }
+  // WebRtcSpl_AffineTransformVector to the noise energy, then
+  // WebRtcSpl_FilterARFastQ12 from the saved filter state.
+  const int32_t dc_offset = scale_shift_ > 1 ? 1 << (scale_shift_ - 1) : 0;
+  std::vector<int16_t> y(kMaxLpcOrder + n);
+  std::copy(filter_state_.begin(), filter_state_.end(), y.begin());
+  for (size_t i = 0; i < n; ++i) {
+    const int16_t scaled = static_cast<int16_t>((random_vector[i] * scale_ + dc_offset) >> scale_shift_);
+    int64_t sum = 0;
+    for (size_t j = kMaxLpcOrder; j > 0; --j) sum += static_cast<int64_t>(filter_[j]) * y[kMaxLpcOrder + i - j];
+    int64_t output = static_cast<int64_t>(filter_[0]) * scaled - sum;
+    output = std::clamp<int64_t>(output, -134217728, 134215679);
+    y[kMaxLpcOrder + i] = static_cast<int16_t>((output + 2048) >> 12);
+  }
+  if (n >= kMaxLpcOrder) std::copy(y.end() - kMaxLpcOrder, y.end(), filter_state_.begin());
+  // The noise's mute factor (0 from the start of every expand period).
+  for (size_t i = 0; i < n; ++i) {
+    const int16_t v = y[kMaxLpcOrder + i];
+    out[i] = mute_factor_ < 16384 ? static_cast<int16_t>((v * mute_factor_ + 8192) >> 14) : v;
+  }
+}
+
+void NetEqBackgroundNoise::IncrementEnergyThreshold(int32_t sample_energy) {
+  // threshold += (increment * threshold) >> 16 in limited-width operations,
+  // as libwebrtc (not bit-exact with the plain product).
+  int32_t temp_energy = (kThresholdIncrement * low_energy_update_threshold_) >> 16;
+  temp_energy += kThresholdIncrement * (energy_update_threshold_ & 0xFF);
+  temp_energy += (kThresholdIncrement * ((energy_update_threshold_ >> 8) & 0xFF)) << 8;
+  low_energy_update_threshold_ += temp_energy;
+  energy_update_threshold_ += kThresholdIncrement * (energy_update_threshold_ >> 16);
+  energy_update_threshold_ += low_energy_update_threshold_ >> 16;
+  low_energy_update_threshold_ = low_energy_update_threshold_ & 0x0FFFF;
+
+  // The maximum energy decays by 1/1024 per update; the threshold stays
+  // within 60 dB of it.
+  max_energy_ = max_energy_ - (max_energy_ >> 10);
+  if (sample_energy > max_energy_) max_energy_ = sample_energy;
+  const int32_t threshold = (max_energy_ + 524288) >> 20;
+  if (threshold > energy_update_threshold_) energy_update_threshold_ = threshold;
+}
+
+void NetEqBackgroundNoise::SaveParameters(const int16_t* lpc_coefficients, const int16_t* filter_state,
+                                          int32_t sample_energy, int32_t residual_energy) {
+  std::copy(lpc_coefficients, lpc_coefficients + kMaxLpcOrder + 1, filter_.begin());
+  std::copy(filter_state, filter_state + kMaxLpcOrder, filter_state_.begin());
+  energy_ = std::max(sample_energy, 1);
+  energy_update_threshold_ = energy_;
+  low_energy_update_threshold_ = 0;
+  // Normalize the residual energy to 29 or 30 bits before the square root.
+  int norm_shift = NormW32(residual_energy) - 1;
+  if (norm_shift & 0x1) norm_shift -= 1;
+  residual_energy = ShiftW32(residual_energy, norm_shift);
+  scale_ = static_cast<int16_t>(SqrtFloor(residual_energy));
+  // + 13 for the random table's Q13; kLogResidualLength 6.
+  scale_shift_ = static_cast<int16_t>(13 + ((6 + norm_shift) / 2));
+  initialized_ = true;
+}
+
+int16_t NetEqNormalMuteFactor(std::span<const float> decoded, int fs_hz, int16_t expand_mute_factor,
+                              int32_t background_noise_energy) {
+  const int fs_mult = fs_hz / 8000;
+  const int fs_shift = 30 - NormW32(fs_mult);
+  std::vector<int16_t> signal(decoded.size());
+  int32_t decoded_max = 0;
+  for (size_t i = 0; i < decoded.size(); ++i) {
+    signal[i] = ToInt16(decoded[i]);
+    decoded_max = std::max(decoded_max, std::abs(static_cast<int32_t>(signal[i])));
+  }
+  const size_t energy_length = std::min(static_cast<size_t>(fs_mult * 64), signal.size());
+  int scaling = std::max(6 + fs_shift - NormW32(decoded_max * decoded_max), 0);
+  int32_t energy = 0;
+  for (size_t i = 0; i < energy_length; ++i) energy += (static_cast<int32_t>(signal[i]) * signal[i]) >> scaling;
+  const int32_t scaled_energy_length = static_cast<int32_t>(energy_length >> scaling);
+  energy = scaled_energy_length > 0 ? energy / scaled_energy_length : 0;
+
+  int32_t local_mute_factor = 16384;  // 1.0 in Q14.
+  if (energy != 0 && energy > background_noise_energy) {
+    // background noise energy / energy in Q14, with energy normalized to 15 bits.
+    scaling = NormW32(energy) - 16;
+    const int32_t bgn_energy = ShiftW32(background_noise_energy, scaling + 14);
+    const int16_t energy_scaled = static_cast<int16_t>(ShiftW32(energy, scaling));
+    const int32_t ratio = energy_scaled != 0 ? bgn_energy / energy_scaled : std::numeric_limits<int32_t>::max();
+    local_mute_factor = std::min(local_mute_factor, SqrtFloor(ShiftW32(ratio, 14)));
+  }
+  return static_cast<int16_t>(std::max<int32_t>(expand_mute_factor, local_mute_factor));
+}
 
 NetEqExpand::NetEqExpand(int sample_rate)
     : fs_hz_(sample_rate), fs_mult_(sample_rate / 8000), overlap_length_(static_cast<size_t>(5 * sample_rate / 8000)) {
@@ -172,7 +365,7 @@ void NetEqExpand::GenerateRandomVector(int16_t seed_increment, size_t length, in
 }
 
 size_t NetEqExpand::Process(std::span<float> sync, std::vector<float>& out) {
-  int16_t random_vector[48000 / 8000 * 120 + 30];
+  int16_t random_vector[48000 / 8000 * 120 + 30] = {};
   if (first_expand_) {
     AnalyzeSignal(sync, random_vector);
     first_expand_ = false;
@@ -263,7 +456,10 @@ size_t NetEqExpand::Process(std::span<float> sync, std::vector<float>& out) {
       mute_factor_ = (consecutive_expands_ > 3 && gain >= mute_factor_) ? 0 : gain;
     }
   }
-  // BackgroundNoise::GenerateBackgroundNoise is not ported: no noise is added.
+  // Background noise part.
+  int16_t noise[48000 / 8000 * 125];
+  background_noise_.GenerateBackgroundNoise(random_vector, current_lag, noise);
+  for (size_t i = 0; i < current_lag; ++i) temp[i] += noise[i];
 
   for (float v : temp) out.push_back(v / kInt16Scale);
   consecutive_expands_ = std::min(consecutive_expands_ + 1, kMaxConsecutiveExpands);
@@ -297,6 +493,7 @@ void NetEqExpand::InitializeForAnExpandPeriod() {
   consecutive_expands_ = 0;
   current_voice_mix_factor_ = 16384;
   mute_factor_ = 16384;
+  background_noise_.SetMuteFactor(0);  // Start with 0 gain for background noise.
 }
 
 void NetEqExpand::UpdateLagIndex() {
