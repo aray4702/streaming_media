@@ -134,6 +134,12 @@ class SendSideController : public MetricsSource {
   // The stream whose SSRC pads and probes. Not owned.
   void SetPaddingSender(RtpSender* sender);
 
+  // RtpTransportControllerSend::SetPacingFactor: the pacing factor of the
+  // streams (StreamsConfig::pacing_factor), which `cc v2` uses in place of its
+  // defaults (cc::GccController::SetPacingFactor). The session sets 1.1 when it
+  // adds a video stream with transport-cc, as VideoSendStreamImpl does (#187).
+  void SetPacingFactor(double factor);
+
   void Enqueue(SenderPacket p, Timestamp now);
   // Releases due packets, and runs the GCC and outage timers.
   std::vector<ReleasedPacket> Process(Timestamp now);

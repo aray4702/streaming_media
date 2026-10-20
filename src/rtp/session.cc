@@ -6,6 +6,9 @@
 
 namespace sm::rtp {
 namespace {
+// VideoSendStreamImpl's kStrictPacingMultiplier (PacingConfig::pacing_factor's
+// default): the pacing factor a video stream with send-side BWE sets.
+constexpr double kStrictPacingMultiplier = 1.1;
 RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   RtcpConfig r = c.rtcp;
   r.local_ssrc = c.local_ssrc;
@@ -121,6 +124,9 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
   send_.SetPaddingSender(video_send_.back().sender.get());
+  // VideoSendStreamImpl: with transport-cc the stricter pacing factor
+  // (GetConfiguredPacingFactor, kStrictPacingMultiplier) applies from the start.
+  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) send_.SetPacingFactor(kStrictPacingMultiplier);
   send_has_padding_ = true;
   return {static_cast<int>(video_send_.size()) - 1};
 }

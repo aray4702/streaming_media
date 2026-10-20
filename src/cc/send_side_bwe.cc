@@ -123,10 +123,14 @@ void GccController::SetPacingLimits(DataRate min_total_allocated, DataRate max_p
   max_padding_ = max_padding;
 }
 
+void GccController::SetPacingFactor(double factor) { streams_pacing_factor_ = factor; }
+
 // GoogCcNetworkController::GetPacingRates. Based on the target before the
 // congestion-window pushback, so the pacer builds no queue when pushback occurs.
+// The streams' pacing factor, when set, replaces the defaults.
 DataRate GccController::PacingRate() const {
-  return std::max(min_total_allocated_, target_) * (first_feedback_received_ ? kDefaultPaceMultiplierWithSendSideBwe : kDefaultPaceMultiplier);
+  return std::max(min_total_allocated_, target_) *
+         streams_pacing_factor_.value_or(first_feedback_received_ ? kDefaultPaceMultiplierWithSendSideBwe : kDefaultPaceMultiplier);
 }
 
 DataRate GccController::PaddingRate() const {

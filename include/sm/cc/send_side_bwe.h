@@ -95,9 +95,16 @@ class GccController : public MetricsSource {
   // which GetPacingRates() reads (the allocator's limits). Takes effect with the
   // next update.
   void SetPacingLimits(DataRate min_total_allocated, DataRate max_padding);
+  // `cc v2`: StreamsConfig::pacing_factor (GoogCcNetworkController::OnStreamsConfig).
+  // Once set, GetPacingRates() uses it in place of the defaults (2.5 before the
+  // first transport feedback, 1.1 after it). A video stream with transport-cc sets
+  // 1.1 from the start (VideoSendStreamImpl's kStrictPacingMultiplier, issue #187).
+  // Takes effect with the next update.
+  void SetPacingFactor(double factor);
   // `cc v2` with `pacer v2`: the pacing and padding rates as GetPacingRates() computes them (the
   // caller takes the minimum of the padding rate and the congestion-window pushback target).
   // `pacing_rate` of the update stays target x pacing_factor, for `pacer v1`.
+  // GccConfig::pacing_factor is `pacer v1`'s; SetPacingFactor() sets this one.
   DataRate PacingRate() const;
   DataRate PaddingRate() const;
   // Periodic tick (e.g. every 25 ms): ALR probing and outage handling.
@@ -143,6 +150,7 @@ class GccController : public MetricsSource {
   bool first_packet_sent_ = false;
   DataRate min_total_allocated_;
   DataRate max_padding_;
+  std::optional<double> streams_pacing_factor_;  // StreamsConfig::pacing_factor.
   Timestamp last_now_ = Timestamp::Micros(0);
   std::optional<DataRate> remb_;
   DataRate target_;

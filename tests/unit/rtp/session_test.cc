@@ -433,3 +433,26 @@ SM_TEST(Session, V2SendsADueSenderReportAheadOfAKeyframe) {
   SM_EXPECT_EQ(run(2, false), 0u);
   SM_EXPECT_EQ(run(1, true), 0u);
 }
+
+// VideoSendStreamImpl (#187): a video stream with the transport-cc extension
+// sets StreamsConfig::pacing_factor to 1.1 (kStrictPacingMultiplier), so GoogCC
+// v2 paces at 1.1 x the target from the start, not 2.5 x until the first feedback.
+SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) {
+  auto pacing_bps = [](bool video, bool transport_cc) {
+    SessionConfig c = Cfg(1);
+    if (!transport_cc) c.extensions = sync::ExtensionMap();
+    c.send_side.gcc.version = 2;
+    c.send_side.pacer.version = cc::PacerVersion::kV2;
+    c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(300);
+    Session s(c);
+    AudioStreamConfig au;
+    au.ssrc = 0x100;
+    s.AddAudioSend(au);
+    if (video) s.AddVideoSend(Video());
+    s.Process(Timestamp::Millis(0));
+    return s.send_side().gcc().PacingRate().bps();
+  };
+  SM_EXPECT_EQ(pacing_bps(true, true), 330000);
+  SM_EXPECT_EQ(pacing_bps(false, true), 750000);  // Audio only: GoogCC's 2.5 x.
+  SM_EXPECT_EQ(pacing_bps(true, false), 750000);  // No transport-cc: no override.
+}
