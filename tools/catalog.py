@@ -321,6 +321,11 @@ ALGORITHMS = [
                       "against libwebrtc's 420. Timing v2 renders the frames timing v1 dropped as late (1194 rendered, "
                       "libwebrtc 1195), and those waited longest in the sender's pacer (pacer p95 of rendered frames 609 ms); "
                       "e2e p50 matches (204 vs 196). "
+                      "Tracked to #230: `issue_127_pacer_v2_jitter_reorder_loss` has 3.3 freezes (753 ms) against libwebrtc's "
+                      "1.1 (240 ms). Both receivers' jitter delay falls to 0 from 17 s (yardstick #228): reordered originals "
+                      "NACKed at once flag 90-100% of frames as retransmitted, so JitterEstimator's frame rate drops below "
+                      "5 fps and GetEstimate returns 0, in libwebrtc too. The extra freezes are repairs slower than the "
+                      "freeze threshold on our side, with a 13% higher send rate. "
                       "Owner plan on PR #216: `issue_12_lossbwe_policer` (`net.loss_pct < 16`, `video.freeze_total_ms < 16000`) "
                       "and `issue_124_burst_loss_v2` (`video.e2e_delay_p95_ms < 320`) sit just above libwebrtc's worst seed in 1-10."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
