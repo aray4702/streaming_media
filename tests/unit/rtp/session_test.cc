@@ -459,7 +459,6 @@ SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
   SM_EXPECT_EQ(c.send_side.gcc.version, 2);
   SM_EXPECT_TRUE(c.send_side.pacer.version == cc::PacerVersion::kV2);
   SM_EXPECT_EQ(c.send_side.allocator_version, 2);
-  SM_EXPECT_EQ(c.rtx_version, 2);
   SM_EXPECT_EQ(c.packetization_version, 2);
   SM_EXPECT_EQ(VideoStreamConfig{}.keyframe.version, 2);
   SM_EXPECT_EQ(cc::GccConfig{}.version, 1);

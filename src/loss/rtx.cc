@@ -39,14 +39,13 @@ constexpr size_t kOldPayloadPaddingSizeHysteresis = 100;
 constexpr uint16_t kMaxOldPayloadPaddingSequenceNumber = 1 << 13;
 }  // namespace
 
-RtxSender::RtxSender(RtxConfig cfg)
-    : cfg_(cfg), slots_(cfg.version >= 2 ? 1 : (cfg.history_capacity ? cfg.history_capacity : 1)) {}
+RtxSender::RtxSender(RtxConfig cfg) : cfg_(cfg) {}
 
 // RtpPacketHistory::GetPacketIndex: the index of `seq` relative to the oldest stored packet,
 // negative when it is older.
-int RtxSender::V2Index(uint16_t seq) const {
-  if (v2_.empty()) return 0;
-  const uint16_t first = v2_.front().packet->seq;
+int RtxSender::Index(uint16_t seq) const {
+  if (history_.empty()) return 0;
+  const uint16_t first = history_.front().packet->seq;
   if (first == seq) return 0;
   int index = static_cast<int>(seq) - static_cast<int>(first);
   constexpr int kSpan = 65536;
@@ -58,53 +57,51 @@ int RtxSender::V2Index(uint16_t seq) const {
   return index;
 }
 
-RtxSender::Stored* RtxSender::V2Get(uint16_t seq) {
-  const int i = V2Index(seq);
-  if (i < 0 || static_cast<size_t>(i) >= v2_.size() || !v2_[static_cast<size_t>(i)].packet) return nullptr;
-  return &v2_[static_cast<size_t>(i)];
+RtxSender::Stored* RtxSender::Get(uint16_t seq) {
+  const int i = Index(seq);
+  if (i < 0 || static_cast<size_t>(i) >= history_.size() || !history_[static_cast<size_t>(i)].packet) return nullptr;
+  return &history_[static_cast<size_t>(i)];
 }
 
-void RtxSender::V2Remove(size_t index) {
-  v2_[index].packet.reset();
+void RtxSender::Remove(size_t index) {
+  history_[index].packet.reset();
   if (index == 0) {
-    while (!v2_.empty() && !v2_.front().packet) v2_.pop_front();
+    while (!history_.empty() && !history_.front().packet) history_.pop_front();
   }
 }
 
 // RtpPacketHistory::CullOldPackets.
-void RtxSender::V2Cull(Timestamp now) {
+void RtxSender::Cull(Timestamp now) {
   const TimeDelta duration =
       rtt_.IsFinite() ? std::max(rtt_ * kMinPacketDurationRtt, kMinPacketDuration) : kMinPacketDuration;
-  while (!v2_.empty()) {
-    if (v2_.size() >= kMaxCapacity) {
-      V2Remove(0);
+  while (!history_.empty()) {
+    if (history_.size() >= kMaxCapacity) {
+      Remove(0);
       continue;
     }
-    const Stored& front = v2_.front();
+    const Stored& front = history_.front();
     if (front.pending) return;
     if (front.send_time + duration > now) return;
-    if (v2_.size() >= cfg_.number_to_store || front.send_time + duration * kPacketCullingDelayFactor <= now) {
-      V2Remove(0);
+    if (history_.size() >= cfg_.number_to_store || front.send_time + duration * kPacketCullingDelayFactor <= now) {
+      Remove(0);
     } else {
       return;
     }
   }
 }
 
-bool RtxSender::V2VerifyRtt(const Stored& s, Timestamp now) const {
+bool RtxSender::VerifyRtt(const Stored& s, Timestamp now) const {
   // An RTX that was already sent once and went out less than an RTT ago is likely still in flight.
   return !(s.times_retransmitted > 0 && now - s.send_time < rtt_);
 }
 
 void RtxSender::SetRtt(TimeDelta rtt, Timestamp now) {
-  if (cfg_.version < 2) return;
   rtt_ = rtt;
-  V2Cull(now);
+  Cull(now);
 }
 
 void RtxSender::MarkPacketAsSent(uint16_t original_seq, Timestamp now) {
-  if (cfg_.version < 2) return;
-  Stored* s = V2Get(original_seq);
+  Stored* s = Get(original_seq);
   if (!s) return;
   s->send_time = now;
   s->pending = false;
@@ -112,91 +109,61 @@ void RtxSender::MarkPacketAsSent(uint16_t original_seq, Timestamp now) {
 }
 
 void RtxSender::CullAcknowledged(std::span<const uint16_t> seqs) {
-  if (cfg_.version < 2) return;
   for (uint16_t seq : seqs) {
-    const int i = V2Index(seq);
-    if (i < 0 || static_cast<size_t>(i) >= v2_.size() || !v2_[static_cast<size_t>(i)].packet) continue;
-    V2Remove(static_cast<size_t>(i));
+    const int i = Index(seq);
+    if (i < 0 || static_cast<size_t>(i) >= history_.size() || !history_[static_cast<size_t>(i)].packet) continue;
+    Remove(static_cast<size_t>(i));
     ++stats_.culled_acked;
   }
 }
 
 void RtxSender::OnPacketSent(const RtpPacket& p, Timestamp now) {
-  if (cfg_.version >= 2) {
-    // RtpPacketHistory::PutRtpPacket.
-    V2Cull(now);
-    int index = V2Index(p.seq);
-    if (index >= 0 && static_cast<size_t>(index) < v2_.size() && v2_[static_cast<size_t>(index)].packet) {
-      V2Remove(static_cast<size_t>(index));
-      index = V2Index(p.seq);
-    }
-    for (; index < 0; ++index) v2_.emplace_front();
-    while (static_cast<int>(v2_.size()) <= index) v2_.emplace_back();
-    // PaddingMode::kRecentLargePacket.
-    if (!large_payload_packet_ ||
-        p.payload.size() + kOldPayloadPaddingSizeHysteresis > large_payload_packet_->payload.size() ||
-        AheadOf<uint16_t>(p.seq, static_cast<uint16_t>(large_payload_packet_->seq + kMaxOldPayloadPaddingSequenceNumber))) {
-      large_payload_packet_ = p;
-    }
-    Stored& s = v2_[static_cast<size_t>(index)];
-    s.packet = p;
-    s.send_time = now;
-    s.pending = false;
-    s.times_retransmitted = 0;
-    ++stats_.packets_stored;
-    return;
+  // RtpPacketHistory::PutRtpPacket.
+  Cull(now);
+  int index = Index(p.seq);
+  if (index >= 0 && static_cast<size_t>(index) < history_.size() && history_[static_cast<size_t>(index)].packet) {
+    Remove(static_cast<size_t>(index));
+    index = Index(p.seq);
   }
-  Slot& s = slots_[p.seq % slots_.size()];
-  s.valid = true;
+  for (; index < 0; ++index) history_.emplace_front();
+  while (static_cast<int>(history_.size()) <= index) history_.emplace_back();
+  // PaddingMode::kRecentLargePacket.
+  if (!large_payload_packet_ ||
+      p.payload.size() + kOldPayloadPaddingSizeHysteresis > large_payload_packet_->payload.size() ||
+      AheadOf<uint16_t>(p.seq, static_cast<uint16_t>(large_payload_packet_->seq + kMaxOldPayloadPaddingSequenceNumber))) {
+    large_payload_packet_ = p;
+  }
+  Stored& s = history_[static_cast<size_t>(index)];
   s.packet = p;
-  s.sent = now;
-  s.last_resent = Timestamp::MinusInfinity();
+  s.send_time = now;
+  s.pending = false;
+  s.times_retransmitted = 0;
   ++stats_.packets_stored;
 }
 
 std::optional<RtpPacket> RtxSender::GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept) {
-  if (cfg_.version < 2 || !large_payload_packet_) return std::nullopt;
+  if (!large_payload_packet_) return std::nullopt;
   if (!accept(*large_payload_packet_)) return std::nullopt;
   ++stats_.payload_padding;
   return MakeRtxPacket(*large_payload_packet_, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++);
 }
 
-std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
+std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta /*rtt*/) {
+  // RtpPacketHistory::GetPacketAndMarkAsPending with the RTX encapsulation.
   std::vector<RtpPacket> out;
-  if (cfg_.version >= 2) {
-    // RtpPacketHistory::GetPacketAndMarkAsPending with the RTX encapsulation.
-    for (uint16_t seq : seqs) {
-      ++stats_.nack_requests;
-      Stored* s = V2Get(seq);
-      if (!s) {
-        ++stats_.not_found;
-        continue;
-      }
-      if (s->pending || !V2VerifyRtt(*s, now)) {
-        ++stats_.throttled;
-        continue;
-      }
-      s->pending = true;
-      out.push_back(MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++));
-      ++stats_.retransmitted;
-      stats_.bytes_retransmitted += static_cast<int64_t>(out.back().size());
-    }
-    if (!out.empty()) SM_EVENT(cfg_.events, now, "rtx", "resend", out.size(), seqs.front());
-    return out;
-  }
   for (uint16_t seq : seqs) {
     ++stats_.nack_requests;
-    Slot& s = slots_[seq % slots_.size()];
-    if (!s.valid || s.packet.seq != seq || now - s.sent > cfg_.max_age) {
+    Stored* s = Get(seq);
+    if (!s) {
       ++stats_.not_found;
       continue;
     }
-    if (s.last_resent.IsFinite() && now - s.last_resent < rtt * cfg_.min_resend_rtt_factor) {
+    if (s->pending || !VerifyRtt(*s, now)) {
       ++stats_.throttled;
       continue;
     }
-    s.last_resent = now;
-    out.push_back(MakeRtxPacket(s.packet, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++));
+    s->pending = true;
+    out.push_back(MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++));
     ++stats_.retransmitted;
     stats_.bytes_retransmitted += static_cast<int64_t>(out.back().size());
   }

@@ -6,7 +6,6 @@ at 10s capacity=500kbps
 at 25s capacity=1500kbps
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 packetization v2

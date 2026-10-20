@@ -3,7 +3,6 @@ describe every v2 switch on, 1200 kbps, 120 ms delay, 30 ms jitter (reordering) 
 duration 60s
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 audio v2

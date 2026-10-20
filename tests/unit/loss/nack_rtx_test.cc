@@ -131,32 +131,6 @@ SM_TEST(Rtx, EncapsulationRoundTrip) {
   SM_EXPECT_FALSE(RestoreFromRtx(pad, 1, 96).has_value());
 }
 
-SM_TEST(Rtx, HistoryResendThrottleAndEviction) {
-  RtxConfig cfg;
-  cfg.history_capacity = 8;
-  cfg.rtx_ssrc = 99;
-  RtxSender s(cfg);
-  for (uint16_t i = 0; i < 16; ++i) {
-    RtpPacket p;
-    p.seq = i;
-    p.payload = {static_cast<uint8_t>(i)};
-    s.OnPacketSent(p, Ms(i));
-  }
-  std::vector<uint16_t> req = {2, 10, 15};
-  auto out = s.OnNack(req, Ms(20), TimeDelta::Millis(50));
-  SM_EXPECT_EQ(out.size(), 2u);  // 2 was evicted.
-  SM_EXPECT_EQ(s.stats().not_found, 1u);
-  auto again = s.OnNack(std::vector<uint16_t>{10}, Ms(30), TimeDelta::Millis(50));
-  SM_EXPECT_TRUE(again.empty());
-  SM_EXPECT_EQ(s.stats().throttled, 1u);
-  auto later = s.OnNack(std::vector<uint16_t>{10}, Ms(80), TimeDelta::Millis(50));
-  SM_EXPECT_EQ(later.size(), 1u);
-  SM_EXPECT_EQ(later[0].ssrc, 99u);
-  // Too old.
-  auto stale = s.OnNack(std::vector<uint16_t>{15}, Ms(5000), TimeDelta::Millis(50));
-  SM_EXPECT_TRUE(stale.empty());
-}
-
 SM_TEST(NackTracker, V2GivesUpAfter100RetriesWithoutKeyframeRequest) {
   // NackRequester: kMaxNackRetries 100, and the entry is only erased.
   NackConfig cfg;
@@ -223,18 +197,17 @@ RtpPacket Pkt(uint16_t seq) {
   p.payload = {static_cast<uint8_t>(seq)};
   return p;
 }
-RtxSender MakeV2() {
+RtxSender MakeHistory() {
   RtxConfig cfg;
-  cfg.version = 2;
   cfg.rtx_ssrc = 99;
   return RtxSender(cfg);
 }
 }  // namespace
 
-SM_TEST(RtxV2, ResendsOnlyAfterSendAndOnceWhilePending) {
+SM_TEST(Rtx, ResendsOnlyAfterSendAndOnceWhilePending) {
   // RtpPacketHistory::GetPacketAndMarkAsPending: a request for a packet the pacer has not sent is
   // not found; a second request while the resend is still queued is ignored (pending_transmission_).
-  RtxSender s = MakeV2();
+  RtxSender s = MakeHistory();
   s.OnPacketSent(Pkt(1), Ms(0));
   auto out = s.OnNack(std::vector<uint16_t>{1, 2}, Ms(100), TimeDelta::Millis(50));
   SM_EXPECT_EQ(out.size(), 1u);
@@ -248,11 +221,11 @@ SM_TEST(RtxV2, ResendsOnlyAfterSendAndOnceWhilePending) {
   SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(500), TimeDelta::Zero()).size(), 1u);
 }
 
-SM_TEST(RtxV2, ResendThatNeverLeavesThePacerStaysPending) {
+SM_TEST(Rtx, ResendThatNeverLeavesThePacerStaysPending) {
   // A queued resend that the pacer flushes (keyframe) never reaches MarkPacketAsSent. As in
   // libwebrtc's RtpPacketHistory (GetPacketAndMarkAsPending, rtp_packet_history.cc:183-186) it stays
   // pending, so every later NACK for it is ignored.
-  RtxSender s = MakeV2();
+  RtxSender s = MakeHistory();
   s.SetRtt(TimeDelta::Millis(100), Ms(0));
   s.OnPacketSent(Pkt(1), Ms(0));
   SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(200), TimeDelta::Zero()).size(), 1u);
@@ -260,11 +233,10 @@ SM_TEST(RtxV2, ResendThatNeverLeavesThePacerStaysPending) {
   SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(2000), TimeDelta::Zero()).empty());
 }
 
-SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat) {
+SM_TEST(Rtx, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat) {
   // CullOldPackets: kept for max(3 x RTT, 1 s); with fewer than number_to_store packets they stay until
   // 3 x that. With the store full (number_to_store) they leave once past the retention.
   RtxConfig cfg;
-  cfg.version = 2;
   cfg.rtx_ssrc = 99;
   cfg.number_to_store = 2;
   RtxSender s(cfg);
@@ -284,7 +256,7 @@ SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesTha
   t.OnPacketSent(Pkt(2), Ms(1400));  // Packet 1 is 1.4 s old, inside 1.5 s.
   SM_EXPECT_EQ(t.OnNack(std::vector<uint16_t>{1}, Ms(1400), TimeDelta::Zero()).size(), 1u);
   // With room to spare a packet stays until 3 x the retention.
-  RtxSender u = MakeV2();
+  RtxSender u = MakeHistory();
   u.OnPacketSent(Pkt(1), Ms(0));
   u.OnPacketSent(Pkt(2), Ms(2999));
   SM_EXPECT_EQ(u.history_size(), 2u);
@@ -292,17 +264,16 @@ SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesTha
   SM_EXPECT_EQ(u.history_size(), 2u);  // 1 timed out at 3 s.
 }
 
-SM_TEST(RtxV2, HistoryNeverExceedsMaxCapacity) {
+SM_TEST(Rtx, HistoryNeverExceedsMaxCapacity) {
   RtxConfig cfg;
-  cfg.version = 2;
   cfg.rtx_ssrc = 99;
   RtxSender s(cfg);
   for (int i = 0; i < 12000; ++i) s.OnPacketSent(Pkt(static_cast<uint16_t>(i)), Ms(0));
   SM_EXPECT_EQ(s.history_size(), 9600u);
 }
 
-SM_TEST(RtxV2, AcknowledgedPacketsLeaveAndSequenceNumbersWrap) {
-  RtxSender s = MakeV2();
+SM_TEST(Rtx, AcknowledgedPacketsLeaveAndSequenceNumbersWrap) {
+  RtxSender s = MakeHistory();
   for (uint16_t seq : {65534, 65535, 0, 1}) s.OnPacketSent(Pkt(seq), Ms(0));
   s.CullAcknowledged(std::vector<uint16_t>{65535, 0});
   SM_EXPECT_EQ(s.stats().culled_acked, 2u);

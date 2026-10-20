@@ -5,7 +5,6 @@ at 0s  capacity=2500kbps delay=30ms queue=100ms
 at 8s  capacity=500kbps
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 packetization v2

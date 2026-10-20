@@ -6,7 +6,6 @@ describe Wi-Fi to LTE handover with `cc v2`, `pacer v2` and `rtx v2`: padding is
 # come from padding and stays with #116.
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 duration 40s
 at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms

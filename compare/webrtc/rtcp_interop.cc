@@ -410,12 +410,16 @@ void SenderToWebrtc() {
 
   std::vector<Bytes> chunks = {Bytes(300, 1), Bytes(200, 2)};
   sender.SendVideoFrame(chunks, 90000, sm::Timestamp::Millis(0));
-  uint16_t want[] = {65535};
-  sender.OnNack(want, sm::Timestamp::Millis(30), sm::TimeDelta::Millis(10));
   for (auto& p : sender.TakePackets()) ctl.Enqueue(std::move(p), sm::Timestamp::Millis(0));
   ctl.pacer().SetPacingRates(sm::DataRate::KilobitsPerSec(2000), sm::DataRate::KilobitsPerSec(100));
   std::vector<sm::rtp::ReleasedPacket> out;
-  for (int t = 0; t < 100; ++t)
+  for (int t = 0; t < 30; ++t)
+    for (auto& r : ctl.Process(sm::Timestamp::Millis(t))) out.push_back(std::move(r));
+  // The history holds a packet once the pacer has sent it (RtpPacketHistory), so the NACK comes after.
+  uint16_t want[] = {65535};
+  sender.OnNack(want, sm::Timestamp::Millis(30), sm::TimeDelta::Millis(10));
+  for (auto& p : sender.TakePackets()) ctl.Enqueue(std::move(p), sm::Timestamp::Millis(30));
+  for (int t = 30; t < 100; ++t)
     for (auto& r : ctl.Process(sm::Timestamp::Millis(t))) out.push_back(std::move(r));
   bool saw_media = false, saw_rtx = false, saw_padding = false;
   bool ok = !out.empty();
@@ -439,7 +443,9 @@ void SenderToWebrtc() {
            w.payload()[1] == 0xFF;
     } else if (r.kind == sm::rtp::PacketKind::kPadding) {
       saw_padding = true;
-      ok = ok && w.Ssrc() == 0x2222 && w.PayloadType() == 97 && w.payload_size() == 0 && w.padding_size() > 0;
+      // Empty padding, or RTX payload padding (a stored packet resent on the RTX SSRC with its OSN).
+      ok = ok && w.Ssrc() == 0x2222 && w.PayloadType() == 97 &&
+           ((w.payload_size() == 0 && w.padding_size() > 0) || w.payload_size() == 302 || w.payload_size() == 202);
     }
   }
   Check(ok && saw_media && saw_rtx && saw_padding,

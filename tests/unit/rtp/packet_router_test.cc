@@ -1,9 +1,8 @@
 // Ports the intent of libwebrtc's modules/pacing/packet_router_unittest.cc (issue #166). The
 // PacketRouter's work is split here: rtp::SendSideController::Process numbers each released packet
 // (transport-wide sequence number) and reports it to GCC, rtp::RtpSender assigns the RTP sequence
-// number at release (`rtx v2`) and makes the padding, and rtp::Session picks the stream that pads.
-// The cases run with `pacer v2` (and `rtx v2` where the case needs it), the switches that follow
-// libwebrtc. Cases not ported, with the reason, are listed in tools/catalog.py (5.5).
+// number at release and makes the padding, and rtp::Session picks the stream that pads.
+// The cases run with `pacer v2`, the switch that follows libwebrtc. Cases not ported, with the reason, are listed in tools/catalog.py (5.5).
 #include <optional>
 #include <vector>
 
@@ -50,7 +49,6 @@ SessionConfig SessionCfg() {
   c.cname = "test";
   c.extensions.Register(1, sync::uri::kTransportCc);
   c.send_side.pacer.version = cc::PacerVersion::kV2;
-  c.rtx_version = 2;
   return c;
 }
 
@@ -106,7 +104,7 @@ SM_TEST(PacketRouter, NoPaddingSenderSendsNoPadding) {
 }
 
 // GeneratePaddingPrioritizesRtx, SupportsRtxPayloadPaddingTrueIfRtxSendModule: a video stream with
-// RTX (and `rtx v2`) pads with RTX payload padding, the history resent on the RTX SSRC.
+// RTX pads with RTX payload padding, the history resent on the RTX SSRC.
 SM_TEST(PacketRouter, PaddingIsRtxPayloadOnTheRtxSsrc) {
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);  // SupportsRtxPayloadPadding needs a BWE extension.
@@ -114,7 +112,6 @@ SM_TEST(PacketRouter, PaddingIsRtxPayloadOnTheRtxSsrc) {
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
-  sc.rtx.version = 2;
   sc.extensions = &map;
   RtpSender sender(sc);
   c.SetPaddingSender(&sender);
@@ -173,7 +170,7 @@ SM_TEST(PacketRouter, VideoWithoutRtxPadsOnTheMediaSsrc) {
   SM_EXPECT_TRUE(AllEqual(ssrcs, 0x200));
 }
 
-// AllocatesRtpSequenceNumbersIfPacketCanBeSent: with `rtx v2` the media packets carry no RTP
+// AllocatesRtpSequenceNumbersIfPacketCanBeSent: the media packets carry no RTP
 // sequence number until the pacer releases them, and get consecutive numbers in release order.
 // (DoNotAllocatesRtpSequenceNumbersIfPacketCanNotBeSent is SendSideController.
 // FlushedPacketsLeaveNoSequenceGapUnderRtxV2: a packet that is never sent takes no number.)
@@ -183,7 +180,6 @@ SM_TEST(PacketRouter, AssignsRtpSequenceNumbersAtRelease) {
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
-  sc.rtx.version = 2;
   sc.initial_seq = 100;
   RtpSender sender(sc);
   const std::vector<std::vector<uint8_t>> frame(3, std::vector<uint8_t>(500, 1));
