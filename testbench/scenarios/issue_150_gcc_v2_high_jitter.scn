@@ -10,7 +10,7 @@ describe 3 Mbps link, 40 ms jitter with reordering, every v2 switch on: the targ
 # libwebrtc (parity-data, 10 seeds): cc.utilization_pct 25-48 (mean 37.1), video.avg_kbps 400-742 (mean 584), queue p95 1-8 ms.
 # The lines below lock the level reached on seeds 1-5.
 # Target (issue #150): cc.target_avg_kbps, cc.utilization_pct, video.avg_kbps and cc.queue_p95_ms within the parity band of libwebrtc.
-# Left: seeds 5 and 10 reach 64-65 % utilization where libwebrtc's seeds reach 31-43 %.
+# Fixed (acked-rate estimator as libwebrtc's RobustThroughputEstimator): seeds 5 and 10 no longer run away, see issue_150_gcc_v2_high_jitter_seed{5,10}.
 cc v2
 pacer v2
 tcc v2

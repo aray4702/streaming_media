@@ -225,7 +225,7 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
     probe2_.SetAlrEndedTime(now);
   }
   previously_in_alr_ = alr_start_time.has_value();
-  acked_v2_.OnPacketResults(results);
+  acked_v2_.OnPacketResults(SortedByReceiveTime(results));
   std::optional<DataRate> acked = acked_v2_.bitrate();
   ssbe_.SetAcknowledgedRate(acked, now);
   for (const auto& r : SortedByReceiveTime(results)) {

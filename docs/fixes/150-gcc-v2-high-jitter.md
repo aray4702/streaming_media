@@ -4,7 +4,7 @@ title: GoogCC v2: target far below libwebrtc under 40 ms jitter with reordering 
 severity: sev:3
 status: partial
 area: area:cc
-regression_tests: testbench/scenarios/issue_150_gcc_v2_high_jitter.scn, tests/unit/cc/transport_feedback_test.cc
+regression_tests: testbench/scenarios/issue_150_gcc_v2_high_jitter.scn, testbench/scenarios/issue_150_gcc_v2_high_jitter_seed5.scn, testbench/scenarios/issue_150_gcc_v2_high_jitter_seed10.scn, tests/unit/cc/transport_feedback_test.cc
 ---
 
 # #150: GoogCC v2: target far below libwebrtc under 40 ms jitter with reordering
@@ -29,17 +29,27 @@ took the `!acked_bitrate` branch of `DelayBasedBwe::MaybeUpdateEstimate`, which 
 feedback (`InitialTimeToReduceFurther`), 1116 -> 558 -> 279 kbps in 50 ms. `AimdRateControl` and the
 `MaybeUpdateEstimate` branch already match the reference line for line.
 
+## Second cause (seeds 5 and 10, the bimodality)
+
+After the fix above, 11 of 40 seeds (5, 10, 12, 15, 20, ...) still ran away to 53-65 % utilization where libwebrtc has 1 of 40
+(`parity-data-pr/pr/170`). Replaying libwebrtc's own packet stream through our controller (`sm_gcc_replay`, PR #175) pointed
+at the acknowledged rate: `AcknowledgedBitrateEstimatorInterface::Create` returns `RobustThroughputEstimator` by default
+(`RobustThroughputEstimatorSettings::enabled = true`), and `cc v2` still fed `AimdRateControl` (`1.5 x acked + 10 kbps`) and
+`LossBasedBweV2` (1.5 x acked candidate) the `BitrateEstimator`-based rate, which rides arrival bursts under reordering.
+
 ## Fix
 
 A packet reported received is marked in `SendHistory`, and a later report of it is ignored, as libwebrtc's
 history does. A packet reported lost can still be reported received later. `tcc v1` reports each arrival once,
-so it is unchanged.
+so it is unchanged. `GccController` (`cc v2`) now feeds the `RobustThroughputEstimator` with `SortedByReceiveTime(results)`
+(`src/cc/send_side_bwe.cc`, `include/sm/cc/send_side_bwe.h`), as `GoogCcNetworkController::OnTransportPacketsFeedback` does.
 
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
 | `testbench/scenarios/issue_150_gcc_v2_high_jitter.scn` | seed 1: `cc.utilization_pct` 19.5 (expect >= 30), `video.avg_kbps` 323 (expect >= 450); fails on seeds 1, 3, 4, 5 | passes on seeds 1-5 |
+| `testbench/scenarios/issue_150_gcc_v2_high_jitter_seed5.scn` / `_seed10.scn` | utilization 64-65 % (expect < 55) | 34.5 % / 42.6 % |
 | `tests/unit/cc/transport_feedback_test.cc` `TransportFeedback.PacketReportedReceivedTwiceIsIgnored` | a packet reported twice is returned twice | returned once |
 
 ## Results
@@ -62,9 +72,17 @@ The suite against the baseline is in the PR. The only regressions are in `issue_
 there is 175 kbps (9.6 -> 8.2 % utilization), both far from libwebrtc's 37 %. `repair.overhead_pct` and
 `video.delay_network_p95_ms` in `issue_12_lossbwe_high_jitter_no_loss` rise because the link now carries 4x the video.
 
+`high_jitter`, every v2 switch on, seeds 1-40 (second cause), ours vs libwebrtc (`parity-data-pr/pr/170`):
+
+| metric | main | after | libwebrtc |
+|---|---|---|---|
+| `cc.utilization_pct` mean (sd) | 42.7 (10.6) | 34.7 (5.9) | 37.5 (7.0) |
+| seeds with utilization >= 53 % | 11 / 40 | 0 / 40 (max 49) | 1 / 40 |
+| `cc.queue_p95_ms` mean | 12.1 | 7.8 | 4.8 |
+| seed 5 / seed 10 utilization | 64 / 65 | 34.5 / 42.6 | 30.8 / 42.9 |
+
 ## Remaining
 
-Seeds 5 and 10 reach 64-65 % utilization where libwebrtc's seeds are 31-43 %, so the target mean is 131 kbps above
-libwebrtc's (band 47.7), and the queue p95 is 11.9 against 4.6 ms (band ±10, seeds 5 and 10: 24 and 22 ms). The
-e2e delay part (176 vs 136 ms) is the receive side: #24. Next step: the per-update bwe trace of #149 (PR #156) to
-see which bound holds libwebrtc's estimate on those seeds.
+The utilization split is closed. What remains is whatever the parity report still shows for `high_jitter` (audio and
+video e2e delay: #62, #24). `issue_61_googcc_glue_congestive` `net.loss_pct` keeps its `< 7` line: on top of #124's
+audio phase (#180), seeds 1-10 are 3.7-6.3 (mean 4.9; seed 1 4.4), libwebrtc 2.7-5.8 (mean 4.5).

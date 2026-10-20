@@ -13,6 +13,8 @@ at 15s capacity=800kbps
 # Seeds 1-5, all v2 switches: net.loss_pct main 11.0 -> 4.3 (libwebrtc 4.5), cc.send_over_target_ms 3860 -> 100
 # (libwebrtc 60), cc.utilization_pct 82 -> 91 (libwebrtc 91), video.avg_kbps 1015 -> 1148 (libwebrtc 1182).
 # Freezes rise (2.4 -> 3.2 s; libwebrtc 2.1 s) and are owned by #61's flip (keyframe/NACK recovery).
+# Port (#150, RobustThroughputEstimator as the acked-rate estimator, as libwebrtc M157), on top of #124's audio phase
+# (#180): net.loss_pct over seeds 1-10 is 3.7-6.3 (mean 4.9; seed 1 4.4), against libwebrtc's 2.7-5.8 (mean 4.5).
 expect net.loss_pct < 7
 expect cc.send_over_target_ms < 1000
 expect cc.utilization_pct > 86

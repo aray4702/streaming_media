@@ -131,7 +131,8 @@ class GccController : public MetricsSource {
   LossBasedBwe loss_;
   SendSideBandwidthEstimation ssbe_;  // `cc v2`.
   AcknowledgedBitrateEstimator acked_;
-  AckedBitrateEstimatorV2 acked_v2_;
+  // `cc v2`: AcknowledgedBitrateEstimatorInterface::Create returns the RobustThroughputEstimator by default (M157).
+  RobustThroughputEstimator acked_v2_;
   ProbeController probe_ctrl_;
   ProbeControllerV2 probe2_;
   AlrDetector alr_;
