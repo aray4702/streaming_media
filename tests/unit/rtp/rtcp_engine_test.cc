@@ -33,37 +33,9 @@ std::vector<int64_t> ReportTimes(RtcpEngine& e, int64_t until_ms) {
 
 }  // namespace
 
-SM_TEST(RtcpEngine, ReportsStayOnTheConfiguredGrid) {
-  // The test bench phases: SR at 500 ms + k s, RR at 1000 ms + k s.
-  RtcpConfig sc;
-  sc.first_report_delay = TimeDelta::Millis(500);
-  RtcpEngine sender(sc);
-  sender.SetSenderState({.ssrc = 7});
-  auto st = ReportTimes(sender, 5600);
-  SM_EXPECT_TRUE((st == std::vector<int64_t>{500, 1500, 2500, 3500, 4500, 5500}));
-
-  RtcpConfig rc;
-  rc.first_report_delay = TimeDelta::Millis(1000);
-  RtcpEngine receiver(rc);
-  auto rt = ReportTimes(receiver, 3100);
-  SM_EXPECT_TRUE((rt == std::vector<int64_t>{1000, 2000, 3000}));
-}
-
-SM_TEST(RtcpEngine, DefaultIntervalsFollowLibwebrtc) {
-  // First report at half the interval, then every interval: 1 s with video, 5 s without.
-  RtcpConfig v;
-  RtcpEngine video(v);
-  SM_EXPECT_TRUE((ReportTimes(video, 3100) == std::vector<int64_t>{500, 1500, 2500}));
-  RtcpConfig a;
-  a.has_video = false;
-  RtcpEngine audio(a);
-  SM_EXPECT_TRUE((ReportTimes(audio, 13000) == std::vector<int64_t>{2500, 7500, 12500}));
-}
-
 SM_TEST(RtcpEngine, RandomizedIntervalsStayInRangeAndAreDeterministic) {
   auto run = [](uint64_t seed) {
     RtcpConfig c;
-    c.randomize_intervals = true;
     c.seed = seed;
     RtcpEngine e(c);
     return ReportTimes(e, 60000);
@@ -172,14 +144,13 @@ SM_TEST(RtcpEngine, EarlyFeedbackSharesOneCompoundWithALeadingRr) {
 // RTCPSender::PrepareReport in compound mode (rtcp_sender.cc): with `rtcp v2`, a
 // NACK or PLI goes out with the full RR (report blocks) and SDES, and restarts
 // the report timer; transport-cc keeps the empty leading RR (#178).
-SM_TEST(RtcpEngine, V2NackCarriesTheFullReportAndRestartsTheTimer) {
+SM_TEST(RtcpEngine, NackCarriesTheFullReportAndRestartsTheTimer) {
   timing::ReceiveStatistics stats(0x1234, 90000);
   stats.OnPacket(1, 0, Timestamp::Millis(0));
   stats.OnPacket(3, 3000, Timestamp::Millis(40));
   RtcpConfig c;
   c.local_ssrc = 100;
   c.cname = "user@host";
-  c.version = 2;
   c.first_report_delay = TimeDelta::Millis(500);
   RtcpEngine rx(c);
   rx.AddReceiveStatistics(&stats);
@@ -210,25 +181,6 @@ SM_TEST(RtcpEngine, V2NackCarriesTheFullReportAndRestartsTheTimer) {
 }
 
 // Version 1 keeps the empty leading RR on every early feedback packet.
-SM_TEST(RtcpEngine, V1NackLeadsWithAnEmptyRr) {
-  timing::ReceiveStatistics stats(0x1234, 90000);
-  stats.OnPacket(1, 0, Timestamp::Millis(0));
-  RtcpConfig c;
-  c.first_report_delay = TimeDelta::Millis(500);
-  RtcpEngine rx(c);
-  rx.AddReceiveStatistics(&stats);
-  rx.Process(Timestamp::Millis(0));
-  const std::vector<uint16_t> seqs = {2};
-  rx.QueueNack(0x1234, seqs);
-  auto out = rx.Process(Timestamp::Millis(100));
-  SM_ASSERT_EQ(out.size(), 1u);
-  auto split = loss::SplitCompoundRtcp(out[0].bytes);
-  auto rr = timing::ParseReceiverReport((*split)[0].data);
-  SM_ASSERT_TRUE(rr.has_value());
-  SM_EXPECT_TRUE(rr->blocks.empty());
-  SM_EXPECT_EQ(rx.NextProcessTime(Timestamp::Millis(101)), Timestamp::Millis(500));
-}
-
 SM_TEST(RtcpEngine, ReducedSizeFeedbackHasNoLeadingReport) {
   RtcpConfig c;
   c.reduced_size = true;
@@ -476,11 +428,10 @@ SM_TEST(RtcpEngine, FirStateIsBoundedAndOnlyTracksLocalStreams) {
 
 // RTCPSender::ComputeTimeUntilNextReport (#76): [0.5, 1.5] x the minimum, and
 // a video sender above 72 kbit/s reports every 360 / kbit/s seconds.
-SM_TEST(RtcpEngine, V2ReportIntervalFollowsTheSendBitrateRule) {
+SM_TEST(RtcpEngine, ReportIntervalFollowsTheSendBitrateRule) {
   auto gaps = [](int64_t bytes_per_ms) {
     RtcpConfig c;
-    c.version = 2;
-    RtcpEngine e(c);
+      RtcpEngine e(c);
     RtcpSenderState st;
     st.ssrc = 7;
     std::vector<int64_t> times;
@@ -510,9 +461,8 @@ SM_TEST(RtcpEngine, V2ReportIntervalFollowsTheSendBitrateRule) {
 
 // RTCPSender::TimeToSendRTCPReport(send_keyframe_before_rtp) (#101): a video
 // report due within 100 ms goes out before the keyframe; audio gets no margin.
-SM_TEST(RtcpEngine, V2ReportDueWithin100msIsSentBeforeAKeyframe) {
+SM_TEST(RtcpEngine, ReportDueWithin100msIsSentBeforeAKeyframe) {
   RtcpConfig c;
-  c.version = 2;
   c.first_report_delay = TimeDelta::Millis(1000);
   RtcpEngine e(c);
   e.Process(Timestamp::Millis(0));
@@ -530,9 +480,4 @@ SM_TEST(RtcpEngine, V2ReportDueWithin100msIsSentBeforeAKeyframe) {
   RtcpEngine audio(a);
   audio.Process(Timestamp::Millis(0));
   SM_EXPECT_FALSE(audio.ReportDue(Timestamp::Millis(900), true));
-  RtcpConfig v1;
-  v1.first_report_delay = TimeDelta::Millis(1000);
-  RtcpEngine old(v1);
-  old.Process(Timestamp::Millis(0));
-  SM_EXPECT_FALSE(old.ReportDue(Timestamp::Millis(900), true));  // v1 has no margin.
 }

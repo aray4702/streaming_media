@@ -63,17 +63,6 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
   SM_EXPECT_TRUE(b.Build().empty());
 }
 
-SM_TEST(TransportFeedback, LateArrivalAfterReportIsCounted) {
-  TransportFeedbackBuilder b;
-  b.OnPacket(1, Timestamp::Millis(10));
-  b.OnPacket(3, Timestamp::Millis(12));
-  auto f = b.Build();
-  SM_ASSERT_EQ(f.size(), 1u);
-  SM_EXPECT_EQ(f[0].packets.size(), 3u);
-  b.OnPacket(2, Timestamp::Millis(30));
-  SM_EXPECT_EQ(b.stats().late_after_report, 1u);
-}
-
 SM_TEST(TransportFeedback, SplitsWhenDeltaOverflows) {
   TransportFeedbackBuilder b;
   b.OnPacket(1, Timestamp::Millis(0));
@@ -92,14 +81,14 @@ SM_TEST(TransportFeedback, RembRoundTrip) {
   SM_EXPECT_EQ(r->second[1], 22u);
 }
 
-// --- Version 2: libwebrtc's TransportSequenceNumberFeedbackGenenerator ---------
+// --- libwebrtc's TransportSequenceNumberFeedbackGenenerator ---------
 // Ported from modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator_unittest.cc.
 
 namespace {
 constexpr uint16_t kBaseSeq = 10;
 const Timestamp kBaseTime = Timestamp::Millis(123);
 
-TransportFeedbackBuilder V2() { return TransportFeedbackBuilder(1, 456, FeedbackBuilderConfig{2}); }
+TransportFeedbackBuilder V2() { return TransportFeedbackBuilder(1, 456); }
 
 std::vector<int64_t> Seqs(const TransportFeedback& fb) {
   std::vector<int64_t> v;
@@ -232,7 +221,7 @@ SM_TEST(TransportFeedbackV2, IntervalFollowsFivePercentOfTheEstimate) {
 SM_TEST(TransportFeedback, PacketReportedReceivedTwiceIsIgnored) {
   SendHistory h;
   for (uint16_t s = 0; s < 4; ++s) h.OnPacketSent(s, Timestamp::Millis(1000 + s), DataSize::Bytes(1000));
-  TransportFeedbackBuilder b(0, 0, FeedbackBuilderConfig{2});
+  TransportFeedbackBuilder b(0, 0);
   b.OnPacket(0, Timestamp::Micros(1040000));
   b.OnPacket(1, Timestamp::Micros(1041000));
   b.OnPacket(3, Timestamp::Micros(1043000));

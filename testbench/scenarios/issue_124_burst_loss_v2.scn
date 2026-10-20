@@ -11,9 +11,7 @@ describe 3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's
 # Target (issue #124): cc.queue_p95_ms within the parity band of libwebrtc (46.8 ms).
 cc v2
 pacer v2
-tcc v2
 rtx v2
-rtcp v2
 keyframe v2
 allocator v2
 packetization v2
