@@ -86,6 +86,22 @@ SM_TEST(GoogCcNetworkController, ChangeDefaultPacingFactorAfterFirstFeedback) {
   SM_EXPECT_TRUE(g.PacingRate() < (kInitialBitrate + DataRate::KilobitsPerSec(5)) * kDefaultPacingRateSendSideBwe);
 }
 
+// StreamsConfig::pacing_factor replaces the defaults, also after the first
+// feedback (#187: SetPacingFactor is OnStreamsConfig's pacing_factor).
+SM_TEST(GoogCcNetworkController, RespectsConfiguredPacingFactor) {
+  GccController g(InitialConfig());
+  g.Start(Timestamp::Millis(123456));
+  SM_ASSERT_TRUE(g.PacingRate() == kInitialBitrate * kDefaultPacingRate);
+
+  g.SetPacingFactor(10);
+
+  const Timestamp feedback_time = Timestamp::Millis(123457);
+  g.OnPacketSent(0, feedback_time, DataSize::Bytes(100));
+  g.OnTransportFeedback(OnePacketFeedback(0, feedback_time), feedback_time);
+  SM_EXPECT_TRUE(g.PacingRate() >= kInitialBitrate * 10);
+  SM_EXPECT_TRUE(g.PacingRate() < (kInitialBitrate + DataRate::KilobitsPerSec(5)) * 10);
+}
+
 SM_TEST(GoogCcNetworkController, ReactsToChangedNetworkConditionsFromRemote) {
   GccController g(InitialConfig());
   Timestamp current_time = Timestamp::Millis(123);

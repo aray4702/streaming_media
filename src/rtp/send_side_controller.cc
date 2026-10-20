@@ -103,6 +103,14 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
 
 void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
 
+void SendSideController::SetPacingFactor(double factor) {
+  gcc_.SetPacingFactor(factor);
+  // OnStreamsConfig returns the new pacer config at once (GetPacingRates).
+  if (cfg_.gcc.version >= 2 && cfg_.pacer.version == cc::PacerVersion::kV2) {
+    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+  }
+}
+
 void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
   Apply(gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now), now);
 }
