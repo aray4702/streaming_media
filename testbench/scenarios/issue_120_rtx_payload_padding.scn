@@ -16,5 +16,7 @@ reverse at 0s delay=15ms
 reverse at 15s down
 reverse at 16.5s up delay=60ms
 expect net.padding_kbps < 2
-expect net.rtx_kbps >= 380
+# Was >= 380. Provisional lock (Owner sign-off on PR #186, program.md 0.2, 2026-10-20 19:06 UTC), tracked to #217:
+# libwebrtc 451 kbps (10 seeds), ours 344 on seed 1 under the v2 defaults.
+expect net.rtx_kbps >= 330
 expect net.rtx_kbps <= 600
