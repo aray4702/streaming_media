@@ -14,9 +14,14 @@ at 15s capacity=800kbps
 # (libwebrtc 60), cc.utilization_pct 82 -> 91 (libwebrtc 91), video.avg_kbps 1015 -> 1148 (libwebrtc 1182).
 # Freezes rise (2.4 -> 3.2 s; libwebrtc 2.1 s) and are owned by #61's flip (keyframe/NACK recovery).
 # Port (#150, RobustThroughputEstimator as the acked-rate estimator, as libwebrtc M157): over seeds 1-10 net.loss_pct went from
-# 6.2-8.6 (mean 7.2) to 5.8-7.9 (mean 6.9), toward libwebrtc's 2.7-5.8 (mean 4.5), but seed 1 moved from 6.2 to 7.9. libwebrtc
-# passes the old line, so this is NOT a claim that the line was wrong: it is a provisional lock at the worst seed, held for the
-# Owner (needs-human). The gap to libwebrtc (loss ~2.4 points) is not closed by this port.
+# 6.2-8.6 (mean 7.2; 6 of 10 seeds already at or above 7) to 5.8-7.9 (mean 6.9), toward libwebrtc's 2.7-5.8 (mean 4.5), but
+# seed 1 moved from 6.2 to 7.9. Seed 1 queue drops (forward-link trace) before 15 s / 15-17 s / after 17 s: libwebrtc 49 / 114 / 25,
+# main 295 / 133 / 123, this port 249 / 198 / 268. Our queue before the drop is fuller (11-18 kB against libwebrtc's 8-13 kB of a
+# 19 kB limit, the standing queue of #124), so the drop to 800 kbps adds about 10 ms of delay and the trendline does not flag
+# overuse (main at 15.9 s, libwebrtc at 15.4 s): LossBasedBweV2 alone settles the target at the 800 kbps capacity, and after it
+# the delay detector never fires again (libwebrtc's does at 21.5 and 28.0 s and holds 665-790 kbps). The detector side is #124 and
+# #152, not the acked rate. libwebrtc passes the old line, so the line is held for the Owner (needs-human), not claimed wrong.
+# Target (libwebrtc): net.loss_pct < 7 on seed 1 (libwebrtc 2.7 on seed 1, 4.5 mean).
 expect net.loss_pct < 8
 expect cc.send_over_target_ms < 1000
 expect cc.utilization_pct > 86
