@@ -345,8 +345,8 @@ issue_120_rtx_payload_padding - Wi-Fi to LTE handover with `cc v2`, `pacer v2` a
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1527         1422  webrtc
-  audio.mouth_to_ear_p95_ms               363          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               363          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      4.9          4.1  webrtc
   video.freeze_total_ms                  4250         4588  sm
   video.longest_freeze_ms                2195         2025  webrtc
@@ -2065,8 +2065,8 @@ issue_23_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier,
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1527         1422  webrtc
-  audio.mouth_to_ear_p95_ms               363          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               363          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      4.9          4.1  webrtc
   video.freeze_total_ms                  4250         4588  sm
   video.longest_freeze_ms                2195         2025  webrtc
@@ -2764,9 +2764,9 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.2          0.5  webrtc
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            37           27  =
-  audio.mouth_to_ear_p95_ms               139          147  =
-  audio.jb_delay_p95_ms                  66.7         81.0  sm
+  audio.longest_interruption_ms            35           27  =
+  audio.mouth_to_ear_p95_ms               148          147  =
+  audio.jb_delay_p95_ms                  75.0         81.0  =
   cc.utilization_pct                     77.0         77.3  =
   cc.queue_p95_ms                         3.8          3.6  =
   cc.max_settle_ms                        100          100  =
@@ -2800,11 +2800,61 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
   net.padding_size_max_b                  224          275
   net.padding_queue_drops                   0            0
 
+issue_62_neteq_v2_cross_traffic - cross_traffic with NetEq's Expand (neteq v2, issue
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.5          0.6  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            50           46  =
+  audio.mouth_to_ear_p95_ms               642          649  =
+  audio.jb_delay_p95_ms                   378          382  =
+  video.freeze_count                      1.4            2  sm
+  video.freeze_total_ms                   526          821  sm
+  video.longest_freeze_ms                 176          253  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.6         29.8  =
+  video.e2e_delay_p95_ms                  270          375  sm
+  video.time_to_first_frame_ms           66.6         53.6  =
+  video.avg_kbps                         1735         1785  =
+  video.keyframe_requests                   0            0  =
+  cc.utilization_pct                     72.4         74.5  =
+  cc.queue_p95_ms                         230          251  sm
+  cc.max_settle_ms                       4350         4500  =
+  cc.rtt_p50_ms                          87.2         64.5  webrtc
+  net.loss_pct                            0.1          0.2  =
+  repair.overhead_pct                     0.2          0.3  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.3         69.7
+  net.video_kbps                         1800         1852
+  net.rtx_kbps                            2.8          6.7
+  net.padding_kbps                        0.5          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                      0.1          0.2
+  net.rtx_loss_pct                        1.6          1.8
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    193          187
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          305
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1359         1366
+  net.video_size_p90_b                   1458         1458
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                   4.5         14.3
+  net.rtx_size_p50_b                     1166         1271
+  net.rtx_size_p90_b                     1403         1392
+  net.rtx_size_max_b                     1418         1406
+  net.rtx_queue_drops                     0.5          2.4
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2, issue
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            31           30  =
+  audio.longest_interruption_ms            33           30  =
   audio.mouth_to_ear_p95_ms               227          212  webrtc
   audio.jb_delay_p95_ms                   108          111  =
   video.freeze_count                        0            0  =
@@ -2905,8 +2955,8 @@ issue_76_rtx_v2_handover - Wi-Fi to LTE handover, RTX history as libwebrtc's Rtp
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1527         1422  webrtc
-  audio.mouth_to_ear_p95_ms               363          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               363          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      4.9          4.1  webrtc
   video.freeze_total_ms                  4250         4588  sm
   video.longest_freeze_ms                2195         2025  webrtc
@@ -3755,8 +3805,8 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1527         1422  webrtc
-  audio.mouth_to_ear_p95_ms               363          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               363          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      4.9          4.1  webrtc
   video.freeze_total_ms                  4250         4588  sm
   video.longest_freeze_ms                2195         2025  webrtc
@@ -3800,7 +3850,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 295, webrtc 169, tie 1103 (of the metrics shown)
+better: sm 298, webrtc 170, tie 1120 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values
