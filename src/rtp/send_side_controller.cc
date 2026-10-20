@@ -140,13 +140,11 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   pp.first_packet_of_frame = p.first_packet_of_frame;
   queued_[id] = std::move(p);
   pacer_.Enqueue(pp);
-  // A keyframe flushed the video stream's queue: those packets are never sent.
+  // A keyframe flushed the video stream's queue: those packets are never sent. The sender is not told:
+  // libwebrtc's PacingController::EnqueuePacket drops the flushed RTX packets (pacing_controller.cc:227-231)
+  // and RtpPacketHistory keeps them pending, so a later NACK for them is ignored (rtp_packet_history.cc:183).
   for (const cc::PacedPacket& f : pacer_.TakeFlushed()) {
-    auto it = queued_.find(f.id);
-    if (it != queued_.end()) {
-      if (it->second.sender) it->second.sender->OnPacketDropped(it->second);
-      queued_.erase(it);
-    }
+    queued_.erase(f.id);
     ++stats_.flushed;
   }
 }

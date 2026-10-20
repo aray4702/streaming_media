@@ -248,16 +248,16 @@ SM_TEST(RtxV2, ResendsOnlyAfterSendAndOnceWhilePending) {
   SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(500), TimeDelta::Zero()).size(), 1u);
 }
 
-SM_TEST(RtxV2, FlushedResendIsNotPendingForever) {
-  // A queued resend that the pacer flushes (keyframe) never reaches MarkPacketAsSent: ClearPending
-  // lets the packet be requested again and lets the history cull it.
+SM_TEST(RtxV2, ResendThatNeverLeavesThePacerStaysPending) {
+  // A queued resend that the pacer flushes (keyframe) never reaches MarkPacketAsSent. As in
+  // libwebrtc's RtpPacketHistory (GetPacketAndMarkAsPending, rtp_packet_history.cc:183-186) it stays
+  // pending, so every later NACK for it is ignored.
   RtxSender s = MakeV2();
   s.SetRtt(TimeDelta::Millis(100), Ms(0));
   s.OnPacketSent(Pkt(1), Ms(0));
   SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(200), TimeDelta::Zero()).size(), 1u);
   SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(400), TimeDelta::Zero()).empty());
-  s.ClearPending(1);
-  SM_EXPECT_EQ(s.OnNack(std::vector<uint16_t>{1}, Ms(600), TimeDelta::Zero()).size(), 1u);
+  SM_EXPECT_TRUE(s.OnNack(std::vector<uint16_t>{1}, Ms(2000), TimeDelta::Zero()).empty());
 }
 
 SM_TEST(RtxV2, RetentionIsThreeRttWithOneSecondMinimumAndCullsAfterThreeTimesThat) {

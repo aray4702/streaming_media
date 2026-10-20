@@ -260,10 +260,10 @@ SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
   for (size_t i = 1; i < seqs.size(); ++i) SM_EXPECT_EQ(static_cast<uint16_t>(seqs[i]), static_cast<uint16_t>(seqs[i - 1] + 1));
 }
 
-// A resend that a keyframe flushes from the pacer never reaches the history's MarkPacketAsSent:
-// the controller must tell the sender (RtpSender::OnPacketDropped), else the v2 history keeps the
-// packet pending and a later NACK for it is ignored for the rest of the call.
-SM_TEST(SendSideController, FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2) {
+// A resend that a keyframe flushes from the pacer never reaches the history's MarkPacketAsSent. As in
+// libwebrtc (PacingController::EnqueuePacket drops the RTX stream's queue, pacing_controller.cc:227-231,
+// and RtpPacketHistory keeps the packet pending) a later NACK for it gets nothing (issue #151).
+SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
   SendSideConfig cfg;
   cfg.pacer.version = cc::PacerVersion::kV2;
   SendSideController c(cfg);
@@ -295,10 +295,10 @@ SM_TEST(SendSideController, FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2
   key.first_packet_of_frame = true;
   c.Enqueue(key, now);
   SM_ASSERT_GT(c.stats().flushed, 0u);
-  // Asked again later, the sender answers: the flushed resend is not pending any more.
+  // Asked again later, the sender ignores it: the flushed resend is still pending.
   now = Timestamp::Millis(900);
   sender.OnNack(std::vector<uint16_t>{seq}, now, rtt);
-  SM_EXPECT_EQ(sender.TakePackets().size(), 1u);
+  SM_EXPECT_EQ(sender.TakePackets().size(), 0u);
 }
 
 // Issue #104: the sum of the enforced minimums (audio + video) is the lower bound
