@@ -30,8 +30,9 @@ struct BweTraceRow {
   // kProbeCluster: a probe cluster created (bitrate = its target, packets = its id;
   // libwebrtc's RtcEventProbeClusterCreated). kProbeResult: a probe result
   // (bitrate = the measured rate, 0 on a failure; packets = the cluster id;
-  // RtcEventProbeResultSuccess / Failure). Issue #152.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kProbeCluster, kProbeResult };
+  // RtcEventProbeResultSuccess / Failure). kAlr: the ALR detector's state changed
+  // (bitrate = 1 entering ALR, 0 leaving it; RtcEventAlrState). Issue #152.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kProbeCluster, kProbeResult, kAlr };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

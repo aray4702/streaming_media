@@ -238,6 +238,14 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
     acked_v2_.SetAlrEndedTime(now);
     probe2_.SetAlrEndedTime(now);
   }
+  if (cfg_.bwe_trace && previously_in_alr_ != alr_start_time.has_value()) {
+    // Logged when the feedback sees the change; libwebrtc logs at the send that flips it.
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kAlr;
+    r.bitrate_bps = alr_start_time.has_value() ? 1 : 0;
+    cfg_.bwe_trace->push_back(r);
+  }
   previously_in_alr_ = alr_start_time.has_value();
   acked_v2_.OnPacketResults(SortedByReceiveTime(results));
   std::optional<DataRate> acked = acked_v2_.bitrate();

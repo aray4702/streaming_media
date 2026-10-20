@@ -293,6 +293,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
         case cc::BweTraceRow::Kind::kTarget: ++target; break;
         case cc::BweTraceRow::Kind::kProbeCluster: SM_EXPECT_GT(r.bitrate_bps, int64_t{0}); break;
         case cc::BweTraceRow::Kind::kProbeResult: break;
+        case cc::BweTraceRow::Kind::kAlr: SM_EXPECT_TRUE(r.bitrate_bps == 0 || r.bitrate_bps == 1); break;
       }
     }
     SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);

@@ -45,6 +45,7 @@
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_failure.h"
 #include "logging/rtc_event_log/events/rtc_event_probe_result_success.h"
@@ -113,6 +114,12 @@ class BweTraceLog final : public w::RtcEventLog {
         r.kind = cc::BweTraceRow::Kind::kProbeResult;
         r.bitrate_bps = e->bitrate_bps();
         r.packets = e->id();
+        break;
+      }
+      case w::RtcEvent::Type::AlrStateEvent: {
+        const auto* e = static_cast<const w::RtcEventAlrState*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kAlr;
+        r.bitrate_bps = e->in_alr() ? 1 : 0;
         break;
       }
       case w::RtcEvent::Type::ProbeResultFailure: {
