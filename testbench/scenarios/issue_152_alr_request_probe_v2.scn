@@ -1,0 +1,27 @@
+name issue_152_alr_request_probe_v2
+describe probe_v2_cross_traffic on seed 4: with libwebrtc's ALR settings (80/40/-60) the sender is in ALR when the competing flow joins, so the probe after the drop (ProbeController::RequestProbe) goes out (#152)
+# libwebrtc's AlrDetector runs with WebRTC-ProbingScreenshareBwe's default "1.0,2875,80,40,-60,3"
+# (alr_experiment.cc), read from its live budget in sm_compare (PR #210): in ALR from 5.7 to 13.6 s on
+# probe_v2_cross_traffic seed 1, and it probes 0.85 x the pre-drop rate at 12.3 s. With 0.65/0.80/0.50 our
+# detector was never in ALR, so RequestProbe never probed. On seed 4 the probe now goes out:
+# target 2008 -> 2081 kbps, utilization 65.7 -> 68.4 %. probe_v2_cross_traffic over seeds 1-10 (libwebrtc
+# from parity-data): queue p95 mean 221.5 -> 230.1 ms (libwebrtc 251.2), target 2172 -> 2240 kbps (2257).
+seed 4
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+duration 40s
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+expect cc.target_avg_kbps >= 2040
+expect cc.utilization_pct >= 68
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
+expect cc.unsettled == 0

@@ -389,6 +389,40 @@ SM_TEST(AlrDetector, BandwidthEstimateChanges) {
   SM_EXPECT_TRUE(!d.GetApplicationLimitedRegionStartTime());
 }
 
+// #152: libwebrtc's AlrDetector runs with WebRTC-ProbingScreenshareBwe's default
+// settings ("1.0,2875,80,40,-60,3" in alr_experiment.cc): a budget of 80% of the
+// estimate, ALR from 40% full, out of ALR under -60%.
+SM_TEST(AlrDetector, StartsAt70PercentUsageWithABudgetOf80Percent) {
+  AlrDetector d;
+  d.SetEstimatedBitrate(kEstimatedBitrate);
+  SM_EXPECT_EQ(d.budget().target_rate_kbps(), 240);  // 0.80 x 300 kbps.
+  AlrTraffic t{d, Timestamp::Seconds(1)};
+  // 70% of the estimate fills an 80% budget by 3.75 kB/s; 40% of its 15 kB
+  // takes 1.6 s. With 0.65 the same traffic would overuse it.
+  t.Send(TimeDelta::Millis(1400), 70);
+  SM_EXPECT_TRUE(!d.GetApplicationLimitedRegionStartTime());
+  t.Send(TimeDelta::Millis(400), 70);
+  SM_EXPECT_TRUE(d.GetApplicationLimitedRegionStartTime().has_value());
+}
+
+SM_TEST(AlrDetector, StaysInAlrUntilTheBudgetFallsUnderMinus60Percent) {
+  AlrDetector d;
+  d.SetEstimatedBitrate(kEstimatedBitrate);
+  AlrTraffic t{d, Timestamp::Seconds(1)};
+  t.Send(TimeDelta::Seconds(1), 20);  // The budget fills up (ratio 1).
+  SM_EXPECT_TRUE(d.GetApplicationLimitedRegionStartTime().has_value());
+  // Full usage drains 7.5 kB/s of the 15 kB budget: after 1.2 s the ratio is
+  // about 0.4, under the 0.50 stop level of the struct defaults but still in ALR.
+  t.Send(TimeDelta::Millis(1200), 100);
+  SM_EXPECT_TRUE(d.budget().budget_ratio() < 0.5 && d.budget().budget_ratio() > -0.6);
+  SM_EXPECT_TRUE(d.GetApplicationLimitedRegionStartTime().has_value());
+  // It leaves once the ratio is under -0.60, about 2 s later.
+  t.Send(TimeDelta::Millis(1800), 100);
+  SM_EXPECT_TRUE(d.GetApplicationLimitedRegionStartTime().has_value());
+  t.Send(TimeDelta::Millis(600), 100);
+  SM_EXPECT_TRUE(!d.GetApplicationLimitedRegionStartTime());
+}
+
 SM_TEST(AlrDetector, SubMillisecondGapsRoundToNearest) {
   // #152: OnBytesSent passes delta_time.ms() to IncreaseBudget, and
   // TimeDelta::ms() rounds to the nearest millisecond, so packets 0.6 ms apart

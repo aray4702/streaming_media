@@ -23,7 +23,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 4.3 | [Audio target delay estimation (DelayManager)](4-timing/4.3-delay-manager.md) | 4 | 1 | 1 | pass | pass | pass | pass |
 | 4.4 | [Time stretching (WSOLA accelerate / preemptive expand)](4-timing/4.4-time-stretch.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 4.5 | [Adaptive audio jitter buffer (NetEq-lite)](4-timing/4.5-audio-jitter-buffer.md) | 5 | 1 | 2 | pass | pass | pass | pass |
-| 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 4 | 1 | 2 | pass | pass | pass | pass |
+| 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 4.7 | [Clock drift estimation and compensation](4-timing/4.7-clock-drift.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 
 ## 5. Bandwidth, congestion and unstable links
@@ -66,7 +66,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
-| 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 
 ## 8. Synchronization
