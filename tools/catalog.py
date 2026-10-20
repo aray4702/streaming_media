@@ -432,7 +432,10 @@ ALGORITHMS = [
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
                "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
-               "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24).",
+               "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24). Provisional locks (PR #186, Owner 2026-10-20): "
+               "`issue_53_cwnd_pushback` `video.render_fps >= 14` (was 22; libwebrtc 27.4, ours 16.0; tracked to #24, "
+               "restored when `timing v2` joins the defaults) and `issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` "
+               "(was 380; libwebrtc 451, ours 344; tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
