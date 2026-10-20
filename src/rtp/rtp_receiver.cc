@@ -38,6 +38,22 @@ video::FrameSchedulerConfig SchedulerCfg(const RtpReceiverConfig& c) {
   if (!f.events) f.events = c.events;
   return f;
 }
+timing::VcmTimingConfig VcmTimingCfg(const RtpReceiverConfig& c) {
+  timing::VcmTimingConfig t;
+  t.render_delay = c.timing.render_delay;
+  t.min_playout_delay = c.timing.min_playout_delay;
+  t.max_playout_delay = c.timing.max_playout_delay;
+  return t;
+}
+timing::FrameReleaseConfig ReleaseCfg(const RtpReceiverConfig& c) {
+  timing::FrameReleaseConfig r;
+  r.events = c.events;
+  return r;
+}
+// CallStats::kUpdateInterval: VideoReceiveStream2::OnRttUpdate runs once a second.
+constexpr TimeDelta kRttUpdateInterval = TimeDelta::Seconds(1);
+// Bound on the NACKed-packet set (timing v2); entries leave it when their frame assembles.
+constexpr size_t kMaxNackedSeqs = 1024;
 timing::AudioJitterBufferConfig JitterCfg(const RtpReceiverConfig& c) {
   timing::AudioJitterBufferConfig j = c.jitter_buffer;
   j.sample_rate = c.clock_rate;
@@ -55,11 +71,14 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       keyframes_(KeyframeCfg(cfg_)),
       video_timing_(cfg_.timing),
       scheduler_(SchedulerCfg(cfg_)),
+      vcm_timing_(VcmTimingCfg(cfg_)),
+      release_(&vcm_timing_, ReleaseCfg(cfg_)),
       jitter_buffer_(JitterCfg(cfg_)),
       stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {}
 
 void RtpReceiver::OnRtt(TimeDelta rtt) {
   rtt_ = rtt;
+  have_rtt_ = true;
   nack_.UpdateRtt(rtt);
   keyframes_.UpdateRtt(rtt);
 }
@@ -146,7 +165,14 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that
   // opens a keyframe access unit carries the parameter sets or the IDR slice.
-  if (cfg_.nack) nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
+  if (cfg_.nack) {
+    const int times_nacked = nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
+    // RtpFrameObject::delayed_by_retransmission: a packet of the frame had been NACKed.
+    if (times_nacked > 0 && cfg_.timing.version >= 2) {
+      if (nacked_seqs_.size() >= kMaxNackedSeqs) nacked_seqs_.clear();
+      nacked_seqs_.insert(p.seq);
+    }
+  }
   // An IDR slice that starts a packet (no parameter sets in it) may follow
   // the parameter-set packet of the same access unit.
   if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps) ==
@@ -197,9 +223,14 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
     // repair or a keyframe.
     if (!keyframe) fi.references.push_back(packet_buffer_.PrecedingMediaSeq(f.first_seq));
     keyframes_.OnFrame(fi, now);
-    video_jitter_.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
-    video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
-    FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}};
+    bool retransmitted = false;
+    if (cfg_.timing.version >= 2) {
+      for (const RtpPacket& pkt : f.packets) retransmitted = nacked_seqs_.erase(pkt.seq) > 0 || retransmitted;
+    } else {
+      video_jitter_.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
+      video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
+    }
+    FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}, f.last_arrival, retransmitted};
     if (cfg_.deliver_bitstream && cfg_.parser && !cfg_.parser->Reassemble(f.packets, meta.bitstream)) {
       meta.bitstream.clear();
       ++stats_.reassembly_failures;
@@ -227,29 +258,45 @@ void RtpReceiver::Process(Timestamp now) {
     // delta frame our decodable test is looser than FrameBuffer's continuity, so it clears nothing.
     if (cfg_.nack && it != frames_.end() && it->second.keyframe) nack_.ClearUpTo(static_cast<uint16_t>(id));
     if (it == frames_.end()) continue;
+    ++stats_.frames_scheduled;
+    if (cfg_.timing.version >= 2) {
+      const FrameMeta& m = it->second;
+      release_.Insert({id, m.rtp_timestamp, m.keyframe, DataSize::Bytes(static_cast<int64_t>(m.size_bytes)),
+                       m.receive_time, m.retransmitted});
+      continue;
+    }
     video_timing_.SetJitterDelay(video_jitter_.JitterDelay());
     video_timing_.AddDecodeTime(cfg_.decode_time);
     video_timing_.UpdateCurrentDelay(now);
     scheduler_.Insert({id, video_timing_.RenderTime(it->second.rtp_timestamp, now)});
-    ++stats_.frames_scheduled;
   }
-  for (const auto& a : scheduler_.Process(now)) {
-    keyframes_.OnFrameReleased(now);
-    auto it = frames_.find(a.id);
-    if (it == frames_.end()) continue;
+  auto emit = [&](int64_t id, bool render, Timestamp render_time, TimeDelta lateness) {
+    // Timing v2 drops frames without decoding them; only a decoded frame re-arms the decode time-out.
+    if (render || cfg_.timing.version < 2) keyframes_.OnFrameReleased(now);
+    auto it = frames_.find(id);
+    if (it == frames_.end()) return;
     ReceivedFrame r;
-    r.frame_id = a.id;
+    r.frame_id = id;
     r.rtp_timestamp = it->second.rtp_timestamp;
     r.keyframe = it->second.keyframe;
-    r.render = a.render;
-    r.render_time = a.render_time;
-    r.lateness = a.lateness;
+    r.render = render;
+    r.render_time = render_time;
+    r.lateness = lateness;
     r.size_bytes = it->second.size_bytes;
     r.bitstream = std::move(it->second.bitstream);
     out_frames_.push_back(r);
     frames_.erase(it);
     // RtpVideoStreamReceiver2::FrameDecoded: the packet buffer drops what the decoded frame used.
-    packet_buffer_.ClearTo(a.id);
+    packet_buffer_.ClearTo(id);
+  };
+  if (cfg_.timing.version >= 2) {
+    if (have_rtt_ && (!last_rtt_update_.IsFinite() || now - last_rtt_update_ >= kRttUpdateInterval)) {
+      vcm_timing_.OnNetworkUpdate(rtt_);
+      last_rtt_update_ = now;
+    }
+    for (const auto& a : release_.Process(now, cfg_.decode_time)) emit(a.id, a.decode, a.render_time, a.lateness);
+  } else {
+    for (const auto& a : scheduler_.Process(now)) emit(a.id, a.render, a.render_time, a.lateness);
   }
   if (cfg_.nack) {
     auto batch = nack_.GetNackBatch(now);

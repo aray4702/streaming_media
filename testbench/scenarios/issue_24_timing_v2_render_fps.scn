@@ -1,0 +1,26 @@
+name issue_24_timing_v2_render_fps
+describe issue_53_cwnd_pushback with every v2 switch and libwebrtc's receive timing (timing v2): late frames are rendered, not dropped (issue #24)
+duration 25s
+at 0s  capacity=2500kbps delay=30ms queue=100ms
+at 8s  capacity=500kbps
+cc v2
+pacer v2
+tcc v2
+rtx v2
+rtcp v2
+keyframe v2
+allocator v2
+packetization v2
+audio v2
+timing v2
+# libwebrtc's VideoStreamBufferController skips a late frame only when a later
+# temporal unit is already decodable (FrameDecodeTiming::OnFrameBufferUpdated,
+# frame_decode_timing.cc:45); with every delta frame referencing the one before
+# it, that is never the case, so late frames are decoded and shown. timing v1's
+# FrameScheduler drops frames more than 10 ms late whenever a newer one is due.
+# Seeds 1-10: timing v1 16.0-20.8 fps; timing v2 28.8-29.2; libwebrtc on
+# issue_53_cwnd_pushback 27-28 (mean 27.5, parity-data main be4bfbc).
+expect video.render_fps >= 28
+expect video.residual_loss_pct <= 1.0
+# Freezes: timing v1 2806-5621 ms, timing v2 1616-3793, libwebrtc 1512-4207.
+expect video.freeze_total_ms < 5000

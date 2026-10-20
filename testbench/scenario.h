@@ -79,6 +79,7 @@ struct Scenario {
   bool cc_v2 = false;  // `cc v2`: libwebrtc's GoogCC, ported in stages (issues #61, #19; default v1).
   bool allocator_v2 = false;  // `allocator v2`: libwebrtc's BitrateAllocator and its minimum as the target's lower bound (issue #104; default v1).
   bool audio_v2 = false;  // `audio v2`: libwebrtc's Opus send path as the bench can model it: VBR frame sizes (issue #126; default v1).
+  bool timing_v2 = false;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v1).
   bool pacer_v2 = false;  // `pacer v2`: libwebrtc's PacingController (default v1, the library's own pacer).
 
   // Congestion control.

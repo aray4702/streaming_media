@@ -474,6 +474,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
   if (s.keyframe_v2) video_cfg.keyframe.version = 2;
+  if (s.timing_v2) video_cfg.timing.version = 2;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
   const bool video_fec = s.video && rtp::VideoFecEnabled(video_cfg);
@@ -532,9 +533,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     registry.Register("receiver.fec", &vr.fec());
     registry.Register("receiver.packet_buffer", &vr.packet_buffer());
     registry.Register("receiver.keyframes", &vr.keyframes());
-    registry.Register("receiver.video_jitter", &vr.video_jitter());
-    registry.Register("receiver.video_timing", &vr.video_timing());
-    registry.Register("receiver.frame_scheduler", &vr.scheduler());
+    if (s.timing_v2) {
+      registry.Register("receiver.vcm_timing", &vr.vcm_timing());
+      registry.Register("receiver.frame_release", &vr.frame_release());
+    } else {
+      registry.Register("receiver.video_jitter", &vr.video_jitter());
+      registry.Register("receiver.video_timing", &vr.video_timing());
+      registry.Register("receiver.frame_scheduler", &vr.scheduler());
+    }
   }
   if (s.audio) {
     registry.Register("sender.audio", &sender.audio_sender(audio_send));
