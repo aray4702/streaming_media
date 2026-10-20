@@ -21,6 +21,9 @@ at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
 expect video.freeze_count == 0
-expect cc.queue_p95_ms < 250
+# Guard rail moved in the #152 link_allocation port (program.md 0.2), signed off by the Owner
+# on #178 at 2026-10-20 06:50 UTC: libwebrtc's queue p95 on cross_traffic is 263.5 ms, so it
+# fails the old < 250 line (same move as #177).
+expect cc.queue_p95_ms < 300
 expect cc.unsettled == 0
 expect cc.utilization_pct >= 68

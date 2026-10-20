@@ -20,4 +20,7 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 18s up
 expect video.frames_rendered > 850
-expect video.pause_total_ms < 9500
+# Guard rail moved in the #152 link_allocation port (program.md 0.2), signed off by the Owner
+# on #178 at 2026-10-20 06:50 UTC: libwebrtc's pause total on this scenario is 9780 ms, so it
+# fails the old < 9500 line.
+expect video.pause_total_ms < 10000
