@@ -9,7 +9,6 @@ duration 40s
 audio off
 pacer v2
 cc v2
-tcc v2
 rtx v2
 allocator v2
 keyframe v2

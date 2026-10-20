@@ -45,7 +45,7 @@ Session::Session(SessionConfig cfg)
     : cfg_(std::move(cfg)),
       rtcp_(MakeRtcpConfig(cfg_)),
       send_(MakeSendConfig(cfg_), &cfg_.extensions),
-      tcc_(cfg_.local_ssrc, 0, cc::FeedbackBuilderConfig{cfg_.transport_feedback_version}),
+      tcc_(cfg_.local_ssrc, 0),
       demux_(cfg_.extensions) {}
 
 RtpSenderConfig Session::SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const {
@@ -256,7 +256,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
-  if (keyframe && cfg_.rtcp.version >= 2 && rtcp_.ReportDue(now, true)) {
+  if (keyframe && rtcp_.ReportDue(now, true)) {
     UpdateSenderState();
     for (RtcpOutgoing& o : rtcp_.SendReport(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
@@ -428,16 +428,7 @@ void Session::Process(Timestamp now) {
     if (fb.pli) rtcp_.QueuePli(v.ssrc);
   }
   // Transport-wide feedback covers every stream of the transport.
-  if (cfg_.transport_feedback_version >= 2) {
-    ProcessTransportFeedbackV2(now);
-  } else {
-    UpdateTransportFeedbackRate();
-    if (cfg_.transport_feedback_interval.us() > 0 &&
-        (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
-      last_tcc_ = now;
-      for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
-    }
-  }
+  ProcessTransportFeedback(now);
   // Paced media.
   if (HasSendStreams()) {
     for (ReleasedPacket& r : send_.Process(now)) {
@@ -460,25 +451,24 @@ void Session::Process(Timestamp now) {
   }
 }
 
-// Version 2 (libwebrtc): the generator's interval follows this endpoint's own
+// libwebrtc: the generator's interval follows this endpoint's own
 // send estimate; a receive-only endpoint runs on the congestion controller's
 // start rate, as libwebrtc's Call does before any feedback.
 void Session::UpdateTransportFeedbackRate() {
-  if (cfg_.transport_feedback_version < 2) return;
   const DataRate estimate = HasSendStreams() && started_ ? send_.target() : cfg_.send_side.gcc.start_rate;
   if (estimate == last_tcc_estimate_) return;
   last_tcc_estimate_ = estimate;
   tcc_.OnSendBandwidthEstimateChanged(estimate);
 }
 
-// Version 2: Call::EnsureStarted starts the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess
+// Call::EnsureStarted starts the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess
 // before it registers for OnTargetTransferRate (call/call.cc), so the generator's first Process sees its default
 // 100 ms interval and the first feedback goes out 100 ms after the start; the rate-based interval applies from
 // then on. TransportSequenceNumberFeedbackGenenerator::Process
 // (modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.cc) sends when
 // last_process_time_ + send_interval_ has passed and returns the delay to the task's next run, so a longer
 // interval takes effect at once and a shorter one at the next wake-up.
-void Session::ProcessTransportFeedbackV2(Timestamp now) {
+void Session::ProcessTransportFeedback(Timestamp now) {
   if (cfg_.transport_feedback_interval.us() > 0 && now >= tcc_wake_) {
     const TimeDelta interval = tcc_.Interval();
     if (!last_tcc_.IsFinite() || now >= last_tcc_ + interval) {
@@ -492,19 +482,11 @@ void Session::ProcessTransportFeedbackV2(Timestamp now) {
   UpdateTransportFeedbackRate();  // Call::OnTargetTransferRate -> ReceiveSideCongestionController::OnBitrateChanged.
 }
 
-TimeDelta Session::TransportFeedbackInterval() const {
-  return cfg_.transport_feedback_version < 2 ? cfg_.transport_feedback_interval : tcc_.Interval();
-}
-
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
-  if (cfg_.transport_feedback_version >= 2) {
-    if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
-  } else if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
-    next = std::min(next, last_tcc_ + TransportFeedbackInterval());
-  }
+  if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
   return std::max(next, now);
 }
 

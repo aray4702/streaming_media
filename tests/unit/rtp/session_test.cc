@@ -377,9 +377,8 @@ SM_TEST(Session, VideoFecEnabledFollowsTheDecision) {
 namespace {
 // `a` sends one audio frame every 20 ms to a receive-only `b`; returns how many
 // transport-cc messages `b` built in 2 s.
-uint64_t FeedbacksIn2s(int version, DataRate start_rate) {
+uint64_t FeedbacksIn2s(DataRate start_rate) {
   SessionConfig ca = Cfg(1), cb = Cfg(2);
-  cb.transport_feedback_version = version;
   cb.send_side.gcc.start_rate = start_rate;
   Session a(ca), b(cb);
   NullDecoder dec;
@@ -400,11 +399,9 @@ uint64_t FeedbacksIn2s(int version, DataRate start_rate) {
 }
 }  // namespace
 
-SM_TEST(Session, TransportFeedbackV2IntervalFollowsTheLocalSendEstimate) {
-  const uint64_t v1 = FeedbacksIn2s(1, DataRate::KilobitsPerSec(300));
-  const uint64_t fast = FeedbacksIn2s(2, DataRate::KilobitsPerSec(300));  // 50 ms.
-  const uint64_t slow = FeedbacksIn2s(2, DataRate::KilobitsPerSec(40));   // 250 ms.
-  SM_EXPECT_NEAR(static_cast<double>(v1), 40, 2);
+SM_TEST(Session, TransportFeedbackIntervalFollowsTheLocalSendEstimate) {
+  const uint64_t fast = FeedbacksIn2s(DataRate::KilobitsPerSec(300));  // 50 ms.
+  const uint64_t slow = FeedbacksIn2s(DataRate::KilobitsPerSec(40));   // 250 ms.
   SM_EXPECT_NEAR(static_cast<double>(fast), 40, 2);
   SM_EXPECT_NEAR(static_cast<double>(slow), 8, 2);
 }
@@ -414,7 +411,7 @@ SM_TEST(Session, TransportFeedbackV2IntervalFollowsTheLocalSendEstimate) {
 // its default 100 ms interval: libwebrtc's first feedback goes out at 100 ms,
 // then every 50 ms (at 300 kbps). Seed 1 of issue_120_rtx_payload_padding: the
 // first delay-based update is at 115 ms, then every 50 ms.
-SM_TEST(Session, TransportFeedbackV2FirstReportWaitsTheDefaultInterval) {
+SM_TEST(Session, TransportFeedbackFirstReportWaitsTheDefaultInterval) {
   SessionConfig ca = Cfg(1), cb = Cfg(2);
   Session a(ca), b(cb);
   NullDecoder dec;
@@ -447,12 +444,11 @@ SM_TEST(Session, TransportFeedbackV2FirstReportWaitsTheDefaultInterval) {
   for (size_t i = 1; i < 6; ++i) SM_EXPECT_EQ(sent_at[i] - sent_at[i - 1], 50);
 }
 
-// RtpRtcpImpl2::OnSendingRtpFrame (#101): with `rtcp v2` a report due within
-// 100 ms is sent ahead of a keyframe, not on the next Process tick.
-SM_TEST(Session, V2SendsADueSenderReportAheadOfAKeyframe) {
-  auto run = [](int version, bool keyframe) {
+// RtpRtcpImpl2::OnSendingRtpFrame (#101): a report due within 100 ms is sent
+// ahead of a keyframe, not on the next Process tick.
+SM_TEST(Session, SendsADueSenderReportAheadOfAKeyframe) {
+  auto run = [](bool keyframe) {
     SessionConfig c = Cfg(1);
-    c.rtcp.version = version;
     c.rtcp.first_report_delay = TimeDelta::Millis(1000);
     Session s(c);
     AudioStreamConfig au;
@@ -467,9 +463,8 @@ SM_TEST(Session, V2SendsADueSenderReportAheadOfAKeyframe) {
     for (auto& o : s.TakeOutgoing()) rtcp += o.kind == OutgoingKind::kRtcp;
     return rtcp;
   };
-  SM_EXPECT_EQ(run(2, true), 1u);
-  SM_EXPECT_EQ(run(2, false), 0u);
-  SM_EXPECT_EQ(run(1, true), 0u);
+  SM_EXPECT_EQ(run(true), 1u);
+  SM_EXPECT_EQ(run(false), 0u);
 }
 
 // VideoSendStreamImpl (#187): a video stream with the transport-cc extension
@@ -502,13 +497,10 @@ SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
   SM_EXPECT_EQ(c.send_side.gcc.version, 2);
   SM_EXPECT_TRUE(c.send_side.pacer.version == cc::PacerVersion::kV2);
   SM_EXPECT_EQ(c.send_side.allocator_version, 2);
-  SM_EXPECT_EQ(c.transport_feedback_version, 2);
-  SM_EXPECT_EQ(c.rtcp.version, 2);
   SM_EXPECT_EQ(c.rtx_version, 2);
   SM_EXPECT_EQ(c.packetization_version, 2);
   SM_EXPECT_EQ(VideoStreamConfig{}.keyframe.version, 2);
   SM_EXPECT_EQ(cc::GccConfig{}.version, 1);
   SM_EXPECT_TRUE(cc::PacerConfig{}.version == cc::PacerVersion::kV1);
-  SM_EXPECT_EQ(RtcpConfig{}.version, 1);
   SM_EXPECT_EQ(loss::KeyframeRequestConfig{}.version, 1);
 }

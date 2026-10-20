@@ -43,14 +43,10 @@ struct RtcpConfig {
   // Time from the first Process call to the first report; zero = half the
   // interval, like RTCPSender. Lets the test bench keep its report phases.
   TimeDelta first_report_delay = TimeDelta::Zero();
-  // libwebrtc draws each interval uniformly from 0.5 to 1.5 times the
-  // nominal one. Off keeps the reports on a fixed grid.
-  bool randomize_intervals = false;
-  // 2 = libwebrtc's `RTCPSender::ComputeTimeUntilNextReport` (#76): every
-  // interval is a whole number of milliseconds drawn from [0.5, 1.5] x the
-  // minimum, at least 1 ms, and a video sender above 72 kbit/s uses
-  // min(360 / kbit/s s, interval) (RFC 3550 6.2). Implies randomization.
-  int version = 1;
+  // Intervals follow libwebrtc's `RTCPSender::ComputeTimeUntilNextReport`
+  // (#76): every interval is a whole number of milliseconds drawn from
+  // [0.5, 1.5] x the minimum, at least 1 ms, and a video sender above
+  // 72 kbit/s uses min(360 / kbit/s s, interval) (RFC 3550 6.2).
   // Reduced-size RTCP (RFC 5506): early feedback is sent without the leading
   // SR/RR. Only when the peer negotiated it.
   bool reduced_size = false;
@@ -153,7 +149,7 @@ class RtcpEngine : public MetricsSource {
   void QueueBye(std::span<const uint32_t> ssrcs, std::string reason = {});
 
   // `RTCPSender::TimeToSendRTCPReport(send_keyframe_before_rtp)`: a report is
-  // due. With a keyframe about to be sent on a video stream (version 2) a
+  // due. With a keyframe about to be sent on a video stream a
   // report due within 100 ms counts, so it goes out before the large frame.
   bool ReportDue(Timestamp now, bool keyframe_before_rtp = false) const;
   // Sends the report now (`SendRTCP(kRtcpReport)`) and schedules the next one

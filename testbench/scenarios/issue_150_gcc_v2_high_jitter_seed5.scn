@@ -8,9 +8,7 @@ describe issue_150_gcc_v2_high_jitter with seed 5: the seed where our target ran
 # Seed 5: before 64-65 % utilization, after 34.5 %.
 cc v2
 pacer v2
-tcc v2
 rtx v2
-rtcp v2
 keyframe v2
 allocator v2
 packetization v2
