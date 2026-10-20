@@ -1,29 +1,29 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-72 scenarios, mean of 10 seeds. **523 gaps**: 265 behind libwebrtc, 258 ahead of it; 0 without an owner.
+72 scenarios, mean of 10 seeds. **520 gaps**: 261 behind libwebrtc, 259 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-520 gaps on `main`, 523 here: **2 closed, 5 opened**, 0 changed direction.
+519 gaps on `main`, 520 here: **3 closed, 4 opened**, 0 changed direction.
 
 Closed:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
 | issue_15_aimd_v2_cross_traffic | `cc.queue_p95_ms` | 222 | 251 | ±23.2 | ahead | 6/10 | #19, #15, #48, #12, #61 |
+| issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.5 | 7.3 | ±2 | behind | 6/10 | #21, #7, #29 |
 | probe_v2_cross_traffic | `cc.queue_p95_ms` | 222 | 251 | ±23.2 | ahead | 6/10 | #19, #15, #48, #12, #61 |
 
 Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| issue_133_all_v2_outage_8s | `video.e2e_delay_p95_ms` | 515 | 325 | ±80.2 | behind | 8/10 | #24, #37 |
+| issue_133_all_v2_outage_8s | `video.e2e_delay_p95_ms` | 465 | 325 | ±80.2 | behind | 8/10 | #24, #37 |
 | issue_152_link_allocation_v2 | `audio.mouth_to_ear_p95_ms` | 83.7 | 98.9 | ±10 | ahead | 9/10 | #62, #63 |
 | issue_152_link_allocation_v2 | `audio.jb_delay_p95_ms` | 29 | 64 | ±10 | ahead | 10/10 | #62, #63 |
-| issue_61_googcc_glue_congestive | `video.freeze_count` | 4.1 | 5.4 | ±1.3 | ahead | 8/10 | #5, #37, #24 |
-| issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.6 | 7.3 | ±2 | behind | 5/10 | #21, #7, #29 |
+| issue_61_googcc_glue_congestive | `video.freeze_count` | 4 | 5.4 | ±1.3 | ahead | 7/10 | #5, #37, #24 |
 
 Still gaps, distance to libwebrtc changed by more than 10%:
 
@@ -32,9 +32,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_151_outage_3s_v2 | `video.e2e_delay_p95_ms` | 40.8 | 46.8 (further) |
 | issue_15_aimd_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 208 | 182 (closer) |
 | issue_15_aimd_v2_cross_traffic | `cc.rtt_p50_ms` | 18.0 | 47.3 (further) |
-| issue_61_googcc_glue_congestive | `video.render_fps` | 3.9 | 4.6 (further) |
-| issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 158 | 219 (further) |
-| issue_61_googcc_glue_congestive | `net.loss_pct` | 1.8 | 2.1 (further) |
+| issue_61_googcc_glue_congestive | `net.loss_pct` | 1.5 | 1.2 (closer) |
 | probe_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 208 | 182 (closer) |
 | probe_v2_cross_traffic | `cc.rtt_p50_ms` | 18.0 | 47.3 (further) |
 | very_low_capacity_allocator_v2 | `video.freeze_total_ms` | 9574 | 8126 (closer) |
@@ -123,13 +121,13 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_126_audio_v2 | `audio.jb_delay_p95_ms` | 18 | 36 | ±10 | ahead | 10/10 | #62, #63 |
 | issue_126_audio_v2 | `cc.rtt_p50_ms` | 73.7 | 63.0 | ±10 | behind | 7/10 | #61 |
 | issue_126_audio_v2 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 10/10 | #23 |
-| issue_127_all_v2_no_stall | `audio.concealed_pct` | 0.9 | 0.2 | ±0.5 | behind | 9/10 | #62, #63 |
-| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 91.2 | 158 | ±27.0 | ahead | 9/10 | #62, #63 |
-| issue_127_all_v2_no_stall | `audio.mouth_to_ear_p95_ms` | 299 | 347 | ±29.2 | ahead | 9/10 | #62, #63 |
-| issue_127_all_v2_no_stall | `video.e2e_delay_p95_ms` | 482 | 441 | ±24.1 | behind | 7/10 | #24, #37 |
-| issue_127_all_v2_no_stall | `video.freeze_count` | 4.6 | 61.6 | ±6.1 | ahead | 10/10 | #5, #37, #24 |
-| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 1375 | 17971 | ±1617 | ahead | 10/10 | #5, #37, #24 |
-| issue_127_all_v2_no_stall | `video.longest_freeze_ms` | 463 | 612 | ±100 | ahead | 5/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `audio.concealed_pct` | 0.8 | 0.2 | ±0.5 | behind | 9/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 89.6 | 158 | ±27.0 | ahead | 10/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `audio.mouth_to_ear_p95_ms` | 299 | 347 | ±29.2 | ahead | 8/10 | #62, #63 |
+| issue_127_all_v2_no_stall | `repair.overhead_pct` | 31.9 | 37.2 | ±2 | ahead | 10/10 | #21, #7, #29 |
+| issue_127_all_v2_no_stall | `video.freeze_count` | 3 | 61.6 | ±6.1 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 852 | 17971 | ±1617 | ahead | 10/10 | #5, #37, #24 |
+| issue_127_all_v2_no_stall | `video.longest_freeze_ms` | 374 | 612 | ±100 | ahead | 9/10 | #5, #37, #24 |
 | issue_127_pacer_v2_jitter_reorder_loss | `audio.concealed_pct` | 1.0 | 0.1 | ±0.5 | behind | 10/10 | #62, #63 |
 | issue_127_pacer_v2_jitter_reorder_loss | `audio.jb_delay_p95_ms` | 72 | 98 | ±10.3 | ahead | 8/10 | #62, #63 |
 | issue_127_pacer_v2_jitter_reorder_loss | `cc.max_settle_ms` | 32040 | 17290 | ±10994 | behind | 8/10 | #15, #48, #61, #20 |
@@ -206,9 +204,9 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_12_lossbwe_shallow_step | `video.longest_freeze_ms` | 16.2 | 451 | ±100 | ahead | 10/10 | #5, #37, #24 |
 | issue_133_all_v2_outage_15s | `cc.rtt_p50_ms` | 109 | 90.2 | ±10 | behind | 7/10 | #61 |
 | issue_133_all_v2_outage_15s | `video.e2e_delay_p95_ms` | 173 | 92.7 | ±10 | behind | 10/10 | #24, #37 |
-| issue_133_all_v2_outage_3s | `cc.rtt_p50_ms` | 110 | 93.2 | ±10 | behind | 10/10 | #61 |
+| issue_133_all_v2_outage_3s | `cc.rtt_p50_ms` | 109 | 93.2 | ±10 | behind | 10/10 | #61 |
 | issue_133_all_v2_outage_8s | `cc.rtt_p50_ms` | 109 | 93.6 | ±10 | behind | 8/10 | #61 |
-| issue_133_all_v2_outage_8s | `video.e2e_delay_p95_ms` | 515 | 325 | ±80.2 | behind | 8/10 | #24, #37 |
+| issue_133_all_v2_outage_8s | `video.e2e_delay_p95_ms` | 465 | 325 | ±80.2 | behind | 8/10 | #24, #37 |
 | issue_133_pacer_v2_outage_15s | `cc.max_settle_ms` | 200 | 15000 | ±750 | ahead | 10/10 | #15, #48, #61, #20 |
 | issue_133_pacer_v2_outage_15s | `cc.utilization_pct` | 89.4 | 101 | ±5.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
 | issue_133_pacer_v2_outage_15s | `net.loss_pct` | 5.1 | 11.3 | ±0.6 | ahead | 10/10 | #21, #61, #12 |
@@ -400,13 +398,10 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_5_keyframe_flush | `video.keyframe_requests` | 6 | 0 | ±0.5 | behind | 10/10 | #23 |
 | issue_5_keyframe_flush | `video.longest_freeze_ms` | 1326 | 1795 | ±258 | ahead | 8/10 | #5, #37, #24 |
 | issue_61_googcc_glue_congestive | `audio.jb_delay_p95_ms` | 60 | 87 | ±10.6 | ahead | 9/10 | #62, #63 |
-| issue_61_googcc_glue_congestive | `cc.queue_p95_ms` | 57.0 | 45.3 | ±10 | behind | 7/10 | #19, #15, #48, #12, #61 |
-| issue_61_googcc_glue_congestive | `cc.rtt_p50_ms` | 105 | 81.2 | ±10 | behind | 10/10 | #61 |
-| issue_61_googcc_glue_congestive | `net.loss_pct` | 6.0 | 3.9 | ±0.8 | behind | 10/10 | #21, #61, #12 |
-| issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.6 | 7.3 | ±2 | behind | 5/10 | #21, #7, #29 |
-| issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 651 | 432 | ±93.5 | behind | 8/10 | #24, #37 |
-| issue_61_googcc_glue_congestive | `video.freeze_count` | 4.1 | 5.4 | ±1.3 | ahead | 8/10 | #5, #37, #24 |
-| issue_61_googcc_glue_congestive | `video.render_fps` | 25.3 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
+| issue_61_googcc_glue_congestive | `cc.rtt_p50_ms` | 101 | 81.2 | ±10 | behind | 10/10 | #61 |
+| issue_61_googcc_glue_congestive | `net.loss_pct` | 5.1 | 3.9 | ±0.8 | behind | 8/10 | #21, #61, #12 |
+| issue_61_googcc_glue_congestive | `video.freeze_count` | 4 | 5.4 | ±1.3 | ahead | 7/10 | #5, #37, #24 |
+| issue_61_googcc_glue_congestive | `video.render_fps` | 25.8 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_76_packetization_v2 | `audio.jb_delay_p95_ms` | 42.4 | 86 | ±33.1 | ahead | 10/10 | #62, #63 |
 | issue_76_packetization_v2 | `cc.max_settle_ms` | 8890 | 1130 | ±2665 | behind | 8/10 | #15, #48, #61, #20 |
 | issue_76_packetization_v2 | `cc.queue_p95_ms` | 10.8 | 27.6 | ±11.9 | ahead | 8/10 | #19, #15, #48, #12, #61 |
