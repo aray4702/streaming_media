@@ -88,6 +88,10 @@ audio/audio_send_stream.h
 audio/audio_send_stream.cc
 modules/audio_coding/codecs/opus/audio_encoder_opus.h
 modules/audio_coding/codecs/opus/audio_encoder_opus.cc
+modules/audio_coding/codecs/opus/audio_decoder_opus.h
+modules/audio_coding/codecs/opus/audio_decoder_opus.cc
+modules/congestion_controller/receive_side_congestion_controller.cc
+modules/congestion_controller/include/receive_side_congestion_controller.h
 api/video/frame_buffer.h
 api/video/frame_buffer.cc
 video/video_stream_buffer_controller.h
