@@ -58,7 +58,10 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
 - **The same links.** Packets travel over this repository's
   `sim::NetworkLink`, which applies the scenario's timeline through
   `testbench::LinkTimeline`, with the same seeds and the same cross
-  traffic as `sm_testbench`.
+  traffic as `sm_testbench`. A link change at time t applies to every
+  packet sent at t or later on both stacks: each transport applies the
+  changes due before it sends, because a libwebrtc task due in the same
+  millisecond can run before the harness tick (issue #151).
 - **Simulated time.** Release builds of libwebrtc leave out its
   simulated-time test harness, so [sim_time.cc](webrtc/sim_time.cc)
   provides one: a clock plus task queues that jump from one due task to
