@@ -695,14 +695,23 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     recv_call->SignalChannelNetworkState(w::MediaType::VIDEO, w::kNetworkUp);
   });
   run_on(sender_q.get(), [&] {
-    w::NetworkRoute route;
-    route.connected = true;
-    route.packet_overhead = static_cast<int>(kUdpIpOverhead);
-    send_call->GetTransportControllerSend()->OnNetworkRouteChanged("sm-link", route);
     send_call->SignalChannelNetworkState(w::MediaType::AUDIO, w::kNetworkUp);
     send_call->SignalChannelNetworkState(w::MediaType::VIDEO, w::kNetworkUp);
     if (audio_send) audio_send->Start();
     if (video_send) video_send->Start();
+    // The route (and its transport overhead) arrives after the streams start, as in a
+    // call where ICE/DTLS connects after negotiation (issue #196). With the route first,
+    // AudioSendStream::Start registers with BitrateAllocator before it knows the 28 B,
+    // and the allocator's synchronous OnBitrateUpdated updates overhead_per_packet_
+    // before registered_with_allocator_ is set (audio_send_stream.cc
+    // ConfigureBitrateObserver, UpdateOverheadPerPacket), so the allocator kept
+    // reserving 32 kbps + 20 B / 20 ms = 40 kbps for the whole call while the stream
+    // used 32 kbps + 48 B / 20 ms = 51.2 kbps. Now OnTransportOverheadChanged
+    // reallocates and audio re-registers with 48 B.
+    w::NetworkRoute route;
+    route.connected = true;
+    route.packet_overhead = static_cast<int>(kUdpIpOverhead);
+    send_call->GetTransportControllerSend()->OnNetworkRouteChanged("sm-link", route);
   });
 
   // --- Media and network, stepped every 1 ms like testbench/call.cc ----------
