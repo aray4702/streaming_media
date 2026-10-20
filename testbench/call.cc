@@ -178,6 +178,12 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
+DataRate AudioAllocationRate(const Scenario& s) {
+  if (!s.audio) return DataRate::Zero();
+  const int64_t rtp_header = s.allocator_v2 ? 12 + 8 : 12 + 4;
+  return DataRate::BitsPerSec(s.audio_bitrate.bps() + (rtp_header + kUdpIpOverhead) * 8 * 50);
+}
+
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
@@ -440,7 +446,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   audio_cfg.clock_rate = sr;
   audio_cfg.nominal_rate = audio_wire_rate;
   // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
-  audio_cfg.allocation_rate = s.audio ? DataRate::BitsPerSec(s.audio_bitrate.bps() + (12 + 4 + kUdpIpOverhead) * 8 * 50) : DataRate::Zero();
+  audio_cfg.allocation_rate = AudioAllocationRate(s);
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;

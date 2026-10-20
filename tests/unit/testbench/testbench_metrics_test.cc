@@ -180,6 +180,17 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
   SM_EXPECT_TRUE(std::abs(static_cast<double>(video_bytes) * 8 / 1000.0 / 4.0 - video_kbps) < 0.01);
 }
 
+// libwebrtc's AudioSendStream registers 32000 + 48 B / 20 ms with BitrateAllocator
+// (issue #196: 51200 in sm_compare once the route arrives after Start, PR #198).
+SM_TEST(TestbenchMetrics, AudioAllocationRateUnderAllocatorV2IsLibwebrtcs) {
+  Scenario s;
+  SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(49600));
+  s.allocator_v2 = true;
+  SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(51200));
+  s.audio = false;
+  SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(0));
+}
+
 // The per-second video send trace (issue #131).
 SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   std::vector<VideoTraceRow> trace(2);
