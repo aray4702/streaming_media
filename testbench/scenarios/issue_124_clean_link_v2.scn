@@ -28,7 +28,6 @@ describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch on: the q
 compare_seeds 40
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 packetization v2

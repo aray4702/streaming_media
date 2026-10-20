@@ -199,4 +199,132 @@ class NetEqExpand {
   int mute_slope_ = 0;
 };
 
+// modules/audio_coding/neteq/merge.cc, one channel: the join of a decoded
+// packet onto an expansion when the packet after a gap arrives (the gap was
+// a loss, not a late packet). Expand runs once more, without muting, and its
+// period is repeated after the sync buffer's unplayed samples to 202 ms * fs/8000.
+// The decoded audio is placed at the lag where its first 10 ms correlate best
+// with that signal at 4 kHz (CorrelateAndPeakSearch: at most max_lag, and far
+// enough on that the sync buffer then holds 10 ms plus Expand's overlap and
+// all its old samples). The decoded audio starts from the larger of Expand's
+// mute factor and SignalScaling's sqrt(expanded energy / decoded energy) over
+// the first 8 ms, unmuting by at least 4194 / (fs/8000) in Q20 per sample, and
+// is crossfaded in linearly over min(60 * fs/8000 samples, what is left of
+// the expansion, the decoded length).
+class NetEqMerge {
+ public:
+  static constexpr size_t kMaxSampleRate = 48000;
+  static constexpr size_t kExpandDownsampLength = 100;
+  static constexpr size_t kInputDownsampLength = 40;
+  static constexpr size_t kMaxCorrelationLength = 60;
+  // GetExpandedSignal keeps at most this many unplayed samples.
+  static constexpr size_t kMaxOldLength = 210 * kMaxSampleRate / 8000;
+
+  // `sample_rate` is 8000, 16000, 32000 or 48000.
+  explicit NetEqMerge(int sample_rate);
+
+  // Merge::Process. `sync` is the sync buffer, oldest sample first, whose
+  // last `future_length` samples (at least Expand's overlap) are not played
+  // yet. The first old_length() samples of the merged signal overwrite the
+  // unplayed ones, and the rest is appended to `out`; returns that length.
+  // An unplayed part longer than kMaxOldLength is cut to its first
+  // kMaxOldLength samples, with zeros put before it, as SyncBuffer's
+  // InsertZerosAtIndex does.
+  size_t Process(std::span<const float> input, std::vector<float>& sync, size_t future_length, NetEqExpand& expand,
+                 std::vector<float>& out);
+  // Merge::SignalScaling on int16 samples: sqrt(expanded / input energy) in
+  // Q14 over the first min(64 * fs/8000, input_length) samples, or 16384
+  // when the expansion is the louder.
+  static int16_t SignalScaling(const int16_t* input, size_t input_length, const int16_t* expanded, int fs_mult);
+
+  size_t old_length() const { return old_length_; }
+  size_t best_correlation_index() const { return best_correlation_index_; }
+  int16_t mute_factor() const { return mute_factor_; }  // Q14, where the decoded audio started.
+
+ private:
+  // Merge::Downsample: both signals to 4 kHz (int16 scale).
+  void Downsample(const float* input, size_t input_length, const float* expanded, size_t expanded_length);
+  size_t CorrelateAndPeakSearch(size_t start_position, size_t input_length, size_t expand_period,
+                                const NetEqExpand& expand) const;
+
+  int fs_hz_;
+  int fs_mult_;
+  size_t timestamps_per_call_;
+  float expanded_downsampled_[kExpandDownsampLength] = {};
+  float input_downsampled_[kInputDownsampLength] = {};
+  std::vector<float> expanded_, expanded_temp_, temp_data_;
+  size_t old_length_ = 0;
+  size_t best_correlation_index_ = 0;
+  int16_t mute_factor_ = 16384;
+};
+
+// modules/audio_coding/neteq/time_stretch.cc with accelerate.cc and
+// preemptive_expand.cc, one channel: the DSP of `neteq v2`'s accelerate and
+// preemptive expand. The input is at least 30 ms (NetEqImpl borrows from the
+// sync buffer to get there). It is downsampled to 4 kHz with the filter delay
+// compensated, and the strongest autocorrelation peak between lags 10 and 59
+// (2.5-15 ms) gives the pitch period L. The two periods either side of 15 ms
+// are compared:
+//   - a simple VAD calls the block passive speech when their energy per
+//     sample is at most 8x the background noise energy (75000 / 16 per sample
+//     before the noise is estimated); then any period works;
+//   - otherwise their correlation in Q14 must exceed 0.9 (14746; 0.5 for
+//     fast accelerate), and preemptive expand also needs at most 15 ms of
+//     already-played samples at the start.
+// Accelerate crossfades the period before 15 ms into the one after it, which
+// removes L samples (fast mode removes as many whole periods as fit in
+// 15 ms). Preemptive expand repeats the period before max(15 ms, old data),
+// which adds L samples. The crossfade is AudioVector::CrossFade's linear ramp
+// of step 16384 / (L + 1).
+//
+// The decision values (energies, the VAD, the correlation, the scaling
+// shifts) keep libwebrtc's integer arithmetic on the int16 samples; the
+// stretched signal is float.
+class NetEqTimeStretch {
+ public:
+  enum class Result { kSuccess, kSuccessLowEnergy, kNoStretch, kError };
+  static constexpr size_t kCorrelationLen = 50;
+  static constexpr size_t kMinLag = 10;
+  static constexpr size_t kMaxLag = 60;
+  static constexpr size_t kDownsampledLen = kCorrelationLen + kMaxLag;
+  static constexpr int kCorrelationThreshold = 14746;  // 0.9 in Q14.
+  static constexpr int kFastCorrelationThreshold = 8192;  // 0.5 in Q14.
+
+  // `sample_rate` is 8000, 16000, 32000 or 48000.
+  explicit NetEqTimeStretch(int sample_rate);
+
+  // Accelerate::Process: appends the stretched `input` to `out`, and sets
+  // `length_change` to the samples removed (0 unless it succeeded).
+  Result Accelerate(std::span<const float> input, bool fast_mode, const NetEqBackgroundNoise& background_noise,
+                    std::vector<float>& out, size_t* length_change);
+  // PreemptiveExpand::Process: the first `old_data_length` samples of
+  // `input` were played already. `overlap_samples` is Expand's overlap.
+  Result PreemptiveExpand(std::span<const float> input, size_t old_data_length, size_t overlap_samples,
+                          const NetEqBackgroundNoise& background_noise, std::vector<float>& out,
+                          size_t* length_change);
+
+  // From the last Process: the pitch period and its correlation (Q14), and
+  // the VAD's decision.
+  size_t peak_index() const { return peak_index_; }
+  int16_t best_correlation() const { return best_correlation_; }
+  bool active_speech() const { return active_speech_; }
+
+ private:
+  // TimeStretch::Process up to CheckCriteriaAndStretch.
+  void Analyze(std::span<const float> input, const NetEqBackgroundNoise& background_noise, bool preemptive,
+               size_t old_data_length);
+  void AutoCorrelation();
+  bool SpeechDetection(int32_t vec1_energy, int32_t vec2_energy, size_t peak_index, int scaling,
+                       const NetEqBackgroundNoise& background_noise) const;
+
+  int fs_hz_;
+  int fs_mult_;
+  std::vector<int16_t> signal_;
+  int16_t downsampled_input_[kDownsampledLen] = {};
+  int16_t auto_correlation_[kCorrelationLen + 1] = {};
+  size_t peak_index_ = 0;
+  int16_t best_correlation_ = 0;
+  bool active_speech_ = false;
+};
+
 }  // namespace sm::timing

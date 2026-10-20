@@ -23,8 +23,10 @@
 // conceals with NetEq's Expand (NetEqExpand): whole pitch periods until the
 // sync buffer holds the output plus Expand's overlap, the mute factor that
 // DecisionLogic reads, and Normal's unmute and 1 ms crossfade on the first
-// decode after it. Merge's alignment search is not ported yet: a merge is
-// joined the way Normal joins a decode after an expand.
+// decode after it. A merge (the packet after a lost one) is joined with
+// NetEq's Merge (NetEqMerge): the decoded audio goes in where it correlates
+// best with one more expansion, scaled to the expansion's energy and
+// crossfaded in.
 #pragma once
 
 #include <cstdint>
@@ -74,11 +76,26 @@ struct AudioJitterBufferStats {
   Histogram jitter_buffer_delay_ms;          // Per decoded packet.
 };
 
+// Packet::Priority (modules/audio_coding/neteq/packet.h): lower is kept,
+// first by the codec's level (0 the frame itself, 1 Opus in-band FEC), then
+// by the RED level (0 the primary block, 1 the redundant one).
+struct AudioPacketPriority {
+  int codec_level = 0;
+  int red_level = 0;
+  bool operator<(const AudioPacketPriority& b) const {
+    return codec_level != b.codec_level ? codec_level < b.codec_level : red_level < b.red_level;
+  }
+};
+
 class AudioJitterBuffer : public MetricsSource {
  public:
   explicit AudioJitterBuffer(AudioJitterBufferConfig cfg = {});
 
-  void InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival);
+  // With version 2 a packet at a timestamp already held replaces it if its
+  // priority is higher, and is discarded otherwise (PacketBuffer::InsertPacket);
+  // version 1 keeps the first. A late in-band FEC frame is not counted as a
+  // late discard (NetEq counts secondary discards apart).
+  void InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival, AudioPacketPriority priority = {});
   // Fills `out` (typically 10 ms) and reports the operation performed.
   AudioOperation GetAudio(std::span<float> out, Timestamp now);
 
@@ -104,7 +121,12 @@ class AudioJitterBuffer : public MetricsSource {
   size_t ExpandOnce(std::vector<float>& out);
   // Normal::Process after an expand (version 2): one more expansion to
   // crossfade from, and the decoded audio unmuted from the mute factor.
-  void JoinAfterExpand(std::vector<float>& decoded, bool merge);
+  void JoinAfterExpand(std::vector<float>& decoded);
+  // NetEqImpl::DoMerge (version 2): Merge::Process on the sync buffer;
+  // `decoded` becomes the samples to append.
+  void MergeAfterExpand(std::vector<float>& decoded, Timestamp now);
+  // StatisticsCalculator::ConcealedSamplesCorrection (version 2).
+  void AddConcealedSamples(int64_t n);
   // PacketBuffer::GetSpanSamples.
   int64_t PacketSpanSamples(bool count_waiting_time) const;
 
@@ -121,11 +143,15 @@ class AudioJitterBuffer : public MetricsSource {
   TimeStretcher stretcher_;
   loss::PacketLossConcealer plc_;
   NetEqExpand expand_;
+  NetEqMerge merge_;
+  NetEqTimeStretch time_stretch_;  // Version 2's accelerate and preemptive expand.
+  uint64_t concealed_samples_correction_ = 0;
   SeqNumUnwrapper<uint32_t> unwrapper_;
   struct Packet {
     std::vector<float> pcm;
     Timestamp arrival;
     int64_t insert_tick = 0;  // Packet::waiting_time.
+    AudioPacketPriority priority;
   };
   std::map<int64_t, Packet> queue_;
   std::vector<float> sync_;          // Decoded samples waiting for playout.

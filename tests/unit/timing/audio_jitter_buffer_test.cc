@@ -84,3 +84,43 @@ SM_TEST(AudioJitterBuffer, MinimumDelayHonoured) {
   jb.SetMinimumDelayMs(120);
   SM_EXPECT_EQ(jb.TargetDelayMs(), 120);
 }
+
+// PacketBuffer::InsertPacket (neteq/packet_buffer.cc) with Packet::Priority
+// (neteq/packet.h): one packet per timestamp, the higher priority kept.
+SM_TEST(AudioJitterBuffer, V2KeepsTheHigherPriorityPacketPerTimestamp) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  AudioJitterBuffer jb(cfg);
+  const std::vector<float> fec(320, 0.25f), primary(320, 0.5f), red(320, 0.75f);
+  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
+  jb.InsertPacket(320, fec, Timestamp::Millis(5), {1, 0});       // In-band FEC first.
+  jb.InsertPacket(320, primary, Timestamp::Millis(20), {0, 0});  // The frame replaces it.
+  jb.InsertPacket(320, red, Timestamp::Millis(25), {0, 1});      // A RED copy loses to it.
+  jb.InsertPacket(320, fec, Timestamp::Millis(30), {1, 0});      // And so does the FEC again.
+  SM_EXPECT_EQ(jb.stats().packets_received, 5u);
+  SM_EXPECT_EQ(jb.stats().packets_duplicate, 3u);
+  std::vector<float> out(160);
+  float last = 0;
+  for (int t = 0; t < 4; ++t) {
+    jb.GetAudio(out, Timestamp::Millis(40 + 10 * t));
+    last = out.back();
+  }
+  // The second frame played is the primary's (Normal may unmute its start).
+  SM_EXPECT_NEAR(last, 0.5f, 1e-6);
+  SM_EXPECT_TRUE((AudioPacketPriority{0, 1} < AudioPacketPriority{1, 0}));
+  SM_EXPECT_TRUE((AudioPacketPriority{0, 0} < AudioPacketPriority{0, 1}));
+}
+
+SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
+  AudioJitterBuffer jb;
+  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
+  jb.InsertPacket(320, std::vector<float>(320, 0.25f), Timestamp::Millis(5), {1, 0});
+  jb.InsertPacket(320, std::vector<float>(320, 0.5f), Timestamp::Millis(20), {0, 0});
+  SM_EXPECT_EQ(jb.stats().packets_duplicate, 1u);
+  std::vector<float> out(160);
+  for (int t = 0; t < 10; ++t) jb.GetAudio(out, Timestamp::Millis(40 + 10 * t));
+  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(150), {1, 0});
+  SM_EXPECT_EQ(jb.stats().packets_discarded_late, 0u);
+  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(150));
+  SM_EXPECT_EQ(jb.stats().packets_discarded_late, 1u);
+}

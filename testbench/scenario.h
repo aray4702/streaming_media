@@ -72,7 +72,6 @@ struct Scenario {
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   bool packetization_v2 = true;  // `packetization v2`: libwebrtc's RtpSenderVideo payload sizing (issue #76 group 7; default v2 since #61).
-  bool rtx_v2 = true;  // `rtx v2`: libwebrtc's RtpPacketHistory (issue #76 group 2; default v2 since #61).
   bool keyframe_v2 = true;  // `keyframe v2`: libwebrtc's receiver keyframe-request policy (issue #23) and the sender's 300 ms request filter (#151); default v2 since #61.
   bool cc_v2 = true;  // `cc v2`: libwebrtc's GoogCC, ported in stages (issues #61, #19; default v2 since #61).
   bool allocator_v2 = true;  // `allocator v2`: libwebrtc's BitrateAllocator and its minimum as the target's lower bound (issue #104; default v2 since #61).

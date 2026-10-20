@@ -261,7 +261,7 @@ SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
   SM_EXPECT_EQ(released_ids + c.stats().flushed, 21u);
 }
 
-// Issue #127/#154: with `rtx v2` the RTP sequence number is assigned when the pacer releases the
+// Issue #127/#154: the RTP sequence number is assigned when the pacer releases the
 // packet (libwebrtc's PacketRouter), so packets a keyframe flushes leave no gap for the receiver to NACK.
 SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
   SendSideConfig cfg;
@@ -271,7 +271,6 @@ SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
-  sc.rtx.version = 2;
   RtpSender sender(sc);
   const Timestamp t0 = Timestamp::Millis(0);
   const std::vector<std::vector<uint8_t>> frame(10, std::vector<uint8_t>(1100, 1));
@@ -302,7 +301,6 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
-  sc.rtx.version = 2;
   RtpSender sender(sc);
   Timestamp now = Timestamp::Millis(0);
   const std::vector<uint8_t> chunk(300, 1);

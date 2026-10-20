@@ -116,7 +116,6 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
   c.rtx = v.rtx;
-  c.rtx.version = std::max(c.rtx.version, cfg_.rtx_version);
   c.fec = VideoFecEnabled(v);
   c.fec_config = v.fec_config;
   video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
