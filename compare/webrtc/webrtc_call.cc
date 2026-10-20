@@ -412,6 +412,17 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   sim::NetworkLink<Pkt> forward(fwd_state.cfg, s.seed);
   if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Pkt> reverse(links.reverse().cfg, s.seed + 1000003);
+  // Applies the scenario's link changes due by `now`. The tick does it first thing, but SimTime runs its queues in
+  // creation order, so a libwebrtc task due at the same millisecond as the tick (the receiver's transport feedback
+  // timer, the pacer) can run before it and send on the old link. Each transport calls this before it sends, so a
+  // packet sent at or after a change sees it, as in the test bench, where every send follows the tick's Advance.
+  // Issue #151: the feedback libwebrtc's receiver sent at 12.000 s crossed a reverse link that goes down at 12 s, and
+  // its 50 ms newer ack decided where the sender's congestion-window drops started.
+  auto advance_links = [&](sm::Timestamp now) {
+    auto [fwd_changed, rev_changed] = links.Advance(now - sm::Timestamp::Micros(0));
+    if (fwd_changed) forward.SetConfig(fwd_state.cfg);
+    if (rev_changed) reverse.SetConfig(links.reverse().cfg);
+  };
 
   // --- Calls ------------------------------------------------------------------
   w::FakeAudioDeviceModule send_adm, recv_adm;
@@ -464,6 +475,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   // --- Transports -------------------------------------------------------------
   LinkTransport send_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions& o) {
     const w::Timestamp now = sim.Now();
+    advance_links(rel(now));
     const int64_t wire = static_cast<int64_t>(data.size()) + kUdpIpOverhead;
     // Counted the way the test bench counts: by SSRC, and padding is a packet with no payload.
     sm::sim::LinkKind link_kind = sm::sim::LinkKind::kOther;
@@ -509,6 +521,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                  DataSize::Bytes(wire), link_kind, trace_seq);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
+    advance_links(rel(sim.Now()));
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
   });
@@ -651,9 +664,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (stopping || t >= end_ms) return;
     const sm::Timestamp now = sm::Timestamp::Millis(t);
 
-    auto [fwd_changed, rev_changed] = links.Advance(now - sm::Timestamp::Micros(0));
-    if (fwd_changed) forward.SetConfig(fwd_state.cfg);
-    if (rev_changed) reverse.SetConfig(links.reverse().cfg);
+    advance_links(now);
 
     // Capture.
     if (s.audio && t % 10 == 0) {
