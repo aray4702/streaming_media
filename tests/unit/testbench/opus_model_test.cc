@@ -100,3 +100,62 @@ SM_TEST(OpusModel, LastFrameActiveFollowsTheSignal) {
   m.NextFrameBytes(zeros);
   SM_EXPECT_FALSE(m.LastFrameActive());
 }
+
+// libopus's compute_equiv_rate (src/opus_encoder.c): 20 ms VBR, complexity 9.
+SM_TEST(OpusModel, EquivRateIsLibopuss) {
+  SM_EXPECT_EQ(OpusFecDecision::EquivRate(32000, OpusFecDecision::kModeSilkOnly, 9, 0), 31680);
+  SM_EXPECT_EQ(OpusFecDecision::EquivRate(32000, OpusFecDecision::kModeSilkOnly, 9, 10), 31680 - 31680 * 10 / 70);
+  SM_EXPECT_EQ(OpusFecDecision::EquivRate(32000, OpusFecDecision::kModeUnknown, 9, 10), 31680 - 31680 * 10 / 140);
+  SM_EXPECT_EQ(OpusFecDecision::EquivRate(32000, OpusFecDecision::kModeCeltOnly, 9, 10), 31680);
+}
+
+// decide_fec: fec_thresholds with 1000 bps of hysteresis, scaled by (125 - loss) %.
+SM_TEST(OpusModel, DecideFecThresholdsAreLibopuss) {
+  int bw = OpusFecDecision::kFullband;
+  // (22000 + 1000) * 124 / 100 = 28504 after silk_SMULWB.
+  SM_EXPECT_TRUE(OpusFecDecision::DecideFec(1, false, OpusFecDecision::kModeSilkOnly, &bw, 28505));
+  SM_EXPECT_FALSE(OpusFecDecision::DecideFec(1, false, OpusFecDecision::kModeSilkOnly, &bw, 28504));
+  // (22000 - 1000) * 124 / 100 = 26026 once LBRR is on.
+  SM_EXPECT_TRUE(OpusFecDecision::DecideFec(1, true, OpusFecDecision::kModeSilkOnly, &bw, 26027));
+  SM_EXPECT_FALSE(OpusFecDecision::DecideFec(0, true, OpusFecDecision::kModeSilkOnly, &bw, 100000));
+  SM_EXPECT_FALSE(OpusFecDecision::DecideFec(10, false, OpusFecDecision::kModeCeltOnly, &bw, 100000));
+  SM_EXPECT_EQ(bw, static_cast<int>(OpusFecDecision::kFullband));
+  // Above 5% loss the bandwidth goes down until LBRR fits: NB needs (12000 + 1000) * 115 / 100.
+  SM_EXPECT_TRUE(OpusFecDecision::DecideFec(10, false, OpusFecDecision::kModeSilkOnly, &bw, 16000));
+  SM_EXPECT_EQ(bw, static_cast<int>(OpusFecDecision::kNarrowband));
+  // Nothing fits: no LBRR, the bandwidth is restored.
+  bw = OpusFecDecision::kWideband;
+  SM_EXPECT_FALSE(OpusFecDecision::DecideFec(10, false, OpusFecDecision::kModeSilkOnly, &bw, 10000));
+  SM_EXPECT_EQ(bw, static_cast<int>(OpusFecDecision::kWideband));
+  // At or below 5% the bandwidth is kept.
+  SM_EXPECT_FALSE(OpusFecDecision::DecideFec(5, false, OpusFecDecision::kModeSilkOnly, &bw, 10000));
+  SM_EXPECT_EQ(bw, static_cast<int>(OpusFecDecision::kWideband));
+}
+
+SM_TEST(OpusModel, FecDecisionPerPacket) {
+  // libwebrtc's 32 kbps: LBRR at any loss up to the 20% clamp, full band.
+  for (int loss : {1, 2, 5, 10, 20}) {
+    OpusFecDecision d;
+    SM_EXPECT_TRUE(d.Update(32000, loss));
+    SM_EXPECT_EQ(d.bandwidth(), static_cast<int>(OpusFecDecision::kFullband));
+  }
+  OpusFecDecision none;
+  SM_EXPECT_FALSE(none.Update(32000, 0));
+  // 12 kbps codes wide band and has no rate for LBRR, even at 10% loss.
+  OpusFecDecision low;
+  SM_EXPECT_FALSE(low.Update(12000, 3));
+  SM_EXPECT_EQ(low.bandwidth(), static_cast<int>(OpusFecDecision::kWideband));
+  SM_EXPECT_FALSE(low.Update(12000, 10));
+  // 20 kbps at 10% loss: LBRR in narrow band.
+  OpusFecDecision mid;
+  SM_EXPECT_TRUE(mid.Update(20000, 10));
+  SM_EXPECT_EQ(mid.bandwidth(), static_cast<int>(OpusFecDecision::kNarrowband));
+  // Hysteresis: 29 kbps at 1% (equiv 26916) is below the switch-on threshold
+  // (28504) but above the switch-off one (26026).
+  OpusFecDecision h;
+  SM_EXPECT_FALSE(h.Update(29000, 1));
+  SM_EXPECT_TRUE(h.Update(32000, 1));
+  SM_EXPECT_TRUE(h.Update(29000, 1));
+  SM_EXPECT_FALSE(h.Update(29000, 0));
+  SM_EXPECT_FALSE(h.Update(29000, 1));
+}
