@@ -2558,7 +2558,7 @@
   {
    "scenario": "issue_62_neteq_v2_audio_only_lossy",
    "metric": "audio.concealed_pct",
-   "sm": 1.17978,
+   "sm": 1.17643,
    "webrtc": 0.464344,
    "band": 0.5,
    "direction": "behind",
@@ -2572,7 +2572,7 @@
   {
    "scenario": "issue_62_neteq_v2_audio_only_lossy",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 68.2529,
+   "sm": 68.395,
    "webrtc": 81,
    "band": 10,
    "direction": "ahead",
@@ -2599,9 +2599,9 @@
   {
    "scenario": "issue_62_neteq_v2_high_jitter",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 227.271,
+   "sm": 227.072,
    "webrtc": 211.766,
-   "band": 11.36355,
+   "band": 11.3536,
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,

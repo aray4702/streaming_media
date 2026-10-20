@@ -2816,7 +2816,7 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms            35           27  =
   audio.mouth_to_ear_p95_ms               141          147  =
-  audio.jb_delay_p95_ms                  68.3         81.0  sm
+  audio.jb_delay_p95_ms                  68.4         81.0  sm
   cc.utilization_pct                     77.0         77.3  =
   cc.queue_p95_ms                         3.8          3.6  =
   cc.max_settle_ms                        100          100  =
@@ -2852,11 +2852,11 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
 
 issue_62_neteq_v2_cross_traffic - cross_traffic with NetEq's Expand (neteq v2, issue
   metric                                   sm       webrtc  better
-  audio.concealed_pct                     0.5          0.6  =
+  audio.concealed_pct                     0.6          0.6  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            50           46  =
-  audio.mouth_to_ear_p95_ms               642          649  =
-  audio.jb_delay_p95_ms                   378          382  =
+  audio.longest_interruption_ms            58           46  =
+  audio.mouth_to_ear_p95_ms               636          649  =
+  audio.jb_delay_p95_ms                   373          382  =
   video.freeze_count                      1.4            2  sm
   video.freeze_total_ms                   478          821  sm
   video.longest_freeze_ms                 183          253  =
@@ -2904,7 +2904,7 @@ issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2,
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            33           30  =
+  audio.longest_interruption_ms            32           30  =
   audio.mouth_to_ear_p95_ms               227          212  webrtc
   audio.jb_delay_p95_ms                   108          111  =
   video.freeze_count                      0.1            0  =

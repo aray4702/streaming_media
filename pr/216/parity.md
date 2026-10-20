@@ -339,7 +339,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 808 | 420 | ±98.3 | behind | 10/10 | #24, #37 |
 | issue_61_googcc_glue_congestive | `video.freeze_count` | 5 | 3.7 | ±1.1 | behind | 7/10 | #5, #37, #24 |
 | issue_62_neteq_v2_audio_only_lossy | `audio.concealed_pct` | 1.2 | 0.5 | ±0.5 | behind | 6/10 | #62, #63 |
-| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 68.3 | 81 | ±10 | ahead | 3/10 | #62, #63 |
+| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 68.4 | 81 | ±10 | ahead | 3/10 | #62, #63 |
 | issue_62_neteq_v2_cross_traffic | `cc.rtt_p50_ms` | 87.2 | 64.5 | ±10 | behind | 1/10 | #61 |
 | issue_62_neteq_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 227 | 212 | ±11.4 | behind | 6/10 | #62, #63 |
 | issue_62_neteq_v2_high_jitter | `repair.overhead_pct` | 34.0 | 43.7 | ±2.5 | ahead | 8/10 | #21, #7, #29 |
