@@ -326,8 +326,10 @@ ALGORITHMS = [
                       "NACKed at once flag 90-100% of frames as retransmitted, so JitterEstimator's frame rate drops below "
                       "5 fps and GetEstimate returns 0, in libwebrtc too. The extra freezes are repairs slower than the "
                       "freeze threshold on our side, with a 13% higher send rate. "
-                      "Owner plan on PR #216: `issue_12_lossbwe_policer` (`net.loss_pct < 16`, `video.freeze_total_ms < 16000`) "
-                      "and `issue_124_burst_loss_v2` (`video.e2e_delay_p95_ms < 320`) sit just above libwebrtc's worst seed in 1-10."),
+                      "Owner rule on PR #216 (just above our seed-1 value, never above libwebrtc's worst seed in 1-10): "
+                      "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
+                      "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
+                      "(304.4; capped at libwebrtc's worst seed)."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
