@@ -49,10 +49,12 @@
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
+#include "modules/congestion_controller/goog_cc/alr_detector.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
+#include "modules/pacing/interval_budget.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/video_coding/include/video_codec_interface.h"
@@ -80,6 +82,11 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // AlrDetector declares the same friend: its budget, for the alr rows (issue #152).
+  static const AlrDetector& Alr(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->alr_detector_;
+  }
+  static const IntervalBudget& Budget(const AlrDetector& a) { return a.alr_budget_; }
 };
 }  // namespace webrtc
 
@@ -139,30 +146,49 @@ class BweTraceLog final : public w::RtcEventLog {
 // without feedback or when GoogCC makes a new DelayBasedBwe), giving one kDetector row per group (issue #152). After
 // the live controller has taken the same feedback, fraction_loss on that feedback's rows says whether the replica
 // still matches the live detector (0) or not (1): its modified trend, threshold, delta count and state.
+// Each SentPacket also goes to a replica of libwebrtc's AlrDetector, which takes every target the controller
+// outputs as MaybeTriggerOnNetworkChanged gives it the loss-based target (with DropFrame, the default, that is
+// TargetTransferRate::target_rate). kAlr rows put the live detector's budget next to the replica's.
 class DetectorTraceController final : public w::NetworkControllerInterface {
  public:
   DetectorTraceController(std::unique_ptr<w::NetworkControllerInterface> inner, const w::Environment& env,
                           std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
       : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
-  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return inner_->OnNetworkAvailability(m); }
-  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
-  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
-  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
-  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
-  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
-  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
-  w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
-    return inner_->OnTargetRateConstraints(m);
+  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override {
+    return Target(inner_->OnNetworkAvailability(m));
   }
-  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return inner_->OnTransportLossReport(m); }
+  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override {
+    return Target(inner_->OnNetworkRouteChange(m));
+  }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return Target(inner_->OnProcessInterval(m)); }
+  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override {
+    return Target(inner_->OnRemoteBitrateReport(m));
+  }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override {
+    return Target(inner_->OnRoundTripTimeUpdate(m));
+  }
+  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override {
+    w::NetworkControlUpdate u = inner_->OnSentPacket(m);
+    replica_alr_.OnBytesSent(m.size, m.send_time);  // GoogCcNetworkController::OnSentPacket, then its trigger.
+    u = Target(std::move(u));
+    TraceAlr(m.send_time);
+    return u;
+  }
+  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return Target(inner_->OnReceivedPacket(m)); }
+  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return Target(inner_->OnStreamsConfig(m)); }
+  w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
+    return Target(inner_->OnTargetRateConstraints(m));
+  }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override {
+    return Target(inner_->OnTransportLossReport(m));
+  }
   w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override {
-    return inner_->OnNetworkStateEstimate(m);
+    return Target(inner_->OnNetworkStateEstimate(m));
   }
   bool SupportsEcnAdaptation() const override { return inner_->SupportsEcnAdaptation(); }
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
-    if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
+    if (m.packet_feedbacks.empty()) return Target(inner_->OnTransportPacketsFeedback(std::move(m)));  // Returns early.
     const size_t first_row = rows_->size();
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
@@ -172,10 +198,45 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
-    return u;
+    return Target(std::move(u));
   }
 
  private:
+  w::NetworkControlUpdate Target(w::NetworkControlUpdate u) {
+    if (u.target_rate && u.target_rate->target_rate > w::DataRate::Zero()) {
+      replica_alr_.SetEstimatedBitrate(u.target_rate->target_rate);
+    }
+    return u;
+  }
+
+  // The live and replica budgets after the last SentPacket of each 100 ms of send time, and at each change of
+  // either ALR state (the same rows GccController::TraceAlr writes for ours).
+  void TraceAlr(w::Timestamp send_time) {
+    using P = w::GoogCcStatePrinter;
+    const w::AlrDetector& live = P::Alr(inner_.get());
+    const bool in = live.GetApplicationLimitedRegionStartTime().has_value();
+    const bool in_replica = replica_alr_.GetApplicationLimitedRegionStartTime().has_value();
+    const int64_t bucket = (send_time - t0_).ms() / 100;
+    if (bucket != alr_bucket_) {
+      if (alr_bucket_ >= 0) rows_->push_back(alr_last_);
+      alr_bucket_ = bucket;
+      alr_last_.packets = 0;
+    }
+    cc::BweTraceRow& r = alr_last_;
+    r.time_us = (send_time - t0_).us();
+    r.kind = cc::BweTraceRow::Kind::kAlr;
+    r.bitrate_bps = static_cast<int64_t>(P::Budget(live).target_rate_kbps()) * 1000;
+    ++r.packets;
+    r.alr_in = in ? 1 : 0;
+    r.alr_ratio = P::Budget(live).budget_ratio();
+    r.alr_in_replica = in_replica ? 1 : 0;
+    r.alr_ratio_replica = P::Budget(replica_alr_).budget_ratio();
+    r.alr_target_replica_bps = static_cast<int64_t>(P::Budget(replica_alr_).target_rate_kbps()) * 1000;
+    if (in != alr_in_ || in_replica != alr_in_replica_) rows_->push_back(r);
+    alr_in_ = in;
+    alr_in_replica_ = in_replica;
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
@@ -222,6 +283,10 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   std::unique_ptr<w::InterArrivalDelta> inter_arrival_;
   std::unique_ptr<w::TrendlineEstimator> detector_;
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
+  w::AlrDetector replica_alr_{env_};
+  int64_t alr_bucket_ = -1;
+  cc::BweTraceRow alr_last_;
+  bool alr_in_ = false, alr_in_replica_ = false;
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {

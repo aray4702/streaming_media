@@ -144,6 +144,7 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
     // GoogCcNetworkController::OnSentPacket.
     alr_.OnBytesSent(size, t);
     acked_v2_.SetAlr(alr_.GetApplicationLimitedRegionStartTime().has_value());
+    TraceAlr(t);
     if (!first_packet_sent_) {
       first_packet_sent_ = true;
       // Initialise the feedback time to the send time to allow an RTT estimate until the first feedback.
@@ -324,6 +325,28 @@ void GccController::TraceDetector(Timestamp now) {
     r.arrival_ms = x.arrival_ms;
     cfg_.bwe_trace->push_back(r);
   }
+}
+
+// The ALR budget after each sent packet (issue #152): the state after the last packet of
+// each 100 ms of send time, and a row at each state change.
+void GccController::TraceAlr(Timestamp t) {
+  if (!cfg_.bwe_trace) return;
+  const bool in = alr_.GetApplicationLimitedRegionStartTime().has_value();
+  const int64_t bucket = t.ms() / 100;
+  if (bucket != alr_trace_bucket_) {
+    if (alr_trace_bucket_ >= 0) cfg_.bwe_trace->push_back(alr_trace_last_);
+    alr_trace_bucket_ = bucket;
+    alr_trace_last_.packets = 0;
+  }
+  BweTraceRow& r = alr_trace_last_;
+  r.time_us = t.us();
+  r.kind = BweTraceRow::Kind::kAlr;
+  r.bitrate_bps = static_cast<int64_t>(alr_.budget().target_rate_kbps()) * 1000;
+  ++r.packets;
+  r.alr_in = in ? 1 : 0;
+  r.alr_ratio = alr_.budget().budget_ratio();
+  if (in != alr_trace_in_) cfg_.bwe_trace->push_back(r);
+  alr_trace_in_ = in;
 }
 
 // DelayBasedBwe::MaybeUpdateEstimate's RtcEventBweUpdateDelayBased: logged when the

@@ -33,7 +33,13 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kAlr: the AlrDetector's IntervalBudget (issue #152), one row per 100 ms of
+  // send time and one at each ALR state change: bitrate_bps = the rate the budget
+  // is set to (0.65 x the estimate), packets = sent packets in the 100 ms, and the
+  // alr_ columns below. time_us is the send time of the last packet counted.
+  // libwebrtc's rows read its live detector, and the _replica columns a copy of
+  // libwebrtc's AlrDetector fed with the same SentPackets and target updates.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kAlr };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -51,6 +57,12 @@ struct BweTraceRow {
   double recv_delta_ms = std::numeric_limits<double>::quiet_NaN();
   double send_ms = std::numeric_limits<double>::quiet_NaN();
   double arrival_ms = std::numeric_limits<double>::quiet_NaN();
+  // kAlr rows only: in ALR (0/1) and IntervalBudget::budget_ratio(), live and replica.
+  int alr_in = -1;
+  double alr_ratio = std::numeric_limits<double>::quiet_NaN();
+  int alr_in_replica = -1;
+  double alr_ratio_replica = std::numeric_limits<double>::quiet_NaN();
+  int64_t alr_target_replica_bps = -1;
 };
 
 struct GccConfig {
@@ -142,6 +154,7 @@ class GccController : public MetricsSource {
  private:
   NetworkControlUpdate MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes);
   void TraceDetector(Timestamp now);
+  void TraceAlr(Timestamp t);
   void TraceDelayBased(Timestamp now, DataRate delay_est, bool updated);
   void TraceLossBased(Timestamp now);
   std::vector<ProbeCluster> RegisterProbes(std::vector<ProbeCluster> probes);
@@ -168,6 +181,10 @@ class GccController : public MetricsSource {
   uint8_t last_fraction_loss_ = 0;
   TimeDelta last_round_trip_time_ = TimeDelta::PlusInfinity();
   bool first_packet_sent_ = false;
+  // TraceAlr: the 100 ms bucket being counted and the last ALR state traced.
+  int64_t alr_trace_bucket_ = -1;
+  BweTraceRow alr_trace_last_;
+  bool alr_trace_in_ = false;
   DataRate min_total_allocated_;
   DataRate max_padding_;
   std::optional<double> streams_pacing_factor_;  // StreamsConfig::pacing_factor.
