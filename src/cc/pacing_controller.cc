@@ -41,7 +41,7 @@ void PacingController::Start(Timestamp now) {
   last_timestamp_ = now;
   last_process_time_ = now;
   last_send_time_ = now;
-  queue_update_time_ = now;
+  queue_.UpdateAverageQueueTime(now);
 }
 
 Timestamp PacingController::Cur(Timestamp now) {
@@ -62,32 +62,25 @@ void PacingController::SetPacingRates(DataRate pacing, DataRate padding) {
 
 void PacingController::Pause() {
   paused_ = true;
-  if (started_) SetQueuePauseState(paused_ || congested_, last_timestamp_);
-  else queue_paused_ = true;
+  queue_.SetPauseState(paused_ || congested_, last_timestamp_);
 }
 
 void PacingController::Resume() {
   paused_ = false;
-  if (started_) SetQueuePauseState(paused_ || congested_, last_timestamp_);
-  else queue_paused_ = congested_;
+  queue_.SetPauseState(paused_ || congested_, last_timestamp_);
 }
 
 void PacingController::SetCongested(bool congested) {
-  if (started_) {
-    if (congested_ && !congested) UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(last_timestamp_));
-    congested_ = congested;
-    SetQueuePauseState(paused_ || congested_, last_timestamp_);
-  } else {
-    congested_ = congested;
-    queue_paused_ = paused_ || congested_;
-  }
+  if (started_ && congested_ && !congested) UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(last_timestamp_));
+  congested_ = congested;
+  queue_.SetPauseState(paused_ || congested_, last_timestamp_);
 }
 
 void PacingController::AddProbeCluster(const ProbeCluster& c) { prober_.CreateProbeCluster(c); }
 
 // --- Prioritized packet queue ----------------------------------------------
 
-int PacingController::Level(PacketPriority p) {
+int PrioritizedPacketQueue::Level(PacketPriority p) {
   switch (p) {
     case PacketPriority::kAudio: return 0;
     case PacketPriority::kRetransmission: return 1;
@@ -98,82 +91,86 @@ int PacingController::Level(PacketPriority p) {
   return 3;
 }
 
-void PacingController::UpdateAverageQueueTime(Timestamp now) {
-  if (!queue_update_time_.IsFinite()) queue_update_time_ = now;
-  if (now <= queue_update_time_) return;
-  const TimeDelta delta = now - queue_update_time_;
-  if (queue_paused_) {
+void PrioritizedPacketQueue::UpdateAverageQueueTime(Timestamp now) {
+  if (!last_update_time_.IsFinite()) last_update_time_ = now;
+  if (now <= last_update_time_) return;
+  const TimeDelta delta = now - last_update_time_;
+  if (paused_) {
     pause_time_sum_ += delta;
   } else {
-    queue_time_sum_ += delta * static_cast<double>(queue_packets_);
+    queue_time_sum_ += delta * static_cast<double>(size_packets_);
   }
-  queue_update_time_ = now;
+  last_update_time_ = now;
 }
 
-void PacingController::SetQueuePauseState(bool paused, Timestamp now) {
+void PrioritizedPacketQueue::SetPauseState(bool paused, Timestamp now) {
   UpdateAverageQueueTime(now);
-  queue_paused_ = paused;
+  paused_ = paused;
 }
 
-TimeDelta PacingController::AverageQueueTime() const {
-  if (queue_packets_ == 0) return TimeDelta::Zero();
-  return queue_time_sum_ / static_cast<int64_t>(queue_packets_);
+TimeDelta PrioritizedPacketQueue::AverageQueueTime() const {
+  if (size_packets_ == 0) return TimeDelta::Zero();
+  return queue_time_sum_ / static_cast<int64_t>(size_packets_);
 }
 
-void PacingController::Push(Timestamp now, PacedPacket p) {
+Timestamp PrioritizedPacketQueue::LeadingPacketEnqueueTime(PacketPriority p) const {
+  const auto& level = levels_[static_cast<size_t>(Level(p))];
+  return level.empty() ? Timestamp::MinusInfinity() : level.front().enqueue_time;
+}
+
+Timestamp PrioritizedPacketQueue::OldestEnqueueTime() const {
+  return enqueue_times_.empty() ? Timestamp::MinusInfinity() : *enqueue_times_.begin();
+}
+
+void PrioritizedPacketQueue::Push(Timestamp now, PacedPacket p) {
   UpdateAverageQueueTime(now);
   Queued q;
   q.oldest_it = enqueue_times_.insert(now);
   // The time spent paused is subtracted from every packet's queue time: take
   // the pause total so far off its enqueue time (as PrioritizedPacketQueue does).
   q.enqueue_time = now - pause_time_sum_;
-  queue_bytes_ += p.size;
-  ++queue_packets_;
+  size_bytes_ += p.size;
+  ++size_packets_;
+  ++size_per_priority_[static_cast<size_t>(p.priority)];
+  if (p.is_key_frame) ++num_keyframe_packets_;
   p.enqueue_time = now;
   q.p = p;
   levels_[static_cast<size_t>(Level(p.priority))].push_back(std::move(q));
 }
 
-bool PacingController::Pop(PacedPacket* out, Timestamp now) {
-  (void)now;
+void PrioritizedPacketQueue::DequeueInternal(Queued& q) {
+  size_bytes_ -= q.p.size;
+  --size_packets_;
+  --size_per_priority_[static_cast<size_t>(q.p.priority)];
+  if (q.p.is_key_frame) --num_keyframe_packets_;
+  queue_time_sum_ -= last_update_time_ - q.enqueue_time - pause_time_sum_;
+  enqueue_times_.erase(q.oldest_it);
+}
+
+std::optional<PacedPacket> PrioritizedPacketQueue::Pop() {
   for (auto& level : levels_) {
     if (level.empty()) continue;
     Queued q = std::move(level.front());
     level.pop_front();
-    queue_bytes_ -= q.p.size;
-    --queue_packets_;
-    const TimeDelta in_queue = queue_update_time_ - q.enqueue_time - pause_time_sum_;
-    queue_time_sum_ -= in_queue;
-    enqueue_times_.erase(q.oldest_it);
-    *out = q.p;
-    return true;
+    DequeueInternal(q);
+    return q.p;
   }
-  return false;
+  return std::nullopt;
 }
 
-bool PacingController::HasKeyframePackets() const {
-  for (const auto& level : levels_) {
-    for (const Queued& q : level) {
-      if (q.p.is_key_frame) return true;
-    }
-  }
-  return false;
-}
-
-void PacingController::FlushVideo() {
+std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets() {
   // The levels that hold the video stream's packets: retransmission (1) and
   // video and FEC (3). Audio and padding are other streams.
+  std::vector<PacedPacket> removed;
   for (PacketPriority prio : {PacketPriority::kRetransmission, PacketPriority::kVideo}) {
     auto& level = levels_[static_cast<size_t>(Level(prio))];
     for (Queued& q : level) {
-      queue_bytes_ -= q.p.size;
-      --queue_packets_;
-      queue_time_sum_ -= queue_update_time_ - q.enqueue_time - pause_time_sum_;
-      enqueue_times_.erase(q.oldest_it);
-      flushed_.push_back(q.p);
+      DequeueInternal(q);
+      removed.push_back(q.p);
     }
     level.clear();
   }
+  return removed;
 }
 
 std::vector<PacedPacket> PacingController::TakeFlushed() {
@@ -183,10 +180,10 @@ std::vector<PacedPacket> PacingController::TakeFlushed() {
 }
 
 TimeDelta PacingController::OldestQueueTime(Timestamp now) const {
-  return enqueue_times_.empty() ? TimeDelta::Zero() : now - *enqueue_times_.begin();
+  return queue_.Empty() ? TimeDelta::Zero() : now - queue_.OldestEnqueueTime();
 }
 
-TimeDelta PacingController::ExpectedQueueTime() const { return Div(queue_bytes_, adjusted_media_rate_); }
+TimeDelta PacingController::ExpectedQueueTime() const { return Div(queue_.SizeInBytes(), adjusted_media_rate_); }
 
 // --- PacingController -------------------------------------------------------
 
@@ -229,12 +226,12 @@ void PacingController::OnPacketSent(PacketPriority prio, DataSize size, Timestam
 void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
   adjusted_media_rate_ = pacing_rate_;
   bool boost = false;
-  if (cfg_.drain_large_queues && queue_bytes_ > DataSize::Zero()) {
+  if (cfg_.drain_large_queues && queue_.SizeInBytes() > DataSize::Zero()) {
     // Assuming equal size packets and input/output rate, the average packet has
     // avg_time_left to get the queue out if the limit is to be met.
-    UpdateAverageQueueTime(now);
-    const TimeDelta avg_time_left = std::max(TimeDelta::Millis(1), queue_time_limit_ - AverageQueueTime());
-    const DataRate min_rate_needed = Div(queue_bytes_, avg_time_left);
+    queue_.UpdateAverageQueueTime(now);
+    const TimeDelta avg_time_left = std::max(TimeDelta::Millis(1), queue_time_limit_ - queue_.AverageQueueTime());
+    const DataRate min_rate_needed = Div(queue_.SizeInBytes(), avg_time_left);
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       boost = true;
@@ -248,7 +245,7 @@ void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
 }
 
 Timestamp PacingController::NextUnpacedSendTime() const {
-  if (!cfg_.pace_audio && !levels_[0].empty()) return levels_[0].front().enqueue_time;
+  if (!cfg_.pace_audio) return queue_.LeadingPacketEnqueueTime(PacketPriority::kAudio);
   return Timestamp::MinusInfinity();
 }
 
@@ -268,13 +265,13 @@ Timestamp PacingController::NextSendTimeAt(Timestamp now) const {
   if (congested_ || !seen_first_packet_) return last_send_time_ + kCongestedPacketInterval;
 
   Timestamp next = Timestamp::PlusInfinity();
-  if (adjusted_media_rate_ > DataRate::Zero() && queue_packets_ > 0) {
+  if (adjusted_media_rate_ > DataRate::Zero() && !queue_.Empty()) {
     // The debt may grow to one packet more than what the burst interval allows.
     const TimeDelta drain_time = Div(media_debt_, adjusted_media_rate_);
     // A burst is not larger than kMaxBurstSize, so as not to overfill socket buffers.
     const TimeDelta burst = std::min(send_burst_interval_, Div(kMaxBurstSize, adjusted_media_rate_));
     next = last_process_time_ + ((burst > drain_time) ? TimeDelta::Zero() : drain_time);
-  } else if (padding_rate_ > DataRate::Zero() && queue_packets_ == 0) {
+  } else if (padding_rate_ > DataRate::Zero() && queue_.Empty()) {
     // No packets: wait until both debts have drained to send padding.
     TimeDelta drain_time = std::max(Div(media_debt_, adjusted_media_rate_), Div(padding_debt_, padding_rate_));
     if (drain_time.IsZero() && (media_debt_ > DataSize::Zero() || padding_debt_ > DataSize::Zero())) {
@@ -295,17 +292,17 @@ Timestamp PacingController::NextSendTime(Timestamp now) const {
 
 void PacingController::Enqueue(PacedPacket p) {
   const Timestamp now = Cur(p.enqueue_time);
-  if (p.is_key_frame && p.first_packet_of_frame && p.priority == PacketPriority::kVideo && !HasKeyframePackets() &&
-      queue_packets_ > 0) {
+  if (p.is_key_frame && p.first_packet_of_frame && p.priority == PacketPriority::kVideo && !queue_.HasKeyframePackets() &&
+      !queue_.Empty()) {
     const size_t before = flushed_.size();
-    UpdateAverageQueueTime(now);
-    FlushVideo();
+    queue_.UpdateAverageQueueTime(now);
+    for (PacedPacket& f : queue_.RemoveVideoStreamPackets()) flushed_.push_back(f);
     ++stats_.keyframe_flushes;
     stats_.flushed_packets += flushed_.size() - before;
     SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);
   }
   prober_.OnIncomingPacket(p.size);
-  if (queue_packets_ == 0) {
+  if (queue_.Empty()) {
     // Fast-forward the last process time, so that time that has passed is not
     // used as budget for the first new packet.
     Timestamp target = now;
@@ -313,14 +310,14 @@ void PacingController::Enqueue(PacedPacket p) {
     if (next.IsFinite()) target = std::min(now, next);
     UpdateBudgetWithElapsedTime(UpdateTimeAndGetElapsed(target));
   }
-  Push(now, std::move(p));
+  queue_.Push(now, std::move(p));
   seen_first_packet_ = true;
   // The queue got longer: the pacing rate may need to change.
   MaybeUpdateMediaRateDueToLongQueue(now);
 }
 
 DataSize PacingController::PaddingToAdd(DataSize recommended_probe_size, DataSize data_sent) const {
-  if (queue_packets_ > 0) return DataSize::Zero();  // Real payload is available.
+  if (!queue_.Empty()) return DataSize::Zero();  // Real payload is available.
   if (congested_) return DataSize::Zero();  // Not even for a probe.
   if (recommended_probe_size > DataSize::Zero()) {
     return recommended_probe_size > data_sent ? recommended_probe_size - data_sent : DataSize::Zero();
@@ -345,7 +342,7 @@ bool PacingController::GetPendingPacket(const ProbeSendInfo& pacing_info, Timest
       return true;
     }
   }
-  if (queue_packets_ == 0) return false;
+  if (queue_.Empty()) return false;
   // Unpaced packets and probes are exempt from the send checks.
   if (!NextUnpacedSendTime().IsFinite() && !is_probe) {
     if (congested_) return false;
@@ -355,7 +352,10 @@ bool PacingController::GetPendingPacket(const ProbeSendInfo& pacing_info, Timest
       if (now + flush_time > target_send_time) return false;
     }
   }
-  return Pop(out, now);
+  std::optional<PacedPacket> p = queue_.Pop();
+  if (!p) return false;
+  *out = std::move(*p);
+  return true;
 }
 
 void PacingController::Account(PacedPacket& p, Timestamp now, const ProbeSendInfo& pacing_info, std::vector<PacedPacket>& sent) {
@@ -440,13 +440,13 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
       if (pad > DataSize::Zero() && padding_generator_) {
         std::vector<PacedPacket> padding = padding_generator_(pad, now);
         if (!padding.empty()) {
-          for (PacedPacket& g : padding) Push(now, std::move(g));
+          for (PacedPacket& g : padding) queue_.Push(now, std::move(g));
           continue;  // Send the padding that was just queued.
         }
         UpdatePaddingBudgetWithSentData(pad);  // Can't generate padding: still charge the budget.
       } else if (pad > DataSize::Zero()) {
         const int64_t n = (pad.bytes() + cfg_.padding_packet.bytes() - 1) / cfg_.padding_packet.bytes();
-        for (int64_t k = 0; k < n; ++k) Push(now, MakePadding(cfg_.padding_packet, now));
+        for (int64_t k = 0; k < n; ++k) queue_.Push(now, MakePadding(cfg_.padding_packet, now));
         continue;  // Send the padding that was just queued.
       }
       break;
@@ -496,9 +496,9 @@ void PacingController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("circuit_breaks", stats_.circuit_breaks);
   w.Counter("keyframe_flushes", stats_.keyframe_flushes);
   w.Counter("flushed_packets", stats_.flushed_packets);
-  w.Gauge("queue_bytes", static_cast<double>(queue_bytes_.bytes()));
+  w.Gauge("queue_bytes", static_cast<double>(queue_.SizeInBytes().bytes()));
   w.Gauge("media_debt_bytes", static_cast<double>(media_debt_.bytes()));
-  w.Gauge("avg_queue_ms", AverageQueueTime().ms_f());
+  w.Gauge("avg_queue_ms", queue_.AverageQueueTime().ms_f());
   w.Gauge("pacing_kbps", pacing_rate_.kbps());
   w.Gauge("adjusted_pacing_kbps", adjusted_media_rate_.kbps());
   w.Gauge("paused", paused_ ? 1 : 0);
