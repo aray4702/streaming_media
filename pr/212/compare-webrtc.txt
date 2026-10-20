@@ -345,8 +345,8 @@ issue_120_rtx_payload_padding - Wi-Fi to LTE handover with `cc v2`, `pacer v2` a
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1542         1422  webrtc
-  audio.mouth_to_ear_p95_ms               350          526  sm
-  audio.jb_delay_p95_ms                   166          315  sm
+  audio.mouth_to_ear_p95_ms               350          525  sm
+  audio.jb_delay_p95_ms                   166          314  sm
   video.freeze_count                      5.3          4.1  webrtc
   video.freeze_total_ms                  4588         4588  =
   video.longest_freeze_ms                2097         2025  =
@@ -2065,8 +2065,8 @@ issue_23_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier,
   audio.concealed_pct                     4.6          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1545         1422  webrtc
-  audio.mouth_to_ear_p95_ms               465          526  sm
-  audio.jb_delay_p95_ms                   205          315  sm
+  audio.mouth_to_ear_p95_ms               465          525  sm
+  audio.jb_delay_p95_ms                   205          314  sm
   video.freeze_count                      2.2          4.1  sm
   video.freeze_total_ms                  5249         4588  webrtc
   video.longest_freeze_ms                3364         2025  webrtc
@@ -2765,8 +2765,8 @@ issue_76_rtx_v2_handover - Wi-Fi to LTE handover, RTX history as libwebrtc's Rtp
   audio.concealed_pct                     4.6          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1545         1422  webrtc
-  audio.mouth_to_ear_p95_ms               451          526  sm
-  audio.jb_delay_p95_ms                   192          315  sm
+  audio.mouth_to_ear_p95_ms               451          525  sm
+  audio.jb_delay_p95_ms                   192          314  sm
   video.freeze_count                      3.2          4.1  sm
   video.freeze_total_ms                  4051         4588  sm
   video.longest_freeze_ms                1899         2025  sm
@@ -3615,8 +3615,8 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   audio.concealed_pct                     4.6          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1541         1422  webrtc
-  audio.mouth_to_ear_p95_ms               462          526  sm
-  audio.jb_delay_p95_ms                   202          315  sm
+  audio.mouth_to_ear_p95_ms               462          525  sm
+  audio.jb_delay_p95_ms                   202          314  sm
   video.freeze_count                      2.5          4.1  sm
   video.freeze_total_ms                  3951         4588  sm
   video.longest_freeze_ms                1983         2025  =
