@@ -60,11 +60,11 @@ size_t TimeStretcher::Accelerate(std::span<const float> in, std::vector<float>& 
   return L;
 }
 
-size_t TimeStretcher::PreemptiveExpand(std::span<const float> in, std::vector<float>& out) {
+size_t TimeStretcher::PreemptiveExpand(std::span<const float> in, std::vector<float>& out, size_t old_samples) {
   out.assign(in.begin(), in.end());
   if (in.size() < min_input()) return 0;
   float corr = 0;
-  const size_t s = kStartMs;
+  const size_t s = kStartMs + old_samples;
   int l = FindPeriod(in, s, &corr);
   bool silent = dsp::RmsDbfs(in) < cfg_.silence_dbfs;
   if (!silent && corr < cfg_.correlation_threshold) {
