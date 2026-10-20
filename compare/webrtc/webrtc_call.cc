@@ -43,6 +43,8 @@
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "api/rtc_event_log/rtc_event_log.h"
+#include "api/transport/goog_cc_factory.h"
+#include "api/transport/network_control.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
 #include "logging/rtc_event_log/events/rtc_event_alr_state.h"
@@ -359,6 +361,87 @@ class RenderSink final : public w::VideoSinkInterface<w::VideoFrame> {
   std::function<void(const w::VideoFrame&)> fn_;
 };
 
+// Issue #152: wraps libwebrtc's GoogCC to record what its OnSentPacket receives (the
+// AlrDetector's input, goog_cc_network_control.cc:265) in 100 ms buckets, and the
+// target it outputs, as kSent and kControllerTarget rows. RtpTransportControllerSend
+// creates the controller from CallConfig::network_controller_factory when it is set
+// (rtp_transport_controller_send.cc:758) and GoogCC with the default config otherwise,
+// so the wrapped controller is the one the call would run.
+class TracedGoogCc final : public w::NetworkControllerInterface {
+ public:
+  TracedGoogCc(std::unique_ptr<w::NetworkControllerInterface> cc, w::Timestamp t0, std::vector<cc::BweTraceRow>* rows)
+      : cc_(std::move(cc)), t0_(t0), rows_(rows) {}
+  ~TracedGoogCc() override { Flush(); }
+  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return Out(cc_->OnNetworkAvailability(m)); }
+  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return Out(cc_->OnNetworkRouteChange(m)); }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return Out(cc_->OnProcessInterval(m)); }
+  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return Out(cc_->OnRemoteBitrateReport(m)); }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return Out(cc_->OnRoundTripTimeUpdate(m)); }
+  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override {
+    const int64_t bucket = (m.send_time - t0_).us() / 100000;
+    if (bucket != bucket_) Flush();
+    bucket_ = bucket;
+    bytes_ += m.size.bytes();
+    ++packets_;
+    return Out(cc_->OnSentPacket(m));
+  }
+  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return Out(cc_->OnReceivedPacket(m)); }
+  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return Out(cc_->OnStreamsConfig(m)); }
+  w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override { return Out(cc_->OnTargetRateConstraints(m)); }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return Out(cc_->OnTransportLossReport(m)); }
+  w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
+    return Out(cc_->OnTransportPacketsFeedback(m));
+  }
+  w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override { return Out(cc_->OnNetworkStateEstimate(m)); }
+  bool SupportsEcnAdaptation() const override { return cc_->SupportsEcnAdaptation(); }
+
+ private:
+  void Flush() {
+    if (packets_ == 0) return;
+    cc::BweTraceRow r;
+    r.time_us = bucket_ * 100000;
+    r.kind = cc::BweTraceRow::Kind::kSent;
+    r.bitrate_bps = bytes_ * 80;
+    r.packets = packets_;
+    // At its bucket's start, behind the rows already written for that bucket, so the trace stays in time order.
+    rows_->insert(std::upper_bound(rows_->begin(), rows_->end(), r.time_us,
+                                   [](int64_t t, const cc::BweTraceRow& x) { return t < x.time_us; }),
+                  r);
+    bytes_ = 0;
+    packets_ = 0;
+  }
+  w::NetworkControlUpdate Out(w::NetworkControlUpdate u) {
+    if (u.target_rate && u.target_rate->target_rate.bps() != last_target_bps_) {
+      last_target_bps_ = u.target_rate->target_rate.bps();
+      cc::BweTraceRow r;
+      r.time_us = (u.target_rate->at_time - t0_).us();
+      r.kind = cc::BweTraceRow::Kind::kControllerTarget;
+      r.bitrate_bps = last_target_bps_;
+      rows_->push_back(r);
+    }
+    return u;
+  }
+  std::unique_ptr<w::NetworkControllerInterface> cc_;
+  w::Timestamp t0_;
+  std::vector<cc::BweTraceRow>* rows_;
+  int64_t bucket_ = -1, bytes_ = 0, last_target_bps_ = -1;
+  int packets_ = 0;
+};
+
+class TracedGoogCcFactory final : public w::NetworkControllerFactoryInterface {
+ public:
+  TracedGoogCcFactory(w::Timestamp t0, std::vector<cc::BweTraceRow>* rows) : t0_(t0), rows_(rows) {}
+  std::unique_ptr<w::NetworkControllerInterface> Create(w::NetworkControllerConfig config) override {
+    return std::make_unique<TracedGoogCc>(goog_cc_.Create(std::move(config)), t0_, rows_);
+  }
+  w::TimeDelta GetProcessInterval() const override { return goog_cc_.GetProcessInterval(); }
+
+ private:
+  w::GoogCcNetworkControllerFactory goog_cc_;
+  w::Timestamp t0_;
+  std::vector<cc::BweTraceRow>* rows_;
+};
+
 class LinkTransport final : public w::Transport {
  public:
   using Fn = std::function<void(std::span<const uint8_t>, bool rtcp, const w::PacketOptions&)>;
@@ -469,16 +552,19 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::scoped_refptr<w::AudioState> recv_audio_state = make_audio_state(&recv_adm);
 
   std::unique_ptr<w::Call> send_call, recv_call;
-  auto make_call = [&](const w::Environment& call_env, w::scoped_refptr<w::AudioState> audio_state) {
+  TracedGoogCcFactory traced_cc(t0, &rep.bwe_trace);
+  auto make_call = [&](const w::Environment& call_env, w::scoped_refptr<w::AudioState> audio_state,
+                       w::NetworkControllerFactoryInterface* cc_factory) {
     w::CallConfig c = w::CallConfig::CreateSingleThreaded(call_env);
+    c.network_controller_factory = cc_factory;
     c.bitrate_config.min_bitrate_bps = static_cast<int>(s.min_rate.bps());
     c.bitrate_config.start_bitrate_bps = static_cast<int>(s.start_rate.bps());
     c.bitrate_config.max_bitrate_bps = static_cast<int>(s.max_rate.bps());
     c.audio_state = audio_state;
     return w::Call::Create(std::move(c));
   };
-  run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
-  run_on(receiver_q.get(), [&] { recv_call = make_call(env, recv_audio_state); });
+  run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state, opt.bwe_trace ? &traced_cc : nullptr); });
+  run_on(receiver_q.get(), [&] { recv_call = make_call(env, recv_audio_state, nullptr); });
 
   const std::vector<w::RtpExtension> extensions = {
       w::RtpExtension(w::RtpExtension::kTransportSequenceNumberUri, kTransportSeqExtId)};

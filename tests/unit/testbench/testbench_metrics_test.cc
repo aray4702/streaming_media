@@ -282,7 +282,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
       continue;
     }
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0;
+    int delay = 0, loss = 0, target = 0, sent = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -294,8 +294,10 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
         case cc::BweTraceRow::Kind::kProbeCluster: SM_EXPECT_GT(r.bitrate_bps, int64_t{0}); break;
         case cc::BweTraceRow::Kind::kProbeResult: break;
         case cc::BweTraceRow::Kind::kAlr: SM_EXPECT_TRUE(r.bitrate_bps == 0 || r.bitrate_bps == 1); break;
+        case cc::BweTraceRow::Kind::kSent: ++sent; SM_EXPECT_TRUE(r.packets > 0 && r.bitrate_bps > 0); break;
+        case cc::BweTraceRow::Kind::kControllerTarget: break;
       }
     }
-    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && sent > 0);
   }
 }

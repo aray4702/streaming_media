@@ -31,8 +31,12 @@ struct BweTraceRow {
   // libwebrtc's RtcEventProbeClusterCreated). kProbeResult: a probe result
   // (bitrate = the measured rate, 0 on a failure; packets = the cluster id;
   // RtcEventProbeResultSuccess / Failure). kAlr: the ALR detector's state changed
-  // (bitrate = 1 entering ALR, 0 leaving it; RtcEventAlrState). Issue #152.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kProbeCluster, kProbeResult, kAlr };
+  // (bitrate = 1 entering ALR, 0 leaving it; RtcEventAlrState). kSent: the sent
+  // packets the controller's OnSentPacket received in a 100 ms bucket starting at
+  // time_us (bitrate = their bytes over 100 ms, packets = their count), the input of
+  // the AlrDetector. kControllerTarget: the controller's own target output
+  // (libwebrtc only; this library's kTarget rows already are). Issue #152.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kProbeCluster, kProbeResult, kAlr, kSent, kControllerTarget };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -157,6 +161,9 @@ class GccController : public MetricsSource {
   DataRate max_padding_;
   std::optional<double> streams_pacing_factor_;  // StreamsConfig::pacing_factor.
   Timestamp last_now_ = Timestamp::Micros(0);
+  int64_t trace_sent_bucket_ = -1;  // kSent rows (#152): the open 100 ms bucket, its bytes and packets.
+  int64_t trace_sent_bytes_ = 0;
+  int trace_sent_packets_ = 0;
   std::optional<DataRate> remb_;
   DataRate target_;
   DataRate last_reported_;

@@ -153,6 +153,25 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
     // GoogCcNetworkController::OnSentPacket.
     alr_.OnBytesSent(size, t);
     acked_v2_.SetAlr(alr_.GetApplicationLimitedRegionStartTime().has_value());
+    if (cfg_.bwe_trace) {
+      const int64_t bucket = t.us() / 100000;
+      if (bucket != trace_sent_bucket_ && trace_sent_bucket_ >= 0) {
+        BweTraceRow r;
+        r.time_us = trace_sent_bucket_ * 100000;
+        r.kind = BweTraceRow::Kind::kSent;
+        r.bitrate_bps = trace_sent_bytes_ * 80;
+        r.packets = trace_sent_packets_;
+        // Inserted at its bucket's start, behind the rows of the bucket already written, so the trace stays in time order.
+        cfg_.bwe_trace->insert(std::upper_bound(cfg_.bwe_trace->begin(), cfg_.bwe_trace->end(), r.time_us,
+                                                [](int64_t at, const BweTraceRow& x) { return at < x.time_us; }),
+                               r);
+        trace_sent_bytes_ = 0;
+        trace_sent_packets_ = 0;
+      }
+      trace_sent_bucket_ = bucket;
+      trace_sent_bytes_ += size.bytes();
+      ++trace_sent_packets_;
+    }
     if (!first_packet_sent_) {
       first_packet_sent_ = true;
       // Initialise the feedback time to the send time to allow an RTT estimate until the first feedback.
