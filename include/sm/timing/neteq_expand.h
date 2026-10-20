@@ -25,8 +25,21 @@
 //
 // The signal arithmetic is float on the int16 scale; the factors that drive
 // decisions (mute factor and voice mix factor in Q14, mute slope in Q20,
-// lags) keep libwebrtc's integer arithmetic. BackgroundNoise is not ported
-// yet, so the noise added to the expansion is zero (tools/catalog.py 4.5).
+// lags) keep libwebrtc's integer arithmetic.
+//
+// NetEqBackgroundNoise ports background_noise.cc (one channel). After every
+// GetAudio whose operation wrote decoded audio unchanged (normal, failed
+// accelerate or preemptive expand) it reads the last 256 samples of the sync
+// buffer. When their energy per sample is under the update threshold (500000
+// at start, then the lowest energy seen, rising by a factor 1 + 229/65536
+// per update otherwise, 4x in 4 s, and never below max energy - 60 dB) and
+// the order-8 LPC residual is flat enough (5 * residual >= 16 * energy), it
+// keeps the filter, the energy and the residual gain. Expand mixes the noise
+// it generates into each period, scaled by its mute factor, which Expand
+// sets to 0 at the start of every expand period and M157 never raises: the
+// noise added is zero, as in libwebrtc. Its energy (2500 until the first
+// update) sets where Normal's first decode after an expand starts its
+// unmuting (NetEqNormalMuteFactor).
 #pragma once
 
 #include <array>
@@ -56,6 +69,59 @@ class NetEqRandomVector {
   uint32_t seed_ = 777;
   int16_t seed_increment_ = 1;
 };
+
+// modules/audio_coding/neteq/background_noise.cc, one channel. The sync
+// buffer is float on the [-1, 1) scale; Update reads it as int16 and the
+// estimate keeps libwebrtc's integer arithmetic, except the order-8
+// Levinson-Durbin recursion (double, rounded to Q12 as WebRtcSpl's).
+class NetEqBackgroundNoise {
+ public:
+  static constexpr size_t kMaxLpcOrder = 8;
+  static constexpr size_t kVecLen = 256;
+  static constexpr size_t kResidualLength = 64;
+  static constexpr int kThresholdIncrement = 229;  // 0.0035 in Q16.
+
+  NetEqBackgroundNoise() { Reset(); }
+  void Reset();
+  // BackgroundNoise::Update on the last kVecLen samples of `sync` (zeros
+  // before its start). Returns true if the filter parameters were saved.
+  bool Update(std::span<const float> sync);
+  // BackgroundNoise::GenerateBackgroundNoise: `n` noise samples (int16 scale)
+  // from `random_vector`, scaled by MuteFactor(); zeros until initialized.
+  void GenerateBackgroundNoise(const int16_t* random_vector, size_t n, int16_t* out);
+
+  int32_t Energy() const { return energy_; }
+  void SetMuteFactor(int16_t value) { mute_factor_ = value; }
+  int16_t MuteFactor() const { return mute_factor_; }
+  bool initialized() const { return initialized_; }
+  int32_t energy_update_threshold() const { return energy_update_threshold_; }
+  int16_t scale() const { return scale_; }
+  int16_t scale_shift() const { return scale_shift_; }
+  const std::array<int16_t, kMaxLpcOrder + 1>& filter() const { return filter_; }
+
+ private:
+  void IncrementEnergyThreshold(int32_t sample_energy);
+  void SaveParameters(const int16_t* lpc_coefficients, const int16_t* filter_state, int32_t sample_energy,
+                      int32_t residual_energy);
+
+  bool initialized_ = false;
+  // BackgroundNoise::ChannelParameters.
+  int32_t energy_ = 2500;
+  int32_t max_energy_ = 0;
+  int32_t energy_update_threshold_ = 500000;
+  int32_t low_energy_update_threshold_ = 0;
+  std::array<int16_t, kMaxLpcOrder> filter_state_{};
+  std::array<int16_t, kMaxLpcOrder + 1> filter_{4096, 0, 0, 0, 0, 0, 0, 0, 0};
+  int16_t mute_factor_ = 0;
+  int16_t scale_ = 20000;
+  int16_t scale_shift_ = 24;
+};
+
+// Normal::Process after an expand: the mute factor the decoded audio starts
+// unmuting from, Expand's raised to sqrt(background noise energy / energy of
+// the first 8 ms) when the audio is louder than the noise, else 1.0 (Q14).
+int16_t NetEqNormalMuteFactor(std::span<const float> decoded, int fs_hz, int16_t expand_mute_factor,
+                              int32_t background_noise_energy);
 
 class NetEqExpand {
  public:
@@ -91,6 +157,9 @@ class NetEqExpand {
   int mute_slope() const { return mute_slope_; }              // Q20 per sample.
   int16_t voice_mix_factor() const { return voice_mix_factor_; }  // Q14.
   bool onset() const { return onset_; }
+  // NetEqImpl's BackgroundNoise, which Expand mixes in; Reset() keeps it.
+  NetEqBackgroundNoise& background_noise() { return background_noise_; }
+  const NetEqBackgroundNoise& background_noise() const { return background_noise_; }
   // StatisticsCalculator::LogDelayedPacketOutageEvent's duration, set when
   // an expand period ends with a normal decode.
   size_t last_outage_duration_samples() const { return last_outage_duration_samples_; }
@@ -106,6 +175,7 @@ class NetEqExpand {
   int fs_hz_;
   int fs_mult_;
   NetEqRandomVector random_vector_;
+  NetEqBackgroundNoise background_noise_;
   bool first_expand_ = true;
   int consecutive_expands_ = 0;
   size_t overlap_length_;

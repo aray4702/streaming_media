@@ -54,18 +54,14 @@ struct SessionConfig {
   // peer's first packet carrying a MID acknowledges it.
   int mid_packets = 8;
   sync::ExtensionMap extensions;  // Negotiated id <-> URI (SDP stays with the host).
-  // local_ssrc, cname and seed are filled in; has_video stays as set. Version 2
-  // (libwebrtc's report timing) is the session default (#61).
-  RtcpConfig rtcp = [] { RtcpConfig c; c.version = 2; return c; }();
+  // local_ssrc, cname and seed are filled in; has_video stays as set.
+  RtcpConfig rtcp;
   SendSideConfig send_side;
-  // Interval between transport-cc feedback messages; zero turns it off.
+  // Zero turns transport-cc feedback off. Otherwise the feedback follows
+  // libwebrtc's TransportSequenceNumberFeedbackGenenerator: the interval
+  // follows the local send estimate (5% of it, 50-250 ms, 100 ms before the
+  // first), arrivals are kept 500 ms and late ones reported again.
   TimeDelta transport_feedback_interval = TimeDelta::Millis(50);
-  // 1: the interval above, each arrival reported once. 2: libwebrtc's
-  // TransportSequenceNumberFeedbackGenenerator: the interval follows the local
-  // send estimate (5% of it, 50-250 ms, 100 ms before the first), arrivals are
-  // kept 500 ms and late ones reported again. Zero interval still turns it off.
-  // Default 2 (#61).
-  int transport_feedback_version = 2;
   // 1: the RTX packet history of loss::RtxConfig v1 (a ring filled at queue time). 2: libwebrtc's
   // RtpPacketHistory (stored when the pacer sends, RTT-based retention, culled on acknowledgement). Default 2 (#61).
   int rtx_version = 2;

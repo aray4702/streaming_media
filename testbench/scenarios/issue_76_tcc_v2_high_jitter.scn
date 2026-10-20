@@ -4,7 +4,6 @@ describe 40 ms jitter with reordering, transport-cc feedback as libwebrtc's gene
 # arrives behind a sent report again, so the delay-based estimator sees the reordered packets in order.
 # Seeds 1-5: video delay p95 159-253 ms with `tcc v1`'s 1547 ms; libwebrtc (CI compare-webrtc, high_jitter): 136 ms.
 # Target (#76 / parity): within the parity band of libwebrtc's 136 ms; video bitrate (libwebrtc 584 kbps) needs #19.
-tcc v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 # Restored by #24 (was a provisional `< 1300` from PR #180): with every v2 switch the default (#61) and

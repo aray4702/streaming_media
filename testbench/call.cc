@@ -431,14 +431,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.version = s.cc_v2 ? 2 : 1;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
-    c.transport_feedback_version = s.tcc_v2 ? 2 : 1;
     c.rtx_version = s.rtx_v2 ? 2 : 1;
     c.packetization_version = s.packetization_v2 ? 2 : 1;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149): under packetization v2
     // the bench's packets are that size, so the overhead is too (issue #151).
     if (s.packetization_v2) c.send_side.max_packet_size = 1460;
-    c.rtcp.version = s.rtcp_v2 ? 2 : 1;
     c.events = &events;
     return c;
   };

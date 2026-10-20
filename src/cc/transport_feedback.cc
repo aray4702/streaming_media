@@ -231,27 +231,19 @@ void TransportFeedbackBuilder::OnSendBandwidthEstimateChanged(DataRate estimate)
 void TransportFeedbackBuilder::OnPacket(uint16_t seq, Timestamp arrival) {
   int64_t s = unwrapper_.Unwrap(seq);
   ++stats_.packets;
-  if (cfg_.version >= 2) {
-    // MaybeCullOldPackets: when the window start has caught up with the end.
-    if (window_start_ && *window_start_ >= end_ && arrival.us() >= kBackWindow.us()) {
-      RemoveOldPackets(s, arrival - kBackWindow);
-    }
-    if (!window_start_ || s < *window_start_) window_start_ = s;
-    if (seen_ && s >= begin_ && s < end_ && arrivals_.count(s)) return;  // Only the first arrival counts.
-    AddArrival(s, arrival);
-    if (*window_start_ < begin_) window_start_ = begin_;
-    return;
+  // MaybeCullOldPackets: when the window start has caught up with the end.
+  if (window_start_ && *window_start_ >= end_ && arrival.us() >= kBackWindow.us()) {
+    RemoveOldPackets(s, arrival - kBackWindow);
   }
-  if (next_to_report_ != INT64_MIN && s < next_to_report_) {
-    ++stats_.late_after_report;
-    return;
-  }
-  arrivals_.emplace(s, arrival);
+  if (!window_start_ || s < *window_start_) window_start_ = s;
+  if (seen_ && s >= begin_ && s < end_ && arrivals_.count(s)) return;  // Only the first arrival counts.
+  AddArrival(s, arrival);
+  if (*window_start_ < begin_) window_start_ = begin_;
 }
 
 // SendPeriodicFeedbacks + MaybeBuildFeedbackPacket. Arrivals stay in the map
 // after a report; the window start says where the next report begins.
-std::vector<TransportFeedback> TransportFeedbackBuilder::BuildV2() {
+std::vector<TransportFeedback> TransportFeedbackBuilder::Build() {
   std::vector<TransportFeedback> out;
   if (!window_start_) return out;
   const int64_t end = end_;
@@ -304,53 +296,8 @@ std::vector<TransportFeedback> TransportFeedbackBuilder::BuildV2() {
   return out;
 }
 
-std::vector<TransportFeedback> TransportFeedbackBuilder::Build() {
-  if (cfg_.version >= 2) return BuildV2();
-  std::vector<TransportFeedback> out;
-  if (arrivals_.empty()) return out;
-  int64_t base = next_to_report_ == INT64_MIN ? arrivals_.begin()->first : next_to_report_;
-  base = std::min(base, arrivals_.begin()->first);
-  const int64_t last = arrivals_.rbegin()->first;
-  while (base <= last) {
-    TransportFeedback fb;
-    fb.sender_ssrc = sender_ssrc_;
-    fb.media_ssrc = media_ssrc_;
-    fb.base_seq = static_cast<uint16_t>(base);
-    fb.feedback_count = fb_count_++;
-    // Reference time: floor of the first arrival to 64 ms.
-    auto first = arrivals_.lower_bound(base);
-    int64_t ref_units = first->second.us() / kRefUnitUs;
-    fb.reference_time = static_cast<int32_t>(ref_units & 0x7FFFFF);
-    int64_t prev_us = ref_units * kRefUnitUs;
-    int64_t s = base;
-    for (; s <= last && fb.packets.size() < 0xFFFF; ++s) {
-      TransportFeedback::Packet p;
-      p.seq = static_cast<uint16_t>(s);
-      auto it = arrivals_.find(s);
-      if (it != arrivals_.end()) {
-        int64_t ticks = (it->second.us() - prev_us) / kTickUs;
-        if (ticks < -32768 || ticks > 32767) break;  // Start a new message.
-        p.received = true;
-        p.delta_ticks = ticks;
-        prev_us += ticks * kTickUs;
-      }
-      fb.packets.push_back(p);
-    }
-    // Trailing not-received packets are not reported yet (they may arrive).
-    while (!fb.packets.empty() && !fb.packets.back().received) fb.packets.pop_back();
-    if (fb.packets.empty()) break;
-    base = base + static_cast<int64_t>(fb.packets.size());
-    out.push_back(std::move(fb));
-    ++stats_.feedbacks;
-  }
-  next_to_report_ = last + 1;
-  arrivals_.clear();
-  return out;
-}
-
 void TransportFeedbackBuilder::ExportMetrics(MetricsWriter& w) const {
   w.Counter("packets", stats_.packets);
-  w.Counter("late_after_report", stats_.late_after_report);
   w.Counter("feedbacks", stats_.feedbacks);
   w.Counter("re_reported", stats_.re_reported);
 }

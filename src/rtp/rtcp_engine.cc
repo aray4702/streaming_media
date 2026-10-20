@@ -20,17 +20,14 @@ void RtcpEngine::AddLocalMediaSsrc(uint32_t ssrc) { local_ssrcs_.push_back(ssrc)
 TimeDelta RtcpEngine::Interval() {
   TimeDelta nominal = cfg_.report_interval.IsZero() ? (cfg_.has_video ? kVideoReportInterval : kAudioReportInterval)
                                                     : cfg_.report_interval;
-  if (cfg_.version >= 2) {
-    TimeDelta min_interval = nominal;
-    if (cfg_.has_video && sender_ && send_rate_ > DataRate::BitsPerSec(72'000)) {
-      min_interval = std::min(TimeDelta::Millis(360'000 / ((send_rate_.bps() + 500) / 1000)), nominal);
-    }
-    const int64_t m = min_interval.ms();
-    const int64_t lo = m * 1 / 2, hi = m * 3 / 2;
-    const int64_t ms = lo + static_cast<int64_t>(rng_.Uniform(0.0, 1.0) * static_cast<double>(hi - lo + 1));
-    return TimeDelta::Millis(std::max<int64_t>(std::min(ms, hi), 1));
+  TimeDelta min_interval = nominal;
+  if (cfg_.has_video && sender_ && send_rate_ > DataRate::BitsPerSec(72'000)) {
+    min_interval = std::min(TimeDelta::Millis(360'000 / ((send_rate_.bps() + 500) / 1000)), nominal);
   }
-  return cfg_.randomize_intervals ? nominal * rng_.Uniform(0.5, 1.5) : nominal;
+  const int64_t m = min_interval.ms();
+  const int64_t lo = m * 1 / 2, hi = m * 3 / 2;
+  const int64_t ms = lo + static_cast<int64_t>(rng_.Uniform(0.0, 1.0) * static_cast<double>(hi - lo + 1));
+  return TimeDelta::Millis(std::max<int64_t>(std::min(ms, hi), 1));
 }
 
 // The sender's bitrate over the last second, from the SR octet counter
@@ -177,14 +174,14 @@ void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
 bool RtcpEngine::ReportDue(Timestamp now, bool keyframe_before_rtp) const {
   if (!started_) return false;
   // For video, a report due within 100 ms goes out before the keyframe.
-  if (cfg_.has_video && keyframe_before_rtp && cfg_.version >= 2) now += TimeDelta::Millis(100);
+  if (cfg_.has_video && keyframe_before_rtp) now += TimeDelta::Millis(100);
   return now >= next_report_;
 }
 
 std::vector<RtcpOutgoing> RtcpEngine::SendReport(Timestamp now) {
   std::vector<RtcpOutgoing> out;
   if (!started_) return out;
-  if (sender_ && cfg_.version >= 2) UpdateSendRate(now);
+  if (sender_) UpdateSendRate(now);
   EmitReport(now, out);
   next_report_ = now + Interval();
   return out;
@@ -192,7 +189,7 @@ std::vector<RtcpOutgoing> RtcpEngine::SendReport(Timestamp now) {
 
 std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   std::vector<RtcpOutgoing> out;
-  if (sender_ && cfg_.version >= 2) UpdateSendRate(now);
+  if (sender_) UpdateSendRate(now);
   if (!started_) {
     started_ = true;
     TimeDelta first = cfg_.first_report_delay;
@@ -218,7 +215,7 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
       bytes = 0;
     }
     if (packets.empty() && !cfg_.reduced_size) {
-      if (cfg_.version >= 2 && CarriesReport(q.tag)) {
+      if (CarriesReport(q.tag)) {
         // RTCPSender::SendCompoundRTCP in compound mode (#178): PrepareReport
         // adds the full SR/RR (report blocks) and SDES to NACK, PLI, FIR and
         // loss notification, and restarts the report timer.

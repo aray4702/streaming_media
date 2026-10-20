@@ -71,8 +71,6 @@ struct Scenario {
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
-  bool tcc_v2 = true;  // `tcc v2`: libwebrtc's transport-cc feedback generator (issue #76; default v2 since #61).
-  bool rtcp_v2 = true;  // `rtcp v2`: libwebrtc's RTCP report timing (issue #76 group 3; default v2 since #61).
   bool packetization_v2 = true;  // `packetization v2`: libwebrtc's RtpSenderVideo payload sizing (issue #76 group 7; default v2 since #61).
   bool rtx_v2 = true;  // `rtx v2`: libwebrtc's RtpPacketHistory (issue #76 group 2; default v2 since #61).
   bool keyframe_v2 = true;  // `keyframe v2`: libwebrtc's receiver keyframe-request policy (issue #23) and the sender's 300 ms request filter (#151); default v2 since #61.
