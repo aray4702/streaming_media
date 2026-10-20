@@ -3,7 +3,9 @@
 // experiences it (audio gaps, video freezes, delay, quality, recovery time).
 #pragma once
 
+#include <cstdint>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -112,6 +114,9 @@ std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
+// Appends a nack_sent / pli_sent row (or *_recv when `received`) for each generic
+// NACK and each PLI or FIR in the compound RTCP packet `rtcp` (issue #151).
+void AddRtcpTraceRows(std::span<const uint8_t> rtcp, int64_t time_us, bool received, std::vector<cc::BweTraceRow>& out);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

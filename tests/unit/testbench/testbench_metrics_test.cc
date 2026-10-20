@@ -266,6 +266,38 @@ SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumn
                "200000,target,900000,,,,,,\n");
 }
 
+// The receiver's NACK and keyframe requests in the same trace (issue #151).
+SM_TEST(TestbenchMetrics, RtcpTraceRowsCountNackedSequenceNumbersAndKeyframeRequests) {
+  using Kind = cc::BweTraceRow::Kind;
+  // Compound packet: an RR with no report blocks, a NACK with two FCI entries
+  // (PID 100 with BLP 0x0003, PID 200 with BLP 0), a PLI, and a FIR.
+  const std::vector<uint8_t> rtcp = {
+      0x80, 201, 0, 1, 0, 0, 0, 1,                                  // RR
+      0x81, 205, 0, 4, 0, 0, 0, 1, 0, 0, 0, 2, 0, 100, 0x00, 0x03,  // NACK, FCI 1
+      0, 200, 0, 0,                                                 // NACK, FCI 2
+      0x81, 206, 0, 2, 0, 0, 0, 1, 0, 0, 0, 2,                      // PLI
+      0x84, 206, 0, 4, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0,  // FIR
+  };
+  std::vector<cc::BweTraceRow> rows;
+  AddRtcpTraceRows(rtcp, 15067000, false, rows);
+  AddRtcpTraceRows(std::span<const uint8_t>(rtcp).subspan(0, 28), 15097000, true, rows);
+  SM_ASSERT_EQ(rows.size(), size_t{4});
+  SM_EXPECT_TRUE(rows[0].kind == Kind::kNackSent);
+  SM_EXPECT_EQ(rows[0].packets, 4);  // 100, 101, 102 and 200.
+  SM_EXPECT_TRUE(rows[1].kind == Kind::kPliSent);
+  SM_EXPECT_TRUE(rows[2].kind == Kind::kPliSent);
+  SM_EXPECT_TRUE(rows[3].kind == Kind::kNackReceived);
+  SM_EXPECT_EQ(rows[3].time_us, int64_t{15097000});
+  SM_EXPECT_EQ(BweTraceCsv({rows[3], rows[1]}),
+               "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n"
+               "15097000,nack_recv,0,,,4,,,\n"
+               "15067000,pli_sent,0,,,,,,\n");
+  // A truncated packet adds nothing.
+  rows.clear();
+  AddRtcpTraceRows(std::span<const uint8_t>(rtcp).subspan(0, 20), 0, false, rows);
+  SM_EXPECT_TRUE(rows.empty());
+}
+
 SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
   const std::string link = "duration 6s\nat 0s capacity=800kbps delay=30ms queue=200ms\nat 3s loss=3%\n";
   RunOptions opt;
@@ -282,7 +314,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
       continue;
     }
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0;
+    int delay = 0, loss = 0, target = 0, nack_sent = 0, nack_recv = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -291,8 +323,15 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
         case cc::BweTraceRow::Kind::kDelayBased: ++delay; SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2); break;
         case cc::BweTraceRow::Kind::kLossBased: ++loss; SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.loss_state >= 0); break;
         case cc::BweTraceRow::Kind::kTarget: ++target; break;
+        case cc::BweTraceRow::Kind::kNackSent: ++nack_sent; SM_EXPECT_GT(r.packets, 0); break;
+        case cc::BweTraceRow::Kind::kNackReceived: ++nack_recv; SM_EXPECT_GT(r.packets, 0); break;
+        case cc::BweTraceRow::Kind::kPliSent:
+        case cc::BweTraceRow::Kind::kPliReceived: break;
       }
     }
     SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0);
+    // 3 % loss on the forward link: the receiver NACKs, and the clean reverse link delivers every NACK.
+    SM_EXPECT_GT(nack_sent, 0);
+    SM_EXPECT_EQ(nack_recv, nack_sent);
   }
 }

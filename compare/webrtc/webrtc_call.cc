@@ -522,6 +522,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
+    // The receiver's NACK and keyframe requests, as the test bench traces them (issue #151).
+    if (opt.bwe_trace && (rtcp || IsRtcp(data))) testbench::AddRtcpTraceRows(data, rel(sim.Now()).us(), false, rep.bwe_trace);
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
   });
@@ -727,8 +729,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                                                 [](const w::RtpPacketReceived&) { return false; });
       });
     });
-    reverse.ReceiveEach(now, [&](Pkt p, sm::Timestamp) {
+    reverse.ReceiveEach(now, [&](Pkt p, sm::Timestamp at) {
       if (p.cross || !p.rtcp) return;
+      if (opt.bwe_trace) testbench::AddRtcpTraceRows(p.data, at.us(), true, rep.bwe_trace);
       sender_q->PostTask([&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
     });
 

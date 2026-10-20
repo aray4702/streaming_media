@@ -26,8 +26,12 @@ namespace sm::cc {
 // target. sm_compare writes libwebrtc's rows in the same layout (BweTraceCsv in
 // testbench/call.h), so tools/bwe_trace.py can lay the two stacks side by side.
 // -1 marks a column the event does not have.
+// The RTCP rows (issue #151) are the receiver's NACK and keyframe requests on the
+// reverse link, parsed from the bytes on both stacks: `*_sent` when the receiver
+// sends the packet, `*_recv` when it reaches the sender. `packets` is the number
+// of sequence numbers a NACK asks for; bitrate_bps is 0.
 struct BweTraceRow {
-  enum class Kind { kDelayBased, kLossBased, kTarget };
+  enum class Kind { kDelayBased, kLossBased, kTarget, kNackSent, kNackReceived, kPliSent, kPliReceived };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

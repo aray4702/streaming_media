@@ -3,6 +3,7 @@
 #include "call_common.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -196,7 +197,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "nack_sent", "nack_recv", "pli_sent", "pli_recv"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out = "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps\n";
@@ -207,6 +208,35 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
            (r.loss_state < 0 ? "" : kLossState[r.loss_state]) + "," + num(r.loss_limit_bps) + "," + num(r.instant_ub_bps) + "\n";
   }
   return out;
+}
+
+void AddRtcpTraceRows(std::span<const uint8_t> rtcp, int64_t time_us, bool received, std::vector<cc::BweTraceRow>& out) {
+  using Kind = cc::BweTraceRow::Kind;
+  // RFC 3550 compound packet: version 2, then 4 * (length + 1) bytes per packet.
+  size_t at = 0;
+  while (at + 4 <= rtcp.size() && (rtcp[at] >> 6) == 2) {
+    const int fmt = rtcp[at] & 0x1f;
+    const int pt = rtcp[at + 1];
+    const size_t len = 4 * (static_cast<size_t>((rtcp[at + 2] << 8) | rtcp[at + 3]) + 1);
+    if (at + len > rtcp.size()) break;
+    cc::BweTraceRow r;
+    r.time_us = time_us;
+    r.bitrate_bps = 0;
+    if (pt == 205 && fmt == 1 && len >= 12) {
+      // RFC 4585 generic NACK: after the two SSRCs, one PID and a 16-bit BLP per FCI entry.
+      int count = 0;
+      for (size_t f = at + 12; f + 4 <= at + len; f += 4) {
+        count += 1 + std::popcount(static_cast<unsigned>((rtcp[f + 2] << 8) | rtcp[f + 3]));
+      }
+      r.kind = received ? Kind::kNackReceived : Kind::kNackSent;
+      r.packets = count;
+      out.push_back(r);
+    } else if (pt == 206 && (fmt == 1 || fmt == 4)) {
+      r.kind = received ? Kind::kPliReceived : Kind::kPliSent;  // PLI (RFC 4585) or FIR (RFC 5104).
+      out.push_back(r);
+    }
+    at += len;
+  }
 }
 
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
@@ -428,6 +458,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   };
   rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
+  // The receiver's NACK and keyframe requests go in the same trace (issue #151), which has rows with `cc v2` only.
+  const bool rtcp_trace = opt.bwe_trace && sender_cfg.send_side.gcc.version >= 2;
   rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
   // Receiver reports on the call's 1 s grid, half a period after the sender's.
   if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
@@ -576,6 +608,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
+      if (!is_forward && rtcp_trace) AddRtcpTraceRows(p.bytes, now.us(), false, rep.bwe_trace);
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
     }
@@ -593,7 +626,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Before the capture: feedback that arrived during the last millisecond happened before this tick's frame,
     // as on libwebrtc's event clock. After the outage in issue #151 a NACK and the recovery keyframe meet in the
     // same tick; libwebrtc queues the NACK's resends first and the keyframe flushes them.
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) {
+      if (rtcp_trace) AddRtcpTraceRows(r.bytes, at.us(), true, rep.bwe_trace);
+      sender.OnPacket(r.bytes, at);
+    });
     for (const auto& e : sender.TakeEvents()) {
       video_ctl.OnSessionEvent(e);
       switch (e.type) {
