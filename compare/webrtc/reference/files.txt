@@ -149,3 +149,9 @@ modules/audio_coding/acm2/audio_coding_module.cc
 media/engine/webrtc_voice_engine.h
 media/engine/webrtc_voice_engine.cc
 media/base/media_constants.cc
+
+# Added for #151 / #24 (2026-10-20): frame release timing and the sender's keyframe-request handling.
+video/frame_decode_timing.h
+video/frame_decode_timing.cc
+video/encoder_rtcp_feedback.h
+video/encoder_rtcp_feedback.cc

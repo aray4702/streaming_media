@@ -21,6 +21,7 @@ DIRS=(
   modules/video_coding/timing
   video/timing
   video/config
+  api/units
   modules/audio_coding/neteq
   modules/audio_coding/codecs/red
   modules/audio_processing/aec3
