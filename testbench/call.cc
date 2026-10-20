@@ -586,15 +586,21 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     if (rev_changed) reverse.SetConfig(links.reverse().cfg);
 
     // --- Sender: audio --------------------------------------------------------
-    if (s.audio && t % 20 == 0) {
+    // Frame k (20 ms from 20k ms) leaves the encoder at 20k + 10 ms. That is the
+    // phase libwebrtc's audio send path has in sm_compare: the ADM delivers 10 ms
+    // blocks from t = 0 and a 20 ms Opus packet completes on every second block
+    // (10, 30, 50 ms). With 30 fps video captured from t = 0 it decides which
+    // packets share a 5 ms send group in the delay-based detector (issue #124).
+    if (s.audio && t % 20 == 10) {
+      const int64_t k = t / 20;
       size_t frame_bytes = audio_frame_bytes;
       if (s.audio_v2) {
-        const size_t off = static_cast<size_t>(t / 20) * frame_samples;
+        const size_t off = static_cast<size_t>(k) * frame_samples;
         const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
         frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
       }
-      std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(t / 20));
-      sender.SendAudio(audio_send, {static_cast<uint32_t>(t * sr / 1000), frame, false}, now);
+      std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
+      sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 
     // --- Sender: video --------------------------------------------------------

@@ -65,7 +65,9 @@ decision, the audio device (a pull every 10 ms), the freeze detector, the
 link emulation and the measurement.
 
 - **Audio** is 20 ms frames at the configured bitrate (default 32 kbps), with
-  RED distance 1. There is no audio codec in the library, so the payload
+  RED distance 1. Frame k is sent at 20k + 10 ms, the phase libwebrtc's audio
+  path has in `sm_compare` (10 ms ADM blocks from t = 0), so audio and the
+  30 fps video share the delay detector's 5 ms send groups as there (#124). There is no audio codec in the library, so the payload
   bytes stand in for the encoded frame. The receiver plays the original
   speech samples for each frame it receives, which is what a lossless codec
   would decode.
