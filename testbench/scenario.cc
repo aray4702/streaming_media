@@ -304,6 +304,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "timing") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: timing v1|v2");
       s.timing_v2 = tok[1] == "v2";
+    } else if (key == "neteq") {
+      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: neteq v1|v2");
+      s.neteq_v2 = tok[1] == "v2";
     } else if (key == "pacer") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: pacer v1|v2");
       s.pacer_v2 = tok[1] == "v2";
@@ -400,6 +403,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.rtx_v2 != d.rtx_v2) o += std::string("rtx ") + (s.rtx_v2 ? "v2" : "v1") + "\n";
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
+  if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
   if (s.cc_v2 != d.cc_v2) o += std::string("cc ") + (s.cc_v2 ? "v2" : "v1") + "\n";
   if (s.audio_v2 != d.audio_v2) o += std::string("audio ") + (s.audio_v2 ? "v2" : "v1") + "\n";

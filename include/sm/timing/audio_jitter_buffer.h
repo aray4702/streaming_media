@@ -10,7 +10,9 @@
 //   merge             packet arrives after an expand: crossfade back in
 // The target delay comes from DelayManager (95th percentile of relative
 // arrival delay), so the buffer tracks the network's jitter instead of
-// using a fixed size.
+// using a fixed size. With `version = 2` (the test bench's `neteq v2`,
+// issue #62) it comes from NetEqDelayManager, libwebrtc M157's NetEq
+// DelayManager and its packet-arrival history, instead.
 #pragma once
 
 #include <cstdint>
@@ -23,6 +25,7 @@
 #include "sm/core/seq_num.h"
 #include "sm/loss/plc.h"
 #include "sm/timing/delay_manager.h"
+#include "sm/timing/neteq_delay.h"
 #include "sm/timing/time_stretch.h"
 
 namespace sm::timing {
@@ -36,6 +39,8 @@ struct AudioJitterBufferConfig {
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
+  int version = 1;  // 2: the target delay as libwebrtc's NetEq (NetEqDelayManager).
+  NetEqDelayConfig neteq_delay;
   EventSink* events = nullptr;
 };
 
@@ -66,7 +71,10 @@ class AudioJitterBuffer : public MetricsSource {
   int TargetDelayMs() const;
   double CurrentLevelMs() const;
   // Extra minimum delay, e.g. requested by audio/video synchronization.
-  void SetMinimumDelayMs(int ms) { min_delay_ms_ = ms; }
+  void SetMinimumDelayMs(int ms) {
+    min_delay_ms_ = ms;
+    neteq_delay_.SetMinimumDelay(ms);
+  }
   const AudioJitterBufferStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -78,6 +86,11 @@ class AudioJitterBuffer : public MetricsSource {
 
   AudioJitterBufferConfig cfg_;
   DelayManager delay_;
+  NetEqDelayManager neteq_delay_;
+  // NetEq's TickTimer: 10 ms per GetAudio call (version 2).
+  static constexpr int64_t kMsPerTick = 10;
+  int64_t ticks_ = 0;
+  bool neteq_reset_done_ = false;
   TimeStretcher stretcher_;
   loss::PacketLossConcealer plc_;
   SeqNumUnwrapper<uint32_t> unwrapper_;

@@ -169,14 +169,35 @@ ALGORITHMS = [
          verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
-         headers=["timing/delay_manager.h"], unit=["DelayManager"], e2e=["E2E_DelayManager"],
+         headers=["timing/delay_manager.h", "timing/neteq_delay.h"],
+         unit=["DelayManager", "NetEqHistogram", "UnderrunOptimizer", "ReorderOptimizer", "PacketArrivalHistory",
+               "NetEqDelayManager", "AudioJitterBufferNetEqV2"],
+         e2e=["E2E_DelayManager"],
          bench=["timing/DelayManager_Update"],
          scenario="The audio jitter buffer simulation with jitter stepping from 5 ms to 40 ms half way; the target "
                   "delay must follow.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
-               "packets, while falling jitter takes several seconds, so the buffer does not oscillate.",
-         verification="No defects found."),
+               "packets, while falling jitter takes several seconds, so the buffer does not oscillate. "
+               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; default v1): "
+               "`NetEqDelayManager` ports libwebrtc M157's modules/audio_coding/neteq/ histogram.cc (Q30 buckets, "
+               "Q15 forget factor from 0 with start_forget_weight 2), underrun_optimizer.cc (95th percentile of the "
+               "largest relative delay of each 500 ms interval, 100 buckets of 20 ms, forget factor 0.983), "
+               "reorder_optimizer.cc (forget factor 0.9993, 20 ms per percent of reordered packets lost), "
+               "packet_arrival_history.cc (delay against the fastest in-order packet of the last 2 s of RTP time), "
+               "delay_manager.cc (max of the two, 80 ms until the first estimate), delay_constraints.cc (minimum "
+               "delay, at most 75% of a 200-packet buffer) and DecisionLogic::PacketArrived. Arrival times are on "
+               "NetEq's 10 ms TickTimer, which advances once per GetAudio, and the packets before the first GetAudio "
+               "are dropped from the statistics as NetEqImpl's SoftReset on the first codec does. Not ported yet "
+               "(the next steps of #62): DecisionLogic's operations (accelerate above target + max arrival delay + "
+               "20 ms, preemptive expand below target, postponed decoding after an expand), BufferLevelFilter, and "
+               "expand/merge timing; the v2 target drives v1's operations. NetEq::Config's max_packets_in_buffer "
+               "(200) and min_delay_ms (0) are from api/neteq/neteq.h, which is not in compare/webrtc/reference/ "
+               "(#57).",
+         verification="No defects found. NetEq v2: libwebrtc's histogram, underrun, reorder, packet arrival history "
+                      "and delay manager unit tests pass. On `high_jitter` (seeds 1-10) audio concealment falls from "
+                      "1.17-1.64 % to 0-0.1 % (libwebrtc 0.07-0.27 %) and the jitter buffer delay p95 rises from "
+                      "72-88 ms to 104 ms (libwebrtc 100-130 ms); `issue_62_neteq_v2_high_jitter` locks it in."),
     dict(id="4.4", slug="time-stretch", title="Time stretching (WSOLA accelerate / preemptive expand)",
          problems=["Variable packet arrival (audio) -> time-stretching: accelerate, preemptive expand",
                    "Clock drift between sender and receiver -> NetEq stretching"],
