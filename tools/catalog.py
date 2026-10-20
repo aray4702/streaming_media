@@ -207,7 +207,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
                "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
-               "audible.",
+               "audible. This is the v1 jitter buffer's DSP; `neteq v2` uses NetEq's (NetEqTimeStretch, see 4.5).",
          verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
                       "ready, but WSOLA needs 30 ms, so stretching never ran and latency stayed at 600 ms after "
                       "a stall. Fixed by decoding ahead only when a stretch is wanted (AudioJitterBuffer::"
@@ -216,7 +216,7 @@ ALGORITHMS = [
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
          headers=["timing/audio_jitter_buffer.h", "timing/neteq_expand.h"],
          unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic",
-               "NetEqRandomVector", "NetEqExpand", "NetEqMerge"],
+               "NetEqRandomVector", "NetEqExpand", "NetEqMerge", "NetEqTimeStretch"],
          e2e=["E2E_AudioJitterBuffer"],
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
@@ -240,8 +240,9 @@ ALGORITHMS = [
                "decodes up to 20 ms and borrows the rest of its 30 ms from the samples just played, inserting the "
                "period after them. BufferLevelFilter (buffer_level_filter.cc, Q8, factor 251-254 by target) is "
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
-               "Differences that remain: the stretch DSP is 4.4's (correlation 0.75, segment at the block start), "
-               "not accelerate.cc/preemptive_expand.cc (0.9, 15 ms); fast accelerate is a plain accelerate, as "
+               "The stretch DSP is NetEq's (NetEqTimeStretch below), fed as NetEqImpl::DoAccelerate and "
+               "DoPreemptiveExpand do: the decoded audio, or 30 ms borrowed from the end of the sync buffer. "
+               "Differences that remain: fast accelerate is a plain accelerate, as "
                "NetEq::Config::enable_fast_accelerate defaults to false (api/neteq/neteq.h, missing from "
                "compare/webrtc/reference/, #57). "
                "The v2 expand is libwebrtc M157's Expand (expand.cc, random_vector.cc and the DspHelper pieces it "
@@ -277,8 +278,21 @@ ALGORITHMS = [
                "samples. The samples a merge adds or removes are a concealed-samples correction "
                "(StatisticsCalculator, a negative one held against later additions). The 4 kHz correlation and "
                "peak search are float (the WebRtcSpl helpers it calls, in common_audio/signal_processing, are "
-               "not in compare/webrtc/reference/, #57). Still to port (issue #62): the "
-               "Accelerate/PreemptiveExpand DSP, and the receive half of Opus in-band FEC.",
+               "not in compare/webrtc/reference/, #57). Accelerate and PreemptiveExpand are ported as NetEqTimeStretch "
+               "(time_stretch.cc, accelerate.cc, preemptive_expand.cc, one channel): the input is downsampled to "
+               "4 kHz with the filter delay compensated, the strongest autocorrelation peak between lags 10 and "
+               "59 gives the pitch period, and the periods either side of 15 ms are compared. A VAD calls the "
+               "block passive when their energy per sample is at most 8x the background noise energy (75000 "
+               "before the first estimate), and then any period is used (kSuccessLowEnergy, NetEq's "
+               "kAccelerateLowEnergy / kPreemptiveExpandLowEnergy modes); otherwise the correlation must exceed "
+               "0.9 in Q14 (0.5 for fast accelerate), and preemptive expand also needs at most 15 ms already "
+               "played. Accelerate crossfades the period before 15 ms into the one after it; preemptive expand "
+               "repeats the period before max(15 ms, played part); the crossfade is AudioVector::CrossFade's "
+               "ramp. The decision values (energies, VAD, correlation, scaling) keep libwebrtc's integer "
+               "arithmetic on int16 samples; the peak search is the float DspHelper::PeakDetection of the expand, "
+               "and the stretched signal is float. Where NetEq's GetAudioInternal fails on a stretch error "
+               "(input under 30 ms, or no new samples past the overlap), the input is kept unchanged. Still to "
+               "port (issue #62): the receive half of Opus in-band FEC.",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -302,7 +316,14 @@ ALGORITHMS = [
                       "and mouth-to-ear p95 147.6 -> 140.9 ms (libwebrtc 81 and 146.8), time-stretch 0.24 -> 0.51 % "
                       "(libwebrtc 0.39): the merge now overwrites the unplayed expansion instead of playing it "
                       "before the packet. `high_jitter` and `cross_traffic` are unchanged but for `high_jitter` "
-                      "jitter buffer delay p50 80.4 -> 82.0 ms (libwebrtc 85)."),
+                      "jitter buffer delay p50 80.4 -> 82.0 ms (libwebrtc 85). "
+                      "NetEq v2 Accelerate/PreemptiveExpand (issue #62): time_stretch_unittest.cc's "
+                      "CreateAndDestroy passes; its Accelerate tests read testfile32kHz.pcm, so synthetic voiced "
+                      "signals and noise test the period, the 0.9 and 0.5 thresholds, the VAD against the noise "
+                      "estimate, preemptive expand's old-data rule, the crossfade and the jitter buffer's whole "
+                      "periods. With `neteq v2`, seeds "
+                      "1-10: `audio_only_lossy` time-stretch 0.51 -> 0.44 % (libwebrtc 0.39), `cross_traffic` "
+                      "2.29 -> 2.06 % (libwebrtc 2.37); the other audio means move by under 2 %."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],

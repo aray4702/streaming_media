@@ -905,4 +905,215 @@ size_t NetEqMerge::Process(std::span<const float> input, std::vector<float>& syn
   return output_length - old_length_;
 }
 
+
+namespace {
+
+// WebRtcSpl_MaxAbsValueW32.
+int32_t MaxAbsValueW32(const int32_t* v, size_t n) {
+  uint32_t m = 0;
+  for (size_t i = 0; i < n; ++i) {
+    const uint32_t a = v[i] < 0 ? 0u - static_cast<uint32_t>(v[i]) : static_cast<uint32_t>(v[i]);
+    m = std::max(m, a);
+  }
+  return static_cast<int32_t>(std::min<uint32_t>(m, std::numeric_limits<int32_t>::max()));
+}
+
+// WebRtcSpl_DivW32W16.
+int32_t DivW32W16(int32_t num, int16_t den) { return den != 0 ? num / den : 0x7FFFFFFF; }
+
+// AudioVector::CrossFade: the last `n` samples of `out` fade into `in`
+// (`out`'s weight falls from 16384 in steps of 16384 / (n + 1), Q14), and
+// the rest of `in` is appended.
+void CrossFade(std::vector<float>& out, const float* in, size_t in_length, size_t n) {
+  n = std::min({n, out.size(), in_length});
+  const int alpha_step = 16384 / (static_cast<int>(n) + 1);
+  int alpha = 16384;
+  const size_t position = out.size() - n;
+  for (size_t i = 0; i < n; ++i) {
+    alpha -= alpha_step;
+    out[position + i] = (static_cast<float>(alpha) * out[position + i] + static_cast<float>(16384 - alpha) * in[i]) / 16384.0f;
+  }
+  out.insert(out.end(), in + n, in + in_length);
+}
+
+}  // namespace
+
+NetEqTimeStretch::NetEqTimeStretch(int sample_rate) : fs_hz_(sample_rate), fs_mult_(sample_rate / 8000) {}
+
+void NetEqTimeStretch::Analyze(std::span<const float> input, const NetEqBackgroundNoise& background_noise,
+                               bool preemptive, size_t old_data_length) {
+  const size_t fs_mult = static_cast<size_t>(fs_mult_);
+  const size_t fs_mult_120 = fs_mult * 120;  // 15 ms.
+  const size_t signal_len = input.size();
+  signal_.resize(signal_len);
+  for (size_t i = 0; i < signal_len; ++i) signal_[i] = ToInt16(input[i]);
+  const int16_t* signal = signal_.data();
+  const int16_t max_input_value = MaxAbsValueW16(signal, signal_len);
+
+  // DspHelper::DownsampleTo4kHz with the delay compensated: WebRtcSpl_DownsampleFast
+  // from sample filter_length - 1, output k at sample delay + k * factor.
+  const Downsample d = DownsampleFor(fs_hz_);
+  const size_t filter_delay = (d.num_coefficients - 1) / 2 + 1;
+  const int16_t* in = signal + d.num_coefficients - 1;
+  for (size_t k = 0; k < kDownsampledLen; ++k) {
+    const size_t i = filter_delay + k * d.factor;
+    int32_t s = 2048;  // 0.5 in Q12.
+    for (size_t j = 0; j < d.num_coefficients; ++j) s += d.coefficients[j] * in[i - j];
+    downsampled_input_[k] = SaturateInt16(s >> 12);
+  }
+  AutoCorrelation();
+
+  // The strongest correlation peak.
+  float correlation[kCorrelationLen + 1];
+  for (size_t i = 0; i <= kCorrelationLen; ++i) correlation[i] = auto_correlation_[i];
+  size_t peak_index = 0;
+  float peak_value = 0;
+  PeakDetection(correlation, kCorrelationLen, 1, fs_mult_, &peak_index, &peak_value);
+  // AutoCorrelation starts at kMinLag (4 kHz).
+  peak_index += kMinLag * fs_mult * 2;  // At most 119 * fs_mult, under 15 ms.
+
+  // Scaling so that `peak_index` squared samples sum without overflow.
+  int scaling = 31 - NormW32(static_cast<int32_t>(max_input_value) * max_input_value) -
+                NormW32(static_cast<int32_t>(peak_index));
+  scaling = std::max(0, scaling);
+  // `vec1` starts at 15 ms minus one pitch period, `vec2` at 15 ms.
+  const int16_t* vec1 = &signal[fs_mult_120 - peak_index];
+  const int16_t* vec2 = &signal[fs_mult_120];
+  const int32_t vec1_energy = DotProductWithScale(vec1, vec1, peak_index, scaling);
+  const int32_t vec2_energy = DotProductWithScale(vec2, vec2, peak_index, scaling);
+  int32_t cross_corr = DotProductWithScale(vec1, vec2, peak_index, scaling);
+
+  active_speech_ = SpeechDetection(vec1_energy, vec2_energy, peak_index, scaling, background_noise);
+  if (!active_speech_) {
+    // SetParametersForPassiveSpeech: the correlation doesn't matter.
+    best_correlation_ = 0;
+    if (preemptive) peak_index = std::min(peak_index, signal_len - old_data_length);
+  } else {
+    // cross_corr / sqrt(vec1_energy * vec2_energy) in Q14.
+    int energy1_scale = std::max(0, 16 - NormW32(vec1_energy));
+    int energy2_scale = std::max(0, 16 - NormW32(vec2_energy));
+    if ((energy1_scale + energy2_scale) & 1) energy1_scale += 1;  // Even total, for the sqrt.
+    const int16_t vec1_energy_int16 = static_cast<int16_t>(vec1_energy >> energy1_scale);
+    const int16_t vec2_energy_int16 = static_cast<int16_t>(vec2_energy >> energy2_scale);
+    const int16_t sqrt_energy_prod =
+        static_cast<int16_t>(SqrtFloor(static_cast<int32_t>(vec1_energy_int16) * vec2_energy_int16));
+    const int temp_scale = 14 - (energy1_scale + energy2_scale) / 2;
+    cross_corr = ShiftW32(cross_corr, temp_scale);
+    cross_corr = std::max(0, cross_corr);  // Not used if negative.
+    best_correlation_ = static_cast<int16_t>(DivW32W16(cross_corr, sqrt_energy_prod));
+    best_correlation_ = std::min<int16_t>(16384, best_correlation_);
+  }
+  peak_index_ = peak_index;
+}
+
+void NetEqTimeStretch::AutoCorrelation() {
+  // CrossCorrelationWithAutoShift from lag kMinLag to kMaxLag - 1 at 4 kHz.
+  const int16_t* seq1 = &downsampled_input_[kMaxLag];
+  const int16_t* seq2 = &downsampled_input_[kMaxLag - kMinLag];
+  const size_t correlation_length = kMaxLag - kMinLag;
+  int32_t max_1 = 0, max_2 = 0;
+  for (size_t j = 0; j < kCorrelationLen; ++j) max_1 = std::max(max_1, std::abs(static_cast<int32_t>(seq1[j])));
+  const int16_t* seq2_start = seq2 - (correlation_length - 1);
+  for (size_t j = 0; j < kCorrelationLen + correlation_length - 1; ++j) {
+    max_2 = std::max(max_2, std::abs(static_cast<int32_t>(seq2_start[j])));
+  }
+  const int64_t max_value = static_cast<int64_t>(max_1) * max_2 * static_cast<int64_t>(kCorrelationLen);
+  const int32_t factor = static_cast<int32_t>(max_value >> 31);
+  const int shift = factor == 0 ? 0 : 31 - NormW32(factor);
+  int32_t auto_corr[kCorrelationLen];
+  for (size_t i = 0; i < correlation_length; ++i) {
+    int32_t corr = 0;
+    for (size_t j = 0; j < kCorrelationLen; ++j) {
+      corr += (static_cast<int32_t>(seq1[j]) * (seq2 - static_cast<std::ptrdiff_t>(i))[j]) >> shift;
+    }
+    auto_corr[i] = corr;
+  }
+  // Normalized to 14 bits.
+  const int32_t max_corr = MaxAbsValueW32(auto_corr, kCorrelationLen);
+  const int scaling = std::max(0, 17 - NormW32(max_corr));
+  for (size_t i = 0; i < kCorrelationLen; ++i) auto_correlation_[i] = SaturateInt16(auto_corr[i] >> scaling);
+  auto_correlation_[kCorrelationLen] = 0;
+}
+
+bool NetEqTimeStretch::SpeechDetection(int32_t vec1_energy, int32_t vec2_energy, size_t peak_index, int scaling,
+                                       const NetEqBackgroundNoise& background_noise) const {
+  // Passive speech when (vec1_energy + vec2_energy) / (2 * peak_index) <=
+  // 8 * background noise energy, written as
+  // (vec1_energy + vec2_energy) / 16 <= peak_index * background noise energy.
+  int32_t left_side = static_cast<int32_t>(std::clamp<int64_t>(
+      (static_cast<int64_t>(vec1_energy) + vec2_energy) / 16, std::numeric_limits<int32_t>::min(),
+      std::numeric_limits<int32_t>::max()));
+  // A fixed threshold until the noise is estimated.
+  int32_t right_side = background_noise.initialized() ? background_noise.Energy() : 75000;
+  const int right_scale = std::max(0, 16 - NormW32(right_side));
+  left_side = left_side >> right_scale;
+  right_side = static_cast<int32_t>(peak_index) * (right_side >> right_scale);
+  // The energies are scaled by 2 * scaling.
+  if (NormW32(left_side) < 2 * scaling) {
+    const int temp_scale = NormW32(left_side);
+    left_side = ShiftW32(left_side, temp_scale);
+    right_side = right_side >> (2 * scaling - temp_scale);
+  } else {
+    left_side = ShiftW32(left_side, 2 * scaling);
+  }
+  return left_side > right_side;
+}
+
+NetEqTimeStretch::Result NetEqTimeStretch::Accelerate(std::span<const float> input, bool fast_mode,
+                                                      const NetEqBackgroundNoise& background_noise,
+                                                      std::vector<float>& out, size_t* length_change) {
+  *length_change = 0;
+  const size_t fs_mult_120 = static_cast<size_t>(fs_mult_) * 120;  // 15 ms.
+  // The input must be (almost) 30 ms.
+  if (input.size() < (2 * 120 - 1) * static_cast<size_t>(fs_mult_)) {
+    out.insert(out.end(), input.begin(), input.end());
+    return Result::kError;
+  }
+  Analyze(input, background_noise, false, 0);
+  const int correlation_threshold = fast_mode ? kFastCorrelationThreshold : kCorrelationThreshold;
+  if (best_correlation_ <= correlation_threshold && active_speech_) {
+    out.insert(out.end(), input.begin(), input.end());
+    return Result::kNoStretch;
+  }
+  size_t peak_index = peak_index_;
+  // Fast mode removes as many whole periods as fit in 15 ms.
+  if (fast_mode) peak_index = (fs_mult_120 / peak_index) * peak_index;
+  // 0 to 15 ms, then the period from 15 ms crossfaded onto its end, then
+  // the rest from 15 ms plus one period.
+  out.insert(out.end(), input.begin(), input.begin() + static_cast<std::ptrdiff_t>(fs_mult_120));
+  CrossFade(out, input.data() + fs_mult_120, peak_index, peak_index);
+  out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(fs_mult_120 + peak_index), input.end());
+  *length_change = peak_index;
+  return active_speech_ ? Result::kSuccess : Result::kSuccessLowEnergy;
+}
+
+NetEqTimeStretch::Result NetEqTimeStretch::PreemptiveExpand(std::span<const float> input, size_t old_data_length,
+                                                            size_t overlap_samples,
+                                                            const NetEqBackgroundNoise& background_noise,
+                                                            std::vector<float>& out, size_t* length_change) {
+  *length_change = 0;
+  const size_t fs_mult_120 = static_cast<size_t>(fs_mult_) * 120;  // 15 ms.
+  // The input must be (almost) 30 ms, with at least `overlap_samples` new.
+  if (input.size() < (2 * 120 - 1) * static_cast<size_t>(fs_mult_) ||
+      old_data_length + overlap_samples >= input.size()) {
+    out.insert(out.end(), input.begin(), input.end());
+    return Result::kError;
+  }
+  Analyze(input, background_noise, true, old_data_length);
+  // Strong correlation and at most 15 ms played already, or passive speech.
+  if (!((best_correlation_ > kCorrelationThreshold && old_data_length <= fs_mult_120) || !active_speech_)) {
+    out.insert(out.end(), input.begin(), input.end());
+    return Result::kNoStretch;
+  }
+  const size_t peak_index = peak_index_;
+  const size_t unmodified_length = std::max(old_data_length, fs_mult_120);
+  // The first part with the crossfade region, the period before it
+  // crossfaded onto its end, then the rest from the unmodified part on.
+  out.insert(out.end(), input.begin(), input.begin() + static_cast<std::ptrdiff_t>(unmodified_length + peak_index));
+  CrossFade(out, input.data() + unmodified_length - peak_index, peak_index, peak_index);
+  out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(unmodified_length), input.end());
+  *length_change = peak_index;
+  return active_speech_ ? Result::kSuccess : Result::kSuccessLowEnergy;
+}
+
 }  // namespace sm::timing
