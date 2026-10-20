@@ -85,13 +85,6 @@ void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
   }
 }
 
-void RtpSender::OnPacketDropped(const SenderPacket& p) {
-  if (!cfg_.rtx_ssrc || cfg_.rtx.version < 2) return;
-  if (p.kind == PacketKind::kRtx && p.packet.payload.size() >= 2) {
-    rtx_.ClearPending(static_cast<uint16_t>((p.packet.payload[0] << 8) | p.packet.payload[1]));
-  }
-}
-
 void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe, bool first) {
   ++stats_.media_packets;
   stats_.media_payload_bytes += static_cast<int64_t>(p.payload.size());

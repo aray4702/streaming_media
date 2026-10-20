@@ -110,6 +110,7 @@ SM_TEST(KeyframeRequestV2, DecodeTimeoutAsksOnceAndRearms) {
   cfg.events = &log;
   KeyframeRequester k(cfg);
   k.OnFrame(Key(0), Ms(0));
+  k.OnFrameReleased(Ms(0));
   k.OnFrame(Delta(2, 1), Ms(66));  // Blocked: frame 1 never comes.
   k.OnMediaPacket(Ms(66), false);
   SM_EXPECT_TRUE(k.Process(Ms(10)).empty());
@@ -118,7 +119,7 @@ SM_TEST(KeyframeRequestV2, DecodeTimeoutAsksOnceAndRearms) {
     k.OnMediaPacket(Ms(t), false);
     asked += CountType(k.Process(Ms(t)), FeedbackType::kPli);
   }
-  SM_EXPECT_EQ(asked, 0u);  // 3 s since the last decodable frame (t = 0) has not passed.
+  SM_EXPECT_EQ(asked, 0u);  // 3 s since the last released frame (t = 0) has not passed.
   k.OnMediaPacket(Ms(3000), false);
   SM_EXPECT_EQ(CountType(k.Process(Ms(3000)), FeedbackType::kPli), 1u);
   SM_EXPECT_EQ(log.Count("keyframe", "trigger_decode_timeout"), 1u);
@@ -126,6 +127,40 @@ SM_TEST(KeyframeRequestV2, DecodeTimeoutAsksOnceAndRearms) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(3100)), FeedbackType::kPli), 0u);
   k.OnMediaPacket(Ms(6000), false);
   SM_EXPECT_EQ(CountType(k.Process(Ms(6000)), FeedbackType::kPli), 1u);  // Re-armed.
+}
+
+SM_TEST(KeyframeRequestV2, DecodeTimeoutRunsFromReleaseNotFromDecodable) {
+  // libwebrtc re-arms the time-out when the frame scheduler releases a frame for decoding
+  // (VideoStreamBufferController::OnFrameReady -> VideoReceiveStreamTimeoutTracker::OnEncodedFrameReleased),
+  // after its wait for the render time, not when the frame becomes decodable (issue #151).
+  KeyframeRequester k(V2());
+  SM_EXPECT_TRUE(k.Process(Ms(0)).empty());
+  k.OnFrame(Key(0), Ms(0));         // Decodable at 0 ...
+  k.OnFrameReleased(Ms(60));         // ... released for decoding at 60.
+  k.OnFrame(Delta(2, 1), Ms(66));    // Blocked: frame 1 never comes.
+  k.OnMediaPacket(Ms(3000), false);
+  SM_EXPECT_EQ(CountType(k.Process(Ms(3000)), FeedbackType::kPli), 0u);
+  k.OnMediaPacket(Ms(3059), false);
+  SM_EXPECT_EQ(CountType(k.Process(Ms(3059)), FeedbackType::kPli), 0u);
+  k.OnMediaPacket(Ms(3060), false);
+  SM_EXPECT_EQ(CountType(k.Process(Ms(3060)), FeedbackType::kPli), 1u);
+}
+
+SM_TEST(KeyframeRequestV2, KeyframeWaitUntilTheFirstRelease) {
+  // OnEncodedFrameReleased ends the keyframe wait (max_wait_for_keyframe, 200 ms): until the first frame is
+  // released the shorter wait applies, even if a frame is already decodable.
+  KeyframeRequester k(V2());
+  SM_EXPECT_TRUE(k.Process(Ms(0)).empty());
+  k.OnFrame(Key(0), Ms(10));
+  k.TakeDecodableFrames();
+  k.OnMediaPacket(Ms(300), false);
+  SM_EXPECT_EQ(CountType(k.Process(Ms(300)), FeedbackType::kPli), 1u);
+  KeyframeRequester k2(V2());
+  SM_EXPECT_TRUE(k2.Process(Ms(0)).empty());
+  k2.OnFrame(Key(0), Ms(10));
+  k2.OnFrameReleased(Ms(20));
+  k2.OnMediaPacket(Ms(300), false);
+  SM_EXPECT_EQ(CountType(k2.Process(Ms(300)), FeedbackType::kPli), 0u);
 }
 
 SM_TEST(KeyframeRequestV2, NoTimeoutRequestWhileAKeyframeArrivesOrWhenIdle) {

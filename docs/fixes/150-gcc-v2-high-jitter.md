@@ -84,5 +84,5 @@ there is 175 kbps (9.6 -> 8.2 % utilization), both far from libwebrtc's 37 %. `r
 ## Remaining
 
 The utilization split is closed. What remains is whatever the parity report still shows for `high_jitter` (audio and
-video e2e delay: #62, #24). Guard rails: `issue_61_googcc_glue_congestive` `net.loss_pct` is held at `< 8` for the
-Owner (seeds 1-10 mean 7.2 -> 6.9, libwebrtc 4.5; seed 1 6.2 -> 7.9, the old line passed by seed luck).
+video e2e delay: #62, #24). `issue_61_googcc_glue_congestive` `net.loss_pct` keeps its `< 7` line: on top of #124's
+audio phase (#180), seeds 1-10 are 3.7-6.3 (mean 4.9; seed 1 4.4), libwebrtc 2.7-5.8 (mean 4.5).

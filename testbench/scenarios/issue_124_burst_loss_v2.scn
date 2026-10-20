@@ -3,7 +3,11 @@ describe 3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's
 # `burst_loss` with the configuration PR #116 makes the default. Measured on main 74266b3, seeds 1-10 (ours / libwebrtc, parity-data of main):
 #   cc.queue_p95_ms 45-108 (mean 73.5) / 46.8 ; video.e2e_delay_p95_ms 188-241 (mean 210.7) / 213.0
 #   cc.utilization_pct 81.1-87.0 (mean 84.0) / 80.4 ; cc.target_avg_kbps 1787 / 1757 ; video.freeze_total_ms 640 / 1433
-# Left: the queue p95 is 27 ms above libwebrtc's mean (the same excess shows on bufferbloat); the lines below lock the level reached.
+# Issue #124 root cause: the test bench sent each 20 ms audio packet at t = 0 mod 20 ms, the phase of the 30 fps video
+# frames; libwebrtc's harness sends it at 10 mod 20 (10 ms ADM blocks). Replayed open loop through our GoogCC, libwebrtc's
+# packets give libwebrtc's overuse times; ours, with the old phase, gave later ones. With the libwebrtc phase, seeds 1-10:
+#   cc.queue_p95_ms 33-63 (mean 45.0) / 46.8 ; cc.utilization_pct 79-84 (mean 82.4) / 80.4
+# The lines below lock the level reached.
 # Target (issue #124): cc.queue_p95_ms within the parity band of libwebrtc (46.8 ms).
 cc v2
 pacer v2
@@ -20,6 +24,6 @@ expect audio.concealed_pct < 5
 expect audio.interruptions <= 1
 expect video.longest_freeze_ms < 1200
 expect video.render_fps >= 25
-expect cc.queue_p95_ms < 120
+expect cc.queue_p95_ms < 75
 expect video.e2e_delay_p95_ms < 260
 expect cc.utilization_pct >= 78

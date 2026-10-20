@@ -37,7 +37,7 @@ ALGORITHMS = [
                "RTX history version 2 (`rtx v2`, issue #76 group 2) is libwebrtc's RtpPacketHistory: a packet enters when "
                "the pacer sends it, stays max(3 x RTT, 1 s) and is culled after three times that (or when 600 are held "
                "and the oldest is past the retention, at most 9600), leaves when transport feedback acknowledges it, and a "
-               "request is ignored while a resend is queued or within one RTT of the last send. With `rtx v2` and no FEC the RTP sequence number is "
+               "request is ignored while a resend is queued or within one RTT of the last send. A queued resend that a keyframe flush discards stays pending, so later requests for it are ignored, as libwebrtc's flush leaves its history entry (issue #151). With `rtx v2` and no FEC the RTP sequence number is "
                "assigned when the pacer releases the packet (`RtpSender::AssignSequenceNumber`, as `PacketRouter` / `AssignSequenceNumber` do), so a packet a "
                "keyframe flush discards leaves no gap (issues #127, #154, [fix record](../../fixes/154-sequence-at-pacer-release.md)). Remaining differences: "
                "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "
@@ -45,7 +45,8 @@ ALGORITHMS = [
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
-                      "selective retransmission."),
+                      "selective retransmission. Provisional lock (Owner, PR #180): `issue_151_outage_3s_v2` holds "
+                      "the freeze total at < 4100 ms (libwebrtc 3217 ms) until #151 closes the outage-recovery gap."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
@@ -214,7 +215,10 @@ ALGORITHMS = [
                "configurable.",
          verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
                       "network jitter, so about 600 of 1 800 frames arrived after their render time. With the new "
-                      "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay."),
+                      "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay. "
+                      "Provisional lock (Owner, PR #180): `issue_76_tcc_v2_high_jitter` holds video e2e delay p95 "
+                      "at < 1300 ms (libwebrtc 136 ms) until the receive-side delay under jitter with reordering is "
+                      "fixed in #24."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
@@ -328,7 +332,7 @@ ALGORITHMS = [
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
-         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController"], e2e=["E2E_Pacer"],
+         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController", "PrioritizedPacketQueue"], e2e=["E2E_Pacer"],
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
@@ -360,7 +364,12 @@ ALGORITHMS = [
                "debt every call and sends queued packets between the audio packets instead of with them.",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
-                      "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "
+                      "congestion keep-alives). `PrioritizedPacketQueue` (#166) ports prioritized_packet_queue_unittest.cc: "
+                      "12 of its 19 cases are ported and pass; the other 7 cover options that are off by default "
+                      "(audio-retransmission priority, `fast_retransmissions`, the per-level TTLs) or the round robin "
+                      "between SSRCs, which a one-to-one call does not need. Queue sizes are wire sizes, where libwebrtc's "
+                      "`SizeInPayloadBytes` counts payload and padding only (it feeds the long-queue drain rate). "
+                      "With the 40 ms burst a v2 frame leaves in one burst, so the "
                       "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "

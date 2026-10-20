@@ -234,6 +234,7 @@ void RtpReceiver::Process(Timestamp now) {
     ++stats_.frames_scheduled;
   }
   for (const auto& a : scheduler_.Process(now)) {
+    keyframes_.OnFrameReleased(now);
     auto it = frames_.find(a.id);
     if (it == frames_.end()) continue;
     ReceivedFrame r;
