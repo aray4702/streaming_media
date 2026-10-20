@@ -408,7 +408,7 @@ class TracedGoogCc final : public w::NetworkControllerInterface {
     r.kind = cc::BweTraceRow::Kind::kSent;
     r.bitrate_bps = bytes_ * 80;
     r.packets = packets_;
-    r.detector = backward_;
+    r.fraction_loss = backward_;
     r.loss_limit_bps = backward_ms_;
     // At its bucket's start, behind the rows already written for that bucket, so the trace stays in time order.
     rows_->insert(std::upper_bound(rows_->begin(), rows_->end(), r.time_us,

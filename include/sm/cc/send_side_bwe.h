@@ -34,7 +34,7 @@ struct BweTraceRow {
   // (bitrate = 1 entering ALR, 0 leaving it; RtcEventAlrState). kSent: the sent
   // packets the controller's OnSentPacket received in a 100 ms bucket starting at
   // time_us (bitrate = their bytes over 100 ms, packets = their count), the input of
-  // the AlrDetector; on libwebrtc's side, detector = how many of them had a send time
+  // the AlrDetector; on libwebrtc's side, fraction_loss = how many of them had a send time
   // before the previous one's, and loss_limit_bps = the largest such step back in ms.
   // kControllerTarget: the controller's own target output
   // (libwebrtc only; this library's kTarget rows already are). Issue #152.
