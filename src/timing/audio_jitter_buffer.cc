@@ -420,6 +420,16 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   }
   const size_t keep = std::max(static_cast<size_t>(samples_30_ms), expand_.history_length());
   if (played_.size() > keep) played_.erase(played_.begin(), played_.end() - static_cast<std::ptrdiff_t>(keep));
+  // NetEqImpl::GetAudioInternal: the background noise estimate is updated
+  // only when the sync buffer holds decoded audio unchanged.
+  if (last_mode_ == NetEqMode::kNormal || last_mode_ == NetEqMode::kAccelerateFail ||
+      last_mode_ == NetEqMode::kPreemptiveExpandFail) {
+    const size_t tail = std::min(NetEqBackgroundNoise::kVecLen, played_.size() + sync_.size());
+    sync_scratch_.clear();
+    if (tail > sync_.size()) sync_scratch_.assign(played_.end() - static_cast<std::ptrdiff_t>(tail - sync_.size()), played_.end());
+    sync_scratch_.insert(sync_scratch_.end(), sync_.end() - static_cast<std::ptrdiff_t>(std::min(tail, sync_.size())), sync_.end());
+    expand_.background_noise().Update(sync_scratch_);
+  }
   stats_.total_samples_received += static_cast<uint64_t>(need);
   ++stats_.ops[static_cast<int>(result)];
   return result;
@@ -450,13 +460,19 @@ void AudioJitterBuffer::JoinAfterExpand(std::vector<float>& decoded, bool merge)
   expanded_.clear();
   ExpandOnce(expanded_);
   expand_.Reset();
-  // The mute factor is raised to the background noise level, whose energy is
-  // 0 while BackgroundNoise is not ported: only silent audio starts at 1.
+  // The mute factor is raised to the background noise level. Merge's own
+  // scaling (Merge::SignalScaling) is not ported: a merge starts from
+  // Expand's mute factor, or 1 for silent audio.
   const int fs_mult = cfg_.sample_rate / 8000;
-  const size_t energy_length = std::min(static_cast<size_t>(fs_mult * 64), decoded.size());
-  double energy = 0;
-  for (size_t i = 0; i < energy_length; ++i) energy += static_cast<double>(decoded[i]) * decoded[i];
-  int mute_factor = energy == 0 ? 16384 : expand_.MuteFactor();
+  int mute_factor;
+  if (merge) {
+    const size_t energy_length = std::min(static_cast<size_t>(fs_mult * 64), decoded.size());
+    double energy = 0;
+    for (size_t i = 0; i < energy_length; ++i) energy += static_cast<double>(decoded[i]) * decoded[i];
+    mute_factor = energy == 0 ? 16384 : expand_.MuteFactor();
+  } else {
+    mute_factor = NetEqNormalMuteFactor(decoded, cfg_.sample_rate, expand_.MuteFactor(), expand_.background_noise().Energy());
+  }
   // Back to full gain by 0.64 per 20 ms, or within the decoded audio.
   const int increment = std::max(64 / fs_mult, (16384 - mute_factor) / std::max<int>(1, static_cast<int>(decoded.size())));
   for (float& v : decoded) {
