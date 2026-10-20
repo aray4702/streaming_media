@@ -383,6 +383,11 @@ class TracedGoogCc final : public w::NetworkControllerInterface {
     bucket_ = bucket;
     bytes_ += m.size.bytes();
     ++packets_;
+    if (last_send_.IsFinite() && m.send_time < last_send_) {
+      ++backward_;
+      backward_ms_ = std::max(backward_ms_, (last_send_ - m.send_time).ms());
+    }
+    last_send_ = m.send_time;
     return Out(cc_->OnSentPacket(m));
   }
   w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return Out(cc_->OnReceivedPacket(m)); }
@@ -403,12 +408,16 @@ class TracedGoogCc final : public w::NetworkControllerInterface {
     r.kind = cc::BweTraceRow::Kind::kSent;
     r.bitrate_bps = bytes_ * 80;
     r.packets = packets_;
+    r.detector = backward_;
+    r.loss_limit_bps = backward_ms_;
     // At its bucket's start, behind the rows already written for that bucket, so the trace stays in time order.
     rows_->insert(std::upper_bound(rows_->begin(), rows_->end(), r.time_us,
                                    [](int64_t t, const cc::BweTraceRow& x) { return t < x.time_us; }),
                   r);
     bytes_ = 0;
     packets_ = 0;
+    backward_ = 0;
+    backward_ms_ = 0;
   }
   w::NetworkControlUpdate Out(w::NetworkControlUpdate u) {
     if (u.target_rate && u.target_rate->target_rate.bps() != last_target_bps_) {
@@ -424,8 +433,9 @@ class TracedGoogCc final : public w::NetworkControllerInterface {
   std::unique_ptr<w::NetworkControllerInterface> cc_;
   w::Timestamp t0_;
   std::vector<cc::BweTraceRow>* rows_;
-  int64_t bucket_ = -1, bytes_ = 0, last_target_bps_ = -1;
-  int packets_ = 0;
+  int64_t bucket_ = -1, bytes_ = 0, last_target_bps_ = -1, backward_ms_ = 0;
+  int packets_ = 0, backward_ = 0;
+  w::Timestamp last_send_ = w::Timestamp::MinusInfinity();
 };
 
 class TracedGoogCcFactory final : public w::NetworkControllerFactoryInterface {
