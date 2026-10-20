@@ -604,6 +604,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   video::FreezeDetector freezes;
   int64_t frames_rendered = 0, w_frames = 0;
   double last_video_delay = 0;
+  std::vector<double> vt_e2e;              // Capture -> render delays in the current second (issue #24).
+  std::map<int64_t, VideoTraceRow> vt_recv;  // Second end (ms) -> its receive-side columns.
   int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
   int64_t interruptions = 0, interruption_ms = 0, w_conceal = 0, w_played = 0;
   double audio_buffer_ms = 0;
@@ -679,6 +681,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (it != model.capture_us_by_rtp.end()) {
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
       video_e2e.push_back(last_video_delay);
+      if (opt.video_trace) vt_e2e.push_back(last_video_delay);
       model.capture_us_by_rtp.erase(it);
     }
   });
@@ -938,6 +941,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       smp.video_fps = static_cast<double>(w_frames) * 10;
       smp.video_delay_ms = last_video_delay;
       w_send = w_good = w_frames = w_conceal = w_played = 0;
+      if (opt.video_trace && video_recv && (t + 1) % 1000 == 0) {
+        // Once per simulated second (issue #24): the frames rendered in it and
+        // VideoReceiveStream::Stats' VCMTiming delays.
+        VideoTraceRow r;
+        testbench::SetRenderDelays(r, std::move(vt_e2e));
+        vt_e2e.clear();
+        receiver_q->PostTask([&, r, t_ms = t + 1]() mutable {
+          const w::VideoReceiveStreamInterface::Stats vs = video_recv->GetStats();
+          r.target_delay_ms = vs.target_delay_ms;
+          r.current_delay_ms = vs.current_delay_ms;
+          r.jitter_delay_ms = vs.jitter_buffer_ms;
+          vt_recv[t_ms] = r;
+        });
+      }
       sender_q->PostTask([&, smp]() mutable {
         w::Call::Stats cs = send_call->GetStats();
         smp.target_kbps = static_cast<double>(cs.send_bandwidth_bps) / 1000.0;
@@ -982,6 +999,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   net_q->PostTask([&] { tick(0); });
   sim.RunUntil(t0 + w::TimeDelta::Millis(end_ms));
   stopping = true;
+  for (VideoTraceRow& r : rep.video_trace) {
+    auto it = vt_recv.find(r.t_ms);
+    if (it == vt_recv.end()) continue;
+    r.rendered = it->second.rendered;
+    r.e2e_p50_ms = it->second.e2e_p50_ms;
+    r.e2e_max_ms = it->second.e2e_max_ms;
+    r.target_delay_ms = it->second.target_delay_ms;
+    r.current_delay_ms = it->second.current_delay_ms;
+    r.jitter_delay_ms = it->second.jitter_delay_ms;
+  }
 
   // --- Final stats and teardown ---------------------------------------------
   int64_t keyframe_requests = 0, undecodable = 0, late_discards = 0;

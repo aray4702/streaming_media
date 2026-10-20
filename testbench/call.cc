@@ -187,18 +187,28 @@ DataRate AudioAllocationRate(const Scenario& s) {
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
-      "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms\n";
-  char ms[32];
+      "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,"
+      "rendered,e2e_p50_ms,e2e_max_ms,target_delay_ms,current_delay_ms,jitter_delay_ms\n";
+  char ms[32], recv[160];
   for (const auto& r : trace) {
     std::snprintf(ms, sizeof(ms), "%.1f", r.pacer_queue_ms);
+    std::snprintf(recv, sizeof(recv), ",%d,%.1f,%.1f,%.1f,%.1f,%.1f", r.rendered, r.e2e_p50_ms, r.e2e_max_ms,
+                  r.target_delay_ms, r.current_delay_ms, r.jitter_delay_ms);
     out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
            std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
            std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
            std::to_string(r.dropped_rate_limiter) + "," + std::to_string(r.dropped_congestion_window) + "," +
            std::to_string(r.dropped_encoder) + "," + std::to_string(r.paused) + "," + std::to_string(r.encoded_bytes) +
-           "," + ms + "\n";
+           "," + ms + recv + "\n";
   }
   return out;
+}
+
+void SetRenderDelays(VideoTraceRow& r, std::vector<double> e2e_ms) {
+  r.rendered = static_cast<int>(e2e_ms.size());
+  if (e2e_ms.empty()) return;
+  r.e2e_p50_ms = Percentile(e2e_ms, 50);
+  r.e2e_max_ms = *std::max_element(e2e_ms.begin(), e2e_ms.end());
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
@@ -552,6 +562,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0;
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  std::vector<double> vt_e2e;  // Capture -> render delays of the frames rendered in it (issue #24).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
@@ -764,6 +775,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (cap != frame_capture.end()) {
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
           video_e2e.push_back(last_video_delay);
+          if (opt.video_trace) vt_e2e.push_back(last_video_delay);
           frame_capture.erase(cap);
         }
       }
@@ -801,6 +813,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       vt_row.alloc_target_bps = sender.rates().video_target.bps();
       vt_row.paused = video_ctl.paused() ? 1 : 0;
       vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now).us()) / 1000.0;
+      if (s.video) {
+        SetRenderDelays(vt_row, std::move(vt_e2e));
+        vt_e2e.clear();
+        const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
+        if (s.timing_v2) {
+          vt_row.target_delay_ms = vr.vcm_timing().TargetDelay().ms_f();
+          vt_row.current_delay_ms = vr.vcm_timing().current_delay().ms_f();
+          vt_row.jitter_delay_ms = vr.vcm_timing().minimum_delay().ms_f();
+        } else {
+          vt_row.target_delay_ms = vr.video_timing().TargetDelay().ms_f();
+          vt_row.current_delay_ms = vr.video_timing().CurrentDelay().ms_f();
+          vt_row.jitter_delay_ms = vr.video_jitter().JitterDelay().ms_f();
+        }
+      }
       rep.video_trace.push_back(vt_row);
       vt_row = VideoTraceRow{};
     }

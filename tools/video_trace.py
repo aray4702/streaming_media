@@ -7,7 +7,12 @@ video send path, in the same CSV for this library and for libwebrtc:
 
   t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-  dropped_encoder,paused,encoded_bytes,pacer_queue_ms
+  dropped_encoder,paused,encoded_bytes,pacer_queue_ms[,rendered,e2e_p50_ms,
+  e2e_max_ms,target_delay_ms,current_delay_ms,jitter_delay_ms]
+
+The bracketed receive-side columns (issue #24) are the frames rendered in the
+second, their median and maximum capture -> render delay (-1 when none), and
+the receiver's VCMTiming target, current and jitter delay at its end.
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,

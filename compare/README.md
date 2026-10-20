@@ -143,7 +143,12 @@ The same runs that write the packet trace also write one row per simulated
 second of the sender's video decisions, for this library and for libwebrtc, in
 one CSV: `t_s,encoder_target_bps,alloc_target_bps,captured,encoded,`
 `dropped_capturer,dropped_encoder_queue,dropped_rate_limiter,`
-`dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms`.
+`dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms`,
+then the receiver's second (issue #24): `rendered,e2e_p50_ms,e2e_max_ms`
+(frames rendered and their capture-to-render delay, -1 when none) and
+`target_delay_ms,current_delay_ms,jitter_delay_ms` at the end of the second
+(libwebrtc's `VideoReceiveStream::Stats` from `VCMTiming`; ours from
+`VcmTiming` under `timing v2`, `VideoTiming` under `timing v1`).
 They are in `compare-webrtc.json` under `"sm_video"` and `"webrtc_video"` of
 each `"traces"` entry (so CI publishes them to `parity-data` and
 `parity-data-pr/pr/<N>/`), and `--trace-dir` writes

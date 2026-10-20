@@ -49,7 +49,20 @@ struct VideoTraceRow {
   int paused = 0;  // 1 when the encoder is paused or suspended at the end of the second.
   int64_t encoded_bytes = 0;
   double pacer_queue_ms = 0;
+  // Receive side (issue #24): frames rendered in the second, the median and
+  // maximum capture -> render delay of those frames (-1 when none), and the
+  // receiver's VCMTiming delays at the end of the second (libwebrtc's
+  // VideoReceiveStream::Stats target_delay_ms, current_delay_ms and
+  // jitter_buffer_ms; for `timing v1`, VideoTiming's target and current delay
+  // and the jitter estimate).
+  int rendered = 0;
+  double e2e_p50_ms = -1, e2e_max_ms = -1;
+  double target_delay_ms = 0, current_delay_ms = 0, jitter_delay_ms = 0;
 };
+
+// Fills `r`'s per-second e2e columns from the capture -> render delays of the
+// frames rendered in that second.
+void SetRenderDelays(VideoTraceRow& r, std::vector<double> e2e_ms);
 
 struct Report {
   Scenario scenario;
@@ -100,7 +113,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-// dropped_encoder,paused,encoded_bytes,pacer_queue_ms. The drop columns are
+// dropped_encoder,paused,encoded_bytes,pacer_queue_ms, and on the receive
+// side (issue #24) rendered,e2e_p50_ms,e2e_max_ms,target_delay_ms,
+// current_delay_ms,jitter_delay_ms (see VideoTraceRow). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop
 // points onto them: the frame dropper is dropped_rate_limiter (libwebrtc's
 // kMediaOptimization), congestion-window pushback is dropped_congestion_window
