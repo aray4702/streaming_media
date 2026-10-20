@@ -230,7 +230,10 @@ ALGORITHMS = [
                       "jitter, +0.9 x RTT after 3 NACKed frames); libwebrtc's JitterEstimator SteadyStateConvergence "
                       "test gives its 54 ms here. With every v2 switch on, `high_jitter` video e2e delay p95 is "
                       "130-199 ms on seeds 1-10 (timing v1 162-313, libwebrtc 122-152) and p50 95-157 ms "
-                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. Default stays v1 until the flip."),
+                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
+                      "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
+                      "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
+                      "Default stays v1 until the flip."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
