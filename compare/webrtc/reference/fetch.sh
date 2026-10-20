@@ -31,6 +31,8 @@ DIRS=(
   modules/audio_processing/transient
   common_audio/vad
   common_audio/resampler
+  common_audio/signal_processing
+  common_audio/third_party/spl_sqrt_floor
 )
 
 for d in "${DIRS[@]}"; do
