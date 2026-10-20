@@ -769,7 +769,7 @@
   {
    "scenario": "issue_120_rtx_payload_padding",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 330.521,
+   "sm": 343.46,
    "webrtc": 536.2,
    "band": 41.71635757243328,
    "direction": "ahead",
@@ -812,7 +812,7 @@
   {
    "scenario": "issue_120_rtx_payload_padding",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 744.46,
+   "sm": 676.06,
    "webrtc": 2319.29,
    "band": 478.1520845923398,
    "direction": "ahead",
@@ -826,11 +826,11 @@
   {
    "scenario": "issue_120_rtx_payload_padding",
    "metric": "cc.queue_p95_ms",
-   "sm": 87.0752,
+   "sm": 101.241,
    "webrtc": 162.135,
    "band": 28.109292751203988,
    "direction": "ahead",
-   "seeds_agree": 7,
+   "seeds_agree": 6,
    "seeds": 10,
    "owners": [
     19,
@@ -943,11 +943,11 @@
   {
    "scenario": "issue_123_v2_allocation_min",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 137.6,
+   "sm": 138.4,
    "webrtc": 207.05,
    "band": 51.38441722286372,
    "direction": "ahead",
-   "seeds_agree": 10,
+   "seeds_agree": 9,
    "seeds": 10,
    "owners": [
     62,
@@ -957,7 +957,7 @@
   {
    "scenario": "issue_123_v2_allocation_min",
    "metric": "video.render_fps",
-   "sm": 2.675,
+   "sm": 3.355,
    "webrtc": 6.02,
    "band": 1.1652253001029458,
    "direction": "behind",
@@ -971,11 +971,11 @@
   {
    "scenario": "issue_123_v2_allocation_min",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 5888.88,
+   "sm": 5271.32,
    "webrtc": 8515.81,
    "band": 960.7261943157602,
    "direction": "ahead",
-   "seeds_agree": 8,
+   "seeds_agree": 9,
    "seeds": 10,
    "owners": [
     24,
@@ -984,21 +984,8 @@
   },
   {
    "scenario": "issue_123_v2_allocation_min",
-   "metric": "video.keyframe_requests",
-   "sm": 4,
-   "webrtc": 3.3,
-   "band": 0.6749485577105528,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    23
-   ]
-  },
-  {
-   "scenario": "issue_123_v2_allocation_min",
    "metric": "net.loss_pct",
-   "sm": 18.8578,
+   "sm": 20.1879,
    "webrtc": 29.5693,
    "band": 3.5560499190503183,
    "direction": "ahead",
@@ -1013,7 +1000,7 @@
   {
    "scenario": "issue_123_v2_allocation_min",
    "metric": "repair.overhead_pct",
-   "sm": 35.8793,
+   "sm": 37.7243,
    "webrtc": 97.5185,
    "band": 17.584353741983872,
    "direction": "ahead",
@@ -1168,7 +1155,7 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "audio.concealed_pct",
-   "sm": 0.892293,
+   "sm": 0.88728,
    "webrtc": 0.162102,
    "band": 0.5,
    "direction": "behind",
@@ -1182,7 +1169,7 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 291.59,
+   "sm": 291.708,
    "webrtc": 346.801,
    "band": 30.321160978212344,
    "direction": "ahead",
@@ -1210,7 +1197,7 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "video.freeze_count",
-   "sm": 3.8,
+   "sm": 3.9,
    "webrtc": 65.8,
    "band": 6.477310827461929,
    "direction": "ahead",
@@ -1225,7 +1212,7 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "video.freeze_total_ms",
-   "sm": 1075.1,
+   "sm": 1105.9,
    "webrtc": 19131.5,
    "band": 1879.2582650550662,
    "direction": "ahead",
@@ -1240,7 +1227,7 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "video.longest_freeze_ms",
-   "sm": 364.5,
+   "sm": 367.6,
    "webrtc": 566.152,
    "band": 142.04336805626184,
    "direction": "ahead",
@@ -1255,9 +1242,9 @@
   {
    "scenario": "issue_127_all_v2_no_stall",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 471.2,
+   "sm": 470.1,
    "webrtc": 442.605,
-   "band": 23.560000000000002,
+   "band": 23.505000000000003,
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
@@ -1327,7 +1314,7 @@
   {
    "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
    "metric": "video.render_fps",
-   "sm": 26.6,
+   "sm": 26.6075,
    "webrtc": 29.87,
    "band": 1.4935,
    "direction": "behind",
@@ -1341,9 +1328,9 @@
   {
    "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 2063.62,
+   "sm": 2063.07,
    "webrtc": 173.598,
-   "band": 103.181,
+   "band": 103.15350000000001,
    "direction": "behind",
    "seeds_agree": 10,
    "seeds": 10,
@@ -1382,7 +1369,7 @@
   {
    "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
    "metric": "cc.utilization_pct",
-   "sm": 8.27287,
+   "sm": 8.27237,
    "webrtc": 56.8059,
    "band": 12.35147367563887,
    "direction": "behind",
@@ -1415,7 +1402,7 @@
   {
    "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
    "metric": "repair.overhead_pct",
-   "sm": 11.2289,
+   "sm": 11.2202,
    "webrtc": 47.8683,
    "band": 3.9949482286869373,
    "direction": "ahead",
@@ -2356,7 +2343,7 @@
   {
    "scenario": "issue_133_all_v2_outage_8s",
    "metric": "cc.rtt_p50_ms",
-   "sm": 107.994,
+   "sm": 108.089,
    "webrtc": 93.6,
    "band": 10,
    "direction": "behind",
@@ -2369,7 +2356,7 @@
   {
    "scenario": "issue_133_pacer_v2_outage_15s",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 135.6,
+   "sm": 135.7,
    "webrtc": 92.7,
    "band": 10,
    "direction": "behind",
@@ -2535,7 +2522,7 @@
   {
    "scenario": "issue_133_pacer_v2_outage_8s",
    "metric": "video.longest_freeze_ms",
-   "sm": 15.4,
+   "sm": 15.3,
    "webrtc": 436.5,
    "band": 313.17877393661985,
    "direction": "ahead",
@@ -2758,7 +2745,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed10",
    "metric": "audio.concealed_pct",
-   "sm": 1.4267,
+   "sm": 1.41334,
    "webrtc": 0.157034,
    "band": 0.5,
    "direction": "behind",
@@ -2772,7 +2759,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed10",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 81.6,
+   "sm": 83.2,
    "webrtc": 107,
    "band": 13.374935098492585,
    "direction": "ahead",
@@ -2786,7 +2773,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed10",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 178.3,
+   "sm": 178.1,
    "webrtc": 142.675,
    "band": 15.839100281686882,
    "direction": "behind",
@@ -2814,7 +2801,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed10",
    "metric": "repair.overhead_pct",
-   "sm": 37.2284,
+   "sm": 37.2545,
    "webrtc": 43.2088,
    "band": 3.4063993456760495,
    "direction": "ahead",
@@ -2829,7 +2816,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed5",
    "metric": "audio.concealed_pct",
-   "sm": 1.47708,
+   "sm": 1.46706,
    "webrtc": 0.153682,
    "band": 0.5,
    "direction": "behind",
@@ -2843,7 +2830,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed5",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 80,
+   "sm": 81.6,
    "webrtc": 113,
    "band": 14.181364924121764,
    "direction": "ahead",
@@ -2857,7 +2844,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed5",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 188.955,
+   "sm": 188.755,
    "webrtc": 134.312,
    "band": 10,
    "direction": "behind",
@@ -2885,7 +2872,7 @@
   {
    "scenario": "issue_150_gcc_v2_high_jitter_seed5",
    "metric": "repair.overhead_pct",
-   "sm": 36.9436,
+   "sm": 36.9697,
    "webrtc": 43.8136,
    "band": 2.937418273264996,
    "direction": "ahead",
@@ -2990,7 +2977,7 @@
   {
    "scenario": "issue_154_shallow_drop_repair_v2",
    "metric": "video.avg_kbps",
-   "sm": 443.575,
+   "sm": 443.056,
    "webrtc": 472.244,
    "band": 27.53096908816202,
    "direction": "behind",
@@ -3012,6 +2999,23 @@
    "seeds": 10,
    "owners": [
     23
+   ]
+  },
+  {
+   "scenario": "issue_154_shallow_drop_repair_v2",
+   "metric": "cc.utilization_pct",
+   "sm": 46.7894,
+   "webrtc": 49.6676,
+   "band": 2.829452734697806,
+   "direction": "behind",
+   "seeds_agree": 4,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
    ]
   },
   {
@@ -4530,7 +4534,7 @@
   {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "video.longest_freeze_ms",
-   "sm": 19.1,
+   "sm": 17.7,
    "webrtc": 3279.06,
    "band": 1648.3506826929897,
    "direction": "ahead",
@@ -4559,7 +4563,7 @@
   {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 2219.28,
+   "sm": 2219.43,
    "webrtc": 4717.68,
    "band": 872.139518671054,
    "direction": "ahead",
@@ -4573,7 +4577,7 @@
   {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "video.avg_kbps",
-   "sm": 51.2679,
+   "sm": 51.2676,
    "webrtc": 73.4438,
    "band": 20,
    "direction": "behind",
@@ -5392,7 +5396,7 @@
   {
    "scenario": "issue_61_googcc_glue_congestive",
    "metric": "cc.queue_p95_ms",
-   "sm": 57.1444,
+   "sm": 57.1454,
    "webrtc": 46.4696,
    "band": 10,
    "direction": "behind",
