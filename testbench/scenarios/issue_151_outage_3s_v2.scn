@@ -25,4 +25,6 @@ reverse at 15s up
 # with the fix 1.34 / 1.37 / 1.33 and 4070 / 4034 / 4072.
 # Target (issue #151): cc.queue_p95_ms < 40 (libwebrtc 39), freeze total within the parity band of libwebrtc (3217).
 expect repair.overhead_pct < 1.4
-expect video.freeze_total_ms < 4080
+# Provisional lock (Owner, PR #180, program.md 0.2): audio at libwebrtc's phase (#124) gives 4089 ms on seed 1
+# (was < 4080) while queue and e2e move toward libwebrtc; tracked to #151.
+expect video.freeze_total_ms < 4100

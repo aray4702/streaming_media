@@ -45,7 +45,8 @@ ALGORITHMS = [
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
-                      "selective retransmission."),
+                      "selective retransmission. Provisional lock (Owner, PR #180): `issue_151_outage_3s_v2` holds "
+                      "the freeze total at < 4100 ms (libwebrtc 3217 ms) until #151 closes the outage-recovery gap."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
@@ -214,7 +215,10 @@ ALGORITHMS = [
                "configurable.",
          verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
                       "network jitter, so about 600 of 1 800 frames arrived after their render time. With the new "
-                      "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay."),
+                      "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay. "
+                      "Provisional lock (Owner, PR #180): `issue_76_tcc_v2_high_jitter` holds video e2e delay p95 "
+                      "at < 1300 ms (libwebrtc 136 ms) until the receive-side delay under jitter with reordering is "
+                      "fixed in #24."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
