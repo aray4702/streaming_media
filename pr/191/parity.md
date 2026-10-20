@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-71 scenarios, mean of 10 seeds. **539 gaps**: 256 behind libwebrtc, 283 ahead of it; 0 without an owner.
+71 scenarios, mean of 10 seeds. **538 gaps**: 256 behind libwebrtc, 282 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-539 gaps on `main`, 539 here: **0 closed, 0 opened**, 0 changed direction.
+538 gaps on `main`, 538 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
@@ -83,12 +83,12 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 4.2 | 3.3 | ±0.7 | behind | 7/10 | #23 |
 | issue_123_v2_allocation_min | `video.render_fps` | 3.1 | 6.0 | ±1.2 | behind | 10/10 | #37, #24 |
 | issue_124_bufferbloat_v2 | `audio.jb_delay_p95_ms` | 76.8 | 110 | ±17.6 | ahead | 8/10 | #62, #63 |
-| issue_124_burst_loss_v2 | `audio.concealed_pct` | 2.0 | 1.5 | ±0.5 | behind | 6/10 | #62, #63 |
-| issue_124_burst_loss_v2 | `audio.jb_delay_p95_ms` | 92.4 | 154 | ±43.8 | ahead | 9/10 | #62, #63 |
-| issue_124_burst_loss_v2 | `video.freeze_count` | 1.4 | 6.2 | ±2.0 | ahead | 10/10 | #5, #37, #24 |
-| issue_124_burst_loss_v2 | `video.freeze_total_ms` | 385 | 1432 | ±500 | ahead | 9/10 | #5, #37, #24 |
-| issue_124_clean_link_v2 | `audio.jb_delay_p95_ms` | 82.8 | 141 | ±17.5 | ahead | 40/40 | #62, #63 |
-| issue_124_clean_link_v2 | `audio.mouth_to_ear_p95_ms` | 189 | 229 | ±34.3 | ahead | 31/40 | #62, #63 |
+| issue_124_burst_loss_v2 | `audio.concealed_pct` | 2.1 | 1.5 | ±0.5 | behind | 7/10 | #62, #63 |
+| issue_124_burst_loss_v2 | `audio.jb_delay_p95_ms` | 84.4 | 154 | ±43.8 | ahead | 9/10 | #62, #63 |
+| issue_124_burst_loss_v2 | `audio.mouth_to_ear_p95_ms` | 184 | 242 | ±52.3 | ahead | 8/10 | #62, #63 |
+| issue_124_burst_loss_v2 | `video.freeze_count` | 1.6 | 6.2 | ±2.0 | ahead | 10/10 | #5, #37, #24 |
+| issue_124_burst_loss_v2 | `video.freeze_total_ms` | 392 | 1432 | ±500 | ahead | 10/10 | #5, #37, #24 |
+| issue_124_clean_link_v2 | `audio.jb_delay_p95_ms` | 84.5 | 141 | ±17.5 | ahead | 40/40 | #62, #63 |
 | issue_126_audio_v2 | `audio.jb_delay_p95_ms` | 18 | 36 | ±10 | ahead | 10/10 | #62, #63 |
 | issue_126_audio_v2 | `cc.rtt_p50_ms` | 73.7 | 62.8 | ±10 | behind | 8/10 | #61 |
 | issue_126_audio_v2 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 10/10 | #23 |
@@ -165,12 +165,13 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_12_lossbwe_shallow | `video.freeze_total_ms` | 519 | 7677 | ±1185 | ahead | 10/10 | #5, #37, #24 |
 | issue_12_lossbwe_shallow | `video.keyframe_requests` | 9.1 | 0 | ±0.5 | behind | 10/10 | #23 |
 | issue_12_lossbwe_shallow | `video.longest_freeze_ms` | 287 | 648 | ±203 | ahead | 8/10 | #5, #37, #24 |
-| issue_12_lossbwe_shallow_step | `audio.jb_delay_p95_ms` | 20.7 | 40 | ±10 | ahead | 9/10 | #62, #63 |
-| issue_12_lossbwe_shallow_step | `net.loss_pct` | 7.8 | 7.2 | ±0.5 | behind | 6/10 | #21, #61, #12 |
-| issue_12_lossbwe_shallow_step | `video.e2e_delay_p95_ms` | 437 | 269 | ±21.8 | behind | 10/10 | #24, #37 |
-| issue_12_lossbwe_shallow_step | `video.freeze_count` | 0.4 | 21.4 | ±4.9 | ahead | 10/10 | #5, #37, #24 |
-| issue_12_lossbwe_shallow_step | `video.freeze_total_ms` | 120 | 5769 | ±1258 | ahead | 10/10 | #5, #37, #24 |
-| issue_12_lossbwe_shallow_step | `video.longest_freeze_ms` | 130 | 569 | ±156 | ahead | 9/10 | #5, #37, #24 |
+| issue_12_lossbwe_shallow_step | `audio.jb_delay_p95_ms` | 18.8 | 40 | ±10 | ahead | 10/10 | #62, #63 |
+| issue_12_lossbwe_shallow_step | `net.loss_pct` | 8.2 | 7.2 | ±0.5 | behind | 7/10 | #21, #61, #12 |
+| issue_12_lossbwe_shallow_step | `repair.overhead_pct` | 15.0 | 12.9 | ±2 | behind | 5/10 | #21, #7, #29 |
+| issue_12_lossbwe_shallow_step | `video.e2e_delay_p95_ms` | 438 | 269 | ±21.9 | behind | 10/10 | #24, #37 |
+| issue_12_lossbwe_shallow_step | `video.freeze_count` | 0.3 | 21.4 | ±4.9 | ahead | 10/10 | #5, #37, #24 |
+| issue_12_lossbwe_shallow_step | `video.freeze_total_ms` | 70.2 | 5769 | ±1258 | ahead | 10/10 | #5, #37, #24 |
+| issue_12_lossbwe_shallow_step | `video.longest_freeze_ms` | 82.7 | 569 | ±156 | ahead | 10/10 | #5, #37, #24 |
 | issue_133_all_v2_outage_15s | `cc.rtt_p50_ms` | 108 | 90.2 | ±10 | behind | 7/10 | #61 |
 | issue_133_all_v2_outage_15s | `video.e2e_delay_p95_ms` | 172 | 92.7 | ±10 | behind | 10/10 | #24, #37 |
 | issue_133_all_v2_outage_3s | `cc.rtt_p50_ms` | 109 | 93.2 | ±10 | behind | 10/10 | #61 |
@@ -195,39 +196,37 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_133_pacer_v2_outage_8s | `video.freeze_total_ms` | 0 | 769 | ±498 | ahead | 9/10 | #5, #37, #24 |
 | issue_133_pacer_v2_outage_8s | `video.longest_freeze_ms` | 15.3 | 436 | ±313 | ahead | 9/10 | #5, #37, #24 |
 | issue_133_pacer_v2_outage_8s | `video.pause_total_ms` | 8276 | 9780 | ±489 | ahead | 10/10 | #5, #37, #24 |
-| issue_150_gcc_v2_high_jitter | `audio.concealed_pct` | 1.4 | 0.2 | ±0.5 | behind | 10/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter | `audio.jb_delay_p95_ms` | 83.2 | 118 | ±13.2 | ahead | 10/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 202 | 218 | ±13.7 | ahead | 6/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter | `repair.overhead_pct` | 36.8 | 43.4 | ±4.0 | ahead | 8/10 | #21, #7, #29 |
-| issue_150_gcc_v2_high_jitter | `video.e2e_delay_p95_ms` | 207 | 136 | ±10.3 | behind | 10/10 | #24, #37 |
-| issue_150_gcc_v2_high_jitter | `video.time_to_first_frame_ms` | 201 | 92.7 | ±50 | behind | 7/10 | #24, #61 |
-| issue_150_gcc_v2_high_jitter_seed10 | `audio.concealed_pct` | 1.3 | 0.2 | ±0.5 | behind | 10/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter_seed10 | `audio.jb_delay_p95_ms` | 80 | 107 | ±13.4 | ahead | 10/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter_seed10 | `repair.overhead_pct` | 38.2 | 43.2 | ±3.4 | ahead | 8/10 | #21, #7, #29 |
-| issue_150_gcc_v2_high_jitter_seed10 | `video.e2e_delay_p95_ms` | 191 | 143 | ±15.8 | behind | 9/10 | #24, #37 |
+| issue_150_gcc_v2_high_jitter | `audio.concealed_pct` | 1.3 | 0.2 | ±0.5 | behind | 10/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter | `audio.jb_delay_p95_ms` | 81.6 | 118 | ±13.2 | ahead | 10/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 200 | 218 | ±13.7 | ahead | 8/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter | `repair.overhead_pct` | 34.7 | 43.4 | ±4.0 | ahead | 9/10 | #21, #7, #29 |
+| issue_150_gcc_v2_high_jitter | `video.e2e_delay_p95_ms` | 195 | 136 | ±10 | behind | 9/10 | #24, #37 |
+| issue_150_gcc_v2_high_jitter | `video.time_to_first_frame_ms` | 209 | 92.7 | ±50 | behind | 7/10 | #24, #61 |
+| issue_150_gcc_v2_high_jitter_seed10 | `audio.concealed_pct` | 1.4 | 0.2 | ±0.5 | behind | 10/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter_seed10 | `audio.jb_delay_p95_ms` | 81.6 | 107 | ±13.4 | ahead | 10/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter_seed10 | `repair.overhead_pct` | 38.1 | 43.2 | ±3.4 | ahead | 7/10 | #21, #7, #29 |
+| issue_150_gcc_v2_high_jitter_seed10 | `video.e2e_delay_p95_ms` | 194 | 143 | ±15.8 | behind | 9/10 | #24, #37 |
 | issue_150_gcc_v2_high_jitter_seed10 | `video.time_to_first_frame_ms` | 179 | 88.6 | ±50 | behind | 6/10 | #24, #61 |
 | issue_150_gcc_v2_high_jitter_seed5 | `audio.concealed_pct` | 1.4 | 0.2 | ±0.5 | behind | 10/10 | #62, #63 |
 | issue_150_gcc_v2_high_jitter_seed5 | `audio.jb_delay_p95_ms` | 78.4 | 113 | ±14.2 | ahead | 10/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter_seed5 | `audio.mouth_to_ear_p95_ms` | 198 | 213 | ±14.4 | ahead | 5/10 | #62, #63 |
-| issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 35.8 | 43.8 | ±2.9 | ahead | 9/10 | #21, #7, #29 |
-| issue_150_gcc_v2_high_jitter_seed5 | `video.e2e_delay_p95_ms` | 210 | 134 | ±10.5 | behind | 10/10 | #24, #37 |
-| issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 188 | 89.4 | ±50 | behind | 7/10 | #24, #61 |
-| issue_151_outage_3s_v2 | `audio.jb_delay_p95_ms` | 83.6 | 109 | ±23.8 | ahead | 8/10 | #62, #63 |
-| issue_151_outage_3s_v2 | `cc.queue_p95_ms` | 51.3 | 39.9 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
-| issue_154_shallow_drop_repair_v2 | `audio.jb_delay_p95_ms` | 22.3 | 42 | ±10 | ahead | 9/10 | #62, #63 |
-| issue_154_shallow_drop_repair_v2 | `video.freeze_count` | 2.9 | 11.9 | ±4.1 | ahead | 10/10 | #5, #37, #24 |
-| issue_154_shallow_drop_repair_v2 | `video.freeze_total_ms` | 3053 | 7143 | ±3468 | ahead | 8/10 | #5, #37, #24 |
-| issue_154_shallow_drop_repair_v2 | `video.keyframe_requests` | 1.9 | 0.9 | ±0.6 | behind | 8/10 | #23 |
-| issue_154_shallow_drop_repair_v2 | `video.pause_total_ms` | 6337 | 2959 | ±3121 | behind | 6/10 | #5, #37, #24 |
+| issue_150_gcc_v2_high_jitter_seed5 | `audio.mouth_to_ear_p95_ms` | 197 | 213 | ±14.4 | ahead | 8/10 | #62, #63 |
+| issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 36.5 | 43.8 | ±2.9 | ahead | 7/10 | #21, #7, #29 |
+| issue_150_gcc_v2_high_jitter_seed5 | `video.e2e_delay_p95_ms` | 198 | 134 | ±10 | behind | 10/10 | #24, #37 |
+| issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 196 | 89.4 | ±50 | behind | 7/10 | #24, #61 |
+| issue_151_outage_3s_v2 | `audio.jb_delay_p95_ms` | 80.4 | 109 | ±23.8 | ahead | 9/10 | #62, #63 |
+| issue_151_outage_3s_v2 | `cc.queue_p95_ms` | 50.5 | 39.9 | ±10 | behind | 3/10 | #19, #15, #48, #12, #61 |
+| issue_154_shallow_drop_repair_v2 | `audio.jb_delay_p95_ms` | 22.8 | 42 | ±10 | ahead | 10/10 | #62, #63 |
+| issue_154_shallow_drop_repair_v2 | `video.freeze_count` | 3.1 | 11.9 | ±4.1 | ahead | 10/10 | #5, #37, #24 |
+| issue_154_shallow_drop_repair_v2 | `video.keyframe_requests` | 1.5 | 0.9 | ±0.6 | behind | 5/10 | #23 |
 | issue_15_aimd_v2_clean_link | `audio.jb_delay_p95_ms` | 44 | 144 | ±20.7 | ahead | 10/10 | #62, #63 |
 | issue_15_aimd_v2_clean_link | `audio.mouth_to_ear_p95_ms` | 105 | 238 | ±40.5 | ahead | 10/10 | #62, #63 |
 | issue_15_aimd_v2_clean_link | `cc.queue_p95_ms` | 26.1 | 76.7 | ±22.3 | ahead | 10/10 | #19, #15, #48, #12, #61 |
 | issue_15_aimd_v2_clean_link | `video.e2e_delay_p95_ms` | 71.8 | 125 | ±15.4 | ahead | 10/10 | #24, #37 |
 | issue_15_aimd_v2_clean_link | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 10/10 | #23 |
-| issue_15_aimd_v2_cross_traffic | `audio.jb_delay_p95_ms` | 182 | 404 | ±52.4 | ahead | 10/10 | #62, #63 |
-| issue_15_aimd_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 426 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
-| issue_15_aimd_v2_cross_traffic | `cc.queue_p95_ms` | 210 | 264 | ±21.6 | ahead | 9/10 | #19, #15, #48, #12, #61 |
-| issue_15_aimd_v2_cross_traffic | `video.longest_freeze_ms` | 4.5 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
+| issue_15_aimd_v2_cross_traffic | `audio.jb_delay_p95_ms` | 186 | 404 | ±52.4 | ahead | 10/10 | #62, #63 |
+| issue_15_aimd_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 442 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
+| issue_15_aimd_v2_cross_traffic | `cc.queue_p95_ms` | 223 | 264 | ±21.6 | ahead | 9/10 | #19, #15, #48, #12, #61 |
+| issue_15_aimd_v2_cross_traffic | `video.longest_freeze_ms` | 58 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
 | issue_15_aimd_v2_random_loss | `audio.concealed_pct` | 1.1 | 0.4 | ±0.5 | behind | 6/10 | #62, #63 |
 | issue_15_aimd_v2_random_loss | `audio.jb_delay_p95_ms` | 69.2 | 118 | ±36.8 | ahead | 9/10 | #62, #63 |
 | issue_15_aimd_v2_random_loss | `video.avg_kbps` | 1286 | 1382 | ±69.1 | behind | 6/10 | #37, #61 |
@@ -490,10 +489,10 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | probe_v2_clean_link | `audio.mouth_to_ear_p95_ms` | 191 | 238 | ±40.5 | ahead | 9/10 | #62, #63 |
 | probe_v2_clean_link | `cc.rtt_p50_ms` | 81.9 | 66.6 | ±10 | behind | 9/10 | #61 |
 | probe_v2_clean_link | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 10/10 | #23 |
-| probe_v2_cross_traffic | `audio.jb_delay_p95_ms` | 182 | 404 | ±52.4 | ahead | 10/10 | #62, #63 |
-| probe_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 426 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
-| probe_v2_cross_traffic | `cc.queue_p95_ms` | 210 | 264 | ±21.6 | ahead | 9/10 | #19, #15, #48, #12, #61 |
-| probe_v2_cross_traffic | `video.longest_freeze_ms` | 4.5 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
+| probe_v2_cross_traffic | `audio.jb_delay_p95_ms` | 186 | 404 | ±52.4 | ahead | 10/10 | #62, #63 |
+| probe_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 442 | 684 | ±70.5 | ahead | 10/10 | #62, #63 |
+| probe_v2_cross_traffic | `cc.queue_p95_ms` | 223 | 264 | ±21.6 | ahead | 9/10 | #19, #15, #48, #12, #61 |
+| probe_v2_cross_traffic | `video.longest_freeze_ms` | 58 | 588 | ±424 | ahead | 9/10 | #5, #37, #24 |
 | random_loss_5pct | `audio.concealed_pct` | 1.3 | 0.4 | ±0.5 | behind | 8/10 | #62, #63 |
 | random_loss_5pct | `audio.jb_delay_p95_ms` | 49.6 | 118 | ±36.8 | ahead | 10/10 | #62, #63 |
 | random_loss_5pct | `audio.mouth_to_ear_p95_ms` | 119 | 182 | ±42.7 | ahead | 8/10 | #62, #63 |
