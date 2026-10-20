@@ -81,7 +81,9 @@ uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
 }
 
 // The modelled audio codec: a frame is identified by its RTP timestamp, and
-// decodes to the matching 20 ms of the speech signal.
+// decodes to the matching 20 ms of the speech signal. A frame flagged with
+// LBRR (testbench/opus_model.h) also decodes the frame before it, as
+// AudioDecoderOpusImpl does; its lower quality is not modelled.
 class SpeechDecoder : public rtp::AudioDecoder {
  public:
   SpeechDecoder(const std::vector<float>& speech, size_t frame_samples) : speech_(speech), frame_samples_(frame_samples) {}
@@ -90,6 +92,12 @@ class SpeechDecoder : public rtp::AudioDecoder {
     if (off + frame_samples_ > speech_.size()) return std::nullopt;
     return std::vector<float>(speech_.begin() + static_cast<std::ptrdiff_t>(off),
                               speech_.begin() + static_cast<std::ptrdiff_t>(off + frame_samples_));
+  }
+  uint32_t FecDuration(std::span<const uint8_t> frame) const override {
+    return !frame.empty() && (frame[0] & kLbrrFlag) ? static_cast<uint32_t>(frame_samples_) : 0;
+  }
+  std::optional<std::vector<float>> DecodeFec(std::span<const uint8_t> frame, uint32_t rtp_timestamp) override {
+    return Decode(frame, rtp_timestamp);
   }
 
  private:
@@ -411,6 +419,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   Random enc_rng(s.seed + 13);
   // `audio v2`: Opus's encoded size follows the signal (testbench/opus_model.h); v1 is a constant frame.
   OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
+  OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // `audio v2`'s in-band FEC input (issue #62).
   SpeechDecoder decoder(speech, frame_samples);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
@@ -630,6 +639,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
           break;
         case rtp::SessionEventType::kReportBlock:
+          // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
+          if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), now);
           if (video_fec && e.ssrc == kVideoSsrc) {
             const auto& rs = receiver.video_receiver(video_recv).stats();
             uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
@@ -657,12 +668,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     if (s.audio && t % 20 == 10) {
       const int64_t k = t / 20;
       size_t frame_bytes = audio_frame_bytes;
+      bool lbrr = false;
       if (s.audio_v2) {
         const size_t off = static_cast<size_t>(k) * frame_samples;
         const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
+        lbrr = opus_loss.percent() > 0 && opus_model.LastFrameActive();
         frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
       }
       std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
+      if (s.audio_v2) frame[0] = lbrr ? kLbrrFlag : 0;
       sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 

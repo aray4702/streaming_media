@@ -291,8 +291,15 @@ ALGORITHMS = [
                "ramp. The decision values (energies, VAD, correlation, scaling) keep libwebrtc's integer "
                "arithmetic on int16 samples; the peak search is the float DspHelper::PeakDetection of the expand, "
                "and the stretched signal is float. Where NetEq's GetAudioInternal fails on a stretch error "
-               "(input under 30 ms, or no new samples past the overlap), the input is kept unchanged. Still to "
-               "port (issue #62): the receive half of Opus in-band FEC.",
+               "(input under 30 ms, or no new samples past the overlap), the input is kept unchanged. "
+               "Opus in-band FEC (issue #62, version 2): the receiver asks the app's `AudioDecoder` whether a "
+               "frame carries LBRR (`FecDuration`, AudioDecoderOpusImpl::ParsePayload in audio_decoder_opus.cc) "
+               "and inserts the decoded copy at the previous frame's timestamp with codec level 1; the buffer "
+               "keeps one packet per timestamp, the higher Packet::Priority (codec level, then RED level), as "
+               "PacketBuffer::InsertPacket, and a late FEC frame is not a late discard. Which frames carry LBRR "
+               "is the test bench's model (`testbench/opus_model.h`): the encoder's loss input is ported "
+               "(ChannelSend::OnReportBlockDataUpdated, PacketLossFractionSmoother, SetProjectedPacketLossRate), "
+               "the per-frame decision inside libopus is not (libopus is not in `reference/`).",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
