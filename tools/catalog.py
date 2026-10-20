@@ -251,7 +251,11 @@ ALGORITHMS = [
                       "jitter, +0.9 x RTT after 3 NACKed frames); libwebrtc's JitterEstimator SteadyStateConvergence "
                       "test gives its 54 ms here. With every v2 switch on, `high_jitter` video e2e delay p95 is "
                       "130-199 ms on seeds 1-10 (timing v1 162-313, libwebrtc 122-152) and p50 95-157 ms "
-                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. Default stays v1 until the flip."),
+                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. "
+                      "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
+                      "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
+                      "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
+                      "at `< 300` (130-199 ms, libwebrtc 130-218) and `issue_24_timing_v2_default` locks the default in."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
@@ -375,12 +379,13 @@ ALGORITHMS = [
                "`keyframe` v2, and the test bench also to `audio` v2. v1 stays selectable per field (test bench `cc v1` etc.) "
                "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, `RtcpConfig`, "
                "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. "
-               "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
+               "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 joins when #62 finishes. "
                "Approved deviation: the Opus frame-size model of `audio v2` (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
-               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24). "
+               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24; "
+               "resolved when timing v2 became the default: 28.8-29.2 fps, libwebrtc 27.1-27.6). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
-               "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24).",
+               "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "

@@ -7,10 +7,10 @@ describe 40 ms jitter with reordering, transport-cc feedback as libwebrtc's gene
 tcc v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
-# Provisional lock (Owner, PR #180, program.md 0.2): with the audio sent at libwebrtc's phase (#124) seed 1 reaches
-# 1228 ms, and main already failed the old `< 300` on 8 of 10 seeds. The receive-side delay under jitter with
-# reordering is tracked to #24, which restores the target above.
-expect video.e2e_delay_p95_ms < 1300
+# Restored by #24 (was a provisional `< 1300` from PR #180): with every v2 switch the default (#61) and
+# libwebrtc's receive timing (timing v2) the default, seeds 1-10 give 130-199 ms (timing v1 162-313);
+# libwebrtc on the same link (issue_150_gcc_v2_high_jitter) 130-218, mean 150.
+expect video.e2e_delay_p95_ms < 300
 expect video.freeze_total_ms < 500
 expect audio.interruptions == 0
 expect audio.concealed_pct < 2

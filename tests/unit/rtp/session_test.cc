@@ -474,3 +474,10 @@ SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
   SM_EXPECT_EQ(RtcpConfig{}.version, 1);
   SM_EXPECT_EQ(loss::KeyframeRequestConfig{}.version, 1);
 }
+
+// #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
+// frame release); timing::VideoTimingConfig on its own keeps version 1.
+SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
+  SM_EXPECT_EQ(VideoStreamConfig{}.timing.version, 2);
+  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
+}

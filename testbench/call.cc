@@ -475,7 +475,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
   video_cfg.keyframe.version = s.keyframe_v2 ? 2 : 1;
-  if (s.timing_v2) video_cfg.timing.version = 2;
+  video_cfg.timing.version = s.timing_v2 ? 2 : 1;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
   const bool video_fec = s.video && rtp::VideoFecEnabled(video_cfg);
