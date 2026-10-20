@@ -9,7 +9,6 @@ describe probe_v2_cross_traffic on seed 4: with libwebrtc's ALR settings (80/40/
 seed 4
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 packetization v2

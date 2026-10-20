@@ -3,7 +3,6 @@ describe 100 kbps link with every v2 switch plus audio v2: the encoder is config
 duration 40s
 allocator v2
 pacer v2
-rtx v2
 cc v2
 keyframe v2
 audio v2

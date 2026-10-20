@@ -34,12 +34,23 @@ RtpReceiverConfig ReceiverCfg() {
   return c;
 }
 
+// The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
+// (SendSideController::Process).
+std::vector<SenderPacket> Release(RtpSender& s, Timestamp now) {
+  auto out = s.TakePackets();
+  for (auto& p : out) {
+    s.AssignSequenceNumber(p);
+    s.OnPacketReleased(p, now);
+  }
+  return out;
+}
+
 // One frame through the sender: the serialized packets of it.
 std::vector<Bytes> SendFrame(RtpSender& s, int64_t id, bool key, size_t bytes, Timestamp now) {
   auto chunks = test::MakeTestFrameChunks(key, bytes, s.config().max_payload_size);
   s.SendVideoFrame(chunks, static_cast<uint32_t>(id * 3000), now);
   std::vector<Bytes> out;
-  for (auto& p : s.TakePackets()) out.push_back(p.packet.Serialize());
+  for (auto& p : Release(s, now)) out.push_back(p.packet.Serialize());
   return out;
 }
 
@@ -189,7 +200,7 @@ std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Byte
   RtpReceiver r(cfg);
   r.Start(Timestamp::Millis(0));
   s.SendVideoFrame(H264Packetizer::Packetize(annexb, s.config().max_payload_size), 0, Timestamp::Millis(0));
-  for (auto& p : s.TakePackets()) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(10));
+  for (auto& p : Release(s, Timestamp::Millis(0))) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(10));
   return Run(r, 10, 400);
 }
 }  // namespace
@@ -478,6 +489,85 @@ SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
   SM_EXPECT_EQ(dec.calls, 6);  // Five received plus the one recovered from RED.
   SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 6u);
+}
+
+namespace {
+// A frame whose second byte is 1 also carries the previous frame as in-band
+// FEC (160 samples), as an Opus packet with LBRR.
+class FecDecoder : public FakeDecoder {
+ public:
+  uint32_t FecDuration(std::span<const uint8_t> frame) const override { return frame.size() > 1 && frame[1] == 1 ? 160 : 0; }
+  std::optional<std::vector<float>> DecodeFec(std::span<const uint8_t>, uint32_t ts) override {
+    fec_ts.push_back(ts);
+    return std::vector<float>(160, 0.5f);
+  }
+  std::vector<uint32_t> fec_ts;
+};
+
+RtpReceiverConfig FecAudioCfg(AudioDecoder* dec, int jitter_buffer_version) {
+  RtpReceiverConfig c;
+  c.ssrc = 7;
+  c.payload_type = 111;
+  c.clock_rate = 8000;
+  c.video = false;
+  c.decoder = dec;
+  c.jitter_buffer.version = jitter_buffer_version;
+  return c;
+}
+
+void SendFecAudio(RtpReceiver& r, uint16_t i, bool fec) {
+  RtpPacket p;
+  p.ssrc = 7;
+  p.payload_type = 111;
+  p.seq = i;
+  p.timestamp = 160u * i;
+  p.payload = Bytes(40, static_cast<uint8_t>(10 + i));
+  p.payload[1] = fec ? 1 : 0;
+  r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
+}
+}  // namespace
+
+// AudioDecoderOpusImpl::ParsePayload (audio_decoder_opus.cc): a packet with
+// in-band FEC gives NetEq a second frame at its timestamp less the FEC's
+// duration, which fills a lost packet's slot (neteq v2 only).
+SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
+  FecDecoder dec;
+  RtpReceiver r(FecAudioCfg(&dec, 2));
+  for (uint16_t i = 0; i < 6; ++i) {
+    if (i != 2) SendFecAudio(r, i, i > 0);  // Packet 2 is lost; packet 3 carries it.
+  }
+  // Packets 1, 3, 4 and 5 carry FEC for 0, 2, 3 and 4.
+  SM_EXPECT_EQ(dec.fec_ts.size(), 4u);
+  SM_EXPECT_EQ(dec.fec_ts[1], 320u);
+  SM_EXPECT_EQ(r.stats().audio_fec_frames, 4u);
+  SM_EXPECT_EQ(r.stats().audio_frames, 5u);
+  // Every slot 0-5 is held once: the FEC copies of 0, 3 and 4 lose to the
+  // frames themselves (PacketBuffer::InsertPacket), and slot 2 is the FEC.
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 9u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 3u);
+  // Playout conceals exactly as much as a receiver that got every packet.
+  FecDecoder all_dec;
+  RtpReceiver all(FecAudioCfg(&all_dec, 2));
+  for (uint16_t i = 0; i < 6; ++i) SendFecAudio(all, i, false);
+  std::vector<float> out(80);
+  for (int t = 0; t < 200; t += 10) {
+    r.GetAudio(out, Timestamp::Millis(120 + t));
+    all.GetAudio(out, Timestamp::Millis(120 + t));
+  }
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_lost, 0u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().concealed_samples, all.jitter_buffer().stats().concealed_samples);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().concealment_events, all.jitter_buffer().stats().concealment_events);
+}
+
+SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
+  FecDecoder dec;
+  RtpReceiver r(FecAudioCfg(&dec, 1));
+  for (uint16_t i = 0; i < 6; ++i) {
+    if (i != 2) SendFecAudio(r, i, i > 0);
+  }
+  SM_EXPECT_TRUE(dec.fec_ts.empty());
+  SM_EXPECT_EQ(r.stats().audio_fec_frames, 0u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 5u);
 }
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {

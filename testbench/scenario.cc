@@ -292,9 +292,6 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "packetization") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: packetization v1|v2");
       s.packetization_v2 = tok[1] == "v2";
-    } else if (key == "rtx") {
-      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: rtx v1|v2");
-      s.rtx_v2 = tok[1] == "v2";
     } else if (key == "timing") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: timing v1|v2");
       s.timing_v2 = tok[1] == "v2";
@@ -392,7 +389,6 @@ std::string FormatScenario(const Scenario& s) {
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.packetization_v2 != d.packetization_v2) o += std::string("packetization ") + (s.packetization_v2 ? "v2" : "v1") + "\n";
-  if (s.rtx_v2 != d.rtx_v2) o += std::string("rtx ") + (s.rtx_v2 ? "v2" : "v1") + "\n";
   if (s.keyframe_v2 != d.keyframe_v2) o += std::string("keyframe ") + (s.keyframe_v2 ? "v2" : "v1") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";

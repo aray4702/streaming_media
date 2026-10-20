@@ -25,19 +25,14 @@ std::optional<RtpPacket> RestoreFromRtx(const RtpPacket& rtx, uint32_t media_ssr
                                         uint8_t media_payload_type);
 
 struct RtxConfig {
-  size_t history_capacity = 1024;              // Packets (power of two not required).
-  TimeDelta max_age = TimeDelta::Seconds(2);   // Do not resend older packets.
-  double min_resend_rtt_factor = 1.0;          // Ignore repeat NACKs within rtt*f.
   uint32_t rtx_ssrc = 0;
   uint8_t rtx_payload_type = 97;
-  // 1: the ring above, filled when a packet is queued for the pacer. 2: libwebrtc's
-  // RtpPacketHistory (modules/rtp_rtcp/source/rtp_packet_history.cc, #76 group 2): a
-  // packet enters when the pacer sends it (OnPacketSent), is kept for max(3 x RTT, 1 s)
-  // and culled after three times that (or once `number_to_store` packets are held and the
-  // oldest has passed the retention), never more than kMaxCapacity; a packet already in the
-  // pacer queue as a resend is not resent again; a repeat request within one RTT of the
-  // last send is ignored. `history_capacity`, `max_age` and `min_resend_rtt_factor` are v1 only.
-  int version = 1;
+  // libwebrtc's RtpPacketHistory (modules/rtp_rtcp/source/rtp_packet_history.cc, #76 group 2): a
+  // packet enters when the pacer sends it (OnPacketSent), is kept for max(3 x RTT, 1 s) and
+  // culled after three times that (or once `number_to_store` packets are held and the oldest
+  // has passed the retention), never more than kMaxCapacity; a packet already in the pacer
+  // queue as a resend is not resent again; a repeat request within one RTT of the last send
+  // is ignored. (The v1 ring, filled when a packet was queued, was deleted in #167.)
   size_t number_to_store = 600;  // kMinSendSidePacketHistorySize (call/rtp_video_sender.cc).
   EventSink* events = nullptr;
 };
@@ -47,36 +42,34 @@ struct RtxStats {
   uint64_t nack_requests = 0;
   uint64_t retransmitted = 0;
   uint64_t not_found = 0;   // Evicted from history or too old.
-  uint64_t throttled = 0;   // Requested again before rtt elapsed (v2: or already pending in the pacer).
-  uint64_t culled_acked = 0;  // v2: removed because the peer acknowledged them.
-  uint64_t payload_padding = 0;  // v2: RTX packets handed out as payload padding.
+  uint64_t throttled = 0;   // Requested again within an RTT of the last send, or already pending in the pacer.
+  uint64_t culled_acked = 0;  // Removed because the peer acknowledged them.
+  uint64_t payload_padding = 0;  // RTX packets handed out as payload padding.
   int64_t bytes_retransmitted = 0;
 };
 
 class RtxSender : public MetricsSource {
  public:
   explicit RtxSender(RtxConfig cfg = {});
-  // v1: called when the packet is queued. v2: called when the pacer sends it
-  // (RtpPacketHistory::PutRtpPacket from RtpSenderEgress).
+  // Called when the pacer sends the packet (RtpPacketHistory::PutRtpPacket from RtpSenderEgress).
   void OnPacketSent(const RtpPacket& p, Timestamp now);
-  // Returns ready-to-send RTX packets for the requested sequence numbers. v2 ignores `rtt`
-  // and uses the one given to SetRtt() (the history's own, -inf until a measurement).
+  // Returns ready-to-send RTX packets for the requested sequence numbers. `rtt` is ignored: the
+  // history uses the one given to SetRtt() (its own, -inf until a measurement).
   std::vector<RtpPacket> OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt);
-  // v2 only (no effect on v1).
   // A measured RTT (RtpPacketHistory::SetRtt): lengthens the retention and culls.
   void SetRtt(TimeDelta rtt, Timestamp now);
   // The pacer sent the RTX packet for `original_seq` (RtpPacketHistory::MarkPacketAsSent).
   void MarkPacketAsSent(uint16_t original_seq, Timestamp now);
   // The peer acknowledged these sequence numbers (RtpPacketHistory::CullAcknowledgedPackets).
   void CullAcknowledged(std::span<const uint16_t> seqs);
-  // v2 only: RtpPacketHistory::GetPayloadPaddingPacket in PaddingMode::kRecentLargePacket (the
+  // RtpPacketHistory::GetPayloadPaddingPacket in PaddingMode::kRecentLargePacket (the
   // mode ModuleRtpRtcpImpl2 builds its history with). The packet is the most recent large
   // payload seen by OnPacketSent(), kept for padding even after it has left the history. It is
   // RTX-encapsulated only if `accept` takes the original (RTPSender::AppendPayloadPadding
   // refuses one that would overshoot the padding target), so a refused packet uses no RTX
   // sequence number.
   std::optional<RtpPacket> GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept);
-  size_t history_size() const { return v2_.size(); }
+  size_t history_size() const { return history_.size(); }
   // Next sequence number of the RTX stream. Padding sent on the RTX SSRC
   // (rtp::RtpSender) takes its numbers here so they never collide with resends.
   uint16_t AllocateSeq() { return rtx_seq_++; }
@@ -84,28 +77,21 @@ class RtxSender : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  struct Slot {
-    bool valid = false;
-    RtpPacket packet;
-    Timestamp sent;
-    Timestamp last_resent = Timestamp::MinusInfinity();
-  };
   struct Stored {
     std::optional<RtpPacket> packet;  // Empty: a hole left by a removed packet.
     Timestamp send_time = Timestamp::MinusInfinity();
     bool pending = false;             // A resend went to the pacer and has not been sent (a flushed one stays pending).
     int times_retransmitted = 0;
   };
-  int V2Index(uint16_t seq) const;
-  Stored* V2Get(uint16_t seq);
-  void V2Cull(Timestamp now);
-  void V2Remove(size_t index);
-  bool V2VerifyRtt(const Stored& s, Timestamp now) const;
+  int Index(uint16_t seq) const;
+  Stored* Get(uint16_t seq);
+  void Cull(Timestamp now);
+  void Remove(size_t index);
+  bool VerifyRtt(const Stored& s, Timestamp now) const;
 
   RtxConfig cfg_;
-  std::vector<Slot> slots_;
-  std::deque<Stored> v2_;
-  std::optional<RtpPacket> large_payload_packet_;  // v2: RtpPacketHistory::large_payload_packet_.
+  std::deque<Stored> history_;
+  std::optional<RtpPacket> large_payload_packet_;  // RtpPacketHistory::large_payload_packet_.
   TimeDelta rtt_ = TimeDelta::MinusInfinity();
   uint16_t rtx_seq_ = 0;
   RtxStats stats_;

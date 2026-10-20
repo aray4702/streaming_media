@@ -117,10 +117,10 @@ void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packet
 
 void SendSideController::SetPaddingSender(RtpSender* sender) {
   padding_sender_ = sender;
-  // With `pacer v2` and `rtx v2` padding is made as libwebrtc's RTPSender::GeneratePadding does:
+  // With `pacer v2` padding is made as libwebrtc's RTPSender::GeneratePadding does:
   // RTX payload padding from the history, then empty padding, each packet with its real size.
   // Otherwise the pacer keeps fixed-size placeholders that MakePadding() fills in when sent.
-  if (!sender || pacer_.version() != cc::PacerVersion::kV2 || !sender->config().rtx_ssrc || sender->config().rtx.version < 2) {
+  if (!sender || pacer_.version() != cc::PacerVersion::kV2 || !sender->config().rtx_ssrc) {
     pacer_.SetPaddingGenerator(nullptr);
     return;
   }
@@ -198,7 +198,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.send_time = now;
     if (sp.sender) {
       sp.sender->OnPacketReleased(sp, now);
-      if (numbered && sp.sender->config().rtx.version >= 2 && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
+      if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
         sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
         // Feedback never covers more than a few seconds; bound the table.
         sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));

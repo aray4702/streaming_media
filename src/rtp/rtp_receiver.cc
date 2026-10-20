@@ -186,19 +186,33 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
 
 void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
   if (!cfg_.decoder) return;
-  auto decode = [&](std::span<const uint8_t> frame, uint32_t ts) {
+  // NetEqImpl::InsertPacketInternal: each RED block (red level 0 for the
+  // primary, 1 for the redundant one) goes through the decoder's ParsePayload.
+  // With version 2, AudioDecoderOpusImpl::ParsePayload puts the frame's
+  // in-band FEC first, at the previous frame's timestamp and codec level 1;
+  // the jitter buffer keeps the higher priority of two at one timestamp.
+  const bool neteq_v2 = cfg_.jitter_buffer.version >= 2;
+  auto decode = [&](std::span<const uint8_t> frame, uint32_t ts, int red_level) {
+    if (neteq_v2) {
+      if (const uint32_t d = cfg_.decoder->FecDuration(frame); d > 0) {
+        if (auto fec = cfg_.decoder->DecodeFec(frame, ts - d)) {
+          ++stats_.audio_fec_frames;
+          jitter_buffer_.InsertPacket(ts - d, std::move(*fec), now, {1, red_level});
+        }
+      }
+    }
     auto pcm = cfg_.decoder->Decode(frame, ts);
     if (!pcm) {
       ++stats_.audio_decode_failures;
       return;
     }
     ++stats_.audio_frames;
-    jitter_buffer_.InsertPacket(ts, std::move(*pcm), now);
+    jitter_buffer_.InsertPacket(ts, std::move(*pcm), now, {0, red_level});
   };
   if (cfg_.red) {
-    for (const auto& b : red_.OnPacket(p.payload, p.timestamp)) decode(b.payload, b.timestamp);
+    for (const auto& b : red_.OnPacket(p.payload, p.timestamp)) decode(b.payload, b.timestamp, b.primary ? 0 : 1);
   } else {
-    decode(p.payload, p.timestamp);
+    decode(p.payload, p.timestamp, 0);
   }
 }
 
@@ -334,6 +348,7 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("missing", stats_.missing);
   w.Counter("audio_frames", stats_.audio_frames);
   w.Counter("audio_decode_failures", stats_.audio_decode_failures);
+  w.Counter("audio_fec_frames", stats_.audio_fec_frames);
 }
 
 }  // namespace sm::rtp

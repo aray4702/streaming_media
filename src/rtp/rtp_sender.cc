@@ -45,7 +45,7 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
   RtpPacket p;
   p.ssrc = cfg_.ssrc;
   p.payload_type = pt;
-  // `rtx v2`: libwebrtc assigns the sequence number when the pacer releases the packet
+  // libwebrtc assigns the sequence number when the pacer releases the packet
   // (PacketRouter::SendPacket -> ModuleRtpRtcpImpl2::AssignSequenceNumber), so a packet
   // the pacer discards leaves no gap. AssignSequenceNumber() does it here.
   p.seq = DefersSequenceNumbers() ? 0 : next_seq_++;
@@ -67,7 +67,7 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
 bool RtpSender::DefersSequenceNumbers() const {
   // FEC packets name the media sequence numbers they protect when they are made, so a sender with
   // FEC keeps assigning at packetization.
-  return cfg_.rtx.version >= 2 && !cfg_.fec;
+  return !cfg_.fec;
 }
 
 void RtpSender::AssignSequenceNumber(SenderPacket& p) {
@@ -77,7 +77,7 @@ void RtpSender::AssignSequenceNumber(SenderPacket& p) {
 }
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
-  if (!cfg_.rtx_ssrc || cfg_.rtx.version < 2) return;
+  if (!cfg_.rtx_ssrc) return;
   if (p.kind == PacketKind::kAudio || p.kind == PacketKind::kVideo) {
     rtx_.OnPacketSent(p.packet, now);
   } else if (p.kind == PacketKind::kRtx && p.packet.payload.size() >= 2) {
@@ -92,9 +92,6 @@ void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now
   sr_octets_ += static_cast<uint32_t>(p.payload.size());
   last_rtp_timestamp_ = p.timestamp;
   last_media_time_ = now;
-  // The history holds the packet as it goes out (design 7.1), RED-wrapped
-  // when RED is in use, so a resend is identical apart from the RTX header.
-  if (cfg_.rtx_ssrc && cfg_.rtx.version < 2) rtx_.OnPacketSent(p, now);
   if (cfg_.fec) {
     for (RtpPacket& f : fec_.AddMediaPacket(p, end_of_group)) {
       ++stats_.fec_packets;
@@ -183,7 +180,7 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
 
 std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32_t rtp_timestamp, Timestamp now) {
   std::vector<SenderPacket> out;
-  if (!cfg_.rtx_ssrc || cfg_.rtx.version < 2) return out;
+  if (!cfg_.rtx_ssrc) return out;
   size_t bytes_left = target_bytes;
   const bool bwe_extension =
       cfg_.extensions && (cfg_.extensions->IdOf(sync::uri::kTransportCc) || cfg_.extensions->IdOf(sync::uri::kAbsSendTime));
