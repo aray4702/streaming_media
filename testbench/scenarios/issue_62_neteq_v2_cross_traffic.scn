@@ -1,0 +1,16 @@
+name issue_62_neteq_v2_cross_traffic
+describe cross_traffic with NetEq's Expand (neteq v2, issue #62): whole pitch periods, Expand's mute factor for PostponeDecode, Normal's unmute after an expand
+duration 40s
+neteq v2
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+# libwebrtc M157 on cross_traffic (compare-webrtc, seeds 1-10): longest audio
+# interruption 100, 80, 70, 30, 50, 30, 20, 30, 30, 20 ms, no interruptions.
+# neteq v2 with our PLC fade (#215), seeds 1-5: 10, 10, 20, 10, 20 ms; with
+# NetEq's Expand: 70, 20, 70, 10, 90 ms.
+expect audio.interruptions == 0
+expect audio.longest_interruption_ms >= 40
+expect audio.longest_interruption_ms <= 150
+expect video.freeze_count == 0
+expect cc.queue_p95_ms < 250
