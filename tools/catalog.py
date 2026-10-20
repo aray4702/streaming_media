@@ -207,7 +207,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
                "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
-               "audible.",
+               "audible. This is the v1 jitter buffer's DSP; `neteq v2` uses NetEq's (NetEqTimeStretch, see 4.5).",
          verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
                       "ready, but WSOLA needs 30 ms, so stretching never ran and latency stayed at 600 ms after "
                       "a stall. Fixed by decoding ahead only when a stretch is wanted (AudioJitterBuffer::"
@@ -216,7 +216,7 @@ ALGORITHMS = [
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
          headers=["timing/audio_jitter_buffer.h", "timing/neteq_expand.h"],
          unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic",
-               "NetEqRandomVector", "NetEqExpand"],
+               "NetEqRandomVector", "NetEqExpand", "NetEqMerge", "NetEqTimeStretch"],
          e2e=["E2E_AudioJitterBuffer"],
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
@@ -240,8 +240,9 @@ ALGORITHMS = [
                "decodes up to 20 ms and borrows the rest of its 30 ms from the samples just played, inserting the "
                "period after them. BufferLevelFilter (buffer_level_filter.cc, Q8, factor 251-254 by target) is "
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
-               "Differences that remain: the stretch DSP is 4.4's (correlation 0.75, segment at the block start), "
-               "not accelerate.cc/preemptive_expand.cc (0.9, 15 ms); fast accelerate is a plain accelerate, as "
+               "The stretch DSP is NetEq's (NetEqTimeStretch below), fed as NetEqImpl::DoAccelerate and "
+               "DoPreemptiveExpand do: the decoded audio, or 30 ms borrowed from the end of the sync buffer. "
+               "Differences that remain: fast accelerate is a plain accelerate, as "
                "NetEq::Config::enable_fast_accelerate defaults to false (api/neteq/neteq.h, missing from "
                "compare/webrtc/reference/, #57). "
                "The v2 expand is libwebrtc M157's Expand (expand.cc, random_vector.cc and the DspHelper pieces it "
@@ -256,10 +257,42 @@ ALGORITHMS = [
                "20 ms) are ported, and Expand is reset after a merge, accelerate, preemptive expand or that "
                "decode. The signal arithmetic is float on the int16 scale, so samples are not bit-exact with "
                "libwebrtc's fixed point; the factors that make decisions (mute factor, voice mix factor, mute "
-               "slope, lags) keep its integer arithmetic. Still to port (issue #62): BackgroundNoise (the "
-               "expansion adds no noise, and Normal's unmute starts from the mute factor as if the noise energy "
-               "were 0), Merge's alignment search (a merge is joined as Normal joins a decode after an expand), "
-               "and the receive half of Opus in-band FEC.",
+               "slope, lags) keep its integer arithmetic. BackgroundNoise is ported as NetEqBackgroundNoise "
+               "(background_noise.cc): after each GetAudio that left decoded audio unchanged (normal, failed "
+               "accelerate or preemptive expand) it reads the last 256 samples of the sync buffer, and when "
+               "their energy is under the update threshold (500000 at start, then the lowest seen, rising 4x in "
+               "4 s while the signal is louder, and kept within 60 dB of the decaying maximum) and the order-8 "
+               "LPC residual is flat (5 * residual >= 16 * energy), it saves the filter, energy and gain, in "
+               "libwebrtc's integer arithmetic (the Levinson-Durbin recursion in double, rounded to Q12). As in "
+               "M157, the noise Expand mixes in is scaled by a mute factor that each expand period sets to 0 and "
+               "nothing raises, so it adds nothing; the estimate's energy (2500 until the first save) sets where "
+               "Normal's first decode after an expand starts unmuting: sqrt(noise energy / energy of its first "
+               "8 ms), or Expand's mute factor if higher. Merge is ported as NetEqMerge (merge.cc, one channel): "
+               "the packet after a lost one is joined by one more unmuted expansion, repeated after the sync "
+               "buffer's unplayed samples to 202 ms * fs/8000; the decoded audio goes in at the lag where its "
+               "first 10 ms best correlate with that signal at 4 kHz (up to max_lag, and far enough on that the "
+               "sync buffer then holds 10 ms plus the overlap and all its old samples), overwriting the unplayed "
+               "expansion. It starts from the larger of Expand's mute factor and SignalScaling's sqrt(expanded / "
+               "decoded energy) over 8 ms (integer arithmetic), unmutes by at least 4194 / (fs/8000) in Q20 per "
+               "sample or to full gain within the frame, and is crossfaded in linearly over up to 60 * fs/8000 "
+               "samples. The samples a merge adds or removes are a concealed-samples correction "
+               "(StatisticsCalculator, a negative one held against later additions). The 4 kHz correlation and "
+               "peak search are float (the WebRtcSpl helpers it calls, in common_audio/signal_processing, are "
+               "not in compare/webrtc/reference/, #57). Accelerate and PreemptiveExpand are ported as NetEqTimeStretch "
+               "(time_stretch.cc, accelerate.cc, preemptive_expand.cc, one channel): the input is downsampled to "
+               "4 kHz with the filter delay compensated, the strongest autocorrelation peak between lags 10 and "
+               "59 gives the pitch period, and the periods either side of 15 ms are compared. A VAD calls the "
+               "block passive when their energy per sample is at most 8x the background noise energy (75000 "
+               "before the first estimate), and then any period is used (kSuccessLowEnergy, NetEq's "
+               "kAccelerateLowEnergy / kPreemptiveExpandLowEnergy modes); otherwise the correlation must exceed "
+               "0.9 in Q14 (0.5 for fast accelerate), and preemptive expand also needs at most 15 ms already "
+               "played. Accelerate crossfades the period before 15 ms into the one after it; preemptive expand "
+               "repeats the period before max(15 ms, played part); the crossfade is AudioVector::CrossFade's "
+               "ramp. The decision values (energies, VAD, correlation, scaling) keep libwebrtc's integer "
+               "arithmetic on int16 samples; the peak search is the float DspHelper::PeakDetection of the expand, "
+               "and the stretched signal is float. Where NetEq's GetAudioInternal fails on a stretch error "
+               "(input under 30 ms, or no new samples past the overlap), the input is kept unchanged. Still to "
+               "port (issue #62): the receive half of Opus in-band FEC.",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -275,7 +308,22 @@ ALGORITHMS = [
                       "jitter buffer's expand loop. With `neteq v2` on the 19 base scenarios against libwebrtc's "
                       "values on the same seeds (1-5), the audio gaps go from 46 to 42. `cross_traffic` longest "
                       "audio interruption goes from 10-20 ms to 10-90 ms (libwebrtc 30-100 ms on those seeds); "
-                      "`issue_62_neteq_v2_cross_traffic` locks it in."),
+                      "`issue_62_neteq_v2_cross_traffic` locks it in. "
+                      "NetEq v2 Merge (issue #62): merge_unittest.cc's Process test passes (input lengths 1, 2, "
+                      "3, 80, 81 and 160 at 8 kHz, synthetic voiced signal), plus tests of the alignment, "
+                      "SignalScaling, the unmute rates, the cut of a long unplayed part and the jitter buffer's "
+                      "merge. With `neteq v2`, seeds 1-10: `audio_only_lossy` jitter buffer delay p95 75.0 -> 68.3 ms "
+                      "and mouth-to-ear p95 147.6 -> 140.9 ms (libwebrtc 81 and 146.8), time-stretch 0.24 -> 0.51 % "
+                      "(libwebrtc 0.39): the merge now overwrites the unplayed expansion instead of playing it "
+                      "before the packet. `high_jitter` and `cross_traffic` are unchanged but for `high_jitter` "
+                      "jitter buffer delay p50 80.4 -> 82.0 ms (libwebrtc 85). "
+                      "NetEq v2 Accelerate/PreemptiveExpand (issue #62): time_stretch_unittest.cc's "
+                      "CreateAndDestroy passes; its Accelerate tests read testfile32kHz.pcm, so synthetic voiced "
+                      "signals and noise test the period, the 0.9 and 0.5 thresholds, the VAD against the noise "
+                      "estimate, preemptive expand's old-data rule, the crossfade and the jitter buffer's whole "
+                      "periods. With `neteq v2`, seeds "
+                      "1-10: `audio_only_lossy` time-stretch 0.51 -> 0.44 % (libwebrtc 0.39), `cross_traffic` "
+                      "2.29 -> 2.06 % (libwebrtc 2.37); the other audio means move by under 2 %."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],
@@ -324,11 +372,16 @@ ALGORITHMS = [
          headers=["cc/transport_feedback.h"], unit=["TransportFeedback"], e2e=["E2E_TransportFeedback"],
          bench=["cc/TransportFeedback_Build100_SerializeParse"],
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
-                  "real wire format, parsed and joined with the send history. Each packet must be reported once, "
-                  "with arrival-time error within the 250 us quantization.",
+                  "real wire format, parsed and joined with the send history. Each packet must be reported received "
+                  "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
+                  "re-reports it), with arrival-time error within the 250 us quantization.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
-               "vectors. A message is split when a delta overflows 16 bits.",
+               "vectors. The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "
+               "reordered packet moves the window start back and is reported again, no gap older than 0x7FFE is "
+               "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
+               "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "
+               "`tcc` switch were deleted in #167.",
          verification="No defects found; maximum arrival-time error 249 us."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
@@ -423,10 +476,11 @@ ALGORITHMS = [
                "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
                "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc. "
                "**Default (#61):** a `rtp::Session` runs libwebrtc's components: `SessionConfig` and `SendSideConfig` "
-               "default to `cc`, `pacer`, `tcc`, `rtcp`, `rtx`, `allocator` and `packetization` v2, `VideoStreamConfig` to "
+               "default to `cc`, `pacer`, `rtx`, `allocator` and `packetization` v2, `VideoStreamConfig` to "
                "`keyframe` v2, and the test bench also to `audio` v2. v1 stays selectable per field (test bench `cc v1` etc.) "
-               "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, `RtcpConfig`, "
-               "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. "
+               "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, "
+               "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. `tcc` and `rtcp` v1 "
+               "are deleted (#167): transport-cc feedback and RTCP report timing are libwebrtc's only. "
                "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
                "Approved deviation: the Opus frame-size model of `audio v2` (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
@@ -890,9 +944,10 @@ ALGORITHMS = [
                   "requests reach the module that acts on them.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
                "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
-               "(SR or RR first, SDES CNAME after it). Version 2 (`rtcp v2`, issue #76 group 3) times reports as "
+               "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
+               "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). With `rtcp v2` a report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). With `rtcp v2` NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "

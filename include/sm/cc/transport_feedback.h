@@ -54,32 +54,26 @@ std::optional<std::pair<DataRate, std::vector<uint32_t>>> ParseRemb(std::span<co
 
 struct FeedbackBuilderStats {
   uint64_t packets = 0;
-  uint64_t late_after_report = 0;
   uint64_t feedbacks = 0;
-  uint64_t re_reported = 0;  // v2: packets reported again after a report (kBackWindow, reordering).
+  uint64_t re_reported = 0;  // packets reported again after a report (kBackWindow, reordering).
 };
 
 // libwebrtc modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.*
 // (periodic reports only; the on-request form of transport-wide-cc-02 is not
-// used). `version` 1 is the original builder: reports each arrival once,
-// every fixed interval. Version 2 is libwebrtc's generator: arrivals stay
-// for kBackWindow, a reordered packet moves the window start back and is
-// reported again, no gap older than 0x7FFE is reported, and the interval
-// follows the local send estimate (`Interval()`).
-struct FeedbackBuilderConfig {
-  int version = 1;
-};
+// used): arrivals stay for kBackWindow, a reordered packet moves the window
+// start back and is reported again, no gap older than 0x7FFE is reported, and
+// the interval follows the local send estimate (`Interval()`).
 
 // Receiver side: records arrivals and periodically builds feedback.
 class TransportFeedbackBuilder : public MetricsSource {
  public:
-  explicit TransportFeedbackBuilder(uint32_t sender_ssrc = 0, uint32_t media_ssrc = 0, FeedbackBuilderConfig cfg = {})
-      : sender_ssrc_(sender_ssrc), media_ssrc_(media_ssrc), cfg_(cfg) {}
+  explicit TransportFeedbackBuilder(uint32_t sender_ssrc = 0, uint32_t media_ssrc = 0)
+      : sender_ssrc_(sender_ssrc), media_ssrc_(media_ssrc) {}
   void OnPacket(uint16_t transport_seq, Timestamp arrival);
-  // v2: the local send estimate changed; feedback may use 5% of it
+  // The local send estimate changed; feedback may use 5% of it
   // (OnSendBandwidthEstimateChanged). Until the first call the interval is 100 ms.
   void OnSendBandwidthEstimateChanged(DataRate estimate);
-  // v2: time between periodic reports.
+  // Time between periodic reports.
   TimeDelta Interval() const { return send_interval_; }
   // Feedback covering everything since the previous call (may be split
   // into several messages when deltas do not fit). Empty if nothing new.
@@ -90,19 +84,16 @@ class TransportFeedbackBuilder : public MetricsSource {
  private:
   void AddArrival(int64_t seq, Timestamp arrival);
   void RemoveOldPackets(int64_t seq, Timestamp limit);
-  std::vector<TransportFeedback> BuildV2();
 
   uint32_t sender_ssrc_, media_ssrc_;
-  FeedbackBuilderConfig cfg_;
   SeqNumUnwrapper<uint16_t> unwrapper_;
   std::map<int64_t, Timestamp> arrivals_;
-  // v2 (PacketArrivalTimeMap): [begin_, end_) is the span of kept sequence numbers.
+  // PacketArrivalTimeMap: [begin_, end_) is the span of kept sequence numbers.
   int64_t begin_ = 0, end_ = 0;
   bool seen_ = false;
   int64_t reported_high_ = INT64_MIN;
   std::optional<int64_t> window_start_;  // periodic_window_start_seq_
   TimeDelta send_interval_ = TimeDelta::Millis(100);
-  int64_t next_to_report_ = INT64_MIN;
   uint8_t fb_count_ = 0;
   FeedbackBuilderStats stats_;
 };
