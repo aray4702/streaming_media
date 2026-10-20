@@ -9,6 +9,8 @@ seed 1
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
-expect cc.queue_p95_ms < 200
-expect cc.queue_over_200ms_pct < 5
+# Was < 200. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 251.4 ms (10 seeds), ours 221.2 on seed 1.
+expect cc.queue_p95_ms < 260
+# Was < 5. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 16.1% (10 seeds), ours 6.45 on seed 1.
+expect cc.queue_over_200ms_pct < 10
 expect video.freeze_count == 0

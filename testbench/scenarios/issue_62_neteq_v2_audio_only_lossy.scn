@@ -1,0 +1,14 @@
+name issue_62_neteq_v2_audio_only_lossy
+describe audio_only_lossy with NetEq's operations (neteq v2, issue #62): play from the first packet, preemptive expand up to the target
+duration 30s
+video off
+neteq v2
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+# libwebrtc M157 on audio_only_lossy (compare-webrtc, seeds 1-10): jitter buffer
+# delay p95 70-90 ms, mouth-to-ear p95 133-168 ms. neteq v2 with v1's operations
+# (#213): 60 ms and 133 ms on seeds 1-5; with DecisionLogic: 72 ms and 145 ms.
+expect audio.interruptions == 0
+expect audio.concealed_pct < 3
+expect audio.jb_delay_p95_ms >= 66
+expect audio.mouth_to_ear_p95_ms >= 139
+expect audio.mouth_to_ear_p95_ms <= 170

@@ -188,10 +188,8 @@ ALGORITHMS = [
                "delay_manager.cc (max of the two, 80 ms until the first estimate), delay_constraints.cc (minimum "
                "delay, at most 75% of a 200-packet buffer) and DecisionLogic::PacketArrived. Arrival times are on "
                "NetEq's 10 ms TickTimer, which advances once per GetAudio, and the packets before the first GetAudio "
-               "are dropped from the statistics as NetEqImpl's SoftReset on the first codec does. Not ported yet "
-               "(the next steps of #62): DecisionLogic's operations (accelerate above target + max arrival delay + "
-               "20 ms, preemptive expand below target, postponed decoding after an expand), BufferLevelFilter, and "
-               "expand/merge timing; the v2 target drives v1's operations. NetEq::Config's max_packets_in_buffer "
+               "are dropped from the statistics as NetEqImpl's SoftReset on the first codec does. The operations "
+               "that use this target are in 4.5. NetEq::Config's max_packets_in_buffer "
                "(200) and min_delay_ms (0) are from api/neteq/neteq.h, which is not in compare/webrtc/reference/ "
                "(#57).",
          verification="No defects found. NetEq v2: libwebrtc's histogram, underrun, reorder, packet arrival history "
@@ -216,17 +214,47 @@ ALGORITHMS = [
                       "MaybeStretch); recovery now takes ~0.5 s."),
     dict(id="4.5", slug="audio-jitter-buffer", title="Adaptive audio jitter buffer (NetEq-lite)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
-         headers=["timing/audio_jitter_buffer.h"], unit=["AudioJitterBuffer"], e2e=["E2E_AudioJitterBuffer"],
+         headers=["timing/audio_jitter_buffer.h"],
+         unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic"],
+         e2e=["E2E_AudioJitterBuffer"],
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
                   "buffer is compared with a fixed 20 ms and a fixed 200 ms buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
-               "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names.",
+               "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names. "
+               "NetEq v2 (issue #62, `neteq v2`; default v1) chooses the operation as libwebrtc M157's "
+               "modules/audio_coding/neteq/decision_logic.cc and NetEqImpl::GetDecision/GetAudioInternal "
+               "(neteq_impl.cc) do, in `NetEqDecisionLogic` (timing/neteq_delay.h): playout starts with the first "
+               "packet (new codec: a normal decode, no wait for the target); with the expected packet available "
+               "and the last mode not an expand, fast accelerate at 4x and accelerate at the arrival history's "
+               "playout delay >= target + its largest arrival delay + 20 ms, preemptive expand below the target, "
+               "the last two at most once per kMinTimescaleInterval (5 ticks after a successful stretch, 6 after a "
+               "reset); decoding is postponed while the buffer (span plus the newest packet's waiting time) is "
+               "under 50 % of the target and the expand is muted below 0.5; a future packet is merged once the "
+               "expand has covered the gap or the buffer is above target + 50 ms, otherwise the expand goes on; "
+               "a missing packet with a later one buffered starts an expand after normal playout. The "
+               "extraction rules are NetEq's: nothing is decoded while 10 ms is ready, except for merge and the "
+               "stretches; accelerate needs 30 ms decoded (else normal, decoding 20 ms first); preemptive expand "
+               "decodes up to 20 ms and borrows the rest of its 30 ms from the samples just played, inserting the "
+               "period after them. BufferLevelFilter (buffer_level_filter.cc, Q8, factor 251-254 by target) is "
+               "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
+               "Differences that remain: the stretch DSP is 4.4's (correlation 0.75, segment at the block start), "
+               "not accelerate.cc/preemptive_expand.cc (0.9, 15 ms); the expand is 3.4's PLC, so the mute factor "
+               "is its fade (full level for 10 ms, linear to 0 over 50 ms) rather than Expand's signal-dependent "
+               "mute_slope, and it conceals exactly the missing part of 10 ms instead of Expand's pitch-length "
+               "chunks; Expand's 5/8 ms overlap is not kept back; fast accelerate is a plain accelerate, as "
+               "NetEq::Config::enable_fast_accelerate defaults to false (api/neteq/neteq.h, missing from "
+               "compare/webrtc/reference/, #57).",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
-                      "rate and delay against both fixed buffers."),
+                      "rate and delay against both fixed buffers. "
+                      "NetEq v2 operations (issue #62): libwebrtc's decision_logic and buffer_level_filter unit "
+                      "tests pass (CNG cases excluded, no CNG here). With `neteq v2` on the whole suite (seeds "
+                      "1-3), the audio gaps against libwebrtc's 10-seed means go from 112 to 94 (38 closed, 20 "
+                      "opened). `audio_only_lossy` jitter buffer delay p95 60 -> 72 ms and mouth-to-ear 133 -> "
+                      "145 ms (libwebrtc 81 and 147); `issue_62_neteq_v2_audio_only_lossy` locks it in."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],
@@ -251,7 +279,9 @@ ALGORITHMS = [
                       "jitter, +0.9 x RTT after 3 NACKed frames); libwebrtc's JitterEstimator SteadyStateConvergence "
                       "test gives its 54 ms here. With every v2 switch on, `high_jitter` video e2e delay p95 is "
                       "130-199 ms on seeds 1-10 (timing v1 162-313, libwebrtc 122-152) and p50 95-157 ms "
-                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. "
+                      "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
+                      "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
+                      "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
                       "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
                       "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
                       "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
@@ -385,7 +415,9 @@ ALGORITHMS = [
                "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24; "
                "resolved when timing v2 became the default: 28.8-29.2 fps, libwebrtc 27.1-27.6). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
-               "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24).",
+               "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
+               "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
+               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "

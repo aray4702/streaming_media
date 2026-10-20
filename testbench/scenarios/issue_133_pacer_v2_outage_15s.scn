@@ -12,4 +12,5 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 25s up
 expect video.frames_rendered > 650
-expect video.pause_total_ms < 16500
+# Was < 16500. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 16728 ms (10 seeds, up to 18220), ours 18248 on seed 1.
+expect video.pause_total_ms < 19000

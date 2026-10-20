@@ -52,6 +52,9 @@ class PacketLossConcealer : public MetricsSource {
   void Conceal(std::span<float> out);
 
   bool in_concealment() const { return concealing_; }
+  // Gain of the next concealed sample (1 outside a concealment): the fade
+  // that NetEq's Expand::MuteFactor tracks.
+  float gain() const;
   const PlcStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

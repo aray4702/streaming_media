@@ -318,4 +318,142 @@ void NetEqDelayManager::ExportMetrics(MetricsWriter& w) const {
   w.Hist("relative_delay_ms", relative_delay_ms_);
 }
 
+// -------------------------------------------------------- BufferLevelFilter
+
+void BufferLevelFilter::Reset() {
+  filtered_current_level_ = 0;
+  level_factor_ = 253;
+}
+
+void BufferLevelFilter::Update(size_t buffer_size_samples, int time_stretched_samples) {
+  // filtered = level_factor * filtered + (1 - level_factor) * buffer_size, in Q8.
+  const int64_t filtered = (level_factor_ * int64_t{filtered_current_level_} >> 8) +
+                           (256 - level_factor_) * static_cast<int64_t>(buffer_size_samples);
+  // Time-scale operations bypass the filter; the level stays non-negative.
+  const int64_t v = std::max<int64_t>(0, filtered - int64_t{time_stretched_samples} * (1 << 8));
+  filtered_current_level_ = static_cast<int>(std::min<int64_t>(v, std::numeric_limits<int>::max()));
+}
+
+void BufferLevelFilter::SetFilteredBufferLevel(int buffer_size_samples) {
+  const int64_t v = int64_t{buffer_size_samples} * 256;
+  filtered_current_level_ = static_cast<int>(
+      std::clamp<int64_t>(v, std::numeric_limits<int>::min(), std::numeric_limits<int>::max()));
+}
+
+void BufferLevelFilter::SetTargetBufferLevel(int target_buffer_level_ms) {
+  if (target_buffer_level_ms <= 20) {
+    level_factor_ = 251;
+  } else if (target_buffer_level_ms <= 60) {
+    level_factor_ = 252;
+  } else if (target_buffer_level_ms <= 140) {
+    level_factor_ = 253;
+  } else {
+    level_factor_ = 254;
+  }
+}
+
+// ------------------------------------------------------ NetEqDecisionLogic
+
+const char* ToString(NetEqOperation op) {
+  switch (op) {
+    case NetEqOperation::kNormal: return "normal";
+    case NetEqOperation::kMerge: return "merge";
+    case NetEqOperation::kExpand: return "expand";
+    case NetEqOperation::kAccelerate: return "accelerate";
+    case NetEqOperation::kFastAccelerate: return "fast_accelerate";
+    case NetEqOperation::kPreemptiveExpand: return "preemptive_expand";
+    case NetEqOperation::kUndefined: return "undefined";
+  }
+  return "?";
+}
+
+bool IsTimestretch(NetEqMode mode) {
+  return mode == NetEqMode::kAccelerateSuccess || mode == NetEqMode::kAccelerateLowEnergy ||
+         mode == NetEqMode::kPreemptiveExpandSuccess || mode == NetEqMode::kPreemptiveExpandLowEnergy;
+}
+
+void NetEqDecisionLogic::SoftReset(int64_t tick) {
+  sample_memory_ = 0;
+  prev_time_scale_ = false;
+  countdown_start_ = tick;
+  countdown_ticks_ = kMinTimescaleInterval + 1;
+  buffer_level_filter_.Reset();
+}
+
+NetEqOperation NetEqDecisionLogic::GetDecision(const NetEqStatus& s, int64_t tick) {
+  prev_time_scale_ = prev_time_scale_ && IsTimestretch(s.last_mode);
+  if (prev_time_scale_) {
+    countdown_start_ = tick;
+    countdown_ticks_ = kMinTimescaleInterval;
+  }
+  if (s.last_mode != NetEqMode::kExpand) FilterBufferLevel(s.span_samples, s.target_level_ms);
+
+  if (!s.next_packet_timestamp) return NoPacket(s);
+  if (PostponeDecode(s)) return NoPacket(s);
+  if (s.target_timestamp == *s.next_packet_timestamp) return ExpectedPacketAvailable(s, tick);
+  // PacketBuffer::IsObsoleteTimestamp within 5 s: an older packet means a
+  // new stream, which NetEq handles with a reset.
+  if (*s.next_packet_timestamp > s.target_timestamp) return FuturePacketAvailable(s);
+  return NetEqOperation::kUndefined;
+}
+
+void NetEqDecisionLogic::FilterBufferLevel(int64_t buffer_size_samples, int target_level_ms) {
+  buffer_level_filter_.SetTargetBufferLevel(target_level_ms);
+  int time_stretched_samples = 0;  // time_stretched_cn_samples_ is CNG only.
+  if (prev_time_scale_) time_stretched_samples += sample_memory_;
+  if (buffer_flush_) {
+    buffer_level_filter_.SetFilteredBufferLevel(static_cast<int>(buffer_size_samples));
+    buffer_flush_ = false;
+  } else {
+    buffer_level_filter_.Update(static_cast<size_t>(std::max<int64_t>(0, buffer_size_samples)), time_stretched_samples);
+  }
+  prev_time_scale_ = false;
+}
+
+NetEqOperation NetEqDecisionLogic::NoPacket(const NetEqStatus&) const { return NetEqOperation::kExpand; }
+
+NetEqOperation NetEqDecisionLogic::ExpectedPacketAvailable(const NetEqStatus& s, int64_t tick) const {
+  if (s.last_mode != NetEqMode::kExpand) {
+    const int64_t low_limit = s.target_level_ms;
+    const int64_t high_limit = low_limit + s.max_delay_ms + kDelayAdjustmentGranularityMs;
+    if (s.playout_delay_ms >= high_limit * 4) return NetEqOperation::kFastAccelerate;
+    if (TimescaleAllowed(tick)) {
+      if (s.playout_delay_ms >= high_limit) return NetEqOperation::kAccelerate;
+      if (s.playout_delay_ms < low_limit) return NetEqOperation::kPreemptiveExpand;
+    }
+  }
+  return NetEqOperation::kNormal;
+}
+
+NetEqOperation NetEqDecisionLogic::FuturePacketAvailable(const NetEqStatus& s) {
+  // Continue an ongoing concealment while the next packet is too far ahead.
+  const int64_t buffer_delay_samples = s.span_samples_wait_time;
+  const int64_t buffer_delay_ms = buffer_delay_samples / sample_rate_khz_;
+  const int64_t high_limit = s.target_level_ms + kTargetLevelWindowMs / 2;
+  const bool above_target_delay = buffer_delay_ms > high_limit;
+  if (PacketTooEarly(s) && !above_target_delay) return NoPacket(s);
+  const int64_t timestamp_leap = *s.next_packet_timestamp - s.target_timestamp;
+  if (timestamp_leap != s.generated_noise_samples) {
+    // The delay was adjusted: reinitialize the buffer level filter.
+    buffer_level_filter_.SetFilteredBufferLevel(static_cast<int>(buffer_delay_samples));
+  }
+  // Time to play the next packet.
+  if (s.last_mode == NetEqMode::kExpand) return NetEqOperation::kMerge;
+  return NetEqOperation::kExpand;
+}
+
+bool NetEqDecisionLogic::PostponeDecode(const NetEqStatus& s) const {
+  // Don't restart audio too soon after an expand, or it runs out again.
+  const int64_t min_buffer_level_samples =
+      int64_t{s.target_level_ms} * sample_rate_khz_ * kPostponeDecodingLevel / 100;
+  if (s.span_samples_wait_time >= min_buffer_level_samples) return false;
+  // Only continue the expand once it is muted enough to be noticeable
+  // (mute factor in Q14).
+  return s.last_mode == NetEqMode::kExpand && s.expand_mutefactor < 16384 / 2;
+}
+
+bool NetEqDecisionLogic::PacketTooEarly(const NetEqStatus& s) const {
+  return *s.next_packet_timestamp - s.target_timestamp > s.generated_noise_samples;
+}
+
 }  // namespace sm::timing

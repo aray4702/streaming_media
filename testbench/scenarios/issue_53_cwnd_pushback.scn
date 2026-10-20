@@ -8,6 +8,8 @@ at 8s  capacity=500kbps
 # and is lost for good. Without it 1.4-4.8% of the video packets are never
 # recovered on every seed 1-20; with it 0-0.84%.
 expect video.residual_loss_pct <= 1.0
+# Restored to >= 22 by #24 (timing v2 default; was a provisional >= 14 under timing v1, Owner sign-off on PR #186).
+# libwebrtc 27.4 fps (10 seeds).
 expect video.render_fps >= 22
 expect audio.interruptions <= 1
 # Target (issue #53): the send rate stays within 1.5x of the target from 1 s
