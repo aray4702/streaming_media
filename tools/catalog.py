@@ -214,8 +214,9 @@ ALGORITHMS = [
                       "MaybeStretch); recovery now takes ~0.5 s."),
     dict(id="4.5", slug="audio-jitter-buffer", title="Adaptive audio jitter buffer (NetEq-lite)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
-         headers=["timing/audio_jitter_buffer.h"],
-         unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic"],
+         headers=["timing/audio_jitter_buffer.h", "timing/neteq_expand.h"],
+         unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic",
+               "NetEqRandomVector", "NetEqExpand"],
          e2e=["E2E_AudioJitterBuffer"],
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
@@ -240,12 +241,25 @@ ALGORITHMS = [
                "period after them. BufferLevelFilter (buffer_level_filter.cc, Q8, factor 251-254 by target) is "
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
                "Differences that remain: the stretch DSP is 4.4's (correlation 0.75, segment at the block start), "
-               "not accelerate.cc/preemptive_expand.cc (0.9, 15 ms); the expand is 3.4's PLC, so the mute factor "
-               "is its fade (full level for 10 ms, linear to 0 over 50 ms) rather than Expand's signal-dependent "
-               "mute_slope, and it conceals exactly the missing part of 10 ms instead of Expand's pitch-length "
-               "chunks; Expand's 5/8 ms overlap is not kept back; fast accelerate is a plain accelerate, as "
+               "not accelerate.cc/preemptive_expand.cc (0.9, 15 ms); fast accelerate is a plain accelerate, as "
                "NetEq::Config::enable_fast_accelerate defaults to false (api/neteq/neteq.h, missing from "
-               "compare/webrtc/reference/, #57).",
+               "compare/webrtc/reference/, #57). "
+               "The v2 expand is libwebrtc M157's Expand (expand.cc, random_vector.cc and the DspHelper pieces it "
+               "uses), as `NetEqExpand` (timing/neteq_expand.h): AnalyzeSignal's three lags from the 4 kHz "
+               "correlation peaks and the distortion, the two expansion vectors, the order-6 AR model of the "
+               "unvoiced part, the voice mix factor and the mute slope (onset above an amplitude ratio of 1.5); "
+               "Process appends one lag per call, cycling through the lags, with the slope floors of the 4th and "
+               "8th calls and the stuck-gain guard, and its mute factor is what DecisionLogic's PostponeDecode "
+               "reads. NetEqImpl::DoExpand's loop (whole periods until the sync buffer holds the output plus the "
+               "5/8 ms overlap), the overlap kept back as lookahead (FlushBuffers, GetAudioInternal) and Normal's "
+               "first decode after an expand (one more expansion, 1 ms crossfade, unmute by at least 0.64 per "
+               "20 ms) are ported, and Expand is reset after a merge, accelerate, preemptive expand or that "
+               "decode. The signal arithmetic is float on the int16 scale, so samples are not bit-exact with "
+               "libwebrtc's fixed point; the factors that make decisions (mute factor, voice mix factor, mute "
+               "slope, lags) keep its integer arithmetic. Still to port (issue #62): BackgroundNoise (the "
+               "expansion adds no noise, and Normal's unmute starts from the mute factor as if the noise energy "
+               "were 0), Merge's alignment search (a merge is joined as Normal joins a decode after an expand), "
+               "and the receive half of Opus in-band FEC.",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -254,7 +268,14 @@ ALGORITHMS = [
                       "tests pass (CNG cases excluded, no CNG here). With `neteq v2` on the whole suite (seeds "
                       "1-3), the audio gaps against libwebrtc's 10-seed means go from 112 to 94 (38 closed, 20 "
                       "opened). `audio_only_lossy` jitter buffer delay p95 60 -> 72 ms and mouth-to-ear 133 -> "
-                      "145 ms (libwebrtc 81 and 147); `issue_62_neteq_v2_audio_only_lossy` locks it in."),
+                      "145 ms (libwebrtc 81 and 147); `issue_62_neteq_v2_audio_only_lossy` locks it in. "
+                      "NetEq v2 Expand (issue #62): expand_unittest.cc's four tests pass (DelayedPacketOutage, "
+                      "LostPacketOutage, CheckOutageStatsAfterReset, Muted; with a synthetic voiced signal for "
+                      "testfile32kHz.pcm), plus tests of the lags, the slope floors, the onset rule and the "
+                      "jitter buffer's expand loop. With `neteq v2` on the 19 base scenarios against libwebrtc's "
+                      "values on the same seeds (1-5), the audio gaps go from 46 to 42. `cross_traffic` longest "
+                      "audio interruption goes from 10-20 ms to 10-90 ms (libwebrtc 30-100 ms on those seeds); "
+                      "`issue_62_neteq_v2_cross_traffic` locks it in."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],

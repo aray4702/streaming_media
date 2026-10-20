@@ -19,7 +19,12 @@
 // its largest arrival delay plus 20 ms, preemptive expand below the target,
 // at most one of them every 5 ticks; decoding is postponed after an expand
 // while the buffer holds less than half the target; and an expand ends in
-// a merge once it has covered the gap to the next packet.
+// a merge once it has covered the gap to the next packet. Version 2
+// conceals with NetEq's Expand (NetEqExpand): whole pitch periods until the
+// sync buffer holds the output plus Expand's overlap, the mute factor that
+// DecisionLogic reads, and Normal's unmute and 1 ms crossfade on the first
+// decode after it. Merge's alignment search is not ported yet: a merge is
+// joined the way Normal joins a decode after an expand.
 #pragma once
 
 #include <cstdint>
@@ -34,6 +39,7 @@
 #include "sm/loss/plc.h"
 #include "sm/timing/delay_manager.h"
 #include "sm/timing/neteq_delay.h"
+#include "sm/timing/neteq_expand.h"
 #include "sm/timing/time_stretch.h"
 
 namespace sm::timing {
@@ -88,11 +94,17 @@ class AudioJitterBuffer : public MetricsSource {
 
  private:
   int64_t SpanSamples() const;
-  AudioOperation DecodeNext(Timestamp now);
+  // Decodes the next packet into `dst` (the sync buffer when null).
+  AudioOperation DecodeNext(Timestamp now, std::vector<float>* dst = nullptr);
   bool NextPacketReady() const;
   AudioOperation MaybeStretch(Timestamp now);
   // NetEqImpl::GetAudioInternal and GetDecision (version 2).
   AudioOperation GetAudioV2(std::span<float> out, Timestamp now);
+  // Expand::Process on the sync buffer (played_ then sync_); appends to `out`.
+  size_t ExpandOnce(std::vector<float>& out);
+  // Normal::Process after an expand (version 2): one more expansion to
+  // crossfade from, and the decoded audio unmuted from the mute factor.
+  void JoinAfterExpand(std::vector<float>& decoded, bool merge);
   // PacketBuffer::GetSpanSamples.
   int64_t PacketSpanSamples(bool count_waiting_time) const;
 
@@ -108,6 +120,7 @@ class AudioJitterBuffer : public MetricsSource {
   bool neteq_reset_done_ = false;
   TimeStretcher stretcher_;
   loss::PacketLossConcealer plc_;
+  NetEqExpand expand_;
   SeqNumUnwrapper<uint32_t> unwrapper_;
   struct Packet {
     std::vector<float> pcm;
@@ -124,7 +137,10 @@ class AudioJitterBuffer : public MetricsSource {
   int min_delay_ms_ = 0;
   AudioJitterBufferStats stats_;
   std::vector<float> scratch_;
-  std::vector<float> played_;  // The last 30 ms played out (version 2), for borrowing.
+  // The played part of the sync buffer (version 2): 30 ms for preemptive
+  // expand to borrow, and Expand's history.
+  std::vector<float> played_;
+  std::vector<float> sync_scratch_, decoded_, expanded_;
 };
 
 }  // namespace sm::timing
