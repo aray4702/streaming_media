@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-79 scenarios, mean of 10 seeds. **249 gaps**: 87 behind libwebrtc, 162 ahead of it; 0 without an owner.
+79 scenarios, mean of 10 seeds. **250 gaps**: 87 behind libwebrtc, 163 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-320 gaps on `main`, 249 here: **88 closed, 17 opened**, 6 changed direction.
+321 gaps on `main`, 250 here: **88 closed, 17 opened**, 6 changed direction.
 
 Closed:
 
@@ -339,6 +339,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 808 | 420 | ±98.3 | behind | 10/10 | #24, #37 |
 | issue_61_googcc_glue_congestive | `video.freeze_count` | 5 | 3.7 | ±1.1 | behind | 7/10 | #5, #37, #24 |
 | issue_62_neteq_v2_audio_only_lossy | `audio.concealed_pct` | 1.2 | 0.5 | ±0.5 | behind | 6/10 | #62, #63 |
+| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 68.3 | 81 | ±10 | ahead | 3/10 | #62, #63 |
 | issue_62_neteq_v2_cross_traffic | `cc.rtt_p50_ms` | 87.2 | 64.5 | ±10 | behind | 1/10 | #61 |
 | issue_62_neteq_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 227 | 212 | ±11.4 | behind | 6/10 | #62, #63 |
 | issue_62_neteq_v2_high_jitter | `repair.overhead_pct` | 34.0 | 43.7 | ±2.5 | ahead | 8/10 | #21, #7, #29 |

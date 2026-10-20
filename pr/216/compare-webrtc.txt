@@ -2815,8 +2815,8 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
   audio.concealed_pct                     1.2          0.5  webrtc
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms            35           27  =
-  audio.mouth_to_ear_p95_ms               148          147  =
-  audio.jb_delay_p95_ms                  75.0         81.0  =
+  audio.mouth_to_ear_p95_ms               141          147  =
+  audio.jb_delay_p95_ms                  68.3         81.0  sm
   cc.utilization_pct                     77.0         77.3  =
   cc.queue_p95_ms                         3.8          3.6  =
   cc.max_settle_ms                        100          100  =
@@ -3900,7 +3900,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 284, webrtc 127, tie 1198 (of the metrics shown)
+better: sm 285, webrtc 127, tie 1197 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values
