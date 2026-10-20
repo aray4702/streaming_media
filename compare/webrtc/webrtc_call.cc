@@ -52,6 +52,7 @@
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
+#include "modules/congestion_controller/goog_cc/loss_based_bwe_v2.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -80,6 +81,11 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // LossBasedBweV2 (issue #217), through SendSideBandwidthEstimation, which also names this class a friend.
+  static const LossBasedBweV2* LossBased(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)
+        ->bandwidth_estimation_.loss_based_bandwidth_estimator_v2_.get();
+  }
 };
 }  // namespace webrtc
 
@@ -94,9 +100,9 @@ using testbench::VideoTraceRow;
 
 // Records the sender's GoogCC events (issue #149) in this library's BweTraceRow layout:
 // RtcEventBweUpdateDelayBased (delay_based_bwe.cc) and RtcEventBweUpdateLossBased
-// (send_side_bandwidth_estimation.cc). LossBasedBweV2's own state (LossBasedState, the
-// loss-limited estimate) has no event or public accessor in the prebuilt libwebrtc, so
-// those columns stay empty here.
+// (send_side_bandwidth_estimation.cc). LossBasedBweV2 logs no event of its own: DetectorTraceController
+// adds its state and loss-limited estimate to these rows (issue #217). Its instant upper bound has
+// no accessor, so that column stays empty here.
 class BweTraceLog final : public w::RtcEventLog {
  public:
   BweTraceLog(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows) : now_us_(std::move(now_us)), rows_(rows) {}
@@ -144,18 +150,46 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   DetectorTraceController(std::unique_ptr<w::NetworkControllerInterface> inner, const w::Environment& env,
                           std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
       : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
-  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return inner_->OnNetworkAvailability(m); }
-  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
-  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
-  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
-  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
-  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
-  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
-  w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
-    return inner_->OnTargetRateConstraints(m);
+  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnNetworkAvailability(m));
   }
-  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return inner_->OnTransportLossReport(m); }
+  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnNetworkRouteChange(m));
+  }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnProcessInterval(m));
+  }
+  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnRemoteBitrateReport(m));
+  }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnRoundTripTimeUpdate(m));
+  }
+  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnSentPacket(m));
+  }
+  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnReceivedPacket(m));
+  }
+  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnStreamsConfig(m));
+  }
+  w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnTargetRateConstraints(m));
+  }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override {
+    const size_t first_row = rows_->size();
+    return AddLossBasedState(first_row, inner_->OnTransportLossReport(m));
+  }
   w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override {
     return inner_->OnNetworkStateEstimate(m);
   }
@@ -171,11 +205,31 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
     const bool match = detector_ && P::ModifiedTrend(live) == P::ModifiedTrend(detector_.get()) &&
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
-    for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
-    return u;
+    for (size_t i = first_row; i < rows_->size(); ++i) {
+      // Only the detector rows: a loss-based row logged by this feedback keeps its fraction lost.
+      if ((*rows_)[i].kind == cc::BweTraceRow::Kind::kDetector) (*rows_)[i].fraction_loss = match ? 0 : 1;
+    }
+    return AddLossBasedState(first_row, std::move(u));
   }
 
  private:
+  // LossBasedBweV2's state after the call, on the loss-based rows GoogCC logged during it (issue #217), in the
+  // columns this library fills from its own LossBasedBweV2: loss_state (LossBasedState as an int, the same values)
+  // and loss_limit_bps (GetLossBasedResult's estimate). Before IsReady() libwebrtc reports kDelayBasedEstimate.
+  w::NetworkControlUpdate AddLossBasedState(size_t first_row, w::NetworkControlUpdate u) {
+    const w::LossBasedBweV2* lb = w::GoogCcStatePrinter::LossBased(inner_.get());
+    if (!lb || !lb->IsEnabled()) return u;
+    w::LossBasedBweV2::Result res;  // kDelayBasedEstimate.
+    if (lb->IsReady()) res = lb->GetLossBasedResult();  // Not before: it logs a warning every time.
+    for (size_t i = first_row; i < rows_->size(); ++i) {
+      cc::BweTraceRow& r = (*rows_)[i];
+      if (r.kind != cc::BweTraceRow::Kind::kLossBased) continue;
+      r.loss_state = static_cast<int>(res.state);
+      if (lb->IsReady() && res.bandwidth_estimate.IsFinite()) r.loss_limit_bps = res.bandwidth_estimate.bps();
+    }
+    return u;
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
