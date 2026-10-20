@@ -23,6 +23,7 @@
 #include <map>
 #include <optional>
 #include <span>
+#include <unordered_set>
 #include <vector>
 
 #include "sm/cc/transport_feedback.h"
@@ -37,8 +38,10 @@
 #include "sm/loss/red.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/timing/audio_jitter_buffer.h"
+#include "sm/timing/frame_release.h"
 #include "sm/timing/packet_buffer.h"
 #include "sm/timing/rtcp_stats.h"
+#include "sm/timing/vcm_timing.h"
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/frame_scheduler.h"
 
@@ -108,7 +111,7 @@ struct RtpReceiverConfig {
   timing::PacketBufferConfig packet_buffer;
   loss::KeyframeRequestConfig keyframe;
   video::FrameSchedulerConfig scheduler;
-  timing::VideoTimingConfig timing;
+  timing::VideoTimingConfig timing;  // timing.version 2: libwebrtc's VCMTiming and frame release.
   TimeDelta decode_time = TimeDelta::Millis(5);  // Fed to the timing model per frame.
 
   // --- Audio ---
@@ -123,7 +126,7 @@ struct RtpReceiverConfig {
 enum class ReceivedKind : uint8_t { kMalformed, kMedia, kRtx, kFec, kPadding, kUnknown };
 
 // A frame the scheduler decided on. `render` is false for frames it dropped
-// as too late.
+// as too late (timing v1: decoded, not shown; timing v2: not decoded).
 struct ReceivedFrame {
   int64_t frame_id = 0;
   uint32_t rtp_timestamp = 0;
@@ -204,6 +207,8 @@ class RtpReceiver : public MetricsSource {
   const video::FrameScheduler& scheduler() const { return scheduler_; }
   const timing::VideoJitterEstimator& video_jitter() const { return video_jitter_; }
   const timing::VideoTiming& video_timing() const { return video_timing_; }
+  const timing::VcmTiming& vcm_timing() const { return vcm_timing_; }
+  const timing::FrameReleaseController& frame_release() const { return release_; }
   const timing::AudioJitterBuffer& jitter_buffer() const { return jitter_buffer_; }
   timing::AudioJitterBuffer& jitter_buffer() { return jitter_buffer_; }
   void ExportMetrics(MetricsWriter& w) const override;
@@ -224,16 +229,23 @@ class RtpReceiver : public MetricsSource {
   timing::VideoJitterEstimator video_jitter_;
   timing::VideoTiming video_timing_;
   video::FrameScheduler scheduler_;
+  timing::VcmTiming vcm_timing_;            // timing v2.
+  timing::FrameReleaseController release_;  // timing v2.
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
   TimeDelta rtt_ = TimeDelta::Millis(100);
+  bool have_rtt_ = false;
+  Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.
+  std::unordered_set<uint16_t> nacked_seqs_;  // timing v2: received packets that had been NACKed.
   struct FrameMeta {
     uint32_t rtp_timestamp;
     bool keyframe;
     size_t size_bytes;
     std::vector<uint8_t> bitstream;
+    Timestamp receive_time;      // Last packet's arrival.
+    bool retransmitted = false;  // A packet of it was NACKed (timing v2).
   };
   std::map<int64_t, FrameMeta> frames_;  // Frame id -> what the scheduler needs; bounded.
   std::vector<ReceivedFrame> out_frames_;

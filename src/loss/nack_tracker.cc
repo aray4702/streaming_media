@@ -10,25 +10,25 @@ constexpr TimeDelta kProcessInterval = TimeDelta::Millis(20);  // NackPeriodicPr
 
 NackTracker::NackTracker(NackConfig cfg) : cfg_(cfg), rtt_(cfg.initial_rtt) {}
 
-void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now) {
+int NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now) {
   int64_t s = unwrapper_.Unwrap(seq);
   ++stats_.packets_received;
   if (!initialized_) {
     initialized_ = true;
     newest_ = s;
     if (is_keyframe) keyframes_.insert(s);
-    return;
+    return 0;
   }
   if (is_keyframe) keyframes_.insert(s);
   if (s == newest_) {
     ++stats_.duplicates;
-    return;
+    return 0;
   }
   if (s < newest_) {
     auto it = missing_.find(s);
     if (it == missing_.end()) {
       ++stats_.duplicates;  // Older than newest and not missing: a duplicate.
-      return;
+      return 0;
     }
     if (it->second.retries == 0) {
       ++stats_.reordered;
@@ -38,15 +38,16 @@ void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now
       stats_.retries_per_recovery.Add(it->second.retries);
       SM_EVENT(cfg_.events, now, "nack", "recovered", (now - it->second.detected).ms_f(), seq);
     }
+    const int times_nacked = it->second.retries;
     missing_.erase(it);
-    return;
+    return times_nacked;
   }
   // Newer packet: everything between newest_ and s is missing.
   if (cfg_.version >= 2) {
     // NackRequester::AddPacketsToNack: no keyframe bookkeeping, no partial keep.
     if (s > newest_ + 1) AddMissingV2(newest_ + 1, s, now);
     newest_ = s;
-    return;
+    return 0;
   }
   if (s - newest_ > cfg_.max_packet_age) {
     // Huge jump: the old state is useless.
@@ -58,6 +59,7 @@ void NackTracker::OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now
   }
   newest_ = s;
   TrimOld(now);
+  return 0;
 }
 
 void NackTracker::ClearUpTo(uint16_t seq) {

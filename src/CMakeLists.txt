@@ -29,6 +29,8 @@ if(SM_WITH_TIMING)
     timing/time_stretch.cc
     timing/audio_jitter_buffer.cc
     timing/video_jitter_estimator.cc
+    timing/vcm_timing.cc
+    timing/frame_release.cc
     timing/clock_drift.cc)
   list(APPEND SM_SECTIONS timing)
 endif()
