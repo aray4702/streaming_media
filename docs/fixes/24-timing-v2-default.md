@@ -111,7 +111,7 @@ timing v2, **88 closed and 11 opened**. The opened ones:
   and those are the frames that waited longest in our pacer: the pacer
   delay p95 of rendered frames goes from 355 to 609 ms, while e2e p50 moves
   to libwebrtc's (204 against 196; timing v1 270). The excess is send side,
-  as #211 showed for `issue_24_timing_v2_render_fps` Tracked to #224 (Owner, PR #216).
+  as #211 showed for `issue_24_timing_v2_render_fps`. Tracked to #224 (Owner, PR #216).
 - `issue_127_pacer_v2_jitter_reorder_loss`: 3.3 freezes (753 ms) against
   libwebrtc's 1.1 (240 ms); timing v1 0.5 (121 ms). Delay matches
   libwebrtc (e2e p50 121 against 115, p95 187 against 185). Tracked to
