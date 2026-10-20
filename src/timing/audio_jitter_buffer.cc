@@ -30,11 +30,16 @@ TimeStretchConfig StretchFor(int rate) {
 }  // namespace
 
 AudioJitterBuffer::AudioJitterBuffer(AudioJitterBufferConfig cfg)
-    : cfg_(cfg), delay_(cfg.delay), stretcher_(StretchFor(cfg.sample_rate)), plc_(PlcFor(cfg.sample_rate)) {
+    : cfg_(cfg), delay_(cfg.delay), neteq_delay_(cfg.neteq_delay), stretcher_(StretchFor(cfg.sample_rate)), plc_(PlcFor(cfg.sample_rate)) {
   delay_.SetPacketDurationMs(cfg_.packet_ms);
+  neteq_delay_.SetSampleRate(cfg_.sample_rate);
 }
 
-int AudioJitterBuffer::TargetDelayMs() const { return std::max(delay_.TargetDelayMs(), min_delay_ms_); }
+int AudioJitterBuffer::TargetDelayMs() const {
+  // DecisionLogic::TargetLevelMs applies the minimum delay itself.
+  if (cfg_.version >= 2) return neteq_delay_.TargetLevelMs();
+  return std::max(delay_.TargetDelayMs(), min_delay_ms_);
+}
 
 int64_t AudioJitterBuffer::SpanSamples() const {
   if (queue_.empty()) return 0;
@@ -50,7 +55,16 @@ double AudioJitterBuffer::CurrentLevelMs() const {
 void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival) {
   int64_t ts = unwrapper_.Unwrap(rtp_ts);
   ++stats_.packets_received;
-  delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
+  if (cfg_.version >= 2) {
+    // NetEqImpl::InsertPacketInternal: the packets that arrive before the
+    // first GetAudio are dropped from the statistics by the SoftReset that
+    // the new codec triggers there.
+    if (neteq_reset_done_) {
+      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pcm.size()), cfg_.sample_rate, ticks_ * kMsPerTick);
+    }
+  } else {
+    delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
+  }
   if (started_ && ts < next_ts_) {
     ++stats_.packets_discarded_late;
     SM_EVENT(cfg_.events, arrival, "neteq", "late", static_cast<double>(next_ts_ - ts), ts);
@@ -123,6 +137,11 @@ AudioOperation AudioJitterBuffer::MaybeStretch(Timestamp now) {
 
 AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) {
   const size_t need = out.size();
+  ++ticks_;  // NetEqImpl::GetAudioInternal: tick_timer_->Increment().
+  if (cfg_.version >= 2 && !neteq_reset_done_ && stats_.packets_received > 0) {
+    neteq_delay_.SoftReset();
+    neteq_reset_done_ = true;
+  }
   if (!started_) {
     if (!queue_.empty() && CurrentLevelMs() >= TargetDelayMs()) {
       started_ = true;
