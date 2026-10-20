@@ -51,6 +51,11 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
     RED when the scenario has `red on`.
   - **Video:** NACK + RTX and ULPFEC (via RED), each following the
     scenario's `nack` and `fec` switches.
+  - **Receiver RTT:** the video receiver measures the round trip with
+    RTCP XR (RRTR in its reports, DLRR in the sender's), libwebrtc's
+    path for an endpoint that only receives. Its jitter estimator and
+    NACK requester then see the RTT, as in a two-way call, and as the
+    test bench's receiver does (issue #24).
   - **Congestion control:** transport-wide sequence numbers on every
     packet, with GoogCC at the scenario's start, minimum and maximum
     rates.

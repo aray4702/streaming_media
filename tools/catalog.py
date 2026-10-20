@@ -543,7 +543,17 @@ ALGORITHMS = [
                       "resends queue behind it (freeze 4666 / 3948 ms, repair 6.30 / 3.18 %; main 4067 / 4047 ms, "
                       "1.43 / 1.26 %; libwebrtc 3256 / 3175 ms, 0.36 / 0.53 %). libwebrtc's PLI lands after that "
                       "capture because its frame release (FrameDecodeTiming) comes later; the other 8 of 10 seeds "
-                      "and the audio gap on all 10 match libwebrtc."),
+                      "and the audio gap on all 10 match libwebrtc. Explained difference (Owner decision on issue "
+                      "#151, 2026-10-20): with every v2 switch on, `outage_3s` `cc.queue_p95_ms` stays above "
+                      "libwebrtc's (`issue_151_outage_3s_v2`, seeds 1-10 on main 0b45569: mean 64.2 vs 40.6 ms, "
+                      "sd 32.1 vs 4.0) while freeze total (3413 vs 3227 ms), repair (1.0 vs 0.4 %) and the longest "
+                      "audio gap (2980 vs 2977 ms) are in band. Every input to the recovery matches libwebrtc: "
+                      "in-flight accounting, overhead rate (#192), link-change timing (#190), the 300 ms "
+                      "keyframe-request interval (#195), no outage monitor and the tick order (#184), and "
+                      "`NackRequester::ClearUpTo` (#172). What remains is a phase race over which frame the "
+                      "congestion window drops first after `up`, which decides whether the NACK lands before, in or "
+                      "after the keyframe's tick; the mean swings with unrelated small inputs (50.5 -> 66.2 -> "
+                      "64.2 ms across #198, #199 and #202). Seeds 2 and 3 stay tracked to #24, as above."),
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
