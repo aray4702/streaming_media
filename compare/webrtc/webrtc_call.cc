@@ -1,9 +1,11 @@
 #include "webrtc_call.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <map>
+#include <mutex>
 #include <memory>
 #include <optional>
 #include <set>
@@ -19,6 +21,7 @@
 #include "sm/sim/signals.h"
 #include "sm/video/freeze_detector.h"
 
+#include "audio/audio_send_stream.h"  // TestOnlyGetPerPacketOverheadBytes (issue #196 yardstick).
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/call/transport.h"
@@ -105,6 +108,53 @@ class BweTraceLog final : public w::RtcEventLog {
  private:
   std::function<int64_t()> now_us_;
   std::vector<cc::BweTraceRow>* rows_;
+};
+
+// Issue #196 yardstick: BitrateAllocator::UpdateAllocationLimits (bitrate_allocator.cc)
+// logs the summed min, padding and max of every stream it allocates to, which is the
+// only place the prebuilt shows the audio stream's registered min/max. Keeps the first
+// and last values, in bps.
+class AllocationLimitsLog final : public w::LogSink {
+ public:
+  using w::LogSink::OnLogMessage;
+  void OnLogMessage(const std::string& msg) override {
+    if (msg.find("UpdateAllocationLimits") == std::string::npos) return;
+    const int64_t min = Parse(msg, "total_requested_min_bitrate: ");
+    const int64_t pad = Parse(msg, "total_requested_padding_bitrate: ");
+    const int64_t max = Parse(msg, "total_requested_max_bitrate: ");
+    std::lock_guard<std::mutex> lock(mu_);
+    if (updates_++ == 0) first_ = {min, pad, max};
+    last_ = {min, pad, max};
+  }
+  struct Limits {
+    int64_t min = -1, pad = -1, max = -1;
+  };
+  int updates() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return updates_;
+  }
+  Limits first() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return first_;
+  }
+  Limits last() {
+    std::lock_guard<std::mutex> lock(mu_);
+    return last_;
+  }
+
+ private:
+  // ToString(DataRate) (api/units/data_rate.cc): "<n> bps", or "<n> kbps" for whole kbps.
+  static int64_t Parse(const std::string& msg, const char* key) {
+    const size_t at = msg.find(key);
+    if (at == std::string::npos) return -1;
+    size_t end = at + std::strlen(key);
+    const int64_t v = std::strtoll(msg.c_str() + end, nullptr, 10);
+    end = msg.find(' ', end);
+    return end != std::string::npos && msg.compare(end + 1, 4, "kbps") == 0 ? v * 1000 : v;
+  }
+  std::mutex mu_;
+  int updates_ = 0;
+  Limits first_, last_;
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
@@ -374,6 +424,8 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
 Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::LogMessage::LogToDebug(w::LS_NONE);
   w::LogMessage::SetLogToStderr(false);
+  AllocationLimitsLog alloc_log;  // Issue #196 yardstick.
+  w::LogMessage::AddLogToStream(&alloc_log, w::LS_INFO);
   Report rep;
   rep.scenario = s;
 
@@ -652,6 +704,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   int64_t next_frame_ms = 0;
   double cross_debt = 0;
   bool stopping = false;
+  std::vector<double> audio_overhead_bytes, audio_target_bps;  // Per second (issue #196 yardstick).
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
@@ -820,6 +873,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                      vs.frames_dropped_by_encoder, model.bytes};
           rep.video_trace.push_back(r);
         }
+        if (audio_send && static_cast<int64_t>(smp.t_s * 1000 + 0.5) % 1000 == 0) {
+          // Issue #196 yardstick: the audio stream's own per-packet overhead and target, each second.
+          audio_overhead_bytes.push_back(static_cast<double>(
+              static_cast<w::internal::AudioSendStream*>(audio_send)->TestOnlyGetPerPacketOverheadBytes()));
+          audio_target_bps.push_back(static_cast<double>(audio_send->GetStats().target_bitrate_bps));
+        }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;
         if (cs.rtt_ms > 0) rtt_samples.push_back(static_cast<double>(cs.rtt_ms));
         rep.timeseries.push_back(smp);
@@ -971,6 +1030,25 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   if (opt.link_trace) rep.link_trace = forward.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
+  {
+    // Issue #196 yardstick, libwebrtc only (no `sm` value, so the parity report skips them).
+    w::LogMessage::RemoveLogToStream(&alloc_log);
+    const AllocationLimitsLog::Limits first = alloc_log.first(), last = alloc_log.last();
+    m["yardstick.alloc_limit_updates"] = alloc_log.updates();
+    m["yardstick.alloc_min_total_bps_first"] = static_cast<double>(first.min);
+    m["yardstick.alloc_max_total_bps_first"] = static_cast<double>(first.max);
+    m["yardstick.alloc_min_total_bps_last"] = static_cast<double>(last.min);
+    m["yardstick.alloc_pad_total_bps_last"] = static_cast<double>(last.pad);
+    m["yardstick.alloc_max_total_bps_last"] = static_cast<double>(last.max);
+    if (!audio_overhead_bytes.empty()) {
+      m["yardstick.audio_overhead_bytes_first"] = audio_overhead_bytes.front();
+      m["yardstick.audio_overhead_bytes_last"] = audio_overhead_bytes.back();
+      m["yardstick.audio_target_bps_first"] = audio_target_bps.front();
+      m["yardstick.audio_target_bps_p50"] = testbench::Percentile(audio_target_bps, 50);
+      m["yardstick.audio_target_bps_min"] = *std::min_element(audio_target_bps.begin(), audio_target_bps.end());
+      m["yardstick.audio_target_bps_max"] = *std::max_element(audio_target_bps.begin(), audio_target_bps.end());
+    }
+  }
   testbench::EvaluateExpectations(rep);
   if (!opt.timeseries) rep.timeseries.clear();
   return rep;
