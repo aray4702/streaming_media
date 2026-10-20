@@ -206,11 +206,16 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[1].dropped_congestion_window = 2;
   trace[1].dropped_encoder_queue = 1;
   trace[1].paused = 1;
+  SetRenderDelays(trace[0], {120, 80, 100, 300});
+  trace[0].target_delay_ms = 185.04;
+  trace[0].current_delay_ms = 185;
+  trace[0].jitter_delay_ms = 170.04;
   SM_EXPECT_EQ(VideoTraceCsv(trace),
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
-               "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0\n");
+               "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,"
+               "rendered,e2e_p50_ms,e2e_max_ms,target_delay_ms,current_delay_ms,jitter_delay_ms\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,4,110.0,300.0,185.0,185.0,170.0\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0,-1.0,-1.0,0.0,0.0,0.0\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
