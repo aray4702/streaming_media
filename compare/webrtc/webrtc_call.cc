@@ -45,6 +45,9 @@
 #include "api/rtc_event_log/rtc_event_log.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
+#include "logging/rtc_event_log/events/rtc_event_probe_result_failure.h"
+#include "logging/rtc_event_log/events/rtc_event_probe_result_success.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
@@ -94,6 +97,29 @@ class BweTraceLog final : public w::RtcEventLog {
         r.bitrate_bps = e->bitrate_bps();
         r.fraction_loss = e->fraction_loss();
         r.packets = e->total_packets();
+        break;
+      }
+      // Issue #152: probe clusters (probe_controller.cc) and their results
+      // (probe_bitrate_estimator.cc), to tell which ProbeController trigger fired.
+      case w::RtcEvent::Type::ProbeClusterCreated: {
+        const auto* e = static_cast<const w::RtcEventProbeClusterCreated*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kProbeCluster;
+        r.bitrate_bps = e->bitrate_bps();
+        r.packets = e->id();
+        break;
+      }
+      case w::RtcEvent::Type::ProbeResultSuccess: {
+        const auto* e = static_cast<const w::RtcEventProbeResultSuccess*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kProbeResult;
+        r.bitrate_bps = e->bitrate_bps();
+        r.packets = e->id();
+        break;
+      }
+      case w::RtcEvent::Type::ProbeResultFailure: {
+        const auto* e = static_cast<const w::RtcEventProbeResultFailure*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kProbeResult;
+        r.bitrate_bps = 0;
+        r.packets = e->id();
         break;
       }
       default:

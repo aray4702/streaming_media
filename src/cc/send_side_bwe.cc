@@ -74,7 +74,17 @@ GccController::GccController(GccConfig cfg)
 }
 
 std::vector<ProbeCluster> GccController::RegisterProbes(std::vector<ProbeCluster> probes) {
-  for (const auto& p : probes) probe_est_.SetClusterInfo(p);
+  for (const auto& p : probes) {
+    probe_est_.SetClusterInfo(p);
+    if (cfg_.bwe_trace && cfg_.version >= 2) {
+      BweTraceRow r;
+      r.time_us = p.at_time.IsFinite() ? p.at_time.us() : last_now_.us();
+      r.kind = BweTraceRow::Kind::kProbeCluster;
+      r.bitrate_bps = p.rate.bps();
+      r.packets = p.id;
+      cfg_.bwe_trace->push_back(r);
+    }
+  }
   return probes;
 }
 
@@ -236,6 +246,13 @@ NetworkControlUpdate GccController::OnTransportFeedbackV2(const std::vector<Pack
     if (r.probe_cluster >= 0) probe_est_.OnPacketResult(r);
   }
   std::optional<DataRate> probe = probe_est_.FetchAndResetLastEstimate();
+  if (probe && cfg_.bwe_trace) {
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kProbeResult;
+    r.bitrate_bps = probe->bps();
+    cfg_.bwe_trace->push_back(r);
+  }
   if (probe && acked) {
     // Limit the backoff to something slightly below the acknowledged rate (to
     // drain the queues if we are actually overusing); never above the estimate.

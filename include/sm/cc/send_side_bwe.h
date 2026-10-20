@@ -27,7 +27,11 @@ namespace sm::cc {
 // testbench/call.h), so tools/bwe_trace.py can lay the two stacks side by side.
 // -1 marks a column the event does not have.
 struct BweTraceRow {
-  enum class Kind { kDelayBased, kLossBased, kTarget };
+  // kProbeCluster: a probe cluster created (bitrate = its target, packets = its id;
+  // libwebrtc's RtcEventProbeClusterCreated). kProbeResult: a probe result
+  // (bitrate = the measured rate, 0 on a failure; packets = the cluster id;
+  // RtcEventProbeResultSuccess / Failure). Issue #152.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kProbeCluster, kProbeResult };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
