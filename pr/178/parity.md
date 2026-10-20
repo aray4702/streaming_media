@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-79 scenarios, mean of 10 seeds. **316 gaps**: 113 behind libwebrtc, 203 ahead of it; 0 without an owner.
+79 scenarios, mean of 10 seeds. **318 gaps**: 114 behind libwebrtc, 204 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-320 gaps on `main`, 316 here: **14 closed, 10 opened**, 0 changed direction.
+321 gaps on `main`, 318 here: **14 closed, 11 opened**, 0 changed direction.
 
 Closed:
 
@@ -39,6 +39,7 @@ Opened:
 | issue_24_timing_v2_render_fps | `cc.queue_p95_ms` | 95.5 | 85.4 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | issue_53_cwnd_pushback | `audio.longest_interruption_ms` | 48 | 27 | ±20 | behind | 5/10 | #62, #63 |
 | issue_53_cwnd_pushback | `cc.queue_p95_ms` | 95.5 | 85.4 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
+| issue_62_neteq_v2_cross_traffic | `audio.longest_interruption_ms` | 78 | 46 | ±28.0 | behind | 4/10 | #62, #63 |
 | issue_76_rtx_v2_handover | `cc.queue_p95_ms` | 90.9 | 152 | ±48.7 | ahead | 6/10 | #19, #15, #48, #12, #61 |
 | wifi_to_lte_handover | `cc.queue_p95_ms` | 90.9 | 152 | ±48.7 | ahead | 6/10 | #19, #15, #48, #12, #61, #20 |
 
@@ -48,7 +49,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 |---|---|---|---|
 | clean_link | `audio.jb_delay_p95_ms` | 45.2 | 40.4 (closer) |
 | cross_traffic | `audio.mouth_to_ear_p95_ms` | 203 | 181 (closer) |
-| issue_120_rtx_payload_padding | `audio.mouth_to_ear_p95_ms` | 163 | 188 (further) |
+| issue_120_rtx_payload_padding | `audio.mouth_to_ear_p95_ms` | 162 | 188 (further) |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 1.6 | 1.3 (closer) |
 | issue_133_all_v2_outage_3s | `cc.rtt_p50_ms` | 32.6 | 17.0 (closer) |
 | issue_133_all_v2_outage_8s | `cc.rtt_p50_ms` | 19.9 | 72.5 (further) |
@@ -58,7 +59,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_152_alr_request_probe_v2 | `audio.mouth_to_ear_p95_ms` | 205 | 174 (closer) |
 | issue_15_aimd_v2_clean_link | `audio.jb_delay_p95_ms` | 45.2 | 40.4 (closer) |
 | issue_15_aimd_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 203 | 181 (closer) |
-| issue_23_handover | `audio.mouth_to_ear_p95_ms` | 163 | 188 (further) |
+| issue_23_handover | `audio.mouth_to_ear_p95_ms` | 162 | 188 (further) |
 | issue_23_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 124 | 107 (closer) |
 | issue_23_outage_3s | `video.e2e_delay_p95_ms` | 41.2 | 47.1 (further) |
 | issue_24_timing_v2_clean_link | `audio.jb_delay_p95_ms` | 45.2 | 40.4 (closer) |
@@ -70,12 +71,12 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_5_adjuster_default | `audio.mouth_to_ear_p95_ms` | 203 | 181 (closer) |
 | issue_5_keyframe_flush | `video.e2e_delay_p95_ms` | 178 | 202 (further) |
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 1.6 | 1.3 (closer) |
-| issue_76_rtx_v2_handover | `audio.mouth_to_ear_p95_ms` | 163 | 188 (further) |
+| issue_76_rtx_v2_handover | `audio.mouth_to_ear_p95_ms` | 162 | 188 (further) |
 | low_bandwidth | `audio.mouth_to_ear_p95_ms` | 124 | 107 (closer) |
 | outage_3s | `video.e2e_delay_p95_ms` | 41.2 | 47.1 (further) |
 | probe_v2_clean_link | `audio.jb_delay_p95_ms` | 45.2 | 40.4 (closer) |
 | probe_v2_cross_traffic | `audio.mouth_to_ear_p95_ms` | 203 | 181 (closer) |
-| wifi_to_lte_handover | `audio.mouth_to_ear_p95_ms` | 163 | 188 (further) |
+| wifi_to_lte_handover | `audio.mouth_to_ear_p95_ms` | 162 | 188 (further) |
 
 ### Gaps
 
@@ -304,6 +305,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 5.1 | 3.8 | ±0.7 | behind | 9/10 | #21, #61, #12 |
 | issue_61_googcc_glue_congestive | `video.render_fps` | 25.8 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_62_neteq_v2_audio_only_lossy | `audio.concealed_pct` | 1.2 | 0.5 | ±0.5 | behind | 6/10 | #62, #63 |
+| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 68.4 | 81 | ±10 | ahead | 3/10 | #62, #63 |
+| issue_62_neteq_v2_cross_traffic | `audio.longest_interruption_ms` | 78 | 46 | ±28.0 | behind | 4/10 | #62, #63 |
 | issue_62_neteq_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 227 | 212 | ±11.4 | behind | 6/10 | #62, #63 |
 | issue_62_neteq_v2_high_jitter | `repair.overhead_pct` | 34.0 | 43.7 | ±2.5 | ahead | 8/10 | #21, #7, #29 |
 | issue_62_neteq_v2_high_jitter | `video.e2e_delay_p95_ms` | 202 | 150 | ±25.7 | behind | 9/10 | #24, #37 |
