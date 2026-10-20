@@ -60,7 +60,8 @@ double AudioJitterBuffer::CurrentLevelMs() const {
          cfg_.sample_rate;
 }
 
-void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival) {
+void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival,
+                                     AudioPacketPriority priority) {
   int64_t ts = unwrapper_.Unwrap(rtp_ts);
   ++stats_.packets_received;
   if (cfg_.version >= 2) {
@@ -74,17 +75,20 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
     delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
   }
   if (started_ && ts < next_ts_) {
+    if (priority.codec_level > 0) return;
     ++stats_.packets_discarded_late;
     SM_EVENT(cfg_.events, arrival, "neteq", "late", static_cast<double>(next_ts_ - ts), ts);
     return;
   }
-  if (queue_.count(ts)) {
+  if (auto it = queue_.find(ts); it != queue_.end()) {
     ++stats_.packets_duplicate;
+    // PacketBuffer::InsertPacket: one packet per timestamp, the higher priority.
+    if (cfg_.version >= 2 && priority < it->second.priority) it->second = Packet{std::move(pcm), arrival, ticks_, priority};
     return;
   }
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
-  queue_.emplace(ts, Packet{std::move(pcm), arrival, ticks_});
+  queue_.emplace(ts, Packet{std::move(pcm), arrival, ticks_, priority});
   if (queue_.size() > cfg_.max_packets) {
     // Far too much audio: drop everything but the newest few packets.
     while (queue_.size() > 3) queue_.erase(queue_.begin());

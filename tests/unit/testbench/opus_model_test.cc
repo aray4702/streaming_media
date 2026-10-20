@@ -69,3 +69,34 @@ SM_TEST(OpusModel, SizeScalesWithTheBitrateAndIsDeterministic) {
   }
   SM_EXPECT_TRUE(sc < 0.6 * sa);
 }
+
+// AudioEncoderOpusImpl's loss input (audio_encoder_opus.cc):
+// PacketLossFractionSmoother, then SetProjectedPacketLossRate.
+SM_TEST(OpusModel, PacketLossRateIsSmoothedClampedAndRounded) {
+  OpusPacketLossRate r(Timestamp::Millis(0));
+  SM_EXPECT_EQ(r.percent(), 0);
+  r.OnReceivedUplinkPacketLossFraction(0.1f, Timestamp::Millis(1000));  // The first sample is taken as is.
+  SM_EXPECT_EQ(r.percent(), 10);
+  // 10 s later a 0 report: 0.9999^10000 = 0.368 of the old value is kept.
+  r.OnReceivedUplinkPacketLossFraction(0.0f, Timestamp::Millis(11000));
+  SM_EXPECT_EQ(r.percent(), 4);
+  OpusPacketLossRate high(Timestamp::Millis(0));
+  high.OnReceivedUplinkPacketLossFraction(0.5f, Timestamp::Millis(1000));
+  SM_EXPECT_EQ(high.percent(), 20);  // kMaxPacketLossFraction.
+  OpusPacketLossRate low(Timestamp::Millis(0));
+  low.OnReceivedUplinkPacketLossFraction(0.004f, Timestamp::Millis(1000));
+  SM_EXPECT_EQ(low.percent(), 0);  // Rounded to a whole percent: no LBRR.
+  low.OnReceivedUplinkPacketLossFraction(0.006f, Timestamp::Millis(1001));
+  SM_EXPECT_EQ(low.percent(), 0);  // 0.0040002 after one ms.
+}
+
+SM_TEST(OpusModel, LastFrameActiveFollowsTheSignal) {
+  OpusSizeModel m(3, 32000);
+  SM_EXPECT_FALSE(m.LastFrameActive());  // No frame yet.
+  const std::vector<float> zeros(320, 0.f);
+  const auto speech = sim::SpeechLike(16000, 1.0, 3, false);
+  m.NextFrameBytes(std::span<const float>(speech.data() + 3200, 320));
+  SM_EXPECT_TRUE(m.LastFrameActive());
+  m.NextFrameBytes(zeros);
+  SM_EXPECT_FALSE(m.LastFrameActive());
+}

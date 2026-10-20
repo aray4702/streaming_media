@@ -76,11 +76,26 @@ struct AudioJitterBufferStats {
   Histogram jitter_buffer_delay_ms;          // Per decoded packet.
 };
 
+// Packet::Priority (modules/audio_coding/neteq/packet.h): lower is kept,
+// first by the codec's level (0 the frame itself, 1 Opus in-band FEC), then
+// by the RED level (0 the primary block, 1 the redundant one).
+struct AudioPacketPriority {
+  int codec_level = 0;
+  int red_level = 0;
+  bool operator<(const AudioPacketPriority& b) const {
+    return codec_level != b.codec_level ? codec_level < b.codec_level : red_level < b.red_level;
+  }
+};
+
 class AudioJitterBuffer : public MetricsSource {
  public:
   explicit AudioJitterBuffer(AudioJitterBufferConfig cfg = {});
 
-  void InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival);
+  // With version 2 a packet at a timestamp already held replaces it if its
+  // priority is higher, and is discarded otherwise (PacketBuffer::InsertPacket);
+  // version 1 keeps the first. A late in-band FEC frame is not counted as a
+  // late discard (NetEq counts secondary discards apart).
+  void InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival, AudioPacketPriority priority = {});
   // Fills `out` (typically 10 ms) and reports the operation performed.
   AudioOperation GetAudio(std::span<float> out, Timestamp now);
 
@@ -136,6 +151,7 @@ class AudioJitterBuffer : public MetricsSource {
     std::vector<float> pcm;
     Timestamp arrival;
     int64_t insert_tick = 0;  // Packet::waiting_time.
+    AudioPacketPriority priority;
   };
   std::map<int64_t, Packet> queue_;
   std::vector<float> sync_;          // Decoded samples waiting for playout.

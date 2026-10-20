@@ -82,6 +82,17 @@ class AudioDecoder {
   // One frame (an Opus packet, or the primary or redundant block of a RED
   // packet) to samples at the jitter buffer's sample rate. Nullopt drops it.
   virtual std::optional<std::vector<float>> Decode(std::span<const uint8_t> frame, uint32_t rtp_timestamp) = 0;
+  // In-band FEC (Opus LBRR), as AudioDecoderOpusImpl::ParsePayload reads it
+  // (modules/audio_coding/codecs/opus/audio_decoder_opus.cc): the RTP
+  // timestamp units of the redundant copy of the previous frame that `frame`
+  // carries, 0 when it carries none (PacketHasFec / PacketDurationRedundant).
+  // Used only with the jitter buffer's version 2 (`neteq v2`).
+  virtual uint32_t FecDuration(std::span<const uint8_t> /*frame*/) const { return 0; }
+  // DecodeRedundantInternal: that copy to samples, for `rtp_timestamp` (the
+  // frame's own timestamp less FecDuration). Nullopt drops it.
+  virtual std::optional<std::vector<float>> DecodeFec(std::span<const uint8_t> /*frame*/, uint32_t /*rtp_timestamp*/) {
+    return std::nullopt;
+  }
 };
 
 struct RtpReceiverConfig {
@@ -167,6 +178,7 @@ struct RtpReceiverStats {
   uint64_t missing = 0;
   uint64_t audio_frames = 0;
   uint64_t audio_decode_failures = 0;
+  uint64_t audio_fec_frames = 0;       // In-band FEC frames given to the jitter buffer (version 2).
 };
 
 class RtpReceiver : public MetricsSource {
