@@ -176,6 +176,7 @@ class RtcpEngine : public MetricsSource {
  private:
   TimeDelta Interval();
   std::vector<uint8_t> BuildReport(Timestamp now);
+  void AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& packets);
   void EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out);
   std::vector<uint8_t> LeadingReport() const;
   void Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind kind, std::vector<RtcpOutgoing>& out);
@@ -189,6 +190,7 @@ class RtcpEngine : public MetricsSource {
   bool started_ = false;
   // Queued feedback, already serialized, in the order queued. The tag counts it.
   enum class Tag : uint8_t { kNack, kPli, kFir, kLntf, kTcc, kRemb, kBye };
+  static bool CarriesReport(Tag tag);
   struct Queued {
     Tag tag;
     size_t units;  // Sequence numbers for a NACK, else 1.

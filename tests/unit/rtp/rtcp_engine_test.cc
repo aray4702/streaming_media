@@ -169,6 +169,66 @@ SM_TEST(RtcpEngine, EarlyFeedbackSharesOneCompoundWithALeadingRr) {
   SM_EXPECT_EQ(nack->media_ssrc, 0xAAu);
 }
 
+// RTCPSender::PrepareReport in compound mode (rtcp_sender.cc): with `rtcp v2`, a
+// NACK or PLI goes out with the full RR (report blocks) and SDES, and restarts
+// the report timer; transport-cc keeps the empty leading RR (#178).
+SM_TEST(RtcpEngine, V2NackCarriesTheFullReportAndRestartsTheTimer) {
+  timing::ReceiveStatistics stats(0x1234, 90000);
+  stats.OnPacket(1, 0, Timestamp::Millis(0));
+  stats.OnPacket(3, 3000, Timestamp::Millis(40));
+  RtcpConfig c;
+  c.local_ssrc = 100;
+  c.cname = "user@host";
+  c.version = 2;
+  c.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine rx(c);
+  rx.AddReceiveStatistics(&stats);
+  rx.Process(Timestamp::Millis(0));
+  const std::vector<uint16_t> seqs = {2};
+  rx.QueueNack(0x1234, seqs);
+  auto out = rx.Process(Timestamp::Millis(100));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_TRUE(out[0].kind == RtcpOutKind::kFeedback);
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kSdes, T::kNack}));
+  auto split = loss::SplitCompoundRtcp(out[0].bytes);
+  auto rr = timing::ParseReceiverReport((*split)[0].data);
+  SM_ASSERT_TRUE(rr.has_value());
+  SM_ASSERT_EQ(rr->blocks.size(), 1u);
+  SM_EXPECT_EQ(rr->blocks[0].ssrc, 0x1234u);
+  SM_EXPECT_GT(rr->blocks[0].fraction_lost, 0);
+  // The report due at 500 ms moved to at least 100 + 0.5 x 1 s.
+  SM_EXPECT_GE(rx.NextProcessTime(Timestamp::Millis(101)), Timestamp::Millis(600));
+
+  rx.QueueTransportFeedback(cc::TransportFeedback{});
+  out = rx.Process(Timestamp::Millis(200));
+  SM_ASSERT_EQ(out.size(), 1u);
+  split = loss::SplitCompoundRtcp(out[0].bytes);
+  rr = timing::ParseReceiverReport((*split)[0].data);
+  SM_ASSERT_TRUE(rr.has_value());
+  SM_EXPECT_TRUE(rr->blocks.empty());
+}
+
+// Version 1 keeps the empty leading RR on every early feedback packet.
+SM_TEST(RtcpEngine, V1NackLeadsWithAnEmptyRr) {
+  timing::ReceiveStatistics stats(0x1234, 90000);
+  stats.OnPacket(1, 0, Timestamp::Millis(0));
+  RtcpConfig c;
+  c.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine rx(c);
+  rx.AddReceiveStatistics(&stats);
+  rx.Process(Timestamp::Millis(0));
+  const std::vector<uint16_t> seqs = {2};
+  rx.QueueNack(0x1234, seqs);
+  auto out = rx.Process(Timestamp::Millis(100));
+  SM_ASSERT_EQ(out.size(), 1u);
+  auto split = loss::SplitCompoundRtcp(out[0].bytes);
+  auto rr = timing::ParseReceiverReport((*split)[0].data);
+  SM_ASSERT_TRUE(rr.has_value());
+  SM_EXPECT_TRUE(rr->blocks.empty());
+  SM_EXPECT_EQ(rx.NextProcessTime(Timestamp::Millis(101)), Timestamp::Millis(500));
+}
+
 SM_TEST(RtcpEngine, ReducedSizeFeedbackHasNoLeadingReport) {
   RtcpConfig c;
   c.reduced_size = true;
