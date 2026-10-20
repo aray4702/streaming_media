@@ -320,9 +320,12 @@ class Session : public MetricsSource {
   bool peer_mid_seen_ = false;
   bool send_has_padding_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();
+  // Version 2: when the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess wakes next.
+  Timestamp tcc_wake_ = Timestamp::MinusInfinity();
   DataRate last_tcc_estimate_ = DataRate::Zero();
   TimeDelta TransportFeedbackInterval() const;
   void UpdateTransportFeedbackRate();
+  void ProcessTransportFeedbackV2(Timestamp now);
   DataRate last_target_ = DataRate::Zero();
   TimeDelta rtt_ = TimeDelta::Millis(100);
   // Last report block per reported SSRC, for the loss between two reports (RtpTransportControllerSend::

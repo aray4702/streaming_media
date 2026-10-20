@@ -337,8 +337,16 @@ ALGORITHMS = [
                   "with arrival-time error within the 250 us quantization.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
-               "vectors. A message is split when a delta overflows 16 bits.",
-         verification="No defects found; maximum arrival-time error 249 us."),
+               "vectors. A message is split when a delta overflows 16 bits. "
+               "With `tcc v2` the session sends the first periodic feedback after the generator's default 100 ms, "
+               "and the interval from the local send estimate (5% of it, 50-250 ms) applies from then on: "
+               "`Call::EnsureStarted` (call/call.cc) starts the task that runs "
+               "`ReceiveSideCongestionController::MaybeProcess` before the Call hears its start rate, and "
+               "`TransportSequenceNumberFeedbackGenenerator::Process` returns the delay to its next run (#217).",
+         verification="No defects found; maximum arrival-time error 249 us. Issue #217: the first feedback went out "
+                      "at 50 ms where libwebrtc's goes out at 100 ms, so the first probe estimate came from the first "
+                      "cluster alone (`issue_120_rtx_payload_padding` seed 1: 913 kbps at 65 ms, libwebrtc 1608 at "
+                      "115 ms); unit test `Session.TransportFeedbackV2FirstReportWaitsTheDefaultInterval`."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
@@ -444,7 +452,8 @@ ALGORITHMS = [
                "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24). Provisional locks (PR #186, Owner 2026-10-20): "
                "`issue_53_cwnd_pushback` `video.render_fps >= 14` (was 22; libwebrtc 27.4, ours 16.0; tracked to #24, "
                "restored when `timing v2` joins the defaults) and `issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` "
-               "(was 380; libwebrtc 451, ours 344; tracked to #217).",
+               "(was 380; libwebrtc 451, ours 344; tracked to #217; restored to 380 by #217's first-feedback timing, "
+               "see 5.1).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "

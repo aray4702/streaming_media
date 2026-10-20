@@ -428,11 +428,15 @@ void Session::Process(Timestamp now) {
     if (fb.pli) rtcp_.QueuePli(v.ssrc);
   }
   // Transport-wide feedback covers every stream of the transport.
-  UpdateTransportFeedbackRate();
-  if (cfg_.transport_feedback_interval.us() > 0 &&
-      (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
-    last_tcc_ = now;
-    for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
+  if (cfg_.transport_feedback_version >= 2) {
+    ProcessTransportFeedbackV2(now);
+  } else {
+    UpdateTransportFeedbackRate();
+    if (cfg_.transport_feedback_interval.us() > 0 &&
+        (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
+      last_tcc_ = now;
+      for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
+    }
   }
   // Paced media.
   if (HasSendStreams()) {
@@ -467,6 +471,27 @@ void Session::UpdateTransportFeedbackRate() {
   tcc_.OnSendBandwidthEstimateChanged(estimate);
 }
 
+// Version 2: Call::EnsureStarted starts the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess
+// before it registers for OnTargetTransferRate (call/call.cc), so the generator's first Process sees its default
+// 100 ms interval and the first feedback goes out 100 ms after the start; the rate-based interval applies from
+// then on. TransportSequenceNumberFeedbackGenenerator::Process
+// (modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.cc) sends when
+// last_process_time_ + send_interval_ has passed and returns the delay to the task's next run, so a longer
+// interval takes effect at once and a shorter one at the next wake-up.
+void Session::ProcessTransportFeedbackV2(Timestamp now) {
+  if (cfg_.transport_feedback_interval.us() > 0 && now >= tcc_wake_) {
+    const TimeDelta interval = tcc_.Interval();
+    if (!last_tcc_.IsFinite() || now >= last_tcc_ + interval) {
+      last_tcc_ = now;
+      tcc_wake_ = now + interval;
+      for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
+    } else {
+      tcc_wake_ = last_tcc_ + interval;
+    }
+  }
+  UpdateTransportFeedbackRate();  // Call::OnTargetTransferRate -> ReceiveSideCongestionController::OnBitrateChanged.
+}
+
 TimeDelta Session::TransportFeedbackInterval() const {
   return cfg_.transport_feedback_version < 2 ? cfg_.transport_feedback_interval : tcc_.Interval();
 }
@@ -475,7 +500,9 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
-  if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
+  if (cfg_.transport_feedback_version >= 2) {
+    if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
+  } else if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
     next = std::min(next, last_tcc_ + TransportFeedbackInterval());
   }
   return std::max(next, now);
