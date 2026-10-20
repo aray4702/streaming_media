@@ -494,6 +494,10 @@ ALGORITHMS = [
                "(`call/bitrate_allocator.cc`): `LowRateAllocation` / `NormalRateAllocation` / `MaxRateAllocation` with min + max(10 %, 20 kbps) "
                "and the protection share to resume, and the sum of the enforced minimums (audio, and video as `suspend_below_min_bitrate` is off) is "
                "the lower bound of GCC's target (`min_total_allocated_bitrate`, `use_min_allocatable_as_lower_bound_`). "
+               "Since #152 the video stream's `link_allocation` is libwebrtc's (`VideoSendStreamImpl::OnBitrateUpdated`): the payload rate "
+               "less `RtpVideoSender`'s protection rate, taken before the encoder target is capped at the maximum and not lowered by the "
+               "congestion-window drop (`SendRates::video_link_allocation`), so above the maximum (up to 2 x max in `MaxRateAllocation`) the "
+               "encoder bitrate adjuster has headroom and video is encoded at its maximum, as libwebrtc's. "
                "Remaining: the elastic allocation (off by default in libwebrtc), the padding limit (`max_padding_rate`, with the prober, #48), "
                "the per-packet overhead libwebrtc takes off the video payload rate, and the audio min and max from Opus's frame-length range (not in `reference/`, #57).",
          verification="A unit-test expectation was wrong about how leftover bitrate is shared (it is split by "

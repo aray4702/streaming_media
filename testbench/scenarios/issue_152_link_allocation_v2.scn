@@ -1,0 +1,21 @@
+name issue_152_link_allocation_v2
+describe A clean 4 Mbps link with every v2 switch on: video at its 2.5 Mbps maximum is encoded at the maximum, as libwebrtc's link_allocation headroom allows (#152)
+duration 30s
+at 0s capacity=4000kbps delay=25ms queue=300ms
+tcc v2
+rtcp v2
+packetization v2
+rtx v2
+keyframe v2
+pacer v2
+cc v2
+audio v2
+allocator v2
+# VideoSendStreamImpl::OnBitrateUpdated takes link_allocation (payload - protection) before
+# capping the encoder target at the encoder maximum, so with an allocation above 2.5 Mbps the
+# EncoderBitrateAdjuster has headroom and does not trim the encoder below its maximum.
+# Seeds 1-5: video.avg_kbps main 2378-2394, with the fix 2442-2463. libwebrtc encodes
+# 2.5 Mbps at a 2.5 Mbps target on `cross_traffic` before the competing flow (310627 bytes in
+# second 10 of `parity-data/traces/cross_traffic.1.webrtc.video.csv`, ours 300697 before, 310627 after).
+expect video.avg_kbps > 2420
+expect video.freeze_count == 0

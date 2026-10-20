@@ -381,3 +381,41 @@ SM_TEST(SendSideController, V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc)
   SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
   SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256);
 }
+
+// Issue #152, VideoSendStreamImpl::OnBitrateUpdated: link_allocation is the
+// payload rate less the protection rate, taken before the encoder target is
+// capped at the encoder maximum, so the encoder bitrate adjuster gets headroom
+// when the allocation exceeds the maximum.
+SM_TEST(SendSideController, V2LinkAllocationIsTakenBeforeTheVideoMaximum) {
+  SendSideConfig cfg;
+  cfg.gcc.version = 2;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  cfg.allocator_version = 2;
+  cfg.video_max = DataRate::KilobitsPerSec(500);
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+  // MaxRateAllocation: up to kTransmissionMaxBitrateMultiplier (2) x the maximum.
+  const int64_t alloc = c.allocator().allocation("video").bps();
+  SM_EXPECT_EQ(alloc, int64_t{1000000});
+  SM_EXPECT_EQ(r.video_target.kbps(), 500.0);
+  // Payload: 1 Mbps less 102 packets/s of 24 + 28 bytes. Encoder overhead: the
+  // payload in packets of 1200 + 28 - 24 bytes, 100 packets/s. Protection is
+  // what is left of the allocation; link_allocation = payload - protection.
+  const int64_t payload = alloc - 102 * (24 + 28) * 8;
+  const int64_t protection = alloc - payload - 100 * (24 + 28) * 8;
+  SM_EXPECT_EQ(r.video_link_allocation.bps(), payload - protection);
+}
+
+SM_TEST(SendSideController, V2LinkAllocationIsTheTargetBelowTheVideoMaximum) {
+  SendSideConfig cfg;
+  cfg.gcc.version = 2;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  cfg.allocator_version = 2;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+  SM_EXPECT_EQ(r.video_link_allocation.bps(), r.video_target.bps());
+}

@@ -85,6 +85,11 @@ struct SendRates {
   // (0 = none); `video_target` is already lowered to match. See
   // SendSideController::DropCapturedFrame().
   int frame_drop_interval = 0;
+  // `allocator v2` (issue #152): VideoSendStreamImpl::OnBitrateUpdated's
+  // link_allocation, the bandwidth the encoder bitrate adjuster may use as
+  // headroom. It is the payload rate less the protection rate before the cap at
+  // the video maximum, and at least `video_target`. Zero means `video_target`.
+  DataRate video_link_allocation;
 };
 
 // A datagram released by the pacer.
@@ -188,6 +193,10 @@ class SendSideController : public MetricsSource {
   // protection share, at most the video maximum: the encoder target before the
   // congestion-window frame dropping (VideoStreamEncoder::UpdateTargetBitrate).
   DataRate AllocatedVideoTarget(DataRate alloc) const;
+  // The same before the cap at the video maximum (RtpVideoSender::GetPayloadBitrateBps).
+  DataRate PayloadVideoRate(DataRate alloc) const;
+  // VideoSendStreamImpl::OnBitrateUpdated: link_allocation for `alloc`.
+  DataRate VideoLinkAllocation(DataRate alloc) const;
   // RtpVideoSender::CalculateOverheadRate (frame-rate option off).
   DataRate OverheadRate(DataRate rate, int64_t packet_size_bytes) const;
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;

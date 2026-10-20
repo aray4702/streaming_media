@@ -335,11 +335,31 @@ DataRate SendSideController::OverheadRate(DataRate rate, int64_t packet_size_byt
   return DataRate::BitsPerSec(packets_per_sec * (cfg_.rtp_overhead_bytes + cfg_.transport_overhead_bytes) * 8);
 }
 
-DataRate SendSideController::AllocatedVideoTarget(DataRate alloc) const {
+DataRate SendSideController::PayloadVideoRate(DataRate alloc) const {
   const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
   // has_packet_feedback_: the payload rate is the allocation less the overhead rate.
   const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, cfg_.max_packet_size + cfg_.transport_overhead_bytes));
-  return std::min(cfg_.video_max, payload * keep);
+  return payload * keep;
+}
+
+DataRate SendSideController::AllocatedVideoTarget(DataRate alloc) const {
+  return std::min(cfg_.video_max, PayloadVideoRate(alloc));
+}
+
+DataRate SendSideController::VideoLinkAllocation(DataRate alloc) const {
+  // RtpVideoSender::OnBitrateUpdated: protection_bitrate_bps_ = target - (encoder
+  // target + encoder overhead), the encoder overhead computed for packets of
+  // max_total_packet_size less the RTP header and capped at what is left.
+  // VideoSendStreamImpl::OnBitrateUpdated then takes link_allocation =
+  // encoder target - protection before capping the encoder target at the
+  // encoder maximum, and at least the capped target.
+  const DataRate payload = PayloadVideoRate(alloc);
+  const DataRate left = std::max(DataRate::Zero(), alloc - payload);
+  const DataRate encoder_overhead =
+      std::min(OverheadRate(payload, cfg_.max_packet_size + cfg_.transport_overhead_bytes - cfg_.rtp_overhead_bytes), left);
+  const DataRate protection = left - encoder_overhead;
+  const DataRate link = payload > protection ? payload - protection : DataRate::Zero();
+  return std::max(std::min(cfg_.video_max, payload), link);
 }
 
 SendRates SendSideController::AllocatedRates() const {
@@ -350,7 +370,9 @@ SendRates SendSideController::AllocatedRates() const {
   out.audio_rate = allocator_.allocation("audio");
   const DataRate alloc = allocator_.allocation("video");
   out.video_target = AllocatedVideoTarget(alloc);
+  out.video_link_allocation = VideoLinkAllocation(alloc);
   ApplyPushback(out);
+  out.video_link_allocation = std::max(out.video_link_allocation, out.video_target);
   return out;
 }
 
