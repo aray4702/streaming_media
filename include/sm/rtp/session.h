@@ -329,6 +329,15 @@ class Session : public MetricsSource {
   };
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
+  // Version 2: the packet history's RTT as ModuleRtpRtcpImpl2 keeps it (rtt_ms_,
+  // refreshed by PeriodicUpdate), and the samples' sum for RTCPReceiver::AverageRtt.
+  static constexpr TimeDelta kRttUpdateInterval = TimeDelta::Millis(1000);
+  void PeriodicRttUpdate(Timestamp now);
+  Timestamp next_rtt_update_ = Timestamp::MinusInfinity();
+  Timestamp last_report_block_ = Timestamp::MinusInfinity();
+  TimeDelta periodic_rtt_ = TimeDelta::Zero();
+  TimeDelta rtt_sum_ = TimeDelta::Zero();
+  int64_t rtt_count_ = 0;
   SessionStats stats_;
 };
 
