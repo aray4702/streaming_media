@@ -27,9 +27,10 @@ reverse at 15s up
 expect repair.overhead_pct < 1.4
 # No outage monitor under cc v2 and feedback handled before the capture in each test bench tick (#151): seed 1
 # freeze 4089 -> 3229 ms (libwebrtc 3221), repair 1.38 -> 0.10 % (0.58), longest audio gap 3550 -> 2980 ms (2977).
-# Known remaining (seeds 1-10 with this change): seed 3 still loses the race, freeze 4784 ms and repair 6.77 %
-# (main 4057 / 1.44; libwebrtc 3175 / 0.53). Its decode-time-out PLI reaches the sender before the 15.066 s capture,
-# so that frame becomes the keyframe before the NACK arrives; libwebrtc's PLI lands after it on every traced seed.
-# That follows from the frame release time (FrameDecodeTiming), receive timing owned by #24.
+# Known remaining (seeds 1-10 on main 70e20a7 with this change): seeds 2 and 3 still lose the race, freeze 4666 / 3948
+# ms and repair 6.30 / 3.18 % (main 4067 / 4047 and 1.43 / 1.26; libwebrtc 3256 / 3175 and 0.36 / 0.53). Their
+# decode-time-out PLI reaches the sender before the next capture, so that frame becomes the keyframe before the NACK
+# arrives; libwebrtc's PLI lands after it on every traced seed. That follows from the frame release time
+# (FrameDecodeTiming), receive timing owned by #24.
 expect video.freeze_total_ms < 3300
 expect audio.longest_interruption_ms < 3000
