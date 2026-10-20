@@ -63,6 +63,63 @@ struct PacingControllerConfig {
   EventSink* events = nullptr;
 };
 
+// PrioritizedPacketQueue (modules/pacing/prioritized_packet_queue.cc, M157),
+// the pacer's queue. One FIFO per priority level, as GetPriorityForType sets
+// them: 0 audio, 1 retransmission, 3 video and FEC (one FIFO), 4 padding.
+// Level 2 (video retransmission) is used only with
+// prioritize_audio_retransmission, which is off by default, and the
+// time-to-live per level (PacketQueueTTL) is infinite by default, so neither
+// is ported. A one-to-one call has one stream of each kind, so the round robin
+// between the SSRCs of a level is not needed either. Sizes are the packets'
+// wire sizes (libwebrtc's SizeInPayloadBytes counts payload and padding only).
+// Enqueue times are kept minus the time the queue has spent paused, so that
+// AverageQueueTime counts only the time spent unpaused.
+class PrioritizedPacketQueue {
+ public:
+  static constexpr int kNumPriorityLevels = 5;
+
+  void Push(Timestamp enqueue_time, PacedPacket p);
+  // The first packet of the highest-priority level; nullopt when empty.
+  std::optional<PacedPacket> Pop();
+  size_t SizeInPackets() const { return size_packets_; }
+  DataSize SizeInBytes() const { return size_bytes_; }
+  bool Empty() const { return size_packets_ == 0; }
+  // Queued packets per PacketPriority (SizeInPacketsPerRtpPacketMediaType).
+  const std::array<size_t, 5>& SizeInPacketsPerPriority() const { return size_per_priority_; }
+  // Enqueue time (minus the pause time before it) of the first packet at the
+  // level of `p`; MinusInfinity when that level is empty.
+  Timestamp LeadingPacketEnqueueTime(PacketPriority p) const;
+  // MinusInfinity when empty.
+  Timestamp OldestEnqueueTime() const;
+  // Mean time the queued packets have spent in the queue while unpaused, as of
+  // the last UpdateAverageQueueTime (Push and SetPauseState call it).
+  TimeDelta AverageQueueTime() const;
+  void UpdateAverageQueueTime(Timestamp now);
+  void SetPauseState(bool paused, Timestamp now);
+  // RemovePacketsForSsrc for the video stream and its RTX stream, as
+  // PacingController::EnqueuePacket calls it on a keyframe: the
+  // retransmission, video and FEC levels.
+  std::vector<PacedPacket> RemoveVideoStreamPackets();
+  bool HasKeyframePackets() const { return num_keyframe_packets_ > 0; }
+
+  static int Level(PacketPriority p);
+
+ private:
+  // `enqueue_time` is minus the time the queue spent paused before it.
+  struct Queued { PacedPacket p; Timestamp enqueue_time; std::multiset<Timestamp>::iterator oldest_it; };
+  void DequeueInternal(Queued& q);
+
+  std::array<std::deque<Queued>, kNumPriorityLevels> levels_;
+  std::multiset<Timestamp> enqueue_times_;
+  DataSize size_bytes_;
+  size_t size_packets_ = 0;
+  std::array<size_t, 5> size_per_priority_{};
+  int num_keyframe_packets_ = 0;
+  TimeDelta queue_time_sum_, pause_time_sum_;
+  Timestamp last_update_time_ = Timestamp::MinusInfinity();
+  bool paused_ = false;
+};
+
 class PacingController : public MetricsSource {
  public:
   explicit PacingController(PacingControllerConfig cfg = {});
@@ -90,8 +147,8 @@ class PacingController : public MetricsSource {
   void SetCongested(bool congested);
   bool congested() const { return congested_; }
 
-  DataSize QueueSize() const { return queue_bytes_; }
-  size_t QueuePackets() const { return queue_packets_; }
+  DataSize QueueSize() const { return queue_.SizeInBytes(); }
+  size_t QueuePackets() const { return queue_.SizeInPackets(); }
   // Age of the oldest queued packet (zero when empty).
   TimeDelta OldestQueueTime(Timestamp now) const;
   // QueueSizeData() / adjusted rate.
@@ -104,13 +161,6 @@ class PacingController : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  static constexpr int kLevels = 5;
-  struct Queued {
-    PacedPacket p;
-    Timestamp enqueue_time;  // Minus the time the queue spent paused.
-    std::multiset<Timestamp>::iterator oldest_it;
-  };
-
   void Start(Timestamp now);
   Timestamp Cur(Timestamp now);
   TimeDelta UpdateTimeAndGetElapsed(Timestamp now);
@@ -126,18 +176,6 @@ class PacingController : public MetricsSource {
   bool GetPendingPacket(const ProbeSendInfo& pacing_info, Timestamp target_send_time, Timestamp now, PacedPacket* out);
   void Account(PacedPacket& p, Timestamp now, const ProbeSendInfo& pacing_info, std::vector<PacedPacket>& sent);
   PacedPacket MakePadding(DataSize size, Timestamp now);
-
-  // PrioritizedPacketQueue.
-  static int Level(PacketPriority p);
-  void Push(Timestamp now, PacedPacket p);
-  bool Pop(PacedPacket* out, Timestamp now);
-  // PrioritizedPacketQueue::RemovePacketsForSsrc for the video stream: the
-  // video, FEC and retransmission levels.
-  void FlushVideo();
-  bool HasKeyframePackets() const;
-  void UpdateAverageQueueTime(Timestamp now);
-  void SetQueuePauseState(bool paused, Timestamp now);
-  TimeDelta AverageQueueTime() const;
 
   PacingControllerConfig cfg_;
   PaddingGenerator padding_generator_;
@@ -157,13 +195,7 @@ class PacingController : public MetricsSource {
   bool seen_first_packet_ = false;
   bool boosted_ = false;
 
-  std::array<std::deque<Queued>, kLevels> levels_;
-  std::multiset<Timestamp> enqueue_times_;
-  DataSize queue_bytes_;
-  size_t queue_packets_ = 0;
-  TimeDelta queue_time_sum_, pause_time_sum_;
-  Timestamp queue_update_time_ = Timestamp::MinusInfinity();
-  bool queue_paused_ = false;
+  PrioritizedPacketQueue queue_;
 
   BitrateProber prober_;
   bool probing_send_failure_ = false;

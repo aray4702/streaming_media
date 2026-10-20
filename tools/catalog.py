@@ -327,7 +327,7 @@ ALGORITHMS = [
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
-         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController"], e2e=["E2E_Pacer"],
+         headers=["cc/pacer.h", "cc/pacing_controller.h"], unit=["Pacer", "PacingController", "PrioritizedPacketQueue"], e2e=["E2E_Pacer"],
          bench=["cc/Pacer_EnqueueProcess", "cc/Q_Pacer_audio_delay"],
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
@@ -359,7 +359,12 @@ ALGORITHMS = [
                "debt every call and sends queued packets between the audio packets instead of with them.",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
-                      "congestion keep-alives). With the 40 ms burst a v2 frame leaves in one burst, so the "
+                      "congestion keep-alives). `PrioritizedPacketQueue` (#166) ports prioritized_packet_queue_unittest.cc: "
+                      "12 of its 19 cases are ported and pass; the other 7 cover options that are off by default "
+                      "(audio-retransmission priority, `fast_retransmissions`, the per-level TTLs) or the round robin "
+                      "between SSRCs, which a one-to-one call does not need. Queue sizes are wire sizes, where libwebrtc's "
+                      "`SizeInPayloadBytes` counts payload and padding only (it feeds the long-queue drain rate). "
+                      "With the 40 ms burst a v2 frame leaves in one burst, so the "
                       "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
