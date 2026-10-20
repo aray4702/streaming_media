@@ -30,7 +30,12 @@ TimeStretchConfig StretchFor(int rate) {
 }  // namespace
 
 AudioJitterBuffer::AudioJitterBuffer(AudioJitterBufferConfig cfg)
-    : cfg_(cfg), delay_(cfg.delay), neteq_delay_(cfg.neteq_delay), stretcher_(StretchFor(cfg.sample_rate)), plc_(PlcFor(cfg.sample_rate)) {
+    : cfg_(cfg),
+      delay_(cfg.delay),
+      neteq_delay_(cfg.neteq_delay),
+      stretcher_(StretchFor(cfg.sample_rate)),
+      plc_(PlcFor(cfg.sample_rate)),
+      expand_(cfg.sample_rate) {
   delay_.SetPacketDurationMs(cfg_.packet_ms);
   neteq_delay_.SetSampleRate(cfg_.sample_rate);
   decision_.SetSampleRate(cfg_.sample_rate);
@@ -83,18 +88,20 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
     while (queue_.size() > 3) queue_.erase(queue_.begin());
     next_ts_ = queue_.begin()->first;
     sync_.clear();
+    if (cfg_.version >= 2) sync_.assign(expand_.overlap_length(), 0.0f);  // NetEqImpl::FlushBuffers.
     ++stats_.buffer_flushes;
     decision_.NotifyBufferFlush();
     SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
   }
 }
 
-AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now) {
+AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* dst) {
   auto it = queue_.begin();
   Packet pkt = std::move(it->second);
   queue_.erase(it);
   next_ts_ += static_cast<int64_t>(pkt.pcm.size());
-  stats_.jitter_buffer_delay_ms.Add((now - pkt.arrival).ms_f() + sync_.size() * 1000.0 / cfg_.sample_rate);
+  const size_t ahead = sync_.size() + (dst ? dst->size() : 0);
+  stats_.jitter_buffer_delay_ms.Add((now - pkt.arrival).ms_f() + ahead * 1000.0 / cfg_.sample_rate);
   plc_.OnGoodFrame(pkt.pcm);  // Keeps PLC history; crossfades after an expand.
   AudioOperation op = AudioOperation::kNormal;
   if (expanding_) {
@@ -102,7 +109,8 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now) {
     expanded_samples_ = 0;
     op = AudioOperation::kMerge;
   }
-  sync_.insert(sync_.end(), pkt.pcm.begin(), pkt.pcm.end());
+  std::vector<float>& to = dst ? *dst : sync_;
+  to.insert(to.end(), pkt.pcm.begin(), pkt.pcm.end());
   return op;
 }
 
@@ -224,13 +232,17 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     // normal decode: the target is reached by preemptive expand, not by waiting.
     started_ = true;
     next_ts_ = queue_.begin()->first;
+    // NetEqImpl::FlushBuffers: Expand's overlap of zeros as lookahead.
+    sync_.assign(expand_.overlap_length(), 0.0f);
   }
   // PacketBuffer::DiscardOldPackets.
   while (!queue_.empty() && queue_.begin()->first < next_ts_) {
     queue_.erase(queue_.begin());
     ++stats_.packets_discarded_late;
   }
-  const int64_t samples_left = static_cast<int64_t>(sync_.size());
+  // The sync buffer always keeps Expand's overlap as lookahead.
+  const int64_t future = static_cast<int64_t>(sync_.size());
+  const int64_t samples_left = future - static_cast<int64_t>(expand_.overlap_length());
   if (IsTimestretch(last_mode_)) decision_.AddSampleMemory(-static_cast<int>(samples_left + need));
 
   NetEqStatus st;
@@ -240,10 +252,10 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   st.span_samples = PacketSpanSamples(false);
   st.span_samples_wait_time = PacketSpanSamples(true);
   st.generated_noise_samples = noise_start_tick_ ? (ticks_ - *noise_start_tick_) * need : 0;
-  st.sync_buffer_samples = samples_left;
-  st.expand_mutefactor = static_cast<int>(plc_.gain() * 16384.0f);
+  st.sync_buffer_samples = future;
+  st.expand_mutefactor = expand_.MuteFactor();
   st.target_level_ms = neteq_delay_.TargetLevelMs();
-  st.playout_delay_ms = neteq_delay_.GetDelayMs(static_cast<uint32_t>(next_ts_ - samples_left), ticks_ * kMsPerTick);
+  st.playout_delay_ms = neteq_delay_.GetDelayMs(static_cast<uint32_t>(next_ts_ - future), ticks_ * kMsPerTick);
   st.max_delay_ms = neteq_delay_.GetMaxDelayMs();
   NetEqOperation op = decision_.GetDecision(st, ticks_);
   if (op == NetEqOperation::kUndefined) op = NetEqOperation::kNormal;  // Old packets were discarded above.
@@ -293,6 +305,7 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     }
   }
   int64_t extracted = 0;
+  decoded_.clear();
   if (extract && !queue_.empty()) {
     // The sync buffer's end timestamp jumps to the packet (a merge after an
     // expand that covered the gap).
@@ -304,11 +317,16 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     }
     // NetEqImpl::ExtractPackets: consecutive packets until `required` samples.
     while (extracted < required && NextPacketReady()) {
-      const int64_t before = static_cast<int64_t>(sync_.size());
-      DecodeNext(now);
-      extracted += static_cast<int64_t>(sync_.size()) - before;
+      DecodeNext(now, &decoded_);
+      extracted = static_cast<int64_t>(decoded_.size());
     }
   }
+  // NetEqImpl::DoNormal / DoMerge: the first decode after an expand.
+  if (!decoded_.empty() && last_mode_ == NetEqMode::kExpand &&
+      (op == NetEqOperation::kNormal || op == NetEqOperation::kMerge)) {
+    JoinAfterExpand(decoded_, op == NetEqOperation::kMerge);
+  }
+  sync_.insert(sync_.end(), decoded_.begin(), decoded_.end());
   if (op == NetEqOperation::kAccelerate || op == NetEqOperation::kPreemptiveExpand) {
     if (extract) {
       decision_.set_sample_memory(static_cast<int>(samples_left + extracted));
@@ -320,16 +338,18 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   AudioOperation result = AudioOperation::kNormal;
   switch (op) {
     case NetEqOperation::kExpand: {
-      // NetEqImpl::DoExpand: conceal until the sync buffer covers the output.
+      // NetEqImpl::DoExpand: whole periods until the sync buffer holds the
+      // output plus Expand's overlap.
       if (last_mode_ != NetEqMode::kExpand) {
         ++stats_.concealment_events;
         SM_EVENT(cfg_.events, now, "neteq", "expand", CurrentLevelMs(), next_ts_);
       }
-      scratch_.assign(static_cast<size_t>(need - samples_left), 0.0f);
-      plc_.Conceal(scratch_);
+      while (sync_.size() < static_cast<size_t>(need) + expand_.overlap_length()) {
+        expanded_.clear();
+        stats_.concealed_samples += ExpandOnce(expanded_);
+        sync_.insert(sync_.end(), expanded_.begin(), expanded_.end());
+      }
       expanding_ = true;
-      stats_.concealed_samples += scratch_.size();
-      sync_.insert(sync_.end(), scratch_.begin(), scratch_.end());
       last_mode_ = NetEqMode::kExpand;
       if (!noise_start_tick_) noise_start_tick_ = ticks_;
       result = AudioOperation::kExpand;
@@ -337,6 +357,7 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     }
     case NetEqOperation::kMerge:
       last_mode_ = NetEqMode::kMerge;
+      expand_.Reset();
       result = AudioOperation::kMerge;
       break;
     case NetEqOperation::kAccelerate:
@@ -366,6 +387,7 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
         last_mode_ = changed ? NetEqMode::kPreemptiveExpandSuccess : NetEqMode::kPreemptiveExpandFail;
         if (changed) result = AudioOperation::kPreemptiveExpand;
       }
+      expand_.Reset();  // DoAccelerate and DoPreemptiveExpand.
       expanding_ = false;
       break;
     }
@@ -389,12 +411,67 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   std::copy(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need), out.begin());
   sync_.erase(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need));
   played_.insert(played_.end(), out.begin(), out.end());
-  if (static_cast<int64_t>(played_.size()) > samples_30_ms) {
-    played_.erase(played_.begin(), played_.end() - static_cast<std::ptrdiff_t>(samples_30_ms));
+  if (sync_.size() < expand_.overlap_length()) {
+    // NetEqImpl::GetAudioInternal reinstalls the lookahead by moving the
+    // sync buffer's index back over samples just played.
+    const size_t missing = std::min(expand_.overlap_length() - sync_.size(), played_.size());
+    sync_.insert(sync_.begin(), played_.end() - static_cast<std::ptrdiff_t>(missing), played_.end());
+    played_.erase(played_.end() - static_cast<std::ptrdiff_t>(missing), played_.end());
   }
+  const size_t keep = std::max(static_cast<size_t>(samples_30_ms), expand_.history_length());
+  if (played_.size() > keep) played_.erase(played_.begin(), played_.end() - static_cast<std::ptrdiff_t>(keep));
   stats_.total_samples_received += static_cast<uint64_t>(need);
   ++stats_.ops[static_cast<int>(result)];
   return result;
+}
+
+size_t AudioJitterBuffer::ExpandOnce(std::vector<float>& out) {
+  // NetEq's sync buffer starts out as zeros.
+  const size_t real = played_.size() + sync_.size();
+  const size_t pad = real < expand_.history_length() ? expand_.history_length() - real : 0;
+  sync_scratch_.assign(pad, 0.0f);
+  sync_scratch_.insert(sync_scratch_.end(), played_.begin(), played_.end());
+  sync_scratch_.insert(sync_scratch_.end(), sync_.begin(), sync_.end());
+  const size_t n = expand_.Process(sync_scratch_, out);
+  // Write back the overlap-add.
+  auto it = sync_scratch_.begin() + static_cast<std::ptrdiff_t>(pad);
+  std::copy(it, it + static_cast<std::ptrdiff_t>(played_.size()), played_.begin());
+  std::copy(it + static_cast<std::ptrdiff_t>(played_.size()), sync_scratch_.end(), sync_.begin());
+  return n;
+}
+
+void AudioJitterBuffer::JoinAfterExpand(std::vector<float>& decoded, bool merge) {
+  // Normal::Process: one more expansion to crossfade from, without muting.
+  if (merge) {
+    expand_.SetParametersForMergeAfterExpand();
+  } else {
+    expand_.SetParametersForNormalAfterExpand();
+  }
+  expanded_.clear();
+  ExpandOnce(expanded_);
+  expand_.Reset();
+  // The mute factor is raised to the background noise level, whose energy is
+  // 0 while BackgroundNoise is not ported: only silent audio starts at 1.
+  const int fs_mult = cfg_.sample_rate / 8000;
+  const size_t energy_length = std::min(static_cast<size_t>(fs_mult * 64), decoded.size());
+  double energy = 0;
+  for (size_t i = 0; i < energy_length; ++i) energy += static_cast<double>(decoded[i]) * decoded[i];
+  int mute_factor = energy == 0 ? 16384 : expand_.MuteFactor();
+  // Back to full gain by 0.64 per 20 ms, or within the decoded audio.
+  const int increment = std::max(64 / fs_mult, (16384 - mute_factor) / std::max<int>(1, static_cast<int>(decoded.size())));
+  for (float& v : decoded) {
+    v = v * static_cast<float>(mute_factor) / 16384.0f;
+    mute_factor = std::min(mute_factor + increment, 16384);
+  }
+  // Crossfade from the expansion over 1 ms.
+  const size_t win = std::min({static_cast<size_t>(cfg_.sample_rate / 1000), expanded_.size(), decoded.size()});
+  if (win == 0) return;
+  const int slope = 16384 / static_cast<int>(win);
+  int up = 0;
+  for (size_t i = 0; i < win; ++i) {
+    up += slope;
+    decoded[i] = (static_cast<float>(up) * decoded[i] + static_cast<float>(16384 - up) * expanded_[i]) / 16384.0f;
+  }
 }
 
 void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
