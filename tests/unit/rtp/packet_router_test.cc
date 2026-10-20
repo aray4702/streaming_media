@@ -261,7 +261,10 @@ SM_TEST(PacketRouter, AnUnsentSlotTakesNoTransportSequenceNumber) {
 
 // `pacer v1` keeps its numbering from 0 and numbers every packet, so the v1 runs are unchanged.
 SM_TEST(PacketRouter, PacerV1NumbersFromZero) {
-  SendSideController c;
+  SendSideConfig cfg;
+  cfg.gcc.version = 1;
+  cfg.pacer.version = cc::PacerVersion::kV1;
+  SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   c.Enqueue(Media(1), Timestamp::Millis(0));
   auto all = Run(c, 0, 100);

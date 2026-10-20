@@ -71,17 +71,17 @@ struct Scenario {
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
-  bool tcc_v2 = false;  // `tcc v2`: libwebrtc's transport-cc feedback generator (issue #76; default v1).
-  bool rtcp_v2 = false;  // `rtcp v2`: libwebrtc's RTCP report timing (issue #76 group 3; default v1).
-  bool packetization_v2 = false;  // `packetization v2`: libwebrtc's RtpSenderVideo payload sizing (issue #76 group 7; default v1).
-  bool rtx_v2 = false;  // `rtx v2`: libwebrtc's RtpPacketHistory (issue #76 group 2; default v1).
-  bool keyframe_v2 = false;  // `keyframe v2`: libwebrtc's receiver keyframe-request policy (issue #23) and the sender's 300 ms request filter (#151); default v1.
-  bool cc_v2 = false;  // `cc v2`: libwebrtc's GoogCC, ported in stages (issues #61, #19; default v1).
-  bool allocator_v2 = false;  // `allocator v2`: libwebrtc's BitrateAllocator and its minimum as the target's lower bound (issue #104; default v1).
-  bool audio_v2 = false;  // `audio v2`: libwebrtc's Opus send path as the bench can model it: VBR frame sizes (issue #126; default v1).
-  bool timing_v2 = false;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v1).
-  bool neteq_v2 = false;  // `neteq v2`: libwebrtc's NetEq target delay (DelayManager, packet arrival history; issue #62; default v1).
-  bool pacer_v2 = false;  // `pacer v2`: libwebrtc's PacingController (default v1, the library's own pacer).
+  bool tcc_v2 = true;  // `tcc v2`: libwebrtc's transport-cc feedback generator (issue #76; default v2 since #61).
+  bool rtcp_v2 = true;  // `rtcp v2`: libwebrtc's RTCP report timing (issue #76 group 3; default v2 since #61).
+  bool packetization_v2 = true;  // `packetization v2`: libwebrtc's RtpSenderVideo payload sizing (issue #76 group 7; default v2 since #61).
+  bool rtx_v2 = true;  // `rtx v2`: libwebrtc's RtpPacketHistory (issue #76 group 2; default v2 since #61).
+  bool keyframe_v2 = true;  // `keyframe v2`: libwebrtc's receiver keyframe-request policy (issue #23) and the sender's 300 ms request filter (#151); default v2 since #61.
+  bool cc_v2 = true;  // `cc v2`: libwebrtc's GoogCC, ported in stages (issues #61, #19; default v2 since #61).
+  bool allocator_v2 = true;  // `allocator v2`: libwebrtc's BitrateAllocator and its minimum as the target's lower bound (issue #104; default v2 since #61).
+  bool audio_v2 = true;  // `audio v2`: libwebrtc's Opus send path as the bench can model it: VBR frame sizes (issue #126; default v2 since #61).
+  bool timing_v2 = false;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v1; not in the #61 flip).
+  bool neteq_v2 = false;  // `neteq v2`: libwebrtc's NetEq target delay (DelayManager, packet arrival history; issue #62; default v1; not in the #61 flip).
+  bool pacer_v2 = true;  // `pacer v2`: libwebrtc's PacingController (default v2 since #61; v1 is the library's own pacer).
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

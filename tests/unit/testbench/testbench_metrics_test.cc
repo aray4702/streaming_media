@@ -184,6 +184,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
 // (issue #196: 51200 in sm_compare once the route arrives after Start, PR #198).
 SM_TEST(TestbenchMetrics, AudioAllocationRateUnderAllocatorV2IsLibwebrtcs) {
   Scenario s;
+  s.allocator_v2 = false;  // v2 is the default since #61.
   SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(49600));
   s.allocator_v2 = true;
   SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(51200));
@@ -294,7 +295,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
   RunOptions opt;
   opt.library_metrics = false;
   for (const bool v2 : {false, true}) {
-    auto parsed = ParseScenario(std::string("name bwetrace\n") + (v2 ? "cc v2\n" : "") + link);
+    auto parsed = ParseScenario(std::string("name bwetrace\n") + (v2 ? "cc v2\n" : "cc v1\n") + link);
     SM_ASSERT_TRUE(parsed.scenario.has_value());
     opt.bwe_trace = false;
     SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).bwe_trace.empty());
