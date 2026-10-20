@@ -312,7 +312,7 @@ ALGORITHMS = [
                       "link."),
     dict(id="5.4", slug="gcc-controller", title="Send-side bandwidth estimation (GCC network controller)",
          problems=["Unknown or changing available bandwidth -> GCC (delay-based and loss-based estimation)"],
-         headers=["cc/send_side_bwe.h"], unit=["SendSideBwe"], e2e=["E2E_SendSideBwe"],
+         headers=["cc/send_side_bwe.h"], unit=["SendSideBwe", "GoogCcNetworkController"], e2e=["E2E_SendSideBwe"],
          bench=["cc/Gcc_OnFeedback_per_packet"],
          scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
                   "(decrease band). Each phase's target is compared with the previous one.",
@@ -322,7 +322,21 @@ ALGORITHMS = [
                "(cc/congestion_window_pushback.h, a port of libwebrtc's CongestionWindowPushbackController with "
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
                "the encoder drops every N-th captured frame (SendRates::frame_drop_interval, "
-               "SendSideController::DropCapturedFrame()). The pacing rate is not reduced.",
+               "SendSideController::DropCapturedFrame()). The pacing rate is not reduced. "
+               "#166 ports goog_cc_network_control_unittest.cc against `GccController` with `cc v2` "
+               "(`GoogCcNetworkController`, 8 cases): the 7 `GoogCcNetworkControllerTest` cases the API can express pass, "
+               "`OnNetworkRouteChanged` in its first half (a route change without a starting rate has no counterpart: "
+               "`ResetEstimate` always takes a rate, and keeps the configured min and max), `ProbeOnRouteChange` with the "
+               "route's maximum configured up front, and `TriggersTargetRateUpdateWhenBandwidthLimitedChanges` on the "
+               "`AlrDetector` state (only libwebrtc's RFC 8888 feedback generator reads `is_bandwidth_limited`). "
+               "`GoogCcScenario.NoCrashOnVeryLateFeedback` is ported at the controller level. Not ported: "
+               "`RespectsConfiguredPacingFactor` (there is no `StreamsConfig::pacing_factor`; see #187), "
+               "`ProbeAfterRouteChangeWhenTransportWritable` (network availability belongs to the host stack's ICE), "
+               "`LimitPacingFactorToUpperLinkCapacity` (a field trial, off in M157), and the other `GoogCcScenario` "
+               "cases, which need libwebrtc's network emulation: the scenario suite and `sm_compare` cover their links "
+               "(capacity steps, high loss, cross traffic, REMB caps), and the rest set field trials that are off by default "
+               "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
+               "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc.",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
