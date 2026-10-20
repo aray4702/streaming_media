@@ -50,6 +50,10 @@ struct VideoSendControllerConfig {
   // the target). 0 = off (the v1 behaviour; `allocator v2` turns it on).
   DataRate allocation_min_bitrate;
   DataRate allocation_max_bitrate = DataRate::KilobitsPerSec(10000);
+  // EncoderRtcpFeedback::OnReceivedIntraFrameRequest (video/encoder_rtcp_feedback.cc):
+  // a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last one it
+  // passed on is ignored. 0 = off (the v1 behaviour; `keyframe v2` turns it on).
+  TimeDelta min_keyframe_request_interval = TimeDelta::Zero();
   EventSink* events = nullptr;
 };
 
@@ -109,8 +113,12 @@ class VideoSendController : public MetricsSource {
   bool paused_ = false;
   bool keyframe_needed_ = true;  // The first frame is a keyframe.
   Timestamp last_keyframe_ = Timestamp::MinusInfinity();
+  // When the last peer keyframe request was passed on (EncoderRtcpFeedback's
+  // time_last_packet_delivery_queue_; libwebrtc starts it at clock zero, which
+  // a real or simulated clock is far past).
+  Timestamp last_keyframe_request_ = Timestamp::MinusInfinity();
   uint64_t dropped_[4] = {0, 0, 0, 0};
-  uint64_t encoded_ = 0, keyframes_ = 0;
+  uint64_t encoded_ = 0, keyframes_ = 0, keyframe_requests_ignored_ = 0;
 };
 
 }  // namespace sm::rtp

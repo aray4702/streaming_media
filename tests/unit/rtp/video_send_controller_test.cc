@@ -189,3 +189,51 @@ SM_TEST(VideoSendController, AllocationIsRaisedToTheCodecMinimum) {
   VideoSendController off(cfg, s);
   SM_EXPECT_TRUE(off.OnCapturedFrame({}, At(0)).target == target);
 }
+
+// EncoderRtcpFeedback::OnReceivedIntraFrameRequest (video/encoder_rtcp_feedback.cc):
+// a PLI/FIR less than kMinKeyframeSendIntervalMs (300 ms) after the last one it
+// passed on is ignored; one exactly 300 ms later goes through.
+SM_TEST(VideoSendController, PeerKeyframeRequestsWithin300msAreIgnored) {
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
+  VideoSendController c(cfg, s);
+  c.OnCapturedFrame({}, At(0));
+  c.OnEncoded({DataSize::Bytes(4000), true}, At(0));
+  auto pli = [](int ms) {
+    SessionEvent e = Ev(SessionEventType::kKeyframeRequested);
+    e.time = At(ms);
+    e.ssrc = 2;
+    return e;
+  };
+  c.OnSessionEvent(pli(1000));
+  SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(1033)).keyframe);
+  c.OnEncoded({DataSize::Bytes(4000), true}, At(1033));
+  c.OnSessionEvent(pli(1299));  // 299 ms after the last one passed on.
+  SM_EXPECT_FALSE(c.OnCapturedFrame({}, At(1300)).keyframe);
+  c.OnSessionEvent(pli(1300));  // 300 ms: passed on.
+  SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(1333)).keyframe);
+  c.OnEncoded({DataSize::Bytes(4000), true}, At(1333));
+  // The outage monitor's own request (SSRC 0) is not a peer request: not filtered.
+  SessionEvent own = Ev(SessionEventType::kKeyframeRequested);
+  own.time = At(1400);
+  c.OnSessionEvent(own);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(1433)).keyframe);
+}
+
+// Off by default (keyframe v1): every request is passed on.
+SM_TEST(VideoSendController, PeerKeyframeRequestsAreNotFilteredByDefault) {
+  Session s(Cfg());
+  VideoSendController c({}, s);
+  c.OnCapturedFrame({}, At(0));
+  c.OnEncoded({DataSize::Bytes(4000), true}, At(0));
+  SessionEvent e = Ev(SessionEventType::kKeyframeRequested);
+  e.ssrc = 2;
+  e.time = At(100);
+  c.OnSessionEvent(e);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(133)).keyframe);
+  c.OnEncoded({DataSize::Bytes(4000), true}, At(133));
+  e.time = At(150);
+  c.OnSessionEvent(e);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(166)).keyframe);
+}

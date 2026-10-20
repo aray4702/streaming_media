@@ -101,7 +101,11 @@ ALGORITHMS = [
                "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that. Wire formats (loss/"
                "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
                "loss notification (LNTF, libwebrtc's goog-lntf application-layer feedback) and compound RTCP with "
-               "the report first; each is checked against libwebrtc's parsers in compare/webrtc/rtcp_interop.cc.",
+               "the report first; each is checked against libwebrtc's parsers in compare/webrtc/rtcp_interop.cc. "
+               "On the sender, `keyframe v2` adds libwebrtc's EncoderRtcpFeedback::OnReceivedIntraFrameRequest "
+               "(video/encoder_rtcp_feedback.cc): a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last "
+               "one passed to the encoder is ignored (rtp::VideoSendController, `min_keyframe_request_interval`; "
+               "issue #151). The outage monitor's own request is not filtered.",
          verification="Pass threshold derived analytically: each unrecoverable loss costs repair window + RTT + "
                       "keyframe transit, about 10 frames, so 2% loss bounds decodability near 80%. Without "
                       "keyframe requests only ~3% of frames decode."),

@@ -99,7 +99,19 @@ void VideoSendController::OnEncoded(const EncodedFrameReport& r, Timestamp now) 
 
 void VideoSendController::OnSessionEvent(const SessionEvent& e) {
   switch (e.type) {
-    case SessionEventType::kKeyframeRequested: keyframe_needed_ = true; break;
+    case SessionEventType::kKeyframeRequested:
+      // A peer PLI or FIR (named by its SSRC) goes through EncoderRtcpFeedback's
+      // minimum interval; the outage monitor's own request (SSRC 0) does not.
+      if (e.ssrc != 0 && cfg_.min_keyframe_request_interval > TimeDelta::Zero()) {
+        if (last_keyframe_request_ + cfg_.min_keyframe_request_interval > e.time) {
+          ++keyframe_requests_ignored_;
+          SM_EVENT(cfg_.events, e.time, "video_send", "keyframe_request_ignored", 0, 0);
+          break;
+        }
+        last_keyframe_request_ = e.time;
+      }
+      keyframe_needed_ = true;
+      break;
     case SessionEventType::kEncoderPause: paused_ = true; break;
     case SessionEventType::kEncoderResume: paused_ = false; break;
     default: break;
@@ -109,6 +121,7 @@ void VideoSendController::OnSessionEvent(const SessionEvent& e) {
 void VideoSendController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("encoded", encoded_);
   w.Counter("keyframes", keyframes_);
+  w.Counter("keyframe_requests_ignored", keyframe_requests_ignored_);
   w.Counter("dropped_paused", dropped_[static_cast<int>(DropReason::kPaused)]);
   w.Counter("dropped_cwnd", dropped_[static_cast<int>(DropReason::kCongestionWindow)]);
   w.Counter("dropped_dropper", dropped_[static_cast<int>(DropReason::kFrameDropper)]);
