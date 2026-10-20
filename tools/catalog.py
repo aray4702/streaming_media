@@ -216,7 +216,7 @@ ALGORITHMS = [
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer with time-stretching"],
          headers=["timing/audio_jitter_buffer.h", "timing/neteq_expand.h"],
          unit=["AudioJitterBuffer", "AudioJitterBufferNetEqV2", "NetEqBufferLevelFilter", "NetEqDecisionLogic",
-               "NetEqRandomVector", "NetEqExpand"],
+               "NetEqRandomVector", "NetEqExpand", "NetEqMerge"],
          e2e=["E2E_AudioJitterBuffer"],
          bench=["timing/AudioJitterBuffer_10msPull_16k", "timing/Q_AudioJitterBuffer_jitter25_loss2"],
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
@@ -266,9 +266,19 @@ ALGORITHMS = [
                "M157, the noise Expand mixes in is scaled by a mute factor that each expand period sets to 0 and "
                "nothing raises, so it adds nothing; the estimate's energy (2500 until the first save) sets where "
                "Normal's first decode after an expand starts unmuting: sqrt(noise energy / energy of its first "
-               "8 ms), or Expand's mute factor if higher. Still to port (issue #62): Merge's alignment search and "
-               "its SignalScaling (a merge is joined as Normal joins a decode after an expand, from Expand's mute "
-               "factor), the Accelerate/PreemptiveExpand DSP, and the receive half of Opus in-band FEC.",
+               "8 ms), or Expand's mute factor if higher. Merge is ported as NetEqMerge (merge.cc, one channel): "
+               "the packet after a lost one is joined by one more unmuted expansion, repeated after the sync "
+               "buffer's unplayed samples to 202 ms * fs/8000; the decoded audio goes in at the lag where its "
+               "first 10 ms best correlate with that signal at 4 kHz (up to max_lag, and far enough on that the "
+               "sync buffer then holds 10 ms plus the overlap and all its old samples), overwriting the unplayed "
+               "expansion. It starts from the larger of Expand's mute factor and SignalScaling's sqrt(expanded / "
+               "decoded energy) over 8 ms (integer arithmetic), unmutes by at least 4194 / (fs/8000) in Q20 per "
+               "sample or to full gain within the frame, and is crossfaded in linearly over up to 60 * fs/8000 "
+               "samples. The samples a merge adds or removes are a concealed-samples correction "
+               "(StatisticsCalculator, a negative one held against later additions). The 4 kHz correlation and "
+               "peak search are float (the WebRtcSpl helpers it calls, in common_audio/signal_processing, are "
+               "not in compare/webrtc/reference/, #57). Still to port (issue #62): the "
+               "Accelerate/PreemptiveExpand DSP, and the receive half of Opus in-band FEC.",
          verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -284,7 +294,15 @@ ALGORITHMS = [
                       "jitter buffer's expand loop. With `neteq v2` on the 19 base scenarios against libwebrtc's "
                       "values on the same seeds (1-5), the audio gaps go from 46 to 42. `cross_traffic` longest "
                       "audio interruption goes from 10-20 ms to 10-90 ms (libwebrtc 30-100 ms on those seeds); "
-                      "`issue_62_neteq_v2_cross_traffic` locks it in."),
+                      "`issue_62_neteq_v2_cross_traffic` locks it in. "
+                      "NetEq v2 Merge (issue #62): merge_unittest.cc's Process test passes (input lengths 1, 2, "
+                      "3, 80, 81 and 160 at 8 kHz, synthetic voiced signal), plus tests of the alignment, "
+                      "SignalScaling, the unmute rates, the cut of a long unplayed part and the jitter buffer's "
+                      "merge. With `neteq v2`, seeds 1-10: `audio_only_lossy` jitter buffer delay p95 75.0 -> 68.3 ms "
+                      "and mouth-to-ear p95 147.6 -> 140.9 ms (libwebrtc 81 and 146.8), time-stretch 0.24 -> 0.51 % "
+                      "(libwebrtc 0.39): the merge now overwrites the unplayed expansion instead of playing it "
+                      "before the packet. `high_jitter` and `cross_traffic` are unchanged but for `high_jitter` "
+                      "jitter buffer delay p50 80.4 -> 82.0 ms (libwebrtc 85)."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],

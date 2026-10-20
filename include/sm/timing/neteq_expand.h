@@ -199,4 +199,63 @@ class NetEqExpand {
   int mute_slope_ = 0;
 };
 
+// modules/audio_coding/neteq/merge.cc, one channel: the join of a decoded
+// packet onto an expansion when the packet after a gap arrives (the gap was
+// a loss, not a late packet). Expand runs once more, without muting, and its
+// period is repeated after the sync buffer's unplayed samples to 202 ms * fs/8000.
+// The decoded audio is placed at the lag where its first 10 ms correlate best
+// with that signal at 4 kHz (CorrelateAndPeakSearch: at most max_lag, and far
+// enough on that the sync buffer then holds 10 ms plus Expand's overlap and
+// all its old samples). The decoded audio starts from the larger of Expand's
+// mute factor and SignalScaling's sqrt(expanded energy / decoded energy) over
+// the first 8 ms, unmuting by at least 4194 / (fs/8000) in Q20 per sample, and
+// is crossfaded in linearly over min(60 * fs/8000 samples, what is left of
+// the expansion, the decoded length).
+class NetEqMerge {
+ public:
+  static constexpr size_t kMaxSampleRate = 48000;
+  static constexpr size_t kExpandDownsampLength = 100;
+  static constexpr size_t kInputDownsampLength = 40;
+  static constexpr size_t kMaxCorrelationLength = 60;
+  // GetExpandedSignal keeps at most this many unplayed samples.
+  static constexpr size_t kMaxOldLength = 210 * kMaxSampleRate / 8000;
+
+  // `sample_rate` is 8000, 16000, 32000 or 48000.
+  explicit NetEqMerge(int sample_rate);
+
+  // Merge::Process. `sync` is the sync buffer, oldest sample first, whose
+  // last `future_length` samples (at least Expand's overlap) are not played
+  // yet. The first old_length() samples of the merged signal overwrite the
+  // unplayed ones, and the rest is appended to `out`; returns that length.
+  // An unplayed part longer than kMaxOldLength is cut to its first
+  // kMaxOldLength samples, with zeros put before it, as SyncBuffer's
+  // InsertZerosAtIndex does.
+  size_t Process(std::span<const float> input, std::vector<float>& sync, size_t future_length, NetEqExpand& expand,
+                 std::vector<float>& out);
+  // Merge::SignalScaling on int16 samples: sqrt(expanded / input energy) in
+  // Q14 over the first min(64 * fs/8000, input_length) samples, or 16384
+  // when the expansion is the louder.
+  static int16_t SignalScaling(const int16_t* input, size_t input_length, const int16_t* expanded, int fs_mult);
+
+  size_t old_length() const { return old_length_; }
+  size_t best_correlation_index() const { return best_correlation_index_; }
+  int16_t mute_factor() const { return mute_factor_; }  // Q14, where the decoded audio started.
+
+ private:
+  // Merge::Downsample: both signals to 4 kHz (int16 scale).
+  void Downsample(const float* input, size_t input_length, const float* expanded, size_t expanded_length);
+  size_t CorrelateAndPeakSearch(size_t start_position, size_t input_length, size_t expand_period,
+                                const NetEqExpand& expand) const;
+
+  int fs_hz_;
+  int fs_mult_;
+  size_t timestamps_per_call_;
+  float expanded_downsampled_[kExpandDownsampLength] = {};
+  float input_downsampled_[kInputDownsampLength] = {};
+  std::vector<float> expanded_, expanded_temp_, temp_data_;
+  size_t old_length_ = 0;
+  size_t best_correlation_index_ = 0;
+  int16_t mute_factor_ = 16384;
+};
+
 }  // namespace sm::timing
