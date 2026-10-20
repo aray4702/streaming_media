@@ -34,12 +34,23 @@ RtpReceiverConfig ReceiverCfg() {
   return c;
 }
 
+// The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
+// (SendSideController::Process).
+std::vector<SenderPacket> Release(RtpSender& s, Timestamp now) {
+  auto out = s.TakePackets();
+  for (auto& p : out) {
+    s.AssignSequenceNumber(p);
+    s.OnPacketReleased(p, now);
+  }
+  return out;
+}
+
 // One frame through the sender: the serialized packets of it.
 std::vector<Bytes> SendFrame(RtpSender& s, int64_t id, bool key, size_t bytes, Timestamp now) {
   auto chunks = test::MakeTestFrameChunks(key, bytes, s.config().max_payload_size);
   s.SendVideoFrame(chunks, static_cast<uint32_t>(id * 3000), now);
   std::vector<Bytes> out;
-  for (auto& p : s.TakePackets()) out.push_back(p.packet.Serialize());
+  for (auto& p : Release(s, now)) out.push_back(p.packet.Serialize());
   return out;
 }
 
@@ -189,7 +200,7 @@ std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Byte
   RtpReceiver r(cfg);
   r.Start(Timestamp::Millis(0));
   s.SendVideoFrame(H264Packetizer::Packetize(annexb, s.config().max_payload_size), 0, Timestamp::Millis(0));
-  for (auto& p : s.TakePackets()) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(10));
+  for (auto& p : Release(s, Timestamp::Millis(0))) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(10));
   return Run(r, 10, 400);
 }
 }  // namespace

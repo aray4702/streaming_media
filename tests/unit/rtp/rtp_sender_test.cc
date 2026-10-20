@@ -22,6 +22,16 @@ RtpSenderConfig VideoCfg() {
   c.initial_seq = 65534;  // Wraps on the third packet.
   return c;
 }
+// The queued packets as the pacer releases them: numbered and stored in the RTX history
+// (SendSideController::Process).
+std::vector<SenderPacket> Release(RtpSender& s, Timestamp now = Timestamp::Millis(0)) {
+  auto out = s.TakePackets();
+  for (auto& p : out) {
+    s.AssignSequenceNumber(p);
+    s.OnPacketReleased(p, now);
+  }
+  return out;
+}
 std::vector<Bytes> Chunks(std::initializer_list<size_t> sizes) {
   std::vector<Bytes> out;
   uint8_t v = 1;
@@ -48,7 +58,7 @@ SM_TEST(RtpSender, VideoFrameNumbersPacketsAndMarksTheLastOne) {
   RtpSender s(VideoCfg());
   auto chunks = Chunks({100, 200, 50});
   s.SendVideoFrame(chunks, 9000, Timestamp::Millis(10));
-  auto out = s.TakePackets();
+  auto out = Release(s);
   SM_ASSERT_EQ(out.size(), 3u);
   uint16_t expect_seq[] = {65534, 65535, 0};
   for (size_t i = 0; i < 3; ++i) {
@@ -75,7 +85,7 @@ SM_TEST(RtpSender, VideoFrameNumbersPacketsAndMarksTheLastOne) {
 SM_TEST(RtpSender, NackIsAnsweredWithRtxAtRetransmissionPriority) {
   RtpSender s(VideoCfg());
   s.SendVideoFrame(Chunks({10, 20, 30}), 1, Timestamp::Millis(0));
-  s.TakePackets();
+  Release(s);
   uint16_t want[] = {65535, 0, 77};
   s.OnNack(want, Timestamp::Millis(50), TimeDelta::Millis(20));
   auto out = s.TakePackets();
@@ -92,7 +102,7 @@ SM_TEST(RtpSender, NackIsAnsweredWithRtxAtRetransmissionPriority) {
   SM_EXPECT_EQ(restored->payload.size(), 20u);
   SM_EXPECT_EQ(restored->timestamp, 1u);
   SM_EXPECT_EQ(s.stats().rtx_packets, 2u);
-  // The same NACK again inside the RTT is throttled by the history.
+  // The same NACK again while the resends are still queued is ignored by the history.
   s.OnNack(want, Timestamp::Millis(55), TimeDelta::Millis(20));
   SM_EXPECT_TRUE(s.TakePackets().empty());
 }
@@ -200,7 +210,7 @@ SM_TEST(RtpSender, MidIsWrittenOnTheFirstPacketsUntilAcknowledged) {
 SM_TEST(RtpSender, PaddingUsesTheRtxStreamAndKeepsSequenceNumbersApart) {
   RtpSender s(VideoCfg());
   s.SendVideoFrame(Chunks({10}), 1, Timestamp::Millis(0));
-  s.TakePackets();
+  Release(s);
   SenderPacket pad = s.MakePadding(224 - 28, 77, Timestamp::Millis(1));
   SM_EXPECT_TRUE(pad.kind == PacketKind::kPadding);
   SM_EXPECT_TRUE(pad.priority == cc::PacketPriority::kPadding);
@@ -225,7 +235,7 @@ SM_TEST(RtpSender, PaddingUsesTheRtxStreamAndKeepsSequenceNumbersApart) {
   SM_EXPECT_EQ(mp.packet.ssrc, 0x1111u);
   SM_EXPECT_EQ(mp.packet.seq, 65534);
   m.SendVideoFrame(Chunks({5}), 1, Timestamp::Millis(1));
-  SM_EXPECT_EQ(m.TakePackets()[0].packet.seq, 65535);
+  SM_EXPECT_EQ(Release(m)[0].packet.seq, 65535);
 }
 
 SM_TEST(RtpSender, AudioLevelByteIsWrittenWhenTheExtensionIsMapped) {
@@ -286,18 +296,14 @@ sync::ExtensionMap TccExtensions() {
 RtpSenderConfig PaddingCfg(const sync::ExtensionMap* ext, bool video = true) {
   RtpSenderConfig c = VideoCfg();
   c.video = video;
-  c.rtx.version = 2;
   c.extensions = ext;
   return c;
 }
-// Sends one frame of `sizes` and lets the pacer release it, so the v2 history holds it.
+// Sends one frame of `sizes` and lets the pacer release it, so the history holds it.
 void SendAndRelease(RtpSender& s, std::initializer_list<size_t> sizes, uint32_t ts, Timestamp now) {
   auto chunks = Chunks(sizes);
   s.SendVideoFrame(chunks, ts, now);
-  for (SenderPacket& p : s.TakePackets()) {
-    s.AssignSequenceNumber(p);  // What the pacer's release does under `rtx v2`.
-    s.OnPacketReleased(p, now);
-  }
+  Release(s, now);
 }
 size_t PaddingTotal(const std::vector<SenderPacket>& v) {
   size_t n = 0;
@@ -412,14 +418,10 @@ SM_TEST(RtpSender, GeneratePaddingAudioIsEmptyAndMaySendSmallPackets) {
   SM_EXPECT_EQ(out[0].packet.padding_size, 50);
 }
 
-// Without RTX, or with the v1 history, the sender makes no padding here (MakePadding stays).
-SM_TEST(RtpSender, GeneratePaddingNeedsRtxV2) {
+// Without RTX the sender makes no padding here (MakePadding stays).
+SM_TEST(RtpSender, GeneratePaddingNeedsRtx) {
   const auto ext = TccExtensions();
   RtpSenderConfig c = PaddingCfg(&ext);
-  c.rtx.version = 1;
-  RtpSender v1(c);
-  SM_EXPECT_TRUE(v1.GeneratePadding(500, 0, Timestamp::Millis(1)).empty());
-  c = PaddingCfg(&ext);
   c.rtx_ssrc.reset();
   RtpSender none(c);
   SM_EXPECT_TRUE(none.GeneratePadding(500, 0, Timestamp::Millis(1)).empty());

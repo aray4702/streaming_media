@@ -19,7 +19,6 @@ describe 3 Mbps link, 40 ms jitter with reordering, every v2 switch on: the targ
 compare_seeds 40
 cc v2
 pacer v2
-rtx v2
 keyframe v2
 allocator v2
 packetization v2
