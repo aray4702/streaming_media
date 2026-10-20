@@ -11,6 +11,12 @@ describe 3 Mbps link, 40 ms jitter with reordering, every v2 switch on: the targ
 # The lines below lock the level reached on seeds 1-5.
 # Target (issue #150): cc.target_avg_kbps, cc.utilization_pct, video.avg_kbps and cc.queue_p95_ms within the parity band of libwebrtc.
 # Fixed (acked-rate estimator as libwebrtc's RobustThroughputEstimator): seeds 5 and 10 no longer run away, see issue_150_gcc_v2_high_jitter_seed{5,10}.
+# Issue #196: audio's allocator share is libwebrtc's 51.2 kbps on both sides since #198 (sm_compare reports the route after
+# Start(), so libwebrtc re-registers audio with 48 B / 20 ms) and #199 (ours reserves 28 + 12 + 8 B under `allocator v2`).
+# Per-seed sd of cc.target_avg_kbps is about 220 kbps here, so 10 seeds cannot place this cell; sm_compare runs 40 seeds of
+# both stacks (issue #196 step 3). Ours on main 5f26355, seeds 1-40: cc.target_avg_kbps mean 958 (sd 225),
+# cc.utilization_pct 37.0, video.avg_kbps 603, cc.queue_p95_ms 8.2. Seeds 1-10: 944 / 36.5 / 596 / 8.0 (libwebrtc 930 / 35.9 / 564 / 4.3).
+compare_seeds 40
 cc v2
 pacer v2
 tcc v2
