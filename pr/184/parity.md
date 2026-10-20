@@ -15,7 +15,7 @@ Closed:
 | capacity_drop | `video.freeze_count` | 3.5 | 2.2 | ±0.9 | behind | 7/10 | #5, #37, #24 |
 | capacity_drop | `video.avg_kbps` | 836 | 895 | ±44.8 | behind | 6/10 | #37, #61 |
 | issue_120_rtx_payload_padding | `audio.concealed_pct` | 4.7 | 4.2 | ±0.5 | behind | 5/10 | #62, #63 |
-| issue_124_burst_loss_v2 | `audio.mouth_to_ear_p95_ms` | 179 | 241 | ±53.3 | ahead | 8/10 | #62, #63 |
+| issue_124_burst_loss_v2 | `audio.mouth_to_ear_p95_ms` | 179 | 242 | ±52.3 | ahead | 8/10 | #62, #63 |
 | issue_127_all_v2_no_stall | `cc.queue_p95_ms` | 42.4 | 31.7 | ±10 | behind | 7/10 | #19, #15, #48, #12, #61 |
 | issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_count` | 4.1 | 1.8 | ±1.6 | behind | 8/10 | #5, #37, #24 |
 | issue_12_lossbwe_burst_loss | `cc.utilization_pct` | 75.2 | 80.4 | ±4.3 | behind | 6/10 | #19, #15, #48, #12, #61 |
@@ -95,14 +95,13 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | high_jitter | `audio.mouth_to_ear_p95_ms` | 17.0 | 22.9 (further) |
 | high_jitter | `audio.jb_delay_p95_ms` | 36.4 | 41.2 (further) |
 | issue_120_rtx_payload_padding | `audio.mouth_to_ear_p95_ms` | 152 | 134 (closer) |
-| issue_120_rtx_payload_padding_capacity_drop | `audio.mouth_to_ear_p95_ms` | 151 | 135 (closer) |
 | issue_123_v2_allocation_min | `audio.jb_delay_p95_ms` | 67.9 | 59.1 (closer) |
 | issue_123_v2_allocation_min | `video.freeze_count` | 8.2 | 6.7 (closer) |
 | issue_123_v2_allocation_min | `video.longest_freeze_ms` | 1101 | 680 (closer) |
 | issue_123_v2_allocation_min | `video.render_fps` | 3.8 | 3.3 (closer) |
 | issue_123_v2_allocation_min | `video.e2e_delay_p95_ms` | 2114 | 3671 (further) |
 | issue_124_burst_loss_v2 | `audio.concealed_pct` | 0.7 | 0.8 (further) |
-| issue_124_burst_loss_v2 | `audio.jb_delay_p95_ms` | 74.2 | 53.2 (closer) |
+| issue_124_burst_loss_v2 | `audio.jb_delay_p95_ms` | 75.2 | 53.2 (closer) |
 | issue_124_burst_loss_v2 | `video.freeze_count` | 4 | 3.1 (closer) |
 | issue_124_burst_loss_v2 | `video.freeze_total_ms` | 898 | 687 (closer) |
 | issue_127_all_v2_no_stall | `audio.mouth_to_ear_p95_ms` | 39.6 | 44.6 (further) |
@@ -183,9 +182,9 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_85_video_pause | `net.loss_pct` | 2.4 | 2.1 (closer) |
 | low_bandwidth | `video.avg_kbps` | 27.0 | 23.2 (closer) |
 | low_bandwidth | `cc.rtt_p50_ms` | 331 | 291 (closer) |
-| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 77.8 | 86.6 (further) |
+| pacer_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 77.1 | 86.6 (further) |
 | pacer_v2_capacity_drop | `cc.queue_p95_ms` | 50.9 | 42.2 (closer) |
-| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 76.9 | 84.7 (further) |
+| probe_v2_capacity_drop | `audio.mouth_to_ear_p95_ms` | 76.3 | 84.7 (further) |
 | probe_v2_capacity_drop | `video.freeze_total_ms` | 401 | 514 (further) |
 | random_loss_5pct | `audio.concealed_pct` | 1.0 | 0.9 (closer) |
 | satellite | `video.freeze_count` | 13 | 10.2 (closer) |
