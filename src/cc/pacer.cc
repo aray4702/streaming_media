@@ -83,7 +83,8 @@ std::vector<PacedPacket> Pacer::ProcessV2(Timestamp now) {
   TimeDelta hold_back = TimeDelta::Zero();
   if (!v2_->probing()) {
     hold_back = hold_back_window_;
-    const DataRate rate = v2_->configured_pacing_rate();
+    // pacing_controller_.pacing_rate(): the adjusted rate, after the long-queue boost (#166).
+    const DataRate rate = v2_->pacing_rate();
     if (hold_back_packets_ >= 0 && rate > DataRate::Zero() && packet_size_ >= 0) {
       const int64_t bits = static_cast<int64_t>(packet_size_) * 8;
       const TimeDelta avg_packet_send_time = TimeDelta::Micros(bits * 1000000 / rate.bps());

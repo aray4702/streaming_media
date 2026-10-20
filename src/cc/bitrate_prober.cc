@@ -9,13 +9,13 @@ namespace {
 constexpr TimeDelta kProbeClusterTimeout = TimeDelta::Seconds(5);
 constexpr size_t kMaxPendingProbeClusters = 5;
 
-// libwebrtc's unit arithmetic: DataRate * TimeDelta rounds to nearest,
-// DataSize / DataRate rounds up.
+// libwebrtc's unit arithmetic (api/units/data_rate.h): DataRate * TimeDelta rounds to nearest,
+// DataSize / DataRate truncates (#166).
 DataSize Mul(DataRate r, TimeDelta t) {
   return DataSize::Bytes(static_cast<int64_t>(std::llround(static_cast<double>(r.bps()) * static_cast<double>(t.us()) / 8e6)));
 }
 TimeDelta Div(DataSize s, DataRate r) {
-  return TimeDelta::Micros(static_cast<int64_t>(std::ceil(static_cast<double>(s.bytes()) * 8e6 / static_cast<double>(r.bps()))));
+  return TimeDelta::Micros(s.bytes() * 8000000 / r.bps());
 }
 }  // namespace
 

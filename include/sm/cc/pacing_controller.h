@@ -153,8 +153,9 @@ class PacingController : public MetricsSource {
   TimeDelta OldestQueueTime(Timestamp now) const;
   // QueueSizeData() / adjusted rate.
   TimeDelta ExpectedQueueTime() const;
+  // PacingController::pacing_rate(): the adjusted rate, after the long-queue boost.
   DataRate pacing_rate() const { return adjusted_media_rate_; }
-  // PacingController::pacing_rate(): the rate set by SetPacingRates, before the long-queue boost.
+  // The rate set by SetPacingRates, before the long-queue boost.
   DataRate configured_pacing_rate() const { return pacing_rate_; }
   bool probing() const { return prober_.is_probing(); }
   const PacerStats& stats() const { return stats_; }

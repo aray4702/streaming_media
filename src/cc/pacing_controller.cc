@@ -18,17 +18,17 @@ constexpr TimeDelta kMaxPaddingReplayDuration = TimeDelta::Millis(50);
 constexpr TimeDelta kMaxEarlyProbeProcessing = TimeDelta::Millis(1);
 constexpr DataSize kMaxBurstSize = DataSize::Bytes(63 * 1000);
 
-// libwebrtc's unit arithmetic: DataRate * TimeDelta rounds to nearest;
-// DataSize / DataRate rounds up.
+// libwebrtc's unit arithmetic (api/units/data_rate.h): DataRate * TimeDelta rounds to nearest;
+// DataSize / DataRate and DataSize / TimeDelta truncate (#166).
 DataSize Mul(DataRate r, TimeDelta t) {
   return DataSize::Bytes(static_cast<int64_t>(std::llround(static_cast<double>(r.bps()) * static_cast<double>(t.us()) / 8e6)));
 }
 TimeDelta Div(DataSize s, DataRate r) {
   if (r.bps() <= 0) return TimeDelta::PlusInfinity();
-  return TimeDelta::Micros(static_cast<int64_t>(std::ceil(static_cast<double>(s.bytes()) * 8e6 / static_cast<double>(r.bps()))));
+  return TimeDelta::Micros(s.bytes() * 8000000 / r.bps());
 }
 DataRate Div(DataSize s, TimeDelta t) {
-  return DataRate::BitsPerSec(static_cast<int64_t>(std::ceil(static_cast<double>(s.bytes()) * 8e6 / static_cast<double>(t.us()))));
+  return DataRate::BitsPerSec(s.bytes() * 8000000 / t.us());
 }
 DataSize Min(DataSize a, DataSize b) { return a < b ? a : b; }
 }  // namespace
