@@ -88,6 +88,14 @@ void PacketLossConcealer::OnGoodFrame(std::span<float> frame) {
   PushHistory(frame);
 }
 
+float PacketLossConcealer::gain() const {
+  if (!concealing_) return 1.0f;
+  const size_t fade_start = static_cast<size_t>(cfg_.fade_start_ms * cfg_.sample_rate / 1000);
+  const size_t fade_len = std::max<size_t>(1, static_cast<size_t>(cfg_.fade_length_ms * cfg_.sample_rate / 1000));
+  if (concealed_in_burst_ <= fade_start) return 1.0f;
+  return std::max(0.0f, 1.0f - static_cast<float>(concealed_in_burst_ - fade_start) / static_cast<float>(fade_len));
+}
+
 void PacketLossConcealer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("good_frames", stats_.good_frames);
   w.Counter("concealed_frames", stats_.concealed_frames);

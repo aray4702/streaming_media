@@ -12,11 +12,19 @@
 // arrival delay), so the buffer tracks the network's jitter instead of
 // using a fixed size. With `version = 2` (the test bench's `neteq v2`,
 // issue #62) it comes from NetEqDelayManager, libwebrtc M157's NetEq
-// DelayManager and its packet-arrival history, instead.
+// DelayManager and its packet-arrival history, instead, and the operation
+// is chosen as NetEq's DecisionLogic and NetEqImpl::GetDecision do
+// (NetEqDecisionLogic): playout starts with the first packet; accelerate
+// when the playout delay of the arrival history reaches the target plus
+// its largest arrival delay plus 20 ms, preemptive expand below the target,
+// at most one of them every 5 ticks; decoding is postponed after an expand
+// while the buffer holds less than half the target; and an expand ends in
+// a merge once it has covered the gap to the next packet.
 #pragma once
 
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -39,7 +47,7 @@ struct AudioJitterBufferConfig {
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
-  int version = 1;  // 2: the target delay as libwebrtc's NetEq (NetEqDelayManager).
+  int version = 1;  // 2: the target delay and the operations as libwebrtc's NetEq.
   NetEqDelayConfig neteq_delay;
   EventSink* events = nullptr;
 };
@@ -83,10 +91,17 @@ class AudioJitterBuffer : public MetricsSource {
   AudioOperation DecodeNext(Timestamp now);
   bool NextPacketReady() const;
   AudioOperation MaybeStretch(Timestamp now);
+  // NetEqImpl::GetAudioInternal and GetDecision (version 2).
+  AudioOperation GetAudioV2(std::span<float> out, Timestamp now);
+  // PacketBuffer::GetSpanSamples.
+  int64_t PacketSpanSamples(bool count_waiting_time) const;
 
   AudioJitterBufferConfig cfg_;
   DelayManager delay_;
   NetEqDelayManager neteq_delay_;
+  NetEqDecisionLogic decision_;
+  NetEqMode last_mode_ = NetEqMode::kNormal;
+  std::optional<int64_t> noise_start_tick_;  // NetEqImpl::generated_noise_stopwatch_.
   // NetEq's TickTimer: 10 ms per GetAudio call (version 2).
   static constexpr int64_t kMsPerTick = 10;
   int64_t ticks_ = 0;
@@ -97,6 +112,7 @@ class AudioJitterBuffer : public MetricsSource {
   struct Packet {
     std::vector<float> pcm;
     Timestamp arrival;
+    int64_t insert_tick = 0;  // Packet::waiting_time.
   };
   std::map<int64_t, Packet> queue_;
   std::vector<float> sync_;          // Decoded samples waiting for playout.
@@ -108,6 +124,7 @@ class AudioJitterBuffer : public MetricsSource {
   int min_delay_ms_ = 0;
   AudioJitterBufferStats stats_;
   std::vector<float> scratch_;
+  std::vector<float> played_;  // The last 30 ms played out (version 2), for borrowing.
 };
 
 }  // namespace sm::timing
