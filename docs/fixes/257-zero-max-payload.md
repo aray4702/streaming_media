@@ -54,7 +54,7 @@ always used), so a scenario can configure the value.
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_257_zero_max_payload.scn` | the base commit's `sm_testbench` rejects `video_max_payload`; with only the bench change, the old library hangs (killed after 20 s, exit 124) | passes on seeds 1-5: `audio.interruptions` 0, `video.frames_rendered` 325-525 |
+| `testbench/scenarios/issue_257_zero_max_payload.scn` | the base commit's `sm_testbench` rejects `video_max_payload`; with only the bench change, the old library hangs (killed after 20 s, exit 124) | passes on seeds 1-5: `audio.interruptions` 0, `video.frames_rendered` 298-474 |
 | `tests/unit/rtp/rtp_sender_test.cc` `RtpSender.MaxPayloadSizeIsClampedToLibwebrtcPacketSizeRange` | `config().max_payload_size` 0, 20, 5000 (expect 88, 88, 1488) | passes |
 | `tests/unit/rtp/rtp_sender_test.cc` `RtpSender.GeneratePaddingWithAZeroMaxPayloadSizeReachesTheTarget` | `config().max_payload_size` 0 (expect 88); asserted before the padding call, which hangs on the old code | 7 packets of 88 bytes for a 600-byte target, video and audio |
 
@@ -69,7 +69,7 @@ The issue's `repro_pad.cc`, before -> after:
 | 1200, 5000 | ok | ok (5000 clamped to 1488) |
 
 `issue_257_zero_max_payload`, seeds 1-5: passes on all; `video.frames_rendered`
-325 / 517 / 434 / 525 / 424.
+328 / 474 / 298 / 473 / 384 (on main 5fd7807, with `timing v2` the default since #216).
 
 The scenario suite against the baseline: 0 regressions, 0 improvements; the
 only change is the new scenario. Native `ctest` 251/251 and ASan `ctest`
