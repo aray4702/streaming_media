@@ -46,6 +46,8 @@ endfunction()
 # sm_add_test_exe(<name> SOURCES ... DEPS ... SUITES ...)
 # Builds a test executable and registers one CTest entry per suite so every
 # algorithm reports pass/fail on its own line.
+# Callers list one source and one suite per line, sorted, so that two
+# changes that each add a test touch different lines (issue #286).
 function(sm_add_test_exe name)
   cmake_parse_arguments(ARG "" "LABEL" "SOURCES;DEPS;SUITES" ${ARGN})
   add_executable(${name} ${ARG_SOURCES})
