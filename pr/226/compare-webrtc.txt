@@ -345,8 +345,8 @@ issue_120_rtx_payload_padding - Wi-Fi to LTE handover with `cc v2`, `pacer v2` a
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1539         1422  webrtc
-  audio.mouth_to_ear_p95_ms               369          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               369          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      5.4          4.1  webrtc
   video.freeze_total_ms                  4426         4588  =
   video.longest_freeze_ms                2063         2025  =
@@ -2065,8 +2065,8 @@ issue_23_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier,
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1539         1422  webrtc
-  audio.mouth_to_ear_p95_ms               369          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               369          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      5.4          4.1  webrtc
   video.freeze_total_ms                  4426         4588  =
   video.longest_freeze_ms                2063         2025  =
@@ -2762,11 +2762,11 @@ issue_61_googcc_glue_congestive - Congestive loss with every v2 switch on: GoogC
 
 issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (neteq v2, issue
   metric                                   sm       webrtc  better
-  audio.concealed_pct                     1.2          0.5  webrtc
+  audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            35           27  =
-  audio.mouth_to_ear_p95_ms               141          147  =
-  audio.jb_delay_p95_ms                  68.4         81.0  sm
+  audio.longest_interruption_ms            28           27  =
+  audio.mouth_to_ear_p95_ms               143          147  =
+  audio.jb_delay_p95_ms                  70.8         81.0  sm
   cc.utilization_pct                     77.0         77.3  =
   cc.queue_p95_ms                         3.8          3.6  =
   cc.max_settle_ms                        100          100  =
@@ -2855,8 +2855,8 @@ issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2,
   audio.concealed_pct                     0.2          0.2  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms            32           30  =
-  audio.mouth_to_ear_p95_ms               228          212  webrtc
-  audio.jb_delay_p95_ms                   108          111  =
+  audio.mouth_to_ear_p95_ms               224          212  webrtc
+  audio.jb_delay_p95_ms                   105          111  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
   video.longest_freeze_ms                15.1         21.3  =
@@ -2955,8 +2955,8 @@ issue_76_rtx_v2_handover - Wi-Fi to LTE handover, RTX history as libwebrtc's Rtp
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1539         1422  webrtc
-  audio.mouth_to_ear_p95_ms               369          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               369          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      5.4          4.1  webrtc
   video.freeze_total_ms                  4426         4588  =
   video.longest_freeze_ms                2063         2025  =
@@ -3805,8 +3805,8 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   audio.concealed_pct                     4.7          4.2  =
   audio.interruptions                       1          1.5  =
   audio.longest_interruption_ms          1539         1422  webrtc
-  audio.mouth_to_ear_p95_ms               369          525  sm
-  audio.jb_delay_p95_ms                   170          314  sm
+  audio.mouth_to_ear_p95_ms               369          526  sm
+  audio.jb_delay_p95_ms                   170          315  sm
   video.freeze_count                      5.4          4.1  webrtc
   video.freeze_total_ms                  4426         4588  =
   video.longest_freeze_ms                2063         2025  =
@@ -3850,7 +3850,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 284, webrtc 154, tie 1150 (of the metrics shown)
+better: sm 284, webrtc 153, tie 1151 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values
