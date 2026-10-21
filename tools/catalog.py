@@ -621,7 +621,14 @@ ALGORITHMS = [
                       "E2E_Pacer expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1's case was deleted with it in #167). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
-                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
+                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). Explained difference, not a gap "
+                      "(issue #258, yardstick PR #275): at 15 fps on a clean 1.5 Mbps / 100 ms RTT link, audio "
+                      "mouth-to-ear p95 and the queue p95 are about twice the 30 fps values. libwebrtc does the same "
+                      "on the same link (seeds 1-10: mouth-to-ear p95 430 vs 446 ms, queue p95 110 vs 106 ms, "
+                      "jitter-buffer p95 266 vs 280 ms; at 30 fps 235 vs 235, 44 vs 44, 132 vs 129). Each frame "
+                      "is twice as large and leaves in one 40 ms burst, so the audio behind it waits longer at the "
+                      "bottleneck and NetEq's target follows. `low_fps_clean_link` locks this in at libwebrtc's "
+                      "levels. See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
@@ -764,7 +771,9 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
-         headers=["audio/echo_canceller.h", "audio/aec3_filter.h"], unit=["EchoCanceller", "Aec3Filter"], e2e=["E2E_EchoCanceller"],
+         headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
+                  "audio/aec3_analysis.h", "audio/aec3_state.h"],
+         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State"], e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
@@ -785,8 +794,18 @@ ALGORITHMS = [
                "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
                "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
                "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
-               "AecState's capture saturation flag as an argument. Nothing in a call uses it yet: AecState, the residual "
-               "echo suppression and EchoCanceller3 are #240's next steps.",
+               "AecState's capture saturation flag as an argument. "
+               "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
+               "`aec3_analysis.h`) ports `aec_state` (linear filter usability after 0.4 s of active unsaturated render, "
+               "0.2 s after a reset; initial state for 2.5 s; direct-path filter delay; echo saturation), "
+               "`erl_estimator`, `erle_estimator` with its fullband, subband (max 4 below and 1.5 above bin 32, onset "
+               "detection) and signal-dependent parts, `reverb_model`, `reverb_decay_estimator`, "
+               "`reverb_frequency_response`, `reverb_model_estimator`, `filter_analyzer`, `echo_audibility`, "
+               "`stationarity_estimator`, `transparent_mode` (the legacy classifier, M157's default; the HMM one through "
+               "`TransparentMode::CreateHmm()` in place of the WebRTC-Aec3TransparentModeHmm trial) and "
+               "`subtractor_output_analyzer`, with EchoCanceller3Config's Erle, EpStrength and EchoAudibility "
+               "defaults. Field trials are read as not set. Nothing in a call uses it yet: the residual echo estimator, "
+               "the suppression gain and filter, comfort noise and EchoCanceller3 are #240's next steps.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -801,7 +820,13 @@ ALGORITHMS = [
                       "signals and bounds (multi-channel cases with the debug-build parameters; the SIMD-equivalence and "
                       "death tests don't apply). The first FFT used fft4g's twiddles, built with cosf; the round trip of "
                       "aec3_fft_unittest's FftAndIfft was 0.002 off at 2.6e6 against its 0.001 bound, so the 128-point "
-                      "tables are now built in double precision as OouraFft stores them, and it passes."),
+                      "tables are now built in double precision as OouraFft stores them, and it passes. AEC3's echo state "
+                      "(#240 step 3): libwebrtc's aec_state (NormalUsage for 1, 2 and 8 render and capture channels, "
+                      "ConvergedFilterDelay), erl_estimator, erle_estimator (VerifyErleIncreaseAndHold, "
+                      "VerifyErleTrackingOnOnsets), signal_dependent_erle_estimator, reverb_model_estimator and "
+                      "filter_analyzer (FilterResize) unit tests pass with their signals and bounds; echo_audibility, "
+                      "transparent_mode and subtractor_output_analyzer, which have no libwebrtc unit tests, have "
+                      "behavioural tests derived from the code."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
