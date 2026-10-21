@@ -42,12 +42,10 @@
 //
 // What is not here yet (catalog.py, #242):
 //  - `AgcManagerDirect` / `MonoAgc`, which picks the compression gain and
-//    the analog volume from `Agc`'s loudness histogram. `Agc` runs
-//    `VoiceActivityDetector` (modules/audio_processing/vad/), whose
-//    `VadAudioProc` needs iSAC's pitch estimator and ooura's fft4g, and
-//    APM's analog mic gain emulation is `CaptureLevelsAdjuster`: those
-//    files are not in the reference sources yet (#57). Until then the
-//    compression gain stays at what the caller sets (7 dB by default, as
+//    the analog volume from `Agc`'s loudness histogram (`Agc` and its
+//    `VoiceActivityDetector` are ported in agc1_vad.h); APM's analog mic
+//    gain emulation is `CaptureLevelsAdjuster`. Until then the compression
+//    gain stays at what the caller sets (7 dB by default, as
 //    `SetupDigitalGainControl`).
 //  - The adaptive modes' analog part (`WebRtcAgc_ProcessAnalog`,
 //    `WebRtcAgc_AddMic`, `WebRtcAgc_VirtualMic`): a call never runs it,

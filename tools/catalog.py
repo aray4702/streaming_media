@@ -821,7 +821,7 @@ ALGORITHMS = [
                       "pins the transform to the output of libwebrtc M157's prebuilt `WebRtc_rdft`."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h"], unit=["GainControl", "GainController2", "Agc1"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -839,11 +839,14 @@ ALGORITHMS = [
                "(`AgcManagerDirect::SetupDigitalGainControl` puts `GainControlImpl` in `kFixedDigital` with "
                "a 2 dB target, 7 dB compression and the limiter): `agc/legacy/digital_agc.cc` (gain table, "
                "envelope followers, gate, overload limit, the AGC's VAD), the fixed-digital parts of "
-               "`agc/legacy/analog_agc.cc` and `gain_control_impl.cc`. Not yet: `AgcManagerDirect`, which "
-               "moves the compression gain (2-12 dB) and the analog volume from `Agc`'s loudness histogram; "
-               "its `VoiceActivityDetector` needs iSAC's pitch estimator and ooura's fft4g, and APM's "
-               "analog mic gain emulation is `CaptureLevelsAdjuster`, none of them in the reference sources "
-               "yet (#57). The e2e chain still runs AGC2 for `apm v2` until AGC1 is complete.",
+               "`agc/legacy/analog_agc.cc` and `gain_control_impl.cc`. `agc1_vad.h` ports `Agc`, the loudness "
+               "meter `AgcManagerDirect` reads (`agc/agc.cc`, `loudness_histogram.cc`, `utility.cc`), with "
+               "its `VoiceActivityDetector` (`vad/`: the WebRtcVad GMM VAD of `common_audio/vad/`, the "
+               "pitch-based VAD on iSAC's pitch estimator and ooura's fft4g); it takes 16 kHz 10 ms chunks "
+               "only, as `AgcManagerDirect` feeds it split band 0, so the resampler is left out. Not yet: "
+               "`AgcManagerDirect` itself, which moves the compression gain (2-12 dB) and the analog volume "
+               "from `Agc`, and APM's analog mic gain emulation (`CaptureLevelsAdjuster`). The e2e chain "
+               "still runs AGC2 for `apm v2` until AGC1 is complete.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -855,7 +858,12 @@ ALGORITHMS = [
                       "`GainControlImpl` drives them: the gain tables for four configurations, and the 11 "
                       "per-millisecond gains and the S16 output of every frame over 30 s of talk spurts at "
                       "-45, -25 and -8 dBFS (`Agc1.GainTableMatchesLibwebrtc`, "
-                      "`Agc1.GainsAndOutputMatchLibwebrtc`). The first port used SPL's unsigned "
+                      "`Agc1.GainsAndOutputMatchLibwebrtc`). `Agc` and its VAD are bit-exact with the prebuilt M157 "
+                      "`libwebrtc.a` on x86-64 glibc (WebRtcVad decisions in four configurations, every chunkwise voice probability "
+                      "and RMS, and every `GetRmsErrorDb` update over 30 s; `Agc1VoiceActivity.*`); elsewhere libm "
+                      "may round differently, so the test checks to a tolerance there. The first goldens came from the "
+                      "reference files compiled with libstdc++, where fft4g's `cos(float)` is the double function; "
+                      "libwebrtc's libc++ picks the float overload, which the Reviewer caught and the library confirmed. The first port used SPL's unsigned "
                       "`WEBRTC_SPL_SCALEDIFF32` for the envelope followers; `digital_agc.cc` has its own "
                       "signed `AGC_SCALEDIFF32`, and the golden test caught the difference."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
