@@ -136,6 +136,56 @@ SM_TEST(E2E_GainControl, NormalizesQuietTalkerLeavesLoudToLimiter) {
   SM_EXPECT_LE(peak, dsp::DbToLinear(-1.0f) + 1e-6f);
 }
 
+// `apm v2` (#242): AGC2 as libwebrtc M157 on the same signals. libwebrtc's
+// AGC2 adaptive digital at its defaults (docs/results/apm-webrtc.md, from
+// sm_apm_compare): quiet talker -21.0 dBFS out, loud talker -1.0 dB,
+// noise in pauses -62.9 dBFS, peak 0.0 dBFS.
+SM_TEST(E2E_GainControl, Agc2LiftsQuietTalkerAsLibwebrtc) {
+  CallScenario q;
+  q.far_talk = false;
+  q.seconds = 40;
+  q.near_gain_db = -10;
+  q.noise_amp = 0.0002f;
+  auto c = MakeCall(q);
+  for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= dsp::DbToLinear(20);
+  ChainConfig cc{true, false, false, false, true};
+  cc.apm_v2 = true;
+  auto r = RunChain(c, cc);
+  // Speech frames by the clean talker's level (as sm_apm_compare's truth),
+  // so both stacks are measured on the same frames.
+  auto talker_level = [&](size_t f) {
+    return dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160));
+  };
+  auto level = [&](const std::vector<float>& x, double a, double b, bool speech) {
+    double e = 0;
+    size_t n = 0;
+    for (size_t f = static_cast<size_t>(a * 100); f < static_cast<size_t>(b * 100); ++f) {
+      const bool is_speech = talker_level(f) > -60.0f;
+      if (is_speech != speech) continue;
+      if (!speech && (f < 25 || talker_level(f - 25) > -60.0f)) continue;  // Pauses only, not word tails.
+      for (size_t i = f * 160; i < f * 160 + 160; ++i) e += static_cast<double>(x[i]) * x[i];
+      n += 160;
+    }
+    return 10 * std::log10(e / static_cast<double>(std::max<size_t>(1, n)) + 1e-20);
+  };
+  float peak = 0;
+  for (float v : r.out) peak = std::max(peak, std::fabs(v));
+  const double quiet_out = level(r.out, 12, 20, true);
+  const double noise_out = level(r.out, 12, 20, false);
+  const double loud_change = level(r.out, 32, 40, true) - level(c.capture, 32, 40, true);
+  SM_RECORD("quiet_talker_in_dbfs", level(c.capture, 12, 20, true));
+  SM_RECORD("quiet_talker_out_dbfs", quiet_out);
+  SM_RECORD("loud_talker_change_db", loud_change);
+  SM_RECORD("noise_in_pauses_dbfs", noise_out);
+  SM_RECORD("peak_dbfs", dsp::LinearToDb(peak));
+  // libwebrtc AGC2: -21.0 dBFS, -1.0 dB, -62.9 dBFS (v1 lifts the quiet
+  // talker to -16.8 dBFS and the noise to -58.2 dBFS, #242).
+  SM_EXPECT_NEAR(quiet_out, -21.0, 1.0);
+  SM_EXPECT_NEAR(loud_change, -1.0, 1.0);
+  SM_EXPECT_NEAR(noise_out, -62.9, 1.5);
+  SM_EXPECT_LE(peak, 1.0f);
+}
+
 SM_TEST(E2E_EchoDelay, AecFollowsAudioRouteChange) {
   CallScenario s;
   s.seconds = 24;

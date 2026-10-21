@@ -1,8 +1,10 @@
 // 5.2 Delay-based bandwidth estimation (Google Congestion Control).
 //
-// Pipeline, per transport feedback:
-//   InterArrival        groups packets sent within 5 ms (a burst) and yields
-//                       per-group send/receive deltas.
+// libwebrtc's DelayBasedBwe (goog_cc/delay_based_bwe.cc, M157,
+// compare/webrtc/reference/). Pipeline, per transport feedback:
+//   InterArrivalDelta   groups packets sent within 5 ms (a burst) and yields
+//                       per-group send/arrival deltas; feedback is sorted by
+//                       receive time, and 2 s without feedback resets it.
 //   TrendlineEstimator  accumulates the one-way delay variation
 //                       (recv_delta - send_delta), smooths it, and fits a
 //                       least-squares slope over the last 20 groups. A rising
@@ -10,11 +12,10 @@
 //   Overuse detection   compares the scaled slope against an adaptive
 //                       threshold (which grows slowly toward |trend| so
 //                       competing TCP flows do not starve us).
-//   AimdRateController  increase (multiplicative far from the link capacity
-//                       estimate, additive near it), hold, or decrease to
-//                       0.85 x the acknowledged throughput on overuse.
-//   AcknowledgedBitrate throughput actually delivered, used to anchor
-//                       decreases and cap increases.
+//   AimdRateControl     libwebrtc's rate control (cc/aimd_rate_control.h),
+//                       driven by MaybeUpdateEstimate: increase, hold, or
+//                       decrease to 0.85 x the acknowledged throughput on
+//                       overuse; a probe result sets the estimate directly.
 #pragma once
 
 #include <algorithm>
@@ -40,32 +41,8 @@ const char* ToString(BandwidthUsage u);
 // PacketResult::ReceiveTimeOrder.
 std::vector<PacketResult> SortedByReceiveTime(const std::vector<PacketResult>& results);
 
-class InterArrival {
- public:
-  explicit InterArrival(TimeDelta group_length = TimeDelta::Millis(5)) : group_length_(group_length) {}
-  struct Deltas {
-    TimeDelta send_delta;
-    TimeDelta recv_delta;
-    int64_t size_delta;
-  };
-  // Returns deltas when a group completes (on the first packet of the next).
-  std::optional<Deltas> OnPacket(Timestamp send_time, Timestamp arrival, DataSize size);
-
- private:
-  struct Group {
-    Timestamp first_send = Timestamp::MinusInfinity();
-    Timestamp last_send;
-    Timestamp first_arrival;
-    Timestamp last_arrival;
-    int64_t size = 0;
-    bool valid() const { return first_send.IsFinite(); }
-  };
-  TimeDelta group_length_;
-  Group current_, prev_;
-};
-
-// libwebrtc modules/congestion_controller/goog_cc/inter_arrival_delta.{h,cc}
-// (`cc v2`). Groups packets by send time (a group spans at most
+// libwebrtc modules/congestion_controller/goog_cc/inter_arrival_delta.{h,cc}.
+// Groups packets by send time (a group spans at most
 // `send_time_group_length` from its first packet; packets that arrive as a
 // burst stay in the group, BelongsToBurst), drops packets reordered across
 // groups, resets after 3 consecutive groups with a negative arrival delta or
@@ -138,49 +115,8 @@ class TrendlineEstimator {
   BandwidthUsage state_ = BandwidthUsage::kNormal;
 };
 
-class AcknowledgedBitrateEstimator {
- public:
-  void OnPacketResults(const std::vector<PacketResult>& results);
-  std::optional<DataRate> bitrate() const { return bitrate_; }
-
- private:
-  std::deque<std::pair<Timestamp, int64_t>> window_;  // (receive time, bytes)
-  std::optional<DataRate> bitrate_;
-};
-
-struct AimdConfig {
-  DataRate min_rate = DataRate::KilobitsPerSec(30);
-  DataRate max_rate = DataRate::KilobitsPerSec(20000);
-  double beta = 0.85;
-  double multiplicative_per_s = 0.08;
-};
-
-class AimdRateController {
- public:
-  explicit AimdRateController(AimdConfig cfg = {}) : cfg_(cfg) {}
-  void SetEstimate(DataRate r, Timestamp now);
-  void SetRtt(TimeDelta rtt) { rtt_ = rtt; }
-  // New lower bound (libwebrtc SetMinBitrate); lifts the estimate to it.
-  void SetMinRate(DataRate r) { cfg_.min_rate = r; current_ = std::max(current_, r); }
-  DataRate Update(BandwidthUsage usage, std::optional<DataRate> acked, Timestamp now);
-  DataRate estimate() const { return current_; }
-  bool has_estimate() const { return has_estimate_; }
-  std::optional<double> link_capacity_kbps() const;
-
- private:
-  enum class State { kHold, kIncrease, kDecrease };
-  AimdConfig cfg_;
-  State state_ = State::kIncrease;
-  DataRate current_ = DataRate::KilobitsPerSec(300);
-  bool has_estimate_ = false;
-  Timestamp last_change_ = Timestamp::MinusInfinity();
-  Timestamp last_decrease_ = Timestamp::MinusInfinity();
-  TimeDelta rtt_ = TimeDelta::Millis(200);
-  double link_kbps_ = -1, link_var_ = 0.4;
-};
-
 struct DelayBweStats {
-  uint64_t stream_resets = 0;  // v2: kStreamTimeOut (2 s without feedback) resets.
+  uint64_t stream_resets = 0;  // kStreamTimeOut (2 s without feedback) resets.
   uint64_t feedbacks = 0;
   uint64_t overuse_signals = 0;
   uint64_t underuse_signals = 0;
@@ -188,7 +124,7 @@ struct DelayBweStats {
   Histogram trend;
 };
 
-// One TrendlineEstimator::Update with calculated deltas (`cc v2`), for the BWE
+// One TrendlineEstimator::Update with calculated deltas, for the BWE
 // trace's detector rows (issue #152).
 struct DetectorSample {
   double recv_delta_ms = 0, send_delta_ms = 0;  // The group deltas.
@@ -201,34 +137,29 @@ struct DetectorSample {
 class DelayBasedBwe : public MetricsSource {
  public:
   struct Config {
-    AimdConfig aimd;
+    DataRate min_rate = DataRate::KilobitsPerSec(30);  // AimdRateControl::SetMinBitrate.
     TrendlineConfig trendline;
     EventSink* events = nullptr;
-    // 1: the original estimator. 2 (`cc v2`): libwebrtc's DelayBasedBwe
-    // front end: feedback sorted by receive time, InterArrivalDelta, 2 s
-    // stream time-out, and (#15) libwebrtc's AimdRateControl with the
-    // MaybeUpdateEstimate decision logic.
-    int version = 1;
-    // `cc v2`: record every trendline update with calculated deltas (TakeDetectorTrace).
+    // Record every trendline update with calculated deltas (TakeDetectorTrace).
     bool trace_detector = false;
   };
   DelayBasedBwe() : DelayBasedBwe(Config{}) {}
   explicit DelayBasedBwe(Config cfg);
-  void SetStartBitrate(DataRate r, Timestamp now);
+  void SetStartBitrate(DataRate r);
   void SetRtt(TimeDelta rtt);
   void SetMinRate(DataRate r);
   // Results must be sorted by send time / sequence number.
   DataRate OnPacketResults(const std::vector<PacketResult>& results, std::optional<DataRate> acked,
                            std::optional<DataRate> probe_estimate, Timestamp now);
-  // DelayBasedBwe::Result of the last OnPacketResults (`cc v2`).
+  // DelayBasedBwe::Result of the last OnPacketResults.
   struct Result {
     bool updated = false;
     bool probe = false;
     bool recovered_from_overuse = false;
   };
   const Result& last_result() const { return last_result_; }
-  DataRate estimate() const { return cfg_.version >= 2 ? rc2_.LatestEstimate() : aimd_.estimate(); }
-  const AimdRateControl& rate_control_v2() const { return rc2_; }
+  DataRate estimate() const { return rc2_.LatestEstimate(); }
+  const AimdRateControl& rate_control() const { return rc2_; }
   BandwidthUsage usage() const { return trendline_.State(); }
   const TrendlineEstimator& trendline() const { return trendline_; }
   // The detector samples recorded since the last call (Config::trace_detector).
@@ -238,14 +169,12 @@ class DelayBasedBwe : public MetricsSource {
 
  private:
   Config cfg_;
-  void OnPacketResultsV2(const std::vector<PacketResult>& results, Timestamp now);
+  void IncomingPacketFeedback(const std::vector<PacketResult>& results, Timestamp now);
   // libwebrtc DelayBasedBwe::MaybeUpdateEstimate.
-  DataRate MaybeUpdateEstimateV2(std::optional<DataRate> acked, std::optional<DataRate> probe, Timestamp now);
-  InterArrival inter_arrival_;
+  DataRate MaybeUpdateEstimate(std::optional<DataRate> acked, std::optional<DataRate> probe, Timestamp now);
   InterArrivalDelta inter_arrival_delta_{TimeDelta::Millis(5)};
   Timestamp last_seen_packet_ = Timestamp::MinusInfinity();
   TrendlineEstimator trendline_;
-  AimdRateController aimd_;
   AimdRateControl rc2_;
   BandwidthUsage last_usage_ = BandwidthUsage::kNormal;
   bool recovered_from_overuse_ = false;

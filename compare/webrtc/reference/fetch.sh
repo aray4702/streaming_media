@@ -27,11 +27,17 @@ DIRS=(
   modules/audio_processing/aec3
   modules/audio_processing/ns
   modules/audio_processing/agc2
+  modules/audio_processing/agc
+  modules/audio_processing/utility
   modules/audio_processing/vad
   modules/audio_processing/transient
   common_audio/vad
   common_audio/resampler
   common_audio/signal_processing
+  common_audio/third_party/ooura/fft_size_256
+  modules/audio_coding/codecs/isac/main/source
+  modules/third_party/fft
+  modules/audio_processing/capture_levels_adjuster
   common_audio/third_party/spl_sqrt_floor
 )
 
@@ -62,4 +68,13 @@ for f in COPYING silk/control_codec.c src/opus_encoder.c silk/enc_API.c silk/fix
   mkdir -p "$HERE/third_party/opus/src/$(dirname "$f")"
   curl -fsSL --retry 8 --retry-delay 10 "https://gitlab.xiph.org/xiph/opus/-/raw/$OPUS_REV/$f" -o "$HERE/third_party/opus/src/$f"
   echo "opus $f"
+done
+
+# rnnoise (AGC2's RNN VAD weights), from chromium/src/third_party at the revision
+# libwebrtc DEPS pins for src/third_party.
+TP_REV="8a83e63525b495aa7f35648a3b4b676279deb864"
+for f in rnnoise/src/rnn_vad_weights.h rnnoise/src/rnn_vad_weights.cc rnnoise/src/rnn_activations.h rnnoise/COPYING; do
+  mkdir -p "$HERE/third_party/$(dirname "$f")"
+  curl -fsSL --retry 8 --retry-delay 10 "https://chromium.googlesource.com/chromium/src/third_party/+/$TP_REV/$f?format=TEXT" | base64 -d > "$HERE/third_party/$f"
+  echo "rnnoise $f"
 done

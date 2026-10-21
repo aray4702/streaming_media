@@ -2,8 +2,6 @@ name probe_v2_capacity_drop
 describe Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at 25 s, `cc v2` and `pacer v2` (#48)
 # libwebrtc (parity-data, 10 seeds): utilization 57.5 %, video 895 kbps, 2.2 freezes (2.5 s), max settle 14.8 s.
 # This library with the port: 58.9 %, 898 kbps, 1.7 freezes (3.0 s), max settle 13.7 s.
-cc v2
-pacer v2
 duration 40s
 at 0s  capacity=2500kbps delay=30ms queue=400ms
 at 10s capacity=500kbps

@@ -4,8 +4,6 @@ describe Wi-Fi to LTE handover with `cc v2`, `pacer v2` and `rtx v2`: padding is
 # Before #120 the pacer queued 224 B placeholders that the sender filled with empty padding: 14.6 kbps of padding.
 # Acceptance (issue #120): net.padding_kbps and net.rtx_kbps within the parity band of libwebrtc's. The freeze gap is not shown to
 # come from padding and stays with #116.
-cc v2
-pacer v2
 duration 40s
 at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
 at 15s down

@@ -661,7 +661,7 @@ SM_TEST(ProbeControllerV2, ProbesAreCappedAtTwiceMaxAllocated) {
 
 namespace {
 struct EstimatorFixture {
-  ProbeBitrateEstimator est{true};
+  ProbeBitrateEstimator est;
   std::optional<DataRate> measured;
   void Add(int cluster, int64_t size, int64_t send_ms, int64_t arrival_ms, int min_probes = 5, int64_t min_bytes = 5000) {
     const Timestamp ref = Timestamp::Seconds(1000);
@@ -830,7 +830,6 @@ SM_TEST(ProbeBitrateEstimatorV2, FetchLastEstimatedBitrate) {
 
 SM_TEST(GccV2Probing, StartsWithTheThreeAndSixTimesClusters) {
   GccConfig cfg;
-  cfg.version = 2;
   GccController g(cfg);
   auto u = g.Start(Timestamp::Seconds(1));
   SM_ASSERT_EQ(u.probes.size(), 2u);
@@ -841,7 +840,6 @@ SM_TEST(GccV2Probing, StartsWithTheThreeAndSixTimesClusters) {
 
 SM_TEST(GccV2Probing, AlrIsTrackedButThereAreNoPeriodicProbes) {
   GccConfig cfg;
-  cfg.version = 2;
   GccController g(cfg);
   g.Start(Timestamp::Seconds(1));
   // A trickle of small packets, far under the estimate, puts the sender in ALR
@@ -873,7 +871,7 @@ StartUp RunStartUp(int64_t first_packet, DataRate capacity) {
   StartUp out;
   PacingController pacer;
   pacer.SetPacingRates(DataRate::KilobitsPerSec(750), DataRate::Zero());
-  ProbeBitrateEstimator est(true);
+  ProbeBitrateEstimator est;
   ProbeControllerV2 controller;
   controller.OnNetworkAvailability(true, Timestamp::Micros(0));
   for (const auto& c : controller.SetBitrates(DataRate::KilobitsPerSec(30), DataRate::KilobitsPerSec(300), DataRate::KilobitsPerSec(5000),

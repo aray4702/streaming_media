@@ -7,8 +7,6 @@ describe Video-only call, 3 s outage at 10 s: video must come back after link-up
 seed 1
 duration 40s
 audio off
-pacer v2
-cc v2
 # packetization v2 and audio v2 added on 2026-10-20 (#152, Owner): the flip (#61) turns on all nine v2 switches.
 at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down

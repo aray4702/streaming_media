@@ -7,7 +7,6 @@ describe Video-only call, 8 s outage at 10 s: video must come back after link-up
 seed 1
 duration 40s
 audio off
-pacer v2
 at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 18s up

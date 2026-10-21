@@ -3,8 +3,6 @@ describe issue_53_cwnd_pushback's link with the default video receive timing: li
 duration 25s
 at 0s  capacity=2500kbps delay=30ms queue=100ms
 at 8s  capacity=500kbps
-cc v2
-pacer v2
 # No `timing` line: this scenario runs the default. It is
 # issue_24_timing_v2_render_fps without its `timing v2` line, so it fails
 # while the default is timing v1 (FrameScheduler's 10 ms late-drop rule).
