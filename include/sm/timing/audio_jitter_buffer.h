@@ -49,8 +49,18 @@ namespace sm::timing {
 enum class AudioOperation { kSilence, kNormal, kAccelerate, kPreemptiveExpand, kExpand, kMerge };
 const char* ToString(AudioOperation op);
 
+// 8000, 16000, 32000 or 48000 Hz, the only rates libwebrtc's NetEq runs at
+// (NetEqImpl::SetSampleRateAndChannels RTC_CHECKs them). libwebrtc never
+// gives NetEq another rate: the decoder factories refuse such a format
+// (AudioDecoderOpus needs a 48 kHz clock, AudioDecoderL16 one of these four),
+// so no decoder is registered and NetEqImpl::InsertPacketInternal drops the
+// payload type's packets as kUnknownRtpPayloadType.
+constexpr bool NetEqSupportsSampleRate(int hz) { return hz == 8000 || hz == 16000 || hz == 32000 || hz == 48000; }
+
 struct AudioJitterBufferConfig {
-  int sample_rate = 16000;  // RTP clock rate is assumed equal.
+  // RTP clock rate is assumed equal. Version 2 runs only at the rates
+  // NetEqSupportsSampleRate accepts, and discards the packets of any other.
+  int sample_rate = 16000;
   int packet_ms = 20;
   size_t max_packets = 100;
   bool time_stretch = true;
@@ -65,6 +75,8 @@ struct AudioJitterBufferStats {
   uint64_t packets_received = 0;
   uint64_t packets_discarded_late = 0;
   uint64_t packets_duplicate = 0;
+  // Version 2 at a sample rate NetEq does not run at (NetEqSupportsSampleRate).
+  uint64_t packets_discarded_unsupported_rate = 0;
   uint64_t packets_lost = 0;                 // Skipped after concealment.
   uint64_t buffer_flushes = 0;
   uint64_t total_samples_received = 0;       // Samples output.

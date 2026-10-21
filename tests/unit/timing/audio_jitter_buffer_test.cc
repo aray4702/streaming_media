@@ -191,3 +191,30 @@ SM_TEST(AudioJitterBuffer, JitterBufferDelayCountsPacketWaitingTicks) {
   SM_EXPECT_EQ(jb.stats().jitter_buffer_emitted_count, 640u);
   SM_EXPECT_EQ(jb.stats().jitter_buffer_delay_ms_samples, 10u * 320u + 30u * 320u);
 }
+
+// #256: NetEq's expand indexed past its history at rates other than 8, 16, 32
+// and 48 kHz. As libwebrtc, where no decoder exists at such a rate, version 2
+// discards those packets and plays silence; version 1 runs at any rate.
+SM_TEST(AudioJitterBuffer, NetEqDiscardsPacketsAtUnsupportedRates) {
+  for (int rate : {4000, 11025, 12000, 22050, 24000, 44100, 8000, 16000, 32000, 48000}) {
+    AudioJitterBufferConfig c;
+    c.version = 2;
+    c.sample_rate = rate;
+    AudioJitterBuffer jb(c);
+    std::vector<float> out(static_cast<size_t>(rate / 100));
+    // 1 s of 20 ms packets, then 2 s of concealment once they run out.
+    for (int t = 0; t < 3000; t += 10) {
+      const Timestamp now = Timestamp::Millis(t);
+      if (t % 20 == 0 && t < 1000) {
+        jb.InsertPacket(static_cast<uint32_t>(int64_t{t} * rate / 1000), std::vector<float>(static_cast<size_t>(rate / 50), 0.1f), now);
+      }
+      jb.GetAudio(out, now);
+    }
+    const bool supported = NetEqSupportsSampleRate(rate);
+    SM_EXPECT_EQ(jb.stats().packets_received, supported ? 50u : 0u);
+    SM_EXPECT_EQ(jb.stats().packets_discarded_unsupported_rate, supported ? 0u : 50u);
+    if (!supported) {
+      for (float s : out) SM_EXPECT_EQ(s, 0.0f);
+    }
+  }
+}

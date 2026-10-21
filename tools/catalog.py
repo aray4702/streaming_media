@@ -312,7 +312,11 @@ ALGORITHMS = [
                "for SILK's VAD activity above 0.3 (silk/VAD.c is not in `reference/`). "
                "Verified by `issue_62_opus_fec_low_rate` (no LBRR at 12 kbps, 10% loss) and the "
                "OpusModel unit tests.",
-         verification="See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
+         verification="Issue #256 (fix record docs/fixes/256-neteq-unsupported-rate.md): at a rate other than "
+                      "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
+                      "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
+                      "decoder exists at such a rate. "
+                      "See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
                       "rate and delay against both fixed buffers. "
