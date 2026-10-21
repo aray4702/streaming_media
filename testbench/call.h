@@ -63,7 +63,7 @@ struct Report {
   std::vector<sim::LinkTraceRecord> link_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
-  // The sender's GoogCC updates (`cc v2` only), when RunOptions::bwe_trace is set (issue #149).
+  // The sender's GoogCC updates, when RunOptions::bwe_trace is set (issue #149).
   std::vector<cc::BweTraceRow> bwe_trace;
 };
 

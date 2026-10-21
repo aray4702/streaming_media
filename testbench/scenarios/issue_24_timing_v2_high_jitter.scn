@@ -2,8 +2,6 @@ name issue_24_timing_v2_high_jitter
 describe 40 ms jitter with reordering, every v2 switch and libwebrtc's receive timing (timing v2): video delay at libwebrtc's level (issue #24)
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
-cc v2
-pacer v2
 timing v2
 # libwebrtc's JitterEstimator (2.33 sigma - 30 ms noise threshold plus 10 ms
 # OS jitter, jitter_estimator.cc) and VCMTiming's current delay, which only

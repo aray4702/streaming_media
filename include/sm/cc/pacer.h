@@ -8,41 +8,30 @@
 // probe estimator can find them; padding fills a probe (or a requested
 // padding rate) when there is no media to send.
 //
-// Two versions sit behind one interface (`PacerConfig::version`, issue #70):
-//   v1  the library's own pacer (cc/pacer_v1.h): a media-debt leaky bucket
-//       with a 5 ms burst allowance; the default.
-//   v2  libwebrtc's PacingController and PrioritizedPacketQueue, ported as
-//       they are (cc/pacing_controller.h). It is not the default because its
-//       results are only meaningful next to the rest of libwebrtc's GoogCC
-//       (#61 makes it the default together with the cc v2 controller).
+// The pacer is libwebrtc's PacingController and PrioritizedPacketQueue, ported
+// as they are (cc/pacing_controller.h, issue #70), run behind
+// TaskQueuePacedSender's scheduling. The library's own leaky-bucket pacer
+// (`pacer v1`) was deleted in #167.
 #pragma once
 
 #include <memory>
 
 #include "sm/cc/pacer_types.h"
-#include "sm/cc/pacer_v1.h"
 #include "sm/cc/pacing_controller.h"
 
 namespace sm::cc {
 
-enum class PacerVersion { kV1, kV2 };
-
 struct PacerConfig {
-  PacerVersion version = PacerVersion::kV1;
-  // v1 (see PacerV1Config).
-  TimeDelta max_queue_time = TimeDelta::Millis(2000);
-  bool bypass_audio = true;  // Audio is sent immediately, never queued behind budget.
-  // Both versions: wire size of one padding packet.
+  // Wire size of one padding packet.
   DataSize padding_packet = DataSize::Bytes(224);
   EventSink* events = nullptr;
-  // v2 (see PacingControllerConfig); its padding_packet and events are taken from above.
-  PacingControllerConfig v2;
-  // v2 only: TaskQueuePacedSender's scheduling around the PacingController. It runs a pass only
+  // See PacingControllerConfig; its padding_packet and events are taken from above.
+  PacingControllerConfig controller;
+  // TaskQueuePacedSender's scheduling around the PacingController. It runs a pass only
   // when a packet, a rate or the pause state changed, or when a timer set by the last pass is
   // due, and only if NextSendTime() has come; consecutive timer passes are at least
   // `hold_back_window` apart. Without it every Process() call is a pass, and the early-return
-  // branch of ProcessPackets then re-bases the leaky bucket on every call. SendSideController turns it
-  // on only with `cc v2`; a bare Pacer has it on.
+  // branch of ProcessPackets then re-bases the leaky bucket on every call.
   bool task_queue_scheduling = true;
   TimeDelta hold_back_window = TimeDelta::Millis(5);  // RtpTransportControllerSend: 5 ms, 3 packets.
   int hold_back_packets = 3;
@@ -53,22 +42,21 @@ class Pacer : public MetricsSource {
   explicit Pacer(PacerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
   void Enqueue(PacedPacket p);
-  // v2 only (see PacingController::SetPaddingGenerator); ignored by v1.
-  void SetPaddingGenerator(PaddingGenerator g) { if (v2_) v2_->SetPaddingGenerator(std::move(g)); }
+  // See PacingController::SetPaddingGenerator.
+  void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call every few ms or at
-  // NextSendTime(). v2 with task_queue_scheduling runs a pass only when TaskQueuePacedSender would.
+  // NextSendTime(). With task_queue_scheduling it runs a pass only when TaskQueuePacedSender would.
   std::vector<PacedPacket> Process(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
-  // v2 only: packets a keyframe flushed from the queue (see PacingController).
+  // Packets a keyframe flushed from the queue (see PacingController).
   std::vector<PacedPacket> TakeFlushed();
   void Pause();
   void Resume();
   bool paused() const;
-  // v2 only (PacingController::SetCongested); ignored by v1.
+  // PacingController::SetCongested.
   void SetCongested(bool congested);
 
-  PacerVersion version() const { return v2_on_ ? PacerVersion::kV2 : PacerVersion::kV1; }
   DataSize QueueSize() const;
   size_t QueuePackets() const;
   TimeDelta OldestQueueTime(Timestamp now) const;
@@ -76,16 +64,14 @@ class Pacer : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  // Only the selected version is built, on the heap: each holds about 4 KB of
-  // statistics, which the Session on a small (wasm) stack does not need twice.
-  std::vector<PacedPacket> ProcessV2(Timestamp now);
+  std::vector<PacedPacket> ProcessScheduled(Timestamp now);
 
-  bool v2_on_;
   bool task_queue_;
   TimeDelta hold_back_window_;
   int hold_back_packets_;
-  std::unique_ptr<PacerV1> v1_;
-  std::unique_ptr<PacingController> v2_;
+  // On the heap: it holds about 4 KB of statistics, which the Session keeps off
+  // a small (wasm) stack.
+  std::unique_ptr<PacingController> pc_;
   // TaskQueuePacedSender state.
   bool kick_ = true;                                          // A MaybeProcessPackets(-inf) is pending.
   Timestamp next_process_time_ = Timestamp::MinusInfinity();  // The scheduled timer.

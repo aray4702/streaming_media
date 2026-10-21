@@ -2,7 +2,6 @@ name issue_19_cc_v2_high_jitter
 describe 40 ms jitter with reordering, no queue: GoogCC's delay detector front end as libwebrtc's (#19)
 # `cc v2` reads feedback sorted by receive time and groups with libwebrtc's InterArrivalDelta
 # (BelongsToBurst, reordered groups dropped), so jitter and reordering are not read as overuse.
-cc v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 expect audio.interruptions == 0

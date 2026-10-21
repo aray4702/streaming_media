@@ -7,7 +7,6 @@ describe 40 ms jitter with reordering and no loss: reordered packets must not re
 # 5 seeds (cc v2, tcc v2): average reported loss 2.5 %,
 # cc.target_avg_kbps 107-437. Target (parity): libwebrtc 1003 kbps; what is left is
 # the delay detector (#24), not the loss path.
-cc v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 expect video.freeze_total_ms == 0

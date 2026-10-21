@@ -42,12 +42,10 @@ if(SM_WITH_CC)
     cc/transport_feedback.cc
     cc/delay_based_bwe.cc
     cc/aimd_rate_control.cc
-    cc/loss_based_bwe.cc
     cc/loss_based_bwe_v2.cc
     cc/send_side_bandwidth_estimation.cc
     cc/send_side_bwe.cc
     cc/pacer.cc
-    cc/pacer_v1.cc
     cc/pacing_controller.cc
     cc/probing.cc
     cc/bitrate_prober.cc

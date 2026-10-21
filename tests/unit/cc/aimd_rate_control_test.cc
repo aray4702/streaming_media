@@ -212,10 +212,9 @@ std::vector<PacketResult> Packets(int64_t& seq, int64_t& send_ms, int n, int gap
 
 SM_TEST(DelayBweV2, OveruseWithoutAckedRateHalvesAtMostEveryRtt) {
   DelayBasedBwe::Config cfg;
-  cfg.version = 2;
   DelayBasedBwe bwe(cfg);
   Timestamp now = Timestamp::Millis(1000);
-  bwe.SetStartBitrate(Bps(2'000'000), now);
+  bwe.SetStartBitrate(Bps(2'000'000));
   bwe.SetRtt(TimeDelta::Millis(200));
   // A growing queue (4 ms more delay per packet) drives the detector to overuse; no acked rate is given.
   int64_t seq = 0, send = 1000;
@@ -252,10 +251,9 @@ SM_TEST(DelayBweV2, OveruseWithoutAckedRateHalvesAtMostEveryRtt) {
 SM_TEST(DelayBweV2, ProbeEstimateSetsTheEstimateEvenBelowIt) {
   // libwebrtc: a probe result is taken as is (SetEstimate), with no check against the current estimate.
   DelayBasedBwe::Config cfg;
-  cfg.version = 2;
   DelayBasedBwe bwe(cfg);
   Timestamp now = Timestamp::Millis(1000);
-  bwe.SetStartBitrate(Bps(1'000'000), now);
+  bwe.SetStartBitrate(Bps(1'000'000));
   int64_t seq = 0, send = 1000;
   auto v = Packets(seq, send, 5, 10, 50);
   now = Timestamp::Millis(send + 50);
@@ -265,10 +263,9 @@ SM_TEST(DelayBweV2, ProbeEstimateSetsTheEstimateEvenBelowIt) {
 
 SM_TEST(DelayBweV2, SteadyFeedbackRampsMultiplicativelyUntilTheAckedLimit) {
   DelayBasedBwe::Config cfg;
-  cfg.version = 2;
   DelayBasedBwe bwe(cfg);
   Timestamp now = Timestamp::Millis(1000);
-  bwe.SetStartBitrate(Bps(300'000), now);
+  bwe.SetStartBitrate(Bps(300'000));
   int64_t seq = 0, send = 1000;
   DataRate r = Bps(300'000);
   for (int i = 0; i < 100; ++i) {

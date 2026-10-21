@@ -13,11 +13,6 @@ cc::PacerConfig WithEvents(cc::PacerConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
 }
-// The pacer v2 runs behind TaskQueuePacedSender's scheduling together with GoogCC (cc v2).
-cc::PacerConfig WithScheduling(cc::PacerConfig c, int gcc_version) {
-  c.task_queue_scheduling = c.task_queue_scheduling && gcc_version >= 2;
-  return c;
-}
 cc::CongestionWindowConfig WithEvents(cc::CongestionWindowConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
@@ -32,24 +27,20 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
     : cfg_(cfg),
       extensions_(extensions),
       gcc_(WithEvents(cfg.gcc, cfg.events)),
-      pacer_(WithEvents(WithScheduling(cfg.pacer, cfg.gcc.version), cfg.events)),
+      pacer_(WithEvents(cfg.pacer, cfg.events)),
       outage_(WithEvents(cfg.outage, cfg.events)),
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       allocator_(cfg.events),
-      transport_seq_(cfg.pacer.version == cc::PacerVersion::kV2 ? 1 : 0),
+      transport_seq_(1),
       target_(cfg.gcc.start_rate),
       pushback_target_(cfg.gcc.start_rate) {}
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
   if (allocation_configured_) allocator_.OnTargetChanged(target_, now);
-  if (cfg_.gcc.version >= 2 && cfg_.pacer.version == cc::PacerVersion::kV2) {
-    // GetPacingRates: the padding rate never exceeds the pushback target.
-    if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
-    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
-  } else {
-    pacer_.SetPacingRates(u.pacing_rate, DataRate::Zero());
-  }
+  // GetPacingRates: the padding rate never exceeds the pushback target.
+  if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
+  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
   outage_.SetCurrentRate(target_);
 }
@@ -105,9 +96,7 @@ void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
 void SendSideController::SetPacingFactor(double factor) {
   gcc_.SetPacingFactor(factor);
   // OnStreamsConfig returns the new pacer config at once (GetPacingRates).
-  if (cfg_.gcc.version >= 2 && cfg_.pacer.version == cc::PacerVersion::kV2) {
-    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
-  }
+  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
 }
 
 void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
@@ -116,10 +105,10 @@ void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packet
 
 void SendSideController::SetPaddingSender(RtpSender* sender) {
   padding_sender_ = sender;
-  // With `pacer v2` padding is made as libwebrtc's RTPSender::GeneratePadding does:
-  // RTX payload padding from the history, then empty padding, each packet with its real size.
-  // Otherwise the pacer keeps fixed-size placeholders that MakePadding() fills in when sent.
-  if (!sender || pacer_.version() != cc::PacerVersion::kV2 || !sender->config().rtx_ssrc) {
+  // Padding is made as libwebrtc's RTPSender::GeneratePadding does: RTX payload padding from the
+  // history, then empty padding, each packet with its real size. Without RTX the pacer keeps
+  // fixed-size placeholders that MakePadding() fills in when sent.
+  if (!sender || !sender->config().rtx_ssrc) {
     pacer_.SetPaddingGenerator(nullptr);
     return;
   }
@@ -184,10 +173,10 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     }
     if (sp.sender) sp.sender->AssignSequenceNumber(sp);
     ReleasedPacket r;
-    // `pacer v2` (PacketRouter::SendPacket, packet_router.cc:213-228): only a packet that carries the
+    // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
     // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
     // reported to the bandwidth estimator (RtpTransportControllerSend::NotifyBweOfPacedSentPacket).
-    const bool numbered = pacer_.version() != cc::PacerVersion::kV2 || (extensions_ && extensions_->IdOf(sync::uri::kTransportCc));
+    const bool numbered = extensions_ && extensions_->IdOf(sync::uri::kTransportCc);
     if (numbered) r.transport_seq = transport_seq_++;
     WriteSendExtensions(sp.packet, r.transport_seq, now);
     r.bytes = sp.packet.Serialize();
@@ -222,29 +211,14 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     UpdatePushback(now, true);
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
-  // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. cc v2 does the same.
-  if (cfg_.gcc.version < 2 && (!last_outage_.IsFinite() || now - last_outage_ >= cfg_.outage_interval)) {
-    last_outage_ = now;
-    cc::OutageActions act = outage_.Process(now);
-    if (act.pause_encoder) actions_.pause_encoder = true;
-    if (act.resume_encoder) actions_.resume_encoder = true;
-    if (pacer_.version() == cc::PacerVersion::kV2) {
-      // The encoder pause leaves nothing to send, and nothing on the wire means no feedback to resume
-      // from. A paused pacer sends libwebrtc's keep-alive (PacingController::ShouldSendKeepalive, a
-      // padding packet every 500 ms), so the receiver's feedback tells the monitor the link is back.
-      if (act.pause_encoder) pacer_.Pause();
-      if (act.resume_encoder) pacer_.Resume();
-    }
-    if (act.request_keyframe) actions_.request_keyframe = true;
-    if (act.reset_estimate) Apply(gcc_.ResetEstimate(act.reset_rate, now), now);
-  }
+  // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. So does this one;
+  // the monitor only follows the link (its metrics), and its decisions are not acted on.
   return out;
 }
 
 Timestamp SendSideController::NextProcessTime(Timestamp now) const {
   Timestamp next = pacer_.NextSendTime(now);
   if (last_gcc_.IsFinite()) next = std::min(next, last_gcc_ + cfg_.gcc_interval);
-  if (cfg_.gcc.version < 2 && last_outage_.IsFinite()) next = std::min(next, last_outage_ + cfg_.outage_interval);
   return std::max(next, now);
 }
 
@@ -273,7 +247,7 @@ ControllerActions SendSideController::TakeActions() {
 }
 
 bool SendSideController::DropCapturedFrame() {
-  const DataRate base = allocation_configured_ && cfg_.gcc.version >= 2 ? AllocatedVideoTarget(allocator_.allocation("video")) : target_;
+  const DataRate base = allocation_configured_ ? AllocatedVideoTarget(allocator_.allocation("video")) : target_;
   const auto drop = cc::CongestionWindowPushback::FrameDropInterval(base, cwnd_.reduce_ratio(), cfg_.video_min);
   if (drop.interval == 0) return false;
   if (cwnd_frame_counter_++ % static_cast<uint64_t>(drop.interval) != 0) return false;
@@ -305,7 +279,7 @@ void SendSideController::ApplyPushback(SendRates& out) const {
   // the matching share of the video target.
   // The allocator passes the reduce ratio to the video stream (cwnd_reduce_ratio
   // in BitrateAllocationUpdate), so the encoder takes it against its own target.
-  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(allocation_configured_ && cfg_.gcc.version >= 2 ? out.video_target : target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(allocation_configured_ ? out.video_target : target_, cwnd_.reduce_ratio(), cfg_.video_min);
   if (drop.interval > 0) {
     out.frame_drop_interval = drop.interval;
     out.video_target = std::clamp(out.video_target - out.video_target * (1.0 / drop.interval), cfg_.video_min, cfg_.video_max);
@@ -327,7 +301,7 @@ double SendSideController::repair_share() const {
 }
 
 DataRate SendSideController::OverheadRate(DataRate rate, int64_t packet_size_bytes) const {
-  if (cfg_.gcc.version < 2 || packet_size_bytes <= 0) return DataRate::Zero();
+  if (packet_size_bytes <= 0) return DataRate::Zero();
   // packet_rate = rate / packet_size, rounded up to whole Hz; times the overhead per packet.
   const int64_t pkt_bits = packet_size_bytes * 8;
   const int64_t packets_per_sec = (rate.bps() + pkt_bits - 1) / pkt_bits;

@@ -7,8 +7,6 @@ describe 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the
 # queue p95 146-196 ms, 1.3-1.7 % overhead on seeds 1-12. libwebrtc (parity-data, 10 seeds, `low_bandwidth`):
 # queue p95 484 ms, 17.8 freezes, 16.9 % overhead, 0.7 keyframe requests: its encoder and allocator are
 # not what this scenario judges (#104, #61 own that gap).
-cc v2
-pacer v2
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 expect audio.concealed_pct < 5

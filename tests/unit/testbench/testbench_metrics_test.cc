@@ -289,21 +289,17 @@ SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumn
                "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,3659\n");
 }
 
-SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
+SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
   const std::string link = "duration 6s\nat 0s capacity=800kbps delay=30ms queue=200ms\nat 3s loss=3%\n";
   RunOptions opt;
   opt.library_metrics = false;
-  for (const bool v2 : {false, true}) {
-    auto parsed = ParseScenario(std::string("name bwetrace\n") + (v2 ? "cc v2\n" : "cc v1\n") + link);
+  {
+    auto parsed = ParseScenario(std::string("name bwetrace\n") + link);
     SM_ASSERT_TRUE(parsed.scenario.has_value());
     opt.bwe_trace = false;
     SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).bwe_trace.empty());
     opt.bwe_trace = true;
     const Report rep = RunCall(*parsed.scenario, opt);
-    if (!v2) {
-      SM_EXPECT_TRUE(rep.bwe_trace.empty());
-      continue;
-    }
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
     int delay = 0, loss = 0, target = 0, detector = 0;
     int64_t prev = 0;

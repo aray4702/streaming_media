@@ -21,7 +21,6 @@ constexpr double kDefaultPacingRateSendSideBwe = 1.1;
 // NetworkControllerTestFixture::InitialConfig: start 60 kbps, min 0, max 5 x start.
 GccConfig InitialConfig(DataRate max_rate = kInitialBitrate * 5) {
   GccConfig cfg;
-  cfg.version = 2;
   cfg.start_rate = kInitialBitrate;
   cfg.min_rate = DataRate::Zero();
   cfg.max_rate = max_rate;
