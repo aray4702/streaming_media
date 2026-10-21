@@ -73,6 +73,7 @@ const std::vector<Shown>& ShownMetrics() {
       {"video.time_to_first_frame_ms", Better::kLower, 50},
       {"video.avg_kbps", Better::kHigher, 20},
       {"video.keyframe_requests", Better::kLower, 0.5},
+      {"sync.av_offset_p95_ms", Better::kLower, 10},  // Issue #63.
       {"cc.utilization_pct", Better::kHigher, 2},
       {"cc.queue_p95_ms", Better::kLower, 10},
       {"cc.max_settle_ms", Better::kLower, 500},

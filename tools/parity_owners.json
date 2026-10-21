@@ -16,6 +16,7 @@
     {"metric": "net.loss_pct", "issues": [21, 61, 12]},
     {"metric": "repair.overhead_pct", "issues": [21, 7, 29]},
     {"metric": "audio.*", "issues": [62, 63]},
+    {"metric": "sync.*", "issues": [77]},
     {"scenario": "wifi_to_lte_handover", "metric": "*", "issues": [20]},
     {"scenario": "outage_*", "metric": "*", "issues": [20]},
     {"scenario": "high_jitter", "metric": "*", "issues": [19, 24]}

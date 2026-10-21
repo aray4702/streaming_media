@@ -1,8 +1,10 @@
 // The parity metrics of the test bench (issue #60): the video delay
 // breakdown, the largest target cut and the send rate over the target.
 #include <cmath>
+#include <map>
 
 #include "call.h"
+#include "call_common.h"
 #include "scenario.h"
 #include "sm_test.h"
 
@@ -324,4 +326,28 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequestWithCcV2Only) {
     }
     SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0);
   }
+}
+
+// The A/V sync offset (issue #63), as libwebrtc's GetStreamSyncOffsetInMs:
+// the audio playout point moved on to the render time, minus the frame's capture.
+SM_TEST(TestbenchMetrics, AvSyncOffset) {
+  AvSyncMeter meter;
+  // A frame before audio playout starts is not counted.
+  meter.OnVideoRendered(Timestamp::Millis(50), Timestamp::Millis(0));
+  std::map<std::string, double> none;
+  meter.AddMetrics(none);
+  SM_EXPECT_TRUE(none.empty());
+  // Audio captured at 40 ms plays at 100 ms (60 ms behind).
+  meter.OnAudioPlayout(Timestamp::Millis(100), Timestamp::Millis(40));
+  // Rendered 5 ms later, 105 ms after capture: the audio playing then was
+  // captured at 45 ms, so the video is 45 ms late.
+  meter.OnVideoRendered(Timestamp::Millis(105), Timestamp::Millis(0));
+  // Rendered 10 ms after capture: 20 ms ahead of the audio.
+  meter.OnAudioPlayout(Timestamp::Millis(110), Timestamp::Millis(50));
+  meter.OnVideoRendered(Timestamp::Millis(110), Timestamp::Millis(70));
+  std::map<std::string, double> m;
+  meter.AddMetrics(m);
+  SM_EXPECT_NEAR(m["sync.av_offset_p50_ms"], 12.5, 1e-9);
+  SM_EXPECT_NEAR(m["sync.av_offset_p95_ms"], 43.75, 1e-9);
+  SM_EXPECT_NEAR(m["sync.av_offset_max_ms"], 45, 1e-9);
 }

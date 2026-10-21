@@ -153,6 +153,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
       {"video.undecodable_frames", "Frames received but discarded because a reference was missing"},
       {"video.residual_loss_pct", "Video media packets never recovered (after NACK/RTX and FEC)"},
+      {"sync.av_offset_p50_ms", "Median A/V offset at each rendered frame: capture time of the audio playing minus the frame's (positive: video later than audio)"},
+      {"sync.av_offset_p95_ms", "95th percentile of the absolute A/V offset at each rendered frame (lip sync; audio and video calls only)"},
+      {"sync.av_offset_max_ms", "Largest absolute A/V offset at a rendered frame"},
       {"cc.target_avg_kbps", "Average GCC target bitrate"},
       {"cc.goodput_kbps", "Average media + repair bitrate delivered"},
       {"cc.utilization_pct", "Delivered bitrate / usable capacity, over samples where the link is up and finite"},
@@ -573,6 +576,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   bool audio_started = false;
   Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
+  AvSyncMeter av_sync;  // Issue #63.
   int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
   int64_t interruptions = 0, interruption_ms = 0;
   int64_t frames_rendered = 0;
@@ -779,6 +783,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
         auto cap = frame_capture.find(f.rtp_timestamp);
         if (cap != frame_capture.end()) {
+          av_sync.OnVideoRendered(now, cap->second);
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
           video_e2e.push_back(last_video_delay);
           frame_capture.erase(cap);
@@ -790,6 +795,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
       auto op = receiver.GetAudio(audio_recv, audio_out, now);
+      // Audio RTP timestamps count samples from the call start (capture at t = 0).
+      if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
+        av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
+      }
       played_ms += 10;
       ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
@@ -910,6 +919,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       AddVideoDelayMetrics(all, rep);
     }
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
+    av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
