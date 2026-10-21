@@ -420,6 +420,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // `audio v2`: Opus's encoded size follows the signal (testbench/opus_model.h); v1 is a constant frame.
   OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // `audio v2`'s in-band FEC input (issue #62).
+  OpusFecDecision opus_fec;  // libopus's decide_fec (testbench/opus_model.h).
+  bool lbrr_pending = false;  // The last frame was coded LBRR: the next packet carries the copy.
   SpeechDecoder decoder(speech, frame_samples);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
@@ -671,8 +673,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (s.audio_v2) {
         const size_t off = static_cast<size_t>(k) * frame_samples;
         const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
-        lbrr = opus_loss.percent() > 0 && opus_model.LastFrameActive();
+        lbrr = lbrr_pending;
+        const bool lbrr_coded = opus_fec.Update(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), opus_loss.percent());
         frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
+        lbrr_pending = lbrr_coded && opus_model.LastFrameActive();
       }
       std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
       if (s.audio_v2) frame[0] = lbrr ? kLbrrFlag : 0;
