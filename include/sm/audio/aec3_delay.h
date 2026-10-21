@@ -54,6 +54,7 @@
 #include <span>
 #include <vector>
 
+#include "sm/audio/cascaded_biquad_filter.h"
 #include "sm/core/metrics.h"
 
 namespace sm::audio::aec3 {
@@ -101,27 +102,8 @@ struct DelayEstimate {
   size_t delay;
 };
 
-// modules/audio_processing/utility/cascaded_biquad_filter (direct form 1).
-class CascadedBiQuadFilter {
- public:
-  struct BiQuadCoefficients {
-    float b[3];
-    float a[2];
-  };
-  explicit CascadedBiQuadFilter(std::span<const BiQuadCoefficients> coefficients);
-  void Process(std::span<const float> x, std::span<float> y);
-  void Process(std::span<float> y);
-  void Reset();
-
- private:
-  struct BiQuad {
-    BiQuadCoefficients coefficients;
-    float x[2] = {0.f, 0.f};
-    float y[2] = {0.f, 0.f};
-  };
-  static void ApplyBiQuad(std::span<const float> x, std::span<float> y, BiQuad& biquad);
-  std::vector<BiQuad> biquads_;
-};
+// utility/cascaded_biquad_filter, shared with the `apm v2` high-pass filter.
+using ::sm::audio::CascadedBiQuadFilter;
 
 class Decimator {
  public:

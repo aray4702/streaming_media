@@ -49,6 +49,37 @@ SM_TEST(E2E_HighPassFilter, RemovesDcAndHumInFullChain) {
   SM_EXPECT_GT(20 * std::log10(hum_in / hum_out), 15.0);
 }
 
+// `apm v2` (#239): libwebrtc's high-pass filter on the case sm_apm_compare
+// measures (the filter alone, so the hum left is the filter's). libwebrtc
+// M157's APM (docs/results/apm-webrtc.md): hum attenuation 67.2 dB, DC left
+// 0.0 (x1000), speech level change -0.2 dB (v1: 16.4, 0.0, -0.0).
+SM_TEST(E2E_HighPassFilter, LibwebrtcHpfAsLibwebrtc) {
+  CallScenario s;
+  s.far_talk = false;
+  s.dc = 0.1f;
+  s.hum_amp = 0.05f;
+  s.noise_amp = 0.002f;
+  auto c = MakeCall(s);
+  ChainConfig cc{true, false, false, false, false};
+  cc.apm_v2 = true;
+  auto r = RunChain(c, cc);
+  std::span<const float> tail(r.out.data() + 10 * 16000, 8 * 16000);
+  double hum_in = ToneAmp(std::span<const float>(c.capture.data() + 10 * 16000, 8 * 16000), 50, 16000);
+  double hum_db = 20 * std::log10(hum_in / ToneAmp(tail, 50, 16000));
+  // Pass band: the clean talker alone through the filter.
+  CallScenario t;
+  t.far_talk = false;
+  auto ct = MakeCall(t);
+  auto rt = RunChain(ct, cc);
+  double speech_db = SegmentDb(rt.out, 3, 20) - SegmentDb(ct.capture, 3, 20);
+  SM_RECORD("hum_attenuation_db", hum_db);
+  SM_RECORD("dc_out", Mean(tail));
+  SM_RECORD("speech_level_change_db", speech_db);
+  SM_EXPECT_NEAR(hum_db, 67.2, 1.0);
+  SM_EXPECT_LT(std::fabs(Mean(tail)), 1e-3);
+  SM_EXPECT_NEAR(speech_db, -0.2, 0.1);
+}
+
 SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   CallScenario s;
   s.far_talk = false;
@@ -106,10 +137,14 @@ SM_TEST(E2E_NoiseSuppressor, LibwebrtcNsAsLibwebrtc) {
   ChainConfig cc{true, false, true, false, false};
   cc.apm_v2 = true;
   auto r = RunChain(c, cc);
-  auto base = RunChain(c, {true, false, false, false, false});
+  // The input and the reference go through the same (`apm v2`, #239)
+  // high-pass filter as the output, as sm_apm_compare runs each stack.
+  ChainConfig hpf_only{true, false, false, false, false};
+  hpf_only.apm_v2 = true;
+  auto base = RunChain(c, hpf_only);
   CallScenario t = s;
   t.noise_amp = 0;
-  auto ref = RunChain(MakeCall(t), {true, false, false, false, false}).out;
+  auto ref = RunChain(MakeCall(t), hpf_only).out;
   // SNR against the clean talker through the same HPF, at the output delay
   // (0..40 ms) that gives the best SNR.
   const size_t start = 3 * 16000, n = ref.size() - start - 640;
