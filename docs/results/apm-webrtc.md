@@ -56,6 +56,10 @@ SNR. "Pauses" are frames more than 250 ms after the talker stopped.
 | noise suppressor | white noise, ~7 dB SNR | noise attenuation in pauses (dB) | 16.9 | 17.9 |  |
 | noise suppressor | white noise, ~7 dB SNR | level change in speech (dB) | -1.3 | -2.9 |  |
 | noise suppressor | white noise, ~7 dB SNR | algorithmic delay (ms) | 10.0 | 6.0 |  |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | SNR improvement (dB) | -0.2 | -0.1 | both kHigh (18 dB); ours measured on #241's branch, libwebrtc from the rows above |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | noise attenuation in pauses (dB) | 17.9 | 17.9 |  |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | level change in speech (dB) | -3.2 | -2.9 |  |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | algorithmic delay (ms) | 6.0 | 6.0 |  |
 | gain control | quiet then loud talker, AGC1 (default) | quiet talker in -> out, 12-20 s (dBFS) | -16.8 | -20.6 | input -32 dBFS |
 | gain control | quiet then loud talker, AGC1 (default) | loud talker level change, 32-40 s (dB) | -2.0 | -3.2 |  |
 | gain control | quiet then loud talker, AGC1 (default) | noise level in pauses, 12-20 s (dBFS) | -58.2 | -63.0 |  |

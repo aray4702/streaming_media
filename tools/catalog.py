@@ -377,7 +377,24 @@ ALGORITHMS = [
                       "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
                       "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
                       "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
-                      "Default stays v1 until the flip."),
+                      "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
+                      "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
+                      "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
+                      "at `< 300` (130-199 ms, libwebrtc 130-218) and `issue_24_timing_v2_default` locks the default in. "
+                      "Explained difference (Owner, PR #216), tracked to #224: on congestive links "
+                      "(`issue_61_googcc_glue_congestive`, `issue_12_lossbwe_congestive`) video e2e delay p95 is 808 ms "
+                      "against libwebrtc's 420. Timing v2 renders the frames timing v1 dropped as late (1194 rendered, "
+                      "libwebrtc 1195), and those waited longest in the sender's pacer (pacer p95 of rendered frames 609 ms); "
+                      "e2e p50 matches (204 vs 196). "
+                      "Tracked to #230: `issue_127_pacer_v2_jitter_reorder_loss` has 3.3 freezes (753 ms) against libwebrtc's "
+                      "1.1 (240 ms). Both receivers' jitter delay falls to 0 from 17 s (yardstick #228): reordered originals "
+                      "NACKed at once flag 90-100% of frames as retransmitted, so JitterEstimator's frame rate drops below "
+                      "5 fps and GetEstimate returns 0, in libwebrtc too. The extra freezes are repairs slower than the "
+                      "freeze threshold on our side, with a 13% higher send rate. "
+                      "Owner rule on PR #216 (just above our seed-1 value, never above libwebrtc's worst seed in 1-10): "
+                      "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
+                      "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
+                      "(304.4; capped at libwebrtc's worst seed)."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
@@ -514,15 +531,15 @@ ALGORITHMS = [
                "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`) "
                "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
                "on `clean_link` queue p95 74 ms. "
-               "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
+               "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 with #62. "
                "Approved deviation: the test bench's Opus frame-size model (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
-               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24). "
+               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24; "
+               "resolved when timing v2 became the default: 28.8-29.2 fps, libwebrtc 27.1-27.6). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
-               "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24). Provisional locks (PR #186, Owner 2026-10-20): "
-               "`issue_53_cwnd_pushback` `video.render_fps >= 14` (was 22; libwebrtc 27.4, ours 16.0; tracked to #24, "
-               "restored when `timing v2` joins the defaults) and `issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` "
-               "(was 380; libwebrtc 451, ours 344; tracked to #217).",
+               "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
+               "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
+               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
@@ -774,15 +791,27 @@ ALGORITHMS = [
                       "estimate and no clock drift; the first estimate comes after 176 ms."),
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
-         headers=["audio/noise_suppressor.h"], unit=["NoiseSuppressor"], e2e=["E2E_NoiseSuppressor"],
+         headers=["audio/noise_suppressor.h", "audio/ns.h"], unit=["NoiseSuppressor", "Ns"], e2e=["E2E_NoiseSuppressor"],
          bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
-               "plugged into the same 10 ms interface.",
+               "plugged into the same 10 ms interface. `apm v2` (#241): `ns::NoiseSuppressor` ports libwebrtc M157's "
+               "NS (`modules/audio_processing/ns/`: quantile noise estimator with the parametric white/pink model "
+               "during start-up, LRT, spectral flatness and spectral difference features with histogram-learnt "
+               "thresholds, speech probability, decision-directed Wiener filter with the attenuation adjustment, "
+               "160-sample frames in a 256-point hybrid Hann/flat filter bank, one gain for the upper bands) at "
+               "kHigh (18 dB floor, over-subtraction 1.1), the level `WebRtcVoiceEngine::ApplyOptions` sets. It "
+               "analyzes the capture before the AEC and suppresses after it, as `AudioProcessingImpl` does. "
+               "Remaining differences: the 256-point FFT is this library's `RealFft`, not Ooura's `fft4g` "
+               "(not in the reference sources, #57), so results differ by float rounding; mono only.",
          verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
                       "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
-                      "from 7.6 to 12.9 dB."),
+                      "from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
+                      "`sm_apm_compare` measures both stacks: SNR improvement -0.2 dB (libwebrtc -0.1, v1 +5.3), "
+                      "noise attenuation in pauses 17.9 dB (17.9, v1 16.9), level change in speech -3.2 dB (-2.9, "
+                      "v1 -1.3), delay 6 ms (6, v1 10). Like libwebrtc's, it takes the speech down along with the "
+                      "noise in speech frames, so the SNR against the clean talker does not rise."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
          headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h"], unit=["GainControl", "GainController2", "Agc1"],
