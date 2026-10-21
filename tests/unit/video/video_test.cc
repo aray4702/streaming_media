@@ -33,6 +33,22 @@ SM_TEST(FreezeDetector, DetectsFreezesAndPauses) {
   SM_EXPECT_LT(fd.HarmonicFps(), 30.0);
 }
 
+// Issue #283: the longest freeze must not come from the `freeze_ms` histogram,
+// which records nothing when metrics are compiled out.
+SM_TEST(FreezeDetector, TracksLongestFreeze) {
+  FreezeDetector fd;
+  int64_t t = 0;
+  SM_EXPECT_EQ(fd.stats().longest_freeze_ms, 0.0);
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 1500));  // Freeze.
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 400));  // Shorter freeze.
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 7000));  // Pause: not a freeze.
+  SM_EXPECT_EQ(fd.stats().freeze_count, 2u);
+  SM_EXPECT_NEAR(fd.stats().longest_freeze_ms, 1500, 1e-6);
+}
+
 SM_TEST(FreezeDetector, SmoothPlaybackHasNoFreezes) {
   FreezeDetector fd;
   for (int i = 0; i < 300; ++i) fd.OnFrameRendered(Ms(i * 33 + (i % 3) * 5));

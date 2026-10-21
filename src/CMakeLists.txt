@@ -63,6 +63,8 @@ endif()
 if(SM_WITH_AUDIO)
   sm_add_library(audio DEPS sm::core SOURCES
     audio/high_pass_filter.cc
+    audio/hpf.cc
+    audio/cascaded_biquad_filter.cc
     audio/vad.cc
     audio/noise_suppressor.cc
     audio/gain_control.cc
@@ -74,6 +76,7 @@ if(SM_WITH_AUDIO)
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc
     audio/agc_manager.cc
+    audio/clipping_predictor.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
     audio/aec3_delay.cc

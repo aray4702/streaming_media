@@ -886,7 +886,7 @@ ALGORITHMS = [
                       "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -918,8 +918,12 @@ ALGORITHMS = [
                "update, clipping handling with libwebrtc's `AnalogGainController` defaults) and APM's analog "
                "mic gain emulation (`capture_levels_adjuster/`), the test bench's modelled mic volume: the "
                "capture is scaled by volume / 255 from 255, ramped over the frame. The `apm v2` e2e chain now "
-               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. Remaining differences: the "
-               "clipping predictor is not ported (off by default, so a call never creates it).",
+               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. `clipping_predictor.h` ports "
+               "AGC1's clipping predictor (`agc2/clipping_predictor.cc`, `clipping_predictor_level_buffer.cc`: "
+               "event prediction from a crest factor drop, or peak prediction with a fixed or adaptive step) "
+               "and `AgcManagerDirect` asks it for a step after the clipping wait, as libwebrtc does; it is off "
+               "by default (`ClippingPredictor::enabled = false`), as in libwebrtc, so a call never creates it "
+               "and no metric moves.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -951,14 +955,27 @@ ALGORITHMS = [
                       "On the test bench's speech-like signal 87% of frames reach a probability of 0.95, on white "
                       "noise none. With it, AGC2 gives on the e2e quiet-then-loud talker: quiet talker -21.05 dBFS "
                       "(libwebrtc AGC2 -21.0; -21.10 with our VAD's decision), loud talker -1.2 dB (-1.0), noise "
-                      "in pauses -62.6 dBFS (-62.9)."),
+                      "in pauses -62.6 dBFS (-62.9). The clipping predictor (#242) passes the ports of libwebrtc's "
+                      "`clipping_predictor_unittest.cc` and `clipping_predictor_level_buffer_unittest.cc` with "
+                      "their parametrizations (`Agc1ClippingPredictor.*`, `Agc1ClippingLevelBuffer.*`: adaptive "
+                      "step 17, fixed step 15), and `AgcManagerDirect` with it the predictor tests of "
+                      "`agc_manager_direct_unittest.cc` (used predictions lower the volume 255 -> 240 -> 225 "
+                      "before clipping, unused ones leave it as without the predictor); with the default config "
+                      "the e2e chain is unchanged."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
-         headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
+         headers=["audio/high_pass_filter.h", "audio/hpf.h", "audio/cascaded_biquad_filter.h"],
+         unit=["HighPassFilter", "Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+                      "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
+                      "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
+                      "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
+                      "(`Hpf.FrequencyResponse16kHz`), and on `sm_apm_compare`'s case it gives hum attenuation "
+                      "67.2 dB and speech -0.2 dB, as libwebrtc (`E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc`). "
+                      "Its pass band is about 0.4 dB down, as libwebrtc's."),
     dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
          problems=["Keyboard typing noise -> transient suppressor"],
          headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],

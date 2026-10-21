@@ -7,7 +7,10 @@ or partially fixes ("Refs #N", "Part of #N") that is labelled agent-found,
 bug, ux or perf, the PR must:
   1. add testbench/scenarios/issue_<N>_*.scn, which must FAIL when run with
      the sm_testbench built from the PR's base commit (proving it catches
-     the problem; the normal suite proves it passes with the fix);
+     the problem; the normal suite proves it passes with the fix). A problem
+     that only shows in one build configuration names its options in the
+     scenario with a line `# fix-record-base-cmake: -DSM_ENABLE_METRICS=OFF`
+     (only -DSM_*=ON|OFF), and the base commit is built with them;
   2. add or update docs/fixes/<N>-*.md with front matter `issue: N` and the
      sections Issue, Root cause, Fix, Regression tests, Results (plus
      Remaining and `status: partial` for a partial fix, else `status: fixed`), and with
@@ -33,6 +36,8 @@ SECTIONS = ["## Issue", "## Root cause", "## Fix", "## Regression tests", "## Re
 CLOSES = re.compile(r"(?i)\b(?:fix(?:es|ed)?|close[sd]?|resolve[sd]?)\s+#(\d+)\b")
 # Partial fixes reference the issue without closing it (program.md 6.5).
 PARTIAL = re.compile(r"(?i)\b(?:refs|part of)\s+#(\d+)\b")
+BASE_CMAKE = re.compile(r"^#\s*fix-record-base-cmake:(.*)$", re.M)
+BASE_CMAKE_FLAG = re.compile(r"-DSM_[A-Z0-9_]+=(?:ON|OFF)")
 
 
 def run(cmd, **kw):
@@ -68,15 +73,25 @@ def front_matter(text):
     return fields
 
 
-def build_base_testbench(base):
+def base_cmake_flags(text):
+    """The extra -DSM_* options a scenario asks the base build to use, or None if malformed."""
+    flags = []
+    for m in BASE_CMAKE.finditer(text):
+        for tok in m.group(1).split():
+            if not BASE_CMAKE_FLAG.fullmatch(tok):
+                return None
+            flags.append(tok)
+    return tuple(flags)
+
+
+def build_base_testbench(base, flags=()):
     """Builds sm_testbench at the base commit; returns its path or None."""
     wt = pathlib.Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "sm-base"
-    run(["git", "worktree", "remove", "--force", str(wt)])
-    if run(["git", "worktree", "add", "--detach", str(wt), base]).returncode != 0:
+    if not wt.exists() and run(["git", "worktree", "add", "--detach", str(wt), base]).returncode != 0:
         return None
-    build = wt / "out" / "base"
+    build = wt / "out" / ("base" + "".join("-" + f[2:].replace("=", "-").lower() for f in flags))
     cfg = subprocess.run(["cmake", "-S", str(wt), "-B", str(build), "-DCMAKE_BUILD_TYPE=Release",
-                          "-DSM_BUILD_TESTS=OFF", "-DSM_BUILD_BENCH=OFF", "-DSM_BUILD_EXAMPLES=OFF"],
+                          "-DSM_BUILD_TESTS=OFF", "-DSM_BUILD_BENCH=OFF", "-DSM_BUILD_EXAMPLES=OFF", *flags],
                          capture_output=True, text=True)
     if cfg.returncode != 0:
         return None
@@ -116,7 +131,10 @@ def main(argv):
             notes.append(f"#{n}: not a found problem ({', '.join(sorted(labels)) or 'no labels'}); no fix record required")
 
     files = changed_files(base) if found else {}
-    base_exe = None
+    if found:  # A fresh worktree of the base commit, shared by every base build below.
+        run(["git", "worktree", "remove", "--force",
+             str(pathlib.Path(os.environ.get("RUNNER_TEMP", "/tmp")) / "sm-base")])
+    base_exes = {}
     for n in found:
         scenarios = [f for f, st in files.items()
                      if re.fullmatch(rf"testbench/scenarios/issue_{n}_[\w-]+\.scn", f) and st in "AM"]
@@ -146,8 +164,13 @@ def main(argv):
                 problems.append(f"{rec}: still contains template placeholders or TODO")
         # The scenario must catch the problem: it has to fail before the fix.
         for scn in scenarios:
-            if base_exe is None:
-                base_exe = build_base_testbench(base) or False
+            flags = base_cmake_flags((ROOT / scn).read_text())
+            if flags is None:
+                problems.append(f"{scn}: `fix-record-base-cmake:` accepts only -DSM_<NAME>=ON|OFF options")
+                continue
+            if flags not in base_exes:
+                base_exes[flags] = build_base_testbench(base, flags) or False
+            base_exe = base_exes[flags]
             if not base_exe:
                 problems.append(f"{scn}: could not build sm_testbench at the base commit to confirm it fails there")
                 continue
@@ -156,7 +179,8 @@ def main(argv):
                 problems.append(f"{scn}: passes on the base commit, so it does not catch the problem "
                                 "(its expect lines must fail before the fix)")
             else:
-                notes.append(f"{scn}: fails on the base commit as required (exit {r.returncode})")
+                built = f" built with {' '.join(flags)}" if flags else ""
+                notes.append(f"{scn}: fails on the base commit{built} as required (exit {r.returncode})")
 
     for line in notes:
         print(f"ok: {line}")

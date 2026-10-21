@@ -901,7 +901,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     const auto& fz = freezes.stats();
     double freeze_count = static_cast<double>(fz.freeze_count);
     double freeze_total = fz.total_freezes_ms;
-    double longest = fz.freeze_ms.count() ? fz.freeze_ms.max() : 0;
+    double longest = fz.longest_freeze_ms;
     double frame_ms = 1000.0 / s.video_fps;
     // Pauses as libwebrtc's VideoQualityObserver counts them: a gap of 5 s or more is
     // a pause, not a freeze. One still in progress at the end of the call is counted
