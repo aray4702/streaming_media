@@ -809,7 +809,9 @@ ALGORITHMS = [
                "analyzes the capture before the AEC and suppresses after it, as `AudioProcessingImpl` does. "
                "The 256-point FFT is Ooura's `fft4g` as `NrFft` runs it (`sm/audio/fft4g.h`, from "
                "`common_audio/third_party/ooura/fft_size_256/`), bit-exact with libwebrtc's `WebRtc_rdft` "
-               "(#241). Remaining difference: mono only.",
+               "(#241). Several channels are handled as libwebrtc does: per-channel estimators, one Wiener filter "
+               "that is the minimum over the channels per bin, and the minimum overall scaling factor and upper-band "
+               "gain (#241). No difference from libwebrtc's NS remains.",
          verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
                       "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
                       "from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
@@ -818,7 +820,12 @@ ALGORITHMS = [
                       "v1 -1.3), delay 6 ms (6, v1 10). Like libwebrtc's, it takes the speech down along with the "
                       "noise in speech frames, so the SNR against the clean talker does not rise. With `fft4g` in "
                       "place of `RealFft` (#241) the same four values hold; unit `Ns.Fft4gBitExactWithLibwebrtc` "
-                      "pins the transform to the output of libwebrtc M157's prebuilt `WebRtc_rdft`."),
+                      "pins the transform to the output of libwebrtc M157's prebuilt `WebRtc_rdft`. The whole "
+                      "suppressor was then run side by side with libwebrtc M157's prebuilt `NoiseSuppressor`, "
+                      "driven through its `AudioBuffer` on the same input: the output is identical bit for bit at "
+                      "16, 32 and 48 kHz with one, two and three channels (#241); unit "
+                      "`Ns.BitExactWithLibwebrtcMultichannel` pins it. So the 0.3 dB left in the speech level above "
+                      "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
          headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],

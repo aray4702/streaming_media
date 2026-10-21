@@ -39,23 +39,31 @@
 //
 // As in AudioProcessingImpl::ProcessCaptureStreamLocked, Analyze() reads the
 // capture before the echo canceller and Process() suppresses after it. Bands
-// are laid out as SplittingFilter's (band b at [b * 160, (b + 1) * 160)).
+// are laid out as SplittingFilter's (band b at [b * 160, (b + 1) * 160)), and
+// channels one after the other (channel c at [c * frame_samples(), ...)).
 // Signals are FloatS16 inside (libwebrtc's scale); the API takes and returns
-// this library's [-1, 1] floats. Mono.
+// this library's [-1, 1] floats.
+//
+// Channels (noise_suppressor.cc): each channel has its own estimators and
+// filter. Analyze() learns from all of them unless every channel's frame is
+// zero. Process() applies one Wiener filter to every channel, the minimum
+// over the channels per bin (AggregateWienerFilters), and likewise the
+// minimum of the channels' overall scaling factors and upper-band gains.
 //
 // The level defaults to k18dB, libwebrtc's kHigh: what
 // WebRtcVoiceEngine::ApplyOptions sets in a call
 // (media/engine/webrtc_voice_engine.cc). NsConfig's own default is k12dB.
 //
-// Differences from libwebrtc that remain (catalog.py, #241):
-//  - One channel (libwebrtc's multi-channel aggregation takes the minimum
-//    filter and gain over the channels; with one channel that is the
-//    channel's own).
+// Verified against libwebrtc M157's prebuilt NoiseSuppressor (the
+// compare/webrtc/fetch.sh build, driven through its AudioBuffer): the output
+// is identical bit for bit at 16, 32 and 48 kHz, with one to three channels
+// (#241; ns_test.cc pins it).
 #pragma once
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 
@@ -222,6 +230,7 @@ class WienerFilter {
 struct NoiseSuppressorConfig {
   int sample_rate = 16000;  // 16000, 32000 or 48000.
   SuppressionLevel level = SuppressionLevel::k18dB;
+  size_t num_channels = 1;
 };
 
 struct NoiseSuppressorStats {
@@ -230,7 +239,7 @@ struct NoiseSuppressorStats {
   float last_mean_gain_db = 0;   // Mean Wiener gain over the bins, last frame.
   float last_upper_band_gain = 1;
   float last_gain_adjustment = 1;
-  float prior_speech_probability = .5f;
+  float prior_speech_probability = .5f;  // Channel 0's.
   Histogram gain_db;
 };
 
@@ -240,10 +249,11 @@ class NoiseSuppressor : public MetricsSource {
   NoiseSuppressor(const NoiseSuppressor&) = delete;  // The filters hold a reference to params_.
   NoiseSuppressor& operator=(const NoiseSuppressor&) = delete;
   size_t num_bands() const { return num_bands_; }
-  // Samples per call: num_bands() * 160.
+  size_t num_channels() const { return channels_.size(); }
+  // Samples per channel per call: num_bands() * 160.
   size_t frame_samples() const { return num_bands_ * kNsFrameSize; }
   // Learns the noise and speech models from the capture (before the echo
-  // canceller, as APM does).
+  // canceller, as APM does). num_channels() * frame_samples() samples.
   void Analyze(std::span<const float> bands);
   // Suppresses noise in place. Output is delayed by latency_samples() (per
   // band).
@@ -253,6 +263,24 @@ class NoiseSuppressor : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  // NoiseSuppressor::ChannelState.
+  struct ChannelState {
+    ChannelState(const SuppressionParams& params, size_t num_bands);
+    SpeechProbabilityEstimator speech_probability_estimator;
+    WienerFilter wiener_filter;
+    NoiseEstimator noise_estimator;
+    Spectrum prev_analysis_signal_spectrum;
+    std::array<float, kOverlapSize> analyze_analysis_memory{};
+    std::array<float, kOverlapSize> process_analysis_memory{};
+    std::array<float, kOverlapSize> process_synthesis_memory{};
+    std::vector<std::array<float, kOverlapSize>> process_delay_memory;
+  };
+  // FilterBankState: one channel's frame through Process().
+  struct FilterBankState {
+    std::array<float, kNsFrameSize> y_band0;
+    std::array<float, kFftSize> real, imag, extended_frame;
+  };
+
   // NrFft (ns_fft.cc): real/imag halves, Ooura layout.
   void Fft(std::span<const float, kFftSize> time, std::span<float, kFftSize> real, std::span<float, kFftSize> imag);
   void Ifft(std::span<const float, kFftSize> real, std::span<const float, kFftSize> imag,
@@ -264,14 +292,10 @@ class NoiseSuppressor : public MetricsSource {
   int32_t num_analyzed_frames_ = -1;
   std::array<size_t, kFftSize / 2> bit_reversal_state_{};
   std::array<float, kFftSize / 2> tables_{};
-  SpeechProbabilityEstimator speech_probability_estimator_;
-  WienerFilter wiener_filter_;
-  NoiseEstimator noise_estimator_;
-  Spectrum prev_analysis_signal_spectrum_;
-  std::array<float, kOverlapSize> analyze_analysis_memory_{};
-  std::array<float, kOverlapSize> process_analysis_memory_{};
-  std::array<float, kOverlapSize> process_synthesis_memory_{};
-  std::vector<std::array<float, kOverlapSize>> process_delay_memory_;
+  // unique_ptr: the filters hold a reference to params_ and must not move.
+  std::vector<std::unique_ptr<ChannelState>> channels_;
+  std::vector<FilterBankState> filter_bank_states_;
+  std::vector<float> upper_band_gains_, energies_before_filtering_, gain_adjustments_;
   NoiseSuppressorStats stats_;
 };
 
