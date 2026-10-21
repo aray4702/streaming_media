@@ -785,7 +785,7 @@ ALGORITHMS = [
                       "from 7.6 to 12.9 dB."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h"], unit=["GainControl", "GainController2"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h"], unit=["GainControl", "GainController2", "Agc1"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -799,14 +799,29 @@ ALGORITHMS = [
                "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
                "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
                "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
-               "default, is #242's next step.",
+               "default: `agc1::GainControl` ports its digital compression stage, which every call runs "
+               "(`AgcManagerDirect::SetupDigitalGainControl` puts `GainControlImpl` in `kFixedDigital` with "
+               "a 2 dB target, 7 dB compression and the limiter): `agc/legacy/digital_agc.cc` (gain table, "
+               "envelope followers, gate, overload limit, the AGC's VAD), the fixed-digital parts of "
+               "`agc/legacy/analog_agc.cc` and `gain_control_impl.cc`. Not yet: `AgcManagerDirect`, which "
+               "moves the compression gain (2-12 dB) and the analog volume from `Agc`'s loudness histogram; "
+               "its `VoiceActivityDetector` needs iSAC's pitch estimator and ooura's fft4g, and APM's "
+               "analog mic gain emulation is `CaptureLevelsAdjuster`, none of them in the reference sources "
+               "yet (#57). The e2e chain still runs AGC2 for `apm v2` until AGC1 is complete.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
                       "quiet talker -21.1 dBFS (libwebrtc AGC2 -21.0, v1 -16.8), loud talker -1.2 dB (-1.0), "
                       "noise in pauses -62.7 dBFS (-62.9), peak 0 dBFS (0.0). libwebrtc's "
                       "`GainDoesNotChangeFast` unit test never runs its loops (its frame count is negative); "
-                      "the port runs them."),
+                      "the port runs them. AGC1's digital stage (#242) is bit-exact with libwebrtc's "
+                      "`digital_agc.cc` and `analog_agc.cc` compiled from `reference/` and driven as "
+                      "`GainControlImpl` drives them: the gain tables for four configurations, and the 11 "
+                      "per-millisecond gains and the S16 output of every frame over 30 s of talk spurts at "
+                      "-45, -25 and -8 dBFS (`Agc1.GainTableMatchesLibwebrtc`, "
+                      "`Agc1.GainsAndOutputMatchLibwebrtc`). The first port used SPL's unsigned "
+                      "`WEBRTC_SPL_SCALEDIFF32` for the envelope followers; `digital_agc.cc` has its own "
+                      "signed `AGC_SCALEDIFF32`, and the golden test caught the difference."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
