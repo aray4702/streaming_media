@@ -2553,6 +2553,57 @@ issue_256_audio_24khz - Audio + video call with 24 kHz audio and 3% loss: NetEq 
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_257_zero_max_payload - A video stream configured with max_payload_size 0 must not hang: the sender clamps it to libwebrtc's 100-byte minimum packet and the call goes on
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     1.2          0.3  webrtc
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            53           21  webrtc
+  audio.mouth_to_ear_p95_ms               678          201  webrtc
+  audio.jb_delay_p95_ms                   362          119  webrtc
+  video.freeze_count                      2.3            0  webrtc
+  video.freeze_total_ms                  3072            0  webrtc
+  video.longest_freeze_ms                2137         26.0  webrtc
+  video.pause_count                       0.1            0  =
+  video.pause_total_ms                    596            0  webrtc
+  video.render_fps                       20.6         29.9  webrtc
+  video.e2e_delay_p95_ms                 3305          113  webrtc
+  video.time_to_first_frame_ms             98         53.6  =
+  video.avg_kbps                         1663         2110  webrtc
+  video.keyframe_requests                 5.6            0  webrtc
+  sync.av_offset_p95_ms                  2736         72.9  webrtc
+  cc.utilization_pct                     97.0         90.2  sm
+  cc.queue_p95_ms                         300         45.3  webrtc
+  cc.max_settle_ms                        490          200  =
+  cc.rtt_p50_ms                           339         65.3  webrtc
+  net.loss_pct                           12.1            0  webrtc
+  repair.overhead_pct                    14.3          0.1  webrtc
+  forward link per kind (information only)
+  net.audio_kbps                         70.4         69.8
+  net.video_kbps                         2377         2188
+  net.rtx_kbps                            350          1.9
+  net.padding_kbps                        0.2          0.7
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                     14.0            0
+  net.rtx_loss_pct                        1.1            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    192          187
+  net.audio_size_p90_b                    223          214
+  net.audio_size_max_b                    271          299
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                    128         1377
+  net.video_size_p90_b                    128         1460
+  net.video_size_max_b                    128         1486
+  net.video_queue_drops                  6559            0
+  net.rtx_size_p50_b                      130         1213
+  net.rtx_size_p90_b                      130         1297
+  net.rtx_size_max_b                      130         1297
+  net.rtx_queue_drops                    61.8            0
+  net.padding_size_p50_b                  136          303
+  net.padding_size_p90_b                  136          303
+  net.padding_size_max_b                  136          303
+  net.padding_queue_drops                   0            0
+
 issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.3          1.4  =
@@ -4101,7 +4152,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 234, webrtc 126, tie 1363 (of the metrics shown)
+better: sm 235, webrtc 143, tie 1367 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

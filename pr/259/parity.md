@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-82 scenarios, mean of 10 seeds. **163 gaps**: 78 behind libwebrtc, 85 ahead of it; 0 without an owner.
+83 scenarios, mean of 10 seeds. **181 gaps**: 95 behind libwebrtc, 86 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-163 gaps on `main`, 163 here: **0 closed, 0 opened**, 0 changed direction.
+181 gaps on `main`, 181 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
@@ -108,6 +108,24 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_256_audio_24khz | `audio.longest_interruption_ms` | 0 | 28 | ±20 | ahead | 4/10 | #62, #63 |
 | issue_256_audio_24khz | `audio.mouth_to_ear_p95_ms` | 81.9 | 219 | ±55.1 | ahead | 10/10 | #62, #63 |
 | issue_256_audio_24khz | `video.e2e_delay_p95_ms` | 205 | 227 | ±19.1 | ahead | 6/10 | #24, #37 |
+| issue_257_zero_max_payload | `audio.concealed_pct` | 1.2 | 0.3 | ±0.5 | behind | 10/10 | #62, #63 |
+| issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 362 | 119 | ±19.7 | behind | 10/10 | #62, #63 |
+| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 53 | 21 | ±20 | behind | 4/10 | #62, #63 |
+| issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 678 | 201 | ±33.9 | behind | 10/10 | #62, #63 |
+| issue_257_zero_max_payload | `cc.queue_p95_ms` | 300 | 45.3 | ±15.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
+| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 339 | 65.3 | ±16.9 | behind | 10/10 | #61 |
+| issue_257_zero_max_payload | `cc.utilization_pct` | 97.0 | 90.2 | ±4.9 | ahead | 8/10 | #19, #15, #48, #12, #61 |
+| issue_257_zero_max_payload | `net.loss_pct` | 12.1 | 0 | ±0.6 | behind | 10/10 | #21, #61, #12 |
+| issue_257_zero_max_payload | `repair.overhead_pct` | 14.3 | 0.1 | ±2 | behind | 10/10 | #21, #7, #29 |
+| issue_257_zero_max_payload | `sync.av_offset_p95_ms` | 2736 | 72.9 | ±137 | behind | 10/10 | #77 |
+| issue_257_zero_max_payload | `video.avg_kbps` | 1663 | 2110 | ±105 | behind | 10/10 | #37, #61 |
+| issue_257_zero_max_payload | `video.e2e_delay_p95_ms` | 3305 | 113 | ±165 | behind | 10/10 | #24, #37 |
+| issue_257_zero_max_payload | `video.freeze_count` | 2.3 | 0 | ±0.5 | behind | 10/10 | #5, #37, #24 |
+| issue_257_zero_max_payload | `video.freeze_total_ms` | 3072 | 0 | ±154 | behind | 10/10 | #5, #37, #24 |
+| issue_257_zero_max_payload | `video.keyframe_requests` | 5.6 | 0 | ±0.5 | behind | 5/10 | #23 |
+| issue_257_zero_max_payload | `video.longest_freeze_ms` | 2137 | 26.0 | ±107 | behind | 10/10 | #5, #37, #24 |
+| issue_257_zero_max_payload | `video.pause_total_ms` | 596 | 0 | ±100 | behind | 1/10 | #5, #37, #24 |
+| issue_257_zero_max_payload | `video.render_fps` | 20.6 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_48_prober_low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #62, #63 |
