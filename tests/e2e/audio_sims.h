@@ -8,6 +8,7 @@
 #include <numbers>
 #include <vector>
 
+#include "sm/audio/agc2.h"
 #include "sm/audio/comfort_noise.h"
 #include "sm/audio/echo_canceller.h"
 #include "sm/audio/gain_control.h"
@@ -79,6 +80,9 @@ inline CallSignals MakeCall(const CallScenario& s) {
 // The capture processing chain, in WebRTC APM order.
 struct ChainConfig {
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
+  // `apm v2`: libwebrtc's modules where ported (#240-#242). So far the AGC
+  // is AGC2 (`agc2::GainController2`) fed our VAD's per-frame decision.
+  bool apm_v2 = false;
 };
 
 struct ChainResult {
@@ -104,6 +108,9 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   gc.sample_rate = fs;
   gc.limiter.sample_rate = fs;
   audio::AutomaticGainControl agc(gc);
+  audio::agc2::GainController2Config gc2;
+  gc2.sample_rate = fs;
+  audio::agc2::GainController2 agc2(gc2);
   ChainResult r;
   r.out = c.capture;
   const size_t frame = static_cast<size_t>(fs / 100);
@@ -118,7 +125,13 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
     bool v = vad.Process(f);
     r.vad.push_back(v);
     if (cc.ts) ts.Process(f, vad.voiced());
-    if (cc.agc) agc.Process(f, v);
+    if (cc.agc && cc.apm_v2) {
+      // AGC2 reads a per-frame speech probability (its RNN VAD has no
+      // hangover), so it gets our VAD's decision before the hangover.
+      agc2.Process(f, vad.raw_decision() ? 1.0f : 0.0f);
+    } else if (cc.agc) {
+      agc.Process(f, v);
+    }
   }
   if (cc.aec) r.latency += aec.latency_samples();
   if (cc.ns) r.latency += ns.latency_samples();
