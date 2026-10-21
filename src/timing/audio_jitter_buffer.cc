@@ -152,14 +152,29 @@ AudioOperation AudioJitterBuffer::MaybeStretch(Timestamp now) {
 }
 
 AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) {
-  const size_t need = out.size();
   ++ticks_;  // NetEqImpl::GetAudioInternal: tick_timer_->Increment().
   if (cfg_.version >= 2 && !neteq_reset_done_ && stats_.packets_received > 0) {
     neteq_delay_.SoftReset();
     decision_.SoftReset(ticks_);
     neteq_reset_done_ = true;
   }
-  if (cfg_.version >= 2) return GetAudioV2(out, now);
+  const AudioOperation op = cfg_.version >= 2 ? GetAudioV2(out, now) : GetAudioV1(out, now);
+  // NetEqImpl::GetAudioInternal: after an expand the playout timestamp moves on
+  // by the output (dead reckoning); otherwise it is the sync buffer's end minus
+  // its future length, never moved backwards.
+  if (started_) {
+    const int64_t played = next_ts_ - static_cast<int64_t>(sync_.size());
+    if (op == AudioOperation::kExpand && playout_ts_) {
+      *playout_ts_ += static_cast<int64_t>(out.size());
+    } else if (!playout_ts_ || played > *playout_ts_) {
+      playout_ts_ = played;
+    }
+  }
+  return op;
+}
+
+AudioOperation AudioJitterBuffer::GetAudioV1(std::span<float> out, Timestamp now) {
+  const size_t need = out.size();
   if (!started_) {
     if (!queue_.empty() && CurrentLevelMs() >= TargetDelayMs()) {
       started_ = true;

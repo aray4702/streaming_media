@@ -94,6 +94,11 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   - the audio jitter-buffer delay percentiles come from 10 ms averages;
   - `video.residual_loss_pct` ignores FEC recoveries;
   - `repair.fec_recovered` is not reported.
+  - `sync.av_offset_*` reads libwebrtc's audio playout point from
+    `Syncable::GetPlayoutRtpTimestamp`, the input its own A/V sync uses.
+    Neither stack synchronizes in the comparison: libwebrtc's receive
+    streams have no `sync_group`, and the test bench has no A/V sync yet
+    (#77).
 - **The video delay breakdown is this library's only.**
   `video.delay_encode_ms`, `video.delay_pacer_p95_ms`,
   `video.delay_network_p95_ms` and `video.delay_jitter_buffer_p95_ms` need the

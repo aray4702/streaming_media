@@ -52,3 +52,14 @@ done
 for f in LICENSE PATENTS AUTHORS; do
   curl -fsSL --retry 8 --retry-delay 10 "$BASE/+/$COMMIT/$f?format=TEXT" | base64 -d > "$HERE/$f"
 done
+
+# libopus, as libwebrtc builds it from third_party/opus/src. Revision from
+# chromium/src/third_party@8a83e635 (libwebrtc DEPS at COMMIT) opus/README.chromium;
+# Chromium's local changes there don't touch these files.
+OPUS_REV="55513e81d8f606bd75d0ff773d2144e5f2a732f5"
+for f in COPYING silk/control_codec.c src/opus_encoder.c silk/enc_API.c silk/fixed/encode_frame_FIX.c \
+         silk/control.h silk/structs.h silk/define.h silk/tuning_parameters.h silk/fixed/structs_FIX.h src/opus_private.h; do
+  mkdir -p "$HERE/third_party/opus/src/$(dirname "$f")"
+  curl -fsSL --retry 8 --retry-delay 10 "https://gitlab.xiph.org/xiph/opus/-/raw/$OPUS_REV/$f" -o "$HERE/third_party/opus/src/$f"
+  echo "opus $f"
+done

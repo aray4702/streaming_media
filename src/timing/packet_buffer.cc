@@ -36,31 +36,29 @@ void PacketBuffer::Clear() {
 
 InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame) {
   int64_t s = unwrapper_.Unwrap(p.seq);
-  if (cfg_.version >= 2) {
-    if (first_seq_ == INT64_MIN) {
-      first_seq_ = s;
-    } else if (s < first_seq_) {
-      // Cleared past this packet by ClearTo: it is old, ignore it.
-      if (cleared_to_first_seq_) {
-        ++stats_.too_old;
-        return InsertResult::kTooOld;
-      }
-      // Large backward jump: clear and treat this as the first packet.
-      if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
-      first_seq_ = s;
+  if (first_seq_ == INT64_MIN) {
+    first_seq_ = s;
+  } else if (s < first_seq_) {
+    // Cleared past this packet by ClearTo: it is old, ignore it.
+    if (cleared_to_first_seq_) {
+      ++stats_.too_old;
+      return InsertResult::kTooOld;
     }
-    if (!packets_.count(s) && !done_.count(s)) {
-      // The packet buffer is full: grow it, and clear it at the maximum.
-      while (SlotTaken(s) && size_ < cfg_.max_size) {
-        size_ = std::min(cfg_.max_size, 2 * size_);
-        SM_EVENT(cfg_.events, now, "packet_buffer", "expanded", static_cast<double>(size_), s);
-      }
-      if (SlotTaken(s)) {
-        Clear();
-        ++stats_.cleared;
-        SM_EVENT(cfg_.events, now, "packet_buffer", "cleared", 0, s);
-        return InsertResult::kBufferCleared;
-      }
+    // Large backward jump: clear and treat this as the first packet.
+    if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
+    first_seq_ = s;
+  }
+  if (!packets_.count(s) && !done_.count(s)) {
+    // The packet buffer is full: grow it, and clear it at the maximum.
+    while (SlotTaken(s) && size_ < cfg_.max_size) {
+      size_ = std::min(cfg_.max_size, 2 * size_);
+      SM_EVENT(cfg_.events, now, "packet_buffer", "expanded", static_cast<double>(size_), s);
+    }
+    if (SlotTaken(s)) {
+      Clear();
+      ++stats_.cleared;
+      SM_EVENT(cfg_.events, now, "packet_buffer", "cleared", 0, s);
+      return InsertResult::kBufferCleared;
     }
   }
   if (highest_ != INT64_MIN && s + static_cast<int64_t>(cfg_.window) <= highest_) {
@@ -81,14 +79,14 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
   packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, now});
   // received_padding_.erase(begin, lower_bound(seq - buffer_.size() / 4)): padding only matters
   // near the packets being inserted.
-  if (cfg_.version >= 2) padding_.erase(padding_.begin(), padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
+  padding_.erase(padding_.begin(), padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
   TryAssemble(s);
   Trim();
   return InsertResult::kInserted;
 }
 
 void PacketBuffer::ClearTo(int64_t seq) {
-  if (cfg_.version < 2 || first_seq_ == INT64_MIN || first_seq_ > seq) return;
+  if (first_seq_ == INT64_MIN || first_seq_ > seq) return;
   ++seq;
   packets_.erase(packets_.begin(), packets_.lower_bound(seq));
   padding_.erase(padding_.begin(), padding_.lower_bound(seq));
@@ -156,7 +154,7 @@ void PacketBuffer::TryAssemble(int64_t seq) {
     done_.insert(i);
   }
   // A found frame drops the padding from the packet that completed it through its last packet.
-  if (cfg_.version >= 2) padding_.erase(padding_.lower_bound(seq), padding_.upper_bound(last));
+  padding_.erase(padding_.lower_bound(seq), padding_.upper_bound(last));
   ++stats_.frames_assembled;
   SM_EVENT(cfg_.events, f.last_arrival, "packet_buffer", "frame", static_cast<double>(last - first + 1), first);
   ready_.push_back(std::move(f));
