@@ -2,7 +2,6 @@ name issue_5_keyframe_flush
 describe libwebrtc's pacer keyframe flush (issue #5, PR 3): after a capacity drop the keyframe leaves ahead of the stale queue instead of behind it
 duration 40s
 seed 2
-pacer v2
 # PacingController::EnqueuePacket discards the stream's queued packets when a keyframe starts.
 # Total freeze time on a drop to 500 kbps, base -> flush, seeds 1-3: 3966 -> 2157, 3197 -> 2007,
 # 4250 -> 2227 ms; seeds 4, 5: 3680 -> 1859, 4006 -> 2402 (longest 1589 at most) (libwebrtc `capacity_drop`: 2355-2538 ms).

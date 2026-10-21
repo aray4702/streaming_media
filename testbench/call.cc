@@ -440,8 +440,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.start_rate = s.start_rate;
     c.send_side.gcc.max_rate = s.max_rate;
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
-    c.send_side.pacer.version = s.pacer_v2 ? cc::PacerVersion::kV2 : cc::PacerVersion::kV1;
-    c.send_side.gcc.version = s.cc_v2 ? 2 : 1;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
@@ -508,14 +506,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   // EncoderRtcpFeedback's kMinKeyframeSendIntervalMs (video/encoder_rtcp_feedback.cc).
   vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
-  if (s.cc_v2) {
-    // With `cc v2` (the stack #61 flipped together with the allocator): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
-    // (VideoCodec::minBitrate = the stream's min_bitrate_bps), and the bitrate adjuster
-    // never pushes the target below it.
-    vsc_cfg.allocation_min_bitrate = s.video_min;
-    vsc_cfg.allocation_max_bitrate = s.video_max;
-    vsc_cfg.adjuster.min_bitrate = s.video_min;
-  }
+  // libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum (VideoCodec::minBitrate =
+  // the stream's min_bitrate_bps), and the bitrate adjuster never pushes the target below it.
+  vsc_cfg.allocation_min_bitrate = s.video_min;
+  vsc_cfg.allocation_max_bitrate = s.video_max;
+  vsc_cfg.adjuster.min_bitrate = s.video_min;
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;

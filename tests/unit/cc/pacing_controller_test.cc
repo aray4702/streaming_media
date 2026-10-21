@@ -482,7 +482,6 @@ struct Polled {
 };
 Polled PollEveryMs(bool task_queue_scheduling) {
   PacerConfig cfg;
-  cfg.version = PacerVersion::kV2;
   cfg.task_queue_scheduling = task_queue_scheduling;
   Pacer pacer(cfg);
   pacer.SetPacingRates(DataRate::KilobitsPerSec(110), DataRate::Zero());

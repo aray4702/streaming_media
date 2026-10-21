@@ -19,21 +19,12 @@ SenderPacket Media(uint16_t seq, PacketKind kind, cc::PacketPriority prio, size_
   p.priority = prio;
   return p;
 }
-
-// The controller with the library's own components (v1). The session defaults
-// are libwebrtc's since #61; these tests pin the v1 behaviour they name.
-SendSideConfig V1Config() {
-  SendSideConfig c;
-  c.gcc.version = 1;
-  c.pacer.version = cc::PacerVersion::kV1;
-  return c;
-}
 }  // namespace
 
 SM_TEST(SendSideController, ReleasesWithTransportSequenceNumbersInPriorityOrder) {
   sync::ExtensionMap map;
   map.Register(3, sync::uri::kTransportCc);
-  SendSideController c(V1Config(), &map);  // v2 numbers from 1 (see PacketRouter).
+  SendSideController c(SendSideConfig{}, &map);
   c.Start(Timestamp::Millis(0));
   Timestamp now = Timestamp::Millis(0);
   c.Enqueue(Media(10, PacketKind::kVideo, cc::PacketPriority::kVideo), now);
@@ -47,10 +38,10 @@ SM_TEST(SendSideController, ReleasesWithTransportSequenceNumbersInPriorityOrder)
   SM_ASSERT_EQ(all.size(), 3u);
   sync::ExtensionAccessor access(map);
   for (size_t i = 0; i < all.size(); ++i) {
-    SM_EXPECT_EQ(all[i].transport_seq, i);
+    SM_EXPECT_EQ(all[i].transport_seq, i + 1);  // From 1, as libwebrtc's PacketRouter.
     auto parsed = RtpPacket::Parse(all[i].bytes);
     SM_ASSERT_TRUE(parsed.has_value());
-    SM_EXPECT_TRUE(access.GetTransportSeq(*parsed) == std::optional<uint16_t>(static_cast<uint16_t>(i)));
+    SM_EXPECT_TRUE(access.GetTransportSeq(*parsed) == std::optional<uint16_t>(static_cast<uint16_t>(i + 1)));
     SM_EXPECT_EQ(all[i].wire_size.bytes(), static_cast<int64_t>(all[i].bytes.size()) + 28);
   }
   SM_EXPECT_TRUE(all[0].kind == PacketKind::kAudio);  // Audio goes first.
@@ -71,31 +62,6 @@ SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
   SM_EXPECT_EQ(total, 40u);
 }
 
-SM_TEST(SendSideController, PaddingIsARealPaddingOnlyPacket) {
-  SendSideController c(V1Config());  // v2 pads through the prober and the pacing controller (see the cc v2 tests).
-  RtpSenderConfig sc;
-  sc.ssrc = 0x10;
-  sc.rtx_ssrc = 0x20;
-  RtpSender sender(sc);
-  c.SetPaddingSender(&sender);
-  c.Start(Timestamp::Millis(0));
-  c.pacer().SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(200));
-  size_t padding = 0;
-  for (int t = 0; t < 200; ++t) {
-    for (auto& r : c.Process(Timestamp::Millis(t))) {
-      SM_EXPECT_TRUE(r.kind == PacketKind::kPadding);
-      auto p = RtpPacket::Parse(r.bytes);
-      SM_ASSERT_TRUE(p.has_value());
-      SM_EXPECT_EQ(p->ssrc, 0x20u);
-      SM_EXPECT_TRUE(p->payload.empty());
-      SM_EXPECT_GT(p->padding_size, 0);
-      ++padding;
-    }
-  }
-  SM_EXPECT_GT(padding, 0u);
-  SM_EXPECT_EQ(c.stats().padding, padding);
-}
-
 SM_TEST(SendSideController, ComputeRatesDividesOutProtectionAndClamps) {
   SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
@@ -114,30 +80,11 @@ SM_TEST(SendSideController, ComputeRatesDividesOutProtectionAndClamps) {
   SM_EXPECT_EQ(r.audio_rate.bps(), 990000);
 }
 
-SM_TEST(SendSideController, SilentFeedbackPausesTheEncoderAndResumes) {
-  SendSideConfig cfg;
-  cfg.gcc.version = 1;  // The outage monitor runs only under cc v1 (issue #151).
-  SendSideController c(cfg);
-  c.Start(Timestamp::Millis(0));
-  c.gcc().OnRttUpdate(TimeDelta::Millis(50));
-  bool paused = false;
-  // No feedback for a long time while sending: the outage monitor must react.
-  for (int t = 0; t < 8000; t += 10) {
-    c.Process(Timestamp::Millis(t));
-    if (t < 7000) c.outage().OnFeedback(Timestamp::Millis(t < 1000 ? t : 999));
-    ControllerActions a = c.TakeActions();
-    if (a.pause_encoder) paused = true;
-  }
-  SM_EXPECT_TRUE(paused);
-  SM_EXPECT_FALSE(c.TakeActions().pause_encoder);  // Taking clears the flags.
-}
-
 SM_TEST(SendSideController, SilentFeedbackDoesNothingUnderGccV2) {
   // libwebrtc has no outage monitor (issue #151): on a feedback time-out GoogCC backs the target off and the
   // congestion window drops frames, but the encoder keeps running, the pacer keeps sending and no keyframe is
   // asked for; the receiver's decode time-out asks for one after the link is back.
   SendSideConfig cfg;
-  cfg.gcc.version = 2;
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   c.gcc().OnRttUpdate(TimeDelta::Millis(50));
@@ -155,7 +102,7 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);
   map.Register(2, sync::uri::kAbsSendTime);
-  SendSideController c(V1Config(), &map);  // v2 pads through the prober and the pacing controller.
+  SendSideController c(SendSideConfig{}, &map);
   RtpSenderConfig sc;
   sc.ssrc = 0x10;
   sc.rtx_ssrc = 0x20;
@@ -163,11 +110,11 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   RtpSender sender(sc);
   c.SetPaddingSender(&sender);
   c.Start(Timestamp::Millis(0));
-  sender.SendVideoFrame(std::vector<std::vector<uint8_t>>{std::vector<uint8_t>(100, 1)}, 123456, Timestamp::Millis(0));
+  // A packet large enough to start the start-up probes, which then go out as padding.
+  sender.SendVideoFrame(std::vector<std::vector<uint8_t>>{std::vector<uint8_t>(300, 1)}, 123456, Timestamp::Millis(0));
   for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
-  c.pacer().SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(300));
   size_t padding = 0;
-  for (int t = 0; t < 300; ++t) {
+  for (int t = 0; t < 1000; ++t) {
     for (auto& r : c.Process(Timestamp::Millis(t))) {
       if (r.kind != PacketKind::kPadding) continue;
       auto p = RtpPacket::Parse(r.bytes);
@@ -235,7 +182,6 @@ SM_TEST(SendSideController, AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc) {
 // and leave nothing behind in the controller.
 SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
   SendSideConfig cfg;
-  cfg.pacer.version = cc::PacerVersion::kV2;
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   const Timestamp t0 = Timestamp::Millis(0);
@@ -264,7 +210,6 @@ SM_TEST(SendSideController, KeyframeFlushesQueuedVideoUnderPacerV2) {
 // packet (libwebrtc's PacketRouter), so packets a keyframe flushes leave no gap for the receiver to NACK.
 SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
   SendSideConfig cfg;
-  cfg.pacer.version = cc::PacerVersion::kV2;
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   RtpSenderConfig sc;
@@ -294,7 +239,6 @@ SM_TEST(SendSideController, FlushedPacketsLeaveNoSequenceGapUnderRtxV2) {
 // and RtpPacketHistory keeps the packet pending) a later NACK for it gets nothing (issue #151).
 SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
   SendSideConfig cfg;
-  cfg.pacer.version = cc::PacerVersion::kV2;
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
   RtpSenderConfig sc;
@@ -333,7 +277,7 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
 // of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
 // not run below what it must send.
 SM_TEST(SendSideController, AllocatorLiftsTheTargetToTheSumOfTheMinimums) {
-  SendSideConfig cfg = V1Config();  // cc v1: no packet-overhead rate off the video allocation.
+  SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   cfg.video_min = DataRate::KilobitsPerSec(50);
   SendSideController c(cfg);
@@ -342,7 +286,9 @@ SM_TEST(SendSideController, AllocatorLiftsTheTargetToTheSumOfTheMinimums) {
   SM_EXPECT_GE(c.target().kbps(), 100.0);
   const SendRates r = c.ComputeMeasuredRates(DataRate::KilobitsPerSec(50));
   SM_EXPECT_NEAR(r.audio_rate.kbps(), 50.0, 0.01);
-  SM_EXPECT_NEAR(r.video_target.kbps(), 50.0, 0.01);  // Its minimum, with no repair traffic yet.
+  // Its minimum less the packet-overhead rate (RtpVideoSender::OnBitrateUpdated), with no repair
+  // traffic yet: 50 kbps / (1228 bytes x 8) = 6 packets/s (rounded up) of 24 + 28 bytes.
+  SM_EXPECT_NEAR(r.video_target.kbps(), 50.0 - 6 * (24 + 28) * 8 / 1000.0, 0.01);
   SM_EXPECT_EQ(c.allocator().limits().min_allocatable.kbps(), 100.0);
 }
 
@@ -350,7 +296,6 @@ SM_TEST(SendSideController, AllocatorLiftsTheTargetToTheSumOfTheMinimums) {
 // rate comes off the video allocation before the protection share does.
 SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) {
   SendSideConfig cfg;
-  cfg.gcc.version = 2;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
   SendSideController c(cfg);
   c.ConfigureAllocation(DataRate::Zero(), true);
@@ -369,7 +314,6 @@ SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) 
 // (1240936 / (1488 x 8), rounded up) of 24 + 28 bytes.
 SM_TEST(SendSideController, V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc) {
   SendSideConfig cfg;
-  cfg.gcc.version = 2;
   cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
   cfg.max_packet_size = 1460;
   SendSideController c(cfg);

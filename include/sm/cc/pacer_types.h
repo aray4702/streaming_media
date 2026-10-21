@@ -1,4 +1,4 @@
-// Types shared by the pacer versions (cc/pacer.h).
+// Types shared by the pacer (cc/pacer.h) and its PacingController.
 #pragma once
 
 #include <array>
@@ -28,7 +28,7 @@ struct PacedPacket {
   bool first_packet_of_frame = false;
 };
 
-// PacketRouter::GeneratePadding, as the pacer sees it (pacer v2): the packets that make about
+// PacketRouter::GeneratePadding, as the pacer sees it: the packets that make about
 // `target` of padding, each with its real wire size, `priority` kPadding and an `id` the caller
 // can recognise when the pacer sends it. Empty when no padding can be made. The pacer queues
 // them at the padding level; without a generator it makes fixed-size placeholders
@@ -40,10 +40,10 @@ struct PacerStats {
   std::array<int64_t, 5> sent_bytes{};
   uint64_t probe_packets = 0;
   uint64_t drain_boosts = 0;  // Times the queue raised the rate above the pacing rate.
-  uint64_t keepalives = 0;       // v2.
-  uint64_t circuit_breaks = 0;   // v2.
-  uint64_t keyframe_flushes = 0;  // v2: keyframes that flushed the video queue.
-  uint64_t flushed_packets = 0;   // v2: packets discarded by those flushes.
+  uint64_t keepalives = 0;
+  uint64_t circuit_breaks = 0;
+  uint64_t keyframe_flushes = 0;  // Keyframes that flushed the video queue.
+  uint64_t flushed_packets = 0;   // Packets discarded by those flushes.
   std::array<Histogram, 5> queue_delay_ms;
 };
 

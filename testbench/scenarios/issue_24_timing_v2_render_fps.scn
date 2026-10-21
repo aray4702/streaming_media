@@ -3,8 +3,6 @@ describe issue_53_cwnd_pushback with every v2 switch and libwebrtc's receive tim
 duration 25s
 at 0s  capacity=2500kbps delay=30ms queue=100ms
 at 8s  capacity=500kbps
-cc v2
-pacer v2
 timing v2
 # libwebrtc's VideoStreamBufferController skips a late frame only when a later
 # temporal unit is already decodable (FrameDecodeTiming::OnFrameBufferUpdated,

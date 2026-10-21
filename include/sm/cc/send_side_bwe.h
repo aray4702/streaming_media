@@ -1,10 +1,11 @@
 // 5.4 Send-side bandwidth estimation: the GCC network controller.
 //
-// Wires transport feedback into the delay-based estimator, the loss-based
-// estimator, the acknowledged-bitrate estimator and the probe machinery,
-// and produces the target rate for the encoders (min of delay-, loss- and
-// REMB-based estimates, clamped to [min, max]) plus a pacing rate
-// (target x pacing_factor) and any probe clusters to send.
+// libwebrtc's GoogCcNetworkController (goog_cc_network_control.cc, M157,
+// compare/webrtc/reference/). Wires transport feedback into the delay-based
+// estimator, SendSideBandwidthEstimation with LossBasedBweV2, the acknowledged-
+// bitrate estimator and the probe machinery, and produces the target rate for
+// the encoders plus the pacing and padding rates (GetPacingRates) and any probe
+// clusters to send.
 #pragma once
 
 #include <limits>
@@ -13,7 +14,6 @@
 
 #include "sm/cc/alr_detector.h"
 #include "sm/cc/delay_based_bwe.h"
-#include "sm/cc/loss_based_bwe.h"
 #include "sm/cc/probing.h"
 #include "sm/cc/send_side_bandwidth_estimation.h"
 #include "sm/cc/transport_feedback.h"
@@ -57,19 +57,12 @@ struct GccConfig {
   DataRate min_rate = DataRate::KilobitsPerSec(30);
   DataRate start_rate = DataRate::KilobitsPerSec(300);
   DataRate max_rate = DataRate::KilobitsPerSec(10000);
-  double pacing_factor = 2.5;
   bool enable_probing = true;
-  // 1: the original controller. 2 (`cc v2`): libwebrtc's GoogCC, ported in
-  // stages (#61); so far the delay detector's front end (#19), the acked-rate
-  // estimator and AimdRateControl (#15), and the AlrDetector, ProbeController
-  // and ProbeBitrateEstimator (#48; the BitrateProber is in `pacer v2`), and
-  // SendSideBandwidthEstimation with LossBasedBweV2 (#12), and GetPacingRates (#61).
-  int version = 1;
-  // `cc v2`: StreamsConfig::requests_alr_probing, which a screen-share stream
+  // StreamsConfig::requests_alr_probing, which a screen-share stream
   // sets; periodic ALR probes are off otherwise.
   bool periodic_alr_probing = false;
   EventSink* events = nullptr;
-  // `cc v2`: when set, rows are appended as libwebrtc's RtcEventLog would log them
+  // When set, rows are appended as libwebrtc's RtcEventLog would log them
   // (delay-based and loss-based updates when they change) and the target when it
   // changes. The test bench sets it for --link-trace.
   std::vector<BweTraceRow>* bwe_trace = nullptr;
@@ -89,36 +82,34 @@ class GccController : public MetricsSource {
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
-  // The RTT the controller last took (rounded to whole ms with `cc v2`).
+  // The RTT the controller last took (rounded to whole ms).
   TimeDelta last_rtt() const { return last_rtt_; }
   void OnRemb(DataRate remb);
-  // `cc v2`: GoogCcNetworkController::OnTransportLossReport. The loss and packet
+  // GoogCcNetworkController::OnTransportLossReport. The loss and packet
   // counts are the deltas between two receiver reports (summed over the report
   // blocks). Used for the loss rate until LossBasedBweV2 has three observations.
   NetworkControlUpdate OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
-  // `cc v2`: StreamsConfig::max_total_allocated_bitrate, the sum of the maximum
-  // bitrates the allocator hands out: a rise probes up to twice that rate, and
-  // it caps every probe at twice that rate. Returns the clusters to send. No
-  // effect with `cc v1`.
+  // StreamsConfig::max_total_allocated_bitrate, the sum of the maximum bitrates
+  // the allocator hands out: a rise probes up to twice that rate, and it caps
+  // every probe at twice that rate. Returns the clusters to send.
   std::vector<ProbeCluster> OnMaxTotalAllocatedBitrate(DataRate max_total_allocated_bitrate, Timestamp now);
   // The sum of the minimums the bitrate allocator must fund is a lower bound for
   // the estimates and the target (GoogCC use_min_allocatable_as_lower_bound_,
   // ClampConstraints). Never below the configured minimum.
   void SetMinAllocatable(DataRate r);
-  // `cc v2`: StreamsConfig::min_total_allocated_bitrate and max_padding_rate,
+  // StreamsConfig::min_total_allocated_bitrate and max_padding_rate,
   // which GetPacingRates() reads (the allocator's limits). Takes effect with the
   // next update.
   void SetPacingLimits(DataRate min_total_allocated, DataRate max_padding);
-  // `cc v2`: StreamsConfig::pacing_factor (GoogCcNetworkController::OnStreamsConfig).
+  // StreamsConfig::pacing_factor (GoogCcNetworkController::OnStreamsConfig).
   // Once set, GetPacingRates() uses it in place of the defaults (2.5 before the
   // first transport feedback, 1.1 after it). A video stream with transport-cc sets
   // 1.1 from the start (VideoSendStreamImpl's kStrictPacingMultiplier, issue #187).
   // Takes effect with the next update.
   void SetPacingFactor(double factor);
-  // `cc v2` with `pacer v2`: the pacing and padding rates as GetPacingRates() computes them (the
-  // caller takes the minimum of the padding rate and the congestion-window pushback target).
-  // `pacing_rate` of the update stays target x pacing_factor, for `pacer v1`.
-  // GccConfig::pacing_factor is `pacer v1`'s; SetPacingFactor() sets this one.
+  // The pacing and padding rates as GetPacingRates() computes them (the caller takes the
+  // minimum of the padding rate and the congestion-window pushback target). An update's
+  // `pacing_rate` is PacingRate() at the time of the update.
   DataRate PacingRate() const;
   DataRate PaddingRate() const;
   // Periodic tick (e.g. every 25 ms): ALR probing and outage handling.
@@ -134,7 +125,6 @@ class GccController : public MetricsSource {
   const DelayBasedBwe& delay_bwe() const { return delay_; }
   const AlrDetector& alr_detector() const { return alr_; }
   const ProbeControllerV2& probe_controller_v2() const { return probe2_; }
-  const LossBasedBwe& loss_bwe() const { return loss_; }
   const SendSideBandwidthEstimation& send_side_bwe() const { return ssbe_; }
   const SendHistory& history() const { return history_; }
   void ExportMetrics(MetricsWriter& w) const override;
@@ -145,24 +135,20 @@ class GccController : public MetricsSource {
   void TraceDelayBased(Timestamp now, DataRate delay_est, bool updated);
   void TraceLossBased(Timestamp now);
   std::vector<ProbeCluster> RegisterProbes(std::vector<ProbeCluster> probes);
-  NetworkControlUpdate OnTransportFeedbackV2(const std::vector<PacketResult>& results, Timestamp now);
   GccConfig cfg_;
   DataRate configured_min_;
   SendHistory history_;
   DelayBasedBwe delay_;
-  LossBasedBwe loss_;
-  SendSideBandwidthEstimation ssbe_;  // `cc v2`.
-  AcknowledgedBitrateEstimator acked_;
-  // `cc v2`: AcknowledgedBitrateEstimatorInterface::Create returns the RobustThroughputEstimator by default (M157).
+  SendSideBandwidthEstimation ssbe_;
+  // AcknowledgedBitrateEstimatorInterface::Create returns the RobustThroughputEstimator by default (M157).
   RobustThroughputEstimator acked_v2_;
-  ProbeController probe_ctrl_;
   ProbeControllerV2 probe2_;
   AlrDetector alr_;
   ProbeBitrateEstimator probe_est_;
   bool first_feedback_received_ = false;
   bool previously_in_alr_ = false;
   bool last_is_bandwidth_limited_ = true;
-  // `cc v2`: the rest of MaybeTriggerOnNetworkChanged's change check (the
+  // The rest of MaybeTriggerOnNetworkChanged's change check (the
   // target and is_bandwidth_limited are the other two).
   LossBasedState last_loss_based_state_ = LossBasedState::kDelayBasedEstimate;
   uint8_t last_fraction_loss_ = 0;
@@ -172,7 +158,6 @@ class GccController : public MetricsSource {
   DataRate max_padding_;
   std::optional<double> streams_pacing_factor_;  // StreamsConfig::pacing_factor.
   Timestamp last_now_ = Timestamp::Micros(0);
-  std::optional<DataRate> remb_;
   DataRate target_;
   DataRate last_reported_;
   std::optional<TimeDelta> last_feedback_max_rtt_;
