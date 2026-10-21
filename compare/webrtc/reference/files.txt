@@ -178,3 +178,7 @@ common_audio/include/audio_util.h
 api/audio/echo_canceller3_config.h
 api/audio/echo_canceller3_config.cc
 modules/audio_coding/codecs/isac/bandwidth_info.h
+rtc_base/numerics/moving_percentile_filter.h
+rtc_base/numerics/percentile_filter.h
+rtc_base/task_utils/repeating_task.h
+rtc_base/task_utils/repeating_task.cc

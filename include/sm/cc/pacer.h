@@ -44,6 +44,8 @@ class Pacer : public MetricsSource {
   void Enqueue(PacedPacket p);
   // See PacingController::SetPaddingGenerator.
   void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }
+  // See PacingController::SetTransportOverhead.
+  void SetTransportOverhead(DataSize overhead_per_packet) { pc_->SetTransportOverhead(overhead_per_packet); }
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call every few ms or at
   // NextSendTime(). With task_queue_scheduling it runs a pass only when TaskQueuePacedSender would.

@@ -470,6 +470,23 @@ SM_TEST(PacingController, ProbeStartsWithGeneratedPadding) {
   SM_EXPECT_EQ(asked.front(), 1);
 }
 
+// #62: BitrateProber's "large enough packet" check takes RtpPacketToSend::size(), the RTP
+// packet without the transport overhead (pacing_controller.cc:234; bitrate_prober.cc:80-93):
+// with 28 bytes of IP/UDP overhead in PacedPacket::size, a 227-byte packet (199 B of RTP) does
+// not start a 900 kbps probe, and a 228-byte one (200 B of RTP) does.
+SM_TEST(PacingController, ProbeWaitsForA200ByteRtpPacketWithoutTheTransportOverhead) {
+  auto probes_after = [](int64_t wire_bytes) {
+    PacingController pacer;
+    pacer.SetTransportOverhead(DataSize::Bytes(28));
+    pacer.SetPacingRates(DataRate::KilobitsPerSec(300), DataRate::Zero());
+    pacer.AddProbeCluster(ProbeCluster{1, DataRate::KilobitsPerSec(900), 5, DataSize::Bytes(1688)});
+    pacer.Enqueue(Pkt(1, PacketPriority::kAudio, wire_bytes, Timestamp::Millis(0)));
+    return pacer.probing();
+  };
+  SM_EXPECT_FALSE(probes_after(227));
+  SM_EXPECT_TRUE(probes_after(228));
+}
+
 // TaskQueuePacedSender runs the PacingController only when a packet or a rate changes, or when the timer
 // set by the last pass is due and NextSendTime() has come. Polling it every millisecond must therefore
 // not change when a saturated pacer sends: with audio counted in the debt and a queue behind it, the
