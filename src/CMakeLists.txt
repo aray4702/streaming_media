@@ -70,6 +70,7 @@ if(SM_WITH_AUDIO)
     audio/agc1.cc
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc
+    audio/agc_manager.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
     audio/aec3_delay.cc

@@ -8,7 +8,9 @@
 #include <numbers>
 #include <vector>
 
+#include "sm/audio/agc1.h"
 #include "sm/audio/agc2.h"
+#include "sm/audio/agc_manager.h"
 #include "sm/audio/comfort_noise.h"
 #include "sm/audio/echo_canceller.h"
 #include "sm/audio/gain_control.h"
@@ -81,11 +83,16 @@ inline CallSignals MakeCall(const CallScenario& s) {
 // The capture processing chain, in WebRTC APM order.
 struct ChainConfig {
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
-  // `apm v2`: libwebrtc's modules where ported (#240-#242). So far the AGC
-  // is AGC2 (`agc2::GainController2`) fed our VAD's per-frame decision, and
-  // the NS is libwebrtc's (`ns::NoiseSuppressor`, kHigh), which analyzes the
-  // capture before the AEC and suppresses after it, as APM does.
+  // `apm v2`: libwebrtc's modules where ported (#240-#242). The AGC is AGC1
+  // as a call runs it (`AgcManagerDirect` in kAdaptiveAnalog with
+  // `GainControl` in kFixedDigital, the volume emulated by `CaptureLevels`
+  // from 255, #242), and the NS is libwebrtc's (`ns::NoiseSuppressor`,
+  // kHigh), which analyzes the capture before the AEC and suppresses after
+  // it, as APM does.
   bool apm_v2 = false;
+  // With `apm_v2`: AGC2 (`agc2::GainController2`, fed our VAD's per-frame
+  // decision) instead of AGC1.
+  bool agc2 = false;
 };
 
 struct ChainResult {
@@ -117,12 +124,43 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::agc2::GainController2Config gc2;
   gc2.sample_rate = fs;
   audio::agc2::GainController2 agc2(gc2);
+  // AGC1 (#242): APM's order with the analog mic gain emulation.
+  const bool agc1_on = cc.agc && cc.apm_v2 && !cc.agc2;
+  audio::agc1::AgcManagerDirect agc_manager(1);
+  agc_manager.Initialize();
+  audio::agc1::GainControlConfig g1;
+  g1.sample_rate = fs;
+  g1.target_level_dbfs = agc_manager.digital_target_level_dbfs();
+  g1.compression_gain_db = agc_manager.digital_compression_gain_db();
+  g1.enable_limiter = agc_manager.digital_limiter_enabled();
+  audio::agc1::GainControl agc1(g1);
+  audio::agc1::CaptureLevelsConfig lc;
+  lc.analog_mic_gain_emulation = true;
+  audio::agc1::CaptureLevels levels(lc);
+  std::vector<float> s16;
+  auto to_s16 = [&](std::span<const float> f) {
+    s16.assign(f.begin(), f.end());
+    for (float& v : s16) v *= 32768.0f;
+  };
+  auto from_s16 = [&](std::span<float> f) {
+    for (size_t k = 0; k < f.size(); ++k) f[k] = s16[k] / 32768.0f;
+  };
   ChainResult r;
   r.out = c.capture;
   const size_t frame = static_cast<size_t>(fs / 100);
   for (size_t i = 0; i + frame <= r.out.size(); i += frame) {
     std::span<float> f(r.out.data() + i, frame);
     if (cc.hpf) hpf.Process(f);
+    if (agc1_on) {
+      // The emulated volume is the applied input volume.
+      agc_manager.set_stream_analog_level(levels.GetAnalogMicGainLevel());
+      to_s16(f);
+      std::span<float> ch[1] = {s16};
+      levels.ApplyPreLevelAdjustment(ch);
+      const std::span<const float> cch[1] = {s16};
+      agc_manager.AnalyzePreProcess(cch);
+      from_s16(f);
+    }
     if (cc.ns && cc.apm_v2) ns2.Analyze(f);
     if (cc.aec) {
       aec.AnalyzeRender(std::span<const float>(c.far.data() + i, frame));
@@ -136,7 +174,18 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
     bool v = vad.Process(f);
     r.vad.push_back(v);
     if (cc.ts) ts.Process(f, vad.voiced());
-    if (cc.agc && cc.apm_v2) {
+    if (agc1_on) {
+      to_s16(f);
+      const std::span<const float> band0[1] = {s16};
+      agc_manager.Process(band0);
+      if (auto g = agc_manager.GetDigitalCompressionGain()) agc1.set_compression_gain_db(*g);
+      agc1.Process(f);
+      to_s16(f);
+      std::span<float> ch[1] = {s16};
+      levels.ApplyPostLevelAdjustment(ch);
+      from_s16(f);
+      levels.SetAnalogMicGainLevel(agc_manager.recommended_analog_level());
+    } else if (cc.agc && cc.apm_v2) {
       // AGC2 reads a per-frame speech probability (its RNN VAD has no
       // hangover), so it gets our VAD's decision before the hangover.
       agc2.Process(f, vad.raw_decision() ? 1.0f : 0.0f);
