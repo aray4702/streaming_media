@@ -13,7 +13,6 @@ constexpr size_t kMaxFrameMeta = 1024;
 
 loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
   loss::NackConfig n = c.nack_config;
-  if (c.keyframe.version >= 2) n.version = 2;  // One switch for the receiver's repair policy.
   if (!n.events) n.events = c.events;
   return n;
 }
@@ -25,7 +24,6 @@ loss::FecConfig FecCfg(const RtpReceiverConfig& c) {
 timing::PacketBufferConfig PacketBufferCfg(const RtpReceiverConfig& c) {
   timing::PacketBufferConfig p = c.packet_buffer;
   if (!p.events) p.events = c.events;
-  if (c.keyframe.version >= 2) p.version = 2;  // The packet buffer is part of libwebrtc's keyframe policy.
   return p;
 }
 loss::KeyframeRequestConfig KeyframeCfg(const RtpReceiverConfig& c) {
@@ -80,7 +78,6 @@ void RtpReceiver::OnRtt(TimeDelta rtt) {
   rtt_ = rtt;
   have_rtt_ = true;
   nack_.UpdateRtt(rtt);
-  keyframes_.UpdateRtt(rtt);
 }
 
 ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
@@ -260,15 +257,14 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
 void RtpReceiver::Process(Timestamp now) {
   if (!cfg_.video) return;
   AssembleFrames(now);
-  if (cfg_.nack && cfg_.keyframe.version >= 2 && nack_.TakeKeyframeRequest()) {
+  if (cfg_.nack && nack_.TakeKeyframeRequest()) {
     keyframes_.OnExternalRequest(now, "trigger_nack_list_full");
   }
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
-  if (cfg_.nack && cfg_.keyframe.version < 2 && nack_.TakeKeyframeRequest()) feedback_.pli = true;
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
     auto it = frames_.find(id);
     // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before its
-    // last packet (a no-op for version 1). Only a keyframe is continuous here whatever came before it; for a
+    // last packet. Only a keyframe is continuous here whatever came before it; for a
     // delta frame our decodable test is looser than FrameBuffer's continuity, so it clears nothing.
     if (cfg_.nack && it != frames_.end() && it->second.keyframe) nack_.ClearUpTo(static_cast<uint16_t>(id));
     if (it == frames_.end()) continue;

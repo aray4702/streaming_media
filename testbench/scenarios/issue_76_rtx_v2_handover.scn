@@ -5,7 +5,6 @@ describe Wi-Fi to LTE handover, RTX history as libwebrtc's RtpPacketHistory (#76
 # repair overhead 29-39% and residual loss 0% with `rtx v2`, against 59-68% and 0.4-2.8% with `rtx v1`;
 # libwebrtc (CI compare-webrtc, wifi_to_lte_handover): repair overhead 34%.
 # Target (#76 / parity): within the parity band of libwebrtc's repair overhead.
-keyframe v2
 duration 40s
 at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
 at 15s down

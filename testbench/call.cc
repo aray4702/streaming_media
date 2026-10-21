@@ -480,7 +480,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
-  video_cfg.keyframe.version = s.keyframe_v2 ? 2 : 1;
   if (s.timing_v2) video_cfg.timing.version = 2;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
@@ -506,7 +505,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.fps = s.video_fps;
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   // EncoderRtcpFeedback's kMinKeyframeSendIntervalMs (video/encoder_rtcp_feedback.cc).
-  if (s.keyframe_v2) vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
+  vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
   if (s.allocator_v2 && s.cc_v2) {
     // `allocator v2` with `cc v2` (the stack #61 flips together): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
     // (VideoCodec::minBitrate = the stream's min_bitrate_bps), and the bitrate adjuster

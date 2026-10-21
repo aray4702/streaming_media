@@ -50,9 +50,13 @@ SM_TEST(E2E_FreezeDetector, MatchesGroundTruthGapsOverLossyLink) {
       ++id;
       fwd.Send(now, f, DataSize::Bytes(5000));
     }
-    fwd.ReceiveEach(now, [&](loss::FrameInfo f, Timestamp at) { req.OnFrame(f, at); });
+    fwd.ReceiveEach(now, [&](loss::FrameInfo f, Timestamp at) {
+      req.OnMediaPacket(at, f.keyframe);
+      req.OnFrame(f, at);
+    });
     for (auto fid : req.TakeDecodableFrames()) {
       (void)fid;
+      req.OnFrameReleased(now);
       fd.OnFrameRendered(now);
       render_ms.push_back(t);
     }
