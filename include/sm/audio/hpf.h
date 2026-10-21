@@ -5,8 +5,10 @@
 // biquads per rate (kHighPassFilterCoefficients16kHz/32kHz/48kHz,
 // utility/cascaded_biquad_filter.*), the first a high-pass section and the
 // other two notches with zeros on the unit circle just below 50 Hz (about
-// 35 and 46 Hz at 16 kHz), so mains hum is taken down by ~67 dB while
-// speech above ~100 Hz passes within 0.2 dB. One filter per channel.
+// 35 and 46 Hz at 16 kHz), so mains hum is taken down by ~67 dB. The pass
+// band above ~150 Hz sits about 0.4 dB down (the first section's gain is
+// 0.93 at high frequencies), so speech loses about 0.2 dB, as with
+// libwebrtc's. One filter per channel.
 //
 // APM applies it in the full band (`apply_in_full_band`, the default), at
 // the capture's full-band rate, first in the capture chain
