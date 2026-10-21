@@ -55,6 +55,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 0 | 0 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 7. Video quality and processing
 
