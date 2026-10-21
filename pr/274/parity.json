@@ -684,8 +684,8 @@
    "scenario": "issue_152_alr_request_probe_v2",
    "metric": "sync.av_offset_p95_ms",
    "sm": 215.719,
-   "webrtc": 282.716,
-   "band": 59.524168835580284,
+   "webrtc": 282.714,
+   "band": 59.52533580856325,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
@@ -1490,6 +1490,36 @@
     21,
     7,
     29
+   ]
+  },
+  {
+   "scenario": "issue_283_longest_freeze_no_metrics",
+   "metric": "video.freeze_count",
+   "sm": 1.2,
+   "webrtc": 1.8,
+   "band": 0.5,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_283_longest_freeze_no_metrics",
+   "metric": "video.freeze_total_ms",
+   "sm": 2133.8,
+   "webrtc": 2273.91,
+   "band": 113.6955,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
    ]
   },
   {
