@@ -621,7 +621,14 @@ ALGORITHMS = [
                       "E2E_Pacer expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1's case was deleted with it in #167). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
-                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
+                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). Explained difference, not a gap "
+                      "(issue #258, yardstick PR #275): at 15 fps on a clean 1.5 Mbps / 100 ms RTT link, audio "
+                      "mouth-to-ear p95 and the queue p95 are about twice the 30 fps values. libwebrtc does the same "
+                      "on the same link (seeds 1-10: mouth-to-ear p95 430 vs 446 ms, queue p95 110 vs 106 ms, "
+                      "jitter-buffer p95 266 vs 280 ms; at 30 fps 235 vs 235, 44 vs 44, 132 vs 129). Each frame "
+                      "is twice as large and leaves in one 40 ms burst, so the audio behind it waits longer at the "
+                      "bottleneck and NetEq's target follows. `low_fps_clean_link` locks this in at libwebrtc's "
+                      "levels. See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
