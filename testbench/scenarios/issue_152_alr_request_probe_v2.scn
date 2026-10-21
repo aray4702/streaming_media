@@ -9,9 +9,6 @@ describe probe_v2_cross_traffic on seed 4: with libwebrtc's ALR settings (80/40/
 seed 4
 cc v2
 pacer v2
-allocator v2
-packetization v2
-audio v2
 duration 40s
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps

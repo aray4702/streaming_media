@@ -2,9 +2,6 @@ name issue_151_outage_3s_v2
 describe 3 s outage with all v2 switches on: the receiver stops NACKing what a keyframe made moot (issue #151)
 cc v2
 pacer v2
-allocator v2
-packetization v2
-audio v2
 seed 1
 duration 30s
 at 0s  capacity=1500kbps delay=30ms queue=300ms
