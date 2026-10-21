@@ -253,7 +253,9 @@ AgcManagerDirect::AgcManagerDirect(int num_capture_channels, AnalogGainControlle
       num_capture_channels_(std::max(1, num_capture_channels)),
       disable_digital_adaptive_(!cfg.enable_digital_adaptive),
       frames_since_clipped_(cfg.clipped_wait_frames),
-      new_compressions_to_set_(static_cast<size_t>(num_capture_channels_)) {
+      new_compressions_to_set_(static_cast<size_t>(num_capture_channels_)),
+      clipping_predictor_(CreateClippingPredictor(num_capture_channels_, cfg.clipping_predictor)),
+      use_clipping_predictor_step_(clipping_predictor_ != nullptr && cfg.clipping_predictor.use_predicted_step) {
   int min_mic_level = kMinMicLevel;
   if (cfg_.min_mic_level_override && *cfg_.min_mic_level_override >= 0 && *cfg_.min_mic_level_override <= 255) {
     min_mic_level = *cfg_.min_mic_level_override;
@@ -276,6 +278,7 @@ void AgcManagerDirect::Initialize() {
 void AgcManagerDirect::AnalyzePreProcess(std::span<const std::span<const float>> channels) {
   AggregateChannelLevels();
   if (!capture_output_used_) return;
+  if (clipping_predictor_) clipping_predictor_->Analyze(channels);
   // Clipped samples hide the pitch from the AGC; checked before the AEC so
   // that clipped echo counts too. A clipped frame lowers the volume and the
   // maximum volume by the same step (compensated by a higher maximum
@@ -285,11 +288,34 @@ void AgcManagerDirect::AnalyzePreProcess(std::span<const std::span<const float>>
     ++frames_since_clipped_;
     return;
   }
-  if (clipped_ratio > cfg_.clipped_ratio_threshold) {
-    for (auto& agc : channel_agcs_) agc->HandleClipping(cfg_.clipped_level_step);
+  const bool clipping_detected = clipped_ratio > cfg_.clipped_ratio_threshold;
+  bool clipping_predicted = false;
+  int predicted_step = 0;
+  if (clipping_predictor_) {
+    for (int ch = 0; ch < num_capture_channels_; ++ch) {
+      const auto step = clipping_predictor_->EstimateClippedLevelStep(
+          ch, recommended_input_volume_, cfg_.clipped_level_step,
+          channel_agcs_[static_cast<size_t>(ch)]->min_mic_level(), kMaxMicLevel);
+      if (step.has_value()) {
+        predicted_step = std::max(predicted_step, *step);
+        clipping_predicted = true;
+      }
+    }
+  }
+  int step = cfg_.clipped_level_step;
+  if (clipping_predicted) {
+    predicted_step = std::max(predicted_step, cfg_.clipped_level_step);
+    ++stats_.clipping_predictions;
+    SM_EVENT(cfg_.events, Timestamp::Micros(0), "agc1", "clipping_predicted", predicted_step,
+             use_clipping_predictor_step_ ? 1 : 0);
+    if (use_clipping_predictor_step_) step = predicted_step;
+  }
+  if (clipping_detected || (clipping_predicted && use_clipping_predictor_step_)) {
+    for (auto& agc : channel_agcs_) agc->HandleClipping(step);
     frames_since_clipped_ = 0;
+    if (clipping_predictor_) clipping_predictor_->Reset();
     ++stats_.clipping_events;
-    SM_EVENT(cfg_.events, Timestamp::Micros(0), "agc1", "clipping", clipped_ratio, cfg_.clipped_level_step);
+    SM_EVENT(cfg_.events, Timestamp::Micros(0), "agc1", "clipping", clipped_ratio, step);
   }
   AggregateChannelLevels();
 }
@@ -357,6 +383,7 @@ void AgcManagerDirect::AggregateChannelLevels() {
 void AgcManagerDirect::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frames", stats_.frames);
   w.Counter("clipping_events", stats_.clipping_events);
+  w.Counter("clipping_predictions", stats_.clipping_predictions);
   w.Counter("volume_changes", stats_.volume_changes);
   w.Gauge("recommended_input_volume", static_cast<double>(stats_.recommended_input_volume));
   w.Gauge("compression_gain_db", static_cast<double>(stats_.compression_gain_db));
