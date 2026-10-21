@@ -98,15 +98,78 @@ struct FilterConfig {
   RefinedConfiguration refined_initial = {12, 0.005f, 0.5f, 0.001f, 2.f, 20075344.f};
   CoarseConfiguration coarse_initial = {12, 0.9f, 20075344.f};
   size_t config_change_duration_blocks = 250;
+  float initial_state_seconds = 2.5f;
   int coarse_reset_hangover_blocks = 25;
+  bool conservative_initial_phase = false;
+  bool enable_coarse_filter_output_usage = true;
+  bool use_linear_filter = true;
+};
+
+// EchoCanceller3Config::Erle with M157's defaults.
+struct ErleConfig {
+  float min = 1.f;
+  float max_l = 4.f;
+  float max_h = 1.5f;
+  bool onset_detection = true;
+  size_t num_sections = 1;
+  bool clamp_quality_estimate_to_zero = true;
+  bool clamp_quality_estimate_to_one = true;
+};
+
+// EchoCanceller3Config::EpStrength with M157's defaults.
+struct EpStrengthConfig {
+  float default_gain = 1.f;
+  float default_len = 0.83f;
+  float nearend_len = 0.83f;
+  bool echo_can_saturate = true;
+  bool bounded_erl = false;
+  bool erle_onset_compensation_in_dominant_nearend = false;
+  bool use_conservative_tail_frequency_response = true;
+};
+
+// EchoCanceller3Config::EchoAudibility with M157's defaults.
+struct EchoAudibilityConfig {
+  float low_render_limit = 4 * 64.f;
+  float normal_render_limit = 64.f;
+  float floor_power = 2 * 64.f;
+  float audibility_threshold_lf = 10;
+  float audibility_threshold_mf = 10;
+  float audibility_threshold_hf = 10;
+  bool use_stationarity_properties = false;
+  bool use_stationarity_properties_at_init = false;
+};
+
+// EchoCanceller3Config::EchoRemovalControl with M157's defaults.
+struct EchoRemovalControlConfig {
+  bool has_clock_drift = false;
+  bool linear_and_stable_echo_path = false;
+};
+
+// EchoCanceller3Config::EchoModel with M157's defaults.
+struct EchoModelConfig {
+  size_t noise_floor_hold = 50;
+  float min_noise_floor_power = 1638400.f;
+  float stationary_gate_slope = 10.f;
+  float noise_gate_power = 27509.42f;
+  float noise_gate_slope = 0.3f;
+  size_t render_pre_window_size = 1;
+  size_t render_post_window_size = 1;
+  bool model_reverb_in_nonlinear_mode = true;
 };
 
 // The parts of EchoCanceller3Config this module reads.
 struct Aec3Config {
   DelayConfig delay;
   FilterConfig filter;
+  ErleConfig erle;
+  EpStrengthConfig ep_strength;
+  EchoAudibilityConfig echo_audibility;
+  EchoRemovalControlConfig echo_removal_control;
+  EchoModelConfig echo_model;
   // config.render_levels
   float active_render_limit = 100.f;
+  float poor_excitation_render_limit = 150.f;
+  float poor_excitation_render_limit_ds8 = 20.f;
   float render_power_gain_db = 0.f;
   // config.delay
   int fixed_capture_delay_samples = 0;
