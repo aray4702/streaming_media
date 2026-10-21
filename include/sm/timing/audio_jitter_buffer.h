@@ -74,6 +74,12 @@ struct AudioJitterBufferStats {
   uint64_t removed_samples_for_acceleration = 0;
   uint64_t ops[6] = {0, 0, 0, 0, 0, 0};      // Indexed by AudioOperation.
   Histogram jitter_buffer_delay_ms;          // Per decoded packet.
+  // StatisticsCalculator::JitterBufferDelay: each extracted packet's waiting
+  // time in the packet buffer (its tick stopwatch, so whole 10 ms ticks),
+  // weighted by its samples, and the samples emitted (jitterBufferDelay and
+  // jitterBufferEmittedCount; the sync buffer is not counted).
+  uint64_t jitter_buffer_delay_ms_samples = 0;
+  uint64_t jitter_buffer_emitted_count = 0;
 };
 
 // Packet::Priority (modules/audio_coding/neteq/packet.h): lower is kept,

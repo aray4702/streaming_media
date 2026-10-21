@@ -491,7 +491,7 @@ std::string WebrtcVersion() { return SM_WEBRTC_VERSION; }
 const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
   static const std::vector<std::pair<std::string, std::string>> k = {
       {"audio.jb_delay_p50_ms / p95", "Percentiles of the jitter buffer delay averaged over each 10 ms of playout "
-                                      "(jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values"},
+                                      "(jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own"},
       {"audio.net_delay_p95_ms", "Measured from the capture time of the packet's first sample, (ts - first ts) / 48 "
                                  "ms, as the test bench measures from its RTP timestamp; the first packet is the "
                                  "frame of the 10 ms blocks captured at 0 and 10 ms"},

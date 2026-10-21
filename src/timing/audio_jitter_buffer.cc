@@ -108,6 +108,9 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   next_ts_ += static_cast<int64_t>(pkt.pcm.size());
   const size_t ahead = sync_.size() + (dst ? dst->size() : 0);
   stats_.jitter_buffer_delay_ms.Add((now - pkt.arrival).ms_f() + ahead * 1000.0 / cfg_.sample_rate);
+  const uint64_t samples = pkt.pcm.size();
+  stats_.jitter_buffer_delay_ms_samples += static_cast<uint64_t>((ticks_ - pkt.insert_tick) * kMsPerTick) * samples;
+  stats_.jitter_buffer_emitted_count += samples;
   plc_.OnGoodFrame(pkt.pcm);  // Keeps PLC history; crossfades after an expand.
   AudioOperation op = AudioOperation::kNormal;
   if (expanding_) {
@@ -575,6 +578,8 @@ void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("current_level_ms", CurrentLevelMs());
   if (cfg_.version >= 2) w.Gauge("filtered_buffer_level_samples", decision_.GetFilteredBufferLevel());
   w.Hist("jitter_buffer_delay_ms", stats_.jitter_buffer_delay_ms);
+  w.Counter("jitter_buffer_delay_ms_samples", stats_.jitter_buffer_delay_ms_samples);
+  w.Counter("jitter_buffer_emitted_count", stats_.jitter_buffer_emitted_count);
 }
 
 }  // namespace sm::timing
