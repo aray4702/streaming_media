@@ -104,8 +104,8 @@ const std::vector<const char*>& InfoMetrics() {
 // (issue #125), for both stacks, when --trace is not given. The traces go into
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
-    "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic";
+    "issue_12_lossbwe_policer,issue_23_outage_500ms,audio_only_lossy,issue_85_video_pause,"
+    "issue_62_opus_fec_low_rate,satellite,outage_3s,clean_link";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -253,6 +253,7 @@ int main(int argc, char** argv) {
       opt.link_trace = named || (k == 0 && !trace_all_dir.empty());
       opt.video_trace = opt.link_trace;
       opt.bwe_trace = opt.link_trace;
+      opt.audio_trace = opt.link_trace;
       ours.push_back(sm::testbench::RunCall(s, opt));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
       if (opt.link_trace) {
@@ -264,12 +265,16 @@ int main(int argc, char** argv) {
         // The GoogCC estimates per update (issue #149), same scenario and seed.
         const std::string sm_bwe = sm::testbench::BweTraceCsv(ours.back().bwe_trace);
         const std::string rtc_bwe = sm::testbench::BweTraceCsv(theirs.back().bwe_trace);
+        // The jitter buffer per 10 ms audio pull (issue #62), same scenario and seed.
+        const std::string sm_audio = sm::testbench::AudioTraceCsv(ours.back().audio_trace);
+        const std::string rtc_audio = sm::testbench::AudioTraceCsv(theirs.back().audio_trace);
         if (named) {
           traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
                          ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
-                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + "}";
+                         ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
+                         ", \"webrtc_audio\": " + JsonString(rtc_audio) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -280,6 +285,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
           std::ofstream(stem + ".sm.bwe.csv") << sm_bwe;
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
+          std::ofstream(stem + ".sm.audio.csv") << sm_audio;
+          std::ofstream(stem + ".webrtc.audio.csv") << rtc_audio;
         }
       }
       if (!dump_dir.empty()) {

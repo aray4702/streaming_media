@@ -896,7 +896,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0) {
-      receiver_q->PostTask([&] {
+      receiver_q->PostTask([&, t_ms = t] {
         int16_t out[kAudioBlock * 2];
         size_t n_out = 0;
         int64_t elapsed = 0, ntp = 0;
@@ -921,6 +921,25 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (emitted > 0) {
           jb_delay.push_back((st.jitter_buffer_delay_seconds - prev_audio.jitter_buffer_delay_seconds) * 1000.0 /
                              static_cast<double>(emitted));
+        }
+        if (opt.audio_trace) {
+          // Issue #62: the jitter buffer after each pull, in the test bench's AudioTraceRow layout. NetEq counts
+          // samples at the decoder's 48 kHz (Opus).
+          constexpr double kMsPerSample = 1000.0 / 48000;
+          testbench::AudioTraceRow r;
+          r.t_ms = t_ms;
+          r.buffer_ms = static_cast<int>(st.jitter_buffer_ms);
+          r.target_ms = static_cast<int>(st.jitter_buffer_preferred_ms);
+          if (emitted > 0) r.jb_delay_ms = jb_delay.back();
+          r.received_ms = static_cast<double>(total) * kMsPerSample;
+          r.concealed_ms = static_cast<double>(concealed) * kMsPerSample;
+          r.accelerate_ms =
+              static_cast<double>(st.removed_samples_for_acceleration - prev_audio.removed_samples_for_acceleration) *
+              kMsPerSample;
+          r.decelerate_ms =
+              static_cast<double>(st.inserted_samples_for_deceleration - prev_audio.inserted_samples_for_deceleration) *
+              kMsPerSample;
+          rep.audio_trace.push_back(r);
         }
         prev_audio = st;
         played_ms += 10;

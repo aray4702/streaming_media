@@ -51,6 +51,18 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
 };
 
+// One 10 ms audio pull (issue #62), the same record for this library and for
+// libwebrtc, read after the pull as AudioReceiveStream::GetStats reports it.
+// Durations are in ms so the two stacks' sample rates compare; see AudioTraceCsv.
+struct AudioTraceRow {
+  int64_t t_ms = 0;
+  int buffer_ms = 0;        // jitterBufferMs: NetEq's current_buffer_size_ms (packet buffer + sync buffer).
+  int target_ms = 0;        // jitterBufferPreferredMs: DecisionLogic::TargetLevelMs.
+  double jb_delay_ms = -1;  // jitterBufferDelay / jitterBufferEmittedCount over this pull; -1 when none was emitted.
+  double received_ms = 0, concealed_ms = 0;  // totalSamplesReceived, concealedSamples over this pull.
+  double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -65,6 +77,8 @@ struct Report {
   std::vector<VideoTraceRow> video_trace;
   // The sender's GoogCC updates, when RunOptions::bwe_trace is set (issue #149).
   std::vector<cc::BweTraceRow> bwe_trace;
+  // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
+  std::vector<AudioTraceRow> audio_trace;
 };
 
 struct RunOptions {
@@ -73,6 +87,7 @@ struct RunOptions {
   bool video_trace = false;  // Fill Report::video_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
+  bool audio_trace = false;  // Fill Report::audio_trace.
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
@@ -120,6 +135,10 @@ std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
+// Report::audio_trace as CSV: t_ms,buffer_ms,target_ms,jb_delay_ms,received_ms,
+// concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
+// was emitted in that pull).
+std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
