@@ -752,14 +752,29 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
-         headers=["audio/echo_canceller.h"], unit=["EchoCanceller"], e2e=["E2E_EchoCanceller"],
+         headers=["audio/echo_canceller.h", "audio/aec3_filter.h"], unit=["EchoCanceller", "Aec3Filter"], e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
-               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2.",
+               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2. "
+               "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`, for `apm v2`) is a port of libwebrtc M157's "
+               "`aec3_fft`, the render buffers (`block_buffer`, `spectrum_buffer`, `fft_buffer`, `render_buffer` and the "
+               "whole `render_delay_buffer`, of which 6.2's low-rate buffer is the decimated half), `adaptive_fir_filter` "
+               "(partitioned frequency-domain filter, 64-sample partitions, one partition constrained per block), "
+               "`adaptive_fir_filter_erl`, `render_signal_analyzer`, `refined_filter_update_gain` (NLMS with the "
+               "filter-error estimate H_error and ERL leakage), `coarse_filter_update_gain` and `subtractor` (refined and "
+               "coarse filters, misadjustment rescaling, coarse filter reset from the refined one), with "
+               "EchoCanceller3Config::Filter's defaults: 12 then 13 partitions, leakage 0.005/0.5 then 0.00005/0.05, error "
+               "floor 0.001 and ceiling 2, noise gate 20075344, coarse rate 0.9 then 0.7, 250-block configuration "
+               "changes, a 25-block hangover after a coarse filter reset. Remaining differences: the FFT is fft4g's rdft "
+               "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
+               "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
+               "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
+               "AecState's capture saturation flag as an argument. Nothing in a call uses it yet: AecState, the residual "
+               "echo suppression and EchoCanceller3 are #240's next steps.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -768,7 +783,13 @@ ALGORITHMS = [
                       "size, which collapses during double talk (step 0.35 -> 0.002): near-end SNR went from "
                       "-4 to +9 dB. (3) After an echo-path change the convergence state was not reset, so the "
                       "adaptive step stayed near zero and ERLE never recovered (0 dB); it now recovers to "
-                      "25.6 dB."),
+                      "25.6 dB. AEC3's linear stage (#240 step 2): libwebrtc's aec3_fft, render_delay_buffer, "
+                      "adaptive_fir_filter (FilterSize, FilterStatisticsAccess, FilterAndAdapt), "
+                      "coarse_filter_update_gain, refined_filter_update_gain and subtractor unit tests pass with their "
+                      "signals and bounds (multi-channel cases with the debug-build parameters; the SIMD-equivalence and "
+                      "death tests don't apply). The first FFT used fft4g's twiddles, built with cosf; the round trip of "
+                      "aec3_fft_unittest's FftAndIfft was 0.002 off at 2.6e6 against its 0.001 bound, so the 128-point "
+                      "tables are now built in double precision as OouraFft stores them, and it passes."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
