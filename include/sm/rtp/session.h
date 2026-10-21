@@ -62,11 +62,6 @@ struct SessionConfig {
   // follows the local send estimate (5% of it, 50-250 ms, 100 ms before the
   // first), arrivals are kept 500 ms and late ones reported again.
   TimeDelta transport_feedback_interval = TimeDelta::Millis(50);
-  // 1: video payloads are sized for a fixed 16 bytes of header extensions.
-  // 2: libwebrtc's RtpSenderVideo: the payload room is the packet capacity
-  // less the header (with the extensions the next packet will carry), and the
-  // packetizer applies the first, last and single packet reductions. Default 2 (#61).
-  int packetization_version = 2;
   uint64_t seed = 1;
   EventSink* events = nullptr;
 };
@@ -80,7 +75,7 @@ struct AudioStreamConfig {
   // Send side: nominal wire rate taken off the target before video is
   // allocated (rates().audio_rate).
   DataRate nominal_rate = DataRate::Zero();
-  // Send side, allocator version 2: the rate the stream registers with the bitrate
+  // Send side: the rate the stream registers with the bitrate
   // allocator as both its minimum and maximum. libwebrtc registers the codec's
   // payload rate plus the per-packet overhead at the packet interval
   // (AudioSendStream::GetMinMaxBitrateConstraints); redundancy is not counted.
@@ -104,7 +99,11 @@ struct VideoStreamConfig {
   // VideoFecEnabled(): it is off beside NACK for a codec without a picture id.
   bool fec = false;
   loss::FecConfig fec_config;
-  size_t max_payload_size = 1200 - 12;  // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu).
+  // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu). As libwebrtc's
+  // RtpSenderVideo, the payload room of each frame is this packet capacity less
+  // the header (with the extensions the next packet will carry), and the
+  // packetizer applies the first, last and single packet reductions.
+  size_t max_payload_size = 1200 - 12;
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.

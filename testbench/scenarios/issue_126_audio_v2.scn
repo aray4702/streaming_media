@@ -4,7 +4,6 @@ describe Audio send path as libwebrtc M157: Opus frame sizes and RED, a clean li
 # net.audio_kbps 69.3-70.4, net.audio_size_p50_b 186-196, net.audio_size_p90_b 215-221.
 # With `audio v1` (a constant 80 B frame, twice with RED) we send 85.2 kbps in 213 B packets.
 # Seeds 1-5 with `audio v2`: 68-71 kbps, p50 191-195 B, p90 218-232 B.
-audio v2
 duration 40s
 at 0s capacity=5000kbps delay=30ms queue=300ms
 expect net.audio_kbps > 64

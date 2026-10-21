@@ -263,8 +263,6 @@ ParseResult ParseScenario(const std::string& text) {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
       if (v < 1 || v > 200) return fail("usage: compare_seeds <1..200> (read only by sm_compare)");
       s.compare_seeds = v;
-    } else if (key == "audio" && tok.size() == 2 && (tok[1] == "v1" || tok[1] == "v2")) {
-      s.audio_v2 = tok[1] == "v2";  // `audio v1|v2`: the Opus send path (issue #126); `audio on|off` is the stream.
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: " + key + " on|off");
@@ -286,9 +284,6 @@ ParseResult ParseScenario(const std::string& text) {
       if (!need(2) || !ParseRate(tok[1], &r) || !r.IsFinite() || r.bps() <= 0) return fail("usage: " + key + " <rate>");
       (key == "video_max" ? s.video_max : key == "video_min" ? s.video_min : key == "start_rate" ? s.start_rate
        : key == "min_rate" ? s.min_rate : s.max_rate) = r;
-    } else if (key == "packetization") {
-      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: packetization v1|v2");
-      s.packetization_v2 = tok[1] == "v2";
     } else if (key == "timing") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: timing v1|v2");
       s.timing_v2 = tok[1] == "v2";
@@ -301,9 +296,6 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "cc") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: cc v1|v2");
       s.cc_v2 = tok[1] == "v2";
-    } else if (key == "allocator") {
-      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: allocator v1|v2");
-      s.allocator_v2 = tok[1] == "v2";
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";
@@ -385,13 +377,10 @@ std::string FormatScenario(const Scenario& s) {
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
-  if (s.packetization_v2 != d.packetization_v2) o += std::string("packetization ") + (s.packetization_v2 ? "v2" : "v1") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
   if (s.pacer_v2 != d.pacer_v2) o += std::string("pacer ") + (s.pacer_v2 ? "v2" : "v1") + "\n";
   if (s.cc_v2 != d.cc_v2) o += std::string("cc ") + (s.cc_v2 ? "v2" : "v1") + "\n";
-  if (s.audio_v2 != d.audio_v2) o += std::string("audio ") + (s.audio_v2 ? "v2" : "v1") + "\n";
-  if (s.allocator_v2 != d.allocator_v2) o += std::string("allocator ") + (s.allocator_v2 ? "v2" : "v1") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";

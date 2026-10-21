@@ -184,11 +184,8 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
 
 // libwebrtc's AudioSendStream registers 32000 + 48 B / 20 ms with BitrateAllocator
 // (issue #196: 51200 in sm_compare once the route arrives after Start, PR #198).
-SM_TEST(TestbenchMetrics, AudioAllocationRateUnderAllocatorV2IsLibwebrtcs) {
+SM_TEST(TestbenchMetrics, AudioAllocationRateIsLibwebrtcs) {
   Scenario s;
-  s.allocator_v2 = false;  // v2 is the default since #61.
-  SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(49600));
-  s.allocator_v2 = true;
   SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(51200));
   s.audio = false;
   SM_EXPECT_EQ(AudioAllocationRate(s).bps(), static_cast<int64_t>(0));

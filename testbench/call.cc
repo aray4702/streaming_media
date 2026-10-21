@@ -191,8 +191,8 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
 
 DataRate AudioAllocationRate(const Scenario& s) {
   if (!s.audio) return DataRate::Zero();
-  const int64_t rtp_header = s.allocator_v2 ? 12 + 8 : 12 + 4;
-  return DataRate::BitsPerSec(s.audio_bitrate.bps() + (rtp_header + kUdpIpOverhead) * 8 * 50);
+  constexpr int64_t kRtpHeader = 12 + 8;
+  return DataRate::BitsPerSec(s.audio_bitrate.bps() + (kRtpHeader + kUdpIpOverhead) * 8 * 50);
 }
 
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
@@ -420,9 +420,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
               : DataRate::Zero();
   Random enc_rng(s.seed + 13);
-  // `audio v2`: Opus's encoded size follows the signal (testbench/opus_model.h); v1 is a constant frame.
+  // Opus's encoded size follows the signal (testbench/opus_model.h).
   OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
-  OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // `audio v2`'s in-band FEC input (issue #62).
+  OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
   OpusFecDecision opus_fec;  // libopus's decide_fec (testbench/opus_model.h).
   bool lbrr_pending = false;  // The last frame was coded LBRR: the next packet carries the copy.
   SpeechDecoder decoder(speech, frame_samples);
@@ -441,15 +441,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.gcc.max_rate = s.max_rate;
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
     c.send_side.pacer.version = s.pacer_v2 ? cc::PacerVersion::kV2 : cc::PacerVersion::kV1;
-    c.send_side.allocator_version = s.allocator_v2 ? 2 : 1;
     c.send_side.gcc.version = s.cc_v2 ? 2 : 1;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
-    c.packetization_version = s.packetization_v2 ? 2 : 1;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
-    // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149): under packetization v2
+    // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
     // the bench's packets are that size, so the overhead is too (issue #151).
-    if (s.packetization_v2) c.send_side.max_packet_size = 1460;
+    c.send_side.max_packet_size = 1460;
     c.events = &events;
     return c;
   };
@@ -475,9 +473,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.rtx_ssrc = kRtxSsrc;
   video_cfg.rtx_payload_type = kRtxPt;
   video_cfg.fec = s.fec;
-  video_cfg.max_payload_size = kMaxVideoPayload + 16;  // The session reserves 16 bytes for header extensions.
   // libwebrtc's default packet capacity (kVideoMtu 1200); the session subtracts the real header.
-  if (s.packetization_v2) video_cfg.max_payload_size = 1458 - 12;
+  video_cfg.max_payload_size = 1458 - 12;
   video_cfg.parser = &parser;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
@@ -511,8 +508,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   // EncoderRtcpFeedback's kMinKeyframeSendIntervalMs (video/encoder_rtcp_feedback.cc).
   vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
-  if (s.allocator_v2 && s.cc_v2) {
-    // `allocator v2` with `cc v2` (the stack #61 flips together): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
+  if (s.cc_v2) {
+    // With `cc v2` (the stack #61 flipped together with the allocator): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
     // (VideoCodec::minBitrate = the stream's min_bitrate_bps), and the bitrate adjuster
     // never pushes the target below it.
     vsc_cfg.allocation_min_bitrate = s.video_min;
@@ -671,18 +668,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // packets share a 5 ms send group in the delay-based detector (issue #124).
     if (s.audio && t % 20 == 10) {
       const int64_t k = t / 20;
-      size_t frame_bytes = audio_frame_bytes;
-      bool lbrr = false;
-      if (s.audio_v2) {
-        const size_t off = static_cast<size_t>(k) * frame_samples;
-        const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
-        lbrr = lbrr_pending;
-        const bool lbrr_coded = opus_fec.Update(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), opus_loss.percent());
-        frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
-        lbrr_pending = lbrr_coded && opus_model.LastFrameActive();
-      }
+      const size_t off = static_cast<size_t>(k) * frame_samples;
+      const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
+      const bool lbrr = lbrr_pending;
+      const bool lbrr_coded = opus_fec.Update(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), opus_loss.percent());
+      const size_t frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
+      lbrr_pending = lbrr_coded && opus_model.LastFrameActive();
       std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
-      if (s.audio_v2) frame[0] = lbrr ? kLbrrFlag : 0;
+      frame[0] = lbrr ? kLbrrFlag : 0;
       sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 

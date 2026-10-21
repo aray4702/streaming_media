@@ -26,7 +26,6 @@ SendSideConfig V1Config() {
   SendSideConfig c;
   c.gcc.version = 1;
   c.pacer.version = cc::PacerVersion::kV1;
-  c.allocator_version = 1;
   return c;
 }
 }  // namespace
@@ -333,9 +332,8 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
 // Issue #104: the sum of the enforced minimums (audio + video) is the lower bound
 // of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
 // not run below what it must send.
-SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
+SM_TEST(SendSideController, AllocatorLiftsTheTargetToTheSumOfTheMinimums) {
   SendSideConfig cfg = V1Config();  // cc v1: no packet-overhead rate off the video allocation.
-  cfg.allocator_version = 2;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
   cfg.video_min = DataRate::KilobitsPerSec(50);
   SendSideController c(cfg);
@@ -348,22 +346,12 @@ SM_TEST(SendSideController, AllocatorV2LiftsTheTargetToTheSumOfTheMinimums) {
   SM_EXPECT_EQ(c.allocator().limits().min_allocatable.kbps(), 100.0);
 }
 
-SM_TEST(SendSideController, AllocatorV1KeepsTheConfiguredMinimum) {
-  SendSideConfig cfg = V1Config();
-  cfg.gcc.start_rate = DataRate::KilobitsPerSec(60);
-  SendSideController c(cfg);
-  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);  // No effect on version 1.
-  c.Start(Timestamp::Millis(0));
-  SM_EXPECT_NEAR(c.target().kbps(), 60.0, 0.01);
-}
-
 // RtpVideoSender::OnBitrateUpdated (#61 glue): with `cc v2` the packet-overhead
 // rate comes off the video allocation before the protection share does.
 SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) {
   SendSideConfig cfg;
   cfg.gcc.version = 2;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
-  cfg.allocator_version = 2;
   SendSideController c(cfg);
   c.ConfigureAllocation(DataRate::Zero(), true);
   c.Start(Timestamp::Millis(0));
@@ -383,7 +371,6 @@ SM_TEST(SendSideController, V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc)
   SendSideConfig cfg;
   cfg.gcc.version = 2;
   cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
-  cfg.allocator_version = 2;
   cfg.max_packet_size = 1460;
   SendSideController c(cfg);
   c.ConfigureAllocation(DataRate::Zero(), true);
