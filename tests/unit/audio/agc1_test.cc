@@ -5,13 +5,14 @@
 // compare/webrtc/reference/ (with the SPL files they call) and driven as
 // GainControlImpl drives them in kFixedDigital mode: WebRtcAgc_Init,
 // WebRtcAgc_set_config, then per 10 ms frame WebRtcAgc_Analyze and the float
-// ApplyDigitalGain, on the signal below.
+// ApplyDigitalGain, on Agc1TestSignal (agc1_signal.h).
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
 #include <vector>
 
+#include "agc1_signal.h"
 #include "sm/audio/agc1.h"
 #include "sm_test.h"
 
@@ -19,34 +20,6 @@ using namespace sm;
 using namespace sm::audio::agc1;
 
 namespace {
-
-// Deterministic test signal (FloatS16), shared with the harness that ran
-// libwebrtc's files. Integer synthesis only, so it is the same on every
-// platform: 400 ms talk spurts (two triangle waves, ~180 and ~550 Hz, with
-// a 4 Hz amplitude ripple) and pauses over noise at about -60 dBFS, at
-// three levels (peaks about -40, -20 and -1 dBFS) for 10 s each.
-std::vector<float> Agc1TestSignal(int fs, int seconds) {
-  std::vector<float> x(static_cast<size_t>(fs) * static_cast<size_t>(seconds));
-  uint32_t lcg = 12345;
-  auto triangle = [](int64_t i, int64_t period) {  // In [-1000, 1000].
-    const int64_t p = i % period;
-    const int64_t half = period / 2;
-    return p < half ? -1000 + 2000 * p / half : 1000 - 2000 * (p - half) / (period - half);
-  };
-  const int64_t n = static_cast<int64_t>(x.size());
-  for (int64_t i = 0; i < n; ++i) {
-    lcg = lcg * 1664525u + 1013904223u;
-    const int64_t noise = static_cast<int64_t>((lcg >> 16) & 0x3F) - 32;
-    const int64_t spurt = i * 5 / (2 * fs);  // 400 ms segments.
-    const bool talk = spurt % 3 != 2;
-    const int64_t level = i < n / 3 ? 330 : (i < 2 * n / 3 ? 3300 : 29000);
-    const int64_t ripple = 800 + triangle(i, fs / 4) / 5;  // 600..1000.
-    const int64_t tone = (7 * triangle(i, 89) + 3 * triangle(i, 29)) / 10;
-    const int64_t v = talk ? level * ripple / 1000 * tone / 1000 : 0;
-    x[static_cast<size_t>(i)] = static_cast<float>(std::clamp<int64_t>(v + noise, -32768, 32767));
-  }
-  return x;
-}
 
 int16_t ToS16(float v) {
   v = std::min(32767.f, std::max(-32768.f, v));
