@@ -173,7 +173,13 @@ SM_TEST(E2E_RtpSession, CleanCallDeliversAudioAndVideoBothWays) {
   SM_EXPECT_EQ(r.malformed_a + r.malformed_b, 0u);
   SM_EXPECT_EQ(r.unroutable, 0u);
   SM_EXPECT_GE(r.rendered, r.frames_sent - 10);
-  SM_EXPECT_LE(r.longest_gap_ms, 100);
+  // Was <= 100. With the first transport feedback after 100 ms (#217) and timing v2 (#24), the
+  // second frame waits in the pacer behind the debt of the keyframe and the initial probes
+  // (880 kbps pacing, 12 KB debt) until the probe result arrives: 118 ms at t = 167 ms, the
+  // longest gap of the call. libwebrtc does the same: its `clean_link` seed-1 forward trace
+  // (parity-data) sends no video from 61 ms to 125 ms after its probes. Owner rule on PR #226
+  // (program.md 0.2): just above our value.
+  SM_EXPECT_LE(r.longest_gap_ms, 120);
   SM_EXPECT_GT(r.audio_decoded, 400u);
   SM_EXPECT_GT(r.rtcp_a_to_b, 5u);
   SM_EXPECT_GT(r.rtcp_b_to_a, 5u);

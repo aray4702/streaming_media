@@ -5,9 +5,12 @@ describe Policer: 1.5 Mbps enforced by dropping, no queueing (queue=5ms); the lo
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=5ms
 # 5 seeds (cc v2): net.loss_pct 7.7-9.9, freeze_total_ms 0-764, target 400-412 kbps. `cc v1`: loss 19.8-25.0, freezes 1.0-1.6 s.
-# Was < 12. Owner rule on PR #226: just above ours on seed 1 (12.11 with #217); libwebrtc's worst seed in 1-10 is 15.97.
-expect net.loss_pct < 13
-# Was < 1500. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 10663 ms (10 seeds), ours 1777 on seed 1.
-# Was < 2500. Owner rule on PR #226: just above ours on seed 1 (4224 with #217); libwebrtc's worst seed in 1-10 is 15854.
+# Was < 12. Owner rule on PR #216 (program.md 0.2, 2026-10-20 23:11 UTC): just above our seed-1 value, never above
+# libwebrtc's worst seed in 1-10. Ours seed 1 13.18 (timing v2); libwebrtc seeds 1-10: 12.22 8.41 9.95 15.97 10.58
+# 10.84 11.68 11.90 12.11 11.83 (worst 15.97, mean 11.55).
+expect net.loss_pct < 14
+# Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
+# timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
+# worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).
 expect video.freeze_total_ms < 6000
 expect audio.interruptions <= 3

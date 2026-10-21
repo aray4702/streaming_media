@@ -257,15 +257,19 @@ void EchoDoubleTalk() {
   Add("echo canceller + NS", "full duplex", "near-end SNR in double talk (dB)", so, sw);
 }
 
-// E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR.
-void Noise() {
+// E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR. With
+// `apm_v2`, our side is the port of libwebrtc's NS (#241).
+void Noise(bool apm_v2) {
   CallScenario s;
   s.far_talk = false;
   s.noise_amp = 0.03f;
   auto c = MakeCall(s);
   ChainConfig base{true, false, false, false, false};
   ChainConfig cc{true, false, true, false, false};
-  auto ours = RunOurs(c, cc);
+  const std::string module = apm_v2 ? "noise suppressor (apm v2)" : "noise suppressor";
+  ChainConfig ours_cc = cc;
+  ours_cc.apm_v2 = apm_v2;
+  auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto ours_base = RunOurs(c, base);
   auto webrtc_base = RunWebrtc(c, WebrtcConfig(base));
@@ -280,22 +284,22 @@ void Noise() {
   double in_w = BestLagSnr(ref_w, webrtc_base.out, start, &l0);
   double out_o = BestLagSnr(ref_o, ours.out, start, &lo);
   double out_w = BestLagSnr(ref_w, webrtc.out, start, &lw);
-  Add("noise suppressor", "white noise, ~7 dB SNR", "SNR improvement (dB)", out_o - in_o, out_w - in_w,
-      "libwebrtc kHigh (18 dB), ours 18 dB");
+  Add(module, "white noise, ~7 dB SNR", "SNR improvement (dB)", out_o - in_o, out_w - in_w,
+      apm_v2 ? "both kHigh (18 dB)" : "libwebrtc kHigh (18 dB), ours 18 dB");
   auto truth = SpeechTruth(c, -45.0f);
   auto atten = [&](const Output& o, const Output& b) {
     return FramesDb(b.out, truth, Truth::kSilence, 3, 20, 0) - FramesDb(o.out, truth, Truth::kSilence, 3, 20, o.latency);
   };
   ours.latency = lo;
   webrtc.latency = lw;
-  Add("noise suppressor", "white noise, ~7 dB SNR", "noise attenuation in pauses (dB)", atten(ours, ours_base),
+  Add(module, "white noise, ~7 dB SNR", "noise attenuation in pauses (dB)", atten(ours, ours_base),
       atten(webrtc, webrtc_base));
   auto speech = [&](const Output& o, const Output& b) {
     return FramesDb(o.out, truth, Truth::kSpeech, 3, 20, o.latency) - FramesDb(b.out, truth, Truth::kSpeech, 3, 20, 0);
   };
-  Add("noise suppressor", "white noise, ~7 dB SNR", "level change in speech (dB)", speech(ours, ours_base),
+  Add(module, "white noise, ~7 dB SNR", "level change in speech (dB)", speech(ours, ours_base),
       speech(webrtc, webrtc_base));
-  Add("noise suppressor", "white noise, ~7 dB SNR", "algorithmic delay (ms)", lo / 16.0, lw / 16.0);
+  Add(module, "white noise, ~7 dB SNR", "algorithmic delay (ms)", lo / 16.0, lw / 16.0);
 }
 
 // E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB.
@@ -370,7 +374,8 @@ int main() {
   HighPass();
   EchoRouteChange();
   EchoDoubleTalk();
-  Noise();
+  Noise(false);
+  Noise(true);
   Gain();
   VoiceActivity();
   std::printf("| module | scenario | metric | ours | libwebrtc | note |\n|---|---|---|---|---|---|\n");
