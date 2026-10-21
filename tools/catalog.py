@@ -766,16 +766,28 @@ ALGORITHMS = [
                       "from 7.6 to 12.9 dB."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h"], unit=["GainControl"], e2e=["E2E_GainControl"],
+         headers=["audio/gain_control.h", "audio/agc2.h"], unit=["GainControl", "GainController2"],
+         e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
-               "recommendation.",
+               "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
+               "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
+               "estimators, saturation protector, limiter with its interpolated gain curve) with its "
+               "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
+               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
+               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
+               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "default, is #242's next step.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
-                      "already modified in place."),
+                      "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
+                      "quiet talker -21.1 dBFS (libwebrtc AGC2 -21.0, v1 -16.8), loud talker -1.2 dB (-1.0), "
+                      "noise in pauses -62.7 dBFS (-62.9), peak 0 dBFS (0.0). libwebrtc's "
+                      "`GainDoesNotChangeFast` unit test never runs its loops (its frame count is negative); "
+                      "the port runs them."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
