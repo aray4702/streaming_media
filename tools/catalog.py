@@ -377,7 +377,24 @@ ALGORITHMS = [
                       "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
                       "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
                       "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
-                      "Default stays v1 until the flip."),
+                      "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
+                      "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
+                      "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
+                      "at `< 300` (130-199 ms, libwebrtc 130-218) and `issue_24_timing_v2_default` locks the default in. "
+                      "Explained difference (Owner, PR #216), tracked to #224: on congestive links "
+                      "(`issue_61_googcc_glue_congestive`, `issue_12_lossbwe_congestive`) video e2e delay p95 is 808 ms "
+                      "against libwebrtc's 420. Timing v2 renders the frames timing v1 dropped as late (1194 rendered, "
+                      "libwebrtc 1195), and those waited longest in the sender's pacer (pacer p95 of rendered frames 609 ms); "
+                      "e2e p50 matches (204 vs 196). "
+                      "Tracked to #230: `issue_127_pacer_v2_jitter_reorder_loss` has 3.3 freezes (753 ms) against libwebrtc's "
+                      "1.1 (240 ms). Both receivers' jitter delay falls to 0 from 17 s (yardstick #228): reordered originals "
+                      "NACKed at once flag 90-100% of frames as retransmitted, so JitterEstimator's frame rate drops below "
+                      "5 fps and GetEstimate returns 0, in libwebrtc too. The extra freezes are repairs slower than the "
+                      "freeze threshold on our side, with a 13% higher send rate. "
+                      "Owner rule on PR #216 (just above our seed-1 value, never above libwebrtc's worst seed in 1-10): "
+                      "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
+                      "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
+                      "(304.4; capped at libwebrtc's worst seed)."),
     dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
          problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
          headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
@@ -514,15 +531,15 @@ ALGORITHMS = [
                "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`) "
                "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
                "on `clean_link` queue p95 74 ms. "
-               "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
+               "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 with #62. "
                "Approved deviation: the test bench's Opus frame-size model (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
-               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24). "
+               "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24; "
+               "resolved when timing v2 became the default: 28.8-29.2 fps, libwebrtc 27.1-27.6). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
-               "`issue_76_tcc_v2_high_jitter` (4.6, tracked to #24). Provisional locks (PR #186, Owner 2026-10-20): "
-               "`issue_53_cwnd_pushback` `video.render_fps >= 14` (was 22; libwebrtc 27.4, ours 16.0; tracked to #24, "
-               "restored when `timing v2` joins the defaults) and `issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` "
-               "(was 380; libwebrtc 451, ours 344; tracked to #217).",
+               "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
+               "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
+               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "

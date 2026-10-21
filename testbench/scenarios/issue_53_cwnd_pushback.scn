@@ -8,10 +8,9 @@ at 8s  capacity=500kbps
 # and is lost for good. Without it 1.4-4.8% of the video packets are never
 # recovered on every seed 1-20; with it 0-0.84%.
 expect video.residual_loss_pct <= 1.0
-# Was >= 22. Provisional lock (Owner sign-off on PR #186, program.md 0.2, 2026-10-20 19:06 UTC), tracked to #24:
-# libwebrtc 27.4 fps (10 seeds), ours 15.96 on seed 1 under the v2 defaults; the receive-side FrameScheduler
-# drops late frames until timing v2 joins the defaults. Restore >= 22 then.
-expect video.render_fps >= 14
+# Restored to >= 22 by #24 (timing v2 default; was a provisional >= 14 under timing v1, Owner sign-off on PR #186).
+# libwebrtc 27.4 fps (10 seeds).
+expect video.render_fps >= 22
 expect audio.interruptions <= 1
 # Target (issue #53): the send rate stays within 1.5x of the target from 1 s
 # after the target falls, so cc.send_over_target_ms stays near 0. Not yet met:

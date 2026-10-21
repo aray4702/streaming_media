@@ -73,7 +73,8 @@ class VideoJitterEstimator : public MetricsSource {
 struct VideoTimingConfig {
   // 1 = VideoJitterEstimator + VideoTiming + video::FrameScheduler. 2 =
   // libwebrtc M157's receive timing (timing::VcmTiming and
-  // timing::FrameReleaseController, issue #24). Default 1 until the final PR.
+  // timing::FrameReleaseController, issue #24). Default 1 here, so this
+  // config's own users get what they name; rtp::VideoStreamConfig defaults to 2 (#24).
   int version = 1;
   TimeDelta render_delay = TimeDelta::Millis(10);
   TimeDelta min_playout_delay = TimeDelta::Zero();
