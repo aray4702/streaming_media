@@ -7,6 +7,9 @@ at 0s capacity=4000kbps delay=40ms jitter=30ms loss=2% queue=150ms
 # (PacingController::EnqueuePacket) left sequence gaps that NACK chased until nack/abandon.
 # libwebrtc numbers its packets when the pacer releases them (packet_router.cc:217), so a flush leaves no gap.
 # Seeds 1-5 on main d2461d5 with `rtx v2`: longest freeze 220-392 ms, 1-4 keyframe requests, 0 % residual loss.
+# Yardstick #274 (for #230): 40 seeds in sm_compare, because the freeze count's 10-seed mean is noisy
+# (ours: 3.3 on seeds 1-10, 2.0 on seeds 1-40).
+compare_seeds 40
 expect video.longest_freeze_ms < 1000
 expect video.keyframe_requests < 10
 expect video.residual_loss_pct < 1
