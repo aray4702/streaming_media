@@ -104,15 +104,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
 
 VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   RtpSenderConfig c = SenderConfig(v.ssrc, v.payload_type, v.clock_rate, true, cfg_.mid_video);
-  // The whole packet stays within the MTU: leave room for the header
-  // extensions (transport-cc, abs-send-time and MID, 4 byte header plus 3, 4
-  // and 2 bytes padded) that are written after the payload is sized.
-  constexpr size_t kExtensionReserve = 16;
-  if (cfg_.packetization_version >= 2) {
-    c.max_payload_size = v.max_payload_size;  // Sized per frame from the header (SendVideo).
-  } else {
-    c.max_payload_size = v.max_payload_size > kExtensionReserve + 1 ? v.max_payload_size - kExtensionReserve : v.max_payload_size;
-  }
+  c.max_payload_size = v.max_payload_size;  // Sized per frame from the header (SendVideo).
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
   c.rtx = v.rtx;
@@ -224,20 +216,15 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     ++stats_.empty_video_frames;
     return;
   }
-  std::vector<std::vector<uint8_t>> chunks;
-  if (cfg_.packetization_version >= 2) {
-    // rtp_sender_video.cc: packet_capacity less the header of a middle packet.
-    // The first, last and single packets carry no extension the middle one
-    // lacks here (transport-cc, abs-send-time and MID go on every packet), so
-    // their reductions are zero.
-    const size_t capacity = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
-    const size_t header = s.MediaHeaderSize();
-    PayloadSizeLimits limits;
-    limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
-    chunks = H264Packetizer::Packetize(f.data, limits);
-  } else {
-    chunks = H264Packetizer::Packetize(f.data, s.config().max_payload_size);
-  }
+  // rtp_sender_video.cc: packet_capacity less the header of a middle packet.
+  // The first, last and single packets carry no extension the middle one
+  // lacks here (transport-cc, abs-send-time and MID go on every packet), so
+  // their reductions are zero.
+  const size_t capacity = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
+  const size_t header = s.MediaHeaderSize();
+  PayloadSizeLimits limits;
+  limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
+  const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(f.data, limits);
   SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe);
 }
 

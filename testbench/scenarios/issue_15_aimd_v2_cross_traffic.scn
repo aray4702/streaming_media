@@ -8,9 +8,6 @@ cc v2
 # 263.5) and the v1 recovery path froze on 4-5 of 10 seeds (up to 19 freezes) where libwebrtc freezes on 5. It now sets every v2 switch,
 # libwebrtc's configuration (#61's flip makes them the default); the expect lines are unchanged.
 pacer v2
-allocator v2
-packetization v2
-audio v2
 duration 40s
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps

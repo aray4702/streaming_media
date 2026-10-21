@@ -3,10 +3,7 @@ describe every v2 switch on, 1200 kbps, 120 ms delay, 30 ms jitter (reordering) 
 duration 60s
 cc v2
 pacer v2
-allocator v2
-audio v2
 # packetization v2 and audio v2 added on 2026-10-20 (#152, Owner): the flip (#61) turns on all nine v2 switches.
-packetization v2
 at 0s capacity=1200kbps delay=120ms jitter=30ms loss=2% queue=150ms
 # #139: seeds 7, 9 and 12 of 12 had an 8-13 s render stall (pause_count > 0) with no outage; the default stack had none.
 # Seeds 1-12 on main d2461d5: video.pause_count 0 on all, longest freeze 225-1444 ms.
