@@ -102,7 +102,8 @@ struct VideoStreamConfig {
   // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu). As libwebrtc's
   // RtpSenderVideo, the payload room of each frame is this packet capacity less
   // the header (with the extensions the next packet will carry), and the
-  // packetizer applies the first, last and single packet reductions.
+  // packetizer applies the first, last and single packet reductions. The sender
+  // clamps it to a 100-1500 byte packet (RtpSenderConfig::max_payload_size).
   size_t max_payload_size = 1200 - 12;
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.

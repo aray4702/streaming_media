@@ -67,6 +67,7 @@ struct Scenario {
   int audio_sample_rate = 16000;
   DataRate audio_bitrate = DataRate::KilobitsPerSec(32);
   int video_fps = 30;
+  size_t video_max_payload = 1458 - 12;  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257).
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.

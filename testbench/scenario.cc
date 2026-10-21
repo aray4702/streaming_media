@@ -279,6 +279,13 @@ ParseResult ParseScenario(const std::string& text) {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
       if (v < 1 || v > 120) return fail("video_fps must be 1..120");
       s.video_fps = v;
+    } else if (key == "video_max_payload") {
+      // Any value reaches the library, which clamps it (issue #257): the bench tests that.
+      char* end = nullptr;
+      const long v = need(2) ? std::strtol(tok[1].c_str(), &end, 10) : -1;
+      if (!need(2) || end == tok[1].c_str() || *end != '\0' || v < 0 || v > 65535)
+        return fail("usage: video_max_payload <bytes 0..65535>");
+      s.video_max_payload = static_cast<size_t>(v);
     } else if (key == "video_max" || key == "video_min" || key == "start_rate" || key == "min_rate" || key == "max_rate") {
       DataRate r;
       if (!need(2) || !ParseRate(tok[1], &r) || !r.IsFinite() || r.bps() <= 0) return fail("usage: " + key + " <rate>");

@@ -334,6 +334,40 @@ SM_TEST(RtpSender, GeneratePaddingEmptyPacketsAreFullOnTheRtxSsrc) {
   SM_EXPECT_EQ(s.stats().payload_padding_packets, 0u);
 }
 
+// RTPSender::SetMaxRtpPacketSize (rtp_sender.cc:307-312) takes a whole packet of 100 to 1500 bytes.
+// A max_payload_size of 0 made every empty padding packet carry 0 bytes, so GeneratePadding never
+// reached its target and allocated until bad_alloc (#257). The sender clamps it to that range.
+SM_TEST(RtpSender, MaxPayloadSizeIsClampedToLibwebrtcPacketSizeRange) {
+  RtpSenderConfig c = VideoCfg();
+  c.max_payload_size = 0;
+  SM_EXPECT_EQ(RtpSender(c).config().max_payload_size, 100u - 12u);
+  c.max_payload_size = 20;
+  SM_EXPECT_EQ(RtpSender(c).config().max_payload_size, 100u - 12u);
+  c.max_payload_size = 5000;
+  SM_EXPECT_EQ(RtpSender(c).config().max_payload_size, 1500u - 12u);
+  c.max_payload_size = 1200 - 12;
+  SM_EXPECT_EQ(RtpSender(c).config().max_payload_size, 1200u - 12u);
+}
+
+SM_TEST(RtpSender, GeneratePaddingWithAZeroMaxPayloadSizeReachesTheTarget) {
+  const auto ext = TccExtensions();
+  for (bool video : {true, false}) {
+    RtpSenderConfig c = PaddingCfg(&ext, video);
+    c.max_payload_size = 0;
+    RtpSender s(c);
+    // Checked first, so that on the old code the test fails here instead of hanging below.
+    SM_ASSERT_EQ(s.config().max_payload_size, 88u);
+    auto out = s.GeneratePadding(600, 777, Timestamp::Millis(5));
+    // Video: full 88-byte packets, 7 x 88 >= 600. Audio: the bytes left, at most 88 each.
+    SM_ASSERT_EQ(out.size(), 7u);
+    for (const auto& p : out) {
+      SM_EXPECT_GT(p.packet.padding_size, 0);
+      SM_EXPECT_LE(p.packet.padding_size, 88);
+    }
+    SM_EXPECT_GE(PaddingTotal(out), 600u);
+  }
+}
+
 // AppendPayloadPadding: the newest large packet of the history goes out again on the RTX SSRC, with the OSN
 // in front of the payload, while at least kMinPayloadPaddingBytes (50) of the target are left.
 SM_TEST(RtpSender, GeneratePaddingResendsTheNewestLargePacketAsPayload) {
