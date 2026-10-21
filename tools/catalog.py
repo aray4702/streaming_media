@@ -185,7 +185,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
                "packets, while falling jitter takes several seconds, so the buffer does not oscillate. "
-               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; default v1): "
+               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to v2 since #62, `AudioJitterBufferConfig` on its own keeps v1): "
                "`NetEqDelayManager` ports libwebrtc M157's modules/audio_coding/neteq/ histogram.cc (Q30 buckets, "
                "Q15 forget factor from 0 with start_forget_weight 2), underrun_optimizer.cc (95th percentile of the "
                "largest relative delay of each 500 ms interval, 100 buckets of 20 ms, forget factor 0.983), "
@@ -230,7 +230,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
                "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names. "
-               "NetEq v2 (issue #62, `neteq v2`; default v1) chooses the operation as libwebrtc M157's "
+               "NetEq v2 (issue #62, `neteq v2`; the session and test bench default since #62) chooses the operation as libwebrtc M157's "
                "modules/audio_coding/neteq/decision_logic.cc and NetEqImpl::GetDecision/GetAudioInternal "
                "(neteq_impl.cc) do, in `NetEqDecisionLogic` (timing/neteq_delay.h): playout starts with the first "
                "packet (new codec: a normal decode, no wait for the target); with the expected packet available "
@@ -342,7 +342,14 @@ ALGORITHMS = [
                       "estimate, preemptive expand's old-data rule, the crossfade and the jitter buffer's whole "
                       "periods. With `neteq v2`, seeds "
                       "1-10: `audio_only_lossy` time-stretch 0.51 -> 0.44 % (libwebrtc 0.39), `cross_traffic` "
-                      "2.29 -> 2.06 % (libwebrtc 2.37); the other audio means move by under 2 %."),
+                      "2.29 -> 2.06 % (libwebrtc 2.37); the other audio means move by under 2 %. "
+                      "NetEq v2 as the default (issue #62): on the whole suite (seeds 1-10, libwebrtc from main's "
+                      "parity-data) 361 audio means move toward libwebrtc and 94 away, and the parity report goes "
+                      "from 319 to 237 gaps (109 closed, 27 opened). `audio_only_lossy` concealed 1.62 -> 0.51 % "
+                      "(libwebrtc 0.46), jitter buffer delay p95 44 -> 71 ms (81); `cross_traffic` jitter buffer "
+                      "delay p95 182 -> 373 ms (382). What stays apart is mostly mouth-to-ear outside the jitter "
+                      "buffer (`bufferbloat` 199 vs 176 ms with the jitter buffer delay matched); "
+                      "`issue_62_neteq_default` locks the default in."),
     dict(id="4.6", slug="video-jitter", title="Video jitter estimation and render timing",
          problems=["Variable packet arrival (video) -> video jitter buffer, frame buffer and render-time estimation"],
          headers=["timing/video_jitter_estimator.h", "timing/vcm_timing.h"], unit=["VideoJitter", "VcmTiming"],

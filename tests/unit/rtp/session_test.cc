@@ -463,3 +463,10 @@ SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
   SM_EXPECT_EQ(cc::GccConfig{}.version, 1);
   SM_EXPECT_TRUE(cc::PacerConfig{}.version == cc::PacerVersion::kV1);
 }
+
+// #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
+// unless the config selects v1; AudioJitterBufferConfig on its own keeps v1.
+SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
+  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 1);
+}
