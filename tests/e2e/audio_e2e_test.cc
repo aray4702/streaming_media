@@ -201,11 +201,15 @@ SM_TEST(E2E_GainControl, NormalizesQuietTalkerLeavesLoudToLimiter) {
   SM_EXPECT_LE(peak, dsp::DbToLinear(-1.0f) + 1e-6f);
 }
 
-// `apm v2` (#242): AGC2 as libwebrtc M157 on the same signals. libwebrtc's
-// AGC2 adaptive digital at its defaults (docs/results/apm-webrtc.md, from
-// sm_apm_compare): quiet talker -21.0 dBFS out, loud talker -1.0 dB,
-// noise in pauses -62.9 dBFS, peak 0.0 dBFS.
-SM_TEST(E2E_GainControl, Agc2LiftsQuietTalkerAsLibwebrtc) {
+namespace {
+
+struct QuietThenLoud {
+  double quiet_in, quiet_out, loud_change, noise_out, peak_dbfs;
+};
+
+// The quiet-then-loud talker through the `apm v2` chain with AGC1 (the call
+// default) or AGC2, measured as sm_apm_compare measures both stacks.
+QuietThenLoud RunQuietThenLoud(bool agc2) {
   CallScenario q;
   q.far_talk = false;
   q.seconds = 40;
@@ -215,6 +219,7 @@ SM_TEST(E2E_GainControl, Agc2LiftsQuietTalkerAsLibwebrtc) {
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
   cc.apm_v2 = true;
+  cc.agc2 = agc2;
   auto r = RunChain(c, cc);
   // Speech frames by the clean talker's level (as sm_apm_compare's truth),
   // so both stacks are measured on the same frames.
@@ -235,20 +240,48 @@ SM_TEST(E2E_GainControl, Agc2LiftsQuietTalkerAsLibwebrtc) {
   };
   float peak = 0;
   for (float v : r.out) peak = std::max(peak, std::fabs(v));
-  const double quiet_out = level(r.out, 12, 20, true);
-  const double noise_out = level(r.out, 12, 20, false);
-  const double loud_change = level(r.out, 32, 40, true) - level(c.capture, 32, 40, true);
-  SM_RECORD("quiet_talker_in_dbfs", level(c.capture, 12, 20, true));
-  SM_RECORD("quiet_talker_out_dbfs", quiet_out);
-  SM_RECORD("loud_talker_change_db", loud_change);
-  SM_RECORD("noise_in_pauses_dbfs", noise_out);
-  SM_RECORD("peak_dbfs", dsp::LinearToDb(peak));
+  return {level(c.capture, 12, 20, true), level(r.out, 12, 20, true),
+          level(r.out, 32, 40, true) - level(c.capture, 32, 40, true), level(r.out, 12, 20, false),
+          dsp::LinearToDb(peak)};
+}
+
+}  // namespace
+
+// `apm v2` (#242): AGC2 as libwebrtc M157 on the same signals. libwebrtc's
+// AGC2 adaptive digital at its defaults (docs/results/apm-webrtc.md, from
+// sm_apm_compare): quiet talker -21.0 dBFS out, loud talker -1.0 dB,
+// noise in pauses -62.9 dBFS, peak 0.0 dBFS.
+SM_TEST(E2E_GainControl, Agc2LiftsQuietTalkerAsLibwebrtc) {
+  const QuietThenLoud m = RunQuietThenLoud(/*agc2=*/true);
+  SM_RECORD("quiet_talker_in_dbfs", m.quiet_in);
+  SM_RECORD("quiet_talker_out_dbfs", m.quiet_out);
+  SM_RECORD("loud_talker_change_db", m.loud_change);
+  SM_RECORD("noise_in_pauses_dbfs", m.noise_out);
+  SM_RECORD("peak_dbfs", m.peak_dbfs);
   // libwebrtc AGC2: -21.0 dBFS, -1.0 dB, -62.9 dBFS (v1 lifts the quiet
   // talker to -16.8 dBFS and the noise to -58.2 dBFS, #242).
-  SM_EXPECT_NEAR(quiet_out, -21.0, 1.0);
-  SM_EXPECT_NEAR(loud_change, -1.0, 1.0);
-  SM_EXPECT_NEAR(noise_out, -62.9, 1.5);
-  SM_EXPECT_LE(peak, 1.0f);
+  SM_EXPECT_NEAR(m.quiet_out, -21.0, 1.0);
+  SM_EXPECT_NEAR(m.loud_change, -1.0, 1.0);
+  SM_EXPECT_NEAR(m.noise_out, -62.9, 1.5);
+  SM_EXPECT_LE(m.peak_dbfs, 0.0);
+}
+
+// `apm v2` (#242): AGC1 as a call runs it (AgcManagerDirect in
+// kAdaptiveAnalog, GainControl in kFixedDigital, the mic volume emulated
+// from 255). libwebrtc M157's APM with the same configuration
+// (docs/results/apm-webrtc.md, sm_apm_compare): quiet talker -20.6 dBFS out,
+// loud talker -3.2 dB, noise in pauses -63.0 dBFS, peak 0.0 dBFS.
+SM_TEST(E2E_GainControl, Agc1LiftsQuietTalkerAsLibwebrtc) {
+  const QuietThenLoud m = RunQuietThenLoud(/*agc2=*/false);
+  SM_RECORD("quiet_talker_in_dbfs", m.quiet_in);
+  SM_RECORD("quiet_talker_out_dbfs", m.quiet_out);
+  SM_RECORD("loud_talker_change_db", m.loud_change);
+  SM_RECORD("noise_in_pauses_dbfs", m.noise_out);
+  SM_RECORD("peak_dbfs", m.peak_dbfs);
+  SM_EXPECT_NEAR(m.quiet_out, -20.6, 1.0);
+  SM_EXPECT_NEAR(m.loud_change, -3.2, 1.0);
+  SM_EXPECT_NEAR(m.noise_out, -63.0, 1.5);
+  SM_EXPECT_LE(m.peak_dbfs, 0.0);
 }
 
 SM_TEST(E2E_EchoDelay, AecFollowsAudioRouteChange) {

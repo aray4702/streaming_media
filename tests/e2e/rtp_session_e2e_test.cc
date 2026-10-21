@@ -236,3 +236,39 @@ SM_TEST(E2E_RtpSession, OutageIsRepairedByNackAndVideoResumes) {
   SM_EXPECT_GT(r.rendered, r.frames_sent / 2);
   SM_EXPECT_LE(r.longest_gap_ms, 3000);
 }
+
+// #256: an audio stream at a clock rate NetEq does not run at crashed the
+// receiver in concealment. Its packets are now discarded, as libwebrtc does.
+SM_TEST(E2E_RtpSession, AudioAtAClockRateNetEqDoesNotRunAtIsDiscarded) {
+  struct AnyRateDecoder : AudioDecoder {
+    std::optional<std::vector<float>> Decode(std::span<const uint8_t>, uint32_t) override {
+      return std::vector<float>(2000, 0.1f);
+    }
+  };
+  for (int rate : {11025, 12000, 22050, 24000, 44100, 48000}) {
+    AnyRateDecoder dec;
+    AudioStreamConfig ac;
+    ac.ssrc = kAudioSsrc;
+    ac.clock_rate = rate;
+    ac.nominal_rate = DataRate::KilobitsPerSec(32);
+    SessionConfig sc;
+    Session tx(sc), rx(sc);
+    const AudioSendId as = tx.AddAudioSend(ac);
+    const AudioRecvId ar = rx.AddAudioReceive(ac, &dec);
+    std::vector<float> out(static_cast<size_t>(rate / 100));
+    for (int t = 0; t < 3000; ++t) {
+      const Timestamp now = Timestamp::Millis(t);
+      if (t % 20 == 0 && t < 1000) {  // 1 s of speech, then the sender goes quiet.
+        std::vector<uint8_t> frame(80, 1);
+        tx.SendAudio(as, {static_cast<uint32_t>(int64_t{t} * rate / 1000), frame, false}, now);
+      }
+      tx.Process(now);
+      for (auto& p : tx.TakeOutgoing()) rx.OnPacket(p.bytes, now);
+      rx.Process(now);
+      if (t % 10 == 0) rx.GetAudio(ar, out, now);
+    }
+    const auto& jb = rx.audio_receiver(ar).jitter_buffer().stats();
+    SM_EXPECT_EQ(jb.packets_discarded_unsupported_rate, rate == 48000 ? 0u : 50u);
+    SM_EXPECT_EQ(jb.packets_received, rate == 48000 ? 50u : 0u);
+  }
+}

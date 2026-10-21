@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "sm/audio/fft4g.h"
 #include "sm/core/dsp.h"
 
 namespace sm::audio::ns {
@@ -649,135 +650,197 @@ float ComputeUpperBandsGain(float minimum_attenuating_gain, std::span<const floa
 size_t NumBandsForRate(int sample_rate) { return sample_rate >= 48000 ? 3 : sample_rate >= 32000 ? 2 : 1; }
 }  // namespace
 
+NoiseSuppressor::ChannelState::ChannelState(const SuppressionParams& params, size_t num_bands)
+    : wiener_filter(params), noise_estimator(params), process_delay_memory(num_bands > 1 ? num_bands - 1 : 0) {
+  prev_analysis_signal_spectrum.fill(1.f);
+  for (auto& d : process_delay_memory) d.fill(0.f);
+}
+
 NoiseSuppressor::NoiseSuppressor(NoiseSuppressorConfig cfg)
     : cfg_(cfg),
       num_bands_(NumBandsForRate(cfg.sample_rate)),
       params_(cfg.level),
-      fft_(kFftSize),
-      bins_(kFftSizeBy2Plus1),
-      wiener_filter_(params_),
-      noise_estimator_(params_),
-      process_delay_memory_(num_bands_ - 1) {
-  prev_analysis_signal_spectrum_.fill(1.f);
-  for (auto& d : process_delay_memory_) d.fill(0.f);
+      filter_bank_states_(std::max<size_t>(cfg.num_channels, 1)),
+      upper_band_gains_(std::max<size_t>(cfg.num_channels, 1)),
+      energies_before_filtering_(std::max<size_t>(cfg.num_channels, 1)),
+      gain_adjustments_(std::max<size_t>(cfg.num_channels, 1)) {
+  for (size_t ch = 0; ch < std::max<size_t>(cfg.num_channels, 1); ++ch) {
+    channels_.push_back(std::make_unique<ChannelState>(params_, num_bands_));
+  }
+  // NrFft::NrFft: ip[0] = 0 makes the first Rdft build the tables.
+  bit_reversal_state_[0] = 0;
+  std::array<float, kFftSize> tmp_buffer;
+  tmp_buffer.fill(0.f);
+  ooura::Rdft(kFftSize, 1, tmp_buffer.data(), bit_reversal_state_.data(), tables_.data());
 }
 
 void NoiseSuppressor::Fft(std::span<const float, kFftSize> time, std::span<float, kFftSize> real,
                           std::span<float, kFftSize> imag) {
-  fft_.Forward(time.data(), bins_.data());
-  // Ooura's rdft returns sum x[j] sin(2 pi j k / n) as the imaginary part.
-  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) {
-    real[i] = bins_[i].real();
-    imag[i] = -bins_[i].imag();
-  }
+  std::array<float, kFftSize> time_data;
+  std::copy(time.begin(), time.end(), time_data.begin());
+  ooura::Rdft(kFftSize, 1, time_data.data(), bit_reversal_state_.data(), tables_.data());
+
   imag[0] = 0;
+  real[0] = time_data[0];
+
   imag[kFftSizeBy2Plus1 - 1] = 0;
+  real[kFftSizeBy2Plus1 - 1] = time_data[1];
+
+  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) {
+    real[i] = time_data[2 * i];
+    imag[i] = time_data[2 * i + 1];
+  }
 }
 
 void NoiseSuppressor::Ifft(std::span<const float, kFftSize> real, std::span<const float, kFftSize> imag,
                            std::span<float, kFftSize> time) {
-  bins_[0] = Complex(real[0], 0.f);
-  bins_[kFftSizeBy2Plus1 - 1] = Complex(real[kFftSizeBy2Plus1 - 1], 0.f);
-  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) bins_[i] = Complex(real[i], -imag[i]);
-  // RealFft::Inverse is scaled by 1/n, as NrFft::Ifft's 2/n after rdft.
-  fft_.Inverse(bins_.data(), time.data());
+  time[0] = real[0];
+  time[1] = real[kFftSizeBy2Plus1 - 1];
+  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) {
+    time[2 * i] = real[i];
+    time[2 * i + 1] = imag[i];
+  }
+  ooura::Rdft(kFftSize, -1, time.data(), bit_reversal_state_.data(), tables_.data());
+
+  constexpr float kScaling = 2.f / kFftSize;
+  for (float& d : time) d *= kScaling;
 }
 
 void NoiseSuppressor::Analyze(std::span<const float> bands) {
-  noise_estimator_.PrepareAnalysis();
+  const size_t num_channels = channels_.size();
+  for (auto& ch : channels_) ch->noise_estimator.PrepareAnalysis();
 
   std::array<float, kNsFrameSize> y_band0;
-  for (size_t i = 0; i < kNsFrameSize; ++i) y_band0[i] = bands[i] * kToFloatS16;
+  auto band0 = [&](size_t ch) {
+    for (size_t i = 0; i < kNsFrameSize; ++i) y_band0[i] = bands[ch * frame_samples() + i] * kToFloatS16;
+  };
 
   // Zero frames would move the thresholds towards silence, so that speech
   // looks like everything once the signal starts; they are not learnt from.
-  if (Energy(y_band0) + Energy(analyze_analysis_memory_) <= 0.f) return;
+  bool zero_frame = true;
+  for (size_t ch = 0; ch < num_channels && zero_frame; ++ch) {
+    band0(ch);
+    if (Energy(channels_[ch]->analyze_analysis_memory) + Energy(y_band0) > 0.f) zero_frame = false;
+  }
+  if (zero_frame) return;
 
   if (++num_analyzed_frames_ < 0) num_analyzed_frames_ = 0;
   ++stats_.analyzed_frames;
 
-  std::array<float, kFftSize> extended_frame;
-  FormExtendedFrame(y_band0, analyze_analysis_memory_, extended_frame);
-  ApplyFilterBankWindow(extended_frame);
+  for (size_t ch = 0; ch < num_channels; ++ch) {
+    ChannelState& c = *channels_[ch];
+    band0(ch);
+    std::array<float, kFftSize> extended_frame;
+    FormExtendedFrame(y_band0, c.analyze_analysis_memory, extended_frame);
+    ApplyFilterBankWindow(extended_frame);
 
-  std::array<float, kFftSize> real, imag;
-  Fft(extended_frame, real, imag);
-  Spectrum signal_spectrum;
-  ComputeMagnitudeSpectrum(real, imag, signal_spectrum);
+    std::array<float, kFftSize> real, imag;
+    Fft(extended_frame, real, imag);
+    Spectrum signal_spectrum;
+    ComputeMagnitudeSpectrum(real, imag, signal_spectrum);
 
-  float signal_energy = 0.f;
-  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) signal_energy += real[i] * real[i] + imag[i] * imag[i];
-  signal_energy /= kFftSizeBy2Plus1;
-  float signal_spectral_sum = 0.f;
-  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) signal_spectral_sum += signal_spectrum[i];
+    float signal_energy = 0.f;
+    for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) signal_energy += real[i] * real[i] + imag[i] * imag[i];
+    signal_energy /= kFftSizeBy2Plus1;
+    float signal_spectral_sum = 0.f;
+    for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) signal_spectral_sum += signal_spectrum[i];
 
-  // Noise spectra and the speech presence probability.
-  noise_estimator_.PreUpdate(num_analyzed_frames_, signal_spectrum, signal_spectral_sum);
-  Spectrum post_snr, prior_snr;
-  ComputeSnr(wiener_filter_.filter(), prev_analysis_signal_spectrum_, signal_spectrum,
-             noise_estimator_.prev_noise_spectrum(), noise_estimator_.noise_spectrum(), prior_snr, post_snr);
-  speech_probability_estimator_.Update(num_analyzed_frames_, prior_snr, post_snr,
-                                       noise_estimator_.conservative_noise_spectrum(), signal_spectrum,
-                                       signal_spectral_sum, signal_energy);
-  noise_estimator_.PostUpdate(speech_probability_estimator_.probability(), signal_spectrum);
-  prev_analysis_signal_spectrum_ = signal_spectrum;
-  stats_.prior_speech_probability = speech_probability_estimator_.prior_probability();
+    // Noise spectra and the speech presence probability.
+    c.noise_estimator.PreUpdate(num_analyzed_frames_, signal_spectrum, signal_spectral_sum);
+    Spectrum post_snr, prior_snr;
+    ComputeSnr(c.wiener_filter.filter(), c.prev_analysis_signal_spectrum, signal_spectrum,
+               c.noise_estimator.prev_noise_spectrum(), c.noise_estimator.noise_spectrum(), prior_snr, post_snr);
+    c.speech_probability_estimator.Update(num_analyzed_frames_, prior_snr, post_snr,
+                                          c.noise_estimator.conservative_noise_spectrum(), signal_spectrum,
+                                          signal_spectral_sum, signal_energy);
+    c.noise_estimator.PostUpdate(c.speech_probability_estimator.probability(), signal_spectrum);
+    c.prev_analysis_signal_spectrum = signal_spectrum;
+  }
+  stats_.prior_speech_probability = channels_[0]->speech_probability_estimator.prior_probability();
 }
 
 void NoiseSuppressor::Process(std::span<float> bands) {
-  std::array<float, kNsFrameSize> y_band0;
-  for (size_t i = 0; i < kNsFrameSize; ++i) y_band0[i] = bands[i] * kToFloatS16;
+  const size_t num_channels = channels_.size();
 
-  std::array<float, kFftSize> extended_frame, real, imag;
-  FormExtendedFrame(y_band0, process_analysis_memory_, extended_frame);
-  ApplyFilterBankWindow(extended_frame);
-  const float energy_before_filtering = Energy(extended_frame);
+  // The suppression filter of every channel.
+  for (size_t ch = 0; ch < num_channels; ++ch) {
+    ChannelState& c = *channels_[ch];
+    FilterBankState& st = filter_bank_states_[ch];
+    for (size_t i = 0; i < kNsFrameSize; ++i) st.y_band0[i] = bands[ch * frame_samples() + i] * kToFloatS16;
+    FormExtendedFrame(st.y_band0, c.process_analysis_memory, st.extended_frame);
+    ApplyFilterBankWindow(st.extended_frame);
+    energies_before_filtering_[ch] = Energy(st.extended_frame);
 
-  Fft(extended_frame, real, imag);
-  Spectrum signal_spectrum;
-  ComputeMagnitudeSpectrum(real, imag, signal_spectrum);
+    Fft(st.extended_frame, st.real, st.imag);
+    Spectrum signal_spectrum;
+    ComputeMagnitudeSpectrum(st.real, st.imag, signal_spectrum);
 
-  // The frequency-domain gain filter.
-  wiener_filter_.Update(num_analyzed_frames_, noise_estimator_.noise_spectrum(), noise_estimator_.prev_noise_spectrum(),
-                        noise_estimator_.parametric_noise_spectrum(), signal_spectrum);
-  float upper_band_gain = 1.f;
-  if (num_bands_ > 1) {
-    upper_band_gain = ComputeUpperBandsGain(params_.minimum_attenuating_gain, wiener_filter_.filter(),
-                                            speech_probability_estimator_.probability(),
-                                            prev_analysis_signal_spectrum_, signal_spectrum);
+    // The frequency-domain gain filter.
+    c.wiener_filter.Update(num_analyzed_frames_, c.noise_estimator.noise_spectrum(),
+                           c.noise_estimator.prev_noise_spectrum(), c.noise_estimator.parametric_noise_spectrum(),
+                           signal_spectrum);
+    if (num_bands_ > 1) {
+      upper_band_gains_[ch] =
+          ComputeUpperBandsGain(params_.minimum_attenuating_gain, c.wiener_filter.filter(),
+                                c.speech_probability_estimator.probability(), c.prev_analysis_signal_spectrum,
+                                signal_spectrum);
+    }
   }
 
-  const Spectrum& filter = wiener_filter_.filter();
+  // One filter for all channels: the minimum per bin (AggregateWienerFilters).
+  Spectrum filter = channels_[0]->wiener_filter.filter();
+  for (size_t ch = 1; ch < num_channels; ++ch) {
+    const Spectrum& filter_ch = channels_[ch]->wiener_filter.filter();
+    for (size_t k = 0; k < kFftSizeBy2Plus1; ++k) filter[k] = std::min(filter[k], filter_ch[k]);
+  }
   float mean_gain = 0.f;
-  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) {
-    real[i] *= filter[i];
-    imag[i] *= filter[i];
-    mean_gain += filter[i];
-  }
+  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) mean_gain += filter[i];
   mean_gain /= kFftSizeBy2Plus1;
 
   // Synthesis.
-  Ifft(real, imag, extended_frame);
-  const float energy_after_filtering = Energy(extended_frame);
-  ApplyFilterBankWindow(extended_frame);
-  const float gain_adjustment = wiener_filter_.ComputeOverallScalingFactor(
-      num_analyzed_frames_, speech_probability_estimator_.prior_probability(), energy_before_filtering,
-      energy_after_filtering);
-  for (float& v : extended_frame) v *= gain_adjustment;
-  OverlapAndAdd(extended_frame, process_synthesis_memory_, y_band0);
+  for (size_t ch = 0; ch < num_channels; ++ch) {
+    FilterBankState& st = filter_bank_states_[ch];
+    for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) {
+      st.real[i] *= filter[i];
+      st.imag[i] *= filter[i];
+    }
+    Ifft(st.real, st.imag, st.extended_frame);
+    const float energy_after_filtering = Energy(st.extended_frame);
+    ApplyFilterBankWindow(st.extended_frame);
+    gain_adjustments_[ch] = channels_[ch]->wiener_filter.ComputeOverallScalingFactor(
+        num_analyzed_frames_, channels_[ch]->speech_probability_estimator.prior_probability(),
+        energies_before_filtering_[ch], energy_after_filtering);
+  }
+  float gain_adjustment = gain_adjustments_[0];
+  for (size_t ch = 1; ch < num_channels; ++ch) gain_adjustment = std::min(gain_adjustment, gain_adjustments_[ch]);
+  float upper_band_gain = 1.f;
+  if (num_bands_ > 1) {
+    upper_band_gain = upper_band_gains_[0];
+    for (size_t ch = 1; ch < num_channels; ++ch) upper_band_gain = std::min(upper_band_gain, upper_band_gains_[ch]);
+  }
 
-  // Limit to the S16 range and back to this library's scale.
-  for (size_t i = 0; i < kNsFrameSize; ++i) bands[i] = std::min(std::max(y_band0[i], -32768.f), 32767.f) / kToFloatS16;
+  for (size_t ch = 0; ch < num_channels; ++ch) {
+    ChannelState& c = *channels_[ch];
+    FilterBankState& st = filter_bank_states_[ch];
+    std::span<float> out_ch = bands.subspan(ch * frame_samples(), frame_samples());
+    for (float& v : st.extended_frame) v *= gain_adjustment;
+    OverlapAndAdd(st.extended_frame, c.process_synthesis_memory, st.y_band0);
 
-  // Upper bands: delayed as the filter bank delays the lowest band, then
-  // scaled by one gain.
-  for (size_t b = 1; b < num_bands_; ++b) {
-    std::array<float, kNsFrameSize> y_band, delayed_frame;
-    std::span<float> out = bands.subspan(b * kNsFrameSize, kNsFrameSize);
-    for (size_t i = 0; i < kNsFrameSize; ++i) y_band[i] = out[i] * kToFloatS16;
-    DelaySignal(y_band, process_delay_memory_[b - 1], delayed_frame);
+    // Limit to the S16 range and back to this library's scale.
     for (size_t i = 0; i < kNsFrameSize; ++i) {
-      out[i] = std::min(std::max(upper_band_gain * delayed_frame[i], -32768.f), 32767.f) / kToFloatS16;
+      out_ch[i] = std::min(std::max(st.y_band0[i], -32768.f), 32767.f) / kToFloatS16;
+    }
+
+    // Upper bands: delayed as the filter bank delays the lowest band, then
+    // scaled by one gain.
+    for (size_t b = 1; b < num_bands_; ++b) {
+      std::array<float, kNsFrameSize> y_band, delayed_frame;
+      std::span<float> out = out_ch.subspan(b * kNsFrameSize, kNsFrameSize);
+      for (size_t i = 0; i < kNsFrameSize; ++i) y_band[i] = out[i] * kToFloatS16;
+      DelaySignal(y_band, c.process_delay_memory[b - 1], delayed_frame);
+      for (size_t i = 0; i < kNsFrameSize; ++i) {
+        out[i] = std::min(std::max(upper_band_gain * delayed_frame[i], -32768.f), 32767.f) / kToFloatS16;
+      }
     }
   }
 

@@ -62,6 +62,13 @@ double AudioJitterBuffer::CurrentLevelMs() const {
 
 void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival,
                                      AudioPacketPriority priority) {
+  if (cfg_.version >= 2 && !NetEqSupportsSampleRate(cfg_.sample_rate)) {
+    // As libwebrtc, where no decoder exists for such a rate (#256): NetEq's
+    // expand, merge and time stretch assume one of the four rates.
+    ++stats_.packets_discarded_unsupported_rate;
+    SM_EVENT(cfg_.events, arrival, "neteq", "unsupported_rate", cfg_.sample_rate, rtp_ts);
+    return;
+  }
   int64_t ts = unwrapper_.Unwrap(rtp_ts);
   ++stats_.packets_received;
   if (cfg_.version >= 2) {
@@ -564,6 +571,7 @@ void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("packets_received", stats_.packets_received);
   w.Counter("packets_discarded_late", stats_.packets_discarded_late);
   w.Counter("packets_duplicate", stats_.packets_duplicate);
+  w.Counter("packets_discarded_unsupported_rate", stats_.packets_discarded_unsupported_rate);
   w.Counter("packets_lost", stats_.packets_lost);
   w.Counter("buffer_flushes", stats_.buffer_flushes);
   w.Counter("total_samples_received", stats_.total_samples_received);

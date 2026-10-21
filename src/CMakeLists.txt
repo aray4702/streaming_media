@@ -68,16 +68,26 @@ if(SM_WITH_AUDIO)
     audio/gain_control.cc
     audio/agc2.cc
     audio/agc1.cc
+    audio/agc1_vad.cc
+    audio/agc1_vad_isac.cc
+    audio/agc_manager.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
     audio/aec3_delay.cc
+    audio/aec3_filter.cc
     audio/transient_suppressor.cc
     audio/comfort_noise.cc
     audio/audio_level.cc
     audio/resampler.cc
     audio/splitting_filter.cc
-    audio/ns.cc)
+    audio/ns.cc
+    audio/fft4g.cc)
   list(APPEND SM_SECTIONS audio)
+  # Bit-exact with libwebrtc's float/double arithmetic (which Chromium builds
+  # with -ffp-contract=off): no fused multiply-adds on FMA targets.
+  set_source_files_properties(audio/agc1_vad.cc audio/agc1_vad_isac.cc
+                              audio/fft4g.cc audio/ns.cc audio/aec3_filter.cc PROPERTIES
+    COMPILE_OPTIONS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>")
 endif()
 
 if(SM_WITH_VIDEO)

@@ -273,12 +273,21 @@ ParseResult ParseScenario(const std::string& text) {
       s.audio_bitrate = r;
     } else if (key == "audio_sample_rate") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
-      if (v != 8000 && v != 16000 && v != 32000 && v != 48000) return fail("audio_sample_rate must be 8000|16000|32000|48000");
+      // The four NetEq rates, plus 12, 24 and 44.1 kHz (issue #256), which NetEq v2 refuses as libwebrtc does.
+      if (v != 8000 && v != 12000 && v != 16000 && v != 24000 && v != 32000 && v != 44100 && v != 48000)
+        return fail("audio_sample_rate must be 8000|12000|16000|24000|32000|44100|48000");
       s.audio_sample_rate = v;
     } else if (key == "video_fps") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
       if (v < 1 || v > 120) return fail("video_fps must be 1..120");
       s.video_fps = v;
+    } else if (key == "video_max_payload") {
+      // Any value reaches the library, which clamps it (issue #257): the bench tests that.
+      char* end = nullptr;
+      const long v = need(2) ? std::strtol(tok[1].c_str(), &end, 10) : -1;
+      if (!need(2) || end == tok[1].c_str() || *end != '\0' || v < 0 || v > 65535)
+        return fail("usage: video_max_payload <bytes 0..65535>");
+      s.video_max_payload = static_cast<size_t>(v);
     } else if (key == "video_max" || key == "video_min" || key == "start_rate" || key == "min_rate" || key == "max_rate") {
       DataRate r;
       if (!need(2) || !ParseRate(tok[1], &r) || !r.IsFinite() || r.bps() <= 0) return fail("usage: " + key + " <rate>");

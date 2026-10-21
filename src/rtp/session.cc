@@ -95,6 +95,10 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   c.red_distance = a.red_distance;
   audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate, a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate});
   rtcp_.AddLocalMediaSsrc(a.ssrc);
+  // AudioSendStream::ConfigureStream: with transport-cc (and allocate_audio_without_feedback_
+  // off) the audio stream asks for periodic ALR probing (WebRTC-Audio-AlrProbing is on
+  // unless disabled; audio_send_stream.cc:158-159, 297-308).
+  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) send_.EnablePeriodicAlrProbing(true);
   if (!send_has_padding_) {
     send_.SetPaddingSender(audio_send_.back().sender.get());
     send_has_padding_ = true;

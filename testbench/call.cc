@@ -473,7 +473,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.rtx_payload_type = kRtxPt;
   video_cfg.fec = s.fec;
   // libwebrtc's default packet capacity (kVideoMtu 1200); the session subtracts the real header.
-  video_cfg.max_payload_size = 1458 - 12;
+  video_cfg.max_payload_size = s.video_max_payload;
   video_cfg.parser = &parser;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
@@ -735,10 +735,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           w_good += wire;
           int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
           audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
-          if (!audio_started) {
-            audio_started = true;
-            audio_first = at;
-          }
+          audio_started = true;
           break;
         }
         case Kind::kVideo:
@@ -757,6 +754,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           break;
       }
       receiver.OnPacket(w.bytes, at);
+      // The first packet the jitter buffer takes: none when it refuses the stream (#256).
+      if (w.kind == Kind::kAudio && !audio_first.IsFinite() &&
+          receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0) {
+        audio_first = at;
+      }
     });
     // The receiver learns the RTT the sender measured (a one-way receiver has
     // no report blocks of its own to measure it from).

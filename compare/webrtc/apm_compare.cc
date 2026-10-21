@@ -302,8 +302,10 @@ void Noise(bool apm_v2) {
   Add(module, "white noise, ~7 dB SNR", "algorithmic delay (ms)", lo / 16.0, lw / 16.0);
 }
 
-// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB.
-void Gain() {
+// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB. With
+// `apm_v2`, our side is the port of the same controller (#242): AGC1 with the
+// emulated mic volume against libwebrtc's AGC1, AGC2 against its AGC2.
+void Gain(bool apm_v2) {
   CallScenario q;
   q.far_talk = false;
   q.seconds = 40;
@@ -313,6 +315,11 @@ void Gain() {
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= sm::dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
   auto ours = RunOurs(c, cc);
+  ChainConfig v2 = cc;
+  v2.apm_v2 = true;
+  auto ours_agc1 = RunOurs(c, v2);
+  v2.agc2 = true;
+  auto ours_agc2 = RunOurs(c, v2);
   auto agc1 = RunWebrtc(c, WebrtcConfig(cc));
   auto agc2 = RunWebrtc(c, WebrtcConfig(cc, true));
   auto truth = SpeechTruth(c, -60.0f);
@@ -323,16 +330,18 @@ void Gain() {
     for (float v : o.out) p = std::max(p, std::fabs(v));
     return 20 * std::log10(p);
   };
+  const std::string module = apm_v2 ? "gain control (apm v2)" : "gain control";
   for (int i = 0; i < 2; ++i) {
     const Output& w = i == 0 ? agc1 : agc2;
+    if (apm_v2) ours = i == 0 ? ours_agc1 : ours_agc2;
     std::string sc = i == 0 ? "quiet then loud talker, AGC1 (default)" : "quiet then loud talker, AGC2 digital";
-    Add("gain control", sc, "quiet talker in -> out, 12-20 s (dBFS)", lvl(ours, 12, 20), lvl(w, 12, 20),
+    Add(module, sc, "quiet talker in -> out, 12-20 s (dBFS)", lvl(ours, 12, 20), lvl(w, 12, 20),
         "input " + std::to_string(static_cast<int>(std::lround(in(12, 20)))) + " dBFS");
-    Add("gain control", sc, "loud talker level change, 32-40 s (dB)", lvl(ours, 32, 40) - in(32, 40),
+    Add(module, sc, "loud talker level change, 32-40 s (dB)", lvl(ours, 32, 40) - in(32, 40),
         lvl(w, 32, 40) - in(32, 40));
-    Add("gain control", sc, "noise level in pauses, 12-20 s (dBFS)",
+    Add(module, sc, "noise level in pauses, 12-20 s (dBFS)",
         FramesDb(ours.out, truth, Truth::kSilence, 12, 20, 0), FramesDb(w.out, truth, Truth::kSilence, 12, 20, 0));
-    Add("gain control", sc, "peak (dBFS)", peak(ours), peak(w));
+    Add(module, sc, "peak (dBFS)", peak(ours), peak(w));
   }
 }
 
@@ -376,7 +385,8 @@ int main() {
   EchoDoubleTalk();
   Noise(false);
   Noise(true);
-  Gain();
+  Gain(false);
+  Gain(true);
   VoiceActivity();
   std::printf("| module | scenario | metric | ours | libwebrtc | note |\n|---|---|---|---|---|---|\n");
   for (const auto& r : rows) {

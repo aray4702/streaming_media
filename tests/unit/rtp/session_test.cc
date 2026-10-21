@@ -501,3 +501,39 @@ SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
   SM_EXPECT_EQ(VideoStreamConfig{}.timing.version, 2);
   SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
 }
+
+// #62: AudioSendStream::ConfigureStream asks for periodic ALR probing when the audio stream
+// has transport-cc (audio_send_stream.cc:297-308), so libwebrtc probes every 5 s in ALR in
+// every call with audio. Without transport-cc it does not.
+SM_TEST(Session, AnAudioStreamWithTransportCcRequestsAlrProbing) {
+  auto alr_probing = [](bool audio, bool transport_cc) {
+    SessionConfig c = Cfg(1);
+    if (!transport_cc) c.extensions = sync::ExtensionMap();
+    Session s(c);
+    AudioStreamConfig au;
+    au.ssrc = 0x100;
+    if (audio) s.AddAudioSend(au);
+    s.AddVideoSend(Video());
+    s.Process(Timestamp::Millis(0));
+    return s.send_side().gcc().probe_controller_v2().periodic_alr_probing();
+  };
+  SM_EXPECT_TRUE(alr_probing(true, true));
+  SM_EXPECT_FALSE(alr_probing(true, false));
+  SM_EXPECT_FALSE(alr_probing(false, true));  // Video alone (not screen share) does not ask.
+}
+
+// #62: the initial exponential probes of an audio-only call are 3x and 6x the start rate,
+// not capped at twice the audio allocation: libwebrtc's GoogCC is created when the network
+// comes up, before AudioSendStream::Start registers its bitrate, so ProbeController knows no
+// max_total_allocated_bitrate when it probes (rtp_transport_controller_send.cc:413-428, 747-773).
+SM_TEST(Session, AudioOnlyInitialProbesAreNotCappedByTheAllocation) {
+  SessionConfig c = Cfg(1);
+  c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(300);
+  Session s(c);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioSend(au);
+  s.Process(Timestamp::Millis(0));
+  const auto& pc = s.send_side().gcc().probe_controller_v2();
+  SM_EXPECT_TRUE(pc.state() == cc::ProbeControllerV2::State::kWaitingForProbingResult);
+}

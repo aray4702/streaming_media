@@ -115,8 +115,9 @@ One directive per line, and `#` starts a comment.
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate |
-| `audio_sample_rate 8000\|16000\|32000\|48000` | 16000 | |
+| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | NetEq v2 (the default) runs only at 8, 16, 32 and 48 kHz and, as libwebrtc, discards the audio of any other rate (#256) |
 | `video_fps <n>` | 30 | |
+| `video_max_payload <bytes>` | 1446 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). `sm_compare`'s libwebrtc side keeps its default |
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |

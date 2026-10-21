@@ -1,12 +1,17 @@
 // Unit tests: libwebrtc M157's noise suppressor (`ns::NoiseSuppressor`,
 // `apm v2`, issue #241; modules/audio_processing/ns/).
+#include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
+#include <memory>
 #include <numbers>
 #include <span>
 #include <vector>
 
+#include "sm/audio/fft4g.h"
 #include "sm/audio/ns.h"
+#include "sm/audio/splitting_filter.h"
 #include "sm/core/dsp.h"
 #include "sm/sim/signals.h"
 #include "sm_test.h"
@@ -30,6 +35,47 @@ std::vector<float> Run(NoiseSuppressor& ns, const std::vector<float>& x) {
 double Db(std::span<const float> x) { return dsp::RmsDbfs(x); }
 
 }  // namespace
+
+// fft4g.cc (WebRtc_rdft), the FFT under NrFft. The expected values are the
+// output of libwebrtc M157's prebuilt WebRtc_rdft on the same input (bit for
+// bit). Several of them (a[3], a[6], ...) differ in the last bit if the
+// twiddle tables are built with the double cos/sin instead of libc++'s float
+// overloads. The twiddle tables come from the C library's cosf/sinf, so the
+// bits are those of glibc (the prebuilt libwebrtc is a Linux build); other C
+// libraries (Apple's) may round the tables differently, for libwebrtc as for
+// us, and are held to a tolerance instead.
+SM_TEST(Ns, Fft4gBitExactWithLibwebrtc) {
+  std::vector<float> a(256);
+  for (size_t i = 0; i < a.size(); ++i) a[i] = static_cast<float>((i * 37) % 101) - 50.f;
+  std::vector<size_t> ip(128, 0);
+  std::vector<float> w(128);
+  audio::ooura::Rdft(256, 1, a.data(), ip.data(), w.data());
+  const struct {
+    size_t i;
+    float v;
+  } expected[] = {{0, -0x1.98p+5f},       {1, 0x1.6p+3f},          {2, -0x1.74cc38p+5f},  {3, 0x1.15d2fcp+4f},
+                  {6, -0x1.2fb1d4p+7f},   {10, -0x1.d6e85ep+7f},   {11, -0x1.056ap+0f},   {100, -0x1.750808p+7f},
+                  {101, 0x1.9af1acp+7f},  {254, 0x1.2e973cp+6f},   {255, -0x1.a310d2p+7f}};
+#if defined(__GLIBC__)
+  for (const auto& e : expected) SM_EXPECT_EQ(a[e.i], e.v);
+#else
+  for (const auto& e : expected) SM_EXPECT_LT(std::fabs(a[e.i] - e.v), 1e-3f);
+#endif
+}
+
+// NrFft::Ifft: the inverse rdft scaled by 2/n gives the frame back.
+SM_TEST(Ns, Fft4gInverseScaledByTwoOverN) {
+  std::vector<float> x(256), a(256);
+  for (size_t i = 0; i < x.size(); ++i) x[i] = 1000.f * std::sin(0.05f * static_cast<float>(i * i % 257));
+  a = x;
+  std::vector<size_t> ip(128, 0);
+  std::vector<float> w(128);
+  audio::ooura::Rdft(256, 1, a.data(), ip.data(), w.data());
+  audio::ooura::Rdft(256, -1, a.data(), ip.data(), w.data());
+  float max_err = 0.f;
+  for (size_t i = 0; i < x.size(); ++i) max_err = std::max(max_err, std::fabs(a[i] * (2.f / 256.f) - x[i]));
+  SM_EXPECT_LT(max_err, 1e-2f);
+}
 
 // suppression_params.cc: the four levels.
 SM_TEST(Ns, SuppressionParamsAsLibwebrtc) {
@@ -160,4 +206,125 @@ SM_TEST(Ns, AllRatesAndLevelsAsLibwebrtcUnitTest) {
       SM_EXPECT_TRUE(ok);
     }
   }
+}
+
+namespace {
+
+// FNV-1a over the output's float bits.
+uint64_t HashBits(const std::vector<float>& v) {
+  uint64_t h = 1469598103934665603ull;
+  for (float f : v) h = (h ^ std::bit_cast<uint32_t>(f)) * 1099511628211ull;
+  return h;
+}
+
+// Runs `num_channels` channels of a ~7 dB SNR talker (SpeechLike seed 11 + c,
+// amplitude 0.1, plus WhiteNoise 0.03 seed 13 + c) through NoiseSuppressor
+// at `rate`, kHigh, 10 ms at a time. Above 16 kHz SplittingFilter splits and
+// merges the bands, as AudioBuffer does around APM's NoiseSuppressor.
+std::vector<std::vector<float>> RunChannels(int rate, size_t num_channels) {
+  std::vector<std::vector<float>> y(num_channels);
+  for (size_t c = 0; c < num_channels; ++c) {
+    auto talk = sim::SpeechLike(rate, 4, 11 + c, true, 0.1f);
+    auto noise = sim::WhiteNoise(rate, 4, 0.03f, 13 + c);
+    y[c].resize(talk.size());
+    for (size_t i = 0; i < talk.size(); ++i) y[c][i] = talk[i] + noise[i];
+  }
+  NoiseSuppressorConfig cfg;
+  cfg.sample_rate = rate;
+  cfg.num_channels = num_channels;
+  NoiseSuppressor ns(cfg);
+  std::vector<std::unique_ptr<audio::SplittingFilter>> split(num_channels);
+  if (rate > 16000) {
+    for (auto& s : split) s = std::make_unique<audio::SplittingFilter>(rate);
+  }
+  const size_t frame = static_cast<size_t>(rate / 100);
+  std::vector<float> bands(frame * num_channels);
+  for (size_t i = 0; i + frame <= y[0].size(); i += frame) {
+    for (size_t c = 0; c < num_channels; ++c) {
+      std::span<float> full(y[c].data() + i, frame), b(bands.data() + c * frame, frame);
+      if (split[c]) {
+        split[c]->Analysis(full, b);
+      } else {
+        std::copy(full.begin(), full.end(), b.begin());
+      }
+    }
+    ns.Analyze(bands);
+    ns.Process(bands);
+    for (size_t c = 0; c < num_channels; ++c) {
+      std::span<float> full(y[c].data() + i, frame), b(bands.data() + c * frame, frame);
+      if (split[c]) {
+        split[c]->Synthesis(b, full);
+      } else {
+        std::copy(b.begin(), b.end(), full.begin());
+      }
+    }
+  }
+  return y;
+}
+
+}  // namespace
+
+// The whole suppressor against libwebrtc M157's: the expected values are the
+// output of the prebuilt NoiseSuppressor (compare/webrtc/fetch.sh), kHigh,
+// driven through its AudioBuffer (CopyFrom, SplitIntoFrequencyBands,
+// Analyze, Process, MergeFrequencyBands, CopyTo) on the same input. With
+// more than one channel this checks noise_suppressor.cc's aggregation: one
+// Wiener filter, the minimum over the channels per bin, and the minimum
+// overall scaling factor and upper-band gain. On x86-64 glibc (libwebrtc's
+// build platform) every output sample is identical (the hashes); elsewhere
+// the C library's tanh/exp/log may round differently, and the sampled values
+// are held to a tolerance.
+SM_TEST(Ns, BitExactWithLibwebrtcMultichannel) {
+  const struct Case {
+    int rate;
+    size_t channels;
+    uint64_t hash[2];
+    struct {
+      size_t c, i;
+      float v;
+    } samples[6];
+  } cases[] = {
+      {16000, 1, {0xb4ac47dbadf66991ull, 0},
+       {{0, 8000, 0x1.39b6eep-8f}, {0, 32000, -0x1.fe2802p-9f}, {0, 63999, -0x1.34506ap-7f}}},
+      {16000, 2, {0xdefe44cc13098040ull, 0x0803a277e0217336ull},
+       {{0, 8000, 0x1.04980ap-9f}, {0, 32000, -0x1.9f5878p-9f}, {0, 63999, -0x1.59d46p-9f},
+        {1, 8000, 0x1.81621ep-9f}, {1, 32000, 0x1.ed8e3ap-9f}, {1, 63999, 0x1.610bc8p-8f}}},
+      {48000, 2, {0x57fc956be20834f3ull, 0x7e9727305d52d72full},
+       {{0, 24000, 0x1.287d1cp-8f}, {0, 96000, -0x1.9939bp-10f}, {0, 191999, -0x1.13c98cp-9f},
+        {1, 24000, -0x1.eee0dep-10f}, {1, 96000, -0x1.a26f96p-9f}, {1, 191999, 0x1.36064p-12f}}},
+  };
+  for (const Case& k : cases) {
+    auto y = RunChannels(k.rate, k.channels);
+    for (const auto& s : k.samples) {
+      if (s.i == 0) continue;  // Unused slot.
+      SM_EXPECT_NEAR(y[s.c][s.i], s.v, 1e-4);
+    }
+#if defined(__GLIBC__) && defined(__x86_64__)
+    for (size_t c = 0; c < k.channels; ++c) SM_EXPECT_EQ(HashBits(y[c]), k.hash[c]);
+#endif
+  }
+}
+
+// With identical channels the aggregation changes nothing: each channel's
+// output is the mono output.
+SM_TEST(Ns, IdenticalChannelsGiveTheMonoOutput) {
+  auto x = sim::SpeechLike(16000, 3, 5, true, 0.1f);
+  auto noise = sim::WhiteNoise(16000, 3, 0.03f, 6);
+  for (size_t i = 0; i < x.size(); ++i) x[i] += noise[i];
+  NoiseSuppressor mono;
+  auto ym = Run(mono, x);
+  NoiseSuppressorConfig cfg;
+  cfg.num_channels = 2;
+  NoiseSuppressor stereo(cfg);
+  SM_ASSERT_EQ(stereo.num_channels(), 2u);
+  std::vector<float> bands(320);
+  bool same = true;
+  for (size_t i = 0; i + 160 <= x.size(); i += 160) {
+    std::copy(x.begin() + i, x.begin() + i + 160, bands.begin());
+    std::copy(x.begin() + i, x.begin() + i + 160, bands.begin() + 160);
+    stereo.Analyze(bands);
+    stereo.Process(bands);
+    for (size_t j = 0; j < 160; ++j) same = same && bands[j] == ym[i + j] && bands[160 + j] == ym[i + j];
+  }
+  SM_EXPECT_TRUE(same);
 }
