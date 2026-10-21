@@ -103,7 +103,13 @@ SM_TEST(E2E_DelayBwe, TracksCapacityStepsWithLowQueueing) {
     // last phase (800 -> 2500 kbps) gets a lower bar than steady phases.
     SM_EXPECT_GE(ph.throughput_kbps, (i == 2 ? 0.60 : 0.75) * ph.capacity_kbps);
     SM_EXPECT_LE(ph.target_kbps, 1.10 * ph.capacity_kbps);
-    SM_EXPECT_LE(ph.queue_p95_ms, 200);
+    // GoogCC drains the queue a 2.5x drop leaves slowly: after the decrease to
+    // 0.85 x the acked rate it sends close to the new capacity (program.md 0.2,
+    // #167: was 200 ms for every phase, v1's AIMD; GoogCC here 557 ms in the
+    // 800 kbps phase). libwebrtc on the bench's capacity_drop (2.5 Mbps -> 500
+    // kbps): queue p95 279 ms over the call and 14.3 s to settle (parity-data,
+    // mean of 10 seeds; ours 282 ms, 14.3 s).
+    SM_EXPECT_LE(ph.queue_p95_ms, i == 1 ? 600 : 200);
   }
   SM_RECORD("loss_ratio", r.loss_ratio);
   SM_EXPECT_LE(r.loss_ratio, 0.02);
@@ -147,38 +153,26 @@ SM_TEST(E2E_SendSideBwe, CombinesDelayAndLossControllers) {
   SM_EXPECT_LT(r.phases[2].target_kbps, 0.5 * r.phases[1].target_kbps);
 }
 
-SM_TEST(E2E_Pacer, SmoothsBurstsAndProtectsAudio) {
-  CcSimParams p;
-  p.capacity_kbps = {{0, 2500}};
-  p.seconds = 30;
-  auto paced = RunCcSim(p);
-  p.use_pacer = false;
-  auto burst = RunCcSim(p);
-  SM_RECORD("paced_audio_p95_ms", paced.audio_p95_ms);
-  SM_RECORD("unpaced_audio_p95_ms", burst.audio_p95_ms);
-  SM_RECORD("paced_queue_p95_ms", paced.queue_p95_ms);
-  SM_RECORD("unpaced_queue_p95_ms", burst.queue_p95_ms);
-  SM_EXPECT_LT(paced.audio_p95_ms, burst.audio_p95_ms);
-  SM_EXPECT_LT(paced.audio_p95_ms, 60);
-}
-
-// Pacer v2 is libwebrtc's PacingController: it lets 40 ms of the pacing rate
+// The pacer is libwebrtc's PacingController: it lets 40 ms of the pacing rate
 // out in one burst and does not pace audio (pacing_controller_unittest.cc
 // SendsPacketsInBurstImmediately, HighPrioDoesntAffectBudget), so frames of
 // this size leave in one burst either way: the paced run is no better than the
 // unpaced one, but never worse (program.md 0.2, signed off by the Owner on #80).
-SM_TEST(E2E_Pacer, LibwebrtcPacerV2DoesNotPaceAudio) {
+// With GoogCC (#167) the target sits close to the 2.5 Mbps capacity, so audio waits
+// behind a standing link queue: 122 ms p95 here, 6.5 ms above the unpaced run (the
+// bounds were < 60 ms and +1 ms with v1's GCC). libwebrtc
+// on the bench's clean_link (2.5 Mbps) keeps a queue p95 of 74 ms (ours 81 ms).
+SM_TEST(E2E_Pacer, LibwebrtcPacerDoesNotPaceAudio) {
   CcSimParams p;
   p.capacity_kbps = {{0, 2500}};
   p.seconds = 30;
-  p.pacer_v2 = true;
   auto paced = RunCcSim(p);
   p.use_pacer = false;
   auto burst = RunCcSim(p);
   SM_RECORD("v2_paced_audio_p95_ms", paced.audio_p95_ms);
   SM_RECORD("v2_unpaced_audio_p95_ms", burst.audio_p95_ms);
-  SM_EXPECT_LE(paced.audio_p95_ms, burst.audio_p95_ms + 1);
-  SM_EXPECT_LT(paced.audio_p95_ms, 60);
+  SM_EXPECT_LE(paced.audio_p95_ms, burst.audio_p95_ms + 10);
+  SM_EXPECT_LT(paced.audio_p95_ms, 130);
 }
 
 SM_TEST(E2E_Probing, FastRampUp) {
@@ -241,7 +235,11 @@ SM_TEST(E2E_VideoAdaptation, ResolutionFollowsBandwidth) {
   SM_EXPECT_EQ(r.phases[0].format.width, 1280);
   SM_EXPECT_LE(r.phases[1].format.width, 640);
   SM_EXPECT_EQ(r.phases[1].format.fps, 30.0);
-  SM_EXPECT_EQ(r.phases[2].format.width, 1280);
+  // GoogCC climbs back from 400 kbps more slowly than v1's AIMD did, so 20 s
+  // after the rise the resolution is one step below the start (program.md 0.2,
+  // #167: was 1280; GoogCC here 960). libwebrtc takes 14.3 s to settle after
+  // the bench's capacity_drop recovers (parity-data; ours 14.3 s).
+  SM_EXPECT_GE(r.phases[2].format.width, 960);
 }
 
 SM_TEST(E2E_VideoAdaptation, CpuOveruseConvergesToSustainableResolution) {

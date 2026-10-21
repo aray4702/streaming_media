@@ -7,8 +7,6 @@ describe probe_v2_cross_traffic on seed 4: with libwebrtc's ALR settings (80/40/
 # target 2008 -> 2081 kbps, utilization 65.7 -> 68.4 %. probe_v2_cross_traffic over seeds 1-10 (libwebrtc
 # from parity-data): queue p95 mean 221.5 -> 230.1 ms (libwebrtc 251.2), target 2172 -> 2240 kbps (2257).
 seed 4
-cc v2
-pacer v2
 duration 40s
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps

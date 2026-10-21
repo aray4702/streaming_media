@@ -2,7 +2,6 @@ name issue_12_lossbwe_random_loss
 describe 5% random loss on a 2 Mbps link with 40 ms one-way delay: the loss-based estimate must not pin the target (#6, #12)
 # LossBasedBweV2 (cc v2) tells inherent loss (noise at any rate) from loss caused by the sending rate.
 # 5 seeds (cc v2): utilization 75.7-82.1 %, video 1311-1420 kbps, no freezes. `cc v1`: 35-53 %. libwebrtc (CI compare-webrtc, random_loss_5pct): 76 %, 1355 kbps.
-cc v2
 duration 30s
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
 expect cc.utilization_pct >= 70

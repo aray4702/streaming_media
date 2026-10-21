@@ -1,4 +1,4 @@
-// 5.5 Packet pacer with priority queues, v2: libwebrtc's PacingController.
+// 5.5 Packet pacer with priority queues: libwebrtc's PacingController.
 //
 // A port of modules/pacing/pacing_controller.cc, prioritized_packet_queue.cc
 // (M157, compare/webrtc/reference/), behind a `Timestamp now` API with no

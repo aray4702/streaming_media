@@ -34,6 +34,10 @@ DIRS=(
   common_audio/vad
   common_audio/resampler
   common_audio/signal_processing
+  common_audio/third_party/ooura/fft_size_256
+  modules/audio_coding/codecs/isac/main/source
+  modules/third_party/fft
+  modules/audio_processing/capture_levels_adjuster
   common_audio/third_party/spl_sqrt_floor
 )
 

@@ -123,9 +123,8 @@ class DelayBasedBweTest {
  public:
   DelayBasedBweTest() : now_us_(100000000), stream_generator_(1000000, 100000000) {
     DelayBasedBwe::Config cfg;
-    cfg.version = 2;
     bwe_ = std::make_unique<DelayBasedBwe>(cfg);
-    probe_est_ = ProbeBitrateEstimator(/*libwebrtc=*/true);
+    probe_est_ = ProbeBitrateEstimator();
   }
 
   Timestamp Now() const { return Timestamp::Micros(now_us_); }
@@ -148,8 +147,8 @@ class DelayBasedBweTest {
 
   // LatestEstimate(&ssrcs, &bitrate): true once the rate control has an estimate.
   bool LatestEstimate(DataRate* bitrate) const {
-    if (!bwe_->rate_control_v2().ValidEstimate()) return false;
-    *bitrate = bwe_->rate_control_v2().LatestEstimate();
+    if (!bwe_->rate_control().ValidEstimate()) return false;
+    *bitrate = bwe_->rate_control().LatestEstimate();
     return true;
   }
 
@@ -491,7 +490,6 @@ SM_TEST(DelayBweLibwebrtc, InitializeResult) {
   SM_EXPECT_FALSE(result.probe);
   SM_EXPECT_FALSE(result.recovered_from_overuse);
   DelayBasedBwe::Config cfg;
-  cfg.version = 2;
   DelayBasedBwe bwe(cfg);
   SM_EXPECT_TRUE(bwe.usage() == BandwidthUsage::kNormal);  // delay_detector_state starts at kBwNormal.
 }
@@ -551,7 +549,7 @@ SM_TEST(DelayBweLibwebrtc, TestInitialOveruse) {
   t.stream_generator_.AddStream(new RtpStream(kFps, static_cast<int>(kStartBitrate.bps())));
   t.stream_generator_.set_capacity_bps(static_cast<int>(kInitialCapacity.bps()));
   // Needed to initialize the AimdRateControl.
-  t.bwe_->SetStartBitrate(kStartBitrate, t.Now());
+  t.bwe_->SetStartBitrate(kStartBitrate);
   int64_t bitrate_bps = kStartBitrate.bps();
   bool seen_overuse = false;
   for (int i = 0; i < 40; ++i) {

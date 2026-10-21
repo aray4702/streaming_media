@@ -21,8 +21,8 @@
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
 // diff them with tools/link_trace.py. The same runs also write the sender's
 // per-second video decisions (issue #131; "sm_video", "webrtc_video") and the
-// GoogCC estimates per update (issue #149; "sm_bwe", "webrtc_bwe"; `cc v2` only on
-// our side). tools/bwe_trace.py lays the two side by side.
+// GoogCC estimates per update (issue #149; "sm_bwe", "webrtc_bwe").
+// tools/bwe_trace.py lays the two side by side.
 //
 // --trace-all-dir=DIR traces the first seed of every scenario the same way and
 // writes only the CSV files, <scenario>.<seed>.{sm,webrtc}.{trace,video,bwe}.csv,

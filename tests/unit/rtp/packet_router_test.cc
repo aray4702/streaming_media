@@ -17,7 +17,6 @@ using namespace sm::rtp;
 namespace {
 SendSideConfig V2() {
   SendSideConfig cfg;
-  cfg.pacer.version = cc::PacerVersion::kV2;
   return cfg;
 }
 
@@ -48,7 +47,6 @@ SessionConfig SessionCfg() {
   c.local_ssrc = 1;
   c.cname = "test";
   c.extensions.Register(1, sync::uri::kTransportCc);
-  c.send_side.pacer.version = cc::PacerVersion::kV2;
   return c;
 }
 
@@ -253,18 +251,4 @@ SM_TEST(PacketRouter, AnUnsentSlotTakesNoTransportSequenceNumber) {
   SM_ASSERT_EQ(second.size(), 1u);
   SM_EXPECT_EQ(first[0].transport_seq, 1u);
   SM_EXPECT_EQ(second[0].transport_seq, 2u);
-}
-
-// `pacer v1` keeps its numbering from 0 and numbers every packet, so the v1 runs are unchanged.
-SM_TEST(PacketRouter, PacerV1NumbersFromZero) {
-  SendSideConfig cfg;
-  cfg.gcc.version = 1;
-  cfg.pacer.version = cc::PacerVersion::kV1;
-  SendSideController c(cfg);
-  c.Start(Timestamp::Millis(0));
-  c.Enqueue(Media(1), Timestamp::Millis(0));
-  auto all = Run(c, 0, 100);
-  SM_ASSERT_EQ(all.size(), 1u);
-  SM_EXPECT_EQ(all[0].transport_seq, 0u);
-  SM_EXPECT_GT(c.gcc().history().InFlight().bytes(), 0);
 }

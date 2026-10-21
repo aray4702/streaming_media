@@ -400,7 +400,6 @@ struct GccLoop {
 
 SM_TEST(GccV2Loss, LossThatTheFeedbackReportsLimitsTheTarget) {
   GccConfig cfg;
-  cfg.version = 2;
   cfg.enable_probing = false;
   GccLoop clean(cfg), lossy(cfg);
   for (int r = 0; r < 40; ++r) {

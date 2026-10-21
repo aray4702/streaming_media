@@ -9,8 +9,6 @@ describe 3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's
 #   cc.queue_p95_ms 33-63 (mean 45.0) / 46.8 ; cc.utilization_pct 79-84 (mean 82.4) / 80.4
 # The lines below lock the level reached.
 # Target (issue #124): cc.queue_p95_ms within the parity band of libwebrtc (46.8 ms).
-cc v2
-pacer v2
 duration 30s
 at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms
 expect audio.concealed_pct < 5

@@ -34,7 +34,6 @@ struct CcSimParams {
   DataSize queue_limit = DataSize::Bytes(200000);
   double seconds = 60;
   bool use_pacer = true;
-  bool pacer_v2 = false;  // libwebrtc's PacingController instead of the library's own pacer.
   bool probing = true;
   bool audio = true;
   DataRate start_rate = DataRate::KilobitsPerSec(300);
@@ -108,10 +107,10 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
   gcfg.max_rate = p.max_rate;
   gcfg.enable_probing = p.probing;
   GccController gcc(gcfg);
+  // A video stream with transport-cc paces at 1.1 x the target (VideoSendStreamImpl, #187).
+  gcc.SetPacingFactor(1.1);
   gcc.OnRttUpdate(p.one_way * 2);
-  PacerConfig pacer_cfg;
-  if (p.pacer_v2) pacer_cfg.version = PacerVersion::kV2;
-  Pacer pacer(pacer_cfg);
+  Pacer pacer;
   TransportFeedbackBuilder fb_builder;
   FrameDropper dropper;
   DegradationConfig dcfg;
@@ -136,7 +135,7 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
 
   auto apply = [&](const NetworkControlUpdate& u, Timestamp now) {
     target = u.target_rate;
-    pacer.SetPacingRates(u.pacing_rate, DataRate::Zero());
+    pacer.SetPacingRates(u.pacing_rate, gcc.PaddingRate());
     for (const auto& c : u.probes) pacer.AddProbeCluster(c);
     outage.SetCurrentRate(target);
     DataRate audio_rate = p.audio ? DataRate::KilobitsPerSec(40) : DataRate::Zero();

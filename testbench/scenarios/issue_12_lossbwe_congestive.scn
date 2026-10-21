@@ -1,6 +1,5 @@
 name issue_12_lossbwe_congestive
 describe Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 15 s behind a 60 ms drop-tail queue (#12)
-cc v2
 duration 40s
 at 0s capacity=2500kbps delay=30ms queue=60ms
 at 15s capacity=800kbps

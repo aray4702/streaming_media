@@ -3,8 +3,6 @@ describe A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and leaves 
 # libwebrtc (parity-data, 10 seeds): utilization 74.2 %, video 1779 kbps, queue p95 264 ms, 3.9 freezes.
 # This library with the port: 74.7 %, 1759 kbps, queue p95 121 ms, no freeze (the earlier cc v1 queue target of
 # about 100 ms is not a goal: libwebrtc has 264 ms).
-cc v2
-pacer v2
 # Port (#150, RobustThroughputEstimator as the acked-rate estimator, as libwebrtc M157): this scenario pinned only `cc v2` and `pacer v2`, so the
 # v1 feedback and recovery stayed in the loop. With the estimator libwebrtc's, the queue rises to libwebrtc's level (262 ms against
 # 263.5) and the v1 recovery path froze on 4-5 of 10 seeds (up to 19 freezes) where libwebrtc freezes on 5. It now sets every v2 switch,

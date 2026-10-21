@@ -23,8 +23,7 @@ loss_state, loss_limit_bps and instant_ub_bps are LossBasedBweV2's state and are
 filled for this library only: the prebuilt libwebrtc has no event or public
 accessor for them. CI publishes the traces in compare-webrtc.json under
 "traces" ("sm_bwe", "webrtc_bwe") and, on main, as
-<scenario>.<seed>.{sm,webrtc}.bwe.csv in parity-data/traces/. With `cc v1` this
-library writes no rows.
+<scenario>.<seed>.{sm,webrtc}.bwe.csv in parity-data/traces/.
 
 Per second, the table shows the last value of each stream and which one the
 target is held by: "delay" when the send-side target is within 1 kbps of the
