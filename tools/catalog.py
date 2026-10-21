@@ -828,7 +828,7 @@ ALGORITHMS = [
                       "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -850,10 +850,15 @@ ALGORITHMS = [
                "meter `AgcManagerDirect` reads (`agc/agc.cc`, `loudness_histogram.cc`, `utility.cc`), with "
                "its `VoiceActivityDetector` (`vad/`: the WebRtcVad GMM VAD of `common_audio/vad/`, the "
                "pitch-based VAD on iSAC's pitch estimator and ooura's fft4g); it takes 16 kHz 10 ms chunks "
-               "only, as `AgcManagerDirect` feeds it split band 0, so the resampler is left out. Not yet: "
-               "`AgcManagerDirect` itself, which moves the compression gain (2-12 dB) and the analog volume "
-               "from `Agc`, and APM's analog mic gain emulation (`CaptureLevelsAdjuster`). The e2e chain "
-               "still runs AGC2 for `apm v2` until AGC1 is complete.",
+               "only, as `AgcManagerDirect` feeds it split band 0, so the resampler is left out. `agc_manager.h` "
+               "ports `AgcManagerDirect` / `MonoAgc` (`agc/agc_manager_direct.cc`: compression gain 2-12 dB "
+               "from 7 in 0.05 dB steps, the analog volume 12-255 through `kGainMap` with at most 15 dB per "
+               "update, clipping handling with libwebrtc's `AnalogGainController` defaults) and APM's analog "
+               "mic gain emulation (`capture_levels_adjuster/`), the test bench's modelled mic volume: the "
+               "capture is scaled by volume / 255 from 255, ramped over the frame. The `apm v2` e2e chain now "
+               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. Remaining differences: the "
+               "clipping predictor is not ported (off by default, so a call never creates it); AGC2's RNN VAD "
+               "(#57).",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -872,7 +877,12 @@ ALGORITHMS = [
                       "reference files compiled with libstdc++, where fft4g's `cos(float)` is the double function; "
                       "libwebrtc's libc++ picks the float overload, which the Reviewer caught and the library confirmed. The first port used SPL's unsigned "
                       "`WEBRTC_SPL_SCALEDIFF32` for the envelope followers; `digital_agc.cc` has its own "
-                      "signed `AGC_SCALEDIFF32`, and the golden test caught the difference."),
+                      "signed `AGC_SCALEDIFF32`, and the golden test caught the difference. `AgcManagerDirect` (#242) "
+                      "passes the ports of libwebrtc's `agc_manager_direct_unittest.cc` (`Agc1Manager.*`, with "
+                      "its mic volume and compression gain sequences, in the six parametrizations), and AGC1 "
+                      "in the `apm v2` chain gives on the e2e quiet-then-loud talker: quiet talker -20.4 dBFS "
+                      "(libwebrtc AGC1 -20.6, v1 -16.8), loud talker -3.3 dB (-3.2), noise in pauses "
+                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0)."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
