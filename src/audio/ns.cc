@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 
+#include "sm/audio/fft4g.h"
 #include "sm/core/dsp.h"
 
 namespace sm::audio::ns {
@@ -653,34 +654,48 @@ NoiseSuppressor::NoiseSuppressor(NoiseSuppressorConfig cfg)
     : cfg_(cfg),
       num_bands_(NumBandsForRate(cfg.sample_rate)),
       params_(cfg.level),
-      fft_(kFftSize),
-      bins_(kFftSizeBy2Plus1),
       wiener_filter_(params_),
       noise_estimator_(params_),
       process_delay_memory_(num_bands_ - 1) {
   prev_analysis_signal_spectrum_.fill(1.f);
   for (auto& d : process_delay_memory_) d.fill(0.f);
+  // NrFft::NrFft: ip[0] = 0 makes the first Rdft build the tables.
+  bit_reversal_state_[0] = 0;
+  std::array<float, kFftSize> tmp_buffer;
+  tmp_buffer.fill(0.f);
+  ooura::Rdft(kFftSize, 1, tmp_buffer.data(), bit_reversal_state_.data(), tables_.data());
 }
 
 void NoiseSuppressor::Fft(std::span<const float, kFftSize> time, std::span<float, kFftSize> real,
                           std::span<float, kFftSize> imag) {
-  fft_.Forward(time.data(), bins_.data());
-  // Ooura's rdft returns sum x[j] sin(2 pi j k / n) as the imaginary part.
-  for (size_t i = 0; i < kFftSizeBy2Plus1; ++i) {
-    real[i] = bins_[i].real();
-    imag[i] = -bins_[i].imag();
-  }
+  std::array<float, kFftSize> time_data;
+  std::copy(time.begin(), time.end(), time_data.begin());
+  ooura::Rdft(kFftSize, 1, time_data.data(), bit_reversal_state_.data(), tables_.data());
+
   imag[0] = 0;
+  real[0] = time_data[0];
+
   imag[kFftSizeBy2Plus1 - 1] = 0;
+  real[kFftSizeBy2Plus1 - 1] = time_data[1];
+
+  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) {
+    real[i] = time_data[2 * i];
+    imag[i] = time_data[2 * i + 1];
+  }
 }
 
 void NoiseSuppressor::Ifft(std::span<const float, kFftSize> real, std::span<const float, kFftSize> imag,
                            std::span<float, kFftSize> time) {
-  bins_[0] = Complex(real[0], 0.f);
-  bins_[kFftSizeBy2Plus1 - 1] = Complex(real[kFftSizeBy2Plus1 - 1], 0.f);
-  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) bins_[i] = Complex(real[i], -imag[i]);
-  // RealFft::Inverse is scaled by 1/n, as NrFft::Ifft's 2/n after rdft.
-  fft_.Inverse(bins_.data(), time.data());
+  time[0] = real[0];
+  time[1] = real[kFftSizeBy2Plus1 - 1];
+  for (size_t i = 1; i < kFftSizeBy2Plus1 - 1; ++i) {
+    time[2 * i] = real[i];
+    time[2 * i + 1] = imag[i];
+  }
+  ooura::Rdft(kFftSize, -1, time.data(), bit_reversal_state_.data(), tables_.data());
+
+  constexpr float kScaling = 2.f / kFftSize;
+  for (float& d : time) d *= kScaling;
 }
 
 void NoiseSuppressor::Analyze(std::span<const float> bands) {

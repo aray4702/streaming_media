@@ -16,5 +16,9 @@ expect audio.interruptions <= 1
 expect video.longest_freeze_ms < 1200
 expect video.render_fps >= 25
 expect cc.queue_p95_ms < 75
-expect video.e2e_delay_p95_ms < 260
+# Was < 260. Owner rule on PR #216 (program.md 0.2, 2026-10-20 23:11 UTC): just above our seed-1 value, never above
+# libwebrtc's worst seed in 1-10. Ours seed 1 304.4 (timing v2); the suggested < 330 is above libwebrtc's worst seed, so
+# the bound is that seed's value. libwebrtc seeds 1-10: 305.95 304.60 296.60 243.00 239.25 236.72 288.35 314.08 285.63
+# 236.00 (worst 314.08, mean 275.0).
+expect video.e2e_delay_p95_ms < 314.08
 expect cc.utilization_pct >= 78

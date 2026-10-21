@@ -28,6 +28,11 @@
 //    gain, blended with a spectral-subtraction filter on the parametric
 //    noise during start-up, and the overall scaling ("attenuation
 //    adjustment") after 200 frames.
+//  - NrFft (ns_fft.cc): the 256-point real DFT is Ooura's fft4g
+//    (common_audio/third_party/ooura/fft_size_256/fft4g.cc, sm/audio/fft4g.h),
+//    with NrFft's layout and its 2/n scaling of the inverse. ns.cc and
+//    fft4g.cc build with -ffp-contract=off, as Chromium does, so the output
+//    is bit-exact with libwebrtc's.
 //  - Upper bands (32/48 kHz): delayed by 96 samples and scaled by one gain
 //    from the speech probability and Wiener gain of the top 32 bins of the
 //    lowest band (ComputeUpperBandsGain).
@@ -43,11 +48,6 @@
 // (media/engine/webrtc_voice_engine.cc). NsConfig's own default is k12dB.
 //
 // Differences from libwebrtc that remain (catalog.py, #241):
-//  - The 256-point real FFT is this library's RealFft, not Ooura's fft4g
-//    (common_audio/third_party/ooura/fft_size_256 is not in the reference
-//    sources, #57). Both compute the same DFT; the output differs only by
-//    float rounding (and the sign of the imaginary part, which the
-//    real-valued gains do not see).
 //  - One channel (libwebrtc's multi-channel aggregation takes the minimum
 //    filter and gain over the channels; with one channel that is the
 //    channel's own).
@@ -59,7 +59,6 @@
 #include <span>
 #include <vector>
 
-#include "sm/core/fft.h"
 #include "sm/core/metrics.h"
 
 namespace sm::audio::ns {
@@ -263,8 +262,8 @@ class NoiseSuppressor : public MetricsSource {
   size_t num_bands_;
   SuppressionParams params_;
   int32_t num_analyzed_frames_ = -1;
-  RealFft fft_;
-  std::vector<Complex> bins_;
+  std::array<size_t, kFftSize / 2> bit_reversal_state_{};
+  std::array<float, kFftSize / 2> tables_{};
   SpeechProbabilityEstimator speech_probability_estimator_;
   WienerFilter wiener_filter_;
   NoiseEstimator noise_estimator_;
