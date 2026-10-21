@@ -28,6 +28,9 @@ struct FreezeStats {
   double total_pauses_ms = 0;
   double total_frames_duration_ms = 0;
   double sum_squared_frame_durations_s2 = 0;
+  // Longest freeze, kept as a plain value because `freeze_ms` records nothing
+  // when metrics are compiled out (SM_ENABLE_METRICS=0).
+  double longest_freeze_ms = 0;
   Histogram freeze_ms;
 };
 
