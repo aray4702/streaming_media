@@ -235,36 +235,6 @@
    ]
   },
   {
-   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
-   "metric": "video.freeze_count",
-   "sm": 3.3,
-   "webrtc": 1.1,
-   "band": 0.7378647873726218,
-   "direction": "behind",
-   "seeds_agree": 8,
-   "seeds": 10,
-   "owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_127_pacer_v2_jitter_reorder_loss",
-   "metric": "video.freeze_total_ms",
-   "sm": 753.4,
-   "webrtc": 239.97,
-   "band": 149.68360651368755,
-   "direction": "behind",
-   "seeds_agree": 8,
-   "seeds": 10,
-   "owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
    "scenario": "issue_12_lossbwe_congestive",
    "metric": "video.freeze_count",
    "sm": 5,
@@ -714,8 +684,8 @@
    "scenario": "issue_152_alr_request_probe_v2",
    "metric": "sync.av_offset_p95_ms",
    "sm": 215.719,
-   "webrtc": 282.714,
-   "band": 59.52533580856325,
+   "webrtc": 282.716,
+   "band": 59.524168835580284,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
