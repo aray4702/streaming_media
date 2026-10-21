@@ -177,3 +177,4 @@ modules/audio_processing/gain_controller2.cc
 common_audio/include/audio_util.h
 api/audio/echo_canceller3_config.h
 api/audio/echo_canceller3_config.cc
+modules/audio_coding/codecs/isac/bandwidth_info.h
