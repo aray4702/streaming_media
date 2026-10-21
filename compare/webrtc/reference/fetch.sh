@@ -27,6 +27,7 @@ DIRS=(
   modules/audio_processing/aec3
   modules/audio_processing/ns
   modules/audio_processing/agc2
+  modules/audio_processing/agc
   modules/audio_processing/vad
   modules/audio_processing/transient
   common_audio/vad
