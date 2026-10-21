@@ -125,8 +125,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"audio.interruptions", "Concealment runs longer than 150 ms (WebRTC interruptionCount)"},
       {"audio.interruption_ms", "Total duration of those interruptions"},
       {"audio.longest_interruption_ms", "Longest continuous concealment run"},
-      {"audio.jb_delay_p50_ms", "Median jitter buffer delay per decoded packet"},
-      {"audio.jb_delay_p95_ms", "95th percentile jitter buffer delay"},
+      {"audio.jb_delay_p50_ms", "Median jitter buffer delay per 10 ms of playout (jitterBufferDelay / "
+                                 "jitterBufferEmittedCount: packet buffer waiting time, as sm_compare reads libwebrtc's)"},
+      {"audio.jb_delay_p95_ms", "95th percentile of the same"},
       {"audio.net_delay_p95_ms", "95th percentile capture -> arrival delay of audio packets (pacer + network)"},
       {"audio.mouth_to_ear_p95_ms", "Upper estimate of mouth-to-ear delay: net_delay_p95 + jb_delay_p95"},
       {"audio.stretch_pct", "Share of playout spent accelerating or decelerating (audible as tempo change)"},
@@ -575,6 +576,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   AvSyncMeter av_sync;  // Issue #63.
   int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
   int64_t interruptions = 0, interruption_ms = 0;
+  // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
+  // (jitterBufferDelay / jitterBufferEmittedCount over each pull).
+  std::vector<double> jb_delay;
+  uint64_t prev_jb_delay = 0, prev_jb_emitted = 0;
   int64_t frames_rendered = 0;
   std::vector<float> audio_out(static_cast<size_t>(sr / 100));
 
@@ -791,6 +796,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
         av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
       }
+      const auto& jst = receiver.audio_receiver(audio_recv).jitter_buffer().stats();
+      if (const uint64_t emitted = jst.jitter_buffer_emitted_count - prev_jb_emitted; emitted > 0) {
+        jb_delay.push_back(static_cast<double>(jst.jitter_buffer_delay_ms_samples - prev_jb_delay) /
+                           static_cast<double>(emitted));
+      }
+      prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
+      prev_jb_emitted = jst.jitter_buffer_emitted_count;
       played_ms += 10;
       ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
@@ -857,8 +869,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["audio.interruptions"] = static_cast<double>(interruptions);
     m["audio.interruption_ms"] = static_cast<double>(interruption_ms);
     m["audio.longest_interruption_ms"] = static_cast<double>(longest_conceal);
-    m["audio.jb_delay_p50_ms"] = jbs.jitter_buffer_delay_ms.Percentile(50);
-    m["audio.jb_delay_p95_ms"] = jbs.jitter_buffer_delay_ms.Percentile(95);
+    m["audio.jb_delay_p50_ms"] = Percentile(jb_delay, 50);
+    m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
     m["audio.stretch_pct"] = played_ms ? 100.0 * static_cast<double>(stretch_ms) / static_cast<double>(played_ms) : 0;
