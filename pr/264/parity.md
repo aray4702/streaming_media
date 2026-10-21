@@ -6,30 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-163 gaps on `main`, 181 here: **0 closed, 18 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_257_zero_max_payload | `audio.concealed_pct` | 1.2 | 0.3 | ±0.5 | behind | 10/10 | #62, #63 |
-| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 53 | 21 | ±20 | behind | 4/10 | #62, #63 |
-| issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 678 | 201 | ±33.9 | behind | 10/10 | #62, #63 |
-| issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 362 | 119 | ±19.7 | behind | 10/10 | #62, #63 |
-| issue_257_zero_max_payload | `video.freeze_count` | 2.3 | 0 | ±0.5 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.freeze_total_ms` | 3072 | 0 | ±154 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.longest_freeze_ms` | 2137 | 26.0 | ±107 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.pause_total_ms` | 596 | 0 | ±100 | behind | 1/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.render_fps` | 20.6 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
-| issue_257_zero_max_payload | `video.e2e_delay_p95_ms` | 3305 | 113 | ±165 | behind | 10/10 | #24, #37 |
-| issue_257_zero_max_payload | `video.avg_kbps` | 1663 | 2110 | ±105 | behind | 10/10 | #37, #61 |
-| issue_257_zero_max_payload | `video.keyframe_requests` | 5.6 | 0 | ±0.5 | behind | 5/10 | #23 |
-| issue_257_zero_max_payload | `sync.av_offset_p95_ms` | 2736 | 72.9 | ±137 | behind | 10/10 | #77 |
-| issue_257_zero_max_payload | `cc.utilization_pct` | 97.0 | 90.2 | ±4.9 | ahead | 8/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `cc.queue_p95_ms` | 300 | 45.3 | ±15.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 339 | 65.3 | ±16.9 | behind | 10/10 | #61 |
-| issue_257_zero_max_payload | `net.loss_pct` | 12.1 | 0 | ±0.6 | behind | 10/10 | #21, #61, #12 |
-| issue_257_zero_max_payload | `repair.overhead_pct` | 14.3 | 0.1 | ±2 | behind | 10/10 | #21, #7, #29 |
+181 gaps on `main`, 181 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
