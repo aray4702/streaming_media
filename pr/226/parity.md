@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-87 scenarios, mean of 10 seeds. **173 gaps**: 73 behind libwebrtc, 100 ahead of it; 0 without an owner.
+89 scenarios, mean of 10 seeds. **175 gaps**: 73 behind libwebrtc, 102 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-175 gaps on `main`, 173 here: **13 closed, 11 opened**, 0 changed direction.
+178 gaps on `main`, 175 here: **13 closed, 10 opened**, 0 changed direction.
 
 Closed:
 
@@ -36,11 +36,10 @@ Opened:
 | issue_154_shallow_drop_repair_v2 | `net.loss_pct` | 9.1 | 8.0 | ±1.0 | behind | 7/10 | #21, #61, #12 |
 | issue_21_shallow_drop_repair | `video.freeze_count` | 3.2 | 5.8 | ±2.6 | ahead | 8/10 | #5, #37, #24 |
 | issue_21_shallow_drop_repair | `net.loss_pct` | 9.1 | 8.0 | ±1.0 | behind | 7/10 | #21, #61, #12 |
-| issue_268_freeze_rule_outage | `video.pause_total_ms` | 1011 | 0 | ±100 | behind | 2/10 | #5, #37, #24 |
-| issue_268_freeze_rule_outage | `cc.rtt_p50_ms` | 125 | 92.3 | ±10 | behind | 4/10 | #61 |
-| issue_5_keyframe_flush | `video.freeze_count` | 1.4 | 2.3 | ±0.7 | ahead | 8/10 | #5, #37, #24 |
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 1015 | 1221 | ±198 | ahead | 8/10 | #24, #37 |
 | issue_76_rtx_v2_keyframe_flush | `sync.av_offset_p95_ms` | 534 | 737 | ±198 | ahead | 9/10 | #77 |
+| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
+| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
 
 Still gaps, distance to libwebrtc changed by more than 10%:
 
@@ -49,12 +48,11 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | capacity_drop | `cc.rtt_p50_ms` | 292 | 227 (closer) |
 | issue_120_rtx_payload_padding | `repair.overhead_pct` | 4.8 | 5.7 (further) |
 | issue_120_rtx_payload_padding_capacity_drop | `cc.rtt_p50_ms` | 292 | 227 (closer) |
-| issue_12_lossbwe_congestive | `video.freeze_count` | 1.3 | 1 (closer) |
 | issue_12_lossbwe_congestive | `video.e2e_delay_p95_ms` | 392 | 277 (closer) |
 | issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 396 | 281 (closer) |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 1.7 | 1.3 (closer) |
-| issue_12_lossbwe_shallow | `video.freeze_count` | 13.1 | 5.5 (closer) |
-| issue_12_lossbwe_shallow | `video.freeze_total_ms` | 2474 | 1026 (closer) |
+| issue_12_lossbwe_shallow | `video.freeze_count` | 7 | 5.5 (closer) |
+| issue_12_lossbwe_shallow | `video.freeze_total_ms` | 1288 | 1026 (closer) |
 | issue_12_lossbwe_shallow | `net.loss_pct` | 0.8 | 0.6 (closer) |
 | issue_150_gcc_v2_high_jitter_seed10 | `repair.overhead_pct` | 7.3 | 5.7 (closer) |
 | issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 10.5 | 9.2 (closer) |
@@ -70,16 +68,14 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_24_timing_v2_render_fps | `video.e2e_delay_p95_ms` | 379 | 439 (further) |
 | issue_24_timing_v2_render_fps | `sync.av_offset_p95_ms` | 382 | 441 (further) |
 | issue_257_zero_max_payload | `audio.longest_interruption_ms` | 32 | 37 (further) |
-| issue_257_zero_max_payload | `video.freeze_total_ms` | 2742 | 3591 (further) |
+| issue_257_zero_max_payload | `video.freeze_total_ms` | 2648 | 3591 (further) |
 | issue_257_zero_max_payload | `video.longest_freeze_ms` | 1761 | 2424 (further) |
 | issue_257_zero_max_payload | `video.render_fps` | 8.4 | 9.8 (further) |
 | issue_257_zero_max_payload | `video.keyframe_requests` | 4.3 | 5.5 (further) |
 | issue_53_cwnd_pushback | `video.longest_freeze_ms` | 192 | 216 (further) |
 | issue_53_cwnd_pushback | `video.e2e_delay_p95_ms` | 379 | 439 (further) |
 | issue_53_cwnd_pushback | `sync.av_offset_p95_ms` | 382 | 441 (further) |
-| issue_5_keyframe_flush | `video.freeze_total_ms` | 660 | 735 (further) |
 | issue_5_keyframe_flush | `cc.rtt_p50_ms` | 290 | 223 (closer) |
-| issue_61_googcc_glue_congestive | `video.freeze_count` | 1.3 | 1 (closer) |
 | issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 392 | 277 (closer) |
 | issue_61_googcc_glue_congestive | `sync.av_offset_p95_ms` | 396 | 281 (closer) |
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 1.7 | 1.3 (closer) |
@@ -236,6 +232,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 1015 | 1221 | ±198 | ahead | 8/10 | #24, #37 |
 | issue_76_session_layer_v2 | `repair.overhead_pct` | 36.6 | 39.8 | ±2 | ahead | 8/10 | #21, #7, #29 |
 | issue_76_tcc_v2_high_jitter | `repair.overhead_pct` | 34.2 | 43.7 | ±2.5 | ahead | 9/10 | #21, #7, #29 |
+| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
+| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
 | issue_85_video_pause | `audio.interruptions` | 3 | 1.1 | ±0.5 | behind | 1/10 | #62, #63 |
 | issue_85_video_pause | `audio.jb_delay_p95_ms` | 131 | 163 | ±24.5 | ahead | 9/10 | #62, #63 |
 | issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #62, #63 |

@@ -2058,6 +2058,32 @@
    ]
   },
   {
+   "scenario": "issue_84_encoder_qp_360p_low_rate",
+   "metric": "sync.av_offset_p95_ms",
+   "sm": 97.6619,
+   "webrtc": 112.97,
+   "band": 12.730403267157115,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    77
+   ]
+  },
+  {
+   "scenario": "issue_84_encoder_qp_720p_low_rate",
+   "metric": "sync.av_offset_p95_ms",
+   "sm": 97.6619,
+   "webrtc": 112.97,
+   "band": 12.730403267157115,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    77
+   ]
+  },
+  {
    "scenario": "issue_85_video_pause",
    "metric": "audio.interruptions",
    "sm": 3,
