@@ -1,12 +1,19 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-85 scenarios, mean of 10 seeds. **175 gaps**: 80 behind libwebrtc, 95 ahead of it; 0 without an owner.
+86 scenarios, mean of 10 seeds. **177 gaps**: 80 behind libwebrtc, 97 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-175 gaps on `main`, 175 here: **0 closed, 0 opened**, 0 changed direction.
+175 gaps on `main`, 177 here: **0 closed, 2 opened**, 0 changed direction.
+
+Opened:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_283_longest_freeze_no_metrics | `video.freeze_count` | 1.2 | 1.8 | ±0.5 | ahead | 6/10 | #5, #37, #24 |
+| issue_283_longest_freeze_no_metrics | `video.freeze_total_ms` | 2134 | 2274 | ±114 | ahead | 6/10 | #5, #37, #24 |
 
 ### Gaps
 
@@ -118,6 +125,8 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_257_zero_max_payload | `video.longest_freeze_ms` | 1787 | 26.0 | ±100 | behind | 10/10 | #5, #37, #24 |
 | issue_257_zero_max_payload | `video.render_fps` | 21.5 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_257_zero_max_payload | `video.time_to_first_frame_ms` | 132 | 53.6 | ±50 | behind | 10/10 | #24, #61 |
+| issue_283_longest_freeze_no_metrics | `video.freeze_count` | 1.2 | 1.8 | ±0.5 | ahead | 6/10 | #5, #37, #24 |
+| issue_283_longest_freeze_no_metrics | `video.freeze_total_ms` | 2134 | 2274 | ±114 | ahead | 6/10 | #5, #37, #24 |
 | issue_48_prober_low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #62, #63 |

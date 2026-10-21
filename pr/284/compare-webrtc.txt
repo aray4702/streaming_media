@@ -2604,6 +2604,57 @@ issue_257_zero_max_payload - A video stream configured with max_payload_size 0 m
   net.padding_size_max_b                  136          303
   net.padding_queue_drops                   0            0
 
+issue_283_longest_freeze_no_metrics - A 2 s outage freezes video for at least 2 s; the bench must report that freeze as the longest, on every build
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                    10.1         10.2  =
+  audio.interruptions                     1.3          1.1  =
+  audio.longest_interruption_ms          1832         1938  sm
+  audio.mouth_to_ear_p95_ms               191          204  sm
+  audio.jb_delay_p95_ms                   103          116  sm
+  video.freeze_count                      1.2          1.8  sm
+  video.freeze_total_ms                  2134         2274  sm
+  video.longest_freeze_ms                2093         2088  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       28.1         28.1  =
+  video.e2e_delay_p95_ms                 1339         1340  =
+  video.time_to_first_frame_ms           56.6         58.6  =
+  video.avg_kbps                         1852         1839  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                  1207         1200  =
+  cc.utilization_pct                     88.4         88.3  =
+  cc.queue_p95_ms                        47.6         43.3  =
+  cc.max_settle_ms                        200          200  =
+  cc.rtt_p50_ms                          75.9         73.3  =
+  net.loss_pct                            5.8          5.9  =
+  repair.overhead_pct                     5.3          6.0  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.4         69.8
+  net.video_kbps                         1921         1908
+  net.rtx_kbps                            105          117
+  net.padding_kbps                        0.6          0.7
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                       10           10
+  net.video_loss_pct                      4.9          5.0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    192          187
+  net.audio_size_p90_b                    223          214
+  net.audio_size_max_b                    271          299
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1368         1370
+  net.video_size_p90_b                   1458         1458
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1346         1338
+  net.rtx_size_p90_b                     1463         1456
+  net.rtx_size_max_b                     1482         1482
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.3          1.4  =
@@ -4243,7 +4294,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 236, webrtc 124, tie 1418 (of the metrics shown)
+better: sm 241, webrtc 124, tie 1435 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

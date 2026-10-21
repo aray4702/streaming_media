@@ -1523,6 +1523,36 @@
    ]
   },
   {
+   "scenario": "issue_283_longest_freeze_no_metrics",
+   "metric": "video.freeze_count",
+   "sm": 1.2,
+   "webrtc": 1.8,
+   "band": 0.5,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_283_longest_freeze_no_metrics",
+   "metric": "video.freeze_total_ms",
+   "sm": 2133.8,
+   "webrtc": 2273.91,
+   "band": 113.6955,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "audio.interruptions",
    "sm": 1,
