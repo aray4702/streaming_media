@@ -41,26 +41,6 @@ SM_TEST(KeyframeRequest, LateReferenceUnblocksWithoutPli) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(500)), FeedbackType::kPli), 0u);
 }
 
-SM_TEST(KeyframeRequest, PliAfterRepairWindowThenThrottled) {
-  KeyframeRequestConfig cfg;
-  cfg.repair_window = TimeDelta::Millis(200);
-  cfg.min_request_interval = TimeDelta::Millis(300);
-  KeyframeRequester k(cfg);
-  k.UpdateRtt(TimeDelta::Millis(50));
-  k.OnFrame(Key(0), Ms(0));
-  k.OnFrame(Delta(2, 1), Ms(66));
-  SM_EXPECT_EQ(CountType(k.Process(Ms(200)), FeedbackType::kPli), 0u);
-  SM_EXPECT_EQ(CountType(k.Process(Ms(266)), FeedbackType::kPli), 1u);
-  SM_EXPECT_TRUE(k.waiting_for_keyframe());
-  SM_EXPECT_EQ(CountType(k.Process(Ms(300)), FeedbackType::kPli), 0u);  // Throttled.
-  // No keyframe: retry after 2x throttle.
-  SM_EXPECT_EQ(CountType(k.Process(Ms(866)), FeedbackType::kPli), 1u);
-  k.OnFrame(Key(10), Ms(900));
-  SM_EXPECT_FALSE(k.waiting_for_keyframe());
-  SM_EXPECT_EQ(k.stats().frames_dropped, 1u);
-  SM_EXPECT_NEAR(k.stats().time_to_keyframe_ms.mean(), 634, 70);
-}
-
 SM_TEST(KeyframeRequest, DecoderErrorAndStreamStart) {
   EventLog log;
   KeyframeRequestConfig cfg;
@@ -79,22 +59,14 @@ SM_TEST(KeyframeRequest, DecoderErrorAndStreamStart) {
   SM_EXPECT_EQ(log.Count("keyframe", "fir"), 1u);
 }
 
-namespace {
-KeyframeRequestConfig V2() {
-  KeyframeRequestConfig c;
-  c.version = 2;
-  return c;
-}
-}  // namespace
-
-SM_TEST(KeyframeRequestV2, BlockedFrameIsLeftToNackWhilePacketsKeepArriving) {
+SM_TEST(KeyframeRequest, BlockedFrameIsLeftToNackWhilePacketsKeepArriving) {
   // No repair window and no retry timer: a blocked frame alone asks for nothing.
   EventLog log;
-  KeyframeRequestConfig cfg = V2();
+  KeyframeRequestConfig cfg;
   cfg.events = &log;
   KeyframeRequester k(cfg);
-  k.UpdateRtt(TimeDelta::Millis(50));
   k.OnFrame(Key(0), Ms(0));
+  k.OnFrameReleased(Ms(0));  // The frame wait (3 s) applies from here, not the 200 ms keyframe wait.
   k.OnFrame(Delta(2, 1), Ms(66));
   k.OnFrameLost(1, Ms(70));
   for (int64_t t = 100; t <= 2900; t += 100) {
@@ -104,16 +76,16 @@ SM_TEST(KeyframeRequestV2, BlockedFrameIsLeftToNackWhilePacketsKeepArriving) {
   SM_EXPECT_EQ(k.stats().pli_sent, 0u);
 }
 
-SM_TEST(KeyframeRequestV2, DecodeTimeoutAsksOnceAndRearms) {
+SM_TEST(KeyframeRequest, DecodeTimeoutAsksOnceAndRearms) {
   EventLog log;
-  KeyframeRequestConfig cfg = V2();
+  KeyframeRequestConfig cfg;
   cfg.events = &log;
   KeyframeRequester k(cfg);
   k.OnFrame(Key(0), Ms(0));
   k.OnFrameReleased(Ms(0));
   k.OnFrame(Delta(2, 1), Ms(66));  // Blocked: frame 1 never comes.
   k.OnMediaPacket(Ms(66), false);
-  SM_EXPECT_TRUE(k.Process(Ms(10)).empty());
+  SM_EXPECT_EQ(CountType(k.Process(Ms(10)), FeedbackType::kPli), 0u);  // Only the LNTF for the blocked frame.
   size_t asked = 0;
   for (int64_t t = 100; t < 3000; t += 100) {
     k.OnMediaPacket(Ms(t), false);
@@ -129,11 +101,11 @@ SM_TEST(KeyframeRequestV2, DecodeTimeoutAsksOnceAndRearms) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(6000)), FeedbackType::kPli), 1u);  // Re-armed.
 }
 
-SM_TEST(KeyframeRequestV2, DecodeTimeoutRunsFromReleaseNotFromDecodable) {
+SM_TEST(KeyframeRequest, DecodeTimeoutRunsFromReleaseNotFromDecodable) {
   // libwebrtc re-arms the time-out when the frame scheduler releases a frame for decoding
   // (VideoStreamBufferController::OnFrameReady -> VideoReceiveStreamTimeoutTracker::OnEncodedFrameReleased),
   // after its wait for the render time, not when the frame becomes decodable (issue #151).
-  KeyframeRequester k(V2());
+  KeyframeRequester k;
   SM_EXPECT_TRUE(k.Process(Ms(0)).empty());
   k.OnFrame(Key(0), Ms(0));         // Decodable at 0 ...
   k.OnFrameReleased(Ms(60));         // ... released for decoding at 60.
@@ -146,16 +118,16 @@ SM_TEST(KeyframeRequestV2, DecodeTimeoutRunsFromReleaseNotFromDecodable) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(3060)), FeedbackType::kPli), 1u);
 }
 
-SM_TEST(KeyframeRequestV2, KeyframeWaitUntilTheFirstRelease) {
+SM_TEST(KeyframeRequest, KeyframeWaitUntilTheFirstRelease) {
   // OnEncodedFrameReleased ends the keyframe wait (max_wait_for_keyframe, 200 ms): until the first frame is
   // released the shorter wait applies, even if a frame is already decodable.
-  KeyframeRequester k(V2());
+  KeyframeRequester k;
   SM_EXPECT_TRUE(k.Process(Ms(0)).empty());
   k.OnFrame(Key(0), Ms(10));
   k.TakeDecodableFrames();
   k.OnMediaPacket(Ms(300), false);
   SM_EXPECT_EQ(CountType(k.Process(Ms(300)), FeedbackType::kPli), 1u);
-  KeyframeRequester k2(V2());
+  KeyframeRequester k2;
   SM_EXPECT_TRUE(k2.Process(Ms(0)).empty());
   k2.OnFrame(Key(0), Ms(10));
   k2.OnFrameReleased(Ms(20));
@@ -163,8 +135,8 @@ SM_TEST(KeyframeRequestV2, KeyframeWaitUntilTheFirstRelease) {
   SM_EXPECT_EQ(CountType(k2.Process(Ms(300)), FeedbackType::kPli), 0u);
 }
 
-SM_TEST(KeyframeRequestV2, NoTimeoutRequestWhileAKeyframeArrivesOrWhenIdle) {
-  KeyframeRequester k(V2());
+SM_TEST(KeyframeRequest, NoTimeoutRequestWhileAKeyframeArrivesOrWhenIdle) {
+  KeyframeRequester k;
   k.OnFrame(Key(0), Ms(0));
   k.OnFrame(Delta(2, 1), Ms(66));
   k.OnMediaPacket(Ms(2900), true);  // A keyframe is on its way.
@@ -173,21 +145,21 @@ SM_TEST(KeyframeRequestV2, NoTimeoutRequestWhileAKeyframeArrivesOrWhenIdle) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(9000)), FeedbackType::kPli), 0u);
 }
 
-SM_TEST(KeyframeRequestV2, FirstFrameNotKeyframeAsksAndNoRequestAtStart) {
+SM_TEST(KeyframeRequest, FirstFrameNotKeyframeAsksAndNoRequestAtStart) {
   EventLog log;
-  KeyframeRequestConfig cfg = V2();
+  KeyframeRequestConfig cfg;
   cfg.events = &log;
   KeyframeRequester k(cfg);
   k.OnFrame(Delta(5, 4), Ms(0));
   SM_EXPECT_EQ(CountType(k.Process(Ms(10)), FeedbackType::kPli), 1u);
   SM_EXPECT_EQ(log.Count("keyframe", "trigger_first_frame_delta"), 1u);
-  KeyframeRequester k2(V2());
+  KeyframeRequester k2;
   k2.OnFrame(Key(0), Ms(0));
   SM_EXPECT_TRUE(k2.Process(Ms(10)).empty());
 }
 
-SM_TEST(KeyframeRequestV2, ExternalAndDecoderTriggersMakeOneRequest) {
-  KeyframeRequester k(V2());
+SM_TEST(KeyframeRequest, ExternalAndDecoderTriggersMakeOneRequest) {
+  KeyframeRequester k;
   k.OnFrame(Key(0), Ms(0));
   k.OnExternalRequest(Ms(10), "trigger_nack_list_full");
   k.OnDecoderError(Ms(10));

@@ -122,7 +122,6 @@ Result Run(const Options& o) {
       if (m.type == loss::FeedbackType::kPli) recv_rtcp.QueuePli(kMediaSsrc);
       if (m.type == loss::FeedbackType::kFir) recv_rtcp.QueueFir(kMediaSsrc);
     }
-    if (fb.pli) recv_rtcp.QueuePli(kMediaSsrc);
     if (t % 50 == 0) {
       for (auto& f : tcc.Build()) recv_rtcp.QueueTransportFeedback(std::move(f));
     }

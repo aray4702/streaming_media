@@ -27,7 +27,7 @@ class FakeDecoder : public AudioDecoder {
 };
 
 struct Endpoint {
-  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red, int keyframe_version = 2)
+  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red)
       : session(std::move(c)) {
     AudioStreamConfig a;
     a.ssrc = kAudioSsrc;
@@ -36,7 +36,6 @@ struct Endpoint {
     VideoStreamConfig v;
     v.ssrc = kVideoSsrc;
     v.rtx_ssrc = kRtxSsrc;
-    v.keyframe.version = keyframe_version;
     v.parser = parser;
     audio_send = session.AddAudioSend(a);
     video_send = session.AddVideoSend(v);
@@ -70,7 +69,6 @@ struct Options {
   bool outage = false;
   bool mid = true;
   bool red = false;
-  int keyframe_version = 2;  // 1: the original requester (asks right after an outage); 2: libwebrtc's (after the decode time-out).
   uint64_t seed = 1;
 };
 
@@ -87,8 +85,8 @@ struct Result {
 Result Run(const Options& o) {
   const test::TestVideoParser parser;
   FakeDecoder dec_a, dec_b;
-  Endpoint a(MakeConfig(10, "alice", o.mid), &parser, &dec_a, o.red, o.keyframe_version);
-  Endpoint b(MakeConfig(20, "bob", o.mid), &parser, &dec_b, o.red, o.keyframe_version);
+  Endpoint a(MakeConfig(10, "alice", o.mid), &parser, &dec_a, o.red);
+  Endpoint b(MakeConfig(20, "bob", o.mid), &parser, &dec_b, o.red);
 
   sim::LinkConfig lc;
   lc.base_delay = TimeDelta::Millis(25);
@@ -219,13 +217,16 @@ SM_TEST(E2E_RtpSession, NackAndRtxRecoverLossThroughTheSession) {
   }
 }
 
-SM_TEST(E2E_RtpSession, OutageEndsWithAKeyframeRequestEventAndVideoResumes) {
+SM_TEST(E2E_RtpSession, OutageIsRepairedByNackAndVideoResumes) {
+  // libwebrtc's receiver (#167 deleted the v1 requester, which asked for a keyframe right after the outage):
+  // a blocked frame is left to NACK, and RTX repairs the 1.5 s outage from the packet history, so no
+  // keyframe is needed. The decode time-out (3 s) is the backstop and does not fire.
   Options o;
   o.outage = true;
-  o.keyframe_version = 1;  // Pins the v1 requester; libwebrtc's waits for the decode time-out.
   Result r = Run(o);
-  SM_EXPECT_GT(r.keyframe_events, 0u);
-  SM_EXPECT_GE(r.keyframes_sent, 2);
+  SM_EXPECT_EQ(r.keyframe_events, 0u);
+  SM_EXPECT_EQ(r.keyframes_sent, 1);
+  SM_EXPECT_GT(r.rtx_received, 0u);
   SM_EXPECT_GT(r.rendered, r.frames_sent / 2);
   SM_EXPECT_LE(r.longest_gap_ms, 3000);
 }

@@ -99,6 +99,13 @@ class AudioJitterBuffer : public MetricsSource {
   // Fills `out` (typically 10 ms) and reports the operation performed.
   AudioOperation GetAudio(std::span<float> out, Timestamp now);
 
+  // NetEq::GetPlayoutTimestamp: the RTP timestamp of the audio the last
+  // GetAudio played out, unset until playout starts. A/V synchronization reads
+  // it (libwebrtc's ChannelReceive::UpdatePlayoutTimestamp).
+  std::optional<uint32_t> PlayoutTimestamp() const {
+    if (!playout_ts_) return std::nullopt;
+    return static_cast<uint32_t>(*playout_ts_);
+  }
   int TargetDelayMs() const;
   double CurrentLevelMs() const;
   // Extra minimum delay, e.g. requested by audio/video synchronization.
@@ -115,6 +122,7 @@ class AudioJitterBuffer : public MetricsSource {
   AudioOperation DecodeNext(Timestamp now, std::vector<float>* dst = nullptr);
   bool NextPacketReady() const;
   AudioOperation MaybeStretch(Timestamp now);
+  AudioOperation GetAudioV1(std::span<float> out, Timestamp now);
   // NetEqImpl::GetAudioInternal and GetDecision (version 2).
   AudioOperation GetAudioV2(std::span<float> out, Timestamp now);
   // Expand::Process on the sync buffer (played_ then sync_); appends to `out`.
@@ -157,6 +165,7 @@ class AudioJitterBuffer : public MetricsSource {
   std::vector<float> sync_;          // Decoded samples waiting for playout.
   int64_t next_ts_ = 0;              // RTP time of the first sample after sync_.
   bool started_ = false;
+  std::optional<int64_t> playout_ts_;  // Unwrapped; NetEqImpl::playout_timestamp_.
   bool expanding_ = false;
   int64_t expanded_samples_ = 0;
   double filtered_level_ms_ = 0;

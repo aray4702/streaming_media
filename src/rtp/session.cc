@@ -178,8 +178,6 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
   rtcp_.AddReceiveStatistics(r->receive_statistics());
-  // Version 2 asks only if the first frame is not a keyframe (libwebrtc).
-  if (c.keyframe.version < 2) r->Start(Timestamp::Millis(0));
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
@@ -424,7 +422,6 @@ void Session::Process(Timestamp now) {
         }
       }
     }
-    if (fb.pli) rtcp_.QueuePli(v.ssrc);
   }
   // Transport-wide feedback covers every stream of the transport.
   UpdateTransportFeedbackRate();

@@ -1,0 +1,13 @@
+name issue_62_neteq_default
+describe audio_only_lossy with no neteq line: libwebrtc's NetEq is the default (issue #62)
+duration 30s
+video off
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+# neteq v1 (main c40f9e3), seeds 1-10: concealed 1.07-2.44 %, jitter buffer delay p95 44 ms, mouth-to-ear p95 116-117 ms.
+# Default neteq v2: concealed 0.33-0.50 % (1.24 on seed 9), 60-72 ms, 133-145 ms.
+# libwebrtc M157 (compare-webrtc, seeds 1-10): 0.27-0.67 %, 70-90 ms, 133-168 ms.
+expect audio.interruptions == 0
+expect audio.concealed_pct < 0.7
+expect audio.jb_delay_p95_ms >= 55
+expect audio.mouth_to_ear_p95_ms >= 130
+expect audio.mouth_to_ear_p95_ms <= 170

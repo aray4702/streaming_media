@@ -111,4 +111,49 @@ inline double Mean(const std::vector<double>& v) {
   return s / static_cast<double>(v.size());
 }
 
+// Audio/video synchronization as the user sees it (issue #63), measured the
+// same way for every call implementation. At each rendered video frame, the
+// audio playing at that moment is compared with the frame in capture time:
+//   offset = capture time of the audio being played - capture time of the frame
+// so a positive offset means the video plays later than the audio it was
+// captured with. This is libwebrtc's RtpStreamsSynchronizer::
+// GetStreamSyncOffsetInMs (video/rtp_streams_synchronizer2.cc), the
+// VideoReceiveStream stat sync_offset_ms, with the capture times known
+// exactly instead of estimated from RTCP sender reports: the audio's comes
+// from the receiver's playout RTP timestamp (Syncable::GetPlayoutRtpTimestamp,
+// NetEq::GetPlayoutTimestamp) moved on by the time since it was read, and the
+// video's from the frame being rendered. Frames rendered before audio playout
+// starts are not counted.
+class AvSyncMeter {
+ public:
+  // The audio last played out was captured at `audio_capture`; it played at `now`.
+  void OnAudioPlayout(Timestamp now, Timestamp audio_capture) {
+    audio_at_ = now;
+    audio_capture_ = audio_capture;
+  }
+  void OnVideoRendered(Timestamp now, Timestamp video_capture) {
+    if (!audio_at_.IsFinite()) return;
+    const Timestamp audio_now = audio_capture_ + (now - audio_at_);
+    offsets_ms_.push_back(static_cast<double>((audio_now - video_capture).us()) / 1000.0);
+  }
+  // sync.av_offset_p50_ms (signed median), sync.av_offset_p95_ms (95th
+  // percentile of the absolute offset) and sync.av_offset_max_ms (largest
+  // absolute offset). Adds nothing without a measured frame.
+  template <class Metrics>
+  void AddMetrics(Metrics& m) const {
+    if (offsets_ms_.empty()) return;
+    std::vector<double> abs_ms;
+    abs_ms.reserve(offsets_ms_.size());
+    for (double o : offsets_ms_) abs_ms.push_back(std::fabs(o));
+    m["sync.av_offset_p50_ms"] = Percentile(offsets_ms_, 50);
+    m["sync.av_offset_p95_ms"] = Percentile(abs_ms, 95);
+    m["sync.av_offset_max_ms"] = *std::max_element(abs_ms.begin(), abs_ms.end());
+  }
+
+ private:
+  Timestamp audio_at_ = Timestamp::MinusInfinity();
+  Timestamp audio_capture_ = Timestamp::MinusInfinity();
+  std::vector<double> offsets_ms_;
+};
+
 }  // namespace sm::testbench

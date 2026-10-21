@@ -35,6 +35,7 @@
 #include "api/video_codecs/video_decoder_factory.h"
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
+#include "audio/audio_receive_stream.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/audio_state.h"
@@ -501,6 +502,9 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
                                       "FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload "
                                       "after RTP padding is removed, including RTX with only its sequence number)"},
       {"cc.goodput_kbps", "Excludes padding-only packets but includes RTX packets libwebrtc sends as padding"},
+      {"sync.av_offset_*", "The audio playout point is AudioReceiveStream's Syncable::GetPlayoutRtpTimestamp, the "
+                           "input libwebrtc's A/V sync uses, read after each 10 ms pull (the test bench reads its "
+                           "jitter buffer's playout timestamp right after the pull)"},
   };
   return k;
 }
@@ -602,6 +606,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   sm::Timestamp audio_first = sm::Timestamp::MinusInfinity(), video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
   video::FreezeDetector freezes;
+  testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
   double last_video_delay = 0;
   int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
@@ -677,6 +682,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     last_render = now;
     auto it = model.capture_us_by_rtp.find(f.rtp_timestamp());
     if (it != model.capture_us_by_rtp.end()) {
+      av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
       video_e2e.push_back(last_video_delay);
       model.capture_us_by_rtp.erase(it);
@@ -894,6 +900,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                                                               &ntp);
         w::AudioReceiveStreamInterface::Stats st = audio_recv->GetStats(false);
         audio_buffer_ms = st.jitter_buffer_ms;
+        // The audio playout point libwebrtc's own A/V sync reads (issue #63): RtpStreamsSynchronizer takes it from
+        // Syncable::GetPlayoutRtpTimestamp (rtp_streams_synchronizer2.cc UpdateDelay), which AudioReceiveStreamImpl
+        // implements. Its time is when the RTP timestamp was sampled.
+        const w::Syncable* syncable = static_cast<const w::AudioReceiveStreamImpl*>(audio_recv);
+        if (std::optional<w::Syncable::PlayoutInfo> pi = syncable->GetPlayoutRtpTimestamp(); pi && audio_ts0) {
+          const int64_t samples = static_cast<int64_t>(static_cast<uint32_t>(pi->rtp_timestamp - *audio_ts0));
+          av_sync.OnAudioPlayout(rel(pi->time), sm::Timestamp::Micros(samples * 1000 / 48));
+        }
         if (st.total_samples_received == 0) return;
         uint64_t total = st.total_samples_received - prev_audio.total_samples_received;
         uint64_t concealed = st.concealed_samples - prev_audio.concealed_samples;
@@ -1085,6 +1099,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.e2e_delay_p50_ms"] = testbench::Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = testbench::Percentile(video_e2e, 95);
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
+    if (s.audio) av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
