@@ -3,6 +3,7 @@
 // float/double types and operation order; see the header.
 #include "sm/audio/sinc_resampler.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cmath>
 #include <cstring>

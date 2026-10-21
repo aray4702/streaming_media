@@ -14,6 +14,7 @@
 #include <limits>
 #include <numbers>
 #include <numeric>
+#include <utility>
 
 namespace sm::audio::agc2 {
 
