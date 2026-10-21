@@ -637,8 +637,8 @@ ALGORITHMS = [
                "library's own probe controller and estimator, `cc v1`, were deleted in #167): "
                "`ProbeControllerV2` (`ProbeController`: clusters at 3x and 6x the start rate, further probes at 2x "
                "a result above 0.7 of the last probe, probes when the max or max allocated bitrate rises, "
-               "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes only when "
-               "the stream requests them, none while the estimate is limited by delay increase or loss), "
+               "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes when "
+               "a stream requests them, none while the estimate is limited by delay increase or loss), "
                "`ProbeBitrateEstimator` (receive/send ratio over 2 rejected, clusters expire "
                "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in the pacer). "
                "`AlrDetector` runs with the settings libwebrtc's does without field trials (#152): a budget of 0.80 x the "
@@ -653,9 +653,21 @@ ALGORITHMS = [
                "`GetConfiguredPacingFactor` does, so a video call paces at 1.1 x from the start), the packet-overhead rate off the video allocation "
                "(`RtpVideoSender::OnBitrateUpdated`) and the congestion-window frame drop against the video target. With "
                "libwebrtc's default `CongestionWindowConfig` the window never reaches the pacer (`SetCongested` stays "
-               "false), as in libwebrtc.",
+               "false), as in libwebrtc. "
+               "Call start as libwebrtc's (#62): `rtp::Session` asks for periodic ALR probes when it adds an audio "
+               "stream with transport-cc, as `AudioSendStream::ConfigureStream` does unless `WebRTC-Audio-AlrProbing` "
+               "is disabled (`audio_send_stream.cc:158-159, 297-308`), so every call with audio probes every 5 s in "
+               "ALR; the streams' `max_total_allocated_bitrate` reaches `ProbeController` after the initial probes, "
+               "because libwebrtc creates GoogCC when the network comes up, before the streams start "
+               "(`rtp_transport_controller_send.cc:413-428, 747-773`), so an audio-only call's 3x and 6x probes are "
+               "not capped at twice the audio allocation; and `BitrateProber` waits for a 200-byte RTP packet "
+               "without the transport overhead (`PacingController::SetTransportOverhead`; `pacing_controller.cc:234`).",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
-                      "within 30 s."),
+                      "within 30 s. Found in #62 from the `audio_only_lossy` traces on `parity-data`: libwebrtc's "
+                      "first probe goes out at 3990 ms, with the first audio packet of 200 RTP bytes, and its "
+                      "estimate stays at 300 kbps, while the library probed at 104 kbps at 10 ms and fell to 75-100 "
+                      "kbps. Over seeds 1-10 the target goes 140 -> 209 kbps (libwebrtc 212), padding 30 -> 62 kbps "
+                      "(61) and the queue maximum 6 -> 58 ms (45); `issue_62_audio_only_probing` locks it in."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",
          problems=["Sharing bandwidth among streams -> bitrate allocator, with per-stream priority and min/max bitrate"],
          headers=["cc/bitrate_allocator.h", "cc/bitrate_allocator_v2.h"], unit=["BitrateAllocator", "BitrateAllocatorV2"], e2e=["E2E_BitrateAllocator"],

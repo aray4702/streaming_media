@@ -129,6 +129,11 @@ class PacingController : public MetricsSource {
   // Unset: fixed-size placeholders. A generator that returns nothing for the padding rate
   // only charges the padding budget (PacingController::ProcessPackets).
   void SetPaddingGenerator(PaddingGenerator g) { padding_generator_ = std::move(g); }
+  // PacingController::SetTransportOverhead: the per-packet transport overhead that
+  // PacedPacket::size includes. The prober's "large enough packet" check takes the RTP
+  // packet's size without it, as libwebrtc's EnqueuePacket passes RtpPacketToSend::size()
+  // (pacing_controller.cc:234; issue #62).
+  void SetTransportOverhead(DataSize overhead_per_packet) { transport_overhead_ = overhead_per_packet; }
   void Enqueue(PacedPacket p);
   void AddProbeCluster(const ProbeCluster& c);
   // Sends everything that is due by `now`. Call at NextSendTime() or sooner.
@@ -180,6 +185,7 @@ class PacingController : public MetricsSource {
 
   PacingControllerConfig cfg_;
   PaddingGenerator padding_generator_;
+  DataSize transport_overhead_ = DataSize::Zero();
   bool started_ = false;
   Timestamp last_timestamp_ = Timestamp::MinusInfinity();
   bool paused_ = false;

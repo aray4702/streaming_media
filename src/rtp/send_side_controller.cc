@@ -33,7 +33,9 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       allocator_(cfg.events),
       transport_seq_(1),
       target_(cfg.gcc.start_rate),
-      pushback_target_(cfg.gcc.start_rate) {}
+      pushback_target_(cfg.gcc.start_rate) {
+  pacer_.SetTransportOverhead(DataSize::Bytes(cfg_.transport_overhead_bytes));
+}
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
@@ -92,6 +94,8 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
 }
 
 void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
+
+void SendSideController::EnablePeriodicAlrProbing(bool enable) { gcc_.EnablePeriodicAlrProbing(enable); }
 
 void SendSideController::SetPacingFactor(double factor) {
   gcc_.SetPacingFactor(factor);
