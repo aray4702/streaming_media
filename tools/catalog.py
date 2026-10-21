@@ -74,7 +74,7 @@ ALGORITHMS = [
                "Residual loss is roughly p^(d+1) for random loss, at a bitrate cost of about d x the primary "
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
-         verification="No defects found; results match the analytical p^2 and p^3. The test bench's `audio v2` (issue #126) "
+         verification="No defects found; results match the analytical p^2 and p^3. The test bench's Opus send path (issue #126) "
                       "feeds it frames the size of libwebrtc's Opus output (`testbench/opus_model.h`): speech of 72 B on "
                       "average, digital silence of 3-35 B. Deviation: the sizes are a model fitted to libwebrtc's forward-link "
                       "trace, not libopus; the encoder defaults (20 ms, 32 kbps, VBR, DTX off, 6-510 kbps) follow "
@@ -502,13 +502,14 @@ ALGORITHMS = [
                "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
                "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc. "
                "**Default (#61):** a `rtp::Session` runs libwebrtc's components: `SessionConfig` and `SendSideConfig` "
-               "default to `cc`, `pacer`, `allocator` and `packetization` v2, and the test bench also to `audio` v2. "
-               "v1 stays selectable per field (test bench `cc v1` etc.) until #167 deletes it; the component configs on "
-               "their own (`GccConfig`, `PacerConfig`) keep version 1, so their unit tests test what they name. `tcc`, `rtcp`, "
-               "`rtx` and `keyframe` v1 are deleted (#167): transport-cc feedback, RTCP report timing, the RTX history and the "
-               "receiver's keyframe requests, NACK list and packet buffer are libwebrtc's only. "
+               "default to `cc` and `pacer` v2. v1 stays selectable per field (test bench `cc v1` etc.) until #167 deletes "
+               "it; the component configs on their own (`GccConfig`, `PacerConfig`) keep version 1, so their unit tests test "
+               "what they name. `tcc`, `rtcp`, `rtx`, `keyframe`, `packetization`, `allocator` and `audio` v1 are deleted (#167): "
+               "transport-cc feedback, RTCP report timing, the RTX history, the receiver's keyframe requests, NACK list and "
+               "packet buffer, `RtpSenderVideo`'s payload sizing, `BitrateAllocator` and (in the test bench) the Opus frame-size "
+               "model are libwebrtc's only. "
                "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
-               "Approved deviation: the Opus frame-size model of `audio v2` (3.1, a model fitted to libwebrtc's "
+               "Approved deviation: the test bench's Opus frame-size model (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
                "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
@@ -636,7 +637,7 @@ ALGORITHMS = [
                   "2) share a GCC target while capacity steps 3000 -> 450 -> 3000 kbps.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Paused streams resume only at min x 1.1 (hysteresis). "
-               "`allocator v2` (`SendSideConfig::allocator_version`, issue #104) is the port of libwebrtc's `BitrateAllocator` "
+               "A `rtp::Session` runs the port of libwebrtc's `BitrateAllocator` (issue #104; the v1 split was deleted by #167) "
                "(`call/bitrate_allocator.cc`): `LowRateAllocation` / `NormalRateAllocation` / `MaxRateAllocation` with min + max(10 %, 20 kbps) "
                "and the protection share to resume, and the sum of the enforced minimums (audio, and video as `suspend_below_min_bitrate` is off) is "
                "the lower bound of GCC's target (`min_total_allocated_bitrate`, `use_min_allocatable_as_lower_bound_`). "
@@ -765,16 +766,28 @@ ALGORITHMS = [
                       "from 7.6 to 12.9 dB."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h"], unit=["GainControl"], e2e=["E2E_GainControl"],
+         headers=["audio/gain_control.h", "audio/agc2.h"], unit=["GainControl", "GainController2"],
+         e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
-               "recommendation.",
+               "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
+               "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
+               "estimators, saturation protector, limiter with its interpolated gain curve) with its "
+               "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
+               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
+               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
+               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "default, is #242's next step.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
-                      "already modified in place."),
+                      "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
+                      "quiet talker -21.1 dBFS (libwebrtc AGC2 -21.0, v1 -16.8), loud talker -1.2 dB (-1.0), "
+                      "noise in pauses -62.7 dBFS (-62.9), peak 0 dBFS (0.0). libwebrtc's "
+                      "`GainDoesNotChangeFast` unit test never runs its loops (its frame count is negative); "
+                      "the port runs them."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
