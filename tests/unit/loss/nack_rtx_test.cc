@@ -32,8 +32,9 @@ SM_TEST(NackTracker, RetriesAfterRttThenRecovers) {
   n.OnReceivedPacket(1, true, Ms(0));
   n.OnReceivedPacket(3, false, Ms(0));
   SM_EXPECT_EQ(n.GetNackBatch(Ms(0)).size(), 1u);
-  SM_EXPECT_TRUE(n.GetNackBatch(Ms(49)).empty());
-  SM_EXPECT_EQ(n.GetNackBatch(Ms(50)).size(), 1u);
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(49)).empty());       // A process tick, but the RTT has not passed.
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(50)).empty());       // The RTT has passed, but the next tick is 20 ms after 49.
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(69)).size(), 1u);
   n.OnReceivedPacket(2, false, Ms(80));
   SM_EXPECT_EQ(n.pending(), 0u);
   SM_EXPECT_EQ(n.stats().recovered, 1u);
@@ -53,23 +54,6 @@ SM_TEST(NackTracker, ReorderWaitSuppressesSpuriousNacks) {
   SM_EXPECT_EQ(n.stats().nack_requests, 0u);
 }
 
-SM_TEST(NackTracker, GivesUpAfterMaxRetriesAndRequestsKeyframe) {
-  NackConfig cfg;
-  cfg.max_retries = 3;
-  cfg.min_retry_interval = TimeDelta::Millis(10);
-  NackTracker n(cfg);
-  n.UpdateRtt(TimeDelta::Millis(10));
-  n.OnReceivedPacket(1, true, Ms(0));
-  n.OnReceivedPacket(3, false, Ms(0));
-  int sent = 0;
-  for (int t = 0; t <= 100; t += 10) sent += static_cast<int>(n.GetNackBatch(Ms(t)).size());
-  SM_EXPECT_EQ(sent, 3);
-  SM_EXPECT_EQ(n.pending(), 0u);
-  SM_EXPECT_EQ(n.stats().abandoned, 1u);
-  SM_EXPECT_TRUE(n.TakeKeyframeRequest());
-  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
-}
-
 SM_TEST(NackTracker, HandlesWrapAround) {
   NackTracker n;
   n.OnReceivedPacket(65534, true, Ms(0));
@@ -78,20 +62,6 @@ SM_TEST(NackTracker, HandlesWrapAround) {
   SM_ASSERT_EQ(b.size(), 2u);
   SM_EXPECT_EQ(b[0], 65535);
   SM_EXPECT_EQ(b[1], 0);
-}
-
-SM_TEST(NackTracker, OverflowDropsToKeyframe) {
-  NackConfig cfg;
-  cfg.max_nack_list = 10;
-  NackTracker n(cfg);
-  n.OnReceivedPacket(0, true, Ms(0));
-  n.OnReceivedPacket(8, false, Ms(0));     // 7 missing.
-  n.OnReceivedPacket(9, true, Ms(0));      // Keyframe at 9.
-  n.OnReceivedPacket(15, false, Ms(0));    // +5 missing = 12 > 10.
-  SM_EXPECT_EQ(n.pending(), 5u);           // Only gaps after keyframe 9 remain.
-  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
-  n.OnReceivedPacket(40, false, Ms(0));    // No later keyframe: clear all.
-  SM_EXPECT_TRUE(n.TakeKeyframeRequest());
 }
 
 SM_TEST(NackTracker, EmitsEventsAndMetrics) {
@@ -131,10 +101,9 @@ SM_TEST(Rtx, EncapsulationRoundTrip) {
   SM_EXPECT_FALSE(RestoreFromRtx(pad, 1, 96).has_value());
 }
 
-SM_TEST(NackTracker, V2GivesUpAfter100RetriesWithoutKeyframeRequest) {
+SM_TEST(NackTracker, GivesUpAfter100RetriesWithoutKeyframeRequest) {
   // NackRequester: kMaxNackRetries 100, and the entry is only erased.
   NackConfig cfg;
-  cfg.version = 2;
   cfg.min_retry_interval = TimeDelta::Millis(10);
   NackTracker n(cfg);
   n.UpdateRtt(TimeDelta::Millis(10));
@@ -148,10 +117,9 @@ SM_TEST(NackTracker, V2GivesUpAfter100RetriesWithoutKeyframeRequest) {
   SM_EXPECT_FALSE(n.TakeKeyframeRequest());
 }
 
-SM_TEST(NackTracker, V2ClearUpToForgetsRequestsBeforeAContinuousFrame) {
+SM_TEST(NackTracker, ClearUpToForgetsRequestsBeforeAContinuousFrame) {
   // NackRequester::ClearUpTo(seq): erases the entries with a sequence number below `seq`.
   NackConfig cfg;
-  cfg.version = 2;
   NackTracker n(cfg);
   n.OnReceivedPacket(65530, true, Ms(0));
   n.OnReceivedPacket(65534, false, Ms(0));  // 65531-65533 missing.
@@ -164,18 +132,9 @@ SM_TEST(NackTracker, V2ClearUpToForgetsRequestsBeforeAContinuousFrame) {
   SM_EXPECT_TRUE(n.GetNackBatch(Ms(1000)).empty());
 }
 
-SM_TEST(NackTracker, V1ClearUpToIsANoOp) {
-  NackTracker n;
-  n.OnReceivedPacket(1, true, Ms(0));
-  n.OnReceivedPacket(5, false, Ms(0));
-  n.ClearUpTo(5);
-  SM_EXPECT_EQ(n.pending(), 3u);
-}
-
-SM_TEST(NackTracker, V2ListOverflowClearsEverythingAndRequestsKeyframe) {
+SM_TEST(NackTracker, ListOverflowClearsEverythingAndRequestsKeyframe) {
   // AddPacketsToNack: no attempt to keep the gaps after a keyframe.
   NackConfig cfg;
-  cfg.version = 2;
   cfg.max_nack_list = 10;
   NackTracker n(cfg);
   n.OnReceivedPacket(0, true, Ms(0));
@@ -285,11 +244,10 @@ SM_TEST(Rtx, AcknowledgedPacketsLeaveAndSequenceNumbersWrap) {
   SM_EXPECT_EQ(back->seq, 1);
 }
 
-SM_TEST(NackTracker, V2RetriesOnTheTwentyMillisecondProcessTick) {
+SM_TEST(NackTracker, RetriesOnTheTwentyMillisecondProcessTick) {
   // NackPeriodicProcessor: the time-based retry is decided every 20 ms, so it leaves up to 20 ms after
   // the RTT has passed (the first request for a gap is immediate).
   NackConfig cfg;
-  cfg.version = 2;
   NackTracker n(cfg);
   n.UpdateRtt(TimeDelta::Millis(50));
   n.OnReceivedPacket(1, true, Ms(0));

@@ -171,10 +171,8 @@ SM_TEST(PacketBuffer, AnUnambiguousStartDoesNotWaitForAMissingPredecessor) {
 
 // libwebrtc PacketBuffer (#76): starts at 512 slots, doubles up to 2048 when a
 // slot is taken by another sequence number, and clears at the maximum.
-SM_TEST(PacketBuffer, V2GrowsThenClearsWhenFull) {
-  PacketBufferConfig cfg;
-  cfg.version = 2;
-  PacketBuffer pb(cfg);
+SM_TEST(PacketBuffer, GrowsThenClearsWhenFull) {
+  PacketBuffer pb;
   SM_EXPECT_EQ(pb.capacity(), 512u);
   // Frame start missing, so nothing assembles and the packets stay held.
   pb.Insert(Pkt(0, 1, false), false, T0());
@@ -189,10 +187,8 @@ SM_TEST(PacketBuffer, V2GrowsThenClearsWhenFull) {
   SM_EXPECT_EQ(pb.stats().cleared, 1u);
 }
 
-SM_TEST(PacketBuffer, V2RestartsOnLargeBackwardJump) {
-  PacketBufferConfig cfg;
-  cfg.version = 2;
-  PacketBuffer pb(cfg);
+SM_TEST(PacketBuffer, RestartsOnLargeBackwardJump) {
+  PacketBuffer pb;
   pb.Insert(Pkt(5000, 1, false), false, T0());
   pb.Insert(Pkt(5001, 1, false), false, T0());
   SM_EXPECT_EQ(pb.buffered_packets(), 2u);
@@ -201,20 +197,11 @@ SM_TEST(PacketBuffer, V2RestartsOnLargeBackwardJump) {
   SM_EXPECT_EQ(pb.buffered_packets(), 1u);
 }
 
-SM_TEST(PacketBuffer, V1KeepsFixedWindow) {
-  PacketBuffer pb;
-  pb.Insert(Pkt(0, 1, false), false, T0());
-  pb.Insert(Pkt(512, 2, false), false, T0());
-  SM_EXPECT_EQ(pb.buffered_packets(), 2u);
-}
-
 // PacketBuffer::ClearTo (#101): after the decoder consumed a frame the packets
 // up to its last one are dropped and a late copy of an older packet is ignored,
 // not mistaken for a backward jump.
-SM_TEST(PacketBuffer, V2ClearToDropsOldPacketsAndIgnoresLateOnes) {
-  PacketBufferConfig cfg;
-  cfg.version = 2;
-  PacketBuffer pb(cfg);
+SM_TEST(PacketBuffer, ClearToDropsOldPacketsAndIgnoresLateOnes) {
+  PacketBuffer pb;
   pb.Insert(Pkt(10, 100, true), true, T0());  // A complete one-packet frame.
   SM_ASSERT_EQ(pb.PopCompleteFrames().size(), 1u);
   pb.Insert(Pkt(12, 200, false), false, T0());  // Waits for 11 / a start; stays held.
@@ -227,19 +214,12 @@ SM_TEST(PacketBuffer, V2ClearToDropsOldPacketsAndIgnoresLateOnes) {
   // Ahead of it still works.
   SM_EXPECT_EQ(pb.Insert(Pkt(13, 300, true), true, T0()), InsertResult::kInserted);
   SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
-  // v1 ignores ClearTo.
-  PacketBuffer v1;
-  v1.Insert(Pkt(5, 1, false), false, T0());
-  v1.ClearTo(5);
-  SM_EXPECT_EQ(v1.buffered_packets(), 1u);
 }
 
 // received_padding_ is dropped once it falls more than a quarter of the buffer behind
 // the packets being inserted, and padding inside a found frame is dropped with it.
-SM_TEST(PacketBuffer, V2PaddingOnlyMattersNearTheInsertedPackets) {
-  PacketBufferConfig cfg;
-  cfg.version = 2;
-  PacketBuffer pb(cfg);  // 512 slots: padding more than 128 behind goes.
+SM_TEST(PacketBuffer, PaddingOnlyMattersNearTheInsertedPackets) {
+  PacketBuffer pb;  // 512 slots: padding more than 128 behind goes.
   pb.Insert(Pkt(1000, 1, true), true, T0());
   pb.PopCompleteFrames();
   pb.NotePadding(1001);

@@ -296,7 +296,6 @@ inline FrameSimResult RunFrameSim(const FrameSimParams& p) {
   sim::NetworkLink<FeedbackType> rev(rcfg, p.seed + 1);
   TemporalLayerScheduler sched(p.temporal_layers);
   KeyframeRequester req;
-  req.UpdateRtt(p.one_way_delay * 2);
   bool force_key = false;
   FrameSimResult r;
   const int interval = 1000 / p.fps;
@@ -310,9 +309,13 @@ inline FrameSimResult RunFrameSim(const FrameSimParams& p) {
       ++r.frames;
       fwd.Send(now, f, DataSize::Bytes(f.keyframe ? 20000 : 4000));
     }
-    fwd.ReceiveEach(now, [&](LayerFrame f, Timestamp at) { req.OnFrame(f.info, at); });
+    fwd.ReceiveEach(now, [&](LayerFrame f, Timestamp at) {
+      req.OnMediaPacket(at, f.info.keyframe);
+      req.OnFrame(f.info, at);
+    });
     for (auto id : req.TakeDecodableFrames()) {
       (void)id;
+      req.OnFrameReleased(now);  // No frame scheduler here: a decodable frame goes straight to the decoder.
       if (now - last_render > TimeDelta::Millis(3 * interval)) {
         r.total_freeze_ms += (now - last_render).ms_f();
       }

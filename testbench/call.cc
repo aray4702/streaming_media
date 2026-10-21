@@ -153,6 +153,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
       {"video.undecodable_frames", "Frames received but discarded because a reference was missing"},
       {"video.residual_loss_pct", "Video media packets never recovered (after NACK/RTX and FEC)"},
+      {"sync.av_offset_p50_ms", "Median A/V offset at each rendered frame: capture time of the audio playing minus the frame's (positive: video later than audio)"},
+      {"sync.av_offset_p95_ms", "95th percentile of the absolute A/V offset at each rendered frame (lip sync; audio and video calls only)"},
+      {"sync.av_offset_max_ms", "Largest absolute A/V offset at a rendered frame"},
       {"cc.target_avg_kbps", "Average GCC target bitrate"},
       {"cc.goodput_kbps", "Average media + repair bitrate delivered"},
       {"cc.utilization_pct", "Delivered bitrate / usable capacity, over samples where the link is up and finite"},
@@ -420,6 +423,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // `audio v2`: Opus's encoded size follows the signal (testbench/opus_model.h); v1 is a constant frame.
   OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // `audio v2`'s in-band FEC input (issue #62).
+  OpusFecDecision opus_fec;  // libopus's decide_fec (testbench/opus_model.h).
+  bool lbrr_pending = false;  // The last frame was coded LBRR: the next packet carries the copy.
   SpeechDecoder decoder(speech, frame_samples);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
@@ -463,7 +468,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   audio_cfg.nominal_rate = audio_wire_rate;
   // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
   audio_cfg.allocation_rate = AudioAllocationRate(s);
-  if (s.neteq_v2) audio_cfg.jitter_buffer.version = 2;
+  audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;
@@ -480,7 +485,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
-  video_cfg.keyframe.version = s.keyframe_v2 ? 2 : 1;
   if (s.timing_v2) video_cfg.timing.version = 2;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
@@ -506,7 +510,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.fps = s.video_fps;
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   // EncoderRtcpFeedback's kMinKeyframeSendIntervalMs (video/encoder_rtcp_feedback.cc).
-  if (s.keyframe_v2) vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
+  vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
   if (s.allocator_v2 && s.cc_v2) {
     // `allocator v2` with `cc v2` (the stack #61 flips together): libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum
     // (VideoCodec::minBitrate = the stream's min_bitrate_bps), and the bitrate adjuster
@@ -571,6 +575,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   bool audio_started = false;
   Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
+  AvSyncMeter av_sync;  // Issue #63.
   int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
   int64_t interruptions = 0, interruption_ms = 0;
   int64_t frames_rendered = 0;
@@ -671,8 +676,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (s.audio_v2) {
         const size_t off = static_cast<size_t>(k) * frame_samples;
         const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
-        lbrr = opus_loss.percent() > 0 && opus_model.LastFrameActive();
+        lbrr = lbrr_pending;
+        const bool lbrr_coded = opus_fec.Update(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), opus_loss.percent());
         frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
+        lbrr_pending = lbrr_coded && opus_model.LastFrameActive();
       }
       std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
       if (s.audio_v2) frame[0] = lbrr ? kLbrrFlag : 0;
@@ -775,6 +782,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
         auto cap = frame_capture.find(f.rtp_timestamp);
         if (cap != frame_capture.end()) {
+          av_sync.OnVideoRendered(now, cap->second);
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
           video_e2e.push_back(last_video_delay);
           frame_capture.erase(cap);
@@ -786,6 +794,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
       auto op = receiver.GetAudio(audio_recv, audio_out, now);
+      // Audio RTP timestamps count samples from the call start (capture at t = 0).
+      if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
+        av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
+      }
       played_ms += 10;
       ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
@@ -906,6 +918,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       AddVideoDelayMetrics(all, rep);
     }
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
+    av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);

@@ -32,12 +32,24 @@
 //       ExpFilter, alpha 0.9999 per ms: a 10 s time constant) ->
 //       SetProjectedPacketLossRate (clamped to kMaxPacketLossFraction 0.2, a
 //       whole percent to WebRtcOpus_SetPacketLossRate)
-// Which frames libopus then codes LBRR for is decided inside libopus, which
-// is not in compare/webrtc/reference (#57), so it is a model: while the
-// percentage is above 0, a packet carries the LBRR copy of the previous frame
-// if that frame was not digital silence. The frame sizes do not change with
-// it: libwebrtc's audio packets on audio_only_lossy (10% loss) are the size
-// of clean_link's (5 s means 158-178 B and 160-177 B, seed 1 traces), since
+// Which frames libopus then codes LBRR for follows libopus 55513e81 (the
+// revision M157's Chromium pins, compare/webrtc/reference/third_party/opus):
+//   src/opus_encoder.c  opus_encode_native: compute_equiv_rate, the mode and the
+//       rate-dependent bandwidth, then decide_fec (fec_thresholds, 1000 bps of
+//       hysteresis, scaled by 125 - min(loss, 25) percent; above 5% loss it
+//       lowers the bandwidth until LBRR fits)
+//   silk/control_codec.c  silk_setup_LBRR: LBRR_enabled = LBRR_coded
+//   silk/fixed/encode_frame_FIX.c  silk_LBRR_encode_FIX: a frame is coded LBRR
+//       when LBRR is enabled and its speech activity is above
+//       LBRR_SPEECH_ACTIVITY_THRES (0.3, silk/tuning_parameters.h)
+//   silk/enc_API.c  the next packet carries the LBRR copy (LBRR_flags)
+// The model's part (OpusFecDecision): mono VOIP without the tonality analysis
+// (voice_est 115), complexity 9 (AudioEncoderOpusConfig's desktop default),
+// SILK's own bandwidth-switch gating left out, and "not digital silence"
+// standing in for SILK's VAD activity above 0.3. At the bench's fixed 32 kbps
+// LBRR is on whenever the projected loss is above 0. The frame sizes do not
+// change with it: libwebrtc's audio packets on audio_only_lossy (10% loss) are
+// the size of clean_link's (5 s means 158-178 B and 160-177 B, seed 1 traces), since
 // libopus fits LBRR inside the VBR budget. The payload's first byte carries
 // the flag (kLbrrFlag), standing in for the TOC byte and SILK's LBRR flags.
 #pragma once
@@ -124,6 +136,100 @@ class OpusSizeModel {
 
 // The payload's first byte: the frame carries the LBRR copy of the previous one.
 inline constexpr uint8_t kLbrrFlag = 0x01;
+
+// libopus's per-packet in-band FEC decision (src/opus_encoder.c,
+// opus_encode_native up to decide_fec), for a mono 20 ms VBR encoder.
+class OpusFecDecision {
+ public:
+  enum Bandwidth { kNarrowband = 1101, kMediumband, kWideband, kSuperwideband, kFullband };
+  enum Mode { kModeUnknown = 0, kModeSilkOnly = 1000, kModeHybrid, kModeCeltOnly };
+  static constexpr int kComplexity = 9;  // AudioEncoderOpusConfig::kDefaultComplexity (desktop).
+  static constexpr int kVoiceEst = 115;  // OPUS_APPLICATION_VOIP without a voice_ratio.
+
+  // compute_equiv_rate for one channel at 50 frames per second, VBR.
+  static int32_t EquivRate(int32_t bitrate, int mode, int complexity, int loss) {
+    int32_t equiv = bitrate * (90 + complexity) / 100;
+    if (mode == kModeSilkOnly || mode == kModeHybrid) {
+      if (complexity < 2) equiv = equiv * 4 / 5;
+      equiv -= equiv * loss / (6 * loss + 10);
+    } else if (mode == kModeCeltOnly) {
+      if (complexity < 5) equiv = equiv * 9 / 10;
+    } else {
+      equiv -= equiv * loss / (12 * loss + 20);
+    }
+    return equiv;
+  }
+
+  // decide_fec; may lower `*bandwidth` above 5% loss.
+  static bool DecideFec(int loss, bool last_fec, int mode, int* bandwidth, int32_t rate) {
+    static constexpr int32_t kFecThresholds[] = {12000, 1000, 14000, 1000, 16000, 1000, 20000, 1000, 22000, 1000};
+    if (loss == 0 || mode == kModeCeltOnly) return false;
+    const int orig_bandwidth = *bandwidth;
+    for (;;) {
+      int32_t thres = kFecThresholds[2 * (*bandwidth - kNarrowband)];
+      const int32_t hysteresis = kFecThresholds[2 * (*bandwidth - kNarrowband) + 1];
+      thres += last_fec ? -hysteresis : hysteresis;
+      thres = SmulWB(thres * (125 - std::min(loss, 25)), 655);  // SILK_FIX_CONST(0.01, 16).
+      if (rate > thres) return true;
+      if (loss <= 5) return false;
+      if (*bandwidth > kNarrowband) {
+        --*bandwidth;
+      } else {
+        break;
+      }
+    }
+    *bandwidth = orig_bandwidth;
+    return false;
+  }
+
+  // One packet: whether the frame encoded now is coded with LBRR enabled
+  // (silk_mode.LBRR_coded), at the encoder bitrate and the loss percentage.
+  bool Update(int32_t bitrate_bps, int loss) {
+    // Mode: SILK for VoIP below the voice threshold (mode_thresholds, +8000 for VoIP, 4000 of hysteresis).
+    int32_t equiv = EquivRate(bitrate_bps, kModeUnknown, kComplexity, loss);
+    int32_t threshold = 10000 + ((kVoiceEst * kVoiceEst * (64000 - 10000)) >> 14) + 8000;
+    if (prev_mode_ == kModeCeltOnly) {
+      threshold -= 4000;
+    } else if (prev_mode_ > 0) {
+      threshold += 4000;
+    }
+    int mode = equiv >= threshold ? kModeCeltOnly : kModeSilkOnly;
+    if (loss > (128 - kVoiceEst) >> 4) mode = kModeSilkOnly;  // useInBandFEC with enough loss.
+    equiv = EquivRate(bitrate_bps, mode, kComplexity, loss);
+    // Rate-dependent bandwidth: mono music/voice thresholds interpolated with voice_est.
+    static constexpr int32_t kVoice[8] = {9000, 700, 9000, 700, 13500, 1000, 14000, 2000};
+    static constexpr int32_t kMusic[8] = {9000, 700, 9000, 700, 11000, 1000, 12000, 2000};
+    int bw = kFullband;
+    do {
+      const int i = 2 * (bw - kMediumband);
+      int32_t thr = kMusic[i] + ((kVoiceEst * kVoiceEst * (kVoice[i] - kMusic[i])) >> 14);
+      const int32_t hyst = kMusic[i + 1] + ((kVoiceEst * kVoiceEst * (kVoice[i + 1] - kMusic[i + 1])) >> 14);
+      if (!first_) thr += auto_bandwidth_ >= bw ? -hyst : hyst;
+      if (equiv >= thr) break;
+    } while (--bw > kNarrowband);
+    if (bw == kMediumband) bw = kWideband;
+    auto_bandwidth_ = bw;
+    first_ = false;
+    lbrr_coded_ = DecideFec(loss, lbrr_coded_, mode, &bw, equiv);
+    if (mode == kModeSilkOnly && bw > kWideband) mode = kModeHybrid;
+    prev_mode_ = mode;
+    bandwidth_ = bw;
+    return lbrr_coded_;
+  }
+  int bandwidth() const { return bandwidth_; }
+
+ private:
+  // silk_SMULWB: (a32 * (int16)b32) >> 16.
+  static int32_t SmulWB(int32_t a, int32_t b) {
+    return static_cast<int32_t>((static_cast<int64_t>(a) * static_cast<int16_t>(b)) >> 16);
+  }
+
+  bool first_ = true;
+  bool lbrr_coded_ = false;
+  int auto_bandwidth_ = kFullband;
+  int bandwidth_ = kFullband;
+  int prev_mode_ = kModeUnknown;
+};
 
 // AudioEncoderOpusImpl's loss input: PacketLossFractionSmoother and
 // SetProjectedPacketLossRate (audio_encoder_opus.cc).

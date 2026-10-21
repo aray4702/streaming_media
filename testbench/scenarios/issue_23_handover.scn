@@ -3,7 +3,6 @@ describe Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier, longer pat
 # Issue #23 (partial): the receiver asks for a keyframe only where libwebrtc does (NackRequester + RtpVideoStreamReceiver2).
 # Target (issue #23): video.keyframe_requests within 2x of libwebrtc or within 2 requests (libwebrtc: 0) on seeds 1-5
 # without raising video.longest_freeze_ms; this scenario locks the request count only (see docs/fixes/23-libwebrtc-keyframe-policy.md, Remaining).
-keyframe v2
 duration 40s
 at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
 at 15s down

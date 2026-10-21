@@ -37,13 +37,12 @@ struct AssembledFrame {
 
 struct PacketBufferConfig {
   size_t window = 2048;  // Packets of history kept for reordering and dedup.
-  // 1 = the bounded window above. 2 = libwebrtc's `video_coding::PacketBuffer`
-  // sizing (packet_buffer.cc, #76): the buffer starts at `start_size` slots and
-  // doubles up to `max_size` when a slot is taken by another sequence number;
-  // when it is full at `max_size` it is cleared and the caller asks for a
-  // keyframe (`kBufferCleared`); a packet `max_size / 2` or more behind the
-  // lowest sequence number seen restarts the buffer.
-  int version = 1;
+  // libwebrtc's `video_coding::PacketBuffer` sizing (packet_buffer.cc, #76):
+  // the buffer starts at `start_size` slots and doubles up to `max_size` when
+  // a slot is taken by another sequence number; when it is full at `max_size`
+  // it is cleared and the caller asks for a keyframe (`kBufferCleared`); a
+  // packet `max_size / 2` or more behind the lowest sequence number seen
+  // restarts the buffer.
   size_t start_size = 512;
   size_t max_size = 2048;
   EventSink* events = nullptr;
@@ -53,7 +52,7 @@ struct PacketBufferStats {
   uint64_t inserted = 0;
   uint64_t duplicates = 0;
   uint64_t too_old = 0;
-  uint64_t cleared = 0;          // v2: the buffer was full at max_size and was cleared.
+  uint64_t cleared = 0;          // The buffer was full at max_size and was cleared.
   uint64_t padding = 0;          // Padding-only packets that held a sequence number.
   uint64_t reordered = 0;        // Arrived after a higher sequence number.
   uint64_t frames_assembled = 0;
@@ -78,10 +77,10 @@ class PacketBuffer : public MetricsSource {
   // The sequence number just before `first_seq` that is not a padding-only
   // packet, i.e. the last packet of the preceding frame if it was received.
   int64_t PrecedingMediaSeq(int64_t first_seq) const;
-  // v2, `PacketBuffer::ClearTo`: the frame ending at `seq` was decoded, so
+  // `PacketBuffer::ClearTo`: the frame ending at `seq` was decoded, so
   // every packet up to and including it is dropped, the lowest sequence number
   // moves past it, and a packet behind it that arrives later is ignored
-  // (`kTooOld`) rather than treated as a backward jump. No effect in v1.
+  // (`kTooOld`) rather than treated as a backward jump.
   void ClearTo(int64_t seq);
   std::vector<AssembledFrame> PopCompleteFrames();
   size_t capacity() const { return size_; }
@@ -107,9 +106,9 @@ class PacketBuffer : public MetricsSource {
   std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
   int64_t highest_ = INT64_MIN;
-  size_t size_ = 0;                      // v2: current slot count.
-  bool cleared_to_first_seq_ = false;    // v2: ClearTo moved first_seq_; older packets are ignored.
-  int64_t first_seq_ = INT64_MIN;        // v2: lowest sequence number seen since the last clear.
+  size_t size_ = 0;                      // Current slot count.
+  bool cleared_to_first_seq_ = false;    // ClearTo moved first_seq_; older packets are ignored.
+  int64_t first_seq_ = INT64_MIN;        // Lowest sequence number seen since the last clear.
   int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;
   PacketBufferStats stats_;

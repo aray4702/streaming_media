@@ -112,11 +112,19 @@ SM_TEST(E2E_Keyframe, RecoversFromUnrepairableLoss) {
   SM_RECORD("kf_max_freeze_ms", with.max_freeze_ms);
   SM_RECORD("kf_pli", with.pli);
   SM_RECORD("no_kf_decodable", without.decodable_ratio);
-  // Each unrepairable loss costs ~repair window (200 ms) + RTT + keyframe
-  // transit ~= 10 frames; 2% loss -> ~20% undecodable is the design bound.
-  SM_EXPECT_GE(with.decodable_ratio, 0.78);
+  // libwebrtc's receiver (#167 deleted the v1 repair window) leaves a blocked
+  // frame to NACK, and asks for a keyframe only after the decode time-out:
+  // kMaxWaitForFrame, 3 s after the last frame released for decoding
+  // (video_receive_stream2.h, video_receive_stream_timeout_tracker.cc). Each
+  // unrepairable loss then costs 3 s + RTT (100 ms) + keyframe transit, about
+  // 93 frames, so at 2% frame loss (one every ~50 frames) most of the stream
+  // is frozen; seeds 1-5 decode 28-49% of the frames (3-10% without requests).
+  // Was >= 0.78 and <= 700 ms, the v1 policy's design bound (repair window
+  // 200 ms + RTT); program.md 0.2, Owner sign-off needed (PR for #167).
+  SM_EXPECT_GE(with.decodable_ratio, 0.25);
+  SM_EXPECT_GE(with.decodable_ratio, without.decodable_ratio + 0.2);
   SM_EXPECT_LE(without.decodable_ratio, 0.10);
-  SM_EXPECT_LE(with.max_freeze_ms, 700.0);
+  SM_EXPECT_LE(with.max_freeze_ms, 3150.0);  // 3 s + RTT + one keyframe's transit; 3102 on seeds 1-5.
   // No request storm: at most a couple of PLIs per lost frame.
   SM_EXPECT_LE(with.pli, static_cast<uint64_t>(0.02 * with.frames * 2.5) + 2);
 }

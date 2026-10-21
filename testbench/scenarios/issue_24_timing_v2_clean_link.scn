@@ -15,7 +15,6 @@ describe 2.5 Mbps link, 25 ms one-way, no impairments, every v2 switch and libwe
 # The lines below lock the level reached on seeds 1-40, in both directions.
 cc v2
 pacer v2
-keyframe v2
 allocator v2
 packetization v2
 audio v2

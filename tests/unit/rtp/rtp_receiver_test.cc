@@ -147,31 +147,10 @@ SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   SM_EXPECT_TRUE(r.TakeFeedback().keyframe.empty());
 }
 
-SM_TEST(RtpReceiver, MissingFrameReferenceAsksForAKeyframe) {
-  RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
-  r.Start(Timestamp::Millis(0));
-  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
-  SendFrame(s, 1, false, 800, Timestamp::Millis(33));  // Frame 1 never arrives.
-  for (auto& b : SendFrame(s, 2, false, 800, Timestamp::Millis(66))) r.OnPacket(b, Timestamp::Millis(80));
-  bool asked = false;
-  for (int64_t t = 80; t < 1000 && !asked; ++t) {
-    r.Process(Timestamp::Millis(t));
-    ReceiverFeedback fb = r.TakeFeedback();
-    for (const auto& m : fb.keyframe)
-      if (m.type == loss::FeedbackType::kPli || m.type == loss::FeedbackType::kFir) asked = true;
-    asked = asked || fb.pli;
-  }
-  SM_EXPECT_TRUE(asked);
-}
-
-SM_TEST(RtpReceiver, V2MissingFrameReferenceIsLeftToNack) {
+SM_TEST(RtpReceiver, MissingFrameReferenceIsLeftToNack) {
   // libwebrtc keeps NACKing and asks for no keyframe until the decode time-out.
   RtpSender s(SenderCfg());
-  RtpReceiverConfig cfg = ReceiverCfg();
-  cfg.keyframe.version = 2;
-  RtpReceiver r(cfg);
-  r.Start(Timestamp::Millis(0));
+  RtpReceiver r(ReceiverCfg());
   for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
   SendFrame(s, 1, false, 800, Timestamp::Millis(33));  // Frame 1 never arrives.
   for (auto& b : SendFrame(s, 2, false, 800, Timestamp::Millis(66))) r.OnPacket(b, Timestamp::Millis(80));
@@ -181,7 +160,6 @@ SM_TEST(RtpReceiver, V2MissingFrameReferenceIsLeftToNack) {
     ReceiverFeedback fb = r.TakeFeedback();
     for (const auto& m : fb.keyframe)
       if (m.type == loss::FeedbackType::kPli || m.type == loss::FeedbackType::kFir) asked = true;
-    asked = asked || fb.pli;
   }
   SM_EXPECT_FALSE(asked);
 }

@@ -125,9 +125,8 @@ One directive per line, and `#` starts a comment.
 | `cc v1\|v2` | v1 | v2 is libwebrtc's GoogCC, ported in stages behind this switch (#61). So far: the delay detector's front end, `InterArrivalDelta` with feedback sorted by receive time and the 2 s stream time-out (#19), the acked-rate estimator and `AimdRateControl` (#15), and the `AlrDetector`, `ProbeController` and `ProbeBitrateEstimator` (#48; the `BitrateProber` is in `pacer v2`), and `LossBasedBweV2` with libwebrtc's `SendSideBandwidthEstimation` (#12; the loss rate counts only packets a feedback reports as not received, so `tcc v2` is what libwebrtc's feedback looks like on a reordering link), and `GoogCcNetworkController`'s glue (#61): pacing rate 2.5 x the target until the first feedback and 1.1 x after, padding rate, the packet-overhead rate off the video allocation, the congestion-window frame drop against the video target |
 | `allocator v1\|v2` | v1 | v1 takes the audio rate off the target and clamps the video to its range; v2 is libwebrtc's `BitrateAllocator` (`call/bitrate_allocator.cc`) and the sum of the enforced minimums as the target's lower bound (#104) |
 | `audio v1\|v2` | v1 | v1 sends a constant frame of the audio rate; v2 sends frames the size libwebrtc's Opus produces (VBR: speech 72 B on average, 3-35 B for digital silence, the first frame after silence larger), with the encoder defaults of `audio_encoder_opus_config.h` (#126) |
-| `keyframe v1\|v2` | v1 | v1 is the original receiver keyframe-request policy; v2 is libwebrtc's (`NackRequester` give-up and overflow rules, `RtpVideoStreamReceiver2` triggers, decode time-out; #23), and on the sender `EncoderRtcpFeedback`'s 300 ms minimum between keyframe requests (#151) |
 | `timing v1\|v2` | v1 | v1 is the library's video receive timing (`VideoJitterEstimator`, `VideoTiming`, `FrameScheduler` with its 10 ms late-drop rule); v2 is libwebrtc's (`JitterEstimator`, `TimestampExtrapolator`, `VCMTiming`, and frame release as `VideoStreamBufferController`/`FrameDecodeTiming`: a late frame is skipped only when a later keyframe is decodable; #24) |
-| `neteq v1\|v2` | v1 | v1 is the library's audio target delay (`DelayManager`: 95th percentile of each packet's relative delay, 10 ms buckets); v2 is libwebrtc M157's NetEq (`DelayManager` with `UnderrunOptimizer` over 500 ms maxima in 20 ms buckets and `ReorderOptimizer`, `PacketArrivalHistory` over 2 s, 80 ms until the first estimate; #62) |
+| `neteq v1\|v2` | v2 | v1 is the library's audio target delay (`DelayManager`: 95th percentile of each packet's relative delay, 10 ms buckets) and its own operations; v2 is libwebrtc M157's NetEq (`DelayManager` with `UnderrunOptimizer` over 500 ms maxima in 20 ms buckets and `ReorderOptimizer`, `PacketArrivalHistory` over 2 s, 80 ms until the first estimate; `DecisionLogic`, `Expand`, `Merge`, `Accelerate`/`PreemptiveExpand`, Opus in-band FEC; #62), the default since #62 |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |
 | `reverse at <time> ...` | mirrors forward delay | Change the feedback link |
 | `expect <metric> <op> <number>` | | Pass criterion; `op` is one of `< <= > >= ==` |
@@ -175,6 +174,13 @@ Link keys (any subset; unset keys keep their previous value):
     `delay_jitter_buffer_p95_ms` (frame complete to rendered). The
     p95 values are separate percentiles, so they need not add up to
     `e2e_delay_p95_ms`.
+- **A/V sync** (calls with audio and video, issue #63):
+  `sync.av_offset_p50_ms` (signed median), `sync.av_offset_p95_ms` (95th
+  percentile of the absolute value) and `sync.av_offset_max_ms`. At each
+  rendered frame, the offset is the capture time of the audio playing
+  then minus the frame's capture time, so a positive value means the video
+  is late. It is libwebrtc's `RtpStreamsSynchronizer::GetStreamSyncOffsetInMs`
+  (the `sync_offset_ms` stat) with exact capture times.
 - **Congestion control:**
   - `cc.target_avg_kbps` and `cc.goodput_kbps`.
   - `cc.utilization_pct`: goodput divided by the usable capacity, which is
