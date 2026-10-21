@@ -1,11 +1,13 @@
 // Unit tests: libwebrtc M157's noise suppressor (`ns::NoiseSuppressor`,
 // `apm v2`, issue #241; modules/audio_processing/ns/).
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <numbers>
 #include <span>
 #include <vector>
 
+#include "sm/audio/fft4g.h"
 #include "sm/audio/ns.h"
 #include "sm/core/dsp.h"
 #include "sm/sim/signals.h"
@@ -30,6 +32,40 @@ std::vector<float> Run(NoiseSuppressor& ns, const std::vector<float>& x) {
 double Db(std::span<const float> x) { return dsp::RmsDbfs(x); }
 
 }  // namespace
+
+// fft4g.cc (WebRtc_rdft), the FFT under NrFft. The expected values are the
+// output of libwebrtc M157's prebuilt WebRtc_rdft on the same input (bit for
+// bit). Several of them (a[3], a[6], ...) differ in the last bit if the
+// twiddle tables are built with the double cos/sin instead of libc++'s float
+// overloads.
+SM_TEST(Ns, Fft4gBitExactWithLibwebrtc) {
+  std::vector<float> a(256);
+  for (size_t i = 0; i < a.size(); ++i) a[i] = static_cast<float>((i * 37) % 101) - 50.f;
+  std::vector<size_t> ip(128, 0);
+  std::vector<float> w(128);
+  audio::ooura::Rdft(256, 1, a.data(), ip.data(), w.data());
+  const struct {
+    size_t i;
+    float v;
+  } expected[] = {{0, -0x1.98p+5f},       {1, 0x1.6p+3f},          {2, -0x1.74cc38p+5f},  {3, 0x1.15d2fcp+4f},
+                  {6, -0x1.2fb1d4p+7f},   {10, -0x1.d6e85ep+7f},   {11, -0x1.056ap+0f},   {100, -0x1.750808p+7f},
+                  {101, 0x1.9af1acp+7f},  {254, 0x1.2e973cp+6f},   {255, -0x1.a310d2p+7f}};
+  for (const auto& e : expected) SM_EXPECT_EQ(a[e.i], e.v);
+}
+
+// NrFft::Ifft: the inverse rdft scaled by 2/n gives the frame back.
+SM_TEST(Ns, Fft4gInverseScaledByTwoOverN) {
+  std::vector<float> x(256), a(256);
+  for (size_t i = 0; i < x.size(); ++i) x[i] = 1000.f * std::sin(0.05f * static_cast<float>(i * i % 257));
+  a = x;
+  std::vector<size_t> ip(128, 0);
+  std::vector<float> w(128);
+  audio::ooura::Rdft(256, 1, a.data(), ip.data(), w.data());
+  audio::ooura::Rdft(256, -1, a.data(), ip.data(), w.data());
+  float max_err = 0.f;
+  for (size_t i = 0; i < x.size(); ++i) max_err = std::max(max_err, std::fabs(a[i] * (2.f / 256.f) - x[i]));
+  SM_EXPECT_LT(max_err, 1e-2f);
+}
 
 // suppression_params.cc: the four levels.
 SM_TEST(Ns, SuppressionParamsAsLibwebrtc) {
