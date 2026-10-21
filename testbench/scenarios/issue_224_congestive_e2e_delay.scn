@@ -1,0 +1,13 @@
+name issue_224_congestive_e2e_delay
+describe Congestive link (2.5 -> 0.8 Mbps at 15 s, 60 ms queue): video e2e delay p95 against libwebrtc's, with receive times from transport feedback rounded down to whole ms as libwebrtc's TransportFeedbackAdapter does (#224)
+# Same link as issue_61_googcc_glue_congestive and issue_12_lossbwe_congestive, seed 1.
+# transport_feedback_adapter.cc:232-271 rounds every receive time down to 1 ms, so DelayBasedBwe's
+# InterArrivalDelta splits groups where libwebrtc's does (3010/3033 ms on seed 1, as libwebrtc).
+# Seed 1: e2e p95 1066 -> 873 ms (libwebrtc 231). Seeds 1-10 mean 808 -> 740 ms (libwebrtc 420);
+# lower on 6 of 10 seeds, higher on 4 (seeds 2, 4, 5, 10), so this is not yet the issue's target.
+# Target (issue #224): video.e2e_delay_p95_ms within libwebrtc's 10-seed band (mean 420 ms).
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
+expect video.e2e_delay_p95_ms < 950
+expect net.loss_pct < 7

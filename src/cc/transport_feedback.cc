@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace sm::cc {
 
@@ -12,6 +13,8 @@ constexpr int64_t kRefUnitUs = 64000;
 void Put(std::vector<uint8_t>& b, uint64_t v, int bytes) {
   for (int i = bytes - 1; i >= 0; --i) b.push_back(static_cast<uint8_t>(v >> (8 * i)));
 }
+// TimeDelta::RoundDownTo(TimeDelta::Millis(1)): integer division, so it truncates toward zero.
+int64_t RoundDownToMs(int64_t us) { return us / 1000 * 1000; }
 uint64_t Get(const uint8_t* p, int bytes) {
   uint64_t v = 0;
   for (int i = 0; i < bytes; ++i) v = (v << 8) | p[i];
@@ -317,6 +320,32 @@ void SendHistory::OnPacketSent(uint16_t seq, Timestamp send_time, DataSize size,
 
 std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, Timestamp now) {
   std::vector<PacketResult> out;
+  // TransportFeedbackAdapter::ProcessTransportFeedback (transport_feedback_adapter.cc:224-274): an empty
+  // feedback changes nothing; otherwise receive times go on a local time base that starts at the first
+  // feedback's local receive time and moves by the base-time delta, and each packet's offset from the base
+  // time is rounded down to a whole millisecond, as are the base deltas.
+  if (fb.packets.empty()) return out;
+  const int64_t base_us = static_cast<int64_t>(fb.reference_time) * kRefUnitUs;
+  if (!last_base_us_) {
+    current_offset_ = now;
+  } else {
+    // TransportFeedback::GetBaseDelta: the 24-bit base time wraps every 2^24 x 64 ms.
+    constexpr int64_t kTimeWrapPeriodUs = kRefUnitUs * (int64_t{1} << 24);
+    int64_t delta = base_us - *last_base_us_;
+    if (std::llabs(delta - kTimeWrapPeriodUs) < std::llabs(delta)) {
+      delta -= kTimeWrapPeriodUs;
+    } else if (std::llabs(delta + kTimeWrapPeriodUs) < std::llabs(delta)) {
+      delta += kTimeWrapPeriodUs;
+    }
+    delta = RoundDownToMs(delta);
+    // Protect against assigning current_offset_ a negative value.
+    if (delta < -current_offset_.us()) {
+      current_offset_ = now;
+    } else {
+      current_offset_ = current_offset_ + TimeDelta::Micros(delta);
+    }
+  }
+  last_base_us_ = base_us;
   auto arrivals = fb.ArrivalTimes();
   size_t ai = 0;
   for (const auto& p : fb.packets) {
@@ -324,7 +353,8 @@ std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, T
     auto it = sent_.find(s);
     Timestamp arrival = Timestamp::PlusInfinity();
     if (p.received) {
-      arrival = arrivals[ai++].second;
+      const int64_t delta_since_base_us = arrivals[ai++].second.us() - base_us;
+      arrival = current_offset_ + TimeDelta::Micros(RoundDownToMs(delta_since_base_us));
     }
     if (it == sent_.end()) continue;
     // libwebrtc's TransportFeedbackAdapter erases a packet from its history

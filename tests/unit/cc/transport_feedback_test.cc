@@ -53,9 +53,9 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
       ++lost;
       continue;
     }
-    // 250 us quantization.
-    double expect_us = 1040000.0 + static_cast<double>(r.seq) * 1000 + 123;
-    SM_EXPECT_NEAR(static_cast<double>(r.receive_time.us()), expect_us, 250);
+    // TransportFeedbackAdapter: the local time base starts at the first feedback's receive time (1100 ms), and
+    // each packet's offset from the base time (1024 ms, 16 x 64 ms) is rounded down to whole milliseconds.
+    SM_EXPECT_EQ(r.receive_time.us(), 1100000 + 16000 + static_cast<int64_t>(r.seq) * 1000);
     SM_EXPECT_EQ(r.send_time.ms(), 1000 + r.seq);
   }
   SM_EXPECT_EQ(lost, 5);
@@ -241,4 +241,33 @@ SM_TEST(TransportFeedback, PacketReportedReceivedTwiceIsIgnored) {
     if (r.received()) ++received;
   }
   SM_EXPECT_EQ(received, 1);
+}
+
+// transport_feedback_adapter.cc:232-271 (ProcessTransportFeedback): receive times are
+// current_offset_ + delta_since_base.RoundDownTo(1 ms), and current_offset_ moves by the base-time
+// delta, also rounded down to 1 ms. Packets 4.5 ms apart on the wire are seen 4 or 5 ms apart, as
+// libwebrtc's DelayBasedBwe sees them.
+SM_TEST(TransportFeedback, ReceiveTimesAreWholeMillisecondsOnTheLocalBase) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 8; ++s) h.OnPacketSent(s, Timestamp::Millis(1000), DataSize::Bytes(1400));
+  TransportFeedbackBuilder b(0, 0);
+  // Receiver clock: base time 64 ms x 20 = 1280 ms; arrivals 1290.1, 1294.6, 1299.1, 1303.6 ms.
+  for (uint16_t s = 0; s < 4; ++s) b.OnPacket(s, Timestamp::Micros(1290100 + s * 4500));
+  auto fb1 = b.Build();
+  SM_ASSERT_EQ(fb1.size(), 1u);
+  SM_EXPECT_EQ(fb1[0].reference_time, 20);
+  auto r1 = h.OnFeedback(*ParseTransportFeedback(SerializeTransportFeedback(fb1[0])), Timestamp::Micros(5000250));
+  SM_ASSERT_EQ(r1.size(), 4u);
+  // Offsets from the base: 10.0 (10.1 in 250 us ticks), 14.5, 19.0, 23.5 ms -> 10, 14, 19, 23 ms.
+  const int64_t expect1[] = {10, 14, 19, 23};
+  for (size_t i = 0; i < 4; ++i) SM_EXPECT_EQ(r1[i].receive_time.us(), 5000250 + expect1[i] * 1000);
+  // Next feedback: base 64 ms x 21 = 1344 ms, arrivals 1350.6 ... ms. current_offset_ moves by 64 ms.
+  for (uint16_t s = 4; s < 8; ++s) b.OnPacket(s, Timestamp::Micros(1350600 + (s - 4) * 4500));
+  auto fb2 = b.Build();
+  SM_ASSERT_EQ(fb2.size(), 1u);
+  SM_EXPECT_EQ(fb2[0].reference_time, 21);
+  auto r2 = h.OnFeedback(*ParseTransportFeedback(SerializeTransportFeedback(fb2[0])), Timestamp::Micros(9000000));
+  SM_ASSERT_EQ(r2.size(), 4u);
+  const int64_t expect2[] = {6, 11, 15, 20};  // 6.5, 11.0, 15.5, 20.0 ms from the base.
+  for (size_t i = 0; i < 4; ++i) SM_EXPECT_EQ(r2[i].receive_time.us(), 5000250 + 64000 + expect2[i] * 1000);
 }

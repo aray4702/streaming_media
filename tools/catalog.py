@@ -421,7 +421,8 @@ ALGORITHMS = [
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
                   "real wire format, parsed and joined with the send history. Each packet must be reported received "
                   "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
-                  "re-reports it), with arrival-time error within the 250 us quantization.",
+                  "re-reports it), with receive times a constant offset from the true arrival less the 250 us tick "
+                  "and the round-down to whole ms (spread under 2.5 ms).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "
@@ -429,7 +430,11 @@ ALGORITHMS = [
                "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
                "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "
                "`tcc` switch were deleted in #167.",
-         verification="No defects found; maximum arrival-time error 249 us."),
+         verification="No defects found; maximum arrival-time error 249 us. Receive times now follow libwebrtc's "
+                      "TransportFeedbackAdapter (`transport_feedback_adapter.cc:232-271`): a local time base that "
+                      "starts at the first feedback's receive time and moves by the base-time delta, and every "
+                      "packet's offset from the base time rounded down to 1 ms, so DelayBasedBwe groups packets "
+                      "as libwebrtc's does ([record](../../fixes/224-feedback-receive-time-ms.md), #224)."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],

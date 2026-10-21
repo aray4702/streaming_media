@@ -43,6 +43,9 @@ struct L1T3 {
 // libwebrtc's generator reports a reordered packet again once it arrives, so
 // a packet first reported lost can come back received; it is never reported
 // received twice (SendHistory drops a second report, as TransportFeedbackAdapter).
+// Receive times are on the sender's local base, as TransportFeedbackAdapter puts
+// them (transport_feedback_adapter.cc:232-271): a constant offset from the
+// receiver's clock, less the 250 us tick and the round-down to whole ms.
 SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization) {
   sim::LinkConfig f;
   f.base_delay = TimeDelta::Millis(25);
@@ -54,7 +57,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
   SendHistory history;
   std::map<int64_t, Timestamp> true_arrival;
   std::map<int64_t, int> reported, received;
-  int64_t max_err_us = 0;
+  int64_t min_off_us = INT64_MAX, max_off_us = INT64_MIN;
   uint16_t seq = 0;
   for (int64_t t = 0; t < 30000; ++t) {
     Timestamp now = Timestamp::Millis(t);
@@ -75,17 +78,23 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
       for (const auto& r : history.OnFeedback(*fb, now)) {
         ++reported[r.seq];
         if (r.received()) ++received[r.seq];
-        if (r.received()) max_err_us = std::max<int64_t>(max_err_us, std::llabs(r.receive_time.us() - true_arrival[r.seq].us()));
+        if (r.received()) {
+          const int64_t off = r.receive_time.us() - true_arrival[r.seq].us();
+          min_off_us = std::min(min_off_us, off);
+          max_off_us = std::max(max_off_us, off);
+        }
       }
     });
   }
   int dup = 0;
   for (auto& [s, n] : received) dup += n > 1;
   SM_RECORD("reported_ratio", static_cast<double>(reported.size()) / seq);
-  SM_RECORD("max_arrival_error_us", max_err_us);
+  SM_RECORD("arrival_offset_spread_us", max_off_us - min_off_us);
   SM_EXPECT_EQ(dup, 0);
   SM_EXPECT_GE(static_cast<double>(reported.size()) / seq, 0.99);
-  SM_EXPECT_LE(max_err_us, 250);
+  // A 250 us tick, then RoundDownTo(1 ms); both truncate toward zero, so a packet that arrived before the
+  // feedback's base time (reordered) is moved later by up to 1250 us and any other earlier by up to 1250 us.
+  SM_EXPECT_LT(max_off_us - min_off_us, 2500);
 }
 
 SM_TEST(E2E_DelayBwe, TracksCapacityStepsWithLowQueueing) {

@@ -121,6 +121,9 @@ class SendHistory : public MetricsSource {
   int64_t highest_reported_ = INT64_MIN;
   int64_t forgotten_below_ = INT64_MIN;  // Packets below this are settled for in_flight_.
   uint64_t lost_ = 0, acked_ = 0;
+  // TransportFeedbackAdapter's local time base for receive times.
+  Timestamp current_offset_ = Timestamp::MinusInfinity();
+  std::optional<int64_t> last_base_us_;  // last_transport_feedback_base_time_
 };
 
 }  // namespace sm::cc
