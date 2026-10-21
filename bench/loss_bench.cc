@@ -182,8 +182,10 @@ SM_BENCH_QUALITY(loss, Q_Keyframe_2pct_frame_loss) {
   st.Counter("decodable", r.decodable_ratio);
   st.Counter("max_freeze_ms", r.max_freeze_ms);
   st.Counter("pli", static_cast<double>(r.pli));
-  st.Require("decodable", r.decodable_ratio, ">=", 0.78);
-  st.Require("max_freeze_ms", r.max_freeze_ms, "<=", 700);
+  // libwebrtc's decode time-out (3 s, then RTT + transit) is the only recovery from an unrepairable frame
+  // (#167 deleted the v1 repair window, whose bounds were >= 0.78 and <= 700 ms); see E2E_Keyframe.
+  st.Require("decodable", r.decodable_ratio, ">=", 0.25);
+  st.Require("max_freeze_ms", r.max_freeze_ms, "<=", 3150);
 }
 
 SM_BENCH_QUALITY(loss, Q_TemporalLayers_5pct) {

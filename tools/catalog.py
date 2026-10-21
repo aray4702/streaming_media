@@ -43,7 +43,9 @@ ALGORITHMS = [
                "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "
                "and retransmitted-flush settings are off as in the libwebrtc default. With `pacer v2` the history also gives payload "
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
-               "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. Version 2 of the NackTracker retries on libwebrtc's 20 ms process tick.",
+               "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. The NackTracker is libwebrtc's NackRequester (issue #23; the v1 policy was deleted in #167): "
+               "it retries on libwebrtc's 20 ms process tick, gives up after kMaxNackRetries (100) without a keyframe request, and a list that would pass 1000 "
+               "entries is cleared and asks for a keyframe.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
@@ -97,18 +99,22 @@ ALGORITHMS = [
                   "(after NACK). The sender answers each PLI with a keyframe. Measures the decodable-frame ratio, "
                   "the longest freeze and the number of PLIs (no request storms).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "The repair window (max(200 ms, 2 x RTT)) gives NACK a chance before a keyframe is requested; "
-               "requests are throttled to max(100 ms, 1.5 x RTT) and retried after twice that. Wire formats (loss/"
+               "The receiver asks on libwebrtc's RtpVideoStreamReceiver2 triggers (issue #23): the first assembled frame is "
+               "not a keyframe, a decoder error, a NACK list or packet buffer overflow, and the decode time-out "
+               "(200 ms before the first frame, 3 s after; not while a keyframe is arriving or the stream is idle). "
+               "A blocked frame is left to NACK: there is no repair window, retry timer or receiver throttle (the v1 "
+               "policy that had them was deleted in #167). Wire formats (loss/"
                "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
                "loss notification (LNTF, libwebrtc's goog-lntf application-layer feedback) and compound RTCP with "
                "the report first; each is checked against libwebrtc's parsers in compare/webrtc/rtcp_interop.cc. "
-               "On the sender, `keyframe v2` adds libwebrtc's EncoderRtcpFeedback::OnReceivedIntraFrameRequest "
+               "On the sender, the test bench runs libwebrtc's EncoderRtcpFeedback::OnReceivedIntraFrameRequest "
                "(video/encoder_rtcp_feedback.cc): a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last "
                "one passed to the encoder is ignored (rtp::VideoSendController, `min_keyframe_request_interval`; "
                "issue #151). The outage monitor's own request is not filtered.",
-         verification="Pass threshold derived analytically: each unrecoverable loss costs repair window + RTT + "
-                      "keyframe transit, about 10 frames, so 2% loss bounds decodability near 80%. Without "
-                      "keyframe requests only ~3% of frames decode."),
+         verification="Pass threshold derived analytically: each unrecoverable loss costs libwebrtc's decode time-out "
+                      "(3 s from the last released frame) + RTT + keyframe transit, about 93 frames, so the longest freeze is "
+                      "3.1 s and 2% frame loss leaves 28-49% of frames decodable on seeds 1-5 (3-10% without keyframe "
+                      "requests). The v1 repair window gave 83% and 0.5 s until #167 deleted it."),
     dict(id="3.6", slug="temporal-layers", title="Temporal scalability (L1T2/L1T3)",
          problems=["A single loss breaking every later frame -> Temporal layers / SVC: dependent frames can be dropped safely"],
          headers=["loss/temporal_layers.h"], unit=["TemporalLayers"], e2e=["E2E_TemporalLayers"],
@@ -147,7 +153,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Frame boundaries come from the packetizer's start flag and the RTP marker bit; frames may complete "
                "out of order and are ordered later by decodability (3.5) and the frame scheduler (7.7). "
-               "Version 2 (under `keyframe v2`, issue #76 group 6) sizes the buffer as libwebrtc's PacketBuffer: 512 slots "
+               "The buffer is sized as libwebrtc's PacketBuffer (issue #76 group 6; the fixed-window v1 was deleted in #167): 512 slots "
                "doubling to 2048 when another unassembled packet maps to a slot, a clear plus a keyframe request when it is "
                "full at 2048, and a restart when a packet is 1024 behind the lowest sequence number. Packets leave at "
                "frame assembly, and the receiver also calls ClearTo(last sequence number) when a frame leaves the scheduler (issue #101): "
@@ -489,11 +495,11 @@ ALGORITHMS = [
                "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
                "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc. "
                "**Default (#61):** a `rtp::Session` runs libwebrtc's components: `SessionConfig` and `SendSideConfig` "
-               "default to `cc`, `pacer`, `allocator` and `packetization` v2, `VideoStreamConfig` to "
-               "`keyframe` v2, and the test bench also to `audio` v2. v1 stays selectable per field (test bench `cc v1` etc.) "
-               "until #167 deletes it; the component configs on their own (`GccConfig`, `PacerConfig`, "
-               "`KeyframeRequestConfig`) keep version 1, so their unit tests test what they name. `tcc`, `rtcp` and `rtx` v1 "
-               "are deleted (#167): transport-cc feedback, RTCP report timing and the RTX history are libwebrtc's only. "
+               "default to `cc`, `pacer`, `allocator` and `packetization` v2, and the test bench also to `audio` v2. "
+               "v1 stays selectable per field (test bench `cc v1` etc.) until #167 deletes it; the component configs on "
+               "their own (`GccConfig`, `PacerConfig`) keep version 1, so their unit tests test what they name. `tcc`, `rtcp`, "
+               "`rtx` and `keyframe` v1 are deleted (#167): transport-cc feedback, RTCP report timing, the RTX history and the "
+               "receiver's keyframe requests, NACK list and packet buffer are libwebrtc's only. "
                "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
                "Approved deviation: the Opus frame-size model of `audio v2` (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
