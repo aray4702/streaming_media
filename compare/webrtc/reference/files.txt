@@ -172,3 +172,8 @@ modules/audio_processing/include/audio_processing.h
 api/audio/audio_processing.h
 api/audio/audio_processing.cc
 media/engine/webrtc_voice_engine.cc
+modules/audio_processing/gain_controller2.h
+modules/audio_processing/gain_controller2.cc
+common_audio/include/audio_util.h
+api/audio/echo_canceller3_config.h
+api/audio/echo_canceller3_config.cc
