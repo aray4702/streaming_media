@@ -1,7 +1,7 @@
 sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
   SOURCES unit/audio/filters_test.cc unit/audio/echo_test.cc unit/audio/dtx_level_mixer_test.cc
-          unit/audio/agc2_test.cc
-  SUITES HighPassFilter Vad NoiseSuppressor GainControl GainController2 TransientSuppressor Resampler EchoDelay
+          unit/audio/agc2_test.cc unit/audio/agc1_test.cc
+  SUITES HighPassFilter Vad NoiseSuppressor GainControl GainController2 Agc1 TransientSuppressor Resampler EchoDelay
          EchoCanceller ComfortNoise AudioLevel)
 sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SOURCES e2e/audio_e2e_test.cc
