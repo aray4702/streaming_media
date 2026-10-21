@@ -224,3 +224,40 @@ SM_TEST(GoogCcNetworkController, NoCrashOnVeryLateFeedback) {
   SM_EXPECT_TRUE(g.target().IsFinite());
   SM_EXPECT_TRUE(g.target() > DataRate::Zero());
 }
+
+// #62: libwebrtc creates GoogCC when the network comes up, before the streams start, so the
+// streams' max_total_allocated_bitrate reaches the ProbeController after the initial probes
+// (rtp_transport_controller_send.cc:413-428, 747-773; goog_cc_network_control.cc:192-210).
+// A value given before Start() therefore does not cap the 3x and 6x start-rate probes; a
+// later one is passed on at once.
+SM_TEST(GccController, AllocationBeforeStartDoesNotCapTheInitialProbes) {
+  GccConfig cfg;
+  cfg.start_rate = DataRate::KilobitsPerSec(300);
+  GccController g(cfg);
+  SM_EXPECT_TRUE(g.OnMaxTotalAllocatedBitrate(DataRate::KilobitsPerSec(52), Timestamp::Millis(0)).empty());
+  NetworkControlUpdate update = g.Start(Timestamp::Millis(0));
+  SM_ASSERT_EQ(update.probes.size(), 2u);
+  SM_EXPECT_EQ(update.probes[0].rate.bps(), 900000);
+  SM_EXPECT_EQ(update.probes[1].rate.bps(), 1800000);
+  SM_EXPECT_TRUE(g.probe_controller_v2().state() == ProbeControllerV2::State::kWaitingForProbingResult);
+}
+
+// The same controller started first, then told the allocation, as before: the allocation goes
+// straight to the ProbeController (which is waiting for its probe results and only records it).
+SM_TEST(GccController, AllocationAfterStartReachesTheProbeController) {
+  GccConfig cfg;
+  cfg.start_rate = DataRate::KilobitsPerSec(300);
+  GccController g(cfg);
+  NetworkControlUpdate update = g.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(update.probes.size(), 2u);
+  SM_EXPECT_TRUE(g.OnMaxTotalAllocatedBitrate(DataRate::KilobitsPerSec(52), Timestamp::Millis(10)).empty());
+  SM_EXPECT_TRUE(g.probe_controller_v2().state() == ProbeControllerV2::State::kWaitingForProbingResult);
+}
+
+// StreamsConfig::requests_alr_probing reaches ProbeController::EnablePeriodicAlrProbing.
+SM_TEST(GccController, EnablePeriodicAlrProbingReachesTheProbeController) {
+  GccController g;
+  SM_EXPECT_FALSE(g.probe_controller_v2().periodic_alr_probing());
+  g.EnablePeriodicAlrProbing(true);
+  SM_EXPECT_TRUE(g.probe_controller_v2().periodic_alr_probing());
+}
