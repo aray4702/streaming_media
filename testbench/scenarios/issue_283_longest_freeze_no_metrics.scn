@@ -1,0 +1,13 @@
+name issue_283_longest_freeze_no_metrics
+describe A 2 s outage freezes video for at least 2 s; the bench must report that freeze as the longest, on every build
+# Issue #283: with metrics compiled out (the embedded preset) the bench read the
+# longest freeze from a Histogram that records nothing, and reported the render
+# gap at the end of the call (tens of ms) instead. This is a metric-correctness
+# check: the outage alone guarantees a freeze of about its length.
+# fix-record-base-cmake: -DSM_ENABLE_METRICS=OFF -DSM_ENABLE_EVENTS=OFF
+duration 20s
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s down
+at 12s up
+expect video.freeze_count >= 1
+expect video.longest_freeze_ms >= 1900
