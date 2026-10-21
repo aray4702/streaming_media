@@ -68,6 +68,7 @@ if(SM_WITH_AUDIO)
     audio/vad.cc
     audio/noise_suppressor.cc
     audio/gain_control.cc
+    audio/agc2.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
     audio/aec3_delay.cc

@@ -1,10 +1,8 @@
 name issue_123_v2_allocation_min
 describe 100 kbps link with every v2 switch plus audio v2: the encoder is configured at the codec minimum, as libwebrtc's SimulcastRateAllocator does (issue #123)
 duration 40s
-allocator v2
 pacer v2
 cc v2
-audio v2
 at 0s capacity=100kbps delay=30ms queue=300ms
 # Second part of #123 (below, "TaskQueuePacedSender"). First part of #123 (roadmap #64): VideoStreamEncoder::UpdateBitrateAllocation, through
 # SimulcastRateAllocator::DistributeAllocationToSimulcastLayers, raises the encoder allocation
