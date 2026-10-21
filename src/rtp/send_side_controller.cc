@@ -72,7 +72,6 @@ void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_se
 }
 
 void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool video) {
-  if (cfg_.allocator_version < 2) return;
   allocation_configured_ = true;
   if (audio_wire_rate > DataRate::Zero()) {
     cc::StreamAllocationConfig a;

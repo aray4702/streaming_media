@@ -9,10 +9,7 @@ duration 40s
 audio off
 pacer v2
 cc v2
-allocator v2
 # packetization v2 and audio v2 added on 2026-10-20 (#152, Owner): the flip (#61) turns on all nine v2 switches.
-packetization v2
-audio v2
 at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 25s up

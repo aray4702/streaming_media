@@ -4,9 +4,6 @@ duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 cc v2
 pacer v2
-allocator v2
-packetization v2
-audio v2
 timing v2
 # libwebrtc's JitterEstimator (2.33 sigma - 30 ms noise threshold plus 10 ms
 # OS jitter, jitter_estimator.cc) and VCMTiming's current delay, which only
