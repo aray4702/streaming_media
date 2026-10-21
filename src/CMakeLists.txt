@@ -69,6 +69,9 @@ if(SM_WITH_AUDIO)
     audio/noise_suppressor.cc
     audio/gain_control.cc
     audio/agc2.cc
+    audio/agc2_rnn_vad.cc
+    audio/agc2_rnn_vad_weights.cc
+    audio/sinc_resampler.cc
     audio/agc1.cc
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc

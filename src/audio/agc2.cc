@@ -4,6 +4,8 @@
 #include <cmath>
 #include <iterator>
 
+#include "sm/audio/agc2_rnn_vad.h"
+
 namespace sm::audio::agc2 {
 
 float FloatS16ToDbfs(float v) {
@@ -509,11 +511,32 @@ GainController2::GainController2(GainController2Config cfg)
       adaptive_digital_(cfg.adaptive_digital, kAdjacentSpeechFramesThreshold),
       limiter_(cfg.sample_rate / 100) {}
 
+GainController2::~GainController2() = default;
+
+void GainController2::Process(std::span<float> frame) {
+  // APM creates the controller with `use_internal_vad` (audio_processing_impl.cc).
+  if (!vad_) vad_ = std::make_unique<VoiceActivityDetectorWrapper>(cfg_.sample_rate, kVadResetPeriodMs);
+  ToFloatS16(frame);
+  ProcessFloatS16(frame, vad_->Analyze(s16_));
+}
+
 void GainController2::Process(std::span<float> frame, float speech_probability) {
+  ToFloatS16(frame);
+  ProcessFloatS16(frame, speech_probability);
+}
+
+void GainController2::ToFloatS16(std::span<const float> frame) {
   s16_.assign(frame.begin(), frame.end());
   for (float& v : s16_) v *= kMaxAbsFloatS16Value;
+}
+
+// gain_controller2.cc GainController2::Process with the adaptive digital
+// controller on: levels, noise floor, speech level, saturation protector,
+// adaptive gain, then the fixed gain and the limiter. The default
+// SpeechLevelEstimatorImpl's IsTargetSpeakerActive() is always true, so the
+// speech probability passes unchanged.
+void GainController2::ProcessFloatS16(std::span<float> frame, float speech_probability) {
   std::span<float> f(s16_);
-  fixed_gain_applier_.ApplyGain(f);
   // Peak and RMS levels.
   float peak = 0.0f, energy = 0.0f;
   for (float v : f) {
@@ -535,12 +558,14 @@ void GainController2::Process(std::span<float> frame, float speech_probability) 
       FloatS16ToDbfs(limiter_.LastAudioLevel()),
   };
   adaptive_digital_.Process(info, f);
+  fixed_gain_applier_.ApplyGain(f);
   limiter_.Process(f);
   for (size_t i = 0; i < frame.size(); ++i) frame[i] = f[i] / kMaxAbsFloatS16Value;
 
   ++stats_.frames;
   if (speech_probability >= kVadConfidenceThreshold) ++stats_.speech_frames;
   if (limiter_.last_scaling_factor() < 1.0f) ++stats_.limiter_frames;
+  stats_.speech_probability = speech_probability;
   stats_.speech_level_dbfs = speech_level_dbfs;
   stats_.speech_level_confident = info.speech_level_reliable;
   stats_.noise_rms_dbfs = noise_rms_dbfs;

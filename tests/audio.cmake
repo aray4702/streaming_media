@@ -1,9 +1,9 @@
 sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
   SOURCES unit/audio/filters_test.cc unit/audio/echo_test.cc unit/audio/dtx_level_mixer_test.cc
-          unit/audio/agc2_test.cc unit/audio/agc1_test.cc unit/audio/agc1_vad_test.cc unit/audio/agc_manager_test.cc
+          unit/audio/agc2_test.cc unit/audio/agc2_rnn_vad_test.cc unit/audio/agc1_test.cc unit/audio/agc1_vad_test.cc unit/audio/agc_manager_test.cc
           unit/audio/splitting_filter_test.cc unit/audio/aec3_delay_test.cc unit/audio/aec3_filter_test.cc unit/audio/ns_test.cc
           unit/audio/hpf_test.cc
-  SUITES HighPassFilter Vad NoiseSuppressor GainControl GainController2 Agc1 Agc1VoiceActivity Agc1Manager Agc1CaptureLevels TransientSuppressor Resampler EchoDelay
+  SUITES HighPassFilter Vad NoiseSuppressor GainControl GainController2 Agc2RnnVad Agc1 Agc1VoiceActivity Agc1Manager Agc1CaptureLevels TransientSuppressor Resampler EchoDelay
          EchoCanceller ComfortNoise AudioLevel SplittingFilter Aec3Delay Aec3Filter Ns CascadedBiquadFilter Hpf)
 sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SOURCES e2e/audio_e2e_test.cc
