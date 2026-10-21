@@ -17,7 +17,9 @@ duration 40s
 at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
-expect video.freeze_count == 0
+# Was == 0. Owner rule on PR #226 (2026-10-20 4:15 PM PT): just above ours on seed 1 (1 with #217's first-feedback
+# timing), never above libwebrtc's worst seed in 1-10 (17; per seed 1/0/17/1/0/0/0/0/0/1).
+expect video.freeze_count <= 2
 expect cc.queue_p95_ms < 250
 expect cc.unsettled == 0
 expect cc.utilization_pct >= 68

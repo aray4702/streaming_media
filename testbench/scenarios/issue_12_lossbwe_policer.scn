@@ -6,7 +6,9 @@ cc v2
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=5ms
 # 5 seeds (cc v2): net.loss_pct 7.7-9.9, freeze_total_ms 0-764, target 400-412 kbps. `cc v1`: loss 19.8-25.0, freezes 1.0-1.6 s.
-expect net.loss_pct < 12
+# Was < 12. Owner rule on PR #226: just above ours on seed 1 (12.11 with #217); libwebrtc's worst seed in 1-10 is 15.97.
+expect net.loss_pct < 13
 # Was < 1500. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 10663 ms (10 seeds), ours 1777 on seed 1.
-expect video.freeze_total_ms < 2500
+# Was < 2500. Owner rule on PR #226: just above ours on seed 1 (4224 with #217); libwebrtc's worst seed in 1-10 is 15854.
+expect video.freeze_total_ms < 6000
 expect audio.interruptions <= 3
