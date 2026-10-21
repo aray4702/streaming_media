@@ -465,7 +465,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   audio_cfg.nominal_rate = audio_wire_rate;
   // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
   audio_cfg.allocation_rate = AudioAllocationRate(s);
-  if (s.neteq_v2) audio_cfg.jitter_buffer.version = 2;
+  audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;
