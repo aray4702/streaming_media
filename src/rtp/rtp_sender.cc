@@ -13,6 +13,15 @@ std::vector<size_t> SplitEvenly(size_t bytes, size_t max_payload) {
 }
 
 namespace {
+// RTPSender::SetMaxRtpPacketSize (rtp_sender.cc:307-312) accepts a whole packet of
+// 100 to IP_PACKET_SIZE (1500) bytes and never makes a packet larger.
+constexpr size_t kMinMaxPacketSize = 100;
+constexpr size_t kMaxMaxPacketSize = 1500;
+RtpSenderConfig ClampPacketSize(RtpSenderConfig c) {
+  c.max_payload_size = std::clamp(c.max_payload_size, kMinMaxPacketSize - RtpPacket::kFixedHeaderSize,
+                                  kMaxMaxPacketSize - RtpPacket::kFixedHeaderSize);
+  return c;
+}
 loss::RtxConfig MakeRtxConfig(const RtpSenderConfig& c) {
   loss::RtxConfig r = c.rtx;
   r.rtx_ssrc = c.rtx_ssrc.value_or(0);
@@ -34,7 +43,7 @@ constexpr size_t kRtxHeaderSize = 2;
 }  // namespace
 
 RtpSender::RtpSender(RtpSenderConfig cfg)
-    : cfg_(std::move(cfg)),
+    : cfg_(ClampPacketSize(std::move(cfg))),
       rtx_(MakeRtxConfig(cfg_)),
       red_(std::max(1, cfg_.red_distance)),
       fec_(MakeFecConfig(cfg_)),

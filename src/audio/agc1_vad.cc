@@ -7,12 +7,14 @@
 // voice_activity_detector}.cc with noise_gmm_tables.h, voice_gmm_tables.h
 // and vad_audio_proc_internal.h, and
 // modules/audio_processing/agc/{loudness_histogram,utility,agc}.cc.
-// The iSAC pitch analysis and fft4g are in agc1_vad_isac.cc.
+// The iSAC pitch analysis is in agc1_vad_isac.cc; fft4g is fft4g.cc.
 //
 // The fixed-point code keeps libwebrtc's arithmetic; where the C relies on
 // signed overflow wrapping (it runs those under RTC_NO_SANITIZE), the sums
 // and products go through uint32_t, which gives the same bits.
 #include "sm/audio/agc1_vad.h"
+
+#include "sm/audio/fft4g.h"
 
 #include <algorithm>
 #include <bit>
@@ -1384,7 +1386,7 @@ VadAudioProc::VadAudioProc()
   // Make FFT to initialize.
   float data[kDftSize] = {};
   ip_[0] = 0;
-  RdftForward(kDftSize, data, ip_, w_fft_);
+  ooura::Rdft(kDftSize, 1, data, ip_, w_fft_);
   // Initialize iSAC components.
   isac::InitPreFilterbank(pre_filter_);
   isac::InitPitchAnalysis(pitch_analysis_);
@@ -1471,7 +1473,7 @@ void VadAudioProc::FindFirstSpectralPeaks(double* f_peak, size_t length_f_peak) 
       data[n] = static_cast<float>(lpc[i * (kLpcOrder + 1) + n]);
     }
     // Transform to frequency domain.
-    RdftForward(kDftSize, data, ip_, w_fft_);
+    ooura::Rdft(kDftSize, 1, data, ip_, w_fft_);
 
     size_t index_peak = 0;
     float prev_magn_sqr = data[0] * data[0];
