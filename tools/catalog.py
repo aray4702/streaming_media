@@ -1126,7 +1126,11 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
          verification="An expectation was wrong: at 300 kbps, 640x360 already gives QP 33, which is inside the "
                       "H.264 band, so not going lower is correct. The test now checks that QP returns inside the "
-                      "band."),
+                      "band. The test bench and `sm_compare` share an encoder model for this module's inputs "
+                      "(`testbench/encoder_model.h`, issue #84 step 1): QP 30 at libwebrtc's per-resolution start "
+                      "rates (720p 1000 kbps, 360p 500 kbps), +6 per halving of the bits per frame, clamped to 0..51, "
+                      "and 10 ms per 720p frame of encode time. Deviation: a model in place of a codec, identical on "
+                      "both stacks, so scaling decisions compare like for like."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],

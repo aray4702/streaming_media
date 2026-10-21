@@ -1,0 +1,12 @@
+name issue_84_encoder_qp_360p_low_rate
+describe 360p camera on a 400 kbps link: the encoder model's QP sits between the H.264 thresholds, where libwebrtc's QualityScaler keeps the resolution
+duration 30s
+video_size 640x360
+at 0s capacity=400kbps delay=30ms queue=300ms
+# Issue #84 step 1: the encoder QP model (testbench/encoder_model.h) that both
+# stacks of sm_compare share. Neither stack adapts resolution yet, so this
+# pins the input a quality scaler would see: 720p at the rate this link leaves
+# for video is above 37 (QualityScaler adapts down); the same link at 360p
+# (this scenario) is inside 24..37 (it stays).
+expect video.qp_mean > 24
+expect video.qp_mean <= 37
