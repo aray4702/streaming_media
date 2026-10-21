@@ -23,6 +23,7 @@ out/compare/sm_compare testbench/scenarios/*.scn                  # mean of 3 se
 out/compare/sm_compare --seeds=5 --json=r.json --dump=runs/ a.scn # JSON summary (means, per-seed values), full per-run reports
 out/compare/sm_compare --trace=NAME --trace-dir=tr/ a.scn          # per-packet forward-link trace, ours and libwebrtc's (below)
 python3 tools/parity_report.py r.json --owners tools/parity_owners.json   # gaps with libwebrtc, in both directions
+out/compare/sm_apm_compare                                         # audio processing vs libwebrtc's APM (docs/results/apm-webrtc.md)
 ```
 
 The build needs clang 21 or newer (Apple clang 21 works): the libc++ the
