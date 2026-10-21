@@ -35,6 +35,7 @@ DIRS=(
   common_audio/resampler
   common_audio/signal_processing
   common_audio/third_party/ooura/fft_size_256
+  common_audio/third_party/ooura/fft_size_128
   modules/audio_coding/codecs/isac/main/source
   modules/third_party/fft
   modules/audio_processing/capture_levels_adjuster
