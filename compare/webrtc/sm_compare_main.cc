@@ -109,6 +109,9 @@ const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,"
     "issue_127_pacer_v2_jitter_reorder_loss";
+// Scenarios of kDefaultTraced whose every seed is traced, not only the first (issue #230: seed 1 alone has too few
+// late frames to tell the stacks apart).
+const char* const kTracedAllSeeds = "issue_127_pacer_v2_jitter_reorder_loss";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -252,7 +255,7 @@ int main(int argc, char** argv) {
     for (int k = 0; k < scn_seeds; ++k) {
       Scenario s = base;
       s.seed = base.seed + static_cast<uint64_t>(k);
-      const bool named = k == 0 && Traced(trace_names, base.name);
+      const bool named = Traced(trace_names, base.name) && (k == 0 || Traced(kTracedAllSeeds, base.name));
       opt.link_trace = named || (k == 0 && !trace_all_dir.empty());
       opt.video_trace = opt.link_trace;
       opt.bwe_trace = opt.link_trace;
