@@ -30,16 +30,16 @@
 //    (compression gain 2-12 dB, default 7, step 0.05 dB per frame; volume
 //    12-255 through agc2/gain_map_internal.h's `kGainMap`, residual change
 //    at most 15 dB; clipping: ratio 0.1, step 15, minimum 70, 300 frames'
-//    wait, 6 dB of surplus compression gain; manual-change slack 25).
+//    wait, 6 dB of surplus compression gain; manual-change slack 25), and
+//    the clipping predictor's step (clipping_predictor.h): checked after the
+//    wait, applied as max(predicted, clipped_level_step) when
+//    `use_predicted_step`, and reset after each clipping event.
 //  - capture_levels_adjuster/: `CaptureLevelsAdjuster`,
 //    `AudioSamplesScaler`.
 //  - api/audio/audio_processing.h: `AnalogGainController` and
 //    `CaptureLevelAdjustment` defaults.
 //
 // Differences from libwebrtc (scope, not behaviour, catalog.py #242):
-//  - The clipping predictor (agc2/clipping_predictor.*) is not ported: it
-//    is off by default (`ClippingPredictor::enabled = false`), so a call
-//    never creates it.
 //  - The `WebRTC-Audio-2ndAgcMinMicLevelExperiment` field trial is the
 //    config field `min_mic_level_override`.
 //  - No histograms or logs (`RTC_HISTOGRAM_*`, `ApmDataDumper`); the
@@ -57,6 +57,7 @@
 #include <vector>
 
 #include "sm/audio/agc1_vad.h"
+#include "sm/audio/clipping_predictor.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 
@@ -76,7 +77,8 @@ struct AnalogGainControllerConfig {
   int clipped_wait_frames = 300;          // > 0.
   // `WebRTC-Audio-2ndAgcMinMicLevelExperiment/Enabled-N` (off by default).
   std::optional<int> min_mic_level_override;
-  EventSink* events = nullptr;  // "agc1" / "input_volume", "clipping".
+  ClippingPredictorConfig clipping_predictor;  // Off by default.
+  EventSink* events = nullptr;  // "agc1" / "input_volume", "clipping", "clipping_predicted".
 };
 
 // agc_manager_direct.h: `MonoAgc`, one channel.
@@ -127,7 +129,8 @@ class MonoAgc {
 
 struct AgcManagerStats {
   uint64_t frames = 0;
-  uint64_t clipping_events = 0;
+  uint64_t clipping_events = 0;  // Volume lowered for detected or predicted clipping.
+  uint64_t clipping_predictions = 0;  // Frames (after the wait) with clipping predicted.
   uint64_t volume_changes = 0;  // Recommended input volume changed by Process().
   int recommended_input_volume = 0;
   int compression_gain_db = 0;  // Last compression gain chosen.
@@ -158,6 +161,9 @@ class AgcManagerDirect : public MetricsSource {
   void HandleCaptureOutputUsedChange(bool capture_output_used);
   float voice_probability() const;
   int num_channels() const { return num_capture_channels_; }
+  bool clipping_predictor_enabled() const { return clipping_predictor_ != nullptr; }
+  // Whether the predicted step lowers the volume.
+  bool use_clipping_predictor_step() const { return use_clipping_predictor_step_; }
   // The latest compression gain chosen by Process(), if it changed.
   std::optional<int> GetDigitalCompressionGain() const { return new_compressions_to_set_[channel_controlling_gain_]; }
   MonoAgc& channel(int ch) { return *channel_agcs_[static_cast<size_t>(ch)]; }
@@ -177,6 +183,8 @@ class AgcManagerDirect : public MetricsSource {
   int channel_controlling_gain_ = 0;
   std::vector<std::unique_ptr<MonoAgc>> channel_agcs_;
   std::vector<std::optional<int>> new_compressions_to_set_;
+  const std::unique_ptr<ClippingPredictor> clipping_predictor_;
+  const bool use_clipping_predictor_step_;
   std::vector<int16_t> s16_;
   AgcManagerStats stats_;
 };

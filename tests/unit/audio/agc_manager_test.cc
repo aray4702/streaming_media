@@ -8,7 +8,9 @@
 // capture_levels_adjuster/capture_levels_adjuster_unittest.cc.
 #include <algorithm>
 #include <deque>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "sm/audio/agc_manager.h"
@@ -508,6 +510,137 @@ SM_TEST(Agc1Manager, MinMicLevelOverrideOutOfRangeIsIgnored) {
   c.min_mic_level_override = 50;
   AgcManagerDirect m(1, c);
   SM_EXPECT_EQ(m.channel(0).min_mic_level(), 50);
+}
+
+// The clipping predictor (agc2/clipping_predictor.h) in the manager:
+// agc_manager_direct_unittest.cc's *ClippingPredictor* tests.
+namespace {
+
+// `CallPreProcessAudioBuffer`: half the calls on frames whose every other
+// sample is zero, the rest on frames with every sample at `peak_ratio`.
+void CallPreProcessAudioBuffer(int num_calls, float peak_ratio, AgcManagerDirect& m) {
+  std::vector<float> audio(kFrames, 0.f);
+  const std::span<const float> ch[1] = {audio};
+  for (size_t i = 0; i < kFrames; i += 2) audio[i] = peak_ratio * 32767.0f;
+  for (int n = 0; n < num_calls / 2; ++n) m.AnalyzePreProcess(ch);
+  std::fill(audio.begin(), audio.end(), peak_ratio * 32767.0f);
+  for (int n = 0; n < num_calls - num_calls / 2; ++n) m.AnalyzePreProcess(ch);
+}
+
+// A manager on the test config with a silent `MockAgc`, after one Process()
+// at `level`.
+std::unique_ptr<AgcManagerDirect> PredictorManager(const Param& p, bool enabled, bool use_step, int level) {
+  AnalogGainControllerConfig c = TestConfig(p);
+  c.clipping_predictor.enabled = enabled;
+  c.clipping_predictor.use_predicted_step = use_step;
+  auto m = std::make_unique<AgcManagerDirect>(1, c);
+  m->channel(0).set_agc(std::make_unique<ScriptedAgc>());
+  m->Initialize();
+  m->set_stream_analog_level(level);
+  const std::vector<float> zeros(kBandFrames, 0.f);
+  const std::span<const float> band[1] = {zeros};
+  const std::optional<float> prob = p.rms_error_override ? std::optional<float>(kHighSpeechProbability) : std::nullopt;
+  const std::optional<float> lvl = p.rms_error_override ? std::optional<float>(kSpeechLevelDbfs) : std::nullopt;
+  m->Process(band, prob, lvl);
+  return m;
+}
+
+constexpr int kClippedLevelStep = 15;
+constexpr int kClippedWaitFrames = 300;
+
+}  // namespace
+
+SM_TEST(Agc1Manager, ClippingPredictorEnabledOnlyWhenConfigured) {
+  AgcManagerDirect off(1);
+  SM_EXPECT_FALSE(off.clipping_predictor_enabled());
+  SM_EXPECT_FALSE(off.use_clipping_predictor_step());
+  AnalogGainControllerConfig c;
+  c.clipping_predictor.enabled = true;
+  c.clipping_predictor.use_predicted_step = true;
+  AgcManagerDirect on(1, c);
+  SM_EXPECT_TRUE(on.clipping_predictor_enabled());
+  SM_EXPECT_TRUE(on.use_clipping_predictor_step());
+}
+
+SM_TEST(Agc1Manager, DisabledClippingPredictorDoesNotLowerVolume) {
+  for (const Param& p : kParams) {
+    {
+      Helper h(p);
+      h.CallAgcSequence(255, h.Override(kHighSpeechProbability), h.Override(kSpeechLevelDbfs));
+      SM_EXPECT_FALSE(h.manager.clipping_predictor_enabled());
+      SM_EXPECT_EQ(h.manager.recommended_analog_level(), 255);
+      h.CallPreProcForChangingAudio(100, 0.99f);
+      SM_EXPECT_EQ(h.manager.recommended_analog_level(), 255);
+      h.CallPreProcForChangingAudio(100, 0.99f);
+      SM_EXPECT_EQ(h.manager.recommended_analog_level(), 255);
+    }
+    auto m = PredictorManager(p, false, true, 255);
+    SM_EXPECT_FALSE(m->use_clipping_predictor_step());
+    SM_EXPECT_EQ(m->recommended_analog_level(), 255);
+    CallPreProcessAudioBuffer(10, 0.99f, *m);
+    SM_EXPECT_EQ(m->recommended_analog_level(), 255);
+    CallPreProcessAudioBuffer(300, 0.99f, *m);
+    SM_EXPECT_EQ(m->recommended_analog_level(), 255);
+    CallPreProcessAudioBuffer(10, 0.99f, *m);
+    SM_EXPECT_EQ(m->recommended_analog_level(), 255);
+  }
+}
+
+SM_TEST(Agc1Manager, UsedClippingPredictionsProduceLowerAnalogLevels) {
+  constexpr int kInitialLevel = 255;
+  for (const Param& p : kParams) {
+    auto with = PredictorManager(p, true, true, kInitialLevel);
+    auto without = PredictorManager(p, false, true, kInitialLevel);
+    SM_EXPECT_TRUE(with->clipping_predictor_enabled());
+    SM_EXPECT_FALSE(without->clipping_predictor_enabled());
+    SM_EXPECT_TRUE(with->use_clipping_predictor_step());
+    SM_EXPECT_EQ(with->recommended_analog_level(), kInitialLevel);
+    SM_EXPECT_EQ(without->recommended_analog_level(), kInitialLevel);
+    // {calls, peak ratio, level with prediction, level without}.
+    struct Step {
+      int calls;
+      float peak;
+      int with, without;
+    };
+    const Step steps[] = {
+        {10, 0.99f, kInitialLevel - kClippedLevelStep, kInitialLevel},               // Predicted.
+        {kClippedWaitFrames, 0.99f, kInitialLevel - kClippedLevelStep, kInitialLevel},  // Waiting.
+        {10, 0.99f, kInitialLevel - 2 * kClippedLevelStep, kInitialLevel},           // Predicted.
+        {2 * kClippedWaitFrames, 0.0f, kInitialLevel - 2 * kClippedLevelStep, kInitialLevel},
+        {1, 1.0f, kInitialLevel - 3 * kClippedLevelStep, kInitialLevel - kClippedLevelStep},  // Clipping.
+        {kClippedWaitFrames, 1.0f, kInitialLevel - 3 * kClippedLevelStep, kInitialLevel - kClippedLevelStep},
+        {1, 1.0f, kInitialLevel - 4 * kClippedLevelStep, kInitialLevel - 2 * kClippedLevelStep},
+    };
+    for (const Step& s : steps) {
+      CallPreProcessAudioBuffer(s.calls, s.peak, *with);
+      CallPreProcessAudioBuffer(s.calls, s.peak, *without);
+      SM_EXPECT_EQ(with->recommended_analog_level(), s.with);
+      SM_EXPECT_EQ(without->recommended_analog_level(), s.without);
+    }
+    SM_EXPECT_GT(with->stats().clipping_predictions, 0u);
+    SM_EXPECT_EQ(without->stats().clipping_predictions, 0u);
+  }
+}
+
+SM_TEST(Agc1Manager, UnusedClippingPredictionsProduceEqualAnalogLevels) {
+  constexpr int kInitialLevel = 255;
+  for (const Param& p : kParams) {
+    auto with = PredictorManager(p, true, false, kInitialLevel);
+    auto without = PredictorManager(p, false, true, kInitialLevel);
+    SM_EXPECT_TRUE(with->clipping_predictor_enabled());
+    SM_EXPECT_FALSE(without->clipping_predictor_enabled());
+    SM_EXPECT_FALSE(with->use_clipping_predictor_step());
+    SM_EXPECT_EQ(with->recommended_analog_level(), kInitialLevel);
+    const std::pair<int, float> steps[] = {{10, 0.99f}, {kClippedWaitFrames, 0.99f}, {10, 0.99f},
+                                           {2 * kClippedWaitFrames, 0.0f}, {1, 1.0f}, {kClippedWaitFrames, 1.0f},
+                                           {1, 1.0f}};
+    for (const auto& [calls, peak] : steps) {
+      CallPreProcessAudioBuffer(calls, peak, *with);
+      CallPreProcessAudioBuffer(calls, peak, *without);
+      SM_EXPECT_EQ(with->recommended_analog_level(), without->recommended_analog_level());
+    }
+    SM_EXPECT_GT(with->stats().clipping_predictions, 0u);
+  }
 }
 
 // capture_levels_adjuster_unittest.cc: the emulated volume scales the

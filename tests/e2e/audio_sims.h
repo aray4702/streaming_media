@@ -16,6 +16,7 @@
 #include "sm/audio/echo_canceller.h"
 #include "sm/audio/gain_control.h"
 #include "sm/audio/high_pass_filter.h"
+#include "sm/audio/hpf.h"
 #include "sm/audio/noise_suppressor.h"
 #include "sm/audio/ns.h"
 #include "sm/audio/transient_suppressor.h"
@@ -84,15 +85,16 @@ inline CallSignals MakeCall(const CallScenario& s) {
 // The capture processing chain, in WebRTC APM order.
 struct ChainConfig {
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
-  // `apm v2`: libwebrtc's modules where ported (#240-#242). The AGC is AGC1
+  // `apm v2`: libwebrtc's modules where ported (#239-#242). The high-pass
+  // filter is libwebrtc's (`hpf::HighPassFilter`, #239). The AGC is AGC1
   // as a call runs it (`AgcManagerDirect` in kAdaptiveAnalog with
   // `GainControl` in kFixedDigital, the volume emulated by `CaptureLevels`
   // from 255, #242), and the NS is libwebrtc's (`ns::NoiseSuppressor`,
   // kHigh), which analyzes the capture before the AEC and suppresses after
   // it, as APM does.
   bool apm_v2 = false;
-  // With `apm_v2`: AGC2 (`agc2::GainController2`, fed our VAD's per-frame
-  // decision) instead of AGC1.
+  // With `apm_v2`: AGC2 (`agc2::GainController2` with its RNN VAD) instead
+  // of AGC1.
   bool agc2 = false;
 };
 
@@ -105,6 +107,7 @@ struct ChainResult {
 
 inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs = 16000) {
   audio::HighPassFilter hpf(fs);
+  audio::hpf::HighPassFilter hpf2(fs);
   audio::EchoCancellerConfig ac;
   ac.sample_rate = fs;
   audio::EchoCanceller aec(ac);
@@ -157,7 +160,11 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   const size_t frame = static_cast<size_t>(fs / 100);
   for (size_t i = 0; i + frame <= r.out.size(); i += frame) {
     std::span<float> f(r.out.data() + i, frame);
-    if (cc.hpf) hpf.Process(f);
+    if (cc.hpf && cc.apm_v2) {
+      hpf2.Process(f);
+    } else if (cc.hpf) {
+      hpf.Process(f);
+    }
     if (agc1_on) {
       // The emulated volume is the applied input volume.
       agc_manager.set_stream_analog_level(levels.GetAnalogMicGainLevel());
@@ -193,9 +200,7 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       from_s16(f);
       levels.SetAnalogMicGainLevel(agc_manager.recommended_analog_level());
     } else if (cc.agc && cc.apm_v2) {
-      // AGC2 reads a per-frame speech probability (its RNN VAD has no
-      // hangover), so it gets our VAD's decision before the hangover.
-      agc2.Process(f, vad.raw_decision() ? 1.0f : 0.0f);
+      agc2.Process(f);
     } else if (cc.agc) {
       agc.Process(f, v);
     }

@@ -25,8 +25,8 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 
 | module | scenario | metric | ours | libwebrtc | note |
 |---|---|---|---|---|---|
-| freeze detection | 30 fps, one gap of 180, 185, ..., 230 ms every 5 s | freezes | 10.0 | 9.0 |  |
-| freeze detection | 30 fps, one gap of 180, 185, ..., 230 ms every 5 s | total freeze duration (ms) | 2075.0 | 1890.0 |  |
+| freeze detection | 30 fps, one gap of 180, 185, ..., 230 ms every 5 s | freezes | 9.0 | 9.0 |  |
+| freeze detection | 30 fps, one gap of 180, 185, ..., 230 ms every 5 s | total freeze duration (ms) | 1890.0 | 1890.0 |  |
 | freeze detection | 30 fps, one gap of 180, 185, ..., 230 ms every 5 s | harmonic fps | 25.0 | 25.0 |  |
 | freeze detection | 30 fps, render jitter 8 ms, 60 s | freezes | 0.0 | 0.0 |  |
 | freeze detection | 30 fps, render jitter 8 ms, 60 s | total freeze duration (ms) | 0.0 | 0.0 |  |
@@ -34,8 +34,8 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 | freeze detection | 30 fps, a 400 ms gap every 1 s, 30 s | freezes | 29.0 | 29.0 |  |
 | freeze detection | 30 fps, a 400 ms gap every 1 s, 30 s | total freeze duration (ms) | 11600.0 | 11600.0 |  |
 | freeze detection | 30 fps, a 400 ms gap every 1 s, 30 s | harmonic fps | 5.6 | 5.6 |  |
-| freeze detection | 30 fps, 3 s at 3 fps, 30 fps | freezes | 9.0 | 7.0 |  |
-| freeze detection | 30 fps, 3 s at 3 fps, 30 fps | total freeze duration (ms) | 2997.0 | 2331.0 |  |
+| freeze detection | 30 fps, 3 s at 3 fps, 30 fps | freezes | 7.0 | 7.0 |  |
+| freeze detection | 30 fps, 3 s at 3 fps, 30 fps | total freeze duration (ms) | 2331.0 | 2331.0 |  |
 | freeze detection | 30 fps, 3 s at 3 fps, 30 fps | harmonic fps | 7.5 | 7.5 |  |
 | freeze detection | 15 fps, one gap of 250, 300, ..., 450 ms every 4 s | freezes | 5.0 | 5.0 |  |
 | freeze detection | 15 fps, one gap of 250, 300, ..., 450 ms every 4 s | total freeze duration (ms) | 1750.0 | 1750.0 |  |
@@ -45,8 +45,8 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 | freeze detection | 30 fps, outages of 2 s, 6 s and 1 s | pauses | 1.0 | 1.0 |  |
 | freeze detection | 30 fps, outages of 2 s, 6 s and 1 s | total pause duration (ms) | 6033.0 | 6033.0 |  |
 | freeze detection | 30 fps, outages of 2 s, 6 s and 1 s | harmonic fps | 0.7 | 0.7 |  |
-| freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | freezes | 59.0 | 57.0 |  |
-| freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | total freeze duration (ms) | 26974.0 | 26580.0 |  |
+| freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | freezes | 57.0 | 57.0 |  |
+| freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | total freeze duration (ms) | 26580.0 | 26580.0 |  |
 | freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | harmonic fps | 7.0 | 7.0 |  |
 | quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | adapt-down signals | 19.0 | 6.0 |  |
 | quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | first adapt-down (s) | 1.5 | 2.0 | -1: none |
@@ -117,18 +117,15 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
   libwebrtc does. (The negative "arrival to render" on the delay-step case is
   real on both sides: after the step, frames arrive after their render time
   until the timing catches up, and both release them at once.)
-- **Freeze detection: a small gap (filed).** On steady video both count the
-  same freezes and pauses, but they differ near the threshold and when the
-  frame rate changes. `VideoQualityObserver` adds the current interval to the
-  30-frame average *before* testing it, keeps freezes in the average, rounds
-  the average down to whole ms, and tests from the 5th interval on.
-  `FreezeDetector` tests against the previous intervals only and leaves
-  freezes out of the average. So ours counts a 185 ms gap at 30 fps as a
-  freeze (libwebrtc: not until 190 ms), and while the frame rate drops to
-  3 fps ours keeps the 30 fps average longer (9 freezes against 7). The
-  test bench reports `video.freeze_*` with `FreezeDetector` on both sides of
-  `sm_compare`, so the parity report compares like with like, but neither
-  number is the one libwebrtc's getStats would give.
+- **Freeze detection: the same (fixed by #268).** Before #268,
+  `FreezeDetector` tested each interval against the previous ones only and
+  left freezes out of the average, so it counted a 185 ms gap at 30 fps as a
+  freeze and kept the 30 fps average longer when the frame rate dropped to
+  3 fps (9 freezes against 7). It now does what `VideoQualityObserver`
+  does: the current interval enters the 30-frame average *before* the test,
+  freezes stay in it, the average is rounded down to whole ms, and the test
+  starts at the 5th interval. Every freeze row above is the same on both
+  sides ([fix record](../fixes/268-freeze-rule-as-libwebrtc.md)).
 - **Quality scaling: a large gap (owned by #84).** libwebrtc checks QP 2 s
   after the start and after a "low QP" signal (`fast_rampup_`), and 5 s
   after a "high QP" one (`kMeasureMs` 2000 x `kSamplePeriodScaleFactor`
