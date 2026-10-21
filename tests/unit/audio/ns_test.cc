@@ -37,7 +37,10 @@ double Db(std::span<const float> x) { return dsp::RmsDbfs(x); }
 // output of libwebrtc M157's prebuilt WebRtc_rdft on the same input (bit for
 // bit). Several of them (a[3], a[6], ...) differ in the last bit if the
 // twiddle tables are built with the double cos/sin instead of libc++'s float
-// overloads.
+// overloads. The twiddle tables come from the C library's cosf/sinf, so the
+// bits are those of glibc (the prebuilt libwebrtc is a Linux build); other C
+// libraries (Apple's) may round the tables differently, for libwebrtc as for
+// us, and are held to a tolerance instead.
 SM_TEST(Ns, Fft4gBitExactWithLibwebrtc) {
   std::vector<float> a(256);
   for (size_t i = 0; i < a.size(); ++i) a[i] = static_cast<float>((i * 37) % 101) - 50.f;
@@ -50,7 +53,11 @@ SM_TEST(Ns, Fft4gBitExactWithLibwebrtc) {
   } expected[] = {{0, -0x1.98p+5f},       {1, 0x1.6p+3f},          {2, -0x1.74cc38p+5f},  {3, 0x1.15d2fcp+4f},
                   {6, -0x1.2fb1d4p+7f},   {10, -0x1.d6e85ep+7f},   {11, -0x1.056ap+0f},   {100, -0x1.750808p+7f},
                   {101, 0x1.9af1acp+7f},  {254, 0x1.2e973cp+6f},   {255, -0x1.a310d2p+7f}};
+#if defined(__GLIBC__)
   for (const auto& e : expected) SM_EXPECT_EQ(a[e.i], e.v);
+#else
+  for (const auto& e : expected) SM_EXPECT_LT(std::fabs(a[e.i] - e.v), 1e-3f);
+#endif
 }
 
 // NrFft::Ifft: the inverse rdft scaled by 2/n gives the frame back.
