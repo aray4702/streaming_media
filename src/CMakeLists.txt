@@ -73,7 +73,8 @@ if(SM_WITH_AUDIO)
     audio/transient_suppressor.cc
     audio/comfort_noise.cc
     audio/audio_level.cc
-    audio/resampler.cc)
+    audio/resampler.cc
+    audio/splitting_filter.cc)
   list(APPEND SM_SECTIONS audio)
 endif()
 
