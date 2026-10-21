@@ -2812,11 +2812,11 @@ issue_61_googcc_glue_congestive - Congestive loss with every v2 switch on: GoogC
 
 issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (neteq v2, issue
   metric                                   sm       webrtc  better
-  audio.concealed_pct                     1.2          0.5  webrtc
+  audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            35           27  =
-  audio.mouth_to_ear_p95_ms               141          147  =
-  audio.jb_delay_p95_ms                  68.4         81.0  sm
+  audio.longest_interruption_ms            28           27  =
+  audio.mouth_to_ear_p95_ms               143          147  =
+  audio.jb_delay_p95_ms                  70.8         81.0  sm
   cc.utilization_pct                     77.0         77.3  =
   cc.queue_p95_ms                         3.8          3.6  =
   cc.max_settle_ms                        100          100  =
@@ -2904,9 +2904,9 @@ issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2,
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            32           30  =
-  audio.mouth_to_ear_p95_ms               227          212  webrtc
-  audio.jb_delay_p95_ms                   108          111  =
+  audio.longest_interruption_ms            31           30  =
+  audio.mouth_to_ear_p95_ms               222          212  =
+  audio.jb_delay_p95_ms                   103          111  =
   video.freeze_count                      0.1            0  =
   video.freeze_total_ms                  21.8            0  =
   video.longest_freeze_ms                  41         21.3  =
@@ -3900,7 +3900,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 285, webrtc 127, tie 1197 (of the metrics shown)
+better: sm 285, webrtc 125, tie 1199 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values
