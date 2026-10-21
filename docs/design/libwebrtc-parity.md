@@ -237,7 +237,7 @@ control, high-pass filter, voice activity, transient suppression), `common_audio
 `audio/audio_level.*`, `modules/audio_coding/codecs/cng/`, `audio/channel_send.cc`. Every row that needs one
 of them says "file needed" and is listed in the open questions.
 
-**Where it runs.** The ten modules in `src/audio/` (6.1 to 6.9, 6.11) are used by their unit, e2e and bench
+**Where it runs.** The eleven modules in `src/audio/` (6.1 to 6.9, 6.11, 6.12) are used by their unit, e2e and bench
 tests only. Neither the test bench call (`testbench/call.cc`) nor the comparison harness
 (`compare/webrtc/webrtc_call.cc`) processes audio samples: both send a modelled Opus-sized payload every 20 ms
 and measure the receive side. The harness registers only the transport-cc extension, so the audio-level
@@ -274,6 +274,7 @@ double-talk test instead of AEC3's matched-filter delay estimate and adaptive fi
 | `TransientSuppressor` (6.6) | `modules/audio_processing/transient/` | Energy-onset detector here. | port (file needed) | #63, then unplaced |
 | `Vad` (6.8) | `modules/audio_processing/vad/`, `common_audio/vad/` | Energy and spectral-flatness detector here. Where libwebrtc uses a VAD: AGC and the Opus encoder's own DTX decision (`info.speech`, `audio_encoder_opus.cc`). | port (file needed) | #63, then unplaced |
 | `Resampler` (6.11) | `common_audio/resampler/`, `PushSincResampler` | Polyphase Kaiser-windowed sinc here (cutoff 0.92 of the lower Nyquist). | port (file needed) | #63, then unplaced |
+| `SplittingFilter`, `ThreeBandFilterBank` (6.12) | `modules/audio_processing/splitting_filter.*`, `three_band_filter_bank.*`, `common_audio/signal_processing/splitting_filter.c` | Ported with libwebrtc's coefficients (#241). Mono only, and the QMF synthesis saturates at [-1, 32767/32768] on our [-1, 1) float scale where libwebrtc saturates its S16-scaled floats at [-32768, 32767]. Not used yet: the `apm v2` NS and AEC3 ports run on its lowest band. | ported | #241 |
 | `ComputeLevel`, audio-level extension (6.9) | `audio/audio_level.*` (not in `reference/`), `audio_send_stream.cc` calls `ComputeLevel` per frame; extension URI `kAudioLevelUri` | The RFC 6464 byte format is the same standard. `audio/audio_level.cc` is in `reference/` now (#101): `voe::AudioLevel` is the stats level of a send stream (maximum absolute sample, refreshed every 11th frame, decayed to a quarter; total energy and duration), not the RFC 6464 header level. Ported as `AudioLevelMeter`. Ours `ComputeLevel` (RMS in -dBov) stays for the extension byte; libwebrtc takes that value from the audio-processing RMS (`rms_level.cc`, not in `reference/`). | same (wire format); `AudioLevelMeter` ported; extension RMS: file needed | list on #57 |
 
 ### 6.3 Items for the Owner to place

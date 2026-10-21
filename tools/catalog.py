@@ -867,6 +867,22 @@ ALGORITHMS = [
          verification="Defect found: when decimating, the filter used too few taps (transition band several kHz "
                       "wide), so a 10 kHz tone aliased at only -36 dB into 48 -> 16 kHz output. Taps now scale "
                       "with the decimation factor: 91 dB rejection, 107 dB SNR."),
+    dict(id="6.12", slug="band-splitting", title="Band splitting",
+         problems=["Wideband capture (32/48 kHz) through processing designed for 16 kHz -> APM band splitting (QMF, three-band filter bank)"],
+         headers=["audio/splitting_filter.h"], unit=["SplittingFilter"], e2e=[],
+         bench=["audio/SplittingFilter_48k_10ms"],
+         scenario="Unit tests only: tones placed in each band at 32 and 48 kHz must land in their own band and come back "
+                  "through synthesis; an impulse through the two-band QMF must match a direct evaluation of the all-pass "
+                  "cascade.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. "
+               "A port of libwebrtc's `SplittingFilter` (issue #241): `modules/audio_processing/splitting_filter.cc`, "
+               "`three_band_filter_bank.cc` and `common_audio/signal_processing/splitting_filter.c`, with their "
+               "coefficients. It is the first step of the `apm v2` ports (#240 AEC3, #241 NS), which run on the 0-8 kHz band. "
+               "Differences: mono only (libwebrtc splits every channel of an `AudioBuffer`), and samples on this "
+               "library's [-1, 1) scale, so the S16 saturation in the QMF synthesis is at [-1, 32767/32768].",
+         verification="New in #241's first PR. The two-band analysis matches a direct-form evaluation of "
+                      "`WebRtcSpl_AllPassQMF` to 1e-6 across two frames, and both paths were bit-exact with libwebrtc's own `splitting_filter.c` and `three_band_filter_bank.cc` compiled from `reference/` (the three-band files arrive there with #247; golden values pinned in `SplittingFilter.MatchesLibwebrtcOutput`); level through analysis and synthesis is "
+                      "within 0.002 dB at 32 and 48 kHz on a 0.2-4.2 kHz chirp."),
     # ------------------------------------------------------------------ 7
     dict(id="7.1", slug="freeze-detector", title="Freeze detection",
          problems=["Lost frame (decode impossible) -> freeze the last frame until recovery (measured as freezes)"],
