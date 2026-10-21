@@ -19,7 +19,7 @@ cmake --build out/compare -j 4 --target sm_apm_compare   # prints the table afte
 
 | Module | Ours | libwebrtc (settings) |
 |---|---|---|
-| High-pass filter | `HighPassFilter`: 4th-order Butterworth at 80 Hz | `HighPassFilter` (`high_pass_filter.cc`): three cascaded biquads with zeros near 35 and 46 Hz |
+| High-pass filter | `HighPassFilter`: 4th-order Butterworth at 80 Hz; `apm v2`: `hpf::HighPassFilter`, libwebrtc's (#239) | `HighPassFilter` (`high_pass_filter.cc`): three cascaded biquads with zeros near 35 and 46 Hz |
 | Echo canceller | `EchoCanceller`: two-filter PBFDAF NLMS + residual suppressor, `EchoDelayEstimator` | AEC3 (`aec3/`), `set_stream_delay_ms(0)` |
 | Noise suppressor | `NoiseSuppressor`: Wiener filter, decision-directed SNR, 18 dB floor | `ns/` at `kHigh` (18 dB), the level `WebRtcVoiceEngine::ApplyOptions` sets |
 | Gain control | `AutomaticGainControl` (AGC2-style adaptive digital) + limiter | AGC1 `kAdaptiveAnalog`, the desktop default in `ApplyOptions`, with APM's analog mic gain emulation (no device volume in a simulation); and AGC2 adaptive digital at its defaults |
@@ -45,6 +45,9 @@ SNR. "Pauses" are frames more than 250 ms after the talker stopped.
 | high-pass filter | dc + 50 Hz hum | hum attenuation (dB) | 16.4 | 67.2 |  |
 | high-pass filter | dc + 50 Hz hum | DC left (x1000) | -0.0 | 0.0 |  |
 | high-pass filter | talker only | speech level change (dB) | -0.0 | -0.2 |  |
+| high-pass filter (apm v2) | dc + 50 Hz hum | hum attenuation (dB) | 67.2 | 67.2 | ours is libwebrtc's filter (#239) |
+| high-pass filter (apm v2) | dc + 50 Hz hum | DC left (x1000) | 0.0 | 0.0 |  |
+| high-pass filter (apm v2) | talker only | speech level change (dB) | -0.2 | -0.2 |  |
 | echo canceller | far end only, route change | ERLE 1-3 s (dB) | 15.3 | 33.2 | convergence |
 | echo canceller | far end only, route change | ERLE 6-12 s (dB) | 29.5 | 50.1 |  |
 | echo canceller | far end only, route change | ERLE 12-14 s (dB) | 2.6 | 8.0 | just after the delay change |
@@ -56,9 +59,9 @@ SNR. "Pauses" are frames more than 250 ms after the talker stopped.
 | noise suppressor | white noise, ~7 dB SNR | noise attenuation in pauses (dB) | 16.9 | 17.9 |  |
 | noise suppressor | white noise, ~7 dB SNR | level change in speech (dB) | -1.3 | -2.9 |  |
 | noise suppressor | white noise, ~7 dB SNR | algorithmic delay (ms) | 10.0 | 6.0 |  |
-| noise suppressor (apm v2) | white noise, ~7 dB SNR | SNR improvement (dB) | -0.2 | -0.1 | both kHigh (18 dB); ours measured on #241's branch, libwebrtc from the rows above |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | SNR improvement (dB) | -0.1 | -0.1 | both kHigh (18 dB); ours behind the `apm v2` high-pass filter (#239) |
 | noise suppressor (apm v2) | white noise, ~7 dB SNR | noise attenuation in pauses (dB) | 17.9 | 17.9 |  |
-| noise suppressor (apm v2) | white noise, ~7 dB SNR | level change in speech (dB) | -3.2 | -2.9 |  |
+| noise suppressor (apm v2) | white noise, ~7 dB SNR | level change in speech (dB) | -2.9 | -2.9 |  |
 | noise suppressor (apm v2) | white noise, ~7 dB SNR | algorithmic delay (ms) | 6.0 | 6.0 |  |
 | gain control | quiet then loud talker, AGC1 (default) | quiet talker in -> out, 12-20 s (dBFS) | -16.8 | -20.6 | input -32 dBFS |
 | gain control | quiet then loud talker, AGC1 (default) | loud talker level change, 32-40 s (dB) | -2.0 | -3.2 |  |
@@ -76,9 +79,11 @@ SNR. "Pauses" are frames more than 250 ms after the talker stopped.
 There is no parity band for these metrics yet (`tools/parity_report.py`
 covers the call metrics only). Read with about 1 dB as a tie:
 
-- **High-pass filter: a gap.** libwebrtc's filter is a different design
-  (three biquads with zeros just below 50 Hz), so it takes 50 Hz hum down
-  by 67 dB against our 16 dB. Both remove DC and leave speech alone.
+- **High-pass filter: a gap in v1, none in `apm v2`.** libwebrtc's filter
+  is a different design (three biquads with zeros just below 50 Hz), so it
+  takes 50 Hz hum down by 67 dB against v1's 16 dB. `apm v2` runs
+  libwebrtc's filter (#239) and matches it. Both remove DC and leave
+  speech within 0.2 dB.
 - **Echo canceller: a gap in both directions.** AEC3 removes 20-37 dB more
   echo, converges faster and recovers sooner after the echo path changes.
   In double talk it also takes about 5 dB off the near-end talker, where

@@ -15,6 +15,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/dtx_level_mixer_test.cc
     unit/audio/echo_test.cc
     unit/audio/filters_test.cc
+    unit/audio/hpf_test.cc
     unit/audio/ns_test.cc
     unit/audio/splitting_filter_test.cc
   SUITES
@@ -32,12 +33,14 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Agc1VoiceActivity
     Agc2RnnVad
     AudioLevel
+    CascadedBiquadFilter
     ComfortNoise
     EchoCanceller
     EchoDelay
     GainControl
     GainController2
     HighPassFilter
+    Hpf
     NoiseSuppressor
     Ns
     Resampler
