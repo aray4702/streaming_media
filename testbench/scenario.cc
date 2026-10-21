@@ -281,6 +281,20 @@ ParseResult ParseScenario(const std::string& text) {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
       if (v < 1 || v > 120) return fail("video_fps must be 1..120");
       s.video_fps = v;
+    } else if (key == "video_size") {
+      int w = 0, h = 0;
+      char x = 0, extra = 0;
+      if (!need(2) || std::sscanf(tok[1].c_str(), "%d%c%d%c", &w, &x, &h, &extra) != 3 || x != 'x' || w < 16 ||
+          h < 16 || w > 7680 || h > 4320 || w % 2 || h % 2)
+        return fail("usage: video_size <W>x<H> (even, 16..7680 x 16..4320)");
+      s.video_width = w;
+      s.video_height = h;
+    } else if (key == "video_complexity" || key == "encoder_speed") {
+      char* end = nullptr;
+      const double v = need(2) ? std::strtod(tok[1].c_str(), &end) : 0;
+      if (!need(2) || end == tok[1].c_str() || *end != '\0' || !(v >= 0.01 && v <= 100))
+        return fail("usage: " + key + " <0.01..100>");
+      (key == "video_complexity" ? s.video_complexity : s.encoder_speed) = v;
     } else if (key == "video_max_payload") {
       // Any value reaches the library, which clamps it (issue #257): the bench tests that.
       char* end = nullptr;
@@ -373,6 +387,10 @@ std::string FormatScenario(const Scenario& s) {
   rate("audio_rate", s.audio_bitrate, d.audio_bitrate);
   if (s.audio_sample_rate != d.audio_sample_rate) o += "audio_sample_rate " + std::to_string(s.audio_sample_rate) + "\n";
   if (s.video_fps != d.video_fps) o += "video_fps " + std::to_string(s.video_fps) + "\n";
+  if (s.video_width != d.video_width || s.video_height != d.video_height)
+    o += "video_size " + std::to_string(s.video_width) + "x" + std::to_string(s.video_height) + "\n";
+  if (s.video_complexity != d.video_complexity) o += "video_complexity " + FormatNumber(s.video_complexity) + "\n";
+  if (s.encoder_speed != d.encoder_speed) o += "encoder_speed " + FormatNumber(s.encoder_speed) + "\n";
   rate("video_max", s.video_max, d.video_max);
   rate("video_min", s.video_min, d.video_min);
   rate("start_rate", s.start_rate, d.start_rate);
