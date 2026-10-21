@@ -50,8 +50,10 @@
 #pragma once
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
@@ -68,6 +70,13 @@ constexpr size_t kFftLengthBy2Minus1 = kFftLengthBy2 - 1;
 constexpr size_t kFftLength = 2 * kFftLengthBy2;
 constexpr size_t kBlockSizeMs = kFftLengthBy2 * 1000 / 16000;
 
+// log2 of in > 0 from its bits, in a fast and approximate manner.
+inline float FastApproxLog2f(const float in) {
+  float out = static_cast<float>(std::bit_cast<uint32_t>(in));
+  out *= 1.1920929e-7f;  // 1/2^23
+  out -= 126.942695f;    // Remove bias.
+  return out;
+}
 constexpr size_t NumBandsForRate(int sample_rate_hz) { return static_cast<size_t>(sample_rate_hz / 16000); }
 constexpr int GetTimeDomainLength(int filter_length_blocks) {
   return filter_length_blocks * static_cast<int>(kFftLengthBy2);

@@ -1,8 +1,7 @@
 // AEC3's model of the reverberant echo (`apm v2`, #240 step 3), ported from
 // compare/webrtc/reference/modules/audio_processing/aec3/
 // {reverb_model,reverb_decay_estimator,reverb_frequency_response,
-// reverb_model_estimator}.{h,cc} (M157), plus FastApproxLog2f from
-// aec3_common.cc.
+// reverb_model_estimator}.{h,cc} (M157).
 //
 //   ReverbModel         exponential reverb over a power spectrum: per bin,
 //                       reverb = (reverb + scaling * power) * decay.
@@ -42,15 +41,6 @@
 #include "sm/audio/aec3_filter.h"
 
 namespace sm::audio::aec3 {
-
-// aec3_common.cc: log2 of in > 0 from its bits, in a fast and approximate
-// manner.
-inline float FastApproxLog2f(const float in) {
-  float out = static_cast<float>(std::bit_cast<uint32_t>(in));
-  out *= 1.1920929e-7f;  // 1/2^23
-  out -= 126.942695f;    // Remove bias.
-  return out;
-}
 
 // reverb_model.h
 class ReverbModel {
