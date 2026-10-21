@@ -601,6 +601,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   SeqNumUnwrapper<uint16_t> video_send_unwrap, video_recv_unwrap;
   std::map<int64_t, int64_t> video_send_ms;  // Unwrapped media sequence number -> send time.
   std::set<int64_t> video_received;
+  std::map<uint32_t, int64_t> video_complete_us;  // RTP timestamp -> last media or RTX packet's arrival (issue #230).
   int64_t nack_recovered = 0;
   std::optional<uint32_t> audio_ts0;
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
@@ -682,6 +683,18 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (!video_first.IsFinite()) video_first = now;
     last_render = now;
     auto it = model.capture_us_by_rtp.find(f.rtp_timestamp());
+    if (opt.video_trace) {
+      testbench::FrameTraceRow row;
+      row.rtp_ts = f.rtp_timestamp();
+      if (it != model.capture_us_by_rtp.end()) row.capture_us = it->second - t0.us();
+      if (auto c = video_complete_us.find(f.rtp_timestamp()); c != video_complete_us.end()) {
+        row.complete_us = c->second;
+        video_complete_us.erase(c);
+      }
+      row.render_us = now.us();
+      row.render_time_us = f.render_time_ms() * 1000 - t0.us();
+      rep.frame_trace.push_back(row);
+    }
     if (it != model.capture_us_by_rtp.end()) {
       av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
@@ -876,7 +889,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
         if (!fec) video_received.insert(video_recv_unwrap.Unwrap(r.seq));
+        // As the test bench: the last media or RTX packet (RFC 4588 keeps the RTP timestamp) marks it complete.
+        if (!fec && opt.video_trace) video_complete_us[r.ts] = at.us();
       } else if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
+        if (r.payload_len > 2 && opt.video_trace) video_complete_us[r.ts] = at.us();
         uint16_t osn = static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]);
         int64_t u = video_recv_unwrap.Unwrap(osn);
         if (video_received.insert(u).second) ++nack_recovered;

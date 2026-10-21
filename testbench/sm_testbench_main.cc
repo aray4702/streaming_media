@@ -110,6 +110,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.bwe.csv",
                     std::ios::binary)
           << sm::testbench::BweTraceCsv(report.bwe_trace);
+      // One row per rendered video frame (issue #230; see tools/frame_trace.py).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.frames.csv",
+                    std::ios::binary)
+          << sm::testbench::FrameTraceCsv(report.frame_trace);
     }
     if (!quiet) {
       std::printf("%s", sm::testbench::ToText(report).c_str());

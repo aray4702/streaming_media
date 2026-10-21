@@ -51,6 +51,17 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
 };
 
+// One rendered video frame on the receiver (issue #230), for this library and
+// for libwebrtc, when RunOptions::video_trace is set. Times are from call
+// start; a time that is not known is -1.
+struct FrameTraceRow {
+  uint32_t rtp_ts = 0;
+  int64_t capture_us = -1;      // Captured on the sender.
+  int64_t complete_us = -1;     // Last media or RTX packet of the frame arrived at the receiver.
+  int64_t render_us = -1;       // Handed to the renderer (the freeze detector's time).
+  int64_t render_time_us = -1;  // The render time the timing model gave the frame (VCMTiming::RenderTime).
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -63,6 +74,8 @@ struct Report {
   std::vector<sim::LinkTraceRecord> link_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
+  // One row per rendered video frame, when RunOptions::video_trace is set (issue #230).
+  std::vector<FrameTraceRow> frame_trace;
   // The sender's GoogCC updates, when RunOptions::bwe_trace is set (issue #149).
   std::vector<cc::BweTraceRow> bwe_trace;
 };
@@ -70,7 +83,7 @@ struct Report {
 struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
-  bool video_trace = false;  // Fill Report::video_trace.
+  bool video_trace = false;  // Fill Report::video_trace and Report::frame_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
 };
@@ -108,6 +121,12 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // path). It has no counterpart for dropped_capturer, DropDueToSize or
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
+// The per-frame receive trace as CSV (issue #230), identical for both
+// implementations: a header line, then one line per rendered frame in render
+// order: rtp_ts,capture_ms,complete_ms,render_ms,render_time_ms (ms from call
+// start, empty when not known). render_ms - complete_ms is how long the
+// receiver held a complete frame; tools/frame_trace.py reads it.
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace);
 // The rate the sender's allocator reserves for audio (zero without audio).
 // `allocator v2` reserves what libwebrtc's AudioSendStream registers with
 // BitrateAllocator (audio_send_stream.cc GetMinMaxBitrateConstraints): the codec

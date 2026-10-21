@@ -213,6 +213,21 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   return out;
 }
 
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace) {
+  std::string out = "rtp_ts,capture_ms,complete_ms,render_ms,render_time_ms\n";
+  auto ms = [](int64_t us) {
+    if (us < 0) return std::string();
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.3f", static_cast<double>(us) / 1000.0);
+    return std::string(buf);
+  };
+  for (const auto& r : trace) {
+    out += std::to_string(r.rtp_ts) + "," + ms(r.capture_us) + "," + ms(r.complete_us) + "," + ms(r.render_us) + "," +
+           ms(r.render_time_us) + "\n";
+  }
+  return out;
+}
+
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
   static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
@@ -774,7 +789,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         ++w_frames;
         if (!video_first.IsFinite()) video_first = now;
         last_render = now;
-        if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
+        if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) {
+          ft->second.rendered = now;
+          if (opt.video_trace) {
+            auto us = [](Timestamp at) { return at.IsFinite() ? at.us() : int64_t{-1}; };
+            rep.frame_trace.push_back(
+                {f.rtp_timestamp, us(ft->second.capture), us(ft->second.complete), now.us(), us(f.render_time)});
+          }
+        }
         auto cap = frame_capture.find(f.rtp_timestamp);
         if (cap != frame_capture.end()) {
           av_sync.OnVideoRendered(now, cap->second);
