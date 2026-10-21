@@ -1058,7 +1058,13 @@ ALGORITHMS = [
                   "detector's freeze count is compared with gaps counted directly from the render log.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Keyframe requests that end freezes are in 3.5.",
          verification="A unit-test expectation was wrong about the harmonic frame rate: irregular 38/38/23 ms "
-                      "intervals give 28.97 fps, not 30.3, which is the point of the metric."),
+                      "intervals give 28.97 fps, not 30.3, which is the point of the metric. "
+                      "#268 ported libwebrtc's freeze rule (`video/video_quality_observer2.cc`, `OnRenderedFrame`): the "
+                      "current interval enters the 30-interval average before the test, freezes stay in it, the "
+                      "average is rounded down to whole ms and the test starts at 5 intervals. `sm_video_compare` now "
+                      "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
+                      "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
+                      "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
     dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
          problems=["Decoder errors or corrupt bitstream -> decoder fallback (hardware -> software)",
                    "Hardware encoder failure -> automatic fallback to a software encoder"],
