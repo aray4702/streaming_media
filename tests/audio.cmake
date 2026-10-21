@@ -3,9 +3,9 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
           unit/audio/agc2_test.cc unit/audio/agc2_rnn_vad_test.cc unit/audio/agc1_test.cc unit/audio/agc1_vad_test.cc unit/audio/agc_manager_test.cc unit/audio/clipping_predictor_test.cc
           unit/audio/splitting_filter_test.cc unit/audio/aec3_delay_test.cc unit/audio/aec3_filter_test.cc unit/audio/aec3_reverb_test.cc
           unit/audio/aec3_analysis_test.cc unit/audio/aec3_erle_test.cc unit/audio/aec3_state_test.cc unit/audio/aec3_suppression_test.cc
-          unit/audio/ns_test.cc
+          unit/audio/ns_test.cc unit/audio/hpf_test.cc
   SUITES HighPassFilter Vad NoiseSuppressor GainControl GainController2 Agc2RnnVad Agc1 Agc1VoiceActivity Agc1Manager Agc1CaptureLevels Agc1ClippingPredictor Agc1ClippingLevelBuffer TransientSuppressor Resampler EchoDelay
-         EchoCanceller ComfortNoise AudioLevel SplittingFilter Aec3Delay Aec3Filter Aec3Reverb Aec3Analysis Aec3Erle Aec3State Aec3Suppression Ns)
+         EchoCanceller ComfortNoise AudioLevel SplittingFilter Aec3Delay Aec3Filter Aec3Reverb Aec3Analysis Aec3Erle Aec3State Aec3Suppression Ns CascadedBiquadFilter Hpf)
 sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SOURCES e2e/audio_e2e_test.cc
   SUITES E2E_HighPassFilter E2E_Vad E2E_NoiseSuppressor E2E_GainControl E2E_EchoDelay E2E_EchoCanceller

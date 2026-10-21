@@ -27,6 +27,7 @@ void FreezeDetector::OnFrameRendered(Timestamp now) {
     if (d >= std::max(3 * avg, avg + 150)) {
       ++stats_.freeze_count;
       stats_.total_freezes_ms += d;
+      stats_.longest_freeze_ms = std::max(stats_.longest_freeze_ms, d);
       stats_.freeze_ms.Add(d);
       SM_EVENT(events_, now, "freeze", "freeze", d, 0);
       return;  // Freezes do not enter the average.

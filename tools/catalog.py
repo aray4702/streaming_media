@@ -982,11 +982,18 @@ ALGORITHMS = [
                       "the e2e chain is unchanged."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
-         headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
+         headers=["audio/high_pass_filter.h", "audio/hpf.h", "audio/cascaded_biquad_filter.h"],
+         unit=["HighPassFilter", "Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+                      "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
+                      "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
+                      "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
+                      "(`Hpf.FrequencyResponse16kHz`), and on `sm_apm_compare`'s case it gives hum attenuation "
+                      "67.2 dB and speech -0.2 dB, as libwebrtc (`E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc`). "
+                      "Its pass band is about 0.4 dB down, as libwebrtc's."),
     dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
          problems=["Keyboard typing noise -> transient suppressor"],
          headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],

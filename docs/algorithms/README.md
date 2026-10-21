@@ -49,7 +49,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 6.7 | [DTX and comfort noise (RFC 3389)](6-audio/6.7-dtx-cng.md) | 3 | 1 | 2 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
