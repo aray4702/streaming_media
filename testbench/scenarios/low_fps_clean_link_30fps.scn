@@ -1,0 +1,7 @@
+name low_fps_clean_link_30fps
+describe 30 fps video on a clean 1.5 Mbps / 100 ms RTT link (issue #258 yardstick: libwebrtc's audio delay and queue at 30 fps)
+duration 60s
+video_fps 30
+at 0s capacity=1500kbps delay=50ms
+expect audio.concealed_pct < 1
+expect video.freeze_count == 0
