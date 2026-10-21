@@ -135,6 +135,13 @@ class SendSideController : public MetricsSource {
   // adds a video stream with transport-cc, as VideoSendStreamImpl does (#187).
   void SetPacingFactor(double factor);
 
+  // RtpTransportControllerSend::EnablePeriodicAlrProbing (StreamsConfig::
+  // requests_alr_probing): ALR probes every 5 s while application limited. The
+  // session requests it for an audio stream with transport-cc, as
+  // AudioSendStream::ConfigureStream does unless WebRTC-Audio-AlrProbing is
+  // disabled (audio_send_stream.cc:158-159, 297-308; issue #62).
+  void EnablePeriodicAlrProbing(bool enable);
+
   void Enqueue(SenderPacket p, Timestamp now);
   // Releases due packets, and runs the GCC timer.
   std::vector<ReleasedPacket> Process(Timestamp now);

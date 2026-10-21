@@ -91,7 +91,11 @@ class GccController : public MetricsSource {
   NetworkControlUpdate OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
   // StreamsConfig::max_total_allocated_bitrate, the sum of the maximum bitrates
   // the allocator hands out: a rise probes up to twice that rate, and it caps
-  // every probe at twice that rate. Returns the clusters to send.
+  // every probe at twice that rate. Returns the clusters to send. Before Start()
+  // the value is held and handed to the probe controller after the initial
+  // exponential probes, so it does not cap them (issue #62): libwebrtc's call
+  // creates GoogCC when the network comes up, before the streams start and
+  // register their bitrates (see Start()).
   std::vector<ProbeCluster> OnMaxTotalAllocatedBitrate(DataRate max_total_allocated_bitrate, Timestamp now);
   // The sum of the minimums the bitrate allocator must fund is a lower bound for
   // the estimates and the target (GoogCC use_min_allocatable_as_lower_bound_,
@@ -107,6 +111,9 @@ class GccController : public MetricsSource {
   // 1.1 from the start (VideoSendStreamImpl's kStrictPacingMultiplier, issue #187).
   // Takes effect with the next update.
   void SetPacingFactor(double factor);
+  // StreamsConfig::requests_alr_probing (GoogCcNetworkController::OnStreamsConfig
+  // and the initial config): ProbeController::EnablePeriodicAlrProbing.
+  void EnablePeriodicAlrProbing(bool enable);
   // The pacing and padding rates as GetPacingRates() computes them (the caller takes the
   // minimum of the padding rate and the congestion-window pushback target). An update's
   // `pacing_rate` is PacingRate() at the time of the update.
@@ -154,6 +161,9 @@ class GccController : public MetricsSource {
   uint8_t last_fraction_loss_ = 0;
   TimeDelta last_round_trip_time_ = TimeDelta::PlusInfinity();
   bool first_packet_sent_ = false;
+  bool started_ = false;
+  // OnMaxTotalAllocatedBitrate before Start(), applied after the initial probes.
+  std::optional<DataRate> pending_max_total_allocated_;
   DataRate min_total_allocated_;
   DataRate max_padding_;
   std::optional<double> streams_pacing_factor_;  // StreamsConfig::pacing_factor.

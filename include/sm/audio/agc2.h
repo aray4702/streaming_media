@@ -28,29 +28,25 @@
 //    limiter envelope while the level is not confident; changes at most
 //    6 dB/s, increases only after 12 frames with speech probability >= 0.95
 //    (then a 12x faster first step).
-//  - GainController2 composes them for one mono 10 ms frame: fixed gain,
-//    peak/RMS levels, noise floor, speech level, saturation protector,
-//    adaptive digital gain, limiter.
+//  - GainController2 (gain_controller2.cc) composes them for one mono 10 ms
+//    frame in its order: speech probability from AGC2's RNN VAD
+//    (agc2_rnn_vad.h, VoiceActivityDetectorWrapper reset every 1500 ms, as
+//    APM creates it with `use_internal_vad`), peak/RMS levels, noise floor,
+//    speech level, saturation protector, adaptive digital gain, then the
+//    fixed gain and the limiter. Process(frame, speech_probability) takes
+//    the probability from the caller instead.
 //
 // Signals are FloatS16 inside (libwebrtc's scale); Process() takes and
 // returns our [-1, 1] floats.
 //
-// Differences from libwebrtc that remain (catalog.py, #242):
-//  - Speech probability comes from the caller (our Vad's per-frame
-//    decision before its hangover, as 0 or 1), not AGC2's RNN VAD: its
-//    weights (third_party/rnnoise) are not in the reference sources yet
-//    (#57).
-//  - The GainController2 glue (modules/audio_processing/gain_controller2.cc)
-//    and common_audio/include/audio_util.h are not in the reference sources
-//    yet (#57); the order of the steps follows the components' inputs
-//    (AdaptiveDigitalGainController::FrameInfo) and is to be checked
-//    against that file once it is added.
-//  - No input volume controller (AGC2's analog part is off in a call; the
-//    call default is AGC1, #242's next step).
+// Difference from libwebrtc that remains (catalog.py, #242): no input
+// volume controller (AGC2's analog part is off in a call; the call default
+// is AGC1).
 #pragma once
 
 #include <array>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <vector>
@@ -69,6 +65,7 @@ inline constexpr int kSubFramesInFrame = 20;
 inline constexpr int kMaximalNumberOfSamplesPerChannel = 480;
 inline constexpr float kLimiterThresholdForAgcGainDbfs = -1.0f;
 inline constexpr float kVadConfidenceThreshold = 0.95f;
+inline constexpr int kVadResetPeriodMs = 1500;
 inline constexpr int kAdjacentSpeechFramesThreshold = 12;
 inline constexpr float kLevelEstimatorTimeToConfidenceMs = 400;
 inline constexpr float kLevelEstimatorLeakFactor = 1.0f - 1.0f / kLevelEstimatorTimeToConfidenceMs;
@@ -281,6 +278,7 @@ struct GainController2Config {
 struct GainController2Stats {
   uint64_t frames = 0;
   uint64_t speech_frames = 0;  // Speech probability >= 0.95.
+  float speech_probability = 0;  // Of the last frame.
   float speech_level_dbfs = 0;
   bool speech_level_confident = false;
   float noise_rms_dbfs = 0;
@@ -289,17 +287,27 @@ struct GainController2Stats {
   uint64_t limiter_frames = 0;  // Frames where the limiter reduced the gain.
 };
 
+class VoiceActivityDetectorWrapper;
+
 class GainController2 : public MetricsSource {
  public:
   explicit GainController2(GainController2Config cfg = {});
-  // One 10 ms mono frame in [-1, 1]; `speech_probability` in [0, 1].
+  ~GainController2() override;
+  // One 10 ms mono frame in [-1, 1] at `cfg.sample_rate`, with the speech
+  // probability from AGC2's RNN VAD, as APM runs it.
+  void Process(std::span<float> frame);
+  // The same with the caller's `speech_probability` in [0, 1].
   void Process(std::span<float> frame, float speech_probability);
   float gain_db() const { return adaptive_digital_.last_gain_db(); }
   const GainController2Stats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  void ToFloatS16(std::span<const float> frame);
+  void ProcessFloatS16(std::span<float> frame, float speech_probability);
+
   GainController2Config cfg_;
+  std::unique_ptr<VoiceActivityDetectorWrapper> vad_;  // Created on first use.
   GainApplier fixed_gain_applier_;
   NoiseFloorEstimator noise_level_estimator_;
   SpeechLevelEstimator speech_level_estimator_;
