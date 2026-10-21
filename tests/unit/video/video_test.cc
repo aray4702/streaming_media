@@ -1,4 +1,8 @@
 // Section 7 unit tests.
+#include <cmath>
+#include <vector>
+
+#include "sm/core/random.h"
 #include "sm/video/codec_fallback.h"
 #include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
@@ -33,6 +37,22 @@ SM_TEST(FreezeDetector, DetectsFreezesAndPauses) {
   SM_EXPECT_LT(fd.HarmonicFps(), 30.0);
 }
 
+// Issue #283: the longest freeze must not come from the `freeze_ms` histogram,
+// which records nothing when metrics are compiled out.
+SM_TEST(FreezeDetector, TracksLongestFreeze) {
+  FreezeDetector fd;
+  int64_t t = 0;
+  SM_EXPECT_EQ(fd.stats().longest_freeze_ms, 0.0);
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 1500));  // Freeze.
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 400));  // Shorter freeze.
+  for (int i = 0; i < 30; ++i) fd.OnFrameRendered(Ms(t += 33));
+  fd.OnFrameRendered(Ms(t += 7000));  // Pause: not a freeze.
+  SM_EXPECT_EQ(fd.stats().freeze_count, 2u);
+  SM_EXPECT_NEAR(fd.stats().longest_freeze_ms, 1500, 1e-6);
+}
+
 SM_TEST(FreezeDetector, SmoothPlaybackHasNoFreezes) {
   FreezeDetector fd;
   for (int i = 0; i < 300; ++i) fd.OnFrameRendered(Ms(i * 33 + (i % 3) * 5));
@@ -40,6 +60,99 @@ SM_TEST(FreezeDetector, SmoothPlaybackHasNoFreezes) {
   // Intervals of 38, 38, 23 ms: sum(d) / sum(d^2) = 99 / 3.417 = 28.97 fps,
   // below the arithmetic 30.3 fps because irregular timing looks worse.
   SM_EXPECT_NEAR(fd.HarmonicFps(), 28.97, 0.05);
+}
+
+// Issue #268: freezes as libwebrtc's VideoQualityObserver counts them. The
+// render times are those of sm_video_compare's freeze block
+// (compare/webrtc/video_compare.cc), and the expected values are libwebrtc's
+// on them (docs/results/video-webrtc.md).
+namespace {
+int64_t RoundMs(double x) { return static_cast<int64_t>(std::llround(x)); }
+void AddFrames(std::vector<int64_t>& v, double from, double to, double period) {
+  for (double t = from; t < to; t += period) {
+    int64_t ms = RoundMs(t);
+    if (!v.empty()) ms = std::max(ms, v.back() + 1);
+    v.push_back(ms);
+  }
+}
+FreezeStats RunFreezes(const std::vector<int64_t>& render_ms) {
+  FreezeDetector fd;
+  for (int64_t t : render_ms) fd.OnFrameRendered(Ms(t));
+  return fd.stats();
+}
+constexpr double k30Fps = 1000.0 / 30;
+}  // namespace
+
+SM_TEST(FreezeDetector, CurrentIntervalEntersAverageBeforeTest) {
+  // libwebrtc: a gap enters the 30-frame average before it is tested, so at
+  // 30 fps a 185 ms gap is not a freeze (threshold about 188 ms) and 190 ms is.
+  std::vector<int64_t> v;
+  double t = 0;
+  for (int gap = 180; gap <= 230; gap += 5) {
+    AddFrames(v, t, t + 5000, k30Fps);
+    t = static_cast<double>(v.back()) + gap;
+  }
+  AddFrames(v, t, t + 2000, k30Fps);
+  FreezeStats s = RunFreezes(v);
+  SM_EXPECT_EQ(s.freeze_count, 9u);  // libwebrtc 9 (was 10).
+  SM_EXPECT_NEAR(s.total_freezes_ms, 1890, 1e-6);  // libwebrtc 1890 (was 2075).
+}
+
+SM_TEST(FreezeDetector, FreezesStayInAverage) {
+  // 3 s at 3 fps: libwebrtc keeps the long intervals in the average, which
+  // rises within a few frames and stops counting them as freezes.
+  std::vector<int64_t> v;
+  AddFrames(v, 0, 3000, k30Fps);
+  AddFrames(v, 3000, 6000, 333);
+  AddFrames(v, 6000, 9000, k30Fps);
+  FreezeStats s = RunFreezes(v);
+  SM_EXPECT_EQ(s.freeze_count, 7u);  // libwebrtc 7 (was 9).
+  SM_EXPECT_NEAR(s.total_freezes_ms, 2331, 1e-6);  // libwebrtc 2331 (was 2997).
+}
+
+SM_TEST(FreezeDetector, RandomGapsAsLibwebrtc) {
+  Random rng(7);
+  std::vector<int64_t> v;
+  double t = 0;
+  while (t < 120000) {
+    v.push_back(RoundMs(t));
+    t += rng.Bernoulli(0.02) ? rng.Uniform(100, 800) : k30Fps;
+  }
+  FreezeStats s = RunFreezes(v);
+  SM_EXPECT_EQ(s.freeze_count, 57u);  // libwebrtc 57 (was 59).
+  SM_EXPECT_NEAR(s.total_freezes_ms, 26580, 1e-6);  // libwebrtc 26580 (was 26974).
+}
+
+SM_TEST(FreezeDetector, TestStartsAtFiveSamplesIncludingCurrent) {
+  // Four 33 ms intervals, then a 300 ms gap: the window holds 5 samples
+  // counting the gap (average 86 ms, threshold 258 ms), so it is a freeze.
+  // Three intervals and the gap make only 4 samples: not tested.
+  FreezeDetector a;
+  int64_t t = 0;
+  a.OnFrameRendered(Ms(t));
+  for (int i = 0; i < 4; ++i) a.OnFrameRendered(Ms(t += 33));
+  a.OnFrameRendered(Ms(t += 300));
+  SM_EXPECT_EQ(a.stats().freeze_count, 1u);
+  FreezeDetector b;
+  t = 0;
+  b.OnFrameRendered(Ms(t));
+  for (int i = 0; i < 3; ++i) b.OnFrameRendered(Ms(t += 33));
+  b.OnFrameRendered(Ms(t += 300));
+  SM_EXPECT_EQ(b.stats().freeze_count, 0u);
+}
+
+SM_TEST(FreezeDetector, AverageRoundedDownToWholeMs) {
+  // 29 intervals of 50 ms and a gap: with 205 ms the average is 1655 / 30 =
+  // 55.17 ms, rounded down to 55, so the threshold is 205 ms and the gap is a
+  // freeze (unrounded it would need 205.17 ms). 204 ms is not.
+  for (int gap : {204, 205}) {
+    FreezeDetector fd;
+    int64_t t = 0;
+    fd.OnFrameRendered(Ms(t));
+    for (int i = 0; i < 29; ++i) fd.OnFrameRendered(Ms(t += 50));
+    fd.OnFrameRendered(Ms(t += gap));
+    SM_EXPECT_EQ(fd.stats().freeze_count, gap == 204 ? 0u : 1u);
+  }
 }
 
 SM_TEST(CodecFallback, InitFailureAndConsecutiveErrors) {

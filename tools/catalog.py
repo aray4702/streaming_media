@@ -630,7 +630,14 @@ ALGORITHMS = [
                       "E2E_Pacer expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1's case was deleted with it in #167). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
-                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
+                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). Explained difference, not a gap "
+                      "(issue #258, yardstick PR #275): at 15 fps on a clean 1.5 Mbps / 100 ms RTT link, audio "
+                      "mouth-to-ear p95 and the queue p95 are about twice the 30 fps values. libwebrtc does the same "
+                      "on the same link (seeds 1-10: mouth-to-ear p95 430 vs 446 ms, queue p95 110 vs 106 ms, "
+                      "jitter-buffer p95 266 vs 280 ms; at 30 fps 235 vs 235, 44 vs 44, 132 vs 129). Each frame "
+                      "is twice as large and leaves in one 40 ms burst, so the audio behind it waits longer at the "
+                      "bottleneck and NetEq's target follows. `low_fps_clean_link` locks this in at libwebrtc's "
+                      "levels. See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
@@ -773,7 +780,9 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
-         headers=["audio/echo_canceller.h", "audio/aec3_filter.h"], unit=["EchoCanceller", "Aec3Filter"], e2e=["E2E_EchoCanceller"],
+         headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
+                  "audio/aec3_analysis.h", "audio/aec3_state.h"],
+         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State"], e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
@@ -794,8 +803,18 @@ ALGORITHMS = [
                "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
                "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
                "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
-               "AecState's capture saturation flag as an argument. Nothing in a call uses it yet: AecState, the residual "
-               "echo suppression and EchoCanceller3 are #240's next steps.",
+               "AecState's capture saturation flag as an argument. "
+               "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
+               "`aec3_analysis.h`) ports `aec_state` (linear filter usability after 0.4 s of active unsaturated render, "
+               "0.2 s after a reset; initial state for 2.5 s; direct-path filter delay; echo saturation), "
+               "`erl_estimator`, `erle_estimator` with its fullband, subband (max 4 below and 1.5 above bin 32, onset "
+               "detection) and signal-dependent parts, `reverb_model`, `reverb_decay_estimator`, "
+               "`reverb_frequency_response`, `reverb_model_estimator`, `filter_analyzer`, `echo_audibility`, "
+               "`stationarity_estimator`, `transparent_mode` (the legacy classifier, M157's default; the HMM one through "
+               "`TransparentMode::CreateHmm()` in place of the WebRTC-Aec3TransparentModeHmm trial) and "
+               "`subtractor_output_analyzer`, with EchoCanceller3Config's Erle, EpStrength and EchoAudibility "
+               "defaults. Field trials are read as not set. Nothing in a call uses it yet: the residual echo estimator, "
+               "the suppression gain and filter, comfort noise and EchoCanceller3 are #240's next steps.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -810,7 +829,13 @@ ALGORITHMS = [
                       "signals and bounds (multi-channel cases with the debug-build parameters; the SIMD-equivalence and "
                       "death tests don't apply). The first FFT used fft4g's twiddles, built with cosf; the round trip of "
                       "aec3_fft_unittest's FftAndIfft was 0.002 off at 2.6e6 against its 0.001 bound, so the 128-point "
-                      "tables are now built in double precision as OouraFft stores them, and it passes."),
+                      "tables are now built in double precision as OouraFft stores them, and it passes. AEC3's echo state "
+                      "(#240 step 3): libwebrtc's aec_state (NormalUsage for 1, 2 and 8 render and capture channels, "
+                      "ConvergedFilterDelay), erl_estimator, erle_estimator (VerifyErleIncreaseAndHold, "
+                      "VerifyErleTrackingOnOnsets), signal_dependent_erle_estimator, reverb_model_estimator and "
+                      "filter_analyzer (FilterResize) unit tests pass with their signals and bounds; echo_audibility, "
+                      "transparent_mode and subtractor_output_analyzer, which have no libwebrtc unit tests, have "
+                      "behavioural tests derived from the code."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
@@ -870,7 +895,7 @@ ALGORITHMS = [
                       "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -881,9 +906,13 @@ ALGORITHMS = [
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
                "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
-               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
-               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
-               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "The speech probability comes from AGC2's RNN VAD, ported in `agc2_rnn_vad.h` "
+               "(`vad_wrapper.cc` and `rnn_vad/`: 24 kHz features from the LP residual's pitch and the "
+               "Opus-band cepstrum, FC-GRU-FC network with the rnnoise weights, reset every 1500 ms, the "
+               "capture resampled with libwebrtc's `PushSincResampler`), and `GainController2` follows "
+               "`gain_controller2.cc`'s order (fixed gain after the adaptive gain, before the limiter). Its "
+               "dot products sum in order (libwebrtc's portable path) and its FFTs are ours, not PFFFT, so "
+               "the probability matches libwebrtc to float precision, not bit for bit. AGC1, the call "
                "default: `agc1::GainControl` ports its digital compression stage, which every call runs "
                "(`AgcManagerDirect::SetupDigitalGainControl` puts `GainControlImpl` in `kFixedDigital` with "
                "a 2 dB target, 7 dB compression and the limiter): `agc/legacy/digital_agc.cc` (gain table, "
@@ -898,9 +927,12 @@ ALGORITHMS = [
                "update, clipping handling with libwebrtc's `AnalogGainController` defaults) and APM's analog "
                "mic gain emulation (`capture_levels_adjuster/`), the test bench's modelled mic volume: the "
                "capture is scaled by volume / 255 from 255, ramped over the frame. The `apm v2` e2e chain now "
-               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. Remaining differences: the "
-               "clipping predictor is not ported (off by default, so a call never creates it); AGC2's RNN VAD "
-               "(#57).",
+               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. `clipping_predictor.h` ports "
+               "AGC1's clipping predictor (`agc2/clipping_predictor.cc`, `clipping_predictor_level_buffer.cc`: "
+               "event prediction from a crest factor drop, or peak prediction with a fixed or adaptive step) "
+               "and `AgcManagerDirect` asks it for a step after the clipping wait, as libwebrtc does; it is off "
+               "by default (`ClippingPredictor::enabled = false`), as in libwebrtc, so a call never creates it "
+               "and no metric moves.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -924,14 +956,35 @@ ALGORITHMS = [
                       "its mic volume and compression gain sequences, in the six parametrizations), and AGC1 "
                       "in the `apm v2` chain gives on the e2e quiet-then-loud talker: quiet talker -20.4 dBFS "
                       "(libwebrtc AGC1 -20.6, v1 -16.8), loud talker -3.3 dB (-3.2), noise in pauses "
-                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0)."),
+                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0). AGC2's RNN VAD (#242) passes the ports of libwebrtc's "
+                      "`rnn_fc`, `rnn_gru`, `spectral_features(_internal)`, `features_extraction` and `vad_wrapper` "
+                      "unit tests with their test vectors and tolerances, and `PushSincResampler` the chirp "
+                      "error thresholds of `push_sinc_resampler_unittest.cc` (`Agc2RnnVad.*`); the tests that read "
+                      "libwebrtc's resource files are not ported (the files are not in the reference sources). "
+                      "On the test bench's speech-like signal 87% of frames reach a probability of 0.95, on white "
+                      "noise none. With it, AGC2 gives on the e2e quiet-then-loud talker: quiet talker -21.05 dBFS "
+                      "(libwebrtc AGC2 -21.0; -21.10 with our VAD's decision), loud talker -1.2 dB (-1.0), noise "
+                      "in pauses -62.6 dBFS (-62.9). The clipping predictor (#242) passes the ports of libwebrtc's "
+                      "`clipping_predictor_unittest.cc` and `clipping_predictor_level_buffer_unittest.cc` with "
+                      "their parametrizations (`Agc1ClippingPredictor.*`, `Agc1ClippingLevelBuffer.*`: adaptive "
+                      "step 17, fixed step 15), and `AgcManagerDirect` with it the predictor tests of "
+                      "`agc_manager_direct_unittest.cc` (used predictions lower the volume 255 -> 240 -> 225 "
+                      "before clipping, unused ones leave it as without the predictor); with the default config "
+                      "the e2e chain is unchanged."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
-         headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
+         headers=["audio/high_pass_filter.h", "audio/hpf.h", "audio/cascaded_biquad_filter.h"],
+         unit=["HighPassFilter", "Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+                      "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
+                      "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
+                      "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
+                      "(`Hpf.FrequencyResponse16kHz`), and on `sm_apm_compare`'s case it gives hum attenuation "
+                      "67.2 dB and speech -0.2 dB, as libwebrtc (`E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc`). "
+                      "Its pass band is about 0.4 dB down, as libwebrtc's."),
     dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
          problems=["Keyboard typing noise -> transient suppressor"],
          headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],
@@ -1014,7 +1067,13 @@ ALGORITHMS = [
                   "detector's freeze count is compared with gaps counted directly from the render log.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Keyframe requests that end freezes are in 3.5.",
          verification="A unit-test expectation was wrong about the harmonic frame rate: irregular 38/38/23 ms "
-                      "intervals give 28.97 fps, not 30.3, which is the point of the metric."),
+                      "intervals give 28.97 fps, not 30.3, which is the point of the metric. "
+                      "#268 ported libwebrtc's freeze rule (`video/video_quality_observer2.cc`, `OnRenderedFrame`): the "
+                      "current interval enters the 30-interval average before the test, freezes stay in it, the "
+                      "average is rounded down to whole ms and the test starts at 5 intervals. `sm_video_compare` now "
+                      "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
+                      "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
+                      "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
     dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
          problems=["Decoder errors or corrupt bitstream -> decoder fallback (hardware -> software)",
                    "Hardware encoder failure -> automatic fallback to a software encoder"],

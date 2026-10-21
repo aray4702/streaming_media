@@ -63,18 +63,28 @@ endif()
 if(SM_WITH_AUDIO)
   sm_add_library(audio DEPS sm::core SOURCES
     audio/high_pass_filter.cc
+    audio/hpf.cc
+    audio/cascaded_biquad_filter.cc
     audio/vad.cc
     audio/noise_suppressor.cc
     audio/gain_control.cc
     audio/agc2.cc
+    audio/agc2_rnn_vad.cc
+    audio/agc2_rnn_vad_weights.cc
+    audio/sinc_resampler.cc
     audio/agc1.cc
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc
     audio/agc_manager.cc
+    audio/clipping_predictor.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
     audio/aec3_delay.cc
     audio/aec3_filter.cc
+    audio/aec3_reverb.cc
+    audio/aec3_analysis.cc
+    audio/aec3_erle.cc
+    audio/aec3_state.cc
     audio/transient_suppressor.cc
     audio/comfort_noise.cc
     audio/audio_level.cc
@@ -86,7 +96,8 @@ if(SM_WITH_AUDIO)
   # Bit-exact with libwebrtc's float/double arithmetic (which Chromium builds
   # with -ffp-contract=off): no fused multiply-adds on FMA targets.
   set_source_files_properties(audio/agc1_vad.cc audio/agc1_vad_isac.cc
-                              audio/fft4g.cc audio/ns.cc audio/aec3_filter.cc PROPERTIES
+                              audio/fft4g.cc audio/ns.cc audio/aec3_filter.cc audio/aec3_reverb.cc
+                              audio/aec3_analysis.cc audio/aec3_erle.cc audio/aec3_state.cc PROPERTIES
     COMPILE_OPTIONS "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>")
 endif()
 
