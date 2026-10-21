@@ -1,19 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-86 scenarios, mean of 10 seeds. **177 gaps**: 80 behind libwebrtc, 97 ahead of it; 0 without an owner.
+86 scenarios, mean of 10 seeds. **175 gaps**: 78 behind libwebrtc, 97 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-175 gaps on `main`, 177 here: **0 closed, 2 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_283_longest_freeze_no_metrics | `video.freeze_count` | 1.2 | 1.8 | ±0.5 | ahead | 6/10 | #5, #37, #24 |
-| issue_283_longest_freeze_no_metrics | `video.freeze_total_ms` | 2134 | 2274 | ±114 | ahead | 6/10 | #5, #37, #24 |
+175 gaps on `main`, 175 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
@@ -35,8 +28,6 @@ Opened:
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 4 | 3.2 | ±0.6 | behind | 6/10 | #23 |
 | issue_123_v2_allocation_min | `video.render_fps` | 9.9 | 7.2 | ±1.6 | ahead | 8/10 | #37, #24 |
 | issue_127_all_v2_no_stall | `repair.overhead_pct` | 31.8 | 37.7 | ±2 | ahead | 10/10 | #21, #7, #29 |
-| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_count` | 3.3 | 1.1 | ±0.7 | behind | 8/10 | #5, #37, #24 |
-| issue_127_pacer_v2_jitter_reorder_loss | `video.freeze_total_ms` | 753 | 240 | ±150 | behind | 8/10 | #5, #37, #24 |
 | issue_12_lossbwe_congestive | `cc.rtt_p50_ms` | 102 | 81.2 | ±10 | behind | 10/10 | #61 |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 5.4 | 3.8 | ±0.7 | behind | 9/10 | #21, #61, #12 |
 | issue_12_lossbwe_congestive | `repair.overhead_pct` | 9.8 | 7.5 | ±2 | behind | 6/10 | #21, #7, #29 |

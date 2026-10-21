@@ -758,46 +758,46 @@ issue_127_pacer_v2_jitter_reorder_loss - pacer v2 with rtx v2 on a 4 Mbps link w
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.1          0.1  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            25           24  =
-  audio.mouth_to_ear_p95_ms               206          210  =
-  audio.jb_delay_p95_ms                    94         99.0  =
-  video.freeze_count                      3.3          1.1  webrtc
-  video.freeze_total_ms                   753          240  webrtc
-  video.longest_freeze_ms                 264          195  =
+  audio.longest_interruption_ms            23         26.5  =
+  audio.mouth_to_ear_p95_ms               204          210  =
+  audio.jb_delay_p95_ms                  92.8         98.3  =
+  video.freeze_count                        2          1.4  webrtc
+  video.freeze_total_ms                   448          320  webrtc
+  video.longest_freeze_ms                 203          194  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.9         29.9  =
-  video.e2e_delay_p95_ms                  187          185  =
-  video.time_to_first_frame_ms           93.2         95.1  =
-  video.avg_kbps                         1092          952  sm
-  video.keyframe_requests                 0.3          0.6  =
-  sync.av_offset_p95_ms                  66.5         71.6  =
-  cc.utilization_pct                     67.1         59.0  sm
-  cc.queue_p95_ms                        13.0          7.4  =
-  cc.max_settle_ms                      11370        15870  sm
-  cc.rtt_p50_ms                           104          104  =
+  video.e2e_delay_p95_ms                  191          186  =
+  video.time_to_first_frame_ms            100          101  =
+  video.avg_kbps                          959          884  sm
+  video.keyframe_requests                 0.4          0.4  =
+  sync.av_offset_p95_ms                  71.3         70.5  =
+  cc.utilization_pct                     58.4         54.8  sm
+  cc.queue_p95_ms                        11.5          6.8  =
+  cc.max_settle_ms                      16715        18535  sm
+  cc.rtt_p50_ms                           103          104  =
   net.loss_pct                            2.0          2.0  =
-  repair.overhead_pct                    47.0         48.4  =
+  repair.overhead_pct                    43.8         47.4  sm
   forward link per kind (information only)
-  net.audio_kbps                         70.3         69.8
-  net.video_kbps                         1134          990
-  net.rtx_kbps                            567          499
-  net.padding_kbps                        0.5          0.6
+  net.audio_kbps                         69.9         70.0
+  net.video_kbps                          997          920
+  net.rtx_kbps                            475          456
+  net.padding_kbps                        0.8          0.8
   net.fec_kbps                              0            0
-  net.audio_loss_pct                      2.0          1.9
-  net.video_loss_pct                      2.0          2.1
-  net.rtx_loss_pct                        2.0          2.0
-  net.padding_loss_pct                    1.7          0.8
-  net.audio_size_p50_b                    193          194
-  net.audio_size_p90_b                    224          219
-  net.audio_size_max_b                    278          310
+  net.audio_loss_pct                      2.0          2.0
+  net.video_loss_pct                      2.0          2.0
+  net.rtx_loss_pct                        2.1          2.0
+  net.padding_loss_pct                    2.7          2.6
+  net.audio_size_p50_b                    193          196
+  net.audio_size_p90_b                    223          219
+  net.audio_size_max_b                    275          303
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                   1299         1261
-  net.video_size_p90_b                   1444         1432
+  net.video_size_p50_b                   1266         1252
+  net.video_size_p90_b                   1432         1428
   net.video_size_max_b                   1486         1486
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                     1309         1268
-  net.rtx_size_p90_b                     1449         1438
+  net.rtx_size_p50_b                     1277         1261
+  net.rtx_size_p90_b                     1436         1434
   net.rtx_size_max_b                     1488         1488
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
@@ -4294,7 +4294,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 241, webrtc 124, tie 1435 (of the metrics shown)
+better: sm 242, webrtc 124, tie 1434 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
