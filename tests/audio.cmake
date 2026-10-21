@@ -6,6 +6,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/aec3_filter_test.cc
     unit/audio/aec3_reverb_test.cc
     unit/audio/aec3_state_test.cc
+    unit/audio/aec3_suppression_test.cc
     unit/audio/agc1_test.cc
     unit/audio/agc1_vad_test.cc
     unit/audio/agc2_rnn_vad_test.cc
@@ -25,6 +26,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Aec3Filter
     Aec3Reverb
     Aec3State
+    Aec3Suppression
     Agc1
     Agc1CaptureLevels
     Agc1ClippingLevelBuffer
