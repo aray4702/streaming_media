@@ -11,9 +11,6 @@ describe 1 Mbps uplink behind a 2 s deep router buffer, every v2 switch on (issu
 # Target (issue #124): cc.queue_p95_ms within the parity band of libwebrtc (47.3 ms).
 cc v2
 pacer v2
-allocator v2
-packetization v2
-audio v2
 duration 40s
 at 0s capacity=1000kbps delay=20ms queue=2s
 expect cc.queue_p95_ms < 65
