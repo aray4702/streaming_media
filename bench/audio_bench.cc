@@ -6,6 +6,7 @@
 #include <algorithm>
 #include "sm/audio/audio_level.h"
 #include "sm/audio/resampler.h"
+#include "sm/audio/splitting_filter.h"
 #include "sm_bench.h"
 
 using namespace sm;
@@ -33,6 +34,21 @@ SM_BENCH(audio, Vad_10ms) {
   for (auto _ : st) {
     bench::DoNotOptimize(v.Process(std::span<const float>(x.data() + off, 160)));
     off = (off + 160) % (x.size() - 160);
+  }
+  st.RequireRealtimeFactor(0.010, 500);
+}
+
+SM_BENCH(audio, SplittingFilter_48k_10ms) {
+  // Three-band analysis plus synthesis of one 10 ms frame at 48 kHz.
+  SplittingFilter f(48000);
+  auto x = sim::SpeechLike(48000, 2.0, 1, true);
+  std::vector<float> bands(480), out(480);
+  size_t off = 0;
+  for (auto _ : st) {
+    f.Analysis(std::span<const float>(x.data() + off, 480), bands);
+    f.Synthesis(bands, out);
+    bench::DoNotOptimize(out[0]);
+    off = (off + 480) % (x.size() - 480);
   }
   st.RequireRealtimeFactor(0.010, 500);
 }

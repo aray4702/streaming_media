@@ -32,7 +32,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 |---|---|---|---|---|---|---|---|---|
 | 5.1 | [Transport-wide CC feedback (and REMB)](5-cc/5.1-transport-feedback.md) | 5 | 1 | 1 | pass | pass | pass | pass |
 | 5.2 | [Delay-based bandwidth estimation (GCC)](5-cc/5.2-delay-based-bwe.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.3 | [Loss-based bandwidth estimation](5-cc/5.3-loss-based-bwe.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 5.3 | [Loss-based bandwidth estimation](5-cc/5.3-loss-based-bwe.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 5.4 | [Send-side bandwidth estimation (GCC network controller)](5-cc/5.4-gcc-controller.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 5.5 | [Pacer with priority queues](5-cc/5.5-pacer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
@@ -46,15 +46,16 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 2 | 1 | 3 | pass | pass | pass | pass |
-| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 2 | 1 | 2 | pass | pass | pass | pass |
-| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | pass | pass | pass | pass |
+| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 6.7 | [DTX and comfort noise (RFC 3389)](6-audio/6.7-dtx-cng.md) | 3 | 1 | 2 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 0 | 0 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 7. Video quality and processing
 

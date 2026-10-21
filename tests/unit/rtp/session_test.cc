@@ -469,13 +469,11 @@ SM_TEST(Session, SendsADueSenderReportAheadOfAKeyframe) {
 
 // VideoSendStreamImpl (#187): a video stream with the transport-cc extension
 // sets StreamsConfig::pacing_factor to 1.1 (kStrictPacingMultiplier), so GoogCC
-// v2 paces at 1.1 x the target from the start, not 2.5 x until the first feedback.
+// paces at 1.1 x the target from the start, not 2.5 x until the first feedback.
 SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) {
   auto pacing_bps = [](bool video, bool transport_cc) {
     SessionConfig c = Cfg(1);
     if (!transport_cc) c.extensions = sync::ExtensionMap();
-    c.send_side.gcc.version = 2;
-    c.send_side.pacer.version = cc::PacerVersion::kV2;
     c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(300);
     Session s(c);
     AudioStreamConfig au;
@@ -488,16 +486,6 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
   SM_EXPECT_EQ(pacing_bps(true, true), 330000);
   SM_EXPECT_EQ(pacing_bps(false, true), 750000);  // Audio only: GoogCC's 2.5 x.
   SM_EXPECT_EQ(pacing_bps(true, false), 750000);  // No transport-cc: no override.
-}
-
-// #61: a session runs libwebrtc's components unless a field selects v1. The
-// component configs on their own keep v1, so their unit tests test what they name.
-SM_TEST(Session, DefaultsToLibwebrtcsComponents) {
-  const SessionConfig c;
-  SM_EXPECT_EQ(c.send_side.gcc.version, 2);
-  SM_EXPECT_TRUE(c.send_side.pacer.version == cc::PacerVersion::kV2);
-  SM_EXPECT_EQ(cc::GccConfig{}.version, 1);
-  SM_EXPECT_TRUE(cc::PacerConfig{}.version == cc::PacerVersion::kV1);
 }
 
 // #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)

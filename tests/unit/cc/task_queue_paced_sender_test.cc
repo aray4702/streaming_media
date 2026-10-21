@@ -39,11 +39,10 @@ const Timestamp kStart = Timestamp::Millis(1234);
 PacerConfig Config(TimeDelta hold_back_window = TimeDelta::Millis(1), int hold_back_packets = -1,
                    TimeDelta time_window = TimeDelta::Millis(40)) {
   PacerConfig cfg;
-  cfg.version = PacerVersion::kV2;
   cfg.task_queue_scheduling = true;
   cfg.hold_back_window = hold_back_window;  // PacingController::kMinSleepTime by default.
   cfg.hold_back_packets = hold_back_packets;
-  cfg.v2.send_burst_interval = time_window;
+  cfg.controller.send_burst_interval = time_window;
   return cfg;
 }
 

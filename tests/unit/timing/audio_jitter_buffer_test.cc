@@ -168,3 +168,26 @@ void CheckPlayoutTimestamp(int version) {
 
 SM_TEST(AudioJitterBuffer, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(1); }
 SM_TEST(AudioJitterBufferNetEqV2, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(2); }
+
+// StatisticsCalculator::JitterBufferDelay: a packet counts the whole 10 ms
+// ticks it waited in the packet buffer, weighted by its samples; the decoded
+// audio waiting in the sync buffer is not counted.
+SM_TEST(AudioJitterBuffer, JitterBufferDelayCountsPacketWaitingTicks) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  cfg.time_stretch = false;
+  AudioJitterBuffer jb(cfg);
+  auto x = sim::SpeechLike(16000, 1.0, 3, false);
+  std::vector<float> out(160);
+  // Two packets arrive together before the first pull.
+  jb.InsertPacket(0, Chunk(x, 0), Timestamp::Millis(0));
+  jb.InsertPacket(320, Chunk(x, 1), Timestamp::Millis(0));
+  jb.GetAudio(out, Timestamp::Millis(0));
+  SM_EXPECT_EQ(jb.stats().jitter_buffer_emitted_count, 320u);
+  SM_EXPECT_EQ(jb.stats().jitter_buffer_delay_ms_samples, 10u * 320u);
+  // The second packet is extracted by the third pull, once the sync buffer
+  // holds less than 10 ms beyond Expand's overlap: it waited 3 ticks.
+  for (int t = 10; t < 40; t += 10) jb.GetAudio(out, Timestamp::Millis(t));
+  SM_EXPECT_EQ(jb.stats().jitter_buffer_emitted_count, 640u);
+  SM_EXPECT_EQ(jb.stats().jitter_buffer_delay_ms_samples, 10u * 320u + 30u * 320u);
+}

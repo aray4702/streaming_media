@@ -6,8 +6,6 @@ describe issue_150_gcc_v2_high_jitter with seed 5: the seed where our target ran
 # (utilization 53-65 %), where libwebrtc has 1 of 40. Seeds 1-40 after the fix: utilization 34.7 % mean, none above 49 %
 # (libwebrtc 37.5 %, 1 of 40 above 53 %).
 # Seed 5: before 64-65 % utilization, after 34.5 %.
-cc v2
-pacer v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 seed 5

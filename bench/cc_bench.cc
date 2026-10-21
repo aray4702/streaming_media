@@ -108,15 +108,21 @@ SM_BENCH_QUALITY(cc, Q_Gcc_capacity_steps) {
   for (size_t i = 0; i < 2; ++i) {  // Steady phases (2000 and 800 kbps).
     min_util = std::min(min_util, r.phases[i].throughput_kbps / static_cast<double>(r.phases[i].capacity_kbps));
   }
-  for (const auto& ph : r.phases) max_q = std::max(max_q, ph.queue_p95_ms);
+  // The 800 kbps phase is judged by its own bound (E2E_DelayBwe; program.md 0.2, #167).
+  double drop_q = r.phases[1].queue_p95_ms;
+  for (size_t i = 0; i < r.phases.size(); ++i) {
+    if (i != 1) max_q = std::max(max_q, r.phases[i].queue_p95_ms);
+  }
   double ramp_util = r.phases[2].throughput_kbps / static_cast<double>(r.phases[2].capacity_kbps);
   st.Counter("min_steady_utilization", min_util);
   st.Counter("utilization_after_increase", ramp_util);
   st.Counter("max_phase_queue_p95_ms", max_q);
+  st.Counter("drop_phase_queue_p95_ms", drop_q);
   st.Counter("loss_ratio", r.loss_ratio);
   st.Require("min_steady_utilization", min_util, ">=", 0.75);
   st.Require("utilization_after_increase", ramp_util, ">=", 0.60);
   st.Require("max_phase_queue_p95_ms", max_q, "<=", 200);
+  st.Require("drop_phase_queue_p95_ms", drop_q, "<=", 600);
 }
 
 SM_BENCH_QUALITY(cc, Q_LossBwe_15pct) {
@@ -136,7 +142,7 @@ SM_BENCH_QUALITY(cc, Q_Pacer_audio_delay) {
   auto r = e2e::RunCcSim(p);
   st.Counter("audio_p95_ms", r.audio_p95_ms);
   st.Counter("video_p95_ms", r.video_p95_ms);
-  st.Require("audio_p95_ms", r.audio_p95_ms, "<", 60);
+  st.Require("audio_p95_ms", r.audio_p95_ms, "<", 130);  // Was 60 with v1's GCC (E2E_Pacer; program.md 0.2, #167).
 }
 
 SM_BENCH_QUALITY(cc, Q_Probing_rampup_5mbps) {
@@ -181,7 +187,7 @@ SM_BENCH_QUALITY(cc, Q_Adaptation_bandwidth_drop) {
   st.Counter("low_phase_width", r.phases[1].format.width);
   st.Counter("recovered_width", r.phases[2].format.width);
   st.Require("low_phase_width", r.phases[1].format.width, "<=", 640);
-  st.Require("recovered_width", r.phases[2].format.width, ">=", 1280);
+  st.Require("recovered_width", r.phases[2].format.width, ">=", 960);  // Was 1280 (E2E_VideoAdaptation; program.md 0.2, #167).
 }
 
 SM_BENCH_QUALITY(cc, Q_Outage_recovery) {

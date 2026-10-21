@@ -287,6 +287,14 @@ own rates. Converting between rates is unavoidable.
 Crude conversion (dropping samples or linear interpolation) folds high frequencies back into the audible band
 (aliasing) and dulls the sound. Conversion between rates that are not simple multiples, like 44.1 kHz and 48 kHz,
 needs fractional-ratio resampling that keeps exact sample counts over time.""",
+    "6.12": """\
+Microphones and browsers capture at 32 or 48 kHz, but the speech-specific work in audio processing (echo
+cancellation, noise suppression) is designed for and cheapest at 16 kHz, where most speech energy is. libwebrtc
+therefore splits each 10 ms frame into 16 kHz bands, runs AEC3 and NS on the lowest one, applies a simple gain to the
+upper ones and merges them again.
+
+The split has to keep the bands apart (so the suppression of one band does not leak into another as aliasing) and
+put the signal back together at its own level without audible artefacts, with as little added delay as possible.""",
     # ------------------------------------------------------------------ 7
     "7.1": """\
 When a frame cannot be decoded, the receiver keeps showing the last good picture, and the user sees frozen

@@ -1,12 +1,12 @@
 // 5.6 Bandwidth probing.
 //
-// ProbeController decides when to probe: at start-up (clusters at 3x and 6x
-// the start rate), again whenever an estimate reaches 70% of the last probe
-// rate (exponential probing upward), when the max bitrate is raised, and
-// periodically while the application is limited (ALR) so a stale estimate
-// can be revalidated. ProbeBitrateEstimator turns the feedback of one probe
-// cluster into a rate: the receive rate if the link could not keep up
-// (receive < 90% of send), else the send rate.
+// libwebrtc's ProbeController (ProbeControllerV2 below) decides when to probe:
+// at start-up (clusters at 3x and 6x the start rate), again whenever an
+// estimate reaches 70% of the last probe rate (exponential probing upward),
+// when the max bitrate is raised, after a large drop, and periodically in ALR
+// when the stream asks for it. ProbeBitrateEstimator turns the feedback of one
+// probe cluster into a rate: 95% of the receive rate if the link could not
+// keep up (receive < 90% of send), else the lower of the two.
 #pragma once
 
 #include <map>
@@ -24,49 +24,13 @@ struct ProbeCluster {
   DataRate rate;
   int min_probes = 5;
   DataSize min_bytes;
-  // `cc v2` (ProbeClusterConfig): when the cluster was requested and the
+  // ProbeClusterConfig: when the cluster was requested and the
   // smallest time between two bursts (BitrateProber::RecommendedMinProbeSize).
   Timestamp at_time;
   TimeDelta min_probe_delta = TimeDelta::Millis(2);
 };
 
-struct ProbeControllerConfig {
-  double first_multiplier = 3.0;
-  double second_multiplier = 6.0;
-  double further_probe_threshold = 0.7;
-  double further_multiplier = 2.0;
-  TimeDelta alr_probe_interval = TimeDelta::Seconds(5);
-  TimeDelta probe_duration = TimeDelta::Millis(15);
-  EventSink* events = nullptr;
-};
-
-class ProbeController : public MetricsSource {
- public:
-  explicit ProbeController(ProbeControllerConfig cfg = {}) : cfg_(cfg) {}
-  std::vector<ProbeCluster> SetBitrates(DataRate min, DataRate start, DataRate max, Timestamp now);
-  std::vector<ProbeCluster> SetEstimate(DataRate estimate, Timestamp now);
-  std::vector<ProbeCluster> SetMaxBitrate(DataRate max, Timestamp now);
-  // ALR: application-limited (sending well below the estimate).
-  void SetApplicationLimited(bool alr, Timestamp now);
-  std::vector<ProbeCluster> Process(Timestamp now);
-  void EnablePeriodicAlrProbing(bool e) { periodic_alr_ = e; }
-  void ExportMetrics(MetricsWriter& w) const override;
-
- private:
-  std::vector<ProbeCluster> Initiate(std::vector<DataRate> rates, Timestamp now, bool further);
-  ProbeControllerConfig cfg_;
-  DataRate max_ = DataRate::KilobitsPerSec(20000);
-  DataRate estimate_;
-  DataRate min_rate_to_continue_ = DataRate::PlusInfinity();  // Exponential probing.
-  bool alr_ = false;
-  bool periodic_alr_ = true;
-  Timestamp alr_start_ = Timestamp::MinusInfinity();
-  Timestamp last_probe_ = Timestamp::MinusInfinity();
-  int next_id_ = 1;
-  uint64_t clusters_ = 0;
-};
-
-// `cc v2`: libwebrtc's ProbeController (goog_cc/probe_controller.{h,cc}, M157,
+// libwebrtc's ProbeController (goog_cc/probe_controller.{h,cc}, M157,
 // compare/webrtc/reference/) with its defaults (WebRTC-Bwe-ProbingConfiguration
 // unset) and no NetworkStateEstimate (the default GoogCC has no estimator):
 //   - exponential probing when the network is available and the bitrates are
@@ -164,11 +128,11 @@ class ProbeControllerV2 : public MetricsSource {
 
 class ProbeBitrateEstimator : public MetricsSource {
  public:
-  // `libwebrtc` (`cc v2`): goog_cc/probe_bitrate_estimator.cc as is: only
-  // received packets count, an estimate needs 80% of the probes and bytes, a
-  // result more than twice the send rate is rejected, old clusters are erased
-  // after 1 s, and the newest estimate wins.
-  explicit ProbeBitrateEstimator(bool libwebrtc = false) : libwebrtc_(libwebrtc) {}
+  // goog_cc/probe_bitrate_estimator.cc as is: only received packets count, an
+  // estimate needs 80% of the probes and bytes, a result more than twice the
+  // send rate is rejected, old clusters are erased after 1 s, and the newest
+  // estimate wins.
+  ProbeBitrateEstimator() = default;
   void SetClusterInfo(const ProbeCluster& c);
   // Feed every packet result; returns an estimate when a cluster completes.
   std::optional<DataRate> OnPacketResult(const PacketResult& r);
@@ -177,18 +141,14 @@ class ProbeBitrateEstimator : public MetricsSource {
 
  private:
   struct Cluster {
-    ProbeCluster config;
     Timestamp first_send = Timestamp::PlusInfinity(), last_send = Timestamp::MinusInfinity();
     Timestamp first_recv = Timestamp::PlusInfinity(), last_recv = Timestamp::MinusInfinity();
     int64_t size_last_send = 0, size_first_recv = 0, bytes = 0;
     int count = 0;
-    bool done = false;
   };
-  std::optional<DataRate> OnPacketResultV2(const PacketResult& r);
   void EraseOldClusters(Timestamp timestamp);
-  bool libwebrtc_;
   std::map<int, Cluster> clusters_;
-  std::map<int, ProbeCluster> configs_;  // v2: the pacing info of the cluster a packet was sent in.
+  std::map<int, ProbeCluster> configs_;  // The pacing info of the cluster a packet was sent in.
   std::optional<DataRate> last_;
   uint64_t estimates_ = 0, invalid_ = 0;
 };

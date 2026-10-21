@@ -491,9 +491,10 @@ std::string WebrtcVersion() { return SM_WEBRTC_VERSION; }
 const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
   static const std::vector<std::pair<std::string, std::string>> k = {
       {"audio.jb_delay_p50_ms / p95", "Percentiles of the jitter buffer delay averaged over each 10 ms of playout "
-                                      "(jitterBufferDelay / jitterBufferEmittedCount); libwebrtc exposes no per-packet values"},
-      {"audio.net_delay_p95_ms", "Measured from when the 20 ms Opus frame is complete (the test bench measures from "
-                                 "when its frame is ready, which is when it is captured)"},
+                                      "(jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own"},
+      {"audio.net_delay_p95_ms", "Measured from the capture time of the packet's first sample, (ts - first ts) / 48 "
+                                 "ms, as the test bench measures from its RTP timestamp; the first packet is the "
+                                 "frame of the 10 ms blocks captured at 0 and 10 ms"},
       {"video.residual_loss_pct", "Counts packets recovered by RTX but not by FEC (libwebrtc does not expose "
                                   "FEC-recovered packets), so it overstates residual loss when FEC recovers packets"},
       {"video.undecodable_frames", "VideoReceiveStream frames_dropped"},
@@ -865,9 +866,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (r.ssrc == kAudioSsrc) {
         if (!audio_first.IsFinite()) audio_first = at;
         if (audio_ts0) {
-          // Ready to send when the 20 ms frame is complete.
-          double ready_ms = static_cast<double>(static_cast<uint32_t>(r.ts - *audio_ts0)) / 48.0 + 20.0;
-          audio_net_delay.push_back(static_cast<double>(at.us()) / 1000.0 - ready_ms);
+          // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
+          // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
+          // at t, so the first packet holds the blocks of 0 and 10 ms and completes at 10 ms, and a packet's first
+          // sample was captured at (ts - first ts) / 48 ms. Both stacks put audio on the link at 10 ms mod 20.
+          double capture_ms = static_cast<double>(static_cast<uint32_t>(r.ts - *audio_ts0)) / 48.0;
+          audio_net_delay.push_back(static_cast<double>(at.us()) / 1000.0 - capture_ms);
         }
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;

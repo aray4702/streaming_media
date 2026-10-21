@@ -425,12 +425,14 @@ ALGORITHMS = [
                   "2000 -> 800 -> 2500 kbps every 20 s, with a 200 KB drop-tail queue. Utilization and queueing "
                   "delay are measured over the second half of each phase.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "After a capacity increase, GCC climbs multiplicatively at 8%/s. Going from 650 to 2500 kbps "
-               "takes about 17 s, so the last phase has a lower utilization bar. "
-               "`cc v2` (`GccConfig::version`, issue #19) starts the port of libwebrtc's GoogCC as a unit (#61): the "
+               "After a capacity increase GoogCC climbs back slowly, so the last phase has a lower utilization bar. "
+               "The estimator is libwebrtc's; the library's own (`cc v1`: its InterArrival grouping, AIMD controller "
+               "and acked-rate window) was deleted in #167, and with it the 200 ms queue bound of the 800 kbps phase "
+               "(600 ms since, program.md 0.2: libwebrtc on `capacity_drop` has queue p95 279 ms and settles in 14.3 s). "
+               "Issue #19 started the port of libwebrtc's GoogCC as a unit (#61): the "
                "detector's front end is `DelayBasedBwe::IncomingPacketFeedbackVector` with `InterArrivalDelta` "
                "(`BelongsToBurst`, reordered groups, feedback sorted by receive time, 2 s stream time-out). The "
-               "trendline detector was already libwebrtc's. #15 adds the rest of the overuse path to `cc v2`: the "
+               "trendline detector was already libwebrtc's. #15 adds the rest of the overuse path: the "
                "acknowledged rate (#15: `BitrateEstimator`, 500 ms first window, then 150 ms Bayesian windows; since #150 `RobustThroughputEstimator`, see below), "
                "`AimdRateControl` (`aimd_rate_control.h`: near-max additive increase, decrease with `beta x "
                "throughput - 5 kbps`, `LinkCapacityEstimator`, `TimeToReduceFurther`, `bitrate_is_initialized_`) and "
@@ -441,7 +443,7 @@ ALGORITHMS = [
                "after a big drop. #166 ports `delay_based_bwe_unittest.cc` (20 cases, `DelayBweLibwebrtc`; found that `Result.updated` "
                "is `ValidEstimate()`, not always true) and `robust_throughput_estimator_unittest.cc`; `acknowledged_bitrate_estimator_unittest.cc` (3 cases, `AcknowledgedBitrateEstimator`, with a recording `BitrateEstimator` in place of the gmock) follows. M157's acknowledged-bitrate "
                "estimator is `RobustThroughputEstimator` (`RobustThroughputEstimatorSettings::enabled = true`, "
-               "`AcknowledgedBitrateEstimatorInterface::Create`), and since #150 `cc v2` feeds it with the receive-sorted "
+               "`AcknowledgedBitrateEstimatorInterface::Create`), and since #150 GoogCC feeds it with the receive-sorted "
                "feedback instead of the `BitrateEstimator` (the ALR marks are no-ops there, as in libwebrtc). Not ported, because we use "
                "transport-cc with send-side estimation: the receive-side `remote_bitrate_estimator_*`, `inter_arrival`, "
                "`overuse_detector` and `congestion_control_feedback_*` tests. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
@@ -452,15 +454,13 @@ ALGORITHMS = [
                       "and so does the simulator now. Utilization rose to ~80%, with queue p95 of 20-33 ms."),
     dict(id="5.3", slug="loss-based-bwe", title="Loss-based bandwidth estimation",
          problems=["Unknown or changing available bandwidth -> GCC: loss-based estimation"],
-         headers=["cc/loss_based_bwe.h", "cc/loss_based_bwe_v2.h", "cc/send_side_bandwidth_estimation.h"],
-         unit=["LossBwe", "LossBweV2", "SendSideBweV2", "GccV2Loss"], e2e=["E2E_LossBwe"],
+         headers=["cc/loss_based_bwe_v2.h", "cc/send_side_bandwidth_estimation.h"],
+         unit=["LossBweV2", "SendSideBweV2", "GccV2Loss"], e2e=["E2E_LossBwe"],
          bench=["cc/Q_LossBwe_15pct"],
          scenario="An 8 Mbps link with 15% versus 1% random loss: heavy loss must push the rate far below "
                   "capacity, light loss must not.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Deviation from libwebrtc v1: below 2% loss this controller does not limit at all (delay-based "
-               "and probing own the upward direction), whereas libwebrtc caps increases at 8%/s after start-up. "
-               "`cc v2` (#12) is libwebrtc's code instead: `LossBasedBweV2` (`loss_based_bwe_v2.h`, CreateConfig's "
+               "The estimate is libwebrtc's code (#12; the library's own loss bands, `cc v1`, were deleted in #167): `LossBasedBweV2` (`loss_based_bwe_v2.h`, CreateConfig's "
                "defaults) fits the loss model p = q + (1 - q)(R - B)/R to 15 observations of at least 250 ms "
                "(byte loss rate, weights 0.9^age) by one Newton step per candidate bandwidth (current x 1.02 / "
                "1.0 / 0.95, the acked rate, a higher delay-based estimate), bounds the result by the instant upper "
@@ -477,8 +477,8 @@ ALGORITHMS = [
                "`LossBasedState::kIncreaseUsingPadding` padding (the pacer sends probes, not loss-based padding).",
          verification="Defect found: loss was measured over 20-packet intervals, and a lucky interval with no "
                       "loss (about 4% likely at 15% loss) let the estimate jump from 153 to 2 338 kbps. Now loss "
-                      "windows are at least 1 s and decisions are applied to the current target. `cc v2`: the "
-                      "unit tests port libwebrtc's `loss_based_bwe_v2_test.cc` cases with their numbers; the "
+                      "windows are at least 1 s and decisions are applied to the current target (that controller was "
+                      "deleted in #167). Since #12 the unit tests port libwebrtc's `loss_based_bwe_v2_test.cc` cases with their numbers; the "
                       "scenarios `issue_12_lossbwe_*` check 5% random loss (utilization 76-82% against libwebrtc's "
                       "76%), burst loss, a policer, a shallow buffer and congestive loss, and a lossless jittery "
                       "link."),
@@ -489,13 +489,13 @@ ALGORITHMS = [
          scenario="A 1.5 Mbps link through three 20 s phases: clean, 5% loss (GCC 'hold' band) and 20% loss "
                   "(decrease band). Each phase's target is compared with the previous one.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "The target is min(delay-based, loss-based, REMB), clamped to [min, max]; the pacing rate is "
-               "2.5 x target. rtp::SendSideController adds congestion-window pushback "
+               "The controller is libwebrtc's GoogCcNetworkController (see the default below); the pacing rate is "
+               "`GetPacingRates`' (5.6). rtp::SendSideController adds congestion-window pushback "
                "(cc/congestion_window_pushback.h, a port of libwebrtc's CongestionWindowPushbackController with "
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
                "the encoder drops every N-th captured frame (SendRates::frame_drop_interval, "
                "SendSideController::DropCapturedFrame()). The pacing rate is not reduced. "
-               "#166 ports goog_cc_network_control_unittest.cc against `GccController` with `cc v2` "
+               "#166 ports goog_cc_network_control_unittest.cc against `GccController` "
                "(`GoogCcNetworkController`, 9 cases): the 8 `GoogCcNetworkControllerTest` cases the API can express pass "
                "(`RespectsConfiguredPacingFactor` through `SetPacingFactor`, #187), "
                "`OnNetworkRouteChanged` in its first half (a route change without a starting rate has no counterpart: "
@@ -509,13 +509,19 @@ ALGORITHMS = [
                "(capacity steps, high loss, cross traffic, REMB caps), and the rest set field trials that are off by default "
                "(`WebRTC-CongestionWindow` sizes, `MaxRttLimit`, `SafeResetOnRouteChange`, `ResetOnAdapterIdChange`, "
                "`LossBasedControl`, `AddPacingToCongestionWindowPushback`) or send without transport-cc. "
-               "**Default (#61):** a `rtp::Session` runs libwebrtc's components: `SessionConfig` and `SendSideConfig` "
-               "default to `cc` and `pacer` v2. v1 stays selectable per field (test bench `cc v1` etc.) until #167 deletes "
-               "it; the component configs on their own (`GccConfig`, `PacerConfig`) keep version 1, so their unit tests test "
-               "what they name. `tcc`, `rtcp`, `rtx`, `keyframe`, `packetization`, `allocator` and `audio` v1 are deleted (#167): "
-               "transport-cc feedback, RTCP report timing, the RTX history, the receiver's keyframe requests, NACK list and "
-               "packet buffer, `RtpSenderVideo`'s payload sizing, `BitrateAllocator` and (in the test bench) the Opus frame-size "
-               "model are libwebrtc's only. "
+               "**Default (#61):** a `rtp::Session` runs libwebrtc's components only: #167 deleted the v1 paths and "
+               "the nine switches (`cc`, `pacer`, `tcc`, `rtcp`, `rtx`, `keyframe`, `packetization`, `allocator`, `audio`), "
+               "so GoogCC, the PacingController, transport-cc feedback, RTCP report timing, the RTX history, the "
+               "receiver's keyframe requests, NACK list and packet buffer, `RtpSenderVideo`'s payload sizing, "
+               "`BitrateAllocator` and (in the test bench) the Opus frame-size model are libwebrtc's only. `GccConfig` and "
+               "`PacerConfig` have no version any more. The outage monitor only follows the link: its pause/resume, "
+               "keyframe and reset decisions were acted on under `cc v1` only (libwebrtc has none, #151). "
+               "Guard rails changed with the `cc v1` deletion (program.md 0.2, #167, Owner sign-off pending): the "
+               "closed-loop simulation's 800 kbps phase queue p95 (`E2E_DelayBwe`, `Q_Gcc_capacity_steps`) 200 -> 600 ms, "
+               "its clean 2.5 Mbps audio delay p95 (`E2E_Pacer`, `Q_Pacer_audio_delay`) 60 -> 130 ms, and the "
+               "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`) "
+               "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
+               "on `clean_link` queue p95 74 ms. "
                "`timing` and `neteq` v2 are not in this flip; they join when #24 and #62 finish. "
                "Approved deviation: the test bench's Opus frame-size model (3.1, a model fitted to libwebrtc's "
                "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
@@ -540,10 +546,9 @@ ALGORITHMS = [
          scenario="The closed-loop simulation at 2.5 Mbps with and without pacing; audio and video queueing "
                   "delay (p95) are compared.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "Two versions sit behind `PacerConfig::version` (test bench directive `pacer v1|v2`): v1, the library's "
-               "own media-debt pacer (5 ms burst, drain on the oldest packet), is the `PacerConfig` default and selectable "
-               "until #167; v2 is a port of libwebrtc's PacingController and PrioritizedPacketQueue (M157, issue #70) and is "
-               "the session default together with the GoogCC port (#61, see 5.4), because with the v1 estimator it gives a result neither has. v2: a 40 ms "
+               "The pacer is a port of libwebrtc's PacingController and PrioritizedPacketQueue (M157, issue #70); the "
+               "library's own media-debt pacer (`pacer v1`: 5 ms burst, drain on the oldest packet) was deleted in #167. "
+               "It has a 40 ms "
                "burst interval (capped at 63 kB), media debt capped at 500 ms of the rate, 2 s cap on the time "
                "credited, a queue-time limit of 2 s judged on the average queue time, audio unpaced but "
                "accounted, queue levels audio / retransmission / video+FEC / padding, keep-alive padding every "
@@ -560,7 +565,7 @@ ALGORITHMS = [
                "200 B) is enqueued, begins with a small padding packet, sends `rate x min_probe_delta` bytes per "
                "burst (padding fills it when there is no media), times the next burst by the bytes sent at the "
                "cluster rate and drops a cluster whose burst is more than 10 ms late (at most 5 pending, 5 s "
-               "old). With `cc v2` the pacer is also scheduled as `TaskQueuePacedSender` does (`Pacer::ProcessV2`, #123): a "
+               "old). The pacer is also scheduled as `TaskQueuePacedSender` does (`Pacer::ProcessScheduled`, #123): a "
                "pass runs only when a packet, a rate or the pause state changed or the timer of the last pass is due, "
                "and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
                "`PacingController` every millisecond lets the early-return branch of `ProcessPackets` re-base its "
@@ -575,8 +580,8 @@ ALGORITHMS = [
                       "`PacketRouter` (#166) ports packet_router_unittest.cc against `rtp::SendSideController`, "
                       "`rtp::RtpSender` and `rtp::Session`, which share the router's work: padding with no stream, RTX "
                       "payload padding on the RTX SSRC, video preferred over audio for padding, RTP sequence numbers at "
-                      "release, and transport-wide sequence numbers. The port found two differences, now fixed behind "
-                      "`pacer v2`: numbering starts at 1 (`transport_seq_(1)`), and a packet without the transport-cc "
+                      "release, and transport-wide sequence numbers. The port found two differences, now fixed: "
+                      "numbering starts at 1 (`transport_seq_(1)`), and a packet without the transport-cc "
                       "extension gets no number and is not reported to GCC (`NotifyBweOfPacedSentPacket`); neither "
                       "changes a scenario, which all map the extension. Not ported: RFC 8888 numbering "
                       "(`SetGenerateTransportSequenceNumbers`), `allow_sending` and ECT(1), which are off by default; "
@@ -585,11 +590,11 @@ ALGORITHMS = [
                       "`OnBatchComplete` and `GetRtxSsrcForMedia` between modules, which only matter with several send "
                       "streams of one kind (a one-to-one call has one audio and one video stream); and "
                       "`OnAbortedRetransmissions`, which M157's pacer never calls. "
-                      "`TaskQueuePacedSender` (#166) ports task_queue_paced_sender_unittest.cc against `Pacer` v2 with "
+                      "`TaskQueuePacedSender` (#166) ports task_queue_paced_sender_unittest.cc against `Pacer` with "
                       "its task-queue scheduling: 11 of its 14 cases in full and 3 in part, all passing (pacing over a second, "
                       "the burst window, rescheduling on a rate change, audio sent at once, the fixed and packet-based "
                       "coalescing windows, probes overriding them, probes 200 us apart, a probe ending in the send loop, "
-                      "the oldest wait and the queue size). The port found two differences, now fixed behind `pacer v2`: "
+                      "the oldest wait and the queue size). The port found two differences, now fixed: "
                       "the pacer's `DataSize / DataRate` and `DataSize / TimeDelta` rounded up, where libwebrtc's "
                       "(api/units/data_rate.h) truncate, so a probe burst due 0.3 us past the 1 ms early-probe margin was "
                       "held back (`NoMinSleepTimeWhenProbing`); and the packet-based hold back was sized by the "
@@ -600,9 +605,9 @@ ALGORITHMS = [
                       "(the library removes a stream's packets only by the keyframe flush), `FirstSentPacketTime` and "
                       "`ExpectedQueueTime` (not exposed by `Pacer`), and the rate change inside the `SendPacket` call "
                       "stack, which `Pacer` cannot have because it returns the packets it sends. "
-                      "With the 40 ms burst a v2 frame leaves in one burst, so the "
-                      "E2E_Pacer v2 case expects that the paced run is not worse than the unpaced one on audio delay "
-                      "(audio is not paced in libwebrtc either; v1 keeps the original expectation). The "
+                      "With the 40 ms burst a frame leaves in one burst, so "
+                      "E2E_Pacer expects that the paced run is not worse than the unpaced one on audio delay "
+                      "(audio is not paced in libwebrtc either; v1's case was deleted with it in #167). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
                       "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
@@ -616,20 +621,21 @@ ALGORITHMS = [
                   "without probing.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Probe clusters are sent by the pacer at the probe rate, using padding when there is no media; "
-               "the estimator ignores clusters with too few packets or bytes. `cc v2` (#48) is libwebrtc's code: "
+               "the estimator ignores clusters with too few packets or bytes. They are libwebrtc's code (#48; the "
+               "library's own probe controller and estimator, `cc v1`, were deleted in #167): "
                "`ProbeControllerV2` (`ProbeController`: clusters at 3x and 6x the start rate, further probes at 2x "
                "a result above 0.7 of the last probe, probes when the max or max allocated bitrate rises, "
                "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes only when "
                "the stream requests them, none while the estimate is limited by delay increase or loss), "
-               "`ProbeBitrateEstimator` in libwebrtc mode (receive/send ratio over 2 rejected, clusters expire "
-               "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in `pacer v2`). "
+               "`ProbeBitrateEstimator` (receive/send ratio over 2 rejected, clusters expire "
+               "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in the pacer). "
                "`AlrDetector` runs with the settings libwebrtc's does without field trials (#152): a budget of 0.80 x the "
                "estimate, ALR above 0.40 and out of it under -0.60, `WebRTC-ProbingScreenshareBwe`'s default "
                "`1.0,2875,80,40,-60,3` (`alr_experiment.cc`), which replaces `AlrDetectorConfig`'s 0.65/0.80/0.50; "
                "sm_compare read it from libwebrtc's live budget (PR #210). "
                "The loss-based state and the RTT limit decide the bandwidth-limited cause (#12, `GetBandwidthLimitedCause`). "
-               "Remaining differences: no `NetworkStateEstimate`, and `cc v1` keeps the old controller, selectable until #167 (v2 is the session default since #61). "
-               "The `GoogCcNetworkController` glue (#61) is in `cc v2`: `GetPacingRates` (2.5 x the target until the first "
+               "Remaining differences: no `NetworkStateEstimate`. "
+               "The `GoogCcNetworkController` glue (#61): `GetPacingRates` (2.5 x the target until the first "
                "feedback, 1.1 x after, unless the streams set a pacing factor; padding rate), `StreamsConfig::pacing_factor` "
                "(#187: `rtp::Session` sets 1.1 when it adds a video stream with transport-cc, as `VideoSendStreamImpl`'s "
                "`GetConfiguredPacingFactor` does, so a video call paces at 1.1 x from the start), the packet-overhead rate off the video allocation "
@@ -707,8 +713,8 @@ ALGORITHMS = [
                   "link, ICE restarts and time to recover 50% of capacity are measured.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "On recovery the estimate is reset to half the last good rate and probing is restarted, because "
-               "the path may have changed. libwebrtc has no outage monitor, so with `cc v2` the "
-               "`SendSideController` does not run it (issue #151): the encoder keeps running, the congestion "
+               "the path may have changed. libwebrtc has no outage monitor, so the "
+               "`SendSideController` does not act on it (issue #151; only `cc v1` did, deleted in #167): the encoder keeps running, the congestion "
                "window drops frames, the pacer keeps sending, and the receiver's decode time-out asks for the "
                "keyframe once the link is back.",
          verification="No defects found. Under `cc v2` (issue #151, PR #184, Owner sign-off) "
@@ -753,15 +759,28 @@ ALGORITHMS = [
                       "25.6 dB."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
-         headers=["audio/echo_delay_estimator.h"], unit=["EchoDelay"], e2e=["E2E_EchoDelay"],
+         headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
          bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
+               "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`, for `apm v2`) is a port of libwebrtc M157's "
+               "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
+               "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
+               "(5 filters of 32 sub-blocks at 4 kHz covering 0-552 ms, headroom 32 samples, thresholds 5/20, pre-echo "
+               "detection on). Remaining differences: mono only; the portable C matched-filter core where x86 libwebrtc "
+               "runs SSE2/AVX2 (float summation order only); no UMA metrics or data dumps. Nothing in a call uses it yet: "
+               "the adaptive filter and EchoCanceller3 integration are #240's next steps.",
          verification="Defect found: with rectangular windows, the window edges correlated with each other and "
                       "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
                       "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
-                      "was also made physical (direct path dominant)."),
+                      "was also made physical (direct path dominant). AEC3 delay estimation (#240): the mono cases of "
+                      "libwebrtc's decimator, matched_filter, matched_filter_lag_aggregator, clockdrift_detector and "
+                      "echo_path_delay_estimator unit tests pass (both down-sampling factors, with and without pre-echo "
+                      "detection; the SIMD-equivalence and death tests don't apply). On speech through a room response "
+                      "with an echo path of 60 then 180 ms, the render delay controller reports 832 and 2752 samples "
+                      "(true 968 and 2888 minus the 32-sample headroom, one pre-echo block early) with a refined "
+                      "estimate and no clock drift; the first estimate comes after 176 ms."),
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
          headers=["audio/noise_suppressor.h"], unit=["NoiseSuppressor"], e2e=["E2E_NoiseSuppressor"],
@@ -775,16 +794,28 @@ ALGORITHMS = [
                       "from 7.6 to 12.9 dB."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h"], unit=["GainControl"], e2e=["E2E_GainControl"],
+         headers=["audio/gain_control.h", "audio/agc2.h"], unit=["GainControl", "GainController2"],
+         e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
-               "recommendation.",
+               "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
+               "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
+               "estimators, saturation protector, limiter with its interpolated gain curve) with its "
+               "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
+               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
+               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
+               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "default, is #242's next step.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
-                      "already modified in place."),
+                      "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
+                      "quiet talker -21.1 dBFS (libwebrtc AGC2 -21.0, v1 -16.8), loud talker -1.2 dB (-1.0), "
+                      "noise in pauses -62.7 dBFS (-62.9), peak 0 dBFS (0.0). libwebrtc's "
+                      "`GainDoesNotChangeFast` unit test never runs its loops (its frame count is negative); "
+                      "the port runs them."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
@@ -849,6 +880,22 @@ ALGORITHMS = [
          verification="Defect found: when decimating, the filter used too few taps (transition band several kHz "
                       "wide), so a 10 kHz tone aliased at only -36 dB into 48 -> 16 kHz output. Taps now scale "
                       "with the decimation factor: 91 dB rejection, 107 dB SNR."),
+    dict(id="6.12", slug="band-splitting", title="Band splitting",
+         problems=["Wideband capture (32/48 kHz) through processing designed for 16 kHz -> APM band splitting (QMF, three-band filter bank)"],
+         headers=["audio/splitting_filter.h"], unit=["SplittingFilter"], e2e=[],
+         bench=["audio/SplittingFilter_48k_10ms"],
+         scenario="Unit tests only: tones placed in each band at 32 and 48 kHz must land in their own band and come back "
+                  "through synthesis; an impulse through the two-band QMF must match a direct evaluation of the all-pass "
+                  "cascade.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. "
+               "A port of libwebrtc's `SplittingFilter` (issue #241): `modules/audio_processing/splitting_filter.cc`, "
+               "`three_band_filter_bank.cc` and `common_audio/signal_processing/splitting_filter.c`, with their "
+               "coefficients. It is the first step of the `apm v2` ports (#240 AEC3, #241 NS), which run on the 0-8 kHz band. "
+               "Differences: mono only (libwebrtc splits every channel of an `AudioBuffer`), and samples on this "
+               "library's [-1, 1) scale, so the S16 saturation in the QMF synthesis is at [-1, 32767/32768].",
+         verification="New in #241's first PR. The two-band analysis matches a direct-form evaluation of "
+                      "`WebRtcSpl_AllPassQMF` to 1e-6 across two frames, and both paths were bit-exact with libwebrtc's own `splitting_filter.c` and `three_band_filter_bank.cc` compiled from `reference/` (the three-band files arrive there with #247; golden values pinned in `SplittingFilter.MatchesLibwebrtcOutput`); level through analysis and synthesis is "
+                      "within 0.002 dB at 32 and 48 kHz on a 0.2-4.2 kHz chirp."),
     # ------------------------------------------------------------------ 7
     dict(id="7.1", slug="freeze-detector", title="Freeze detection",
          problems=["Lost frame (decode impossible) -> freeze the last frame until recovery (measured as freezes)"],

@@ -17,8 +17,6 @@ describe 3 Mbps link, 40 ms jitter with reordering, every v2 switch on: the targ
 # both stacks (issue #196 step 3). Ours on main 5f26355, seeds 1-40: cc.target_avg_kbps mean 958 (sd 225),
 # cc.utilization_pct 37.0, video.avg_kbps 603, cc.queue_p95_ms 8.2. Seeds 1-10: 944 / 36.5 / 596 / 8.0 (libwebrtc 930 / 35.9 / 564 / 4.3).
 compare_seeds 40
-cc v2
-pacer v2
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 expect audio.interruptions == 0
