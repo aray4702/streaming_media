@@ -91,8 +91,8 @@ struct ChainConfig {
   // kHigh), which analyzes the capture before the AEC and suppresses after
   // it, as APM does.
   bool apm_v2 = false;
-  // With `apm_v2`: AGC2 (`agc2::GainController2`, fed our VAD's per-frame
-  // decision) instead of AGC1.
+  // With `apm_v2`: AGC2 (`agc2::GainController2` with its RNN VAD) instead
+  // of AGC1.
   bool agc2 = false;
 };
 
@@ -193,9 +193,7 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       from_s16(f);
       levels.SetAnalogMicGainLevel(agc_manager.recommended_analog_level());
     } else if (cc.agc && cc.apm_v2) {
-      // AGC2 reads a per-frame speech probability (its RNN VAD has no
-      // hangover), so it gets our VAD's decision before the hangover.
-      agc2.Process(f, vad.raw_decision() ? 1.0f : 0.0f);
+      agc2.Process(f);
     } else if (cc.agc) {
       agc.Process(f, v);
     }

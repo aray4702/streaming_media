@@ -861,7 +861,7 @@ ALGORITHMS = [
                       "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -872,9 +872,13 @@ ALGORITHMS = [
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
                "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
-               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
-               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
-               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "The speech probability comes from AGC2's RNN VAD, ported in `agc2_rnn_vad.h` "
+               "(`vad_wrapper.cc` and `rnn_vad/`: 24 kHz features from the LP residual's pitch and the "
+               "Opus-band cepstrum, FC-GRU-FC network with the rnnoise weights, reset every 1500 ms, the "
+               "capture resampled with libwebrtc's `PushSincResampler`), and `GainController2` follows "
+               "`gain_controller2.cc`'s order (fixed gain after the adaptive gain, before the limiter). Its "
+               "dot products sum in order (libwebrtc's portable path) and its FFTs are ours, not PFFFT, so "
+               "the probability matches libwebrtc to float precision, not bit for bit. AGC1, the call "
                "default: `agc1::GainControl` ports its digital compression stage, which every call runs "
                "(`AgcManagerDirect::SetupDigitalGainControl` puts `GainControlImpl` in `kFixedDigital` with "
                "a 2 dB target, 7 dB compression and the limiter): `agc/legacy/digital_agc.cc` (gain table, "
@@ -890,8 +894,7 @@ ALGORITHMS = [
                "mic gain emulation (`capture_levels_adjuster/`), the test bench's modelled mic volume: the "
                "capture is scaled by volume / 255 from 255, ramped over the frame. The `apm v2` e2e chain now "
                "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. Remaining differences: the "
-               "clipping predictor is not ported (off by default, so a call never creates it); AGC2's RNN VAD "
-               "(#57).",
+               "clipping predictor is not ported (off by default, so a call never creates it).",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -915,7 +918,15 @@ ALGORITHMS = [
                       "its mic volume and compression gain sequences, in the six parametrizations), and AGC1 "
                       "in the `apm v2` chain gives on the e2e quiet-then-loud talker: quiet talker -20.4 dBFS "
                       "(libwebrtc AGC1 -20.6, v1 -16.8), loud talker -3.3 dB (-3.2), noise in pauses "
-                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0)."),
+                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0). AGC2's RNN VAD (#242) passes the ports of libwebrtc's "
+                      "`rnn_fc`, `rnn_gru`, `spectral_features(_internal)`, `features_extraction` and `vad_wrapper` "
+                      "unit tests with their test vectors and tolerances, and `PushSincResampler` the chirp "
+                      "error thresholds of `push_sinc_resampler_unittest.cc` (`Agc2RnnVad.*`); the tests that read "
+                      "libwebrtc's resource files are not ported (the files are not in the reference sources). "
+                      "On the test bench's speech-like signal 87% of frames reach a probability of 0.95, on white "
+                      "noise none. With it, AGC2 gives on the e2e quiet-then-loud talker: quiet talker -21.05 dBFS "
+                      "(libwebrtc AGC2 -21.0; -21.10 with our VAD's decision), loud talker -1.2 dB (-1.0), noise "
+                      "in pauses -62.6 dBFS (-62.9)."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
          headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
