@@ -1,15 +1,14 @@
 // Unit tests: AGC1's `Agc` with its VoiceActivityDetector and WebRtcVad
 // (`apm v2`, #242), ported from libwebrtc M157 (see sm/audio/agc1_vad.h).
 //
-// The golden values (`*MatchesLibwebrtc*`) come from libwebrtc's own files
-// compiled from compare/webrtc/reference/ (webrtc_vad.c, vad_core.c,
-// vad_filterbank.c, vad_gmm.c, vad_sp.c, the SPL energy, scaling and division
-// files, the iSAC filter_functions.c, isac_vad.c, pitch_estimator.c and
-// pitch_filter.c, fft4g.cc, and modules/audio_processing/vad/*.cc and
-// agc/{agc,loudness_histogram,utility}.cc, with stubs for rtc_base's check
-// macros and the never-called Resampler), with GCC 13 -O2 -ffp-contract=off
-// -DWEBRTC_POSIX on x86-64 glibc, driven on the signals of agc1_signal.h at
-// 16 kHz (S16):
+// The golden values (`*MatchesLibwebrtc*`) come from libwebrtc itself: the
+// prebuilt M157 libwebrtc.a that compare/webrtc/fetch.sh downloads (Linux
+// x86-64, built with Chromium's libc++), whose WebRtcVad, VoiceActivityDetector
+// and Agc symbols were called directly, driven on the signals of
+// agc1_signal.h at 16 kHz (S16). (The reference files compiled here with
+// libstdc++ give the same values except for the VoiceActivityDetector hashes:
+// there fft4g's unqualified `cos(float)` becomes the double function, while
+// libc++ picks the float overload.)
 //  - `WebRtcVad_Create`/`_Init`/`_set_mode`, then `WebRtcVad_Process` per
 //    frame; FNV-1a-style hash (h ^= value; h *= prime) of the decisions;
 //  - `VoiceActivityDetector::ProcessChunk` per 10 ms; hash of the bit
@@ -18,7 +17,7 @@
 //  - `Agc::Process` then `Agc::GetRmsErrorDb` per 10 ms, as `MonoAgc` calls
 //    them; the frames that returned true and their errors.
 // The float results go through libm (exp, log, pow, sin, cos), so the
-// bit-exact hashes are checked where they were produced (x86-64 glibc);
+// bit-exact hashes are checked on x86-64 glibc, where they were produced;
 // elsewhere the values are checked to a tolerance.
 //
 // The other tests port libwebrtc's own unit tests where they need no
@@ -246,8 +245,8 @@ SM_TEST(Agc1VoiceActivity, VoiceActivityDetectorMatchesLibwebrtc) {
     SM_EXPECT_EQ(std::bit_cast<uint32_t>(r.last[299]), 0x3f000000u);
     SM_EXPECT_EQ(std::bit_cast<uint32_t>(r.last[2500]), 0x3c23d70au);  // 0.01f
     if (kExactLibm) {
-      SM_EXPECT_EQ(r.hash, 9892251402787727296ull);
-      SM_EXPECT_EQ(r.last_hash, 7301032047745508533ull);
+      SM_EXPECT_EQ(r.hash, 18328707973946687816ull);
+      SM_EXPECT_EQ(r.last_hash, 9156475636820479294ull);
     }
   }
   {
@@ -263,8 +262,8 @@ SM_TEST(Agc1VoiceActivity, VoiceActivityDetectorMatchesLibwebrtc) {
     SM_EXPECT_EQ(r.p[1751][0], 0.01);
     SM_EXPECT_LT(r.rms[1751][0], 5.0);
     if (kExactLibm) {
-      SM_EXPECT_EQ(r.hash, 5029479510946349548ull);
-      SM_EXPECT_EQ(r.last_hash, 2454978586823692643ull);
+      SM_EXPECT_EQ(r.hash, 9225343732808271493ull);
+      SM_EXPECT_EQ(r.last_hash, 13761485371583069528ull);
     }
   }
   {
@@ -280,8 +279,8 @@ SM_TEST(Agc1VoiceActivity, VoiceActivityDetectorMatchesLibwebrtc) {
     };
     ExpectSamples(r, kSamples);
     if (kExactLibm) {
-      SM_EXPECT_EQ(r.hash, 11487687944210301305ull);
-      SM_EXPECT_EQ(r.last_hash, 17232279542994620741ull);
+      SM_EXPECT_EQ(r.hash, 11013044893605988273ull);
+      SM_EXPECT_EQ(r.last_hash, 8146861692519328529ull);
     }
   }
 }

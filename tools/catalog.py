@@ -834,10 +834,12 @@ ALGORITHMS = [
                       "`GainControlImpl` drives them: the gain tables for four configurations, and the 11 "
                       "per-millisecond gains and the S16 output of every frame over 30 s of talk spurts at "
                       "-45, -25 and -8 dBFS (`Agc1.GainTableMatchesLibwebrtc`, "
-                      "`Agc1.GainsAndOutputMatchLibwebrtc`). `Agc` and its VAD are bit-exact with libwebrtc's files on "
-                      "x86-64 glibc (WebRtcVad decisions in four configurations, every chunkwise voice probability "
+                      "`Agc1.GainsAndOutputMatchLibwebrtc`). `Agc` and its VAD are bit-exact with the prebuilt M157 "
+                      "`libwebrtc.a` on x86-64 glibc (WebRtcVad decisions in four configurations, every chunkwise voice probability "
                       "and RMS, and every `GetRmsErrorDb` update over 30 s; `Agc1VoiceActivity.*`); elsewhere libm "
-                      "may round differently, so the test checks to a tolerance there. The first port used SPL's unsigned "
+                      "may round differently, so the test checks to a tolerance there. The first goldens came from the "
+                      "reference files compiled with libstdc++, where fft4g's `cos(float)` is the double function; "
+                      "libwebrtc's libc++ picks the float overload, which the Reviewer caught and the library confirmed. The first port used SPL's unsigned "
                       "`WEBRTC_SPL_SCALEDIFF32` for the envelope followers; `digital_agc.cc` has its own "
                       "signed `AGC_SCALEDIFF32`, and the golden test caught the difference."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",

@@ -1323,10 +1323,12 @@ void bitrv2(size_t n, size_t* ip, float* a) {
   }
 }
 
-// The C++ reference calls `cos`/`sin` on a float argument with <cmath>,
-// which with libstdc++ resolves to the C library's double functions.
-float CosD(float x) { return static_cast<float>(std::cos(static_cast<double>(x))); }
-float SinD(float x) { return static_cast<float>(std::sin(static_cast<double>(x))); }
+// The reference calls unqualified `cos`/`sin` on a float argument; libwebrtc
+// is built with libc++, where that is the float overload (`cosf`/`sinf`).
+// Checked against the prebuilt M157 libwebrtc.a: the double functions differ
+// from its twiddle tables in the last bit.
+float CosF(float x) { return std::cos(x); }
+float SinF(float x) { return std::sin(x); }
 
 void makewt(size_t nw, size_t* ip, float* w) {
   size_t j, nwh;
@@ -1339,12 +1341,12 @@ void makewt(size_t nw, size_t* ip, float* w) {
     delta = std::atan(1.0f) / static_cast<float>(nwh);
     w[0] = 1;
     w[1] = 0;
-    w[nwh] = CosD(delta * static_cast<float>(nwh));
+    w[nwh] = CosF(delta * static_cast<float>(nwh));
     w[nwh + 1] = w[nwh];
     if (nwh > 2) {
       for (j = 2; j < nwh; j += 2) {
-        x = CosD(delta * static_cast<float>(j));
-        y = SinD(delta * static_cast<float>(j));
+        x = CosF(delta * static_cast<float>(j));
+        y = SinF(delta * static_cast<float>(j));
         w[j] = x;
         w[j + 1] = y;
         w[nw - j] = y;
@@ -1363,11 +1365,11 @@ void makect(size_t nc, size_t* ip, float* c) {
   if (nc > 1) {
     nch = nc >> 1;
     delta = std::atan(1.0f) / static_cast<float>(nch);
-    c[0] = CosD(delta * static_cast<float>(nch));
+    c[0] = CosF(delta * static_cast<float>(nch));
     c[nch] = 0.5f * c[0];
     for (j = 1; j < nch; j++) {
-      c[j] = 0.5f * CosD(delta * static_cast<float>(j));
-      c[nc - j] = 0.5f * SinD(delta * static_cast<float>(j));
+      c[j] = 0.5f * CosF(delta * static_cast<float>(j));
+      c[nc - j] = 0.5f * SinF(delta * static_cast<float>(j));
     }
   }
 }

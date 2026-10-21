@@ -25,8 +25,8 @@
 //  - common_audio/third_party/ooura/fft_size_256/fft4g.cc: `WebRtc_rdft`,
 //    forward transform.
 //
-// The results are bit-exact with libwebrtc's own files compiled from
-// reference/ (golden values in `Agc1VoiceActivity.*MatchesLibwebrtc*`; the files are
+// The results are bit-exact with the prebuilt libwebrtc M157 library on
+// x86-64 (golden values in `Agc1VoiceActivity.*MatchesLibwebrtc*`; the files are
 // built with -ffp-contract=off, as Chromium builds libwebrtc).
 //
 // Differences from libwebrtc (scope, not behaviour):
