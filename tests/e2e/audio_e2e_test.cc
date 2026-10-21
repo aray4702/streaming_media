@@ -93,6 +93,71 @@ SM_TEST(E2E_NoiseSuppressor, ImprovesSnrInChain) {
   SM_EXPECT_GT(snr_out, snr_in + 4.0);
 }
 
+// `apm v2` (#241): libwebrtc's NS (kHigh) on the same signals, measured as
+// sm_apm_compare measures both stacks. libwebrtc M157's APM
+// (docs/results/apm-webrtc.md): SNR improvement -0.1 dB, noise attenuation
+// in pauses 17.9 dB, level change in speech -2.9 dB, delay 6.0 ms (v1:
+// +5.3, 16.9, -1.3, 10.0).
+SM_TEST(E2E_NoiseSuppressor, LibwebrtcNsAsLibwebrtc) {
+  CallScenario s;
+  s.far_talk = false;
+  s.noise_amp = 0.03f;
+  auto c = MakeCall(s);
+  ChainConfig cc{true, false, true, false, false};
+  cc.apm_v2 = true;
+  auto r = RunChain(c, cc);
+  auto base = RunChain(c, {true, false, false, false, false});
+  CallScenario t = s;
+  t.noise_amp = 0;
+  auto ref = RunChain(MakeCall(t), {true, false, false, false, false}).out;
+  // SNR against the clean talker through the same HPF, at the output delay
+  // (0..40 ms) that gives the best SNR.
+  const size_t start = 3 * 16000, n = ref.size() - start - 640;
+  auto best_lag_snr = [&](const std::vector<float>& out, size_t* lag) {
+    double best = -1e9;
+    for (size_t l = 0; l <= 640; ++l) {
+      double snr = dsp::SnrDb({ref.data() + start, n}, {out.data() + start + l, n});
+      if (snr > best) {
+        best = snr;
+        *lag = l;
+      }
+    }
+    return best;
+  };
+  size_t lag_in = 0, lag = 0;
+  const double snr_gain = best_lag_snr(r.out, &lag) - best_lag_snr(base.out, &lag_in);
+  // Speech frames by the clean talker's level; pauses are frames more than
+  // 250 ms after it stopped.
+  std::vector<int> truth;  // 1 speech, 0 pause, -1 not scored.
+  for (size_t f = 0, since = 1000; (f + 1) * 160 <= c.talker.size(); ++f) {
+    bool speech = dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160)) > -45.0f;
+    since = speech ? 0 : since + 1;
+    truth.push_back(speech ? 1 : since > 25 ? 0 : -1);
+  }
+  auto frames_db = [&](const std::vector<float>& x, int want, size_t shift) {
+    double e = 0;
+    size_t cnt = 0;
+    for (size_t f = 300; f < 2000 && f < truth.size(); ++f) {
+      if (truth[f] != want) continue;
+      for (size_t i = f * 160 + shift; i < f * 160 + 160 + shift && i < x.size(); ++i, ++cnt) {
+        e += static_cast<double>(x[i]) * x[i];
+      }
+    }
+    return 10 * std::log10(e / static_cast<double>(std::max<size_t>(1, cnt)) + 1e-20);
+  };
+  const double atten = frames_db(base.out, 0, 0) - frames_db(r.out, 0, lag);
+  const double speech_change = frames_db(r.out, 1, lag) - frames_db(base.out, 1, 0);
+  SM_RECORD("snr_improvement_db", snr_gain);
+  SM_RECORD("noise_attenuation_db", atten);
+  SM_RECORD("speech_level_change_db", speech_change);
+  SM_RECORD("delay_ms", lag / 16.0);
+  SM_EXPECT_EQ(r.latency, 96u);
+  SM_EXPECT_EQ(lag, 96u);
+  SM_EXPECT_NEAR(snr_gain, -0.1, 0.5);
+  SM_EXPECT_NEAR(atten, 17.9, 0.5);
+  SM_EXPECT_NEAR(speech_change, -2.9, 0.5);
+}
+
 SM_TEST(E2E_GainControl, NormalizesQuietTalkerLeavesLoudToLimiter) {
   // Quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB) for 20 s.
   CallScenario q;
