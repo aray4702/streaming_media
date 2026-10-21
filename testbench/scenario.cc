@@ -273,7 +273,9 @@ ParseResult ParseScenario(const std::string& text) {
       s.audio_bitrate = r;
     } else if (key == "audio_sample_rate") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
-      if (v != 8000 && v != 16000 && v != 32000 && v != 48000) return fail("audio_sample_rate must be 8000|16000|32000|48000");
+      // The four NetEq rates, plus 12, 24 and 44.1 kHz (issue #256), which NetEq v2 refuses as libwebrtc does.
+      if (v != 8000 && v != 12000 && v != 16000 && v != 24000 && v != 32000 && v != 44100 && v != 48000)
+        return fail("audio_sample_rate must be 8000|12000|16000|24000|32000|44100|48000");
       s.audio_sample_rate = v;
     } else if (key == "video_fps") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;

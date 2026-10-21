@@ -115,7 +115,8 @@ struct VideoStreamConfig {
   timing::PacketBufferConfig packet_buffer;
   loss::KeyframeRequestConfig keyframe;
   video::FrameSchedulerConfig scheduler;
-  timing::VideoTimingConfig timing;
+  // libwebrtc's video receive timing (VCMTiming and frame release, version 2) is the session default (#24).
+  timing::VideoTimingConfig timing = [] { timing::VideoTimingConfig c; c.version = 2; return c; }();
   TimeDelta decode_time = TimeDelta::Millis(5);
 };
 

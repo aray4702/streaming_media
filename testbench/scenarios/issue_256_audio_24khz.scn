@@ -1,0 +1,15 @@
+name issue_256_audio_24khz
+describe Audio + video call with 24 kHz audio and 3% loss: NetEq v2 must not crash or corrupt memory (issue #256)
+# Before the fix NetEq's expand, merge and time stretch indexed past their buffers at any rate but
+# 8/16/32/48 kHz (heap-buffer-overflow in NetEqExpand::Correlation under ASan), and the test bench did not
+# accept the rate. libwebrtc never runs NetEq at such a rate: its decoder factories refuse the format
+# (AudioDecoderOpus needs a 48 kHz clock, AudioDecoderL16 one of the four rates), so the payload type has no
+# decoder and NetEqImpl::InsertPacketInternal drops its packets. The fix does the same: the audio packets are
+# discarded and the receiver plays silence, and video is unaffected.
+seed 1
+duration 20s
+audio_sample_rate 24000
+at 0s capacity=2000kbps delay=40ms loss=3%
+expect audio.time_to_first_ms > 19000
+expect video.frames_rendered > 500
+expect video.freeze_count <= 2
