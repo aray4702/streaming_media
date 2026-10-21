@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "call_common.h"
+#include "encoder_model.h"
 #include "sim_time.h"
 #include "sm/core/random.h"
 #include "sm/core/seq_num.h"
@@ -304,6 +305,7 @@ struct VideoModel {
   const Scenario* s = nullptr;
   Random rng;
   int64_t frames_captured = 0, frames_encoded = 0, keyframes = 0, bytes = 0;
+  int64_t qp_sum = 0, encode_us_sum = 0;  // testbench/encoder_model.h (issue #84).
   int64_t last_key_us = INT64_MIN / 2;
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;  // Filled by the decoder.
@@ -312,6 +314,8 @@ struct VideoModel {
 // Frame sizes follow the allocated rate with +-20% variation and keyframes
 // are 4x larger, as in testbench/call.cc. The capture time travels in the
 // first 8 payload bytes so the receiver can measure capture-to-render delay.
+// QP (EncodedImage::qp_) and the encode time (timing_) come from the encoder
+// model the test bench uses (testbench/encoder_model.h, issue #84).
 class ModelEncoder final : public w::VideoEncoder {
  public:
   explicit ModelEncoder(VideoModel* m) : m_(m) {}
@@ -346,6 +350,13 @@ class ModelEncoder final : public w::VideoEncoder {
     img._encodedHeight = static_cast<uint32_t>(frame.height());
     img.SetRtpTimestamp(frame.rtp_timestamp());
     img.capture_time_ms_ = frame.render_time_ms();
+    img.qp_ = testbench::EncoderModel::Qp(bytes, key, frame.width(), frame.height(), m_->s->video_complexity);
+    const int64_t encode_us = testbench::EncoderModel::EncodeTimeUs(frame.width(), frame.height(), m_->s->encoder_speed);
+    img.timing_.flags = w::VideoSendTiming::kNotTriggered;
+    img.timing_.encode_start_ms = capture_us / 1000;
+    img.timing_.encode_finish_ms = (capture_us + encode_us) / 1000;
+    m_->qp_sum += img.qp_;
+    m_->encode_us_sum += encode_us;
     w::CodecSpecificInfo info;
     info.codecType = w::kVideoCodecGeneric;
     ++m_->frames_encoded;
@@ -433,7 +444,9 @@ class ModelDecoderFactory final : public w::VideoDecoderFactory {
 // A camera that delivers frames when told to.
 class ModelSource final : public w::VideoSourceInterface<w::VideoFrame> {
  public:
-  ModelSource() : buffer_(w::I420Buffer::Create(1280, 720)) { w::I420Buffer::SetBlack(buffer_.get()); }
+  ModelSource(int width, int height) : buffer_(w::I420Buffer::Create(width, height)) {
+    w::I420Buffer::SetBlack(buffer_.get());
+  }
   void AddOrUpdateSink(w::VideoSinkInterface<w::VideoFrame>* sink, const w::VideoSinkWants&) override { sink_ = sink; }
   void RemoveSink(w::VideoSinkInterface<w::VideoFrame>* sink) override {
     if (sink_ == sink) sink_ = nullptr;
@@ -673,7 +686,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   ModelEncoderFactory encoder_factory(&model);
   ModelDecoderFactory decoder_factory(&model);
   auto allocator_factory = w::CreateBuiltinVideoBitrateAllocatorFactory();
-  ModelSource source;
+  ModelSource source(s.video_width, s.video_height);
   RenderSink renderer([&](const w::VideoFrame& f) {
     const sm::Timestamp now = rel(sim.Now());
     freezes.OnFrameRendered(now);
@@ -816,7 +829,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
     uint32_t capturer = 0, queue = 0, rate = 0, cwnd = 0, encoder = 0;
-    int64_t bytes = 0;
+    int64_t bytes = 0, qp_sum = 0, encode_us_sum = 0;
   } vt_prev;
 
   std::function<void(int64_t)> tick = [&](int64_t t) {
@@ -984,10 +997,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           r.dropped_encoder = static_cast<int>(vs.frames_dropped_by_encoder - vt_prev.encoder);
           r.paused = vs.suspended ? 1 : 0;
           r.encoded_bytes = model.bytes - vt_prev.bytes;
+          r.qp_sum = model.qp_sum - vt_prev.qp_sum;
+          r.encode_us_sum = model.encode_us_sum - vt_prev.encode_us_sum;
           r.pacer_queue_ms = static_cast<double>(cs.pacer_delay_ms);
           vt_prev = {model.frames_captured, model.frames_encoded, vs.frames_dropped_by_capturer, vs.frames_dropped_by_encoder_queue,
                      vs.frames_dropped_by_rate_limiter, vs.frames_dropped_by_congestion_window,
-                     vs.frames_dropped_by_encoder, model.bytes};
+                     vs.frames_dropped_by_encoder, model.bytes, model.qp_sum, model.encode_us_sum};
           rep.video_trace.push_back(r);
         }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;
@@ -1105,6 +1120,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
     if (s.audio) av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
+    m["video.qp_mean"] =
+        model.frames_encoded ? static_cast<double>(model.qp_sum) / static_cast<double>(model.frames_encoded) : 0;
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(model.frames_captured - model.frames_encoded);

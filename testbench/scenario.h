@@ -67,6 +67,9 @@ struct Scenario {
   int audio_sample_rate = 16000;
   DataRate audio_bitrate = DataRate::KilobitsPerSec(32);
   int video_fps = 30;
+  int video_width = 1280, video_height = 720;  // `video_size <W>x<H>`: the captured resolution (issue #84).
+  double video_complexity = 1;  // `video_complexity <x>`: content for the encoder's QP model (testbench/encoder_model.h).
+  double encoder_speed = 1;     // `encoder_speed <x>`: CPU speed for the encode-time model (testbench/encoder_model.h).
   size_t video_max_payload = 1458 - 12;  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257).
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
