@@ -3682,6 +3682,57 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+low_fps_clean_link - 15 fps video on a clean 1.5 Mbps / 100 ms RTT link: audio delay and queue twice the 30 fps values, as in libwebrtc (issue
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.4          0.4  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            54           57  =
+  audio.mouth_to_ear_p95_ms               430          446  =
+  audio.jb_delay_p95_ms                   266          280  =
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                45.1         52.0  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       15.0         15.0  =
+  video.e2e_delay_p95_ms                  225          229  =
+  video.time_to_first_frame_ms            109          116  =
+  video.avg_kbps                         1267         1263  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                   176          186  sm
+  cc.utilization_pct                     92.1         91.9  =
+  cc.queue_p95_ms                         110          106  =
+  cc.max_settle_ms                        200          200  =
+  cc.rtt_p50_ms                           133          131  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                     0.0          0.0  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.7         70.3
+  net.video_kbps                         1313         1309
+  net.rtx_kbps                            0.3          0.1
+  net.padding_kbps                        0.2          0.2
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    194          189
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          306
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1395         1395
+  net.video_size_p90_b                   1467         1465
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1259          865
+  net.rtx_size_p90_b                     1259          865
+  net.rtx_size_max_b                     1259          865
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 outage_3s - 3 s outage (tunnel) in the middle of the call
   metric                                   sm       webrtc  better
   audio.concealed_pct                    10.2         10.2  =
@@ -4192,7 +4243,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 235, webrtc 124, tie 1397 (of the metrics shown)
+better: sm 236, webrtc 124, tie 1418 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
