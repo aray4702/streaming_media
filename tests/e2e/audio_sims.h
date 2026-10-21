@@ -14,6 +14,7 @@
 #include "sm/audio/gain_control.h"
 #include "sm/audio/high_pass_filter.h"
 #include "sm/audio/noise_suppressor.h"
+#include "sm/audio/ns.h"
 #include "sm/audio/transient_suppressor.h"
 #include "sm/audio/vad.h"
 #include "sm/core/dsp.h"
@@ -81,7 +82,9 @@ inline CallSignals MakeCall(const CallScenario& s) {
 struct ChainConfig {
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
   // `apm v2`: libwebrtc's modules where ported (#240-#242). So far the AGC
-  // is AGC2 (`agc2::GainController2`) fed our VAD's per-frame decision.
+  // is AGC2 (`agc2::GainController2`) fed our VAD's per-frame decision, and
+  // the NS is libwebrtc's (`ns::NoiseSuppressor`, kHigh), which analyzes the
+  // capture before the AEC and suppresses after it, as APM does.
   bool apm_v2 = false;
 };
 
@@ -100,6 +103,9 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::NoiseSuppressorConfig nc;
   nc.sample_rate = fs;
   audio::NoiseSuppressor ns(nc);
+  audio::ns::NoiseSuppressorConfig nc2;
+  nc2.sample_rate = fs;
+  audio::ns::NoiseSuppressor ns2(nc2);
   audio::VadConfig vc;
   vc.sample_rate = fs;
   audio::Vad vad(vc);
@@ -117,11 +123,16 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   for (size_t i = 0; i + frame <= r.out.size(); i += frame) {
     std::span<float> f(r.out.data() + i, frame);
     if (cc.hpf) hpf.Process(f);
+    if (cc.ns && cc.apm_v2) ns2.Analyze(f);
     if (cc.aec) {
       aec.AnalyzeRender(std::span<const float>(c.far.data() + i, frame));
       aec.ProcessCapture(f);
     }
-    if (cc.ns) ns.Process(f);
+    if (cc.ns && cc.apm_v2) {
+      ns2.Process(f);
+    } else if (cc.ns) {
+      ns.Process(f);
+    }
     bool v = vad.Process(f);
     r.vad.push_back(v);
     if (cc.ts) ts.Process(f, vad.voiced());
@@ -134,7 +145,7 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
     }
   }
   if (cc.aec) r.latency += aec.latency_samples();
-  if (cc.ns) r.latency += ns.latency_samples();
+  if (cc.ns) r.latency += cc.apm_v2 ? ns2.latency_samples() : ns.latency_samples();
   r.aec = aec.stats();
   return r;
 }

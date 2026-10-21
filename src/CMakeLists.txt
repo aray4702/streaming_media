@@ -77,7 +77,8 @@ if(SM_WITH_AUDIO)
     audio/comfort_noise.cc
     audio/audio_level.cc
     audio/resampler.cc
-    audio/splitting_filter.cc)
+    audio/splitting_filter.cc
+    audio/ns.cc)
   list(APPEND SM_SECTIONS audio)
   # Bit-exact with libwebrtc's float/double arithmetic (which Chromium builds
   # with -ffp-contract=off): no fused multiply-adds on FMA targets.

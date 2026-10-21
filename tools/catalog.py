@@ -774,15 +774,27 @@ ALGORITHMS = [
                       "estimate and no clock drift; the first estimate comes after 176 ms."),
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
-         headers=["audio/noise_suppressor.h"], unit=["NoiseSuppressor"], e2e=["E2E_NoiseSuppressor"],
+         headers=["audio/noise_suppressor.h", "audio/ns.h"], unit=["NoiseSuppressor", "Ns"], e2e=["E2E_NoiseSuppressor"],
          bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
-               "plugged into the same 10 ms interface.",
+               "plugged into the same 10 ms interface. `apm v2` (#241): `ns::NoiseSuppressor` ports libwebrtc M157's "
+               "NS (`modules/audio_processing/ns/`: quantile noise estimator with the parametric white/pink model "
+               "during start-up, LRT, spectral flatness and spectral difference features with histogram-learnt "
+               "thresholds, speech probability, decision-directed Wiener filter with the attenuation adjustment, "
+               "160-sample frames in a 256-point hybrid Hann/flat filter bank, one gain for the upper bands) at "
+               "kHigh (18 dB floor, over-subtraction 1.1), the level `WebRtcVoiceEngine::ApplyOptions` sets. It "
+               "analyzes the capture before the AEC and suppresses after it, as `AudioProcessingImpl` does. "
+               "Remaining differences: the 256-point FFT is this library's `RealFft`, not Ooura's `fft4g` "
+               "(not in the reference sources, #57), so results differ by float rounding; mono only.",
          verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
                       "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
-                      "from 7.6 to 12.9 dB."),
+                      "from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
+                      "`sm_apm_compare` measures both stacks: SNR improvement -0.2 dB (libwebrtc -0.1, v1 +5.3), "
+                      "noise attenuation in pauses 17.9 dB (17.9, v1 16.9), level change in speech -3.2 dB (-2.9, "
+                      "v1 -1.3), delay 6 ms (6, v1 10). Like libwebrtc's, it takes the speech down along with the "
+                      "noise in speech frames, so the SNR against the clean talker does not rise."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
          headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity"],
