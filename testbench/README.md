@@ -174,6 +174,13 @@ Link keys (any subset; unset keys keep their previous value):
     `delay_jitter_buffer_p95_ms` (frame complete to rendered). The
     p95 values are separate percentiles, so they need not add up to
     `e2e_delay_p95_ms`.
+- **A/V sync** (calls with audio and video, issue #63):
+  `sync.av_offset_p50_ms` (signed median), `sync.av_offset_p95_ms` (95th
+  percentile of the absolute value) and `sync.av_offset_max_ms`. At each
+  rendered frame, the offset is the capture time of the audio playing
+  then minus the frame's capture time, so a positive value means the video
+  is late. It is libwebrtc's `RtpStreamsSynchronizer::GetStreamSyncOffsetInMs`
+  (the `sync_offset_ms` stat) with exact capture times.
 - **Congestion control:**
   - `cc.target_avg_kbps` and `cc.goodput_kbps`.
   - `cc.utilization_pct`: goodput divided by the usable capacity, which is

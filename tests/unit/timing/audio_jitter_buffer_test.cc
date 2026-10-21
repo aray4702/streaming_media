@@ -124,3 +124,47 @@ SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
   jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(150));
   SM_EXPECT_EQ(jb.stats().packets_discarded_late, 1u);
 }
+
+// NetEq::GetPlayoutTimestamp (issue #63): unset until playout starts, then the
+// RTP time of the next sample to play, moving on by one output block per pull
+// (dead reckoning through an expand) and never backwards.
+namespace {
+void CheckPlayoutTimestamp(int version) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = version;
+  AudioJitterBuffer jb(cfg);
+  auto x = sim::SpeechLike(16000, 3.0, 3, false);
+  std::vector<float> out(160);
+  SM_EXPECT_FALSE(jb.PlayoutTimestamp().has_value());
+  std::optional<uint32_t> prev;
+  int steps = 0, backwards = 0, expand_steps = 0;
+  for (int t = 0; t < 2900; t += 10) {
+    int pkt = t / 20;
+    if (t % 20 == 0 && pkt != 60 && pkt != 61) {
+      jb.InsertPacket(static_cast<uint32_t>(pkt * 320), Chunk(x, pkt), Timestamp::Millis(t));
+    }
+    auto op = jb.GetAudio(out, Timestamp::Millis(t));
+    auto ts = jb.PlayoutTimestamp();
+    if (prev && ts) {
+      int32_t step = static_cast<int32_t>(*ts - *prev);
+      if (step < 0) ++backwards;
+      if (op == AudioOperation::kExpand) {
+        ++expand_steps;
+        SM_EXPECT_EQ(step, 160);
+      }
+      if (op == AudioOperation::kNormal && step == 160) ++steps;
+    }
+    if (ts) prev = ts;
+  }
+  SM_EXPECT_TRUE(prev.has_value());
+  SM_EXPECT_EQ(backwards, 0);
+  SM_EXPECT_GE(expand_steps, 2);
+  SM_EXPECT_GE(steps, 200);
+  // The audio playing at the end lags the last packet's capture by about the buffer delay.
+  SM_EXPECT_LE(static_cast<int64_t>(*prev), 2900 * 16);
+  SM_EXPECT_GE(static_cast<int64_t>(*prev), (2900 - 200) * 16);
+}
+}  // namespace
+
+SM_TEST(AudioJitterBuffer, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(1); }
+SM_TEST(AudioJitterBufferNetEqV2, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(2); }
