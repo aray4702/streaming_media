@@ -1,19 +1,51 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-80 scenarios, mean of 10 seeds. **270 gaps**: 136 behind libwebrtc, 134 ahead of it; 0 without an owner.
+80 scenarios, mean of 10 seeds. **267 gaps**: 136 behind libwebrtc, 131 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-270 gaps on `main`, 270 here: **0 closed, 0 opened**, 0 changed direction.
+270 gaps on `main`, 267 here: **7 closed, 4 opened**, 0 changed direction.
+
+Closed:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| audio_only_lossy | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
+| issue_24_timing_v2_render_fps | `audio.mouth_to_ear_p95_ms` | 223 | 249 | ±22.9 | ahead | 6/10 | #62, #63 |
+| issue_24_timing_v2_render_fps | `audio.jb_delay_p95_ms` | 102 | 128 | ±23.0 | ahead | 6/10 | #62, #63 |
+| issue_53_cwnd_pushback | `audio.mouth_to_ear_p95_ms` | 223 | 249 | ±22.9 | ahead | 6/10 | #62, #63 |
+| issue_53_cwnd_pushback | `audio.jb_delay_p95_ms` | 102 | 128 | ±23.0 | ahead | 6/10 | #62, #63 |
+| issue_62_neteq_default | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
+| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
+
+Opened:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_12_lossbwe_policer | `audio.mouth_to_ear_p95_ms` | 70.4 | 84.4 | ±10 | ahead | 4/10 | #62, #63 |
+| issue_12_lossbwe_policer | `audio.jb_delay_p95_ms` | 29 | 43 | ±10 | ahead | 3/10 | #62, #63 |
+| issue_152_alr_request_probe_v2 | `audio.mouth_to_ear_p95_ms` | 613 | 661 | ±39.5 | ahead | 7/10 | #62, #63 |
+| issue_152_alr_request_probe_v2 | `audio.jb_delay_p95_ms` | 349 | 377 | ±21.5 | ahead | 7/10 | #62, #63 |
+
+Still gaps, distance to libwebrtc changed by more than 10%:
+
+| scenario | metric | distance on main | distance here |
+|---|---|---|---|
+| issue_151_outage_3s_v2 | `audio.jb_delay_p95_ms` | 24.8 | 21.9 (closer) |
+| issue_23_low_bandwidth | `audio.jb_delay_p95_ms` | 33 | 36.5 (further) |
+| issue_23_outage_3s | `audio.jb_delay_p95_ms` | 24.8 | 21.9 (closer) |
+| issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 33 | 36.5 (further) |
+| issue_62_opus_fec_low_rate | `audio.jb_delay_p95_ms` | 10.6 | 13 (further) |
+| low_bandwidth | `audio.jb_delay_p95_ms` | 33 | 36.5 (further) |
+| outage_3s | `audio.jb_delay_p95_ms` | 24.8 | 21.9 (closer) |
 
 ### Gaps
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| audio_only_lossy | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
-| audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 143 | 167 | ±10 | ahead | 9/10 | #62, #63 |
+| audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 145 | 167 | ±10 | ahead | 8/10 | #62, #63 |
 | burst_loss | `sync.av_offset_p95_ms` | 62.0 | 102 | ±18.8 | ahead | 10/10 | #77 |
 | burst_loss | `video.e2e_delay_p95_ms` | 211 | 275 | ±32.3 | ahead | 9/10 | #24, #37 |
 | capacity_drop | `cc.rtt_p50_ms` | 366 | 72.2 | ±18.3 | behind | 10/10 | #61 |
@@ -34,8 +66,8 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_120_rtx_payload_padding_capacity_drop | `sync.av_offset_p95_ms` | 372 | 286 | ±33.0 | behind | 9/10 | #77 |
 | issue_120_rtx_payload_padding_capacity_drop | `video.e2e_delay_p95_ms` | 203 | 387 | ±125 | ahead | 10/10 | #24, #37 |
 | issue_120_rtx_payload_padding_capacity_drop | `video.freeze_total_ms` | 1965 | 2613 | ±382 | ahead | 10/10 | #5, #37, #24 |
-| issue_123_v2_allocation_min | `audio.jb_delay_p95_ms` | 219 | 186 | ±24.5 | behind | 7/10 | #62, #63 |
-| issue_123_v2_allocation_min | `audio.mouth_to_ear_p95_ms` | 552 | 519 | ±27.6 | behind | 5/10 | #62, #63 |
+| issue_123_v2_allocation_min | `audio.jb_delay_p95_ms` | 217 | 186 | ±24.5 | behind | 6/10 | #62, #63 |
+| issue_123_v2_allocation_min | `audio.mouth_to_ear_p95_ms` | 550 | 519 | ±27.5 | behind | 4/10 | #62, #63 |
 | issue_123_v2_allocation_min | `repair.overhead_pct` | 35.2 | 55.6 | ±11.1 | ahead | 9/10 | #21, #7, #29 |
 | issue_123_v2_allocation_min | `video.freeze_count` | 12.7 | 21.9 | ±5.4 | ahead | 9/10 | #5, #37, #24 |
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 4.1 | 3.2 | ±0.6 | behind | 6/10 | #23 |
@@ -56,6 +88,8 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_12_lossbwe_high_jitter_no_loss | `sync.av_offset_p95_ms` | 76.2 | 58.0 | ±18.0 | behind | 5/10 | #77 |
 | issue_12_lossbwe_high_jitter_no_loss | `video.e2e_delay_p95_ms` | 202 | 150 | ±25.7 | behind | 9/10 | #24, #37 |
 | issue_12_lossbwe_high_jitter_no_loss | `video.time_to_first_frame_ms` | 209 | 92.6 | ±50 | behind | 7/10 | #24, #61 |
+| issue_12_lossbwe_policer | `audio.jb_delay_p95_ms` | 29 | 43 | ±10 | ahead | 3/10 | #62, #63 |
+| issue_12_lossbwe_policer | `audio.mouth_to_ear_p95_ms` | 70.4 | 84.4 | ±10 | ahead | 4/10 | #62, #63 |
 | issue_12_lossbwe_policer | `sync.av_offset_p95_ms` | 2264 | 3204 | ±494 | ahead | 7/10 | #77 |
 | issue_12_lossbwe_policer | `video.e2e_delay_p95_ms` | 2329 | 3282 | ±495 | ahead | 7/10 | #24, #37 |
 | issue_12_lossbwe_policer | `video.freeze_count` | 4 | 7 | ±2.7 | ahead | 7/10 | #5, #37, #24 |
@@ -101,13 +135,15 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_150_gcc_v2_high_jitter_seed5 | `sync.av_offset_p95_ms` | 77.1 | 51.4 | ±15.9 | behind | 5/10 | #77 |
 | issue_150_gcc_v2_high_jitter_seed5 | `video.e2e_delay_p95_ms` | 204 | 147 | ±26.1 | behind | 9/10 | #24, #37 |
 | issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 196 | 89.4 | ±50 | behind | 7/10 | #24, #61 |
-| issue_151_outage_3s_v2 | `audio.jb_delay_p95_ms` | 144 | 119 | ±19.1 | behind | 4/10 | #62, #63 |
-| issue_151_outage_3s_v2 | `audio.mouth_to_ear_p95_ms` | 247 | 202 | ±20.3 | behind | 6/10 | #62, #63 |
+| issue_151_outage_3s_v2 | `audio.jb_delay_p95_ms` | 141 | 119 | ±19.1 | behind | 4/10 | #62, #63 |
+| issue_151_outage_3s_v2 | `audio.mouth_to_ear_p95_ms` | 244 | 202 | ±20.3 | behind | 5/10 | #62, #63 |
 | issue_151_outage_3s_v2 | `cc.queue_p95_ms` | 64.2 | 40.2 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | issue_151_outage_3s_v2 | `sync.av_offset_p95_ms` | 101 | 71.8 | ±23.6 | behind | 4/10 | #77 |
 | issue_151_outage_3s_v2 | `video.e2e_delay_p95_ms` | 154 | 113 | ±10 | behind | 4/10 | #24, #37 |
 | issue_151_outage_3s_v2 | `video.freeze_total_ms` | 3413 | 3240 | ±171 | behind | 2/10 | #5, #37, #24 |
 | issue_151_outage_3s_v2 | `video.longest_freeze_ms` | 3413 | 3240 | ±171 | behind | 2/10 | #5, #37, #24 |
+| issue_152_alr_request_probe_v2 | `audio.jb_delay_p95_ms` | 349 | 377 | ±21.5 | ahead | 7/10 | #62, #63 |
+| issue_152_alr_request_probe_v2 | `audio.mouth_to_ear_p95_ms` | 613 | 661 | ±39.5 | ahead | 7/10 | #62, #63 |
 | issue_152_alr_request_probe_v2 | `cc.rtt_p50_ms` | 87.0 | 65.7 | ±10 | behind | 1/10 | #61 |
 | issue_154_shallow_drop_repair_v2 | `sync.av_offset_p95_ms` | 1463 | 2549 | ±989 | ahead | 9/10 | #77 |
 | issue_154_shallow_drop_repair_v2 | `video.e2e_delay_p95_ms` | 1530 | 2624 | ±988 | ahead | 9/10 | #24, #37 |
@@ -140,37 +176,33 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_23_handover | `sync.av_offset_p95_ms` | 510 | 1832 | ±467 | ahead | 10/10 | #77 |
 | issue_23_handover | `video.e2e_delay_p95_ms` | 832 | 2259 | ±508 | ahead | 10/10 | #24, #37 |
 | issue_23_low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #62, #63 |
-| issue_23_low_bandwidth | `audio.jb_delay_p95_ms` | 320 | 353 | ±29.5 | ahead | 7/10 | #62, #63 |
+| issue_23_low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #62, #63 |
 | issue_23_low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #62, #63 |
 | issue_23_low_bandwidth | `cc.rtt_p50_ms` | 320 | 232 | ±72.2 | behind | 7/10 | #61 |
 | issue_23_low_bandwidth | `sync.av_offset_p95_ms` | 2011 | 2487 | ±237 | ahead | 9/10 | #77 |
 | issue_23_low_bandwidth | `video.e2e_delay_p95_ms` | 2404 | 2950 | ±348 | ahead | 10/10 | #24, #37 |
-| issue_23_outage_3s | `audio.jb_delay_p95_ms` | 144 | 119 | ±19.1 | behind | 4/10 | #62, #63 |
-| issue_23_outage_3s | `audio.mouth_to_ear_p95_ms` | 247 | 202 | ±20.3 | behind | 6/10 | #62, #63 |
+| issue_23_outage_3s | `audio.jb_delay_p95_ms` | 141 | 119 | ±19.1 | behind | 4/10 | #62, #63 |
+| issue_23_outage_3s | `audio.mouth_to_ear_p95_ms` | 244 | 202 | ±20.3 | behind | 5/10 | #62, #63 |
 | issue_23_outage_3s | `cc.queue_p95_ms` | 64.2 | 40.2 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | issue_23_outage_3s | `sync.av_offset_p95_ms` | 101 | 71.8 | ±23.6 | behind | 4/10 | #77 |
 | issue_23_outage_3s | `video.e2e_delay_p95_ms` | 154 | 113 | ±10 | behind | 4/10 | #24, #37 |
 | issue_23_outage_3s | `video.freeze_total_ms` | 3413 | 3240 | ±171 | behind | 2/10 | #5, #37, #24 |
 | issue_23_outage_3s | `video.longest_freeze_ms` | 3413 | 3240 | ±171 | behind | 2/10 | #5, #37, #24 |
-| issue_23_outage_500ms | `audio.jb_delay_p95_ms` | 118 | 151 | ±19.7 | ahead | 10/10 | #62, #63 |
-| issue_23_outage_500ms | `audio.mouth_to_ear_p95_ms` | 192 | 247 | ±33.5 | ahead | 10/10 | #62, #63 |
+| issue_23_outage_500ms | `audio.jb_delay_p95_ms` | 116 | 151 | ±19.7 | ahead | 10/10 | #62, #63 |
+| issue_23_outage_500ms | `audio.mouth_to_ear_p95_ms` | 190 | 247 | ±33.5 | ahead | 10/10 | #62, #63 |
 | issue_23_outage_500ms | `video.e2e_delay_p95_ms` | 152 | 180 | ±27.1 | ahead | 7/10 | #24, #37 |
 | issue_24_timing_v2_high_jitter | `repair.overhead_pct` | 34.0 | 43.7 | ±2.5 | ahead | 8/10 | #21, #7, #29 |
-| issue_24_timing_v2_render_fps | `audio.jb_delay_p95_ms` | 102 | 128 | ±23.0 | ahead | 6/10 | #62, #63 |
-| issue_24_timing_v2_render_fps | `audio.mouth_to_ear_p95_ms` | 223 | 249 | ±22.9 | ahead | 6/10 | #62, #63 |
 | issue_24_timing_v2_render_fps | `cc.rtt_p50_ms` | 139 | 126 | ±11.9 | behind | 6/10 | #61 |
 | issue_24_timing_v2_render_fps | `sync.av_offset_p95_ms` | 2165 | 1759 | ±108 | behind | 10/10 | #77 |
 | issue_24_timing_v2_render_fps | `video.e2e_delay_p95_ms` | 2354 | 1949 | ±118 | behind | 10/10 | #24, #37 |
 | issue_24_timing_v2_render_fps | `video.longest_freeze_ms` | 1111 | 875 | ±186 | behind | 8/10 | #5, #37, #24 |
 | issue_24_timing_v2_render_fps | `video.render_fps` | 29.0 | 27.4 | ±1.4 | ahead | 8/10 | #37, #24 |
 | issue_48_prober_low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #62, #63 |
-| issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 320 | 353 | ±29.5 | ahead | 7/10 | #62, #63 |
+| issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #62, #63 |
 | issue_48_prober_low_bandwidth | `cc.rtt_p50_ms` | 320 | 232 | ±72.2 | behind | 7/10 | #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 2011 | 2487 | ±237 | ahead | 9/10 | #77 |
 | issue_48_prober_low_bandwidth | `video.e2e_delay_p95_ms` | 2404 | 2950 | ±348 | ahead | 10/10 | #24, #37 |
-| issue_53_cwnd_pushback | `audio.jb_delay_p95_ms` | 102 | 128 | ±23.0 | ahead | 6/10 | #62, #63 |
-| issue_53_cwnd_pushback | `audio.mouth_to_ear_p95_ms` | 223 | 249 | ±22.9 | ahead | 6/10 | #62, #63 |
 | issue_53_cwnd_pushback | `cc.rtt_p50_ms` | 139 | 126 | ±11.9 | behind | 6/10 | #61 |
 | issue_53_cwnd_pushback | `sync.av_offset_p95_ms` | 1430 | 1759 | ±107 | ahead | 10/10 | #77 |
 | issue_53_cwnd_pushback | `video.e2e_delay_p95_ms` | 1607 | 1949 | ±107 | ahead | 10/10 | #24, #37 |
@@ -192,16 +224,14 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 5.3 | 3.8 | ±0.7 | behind | 9/10 | #21, #61, #12 |
 | issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.5 | 7.5 | ±2 | behind | 6/10 | #21, #7, #29 |
 | issue_61_googcc_glue_congestive | `video.render_fps` | 25.9 | 29.9 | ±1.5 | behind | 10/10 | #37, #24 |
-| issue_62_neteq_default | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
-| issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 143 | 167 | ±10 | ahead | 9/10 | #62, #63 |
-| issue_62_neteq_v2_audio_only_lossy | `audio.jb_delay_p95_ms` | 70.8 | 81 | ±10 | ahead | 2/10 | #62, #63 |
-| issue_62_neteq_v2_audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 143 | 167 | ±10 | ahead | 9/10 | #62, #63 |
+| issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 145 | 167 | ±10 | ahead | 8/10 | #62, #63 |
+| issue_62_neteq_v2_audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 145 | 167 | ±10 | ahead | 8/10 | #62, #63 |
 | issue_62_neteq_v2_cross_traffic | `cc.rtt_p50_ms` | 87.2 | 64.5 | ±10 | behind | 1/10 | #61 |
 | issue_62_neteq_v2_high_jitter | `repair.overhead_pct` | 34.0 | 43.7 | ±2.5 | ahead | 8/10 | #21, #7, #29 |
 | issue_62_neteq_v2_high_jitter | `sync.av_offset_p95_ms` | 76.2 | 58.0 | ±18.0 | behind | 5/10 | #77 |
 | issue_62_neteq_v2_high_jitter | `video.e2e_delay_p95_ms` | 202 | 150 | ±25.7 | behind | 9/10 | #24, #37 |
 | issue_62_neteq_v2_high_jitter | `video.time_to_first_frame_ms` | 209 | 92.6 | ±50 | behind | 7/10 | #24, #61 |
-| issue_62_opus_fec_low_rate | `audio.jb_delay_p95_ms` | 74.6 | 64 | ±10 | behind | 7/10 | #62, #63 |
+| issue_62_opus_fec_low_rate | `audio.jb_delay_p95_ms` | 77 | 64 | ±10 | behind | 4/10 | #62, #63 |
 | issue_62_opus_fec_low_rate | `cc.utilization_pct` | 90.1 | 84.3 | ±4.5 | ahead | 8/10 | #19, #15, #48, #12, #61 |
 | issue_76_packetization_v2 | `repair.overhead_pct` | 29.1 | 32.1 | ±2 | ahead | 7/10 | #21, #7, #29 |
 | issue_76_packetization_v2 | `video.e2e_delay_p95_ms` | 179 | 149 | ±10 | behind | 9/10 | #24, #37 |
@@ -228,18 +258,18 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_85_video_pause | `audio.interruptions` | 3 | 1.1 | ±0.5 | behind | 1/10 | #62, #63 |
 | issue_85_video_pause | `audio.jb_delay_p95_ms` | 133 | 163 | ±24.5 | ahead | 8/10 | #62, #63 |
 | issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #62, #63 |
-| issue_85_video_pause | `audio.mouth_to_ear_p95_ms` | 233 | 282 | ±32.0 | ahead | 9/10 | #62, #63 |
+| issue_85_video_pause | `audio.mouth_to_ear_p95_ms` | 233 | 282 | ±32.0 | ahead | 10/10 | #62, #63 |
 | issue_85_video_pause | `sync.av_offset_p95_ms` | 86.9 | 131 | ±22.5 | ahead | 10/10 | #77 |
 | issue_85_video_pause | `video.e2e_delay_p95_ms` | 176 | 156 | ±17.1 | behind | 8/10 | #24, #37 |
 | lossy_feedback | `video.e2e_delay_p95_ms` | 88.7 | 119 | ±15.5 | ahead | 9/10 | #24, #37 |
 | low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #62, #63 |
-| low_bandwidth | `audio.jb_delay_p95_ms` | 320 | 353 | ±29.5 | ahead | 7/10 | #62, #63 |
+| low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #62, #63 |
 | low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #62, #63 |
 | low_bandwidth | `cc.rtt_p50_ms` | 320 | 232 | ±72.2 | behind | 7/10 | #61 |
 | low_bandwidth | `sync.av_offset_p95_ms` | 2011 | 2487 | ±237 | ahead | 9/10 | #77 |
 | low_bandwidth | `video.e2e_delay_p95_ms` | 2404 | 2950 | ±348 | ahead | 10/10 | #24, #37 |
-| outage_3s | `audio.jb_delay_p95_ms` | 144 | 119 | ±19.1 | behind | 4/10 | #62, #63, #20 |
-| outage_3s | `audio.mouth_to_ear_p95_ms` | 247 | 202 | ±20.3 | behind | 6/10 | #62, #63, #20 |
+| outage_3s | `audio.jb_delay_p95_ms` | 141 | 119 | ±19.1 | behind | 4/10 | #62, #63, #20 |
+| outage_3s | `audio.mouth_to_ear_p95_ms` | 244 | 202 | ±20.3 | behind | 5/10 | #62, #63, #20 |
 | outage_3s | `cc.queue_p95_ms` | 64.2 | 40.2 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61, #20 |
 | outage_3s | `sync.av_offset_p95_ms` | 101 | 71.8 | ±23.6 | behind | 4/10 | #77, #20 |
 | outage_3s | `video.e2e_delay_p95_ms` | 154 | 113 | ±10 | behind | 4/10 | #24, #37, #20 |
@@ -265,14 +295,14 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | satellite | `video.freeze_count` | 20 | 30.6 | ±4.7 | ahead | 7/10 | #5, #37, #24 |
 | satellite | `video.freeze_total_ms` | 6369 | 13227 | ±2008 | ahead | 10/10 | #5, #37, #24 |
 | satellite | `video.render_fps` | 24.8 | 29.5 | ±1.5 | behind | 10/10 | #37, #24 |
-| very_low_capacity | `audio.jb_delay_p95_ms` | 219 | 186 | ±24.5 | behind | 7/10 | #62, #63 |
-| very_low_capacity | `audio.mouth_to_ear_p95_ms` | 552 | 519 | ±27.6 | behind | 5/10 | #62, #63 |
+| very_low_capacity | `audio.jb_delay_p95_ms` | 217 | 186 | ±24.5 | behind | 6/10 | #62, #63 |
+| very_low_capacity | `audio.mouth_to_ear_p95_ms` | 550 | 519 | ±27.5 | behind | 4/10 | #62, #63 |
 | very_low_capacity | `repair.overhead_pct` | 35.2 | 55.6 | ±11.1 | ahead | 9/10 | #21, #7, #29 |
 | very_low_capacity | `video.freeze_count` | 12.7 | 21.9 | ±5.4 | ahead | 9/10 | #5, #37, #24 |
 | very_low_capacity | `video.keyframe_requests` | 4.1 | 3.2 | ±0.6 | behind | 6/10 | #23 |
 | very_low_capacity | `video.render_fps` | 2.4 | 7.2 | ±1.6 | behind | 10/10 | #37, #24 |
-| very_low_capacity_allocator_v2 | `audio.jb_delay_p95_ms` | 219 | 186 | ±24.5 | behind | 7/10 | #62, #63 |
-| very_low_capacity_allocator_v2 | `audio.mouth_to_ear_p95_ms` | 552 | 519 | ±27.6 | behind | 5/10 | #62, #63 |
+| very_low_capacity_allocator_v2 | `audio.jb_delay_p95_ms` | 217 | 186 | ±24.5 | behind | 6/10 | #62, #63 |
+| very_low_capacity_allocator_v2 | `audio.mouth_to_ear_p95_ms` | 550 | 519 | ±27.5 | behind | 4/10 | #62, #63 |
 | very_low_capacity_allocator_v2 | `repair.overhead_pct` | 35.2 | 55.6 | ±11.1 | ahead | 9/10 | #21, #7, #29 |
 | very_low_capacity_allocator_v2 | `video.freeze_count` | 12.7 | 21.9 | ±5.4 | ahead | 9/10 | #5, #37, #24 |
 | very_low_capacity_allocator_v2 | `video.keyframe_requests` | 4.1 | 3.2 | ±0.6 | behind | 6/10 | #23 |
