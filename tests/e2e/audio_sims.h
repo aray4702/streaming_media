@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <numbers>
 #include <vector>
 
@@ -112,7 +113,11 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::NoiseSuppressor ns(nc);
   audio::ns::NoiseSuppressorConfig nc2;
   nc2.sample_rate = fs;
-  audio::ns::NoiseSuppressor ns2(nc2);
+  // On the heap, as the AGC1 objects below: AGC1's pitch-based VAD needs
+  // ~40 KB of stack (iSAC's PitchAnalysis, as in libwebrtc) and wasm's
+  // stack is 64 KB.
+  auto ns2_ptr = std::make_unique<audio::ns::NoiseSuppressor>(nc2);
+  audio::ns::NoiseSuppressor& ns2 = *ns2_ptr;
   audio::VadConfig vc;
   vc.sample_rate = fs;
   audio::Vad vad(vc);
@@ -126,14 +131,16 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::agc2::GainController2 agc2(gc2);
   // AGC1 (#242): APM's order with the analog mic gain emulation.
   const bool agc1_on = cc.agc && cc.apm_v2 && !cc.agc2;
-  audio::agc1::AgcManagerDirect agc_manager(1);
+  auto agc_manager_ptr = std::make_unique<audio::agc1::AgcManagerDirect>(1);
+  audio::agc1::AgcManagerDirect& agc_manager = *agc_manager_ptr;
   agc_manager.Initialize();
   audio::agc1::GainControlConfig g1;
   g1.sample_rate = fs;
   g1.target_level_dbfs = agc_manager.digital_target_level_dbfs();
   g1.compression_gain_db = agc_manager.digital_compression_gain_db();
   g1.enable_limiter = agc_manager.digital_limiter_enabled();
-  audio::agc1::GainControl agc1(g1);
+  auto agc1_ptr = std::make_unique<audio::agc1::GainControl>(g1);
+  audio::agc1::GainControl& agc1 = *agc1_ptr;
   audio::agc1::CaptureLevelsConfig lc;
   lc.analog_mic_gain_emulation = true;
   audio::agc1::CaptureLevels levels(lc);

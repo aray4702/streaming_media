@@ -44,6 +44,10 @@
 //    config field `min_mic_level_override`.
 //  - No histograms or logs (`RTC_HISTOGRAM_*`, `ApmDataDumper`); the
 //    decisions are events and metrics instead.
+//
+// Stack: `Process` runs `Agc`'s pitch-based VAD, whose iSAC pitch analysis
+// keeps ~40 KB of buffers on the stack, as libwebrtc's does. On wasm (64 KB
+// stack by default) keep large objects off the caller's stack.
 #pragma once
 
 #include <cstdint>
