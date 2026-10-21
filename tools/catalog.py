@@ -744,15 +744,28 @@ ALGORITHMS = [
                       "25.6 dB."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
-         headers=["audio/echo_delay_estimator.h"], unit=["EchoDelay"], e2e=["E2E_EchoDelay"],
+         headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
          bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
+               "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`, for `apm v2`) is a port of libwebrtc M157's "
+               "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
+               "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
+               "(5 filters of 32 sub-blocks at 4 kHz covering 0-552 ms, headroom 32 samples, thresholds 5/20, pre-echo "
+               "detection on). Remaining differences: mono only; the portable C matched-filter core where x86 libwebrtc "
+               "runs SSE2/AVX2 (float summation order only); no UMA metrics or data dumps. Nothing in a call uses it yet: "
+               "the adaptive filter and EchoCanceller3 integration are #240's next steps.",
          verification="Defect found: with rectangular windows, the window edges correlated with each other and "
                       "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
                       "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
-                      "was also made physical (direct path dominant)."),
+                      "was also made physical (direct path dominant). AEC3 delay estimation (#240): the mono cases of "
+                      "libwebrtc's decimator, matched_filter, matched_filter_lag_aggregator, clockdrift_detector and "
+                      "echo_path_delay_estimator unit tests pass (both down-sampling factors, with and without pre-echo "
+                      "detection; the SIMD-equivalence and death tests don't apply). On speech through a room response "
+                      "with an echo path of 60 then 180 ms, the render delay controller reports 832 and 2752 samples "
+                      "(true 968 and 2888 minus the 32-sample headroom, one pre-echo block early) with a refined "
+                      "estimate and no clock drift; the first estimate comes after 176 ms."),
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
          headers=["audio/noise_suppressor.h"], unit=["NoiseSuppressor"], e2e=["E2E_NoiseSuppressor"],

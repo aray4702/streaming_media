@@ -46,7 +46,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 2 | 1 | 3 | pass | pass | pass | pass |
-| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | pass | pass | pass | pass |

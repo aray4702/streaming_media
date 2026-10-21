@@ -71,6 +71,7 @@ if(SM_WITH_AUDIO)
     audio/agc2.cc
     audio/echo_delay_estimator.cc
     audio/echo_canceller.cc
+    audio/aec3_delay.cc
     audio/transient_suppressor.cc
     audio/comfort_noise.cc
     audio/audio_level.cc
