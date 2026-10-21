@@ -301,7 +301,7 @@ void PacingController::Enqueue(PacedPacket p) {
     stats_.flushed_packets += flushed_.size() - before;
     SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);
   }
-  prober_.OnIncomingPacket(p.size);
+  prober_.OnIncomingPacket(std::max(DataSize::Zero(), p.size - transport_overhead_));
   if (queue_.Empty()) {
     // Fast-forward the last process time, so that time that has passed is not
     // used as budget for the first new packet.

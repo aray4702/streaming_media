@@ -68,18 +68,41 @@ NetworkControlUpdate GccController::Start(Timestamp now) {
   std::vector<ProbeCluster> probes;
   ssbe_.SetBitrates(cfg_.start_rate, cfg_.min_rate, cfg_.max_rate, now);
   target_ = ssbe_.target_rate();
+  started_ = true;
   if (cfg_.enable_probing) {
     // OnNetworkAvailability(true), then the first ResetConstraints.
     probes = probe2_.OnNetworkAvailability(true, now);
     auto more = probe2_.SetBitrates(cfg_.min_rate, cfg_.start_rate, cfg_.max_rate, now);
     probes.insert(probes.end(), more.begin(), more.end());
+    // The streams' bitrates arrive after the initial probes (issue #62). libwebrtc's
+    // RtpTransportControllerSend::MaybeCreateControllers creates GoogCC when the network
+    // comes up (rtp_transport_controller_send.cc:413-428, 747-773), and the call signals
+    // that before the streams start (sm_compare's webrtc_call.cc; WebRtcVoiceSendChannel::
+    // OnReadyToSend). AudioSendStream::Start then registers with the BitrateAllocator, and
+    // OnStreamsConfig hands max_total_allocated_bitrate to a ProbeController that is already
+    // waiting for its probe results, so the 3x and 6x start-rate probes are not capped at
+    // twice the allocation (probe_controller.cc:224-268, 567-576).
+    if (pending_max_total_allocated_) {
+      auto alloc = probe2_.OnMaxTotalAllocatedBitrate(*pending_max_total_allocated_, now);
+      probes.insert(probes.end(), alloc.begin(), alloc.end());
+    }
   }
+  pending_max_total_allocated_.reset();
   return MakeUpdate(now, RegisterProbes(std::move(probes)));
 }
 
 std::vector<ProbeCluster> GccController::OnMaxTotalAllocatedBitrate(DataRate max_total_allocated_bitrate, Timestamp now) {
   if (!cfg_.enable_probing) return {};
+  if (!started_) {
+    pending_max_total_allocated_ = max_total_allocated_bitrate;
+    return {};
+  }
   return RegisterProbes(probe2_.OnMaxTotalAllocatedBitrate(max_total_allocated_bitrate, now));
+}
+
+void GccController::EnablePeriodicAlrProbing(bool enable) {
+  cfg_.periodic_alr_probing = enable;
+  probe2_.EnablePeriodicAlrProbing(enable);
 }
 
 void GccController::SetMinAllocatable(DataRate r) {
