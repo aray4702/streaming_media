@@ -1,14 +1,19 @@
 // 8.1 RTP timestamp -> NTP (sender wall clock) mapping from RTCP Sender
-// Reports.
+// Reports, as libwebrtc M157's RtpToNtpEstimator
+// (rtc_base/rtp_to_ntp_estimator.*).
 //
 // Each SR pairs the sender's NTP time with the RTP timestamp of the same
-// instant. A least-squares line through the last `max_measurements` pairs
-// (RTP unwrapped) maps any RTP timestamp of the stream to the sender's
-// capture wall-clock time; the slope also yields the actual media clock
-// rate, which absorbs sender clock drift. Pairs that deviate from the
-// current fit by more than `max_deviation` (an SR delayed in the sender, a
-// timestamp jump) are rejected; after `reset_after` consecutive rejections
-// the history is reset, so a genuine discontinuity is followed.
+// instant. A least-squares line (NTP units of 2^-32 s on the unwrapped RTP
+// timestamp) through the last `kNumRtcpReportsToUse` 20 pairs maps any RTP
+// timestamp of the stream to the sender's capture wall-clock time; the
+// slope also yields the actual media clock rate, which absorbs sender clock
+// drift. An SR with the same NTP time or the same RTP timestamp as a stored
+// one is the same measurement. A new SR is invalid unless, compared with
+// the newest stored one, its NTP time moves forward by at most 1 h
+// (`kMaxAllowedRtcpNtpInterval`) and its RTP timestamp moves forward by at
+// most `1 << 25` ticks. After `kMaxInvalidSamples` 3 consecutive invalid
+// SRs the history is cleared and the third one starts a new line, so a
+// genuine discontinuity (a sender restart) is followed.
 #pragma once
 
 #include <cstdint>
@@ -22,32 +27,41 @@
 
 namespace sm::sync {
 
-struct RtpToNtpConfig {
-  size_t max_measurements = 20;
-  TimeDelta max_deviation = TimeDelta::Millis(30);
-  int reset_after = 3;
-};
-
 class RtpToNtpEstimator : public MetricsSource {
  public:
-  enum class UpdateResult { kInvalid, kSameMeasurement, kNewMeasurement, kRejected, kReset };
-  explicit RtpToNtpEstimator(RtpToNtpConfig cfg = {}) : cfg_(cfg) {}
+  static constexpr int kMaxInvalidSamples = 3;
+  static constexpr size_t kNumRtcpReportsToUse = 20;
+  static constexpr uint64_t kMaxAllowedRtcpNtpInterval = uint64_t{60 * 60} << 32;
+  static constexpr int64_t kMaxRtpJump = int64_t{1} << 25;
+
+  enum class UpdateResult { kInvalidMeasurement, kSameMeasurement, kNewMeasurement };
   UpdateResult UpdateMeasurements(timing::NtpTime ntp, uint32_t rtp);
-  // Sender wall-clock (as Timestamp, Unix epoch) of a media RTP timestamp.
+  // NTP time of a media RTP timestamp; value 0 (invalid) without a line.
+  // Like libwebrtc's, it advances the RTP unwrapper.
+  timing::NtpTime EstimateNtp(uint32_t rtp) const;
+  // The same as a Timestamp (Unix epoch).
   std::optional<Timestamp> Estimate(uint32_t rtp) const;
+  // libwebrtc's EstimatedFrequencyKhz: 0 without a line.
+  double EstimatedFrequencyKhz() const;
   std::optional<double> EstimatedFrequencyHz() const;
-  size_t size() const { return points_.size(); }
+  size_t size() const { return measurements_.size(); }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  void Fit();
-  RtpToNtpConfig cfg_;
+  struct Measurement {
+    uint64_t ntp;  // UQ32.32
+    int64_t unwrapped_rtp;
+  };
+  struct Parameters {
+    double slope;   // NTP units per RTP tick.
+    double offset;  // NTP units.
+  };
+  void UpdateParameters();
+  int consecutive_invalid_samples_ = 0;
+  std::deque<Measurement> measurements_;  // Newest first.
+  std::optional<Parameters> params_;
   mutable SeqNumUnwrapper<uint32_t> unwrapper_;
-  std::deque<std::pair<int64_t, double>> points_;  // (unwrapped rtp, ntp ms)
-  double slope_ = 0, intercept_ = 0;               // ntp_ms = slope * rtp + intercept
-  bool valid_ = false;
-  int consecutive_rejects_ = 0;
-  uint64_t accepted_ = 0, rejected_ = 0, resets_ = 0;
+  uint64_t accepted_ = 0, invalid_ = 0, resets_ = 0;
 };
 
 }  // namespace sm::sync

@@ -29,16 +29,20 @@ SM_BENCH(sync, RtpToNtp_Estimate) {
 }
 
 SM_BENCH(sync, StreamSync_Update) {
-  StreamSynchronization s;
+  StreamSynchronization::Measurements audio, video;
   for (int i = 0; i < 5; ++i) {
-    s.audio_map().UpdateMeasurements(NtpTime::FromTimestamp(Timestamp::Seconds(1700000000 + i)), static_cast<uint32_t>(i * 48000));
-    s.video_map().UpdateMeasurements(NtpTime::FromTimestamp(Timestamp::Seconds(1700000000 + i)), static_cast<uint32_t>(i * 90000));
+    audio.rtp_to_ntp.UpdateMeasurements(NtpTime::FromTimestamp(Timestamp::Seconds(1700000000 + i)), static_cast<uint32_t>(i * 48000));
+    video.rtp_to_ntp.UpdateMeasurements(NtpTime::FromTimestamp(Timestamp::Seconds(1700000000 + i)), static_cast<uint32_t>(i * 90000));
   }
+  StreamSynchronization s(2, 1);
   int64_t t = 0;
   for (auto _ : st) {
-    s.OnAudioPacket(static_cast<uint32_t>(4 * 48000 + t * 48), Timestamp::Millis(4050 + t));
-    s.OnVideoFrame(static_cast<uint32_t>(4 * 90000 + t * 90), Timestamp::Millis(4120 + t));
-    bench::DoNotOptimize(s.Update(TimeDelta::Millis(60), TimeDelta::Millis(40), Timestamp::Millis(5000 + t)));
+    audio.latest_timestamp = static_cast<uint32_t>(4 * 48000 + t * 48);
+    audio.latest_receive_time_ms = 4050 + t;
+    video.latest_timestamp = static_cast<uint32_t>(4 * 90000 + t * 90);
+    video.latest_receive_time_ms = 4120 + t;
+    auto relative = StreamSynchronization::ComputeRelativeDelay(audio, video);
+    bench::DoNotOptimize(s.ComputeDelays(relative.value_or(0), 60, 40));
     ++t;
   }
   st.BudgetNsPerItem(500);
