@@ -1152,7 +1152,8 @@ ALGORITHMS = [
                                 "`issue_24_timing_v2_render_fps` locks it in."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
-         headers=["video/quality_scaler.h"], unit=["QualityScaler"], e2e=["E2E_QualityScaler"],
+         headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],
+         unit=["QualityScaler", "VideoStreamAdapter", "VideoAdapter"], e2e=["E2E_QualityScaler"],
          bench=["video/QualityScaler_frame"],
          scenario="An H.264-like encoder model (QP +6 per halving of bits per pixel) with bandwidth 2500 -> 300 "
                   "-> 2500 kbps; resolution follows the QP signals.",
@@ -1170,8 +1171,22 @@ ALGORITHMS = [
                       "window; drop rate >= 60%; smoothed QP > high or <= low. `sm_video_compare` gives the same "
                       "signals as libwebrtc on all six quality-scaler inputs "
                       "([results](../../results/video-webrtc.md)); the unit tests port "
-                      "`quality_scaler_unittest.cc`. Version 1 stays the default until #84 wires version 2 "
-                      "into the send path."),
+                      "`quality_scaler_unittest.cc`. "
+                      "Issue #84 step 4 wires version 2 into the send path behind `quality_scaling` "
+                      "(`rtp::VideoSendController`, scenario key `quality_scaling on`, off by default): "
+                      "libwebrtc's `QualityScalerResource` with `MAINTAIN_FRAMERATE`, `VideoStreamAdapter`'s "
+                      "resolution steps (3/5 down, 5/3 up with a 12/5 maximum, the 320x180 minimum, waiting for the "
+                      "frame size to change), `VideoAdapter`'s 3/4-2/3 scale series and "
+                      "`VideoStreamEncoder::DropDueToSize` (up to 4 initial frames dropped as too large for the "
+                      "target, each adapting down), from `call/adaptation/` and `api/video/video_adapter.cc` "
+                      "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
+                      "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
+                      "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
+                      "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
+                      "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
+                      "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
+                      "frame kept as `pending_frame_`. `issue_84_quality_scaling_720p_low_rate` and "
+                      "`issue_84_quality_scaling_rate_rise` lock in the behaviour."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
