@@ -106,7 +106,8 @@ const std::vector<const char*>& InfoMetrics() {
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,"
-    "issue_120_rtx_payload_padding";
+    "issue_120_rtx_payload_padding,issue_120_rtx_payload_padding_seed2,issue_120_rtx_payload_padding_seed8,"
+    "issue_120_rtx_payload_padding_seed9";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
