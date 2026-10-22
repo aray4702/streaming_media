@@ -732,7 +732,7 @@ ALGORITHMS = [
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
-         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation"], e2e=["E2E_VideoAdaptation"],
+         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation", "OveruseFrameDetector"], e2e=["E2E_VideoAdaptation"],
          bench=["cc/Degradation_and_CpuDetector", "cc/Q_Adaptation_bandwidth_drop"],
          scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
                   "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
@@ -740,7 +740,16 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
-         verification="No defects found after the 5.2 fixes."),
+         verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3) "
+                      "is libwebrtc M157's `OveruseFrameDetector` (`video/adaptation/overuse_frame_detector.cc`) "
+                      "with its default estimator `SendProcessingUsage1` and the `CpuOveruseOptions` a software "
+                      "encoder gets (85% / 42%, 120 frame samples, 3 process counts, 2 checks in a row, 1.5 s frame "
+                      "time-out, first check 100 ms after start then every 5 s, ramp-up delay 10 s quick, 40 s "
+                      "standard, doubled up to 240 s). The `OveruseFrameDetector` unit tests port "
+                      "`overuse_frame_detector_unittest.cc` (all but the two random-interval cases and the "
+                      "`SendProcessingUsage2` suite, which is off by default). Version 1 stays the default until #84 "
+                      "wires version 2 into the send path, which needs libwebrtc's `call/adaptation/` and "
+                      "`media/base/video_adapter` sources in `compare/webrtc/reference/`."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
