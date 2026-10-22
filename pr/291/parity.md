@@ -6,14 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-178 gaps on `main`, 180 here: **0 closed, 2 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.6 | 113 | ±12.7 | ahead | 6/10 | #77 |
-| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.6 | 113 | ±12.7 | ahead | 6/10 | #77 |
+180 gaps on `main`, 180 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
