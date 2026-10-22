@@ -18,6 +18,7 @@ DIRS=(
   modules/pacing
   modules/video_coding/utility
   video/adaptation
+  call/adaptation
   modules/video_coding/timing
   video/timing
   video/config
