@@ -37,6 +37,7 @@
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/red.h"
 #include "sm/sync/header_extensions.h"
+#include "sm/sync/stream_sync.h"
 #include "sm/timing/audio_jitter_buffer.h"
 #include "sm/timing/frame_release.h"
 #include "sm/timing/packet_buffer.h"
@@ -195,7 +196,27 @@ class RtpReceiver : public MetricsSource {
   // and schedules decodable frames. Cheap to call every tick.
   void Process(Timestamp now);
   // Sender report from RtcpEngine (RtcpIncoming::sender_reports).
-  void OnSenderReport(const timing::SenderReport& sr, Timestamp now) { stats_rtp_.OnSenderReport(sr, now); }
+  void OnSenderReport(const timing::SenderReport& sr, Timestamp now) {
+    stats_rtp_.OnSenderReport(sr, now);
+    last_sr_ = sr;
+  }
+  // A/V synchronization (issue #77), what the stream gives
+  // sync::RtpStreamsSynchronizer as a Syncable. Video is libwebrtc's
+  // VideoReceiveStream2::GetInfo (RtpVideoStreamReceiver2::GetSyncInfo: the
+  // last SR and the last media packet, with VCMTiming::TargetVideoDelay as
+  // the current delay; timing v2 only). Audio is AudioReceiveStreamImpl::
+  // GetInfo (ChannelReceive::GetSyncInfo, with GetDelayEstimate =
+  // NetEq::FilteredCurrentDelayMs, no playout device delay). Unset until an
+  // SR and a media packet have arrived.
+  std::optional<sync::Syncable::Info> SyncInfo() const;
+  // The synchronizer's minimum playout delay. Video is VideoReceiveStream2::
+  // SetMinimumPlayoutDelay (the largest of it and the configured minimum goes
+  // to VCMTiming); audio is ChannelReceive::SetMinimumPlayoutDelay (clamped
+  // to 0-10 s, NetEq::SetMinimumDelay). False when the delay is not applied.
+  bool SetSyncMinimumPlayoutDelay(TimeDelta delay);
+  // ChannelReceive::GetPlayoutRtpTimestamp: the RTP timestamp of the audio
+  // last played and when (audio only).
+  std::optional<sync::Syncable::PlayoutInfo> PlayoutRtpTimestamp() const;
   void OnRtt(TimeDelta rtt);
   // The decoder failed: ask for a keyframe.
   void OnDecodeFailure(Timestamp now) { keyframes_.OnDecoderError(now); }
@@ -203,7 +224,10 @@ class RtpReceiver : public MetricsSource {
   std::vector<ReceivedFrame> TakeFrames();
   ReceiverFeedback TakeFeedback();
   // Audio: the device pulls 10 ms.
-  timing::AudioOperation GetAudio(std::span<float> out, Timestamp now) { return jitter_buffer_.GetAudio(out, now); }
+  timing::AudioOperation GetAudio(std::span<float> out, Timestamp now) {
+    last_playout_time_ = now;
+    return jitter_buffer_.GetAudio(out, now);
+  }
 
   // Report block source for rtp::RtcpEngine::AddReceiveStatistics.
   timing::ReceiveStatistics* receive_statistics() { return &stats_rtp_; }
@@ -250,6 +274,11 @@ class RtpReceiver : public MetricsSource {
   bool have_rtt_ = false;
   Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.
   std::unordered_set<uint16_t> nacked_seqs_;  // timing v2: received packets that had been NACKed.
+  // A/V sync (issue #77): the last SR, the last media packet and the last playout.
+  std::optional<timing::SenderReport> last_sr_;
+  std::optional<uint32_t> last_received_rtp_timestamp_;
+  Timestamp last_received_rtp_time_ = Timestamp::MinusInfinity();
+  Timestamp last_playout_time_ = Timestamp::MinusInfinity();
   struct FrameMeta {
     uint32_t rtp_timestamp;
     bool keyframe;
