@@ -764,6 +764,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.decoder_factory = w::CreateBuiltinAudioDecoderFactory();
       c.decoder_map.emplace(kOpusPt, w::SdpAudioFormat("opus", 48000, 2));
       if (s.red) c.decoder_map.emplace(kAudioRedPt, w::SdpAudioFormat("red", 48000, 2));
+      // One sync group, so Call::ConfigureSync runs RtpStreamsSynchronizer on the pair (issue #77).
+      if (s.av_sync) c.sync_group = "sm";
       audio_recv = recv_call->CreateAudioReceiveStream(std::move(c));
     }
     if (s.video) {
@@ -788,6 +790,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.decoder_factory = &decoder_factory;
       c.decoders.push_back(w::VideoReceiveStreamInterface::Decoder(w::SdpVideoFormat("Generic"), kVideoPt));
       c.renderer = &renderer;
+      if (s.av_sync) c.sync_group = "sm";
       video_recv = recv_call->CreateVideoReceiveStream(std::move(c));
     }
   });
