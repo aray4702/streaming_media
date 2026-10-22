@@ -10,13 +10,16 @@
 // controller picks the smallest m parity packets such that the probability
 // of more than m losses among k+m packets (binomial, filtered loss p) is
 // below a residual-loss target. The target is strict (1%) at high RTT and
-// relaxed toward NACK-only (10%) at low RTT. Overhead is capped.
+// relaxed toward NACK-only (10%) at low RTT. Overhead is capped. The result
+// is ULPFEC's protection parameters (loss/ulpfec.h): the rate m/k in Q8,
+// one frame per FEC block and random masks, which libwebrtc's
+// FecControllerDefault always picks (fec_controller_default.cc:138-143).
 #pragma once
 
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
-#include "sm/loss/fec.h"
+#include "sm/loss/ulpfec.h"
 
 namespace sm::loss {
 
@@ -28,20 +31,18 @@ struct ProtectionConfig {
   double max_overhead = 0.5;       // Max parity / media packets.
   double min_loss_for_fec = 0.005;
   double loss_smoothing = 0.3;     // EMA weight of each new loss report.
-  double burst_threshold = 1.5;    // Mean burst length -> interleaved masks.
   EventSink* events = nullptr;
 };
 
 struct ProtectionInput {
   TimeDelta rtt;
   double loss_rate = 0;            // Fraction lost since last report.
-  double mean_burst_length = 1.0;  // Packets per loss burst.
   double packets_per_frame = 5;
 };
 
 struct ProtectionDecision {
   bool nack = true;
-  FecParams fec;
+  ulpfec::FecProtectionParams fec;  // fec_rate 0: no FEC.
   double filtered_loss = 0;
   double expected_residual = 0;    // Predicted frame loss after FEC.
 };

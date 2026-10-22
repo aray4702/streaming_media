@@ -159,30 +159,82 @@ SM_TEST(RtpSender, AudioWithoutRedIsOnePlainPacket) {
   SM_EXPECT_TRUE(out[0].packet.payload == f);
 }
 
-SM_TEST(RtpSender, FecPacketsComeBeforeTheLastMediaPacketOfTheFrame) {
+// RTPSenderVideo with RED and ULPFEC: every media packet is wrapped in RED (BuildRedPayload), the
+// FEC is generated as the pacer sends the media (RtpSenderEgress::SendPacket) and the FEC packets
+// are RED packets on the media SSRC that take their sequence numbers when the pacer sends them.
+SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   RtpSenderConfig c = VideoCfg();
   c.fec = true;
-  c.fec_config.fec_ssrc = 0x3333;
   RtpSender s(c);
-  s.SetFecParams({0.5, loss::FecMaskType::kInterleaved});
+  s.SetFecParams({.fec_rate = 128, .max_fec_frames = 1});
   s.SendVideoFrame(Chunks({100, 100, 100, 100}), 1, Timestamp::Millis(0));
-  auto out = s.TakePackets();
-  size_t media = 0, fec = 0;
-  for (size_t i = 0; i < out.size(); ++i) {
-    if (out[i].kind == PacketKind::kFec) {
-      ++fec;
-      SM_EXPECT_TRUE(out[i].priority == cc::PacketPriority::kFec);
-      SM_EXPECT_EQ(out[i].packet.ssrc, 0x3333u);
-      SM_EXPECT_EQ(media, 4u - 1);  // Parity is queued with the frame's last packet, ahead of it.
-    } else {
-      ++media;
-    }
+  auto media = s.TakePackets();
+  SM_ASSERT_EQ(media.size(), 4u);
+  for (size_t i = 0; i < media.size(); ++i) {
+    SM_EXPECT_TRUE(media[i].kind == PacketKind::kVideo);
+    SM_EXPECT_EQ(media[i].packet.payload_type, c.ulpfec.red_payload_type);
+    SM_ASSERT_EQ(media[i].packet.payload.size(), 101u);
+    SM_EXPECT_EQ(media[i].packet.payload[0], 96);  // RED block header: the media PT, F bit 0.
+    SM_EXPECT_EQ(media[i].packet.payload[1], static_cast<uint8_t>(i + 1));
+    s.AssignSequenceNumber(media[i]);
+    s.OnPacketReleased(media[i], Timestamp::Millis(1));
+    // The FEC comes when the frame's last packet is sent.
+    if (i < 3) SM_EXPECT_TRUE(s.TakeFecPackets().empty());
   }
-  SM_EXPECT_EQ(media, 4u);
-  SM_EXPECT_EQ(fec, 2u);
+  auto fec = s.TakeFecPackets();
+  SM_ASSERT_EQ(fec.size(), 2u);  // NumFecPackets(4, 128).
+  for (size_t i = 0; i < fec.size(); ++i) {
+    SM_EXPECT_TRUE(fec[i].kind == PacketKind::kFec);
+    SM_EXPECT_TRUE(fec[i].priority == cc::PacketPriority::kFec);
+    SM_EXPECT_TRUE(fec[i].sender == &s);
+    SM_EXPECT_EQ(fec[i].packet.ssrc, c.ssrc);
+    SM_EXPECT_EQ(fec[i].packet.payload_type, c.ulpfec.red_payload_type);
+    SM_EXPECT_EQ(fec[i].packet.payload[0], c.ulpfec.ulpfec_payload_type);
+    SM_EXPECT_FALSE(fec[i].packet.marker);
+    s.AssignSequenceNumber(fec[i]);
+    // After the four media packets: 65534, 65535, 0, 1, then 2 and 3.
+    SM_EXPECT_EQ(fec[i].packet.seq, static_cast<uint16_t>(2 + i));
+    s.OnPacketReleased(fec[i], Timestamp::Millis(1));
+  }
+  SM_EXPECT_TRUE(s.TakeFecPackets().empty());
   SM_EXPECT_EQ(s.stats().fec_packets, 2u);
   // FEC packets are not in the sender report counts.
   SM_EXPECT_EQ(s.SenderState().packet_count, 4u);
+  // The FEC packets are not kept for retransmission.
+  SM_EXPECT_EQ(s.rtx().history_size(), 4u);
+}
+
+// rtx_payload_type_map_: a RED packet is resent with the RTX payload type associated with RED.
+SM_TEST(RtpSender, RedPacketIsResentWithTheRedRtxPayloadType) {
+  RtpSenderConfig c = VideoCfg();
+  c.fec = true;
+  RtpSender s(c);
+  s.SendVideoFrame(Chunks({100}), 1, Timestamp::Millis(0));
+  auto sent = Release(s);
+  SM_ASSERT_EQ(sent.size(), 1u);
+  const uint16_t seq = sent[0].packet.seq;
+  s.OnNack(std::vector<uint16_t>{seq}, Timestamp::Millis(100), TimeDelta::Millis(10));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  SM_EXPECT_EQ(rtx[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(rtx[0].packet.payload_type, c.ulpfec.red_rtx_payload_type);
+  auto restored = loss::RestoreFromRtx(rtx[0].packet, c.ssrc, c.ulpfec.red_payload_type);
+  SM_ASSERT_TRUE(restored.has_value());
+  SM_EXPECT_TRUE(restored->payload == sent[0].packet.payload);
+}
+
+// RTPSenderVideo::FecPacketOverhead: the ULPFEC header with a 6-byte mask (18), the RED header (1)
+// and the registered extensions an FEC packet can carry.
+SM_TEST(RtpSender, FecPacketOverhead) {
+  RtpSenderConfig c = VideoCfg();
+  SM_EXPECT_EQ(RtpSender(c).FecPacketOverhead(), 0u);
+  c.fec = true;
+  SM_EXPECT_EQ(RtpSender(c).FecPacketOverhead(), 19u);
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  c.extensions = &map;
+  // One-byte header extension block (4) plus transport-cc (1 + 2), padded to 4: 8 bytes.
+  SM_EXPECT_EQ(RtpSender(c).FecPacketOverhead(), 27u);
 }
 
 SM_TEST(RtpSender, MidIsWrittenOnTheFirstPacketsUntilAcknowledged) {

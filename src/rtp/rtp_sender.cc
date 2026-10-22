@@ -26,13 +26,12 @@ loss::RtxConfig MakeRtxConfig(const RtpSenderConfig& c) {
   loss::RtxConfig r = c.rtx;
   r.rtx_ssrc = c.rtx_ssrc.value_or(0);
   r.rtx_payload_type = c.rtx_payload_type;
+  if (c.fec) {
+    r.red_payload_type = c.ulpfec.red_payload_type;
+    r.rtx_red_payload_type = c.ulpfec.red_rtx_payload_type;
+  }
   if (!r.events) r.events = c.events;
   return r;
-}
-loss::FecConfig MakeFecConfig(const RtpSenderConfig& c) {
-  loss::FecConfig f = c.fec_config;
-  if (!f.events) f.events = c.events;
-  return f;
 }
 // rtp_sender.cc:54-62 and rtp_sender.h:44.
 constexpr size_t kMinAudioPaddingLength = 50;
@@ -46,9 +45,13 @@ RtpSender::RtpSender(RtpSenderConfig cfg)
     : cfg_(ClampPacketSize(std::move(cfg))),
       rtx_(MakeRtxConfig(cfg_)),
       red_(std::max(1, cfg_.red_distance)),
-      fec_(MakeFecConfig(cfg_)),
       next_seq_(cfg_.initial_seq),
-      mid_remaining_(cfg_.mid_packets) {}
+      mid_remaining_(cfg_.mid_packets) {
+  if (cfg_.fec) {
+    ulpfec_ = std::make_unique<loss::ulpfec::UlpfecGenerator>(cfg_.ulpfec.red_payload_type,
+                                                              cfg_.ulpfec.ulpfec_payload_type);
+  }
+}
 
 RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) {
   RtpPacket p;
@@ -56,8 +59,8 @@ RtpPacket RtpSender::NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker) 
   p.payload_type = pt;
   // libwebrtc assigns the sequence number when the pacer releases the packet
   // (PacketRouter::SendPacket -> ModuleRtpRtcpImpl2::AssignSequenceNumber), so a packet
-  // the pacer discards leaves no gap. AssignSequenceNumber() does it here.
-  p.seq = DefersSequenceNumbers() ? 0 : next_seq_++;
+  // the pacer discards leaves no gap. AssignSequenceNumber() does it.
+  p.seq = 0;
   p.timestamp = rtp_timestamp;
   p.marker = marker;
   if (mid_remaining_ > 0 && !cfg_.mid.empty() && cfg_.extensions) {
@@ -73,19 +76,28 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
   out_.back().sender = this;
 }
 
-bool RtpSender::DefersSequenceNumbers() const {
-  // FEC packets name the media sequence numbers they protect when they are made, so a sender with
-  // FEC keeps assigning at packetization.
-  return !cfg_.fec;
-}
-
 void RtpSender::AssignSequenceNumber(SenderPacket& p) {
-  if (!DefersSequenceNumbers()) return;
-  if (p.kind != PacketKind::kAudio && p.kind != PacketKind::kVideo) return;
+  if (p.kind != PacketKind::kAudio && p.kind != PacketKind::kVideo && p.kind != PacketKind::kFec) return;
   p.packet.seq = next_seq_++;
 }
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
+  if (ulpfec_ && p.kind == PacketKind::kVideo) {
+    // RtpSenderEgress::SendPacket: the media packet without its RED header (media PT
+    // restored), then the FEC that it completes.
+    RtpPacket media = p.packet;
+    if (media.payload_type == cfg_.ulpfec.red_payload_type && !media.payload.empty()) {
+      media.payload_type = media.payload[0];
+      media.payload.erase(media.payload.begin());
+    }
+    ulpfec_->AddPacketAndGenerateFec(media, p.is_key_frame);
+    for (RtpPacket& f : ulpfec_->GetFecPackets()) {
+      ++stats_.fec_packets;
+      stats_.fec_payload_bytes += static_cast<int64_t>(f.payload.size());
+      fec_out_.push_back({std::move(f), PacketKind::kFec, cc::PacketPriority::kFec});
+      fec_out_.back().sender = this;
+    }
+  }
   if (!cfg_.rtx_ssrc) return;
   if (p.kind == PacketKind::kAudio || p.kind == PacketKind::kVideo) {
     rtx_.OnPacketSent(p.packet, now);
@@ -94,20 +106,13 @@ void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
   }
 }
 
-void RtpSender::StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe, bool first) {
+void RtpSender::StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe, bool first) {
   ++stats_.media_packets;
   stats_.media_payload_bytes += static_cast<int64_t>(p.payload.size());
   sr_packets_ += 1;
   sr_octets_ += static_cast<uint32_t>(p.payload.size());
   last_rtp_timestamp_ = p.timestamp;
   last_media_time_ = now;
-  if (cfg_.fec) {
-    for (RtpPacket& f : fec_.AddMediaPacket(p, end_of_group)) {
-      ++stats_.fec_packets;
-      stats_.fec_payload_bytes += static_cast<int64_t>(f.payload.size());
-      Queue(std::move(f), PacketKind::kFec, cc::PacketPriority::kFec);
-    }
-  }
   Queue(std::move(p), cfg_.video ? PacketKind::kVideo : PacketKind::kAudio,
         cfg_.video ? cc::PacketPriority::kVideo : cc::PacketPriority::kAudio);
   out_.back().is_key_frame = keyframe;
@@ -142,7 +147,7 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
     sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAudioLevel, {byte});
     ++stats_.audio_level_packets;
   }
-  StoreAndQueueMedia(std::move(p), true, now);
+  StoreAndQueueMedia(std::move(p), now);
 }
 
 void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
@@ -151,9 +156,18 @@ void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uin
   ++stats_.frames;
   for (size_t i = 0; i < chunks.size(); ++i) {
     bool last = i + 1 == chunks.size();
-    RtpPacket p = NewPacket(cfg_.payload_type, rtp_timestamp, last);
-    p.payload = chunks[i];
-    StoreAndQueueMedia(std::move(p), last, now, keyframe, i == 0);
+    RtpPacket p;
+    if (ulpfec_) {
+      // BuildRedPayload: one RED block header (the media PT, F bit 0), then the payload.
+      p = NewPacket(cfg_.ulpfec.red_payload_type, rtp_timestamp, last);
+      p.payload.reserve(loss::ulpfec::kRedForFecHeaderLength + chunks[i].size());
+      p.payload.push_back(cfg_.payload_type);
+      p.payload.insert(p.payload.end(), chunks[i].begin(), chunks[i].end());
+    } else {
+      p = NewPacket(cfg_.payload_type, rtp_timestamp, last);
+      p.payload = chunks[i];
+    }
+    StoreAndQueueMedia(std::move(p), now, keyframe, i == 0);
   }
 }
 
@@ -231,6 +245,32 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32
     bytes_left -= std::min(bytes_left, padding_bytes_in_packet);
   }
   return out;
+}
+
+void RtpSender::SetFecParams(const loss::ulpfec::FecProtectionParams& p) {
+  fec_params_ = p;
+  if (ulpfec_) ulpfec_->SetProtectionParameters(p, p);
+}
+
+std::vector<SenderPacket> RtpSender::TakeFecPackets() {
+  std::vector<SenderPacket> out;
+  out.swap(fec_out_);
+  return out;
+}
+
+size_t RtpSender::FecPacketOverhead() const {
+  if (!ulpfec_) return 0;
+  // RTPSender's max_padding_fec_packet_header_: the extensions of kFecOrPaddingExtensionSizes
+  // that are registered, MID at its largest (RtpMid::kMaxValueSizeBytes, 16).
+  RtpPacket p;
+  if (cfg_.extensions) {
+    const sync::ExtensionAccessor access(*cfg_.extensions);
+    if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
+    if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
+    if (cfg_.extensions->IdOf(sync::uri::kMid)) access.SetString(p, sync::uri::kMid, std::string(16, 'm'));
+  }
+  return loss::ulpfec::ForwardErrorCorrection::MaxPacketOverhead() + loss::ulpfec::kRedForFecHeaderLength +
+         (p.HeaderSize() - RtpPacket::kFixedHeaderSize);
 }
 
 std::vector<SenderPacket> RtpSender::TakePackets() {

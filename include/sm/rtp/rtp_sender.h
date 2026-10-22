@@ -2,7 +2,7 @@
 // 7): turns encoded frames into RTP packets. It assigns sequence numbers,
 // SSRC, payload type, timestamps and the marker bit, writes the MID header
 // extension, wraps audio in RED (RFC 2198), keeps the packet history and
-// answers NACKs with RTX (RFC 4588), and feeds the optional FEC encoder. It
+// answers NACKs with RTX (RFC 4588), and feeds the optional ULPFEC generator. It
 // does not send anything: every packet is handed out through TakePackets()
 // with the pacer priority it needs, and rtp::SendSideController paces, numbers
 // (transport-wide sequence number) and serializes it.
@@ -13,6 +13,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <span>
 #include <string>
@@ -24,8 +25,8 @@
 #include "sm/audio/audio_level.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/units.h"
-#include "sm/loss/fec.h"
 #include "sm/loss/red.h"
+#include "sm/loss/ulpfec.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/sync/header_extensions.h"
@@ -68,9 +69,11 @@ struct RtpSenderConfig {
   std::optional<uint8_t> red_payload_type;
   int red_distance = 1;
 
-  // Forward error correction over the media packets (video).
+  // Video RED (RFC 2198) + ULPFEC (RFC 5109), as libwebrtc's RTPSenderVideo
+  // and RtpSenderEgress with a UlpfecGenerator: every media packet is wrapped
+  // in RED, and the FEC packets go on the media SSRC.
   bool fec = false;
-  loss::FecConfig fec_config;
+  loss::ulpfec::UlpfecConfig ulpfec;
 
   // MID (RFC 8843) is written on the first `mid_packets` packets, or until
   // AcknowledgeMid() when the peer has answered. Needs the extension mapped.
@@ -114,21 +117,30 @@ class RtpSender : public MetricsSource {
   // libwebrtc's RtpSenderVideo reads from the packet templates to size the
   // payload (rtp_sender_video.cc, `max_payload_len`).
   size_t MediaHeaderSize() const;
-  // Video: one packetized frame. The marker is set on the last chunk. FEC
-  // groups end at the frame boundary.
+  // Video: one packetized frame. The marker is set on the last chunk. With
+  // FEC each packet is wrapped in RED (rtp_sender_video.cc BuildRedPayload).
   // `keyframe` marks its media packets for the pacer (keyframe flush).
   void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
                       bool keyframe = false);
 
-  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). Without
-  // FEC the media packet gets its RTP sequence number here, as
-  // libwebrtc's PacketRouter does (modules/pacing/packet_router.cc:217,
-  // rtp_rtcp_impl2.cc:352); until then it carries 0. Otherwise the number was set when packetized.
+  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
+  // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
+  // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then it carries 0.
   void AssignSequenceNumber(SenderPacket& p);
   // The pacer sent `p` (SendSideController::Process). The RTX history takes media packets
   // here (the packet as it goes out, RED-wrapped when RED is in use, so a resend is identical
-  // apart from the RTX header) and learns that a resend left the queue.
+  // apart from the RTX header) and learns that a resend left the queue. With FEC a video
+  // packet goes to the ULPFEC generator without its RED header (RtpSenderEgress::SendPacket,
+  // rtp_sender_egress.cc:186-216), so the FEC covers the numbered packet.
   void OnPacketReleased(const SenderPacket& p, Timestamp now);
+  // The FEC packets the last OnPacketReleased generated, for the pacer to enqueue
+  // (PacketRouter::FetchFec, PacingController::ProcessPackets). Their sequence numbers are
+  // assigned when the pacer releases them.
+  std::vector<SenderPacket> TakeFecPackets();
+  // Bytes a video packet's payload leaves for FEC: RTPSenderVideo::FecPacketOverhead
+  // (rtp_sender_video.cc:263-280), the ULPFEC header, the RED header and the header
+  // extensions an FEC packet can carry (kFecOrPaddingExtensionSizes). 0 without FEC.
+  size_t FecPacketOverhead() const;
   // A measured RTT (history retention).
   void SetRtt(TimeDelta rtt, Timestamp now) { rtx_.SetRtt(rtt, now); }
   // Packets the peer acknowledged by transport-wide feedback leave the history.
@@ -159,9 +171,12 @@ class RtpSender : public MetricsSource {
   // The peer acknowledged the MID: stop repeating it.
   void AcknowledgeMid() { mid_remaining_ = 0; }
 
-  // FEC protection level for the next frames (loss::ProtectionController).
-  void SetFecParams(const loss::FecParams& p) { fec_.SetParams(p); }
-  const loss::FecParams& fec_params() const { return fec_.params(); }
+  // FEC protection for the next frames (loss::ProtectionController), for delta and key frames
+  // alike; the generator applies them from the next protected packet.
+  void SetFecParams(const loss::ulpfec::FecProtectionParams& p);
+  const loss::ulpfec::FecProtectionParams& fec_params() const { return fec_params_; }
+  // The ULPFEC generator, when FEC is on.
+  const loss::ulpfec::UlpfecGenerator* ulpfec() const { return ulpfec_.get(); }
 
   // Everything queued since the last call, in the order to enqueue it.
   std::vector<SenderPacket> TakePackets();
@@ -177,14 +192,15 @@ class RtpSender : public MetricsSource {
 
  private:
   RtpPacket NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker);
-  bool DefersSequenceNumbers() const;
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
-  void StoreAndQueueMedia(RtpPacket p, bool end_of_group, Timestamp now, bool keyframe = false, bool first = false);
+  void StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe = false, bool first = false);
 
   RtpSenderConfig cfg_;
   loss::RtxSender rtx_;
   loss::RedEncoder red_;
-  loss::FecEncoder fec_;
+  std::unique_ptr<loss::ulpfec::UlpfecGenerator> ulpfec_;
+  loss::ulpfec::FecProtectionParams fec_params_;
+  std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
   int mid_remaining_;
   uint32_t last_rtp_timestamp_ = 0;
