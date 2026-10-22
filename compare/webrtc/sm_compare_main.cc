@@ -10,7 +10,7 @@
 // Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3, or the
 // scenario's own `compare_seeds N` directive);
 // the table shows the mean over seeds. The JSON has the means ("sm", "webrtc"),
-// every seed's values for the shown metrics ("per_seed"), and each shown
+// every seed's values for the shown metrics and PerSeedInfoMetrics ("per_seed"), and each shown
 // metric's direction and tie floor ("shown"), which tools/parity_report.py
 // reads to find gaps in both directions.
 //
@@ -131,11 +131,23 @@ bool Traced(const std::string& names, const std::string& scenario) {
 using Metrics = std::map<std::string, double>;
 
 // Only the shown metrics of one run.
+// Information only, in "per_seed" beside the shown metrics: metrics that
+// scenario expect lines judge, so a guard rail can be checked against
+// libwebrtc's worst seed (program.md 0.2). Never part of the parity gaps.
+const std::vector<const char*>& PerSeedInfoMetrics() {
+  static const std::vector<const char*> k = {"cc.queue_over_200ms_pct", "cc.target_avg_kbps", "net.rtx_kbps"};
+  return k;
+}
+
 Metrics ShownOf(const Report& r) {
   Metrics m;
   for (const auto& sh : ShownMetrics()) {
     auto it = r.metrics.find(sh.metric);
     if (it != r.metrics.end()) m[sh.metric] = it->second;
+  }
+  for (const char* name : PerSeedInfoMetrics()) {
+    auto it = r.metrics.find(name);
+    if (it != r.metrics.end()) m[name] = it->second;
   }
   return m;
 }
