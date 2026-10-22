@@ -117,6 +117,9 @@ One directive per line, and `#` starts a comment.
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate |
 | `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | NetEq v2 (the default) runs only at 8, 16, 32 and 48 kHz and, as libwebrtc, discards the audio of any other rate (#256) |
 | `video_fps <n>` | 30 | |
+| `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
+| `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
+| `encoder_speed <x>` | 1 | CPU speed for the encoder model's encode time: 10 ms per 720p frame at 1, reported in the video trace (#84) |
 | `video_max_payload <bytes>` | 1446 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). `sm_compare`'s libwebrtc side keeps its default |
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
@@ -159,7 +162,9 @@ Link keys (any subset; unset keys keep their previous value):
   end), `pause_count` and `pause_total_ms` (render gaps of 5 s or more,
   which libwebrtc's `VideoQualityObserver` counts as pauses, not freezes;
   a pause still in progress at the end is included), `render_fps`, `render_ratio_pct`, `e2e_delay_p50/p95_ms` (capture
-  to render), `time_to_first_frame_ms`, `avg_kbps`, `keyframes`,
+  to render), `time_to_first_frame_ms`, `avg_kbps`, `qp_mean` (mean QP of encoded
+  frames from the encoder model both stacks share,
+  `testbench/encoder_model.h`), `keyframes`,
   `keyframe_requests`, `encoder_dropped`, `undecodable_frames`,
   `residual_loss_pct`.
   - Delay breakdown of each rendered frame: `delay_encode_ms` (mean

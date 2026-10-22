@@ -1,4 +1,5 @@
 // Section 8 end-to-end tests.
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -54,8 +55,9 @@ SM_TEST(E2E_RtpToNtp, MapsCaptureTimeDespiteDriftAndJitter) {
 SM_TEST(E2E_StreamSync, LipSyncAcrossPathsAndRouteChange) {
   // Audio: 30 ms network, 60 ms jitter buffer. Video: 90 ms network (bigger
   // frames, pacing), 40 ms decode+render. At 40 s the video path gains
-  // 120 ms (route change). Playout delay per stream = network base + buffer
-  // + the extra delay requested by StreamSynchronization.
+  // 120 ms (route change). Each stream plays out after its network delay
+  // plus max(its own buffer, the minimum playout delay that
+  // RtpStreamsSynchronizer set), as NetEq and the video timing apply it.
   sim::LinkConfig al, vl;
   al.base_delay = TimeDelta::Millis(30);
   al.jitter_stddev = TimeDelta::Millis(5);
@@ -65,12 +67,38 @@ SM_TEST(E2E_StreamSync, LipSyncAcrossPathsAndRouteChange) {
   vl.allow_reordering = false;
   sim::NetworkLink<uint32_t> alink(al, 2), vlink(vl, 3);
   sim::NetworkLink<std::pair<bool, std::pair<NtpTime, uint32_t>>> rtcp(sim::LinkConfig{}, 4);
-  StreamSynchronization sync;
+  struct Stream : Syncable {
+    uint32_t ssrc = 0;
+    TimeDelta buffer;
+    TimeDelta min_delay;
+    Info info;
+    bool has_packet = false, has_sr = false;
+    TimeDelta delay() const { return std::max(buffer, min_delay); }
+    uint32_t id() const override { return ssrc; }
+    std::optional<Info> GetInfo() const override {
+      if (!has_packet || !has_sr) return std::nullopt;
+      Info i = info;
+      i.current_delay = delay();
+      return i;
+    }
+    std::optional<PlayoutInfo> GetPlayoutRtpTimestamp() const override { return std::nullopt; }
+    bool SetMinimumPlayoutDelay(TimeDelta d) override {
+      min_delay = d;
+      return true;
+    }
+    void SetEstimatedPlayoutNtpTimestamp(NtpTime, Timestamp) override {}
+  };
+  Stream audio, video;
+  audio.ssrc = 1111;
+  audio.buffer = TimeDelta::Millis(60);
+  video.ssrc = 2222;
+  video.buffer = TimeDelta::Millis(40);
   MediaSyncGroups groups;
-  groups.AddStream(1111, "cam-1", MediaSyncGroups::Kind::kAudio);
-  groups.AddStream(2222, "cam-1", MediaSyncGroups::Kind::kVideo);
+  groups.AddStream(audio.ssrc, "cam-1", MediaSyncGroups::Kind::kAudio);
+  groups.AddStream(video.ssrc, "cam-1", MediaSyncGroups::Kind::kVideo);
   SM_ASSERT_EQ(groups.SyncPairs().size(), 1u);
-  const TimeDelta audio_buffer = TimeDelta::Millis(60), video_buffer = TimeDelta::Millis(40);
+  RtpStreamsSynchronizer sync(&video);
+  sync.ConfigureSync(&audio, Timestamp::Micros(0));
   double before = 0, settled1 = 0, settled2 = 0;
   for (int64_t t = 0; t < 80000; ++t) {
     Timestamp now = Timestamp::Millis(t);
@@ -84,15 +112,23 @@ SM_TEST(E2E_StreamSync, LipSyncAcrossPathsAndRouteChange) {
       rtcp.Send(now, {true, {NtpTime::FromTimestamp(Wall(now)), static_cast<uint32_t>(t * 48)}}, DataSize::Bytes(28));
       rtcp.Send(now, {false, {NtpTime::FromTimestamp(Wall(now)), static_cast<uint32_t>(t * 90)}}, DataSize::Bytes(28));
     }
-    alink.ReceiveEach(now, [&](uint32_t rtp, Timestamp at) { sync.OnAudioPacket(rtp, at); });
-    vlink.ReceiveEach(now, [&](uint32_t rtp, Timestamp at) { sync.OnVideoFrame(rtp, at); });
+    auto on_packet = [](Stream& s, uint32_t rtp, Timestamp at) {
+      s.info.latest_receive_time = at;
+      s.info.latest_received_capture_rtp_timestamp = rtp;
+      s.has_packet = true;
+    };
+    alink.ReceiveEach(now, [&](uint32_t rtp, Timestamp at) { on_packet(audio, rtp, at); });
+    vlink.ReceiveEach(now, [&](uint32_t rtp, Timestamp at) { on_packet(video, rtp, at); });
     rtcp.ReceiveEach(now, [&](std::pair<bool, std::pair<NtpTime, uint32_t>> sr, Timestamp) {
-      (sr.first ? sync.audio_map() : sync.video_map()).UpdateMeasurements(sr.second.first, sr.second.second);
+      Stream& s = sr.first ? audio : video;
+      s.info.capture_time_ntp = sr.second.first;
+      s.info.capture_time_rtp = sr.second.second;
+      s.has_sr = true;
     });
-    if (t % 1000 == 500) sync.Update(audio_buffer, video_buffer, now);
+    sync.Process(now);
     // True A/V offset of what the viewer sees.
-    TimeDelta d_audio = al.base_delay + audio_buffer + sync.delays().audio_extra;
-    TimeDelta d_video = vl.base_delay + video_buffer + sync.delays().video_extra;
+    TimeDelta d_audio = al.base_delay + audio.delay();
+    TimeDelta d_video = vl.base_delay + video.delay();
     double off = (d_video - d_audio).ms_f();
     if (t == 0) before = off;  // No correction applied yet.
     if (t == 39000) settled1 = off;
@@ -101,7 +137,7 @@ SM_TEST(E2E_StreamSync, LipSyncAcrossPathsAndRouteChange) {
   SM_RECORD("av_offset_before_sync_ms", before);
   SM_RECORD("av_offset_settled_ms", settled1);
   SM_RECORD("av_offset_after_route_change_ms", settled2);
-  SM_RECORD("audio_extra_delay_ms", sync.delays().audio_extra.ms_f());
+  SM_RECORD("audio_min_playout_delay_ms", audio.min_delay.ms_f());
   SM_EXPECT_GT(before, 30.0);
   // ITU-R BT.1359: detectability threshold is about +45 ms / -125 ms.
   SM_EXPECT_LT(std::fabs(settled1), 35.0);

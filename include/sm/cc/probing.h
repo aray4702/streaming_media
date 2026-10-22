@@ -83,6 +83,7 @@ class ProbeControllerV2 : public MetricsSource {
   std::vector<ProbeCluster> OnNetworkAvailability(bool available, Timestamp at_time);
   std::vector<ProbeCluster> SetEstimatedBitrate(DataRate bitrate, BandwidthLimitedCause cause, Timestamp at_time);
   void EnablePeriodicAlrProbing(bool enable) { enable_periodic_alr_probing_ = enable; }
+  bool periodic_alr_probing() const { return enable_periodic_alr_probing_; }
   void EnableRepeatedInitialProbing(bool enable) { repeated_initial_probing_enabled_ = enable; }
   void SetAlrStartTime(std::optional<Timestamp> alr_start_time) { alr_start_time_ = alr_start_time; }
   void SetAlrEndedTime(Timestamp alr_end_time) { alr_end_time_ = alr_end_time; }

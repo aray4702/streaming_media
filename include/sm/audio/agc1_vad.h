@@ -36,7 +36,8 @@
 //    are ignored.
 //  - `WebRtcVad` runs at 8, 16 and 32 kHz; 48 kHz (which needs SPL's
 //    48-to-8 kHz resampler) returns -1.
-//  - Factory functions (`Create`) are constructors, and nothing is virtual.
+//  - Factory functions (`Create`) are constructors. Only `Agc` is virtual,
+//    as in libwebrtc, so `MonoAgc`'s tests can script its RMS errors.
 #pragma once
 
 #include <array>
@@ -393,15 +394,16 @@ double Dbfs2Loudness(double dbfs);
 class Agc {
  public:
   Agc();
+  virtual ~Agc() = default;
   // One mono 10 ms chunk at 16 kHz (160 samples).
-  void Process(std::span<const int16_t> audio);
+  virtual void Process(std::span<const int16_t> audio);
   // The target minus the current RMS level in dB, once 100 frames with
   // enough voice activity are in (then the histogram restarts).
-  bool GetRmsErrorDb(int* error);
-  void Reset();
-  int set_target_level_dbfs(int level);  // (-100, 0); else -1.
-  int target_level_dbfs() const { return target_level_dbfs_; }
-  float voice_probability() const { return vad_.last_voice_probability(); }
+  virtual bool GetRmsErrorDb(int* error);
+  virtual void Reset();
+  virtual int set_target_level_dbfs(int level);  // (-100, 0); else -1.
+  virtual int target_level_dbfs() const { return target_level_dbfs_; }
+  virtual float voice_probability() const { return vad_.last_voice_probability(); }
 
  private:
   double target_level_loudness_;

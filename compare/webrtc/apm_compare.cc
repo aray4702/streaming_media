@@ -180,7 +180,8 @@ void Add(std::string module, std::string scenario, std::string metric, double ou
 }
 
 // E2E_HighPassFilter: DC 0.1 and 50 Hz hum 0.05 under a near-end talker.
-void HighPass() {
+// With `apm_v2`, our side is the port of libwebrtc's filter (#239).
+void HighPass(bool apm_v2) {
   CallScenario s;
   s.far_talk = false;
   s.dc = 0.1f;
@@ -188,21 +189,24 @@ void HighPass() {
   s.noise_amp = 0.002f;
   auto c = MakeCall(s);
   ChainConfig cc{true, false, false, false, false};
-  auto ours = RunOurs(c, cc);
+  ChainConfig ours_cc = cc;
+  ours_cc.apm_v2 = apm_v2;
+  const std::string module = apm_v2 ? "high-pass filter (apm v2)" : "high-pass filter";
+  auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   double hum_in = ToneAmp(Seg(c.capture, 10, 8), 50);
   auto hum_db = [&](const Output& o) { return 20 * std::log10(hum_in / ToneAmp(Seg(o.out, 10, 8), 50)); };
-  Add("high-pass filter", "dc + 50 Hz hum", "hum attenuation (dB)", hum_db(ours), hum_db(webrtc));
-  Add("high-pass filter", "dc + 50 Hz hum", "DC left (x1000)", 1000 * Mean(Seg(ours.out, 10, 8)),
+  Add(module, "dc + 50 Hz hum", "hum attenuation (dB)", hum_db(ours), hum_db(webrtc));
+  Add(module, "dc + 50 Hz hum", "DC left (x1000)", 1000 * Mean(Seg(ours.out, 10, 8)),
       1000 * Mean(Seg(webrtc.out, 10, 8)));
   // Pass band: the clean talker alone through the filter.
   CallScenario t;
   t.far_talk = false;
   auto ct = MakeCall(t);
-  auto ours_t = RunOurs(ct, cc);
+  auto ours_t = RunOurs(ct, ours_cc);
   auto webrtc_t = RunWebrtc(ct, WebrtcConfig(cc));
   double in = SegmentDb(ct.capture, 3, 20);
-  Add("high-pass filter", "talker only", "speech level change (dB)", SegmentDb(ours_t.out, 3, 20) - in,
+  Add(module, "talker only", "speech level change (dB)", SegmentDb(ours_t.out, 3, 20) - in,
       SegmentDb(webrtc_t.out, 3, 20) - in);
 }
 
@@ -267,17 +271,17 @@ void Noise(bool apm_v2) {
   ChainConfig base{true, false, false, false, false};
   ChainConfig cc{true, false, true, false, false};
   const std::string module = apm_v2 ? "noise suppressor (apm v2)" : "noise suppressor";
-  ChainConfig ours_cc = cc;
-  ours_cc.apm_v2 = apm_v2;
+  ChainConfig ours_cc = cc, ours_base_cc = base;
+  ours_cc.apm_v2 = ours_base_cc.apm_v2 = apm_v2;
   auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
-  auto ours_base = RunOurs(c, base);
+  auto ours_base = RunOurs(c, ours_base_cc);
   auto webrtc_base = RunWebrtc(c, WebrtcConfig(base));
   // Reference: the clean talker through each side's own high-pass filter.
   CallScenario t = s;
   t.noise_amp = 0;
   auto ct = MakeCall(t);
-  auto ref_o = RunOurs(ct, base).out, ref_w = RunWebrtc(ct, WebrtcConfig(base)).out;
+  auto ref_o = RunOurs(ct, ours_base_cc).out, ref_w = RunWebrtc(ct, WebrtcConfig(base)).out;
   const size_t start = 3 * kFs;
   size_t lo = 0, lw = 0, l0 = 0;
   double in_o = BestLagSnr(ref_o, ours_base.out, start, &l0);
@@ -302,8 +306,10 @@ void Noise(bool apm_v2) {
   Add(module, "white noise, ~7 dB SNR", "algorithmic delay (ms)", lo / 16.0, lw / 16.0);
 }
 
-// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB.
-void Gain() {
+// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB. With
+// `apm_v2`, our side is the port of the same controller (#242): AGC1 with the
+// emulated mic volume against libwebrtc's AGC1, AGC2 against its AGC2.
+void Gain(bool apm_v2) {
   CallScenario q;
   q.far_talk = false;
   q.seconds = 40;
@@ -313,6 +319,11 @@ void Gain() {
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= sm::dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
   auto ours = RunOurs(c, cc);
+  ChainConfig v2 = cc;
+  v2.apm_v2 = true;
+  auto ours_agc1 = RunOurs(c, v2);
+  v2.agc2 = true;
+  auto ours_agc2 = RunOurs(c, v2);
   auto agc1 = RunWebrtc(c, WebrtcConfig(cc));
   auto agc2 = RunWebrtc(c, WebrtcConfig(cc, true));
   auto truth = SpeechTruth(c, -60.0f);
@@ -323,16 +334,18 @@ void Gain() {
     for (float v : o.out) p = std::max(p, std::fabs(v));
     return 20 * std::log10(p);
   };
+  const std::string module = apm_v2 ? "gain control (apm v2)" : "gain control";
   for (int i = 0; i < 2; ++i) {
     const Output& w = i == 0 ? agc1 : agc2;
+    if (apm_v2) ours = i == 0 ? ours_agc1 : ours_agc2;
     std::string sc = i == 0 ? "quiet then loud talker, AGC1 (default)" : "quiet then loud talker, AGC2 digital";
-    Add("gain control", sc, "quiet talker in -> out, 12-20 s (dBFS)", lvl(ours, 12, 20), lvl(w, 12, 20),
+    Add(module, sc, "quiet talker in -> out, 12-20 s (dBFS)", lvl(ours, 12, 20), lvl(w, 12, 20),
         "input " + std::to_string(static_cast<int>(std::lround(in(12, 20)))) + " dBFS");
-    Add("gain control", sc, "loud talker level change, 32-40 s (dB)", lvl(ours, 32, 40) - in(32, 40),
+    Add(module, sc, "loud talker level change, 32-40 s (dB)", lvl(ours, 32, 40) - in(32, 40),
         lvl(w, 32, 40) - in(32, 40));
-    Add("gain control", sc, "noise level in pauses, 12-20 s (dBFS)",
+    Add(module, sc, "noise level in pauses, 12-20 s (dBFS)",
         FramesDb(ours.out, truth, Truth::kSilence, 12, 20, 0), FramesDb(w.out, truth, Truth::kSilence, 12, 20, 0));
-    Add("gain control", sc, "peak (dBFS)", peak(ours), peak(w));
+    Add(module, sc, "peak (dBFS)", peak(ours), peak(w));
   }
 }
 
@@ -371,12 +384,14 @@ void VoiceActivity() {
 }  // namespace
 
 int main() {
-  HighPass();
+  HighPass(false);
+  HighPass(true);
   EchoRouteChange();
   EchoDoubleTalk();
   Noise(false);
   Noise(true);
-  Gain();
+  Gain(false);
+  Gain(true);
   VoiceActivity();
   std::printf("| module | scenario | metric | ours | libwebrtc | note |\n|---|---|---|---|---|---|\n");
   for (const auto& r : rows) {

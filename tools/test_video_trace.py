@@ -26,6 +26,16 @@ class Summary(unittest.TestCase):
         self.assertAlmostEqual(s["encoder_target_kbps_mean"], 45.0)
         self.assertEqual(s["pacer_queue_ms_max"], 30.0)
 
+    def test_qp_and_encode_time_weighted_by_frames(self):
+        head = HEAD.rstrip("\n") + ",qp_mean,encode_ms_mean\n"
+        rows = vt.parse(head + "1,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,40.0,10.00\n"
+                               "2,50000,60000,30,10,0,0,20,0,0,0,3000,1.0,20.0,2.00\n")
+        s = vt.summarize(rows)
+        self.assertAlmostEqual(s["qp_mean"], 35.0)
+        self.assertAlmostEqual(s["encode_ms_mean"], 8.0)
+        # A trace from before issue #84 has neither column.
+        self.assertEqual(vt.summarize(vt.parse(SM))["qp_mean"], 0.0)
+
     def test_paused_and_other_reasons(self):
         s = vt.summarize(vt.parse(RTC))
         self.assertEqual(s["paused_seconds"], 1)

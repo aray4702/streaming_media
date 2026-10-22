@@ -49,6 +49,8 @@ struct VideoTraceRow {
   int paused = 0;  // 1 when the encoder is paused or suspended at the end of the second.
   int64_t encoded_bytes = 0;
   double pacer_queue_ms = 0;
+  // Sums over the encoded frames of the second, from testbench/encoder_model.h (issue #84).
+  int64_t qp_sum = 0, encode_us_sum = 0;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for
@@ -115,7 +117,10 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-// dropped_encoder,paused,encoded_bytes,pacer_queue_ms. The drop columns are
+// dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean.
+// The last two are means over the second's encoded frames (0 when none), from
+// the encoder model both implementations share (testbench/encoder_model.h,
+// issue #84). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop
 // points onto them: the frame dropper is dropped_rate_limiter (libwebrtc's
 // kMediaOptimization), congestion-window pushback is dropped_congestion_window

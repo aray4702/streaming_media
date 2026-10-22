@@ -621,7 +621,14 @@ ALGORITHMS = [
                       "E2E_Pacer expects that the paced run is not worse than the unpaced one on audio delay "
                       "(audio is not paced in libwebrtc either; v1's case was deleted with it in #167). The "
                       "pacer_v2_capacity_drop scenario keeps the v2 run reproducible; issue_5_keyframe_flush locks in "
-                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). See "
+                      "the keyframe flush (docs/fixes/5-pacer-keyframe-flush.md). Explained difference, not a gap "
+                      "(issue #258, yardstick PR #275): at 15 fps on a clean 1.5 Mbps / 100 ms RTT link, audio "
+                      "mouth-to-ear p95 and the queue p95 are about twice the 30 fps values. libwebrtc does the same "
+                      "on the same link (seeds 1-10: mouth-to-ear p95 430 vs 446 ms, queue p95 110 vs 106 ms, "
+                      "jitter-buffer p95 266 vs 280 ms; at 30 fps 235 vs 235, 44 vs 44, 132 vs 129). Each frame "
+                      "is twice as large and leaves in one 40 ms burst, so the audio behind it waits longer at the "
+                      "bottleneck and NetEq's target follows. `low_fps_clean_link` locks this in at libwebrtc's "
+                      "levels. See "
                       "docs/design/libwebrtc-parity.md 5.5 and PR #80 for the suite comparison."),
     dict(id="5.6", slug="probing", title="Bandwidth probing",
          problems=["Probing for more bandwidth safely -> bandwidth probing (padding / RTX probe clusters)"],
@@ -637,8 +644,8 @@ ALGORITHMS = [
                "library's own probe controller and estimator, `cc v1`, were deleted in #167): "
                "`ProbeControllerV2` (`ProbeController`: clusters at 3x and 6x the start rate, further probes at 2x "
                "a result above 0.7 of the last probe, probes when the max or max allocated bitrate rises, "
-               "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes only when "
-               "the stream requests them, none while the estimate is limited by delay increase or loss), "
+               "`RequestProbe` after a big drop within 5 s in or just after an ALR, periodic ALR probes when "
+               "a stream requests them, none while the estimate is limited by delay increase or loss), "
                "`ProbeBitrateEstimator` (receive/send ratio over 2 rejected, clusters expire "
                "after 1 s, the newest estimate wins), `AlrDetector` and `BitrateProber` (in the pacer). "
                "`AlrDetector` runs with the settings libwebrtc's does without field trials (#152): a budget of 0.80 x the "
@@ -653,9 +660,21 @@ ALGORITHMS = [
                "`GetConfiguredPacingFactor` does, so a video call paces at 1.1 x from the start), the packet-overhead rate off the video allocation "
                "(`RtpVideoSender::OnBitrateUpdated`) and the congestion-window frame drop against the video target. With "
                "libwebrtc's default `CongestionWindowConfig` the window never reaches the pacer (`SetCongested` stays "
-               "false), as in libwebrtc.",
+               "false), as in libwebrtc. "
+               "Call start as libwebrtc's (#62): `rtp::Session` asks for periodic ALR probes when it adds an audio "
+               "stream with transport-cc, as `AudioSendStream::ConfigureStream` does unless `WebRTC-Audio-AlrProbing` "
+               "is disabled (`audio_send_stream.cc:158-159, 297-308`), so every call with audio probes every 5 s in "
+               "ALR; the streams' `max_total_allocated_bitrate` reaches `ProbeController` after the initial probes, "
+               "because libwebrtc creates GoogCC when the network comes up, before the streams start "
+               "(`rtp_transport_controller_send.cc:413-428, 747-773`), so an audio-only call's 3x and 6x probes are "
+               "not capped at twice the audio allocation; and `BitrateProber` waits for a 200-byte RTP packet "
+               "without the transport overhead (`PacingController::SetTransportOverhead`; `pacing_controller.cc:234`).",
          verification="No defects found. Ramp-up takes 0.2 s with probing; without it, 80% is not reached "
-                      "within 30 s."),
+                      "within 30 s. Found in #62 from the `audio_only_lossy` traces on `parity-data`: libwebrtc's "
+                      "first probe goes out at 3990 ms, with the first audio packet of 200 RTP bytes, and its "
+                      "estimate stays at 300 kbps, while the library probed at 104 kbps at 10 ms and fell to 75-100 "
+                      "kbps. Over seeds 1-10 the target goes 140 -> 209 kbps (libwebrtc 212), padding 30 -> 62 kbps "
+                      "(61) and the queue maximum 6 -> 58 ms (45); `issue_62_audio_only_probing` locks it in."),
     dict(id="5.7", slug="bitrate-allocator", title="Bitrate allocation among streams",
          problems=["Sharing bandwidth among streams -> bitrate allocator, with per-stream priority and min/max bitrate"],
          headers=["cc/bitrate_allocator.h", "cc/bitrate_allocator_v2.h"], unit=["BitrateAllocator", "BitrateAllocatorV2"], e2e=["E2E_BitrateAllocator"],
@@ -752,14 +771,53 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
-         headers=["audio/echo_canceller.h"], unit=["EchoCanceller"], e2e=["E2E_EchoCanceller"],
+         headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
+                  "audio/aec3_analysis.h", "audio/aec3_state.h", "audio/aec3_suppression.h"],
+         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression"],
+         e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
-               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2.",
+               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2. "
+               "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`, for `apm v2`) is a port of libwebrtc M157's "
+               "`aec3_fft`, the render buffers (`block_buffer`, `spectrum_buffer`, `fft_buffer`, `render_buffer` and the "
+               "whole `render_delay_buffer`, of which 6.2's low-rate buffer is the decimated half), `adaptive_fir_filter` "
+               "(partitioned frequency-domain filter, 64-sample partitions, one partition constrained per block), "
+               "`adaptive_fir_filter_erl`, `render_signal_analyzer`, `refined_filter_update_gain` (NLMS with the "
+               "filter-error estimate H_error and ERL leakage), `coarse_filter_update_gain` and `subtractor` (refined and "
+               "coarse filters, misadjustment rescaling, coarse filter reset from the refined one), with "
+               "EchoCanceller3Config::Filter's defaults: 12 then 13 partitions, leakage 0.005/0.5 then 0.00005/0.05, error "
+               "floor 0.001 and ceiling 2, noise gate 20075344, coarse rate 0.9 then 0.7, 250-block configuration "
+               "changes, a 25-block hangover after a coarse filter reset. Remaining differences: the FFT is fft4g's rdft "
+               "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
+               "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
+               "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
+               "AecState's capture saturation flag as an argument. "
+               "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
+               "`aec3_analysis.h`) ports `aec_state` (linear filter usability after 0.4 s of active unsaturated render, "
+               "0.2 s after a reset; initial state for 2.5 s; direct-path filter delay; echo saturation), "
+               "`erl_estimator`, `erle_estimator` with its fullband, subband (max 4 below and 1.5 above bin 32, onset "
+               "detection) and signal-dependent parts, `reverb_model`, `reverb_decay_estimator`, "
+               "`reverb_frequency_response`, `reverb_model_estimator`, `filter_analyzer`, `echo_audibility`, "
+               "`stationarity_estimator`, `transparent_mode` (the legacy classifier, M157's default; the HMM one through "
+               "`TransparentMode::CreateHmm()` in place of the WebRTC-Aec3TransparentModeHmm trial) and "
+               "`subtractor_output_analyzer`, with EchoCanceller3Config's Erle, EpStrength and EchoAudibility "
+               "defaults. Field trials are read as not set. "
+               "AEC3's residual echo suppression (#240 step 4, `audio/aec3_suppression.h`) ports "
+               "`residual_echo_estimator` (linear S2 / ERLE, or the render power around the delay times the echo "
+               "path gain, with the render noise floor and soft noise gate, plus the reverb tail), "
+               "`suppression_gain` (echo-to-nearend and echo-to-noise masking thresholds per bin, gain rise and fall "
+               "limits, high-frequency and upper-band limits, the low-noise render detector), "
+               "`dominant_nearend_detector`, `subband_nearend_detector`, `moving_average_spectrum`, "
+               "`suppression_filter` (sqrt-Hanning overlap-add with comfort noise, upper bands delayed one block) "
+               "and `comfort_noise_generator`, with EchoCanceller3Config's Suppressor, ComfortNoise, EchoModel and "
+               "EpStrength defaults. Remaining differences: no neural residual echo estimator (optional in "
+               "libwebrtc and absent in a call); the Low{Early,Late}ReflectionsDefaultGain and "
+               "ErleOnsetCompensationInDominantNearend field trials are read as not set. Nothing in a call uses it "
+               "yet: EchoRemover, BlockProcessor and EchoCanceller3 are #240's next step.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -768,7 +826,25 @@ ALGORITHMS = [
                       "size, which collapses during double talk (step 0.35 -> 0.002): near-end SNR went from "
                       "-4 to +9 dB. (3) After an echo-path change the convergence state was not reset, so the "
                       "adaptive step stayed near zero and ERLE never recovered (0 dB); it now recovers to "
-                      "25.6 dB."),
+                      "25.6 dB. AEC3's linear stage (#240 step 2): libwebrtc's aec3_fft, render_delay_buffer, "
+                      "adaptive_fir_filter (FilterSize, FilterStatisticsAccess, FilterAndAdapt), "
+                      "coarse_filter_update_gain, refined_filter_update_gain and subtractor unit tests pass with their "
+                      "signals and bounds (multi-channel cases with the debug-build parameters; the SIMD-equivalence and "
+                      "death tests don't apply). The first FFT used fft4g's twiddles, built with cosf; the round trip of "
+                      "aec3_fft_unittest's FftAndIfft was 0.002 off at 2.6e6 against its 0.001 bound, so the 128-point "
+                      "tables are now built in double precision as OouraFft stores them, and it passes. AEC3's echo state "
+                      "(#240 step 3): libwebrtc's aec_state (NormalUsage for 1, 2 and 8 render and capture channels, "
+                      "ConvergedFilterDelay), erl_estimator, erle_estimator (VerifyErleIncreaseAndHold, "
+                      "VerifyErleTrackingOnOnsets), signal_dependent_erle_estimator, reverb_model_estimator and "
+                      "filter_analyzer (FilterResize) unit tests pass with their signals and bounds; echo_audibility, "
+                      "transparent_mode and subtractor_output_analyzer, which have no libwebrtc unit tests, have "
+                      "behavioural tests derived from the code. AEC3's residual echo suppression (#240 step 4): "
+                      "libwebrtc's moving_average_spectrum, comfort_noise_generator (CorrectLevel), suppression_gain "
+                      "(BasicGainComputation, UpdateStateDependingOnConfig), suppression_filter (ComfortNoiseInUnityGain, "
+                      "SignalSuppression, SignalTransparency, Delay) and residual_echo_estimator (BasicTest for 1, 2 and "
+                      "4 render and capture channels, ReverbTest) unit tests pass with their signals and bounds; the "
+                      "death tests and the neural estimator's metrics tests don't apply. The two nearend detectors, "
+                      "which have no libwebrtc unit tests, have behavioural tests derived from the code."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
@@ -809,7 +885,9 @@ ALGORITHMS = [
                "analyzes the capture before the AEC and suppresses after it, as `AudioProcessingImpl` does. "
                "The 256-point FFT is Ooura's `fft4g` as `NrFft` runs it (`sm/audio/fft4g.h`, from "
                "`common_audio/third_party/ooura/fft_size_256/`), bit-exact with libwebrtc's `WebRtc_rdft` "
-               "(#241). Remaining difference: mono only.",
+               "(#241). Several channels are handled as libwebrtc does: per-channel estimators, one Wiener filter "
+               "that is the minimum over the channels per bin, and the minimum overall scaling factor and upper-band "
+               "gain (#241). No difference from libwebrtc's NS remains.",
          verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
                       "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
                       "from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
@@ -818,10 +896,15 @@ ALGORITHMS = [
                       "v1 -1.3), delay 6 ms (6, v1 10). Like libwebrtc's, it takes the speech down along with the "
                       "noise in speech frames, so the SNR against the clean talker does not rise. With `fft4g` in "
                       "place of `RealFft` (#241) the same four values hold; unit `Ns.Fft4gBitExactWithLibwebrtc` "
-                      "pins the transform to the output of libwebrtc M157's prebuilt `WebRtc_rdft`."),
+                      "pins the transform to the output of libwebrtc M157's prebuilt `WebRtc_rdft`. The whole "
+                      "suppressor was then run side by side with libwebrtc M157's prebuilt `NoiseSuppressor`, "
+                      "driven through its `AudioBuffer` on the same input: the output is identical bit for bit at "
+                      "16, 32 and 48 kHz with one, two and three channels (#241); unit "
+                      "`Ns.BitExactWithLibwebrtcMultichannel` pins it. So the 0.3 dB left in the speech level above "
+                      "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc1.h", "audio/agc1_vad.h"], unit=["GainControl", "GainController2", "Agc1", "Agc1VoiceActivity"],
+         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
          e2e=["E2E_GainControl"],
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
@@ -832,9 +915,13 @@ ALGORITHMS = [
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
                "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
-               "Remaining differences: the speech probability is our VAD's per-frame decision, not AGC2's "
-               "RNN VAD (its weights are not in the reference sources, #57), and the `GainController2` glue "
-               "is to be checked against `gain_controller2.cc` once it is added (#57). AGC1, the call "
+               "The speech probability comes from AGC2's RNN VAD, ported in `agc2_rnn_vad.h` "
+               "(`vad_wrapper.cc` and `rnn_vad/`: 24 kHz features from the LP residual's pitch and the "
+               "Opus-band cepstrum, FC-GRU-FC network with the rnnoise weights, reset every 1500 ms, the "
+               "capture resampled with libwebrtc's `PushSincResampler`), and `GainController2` follows "
+               "`gain_controller2.cc`'s order (fixed gain after the adaptive gain, before the limiter). Its "
+               "dot products sum in order (libwebrtc's portable path) and its FFTs are ours, not PFFFT, so "
+               "the probability matches libwebrtc to float precision, not bit for bit. AGC1, the call "
                "default: `agc1::GainControl` ports its digital compression stage, which every call runs "
                "(`AgcManagerDirect::SetupDigitalGainControl` puts `GainControlImpl` in `kFixedDigital` with "
                "a 2 dB target, 7 dB compression and the limiter): `agc/legacy/digital_agc.cc` (gain table, "
@@ -843,10 +930,18 @@ ALGORITHMS = [
                "meter `AgcManagerDirect` reads (`agc/agc.cc`, `loudness_histogram.cc`, `utility.cc`), with "
                "its `VoiceActivityDetector` (`vad/`: the WebRtcVad GMM VAD of `common_audio/vad/`, the "
                "pitch-based VAD on iSAC's pitch estimator and ooura's fft4g); it takes 16 kHz 10 ms chunks "
-               "only, as `AgcManagerDirect` feeds it split band 0, so the resampler is left out. Not yet: "
-               "`AgcManagerDirect` itself, which moves the compression gain (2-12 dB) and the analog volume "
-               "from `Agc`, and APM's analog mic gain emulation (`CaptureLevelsAdjuster`). The e2e chain "
-               "still runs AGC2 for `apm v2` until AGC1 is complete.",
+               "only, as `AgcManagerDirect` feeds it split band 0, so the resampler is left out. `agc_manager.h` "
+               "ports `AgcManagerDirect` / `MonoAgc` (`agc/agc_manager_direct.cc`: compression gain 2-12 dB "
+               "from 7 in 0.05 dB steps, the analog volume 12-255 through `kGainMap` with at most 15 dB per "
+               "update, clipping handling with libwebrtc's `AnalogGainController` defaults) and APM's analog "
+               "mic gain emulation (`capture_levels_adjuster/`), the test bench's modelled mic volume: the "
+               "capture is scaled by volume / 255 from 255, ramped over the frame. The `apm v2` e2e chain now "
+               "runs AGC1 as a call does, in `AudioProcessingImpl`'s order. `clipping_predictor.h` ports "
+               "AGC1's clipping predictor (`agc2/clipping_predictor.cc`, `clipping_predictor_level_buffer.cc`: "
+               "event prediction from a crest factor drop, or peak prediction with a fixed or adaptive step) "
+               "and `AgcManagerDirect` asks it for a step after the clipping wait, as libwebrtc does; it is off "
+               "by default (`ClippingPredictor::enabled = false`), as in libwebrtc, so a call never creates it "
+               "and no metric moves.",
          verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
                       "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
                       "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
@@ -865,14 +960,40 @@ ALGORITHMS = [
                       "reference files compiled with libstdc++, where fft4g's `cos(float)` is the double function; "
                       "libwebrtc's libc++ picks the float overload, which the Reviewer caught and the library confirmed. The first port used SPL's unsigned "
                       "`WEBRTC_SPL_SCALEDIFF32` for the envelope followers; `digital_agc.cc` has its own "
-                      "signed `AGC_SCALEDIFF32`, and the golden test caught the difference."),
+                      "signed `AGC_SCALEDIFF32`, and the golden test caught the difference. `AgcManagerDirect` (#242) "
+                      "passes the ports of libwebrtc's `agc_manager_direct_unittest.cc` (`Agc1Manager.*`, with "
+                      "its mic volume and compression gain sequences, in the six parametrizations), and AGC1 "
+                      "in the `apm v2` chain gives on the e2e quiet-then-loud talker: quiet talker -20.4 dBFS "
+                      "(libwebrtc AGC1 -20.6, v1 -16.8), loud talker -3.3 dB (-3.2), noise in pauses "
+                      "-62.6 dBFS (-63.0), peak 0 dBFS (0.0). AGC2's RNN VAD (#242) passes the ports of libwebrtc's "
+                      "`rnn_fc`, `rnn_gru`, `spectral_features(_internal)`, `features_extraction` and `vad_wrapper` "
+                      "unit tests with their test vectors and tolerances, and `PushSincResampler` the chirp "
+                      "error thresholds of `push_sinc_resampler_unittest.cc` (`Agc2RnnVad.*`); the tests that read "
+                      "libwebrtc's resource files are not ported (the files are not in the reference sources). "
+                      "On the test bench's speech-like signal 87% of frames reach a probability of 0.95, on white "
+                      "noise none. With it, AGC2 gives on the e2e quiet-then-loud talker: quiet talker -21.05 dBFS "
+                      "(libwebrtc AGC2 -21.0; -21.10 with our VAD's decision), loud talker -1.2 dB (-1.0), noise "
+                      "in pauses -62.6 dBFS (-62.9). The clipping predictor (#242) passes the ports of libwebrtc's "
+                      "`clipping_predictor_unittest.cc` and `clipping_predictor_level_buffer_unittest.cc` with "
+                      "their parametrizations (`Agc1ClippingPredictor.*`, `Agc1ClippingLevelBuffer.*`: adaptive "
+                      "step 17, fixed step 15), and `AgcManagerDirect` with it the predictor tests of "
+                      "`agc_manager_direct_unittest.cc` (used predictions lower the volume 255 -> 240 -> 225 "
+                      "before clipping, unused ones leave it as without the predictor); with the default config "
+                      "the e2e chain is unchanged."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
-         headers=["audio/high_pass_filter.h"], unit=["HighPassFilter"], e2e=["E2E_HighPassFilter"],
+         headers=["audio/high_pass_filter.h", "audio/hpf.h", "audio/cascaded_biquad_filter.h"],
+         unit=["HighPassFilter", "Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+                      "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
+                      "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
+                      "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
+                      "(`Hpf.FrequencyResponse16kHz`), and on `sm_apm_compare`'s case it gives hum attenuation "
+                      "67.2 dB and speech -0.2 dB, as libwebrtc (`E2E_HighPassFilter.LibwebrtcHpfAsLibwebrtc`). "
+                      "Its pass band is about 0.4 dB down, as libwebrtc's."),
     dict(id="6.6", slug="transient-suppressor", title="Transient (keyboard click) suppression",
          problems=["Keyboard typing noise -> transient suppressor"],
          headers=["audio/transient_suppressor.h"], unit=["TransientSuppressor"], e2e=["E2E_TransientSuppressor"],
@@ -955,7 +1076,13 @@ ALGORITHMS = [
                   "detector's freeze count is compared with gaps counted directly from the render log.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Keyframe requests that end freezes are in 3.5.",
          verification="A unit-test expectation was wrong about the harmonic frame rate: irregular 38/38/23 ms "
-                      "intervals give 28.97 fps, not 30.3, which is the point of the metric."),
+                      "intervals give 28.97 fps, not 30.3, which is the point of the metric. "
+                      "#268 ported libwebrtc's freeze rule (`video/video_quality_observer2.cc`, `OnRenderedFrame`): the "
+                      "current interval enters the 30-interval average before the test, freezes stay in it, the "
+                      "average is rounded down to whole ms and the test starts at 5 intervals. `sm_video_compare` now "
+                      "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
+                      "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
+                      "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
     dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
          problems=["Decoder errors or corrupt bitstream -> decoder fallback (hardware -> software)",
                    "Hardware encoder failure -> automatic fallback to a software encoder"],
@@ -1023,7 +1150,11 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
          verification="An expectation was wrong: at 300 kbps, 640x360 already gives QP 33, which is inside the "
                       "H.264 band, so not going lower is correct. The test now checks that QP returns inside the "
-                      "band."),
+                      "band. The test bench and `sm_compare` share an encoder model for this module's inputs "
+                      "(`testbench/encoder_model.h`, issue #84 step 1): QP 30 at libwebrtc's per-resolution start "
+                      "rates (720p 1000 kbps, 360p 500 kbps), +6 per halving of the bits per frame, clamped to 0..51, "
+                      "and 10 ms per 720p frame of encode time. Deviation: a model in place of a codec, identical on "
+                      "both stacks, so scaling decisions compare like for like."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
@@ -1032,18 +1163,28 @@ ALGORITHMS = [
          scenario="120 s with a sender audio clock 80 ppm off its NTP clock; SRs every second over a jittery "
                   "link. Every 20 ms the estimated capture time of the current RTP timestamp is compared with "
                   "the truth.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected. "
+                      "#77 ported libwebrtc M157's SR validation (`rtc_base/rtp_to_ntp_estimator.cc`): it compares a new SR with the "
+                      "newest one (NTP forward by at most 1 h, RTP forward by at most 1 << 25 ticks) and clears the history after 3 "
+                      "invalid SRs, where ours rejected points 30 ms off the fitted line. The line is fitted in NTP units, as libwebrtc fits it. "
+                      "The e2e capture-time error on the 80 ppm clock is unchanged (0.014 ms)."),
     dict(id="8.2", slug="stream-sync", title="Audio/video synchronization and CNAME sync groups",
          problems=["Lip-sync (A/V sync) -> the receiver aligns playout delay between streams",
                    "Synchronizing multiple streams from one sender -> shared CNAME, MediaStream grouping"],
          headers=["sync/stream_sync.h"], unit=["StreamSync"], e2e=["E2E_StreamSync"],
          bench=["sync/StreamSync_Update"],
          scenario="Audio (30 ms network, 60 ms buffer) and video (90 ms network, 40 ms decode/render) from one "
-                  "CNAME; at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after "
-                  "settling and after the route change.",
+                  "CNAME, each playing out after max(its buffer, the minimum playout delay the synchronizer sets); "
+                  "at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after settling and "
+                  "after the route change.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
          verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
-                      "(40 ms offset)."),
+                      "(40 ms offset). #77 ported libwebrtc M157's `StreamSynchronization` and `RtpStreamsSynchronizer` "
+                      "(`video/stream_synchronization.cc`, `video/rtp_streams_synchronizer2.cc`, `call/syncable.h`). The filter "
+                      "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
+                      "set through `Syncable`, and the synchronizer runs every 1 s when both streams have new packets. "
+                      "The e2e offset after settling went from 18.8 to 25 ms, and after the route change from 22.0 to 17 ms. Both "
+                      "are inside the 30 ms dead band. Not yet wired into the test bench call."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
          problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
          headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],
