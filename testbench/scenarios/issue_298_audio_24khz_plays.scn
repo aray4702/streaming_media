@@ -1,0 +1,16 @@
+name issue_298_audio_24khz_plays
+describe Audio + video call captured at 24 kHz with 3% loss: the audio plays through NetEq as libwebrtc's does (issue #298)
+# libwebrtc resamples the capture to the encoder's rate and Opus stamps a 48 kHz RTP clock whatever the
+# capture rate, so NetEq decodes the call at 48 kHz. Before the fix the bench used the 24 kHz capture rate as
+# the codec clock, NetEq v2 discarded every packet (#256) and the call had no audio: jitter-buffer delay 0 ms,
+# concealment 0 %, mouth-to-ear equal to the network delay. libwebrtc on issue_256_audio_24khz (10-seed mean,
+# parity-data): jitter-buffer p95 129 ms, concealment 0.39 %, mouth-to-ear p95 219 ms.
+seed 1
+duration 20s
+audio_sample_rate 24000
+at 0s capacity=2000kbps delay=40ms loss=3%
+expect audio.time_to_first_ms < 1000
+expect audio.jb_delay_p95_ms > 40
+expect audio.concealed_pct > 0
+expect audio.mouth_to_ear_p95_ms > 120
+expect video.freeze_count <= 2
