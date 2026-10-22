@@ -158,6 +158,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     return;
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
+  // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports.
+  last_received_rtp_timestamp_ = p.timestamp;
+  last_received_rtp_time_ = now;
   keyframes_.OnMediaPacket(now, info.idr || info.sps || info.pps);
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that
@@ -182,6 +185,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
 }
 
 void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
+  // ChannelReceive::OnRtpPacket: what GetSyncInfo reports.
+  last_received_rtp_timestamp_ = p.timestamp;
+  last_received_rtp_time_ = now;
   if (!cfg_.decoder) return;
   // NetEqImpl::InsertPacketInternal: each RED block (red level 0 for the
   // primary, 1 for the redundant one) goes through the decoder's ParsePayload.
@@ -252,6 +258,37 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       ++stats_.frame_meta_evicted;
     }
   }
+}
+
+std::optional<sync::Syncable::Info> RtpReceiver::SyncInfo() const {
+  if (!last_sr_ || !last_received_rtp_timestamp_) return std::nullopt;
+  if (cfg_.video && cfg_.timing.version < 2) return std::nullopt;  // FrameScheduler has no VCMTiming.
+  sync::Syncable::Info info;
+  info.capture_time_ntp = last_sr_->ntp;
+  info.capture_time_rtp = last_sr_->rtp_timestamp;
+  info.latest_received_capture_rtp_timestamp = *last_received_rtp_timestamp_;
+  info.latest_receive_time = last_received_rtp_time_;
+  info.current_delay = cfg_.video ? vcm_timing_.TargetDelay() : TimeDelta::Millis(jitter_buffer_.FilteredCurrentDelayMs());
+  return info;
+}
+
+bool RtpReceiver::SetSyncMinimumPlayoutDelay(TimeDelta delay) {
+  if (cfg_.video) {
+    if (cfg_.timing.version < 2) return false;
+    // UpdatePlayoutDelays: the largest of the minimum delays set.
+    vcm_timing_.set_min_playout_delay(std::max(delay, cfg_.timing.min_playout_delay));
+    return true;
+  }
+  // ChannelReceive::SetMinimumPlayoutDelay clamps to kVoiceEngine{Min,Max}MinPlayoutDelay (0, 10 s).
+  const int64_t ms = std::clamp<int64_t>(delay.ms(), 0, 10000);
+  return jitter_buffer_.SetMinimumDelayMs(static_cast<int>(ms));
+}
+
+std::optional<sync::Syncable::PlayoutInfo> RtpReceiver::PlayoutRtpTimestamp() const {
+  if (cfg_.video) return std::nullopt;
+  std::optional<uint32_t> ts = jitter_buffer_.PlayoutTimestamp();
+  if (!ts) return std::nullopt;
+  return sync::Syncable::PlayoutInfo{last_playout_time_, *ts};
 }
 
 void RtpReceiver::Process(Timestamp now) {

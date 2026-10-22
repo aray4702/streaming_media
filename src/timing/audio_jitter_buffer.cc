@@ -55,6 +55,12 @@ int64_t AudioJitterBuffer::SpanSamples() const {
   return last.first + static_cast<int64_t>(last.second.pcm.size()) - next_ts_;
 }
 
+int AudioJitterBuffer::FilteredCurrentDelayMs() const {
+  if (cfg_.version < 2) return static_cast<int>(filtered_level_ms_);
+  const int64_t delay_samples = decision_.GetFilteredBufferLevel() + static_cast<int64_t>(sync_.size());
+  return static_cast<int>(delay_samples / (cfg_.sample_rate / 1000));
+}
+
 double AudioJitterBuffer::CurrentLevelMs() const {
   return static_cast<double>(static_cast<int64_t>(sync_.size()) + std::max<int64_t>(0, SpanSamples())) * 1000.0 /
          cfg_.sample_rate;

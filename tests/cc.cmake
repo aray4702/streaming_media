@@ -10,6 +10,7 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     unit/cc/encoder_bitrate_adjuster_test.cc
     unit/cc/goog_cc_network_control_test.cc
     unit/cc/loss_based_bwe_v2_test.cc
+    unit/cc/overuse_frame_detector_test.cc
     unit/cc/pacer_probe_test.cc
     unit/cc/pacing_controller_test.cc
     unit/cc/prioritized_packet_queue_test.cc
@@ -38,6 +39,7 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     GoogCcNetworkController
     LossBweV2
     Outage
+    OveruseFrameDetector
     Pacer
     PacingController
     PacingControllerProbing
