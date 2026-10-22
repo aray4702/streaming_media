@@ -13,7 +13,10 @@ at 25s cross=0kbps
 expect cc.queue_p95_ms < 260
 # Was < 5. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 16.1% (10 seeds), ours 6.45 on seed 1.
 # Was < 10. Owner rule on PR #226: just above ours on seed 1 (11.72 with #217); libwebrtc's 10-seed mean is 16.1.
-expect cc.queue_over_200ms_pct < 13
+# Provisional lock < 30 (Owner sign-off on PR #226, 2026-10-22), tracked to #217: with #217's first-feedback timing
+# and #272's call-start probe together, ours is 26.55 on seed 1 (main 6.47); 10-seed means main 10.92, #226 13.84,
+# libwebrtc 16.10; libwebrtc's worst seed in 1-10 is 36.0 (seed 3, yardstick #295). Restore < 13 when #217 recovers it.
+expect cc.queue_over_200ms_pct < 30
 # Was == 0. Owner rule on PR #226 (2026-10-20 4:15 PM PT): just above ours on seed 1 (1 with #217's first-feedback
 # timing), never above libwebrtc's worst seed in 1-10 (17; per seed 1/0/17/1/0/0/0/0/0/1).
 expect video.freeze_count <= 2

@@ -552,7 +552,10 @@ ALGORITHMS = [
                "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
                "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
                "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217; "
-               "restored to 380 by #217's first-feedback timing, see 5.1).",
+               "restored to 380 by #217's first-feedback timing, see 5.1). Provisional lock (PR #226, Owner 2026-10-22): "
+               "`issue_5_adjuster_default` `cc.queue_over_200ms_pct < 30` (was `< 13`; ours 26.55 on seed 1 with #217's "
+               "first-feedback timing and #272's call-start probe; 10-seed mean 13.84, libwebrtc 16.10, worst seed 36.0; "
+               "tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
