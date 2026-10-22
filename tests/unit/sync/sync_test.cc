@@ -1,5 +1,6 @@
 // Section 8 unit tests.
 #include <cmath>
+#include <vector>
 
 #include "sm/sync/capture_time.h"
 #include "sm/sync/header_extensions.h"
@@ -27,60 +28,254 @@ SM_TEST(RtpToNtp, FitsLineAndHandlesWrap) {
   SM_ASSERT_TRUE(t.has_value());
   SM_EXPECT_NEAR(MsOf(*t), 4500, 0.01);
   SM_EXPECT_NEAR(*e.EstimatedFrequencyHz(), 90000, 0.1);
+  SM_EXPECT_NEAR(e.EstimatedFrequencyKhz(), 90, 1e-4);
+  // Equal NTP or equal RTP timestamp: the same measurement.
   SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(4000.0), rtp0 + 4 * 90000) == RtpToNtpEstimator::UpdateResult::kSameMeasurement);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(4500.0), rtp0 + 4 * 90000) == RtpToNtpEstimator::UpdateResult::kSameMeasurement);
 }
 
-SM_TEST(RtpToNtp, RejectsOutliersThenResets) {
+SM_TEST(RtpToNtp, NeedsTwoMeasurementsAndAValidNtp) {
   RtpToNtpEstimator e;
-  for (int i = 0; i < 5; ++i) e.UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 48000));
-  // An SR whose NTP is 200 ms off is rejected.
-  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(5200.0), 5 * 48000) == RtpToNtpEstimator::UpdateResult::kRejected);
-  SM_EXPECT_NEAR(MsOf(*e.Estimate(6 * 48000)), 6000, 0.01);
-  e.UpdateMeasurements(Ntp(6000.0), 6 * 48000);  // Good again: counter cleared.
-  // A persistent jump (sender restarted its RTP clock) resets the history
-  // after three consecutive rejections.
-  e.UpdateMeasurements(Ntp(6500.0), 1000000);
-  e.UpdateMeasurements(Ntp(7000.0), 1048000);
-  auto r = e.UpdateMeasurements(Ntp(8000.0), 1096000);
-  SM_EXPECT_TRUE(r == RtpToNtpEstimator::UpdateResult::kReset);
-  e.UpdateMeasurements(Ntp(9000.0), 1144000);
-  SM_EXPECT_NEAR(MsOf(*e.Estimate(1168000)), 9500, 0.01);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(NtpTime{0}, 1000) == RtpToNtpEstimator::UpdateResult::kInvalidMeasurement);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(0.0), 0) == RtpToNtpEstimator::UpdateResult::kNewMeasurement);
+  SM_EXPECT_FALSE(e.Estimate(0).has_value());
+  SM_EXPECT_EQ(e.EstimateNtp(0).value, 0u);
+  SM_EXPECT_EQ(e.EstimatedFrequencyKhz(), 0.0);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(20.0), 960) == RtpToNtpEstimator::UpdateResult::kNewMeasurement);
+  SM_ASSERT_TRUE(e.Estimate(480).has_value());
+  SM_EXPECT_NEAR(MsOf(*e.Estimate(480)), 10, 0.01);
 }
 
-SM_TEST(StreamSync, ConvergesAndPrefersRemovingDelay) {
-  StreamSynchronization s;
-  // Same capture clock; video arrives 100 ms later than audio for the same
-  // capture instant, buffers equal: video lags by 100 ms.
-  for (int i = 0; i < 5; ++i) {
-    s.audio_map().UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 48000));
-    s.video_map().UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 90000));
+SM_TEST(RtpToNtp, ValidatesAgainstTheNewestReport) {
+  // libwebrtc's rule: NTP and RTP must move forward from the newest stored
+  // SR, NTP by at most 1 h and RTP by at most 1 << 25 ticks.
+  RtpToNtpEstimator e;
+  e.UpdateMeasurements(Ntp(0.0), 0);
+  e.UpdateMeasurements(Ntp(1000.0), 48000);
+  using R = RtpToNtpEstimator::UpdateResult;
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(900.0), 96000) == R::kInvalidMeasurement);      // NTP backwards.
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(2000.0), 40000) == R::kInvalidMeasurement);     // RTP backwards.
+  e.UpdateMeasurements(Ntp(2000.0), 96000);  // Valid: clears the invalid count.
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(3000.0), 96000 + (1u << 25) + 1) == R::kInvalidMeasurement);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(2000.0 + 3600e3 + 1), 144000) == R::kInvalidMeasurement);
+  e.UpdateMeasurements(Ntp(3000.0), 144000);
+  SM_EXPECT_EQ(e.size(), 4u);
+  // An SR delayed 200 ms in the sender is off the line but still valid.
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(4200.0), 192000) == R::kNewMeasurement);
+  SM_EXPECT_EQ(e.size(), 5u);
+}
+
+SM_TEST(RtpToNtp, ClearsAfterThreeConsecutiveInvalidReports) {
+  RtpToNtpEstimator e;
+  for (int i = 0; i < 5; ++i) e.UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(10000000 + i * 48000));
+  using R = RtpToNtpEstimator::UpdateResult;
+  // The sender restarted its RTP clock: the timestamps go backwards.
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(5000.0), 1000) == R::kInvalidMeasurement);
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(6000.0), 49000) == R::kInvalidMeasurement);
+  SM_EXPECT_NEAR(MsOf(*e.Estimate(10000000 + 5 * 48000)), 5000, 0.01);  // Old line still in use.
+  // The third one clears the history and starts the new line alone.
+  SM_EXPECT_TRUE(e.UpdateMeasurements(Ntp(7000.0), 97000) == R::kNewMeasurement);
+  SM_EXPECT_EQ(e.size(), 1u);
+  SM_EXPECT_FALSE(e.Estimate(97000).has_value());
+  e.UpdateMeasurements(Ntp(8000.0), 145000);
+  SM_EXPECT_NEAR(MsOf(*e.Estimate(169000)), 8500, 0.01);
+}
+
+SM_TEST(RtpToNtp, KeepsTheLastTwentyReports) {
+  RtpToNtpEstimator e;
+  // The first 10 SRs map to a 48 kHz clock, the next 20 to 48.048 kHz.
+  int64_t rtp = 0;
+  for (int i = 0; i < 30; ++i) {
+    e.UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(rtp));
+    rtp += i < 10 ? 48000 : 48048;
   }
-  s.OnAudioPacket(4 * 48000, Timestamp::Millis(4050));
-  s.OnVideoFrame(4 * 90000, Timestamp::Millis(4150));
-  SyncDelays d;
-  for (int k = 0; k < 20; ++k) d = *s.Update(TimeDelta::Millis(60), TimeDelta::Millis(60), Timestamp::Millis(5000 + k * 1000));
-  SM_EXPECT_NEAR(d.audio_extra.ms_f(), 100, 30);  // Audio delayed to match.
-  SM_EXPECT_EQ(d.video_extra.ms(), 0);
-  SM_EXPECT_LT(std::fabs(s.last_offset().ms_f()), 35);
-  // Now video becomes early: audio extra delay is removed before any video delay is added.
-  s.OnVideoFrame(4 * 90000, Timestamp::Millis(4000));
-  for (int k = 0; k < 20; ++k) d = *s.Update(TimeDelta::Millis(60), TimeDelta::Millis(60), Timestamp::Millis(30000 + k * 1000));
-  SM_EXPECT_LT(d.audio_extra.ms(), 30);
-  SM_EXPECT_NEAR(d.video_extra.ms_f(), 50, 30);
+  SM_EXPECT_EQ(e.size(), RtpToNtpEstimator::kNumRtcpReportsToUse);
+  SM_EXPECT_NEAR(*e.EstimatedFrequencyHz(), 48048, 0.01);
 }
 
-SM_TEST(StreamSync, StepIsBounded) {
-  StreamSyncConfig cfg;
-  cfg.max_change = TimeDelta::Millis(80);
-  StreamSynchronization s(cfg);
+namespace {
+// Two streams whose SRs share one capture clock: audio 48 kHz, video 90 kHz.
+void TrainMeasurements(StreamSynchronization::Measurements& audio, StreamSynchronization::Measurements& video) {
   for (int i = 0; i < 3; ++i) {
-    s.audio_map().UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 48000));
-    s.video_map().UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 90000));
+    audio.rtp_to_ntp.UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 48000));
+    video.rtp_to_ntp.UpdateMeasurements(Ntp(i * 1000.0), static_cast<uint32_t>(i * 90000));
   }
-  s.OnAudioPacket(2 * 48000, Timestamp::Millis(2000));
-  s.OnVideoFrame(2 * 90000, Timestamp::Millis(3000));  // 1 s lag.
-  auto d = s.Update(TimeDelta::Zero(), TimeDelta::Zero(), Timestamp::Millis(3000));
-  SM_EXPECT_EQ(d->audio_extra.ms(), 80);
+}
+}  // namespace
+
+SM_TEST(StreamSync, RelativeDelayFromLatestPackets) {
+  StreamSynchronization::Measurements audio, video;
+  SM_EXPECT_FALSE(StreamSynchronization::ComputeRelativeDelay(audio, video).has_value());  // No SRs yet.
+  TrainMeasurements(audio, video);
+  // Captured at 2000 ms (audio) and 2010 ms (video); received at 2050 and
+  // 2160: video is 100 ms behind.
+  audio.latest_timestamp = 2 * 48000;
+  audio.latest_receive_time_ms = 2050;
+  video.latest_timestamp = 2 * 90000 + 900;
+  video.latest_receive_time_ms = 2160;
+  SM_EXPECT_EQ(*StreamSynchronization::ComputeRelativeDelay(audio, video), 100);
+  // Beyond +-10 s there is no update.
+  video.latest_receive_time_ms = 2050 + 10 + 10001;
+  SM_EXPECT_FALSE(StreamSynchronization::ComputeRelativeDelay(audio, video).has_value());
+  video.latest_receive_time_ms = 2050 + 10 + 10000;
+  SM_EXPECT_EQ(*StreamSynchronization::ComputeRelativeDelay(audio, video), 10000);
+}
+
+SM_TEST(StreamSync, FilterStartsAtZeroAndResetsAfterAMove) {
+  StreamSynchronization s(2, 1);
+  // Video 100 ms late, equal current delays: avg = (3 * 0 + 100) / 4 = 25,
+  // inside the 30 ms margin.
+  SM_EXPECT_FALSE(s.ComputeDelays(100, 0, 0).has_value());
+  // avg = (75 + 100) / 4 = 43: move 43 / 2 = 21 ms of audio delay.
+  auto d = s.ComputeDelays(100, 0, 0);
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 21);
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 0);
+  // The average restarted from 0 after the move.
+  SM_EXPECT_FALSE(s.ComputeDelays(100, 21, 0).has_value());
+}
+
+SM_TEST(StreamSync, StepIsBoundedByMaxChange) {
+  StreamSynchronization s(2, 1);
+  // Video 1 s late every time: avg = 1000 / 4 = 250, half of it capped at
+  // 80 ms per move.
+  for (int k = 1; k <= 5; ++k) {
+    auto d = s.ComputeDelays(1000, 0, 0);
+    SM_ASSERT_TRUE(d.has_value());
+    SM_EXPECT_EQ(d->total_audio_delay_target_ms, k * StreamSynchronization::kMaxChangeMs);
+    SM_EXPECT_EQ(d->total_video_delay_target_ms, 0);
+  }
+}
+
+namespace {
+// Two moves of 50 ms with video 400 ms late: 100 ms of extra audio delay.
+StreamSynchronization WithAudioExtra100() {
+  StreamSynchronization s(2, 1);
+  s.ComputeDelays(400, 0, 0);
+  auto d = s.ComputeDelays(400, 0, 0);
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 100);
+  return s;
+}
+}  // namespace
+
+SM_TEST(StreamSync, ChangesOneStreamAtATime) {
+  StreamSynchronization s = WithAudioExtra100();
+  // Video 120 ms early: avg -30, move -15 ms. The extra audio delay comes
+  // off first and video keeps its last output.
+  auto d = s.ComputeDelays(-120, 0, 0);
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 85);
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 0);
+  // 70, 55, 40, 25, 10, then the extra audio delay is spent (-5): audio
+  // keeps its last output, 10, and video gets the extra delay from then on.
+  for (int k = 0; k < 6; ++k) d = s.ComputeDelays(-120, 0, 0);
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 10);
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 0);
+  d = s.ComputeDelays(-120, 0, 0);
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 10);
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 15);
+}
+
+SM_TEST(StreamSync, ReduceAudioDelay) {
+  StreamSynchronization s = WithAudioExtra100();
+  s.ReduceAudioDelay();  // A failed SetMinimumPlayoutDelay: 100 -> 90.
+  auto d = s.ComputeDelays(-120, 0, 0);
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 75);
+}
+
+SM_TEST(StreamSync, BaseTargetDelayAndCap) {
+  StreamSynchronization s(2, 1);
+  s.SetTargetBufferingDelay(150);
+  // Video 100 ms early: avg -25 (no move), then -43: video gets 21 ms on
+  // top of the base and audio stays at the base.
+  SM_EXPECT_FALSE(s.ComputeDelays(-100, 0, 0).has_value());
+  auto d = s.ComputeDelays(-100, 0, 0);
+  SM_ASSERT_TRUE(d.has_value());
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 171);
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 150);
+  // Video far late for a long time: the output is capped at base + 10 s.
+  // The video extra delay drops back to the base, so video keeps its last
+  // output (171), as libwebrtc's `last_ms` rule does.
+  for (int k = 0; k < 400; ++k) {
+    auto n = s.ComputeDelays(10000, 0, 0);
+    if (n) d = n;
+  }
+  SM_EXPECT_EQ(d->total_audio_delay_target_ms, 150 + StreamSynchronization::kMaxDeltaDelayMs);
+  SM_EXPECT_EQ(d->total_video_delay_target_ms, 171);
+}
+
+namespace {
+struct FakeSyncable : Syncable {
+  uint32_t ssrc = 0;
+  std::optional<Info> info;
+  std::optional<PlayoutInfo> playout;
+  bool accept = true;
+  std::vector<int> min_delays;
+  uint32_t id() const override { return ssrc; }
+  std::optional<Info> GetInfo() const override { return info; }
+  std::optional<PlayoutInfo> GetPlayoutRtpTimestamp() const override { return playout; }
+  bool SetMinimumPlayoutDelay(TimeDelta d) override {
+    min_delays.push_back(static_cast<int>(d.ms()));
+    return accept;
+  }
+  void SetEstimatedPlayoutNtpTimestamp(NtpTime, Timestamp) override {}
+};
+}  // namespace
+
+SM_TEST(StreamSync, SynchronizerRunsEverySecondOnNewPackets) {
+  FakeSyncable audio, video;
+  audio.ssrc = 1;
+  video.ssrc = 2;
+  RtpStreamsSynchronizer sync(&video);
+  sync.ConfigureSync(&audio, Timestamp::Millis(0));
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 1000);
+  // Video 200 ms behind audio, both with 50 ms of playout delay.
+  auto feed = [&](int64_t t, int sr) {
+    audio.info = Syncable::Info{Timestamp::Millis(t + 20), static_cast<uint32_t>(t * 48), static_cast<uint32_t>(sr * 48000),
+                                Ntp(sr * 1000.0), TimeDelta::Millis(50)};
+    video.info = Syncable::Info{Timestamp::Millis(t + 220), static_cast<uint32_t>(t * 90), static_cast<uint32_t>(sr * 90000),
+                                Ntp(sr * 1000.0), TimeDelta::Millis(50)};
+  };
+  int runs_with_delays = 0;
+  for (int64_t t = 0; t <= 10000; t += 10) {
+    feed(t, static_cast<int>(t / 1000));
+    if (t == 6000) {
+      audio.info->latest_receive_time = Timestamp::Millis(5020);  // No new audio packet this second.
+    }
+    size_t before = audio.min_delays.size();
+    sync.Process(Timestamp::Millis(t));
+    if (audio.min_delays.size() > before) ++runs_with_delays;
+    if (t == 6000) SM_EXPECT_EQ(audio.min_delays.size(), before);
+  }
+  SM_EXPECT_GT(runs_with_delays, 2);
+  SM_EXPECT_EQ(audio.min_delays.size(), video.min_delays.size());
+  SM_EXPECT_GT(audio.min_delays.back(), 0);
+  // Stopping the sync stops the task.
+  sync.ConfigureSync(nullptr, Timestamp::Millis(10000));
+  SM_EXPECT_FALSE(sync.NextProcessTime().has_value());
+}
+
+SM_TEST(StreamSync, StreamSyncOffset) {
+  FakeSyncable audio, video;
+  audio.ssrc = 1;
+  video.ssrc = 2;
+  RtpStreamsSynchronizer sync(&video);
+  sync.ConfigureSync(&audio, Timestamp::Millis(0));
+  for (int i = 0; i <= 2; ++i) {
+    audio.info = Syncable::Info{Timestamp::Millis(i * 1000 + 20), static_cast<uint32_t>(i * 48000), static_cast<uint32_t>(i * 48000),
+                                Ntp(i * 1000.0), TimeDelta::Millis(50)};
+    video.info = Syncable::Info{Timestamp::Millis(i * 1000 + 60), static_cast<uint32_t>(i * 90000), static_cast<uint32_t>(i * 90000),
+                                Ntp(i * 1000.0), TimeDelta::Millis(50)};
+    sync.UpdateDelay(Timestamp::Millis(i * 1000 + 100));
+  }
+  // Audio played out capture 2000 at 2080; a video frame captured at 1950
+  // renders at 2120. At 2100 audio plays capture 2020 and video 1930.
+  audio.playout = Syncable::PlayoutInfo{Timestamp::Millis(2080), 2 * 48000};
+  auto off = sync.GetStreamSyncOffsetInMs(static_cast<uint32_t>(1950 * 90), 2120, Timestamp::Millis(2100));
+  SM_ASSERT_TRUE(off.has_value());
+  SM_EXPECT_EQ(off->stream_offset_ms, 90);
+  SM_EXPECT_NEAR(off->estimated_freq_khz, 90, 1e-4);
 }
 
 SM_TEST(StreamSync, GroupsByCname) {
