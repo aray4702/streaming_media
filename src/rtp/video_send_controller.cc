@@ -118,15 +118,19 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   d.width = width;
   d.height = height;
   d.fps = fps;
-  // As VideoStreamEncoder::OnFrame: the outage pause, then congestion-window
-  // pushback (keyframes included), the initial frame drop (DropDueToSize, with
-  // quality scaling), then the frame dropper (keyframes included).
-  if (paused_) {
+  // The outage pause, then congestion-window pushback (keyframes included),
+  // then the frame dropper (keyframes included). With quality scaling the
+  // order is VideoStreamEncoder's: the congestion-window drop (OnFrame), then
+  // in MaybeEncodeVideoFrame the initial frame drop (DropDueToSize and
+  // OnMaybeEncodeFrame), the pause (EncoderPaused) and the frame dropper.
+  if (paused_ && !cfg_.quality_scaling) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
   } else if (cfg_.quality_scaling && QualityScalingDropsForSize(width, height, target, now)) {
     d.reason = DropReason::kSize;
+  } else if (paused_) {
+    d.reason = DropReason::kPaused;
   } else if (dropper_.ShouldDrop(fps)) {
     d.reason = DropReason::kFrameDropper;
   } else {

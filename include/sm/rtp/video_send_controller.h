@@ -33,8 +33,9 @@
 // reconfigures the encoder, which makes the next frame a keyframe
 // (ReconfigureEncoder's encoder reset). Not ported: the start-bitrate reset of
 // the initial frame drop (QualityScalerSettings' InitialBitrateIntervalMs and
-// Factor are unset by default), the dropped frame kept as `pending_frame_`,
-// and the size check running before the outage pause (it runs after it here).
+// Factor are unset by default) and the dropped frame kept as `pending_frame_`.
+// With quality scaling the drop checks run in VideoStreamEncoder's order:
+// congestion window (OnFrame), initial frame drop, outage pause, frame dropper.
 // CPU overuse and the other degradation preferences are not wired yet. The
 // frame dropper is libwebrtc's, applied to keyframes too (issue #5).
 #pragma once

@@ -298,3 +298,24 @@ SM_TEST(VideoSendController, QualityScalingAdaptsUpOnLowQpWithAKeyframe) {
   SM_EXPECT_EQ(first_up_height, 540);
   SM_EXPECT_GE(t, 2000);
 }
+
+SM_TEST(VideoSendController, QualityScalingInitialDropRunsBeforeThePause) {
+  // VideoStreamEncoder::MaybeEncodeVideoFrame: DropDueToSize (and
+  // OnMaybeEncodeFrame) come before EncoderPaused, so a paused encoder still
+  // adapts down for an oversized frame and a fitting frame ends the initial drop.
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  auto d = c.OnCapturedFrame({1280, 720}, At(0));
+  SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({1280, 720}, At(33)).reason == DropReason::kSize);
+  d = c.OnCapturedFrame({1280, 720}, At(66));
+  SM_EXPECT_TRUE(d.reason == DropReason::kPaused);
+  SM_EXPECT_EQ(d.height, 360);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  d = c.OnCapturedFrame({1280, 720}, At(99));
+  SM_EXPECT_TRUE(d.encode);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+}

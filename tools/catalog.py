@@ -1185,7 +1185,10 @@ ALGORITHMS = [
                       "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
                       "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
                       "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
-                      "frame kept as `pending_frame_`. `issue_84_quality_scaling_720p_low_rate` and "
+                      "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
+                      "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
+                      "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
+                      "(`EncoderPaused`) and the frame dropper. `issue_84_quality_scaling_720p_low_rate` and "
                       "`issue_84_quality_scaling_rate_rise` lock in the behaviour."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
