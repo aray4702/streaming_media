@@ -39,7 +39,8 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
-  if (allocation_configured_) allocator_.OnTargetChanged(target_, now);
+  // BitrateAllocator::OnNetworkEstimateChanged runs only for a message the transport passes on.
+  if (allocation_configured_ && u.notify) allocator_.OnTargetChanged(target_, now);
   // GetPacingRates: the padding rate never exceeds the pushback target.
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
@@ -80,7 +81,10 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
     allocator_.AddObserver("video", v, [this](DataRate alloc) {
       // OnBitrateUpdated: protection = target - (encoder target + its packet overhead).
+      // RtpVideoSender::OnBitrateUpdated sets encoder_target_rate_bps_ here, from the protection sent
+      // in the last second, and the encoder keeps it until the next allocation.
       const DataRate encoder = AllocatedVideoTarget(alloc);
+      video_encoder_target_ = encoder;
       const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
       DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
       enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
@@ -251,7 +255,7 @@ ControllerActions SendSideController::TakeActions() {
 }
 
 bool SendSideController::DropCapturedFrame() {
-  const DataRate base = allocation_configured_ ? AllocatedVideoTarget(allocator_.allocation("video")) : target_;
+  const DataRate base = allocation_configured_ ? video_encoder_target_ : target_;
   const auto drop = cc::CongestionWindowPushback::FrameDropInterval(base, cwnd_.reduce_ratio(), cfg_.video_min);
   if (drop.interval == 0) return false;
   if (cwnd_frame_counter_++ % static_cast<uint64_t>(drop.interval) != 0) return false;
@@ -325,8 +329,7 @@ SendRates SendSideController::AllocatedRates() const {
   SendRates out;
   out.target = target_;
   out.audio_rate = allocator_.allocation("audio");
-  const DataRate alloc = allocator_.allocation("video");
-  out.video_target = AllocatedVideoTarget(alloc);
+  out.video_target = video_encoder_target_;
   ApplyPushback(out);
   return out;
 }

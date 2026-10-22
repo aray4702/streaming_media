@@ -73,6 +73,12 @@ struct NetworkControlUpdate {
   DataRate pacing_rate;
   std::vector<ProbeCluster> probes;
   bool changed = false;
+  // GoogCC sent a TargetTransferRate that the transport passes on to the
+  // bitrate allocator: the target, the loss fraction or the RTT changed since
+  // the last one passed on (MaybeTriggerOnNetworkChanged, then the
+  // transport's CongestionControlHandler::GetUpdate). Only then do the
+  // streams get a new allocation (BitrateAllocator::OnNetworkEstimateChanged).
+  bool notify = false;
 };
 
 class GccController : public MetricsSource {
@@ -160,6 +166,11 @@ class GccController : public MetricsSource {
   LossBasedState last_loss_based_state_ = LossBasedState::kDelayBasedEstimate;
   uint8_t last_fraction_loss_ = 0;
   TimeDelta last_round_trip_time_ = TimeDelta::PlusInfinity();
+  // The last update passed on to the allocator (`NetworkControlUpdate::notify`).
+  bool notified_ = false;
+  DataRate notified_target_;
+  uint8_t notified_fraction_loss_ = 0;
+  TimeDelta notified_round_trip_time_ = TimeDelta::PlusInfinity();
   bool first_packet_sent_ = false;
   bool started_ = false;
   // OnMaxTotalAllocatedBitrate before Start(), applied after the initial probes.

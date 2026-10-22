@@ -203,6 +203,8 @@ class SendSideController : public MetricsSource {
   cc::CongestionWindowPushback cwnd_;
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
+  // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
+  DataRate video_encoder_target_;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;

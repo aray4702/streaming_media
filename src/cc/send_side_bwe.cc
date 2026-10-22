@@ -365,6 +365,16 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
       u.probes.insert(u.probes.end(), more.begin(), more.end());
     }
   }
+  // The transport passes the message on only if the target, the loss fraction
+  // or the RTT differs from the last one it passed on.
+  if (!notified_ || target_ != notified_target_ || fraction_loss != notified_fraction_loss_ ||
+      round_trip_time != notified_round_trip_time_) {
+    notified_ = true;
+    notified_target_ = target_;
+    notified_fraction_loss_ = fraction_loss;
+    notified_round_trip_time_ = round_trip_time;
+    u.notify = true;
+  }
   if (u.changed) {
     target_kbps_.Add(target_.kbps());
     SM_EVENT(cfg_.events, now, "gcc", "target", target_.bps(), last_reported_.bps());
