@@ -203,3 +203,24 @@ python3 tools/bwe_trace.py sm.bwe.csv webrtc.bwe.csv
 For each second it shows both stacks' delay-based estimate and detector state, the
 send-side target, the loss fraction, and whether the target is held by the
 delay-based estimate or by the loss side.
+
+### Audio jitter buffer trace (issue #62)
+
+Both stacks also record NetEq's state after every 10 ms audio pull, read as
+`AudioReceiveStream::GetStats` reports it for libwebrtc and from
+`AudioJitterBuffer` for this library:
+
+| column | libwebrtc | this library |
+|---|---|---|
+| `buffer_ms` | `jitter_buffer_ms` (NetEq's `current_buffer_size_ms`: packet buffer + sync buffer) | `AudioJitterBuffer::CurrentLevelMs` |
+| `target_ms` | `jitter_buffer_preferred_ms` (`DecisionLogic::TargetLevelMs`) | `AudioJitterBuffer::TargetDelayMs` |
+| `jb_delay_ms` | `jitterBufferDelay / jitterBufferEmittedCount` over the pull, empty when nothing was emitted | the same counters; `audio.jb_delay_*` are their percentiles |
+| `received_ms`, `concealed_ms`, `accelerate_ms`, `decelerate_ms` | `totalSamplesReceived`, `concealedSamples`, `removedSamplesForAcceleration`, `insertedSamplesForDeceleration` over the pull, in ms | the same stats |
+
+The files are `"sm_audio"` and `"webrtc_audio"` in each `"traces"` entry,
+`<scenario>.<seed>.{sm,webrtc}.audio.csv` with `--trace-dir` and
+`--trace-all-dir` (so `main` publishes them for every scenario in
+`parity-data/traces/`), and `sm_testbench --link-trace=DIR` writes ours alone.
+Yardstick #266 used them to show that the two NetEqs take the same decisions at
+the same ticks, and that the remaining jitter buffer differences come from the
+packets' arrivals.

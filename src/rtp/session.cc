@@ -437,12 +437,7 @@ void Session::Process(Timestamp now) {
   // RtpStreamsSynchronizer's 1 s task.
   if (av_sync_) av_sync_->Process(now);
   // Transport-wide feedback covers every stream of the transport.
-  UpdateTransportFeedbackRate();
-  if (cfg_.transport_feedback_interval.us() > 0 &&
-      (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
-    last_tcc_ = now;
-    for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
-  }
+  ProcessTransportFeedback(now);
   // Paced media.
   if (HasSendStreams()) {
     for (ReleasedPacket& r : send_.Process(now)) {
@@ -482,8 +477,25 @@ void Session::UpdateTransportFeedbackRate() {
   tcc_.OnSendBandwidthEstimateChanged(estimate);
 }
 
-TimeDelta Session::TransportFeedbackInterval() const {
-  return tcc_.Interval();
+// Call::EnsureStarted starts the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess
+// before it registers for OnTargetTransferRate (call/call.cc), so the generator's first Process sees its default
+// 100 ms interval and the first feedback goes out 100 ms after the start; the rate-based interval applies from
+// then on. TransportSequenceNumberFeedbackGenenerator::Process
+// (modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.cc) sends when
+// last_process_time_ + send_interval_ has passed and returns the delay to the task's next run, so a longer
+// interval takes effect at once and a shorter one at the next wake-up.
+void Session::ProcessTransportFeedback(Timestamp now) {
+  if (cfg_.transport_feedback_interval.us() > 0 && now >= tcc_wake_) {
+    const TimeDelta interval = tcc_.Interval();
+    if (!last_tcc_.IsFinite() || now >= last_tcc_ + interval) {
+      last_tcc_ = now;
+      tcc_wake_ = now + interval;
+      for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
+    } else {
+      tcc_wake_ = last_tcc_ + interval;
+    }
+  }
+  UpdateTransportFeedbackRate();  // Call::OnTargetTransferRate -> ReceiveSideCongestionController::OnBitrateChanged.
 }
 
 Timestamp Session::NextProcessTime(Timestamp now) const {
@@ -492,9 +504,7 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
-  if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
-    next = std::min(next, last_tcc_ + TransportFeedbackInterval());
-  }
+  if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
   return std::max(next, now);
 }
 

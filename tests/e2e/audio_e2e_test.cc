@@ -355,6 +355,61 @@ SM_TEST(E2E_EchoCanceller, FullDuplexCall) {
   SM_EXPECT_LT(near_change, 3.0);
 }
 
+// `apm v2` (#240): libwebrtc's AEC3. libwebrtc M157's APM on the same call
+// (docs/results/apm-webrtc.md, sm_apm_compare): ERLE 33.2 dB at 1-3 s, 50.1
+// at 6-12 s, 8.0 just after the delay change, 49.0 at 18-24 s.
+SM_TEST(E2E_EchoDelay, Aec3FollowsAudioRouteChangeAsLibwebrtc) {
+  CallScenario s;
+  s.seconds = 24;
+  s.echo_delay_ms = 60;
+  s.echo_delay2_ms = 180;
+  s.near_start_s = 1e9;
+  s.noise_amp = 0.0005f;
+  auto c = MakeCall(s);
+  ChainConfig cc{true, true, false, false, false};
+  cc.apm_v2 = true;
+  auto r = RunChain(c, cc);
+  auto erle = [&](double a, double b) { return SegmentDb(c.echo, a, b) - SegmentDb(r.out, a, b, 16000, r.latency); };
+  SM_RECORD("erle_1_3_db", erle(1, 3));
+  SM_RECORD("erle_6_12_db", erle(6, 12));
+  SM_RECORD("erle_12_14_db", erle(12, 14));
+  SM_RECORD("erle_18_24_db", erle(18, 24));
+  SM_EXPECT_EQ(r.latency, 64u);
+  SM_EXPECT_NEAR(erle(1, 3), 33.2, 1.0);
+  SM_EXPECT_NEAR(erle(6, 12), 50.1, 1.0);
+  SM_EXPECT_NEAR(erle(12, 14), 8.0, 1.0);
+  SM_EXPECT_NEAR(erle(18, 24), 49.0, 1.0);
+}
+
+// `apm v2` (#240, #241): AEC3 then libwebrtc's NS. libwebrtc M157's APM:
+// ERLE 67.0 dB with the far end alone, the near end 5.3 dB quieter in
+// double talk, near-end SNR -0.2 dB there.
+SM_TEST(E2E_EchoCanceller, Aec3FullDuplexCallAsLibwebrtc) {
+  CallScenario s;
+  s.seconds = 30;
+  s.near_start_s = 15;
+  s.noise_amp = 0.0005f;
+  auto c = MakeCall(s);
+  ChainConfig cc{true, true, true, false, false};
+  cc.apm_v2 = true;
+  auto r = RunChain(c, cc);
+  double erle = SegmentDb(c.echo, 6, 15) - SegmentDb(r.out, 6, 15, 16000, r.latency);
+  double near_change = SegmentDb(r.out, 18, 30, 16000, r.latency) - SegmentDb(c.talker, 18, 30);
+  // The talker against everything else in the output from 18 s, at the
+  // output delay (0..40 ms) with the best SNR, as sm_apm_compare.
+  const size_t start = 18 * 16000, n = 30 * 16000 - start - 640;
+  double snr = -1e9;
+  for (size_t l = 0; l <= 640; ++l) {
+    snr = std::max(snr, dsp::SnrDb({c.talker.data() + start, n}, {r.out.data() + start + l, n}));
+  }
+  SM_RECORD("call_erle_db", erle);
+  SM_RECORD("call_double_talk_near_level_change_db", near_change);
+  SM_RECORD("call_double_talk_near_snr_db", snr);
+  SM_EXPECT_NEAR(erle, 67.0, 1.0);
+  SM_EXPECT_NEAR(near_change, -5.3, 1.0);
+  SM_EXPECT_NEAR(snr, -0.2, 1.0);
+}
+
 SM_TEST(E2E_TransientSuppressor, KeyboardDuringCall) {
   CallScenario s;
   s.far_talk = false;
