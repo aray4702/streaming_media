@@ -51,7 +51,7 @@ ALGORITHMS = [
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
-         headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
+         headers=["loss/fec.h", "loss/ulpfec.h"], unit=["Fec", "Ulpfec"], e2e=["E2E_Fec"],
          bench=["loss/FecEncode_10pkt_frame_50pct", "loss/FecDecode_RecoverOne", "loss/Q_Fec_5pct_rtt300"],
          scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
                   "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
@@ -60,8 +60,20 @@ ALGORITHMS = [
                "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
                "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
                "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
-               "logic is the same.",
-         verification="A unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
+               "logic is the same. "
+               "Issue #29 replaces that format with ULPFEC (RFC 5109) over RED (RFC 2198), ported from libwebrtc M157 "
+               "(`forward_error_correction.cc`, `forward_error_correction_internal.cc`, `ulpfec_header_reader_writer.cc`, "
+               "`ulpfec_generator.cc`, `ulpfec_receiver.cc`): `loss/ulpfec.h`, with libwebrtc's random and bursty "
+               "packet mask tables (read from the pinned prebuilt libwebrtc, as `reference/` has only their headers), "
+               "interleaved masks above 12 packets, Q8 protection factors, kMinMediaPackets 4 above protection 80 and "
+               "kMaxExcessOverhead 50. Its first PR adds the module only; the session layer still sends the old format "
+               "until the next step of #29 switches it over and removes `loss/fec.h`.",
+         verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
+                      "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
+                      "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
+                      "bursty tables recover every run of up to m consecutive losses for all (k, m) up to 12, as "
+                      "`fec_private_tables_bursty.h` states; the test fails if the random table is used in their place. "
+                      "XOR FEC: a unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
                       "rebuilt from parity before its own late arrival, which is correct, so the expectation was "
                       "fixed."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
@@ -739,7 +751,7 @@ ALGORITHMS = [
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
-         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation"], e2e=["E2E_VideoAdaptation"],
+         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation", "OveruseFrameDetector"], e2e=["E2E_VideoAdaptation"],
          bench=["cc/Degradation_and_CpuDetector", "cc/Q_Adaptation_bandwidth_drop"],
          scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
                   "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
@@ -747,7 +759,16 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
-         verification="No defects found after the 5.2 fixes."),
+         verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3) "
+                      "is libwebrtc M157's `OveruseFrameDetector` (`video/adaptation/overuse_frame_detector.cc`) "
+                      "with its default estimator `SendProcessingUsage1` and the `CpuOveruseOptions` a software "
+                      "encoder gets (85% / 42%, 120 frame samples, 3 process counts, 2 checks in a row, 1.5 s frame "
+                      "time-out, first check 100 ms after start then every 5 s, ramp-up delay 10 s quick, 40 s "
+                      "standard, doubled up to 240 s). The `OveruseFrameDetector` unit tests port "
+                      "`overuse_frame_detector_unittest.cc` (all but the two random-interval cases and the "
+                      "`SendProcessingUsage2` suite, which is off by default). Version 1 stays the default until #84 "
+                      "wires version 2 into the send path, which needs libwebrtc's `call/adaptation/` and "
+                      "`media/base/video_adapter` sources in `compare/webrtc/reference/`."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -784,8 +805,9 @@ ALGORITHMS = [
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
          headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
-                  "audio/aec3_analysis.h", "audio/aec3_state.h", "audio/aec3_suppression.h"],
-         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression"],
+                  "audio/aec3_analysis.h", "audio/aec3_state.h", "audio/aec3_suppression.h", "audio/aec3.h"],
+         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression",
+               "Aec3"],
          e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
@@ -828,8 +850,20 @@ ALGORITHMS = [
                "and `comfort_noise_generator`, with EchoCanceller3Config's Suppressor, ComfortNoise, EchoModel and "
                "EpStrength defaults. Remaining differences: no neural residual echo estimator (optional in "
                "libwebrtc and absent in a call); the Low{Early,Late}ReflectionsDefaultGain and "
-               "ErleOnsetCompensationInDominantNearend field trials are read as not set. Nothing in a call uses it "
-               "yet: EchoRemover, BlockProcessor and EchoCanceller3 are #240's next step.",
+               "ErleOnsetCompensationInDominantNearend field trials are read as not set. "
+               "AEC3 as a whole (#240 step 5, `audio/aec3.h`) ports `echo_remover` (refined or coarse filter output "
+               "with a 30-sample crossfade, sqrt-Hanning spectra of the capture and the linear output, linear echo "
+               "|Y - E|^2, then AecState, comfort noise, residual echo, suppression gain and filter), "
+               "`echo_remover_metrics`, `block_processor` (render start, buffer flush at overrun, delay controller "
+               "reset at underrun, render buffer alignment to the estimated delay), `frame_blocker`, `block_framer`, "
+               "`block_delay_buffer` and `echo_canceller3` (render queue of 100 frames, capture saturation at 32700, "
+               "10 ms frames cut into 64-sample blocks), and it runs in the `apm v2` chain as APM calls it. On #63's "
+               "signals it gives libwebrtc M157's numbers: ERLE 33.2 / 50.1 / 8.0 / 49.0 dB on the route change, "
+               "67.0 dB with NS, near end -5.3 dB and SNR -0.2 dB in double talk. Remaining differences: the render "
+               "is used as one channel, as libwebrtc does until its MultiChannelContentDetector finds proper stereo "
+               "(that detector, ConfigSelector and the multichannel config aren't ported); AdjustConfig's field "
+               "trials are read as not set; no linear AEC output export (off by default) and no UMA histograms; "
+               "the render queue is a FIFO, not a thread hand-off.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -856,7 +890,15 @@ ALGORITHMS = [
                       "SignalSuppression, SignalTransparency, Delay) and residual_echo_estimator (BasicTest for 1, 2 and "
                       "4 render and capture channels, ReverbTest) unit tests pass with their signals and bounds; the "
                       "death tests and the neural estimator's metrics tests don't apply. The two nearend detectors, "
-                      "which have no libwebrtc unit tests, have behavioural tests derived from the code."),
+                      "which have no libwebrtc unit tests, have behavioural tests derived from the code. AEC3 as a "
+                      "whole (#240 step 5): libwebrtc's frame_blocker, block_framer, block_delay_buffer, "
+                      "echo_remover_metrics, echo_remover (BasicApiCalls, BasicEchoRemoval) and block_processor "
+                      "(BasicSetupAndApiCalls, TestLongerCall) unit tests pass with their signals and bounds; "
+                      "EchoCanceller3's pass-through, render queue and saturation tests are derived from "
+                      "echo_canceller3_unittest.cc on the real block processor (the originals mock it). "
+                      "E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc and "
+                      "E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc check the `apm v2` chain against libwebrtc "
+                      "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
