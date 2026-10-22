@@ -17,6 +17,8 @@ if(SM_WITH_LOSS)
     loss/keyframe_request.cc
     loss/rtcp_feedback.cc
     loss/temporal_layers.cc
+    loss/ulpfec.cc
+    loss/ulpfec_tables.cc
     loss/protection_controller.cc)
   list(APPEND SM_SECTIONS loss)
 endif()

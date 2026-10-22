@@ -51,7 +51,7 @@ ALGORITHMS = [
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
-         headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
+         headers=["loss/fec.h", "loss/ulpfec.h"], unit=["Fec", "Ulpfec"], e2e=["E2E_Fec"],
          bench=["loss/FecEncode_10pkt_frame_50pct", "loss/FecDecode_RecoverOne", "loss/Q_Fec_5pct_rtt300"],
          scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
                   "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
@@ -60,8 +60,20 @@ ALGORITHMS = [
                "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
                "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
                "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
-               "logic is the same.",
-         verification="A unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
+               "logic is the same. "
+               "Issue #29 replaces that format with ULPFEC (RFC 5109) over RED (RFC 2198), ported from libwebrtc M157 "
+               "(`forward_error_correction.cc`, `forward_error_correction_internal.cc`, `ulpfec_header_reader_writer.cc`, "
+               "`ulpfec_generator.cc`, `ulpfec_receiver.cc`): `loss/ulpfec.h`, with libwebrtc's random and bursty "
+               "packet mask tables (read from the pinned prebuilt libwebrtc, as `reference/` has only their headers), "
+               "interleaved masks above 12 packets, Q8 protection factors, kMinMediaPackets 4 above protection 80 and "
+               "kMaxExcessOverhead 50. Its first PR adds the module only; the session layer still sends the old format "
+               "until the next step of #29 switches it over and removes `loss/fec.h`.",
+         verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
+                      "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
+                      "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
+                      "bursty tables recover every run of up to m consecutive losses for all (k, m) up to 12, as "
+                      "`fec_private_tables_bursty.h` states; the test fails if the random table is used in their place. "
+                      "XOR FEC: a unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
                       "rebuilt from parity before its own late arrival, which is correct, so the expectation was "
                       "fixed."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
