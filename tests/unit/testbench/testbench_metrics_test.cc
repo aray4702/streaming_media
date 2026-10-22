@@ -239,6 +239,55 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
   SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
 }
 
+// The jitter buffer per 10 ms audio pull (issue #62).
+SM_TEST(TestbenchMetrics, AudioTraceCsvWritesOneLinePerPullAndLeavesJbDelayEmptyWithoutAPacket) {
+  std::vector<AudioTraceRow> trace(2);
+  trace[0].t_ms = 50;
+  trace[0].buffer_ms = 16;
+  trace[0].target_ms = 80;
+  trace[0].jb_delay_ms = 10;
+  trace[0].received_ms = 10;
+  trace[0].decelerate_ms = 5.875;
+  trace[1].t_ms = 60;
+  trace[1].buffer_ms = 6;
+  trace[1].target_ms = 80;
+  trace[1].received_ms = 10;
+  trace[1].concealed_ms = 2.5;
+  trace[1].accelerate_ms = 1;
+  SM_EXPECT_EQ(AudioTraceCsv(trace),
+               "t_ms,buffer_ms,target_ms,jb_delay_ms,received_ms,concealed_ms,accelerate_ms,decelerate_ms\n"
+               "50,16,80,10,10,0,0,5.875\n"
+               "60,6,80,,10,2.5,1,0\n");
+}
+
+SM_TEST(TestbenchMetrics, ACallRecordsTheAudioTraceOnRequestAndItAgreesWithTheMetrics) {
+  auto parsed = ParseScenario("name atrace\nduration 6s\nat 0s capacity=1000kbps delay=30ms loss=5% queue=200ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  SM_EXPECT_TRUE(RunCall(*parsed.scenario, opt).audio_trace.empty());
+  opt.audio_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_ASSERT_TRUE(rep.audio_trace.size() > static_cast<size_t>(500));
+  std::vector<double> jb;
+  double concealed = 0, stretched = 0;
+  for (size_t i = 0; i < rep.audio_trace.size(); ++i) {
+    const AudioTraceRow& r = rep.audio_trace[i];
+    SM_EXPECT_EQ(r.t_ms % 10, static_cast<int64_t>(0));
+    if (i > 0) SM_EXPECT_EQ(r.t_ms, rep.audio_trace[i - 1].t_ms + 10);
+    SM_EXPECT_TRUE(std::abs(r.received_ms - 10) < 1e-9);  // One 10 ms pull per row.
+    SM_EXPECT_TRUE(r.target_ms >= 20);  // UnderrunOptimizer's lowest bucket is 20 ms.
+    if (r.jb_delay_ms >= 0) jb.push_back(r.jb_delay_ms);
+    concealed += r.concealed_ms;
+    stretched += r.accelerate_ms + r.decelerate_ms;
+  }
+  // The rows carry exactly the values audio.jb_delay_* are computed from.
+  SM_EXPECT_EQ(Percentile(jb, 50), rep.metrics.at("audio.jb_delay_p50_ms"));
+  SM_EXPECT_EQ(Percentile(jb, 95), rep.metrics.at("audio.jb_delay_p95_ms"));
+  SM_EXPECT_TRUE(concealed > 0);  // 5 % loss conceals some audio.
+  SM_EXPECT_TRUE(stretched > 0);
+}
+
 SM_TEST(TestbenchMetrics, CompareSeedsIsParsedForSmCompareAndRangeChecked) {
   auto parsed = ParseScenario("name seeds\ncompare_seeds 40\nduration 2s\n");
   SM_ASSERT_TRUE(parsed.scenario.has_value());

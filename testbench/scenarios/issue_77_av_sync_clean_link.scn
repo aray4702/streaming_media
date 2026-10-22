@@ -1,0 +1,14 @@
+name issue_77_av_sync_clean_link
+describe Lip sync (#77): clean_link with audio and video in one sync group on both stacks; RtpStreamsSynchronizer delays the earlier stream
+duration 30s
+av_sync on
+at 0s capacity=2500kbps delay=25ms queue=300ms
+# Without sync (clean_link): A/V offset median -53 ms (audio 53 ms behind video).
+# Target (issue #77): sync.av_offset_* within the parity band of libwebrtc with sync_group set.
+expect sync.av_offset_p50_ms > -45
+expect sync.av_offset_p50_ms < 30
+expect audio.concealed_pct < 1
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect video.render_fps >= 29
+expect video.e2e_delay_p95_ms < 180

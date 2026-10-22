@@ -9,7 +9,8 @@
 //     5 s or more stands for a stream with no packets for 5 s, so libwebrtc
 //     gets OnStreamInactive() 5 s into it, as VideoReceiveStream2 calls it
 //     (video/video_receive_stream2.cc, kInactiveDuration);
-//   - quality scaling: encoder QP and drops through video::QualityScaler and
+//   - quality scaling: encoder QP and drops through video::QualityScaler
+//     (version 2, the port of libwebrtc's, #84) and
 //     libwebrtc's QualityScaler (modules/video_coding/utility/
 //     quality_scaler.cc) with H.264's thresholds 24/37, on a simulated task
 //     queue. Both clear their samples after a signal, as libwebrtc does;
@@ -214,17 +215,11 @@ constexpr int kH264Low = 24, kH264High = 37;  // VideoEncoder H.264 defaults (op
 ScalerResult ScalerOurs(const ScalerInput& in) {
   sm::video::QualityScalerConfig cfg;
   cfg.thresholds = {kH264Low, kH264High};
+  cfg.version = 2;  // libwebrtc M157's QualityScaler (#84).
   sm::video::QualityScaler s(cfg);
   ScalerResult r;
   const int64_t n = Round(in.seconds * kFps);
-  for (int64_t f = 0; f < n; ++f) {
-    const double t = static_cast<double>(f) / kFps;
-    const int qp = in.qp(f, t);
-    if (qp < 0) {
-      s.OnFrameDropped();
-    } else {
-      s.OnEncodedFrame(qp);
-    }
+  auto check = [&](double t) {
     auto sig = s.Check(sm::Timestamp::Micros(Round(t * 1e6)));
     if (sig == sm::video::QualityScaler::Signal::kAdaptDown) {
       if (r.downs++ == 0) r.first_down_s = t;
@@ -233,7 +228,20 @@ ScalerResult ScalerOurs(const ScalerInput& in) {
       if (r.ups++ == 0) r.first_up_s = t;
       s.OnResolutionChanged();
     }
+  };
+  for (int64_t f = 0; f < n; ++f) {
+    const double t = static_cast<double>(f) / kFps;
+    // libwebrtc's CheckQpTask due at `t` runs before the frame at `t` is
+    // reported (ScalerWebrtc: RunUntil, then post the frame).
+    check(t);
+    const int qp = in.qp(f, t);
+    if (qp < 0) {
+      s.OnFrameDropped();
+    } else {
+      s.OnEncodedFrame(qp, sm::Timestamp::Micros(Round(t * 1e6)));
+    }
   }
+  check(in.seconds);
   return r;
 }
 

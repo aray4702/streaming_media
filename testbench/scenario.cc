@@ -313,6 +313,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "neteq") {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: neteq v1|v2");
       s.neteq_v2 = tok[1] == "v2";
+    } else if (key == "av_sync") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: av_sync on|off");
+      s.av_sync = tok[1] == "on";
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";
@@ -400,6 +403,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
+  if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
