@@ -441,12 +441,21 @@ ALGORITHMS = [
                "reordered packet moves the window start back and is reported again, no gap older than 0x7FFE is "
                "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
                "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "
-               "`tcc` switch were deleted in #167.",
+               "`tcc` switch were deleted in #167. "
+               "The session sends the first periodic feedback after the generator's default 100 ms, "
+               "and the interval from the local send estimate applies from then on: "
+               "`Call::EnsureStarted` (call/call.cc) starts the task that runs "
+               "`ReceiveSideCongestionController::MaybeProcess` before the Call hears its start rate, and "
+               "`TransportSequenceNumberFeedbackGenenerator::Process` returns the delay to its next run (#217).",
          verification="No defects found; maximum arrival-time error 249 us. Receive times now follow libwebrtc's "
                       "TransportFeedbackAdapter (`transport_feedback_adapter.cc:232-271`): a local time base that "
                       "starts at the first feedback's receive time and moves by the base-time delta, and every "
                       "packet's offset from the base time rounded down to 1 ms, so DelayBasedBwe groups packets "
-                      "as libwebrtc's does ([record](../../fixes/224-feedback-receive-time-ms.md), #224)."),
+                      "as libwebrtc's does ([record](../../fixes/224-feedback-receive-time-ms.md), #224). "
+                      "Issue #217: the first feedback went out "
+                      "at 50 ms where libwebrtc's goes out at 100 ms, so the first probe estimate came from the first "
+                      "cluster alone (`issue_120_rtx_payload_padding` seed 1: 913 kbps at 65 ms, libwebrtc 1608 at "
+                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
@@ -560,7 +569,11 @@ ALGORITHMS = [
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
                "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
                "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
-               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217).",
+               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217; "
+               "restored to 380 by #217's first-feedback timing, see 5.1). Provisional lock (PR #226, Owner 2026-10-22): "
+               "`issue_5_adjuster_default` `cc.queue_over_200ms_pct < 30` (was `< 13`; ours 26.55 on seed 1 with #217's "
+               "first-feedback timing and #272's call-start probe; 10-seed mean 13.84, libwebrtc 16.10, worst seed 36.0; "
+               "tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
