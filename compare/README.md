@@ -188,10 +188,11 @@ libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 | `loss_based` | `RtcEventBweUpdateLossBased` (`send_side_bandwidth_estimation.cc`): the send-side target, fraction lost and packets, when the target or fraction changes, and every 5 s | `GccController::TraceLossBased`, same condition |
 | `target` | `Call::Stats::send_bandwidth_bps` every 100 ms, when it changes | the controller's target, when it changes |
 
-`loss_state`, `loss_limit_bps` and `instant_ub_bps` (`LossBasedBweV2`'s state,
-loss-limited estimate and instant upper bound) are filled for this library only:
-the prebuilt libwebrtc logs no event for them and has no public accessor, so
-those columns are empty on its side. The files are `"sm_bwe"` and `"webrtc_bwe"` in
+`loss_state`, `loss_limit_bps` and `instant_ub_bps` are `LossBasedBweV2`'s state,
+loss-limited estimate and instant upper bound. libwebrtc logs no event for them, so
+`DetectorTraceController` reads its `LossBasedBweV2` after each GoogCC call and fills
+`loss_state` and `loss_limit_bps` on the `loss_based` rows that the call logged
+(issue #217). `instant_ub_bps` has no accessor, so it stays empty on libwebrtc's side. The files are `"sm_bwe"` and `"webrtc_bwe"` in
 each `"traces"` entry, `<scenario>.<seed>.{sm,webrtc}.bwe.csv` with `--trace-dir` and
 `--trace-all-dir` (so `main` publishes them in `parity-data/traces/`), and
 `sm_testbench --link-trace=DIR` writes ours alone.

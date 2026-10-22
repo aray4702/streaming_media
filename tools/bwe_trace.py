@@ -19,9 +19,9 @@ same CSV for both stacks:
   target       the target the call reports (libwebrtc: Call::Stats::send_bandwidth_bps
                every 100 ms; this library: GccController's target), when it changes.
 
-loss_state, loss_limit_bps and instant_ub_bps are LossBasedBweV2's state and are
-filled for this library only: the prebuilt libwebrtc has no event or public
-accessor for them. CI publishes the traces in compare-webrtc.json under
+loss_state, loss_limit_bps and instant_ub_bps are LossBasedBweV2's state. On
+libwebrtc's side sm_compare fills loss_state and loss_limit_bps (issue #217);
+instant_ub_bps has no accessor there and stays empty. CI publishes the traces in compare-webrtc.json under
 "traces" ("sm_bwe", "webrtc_bwe") and, on main, as
 <scenario>.<seed>.{sm,webrtc}.bwe.csv in parity-data/traces/.
 
