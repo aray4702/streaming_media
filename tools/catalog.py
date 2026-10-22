@@ -1204,7 +1204,12 @@ ALGORITHMS = [
                       "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
                       "set through `Syncable`, and the synchronizer runs every 1 s when both streams have new packets. "
                       "The e2e offset after settling went from 18.8 to 25 ms, and after the route change from 22.0 to 17 ms. Both "
-                      "are inside the 30 ms dead band. Not yet wired into the test bench call."),
+                      "are inside the 30 ms dead band. #77 step 2 wires it into the session behind `SessionConfig::av_sync` (scenario "
+                      "`av_sync on`, off by default): `rtp::Session` pairs its first audio and video receive streams as `Call::ConfigureSync` "
+                      "does for one `sync_group`, the receivers give `Syncable::Info` (the last SR and media packet; video's current delay is "
+                      "`VCMTiming::TargetVideoDelay`, audio's NetEq's `FilteredCurrentDelayMs`), and `SessionConfig::audio_rtcp` sends the "
+                      "audio stream's own SR, as libwebrtc's audio RtpRtcp module, which the audio side needs. On `issue_77_av_sync_clean_link` "
+                      "the A/V offset median goes from -53 to -16 ms (seed 1); `sm_compare` sets libwebrtc's `sync_group` for the same scenario."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
          problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
          headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],

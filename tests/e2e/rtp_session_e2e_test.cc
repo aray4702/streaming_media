@@ -27,7 +27,8 @@ class FakeDecoder : public AudioDecoder {
 };
 
 struct Endpoint {
-  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red)
+  explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red,
+                    TimeDelta video_min_playout = TimeDelta::Zero())
       : session(std::move(c)) {
     AudioStreamConfig a;
     a.ssrc = kAudioSsrc;
@@ -37,6 +38,7 @@ struct Endpoint {
     v.ssrc = kVideoSsrc;
     v.rtx_ssrc = kRtxSsrc;
     v.parser = parser;
+    v.timing.min_playout_delay = video_min_playout;
     audio_send = session.AddAudioSend(a);
     video_send = session.AddVideoSend(v);
     audio_recv = session.AddAudioReceive(a, dec);
@@ -69,6 +71,9 @@ struct Options {
   bool outage = false;
   bool mid = true;
   bool red = false;
+  bool av_sync = false;
+  int64_t duration_ms = 10000;
+  TimeDelta video_min_playout = TimeDelta::Zero();  // Bob's configured video minimum playout delay.
   uint64_t seed = 1;
 };
 
@@ -80,13 +85,20 @@ struct Result {
   int64_t longest_gap_ms = 0;
   double rtt_ms = 0;
   double target_kbps = 0;
+  bool synchronizer = false, audio_sync_info = false;
+  uint64_t sync_updates = 0;
+  int sync_video_target_ms = 0, sync_audio_target_ms = 0;
+  int64_t video_min_playout_ms = 0;
 };
 
 Result Run(const Options& o) {
   const test::TestVideoParser parser;
   FakeDecoder dec_a, dec_b;
-  Endpoint a(MakeConfig(10, "alice", o.mid), &parser, &dec_a, o.red);
-  Endpoint b(MakeConfig(20, "bob", o.mid), &parser, &dec_b, o.red);
+  SessionConfig ca = MakeConfig(10, "alice", o.mid), cb = MakeConfig(20, "bob", o.mid);
+  ca.audio_rtcp = cb.audio_rtcp = o.av_sync;
+  ca.av_sync = cb.av_sync = o.av_sync;
+  Endpoint a(ca, &parser, &dec_a, o.red);
+  Endpoint b(cb, &parser, &dec_b, o.red, o.video_min_playout);
 
   sim::LinkConfig lc;
   lc.base_delay = TimeDelta::Millis(25);
@@ -99,7 +111,7 @@ Result Run(const Options& o) {
   Result res;
   bool key_needed = true;
   int64_t frame_id = 0, last_render = -1;
-  const int64_t end_ms = 10000;
+  const int64_t end_ms = o.duration_ms;
   std::vector<float> pcm(480);
   for (int64_t t = 0; t < end_ms; ++t) {
     const Timestamp now = Timestamp::Millis(t);
@@ -164,6 +176,14 @@ Result Run(const Options& o) {
   res.audio_decoded = static_cast<uint64_t>(dec_b.decoded);
   res.rtt_ms = static_cast<double>(a.session.rtt().us()) / 1000.0;
   res.target_kbps = a.session.rates().target.kbps();
+  if (const sync::RtpStreamsSynchronizer* s = b.session.av_sync()) {
+    res.synchronizer = true;
+    res.sync_updates = s->updates();
+    res.sync_video_target_ms = s->last_targets().total_video_delay_target_ms;
+    res.sync_audio_target_ms = s->last_targets().total_audio_delay_target_ms;
+  }
+  res.audio_sync_info = b.session.audio_receiver(b.audio_recv).SyncInfo().has_value();
+  res.video_min_playout_ms = b.session.video_receiver(b.video_recv).vcm_timing().min_playout_delay().ms();
   return res;
 }
 }  // namespace
@@ -188,6 +208,35 @@ SM_TEST(E2E_RtpSession, CleanCallDeliversAudioAndVideoBothWays) {
   SM_EXPECT_GT(r.rtt_ms, 45.0);
   SM_EXPECT_LT(r.rtt_ms, 120.0);
   SM_EXPECT_GT(r.target_kbps, 0.0);
+}
+
+// #77: with lip sync on, the audio stream sends its own SR (as libwebrtc's
+// audio RtpRtcp module), so the receiver maps both streams to NTP, and
+// RtpStreamsSynchronizer sets the minimum playout delays every second.
+SM_TEST(E2E_RtpSession, LipSyncSetsMinimumPlayoutDelays) {
+  // Video held 300 ms at the receiver: audio, on its jitter buffer alone, plays well ahead of it.
+  Options o;
+  o.av_sync = true;
+  o.duration_ms = 30000;  // RtpToNtpEstimator needs two SRs of each stream; audio's come every ~5 s.
+  o.video_min_playout = TimeDelta::Millis(300);
+  Result r = Run(o);
+  SM_EXPECT_TRUE(r.synchronizer);
+  SM_EXPECT_TRUE(r.audio_sync_info);
+  SM_EXPECT_GT(r.sync_updates, 0u);
+  // Video is late, and has no extra delay to remove: audio is delayed (StreamSynchronization::ComputeDelays).
+  SM_EXPECT_GT(r.sync_audio_target_ms, 100);
+  // VideoReceiveStream2::UpdatePlayoutDelays: the larger of the configured and the synchronizer's minimum.
+  SM_EXPECT_EQ(r.video_min_playout_ms, std::max<int64_t>(300, r.sync_video_target_ms));
+  SM_EXPECT_GE(r.rendered, r.frames_sent - 10);
+  SM_EXPECT_GT(r.audio_decoded, 1200u);
+}
+
+SM_TEST(E2E_RtpSession, LipSyncOffSendsNoAudioSrBesideVideo) {
+  Result r = Run({});
+  SM_EXPECT_FALSE(r.synchronizer);
+  // Only the video stream's SR is sent, so audio has no RTP->NTP mapping.
+  SM_EXPECT_FALSE(r.audio_sync_info);
+  SM_EXPECT_EQ(r.video_min_playout_ms, 0);
 }
 
 SM_TEST(E2E_RtpSession, RoutesWithoutMidByPayloadTypeAndSsrc) {
