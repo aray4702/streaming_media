@@ -14,5 +14,6 @@ at 0s capacity=1000kbps delay=20ms queue=2s
 expect cc.queue_p95_ms < 65
 expect video.freeze_count == 0
 expect audio.mouth_to_ear_p95_ms < 280
-expect video.e2e_delay_p95_ms < 100
+# Was < 100. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 125 on seed 1; libwebrtc with sync_group 121.5 (mean of 10 seeds), worst seed 150.
+expect video.e2e_delay_p95_ms < 140
 expect cc.utilization_pct >= 86

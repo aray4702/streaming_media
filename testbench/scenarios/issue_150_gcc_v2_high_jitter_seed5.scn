@@ -9,7 +9,8 @@ describe issue_150_gcc_v2_high_jitter with seed 5: the seed where our target ran
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 seed 5
-expect cc.utilization_pct < 55
+# Was < 55. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 56.02 on seed 1 (mean of 10 seeds 40.6); libwebrtc with sync_group 38.4 (mean), worst seed 58.24, which caps the bound.
+expect cc.utilization_pct < 58
 expect cc.utilization_pct >= 25
 expect cc.queue_p95_ms < 40
 expect video.freeze_count == 0

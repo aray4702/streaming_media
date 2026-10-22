@@ -5,6 +5,7 @@ describe 5% random loss on a 2 Mbps link with 40 ms one-way delay: the loss-base
 duration 30s
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
 expect cc.utilization_pct >= 70
-expect video.freeze_total_ms < 200
+# Was < 200. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 226 on seed 1; libwebrtc with sync_group 415.2 (mean of 10 seeds), worst seed 1028.
+expect video.freeze_total_ms < 270
 expect audio.concealed_pct < 3
 expect audio.interruptions == 0
