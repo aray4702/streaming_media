@@ -1163,7 +1163,15 @@ ALGORITHMS = [
                       "(`testbench/encoder_model.h`, issue #84 step 1): QP 30 at libwebrtc's per-resolution start "
                       "rates (720p 1000 kbps, 360p 500 kbps), +6 per halving of the bits per frame, clamped to 0..51, "
                       "and 10 ms per 720p frame of encode time. Deviation: a model in place of a codec, identical on "
-                      "both stacks, so scaling decisions compare like for like."),
+                      "both stacks, so scaling decisions compare like for like. "
+                      "`version = 2` (issue #84 step 2) is libwebrtc M157's `QualityScaler` "
+                      "(`modules/video_coding/utility/quality_scaler.cc`) with `QualityScalingExperiment`'s default "
+                      "smoothers: 2 s checks until the first adapt-down, then 5 s; 60 frames over a 150-frame "
+                      "window; drop rate >= 60%; smoothed QP > high or <= low. `sm_video_compare` gives the same "
+                      "signals as libwebrtc on all six quality-scaler inputs "
+                      "([results](../../results/video-webrtc.md)); the unit tests port "
+                      "`quality_scaler_unittest.cc`. Version 1 stays the default until #84 wires version 2 "
+                      "into the send path."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
