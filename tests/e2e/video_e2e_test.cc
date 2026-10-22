@@ -284,10 +284,16 @@ SM_TEST(E2E_FrameScheduler, SmoothPlayoutOverJitteryNetwork) {
   SM_EXPECT_LE(smooth.stats().freeze_count, naive.stats().freeze_count);
 }
 
-SM_TEST(E2E_QualityScaler, ResolutionTracksBitrateViaQp) {
-  // Encoder model: QP rises ~6 per halving of bits per pixel (H.264-like).
+namespace {
+
+// Encoder model: QP rises ~6 per halving of bits per pixel (H.264-like).
+// Bandwidth 2500 -> 300 -> 2500 kbps for 30 s each; resolution follows the
+// scaler's signals down and up a 5-step ladder.
+void QualityScalerLadder(int version) {
   const std::vector<std::pair<int, int>> ladder = {{1280, 720}, {960, 540}, {640, 360}, {480, 270}, {320, 180}};
-  QualityScaler qs;
+  QualityScalerConfig cfg;
+  cfg.version = version;
+  QualityScaler qs(cfg);
   size_t step = 0;
   std::map<int, int> width_at;  // Phase -> width at end.
   std::map<int, int> qp_at;     // Phase -> QP at end.
@@ -296,8 +302,11 @@ SM_TEST(E2E_QualityScaler, ResolutionTracksBitrateViaQp) {
     auto [w, h] = ladder[step];
     double bpp = kbps * 1000 / (static_cast<double>(w) * h * 30);
     int qp = static_cast<int>(std::lround(std::clamp(26 - 6 * std::log2(bpp / 0.1), 10.0, 51.0)));
-    qs.OnEncodedFrame(qp);
+    // Version 2 checks before the frame at `t`, as libwebrtc's CheckQpTask
+    // due at `t` runs before that frame's ReportQp.
+    if (version == 1) qs.OnEncodedFrame(qp);
     auto sig = qs.Check(Timestamp::Millis(t));
+    if (version >= 2) qs.OnEncodedFrame(qp, Timestamp::Millis(t));
     if (sig == QualityScaler::Signal::kAdaptDown && step + 1 < ladder.size()) {
       ++step;
       qs.OnResolutionChanged();
@@ -319,3 +328,12 @@ SM_TEST(E2E_QualityScaler, ResolutionTracksBitrateViaQp) {
   SM_EXPECT_LE(qp_at[1], th.high);
   SM_EXPECT_EQ(width_at[2], 1280);
 }
+
+}  // namespace
+
+SM_TEST(E2E_QualityScaler, ResolutionTracksBitrateViaQp) { QualityScalerLadder(1); }
+
+// Version 2, libwebrtc M157's QualityScaler (#84): the same ladder with
+// libwebrtc's cadence (2 s, then 5 s after the first adapt-down), 60 frames
+// and smoothed QP.
+SM_TEST(E2E_QualityScaler, ResolutionTracksBitrateViaQpV2) { QualityScalerLadder(2); }
