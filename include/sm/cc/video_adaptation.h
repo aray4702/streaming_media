@@ -143,12 +143,8 @@ class CpuOveruseDetector : public MetricsSource {
 
  private:
   bool version2() const { return cfg_.version >= 2; }
-  // SendProcessingUsage1.
-  struct FrameTiming {
-    uint32_t timestamp;
-    int64_t capture_us;  // When first seen.
-    int64_t last_send_us = -1;
-  };
+  // SendProcessingUsage1's FrameTiming; capture_us is when the frame was first seen.
+  struct FrameTiming { uint32_t timestamp; int64_t capture_us; int64_t last_send_us = -1; };
   void ResetUsage();
   void ResetAll(int num_pixels);
   int UsageValue() const;
