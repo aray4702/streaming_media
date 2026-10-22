@@ -10,6 +10,7 @@
 #include <set>
 #include <unordered_map>
 
+#include "encoder_model.h"
 #include "opus_model.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
@@ -149,6 +150,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.delay_jitter_buffer_p95_ms", "95th percentile frame complete -> rendered (video jitter buffer and render timing)"},
       {"video.time_to_first_frame_ms", "Call start -> first rendered frame"},
       {"video.avg_kbps", "Average encoded video bitrate (quality proxy)"},
+      {"video.qp_mean", "Mean QP of encoded frames, from the encoder model both implementations share (testbench/encoder_model.h; H.264 0..51)"},
       {"video.keyframes", "Keyframes encoded"},
       {"video.keyframe_requests", "PLI/FIR received by the sender"},
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
@@ -199,10 +201,13 @@ DataRate AudioAllocationRate(const Scenario& s) {
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
-      "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms\n";
-  char ms[32];
+      "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
+      "encode_ms_mean\n";
+  char ms[96];
   for (const auto& r : trace) {
-    std::snprintf(ms, sizeof(ms), "%.1f", r.pacer_queue_ms);
+    const double n = r.encoded > 0 ? r.encoded : 1;
+    std::snprintf(ms, sizeof(ms), "%.1f,%.1f,%.2f", r.pacer_queue_ms, static_cast<double>(r.qp_sum) / n,
+                  static_cast<double>(r.encode_us_sum) / 1000.0 / n);
     out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
            std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
            std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
@@ -555,7 +560,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
-  int64_t video_bytes_encoded = 0;
+  int64_t video_bytes_encoded = 0, qp_sum = 0;
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
@@ -684,7 +689,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
       // The library decides: encode or drop, keyframe or not, and the rate.
-      const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({}, now);
+      const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
       const DataRate vr = dec.target;
       const bool key = dec.keyframe;
       ++vt_row.captured;
@@ -703,6 +708,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
         bytes = std::max<int64_t>(bytes, 200);
         vt_row.encoded_bytes += bytes;
+        const int qp = EncoderModel::Qp(bytes, key, s.video_width, s.video_height, s.video_complexity);
+        vt_row.qp_sum += qp;
+        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(s.video_width, s.video_height, s.encoder_speed);
+        qp_sum += qp;
         video_ctl.OnEncoded({DataSize::Bytes(bytes), key}, now);
         if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
@@ -922,6 +931,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
     av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
+    m["video.qp_mean"] = frames_encoded ? static_cast<double>(qp_sum) / static_cast<double>(frames_encoded) : 0;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(frames_skipped);

@@ -784,8 +784,9 @@ ALGORITHMS = [
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
          headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
-                  "audio/aec3_analysis.h", "audio/aec3_state.h"],
-         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State"], e2e=["E2E_EchoCanceller"],
+                  "audio/aec3_analysis.h", "audio/aec3_state.h", "audio/aec3_suppression.h"],
+         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression"],
+         e2e=["E2E_EchoCanceller"],
          bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
                 "audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
@@ -816,8 +817,19 @@ ALGORITHMS = [
                "`stationarity_estimator`, `transparent_mode` (the legacy classifier, M157's default; the HMM one through "
                "`TransparentMode::CreateHmm()` in place of the WebRTC-Aec3TransparentModeHmm trial) and "
                "`subtractor_output_analyzer`, with EchoCanceller3Config's Erle, EpStrength and EchoAudibility "
-               "defaults. Field trials are read as not set. Nothing in a call uses it yet: the residual echo estimator, "
-               "the suppression gain and filter, comfort noise and EchoCanceller3 are #240's next steps.",
+               "defaults. Field trials are read as not set. "
+               "AEC3's residual echo suppression (#240 step 4, `audio/aec3_suppression.h`) ports "
+               "`residual_echo_estimator` (linear S2 / ERLE, or the render power around the delay times the echo "
+               "path gain, with the render noise floor and soft noise gate, plus the reverb tail), "
+               "`suppression_gain` (echo-to-nearend and echo-to-noise masking thresholds per bin, gain rise and fall "
+               "limits, high-frequency and upper-band limits, the low-noise render detector), "
+               "`dominant_nearend_detector`, `subband_nearend_detector`, `moving_average_spectrum`, "
+               "`suppression_filter` (sqrt-Hanning overlap-add with comfort noise, upper bands delayed one block) "
+               "and `comfort_noise_generator`, with EchoCanceller3Config's Suppressor, ComfortNoise, EchoModel and "
+               "EpStrength defaults. Remaining differences: no neural residual echo estimator (optional in "
+               "libwebrtc and absent in a call); the Low{Early,Late}ReflectionsDefaultGain and "
+               "ErleOnsetCompensationInDominantNearend field trials are read as not set. Nothing in a call uses it "
+               "yet: EchoRemover, BlockProcessor and EchoCanceller3 are #240's next step.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
                       "capped ERLE at 12 dB. (2) Double talk corrupted the filter: the background filter partly "
                       "'cancels' near speech for a few blocks and was then copied to the foreground. An "
@@ -838,7 +850,13 @@ ALGORITHMS = [
                       "VerifyErleTrackingOnOnsets), signal_dependent_erle_estimator, reverb_model_estimator and "
                       "filter_analyzer (FilterResize) unit tests pass with their signals and bounds; echo_audibility, "
                       "transparent_mode and subtractor_output_analyzer, which have no libwebrtc unit tests, have "
-                      "behavioural tests derived from the code."),
+                      "behavioural tests derived from the code. AEC3's residual echo suppression (#240 step 4): "
+                      "libwebrtc's moving_average_spectrum, comfort_noise_generator (CorrectLevel), suppression_gain "
+                      "(BasicGainComputation, UpdateStateDependingOnConfig), suppression_filter (ComfortNoiseInUnityGain, "
+                      "SignalSuppression, SignalTransparency, Delay) and residual_echo_estimator (BasicTest for 1, 2 and "
+                      "4 render and capture channels, ReverbTest) unit tests pass with their signals and bounds; the "
+                      "death tests and the neural estimator's metrics tests don't apply. The two nearend detectors, "
+                      "which have no libwebrtc unit tests, have behavioural tests derived from the code."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
@@ -1144,7 +1162,11 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Per-region QP (ROI) is an encoder-side feature built on top of these thresholds.",
          verification="An expectation was wrong: at 300 kbps, 640x360 already gives QP 33, which is inside the "
                       "H.264 band, so not going lower is correct. The test now checks that QP returns inside the "
-                      "band."),
+                      "band. The test bench and `sm_compare` share an encoder model for this module's inputs "
+                      "(`testbench/encoder_model.h`, issue #84 step 1): QP 30 at libwebrtc's per-resolution start "
+                      "rates (720p 1000 kbps, 360p 500 kbps), +6 per halving of the bits per frame, clamped to 0..51, "
+                      "and 10 ms per 720p frame of encode time. Deviation: a model in place of a codec, identical on "
+                      "both stacks, so scaling decisions compare like for like."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
@@ -1153,18 +1175,28 @@ ALGORITHMS = [
          scenario="120 s with a sender audio clock 80 ppm off its NTP clock; SRs every second over a jittery "
                   "link. Every 20 ms the estimated capture time of the current RTP timestamp is compared with "
                   "the truth.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected. "
+                      "#77 ported libwebrtc M157's SR validation (`rtc_base/rtp_to_ntp_estimator.cc`): it compares a new SR with the "
+                      "newest one (NTP forward by at most 1 h, RTP forward by at most 1 << 25 ticks) and clears the history after 3 "
+                      "invalid SRs, where ours rejected points 30 ms off the fitted line. The line is fitted in NTP units, as libwebrtc fits it. "
+                      "The e2e capture-time error on the 80 ppm clock is unchanged (0.014 ms)."),
     dict(id="8.2", slug="stream-sync", title="Audio/video synchronization and CNAME sync groups",
          problems=["Lip-sync (A/V sync) -> the receiver aligns playout delay between streams",
                    "Synchronizing multiple streams from one sender -> shared CNAME, MediaStream grouping"],
          headers=["sync/stream_sync.h"], unit=["StreamSync"], e2e=["E2E_StreamSync"],
          bench=["sync/StreamSync_Update"],
          scenario="Audio (30 ms network, 60 ms buffer) and video (90 ms network, 40 ms decode/render) from one "
-                  "CNAME; at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after "
-                  "settling and after the route change.",
+                  "CNAME, each playing out after max(its buffer, the minimum playout delay the synchronizer sets); "
+                  "at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after settling and "
+                  "after the route change.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
          verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
-                      "(40 ms offset)."),
+                      "(40 ms offset). #77 ported libwebrtc M157's `StreamSynchronization` and `RtpStreamsSynchronizer` "
+                      "(`video/stream_synchronization.cc`, `video/rtp_streams_synchronizer2.cc`, `call/syncable.h`). The filter "
+                      "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
+                      "set through `Syncable`, and the synchronizer runs every 1 s when both streams have new packets. "
+                      "The e2e offset after settling went from 18.8 to 25 ms, and after the route change from 22.0 to 17 ms. Both "
+                      "are inside the 30 ms dead band. Not yet wired into the test bench call."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
          problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
          headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],

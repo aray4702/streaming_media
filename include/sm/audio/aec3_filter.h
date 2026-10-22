@@ -166,6 +166,67 @@ struct EchoModelConfig {
   bool model_reverb_in_nonlinear_mode = true;
 };
 
+// EchoCanceller3Config::ComfortNoise with M157's defaults.
+struct ComfortNoiseConfig {
+  float noise_floor_dbfs = -96.03406f;
+};
+
+// EchoCanceller3Config::Suppressor with M157's defaults.
+struct SuppressorConfig {
+  struct MaskingThresholds {
+    float enr_transparent;
+    float enr_suppress;
+    float emr_transparent;
+  };
+  struct Tuning {
+    MaskingThresholds mask_lf;
+    MaskingThresholds mask_hf;
+    float max_inc_factor;
+    float max_dec_factor_lf;
+  };
+  size_t nearend_average_blocks = 4;
+  Tuning normal_tuning = {{.3f, .4f, .3f}, {.07f, .1f, .3f}, 2.0f, 0.25f};
+  Tuning nearend_tuning = {{1.09f, 1.1f, .3f}, {.1f, .3f, .3f}, 2.0f, 0.25f};
+  bool lf_smoothing_during_initial_phase = true;
+  int last_permanent_lf_smoothing_band = 0;
+  int last_lf_smoothing_band = 5;
+  int last_lf_band = 5;
+  int first_hf_band = 8;
+  struct DominantNearendDetection {
+    float enr_threshold = .25f;
+    float enr_exit_threshold = 10.f;
+    float snr_threshold = 30.f;
+    int hold_duration = 50;
+    int trigger_threshold = 12;
+    bool use_during_initial_phase = true;
+    bool use_unbounded_echo_spectrum = true;
+  } dominant_nearend_detection;
+  struct SubbandNearendDetection {
+    size_t nearend_average_blocks = 1;
+    struct SubbandRegion {
+      size_t low;
+      size_t high;
+    };
+    SubbandRegion subband1 = {1, 1};
+    SubbandRegion subband2 = {1, 1};
+    float nearend_threshold = 1.f;
+    float snr_threshold = 1.f;
+  } subband_nearend_detection;
+  bool use_subband_nearend_detection = false;
+  struct HighBandsSuppression {
+    float enr_threshold = 1.f;
+    float max_gain_during_echo = 1.f;
+    float anti_howling_activation_threshold = 400.f;
+    float anti_howling_gain = 1.f;
+  } high_bands_suppression;
+  struct HighFrequencySuppression {
+    int limiting_gain_band = 16;
+    int bands_in_limiting_gain = 1;
+  } high_frequency_suppression;
+  float floor_first_increase = 0.00001f;
+  bool conservative_hf_suppression = false;
+};
+
 // The parts of EchoCanceller3Config this module reads.
 struct Aec3Config {
   DelayConfig delay;
@@ -175,6 +236,8 @@ struct Aec3Config {
   EchoAudibilityConfig echo_audibility;
   EchoRemovalControlConfig echo_removal_control;
   EchoModelConfig echo_model;
+  ComfortNoiseConfig comfort_noise;
+  SuppressorConfig suppressor;
   // config.render_levels
   float active_render_limit = 100.f;
   float poor_excitation_render_limit = 150.f;
