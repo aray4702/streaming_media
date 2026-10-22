@@ -16,12 +16,12 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 | Block | Ours | libwebrtc | Input |
 |---|---|---|---|
 | Freeze detection | `video::FreezeDetector` (`src/video/freeze_detector.cc`), which the test bench and both sides of `sm_compare` use for `video.freeze_*` | `internal::VideoQualityObserver` (`video/video_quality_observer2.cc`), the class behind getStats' `freezeCount` and `totalFreezesDuration` | Render times. A gap of 5 s or more gets `OnStreamInactive()` 5 s into it, as `VideoReceiveStream2` calls it when no packet arrived for `kInactiveDuration` (`video/video_receive_stream2.cc`) |
-| Quality scaling | `video::QualityScaler` (`src/video/quality_scaler.cc`; not in the call path yet) | `QualityScaler` (`modules/video_coding/utility/quality_scaler.cc`) at its default field trials, on a simulated task queue | Per-frame QP at 30 fps for 30 s, H.264 thresholds 24/37. Both clear their samples after a signal, as libwebrtc's `CheckQpTask` does (ours through `OnResolutionChanged()`); the QP input does not react to the signal |
+| Quality scaling | `video::QualityScaler` version 2 (`src/video/quality_scaler.cc`, the port of libwebrtc's, #84; not in the call path yet) | `QualityScaler` (`modules/video_coding/utility/quality_scaler.cc`) at its default field trials, on a simulated task queue | Per-frame QP at 30 fps for 30 s, H.264 thresholds 24/37. Both clear their samples after a signal, as libwebrtc's `CheckQpTask` does; ours checks before the frame at the same time, as libwebrtc's task runs before that frame's `ReportQp`; the QP input does not react to the signal |
 | Frame timing | `timing::VcmTiming` (`src/timing/vcm_timing.cc`, the #24 port) | `VCMTiming` with its `DefaultVideoJitterTiming` (`modules/video_coding/timing/timing.cc`) | Frame arrivals (30 or 15 fps, 50 ms base delay, Gaussian jitter, a delay step, retransmitted frames at RTT 100 ms), 40 KB keyframe then 4-6 KB frames. Driven in `video/video_stream_buffer_controller.cc`'s order: `OnCompleteFrame` on arrival; the front frame is scheduled at its latest decode time (render time - decode estimate - render delay, or at once if that has passed, as `frame_decode_timing.cc`), then `OnDecodableTemporalUnit`, `UpdateCurrentDelay` unless retransmitted, and a 5 ms decode time. Metrics skip the first quarter of the run |
 
 ## Results
 
-`main` @ f944afa plus this tool.
+`main` @ f944afa plus this tool. The quality-scaler rows are `QualityScaler` version 2 (#84 step 2), from the same `ScalerOurs` code.
 
 | module | scenario | metric | ours | libwebrtc | note |
 |---|---|---|---|---|---|
@@ -48,8 +48,8 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 | freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | freezes | 57.0 | 57.0 |  |
 | freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | total freeze duration (ms) | 26580.0 | 26580.0 |  |
 | freeze detection | 30 fps, 2% of frames followed by a 100-800 ms gap, 120 s | harmonic fps | 7.0 | 7.0 |  |
-| quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | adapt-down signals | 19.0 | 6.0 |  |
-| quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | first adapt-down (s) | 1.5 | 2.0 | -1: none |
+| quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | adapt-down signals | 6.0 | 6.0 |  |
+| quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | first adapt-down (s) | 2.0 | 2.0 | -1: none |
 | quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | adapt-up signals | 0.0 | 0.0 |  |
 | quality scaler | H.264, QP 40 (above 37), 30 fps, 30 s | first adapt-up (s) | -1.0 | -1.0 | -1: none |
 | quality scaler | H.264, QP 30 (between 24 and 37) | adapt-down signals | 0.0 | 0.0 |  |
@@ -58,18 +58,18 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
 | quality scaler | H.264, QP 30 (between 24 and 37) | first adapt-up (s) | -1.0 | -1.0 | -1: none |
 | quality scaler | H.264, QP 18 (below 24) | adapt-down signals | 0.0 | 0.0 |  |
 | quality scaler | H.264, QP 18 (below 24) | first adapt-down (s) | -1.0 | -1.0 | -1: none |
-| quality scaler | H.264, QP 18 (below 24) | adapt-up signals | 19.0 | 15.0 |  |
-| quality scaler | H.264, QP 18 (below 24) | first adapt-up (s) | 1.5 | 2.0 | -1: none |
-| quality scaler | H.264, QP 40 for 10 s, then 18 | adapt-down signals | 6.0 | 2.0 |  |
-| quality scaler | H.264, QP 40 for 10 s, then 18 | first adapt-down (s) | 1.5 | 2.0 | -1: none |
-| quality scaler | H.264, QP 40 for 10 s, then 18 | adapt-up signals | 13.0 | 2.0 |  |
-| quality scaler | H.264, QP 40 for 10 s, then 18 | first adapt-up (s) | 10.5 | 22.0 | -1: none |
-| quality scaler | H.264, QP uniform 30-45 (mean 37.5) | adapt-down signals | 15.0 | 0.0 |  |
-| quality scaler | H.264, QP uniform 30-45 (mean 37.5) | first adapt-down (s) | 1.5 | -1.0 | -1: none |
+| quality scaler | H.264, QP 18 (below 24) | adapt-up signals | 15.0 | 15.0 |  |
+| quality scaler | H.264, QP 18 (below 24) | first adapt-up (s) | 2.0 | 2.0 | -1: none |
+| quality scaler | H.264, QP 40 for 10 s, then 18 | adapt-down signals | 2.0 | 2.0 |  |
+| quality scaler | H.264, QP 40 for 10 s, then 18 | first adapt-down (s) | 2.0 | 2.0 | -1: none |
+| quality scaler | H.264, QP 40 for 10 s, then 18 | adapt-up signals | 2.0 | 2.0 |  |
+| quality scaler | H.264, QP 40 for 10 s, then 18 | first adapt-up (s) | 22.0 | 22.0 | -1: none |
+| quality scaler | H.264, QP uniform 30-45 (mean 37.5) | adapt-down signals | 0.0 | 0.0 |  |
+| quality scaler | H.264, QP uniform 30-45 (mean 37.5) | first adapt-down (s) | -1.0 | -1.0 | -1: none |
 | quality scaler | H.264, QP uniform 30-45 (mean 37.5) | adapt-up signals | 0.0 | 0.0 |  |
 | quality scaler | H.264, QP uniform 30-45 (mean 37.5) | first adapt-up (s) | -1.0 | -1.0 | -1: none |
-| quality scaler | H.264, QP 30, 70% of frames dropped | adapt-down signals | 19.0 | 6.0 |  |
-| quality scaler | H.264, QP 30, 70% of frames dropped | first adapt-down (s) | 1.5 | 2.0 | -1: none |
+| quality scaler | H.264, QP 30, 70% of frames dropped | adapt-down signals | 6.0 | 6.0 |  |
+| quality scaler | H.264, QP 30, 70% of frames dropped | first adapt-down (s) | 2.0 | 2.0 | -1: none |
 | quality scaler | H.264, QP 30, 70% of frames dropped | adapt-up signals | 0.0 | 0.0 |  |
 | quality scaler | H.264, QP 30, 70% of frames dropped | first adapt-up (s) | -1.0 | -1.0 | -1: none |
 | frame timing | 30 fps, 50 ms delay, no jitter | jitter delay, mean (ms) | 11.0 | 11.0 |  |
@@ -126,22 +126,21 @@ cmake --build out/compare -j 4 --target sm_video_compare   # prints the table af
   freezes stay in it, the average is rounded down to whole ms, and the test
   starts at the 5th interval. Every freeze row above is the same on both
   sides ([fix record](../fixes/268-freeze-rule-as-libwebrtc.md)).
-- **Quality scaling: a large gap (owned by #84).** libwebrtc checks QP 2 s
-  after the start and after a "low QP" signal (`fast_rampup_`), and 5 s
-  after a "high QP" one (`kMeasureMs` 2000 x `kSamplePeriodScaleFactor`
-  2.5); it needs 60 frames (`kMinFramesNeededToScale`), averages QP over the
-  last 150 frames (rounded down), and adapts down at a drop rate of 60% or
-  more. Ours checks every 1.5 s with an exponential average (0.15 per
-  frame) and 15 frames. With QP 40 throughout, ours signals adapt-down 19
-  times in 30 s against libwebrtc's 6. After QP falls from 40 to 18 at 10 s,
-  ours adapts up at 10.5 s and libwebrtc at 22 s: its check at 12 s still
-  averages QP-40 frames, and `QualityScalingExperiment`, on by default in
-  the binary, smooths the QP further (with
-  `WebRTC-Video-QualityScaling/Disabled/` it adapts up at 17 s instead). A
-  QP that averages 37.5 is "high" for ours and not for libwebrtc. Our
-  scaler is not in the call path
-  yet; #84 (video adaptation as libwebrtc) ports it with the rest of
-  `VideoStreamEncoder`'s adaptation.
+- **Quality scaling: the same (#84 step 2).** `QualityScaler` version 2
+  is libwebrtc M157's: the first check 2 s after the start, every 2 s while
+  `fast_rampup_` (until the first adapt-down), then every 5 s (`kMeasureMs`
+  2000 x `kSamplePeriodScaleFactor` 2.5), or 1 s after a check that saw too
+  few frames; 60 frames (`kMinFramesNeededToScale`) over a 150-frame drop
+  window; adapt down at a drop rate of 60% or more or a smoothed QP above
+  `high`, up at one at or below `low`. QP is smoothed as
+  `QualityScalingExperiment` does by default (two exponential filters per
+  ms, alpha 0.9995 for the high check and 0.9999 for the low one), which is
+  why libwebrtc adapts up at 22 s, not 17 s, after QP falls from 40 to 18 at
+  10 s. Every quality-scaler row above is the same on both sides. Version 1
+  (1.5 s checks, an exponential average of 0.15 per frame, 15 frames) gave
+  19 adapt-downs against 6 with QP 40 throughout, adapted up at 10.5 s in
+  the 40-then-18 case and called a QP averaging 37.5 "high". The scaler is
+  not in the call path yet; #84's next steps wire it into the send path.
 
 ## Caveats
 

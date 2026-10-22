@@ -127,10 +127,15 @@ class AudioJitterBuffer : public MetricsSource {
   int TargetDelayMs() const;
   double CurrentLevelMs() const;
   // Extra minimum delay, e.g. requested by audio/video synchronization.
-  void SetMinimumDelayMs(int ms) {
+  // Version 2 returns DelayConstraints::SetMinimumDelay's result.
+  bool SetMinimumDelayMs(int ms) {
     min_delay_ms_ = ms;
-    neteq_delay_.SetMinimumDelay(ms);
+    return neteq_delay_.SetMinimumDelay(ms) || cfg_.version < 2;
   }
+  // NetEqImpl::FilteredCurrentDelayMs (version 2): the filtered packet
+  // buffer level plus the decoded audio not yet played, truncated to ms.
+  // Version 1 gives its own filtered level.
+  int FilteredCurrentDelayMs() const;
   const AudioJitterBufferStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

@@ -1,5 +1,6 @@
 // Section 7 unit tests.
 #include <cmath>
+#include <functional>
 #include <vector>
 
 #include "sm/core/random.h"
@@ -349,4 +350,134 @@ SM_TEST(QualityScaler, ThresholdsAndSignals) {
   for (int i = 0; i < 20; ++i) d.OnFrameDropped();
   for (int i = 0; i < 5; ++i) d.OnEncodedFrame(20);
   SM_EXPECT_TRUE(d.Check(Ms(0)) == QualityScaler::Signal::kAdaptDown);  // 80% dropped.
+}
+
+// Version 2: libwebrtc M157's QualityScaler. These are the cases of
+// modules/video_coding/utility/quality_scaler_unittest.cc (thresholds 15/40,
+// 150 frames per TriggerScale, every sample at time 0), run on M157's real
+// cadence instead of the test's 5 ms period: the first check comes 2 s after
+// the first Check() call.
+namespace {
+
+QualityScaler V2Scaler() {
+  QualityScalerConfig cfg;
+  cfg.thresholds = {15, 40};
+  cfg.version = 2;
+  return QualityScaler(cfg);
+}
+
+// Starts the check timer at 0 and runs `feed`, then the first check at 2 s.
+QualityScaler::Signal FirstCheck(QualityScaler& q, const std::function<void()>& feed) {
+  SM_EXPECT_TRUE(q.Check(Ms(0)) == QualityScaler::Signal::kNone);
+  feed();
+  SM_EXPECT_TRUE(q.Check(Ms(1999)) == QualityScaler::Signal::kNone);
+  return q.Check(Ms(2000));
+}
+
+}  // namespace
+
+SM_TEST(QualityScaler, V2DownscalesAfterContinuousFramedrop) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 150; ++i) q.OnFrameDropped(); }) ==
+                 QualityScaler::Signal::kAdaptDown);
+}
+
+SM_TEST(QualityScaler, V2KeepsScaleAtHighQp) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 150; ++i) q.OnEncodedFrame(40, Ms(0)); }) ==
+                 QualityScaler::Signal::kNone);
+}
+
+SM_TEST(QualityScaler, V2DownscalesAboveHighQp) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 150; ++i) q.OnEncodedFrame(41, Ms(0)); }) ==
+                 QualityScaler::Signal::kAdaptDown);
+}
+
+SM_TEST(QualityScaler, V2DownscalesAfterTwoThirdsFramedrop) {
+  // Also DownscalesAfterTwoThirdsIfFieldTrialEnabled: QualityScalingExperiment
+  // is on by default and counts drops by the encoder too.
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] {
+                   for (int i = 0; i < 150; ++i) {
+                     q.OnFrameDropped();
+                     q.OnFrameDropped();
+                     q.OnEncodedFrame(40, Ms(0));
+                   }
+                 }) == QualityScaler::Signal::kAdaptDown);
+}
+
+SM_TEST(QualityScaler, V2DoesNotDownscaleAfterHalfFramedrop) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] {
+                   for (int i = 0; i < 150; ++i) {
+                     q.OnFrameDropped();
+                     q.OnEncodedFrame(40, Ms(0));
+                   }
+                 }) == QualityScaler::Signal::kNone);
+}
+
+SM_TEST(QualityScaler, V2KeepsScaleOnNormalQp) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 150; ++i) q.OnEncodedFrame(16, Ms(0)); }) ==
+                 QualityScaler::Signal::kNone);
+}
+
+SM_TEST(QualityScaler, V2ScalesDownAndBackUp) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 150; ++i) q.OnFrameDropped(); }) ==
+                 QualityScaler::Signal::kAdaptDown);
+  for (int i = 0; i < 150; ++i) q.OnEncodedFrame(15, Ms(2000));
+  // After the first adapt-down the period is 2 s x 2.5.
+  SM_EXPECT_TRUE(q.Check(Ms(6999)) == QualityScaler::Signal::kNone);
+  SM_EXPECT_TRUE(q.Check(Ms(7000)) == QualityScaler::Signal::kAdaptUp);
+}
+
+SM_TEST(QualityScaler, V2DoesNotScaleUntilEnoughFramesObserved) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 59; ++i) q.OnEncodedFrame(15, Ms(0)); }) ==
+                 QualityScaler::Signal::kNone);
+  q.OnEncodedFrame(15, Ms(0));  // The 60th frame.
+  // Still in fast rampup: the next check is 2 s later.
+  SM_EXPECT_TRUE(q.Check(Ms(3999)) == QualityScaler::Signal::kNone);
+  SM_EXPECT_TRUE(q.Check(Ms(4000)) == QualityScaler::Signal::kAdaptUp);
+  // Samples are cleared after a report.
+  q.OnEncodedFrame(15, Ms(4000));
+  SM_EXPECT_TRUE(q.Check(Ms(6000)) == QualityScaler::Signal::kNone);
+  SM_EXPECT_EQ(q.average_qp(), 15.0);
+}
+
+SM_TEST(QualityScaler, V2ScalesDownAndBackUpWithMinFramesNeeded) {
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 60; ++i) q.OnEncodedFrame(41, Ms(0)); }) ==
+                 QualityScaler::Signal::kAdaptDown);
+  for (int i = 0; i < 60; ++i) q.OnEncodedFrame(15, Ms(2000));
+  SM_EXPECT_TRUE(q.Check(Ms(7000)) == QualityScaler::Signal::kAdaptUp);
+}
+
+SM_TEST(QualityScaler, V2HalfPeriodWhileTooFewFramesAfterRampup) {
+  // CheckQpTask::GetCheckingQpDelayMs: with QualityScalingExperiment on, a
+  // check that saw too few frames is followed by one after 1 s, not 5 s.
+  auto q = V2Scaler();
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 60; ++i) q.OnEncodedFrame(41, Ms(0)); }) ==
+                 QualityScaler::Signal::kAdaptDown);
+  SM_EXPECT_TRUE(q.Check(Ms(7000)) == QualityScaler::Signal::kNone);  // No frames since.
+  for (int i = 0; i < 60; ++i) q.OnEncodedFrame(41, Ms(7000));
+  SM_EXPECT_TRUE(q.Check(Ms(7999)) == QualityScaler::Signal::kNone);
+  SM_EXPECT_TRUE(q.Check(Ms(8000)) == QualityScaler::Signal::kAdaptDown);
+}
+
+SM_TEST(QualityScaler, V2SmoothsQpOverTime) {
+  // QpSmoother: alpha 0.9995 per ms for the high check. 40 for 10 s at 30 fps,
+  // then 18: the high filter is still above 37 a few frames into the 18s.
+  QualityScalerConfig cfg;
+  cfg.version = 2;  // H.264 24/37.
+  QualityScaler q(cfg);
+  q.Check(Ms(0));
+  int64_t t = 0;
+  for (; t < 10000; t += 33) q.OnEncodedFrame(40, Ms(t));
+  SM_EXPECT_NEAR(q.average_qp(), 40.0, 1e-3);
+  q.OnEncodedFrame(18, Ms(t));
+  // 0.9995^33 = 0.98363: 40 - 22 x (1 - 0.98363) = 39.64.
+  SM_EXPECT_NEAR(q.average_qp(), 39.64, 0.01);
 }

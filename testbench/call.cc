@@ -457,9 +457,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   };
   rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
+  sender_cfg.audio_rtcp = s.av_sync;  // The audio SR lip sync needs (issue #77).
   rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
   // Receiver reports on the call's 1 s grid, half a period after the sender's.
   if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
+  receiver_cfg.av_sync = s.av_sync;  // Issue #77.
   rtp::Session sender(sender_cfg), receiver(receiver_cfg);
 
   rtp::AudioStreamConfig audio_cfg;
@@ -534,6 +536,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
   registry.Register("receiver.freezes", &freezes);
+  if (receiver.av_sync()) registry.Register("receiver.av_sync", receiver.av_sync());
   if (s.video) {
     registry.Register("sender.video", &sender.video_sender(video_send));
     const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
