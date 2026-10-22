@@ -1,0 +1,9 @@
+name yardstick_301_feedback_loss_50
+describe Yardstick for issue 301: clean 2 Mbps link with 50% of the feedback packets lost (seeds 2-11 in sm_compare)
+# The Tester's repro.scn from #301. Seed 2 is one of the seeds on which our send
+# rate stays near the 300 kbps start rate; sm_compare runs seeds 2-11 and traces
+# seed 2 (kDefaultTraced). No expect lines: this measures, it doesn't judge.
+duration 30s
+seed 2
+at 0s capacity=2000kbps delay=30ms queue=300ms
+reverse at 0s delay=30ms loss=50%
