@@ -1,0 +1,6 @@
+name yardstick_204_cross_1800
+describe Yardstick for #204: 1800 kbps of non-responsive cross traffic joins a 3 Mbps bottleneck (300 ms queue) at 10 s and leaves at 25 s
+duration 40s
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=1800kbps
+at 25s cross=0kbps
