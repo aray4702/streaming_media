@@ -1172,18 +1172,28 @@ ALGORITHMS = [
          scenario="120 s with a sender audio clock 80 ppm off its NTP clock; SRs every second over a jittery "
                   "link. Every 20 ms the estimated capture time of the current RTP timestamp is compared with "
                   "the truth.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No algorithm defects; one unit test's reject counting was corrected. "
+                      "#77 ported libwebrtc M157's SR validation (`rtc_base/rtp_to_ntp_estimator.cc`): it compares a new SR with the "
+                      "newest one (NTP forward by at most 1 h, RTP forward by at most 1 << 25 ticks) and clears the history after 3 "
+                      "invalid SRs, where ours rejected points 30 ms off the fitted line. The line is fitted in NTP units, as libwebrtc fits it. "
+                      "The e2e capture-time error on the 80 ppm clock is unchanged (0.014 ms)."),
     dict(id="8.2", slug="stream-sync", title="Audio/video synchronization and CNAME sync groups",
          problems=["Lip-sync (A/V sync) -> the receiver aligns playout delay between streams",
                    "Synchronizing multiple streams from one sender -> shared CNAME, MediaStream grouping"],
          headers=["sync/stream_sync.h"], unit=["StreamSync"], e2e=["E2E_StreamSync"],
          bench=["sync/StreamSync_Update"],
          scenario="Audio (30 ms network, 60 ms buffer) and video (90 ms network, 40 ms decode/render) from one "
-                  "CNAME; at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after "
-                  "settling and after the route change.",
+                  "CNAME, each playing out after max(its buffer, the minimum playout delay the synchronizer sets); "
+                  "at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after settling and "
+                  "after the route change.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
          verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
-                      "(40 ms offset)."),
+                      "(40 ms offset). #77 ported libwebrtc M157's `StreamSynchronization` and `RtpStreamsSynchronizer` "
+                      "(`video/stream_synchronization.cc`, `video/rtp_streams_synchronizer2.cc`, `call/syncable.h`). The filter "
+                      "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
+                      "set through `Syncable`, and the synchronizer runs every 1 s when both streams have new packets. "
+                      "The e2e offset after settling went from 18.8 to 25 ms, and after the route change from 22.0 to 17 ms. Both "
+                      "are inside the 30 ms dead band. Not yet wired into the test bench call."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
          problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
          headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],
