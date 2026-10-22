@@ -10,6 +10,6 @@ seed 1
 duration 20s
 audio_sample_rate 24000
 at 0s capacity=2000kbps delay=40ms loss=3%
-expect audio.time_to_first_ms < 1000
+expect audio.time_to_first_ms <= 53
 expect video.frames_rendered > 500
 expect video.freeze_count <= 2

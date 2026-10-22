@@ -9,7 +9,7 @@ seed 1
 duration 20s
 audio_sample_rate 24000
 at 0s capacity=2000kbps delay=40ms loss=3%
-expect audio.time_to_first_ms < 1000
+expect audio.time_to_first_ms <= 53
 expect audio.jb_delay_p95_ms > 40
 expect audio.concealed_pct > 0
 expect audio.mouth_to_ear_p95_ms > 120

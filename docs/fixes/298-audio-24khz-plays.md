@@ -47,14 +47,17 @@ clock it does not decode at (#256's unit and e2e tests keep that covered).
 
 `issue_256_audio_24khz`'s `expect audio.time_to_first_ms > 19000` encoded
 the discard, behaviour libwebrtc does not have on this call (libwebrtc 53 ms
-there). It becomes `< 1000` (program.md 0.2, guard rails during a port;
-`needs-human`).
+there). It becomes `<= 53` (program.md 0.2, guard rails during a port;
+signed off by the Owner on PR #307 under the tight rule): ours is 52 ms on
+seeds 1-10, and libwebrtc's 10-seed mean on this scenario is 53.0 ms, so its
+worst seed is at least 53 and the bound is not above it. The new scenario
+uses the same bound.
 
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_298_audio_24khz_plays.scn` | `audio.time_to_first_ms` 20000 (expect < 1000), `audio.jb_delay_p95_ms` 0 (> 40), `audio.concealed_pct` 0 (> 0), `audio.mouth_to_ear_p95_ms` 82.2 (> 120) | 52, 100, 0.25, 182.2 |
+| `testbench/scenarios/issue_298_audio_24khz_plays.scn` | `audio.time_to_first_ms` 20000 (expect <= 53), `audio.jb_delay_p95_ms` 0 (> 40), `audio.concealed_pct` 0 (> 0), `audio.mouth_to_ear_p95_ms` 82.2 (> 120) | 52, 100, 0.25, 182.2 |
 | `tests/unit/testbench/testbench_metrics_test.cc` `TestbenchMetrics.AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRun` | does not build (no `AudioCodecRate`); a 24 kHz call has no audio | passes |
 
 ## Results
