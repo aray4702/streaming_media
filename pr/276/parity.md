@@ -6,7 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-178 gaps on `main`, 170 here: **25 closed, 17 opened**, 0 changed direction.
+180 gaps on `main`, 170 here: **25 closed, 15 opened**, 0 changed direction.
 
 Closed:
 
@@ -54,9 +54,7 @@ Opened:
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 952 | 1221 | ±198 | ahead | 9/10 | #24, #37 |
 | issue_76_rtx_v2_keyframe_flush | `sync.av_offset_p95_ms` | 472 | 737 | ±198 | ahead | 9/10 | #77 |
 | issue_84_encoder_qp_360p_low_rate | `audio.jb_delay_p95_ms` | 124 | 145 | ±19.0 | ahead | 5/10 | #62, #63 |
-| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.6 | 113 | ±12.7 | ahead | 6/10 | #77 |
 | issue_84_encoder_qp_720p_low_rate | `audio.jb_delay_p95_ms` | 124 | 145 | ±19.0 | ahead | 5/10 | #62, #63 |
-| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.6 | 113 | ±12.7 | ahead | 6/10 | #77 |
 | pacer_v2_capacity_drop | `video.freeze_count` | 1.4 | 2.2 | ±0.8 | ahead | 7/10 | #5, #37, #24 |
 | probe_v2_capacity_drop | `video.freeze_count` | 1.4 | 2.2 | ±0.8 | ahead | 7/10 | #5, #37, #24 |
 
