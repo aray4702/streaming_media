@@ -132,6 +132,8 @@ class RtpStreamsSynchronizer : public MetricsSource {
   void UpdateDelay(Timestamp now);
   std::optional<StreamSyncOffset> GetStreamSyncOffsetInMs(uint32_t rtp_timestamp, int64_t render_time_ms,
                                                           Timestamp now) const;
+  uint64_t updates() const { return updates_; }  // Runs that computed new delay targets.
+  const StreamSynchronization::DelayTargets& last_targets() const { return last_targets_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

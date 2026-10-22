@@ -210,8 +210,9 @@ void HighPass(bool apm_v2) {
       SegmentDb(webrtc_t.out, 3, 20) - in);
 }
 
-// E2E_EchoDelay: far end only, echo path 60 ms, then 180 ms at 12 s.
-void EchoRouteChange() {
+// E2E_EchoDelay: far end only, echo path 60 ms, then 180 ms at 12 s. With
+// `apm_v2`, our side is the port of libwebrtc's AEC3 (#240).
+void EchoRouteChange(bool apm_v2) {
   CallScenario s;
   s.seconds = 24;
   s.echo_delay_ms = 60;
@@ -220,34 +221,41 @@ void EchoRouteChange() {
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, false, false, false};
-  auto ours = RunOurs(c, cc);
+  ChainConfig ours_cc = cc;
+  ours_cc.apm_v2 = apm_v2;
+  const std::string module = apm_v2 ? "echo canceller (apm v2)" : "echo canceller";
+  auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto erle = [&](const Output& o, double a, double b) {
     return SegmentDb(c.echo, a, b) - SegmentDb(o.out, a, b, kFs, o.latency);
   };
-  Add("echo canceller", "far end only, route change", "ERLE 1-3 s (dB)", erle(ours, 1, 3), erle(webrtc, 1, 3),
-      "convergence");
-  Add("echo canceller", "far end only, route change", "ERLE 6-12 s (dB)", erle(ours, 6, 12), erle(webrtc, 6, 12));
-  Add("echo canceller", "far end only, route change", "ERLE 12-14 s (dB)", erle(ours, 12, 14),
-      erle(webrtc, 12, 14), "just after the delay change");
-  Add("echo canceller", "far end only, route change", "ERLE 18-24 s (dB)", erle(ours, 18, 24),
-      erle(webrtc, 18, 24));
+  Add(module, "far end only, route change", "ERLE 1-3 s (dB)", erle(ours, 1, 3), erle(webrtc, 1, 3),
+      apm_v2 ? "ours is libwebrtc's AEC3 (#240)" : "convergence");
+  Add(module, "far end only, route change", "ERLE 6-12 s (dB)", erle(ours, 6, 12), erle(webrtc, 6, 12));
+  Add(module, "far end only, route change", "ERLE 12-14 s (dB)", erle(ours, 12, 14), erle(webrtc, 12, 14),
+      "just after the delay change");
+  Add(module, "far end only, route change", "ERLE 18-24 s (dB)", erle(ours, 18, 24), erle(webrtc, 18, 24));
 }
 
 // E2E_EchoCanceller.FullDuplexCall: far end alone, then double talk at 15 s.
-void EchoDoubleTalk() {
+// With `apm_v2`, our side is the port of libwebrtc's AEC3 (#240) and NS
+// (#241).
+void EchoDoubleTalk(bool apm_v2) {
   CallScenario s;
   s.seconds = 30;
   s.near_start_s = 15;
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, true, false, false};
-  auto ours = RunOurs(c, cc);
+  ChainConfig ours_cc = cc;
+  ours_cc.apm_v2 = apm_v2;
+  const std::string module = apm_v2 ? "echo canceller + NS (apm v2)" : "echo canceller + NS";
+  auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto erle = [&](const Output& o) { return SegmentDb(c.echo, 6, 15) - SegmentDb(o.out, 6, 15, kFs, o.latency); };
   auto near = [&](const Output& o) { return SegmentDb(o.out, 18, 30, kFs, o.latency) - SegmentDb(c.talker, 18, 30); };
-  Add("echo canceller + NS", "full duplex", "ERLE far end alone 6-15 s (dB)", erle(ours), erle(webrtc));
-  Add("echo canceller + NS", "full duplex", "near-end level change in double talk (dB)", near(ours), near(webrtc));
+  Add(module, "full duplex", "ERLE far end alone 6-15 s (dB)", erle(ours), erle(webrtc));
+  Add(module, "full duplex", "near-end level change in double talk (dB)", near(ours), near(webrtc));
   // How much of the output in double talk is the near-end talker: the
   // talker against everything else (residual echo, distortion, noise).
   size_t lag_o = 0, lag_w = 0;
@@ -258,7 +266,7 @@ void EchoDoubleTalk() {
     return BestLagSnr(rtail, tail, 0, lag);
   };
   double so = snr(ours, &lag_o), sw = snr(webrtc, &lag_w);
-  Add("echo canceller + NS", "full duplex", "near-end SNR in double talk (dB)", so, sw);
+  Add(module, "full duplex", "near-end SNR in double talk (dB)", so, sw);
 }
 
 // E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR. With
@@ -386,8 +394,10 @@ void VoiceActivity() {
 int main() {
   HighPass(false);
   HighPass(true);
-  EchoRouteChange();
-  EchoDoubleTalk();
+  EchoRouteChange(false);
+  EchoRouteChange(true);
+  EchoDoubleTalk(false);
+  EchoDoubleTalk(true);
   Noise(false);
   Noise(true);
   Gain(false);

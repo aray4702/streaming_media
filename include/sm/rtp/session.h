@@ -63,6 +63,18 @@ struct SessionConfig {
   // first), arrivals are kept 500 ms and late ones reported again.
   TimeDelta transport_feedback_interval = TimeDelta::Millis(50);
   uint64_t seed = 1;
+  // Lip sync (issue #77): the first audio and the first video receive stream
+  // are one sync group, as libwebrtc's Call::ConfigureSync pairs streams that
+  // share a sync_group, and a sync::RtpStreamsSynchronizer sets both streams'
+  // minimum playout delays every second (needs video timing version 2).
+  // Off: each stream plays out on its own delay.
+  bool av_sync = false;
+  // The audio send stream sends its own RTCP sender reports beside video's,
+  // as libwebrtc's audio RtpRtcp module does (SSRC the audio SSRC, the 5 s
+  // audio report interval), so a receiver can map audio RTP time to NTP for
+  // lip sync (issue #77). Off: only the first video stream's SR is sent when
+  // the session sends video.
+  bool audio_rtcp = false;
   EventSink* events = nullptr;
 };
 
@@ -273,6 +285,8 @@ class Session : public MetricsSource {
   const RtpSender& audio_sender(AudioSendId id) const { return *audio_send_[static_cast<size_t>(id.index)].sender; }
   const RtpReceiver& video_receiver(VideoRecvId id) const { return *video_recv_[static_cast<size_t>(id.index)].receiver; }
   const RtpReceiver& audio_receiver(AudioRecvId id) const { return *audio_recv_[static_cast<size_t>(id.index)].receiver; }
+  // The A/V synchronizer; null unless SessionConfig::av_sync and both an audio and a video receive stream exist.
+  const sync::RtpStreamsSynchronizer* av_sync() const { return av_sync_.get(); }
   const cc::TransportFeedbackBuilder& transport_feedback() const { return tcc_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -287,6 +301,20 @@ class Session : public MetricsSource {
     uint32_t ssrc = 0;
     uint32_t rtx_ssrc = 0;
   };
+  // A receive stream as call/syncable.h's Syncable.
+  class SyncableStream : public sync::Syncable {
+   public:
+    SyncableStream(RtpReceiver* r, uint32_t ssrc) : r_(r), ssrc_(ssrc) {}
+    uint32_t id() const override { return ssrc_; }
+    std::optional<Info> GetInfo() const override { return r_->SyncInfo(); }
+    std::optional<PlayoutInfo> GetPlayoutRtpTimestamp() const override { return r_->PlayoutRtpTimestamp(); }
+    bool SetMinimumPlayoutDelay(TimeDelta delay) override { return r_->SetSyncMinimumPlayoutDelay(delay); }
+    void SetEstimatedPlayoutNtpTimestamp(timing::NtpTime, Timestamp) override {}
+
+   private:
+    RtpReceiver* r_;
+    uint32_t ssrc_;
+  };
 
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
@@ -296,6 +324,7 @@ class Session : public MetricsSource {
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;
   void Start(Timestamp now);
+  void MaybeCreateSync();  // The synchronizer, once both an audio and a video receive stream exist.
   bool HasSendStreams() const { return !audio_send_.empty() || !video_send_.empty(); }
 
   SessionConfig cfg_;
@@ -313,9 +342,11 @@ class Session : public MetricsSource {
   bool peer_mid_seen_ = false;
   bool send_has_padding_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();
+  // When the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess wakes next.
+  Timestamp tcc_wake_ = Timestamp::MinusInfinity();
   DataRate last_tcc_estimate_ = DataRate::Zero();
-  TimeDelta TransportFeedbackInterval() const;
   void UpdateTransportFeedbackRate();
+  void ProcessTransportFeedback(Timestamp now);
   DataRate last_target_ = DataRate::Zero();
   TimeDelta rtt_ = TimeDelta::Millis(100);
   // Last report block per reported SSRC, for the loss between two reports (RtpTransportControllerSend::
@@ -327,6 +358,9 @@ class Session : public MetricsSource {
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
   SessionStats stats_;
+  std::unique_ptr<SyncableStream> sync_audio_, sync_video_;
+  std::unique_ptr<RtcpEngine> audio_rtcp_;  // SessionConfig::audio_rtcp.
+  std::unique_ptr<sync::RtpStreamsSynchronizer> av_sync_;
 };
 
 }  // namespace sm::rtp

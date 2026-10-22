@@ -126,6 +126,13 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   return {static_cast<int>(video_send_.size()) - 1};
 }
 
+void Session::MaybeCreateSync() {
+  if (!cfg_.av_sync || av_sync_ || audio_recv_.empty() || video_recv_.empty()) return;
+  sync_audio_ = std::make_unique<SyncableStream>(audio_recv_.front().receiver.get(), audio_recv_.front().ssrc);
+  sync_video_ = std::make_unique<SyncableStream>(video_recv_.front().receiver.get(), video_recv_.front().ssrc);
+  av_sync_ = std::make_unique<sync::RtpStreamsSynchronizer>(sync_video_.get(), cfg_.events);
+}
+
 AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* decoder) {
   RtpReceiverConfig c;
   c.ssrc = a.ssrc;
@@ -146,6 +153,7 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(false, static_cast<int>(audio_recv_.size()) - 1);
   demux_.AddSink(sink, cfg_.mid_audio, "", std::move(pts));
+  MaybeCreateSync();
   return {static_cast<int>(audio_recv_.size()) - 1};
 }
 
@@ -181,16 +189,28 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(true, static_cast<int>(video_recv_.size()) - 1);
   demux_.AddSink(sink, cfg_.mid_video, "", std::move(pts));
+  MaybeCreateSync();
   return {static_cast<int>(video_recv_.size()) - 1};
 }
 
 void Session::Start(Timestamp now) {
   if (started_) return;
   started_ = true;
+  // Call::ConfigureSync: the audio and video stream of one sync group.
+  if (av_sync_) av_sync_->ConfigureSync(sync_audio_.get(), now);
   // A receive-only endpoint has no congestion controller to run: its pacer,
   // GCC and outage monitor would only log decisions about a link it never
   // sends on.
   if (!HasSendStreams()) return;
+  if (cfg_.audio_rtcp && !audio_send_.empty() && !video_send_.empty()) {
+    RtcpConfig r = MakeRtcpConfig(cfg_);
+    r.local_ssrc = audio_send_.front().sender->SenderState().ssrc;
+    r.has_video = false;
+    r.report_interval = TimeDelta::Zero();
+    r.first_report_delay = TimeDelta::Zero();
+    r.seed = cfg_.seed + 1;
+    audio_rtcp_ = std::make_unique<RtcpEngine>(r);
+  }
   DataRate audio = DataRate::Zero();
   for (const auto& a : audio_send_) audio = audio + a.allocation_rate;
   send_.ConfigureAllocation(audio, !video_send_.empty());
@@ -414,13 +434,10 @@ void Session::Process(Timestamp now) {
       }
     }
   }
+  // RtpStreamsSynchronizer's 1 s task.
+  if (av_sync_) av_sync_->Process(now);
   // Transport-wide feedback covers every stream of the transport.
-  UpdateTransportFeedbackRate();
-  if (cfg_.transport_feedback_interval.us() > 0 &&
-      (!last_tcc_.IsFinite() || now - last_tcc_ >= TransportFeedbackInterval())) {
-    last_tcc_ = now;
-    for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
-  }
+  ProcessTransportFeedback(now);
   // Paced media.
   if (HasSendStreams()) {
     for (ReleasedPacket& r : send_.Process(now)) {
@@ -441,6 +458,13 @@ void Session::Process(Timestamp now) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
   }
+  if (audio_rtcp_) {
+    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState());
+    for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
 }
 
 // libwebrtc: the generator's interval follows this endpoint's own
@@ -453,17 +477,34 @@ void Session::UpdateTransportFeedbackRate() {
   tcc_.OnSendBandwidthEstimateChanged(estimate);
 }
 
-TimeDelta Session::TransportFeedbackInterval() const {
-  return tcc_.Interval();
+// Call::EnsureStarted starts the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess
+// before it registers for OnTargetTransferRate (call/call.cc), so the generator's first Process sees its default
+// 100 ms interval and the first feedback goes out 100 ms after the start; the rate-based interval applies from
+// then on. TransportSequenceNumberFeedbackGenenerator::Process
+// (modules/remote_bitrate_estimator/transport_sequence_number_feedback_generator.cc) sends when
+// last_process_time_ + send_interval_ has passed and returns the delay to the task's next run, so a longer
+// interval takes effect at once and a shorter one at the next wake-up.
+void Session::ProcessTransportFeedback(Timestamp now) {
+  if (cfg_.transport_feedback_interval.us() > 0 && now >= tcc_wake_) {
+    const TimeDelta interval = tcc_.Interval();
+    if (!last_tcc_.IsFinite() || now >= last_tcc_ + interval) {
+      last_tcc_ = now;
+      tcc_wake_ = now + interval;
+      for (auto& f : tcc_.Build()) rtcp_.QueueTransportFeedback(std::move(f));
+    } else {
+      tcc_wake_ = last_tcc_ + interval;
+    }
+  }
+  UpdateTransportFeedbackRate();  // Call::OnTargetTransferRate -> ReceiveSideCongestionController::OnBitrateChanged.
 }
 
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
+  if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
-  if (cfg_.transport_feedback_interval.us() > 0 && last_tcc_.IsFinite()) {
-    next = std::min(next, last_tcc_ + TransportFeedbackInterval());
-  }
+  if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
+  if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
   return std::max(next, now);
 }
 
