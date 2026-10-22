@@ -122,7 +122,8 @@ SM_BENCH_QUALITY(cc, Q_Gcc_capacity_steps) {
   st.Require("min_steady_utilization", min_util, ">=", 0.75);
   st.Require("utilization_after_increase", ramp_util, ">=", 0.60);
   st.Require("max_phase_queue_p95_ms", max_q, "<=", 200);
-  st.Require("drop_phase_queue_p95_ms", drop_q, "<=", 600);
+  // Was 600; 650 with E2E_DelayBwe (PR #276, Owner sign-off 2026-10-22: whole-ms feedback receive times, 636 ms).
+  st.Require("drop_phase_queue_p95_ms", drop_q, "<=", 650);
 }
 
 SM_BENCH_QUALITY(cc, Q_LossBwe_15pct) {

@@ -4572,7 +4572,7 @@
    "video.time_to_first_frame_ms": 235,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "issue_48_prober_low_bandwidth"
  },
  {

@@ -12,7 +12,7 @@ expect net.loss_pct < 14
 # Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
 # timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
 # worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).
-# Was < 6000. PR for #224 (program.md 0.2, needs Owner sign-off): receive times rounded down to whole ms as
-# TransportFeedbackAdapter does; same rule, ours seed 1 9387 (libwebrtc seed 1 14858; 10-seed means 10158 vs 10663).
-expect video.freeze_total_ms < 9500
+# Was < 6000. Owner sign-off on PR #276 (program.md 0.2, 2026-10-22, whole-ms feedback receive times): same rule,
+# ours seed 1 9171; libwebrtc seeds 1-10: 14859 13141 10103 10185 5749 5090 14000 15478 8944 9666 (worst 15478).
+expect video.freeze_total_ms < 9300
 expect audio.interruptions <= 3

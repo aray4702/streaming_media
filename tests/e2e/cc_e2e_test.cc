@@ -118,7 +118,10 @@ SM_TEST(E2E_DelayBwe, TracksCapacityStepsWithLowQueueing) {
     // 800 kbps phase). libwebrtc on the bench's capacity_drop (2.5 Mbps -> 500
     // kbps): queue p95 279 ms over the call and 14.3 s to settle (parity-data,
     // mean of 10 seeds; ours 282 ms, 14.3 s).
-    SM_EXPECT_LE(ph.queue_p95_ms, i == 1 ? 600 : 200);
+    // Was 600. Owner sign-off on PR #276 (program.md 0.2, 2026-10-22): receive times rounded down to whole ms as
+    // libwebrtc's TransportFeedbackAdapter give 636 ms here; just above ours. Closest bench scenario,
+    // capacity_drop: ours seed 1 297 ms, libwebrtc mean 279 ms, worst seed 306 ms.
+    SM_EXPECT_LE(ph.queue_p95_ms, i == 1 ? 650 : 200);
   }
   SM_RECORD("loss_ratio", r.loss_ratio);
   SM_EXPECT_LE(r.loss_ratio, 0.02);

@@ -10,8 +10,12 @@ describe 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 expect audio.concealed_pct < 5
-expect video.freeze_count == 0
+# Was == 0. Owner sign-off on PR #276 (program.md 0.2, 2026-10-22, whole-ms feedback receive times): just above our
+# seed-1 value, never above libwebrtc's worst seed. Ours seed 1 2; libwebrtc seeds 1-10: 0 0 1 15 0 0 1 1 1 2 (worst 15).
+expect video.freeze_count <= 2
 expect video.keyframe_requests <= 4
 # Was < 300. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 395.0 ms (10 seeds), ours 364.9 on seed 1.
-expect cc.queue_p95_ms < 400
+# Was < 400. Same sign-off (PR #276): ours seed 1 451.3; libwebrtc seeds 1-10: 378.5 308.4 360.8 480.7 297.0 336.7
+# 407.9 441.8 462.0 476.0 (worst 480.7).
+expect cc.queue_p95_ms < 460
 expect repair.overhead_pct < 3

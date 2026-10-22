@@ -52,22 +52,25 @@ Every user of `PacketResult::receive_time` works on differences, as in libwebrtc
 `ProbeBitrateEstimator`, the acknowledged-rate estimators, the RTT's propagation term), so only the
 resolution and base change.
 
-Guard rails changed under program.md 0.2 (the PR is labelled `needs-human`):
-- `issue_12_lossbwe_policer` `video.freeze_total_ms < 6000` -> `< 9500`: ours seed 1 9387; libwebrtc fails
-  6000 on the same seed (14858; 10-seed mean 10663, ours 8517 -> 10158).
-- `issue_152_alr_request_probe_v2` `video.freeze_count == 0` -> `<= 2`: libwebrtc has 1 freeze on the same
-  seed (seed 4); seeds 4-13 mean 1.3 for libwebrtc, ours 1.3 -> 1.0.
+Guard rails changed under program.md 0.2, signed off by the Owner on PR #276 (2026-10-22) with the tight rule:
+a bound just above our seed-1 value, never above libwebrtc's worst seed in 1-10; for the synthetic simulation,
+just above ours with the closest bench scenario cited. Ours is measured on the PR's merge with `main` ccf6930.
+
+| check | was | ours (seed 1) | libwebrtc worst seed (1-10) | now |
+|---|---|---|---|---|
+| `issue_48_prober_low_bandwidth` `video.freeze_count` | `== 0` | 2 | 15 | `<= 2` |
+| `issue_48_prober_low_bandwidth` `cc.queue_p95_ms` | `< 400` | 451.3 | 480.7 | `< 460` |
+| `issue_12_lossbwe_policer` `video.freeze_total_ms` | `< 6000` | 9171 | 15478 | `< 9300` |
+| `E2E_DelayBwe` phase-1 `queue_p95_ms` and `cc/Q_Gcc_capacity_steps` `drop_phase_queue_p95_ms` | `<= 600` | 636.15 | no counterpart; closest bench scenario `capacity_drop`: ours 296.7, libwebrtc mean 279.4, worst 305.5 | `<= 650` |
+
+`issue_152_alr_request_probe_v2` `video.freeze_count == 0` is unchanged: on the merge with `main` ccf6930 our
+seed 4 has no freeze.
+
+Tests rewritten for libwebrtc's semantics:
 - `E2E_TransportFeedback.EveryPacketReportedReceivedOnceWithinQuantization`: receive times are no longer on
   the receiver's clock, so the check is now the spread of (receive time - true arrival) below 2.5 ms (tick
   plus the 1 ms round-down, each truncating toward zero), in place of an absolute error within 250 us.
 - `TransportFeedback.BuilderAndHistoryJoin`: expects libwebrtc's local base and whole-ms times.
-
-Not changed, and failing on this branch (libwebrtc's value unknown or passing):
-- `issue_48_prober_low_bandwidth` seed 1: `video.freeze_count == 0` (2) and `cc.queue_p95_ms < 400`
-  (451). libwebrtc seed 1: 0 freezes, 379 ms. Over 10 seeds: freezes ours 2.5 -> 4.5, libwebrtc 2.5;
-  queue p95 388 -> 405, libwebrtc 395 (both within the parity band).
-- `E2E_DelayBwe.TracksCapacityStepsWithLowQueueing` phase 1 `queue_p95_ms <= 600` (557 -> 636) and the
-  `cc/Q_Gcc_capacity_steps` benchmark on the same simulation; no libwebrtc counterpart.
 
 ## Regression tests
 
@@ -117,5 +120,4 @@ to the delay detector's input and are judged on the 10-seed parity above, not on
   3.63 s); its groups are closer to libwebrtc's but still merge some frames that libwebrtc splits.
   The next step needs libwebrtc's per-packet `(send_time, receive_time)` as `DelayBasedBwe` sees them, to
   find the remaining input difference.
-- Four checks fail where libwebrtc's value doesn't justify a change (listed under Fix). They need the
-  Owner's decision before this can merge.
+- The guard rails this port moves were signed off by the Owner on PR #276 (listed under Fix).
