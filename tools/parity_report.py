@@ -215,4 +215,39 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Diagnostic for PR #311 (yardstick draft, not for merging): on an exception, publish the
+    # traceback and the values that caused it instead of failing, so parity-data-pr gets them.
+    try:
+        rc = main()
+    except (Exception, SystemExit) as e:
+        if isinstance(e, SystemExit) and not isinstance(e.code, str):
+            raise
+        import traceback
+        tb = traceback.format_exc()
+        print(tb, file=sys.stderr)
+        extreme = []
+        try:
+            d = load(sys.argv[1])
+            for sc in d["scenarios"]:
+                for side in ("sm", "webrtc"):
+                    for k, v in sc[side].items():
+                        if isinstance(v, (int, float)) and abs(v) > 1e12:
+                            extreme.append("%s %s %s %r" % (sc["scenario"], side, k, v))
+                for ps in sc.get("per_seed", []):
+                    for side in ("sm", "webrtc"):
+                        for k, v in ps[side].items():
+                            if isinstance(v, (int, float)) and abs(v) > 1e12:
+                                extreme.append("%s seed %s %s %s %r" % (sc["scenario"], ps["seed"], side, k, v))
+        except Exception as e:
+            extreme.append("could not scan the input: %r" % e)
+            if isinstance(e, OSError):
+                with open(sys.argv[1], "w") as f:  # So the publish step still runs.
+                    f.write(json.dumps({"error": "input missing: sm_compare wrote no JSON"}) + "\n")
+        args = sys.argv[1:]
+        for flag, body in (("--markdown", "## parity_report.py failed\n\n```\n%s\n```\n\nValues above 1e12:\n\n```\n%s\n```\n" % (tb, "\n".join(extreme))),
+                           ("--json", json.dumps({"error": tb, "extreme": extreme}, indent=1) + "\n")):
+            if flag in args:
+                with open(args[args.index(flag) + 1], "w") as f:
+                    f.write(body)
+        rc = 0
+    sys.exit(rc)
