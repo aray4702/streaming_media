@@ -4,7 +4,8 @@
 `sm_compare` records every packet either stack offers to the forward link,
 for the first seed of the scenarios named by --trace (default
 very_low_capacity_allocator_v2), in the same CSV for this library and for
-libwebrtc: time_us,size,kind,seq,queue_bytes,outcome. CI publishes them in
+libwebrtc: time_us,size,kind,seq,queue_bytes,outcome (for rtx, seq is the
+original sequence number from the RTX payload). CI publishes them in
 compare-webrtc.json under "traces"; with --trace-dir they are also written as
 <scenario>.<seed>.{sm,webrtc}.trace.csv.
 

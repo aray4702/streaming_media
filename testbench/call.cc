@@ -633,7 +633,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
-      const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      // An RTX row carries the original sequence number (the first two payload bytes, #217).
+      if (kind == Kind::kRtx) {
+        if (auto q = RtpPacket::Parse(p.bytes); q && q->payload.size() >= 2) seq = (q->payload[0] << 8) | q->payload[1];
+      }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
     }
   };
