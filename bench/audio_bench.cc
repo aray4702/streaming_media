@@ -101,7 +101,9 @@ SM_BENCH(audio, EchoCanceller_10ms_80ms_tail) {
 }
 
 SM_BENCH(audio, TransientSuppressor_10ms) {
-  TransientSuppressor ts;
+  TransientSuppressorConfig tc;
+  tc.enabled = true;
+  TransientSuppressor ts(tc);
   auto x = Speech();
   size_t off = 0;
   for (auto _ : st) {
@@ -168,7 +170,8 @@ SM_BENCH(audio, Resampler_44k1_to_48k_10ms) {
 }
 
 SM_BENCH(audio, FullCaptureChain_10ms) {
-  // HPF + AEC + NS + VAD + TS + AGC: the whole capture path per 10 ms.
+  // HPF + AEC + NS + VAD + AGC: the whole capture path per 10 ms. The
+  // transient suppressor is off by default (#243), as in libwebrtc M157's APM.
   e2e::CallScenario s;
   s.seconds = 4;
   s.noise_amp = 0.003f;
@@ -177,7 +180,6 @@ SM_BENCH(audio, FullCaptureChain_10ms) {
   EchoCanceller aec;
   NoiseSuppressor ns;
   Vad vad;
-  TransientSuppressor ts;
   AutomaticGainControl agc;
   size_t off = 0;
   std::vector<float> f(160);
@@ -188,7 +190,6 @@ SM_BENCH(audio, FullCaptureChain_10ms) {
     aec.ProcessCapture(f);
     ns.Process(f);
     bool v = vad.Process(f);
-    ts.Process(f, vad.voiced());
     agc.Process(f, v);
     off = (off + 160) % (c.capture.size() - 160);
   }

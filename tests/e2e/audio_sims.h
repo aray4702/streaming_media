@@ -84,6 +84,8 @@ inline CallSignals MakeCall(const CallScenario& s) {
 
 // The capture processing chain, in WebRTC APM order.
 struct ChainConfig {
+  // `ts`: the transient suppressor, an opt-in (#243): libwebrtc M157's APM
+  // has none, and its deprecated `transient_suppression.enabled` is false.
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
   // `apm v2`: libwebrtc's modules where ported (#239-#242). The high-pass
   // filter is libwebrtc's (`hpf::HighPassFilter`, #239). The AGC is AGC1
@@ -124,7 +126,9 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::VadConfig vc;
   vc.sample_rate = fs;
   audio::Vad vad(vc);
-  audio::TransientSuppressor ts;
+  audio::TransientSuppressorConfig tc;
+  tc.enabled = true;  // `ts` opts in, as APM's transient_suppression.enabled.
+  audio::TransientSuppressor ts(tc);
   audio::AgcConfig gc;
   gc.sample_rate = fs;
   gc.limiter.sample_rate = fs;

@@ -1000,12 +1000,15 @@ ALGORITHMS = [
          bench=["audio/TransientSuppressor_10ms"],
          scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
                   "compared with and without suppression.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels. "
+               "Keeping it as an opt-in (`enabled = true`) for later stages is an Owner decision (#243, 2026-10-22).",
          verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
                       "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
                       "first millisecond, which holds most of a click's energy; attack is now instant. (3) A "
                       "60 ms envelope still held the speech level right after a word, so a 4 ms envelope (onset "
-                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB."),
+                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB. #243: off by default "
+                      "as libwebrtc (`TransientSuppressor.OffByDefaultAsLibwebrtc`: the audio passes unchanged); "
+                      "the tests that measure it opt in with `enabled = true`."),
     dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
          problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
                    "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
