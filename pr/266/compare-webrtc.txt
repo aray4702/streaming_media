@@ -3574,6 +3574,57 @@ issue_76_tcc_v2_high_jitter - 40 ms jitter with reordering, transport-cc feedbac
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_77_av_sync_clean_link - Lip sync (
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.3          0.3  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            27           26  =
+  audio.mouth_to_ear_p95_ms               242          241  =
+  audio.jb_delay_p95_ms                   127          130  =
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                15.2         16.7  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.9         29.9  =
+  video.e2e_delay_p95_ms                  141          144  =
+  video.time_to_first_frame_ms           51.6         53.6  =
+  video.avg_kbps                         2144         2137  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                  62.9         68.2  =
+  cc.utilization_pct                     91.7         91.4  =
+  cc.queue_p95_ms                        81.3         74.4  =
+  cc.max_settle_ms                        200          200  =
+  cc.rtt_p50_ms                          71.1         66.2  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                     0.1          0.1  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.1         69.5
+  net.video_kbps                         2223         2216
+  net.rtx_kbps                            1.2          1.3
+  net.padding_kbps                        0.4          0.5
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    193          186
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    274          302
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1377         1379
+  net.video_size_p90_b                   1462         1463
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1030         1213
+  net.rtx_size_p90_b                     1276         1297
+  net.rtx_size_max_b                     1276         1297
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_7_no_fec_beside_nack - 5% random loss, H.264 with NACK: libwebrtc (ShouldDisableRedAndUlpfec) sends no video FEC, so repair is RTX only
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.3          0.3  =
@@ -4441,7 +4492,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 244, webrtc 129, tie 1487 (of the metrics shown)
+better: sm 244, webrtc 129, tie 1509 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
