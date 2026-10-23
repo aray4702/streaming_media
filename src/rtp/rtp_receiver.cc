@@ -100,7 +100,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
       }
       ++stats_.rtx;
       if (auto m = loss::RestoreFromRtx(p, cfg_.ssrc, cfg_.payload_type)) {
-        OnVideoMedia(*m, now, true);
+        OnVideoMedia(*m, now, true, /*recovered=*/true);
       } else {
         ++stats_.rtx_unrestorable;
       }
@@ -108,7 +108,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     }
     if (cfg_.fec && p.ssrc == cfg_.fec_config.fec_ssrc) {
       ++stats_.fec;
-      for (auto& r : fec_.OnFecPacket(p)) OnVideoMedia(r, now, false);
+      for (auto& r : fec_.OnFecPacket(p)) OnVideoMedia(r, now, false, /*recovered=*/true);
       return ReceivedKind::kFec;
     }
   }
@@ -132,7 +132,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   ++stats_.media;
   stats_rtp_.OnPacket(p.seq, p.timestamp, now);
   if (cfg_.video) {
-    OnVideoMedia(p, now, true);
+    OnVideoMedia(p, now, true, /*recovered=*/false);
   } else {
     OnAudioMedia(p, now);
   }
@@ -150,7 +150,7 @@ void RtpReceiver::TrackSequence(uint16_t seq) {
   }
 }
 
-void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec) {
+void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec, bool recovered) {
   VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
   if (!info.valid) {
     ++stats_.invalid_payload;
@@ -158,9 +158,15 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     return;
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
-  // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports.
-  last_received_rtp_timestamp_ = p.timestamp;
-  last_received_rtp_time_ = now;
+  // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports,
+  // from packets received as they were sent only. A packet restored from RTX
+  // or recovered by FEC is `recovered()` there and doesn't move it
+  // (UpdatePacketReceiveTimestamps), so a late retransmission of an old frame
+  // doesn't look like a video delay to lip sync.
+  if (!recovered) {
+    last_received_rtp_timestamp_ = p.timestamp;
+    last_received_rtp_time_ = now;
+  }
   keyframes_.OnMediaPacket(now, info.idr || info.sps || info.pps);
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that
@@ -180,7 +186,7 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
     keyframes_.OnExternalRequest(now, "trigger_packet_buffer_cleared");
   }
   if (feed_fec && cfg_.fec) {
-    for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false);
+    for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false, /*recovered=*/true);
   }
 }
 

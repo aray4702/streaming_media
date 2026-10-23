@@ -250,7 +250,8 @@ class RtpReceiver : public MetricsSource {
 
  private:
   // A video media packet: original, retransmitted or FEC-recovered.
-  void OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec);
+  // `recovered`: restored from RTX or recovered by FEC (RtpPacketReceived::recovered).
+  void OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec, bool recovered);
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   void AssembleFrames(Timestamp now);
