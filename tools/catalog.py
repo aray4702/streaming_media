@@ -830,9 +830,9 @@ ALGORITHMS = [
                "coarse filters, misadjustment rescaling, coarse filter reset from the refined one), with "
                "EchoCanceller3Config::Filter's defaults: 12 then 13 partitions, leakage 0.005/0.5 then 0.00005/0.05, error "
                "floor 0.001 and ceiling 2, noise gate 20075344, coarse rate 0.9 then 0.7, 250-block configuration "
-               "changes, a 25-block hangover after a coarse filter reset. Remaining differences: the FFT is fft4g's rdft "
-               "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
-               "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
+               "changes, a 25-block hangover after a coarse filter reset. The FFT is libwebrtc's 128-point `OouraFft` "
+               "(`audio/ooura_fft.h`, from `common_audio/third_party/ooura/fft_size_128`, its C path and stored tables; "
+               "#240 step 6). Remaining differences: the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
                "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
                "AecState's capture saturation flag as an argument. "
                "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
@@ -903,7 +903,10 @@ ALGORITHMS = [
                       "echo_canceller3_unittest.cc on the real block processor (the originals mock it). "
                       "E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc and "
                       "E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc check the `apm v2` chain against libwebrtc "
-                      "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB."),
+                      "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB. #240 step 6 moved Aec3Fft from "
+                      "fft4g's rdft to the ported `OouraFft` (fft_size_128): Aec3Filter.OouraFft128MatchesDft checks it "
+                      "against a double-precision DFT, the aec3_fft unit tests still pass, and the e2e ERLE and double-talk "
+                      "numbers stay at libwebrtc's."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
