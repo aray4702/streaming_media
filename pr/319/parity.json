@@ -1477,6 +1477,51 @@
    ]
   },
   {
+   "scenario": "issue_29_ulpfec_over_red",
+   "metric": "video.longest_freeze_ms",
+   "sm": 3486.4,
+   "webrtc": 3283.4,
+   "band": 174.32000000000002,
+   "direction": "behind",
+   "seeds_agree": 1,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_29_ulpfec_over_red",
+   "metric": "video.pause_total_ms",
+   "sm": 1769.3,
+   "webrtc": 0,
+   "band": 100,
+   "direction": "behind",
+   "seeds_agree": 2,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_29_ulpfec_over_red",
+   "metric": "repair.overhead_pct",
+   "sm": 33.6917,
+   "webrtc": 38.8854,
+   "band": 3.276276617951136,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    21,
+    7,
+    29
+   ]
+  },
+  {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "audio.interruptions",
    "sm": 1,
