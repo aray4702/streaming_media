@@ -342,6 +342,29 @@ SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
   SM_EXPECT_TRUE(p.b.TakeEvents().empty());
 }
 
+// A receive-only video stream takes its NACK RTT from CallStats, as
+// VideoReceiveStream2::OnRttUpdate does: a measurement reaches it at the next
+// 1 s periodic update (ModuleRtpRtcpImpl2::PeriodicUpdate), and the largest
+// report of the last 1.5 s wins (call_stats2.cc).
+SM_TEST(Session, AReceiveOnlyVideoStreamTakesTheMaximumRttFromCallStats) {
+  Session s(Cfg(2));
+  VideoRecvId v = s.AddVideoReceive(Video());
+  const auto nack_rtt = [&] { return s.video_receiver(v).nack().rtt().ms(); };
+  Pump(s, 0, 100);
+  const int64_t initial = nack_rtt();
+  s.SetRtt(TimeDelta::Millis(250));
+  Pump(s, 100, 899);  // Up to 998 ms: before the first periodic update.
+  SM_EXPECT_EQ(nack_rtt(), initial);
+  Pump(s, 999, 2);  // The update at 1000 ms.
+  SM_EXPECT_EQ(nack_rtt(), 250);
+  s.SetRtt(TimeDelta::Millis(50));
+  Pump(s, 1001, 1000);  // 2000 ms: the 250 ms report is 1 s old and still the maximum.
+  SM_EXPECT_EQ(nack_rtt(), 250);
+  s.SetRtt(TimeDelta::Millis(60));
+  Pump(s, 2001, 1000);  // 3000 ms: 250 ms has expired; 60 is the largest left.
+  SM_EXPECT_EQ(nack_rtt(), 60);
+}
+
 SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
   Session s(Cfg(2));
   NullDecoder dec;

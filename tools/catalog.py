@@ -1355,11 +1355,14 @@ ALGORITHMS = [
                       "tools/run_all.sh does not run these suites yet."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
-         headers=["rtp/session.h"], unit=["Session"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
-               "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes.",
+               "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes. "
+               "The video receivers take their RTT from CallStats (video/call_stats2.cc: the maximum of the reports "
+               "of the last 1.5 s, on each report and every 1 s), fed by the 1 s periodic update; a receive-only "
+               "endpoint's measurement comes from SetRtt in place of libwebrtc's XR DLRR RTT (#217).",
          verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),

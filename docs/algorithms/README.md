@@ -38,7 +38,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 3 | 2 | 2 | pass | pass | pass | pass |
+| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 3 | 2 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.11 | [Link outage detection and recovery](5-cc/5.11-outage.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 
 ## 6. Audio quality (APM)
@@ -68,7 +68,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | pass | pass | pass | pass |
+| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 8. Synchronization
 

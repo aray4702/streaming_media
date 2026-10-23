@@ -38,6 +38,7 @@
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
 #include "sm/loss/fec.h"
+#include "sm/rtp/call_stats.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
@@ -250,11 +251,14 @@ class Session : public MetricsSource {
   // One datagram, RTP or RTCP (RFC 5761 demux by the payload-type byte),
   // already decrypted by the host.
   void OnPacket(std::span<const uint8_t> bytes, Timestamp now);
-  // The round-trip time as learned outside RTCP, for an endpoint that only
-  // receives (its reports carry no RTT; the host may know it from ICE
-  // connectivity checks or from the peer). Feeds the receivers' NACK and
-  // keyframe throttles and the congestion controller, like an RTCP-measured
-  // RTT, but raises no event.
+  // A new round-trip time measurement learned outside RTCP, for an endpoint
+  // that only receives (its reports carry no RTT; the host may know it from
+  // ICE connectivity checks or from the peer). Call it once per measurement.
+  // It takes the place of a receive-only stream's XR DLRR RTT: the next 1 s
+  // periodic update hands it to CallStats, whose maximum feeds the video
+  // receivers' NACK and jitter estimate (VideoReceiveStream2::OnRttUpdate).
+  // The congestion controller and the audio receivers take it at once. It
+  // raises no event.
   void SetRtt(TimeDelta rtt);
   // The decoder failed on a frame: ask the sender for a keyframe.
   void OnDecodeFailure(VideoRecvId id, Timestamp now);
@@ -366,6 +370,12 @@ class Session : public MetricsSource {
   TimeDelta periodic_rtt_ = TimeDelta::Zero();
   TimeDelta rtt_sum_ = TimeDelta::Zero();
   int64_t rtt_count_ = 0;
+  // CallStats for the video receivers, fed by the periodic update: the
+  // sender's periodic RTT, and a receive-only stream's RTT from SetRtt
+  // (RTCPReceiver::GetAndResetXrRrRtt: each measurement once).
+  CallStats call_stats_;
+  std::optional<TimeDelta> pending_rr_rtt_;
+  void OnCallStatsUpdate(const std::optional<CallStats::Update>& u);
   SessionStats stats_;
   std::unique_ptr<SyncableStream> sync_audio_, sync_video_;
   std::unique_ptr<RtcpEngine> audio_rtcp_;  // SessionConfig::audio_rtcp.

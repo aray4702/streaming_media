@@ -281,9 +281,16 @@ void Session::SetFecParams(VideoSendId id, const loss::FecParams& p) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
+  pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
-  for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
   for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
+}
+
+// VideoReceiveStream2::OnRttUpdate: the maximum RTT goes to NackRequester
+// (RtpVideoStreamReceiver2::UpdateRtt) and the jitter estimator.
+void Session::OnCallStatsUpdate(const std::optional<CallStats::Update>& u) {
+  if (!u) return;
+  for (auto& v : video_recv_) v.receiver->OnRtt(TimeDelta::Millis(u->max_rtt_ms));
 }
 
 void Session::OnDecodeFailure(VideoRecvId id, Timestamp now) {
@@ -357,10 +364,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     rtt_sum_ = rtt_sum_ + rtt_;
     ++rtt_count_;
     send_.OnRtt(rtt_);
-    for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
     for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
-    // The packet history takes its RTT from the 1 s periodic update and from
-    // each NACK (PeriodicRttUpdate, the NACK loop below), not from every sample.
+    // The packet history and CallStats (so the video receivers) take their RTT
+    // from the 1 s periodic update, the history also from each NACK
+    // (PeriodicRttUpdate, the NACK loop below), not from every sample.
     SessionEvent e;
     e.type = SessionEventType::kRttUpdated;
     e.time = now;
@@ -421,18 +428,26 @@ void Session::UpdateSenderState() {
   if (s) rtcp_.SetSenderState(s->SenderState());
 }
 
-// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s): while
-// sending, the last RTT sample goes to the packet history if a report block
-// arrived within the interval (RTCPReceiver::OnPeriodicRttUpdate).
+// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s), with
+// RTCPReceiver::OnPeriodicRttUpdate. While sending, the last RTT sample goes
+// to the packet history and to CallStats if a report block arrived within the
+// interval. A receive stream reports its XR RTT to CallStats, here the
+// measurement SetRtt gave since the last update (GetAndResetXrRrRtt).
 void Session::PeriodicRttUpdate(Timestamp now) {
-  if (!HasSendStreams()) return;
+  if (!HasSendStreams() && video_recv_.empty()) return;
   if (!next_rtt_update_.IsFinite()) next_rtt_update_ = now + kRttUpdateInterval;
   while (now >= next_rtt_update_) {
-    const Timestamp check_since = next_rtt_update_ - kRttUpdateInterval;
-    if (have_rtt_ && rtt_count_ > 0 && last_report_block_ > check_since) {
+    const Timestamp at = next_rtt_update_;
+    const Timestamp check_since = at - kRttUpdateInterval;
+    if (HasSendStreams() && have_rtt_ && rtt_count_ > 0 && last_report_block_ > check_since) {
       periodic_rtt_ = TimeDelta::Millis(rtt_.ms());
+      OnCallStatsUpdate(call_stats_.OnRttUpdate(periodic_rtt_.ms(), at));
       for (auto& v : video_send_) v.sender->SetRtt(periodic_rtt_, now);
       for (auto& a : audio_send_) a.sender->SetRtt(periodic_rtt_, now);
+    }
+    if (!video_recv_.empty() && pending_rr_rtt_) {
+      OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
+      pending_rr_rtt_.reset();
     }
     next_rtt_update_ += kRttUpdateInterval;
   }
@@ -440,7 +455,9 @@ void Session::PeriodicRttUpdate(Timestamp now) {
 
 void Session::Process(Timestamp now) {
   Start(now);
+  call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
+  OnCallStatsUpdate(call_stats_.Process(now));
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
     RtpReceiver& r = *v.receiver;
@@ -531,6 +548,7 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
+  next = std::min(next, call_stats_.NextProcessTime());
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
   if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
