@@ -2,6 +2,7 @@
 #include <optional>
 #include <vector>
 
+#include "sm/loss/rtx.h"
 #include "sm/rtp/send_side_controller.h"
 #include "sm_test.h"
 
@@ -311,6 +312,67 @@ SM_TEST(SendSideController, FlushedResendIsNotSentAgainUnderPacerV2AndRtxV2) {
   now = Timestamp::Millis(900);
   sender.OnNack(std::vector<uint16_t>{seq}, now, rtt);
   SM_EXPECT_EQ(sender.TakePackets().size(), 0u);
+}
+
+// Issue #217: RtpVideoSender::OnPacketFeedbackVector (call/rtp_video_sender.cc:1010-1035). A video
+// packet that transport feedback reports lost, with no later packet of the stream received, is
+// resent at once ("early loss detection"); one followed by a received packet is left to the NACK.
+// The NACK that follows finds the resend pending and is ignored.
+SM_TEST(SendSideController, TrailingLostVideoIsResentFromTransportFeedback) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideController c(SendSideConfig{}, &map);
+  c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  RtpSender sender(sc);
+  Timestamp now = Timestamp::Millis(0);
+  const std::vector<uint8_t> chunk(300, 1);
+  for (int f = 0; f < 3; ++f) {
+    sender.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000 + 3000 * f, now);
+    for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), now);
+  }
+  // RTP sequence numbers are assigned as the pacer releases the packets.
+  std::vector<uint16_t> seqs, transport;
+  for (int t = 0; t < 100; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      auto p = RtpPacket::Parse(r.bytes);
+      SM_ASSERT_TRUE(p.has_value());
+      seqs.push_back(p->seq);
+      transport.push_back(static_cast<uint16_t>(r.transport_seq));
+    }
+  }
+  SM_ASSERT_EQ(transport.size(), 3u);
+  now = Timestamp::Millis(150);
+  // The first packet is lost but the second arrived: the receiver can see the gap.
+  cc::TransportFeedback fb;
+  fb.base_seq = transport[0];
+  fb.packets = {{transport[0], false, 0}, {transport[1], true, 4}, {transport[2], false, 0}};
+  c.OnTransportFeedback(fb, now);
+  // Only the trailing loss (the third packet) is resent.
+  SM_EXPECT_EQ(sender.TakePackets().size(), 0u);  // Handed to the pacer, not left with the sender.
+  std::vector<ReleasedPacket> rtx;
+  for (int t = 150; t < 200; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      if (r.kind == PacketKind::kRtx) rtx.push_back(r);
+    }
+  }
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  auto parsed = RtpPacket::Parse(rtx[0].bytes);
+  SM_ASSERT_TRUE(parsed.has_value());
+  auto back = loss::RestoreFromRtx(*parsed, sc.ssrc, sc.payload_type);
+  SM_ASSERT_TRUE(back.has_value());
+  SM_EXPECT_EQ(back->seq, seqs[2]);
+  // The NACK for both: the first is resent, the third went out less than an RTT ago.
+  const TimeDelta rtt = TimeDelta::Millis(100);
+  sender.SetRtt(rtt, Timestamp::Millis(200));
+  sender.OnNack(std::vector<uint16_t>{seqs[0], seqs[2]}, Timestamp::Millis(200), rtt);
+  auto resend = sender.TakePackets();
+  SM_ASSERT_EQ(resend.size(), 1u);
+  auto first = loss::RestoreFromRtx(resend[0].packet, sc.ssrc, sc.payload_type);
+  SM_ASSERT_TRUE(first.has_value());
+  SM_EXPECT_EQ(first->seq, seqs[0]);
 }
 
 // Issue #104: the sum of the enforced minimums (audio + video) is the lower bound

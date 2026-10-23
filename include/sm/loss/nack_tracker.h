@@ -50,6 +50,7 @@ class NackTracker : public MetricsSource {
   // Returns how many times the packet was NACKed before it arrived (0 if never), as NackRequester::OnReceivedPacket.
   int OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now);
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
+  TimeDelta rtt() const { return rtt_; }
   // Sequence numbers to put in a NACK now. Each call counts as one attempt.
   std::vector<uint16_t> GetNackBatch(Timestamp now);
   // NackRequester::ClearUpTo: forgets the requests for every sequence number before `seq`. The

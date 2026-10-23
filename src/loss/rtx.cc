@@ -153,27 +153,46 @@ std::optional<RtpPacket> RtxSender::GetPayloadPaddingPacket(const std::function<
   return MakeRtxPacket(*large_payload_packet_, cfg_.rtx_ssrc, RtxPayloadType(*large_payload_packet_), rtx_seq_++);
 }
 
+RtxSender::ResendResult RtxSender::GetPacketAndMarkAsPending(uint16_t seq, Timestamp now,
+                                                             std::optional<RtpPacket>* out) {
+  Stored* s = Get(seq);
+  if (!s) return ResendResult::kNotFound;
+  if (s->pending || !VerifyRtt(*s, now)) return ResendResult::kThrottled;
+  s->pending = true;
+  *out = MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, RtxPayloadType(*s->packet), rtx_seq_++);
+  ++stats_.retransmitted;
+  stats_.bytes_retransmitted += static_cast<int64_t>((*out)->size());
+  return ResendResult::kResent;
+}
+
 std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta /*rtt*/) {
-  // RtpPacketHistory::GetPacketAndMarkAsPending with the RTX encapsulation.
   std::vector<RtpPacket> out;
   for (uint16_t seq : seqs) {
     ++stats_.nack_requests;
-    Stored* s = Get(seq);
-    if (!s) {
-      ++stats_.not_found;
-      continue;
+    std::optional<RtpPacket> r;
+    switch (GetPacketAndMarkAsPending(seq, now, &r)) {
+      case ResendResult::kNotFound:
+        ++stats_.not_found;
+        break;
+      case ResendResult::kThrottled:
+        ++stats_.throttled;
+        break;
+      case ResendResult::kResent:
+        out.push_back(std::move(*r));
+        break;
     }
-    if (s->pending || !VerifyRtt(*s, now)) {
-      ++stats_.throttled;
-      continue;
-    }
-    s->pending = true;
-    out.push_back(MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, RtxPayloadType(*s->packet), rtx_seq_++));
-    ++stats_.retransmitted;
-    stats_.bytes_retransmitted += static_cast<int64_t>(out.back().size());
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "rtx", "resend", out.size(), seqs.front());
   return out;
+}
+
+std::optional<RtpPacket> RtxSender::ReSendEarlyLoss(uint16_t seq, Timestamp now) {
+  ++stats_.early_loss_requests;
+  std::optional<RtpPacket> r;
+  if (GetPacketAndMarkAsPending(seq, now, &r) != ResendResult::kResent) return std::nullopt;
+  ++stats_.early_loss_resent;
+  SM_EVENT(cfg_.events, now, "rtx", "early_loss_resend", 1, seq);
+  return r;
 }
 
 void RtxSender::ExportMetrics(MetricsWriter& w) const {
@@ -184,6 +203,8 @@ void RtxSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("throttled", stats_.throttled);
   w.Counter("culled_acked", stats_.culled_acked);
   w.Counter("payload_padding", stats_.payload_padding);
+  w.Counter("early_loss_requests", stats_.early_loss_requests);
+  w.Counter("early_loss_resent", stats_.early_loss_resent);
   w.Counter("bytes_retransmitted", static_cast<uint64_t>(stats_.bytes_retransmitted));
 }
 

@@ -39,9 +39,11 @@ ALGORITHMS = [
                "and the oldest is past the retention, at most 9600), leaves when transport feedback acknowledges it, and a "
                "request is ignored while a resend is queued or within one RTT of the last send. A queued resend that a keyframe flush discards stays pending, so later requests for it are ignored, as libwebrtc's flush leaves its history entry (issue #151). Without FEC the RTP sequence number is "
                "assigned when the pacer releases the packet (`RtpSender::AssignSequenceNumber`, as `PacketRouter` / `AssignSequenceNumber` do), so a packet a "
-               "keyframe flush discards leaves no gap (issues #127, #154, [fix record](../../fixes/154-sequence-at-pacer-release.md)). Remaining differences: "
-               "no early resend of packets that transport-wide feedback reports lost (RtpVideoSender::OnPacketFeedbackVector), "
-               "and retransmitted-flush settings are off as in the libwebrtc default. With `pacer v2` the history also gives payload "
+               "keyframe flush discards leaves no gap (issues #127, #154, [fix record](../../fixes/154-sequence-at-pacer-release.md)). "
+               "A video packet that transport-wide feedback reports lost, with no later packet of its SSRC received in that feedback, is resent "
+               "at once through the same history checks (RtpVideoSender::OnPacketFeedbackVector's early loss detection, call/rtp_video_sender.cc, "
+               "issue #217), so the NACK that follows finds it pending or sent within an RTT. Remaining difference: "
+               "retransmitted-flush settings are off as in the libwebrtc default. With `pacer v2` the history also gives payload "
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. The NackTracker is libwebrtc's NackRequester (issue #23; the v1 policy was deleted in #167): "
                "it retries on libwebrtc's 20 ms process tick, gives up after kMaxNackRetries (100) without a keyframe request, and a list that would pass 1000 "
@@ -1371,7 +1373,7 @@ ALGORITHMS = [
                "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
                "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is taken from the SR octet counter (media payload), lower than libwebrtc's all-packet egress rate (remaining work, #76). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "
@@ -1420,11 +1422,14 @@ ALGORITHMS = [
                       "tools/run_all.sh does not run these suites yet."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
-         headers=["rtp/session.h"], unit=["Session"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench runs a full call through two rtp::Session objects, and every packet crosses "
                   "sim::NetworkLink as bytes. The whole scenario suite is the end-to-end test.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Pull-based: every output is a Take*() call, so the order of effects is fixed. The app keeps the "
-               "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes.",
+               "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes. "
+               "The video receivers take their RTT from CallStats (video/call_stats2.cc: the maximum of the reports "
+               "of the last 1.5 s, on each report and every 1 s), fed by the 1 s periodic update; a receive-only "
+               "endpoint's measurement comes from SetRtt in place of libwebrtc's XR DLRR RTT (#217).",
          verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),

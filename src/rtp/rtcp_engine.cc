@@ -30,11 +30,15 @@ TimeDelta RtcpEngine::Interval() {
   return TimeDelta::Millis(std::max<int64_t>(std::min(ms, hi), 1));
 }
 
-// The sender's bitrate over the last second, from the SR octet counter
-// (libwebrtc feeds the interval rule with `GetSendRates(now).Sum()`, which counts
-// every packet type with its RTP header; the SR octet count is media payload only,
-// so this rate is lower: remaining work, #76).
+// The sender's bitrate for the interval rule: the caller's `send_bitrate`
+// (libwebrtc's `GetSendRates(now).Sum()`, every packet type with its RTP header),
+// else the rate over the last second from the SR octet counter, which counts
+// media payload only.
 void RtcpEngine::UpdateSendRate(Timestamp now) {
+  if (sender_->send_bitrate) {
+    send_rate_ = *sender_->send_bitrate;
+    return;
+  }
   rate_samples_.push_back({now, sender_->octet_count});
   while (rate_samples_.size() > 2 && now - rate_samples_[1].first >= TimeDelta::Seconds(1)) {
     rate_samples_.pop_front();
