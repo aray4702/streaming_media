@@ -319,6 +319,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "send_rate_stats") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: send_rate_stats on|off");
       s.send_rate_stats = tok[1] == "on";
+    } else if (key == "control_handler") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: control_handler on|off");
+      s.control_handler = tok[1] == "on";
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";

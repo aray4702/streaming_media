@@ -42,7 +42,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
-  if (allocation_configured_) allocator_.OnTargetChanged(target_, now);
+  if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(target_, now);
   // GetPacingRates: the padding rate never exceeds the pushback target.
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
@@ -58,6 +58,29 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   if (window) cwnd_.UpdateWindow(target_);
   // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+}
+
+// GoogCC's MaybeTriggerOnNetworkChanged hands its TargetTransferRate to the transport's
+// CongestionControlHandler (drop-frame-only pushback: the loss-based target and the reduce ratio). It runs
+// after feedback, on the process interval and, with congestion-window pushback, for every sent packet.
+void SendSideController::PostTargetRate(Timestamp now) {
+  if (!cfg_.control_handler) return;
+  cc::TargetTransferRate msg;
+  msg.target_rate = target_;
+  msg.cwnd_reduce_ratio = cwnd_.reduce_ratio();
+  msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
+  msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
+  control_handler_.SetTargetRate(msg);
+  UpdateControlState(now);
+}
+
+// RtpTransportControllerSend::UpdateControlState: only a message the handler passes on reaches
+// the bitrate allocator (BitrateAllocator::OnNetworkEstimateChanged), and with it the streams.
+void SendSideController::UpdateControlState(Timestamp now) {
+  const std::optional<cc::TargetTransferRate> update = control_handler_.GetUpdate();
+  if (!update) return;
+  reported_reduce_ratio_ = update->cwnd_reduce_ratio;
+  if (allocation_configured_) allocator_.OnTargetChanged(update->target_rate, now);
 }
 
 void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const {
@@ -83,7 +106,10 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
     allocator_.AddObserver("video", v, [this](DataRate alloc) {
       // OnBitrateUpdated: protection = target - (encoder target + its packet overhead).
+      // RtpVideoSender::OnBitrateUpdated sets encoder_target_rate_bps_ here, from the protection sent in
+      // the last second, and the encoder keeps it until the next allocation.
       const DataRate encoder = AllocatedVideoTarget(alloc);
+      video_encoder_target_ = encoder;
       const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
       DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
       enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
@@ -96,7 +122,10 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
   target_ = std::max(target_, gcc_.target());
 }
 
-void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
+void SendSideController::Start(Timestamp now) {
+  Apply(gcc_.Start(now), now);
+  PostTargetRate(now);
+}
 
 void SendSideController::EnablePeriodicAlrProbing(bool enable) { gcc_.EnablePeriodicAlrProbing(enable); }
 
@@ -203,6 +232,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     }
     if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
+    if (cfg_.cwnd.enabled) PostTargetRate(now);
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
       (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();
@@ -221,8 +251,13 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   last_process_ = now;
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
+    // The transport's pacer-queue task (kPacerQueueUpdateInterval, 25 ms, started with the controller's
+    // and before it): the encoder pauses while the pacer's expected queue time is above 2 s.
+    if (cfg_.control_handler) control_handler_.SetPacerQueue(pacer_.QueueSize().bytes() == 0 ? TimeDelta::Zero() : pacer_.ExpectedQueueTime());
+    if (cfg_.control_handler) UpdateControlState(now);
     Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
     UpdatePushback(now, true);
+    PostTargetRate(now);
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
   // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. So does this one;
@@ -251,6 +286,7 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
   Apply(gcc_.OnTransportFeedback(fb, now), now);
   if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
   UpdatePushback(now, true);
+  PostTargetRate(now);
   outage_.OnFeedback(now);
 }
 
@@ -261,8 +297,10 @@ ControllerActions SendSideController::TakeActions() {
 }
 
 bool SendSideController::DropCapturedFrame() {
-  const DataRate base = allocation_configured_ ? AllocatedVideoTarget(allocator_.allocation("video")) : target_;
-  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(base, cwnd_.reduce_ratio(), cfg_.video_min);
+  const DataRate base = !allocation_configured_ ? target_
+                        : cfg_.control_handler ? video_encoder_target_
+                                               : AllocatedVideoTarget(allocator_.allocation("video"));
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(base, reduce_ratio(), cfg_.video_min);
   if (drop.interval == 0) return false;
   if (cwnd_frame_counter_++ % static_cast<uint64_t>(drop.interval) != 0) return false;
   ++cwnd_frames_dropped_;
@@ -293,7 +331,7 @@ void SendSideController::ApplyPushback(SendRates& out) const {
   // the matching share of the video target.
   // The allocator passes the reduce ratio to the video stream (cwnd_reduce_ratio
   // in BitrateAllocationUpdate), so the encoder takes it against its own target.
-  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(allocation_configured_ ? out.video_target : target_, cwnd_.reduce_ratio(), cfg_.video_min);
+  const auto drop = cc::CongestionWindowPushback::FrameDropInterval(allocation_configured_ ? out.video_target : target_, reduce_ratio(), cfg_.video_min);
   if (drop.interval > 0) {
     out.frame_drop_interval = drop.interval;
     out.video_target = std::clamp(out.video_target - out.video_target * (1.0 / drop.interval), cfg_.video_min, cfg_.video_max);
@@ -347,8 +385,8 @@ SendRates SendSideController::AllocatedRates() const {
   SendRates out;
   out.target = target_;
   out.audio_rate = allocator_.allocation("audio");
-  const DataRate alloc = allocator_.allocation("video");
-  out.video_target = AllocatedVideoTarget(alloc);
+  out.video_target = cfg_.control_handler ? video_encoder_target_ : AllocatedVideoTarget(allocator_.allocation("video"));
+  out.encoder_paused = cfg_.control_handler && control_handler_.encoder_paused();
   ApplyPushback(out);
   return out;
 }

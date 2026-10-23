@@ -74,6 +74,7 @@ struct Scenario {
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
+  bool control_handler = false;  // `control_handler on|off`: libwebrtc's CongestionControlHandler (issue #204).
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource with MAINTAIN_FRAMERATE and the
   // initial frame drop, on the encoder model's QP (issue #84 step 4; off by default until judged
