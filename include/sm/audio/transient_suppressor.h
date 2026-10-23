@@ -7,6 +7,11 @@
 // is voiced speech, see Vad::voiced(), so vowels are left alone), and the
 // following `hold_ms` are attenuated by `attenuation_db` (instant attack,
 // smooth ramp back to unity).
+//
+// Off by default (#243): libwebrtc M157's APM has no transient suppression;
+// its `AudioProcessing::Config::TransientSuppression` keeps only `enabled`,
+// false by default and deprecated (api/audio/audio_processing.h). With
+// `enabled` false, Process() leaves the audio as it is; set it to opt in.
 #pragma once
 
 #include <span>
@@ -16,6 +21,7 @@
 namespace sm::audio {
 
 struct TransientSuppressorConfig {
+  bool enabled = false;  // As libwebrtc's Config::TransientSuppression::enabled.
   int sample_rate = 16000;
   float onset_db = 12.0f;
   float attenuation_db = 20.0f;
