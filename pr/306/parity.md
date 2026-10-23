@@ -36,8 +36,8 @@ Opened:
 | issue_123_v2_allocation_min | `sync.av_offset_p95_ms` | 8170 | 6450 | ±1708 | behind | 8/10 | #77 |
 | issue_123_v2_allocation_min | `net.loss_pct` | 21.9 | 18.0 | ±3.8 | behind | 6/10 | #21, #61, #12 |
 | issue_127_pacer_v2_jitter_reorder_loss | `repair.overhead_pct` | 42.9 | 47.4 | ±4.2 | ahead | 25/40 | #21, #7, #29 |
-| issue_12_lossbwe_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63 |
-| issue_12_lossbwe_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63 |
+| issue_12_lossbwe_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63, #224 |
+| issue_12_lossbwe_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63, #224 |
 | issue_12_lossbwe_congestive | `repair.overhead_pct` | 9.8 | 7.5 | ±2 | behind | 7/10 | #21, #7, #29 |
 | issue_12_lossbwe_shallow_step | `audio.mouth_to_ear_p95_ms` | 159 | 149 | ±10 | behind | 5/10 | #63 |
 | issue_23_capacity_drop | `video.freeze_count` | 1.4 | 2.2 | ±0.8 | ahead | 7/10 | #5, #37, #24 |
@@ -47,8 +47,8 @@ Opened:
 | issue_23_low_bandwidth | `sync.av_offset_p95_ms` | 1959 | 1401 | ±199 | behind | 9/10 | #77 |
 | issue_23_outage_500ms | `cc.queue_p95_ms` | 47.2 | 64.0 | ±16.1 | ahead | 8/10 | #19, #15, #48, #12, #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1959 | 1401 | ±199 | behind | 9/10 | #77 |
-| issue_61_googcc_glue_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63 |
-| issue_61_googcc_glue_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63 |
+| issue_61_googcc_glue_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63, #224 |
+| issue_61_googcc_glue_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63, #224 |
 | issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.8 | 7.5 | ±2 | behind | 7/10 | #21, #7, #29 |
 | issue_76_rtx_v2_handover | `video.freeze_count` | 2.5 | 3.4 | ±0.8 | ahead | 6/10 | #5, #37, #24 |
 | issue_76_rtx_v2_handover | `video.e2e_delay_p95_ms` | 1718 | 2264 | ±501 | ahead | 6/10 | #24, #37 |
@@ -143,8 +143,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 4.1 | 3.2 | ±0.6 | behind | 7/10 | #23 |
 | issue_127_all_v2_no_stall | `repair.overhead_pct` | 31.3 | 37.7 | ±2 | ahead | 10/10 | #21, #7, #29 |
 | issue_127_pacer_v2_jitter_reorder_loss | `repair.overhead_pct` | 42.9 | 47.4 | ±4.2 | ahead | 25/40 | #21, #7, #29 |
-| issue_12_lossbwe_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63 |
-| issue_12_lossbwe_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63 |
+| issue_12_lossbwe_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63, #224 |
+| issue_12_lossbwe_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63, #224 |
 | issue_12_lossbwe_congestive | `cc.rtt_p50_ms` | 101 | 81.2 | ±10 | behind | 10/10 | #61 |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 5.2 | 3.8 | ±0.7 | behind | 9/10 | #21, #61, #12 |
 | issue_12_lossbwe_congestive | `repair.overhead_pct` | 9.8 | 7.5 | ±2 | behind | 7/10 | #21, #7, #29 |
@@ -257,8 +257,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_5_keyframe_flush | `cc.rtt_p50_ms` | 293 | 72.5 | ±14.6 | behind | 10/10 | #61 |
 | issue_5_keyframe_flush | `video.freeze_count` | 1.3 | 2.3 | ±0.7 | ahead | 8/10 | #5, #37, #24 |
 | issue_5_keyframe_flush | `video.freeze_total_ms` | 1749 | 2524 | ±299 | ahead | 10/10 | #5, #37, #24 |
-| issue_61_googcc_glue_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63 |
-| issue_61_googcc_glue_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63 |
+| issue_61_googcc_glue_congestive | `audio.jb_delay_p95_ms` | 335 | 192 | ±33.9 | behind | 10/10 | #63, #224 |
+| issue_61_googcc_glue_congestive | `audio.mouth_to_ear_p95_ms` | 421 | 278 | ±34.3 | behind | 10/10 | #63, #224 |
 | issue_61_googcc_glue_congestive | `cc.rtt_p50_ms` | 101 | 81.2 | ±10 | behind | 10/10 | #61 |
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 5.2 | 3.8 | ±0.7 | behind | 9/10 | #21, #61, #12 |
 | issue_61_googcc_glue_congestive | `repair.overhead_pct` | 9.8 | 7.5 | ±2 | behind | 7/10 | #21, #7, #29 |
