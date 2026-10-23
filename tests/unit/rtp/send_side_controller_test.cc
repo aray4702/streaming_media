@@ -177,6 +177,46 @@ SM_TEST(SendSideController, AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc) {
   SM_EXPECT_GE(c.ComputeMeasuredRates(DataRate::KilobitsPerSec(1990)).video_target.bps(), cfg.video_min.bps());
 }
 
+// `send_rate_stats` (issue #224): the share comes from per-type RateStatistics, as
+// RtpSenderEgress::GetSendRates. RTX that starts after more than 1.5 s without
+// any counts at its rate since it started; with the switch off it is averaged
+// over the whole second.
+namespace {
+double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(5000);
+  cfg.send_rate_stats = send_rate_stats;
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  uint16_t seq = 0;
+  const int rtx_start = 1000 + rtx_gap_ms;
+  for (int t = 0; t <= rtx_start + 100; ++t) {
+    // Video every 10 ms the whole time; a burst of RTX at 1000 ms, and RTX every
+    // 10 ms from `rtx_start`, the same size as the video.
+    if (t % 10 == 0) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+    if ((t == 1000 || (t >= rtx_start && t % 10 == 0)) && t < rtx_start + 100) {
+      c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+    }
+    c.Process(Timestamp::Millis(t));
+  }
+  return c.repair_share();
+}
+}  // namespace
+
+SM_TEST(SendSideController, RateStatisticsCountRepairThatJustStartedAtItsRateSinceItStarted) {
+  // 2 s without RTX: the RTX tracker restarts, so 100 ms of RTX at the video's
+  // rate is half of the rate (FecControllerDefault then caps it at 0.5).
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 2000), 0.5, 0.03);
+  // Averaged over the second, the same RTX is a tenth of the bytes.
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(false, 2000), 1.0 / 11.0, 0.02);
+}
+
+SM_TEST(SendSideController, RateStatisticsKeepTheWindowWhenTheLastRepairWasRecent) {
+  // The last RTX was 1.2 s before (under 1.5 windows): RateStatistics keeps the
+  // window start, so the new RTX is averaged over the whole second.
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), 1.0 / 11.0, 0.02);
+}
+
 // The keyframe's first packet flushes the queued video packets under pacer v2
 // (PacingController::EnqueuePacket); the flushed packets are never released
 // and leave nothing behind in the controller.
