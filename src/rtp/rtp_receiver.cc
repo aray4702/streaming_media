@@ -101,7 +101,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
       const uint8_t original_pt =
           ulpfec_ && p.payload_type == cfg_.ulpfec.red_rtx_payload_type ? cfg_.ulpfec.red_payload_type : cfg_.payload_type;
       if (auto m = loss::RestoreFromRtx(p, cfg_.ssrc, original_pt)) {
-        OnVideoRtp(*m, now);
+        OnVideoRtp(*m, now, /*recovered=*/true);
       } else {
         ++stats_.rtx_unrestorable;
       }
@@ -124,7 +124,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   // FEC packets hold media sequence numbers: they count in the receive statistics too.
   stats_rtp_.OnPacket(p.seq, p.timestamp, now);
   if (cfg_.video) {
-    const ReceivedKind kind = OnVideoRtp(p, now);
+    const ReceivedKind kind = OnVideoRtp(p, now, /*recovered=*/false);
     if (kind == ReceivedKind::kMedia) ++stats_.media;
     return kind;
   }
@@ -133,9 +133,9 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   return ReceivedKind::kMedia;
 }
 
-ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now) {
+ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered) {
   if (!ulpfec_ || p.payload_type != cfg_.ulpfec.red_payload_type) {
-    OnVideoMedia(p, now);
+    OnVideoMedia(p, now, recovered);
     return ReceivedKind::kMedia;
   }
   // ParseAndHandleEncapsulatingHeader (rtp_video_stream_receiver2.cc:1482-1505).
@@ -148,7 +148,8 @@ ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now) {
   if (ulpfec_->AddReceivedRedPacket(p)) {
     // UlpfecReceiver::ProcessReceivedFec: the media packet out of RED, then what FEC recovered
     // (OnRecoveredPacket, which is not fed back).
-    for (const RtpPacket& m : ulpfec_->ProcessReceivedFec()) OnVideoMedia(m, now);
+    // The media packet out of RED keeps `p`'s sequence number; the rest were recovered by FEC.
+    for (const RtpPacket& m : ulpfec_->ProcessReceivedFec()) OnVideoMedia(m, now, m.seq != p.seq || recovered);
   }
   return is_fec ? ReceivedKind::kFec : ReceivedKind::kMedia;
 }
@@ -170,7 +171,7 @@ void RtpReceiver::TrackSequence(uint16_t seq) {
   }
 }
 
-void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now) {
+void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered) {
   VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
   if (!info.valid) {
     ++stats_.invalid_payload;
@@ -178,9 +179,15 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now) {
     return;
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
-  // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports.
-  last_received_rtp_timestamp_ = p.timestamp;
-  last_received_rtp_time_ = now;
+  // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports,
+  // from packets received as they were sent only. A packet restored from RTX
+  // or recovered by FEC is `recovered()` there and doesn't move it
+  // (UpdatePacketReceiveTimestamps), so a late retransmission of an old frame
+  // doesn't look like a video delay to lip sync.
+  if (!recovered) {
+    last_received_rtp_timestamp_ = p.timestamp;
+    last_received_rtp_time_ = now;
+  }
   keyframes_.OnMediaPacket(now, info.idr || info.sps || info.pps);
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that

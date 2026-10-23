@@ -349,15 +349,14 @@ Reference files: `video/stream_synchronization.*`, `video/rtp_streams_synchroniz
 receive, `GetSyncInfo`), `audio/audio_send_stream.cc` (extension registration),
 `media/engine/webrtc_video_engine.cc` (base minimum playout delay).
 
-**Where it runs.** The section 8 modules are used by their unit, e2e and bench
-tests only. The test bench call (`testbench/call.cc`) registers the transport-cc
-extension and nothing else from section 8: it does not map RTP to NTP, does not
-run `StreamSynchronization` and sends no abs-capture-time. The comparison harness
-(`compare/webrtc/webrtc_call.cc`) registers the same one extension and sets no
-sync group, so **neither side synchronizes audio and video in any `sm_compare`
-scenario today**. Section 8 parity is therefore not measured; #63 owns the metric
-(`sync.av_offset_p95_ms`), and wiring the modules into the session layer is
-unplaced (see the last table).
+**Where it runs.** Since #77 step 2 (#300), `rtp::Session` runs lip sync when
+`SessionConfig::av_sync` is set: it pairs its first audio and first video receive
+stream as one sync group, the receivers act as `Syncable`, and the audio send stream
+sends its own SR (`SessionConfig::audio_rtcp`). The test bench call turns both on
+with the scenario's `av_sync` (default on since #77 step 3), and `sm_compare` then
+puts libwebrtc's audio and video receive streams in one `sync_group`, so both stacks
+synchronize in the same scenarios. #63's `sync.av_offset_*` metrics measure it on
+both. The call still sends no abs-capture-time (8.3).
 
 #77 ported `RtpToNtpEstimator`, `StreamSynchronization` and `RtpStreamsSynchronizer`
 (with `Syncable`) from M157 as library modules. Integer milliseconds come from our
@@ -386,12 +385,28 @@ filter and the delay rule). Ours is one class and the caller decides when to cal
 | Relative delay | `ComputeRelativeDelay` | **Same** (ported in #77): `(video_receive - audio_receive) - (video_capture - audio_capture)` in integer ms (`NtpTime::ToMs`), no update beyond +-10000 ms. The receive time and RTP timestamp are those of the latest received RTP packet of each stream, which the caller gives in `Syncable::Info` as `GetSyncInfo` does. | same | #77 |
 | Offset filter | `ComputeDelays` (`avg_diff_ms_`, integer arithmetic) | **Same** (ported in #77): the average starts at 0, `(3 x avg + cur) / 4` in integer ms, reset to 0 after a move; `cur = current_video_delay - current_audio_delay + relative_delay` with the video target delay and the audio current delay as `RtpStreamsSynchronizer` passes them. | same | #77 |
 | Delay rule | `ComputeDelays` (`audio_delay_`/`video_delay_` with `extra_ms` and `last_ms`) | **Same** (ported in #77): one stream at a time, the other keeps its `last_ms` output, each output capped at base + 10 s, video never below base. | same | #77 |
-| What the output means | `rtp_streams_synchronizer2.cc` `UpdateDelay` | **Same** (ported in #77 as `RtpStreamsSynchronizer`): the targets go to `Syncable::SetMinimumPlayoutDelay` of the audio and video streams as a minimum total playout delay (audio target from 0, video from its current delay). No receive stream in the library implements `Syncable` yet (see "Where it runs"). | same (not wired) | #77 |
+| What the output means | `rtp_streams_synchronizer2.cc` `UpdateDelay` | **Same** (ported in #77 as `RtpStreamsSynchronizer`): the targets go to `Syncable::SetMinimumPlayoutDelay` of the audio and video streams as a minimum total playout delay (audio target from 0, video from its current delay). `rtp::RtpReceiver` implements `Syncable` since #300 (8.2a). | same | #77 |
 | When it runs | `kSyncInterval` 1 s repeating task; skipped when no new audio packet **and** no new video packet arrived since the last run, when either stream has no SR yet, or when `RtpToNtpEstimator` is not valid | **Same** rules (#77): `RtpStreamsSynchronizer::Process(now)` runs `UpdateDelay` 1 s after `ConfigureSync` and then 1 s after each run. The next run is timed from the time `Process` ran; `rtc_base/task_utils/repeating_task.cc` is not in `reference/` to confirm how libwebrtc times it under a late run. | same | #77 |
 | Failed delay change | `ReduceAudioDelay`, `ReduceVideoDelay` (extra delay x 0.9 when `SetMinimumPlayoutDelay` returns false) | **Same** (#77). | same | #77 |
 | Base target delay | `SetTargetBufferingDelay`, `base_target_delay_ms_`; the engine's `SetBaseMinimumPlayoutDelayMs` (`webrtc_video_engine.cc`) | `SetTargetBufferingDelay` is **the same** (#77). Who calls it with which value is part of wiring (unplaced). | same | #77 |
-| Which streams are paired | `RtpStreamsSynchronizer::ConfigureSync(Syncable* audio)` called per **sync group** by `Call` (`call/call.cc`, not in `reference/`) | `MediaSyncGroups` pairs by **CNAME** and takes the lowest SSRC of each kind. libwebrtc pairs by the `sync_group` string of the receive stream configuration (the stream id from SDP), one audio stream per video stream. Same purpose, different key; `call/call.cc` and `call/syncable.h` are needed to confirm. | file needed (#57) | unplaced |
+| Which streams are paired | `Call::ConfigureSync` (`call/call.cc`, not in `reference/`) calls `RtpStreamsSynchronizer::ConfigureSync(Syncable* audio)` for the audio and video receive streams that share a **sync group** | `rtp::Session::MaybeCreateSync` (#300) pairs the **first** audio and the **first** video receive stream when `av_sync` is on: a one-to-one call has one of each (`program.md` 0.1). `MediaSyncGroups` (CNAME pairing, lowest SSRC of each kind) is not used by the session. `call/call.cc` is still needed to confirm the pairing rule itself. | same for a one-to-one call; file needed (#57) | #77 |
 | Stream offset stat | `GetStreamSyncOffsetInMs` (video playout NTP vs audio playout NTP, estimated frequency) | **Same** (ported in #77 as `RtpStreamsSynchronizer::GetStreamSyncOffsetInMs`). The test bench's `sync.av_offset_*` metric (#237) computes the same quantity with exact capture times. | same | #77 |
+
+### 8.2a The receive streams as `Syncable` (`rtp::RtpReceiver`, `src/rtp/rtp_receiver.cc`)
+
+Checked against `audio/channel_receive.cc`, `audio/audio_receive_stream.cc` (reference
+PR #304) and `video/rtp_video_stream_receiver2.cc` for #77.
+
+| Our module | libwebrtc | Difference | Status | Issue |
+|---|---|---|---|---|
+| Audio `SyncInfo` | `AudioReceiveStreamImpl::GetInfo` -> `ChannelReceive::GetSyncInfo` | **Same**: unset without an SR (`GetSenderReportStats`) or without a received packet; capture NTP and RTP from the last SR; the last received RTP timestamp and its arrival time, recorded in `OnRtpPacket` before the payload-type check, as `OnAudioMedia` records them before the decoder check; `current_delay` is NetEq's `FilteredCurrentDelayMs` plus the device's `PlayoutDelay`. The test bench has no audio device, so the device delay is 0. | same | #77 |
+| Audio minimum playout delay | `ChannelReceive::SetMinimumPlayoutDelay` (`kVoiceEngineMinMinPlayoutDelay` 0, `kVoiceEngineMaxMinPlayoutDelay` 10 s, then `NetEq::SetMinimumDelay(delay.ms())`, false when NetEq refuses) | **Same** clamp and result: `AudioJitterBuffer::SetMinimumDelayMs` returns `DelayConstraints::SetMinimumDelay`'s result with `neteq v2`. | same | #77 |
+| Audio playout timestamp | `ChannelReceive::GetPlayoutRtpTimestamp` (unset before the first successful `GetAudioFrameWithInfo`; `NetEq::GetPlayoutTimestamp` minus the device delay; the time of the last playout) | **Same**: `NetEq::GetPlayoutTimestamp` (`AudioJitterBuffer::PlayoutTimestamp`) is unset until the first `GetAudio`, which also records the playout time; device delay 0. | same | #77 |
+| Audio estimated playout NTP | `ChannelReceive::SetEstimatedPlayoutNtpTimestamp`, `GetCurrentEstimatedPlayoutNtpTimestampMs` (stats only) | Not kept: nothing in the library reads it (`SetEstimatedPlayoutNtpTimestamp` is a no-op). | n/a (stats only) | |
+| Audio base minimum delay | `ChannelReceive::SetBaseMinimumPlayoutDelayMs` -> `NetEq::SetBaseMinimumDelayMs` (the app's `playout_delay` setting) | Not wired: no caller in a one-to-one call through the session. | n/a | |
+| Video latest received packet | `RtpVideoStreamReceiver2::OnReceivedPayloadData` calls `UpdatePacketReceiveTimestamps` only `if (!rtp_packet.recovered())`: packets restored from RTX or recovered by FEC don't move the RTP timestamp and receive time that `GetSyncInfo` reports | **Same** since #77 step 3 (PR #306): `RtpReceiver::OnVideoMedia` takes `recovered` and skips them. Before, a NACKed packet of an old frame arriving ~300 ms late looked like a 300 ms jump in relative delay, and sync added that much audio delay (`issue_127_all_v2_no_stall` audio jitter buffer p95 350 vs libwebrtc 235 ms). `call/rtx_receive_stream.cc`, which marks RTX packets recovered, is not in `reference/`. | same; file needed (#57) | #77 |
+| Video `SyncInfo` and minimum delay | `VideoReceiveStream2::GetInfo` (`RtpVideoStreamReceiver2::GetSyncInfo`, `current_delay` = `VCMTiming::TargetVideoDelay`), `SetMinimumPlayoutDelay` (largest of the sync, base and frame minimums to `VCMTiming`) | **Same** with `timing v2`; with `timing v1` (the library's `FrameScheduler`, no `VCMTiming`) the video stream gives no sync info and lip sync does not run. `video/video_receive_stream2.cc` is not in `reference/`, so the `GetInfo` side is read from the receiver and the prebuilt headers. | same (`timing v2`); file needed (#57) | #77 |
+| Audio sender reports | The audio stream's own `RtpRtcp` module (`audio/audio_send_stream.cc`, `channel_send.cc`): SR on the audio SSRC every 5 s on average | `SessionConfig::audio_rtcp` (#300): a second `RtcpEngine` on the audio SSRC with the audio report interval. Before #300 only the video stream sent SRs. | same | #77 |
 
 ### 8.3 Capture time and glass-to-glass latency (`src/sync/capture_time.cc`)
 
@@ -418,15 +433,12 @@ missing. The table records what can be said without them.
 
 ### 8.5 Items for the Owner to place
 
-Rows marked `unplaced` above fall into three groups; none has an issue yet:
+Rows marked `unplaced` above fall into these groups:
 
-1. **Port `StreamSynchronization` and `RtpStreamsSynchronizer` as libwebrtc has
-   them** (8.1 rejection rule, 8.2 filter, delay rule, schedule, `ReduceDelay`,
-   base delay). Needs a place on the work list after #63 builds the metric, since
-   the library does not use the module today.
-2. **Wire sync into the session layer** (`src/rtp`): SR to `RtpToNtpEstimator`,
-   `GetSyncInfo`-like inputs, `SetMinimumPlayoutDelay` on the audio jitter buffer
-   and video timing. Without it no scenario can show a sync gap.
+1. ~~Port `StreamSynchronization` and `RtpStreamsSynchronizer`~~: done in #77
+   step 1 (#278).
+2. ~~Wire sync into the session layer~~: done in #77 step 2 (#300), on in the test
+   bench and `sm_compare` by default since step 3.
 3. **Add to #57:** `modules/rtp_rtcp/source/absolute_capture_time_sender.*`,
    `absolute_capture_time_interpolator.*`, `capture_clock_offset_updater.*`,
    `call/call.cc` (`ConfigureSync`), `call/syncable.h`,

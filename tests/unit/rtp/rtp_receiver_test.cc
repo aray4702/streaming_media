@@ -644,3 +644,45 @@ SM_TEST(RtpReceiver, MediaObserverSeesOriginalsAndRtxRestoresButNotPadding) {
   r.OnPacket(pad.packet.Serialize(), Timestamp::Millis(90));
   SM_EXPECT_EQ(log.seqs.size(), f0.size());
 }
+
+// Lip sync (issue #77): RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps
+// runs only for packets that are not `recovered()`. A late RTX restore of an
+// old frame leaves the latest received RTP timestamp and receive time alone,
+// so it doesn't look like a 100 ms jump in video delay to the synchronizer.
+SM_TEST(RtpReceiver, SyncInfoIgnoresPacketsRestoredFromRtx) {
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.timing.version = 2;
+  RtpSender s(SenderCfg());
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  timing::SenderReport sr;
+  sr.ssrc = kSsrc;
+  sr.ntp = timing::NtpTime{uint64_t{1} << 32};
+  sr.rtp_timestamp = 0;
+  r.OnSenderReport(sr, Timestamp::Millis(10));
+  auto f0 = SendFrame(s, 0, true, 3000, Timestamp::Millis(0));
+  auto f1 = SendFrame(s, 1, false, 800, Timestamp::Millis(33));
+  SM_ASSERT_GE(f0.size(), 3u);
+  for (size_t i = 0; i < f0.size(); ++i)
+    if (i != 1) r.OnPacket(f0[i], Timestamp::Millis(20));
+  for (auto& b : f1) r.OnPacket(b, Timestamp::Millis(53));
+  auto before = r.SyncInfo();
+  SM_ASSERT_TRUE(before.has_value());
+  SM_EXPECT_EQ(before->latest_received_capture_rtp_timestamp, 3000u);
+  SM_EXPECT_EQ(before->latest_receive_time.ms(), 53);
+  // Frame 0's lost packet arrives through RTX 100 ms later.
+  auto lost = RtpPacket::Parse(f0[1]);
+  s.OnNack(std::vector<uint16_t>{lost->seq}, Timestamp::Millis(130), TimeDelta::Millis(40));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  SM_EXPECT_TRUE(r.OnPacket(rtx[0].packet.Serialize(), Timestamp::Millis(153)) == ReceivedKind::kRtx);
+  auto after = r.SyncInfo();
+  SM_ASSERT_TRUE(after.has_value());
+  SM_EXPECT_EQ(after->latest_received_capture_rtp_timestamp, 3000u);
+  SM_EXPECT_EQ(after->latest_receive_time.ms(), 53);
+  // A packet received as it was sent still moves it.
+  auto f2 = SendFrame(s, 2, false, 800, Timestamp::Millis(166));
+  for (auto& b : f2) r.OnPacket(b, Timestamp::Millis(186));
+  SM_EXPECT_EQ(r.SyncInfo()->latest_received_capture_rtp_timestamp, 6000u);
+  SM_EXPECT_EQ(r.SyncInfo()->latest_receive_time.ms(), 186);
+}

@@ -17,7 +17,8 @@ timing v2
 duration 30s
 at 0s capacity=2500kbps delay=25ms queue=300ms
 expect video.e2e_delay_p50_ms >= 68
-expect video.e2e_delay_p50_ms < 85
+# Was < 85. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 102 on seed 1; libwebrtc with sync_group 116.1 (mean of 10 seeds, so libwebrtc fails < 85 too; the per-seed values are not published, so the bound stays below the mean, which no worst seed is below).
+expect video.e2e_delay_p50_ms < 115
 expect video.e2e_delay_p95_ms < 200
 expect video.time_to_first_frame_ms < 60
 expect video.freeze_count == 0
