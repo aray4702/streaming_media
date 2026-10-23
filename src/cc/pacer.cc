@@ -95,6 +95,7 @@ void Pacer::SetCongested(bool congested) {
   kick_ = true;
 }
 DataSize Pacer::QueueSize() const { return pc_->QueueSize(); }
+TimeDelta Pacer::ExpectedQueueTime() const { return pc_->ExpectedQueueTime(); }
 size_t Pacer::QueuePackets() const { return pc_->QueuePackets(); }
 TimeDelta Pacer::OldestQueueTime(Timestamp now) const { return pc_->OldestQueueTime(now); }
 const PacerStats& Pacer::stats() const { return pc_->stats(); }

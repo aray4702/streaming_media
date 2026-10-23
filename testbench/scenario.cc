@@ -316,6 +316,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "av_sync") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: av_sync on|off");
       s.av_sync = tok[1] == "on";
+    } else if (key == "control_handler") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: control_handler on|off");
+      s.control_handler = tok[1] == "on";
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";
