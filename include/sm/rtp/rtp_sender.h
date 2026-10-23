@@ -171,10 +171,14 @@ class RtpSender : public MetricsSource {
   // The peer acknowledged the MID: stop repeating it.
   void AcknowledgeMid() { mid_remaining_ = 0; }
 
-  // FEC protection for the next frames (loss::ProtectionController), for delta and key frames
-  // alike; the generator applies them from the next protected packet.
-  void SetFecParams(const loss::ulpfec::FecProtectionParams& p);
+  // FEC protection for the next frames, for delta and key frames alike; the
+  // generator applies them from the next protected packet.
+  void SetFecParams(const loss::ulpfec::FecProtectionParams& p) { SetFecParams(p, p); }
+  // RtpRtcp::SetFecProtectionParams: what loss::FecControllerDefault asks for each frame type.
+  void SetFecParams(const loss::ulpfec::FecProtectionParams& delta, const loss::ulpfec::FecProtectionParams& key);
+  // The delta-frame and key-frame parameters last set.
   const loss::ulpfec::FecProtectionParams& fec_params() const { return fec_params_; }
+  const loss::ulpfec::FecProtectionParams& key_fec_params() const { return key_fec_params_; }
   // The ULPFEC generator, when FEC is on.
   const loss::ulpfec::UlpfecGenerator* ulpfec() const { return ulpfec_.get(); }
 
@@ -200,6 +204,7 @@ class RtpSender : public MetricsSource {
   loss::RedEncoder red_;
   std::unique_ptr<loss::ulpfec::UlpfecGenerator> ulpfec_;
   loss::ulpfec::FecProtectionParams fec_params_;
+  loss::ulpfec::FecProtectionParams key_fec_params_;
   std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
   int mid_remaining_;
