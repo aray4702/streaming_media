@@ -1,6 +1,9 @@
 name issue_84_encoder_qp_720p_low_rate
 describe 720p camera on a 400 kbps link: the encoder model's QP sits above the H.264 high threshold, where libwebrtc's QualityScaler adapts down
 duration 30s
+# The encoder's input as such: quality scaling (on by default since #84's
+# flip) would change the resolution this scenario pins.
+quality_scaling off
 at 0s capacity=400kbps delay=30ms queue=300ms
 # Issue #84 step 1: the encoder QP model (testbench/encoder_model.h) that both
 # stacks of sm_compare share. Neither stack adapts resolution yet, so this
