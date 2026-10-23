@@ -1,0 +1,14 @@
+name issue_84_quality_scaling_rate_rise
+describe 720p camera with libwebrtc's quality scaling, 400 kbps for 10 s then 2.5 Mbps: the low QP at the higher rate scales the resolution back up to 720p
+duration 40s
+quality_scaling on
+at 0s capacity=400kbps delay=30ms queue=300ms
+at 10s capacity=2500kbps
+# Issue #84 step 4: after the initial frame drop puts the call at 320x180, the
+# quality scaler (QualityScaler version 2: 60 frames, a check every 2 s until
+# its first high-QP report) sees QP at or below 24 once the target
+# rises and asks to adapt up; each step is 5/3 of the pixels (480x270,
+# 640x360, 960x540, 1280x720), each new size starting with a keyframe.
+expect video.encode_height_mean > 250
+expect video.keyframes >= 4
+expect video.freeze_count <= 1

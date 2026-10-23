@@ -12,6 +12,7 @@
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
 #include "sm/video/quality_scaler.h"
+#include "sm/video/video_stream_adapter.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -480,4 +481,100 @@ SM_TEST(QualityScaler, V2SmoothsQpOverTime) {
   q.OnEncodedFrame(18, Ms(t));
   // 0.9995^33 = 0.98363: 40 - 22 x (1 - 0.98363) = 39.64.
   SM_EXPECT_NEAR(q.average_qp(), 39.64, 0.01);
+}
+
+// Ports of call/adaptation/video_stream_adapter_unittest.cc (MAINTAIN_FRAMERATE)
+// and the VideoAdapter scale series (api/video/video_adapter.cc), issue #84.
+namespace {
+// FakeVideoStream::ApplyAdaptation: the input follows the target, else the maximum.
+void FollowRestrictions(VideoStreamAdapter& a, int& input_pixels) {
+  const auto& r = a.restrictions();
+  if (r.target_pixels_per_frame) {
+    input_pixels = *r.target_pixels_per_frame;
+  } else if (r.max_pixels_per_frame) {
+    input_pixels = *r.max_pixels_per_frame;
+  }
+  a.OnFrameSizeObserved(input_pixels);
+}
+}  // namespace
+
+SM_TEST(VideoStreamAdapter, DecreasesPixelsToThreeFifthsAndStopsAtTheMinimum) {
+  VideoStreamAdapter a;
+  SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+  SM_EXPECT_TRUE(a.AdaptDown() == VideoStreamAdapter::Status::kInsufficientInput);
+  a.OnFrameSizeObserved(1280 * 720);
+  SM_EXPECT_TRUE(a.AdaptDown() == VideoStreamAdapter::Status::kValid);
+  SM_EXPECT_EQ(a.restrictions().max_pixels_per_frame.value_or(0), 1280 * 720 * 3 / 5);
+  SM_EXPECT_FALSE(a.restrictions().target_pixels_per_frame.has_value());
+  SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+  // MaintainFramerate_DecreasesPixelsToLimitReached: 3/5 would go below the minimum.
+  VideoStreamAdapter limited(640 * 480);
+  limited.OnFrameSizeObserved(640 * 480 + 1);
+  SM_EXPECT_TRUE(limited.AdaptDown() == VideoStreamAdapter::Status::kLimitReached);
+}
+
+SM_TEST(VideoStreamAdapter, IncreasesPixelsToFiveThirdsThenUnrestricted) {
+  VideoStreamAdapter a;
+  int input = 1280 * 720;
+  a.OnFrameSizeObserved(input);
+  // Unrestricted: nothing to undo.
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kLimitReached);
+  a.AdaptDown();
+  FollowRestrictions(a, input);
+  a.AdaptDown();
+  FollowRestrictions(a, input);
+  SM_EXPECT_EQ(a.resolution_adaptations(), 2);
+  const int target = input * 5 / 3;
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kValid);
+  SM_EXPECT_EQ(a.restrictions().max_pixels_per_frame.value_or(0), target * 12 / 5);
+  SM_EXPECT_EQ(a.restrictions().target_pixels_per_frame.value_or(0), target);
+  SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+  FollowRestrictions(a, input);
+  // Undoing the last step removes the restrictions.
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kValid);
+  SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+  SM_EXPECT_EQ(a.resolution_adaptations(), 0);
+}
+
+SM_TEST(VideoStreamAdapter, AwaitsThePreviousAdaptation) {
+  VideoStreamAdapter a;
+  a.OnFrameSizeObserved(1280 * 720);
+  a.AdaptDown();
+  // The input has not changed size yet: no second step down.
+  SM_EXPECT_TRUE(a.AdaptDown() == VideoStreamAdapter::Status::kAwaitingPreviousAdaptation);
+  a.OnFrameSizeObserved(960 * 540);
+  SM_EXPECT_TRUE(a.AdaptDown() == VideoStreamAdapter::Status::kValid);
+  a.OnFrameSizeObserved(640 * 360);
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kValid);
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kAwaitingPreviousAdaptation);
+}
+
+SM_TEST(VideoAdapter, ScalesThroughLibwebrtcsSeries) {
+  // 1280x720: 3/4 -> 960x540, 1/2 -> 640x360, 3/8 -> 480x270, 1/4 -> 320x180.
+  VideoAdapter v;
+  int w = 0, h = 0;
+  SM_EXPECT_TRUE(v.AdaptFrameResolution(1280, 720, &w, &h));
+  SM_EXPECT_EQ(w, 1280);
+  SM_EXPECT_EQ(h, 720);
+  const int expected[][2] = {{960, 540}, {640, 360}, {480, 270}, {320, 180}};
+  int pixels = 1280 * 720;
+  for (const auto& e : expected) {
+    pixels = GetLowerResolutionThan(pixels);
+    v.OnSinkWants({pixels, std::nullopt});
+    v.AdaptFrameResolution(1280, 720, &w, &h);
+    SM_EXPECT_EQ(w, e[0]);
+    SM_EXPECT_EQ(h, e[1]);
+    pixels = w * h;
+  }
+  // Going up: target 5/3 of 320x180, maximum 12/5 of that -> 480x270 is closest.
+  const int target = GetHigherResolutionThan(320 * 180);
+  v.OnSinkWants({target * 12 / 5, target});
+  v.AdaptFrameResolution(1280, 720, &w, &h);
+  SM_EXPECT_EQ(w, 480);
+  SM_EXPECT_EQ(h, 270);
+  // 960x540 divides by 3, so the series starts with 2/3: 3/5 of it -> 640x360.
+  v.OnSinkWants({GetLowerResolutionThan(960 * 540), std::nullopt});
+  v.AdaptFrameResolution(960, 540, &w, &h);
+  SM_EXPECT_EQ(w, 640);
+  SM_EXPECT_EQ(h, 360);
 }
