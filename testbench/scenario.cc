@@ -414,6 +414,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
   if (s.encode_delay != d.encode_delay) o += std::string("encode_delay ") + (s.encode_delay ? "on" : "off") + "\n";
+  if (s.control_handler != d.control_handler) o += std::string("control_handler ") + (s.control_handler ? "on" : "off") + "\n";
   if (s.send_rate_stats != d.send_rate_stats) o += std::string("send_rate_stats ") + (s.send_rate_stats ? "on" : "off") + "\n";
   if (s.quality_scaling != d.quality_scaling) o += std::string("quality_scaling ") + (s.quality_scaling ? "on" : "off") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
