@@ -6,19 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-173 gaps on `main`, 180 here: **0 closed, 7 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 19591 | 24237 | ±4540 | ahead | 7/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.longest_freeze_ms` | 3512 | 3283 | ±176 | behind | 1/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.pause_count` | 1 | 0 | ±0.5 | behind | 6/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.pause_total_ms` | 6456 | 0 | ±323 | behind | 6/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.e2e_delay_p95_ms` | 174 | 232 | ±36.7 | ahead | 9/10 | #24, #37 |
-| issue_29_ulpfec_over_red | `sync.av_offset_p95_ms` | 60.8 | 110 | ±29.5 | ahead | 9/10 | #77 |
-| issue_29_ulpfec_over_red | `repair.overhead_pct` | 32.0 | 38.9 | ±3.3 | ahead | 10/10 | #21, #7, #29 |
+180 gaps on `main`, 180 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
