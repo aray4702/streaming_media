@@ -91,7 +91,15 @@ ALGORITHMS = [
                       "sequence numbers) and `RtpReceiver.RedPacketRestoredFromRtx`. In the e2e simulation 50% random-mask "
                       "protection keeps 99.0% of frames on time at 5% loss (67.4% without); on Gilbert-Elliott bursts the "
                       "bursty masks recover 150 packets against 143 for the random ones. No stage-1 scenario sends video "
-                      "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged."),
+                      "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged. "
+                      "Interop (#29, last PR): `compare/webrtc/rtcp_interop.cc` (CI job compare-webrtc) has libwebrtc's "
+                      "`UlpfecReceiver` recover, byte for byte, the packets this library's `UlpfecGenerator` protected, "
+                      "and this library's `UlpfecReceiver` recover those libwebrtc's `UlpfecGenerator` protected, on an "
+                      "8-packet block (16-bit mask, 3 lost) and a 20-packet block (48-bit mask, interleaved masks, "
+                      "across the sequence-number wrap, 2 lost) with CSRCs, extensions and padding; the two generators "
+                      "also make the same FEC payloads. On `random_loss_5pct`, `burst_loss` and `satellite`, seeds 1-5, "
+                      "neither stack sends video FEC (0 kbps on both), so recovery per parity packet and "
+                      "`video.residual_loss_pct` are unchanged from before the port."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
          problems=["Lost audio frames -> RED redundancy for audio"],
          headers=["loss/red.h"], unit=["Red"], e2e=["E2E_Red"],
