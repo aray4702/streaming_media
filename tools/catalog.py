@@ -328,6 +328,11 @@ ALGORITHMS = [
                       "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
                       "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
                       "decoder exists at such a rate. "
+                      "Issue #298 (fix record docs/fixes/298-audio-24khz-plays.md): the test bench used the capture "
+                      "rate as the codec clock, so a 24 kHz call lost all its audio; it now encodes 12, 24 and "
+                      "44.1 kHz captures at Opus's 48 kHz clock as libwebrtc does, and `issue_256_audio_24khz` "
+                      "measures jitter-buffer p95 112 ms, concealment 0.25 %, mouth-to-ear p95 194 ms (seeds 1-5; "
+                      "libwebrtc 129, 0.39, 219, the same gaps as the 16 kHz calls). "
                       "See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -1203,7 +1208,8 @@ ALGORITHMS = [
                                 "`issue_24_timing_v2_render_fps` locks it in."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
-         headers=["video/quality_scaler.h"], unit=["QualityScaler"], e2e=["E2E_QualityScaler"],
+         headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],
+         unit=["QualityScaler", "VideoStreamAdapter", "VideoAdapter"], e2e=["E2E_QualityScaler"],
          bench=["video/QualityScaler_frame"],
          scenario="An H.264-like encoder model (QP +6 per halving of bits per pixel) with bandwidth 2500 -> 300 "
                   "-> 2500 kbps; resolution follows the QP signals.",
@@ -1221,8 +1227,25 @@ ALGORITHMS = [
                       "window; drop rate >= 60%; smoothed QP > high or <= low. `sm_video_compare` gives the same "
                       "signals as libwebrtc on all six quality-scaler inputs "
                       "([results](../../results/video-webrtc.md)); the unit tests port "
-                      "`quality_scaler_unittest.cc`. Version 1 stays the default until #84 wires version 2 "
-                      "into the send path."),
+                      "`quality_scaler_unittest.cc`. "
+                      "Issue #84 step 4 wires version 2 into the send path behind `quality_scaling` "
+                      "(`rtp::VideoSendController`, scenario key `quality_scaling on`, off by default): "
+                      "libwebrtc's `QualityScalerResource` with `MAINTAIN_FRAMERATE`, `VideoStreamAdapter`'s "
+                      "resolution steps (3/5 down, 5/3 up with a 12/5 maximum, the 320x180 minimum, waiting for the "
+                      "frame size to change), `VideoAdapter`'s 3/4-2/3 scale series and "
+                      "`VideoStreamEncoder::DropDueToSize` (up to 4 initial frames dropped as too large for the "
+                      "target, each adapting down), from `call/adaptation/` and `api/video/video_adapter.cc` "
+                      "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
+                      "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
+                      "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
+                      "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
+                      "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
+                      "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
+                      "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
+                      "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
+                      "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
+                      "(`EncoderPaused`) and the frame dropper. `issue_84_quality_scaling_720p_low_rate` and "
+                      "`issue_84_quality_scaling_rate_rise` lock in the behaviour."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],
