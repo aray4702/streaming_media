@@ -1,12 +1,24 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-90 scenarios, mean of 10 seeds. **175 gaps**: 73 behind libwebrtc, 102 ahead of it; 0 without an owner.
+94 scenarios, mean of 10 seeds. **180 gaps**: 77 behind libwebrtc, 103 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-175 gaps on `main`, 175 here: **0 closed, 0 opened**, 0 changed direction.
+173 gaps on `main`, 180 here: **0 closed, 7 opened**, 0 changed direction.
+
+Opened:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 19591 | 24237 | ±4540 | ahead | 7/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.longest_freeze_ms` | 3512 | 3283 | ±176 | behind | 1/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.pause_count` | 1 | 0 | ±0.5 | behind | 6/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.pause_total_ms` | 6456 | 0 | ±323 | behind | 6/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.e2e_delay_p95_ms` | 174 | 232 | ±36.7 | ahead | 9/10 | #24, #37 |
+| issue_29_ulpfec_over_red | `sync.av_offset_p95_ms` | 60.8 | 110 | ±29.5 | ahead | 9/10 | #77 |
+| issue_29_ulpfec_over_red | `repair.overhead_pct` | 32.0 | 38.9 | ±3.3 | ahead | 10/10 | #21, #7, #29 |
 
 ### Gaps
 
@@ -93,9 +105,6 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_24_timing_v2_render_fps | `video.e2e_delay_p95_ms` | 2388 | 1949 | ±119 | behind | 10/10 | #24, #37 |
 | issue_24_timing_v2_render_fps | `video.longest_freeze_ms` | 1092 | 876 | ±186 | behind | 8/10 | #5, #37, #24 |
 | issue_24_timing_v2_render_fps | `video.render_fps` | 28.9 | 27.4 | ±1.4 | ahead | 7/10 | #37, #24 |
-| issue_256_audio_24khz | `audio.jb_delay_p95_ms` | 0 | 129 | ±41.5 | ahead | 10/10 | #63 |
-| issue_256_audio_24khz | `audio.longest_interruption_ms` | 0 | 28 | ±20 | ahead | 4/10 | #63 |
-| issue_256_audio_24khz | `audio.mouth_to_ear_p95_ms` | 81.0 | 219 | ±55.1 | ahead | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.concealed_pct` | 1.3 | 0.3 | ±0.5 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 370 | 119 | ±19.7 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.longest_interruption_ms` | 58 | 21 | ±20 | behind | 5/10 | #63 |
@@ -118,6 +127,13 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_268_freeze_rule_outage | `video.pause_total_ms` | 1011 | 0 | ±100 | behind | 2/10 | #5, #37, #24 |
 | issue_283_longest_freeze_no_metrics | `video.freeze_count` | 1.2 | 1.8 | ±0.5 | ahead | 6/10 | #5, #37, #24 |
 | issue_283_longest_freeze_no_metrics | `video.freeze_total_ms` | 2136 | 2274 | ±114 | ahead | 6/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `repair.overhead_pct` | 32.0 | 38.9 | ±3.3 | ahead | 10/10 | #21, #7, #29 |
+| issue_29_ulpfec_over_red | `sync.av_offset_p95_ms` | 60.8 | 110 | ±29.5 | ahead | 9/10 | #77 |
+| issue_29_ulpfec_over_red | `video.e2e_delay_p95_ms` | 174 | 232 | ±36.7 | ahead | 9/10 | #24, #37 |
+| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 19591 | 24237 | ±4540 | ahead | 7/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.longest_freeze_ms` | 3512 | 3283 | ±176 | behind | 1/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.pause_count` | 1 | 0 | ±0.5 | behind | 6/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.pause_total_ms` | 6456 | 0 | ±323 | behind | 6/10 | #5, #37, #24 |
 | issue_48_prober_low_bandwidth | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
 | issue_48_prober_low_bandwidth | `audio.jb_delay_p95_ms` | 316 | 353 | ±29.5 | ahead | 8/10 | #63, #224 |
 | issue_48_prober_low_bandwidth | `audio.longest_interruption_ms` | 199 | 150 | ±20 | behind | 10/10 | #63 |
@@ -157,6 +173,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_76_tcc_v2_high_jitter | `repair.overhead_pct` | 34.2 | 43.7 | ±2.5 | ahead | 9/10 | #21, #7, #29 |
 | issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
 | issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
+| issue_84_quality_scaling_rate_rise | `cc.queue_p95_ms` | 54.5 | 42.7 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | issue_85_video_pause | `audio.interruptions` | 3 | 1.1 | ±0.5 | behind | 1/10 | #63 |
 | issue_85_video_pause | `audio.jb_delay_p95_ms` | 131 | 163 | ±24.5 | ahead | 9/10 | #63, #218 |
 | issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #63 |
