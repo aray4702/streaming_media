@@ -189,7 +189,9 @@ SM_TEST(E2E_Protection, AdaptiveAcrossRtt) {
       SM_EXPECT_LE(r.overhead, 0.08);  // NACK only below 20 ms RTT.
     } else {
       SM_EXPECT_GT(r.overhead, 0.08);  // FEC on.
-      SM_EXPECT_LE(r.overhead, 1.0);   // At most one FEC packet per media packet, plus RTX.
+      // libwebrtc caps FEC at one packet per media packet; the bound sits just above this
+      // simulation's overhead so that an overshoot still fails (Owner, PR #321).
+      SM_EXPECT_LE(r.overhead, 0.55);
     }
   }
 }
