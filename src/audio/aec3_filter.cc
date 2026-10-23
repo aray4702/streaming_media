@@ -7,7 +7,6 @@
 #include <functional>
 #include <numeric>
 
-#include "sm/audio/fft4g.h"
 
 namespace sm::audio::aec3 {
 
@@ -76,57 +75,16 @@ const float kSqrtHanning128[kFftLength] = {
 
 }  // namespace
 
-Aec3Fft::Aec3Fft() {
-  // fft4g builds ip (the bit-reversal table) and w on its first call, and
-  // only reads them afterwards.
-  std::array<float, kFftLength> x{};
-  ip_[0] = 0;
-  ooura::Rdft(kFftLength, 1, x.data(), ip_.data(), w_.data());
-  // OouraFft (fft_size_128) uses stored tables: makewt's twiddles (in
-  // bit-reversed order) and makect's cosines, computed in double precision
-  // and rounded once (ooura_fft_tables_common.h's rdft_w). fft4g's own come
-  // from cosf, a few ulps off, so rebuild them the same way.
-  constexpr size_t kNw = kFftLength / 4;  // 32 twiddles
-  constexpr size_t kNwh = kNw / 2;
-  constexpr size_t kNc = kFftLength / 4;  // 32 cosines
-  constexpr size_t kNch = kNc / 2;
-  const double delta_w = std::atan(1.0) / kNwh;
-  std::array<double, kNw> w{};
-  w[0] = 1;
-  w[1] = 0;
-  w[kNwh] = std::cos(delta_w * kNwh);
-  w[kNwh + 1] = w[kNwh];
-  for (size_t j = 2; j < kNwh; j += 2) {
-    w[j] = std::cos(delta_w * static_cast<double>(j));
-    w[j + 1] = std::sin(delta_w * static_cast<double>(j));
-    w[kNw - j] = w[j + 1];
-    w[kNw - j + 1] = w[j];
-  }
-  // bitrv2 on 16 complex values is the 4-bit index reversal.
-  for (size_t k = 0; k < kNw / 2; ++k) {
-    const size_t r = ((k & 1) << 3) | ((k & 2) << 1) | ((k & 4) >> 1) | ((k & 8) >> 3);
-    w_[2 * r] = static_cast<float>(w[2 * k]);
-    w_[2 * r + 1] = static_cast<float>(w[2 * k + 1]);
-  }
-  const double delta_c = std::atan(1.0) / kNch;
-  float* c = w_.data() + kNw;
-  c[0] = static_cast<float>(std::cos(delta_c * kNch));
-  c[kNch] = static_cast<float>(0.5 * std::cos(delta_c * kNch));
-  for (size_t j = 1; j < kNch; ++j) {
-    c[j] = static_cast<float>(0.5 * std::cos(delta_c * static_cast<double>(j)));
-    c[kNc - j] = static_cast<float>(0.5 * std::sin(delta_c * static_cast<double>(j)));
-  }
-}
+Aec3Fft::Aec3Fft() = default;
 
-// OouraFft::Fft and ::InverseFft are rdft(128, +1) and rdft(128, -1).
 void Aec3Fft::Fft(std::array<float, kFftLength>* x, FftData* X) const {
-  ooura::Rdft(kFftLength, 1, x->data(), ip_.data(), w_.data());
+  ooura_fft_.Fft(x->data());
   X->CopyFromPackedArray(*x);
 }
 
 void Aec3Fft::Ifft(const FftData& X, std::array<float, kFftLength>* x) const {
   X.CopyToPackedArray(x);
-  ooura::Rdft(kFftLength, -1, x->data(), ip_.data(), w_.data());
+  ooura_fft_.InverseFft(x->data());
 }
 
 void Aec3Fft::ZeroPaddedFft(std::span<const float> x, Window window, FftData* X) const {

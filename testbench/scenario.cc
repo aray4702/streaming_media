@@ -273,7 +273,7 @@ ParseResult ParseScenario(const std::string& text) {
       s.audio_bitrate = r;
     } else if (key == "audio_sample_rate") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
-      // The four NetEq rates, plus 12, 24 and 44.1 kHz (issue #256), which NetEq v2 refuses as libwebrtc does.
+      // The four NetEq rates, plus 12, 24 and 44.1 kHz (issue #256), which the bench encodes at Opus's 48 kHz (#298).
       if (v != 8000 && v != 12000 && v != 16000 && v != 24000 && v != 32000 && v != 44100 && v != 48000)
         return fail("audio_sample_rate must be 8000|12000|16000|24000|32000|44100|48000");
       s.audio_sample_rate = v;
@@ -319,6 +319,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";
+    } else if (key == "quality_scaling") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: quality_scaling on|off");
+      s.quality_scaling = tok[1] == "on";
     } else if (key == "keyframe_interval") {
       if (!need(2) || !ParseTime(tok[1], &s.keyframe_interval)) return fail("usage: keyframe_interval <time>");
     } else if (key == "at") {
@@ -401,6 +404,7 @@ std::string FormatScenario(const Scenario& s) {
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
+  if (s.quality_scaling != d.quality_scaling) o += std::string("quality_scaling ") + (s.quality_scaling ? "on" : "off") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";

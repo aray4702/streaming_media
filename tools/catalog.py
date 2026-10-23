@@ -328,6 +328,11 @@ ALGORITHMS = [
                       "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
                       "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
                       "decoder exists at such a rate. "
+                      "Issue #298 (fix record docs/fixes/298-audio-24khz-plays.md): the test bench used the capture "
+                      "rate as the codec clock, so a 24 kHz call lost all its audio; it now encodes 12, 24 and "
+                      "44.1 kHz captures at Opus's 48 kHz clock as libwebrtc does, and `issue_256_audio_24khz` "
+                      "measures jitter-buffer p95 112 ms, concealment 0.25 %, mouth-to-ear p95 194 ms (seeds 1-5; "
+                      "libwebrtc 129, 0.39, 219, the same gaps as the 16 kHz calls). "
                       "See 4.4 for the decode-ahead defect. A first comparison test was wrong: a fixed 20 ms "
                       "buffer without acceleration does not conceal late packets, it waits for them, so its "
                       "latency ratchets up (to 4x its target). The test now checks concealment against the loss "
@@ -825,9 +830,9 @@ ALGORITHMS = [
                "coarse filters, misadjustment rescaling, coarse filter reset from the refined one), with "
                "EchoCanceller3Config::Filter's defaults: 12 then 13 partitions, leakage 0.005/0.5 then 0.00005/0.05, error "
                "floor 0.001 and ceiling 2, noise gate 20075344, coarse rate 0.9 then 0.7, 250-block configuration "
-               "changes, a 25-block hangover after a coarse filter reset. Remaining differences: the FFT is fft4g's rdft "
-               "at n = 128 with OouraFft's double-precision tables, because `common_audio/third_party/ooura/fft_size_128` "
-               "is not in the reference sources; the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
+               "changes, a 25-block hangover after a coarse filter reset. The FFT is libwebrtc's 128-point `OouraFft` "
+               "(`audio/ooura_fft.h`, from `common_audio/third_party/ooura/fft_size_128`, its C path and stored tables; "
+               "#240 step 6). Remaining differences: the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
                "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
                "AecState's capture saturation flag as an argument. "
                "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
@@ -898,7 +903,10 @@ ALGORITHMS = [
                       "echo_canceller3_unittest.cc on the real block processor (the originals mock it). "
                       "E2E_EchoDelay.Aec3FollowsAudioRouteChangeAsLibwebrtc and "
                       "E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc check the `apm v2` chain against libwebrtc "
-                      "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB."),
+                      "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB. #240 step 6 moved Aec3Fft from "
+                      "fft4g's rdft to the ported `OouraFft` (fft_size_128): Aec3Filter.OouraFft128MatchesDft checks it "
+                      "against a double-precision DFT, the aec3_fft unit tests still pass, and the e2e ERLE and double-talk "
+                      "numbers stay at libwebrtc's."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
@@ -1054,12 +1062,15 @@ ALGORITHMS = [
          bench=["audio/TransientSuppressor_10ms"],
          scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
                   "compared with and without suppression.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels. "
+               "Keeping it as an opt-in (`enabled = true`) for later stages is an Owner decision (#243, 2026-10-22).",
          verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
                       "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
                       "first millisecond, which holds most of a click's energy; attack is now instant. (3) A "
                       "60 ms envelope still held the speech level right after a word, so a 4 ms envelope (onset "
-                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB."),
+                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB. #243: off by default "
+                      "as libwebrtc (`TransientSuppressor.OffByDefaultAsLibwebrtc`: the audio passes unchanged); "
+                      "the tests that measure it opt in with `enabled = true`."),
     dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
          problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
                    "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
@@ -1197,7 +1208,8 @@ ALGORITHMS = [
                                 "`issue_24_timing_v2_render_fps` locks it in."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
-         headers=["video/quality_scaler.h"], unit=["QualityScaler"], e2e=["E2E_QualityScaler"],
+         headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],
+         unit=["QualityScaler", "VideoStreamAdapter", "VideoAdapter"], e2e=["E2E_QualityScaler"],
          bench=["video/QualityScaler_frame"],
          scenario="An H.264-like encoder model (QP +6 per halving of bits per pixel) with bandwidth 2500 -> 300 "
                   "-> 2500 kbps; resolution follows the QP signals.",
@@ -1215,8 +1227,25 @@ ALGORITHMS = [
                       "window; drop rate >= 60%; smoothed QP > high or <= low. `sm_video_compare` gives the same "
                       "signals as libwebrtc on all six quality-scaler inputs "
                       "([results](../../results/video-webrtc.md)); the unit tests port "
-                      "`quality_scaler_unittest.cc`. Version 1 stays the default until #84 wires version 2 "
-                      "into the send path."),
+                      "`quality_scaler_unittest.cc`. "
+                      "Issue #84 step 4 wires version 2 into the send path behind `quality_scaling` "
+                      "(`rtp::VideoSendController`, scenario key `quality_scaling on`, off by default): "
+                      "libwebrtc's `QualityScalerResource` with `MAINTAIN_FRAMERATE`, `VideoStreamAdapter`'s "
+                      "resolution steps (3/5 down, 5/3 up with a 12/5 maximum, the 320x180 minimum, waiting for the "
+                      "frame size to change), `VideoAdapter`'s 3/4-2/3 scale series and "
+                      "`VideoStreamEncoder::DropDueToSize` (up to 4 initial frames dropped as too large for the "
+                      "target, each adapting down), from `call/adaptation/` and `api/video/video_adapter.cc` "
+                      "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
+                      "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
+                      "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
+                      "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
+                      "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
+                      "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
+                      "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
+                      "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
+                      "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
+                      "(`EncoderPaused`) and the frame dropper. `issue_84_quality_scaling_720p_low_rate` and "
+                      "`issue_84_quality_scaling_rate_rise` lock in the behaviour."),
     # ------------------------------------------------------------------ 8
     dict(id="8.1", slug="rtp-to-ntp", title="RTP -> NTP mapping",
          problems=["Lip-sync (A/V sync) -> RTCP Sender Reports map the RTP timestamp to NTP wallclock"],

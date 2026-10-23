@@ -25,11 +25,13 @@
 #include "api/call/transport.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/field_trials.h"
 #include "api/rtp_header_extension_id.h"
 #include "api/rtp_parameters.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
+#include "api/video/video_adapter.h"
 #include "api/video/video_frame.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder.h"
@@ -306,6 +308,7 @@ struct VideoModel {
   Random rng;
   int64_t frames_captured = 0, frames_encoded = 0, keyframes = 0, bytes = 0;
   int64_t qp_sum = 0, encode_us_sum = 0;  // testbench/encoder_model.h (issue #84).
+  int64_t height_sum = 0;                  // Encoded frame heights (quality scaling, issue #84).
   int64_t last_key_us = INT64_MIN / 2;
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;  // Filled by the decoder.
@@ -356,6 +359,7 @@ class ModelEncoder final : public w::VideoEncoder {
     img.timing_.encode_start_ms = capture_us / 1000;
     img.timing_.encode_finish_ms = (capture_us + encode_us) / 1000;
     m_->qp_sum += img.qp_;
+    m_->height_sum += frame.height();
     m_->encode_us_sum += encode_us;
     w::CodecSpecificInfo info;
     info.codecType = w::kVideoCodecGeneric;
@@ -375,7 +379,14 @@ class ModelEncoder final : public w::VideoEncoder {
     // as the test bench's frame dropper does.
     info.has_trusted_rate_controller = false;
     info.is_hardware_accelerated = false;
-    info.scaling_settings = ScalingSettings::kOff;
+    // With `quality_scaling on`, an encoder that reports QP and asks for quality
+    // scaling with H.264's thresholds and kDefaultMinPixelsPerFrame (issue #84;
+    // QualityScalingExperiment's thresholds replace these, see RunWebrtcCall).
+    if (m_->s->quality_scaling) {
+      info.scaling_settings = ScalingSettings(24, 37);
+    } else {
+      info.scaling_settings = ScalingSettings::kOff;
+    }
     return info;
   }
 
@@ -441,18 +452,30 @@ class ModelDecoderFactory final : public w::VideoDecoderFactory {
   VideoModel* m_;
 };
 
-// A camera that delivers frames when told to.
+// A camera that delivers frames when told to. Like libwebrtc's
+// AdaptedVideoTrackSource, it scales them to the sink's wants with libwebrtc's
+// VideoAdapter (quality scaling, issue #84); without restrictions the frames
+// keep the captured size.
 class ModelSource final : public w::VideoSourceInterface<w::VideoFrame> {
  public:
-  ModelSource(int width, int height) : buffer_(w::I420Buffer::Create(width, height)) {
+  ModelSource(int width, int height) : width_(width), height_(height), buffer_(w::I420Buffer::Create(width, height)) {
     w::I420Buffer::SetBlack(buffer_.get());
   }
-  void AddOrUpdateSink(w::VideoSinkInterface<w::VideoFrame>* sink, const w::VideoSinkWants&) override { sink_ = sink; }
+  void AddOrUpdateSink(w::VideoSinkInterface<w::VideoFrame>* sink, const w::VideoSinkWants& wants) override {
+    sink_ = sink;
+    adapter_.OnSinkWants(wants);
+  }
   void RemoveSink(w::VideoSinkInterface<w::VideoFrame>* sink) override {
     if (sink_ == sink) sink_ = nullptr;
   }
   void Capture(int64_t capture_us) {
     if (!sink_) return;
+    int cropped_w = 0, cropped_h = 0, out_w = 0, out_h = 0;
+    if (!adapter_.AdaptFrameResolution(width_, height_, capture_us * 1000, &cropped_w, &cropped_h, &out_w, &out_h)) return;
+    if (buffer_->width() != out_w || buffer_->height() != out_h) {
+      buffer_ = w::I420Buffer::Create(out_w, out_h);
+      w::I420Buffer::SetBlack(buffer_.get());
+    }
     sink_->OnFrame(w::VideoFrame::Builder()
                        .set_video_frame_buffer(buffer_)
                        .set_timestamp_us(capture_us)
@@ -461,6 +484,8 @@ class ModelSource final : public w::VideoSourceInterface<w::VideoFrame> {
   }
 
  private:
+  int width_, height_;
+  w::VideoAdapter adapter_;
   w::scoped_refptr<w::I420Buffer> buffer_;
   w::VideoSinkInterface<w::VideoFrame>* sink_ = nullptr;
 };
@@ -543,6 +568,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   sender_env_factory.Set(sim.clock());
   sender_env_factory.Set(static_cast<w::TaskQueueFactory*>(&sim));
   if (opt.bwe_trace) sender_env_factory.Set(static_cast<w::RtcEventLog*>(&bwe_log));
+  // QualityScalingExperiment (on by default) gives the Generic codec of the
+  // encoder model QP thresholds 26/36; the model is H.264's QP scale, so the
+  // experiment's default string is passed with H.264's 24/37 in the Generic
+  // slot (rtc_base/experiments/quality_scaling_experiment.cc; issue #84).
+  if (s.quality_scaling) {
+    sender_env_factory.Set(std::make_unique<w::FieldTrials>(
+        "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
+  }
   DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
   const w::Environment sender_env = sender_env_factory.Create();
 
@@ -752,8 +785,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       ec.max_bitrate_bps = static_cast<int>(s.video_max.bps());
       ec.frame_drop_enabled = true;
       video_send = send_call->CreateVideoSendStream(std::move(c), std::move(ec));
-      // The encoder model has no resolution or frame rate to adapt.
-      video_send->SetSource(&source, w::DegradationPreference::DISABLED);
+      // A camera: MAINTAIN_FRAMERATE when the quality scaler is on (issue #84),
+      // otherwise no adaptation.
+      video_send->SetSource(&source, s.quality_scaling ? w::DegradationPreference::MAINTAIN_FRAMERATE
+                                                       : w::DegradationPreference::DISABLED);
     }
   });
   run_on(receiver_q.get(), [&] {
@@ -1144,6 +1179,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] =
         model.frames_encoded ? static_cast<double>(model.qp_sum) / static_cast<double>(model.frames_encoded) : 0;
+    m["video.encode_height_mean"] =
+        model.frames_encoded ? static_cast<double>(model.height_sum) / static_cast<double>(model.frames_encoded) : 0;
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(model.frames_captured - model.frames_encoded);

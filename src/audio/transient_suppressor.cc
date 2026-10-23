@@ -16,6 +16,7 @@ TransientSuppressor::TransientSuppressor(TransientSuppressorConfig cfg)
 }
 
 void TransientSuppressor::Process(std::span<float> frame, bool voice) {
+  if (!cfg_.enabled) return;
   const float onset = dsp::DbToLinear(cfg_.onset_db);
   const float strong = dsp::DbToLinear(2 * cfg_.onset_db);
   for (size_t start = 0; start < frame.size(); start += sub_) {
