@@ -2,7 +2,8 @@
 // 5 and 6.4): takes datagrams as bytes and does what the test bench's
 // receiver glue does today.
 //
-// Video: parse the RTP packet, restore RTX (RFC 4588), recover with FEC, track
+// Video: parse the RTP packet, restore RTX (RFC 4588), take RED apart and
+// recover with ULPFEC (RFC 2198, RFC 5109) as RtpVideoStreamReceiver2, track
 // gaps for NACK, assemble frames in the packet buffer, request keyframes
 // (PLI, FIR, LNTF), and time and schedule decodable frames with the jitter
 // estimator, the timing model and the frame scheduler. Audio: unwrap RED
@@ -20,6 +21,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <map>
 #include <optional>
 #include <span>
@@ -32,10 +34,10 @@
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
 #include "sm/core/units.h"
-#include "sm/loss/fec.h"
 #include "sm/loss/keyframe_request.h"
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/red.h"
+#include "sm/loss/ulpfec.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/sync/stream_sync.h"
 #include "sm/timing/audio_jitter_buffer.h"
@@ -117,8 +119,9 @@ struct RtpReceiverConfig {
   // libwebrtc's default.
   bool keyframe_needs_parameter_sets = false;
   bool deliver_bitstream = true;  // Rebuild each frame's bitstream (ReceivedFrame::bitstream).
+  // Video RED + ULPFEC on the media SSRC, with `ulpfec`'s payload types.
   bool fec = false;
-  loss::FecConfig fec_config;  // fec_config.fec_ssrc is the SSRC of the FEC packets.
+  loss::ulpfec::UlpfecConfig ulpfec;
   loss::NackConfig nack_config;
   timing::PacketBufferConfig packet_buffer;
   loss::KeyframeRequestConfig keyframe;
@@ -235,7 +238,8 @@ class RtpReceiver : public MetricsSource {
   const RtpReceiverConfig& config() const { return cfg_; }
   const RtpReceiverStats& stats() const { return stats_; }
   const loss::NackTracker& nack() const { return nack_; }
-  const loss::FecDecoder& fec() const { return fec_; }
+  // The ULPFEC receiver, when FEC is on.
+  const loss::ulpfec::UlpfecReceiver* ulpfec() const { return ulpfec_.get(); }
   const loss::RedReceiver& red() const { return red_; }
   const timing::PacketBuffer& packet_buffer() const { return packet_buffer_; }
   const loss::KeyframeRequester& keyframes() const { return keyframes_; }
@@ -249,15 +253,21 @@ class RtpReceiver : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  // A video packet on the media SSRC, received or restored from RTX: RED goes to the ULPFEC
+  // receiver (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader). kFec for an FEC packet.
+  ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now);
   // A video media packet: original, retransmitted or FEC-recovered.
-  void OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec);
+  void OnVideoMedia(const RtpPacket& p, Timestamp now);
+  // A packet that holds a media sequence number but no media (padding, FEC):
+  // RtpVideoStreamReceiver2::NotifyReceiverOfEmptyPacket.
+  void OnEmptyPacket(uint16_t seq, Timestamp now);
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   void AssembleFrames(Timestamp now);
 
   RtpReceiverConfig cfg_;
   loss::NackTracker nack_;
-  loss::FecDecoder fec_;
+  std::unique_ptr<loss::ulpfec::UlpfecReceiver> ulpfec_;
   loss::RedReceiver red_;
   timing::PacketBuffer packet_buffer_;
   loss::KeyframeRequester keyframes_;

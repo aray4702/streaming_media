@@ -16,11 +16,6 @@ loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
   if (!n.events) n.events = c.events;
   return n;
 }
-loss::FecConfig FecCfg(const RtpReceiverConfig& c) {
-  loss::FecConfig f = c.fec_config;
-  if (!f.events) f.events = c.events;
-  return f;
-}
 timing::PacketBufferConfig PacketBufferCfg(const RtpReceiverConfig& c) {
   timing::PacketBufferConfig p = c.packet_buffer;
   if (!p.events) p.events = c.events;
@@ -64,7 +59,6 @@ bool PaddingOnly(const RtpPacket& p) { return p.payload.empty() && p.padding_siz
 RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
     : cfg_(std::move(cfg)),
       nack_(NackCfg(cfg_)),
-      fec_(FecCfg(cfg_)),
       packet_buffer_(PacketBufferCfg(cfg_)),
       keyframes_(KeyframeCfg(cfg_)),
       video_timing_(cfg_.timing),
@@ -72,7 +66,11 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       vcm_timing_(VcmTimingCfg(cfg_)),
       release_(&vcm_timing_, ReleaseCfg(cfg_)),
       jitter_buffer_(JitterCfg(cfg_)),
-      stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {}
+      stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {
+  if (cfg_.video && cfg_.fec) {
+    ulpfec_ = std::make_unique<loss::ulpfec::UlpfecReceiver>(cfg_.ssrc, cfg_.ulpfec.ulpfec_payload_type);
+  }
+}
 
 void RtpReceiver::OnRtt(TimeDelta rtt) {
   rtt_ = rtt;
@@ -99,17 +97,15 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
         return ReceivedKind::kPadding;
       }
       ++stats_.rtx;
-      if (auto m = loss::RestoreFromRtx(p, cfg_.ssrc, cfg_.payload_type)) {
-        OnVideoMedia(*m, now, true);
+      // RtxReceiveStream: the RTX payload type names the original's (RED when ULPFEC is on).
+      const uint8_t original_pt =
+          ulpfec_ && p.payload_type == cfg_.ulpfec.red_rtx_payload_type ? cfg_.ulpfec.red_payload_type : cfg_.payload_type;
+      if (auto m = loss::RestoreFromRtx(p, cfg_.ssrc, original_pt)) {
+        OnVideoRtp(*m, now);
       } else {
         ++stats_.rtx_unrestorable;
       }
       return ReceivedKind::kRtx;
-    }
-    if (cfg_.fec && p.ssrc == cfg_.fec_config.fec_ssrc) {
-      ++stats_.fec;
-      for (auto& r : fec_.OnFecPacket(p)) OnVideoMedia(r, now, false);
-      return ReceivedKind::kFec;
     }
   }
   if (p.ssrc != cfg_.ssrc) {
@@ -122,21 +118,45 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     // number: it is received, so it is no gap, no NACK and no loss in the RR.
     ++stats_.padding;
     stats_rtp_.OnPacket(p.seq, p.timestamp, now);
-    if (cfg_.video) {
-      TrackSequence(p.seq);
-      if (cfg_.nack) nack_.OnReceivedPacket(p.seq, false, now);
-      packet_buffer_.NotePadding(p.seq);
-    }
+    if (cfg_.video) OnEmptyPacket(p.seq, now);
     return ReceivedKind::kPadding;
   }
-  ++stats_.media;
+  // FEC packets hold media sequence numbers: they count in the receive statistics too.
   stats_rtp_.OnPacket(p.seq, p.timestamp, now);
   if (cfg_.video) {
-    OnVideoMedia(p, now, true);
-  } else {
-    OnAudioMedia(p, now);
+    const ReceivedKind kind = OnVideoRtp(p, now);
+    if (kind == ReceivedKind::kMedia) ++stats_.media;
+    return kind;
   }
+  ++stats_.media;
+  OnAudioMedia(p, now);
   return ReceivedKind::kMedia;
+}
+
+ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now) {
+  if (!ulpfec_ || p.payload_type != cfg_.ulpfec.red_payload_type) {
+    OnVideoMedia(p, now);
+    return ReceivedKind::kMedia;
+  }
+  // ParseAndHandleEncapsulatingHeader (rtp_video_stream_receiver2.cc:1482-1505).
+  const bool is_fec = !p.payload.empty() && p.payload[0] == cfg_.ulpfec.ulpfec_payload_type;
+  if (is_fec) {
+    // So that the FEC packet's sequence number is not NACKed.
+    ++stats_.fec;
+    OnEmptyPacket(p.seq, now);
+  }
+  if (ulpfec_->AddReceivedRedPacket(p)) {
+    // UlpfecReceiver::ProcessReceivedFec: the media packet out of RED, then what FEC recovered
+    // (OnRecoveredPacket, which is not fed back).
+    for (const RtpPacket& m : ulpfec_->ProcessReceivedFec()) OnVideoMedia(m, now);
+  }
+  return is_fec ? ReceivedKind::kFec : ReceivedKind::kMedia;
+}
+
+void RtpReceiver::OnEmptyPacket(uint16_t seq, Timestamp now) {
+  TrackSequence(seq);
+  if (cfg_.nack) nack_.OnReceivedPacket(seq, false, now);
+  packet_buffer_.NotePadding(seq);
 }
 
 void RtpReceiver::TrackSequence(uint16_t seq) {
@@ -150,7 +170,7 @@ void RtpReceiver::TrackSequence(uint16_t seq) {
   }
 }
 
-void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec) {
+void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now) {
   VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
   if (!info.valid) {
     ++stats_.invalid_payload;
@@ -178,9 +198,6 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool feed_fec)
   if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps) ==
       timing::InsertResult::kBufferCleared) {
     keyframes_.OnExternalRequest(now, "trigger_packet_buffer_cleared");
-  }
-  if (feed_fec && cfg_.fec) {
-    for (auto& r : fec_.OnMediaPacket(p)) OnVideoMedia(r, now, false);
   }
 }
 

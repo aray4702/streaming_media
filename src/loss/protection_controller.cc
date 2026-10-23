@@ -52,13 +52,15 @@ ProtectionDecision ProtectionController::Update(const ProtectionInput& in, Times
       ++m;
       residual = BinomialTail(k + m, m, p);
     }
-    d.fec.protection = static_cast<double>(m) / k;
+    // Q8, so that ForwardErrorCorrection::NumFecPackets(k, fec_rate) gives back m.
+    d.fec.fec_rate = std::min(255, static_cast<int>(std::lround(256.0 * m / k)));
     d.expected_residual = residual;
   }
-  d.fec.mask = in.mean_burst_length >= cfg_.burst_threshold ? FecMaskType::kInterleaved : FecMaskType::kBlock;
-  if (d.fec.protection > 0) ++fec_on_;
-  if (d.fec.protection != last_.fec.protection) {
-    SM_EVENT(cfg_.events, now, "protection", "fec_rate", d.fec.protection, in.rtt.ms());
+  d.fec.max_fec_frames = 1;
+  d.fec.fec_mask_type = ulpfec::FecMaskType::kRandom;
+  if (d.fec.fec_rate > 0) ++fec_on_;
+  if (d.fec.fec_rate != last_.fec.fec_rate) {
+    SM_EVENT(cfg_.events, now, "protection", "fec_rate", d.fec.fec_rate, in.rtt.ms());
   }
   last_ = d;
   return d;
@@ -68,7 +70,7 @@ void ProtectionController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("updates", updates_);
   w.Counter("updates_with_fec", fec_on_);
   w.Gauge("filtered_loss", filtered_loss_);
-  w.Gauge("fec_protection", last_.fec.protection);
+  w.Gauge("fec_protection", last_.fec.fec_rate / 256.0);
   w.Gauge("expected_residual", last_.expected_residual);
 }
 

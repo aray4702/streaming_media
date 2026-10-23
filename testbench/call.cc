@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
+#include <map>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -574,7 +575,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
     registry.Register("receiver.video", &vr);
     registry.Register("receiver.nack", &vr.nack());
-    registry.Register("receiver.fec", &vr.fec());
+    if (vr.ulpfec()) registry.Register("receiver.ulpfec", vr.ulpfec());
+    if (const auto* gen = sender.video_sender(video_send).ulpfec()) registry.Register("sender.ulpfec", gen);
     registry.Register("receiver.packet_buffer", &vr.packet_buffer());
     registry.Register("receiver.keyframes", &vr.keyframes());
     if (s.timing_v2) {
@@ -600,7 +602,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
-  std::vector<int64_t> video_send_ms;  // By unwrapped media sequence number.
+  // Send time of each video media packet by unwrapped sequence number (ULPFEC packets share the
+  // sequence numbers and are not counted).
+  std::map<int64_t, int64_t> video_send_ms;
   SeqNumUnwrapper<uint16_t> video_sent_unwrap;
   double cross_debt = 0;
 
@@ -624,7 +628,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   double last_video_delay = 0;
   // Receiver-side burst tracking for the protection controller (a real
   // receiver would report this in RTCP XR); read when a report block arrives.
-  uint64_t last_gaps = 0, last_missing = 0;
 
   const int64_t end_ms = s.duration.ms();
   int64_t next_frame_ms = 0;
@@ -644,10 +647,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kVideo) {
-          video_send_ms.push_back(now.ms());
+          video_send_ms.emplace(video_sent_unwrap.Unwrap(RtpSeq(p.bytes)), now.ms());
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
           if (ft != frame_times.end()) ft->second.last_sent = now;
-          (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
@@ -684,14 +686,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
           if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), now);
           if (video_fec && e.ssrc == kVideoSsrc) {
-            const auto& rs = receiver.video_receiver(video_recv).stats();
-            uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
-            last_gaps = rs.gaps;
-            last_missing = rs.missing;
             loss::ProtectionInput in;
             in.rtt = sender.rtt();
             in.loss_rate = e.loss_fraction;
-            in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
             double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
             in.packets_per_frame = pkts;
             sender.SetFecParams(video_send, protection.Update(in, now).fec);
@@ -913,7 +910,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       smp.audio_concealed_pct = w_played ? 100.0 * static_cast<double>(w_conceal) / static_cast<double>(w_played) : 0;
       smp.video_fps = static_cast<double>(w_frames) * 10;
       smp.video_delay_ms = last_video_delay;
-      smp.fec_pct = s.video ? sender.video_sender(video_send).fec_params().protection * 100 : 0;
+      smp.fec_pct = s.video ? sender.video_sender(video_send).fec_params().fec_rate * 100.0 / 256 : 0;
       rep.timeseries.push_back(smp);
       w_send = w_good = w_frames = w_conceal = w_played = 0;
     }
@@ -1000,15 +997,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     {
       // Packets sent in the last second may still be in flight or under repair.
       int64_t counted = 0, lost = 0;
-      for (size_t i = 0; i < video_send_ms.size(); ++i) {
-        if (video_send_ms[i] > end_ms - 1000) break;
+      for (const auto& [useq, sent_ms] : video_send_ms) {
+        if (sent_ms > end_ms - 1000) break;
         ++counted;
-        lost += !received_seqs.Has(static_cast<int64_t>(i));
+        lost += !received_seqs.Has(useq);
       }
       m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
     }
     m["repair.nack_recovered"] = static_cast<double>(vrx.nack().stats().recovered);
-    m["repair.fec_recovered"] = static_cast<double>(vrx.fec().stats().recovered);
+    m["repair.fec_recovered"] =
+        vrx.ulpfec() ? static_cast<double>(vrx.ulpfec()->GetPacketCounter().num_recovered_packets) : 0;
   }
 
   // Congestion control: utilization, queueing and settle time.

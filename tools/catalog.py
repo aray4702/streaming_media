@@ -49,33 +49,49 @@ ALGORITHMS = [
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
-    dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
+    dict(id="3.2", slug="fec", title="Forward error correction (ULPFEC over RED, as libwebrtc)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
-         headers=["loss/fec.h", "loss/ulpfec.h"], unit=["Fec", "Ulpfec"], e2e=["E2E_Fec"],
+         headers=["loss/ulpfec.h"], unit=["Ulpfec"], e2e=["E2E_Fec"],
          bench=["loss/FecEncode_10pkt_frame_50pct", "loss/FecDecode_RecoverOne", "loss/Q_Fec_5pct_rtt300"],
-         scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
-                  "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
-                  "within the 250 ms budget.",
+         scenario="Same video stream at 150 ms one-way delay (NACK disabled), media in RED and ULPFEC on the media "
+                  "SSRC: random 5% loss at 50% protection with random masks, and Gilbert-Elliott bursty loss "
+                  "comparing libwebrtc's bursty masks against its random ones. Frames must be complete within the "
+                  "250 ms budget.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
-               "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
-               "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
-               "logic is the same. "
-               "Issue #29 replaces that format with ULPFEC (RFC 5109) over RED (RFC 2198), ported from libwebrtc M157 "
+               "ULPFEC (RFC 5109) over RED (RFC 2198), the only FEC format (Owner, 2026-10-15), ported from libwebrtc M157 "
                "(`forward_error_correction.cc`, `forward_error_correction_internal.cc`, `ulpfec_header_reader_writer.cc`, "
                "`ulpfec_generator.cc`, `ulpfec_receiver.cc`): `loss/ulpfec.h`, with libwebrtc's random and bursty "
                "packet mask tables (read from the pinned prebuilt libwebrtc, as `reference/` has only their headers), "
                "interleaved masks above 12 packets, Q8 protection factors, kMinMediaPackets 4 above protection 80 and "
-               "kMaxExcessOverhead 50. Its first PR adds the module only; the session layer still sends the old format "
-               "until the next step of #29 switches it over and removes `loss/fec.h`.",
+               "kMaxExcessOverhead 50. "
+               "Since #29's second step the session layer sends and receives it as libwebrtc does: `RtpSender` wraps every "
+               "video packet in RED when FEC is on (`rtp_sender_video.cc` BuildRedPayload), feeds the packet as the pacer "
+               "sends it, without RED, to the `UlpfecGenerator` (`RtpSenderEgress::SendPacket`), and the FEC packets go "
+               "back to the pacer (`PacketRouter::FetchFec`) at FEC priority, on the media SSRC, numbered when sent. The "
+               "payload room of each packet is reduced by `RTPSenderVideo::FecPacketOverhead`. A RED packet is resent "
+               "on RTX with the RTX payload type associated with RED (`rtx_payload_type_map_`; 118/119/99 as Chrome "
+               "offers them). `RtpReceiver` hands RED packets to the `UlpfecReceiver` and treats an FEC packet's "
+               "sequence number as received (`RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader`, "
+               "`NotifyReceiverOfEmptyPacket`), so it is not NACKed. The library's own XOR format (`loss/fec.h`, a "
+               "separate FEC SSRC) is removed. "
+               "Remaining differences: the FEC enqueued after a pacer release goes out from the next pacer pass, where "
+               "libwebrtc's `ProcessPackets` loop can send it in the same pass; one RTX payload type per stream plus "
+               "the RED one, where libwebrtc maps each associated payload type; FEC packets are not in the sender "
+               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is still "
+               "`ProtectionController` (3.7) until #29's next step ports `FecControllerDefault`.",
          verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
                       "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
                       "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
                       "bursty tables recover every run of up to m consecutive losses for all (k, m) up to 12, as "
                       "`fec_private_tables_bursty.h` states; the test fails if the random table is used in their place. "
-                      "XOR FEC: a unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
-                      "rebuilt from parity before its own late arrival, which is correct, so the expectation was "
-                      "fixed."),
+                      "Session layer (#29, second PR): `RtpSender.UlpfecOverRedOnTheMediaSsrc` (RED wrapping, FEC after "
+                      "the frame's last packet is sent, on the media SSRC with the next sequence numbers, not in the "
+                      "history), `RtpSender.RedPacketIsResentWithTheRedRtxPayloadType`, `RtpSender.FecPacketOverhead`, "
+                      "`RtpReceiver.UlpfecRecoversALostMediaPacket` (recovered, and no NACK for the FEC or the recovered "
+                      "sequence numbers) and `RtpReceiver.RedPacketRestoredFromRtx`. In the e2e simulation 50% random-mask "
+                      "protection keeps 99.0% of frames on time at 5% loss (67.4% without); on Gilbert-Elliott bursts the "
+                      "bursty masks recover 150 packets against 143 for the random ones. No stage-1 scenario sends video "
+                      "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
          problems=["Lost audio frames -> RED redundancy for audio"],
          headers=["loss/red.h"], unit=["Red"], e2e=["E2E_Red"],
@@ -142,11 +158,14 @@ ALGORITHMS = [
          headers=["loss/protection_controller.h"], unit=["Protection"], e2e=["E2E_Protection"],
          bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
          scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
-                  "loss and burstiness, at RTT 20, 80 and 300 ms with 5% loss.",
+                  "loss, at RTT 20, 80 and 300 ms with 5% loss.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
                "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
-               "replacement for libwebrtc's lookup tables.",
+               "replacement for libwebrtc's lookup tables. Its decision is ULPFEC's `FecProtectionParams`: the rate "
+               "in Q8 (so that `NumFecPackets` gives back the parity count), one frame per block and random masks, "
+               "which `FecControllerDefault` always picks (`fec_controller_default.cc:138-143`); the burst-length "
+               "input that chose this library's interleaved masks is gone with them (#29).",
          verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
                       "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead. "
                       "Video RED+ULPFEC is off beside NACK for H.264 and Generic, as libwebrtc's "

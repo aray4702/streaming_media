@@ -11,7 +11,6 @@ if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES
     loss/nack_tracker.cc
     loss/rtx.cc
-    loss/fec.cc
     loss/red.cc
     loss/plc.cc
     loss/keyframe_request.cc
