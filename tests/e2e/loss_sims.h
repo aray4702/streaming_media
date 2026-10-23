@@ -12,9 +12,9 @@
 #include "sm/core/dsp.h"
 #include "sm/core/seq_num.h"
 #include "sm/loss/keyframe_request.h"
+#include "sm/loss/fec_controller.h"
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/plc.h"
-#include "sm/loss/protection_controller.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/loss/temporal_layers.h"
@@ -33,7 +33,7 @@ struct VideoSimParams {
   TimeDelta one_way_delay = TimeDelta::Millis(40);
   double reverse_loss = 0.0;
   bool nack = true;
-  bool adaptive = false;                     // ProtectionController decides FEC.
+  bool adaptive = false;                     // FecControllerDefault decides FEC.
   loss::ulpfec::FecProtectionParams fec;     // Fixed FEC when !adaptive.
   int packets_per_frame = 8;
   int fps = 30;
@@ -74,7 +74,10 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
   NackTracker nack;
   const TimeDelta rtt = p.one_way_delay * 2;
   nack.UpdateRtt(rtt);
-  ProtectionController controller;
+  // RtpVideoSender's FEC controller: kNackFec with NACK, kFec without.
+  FecControllerDefault controller;
+  controller.SetProtectionMethod(true, p.nack);
+  controller.SetEncodingData(704, 576, 1, 1200);
 
   std::vector<Timestamp> sent_at;
   std::vector<Timestamp> arrived;
@@ -113,6 +116,7 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
   for (int64_t t = 0; t <= end_ms; ++t) {
     Timestamp now = Timestamp::Millis(t);
     if (t < p.duration.ms() && t % frame_interval_ms == 0) {
+      controller.UpdateWithEncodedData(static_cast<size_t>(p.packets_per_frame) * 1000, false, now);
       for (int i = 0; i < p.packets_per_frame; ++i) {
         RtpPacket m;
         m.ssrc = 1;
@@ -162,8 +166,12 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
       last_missing = nack.stats().missing_detected;
       last_received = nack.stats().packets_received;
       double loss = missing + received ? static_cast<double>(missing) / static_cast<double>(missing + received) : 0;
-      auto d = controller.Update({rtt, loss, static_cast<double>(p.packets_per_frame)}, now);
-      fec_enc.SetProtectionParameters(d.fec, d.fec);
+      // The media rate, the frame rate and the fraction lost in 1/256, as RtpVideoSender passes them.
+      const DataRate rate = DataRate::BitsPerSec(int64_t{p.packets_per_frame} * 1000 * 8 * p.fps);
+      const auto fraction = static_cast<uint8_t>(std::min(255.0, loss * 256));
+      if (auto d = controller.UpdateFecRates(rate, p.fps, fraction, rtt.ms(), now)) {
+        fec_enc.SetProtectionParameters(d->delta, d->key);
+      }
     }
   }
 

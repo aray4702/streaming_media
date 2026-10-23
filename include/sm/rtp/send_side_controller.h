@@ -181,6 +181,10 @@ class SendSideController : public MetricsSource {
 
   DataRate target() const { return target_; }
   DataRate send_rate(Timestamp now);
+  // RtpVideoSender::OnBitrateUpdated's payload rate: the video allocation less
+  // the packet overhead rate, which FecControllerDefault::UpdateFecRates takes.
+  // Zero without an allocation (ConfigureAllocation).
+  DataRate VideoPayloadRate() const;
   SendRates ComputeRates(DataRate audio_wire_rate, double fec_protection) const;
   // As above, but the share taken off is what the sender actually spent on
   // RTX and FEC in the last second, exactly as libwebrtc's FecControllerDefault::
