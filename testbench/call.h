@@ -94,6 +94,11 @@ struct RunOptions {
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
 
+// The rate the bench's audio codec, RTP clock, NetEq and playout run at for a
+// capture rate: the capture rate at 8, 16, 32 and 48 kHz, else Opus's 48 kHz
+// RTP clock, as libwebrtc resamples the capture to the encoder (issue #298).
+int AudioCodecRate(int capture_rate);
+
 // Steps shared with other call implementations (compare/), so every
 // implementation reports the same metrics computed the same way.
 // Adds cc.target_avg_kbps, cc.goodput_kbps, cc.utilization_pct,
