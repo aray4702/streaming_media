@@ -936,6 +936,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       receiver_q->PostTask([&, media, at_w, buf = w::CopyOnWriteBuffer(p.data)] {
         w::RtpPacketReceived packet(&extension_map, at_w);
         if (!packet.Parse(buf)) return;
+        // As WebRtcVideoReceiveChannel::OnPacketReceived (webrtc_video_engine.cc:3425); the voice channel sets none.
+        // Without it a video stream with no RTX (NACK off) fails the RTC_CHECK in ReceiveStatistics'
+        // IsRetransmitOfOldPacket (video_receive_stream2.cc:318 enables that detection), and the RR jitter is 0.
+        if (media == w::MediaType::VIDEO) packet.set_payload_type_frequency(90000);
         recv_call->Receiver()->DeliverRtpPacket(media, std::move(packet),
                                                 [](const w::RtpPacketReceived&) { return false; });
       });
