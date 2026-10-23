@@ -15,5 +15,9 @@ expect net.loss_pct < 12.5
 # Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
 # timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
 # worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).
-expect video.freeze_total_ms < 6000
+# Was < 6000. Guard rail during a port (program.md 0.2, #217): with the RTCP report interval from the sender's whole
+# send rate (RtpSenderEgress::GetSendRates(now).Sum()), seed 1 freezes 10789 ms (10 seeds: mean 9694, libwebrtc 10722).
+# libwebrtc fails < 6000 on 8 of 10 seeds (parity-data: 14859 13141 10103 10185 5749 5090 14000 15478 8944 9666).
+# Bound per the Owner rule on PR #216: just above our seed-1 value, below libwebrtc's worst seed (15478).
+expect video.freeze_total_ms < 11000
 expect audio.interruptions <= 3

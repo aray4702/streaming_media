@@ -207,7 +207,7 @@ void Session::Start(Timestamp now) {
   if (!HasSendStreams()) return;
   if (cfg_.audio_rtcp && !audio_send_.empty() && !video_send_.empty()) {
     RtcpConfig r = MakeRtcpConfig(cfg_);
-    r.local_ssrc = audio_send_.front().sender->SenderState().ssrc;
+    r.local_ssrc = audio_send_.front().sender->config().ssrc;
     r.has_video = false;
     r.report_interval = TimeDelta::Zero();
     r.first_report_delay = TimeDelta::Zero();
@@ -268,7 +268,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {
-    UpdateSenderState();
+    UpdateSenderState(now);
     for (RtcpOutgoing& o : rtcp_.SendReport(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
@@ -425,10 +425,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   }
 }
 
-void Session::UpdateSenderState() {
+void Session::UpdateSenderState(Timestamp now) {
   RtpSender* s = !video_send_.empty() ? video_send_.front().sender.get()
                                       : (!audio_send_.empty() ? audio_send_.front().sender.get() : nullptr);
-  if (s) rtcp_.SetSenderState(s->SenderState());
+  if (s) rtcp_.SetSenderState(s->SenderState(now));
 }
 
 // ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s), with
@@ -501,13 +501,13 @@ void Session::Process(Timestamp now) {
     Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
   }
   // RTCP: reports and queued feedback.
-  UpdateSenderState();
+  UpdateSenderState(now);
   for (RtcpOutgoing& o : rtcp_.Process(now)) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
   }
   if (audio_rtcp_) {
-    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState());
+    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});

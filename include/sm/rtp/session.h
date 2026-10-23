@@ -323,7 +323,7 @@ class Session : public MetricsSource {
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
   void EnqueueSenderPackets(RtpSender& s, Timestamp now);
-  void UpdateSenderState();
+  void UpdateSenderState(Timestamp now);
   void Emit(SessionEvent e) { events_.push_back(e); }
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;

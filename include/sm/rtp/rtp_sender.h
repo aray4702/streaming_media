@@ -12,6 +12,7 @@
 // clock and starts no thread.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -22,6 +23,7 @@
 #include "sm/cc/pacer.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
+#include "sm/core/rate_statistics.h"
 #include "sm/audio/audio_level.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/units.h"
@@ -182,7 +184,11 @@ class RtpSender : public MetricsSource {
   std::vector<SenderPacket> TakePackets();
 
   // Counters of the media stream for the RTCP sender report.
-  RtcpSenderState SenderState() const;
+  // The SR's counters, and the send rate over the last second for the report interval.
+  RtcpSenderState SenderState(Timestamp now) const;
+  // RtpSenderEgress::GetSendRates(now).Sum(): one BitrateTracker (1 s window) per packet kind,
+  // fed with each released packet's RTP size (rtp_sender_egress.cc:49, 129, 495).
+  DataRate SendRate(Timestamp now) const;
   // RTP timestamp of the last media packet; padding carries it, like libwebrtc.
   uint32_t last_rtp_timestamp() const { return last_rtp_timestamp_; }
   const RtpSenderConfig& config() const { return cfg_; }
@@ -206,6 +212,10 @@ class RtpSender : public MetricsSource {
   uint32_t last_rtp_timestamp_ = 0;
   Timestamp last_media_time_ = Timestamp::MinusInfinity();
   uint32_t sr_packets_ = 0, sr_octets_ = 0;
+  // Indexed by PacketKind (kAudio, kVideo, kRtx, kFec, kPadding).
+  mutable std::array<RateStatistics, 5> send_rates_{RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
+                                                    RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
+                                                    RateStatistics(1000, 8000.0f)};
   std::vector<SenderPacket> out_;
   RtpSenderStats stats_;
 };

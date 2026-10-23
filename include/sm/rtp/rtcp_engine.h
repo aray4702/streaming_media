@@ -67,6 +67,10 @@ struct RtcpSenderState {
   uint32_t rtp_timestamp = 0;
   Timestamp reference_time = Timestamp::Millis(0);
   int clock_rate = 90000;
+  // The sender's rate over the last second, every packet type with its RTP
+  // header (ModuleRtpRtcpImpl2::GetFeedbackState: RtpSenderEgress::GetSendRates(now).Sum()),
+  // for the video report interval. Empty: derived from `octet_count`.
+  std::optional<DataRate> send_bitrate;
 };
 
 enum class RtcpOutKind { kReport, kFeedback };
