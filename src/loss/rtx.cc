@@ -141,11 +141,16 @@ void RtxSender::OnPacketSent(const RtpPacket& p, Timestamp now) {
   ++stats_.packets_stored;
 }
 
+uint8_t RtxSender::RtxPayloadType(const RtpPacket& original) const {
+  return cfg_.red_payload_type && original.payload_type == *cfg_.red_payload_type ? cfg_.rtx_red_payload_type
+                                                                                   : cfg_.rtx_payload_type;
+}
+
 std::optional<RtpPacket> RtxSender::GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept) {
   if (!large_payload_packet_) return std::nullopt;
   if (!accept(*large_payload_packet_)) return std::nullopt;
   ++stats_.payload_padding;
-  return MakeRtxPacket(*large_payload_packet_, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++);
+  return MakeRtxPacket(*large_payload_packet_, cfg_.rtx_ssrc, RtxPayloadType(*large_payload_packet_), rtx_seq_++);
 }
 
 std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta /*rtt*/) {
@@ -163,7 +168,7 @@ std::vector<RtpPacket> RtxSender::OnNack(std::span<const uint16_t> seqs, Timesta
       continue;
     }
     s->pending = true;
-    out.push_back(MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, cfg_.rtx_payload_type, rtx_seq_++));
+    out.push_back(MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, RtxPayloadType(*s->packet), rtx_seq_++));
     ++stats_.retransmitted;
     stats_.bytes_retransmitted += static_cast<int64_t>(out.back().size());
   }

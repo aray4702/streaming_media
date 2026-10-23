@@ -113,7 +113,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx_payload_type = v.rtx_payload_type;
   c.rtx = v.rtx;
   c.fec = VideoFecEnabled(v);
-  c.fec_config = v.fec_config;
+  c.ulpfec = v.ulpfec;
   video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
@@ -172,7 +172,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.rtx_ssrc = v.rtx_ssrc;
   c.nack = v.nack;
   c.fec = VideoFecEnabled(v);
-  c.fec_config = v.fec_config;
+  c.ulpfec = v.ulpfec;
   c.nack_config = v.nack_config;
   c.packet_buffer = v.packet_buffer;
   c.keyframe = v.keyframe;
@@ -185,7 +185,10 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
-  if (VideoFecEnabled(v)) pts.push_back(v.fec_config.fec_payload_type);
+  if (VideoFecEnabled(v)) {
+    pts.push_back(v.ulpfec.red_payload_type);
+    if (v.rtx_ssrc) pts.push_back(v.ulpfec.red_rtx_payload_type);
+  }
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(true, static_cast<int>(video_recv_.size()) - 1);
   demux_.AddSink(sink, cfg_.mid_video, "", std::move(pts));
@@ -240,11 +243,11 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     ++stats_.empty_video_frames;
     return;
   }
-  // rtp_sender_video.cc: packet_capacity less the header of a middle packet.
-  // The first, last and single packets carry no extension the middle one
+  // rtp_sender_video.cc: packet_capacity, less FecPacketOverhead with FEC, less the header of a
+  // middle packet. The first, last and single packets carry no extension the middle one
   // lacks here (transport-cc, abs-send-time and MID go on every packet), so
   // their reductions are zero.
-  const size_t capacity = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
+  const size_t capacity = s.config().max_payload_size + RtpPacket::kFixedHeaderSize - s.FecPacketOverhead();
   const size_t header = s.MediaHeaderSize();
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
@@ -274,7 +277,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   EnqueueSenderPackets(s, now);
 }
 
-void Session::SetFecParams(VideoSendId id, const loss::FecParams& p) {
+void Session::SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   video_send_[static_cast<size_t>(id.index)].sender->SetFecParams(p);
 }
