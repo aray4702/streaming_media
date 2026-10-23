@@ -66,6 +66,11 @@ struct SendSideConfig {
   // started. Off: the bytes of each type over the last `repair_window`. On by
   // default since #224, together with `control_handler`.
   bool send_rate_stats = true;
+  // The encoder bitrate adjuster's bandwidth allocation (issue #326). On: VideoSendStreamImpl's
+  // link_allocation, the video allocation less overhead and protection before the encoder target
+  // is capped at `video_max`, so an allocation above the maximum gives the adjuster headroom, as
+  // libwebrtc does. Off: the capped encoder target, no headroom.
+  bool link_headroom = true;
   // The transport's CongestionControlHandler between GoogCC and the allocator (cc/control_handler.h,
   // issue #204): the allocator, and with it the encoder target and its protection share, changes only
   // when the handler passes an update on, and the encoder pauses while the pacer queue is above 2 s.
@@ -89,6 +94,10 @@ struct SendRates {
   DataRate target;       // GCC target for everything the session sends.
   DataRate audio_rate;   // Audio wire rate taken off first.
   DataRate video_target; // What the video encoder may produce (after congestion-window pushback).
+  // VideoSendStreamImpl's link_allocation, given to the encoder bitrate adjuster as the bandwidth
+  // allocation: the video allocation less overhead and protection, before the target is capped at
+  // the encoder maximum (and before pushback). Zero without a configured allocation.
+  DataRate video_link_allocation;
   // Congestion-window pushback (issue #53): drop every N-th captured frame
   // (0 = none); `video_target` is already lowered to match. See
   // SendSideController::DropCapturedFrame().
@@ -218,6 +227,13 @@ class SendSideController : public MetricsSource {
   // `allocator v2`: the video allocation less the packet-overhead rate and the
   // protection share, at most the video maximum: the encoder target before the
   // congestion-window frame dropping (VideoStreamEncoder::UpdateTargetBitrate).
+  // RtpVideoSender::OnBitrateUpdated and VideoSendStreamImpl::OnBitrateUpdated for a video allocation.
+  struct VideoAllocationSplit {
+    DataRate encoder_target;   // Capped at the encoder maximum.
+    DataRate link_allocation;  // At least encoder_target.
+    DataRate protection;       // Returned to the allocator.
+  };
+  VideoAllocationSplit SplitVideoAllocation(DataRate alloc) const;
   DataRate AllocatedVideoTarget(DataRate alloc) const;
   // RtpVideoSender::CalculateOverheadRate (frame-rate option off).
   DataRate OverheadRate(DataRate rate, int64_t packet_size_bytes) const;
@@ -236,6 +252,7 @@ class SendSideController : public MetricsSource {
   double reported_reduce_ratio_ = 0;
   // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
   DataRate video_encoder_target_;
+  DataRate video_link_allocation_;  // VideoSendStreamImpl's link_allocation as of the last allocation.
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;

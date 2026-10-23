@@ -150,8 +150,9 @@ SM_TEST(VideoSendController, InputFrameRateIsMeasuredNotConfigured) {
   SM_EXPECT_NEAR(d.fps, 10.0, 1.0);
 }
 
-// VideoSendStreamImpl::OnBitrateUpdated: link_allocation equals the encoder
-// target, so the adjuster sees no headroom from the session's audio share.
+// VideoSendStreamImpl::OnBitrateUpdated: below the encoder maximum,
+// link_allocation equals the encoder target, so the adjuster sees no headroom
+// from the session's audio share (above the maximum it does, issue #326).
 SM_TEST(VideoSendController, LinkAllocationEqualsTheEncoderTarget) {
   Session s(Cfg());
   VideoSendController c({}, s);

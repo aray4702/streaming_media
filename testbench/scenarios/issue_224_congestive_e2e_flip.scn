@@ -10,4 +10,7 @@ duration 40s
 at 0s capacity=2500kbps delay=30ms queue=60ms
 at 15s capacity=800kbps
 expect video.e2e_delay_p95_ms < 650
-expect sync.av_offset_p95_ms < 520
+# Provisional lock, tracked to #77 (Owner accepted on PR #328, 2026-10-23 9:34 AM PT): was < 520. With #328's
+# link_headroom ours is 530.9 on seed 1 (10-seed mean 367, main 379); libwebrtc per seed 118/388/264/382/172/326/358/445/306/318
+# (mean 307, worst 445). When #306 (#77's sync tail) lands, tighten by the tight rule on its head.
+expect sync.av_offset_p95_ms < 535

@@ -319,6 +319,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "send_rate_stats") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: send_rate_stats on|off");
       s.send_rate_stats = tok[1] == "on";
+    } else if (key == "link_headroom") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: link_headroom on|off");
+      s.link_headroom = tok[1] == "on";
     } else if (key == "control_handler") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: control_handler on|off");
       s.control_handler = tok[1] == "on";
@@ -416,6 +419,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.encode_delay != d.encode_delay) o += std::string("encode_delay ") + (s.encode_delay ? "on" : "off") + "\n";
   if (s.control_handler != d.control_handler) o += std::string("control_handler ") + (s.control_handler ? "on" : "off") + "\n";
   if (s.send_rate_stats != d.send_rate_stats) o += std::string("send_rate_stats ") + (s.send_rate_stats ? "on" : "off") + "\n";
+  if (s.link_headroom != d.link_headroom) o += std::string("link_headroom ") + (s.link_headroom ? "on" : "off") + "\n";
   if (s.quality_scaling != d.quality_scaling) o += std::string("quality_scaling ") + (s.quality_scaling ? "on" : "off") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
