@@ -183,6 +183,18 @@ void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta 
   }
 }
 
+void RtpSender::OnEarlyLoss(std::span<const uint16_t> seqs, Timestamp now) {
+  // Without RTX, libwebrtc would resend on the media SSRC; this sender only
+  // retransmits over RTX, as OnNack.
+  if (!cfg_.rtx_ssrc) return;
+  for (uint16_t seq : seqs) {
+    std::optional<RtpPacket> r = rtx_.ReSendEarlyLoss(seq, now);
+    if (!r) continue;
+    ++stats_.rtx_packets;
+    Queue(std::move(*r), PacketKind::kRtx, cc::PacketPriority::kRetransmission);
+  }
+}
+
 SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, Timestamp now) {
   RtpPacket p;
   p.timestamp = rtp_timestamp;
