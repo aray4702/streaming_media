@@ -82,53 +82,80 @@ int GetHigherResolutionThan(int pixel_count) {
   return pixel_count != kMax ? static_cast<int>(int64_t{pixel_count} * 5 / 3) : kMax;
 }
 
-VideoStreamAdapter::Status VideoStreamAdapter::AdaptDown() {
-  if (frame_size_pixels_ <= 0) return Status::kInsufficientInput;
+VideoStreamAdapter::Adaptation VideoStreamAdapter::GetAdaptationDown() const {
+  Adaptation a;
+  if (frame_size_pixels_ <= 0) {
+    a.status = Status::kInsufficientInput;
+    return a;
+  }
   if (awaiting_ && !awaiting_->pixels_increased && frame_size_pixels_ >= awaiting_->frame_size_pixels) {
-    return Status::kAwaitingPreviousAdaptation;
+    a.status = Status::kAwaitingPreviousAdaptation;
+    return a;
   }
   // DecreaseResolution; single_active_stream_pixels is the input size for one stream.
   const int target = GetLowerResolutionThan(frame_size_pixels_);
   if (!(target < restrictions_.max_pixels_per_frame.value_or(kMax) && target >= min_pixels_)) {
-    return Status::kLimitReached;
+    a.status = Status::kLimitReached;
+    return a;
   }
-  VideoSourceRestrictions next = restrictions_;
-  next.max_pixels_per_frame = target;
-  next.target_pixels_per_frame.reset();
-  Apply(next, +1);
-  return Status::kValid;
+  a.status = Status::kValid;
+  a.restrictions = restrictions_;
+  a.restrictions.max_pixels_per_frame = target;
+  a.restrictions.target_pixels_per_frame.reset();
+  a.resolution_adaptations = resolution_adaptations_ + 1;
+  return a;
 }
 
-VideoStreamAdapter::Status VideoStreamAdapter::AdaptUp() {
-  if (frame_size_pixels_ <= 0) return Status::kInsufficientInput;
+VideoStreamAdapter::Adaptation VideoStreamAdapter::GetAdaptationUp() const {
+  Adaptation a;
+  if (frame_size_pixels_ <= 0) {
+    a.status = Status::kInsufficientInput;
+    return a;
+  }
   if (awaiting_ && awaiting_->pixels_increased && frame_size_pixels_ <= awaiting_->frame_size_pixels) {
-    return Status::kAwaitingPreviousAdaptation;
+    a.status = Status::kAwaitingPreviousAdaptation;
+    return a;
   }
   // IncreaseResolution.
   int target = frame_size_pixels_;
   if (resolution_adaptations_ == 1) target = kMax;  // Removes the down-scaling.
   target = GetHigherResolutionThan(target);
   const int max_wanted = GetIncreasedMaxPixelsWanted(target);
-  if (!(max_wanted > restrictions_.max_pixels_per_frame.value_or(kMax))) return Status::kLimitReached;
-  VideoSourceRestrictions next;
-  if (max_wanted != kMax) {
-    next.max_pixels_per_frame = max_wanted;
-    next.target_pixels_per_frame = target;
+  if (!(max_wanted > restrictions_.max_pixels_per_frame.value_or(kMax))) {
+    a.status = Status::kLimitReached;
+    return a;
   }
-  Apply(next, -1);
-  return Status::kValid;
+  a.status = Status::kValid;
+  if (max_wanted != kMax) {
+    a.restrictions.max_pixels_per_frame = max_wanted;
+    a.restrictions.target_pixels_per_frame = target;
+  }
+  a.resolution_adaptations = resolution_adaptations_ - 1;
+  return a;
 }
 
-void VideoStreamAdapter::Apply(const VideoSourceRestrictions& next, int counter_delta) {
-  if (DidIncreaseResolution(restrictions_, next)) {
+VideoStreamAdapter::Status VideoStreamAdapter::AdaptDown() {
+  const Adaptation a = GetAdaptationDown();
+  if (a.status == Status::kValid) ApplyAdaptation(a);
+  return a.status;
+}
+
+VideoStreamAdapter::Status VideoStreamAdapter::AdaptUp() {
+  const Adaptation a = GetAdaptationUp();
+  if (a.status == Status::kValid) ApplyAdaptation(a);
+  return a.status;
+}
+
+void VideoStreamAdapter::ApplyAdaptation(const Adaptation& a) {
+  if (DidIncreaseResolution(restrictions_, a.restrictions)) {
     awaiting_ = AwaitingFrameSizeChange{true, frame_size_pixels_};
-  } else if (DidDecreaseResolution(restrictions_, next)) {
+  } else if (DidDecreaseResolution(restrictions_, a.restrictions)) {
     awaiting_ = AwaitingFrameSizeChange{false, frame_size_pixels_};
   } else {
     awaiting_.reset();
   }
-  restrictions_ = next;
-  resolution_adaptations_ += counter_delta;
+  restrictions_ = a.restrictions;
+  resolution_adaptations_ = a.resolution_adaptations;
 }
 
 void VideoAdapter::OnSinkWants(const VideoSourceRestrictions& r) {

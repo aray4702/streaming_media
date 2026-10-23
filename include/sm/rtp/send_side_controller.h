@@ -31,12 +31,14 @@
 
 #include "sm/cc/bitrate_allocator_v2.h"
 #include "sm/cc/congestion_window_pushback.h"
+#include "sm/cc/control_handler.h"
 #include "sm/cc/outage_monitor.h"
 #include "sm/cc/pacer.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
+#include "sm/core/rate_statistics.h"
 #include "sm/core/units.h"
 #include "sm/rtp/rtp_sender.h"
 #include "sm/sync/header_extensions.h"
@@ -58,6 +60,17 @@ struct SendSideConfig {
   // video encoder (libwebrtc FecControllerDefault::overhead_threshold_).
   double max_repair_share = 0.5;
   TimeDelta repair_window = TimeDelta::Seconds(1);
+  // How the repair share is measured (issue #224). On: one RateStatistics per
+  // media type, as RtpSenderEgress::GetSendRates, so a repair stream that has
+  // just started (after 1.5 windows without one) counts at its rate since it
+  // started. Off: the bytes of each type over the last `repair_window`.
+  bool send_rate_stats = false;
+  // The transport's CongestionControlHandler between GoogCC and the allocator (cc/control_handler.h,
+  // issue #204): the allocator, and with it the encoder target and its protection share, changes only
+  // when the handler passes an update on, and the encoder pauses while the pacer queue is above 2 s.
+  // Off: every GoogCC update reallocates and the encoder reads the live protection share (until the
+  // port is judged against libwebrtc as a whole, program.md 0.2).
+  bool control_handler = false;
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
   // With the allocator (RtpVideoSender::OnBitrateUpdated): the packet size
@@ -79,6 +92,9 @@ struct SendRates {
   // (0 = none); `video_target` is already lowered to match. See
   // SendSideController::DropCapturedFrame().
   int frame_drop_interval = 0;
+  // `control_handler`: the last update passed on had a zero target (the pacer queue above 2 s), so the
+  // encoder drops every captured frame (VideoStreamEncoder::EncoderPaused).
+  bool encoder_paused = false;
 };
 
 // A datagram released by the pacer.
@@ -165,13 +181,20 @@ class SendSideController : public MetricsSource {
 
   DataRate target() const { return target_; }
   DataRate send_rate(Timestamp now);
+  // RtpVideoSender::OnBitrateUpdated's payload rate: the video allocation less
+  // the packet overhead rate, which FecControllerDefault::UpdateFecRates takes.
+  // Zero without an allocation (ConfigureAllocation).
+  DataRate VideoPayloadRate() const;
   SendRates ComputeRates(DataRate audio_wire_rate, double fec_protection) const;
   // As above, but the share taken off is what the sender actually spent on
   // RTX and FEC in the last second, exactly as libwebrtc's FecControllerDefault::
   // UpdateFecRates does: (sent_nack + sent_fec) / (video + nack + fec), capped at
   // `max_repair_share` (0.5).
   SendRates ComputeMeasuredRates(DataRate audio_wire_rate) const;
-  // Share of the non-audio bytes released in the last `repair_window` (as of the last Process()) that were RTX or FEC.
+  // Share of the video stream's send rate that was RTX or FEC, as of the last Process(): of the bytes
+  // released in the last `repair_window`, or with `send_rate_stats` of RtpSenderEgress::GetSendRates'
+  // rates (RateStatistics over `repair_window`), where a repair stream that has just started counts at
+  // its rate since it started.
   double repair_share() const;
 
   const cc::BitrateAllocatorV2& allocator() const { return allocator_; }
@@ -186,6 +209,10 @@ class SendSideController : public MetricsSource {
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
+  void PostTargetRate(Timestamp now);
+  void UpdateControlState(Timestamp now);
+  // The congestion-window reduce ratio the encoder takes: the one last passed on with the handler.
+  double reduce_ratio() const { return cfg_.control_handler ? reported_reduce_ratio_ : cwnd_.reduce_ratio(); }
   void ApplyPushback(SendRates& out) const;
   // `allocator v2`: the video allocation less the packet-overhead rate and the
   // protection share, at most the video maximum: the encoder target before the
@@ -203,6 +230,11 @@ class SendSideController : public MetricsSource {
   cc::CongestionWindowPushback cwnd_;
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
+  cc::CongestionControlHandler control_handler_;
+  // The reduce ratio of the last update passed on (BitrateAllocationUpdate::cwnd_reduce_ratio).
+  double reported_reduce_ratio_ = 0;
+  // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
+  DataRate video_encoder_target_;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
@@ -225,6 +257,10 @@ class SendSideController : public MetricsSource {
   void ExpireRepair(Timestamp now);
   std::deque<Released> repair_window_;
   int64_t repair_bytes_ = 0, video_bytes_ = 0;
+  // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
+  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
+  RateStatistics video_rate_, rtx_rate_, fec_rate_;
+  Timestamp last_process_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
   std::deque<std::pair<Timestamp, int64_t>> window_;

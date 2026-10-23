@@ -13,6 +13,7 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
     Histogram
     Metrics
     NetworkLink
+    RateStatistics
     RtpPacket
     SeqNum
     Units
@@ -21,19 +22,19 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
 if(SM_WITH_LOSS)
   sm_add_test_exe(sm_unit_loss LABEL unit DEPS sm::loss
     SOURCES
+      unit/loss/fec_controller_test.cc
       unit/loss/keyframe_test.cc
       unit/loss/nack_rtx_test.cc
       unit/loss/plc_test.cc
-      unit/loss/protection_test.cc
       unit/loss/red_test.cc
       unit/loss/rtcp_feedback_test.cc
       unit/loss/temporal_layers_test.cc
       unit/loss/ulpfec_test.cc
     SUITES
+      FecController
       KeyframeRequest
       NackTracker
       Plc
-      Protection
       Red
       RtcpFeedback
       Rtx

@@ -1,0 +1,18 @@
+name issue_84_cpu_overuse_slow_encoder
+describe 720p camera with libwebrtc's adaptation on a slow CPU: a 720p frame takes 33 ms to encode (100% of the frame interval), so CPU overuse scales the resolution down while the 5 Mbps link would allow 720p at 2.5 Mbps
+duration 60s
+quality_scaling on
+encode_delay on
+encoder_speed 0.3
+at 0s capacity=5000kbps delay=30ms queue=300ms
+# Issue #84 step 5: EncodeUsageResource on OveruseFrameDetector (SendProcessingUsage1)
+# measures each frame from the start of its encode to the encoded callback. At
+# 720p that is 33 ms per 33 ms frame, above the 85% overuse threshold; after
+# 120 samples and two checks in a row (5 s apart) it adapts down one step to
+# 960x540 (19 ms, 56%: between the 42% and 85% thresholds, so it stays). The
+# quality scaler's low-QP adapt-ups are refused: the CPU resource holds the
+# most adaptations (ResourceAdaptationProcessor's kNotMostLimitedResource).
+expect video.encode_height_mean < 680
+expect video.encode_height_mean > 500
+expect video.render_fps > 28
+expect video.freeze_count <= 1

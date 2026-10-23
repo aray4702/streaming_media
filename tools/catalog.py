@@ -77,8 +77,8 @@ ALGORITHMS = [
                "Remaining differences: the FEC enqueued after a pacer release goes out from the next pacer pass, where "
                "libwebrtc's `ProcessPackets` loop can send it in the same pass; one RTX payload type per stream plus "
                "the RED one, where libwebrtc maps each associated payload type; FEC packets are not in the sender "
-               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is still "
-               "`ProtectionController` (3.7) until #29's next step ports `FecControllerDefault`.",
+               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is "
+               "`FecControllerDefault` (3.7).",
          verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
                       "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
                       "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
@@ -155,19 +155,36 @@ ALGORITHMS = [
          verification="No defects found."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
          problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
-         headers=["loss/protection_controller.h"], unit=["Protection"], e2e=["E2E_Protection"],
-         bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
+         headers=["loss/fec_controller.h"], unit=["FecController"], e2e=["E2E_Protection"],
+         bench=["loss/FecControllerDefault_UpdateFecRates", "loss/Q_Protection_adaptive_rtt300"],
          scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
-                  "loss, at RTT 20, 80 and 300 ms with 5% loss.",
+                  "loss, at RTT 18, 20, 80 and 300 ms with 5% loss; in the session, `issue_29_ulpfec_over_red`.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
-               "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
-               "replacement for libwebrtc's lookup tables. Its decision is ULPFEC's `FecProtectionParams`: the rate "
-               "in Q8 (so that `NumFecPackets` gives back the parity count), one frame per block and random masks, "
-               "which `FecControllerDefault` always picks (`fec_controller_default.cc:138-143`); the burst-length "
-               "input that chose this library's interleaved masks is gone with them (#29).",
-         verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
-                      "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead. "
+               "A port of libwebrtc M157's `FecControllerDefault` (`modules/video_coding/fec_controller_default.cc`) "
+               "with `media_opt_util.cc`'s `VCMLossProtectionLogic`, `VCMFecMethod` and `VCMNackFecMethod` and the "
+               "`kFecRateTable` of `fec_rate_table.h`, copied value for value (#29). The method follows what the "
+               "stream has on (`kNackFec`, `kFec`, `kNack`, `kNone`); the loss is the max of the last 10 one-second "
+               "windows; the delta rate comes from the table by effective bits per frame and loss, at least 20% "
+               "with loss and more than one packet per frame, at most 128/255; key frames get at least twice that "
+               "and the loss; `kNackFec` sends no delta FEC below 20 ms RTT, none at all for small frames under "
+               "200 ms RTT (`BitRateTooLowForFec`), and spreads FEC over up to 6 frames by RTT. The rates are "
+               "converted to a share of the media packets (`ConvertFECRate`) and the masks are random. "
+               "`rtp::Session` owns one per video send stream, as `RtpVideoSender` does: it calls `UpdateFecRates` "
+               "when the target, the fraction lost or the RTT changes (`CongestionControlHandler::GetUpdate`), with "
+               "the video payload rate, the frames sent in the last second and GoogCC's fraction lost, and sets the "
+               "delta and key parameters on the sender; `UpdateWithEncodedData` runs on every frame and "
+               "`SetVideoEncodingData` on each encoder reconfiguration. The encoder rate half of `UpdateFecRates` "
+               "(the measured protection share, capped at 0.5) is `SendSideController::AllocatedVideoTarget`. "
+               "Remaining differences: the sent frame rate is counted over the last second here, where libwebrtc's "
+               "`SendStatisticsProxy::GetSendFrameRate` (not in `compare/webrtc/reference/`) uses its rate tracker; "
+               "`_corrFecCost` is not computed, since M157 reads it nowhere.",
+         verification="Unit tests (`FecController`) check the table rates against values worked out by hand from "
+                      "`kFecRateTable`, the first-partition minimum, the 128/255 cap, the 10 s max filter, the "
+                      "20 ms NACK-only threshold, `BitRateTooLowForFec`, `max_fec_frames` and the packets-per-frame "
+                      "filter. `E2E_Protection.AdaptiveAcrossRtt`: NACK only at 18 ms RTT (overhead 5%), FEC from "
+                      "20 ms (overhead 45% at 20 ms, 39% at 80, 35% at 300; libwebrtc's table at 1.9 Mbps and 5% loss), "
+                      "on time 99.3% or more. On `issue_29_ulpfec_over_red`, seeds 1-10, FEC goes from 375 to 392 "
+                      "kbps (libwebrtc 444) and video e2e p95 from 174 to 242 ms (libwebrtc 232). "
                       "Video RED+ULPFEC is off beside NACK for H.264 and Generic, as libwebrtc's "
                       "`ShouldDisableRedAndUlpfec` decides (`rtp::ShouldDisableRedAndUlpfec`, "
                       "[fix record #7](../../fixes/7-no-fec-beside-nack.md)); the controller only runs where "
@@ -552,6 +569,10 @@ ALGORITHMS = [
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
                "the encoder drops every N-th captured frame (SendRates::frame_drop_interval, "
                "SendSideController::DropCapturedFrame()). The pacing rate is not reduced. "
+               "`SendSideConfig::control_handler` (scenario `control_handler on`, default off; #204) adds libwebrtc's "
+               "`CongestionControlHandler` (cc/control_handler.h, control_handler.cc) between GoogCC and the allocator: "
+               "the allocation, and with it the encoder target and its protection share, changes only when the target, the "
+               "reduce ratio, the loss fraction or the RTT changes, and the encoder pauses while the pacer queue is above 2 s. "
                "#166 ports goog_cc_network_control_unittest.cc against `GccController` "
                "(`GoogCcNetworkController`, 9 cases): the 8 `GoogCcNetworkControllerTest` cases the API can express pass "
                "(`RespectsConfiguredPacingFactor` through `SetPacingFactor`, #187), "
@@ -790,9 +811,15 @@ ALGORITHMS = [
                       "time-out, first check 100 ms after start then every 5 s, ramp-up delay 10 s quick, 40 s "
                       "standard, doubled up to 240 s). The `OveruseFrameDetector` unit tests port "
                       "`overuse_frame_detector_unittest.cc` (all but the two random-interval cases and the "
-                      "`SendProcessingUsage2` suite, which is off by default). Version 1 stays the default until #84 "
-                      "wires version 2 into the send path, which needs libwebrtc's `call/adaptation/` and "
-                      "`media/base/video_adapter` sources in `compare/webrtc/reference/`."),
+                      "`SendProcessingUsage2` suite, which is off by default). Issue #84 step 5 wires version 2 into "
+                      "the send path as libwebrtc's `EncodeUsageResource` "
+                      "(`video/adaptation/encode_usage_resource.cc`), behind `quality_scaling` with the quality "
+                      "scaler: `rtp::VideoSendController` starts each encoded frame in `OnCapturedFrame` and "
+                      "completes it in `OnEncoded`, overuse adapts the resolution down and underuse up, and the "
+                      "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
+                      "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
+                      "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
+                      "the behaviour."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -1257,9 +1284,13 @@ ALGORITHMS = [
                       "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
                       "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
                       "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
-                      "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
-                      "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
-                      "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
+                      "the encoder model is H.264's QP scale). Step 5 adds the CPU resource and "
+                      "`ResourceAdaptationProcessor`'s per-resource bookkeeping "
+                      "(`call/adaptation/resource_adaptation_processor.cc`): each resource keeps the restrictions it "
+                      "last asked for, and an adapt-up applies only for the resource with the most adaptations, "
+                      "alone (`kNotMostLimitedResource`, `kSharedMostLimitedResource`). Not ported: the BALANCED and "
+                      "MAINTAIN_RESOLUTION steps, the processor's removal of a resource (both stay for the call), "
+                      "the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
                       "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
                       "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
                       "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
@@ -1351,14 +1382,21 @@ ALGORITHMS = [
                "probes are real padding-only RTP packets. RTX of RED is retransmitted as sent, as in libwebrtc's "
                "RtxReceiveStream. Packet size is capped at 1200 bytes, libwebrtc's kVideoMtu. Interop for RTP with "
                "MID, transport-cc and abs-send-time, RTX and padding is in compare/webrtc/rtcp_interop.cc. The encoder "
-               "budget (SendSideController::ComputeMeasuredRates) takes off the share of the last second's "
-               "non-audio bytes that was RTX or FEC, capped at 50%, exactly as libwebrtc's FecControllerDefault::"
-               "UpdateFecRates (compare/webrtc/reference/modules/video_coding/fec_controller_default.cc). There is no "
+               "budget (SendSideController::ComputeMeasuredRates) takes off the share of the video stream's send rate "
+               "that was RTX or FEC, capped at 50%, as libwebrtc's FecControllerDefault::UpdateFecRates "
+               "(compare/webrtc/reference/modules/video_coding/fec_controller_default.cc). By default the share is "
+               "of the last second's bytes. `send_rate_stats` (off; #224) measures it as libwebrtc does, from one "
+               "RateStatistics per media type (RtpSenderEgress::GetSendRates, rtp_sender_egress.cc:340, "
+               "rtc_base/rate_statistics.cc): a repair stream that starts after 1.5 s without one counts at its rate "
+               "since it started, so the share reaches the cap within about 100 ms of the RTX that follows a capacity "
+               "drop, instead of over a second. There is no "
                "retransmission rate cap, as in M157. Differences that remain: the FEC amount (#7, "
                "FecControllerDefault's media_opt_util choice) and keyframe requests (#23); the encoder floor of 30 kbps "
                "applies even when the audio alone exceeds the target (#37).",
          verification="Introduced by #32 plan PRs 3 and 5. Issue #21 (partial) added the measured repair share; "
-                      "see docs/fixes/21-repair-within-target.md. Review notes from PR 3 (padding timestamp, padding size "
+                      "see docs/fixes/21-repair-within-target.md. Issue #224 added `send_rate_stats` (sm::RateStatistics, "
+                      "unit tests RateStatistics.* and SendSideController.RateStatistics*), off until it is judged with "
+                      "the allocation-time encoder target of #204's `control_handler`. Review notes from PR 3 (padding timestamp, padding size "
                       "accounting, zero-byte frames) were fixed in PR 5. Per-suite results are recorded by ctest "
                       "and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",

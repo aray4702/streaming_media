@@ -18,7 +18,8 @@ if(SM_WITH_LOSS)
     loss/temporal_layers.cc
     loss/ulpfec.cc
     loss/ulpfec_tables.cc
-    loss/protection_controller.cc)
+    loss/fec_controller.cc
+    loss/fec_rate_table.cc)
   list(APPEND SM_SECTIONS loss)
 endif()
 
@@ -56,6 +57,7 @@ if(SM_WITH_CC)
     cc/frame_dropper.cc
     cc/encoder_bitrate_adjuster.cc
     cc/congestion_window_pushback.cc
+    cc/control_handler.cc
     cc/video_adaptation.cc
     cc/outage_monitor.cc)
   list(APPEND SM_SECTIONS cc)
