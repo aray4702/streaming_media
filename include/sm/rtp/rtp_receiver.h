@@ -255,9 +255,10 @@ class RtpReceiver : public MetricsSource {
  private:
   // A video packet on the media SSRC, received or restored from RTX: RED goes to the ULPFEC
   // receiver (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader). kFec for an FEC packet.
-  ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now);
+  ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered);
   // A video media packet: original, retransmitted or FEC-recovered.
-  void OnVideoMedia(const RtpPacket& p, Timestamp now);
+  // `recovered`: restored from RTX or recovered by FEC (RtpPacketReceived::recovered).
+  void OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered);
   // A packet that holds a media sequence number but no media (padding, FEC):
   // RtpVideoStreamReceiver2::NotifyReceiverOfEmptyPacket.
   void OnEmptyPacket(uint16_t seq, Timestamp now);
