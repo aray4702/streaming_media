@@ -811,9 +811,15 @@ ALGORITHMS = [
                       "time-out, first check 100 ms after start then every 5 s, ramp-up delay 10 s quick, 40 s "
                       "standard, doubled up to 240 s). The `OveruseFrameDetector` unit tests port "
                       "`overuse_frame_detector_unittest.cc` (all but the two random-interval cases and the "
-                      "`SendProcessingUsage2` suite, which is off by default). Version 1 stays the default until #84 "
-                      "wires version 2 into the send path, which needs libwebrtc's `call/adaptation/` and "
-                      "`media/base/video_adapter` sources in `compare/webrtc/reference/`."),
+                      "`SendProcessingUsage2` suite, which is off by default). Issue #84 step 5 wires version 2 into "
+                      "the send path as libwebrtc's `EncodeUsageResource` "
+                      "(`video/adaptation/encode_usage_resource.cc`), behind `quality_scaling` with the quality "
+                      "scaler: `rtp::VideoSendController` starts each encoded frame in `OnCapturedFrame` and "
+                      "completes it in `OnEncoded`, overuse adapts the resolution down and underuse up, and the "
+                      "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
+                      "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
+                      "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
+                      "the behaviour."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -1278,9 +1284,13 @@ ALGORITHMS = [
                       "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
                       "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
                       "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
-                      "the encoder model is H.264's QP scale). Not ported: the BALANCED and MAINTAIN_RESOLUTION "
-                      "steps, the per-resource bookkeeping of `ResourceAdaptationProcessor` (one resource so "
-                      "far), the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
+                      "the encoder model is H.264's QP scale). Step 5 adds the CPU resource and "
+                      "`ResourceAdaptationProcessor`'s per-resource bookkeeping "
+                      "(`call/adaptation/resource_adaptation_processor.cc`): each resource keeps the restrictions it "
+                      "last asked for, and an adapt-up applies only for the resource with the most adaptations, "
+                      "alone (`kNotMostLimitedResource`, `kSharedMostLimitedResource`). Not ported: the BALANCED and "
+                      "MAINTAIN_RESOLUTION steps, the processor's removal of a resource (both stay for the call), "
+                      "the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
                       "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
                       "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
                       "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
