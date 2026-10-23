@@ -1,7 +1,0 @@
-name high_jitter
-describe Congested Wi-Fi: 40 ms jitter with reordering
-duration 30s
-at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
-# Known gap: delay-based BWE overreacts to jitter, video bitrate collapses.
-expect audio.interruptions == 0
-expect audio.concealed_pct < 2

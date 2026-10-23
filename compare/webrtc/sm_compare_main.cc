@@ -38,6 +38,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 #include "call.h"
 #include "scenario.h"
 #include "webrtc_call.h"
@@ -197,6 +199,9 @@ std::string JsonShown() {
 }  // namespace
 
 int main(int argc, char** argv) {
+  // Diagnostic (#313, not for merging): stderr into stdout, unbuffered, so the CI txt shows a crash message.
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
+  dup2(1, 2);
   int seeds = 3;
   std::string json_path, dump_dir, trace_names = kDefaultTraced, trace_dir, trace_all_dir, traces_json;
   std::vector<std::string> files;
@@ -254,8 +259,11 @@ int main(int argc, char** argv) {
       opt.video_trace = opt.link_trace;
       opt.bwe_trace = opt.link_trace;
       opt.audio_trace = opt.link_trace;
+      std::printf("[diag] %s seed %llu: sm\n", base.name.c_str(), static_cast<unsigned long long>(s.seed));
       ours.push_back(sm::testbench::RunCall(s, opt));
+      std::printf("[diag] %s seed %llu: webrtc\n", base.name.c_str(), static_cast<unsigned long long>(s.seed));
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
+      std::printf("[diag] %s seed %llu: done\n", base.name.c_str(), static_cast<unsigned long long>(s.seed));
       if (opt.link_trace) {
         const std::string sm_csv = sm::testbench::LinkTraceCsv(ours.back().link_trace);
         const std::string rtc_csv = sm::testbench::LinkTraceCsv(theirs.back().link_trace);

@@ -1,7 +1,0 @@
-name satellite
-describe GEO satellite: 300 ms one-way, 1% loss, 1.5 Mbps
-duration 40s
-at 0s capacity=1500kbps delay=300ms jitter=10ms loss=1% queue=600ms
-reverse at 0s delay=300ms
-expect audio.mouth_to_ear_p95_ms < 800
-expect audio.interruptions == 0

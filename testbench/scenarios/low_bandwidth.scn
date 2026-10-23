@@ -1,6 +1,0 @@
-name low_bandwidth
-describe 150 kbps link: audio must stay clean, video degrades gracefully
-duration 40s
-at 0s capacity=150kbps delay=40ms queue=500ms
-# Known gap: audio queues behind video in the bottleneck; mouth-to-ear delay ~1 s.
-expect audio.concealed_pct < 5

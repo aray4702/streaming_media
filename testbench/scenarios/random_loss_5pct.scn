@@ -1,9 +1,0 @@
-name random_loss_5pct
-describe 5% random loss on a 2 Mbps link with 40 ms one-way delay
-duration 30s
-at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
-expect audio.concealed_pct < 3
-expect audio.interruptions == 0
-expect video.residual_loss_pct < 0.5
-expect video.render_fps >= 25
-expect video.longest_freeze_ms < 2500

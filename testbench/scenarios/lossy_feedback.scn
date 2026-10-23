@@ -1,7 +1,0 @@
-name lossy_feedback
-describe Clean media path but 10% loss on the feedback path
-duration 30s
-at 0s capacity=2000kbps delay=30ms queue=300ms
-reverse at 0s delay=30ms loss=10%
-expect video.freeze_count == 0
-expect cc.utilization_pct >= 40

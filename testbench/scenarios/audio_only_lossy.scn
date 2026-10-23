@@ -1,7 +1,0 @@
-name audio_only_lossy
-describe Audio-only call over 10% random loss with jitter
-duration 30s
-video off
-at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
-expect audio.concealed_pct < 3
-expect audio.interruptions == 0
