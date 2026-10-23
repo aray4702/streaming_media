@@ -218,6 +218,14 @@ SM_TEST(SendSideController, RateStatisticsKeepTheWindowWhenTheLastRepairWasRecen
   SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), 1.0 / 11.0, 0.02);
 }
 
+// Issues #224 and #204: libwebrtc's send-side rates (RtpSenderEgress::GetSendRates) and its
+// CongestionControlHandler are what a session uses by default, as RtpTransportControllerSend does.
+SM_TEST(SendSideController, RateStatisticsAndControlHandlerAreTheDefault) {
+  const SendSideConfig cfg;
+  SM_EXPECT_TRUE(cfg.send_rate_stats);
+  SM_EXPECT_TRUE(cfg.control_handler);
+}
+
 // The keyframe's first packet flushes the queued video packets under pacer v2
 // (PacingController::EnqueuePacket); the flushed packets are never released
 // and leave nothing behind in the controller.
