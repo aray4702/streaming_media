@@ -4,8 +4,32 @@
 
 namespace sm::rtp {
 
+namespace {
+video::QualityScalerConfig ScalerConfig(const VideoSendControllerConfig& cfg) {
+  video::QualityScalerConfig c;
+  c.thresholds = cfg.qp_thresholds;
+  c.version = 2;
+  c.events = cfg.events;
+  return c;
+}
+
+// InitialFrameDropper's kMaxInitialFramedrop.
+constexpr int kMaxInitialFramedrop = 4;
+
+// VideoStreamEncoder::DropDueToSize without encoder bitrate limits.
+bool DropDueToSize(int pixel_count, int64_t bitrate_bps) {
+  if (bitrate_bps < 300000) return pixel_count > 320 * 240;  // qvga
+  if (bitrate_bps < 500000) return pixel_count > 640 * 480;  // vga
+  return false;
+}
+}  // namespace
+
 VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session& session)
-    : cfg_(cfg), session_(session), adjuster_(cfg.adjuster) {}
+    : cfg_(cfg),
+      session_(session),
+      adjuster_(cfg.adjuster),
+      scaler_(ScalerConfig(cfg)),
+      stream_adapter_(cfg.min_pixels_per_frame) {}
 
 namespace {
 // FrameCadenceAdapterInterface::kFrameRateAveragingWindowSizeMs.
@@ -37,8 +61,35 @@ void VideoSendController::UpdateFrameRate(Timestamp now) {
   frame_times_ms_.push_back(t);
 }
 
+void VideoSendController::OnQualityScalerSignal(video::QualityScaler::Signal signal) {
+  // QualityScalerResource::OnReportQpUsageHigh / Low -> ResourceAdaptationProcessor
+  // (the only resource, so always the most limited one) -> VideoStreamAdapter.
+  using Signal = video::QualityScaler::Signal;
+  if (signal == Signal::kNone) return;
+  const bool down = signal == Signal::kAdaptDown;
+  const auto status = down ? stream_adapter_.AdaptDown() : stream_adapter_.AdaptUp();
+  if (status != video::VideoStreamAdapter::Status::kValid) return;
+  ++(down ? adapt_downs_ : adapt_ups_);
+  video_adapter_.OnSinkWants(stream_adapter_.restrictions());
+}
+
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
   UpdateFrameRate(now);
+  int width = frame.width, height = frame.height;
+  if (cfg_.quality_scaling) {
+    // The quality scaler's CheckQpTask, then the source's VideoAdapter with the
+    // sink wants, then the frame size the encoder sees (OnFrameSizeObserved).
+    OnQualityScalerSignal(scaler_.Check(now));
+    if (frame.width > 0 && frame.height > 0) video_adapter_.AdaptFrameResolution(frame.width, frame.height, &width, &height);
+    stream_adapter_.OnFrameSizeObserved(width * height);
+    // ReconfigureEncoder for a new frame size: the encoder is reset and its
+    // next frame is a keyframe (next_frame_types_).
+    if (width != configured_width_ || height != configured_height_) {
+      if (configured_width_ > 0) keyframe_needed_ = true;
+      configured_width_ = width;
+      configured_height_ = height;
+    }
+  }
   const double fps = input_fps();
   const SendRates& rates = session_.rates();
   const DataRate target = rates.video_target;
@@ -64,15 +115,23 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   EncodeDecision d;
   d.keyframe = key;
   d.target = encoder_rate;
-  d.width = frame.width;
-  d.height = frame.height;
+  d.width = width;
+  d.height = height;
   d.fps = fps;
-  // As VideoStreamEncoder::OnFrame: the outage pause, then congestion-window
-  // pushback (keyframes included), then the frame dropper (keyframes included).
-  if (paused_ || rates.encoder_paused) {
+  // The outage pause, then congestion-window pushback (keyframes included),
+  // then the frame dropper (keyframes included). With quality scaling the
+  // order is VideoStreamEncoder's: the congestion-window drop (OnFrame), then
+  // in MaybeEncodeVideoFrame the initial frame drop (DropDueToSize and
+  // OnMaybeEncodeFrame), the pause (EncoderPaused) and the frame dropper.
+  const bool paused = paused_ || rates.encoder_paused;
+  if (paused && !cfg_.quality_scaling) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
+  } else if (cfg_.quality_scaling && QualityScalingDropsForSize(width, height, target, now)) {
+    d.reason = DropReason::kSize;
+  } else if (paused) {
+    d.reason = DropReason::kPaused;
   } else if (dropper_.ShouldDrop(fps)) {
     d.reason = DropReason::kFrameDropper;
   } else {
@@ -81,13 +140,35 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   }
   d.keyframe = false;
   if (d.reason == DropReason::kFrameDropper && cfg_.bitrate_adjuster) adjuster_.OnFrameDropped(now);
+  // QualityScalerResource::OnFrameDropped counts kMediaOptimization (the frame
+  // dropper) and kEncoder drops only.
+  if (d.reason == DropReason::kFrameDropper && cfg_.quality_scaling) scaler_.OnFrameDropped();
   ++dropped_[static_cast<int>(d.reason)];
   SM_EVENT(cfg_.events, now, "video_send", "frame_dropped", static_cast<double>(d.reason), 0);
   return d;
 }
 
+bool VideoSendController::QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now) {
+  // DropDueToSize, then OnMaybeEncodeFrame disables the initial frame drop.
+  if (initial_framedrop_ >= kMaxInitialFramedrop || target.bps() <= 0) return false;
+  if (!DropDueToSize(width * height, target.bps())) {
+    initial_framedrop_ = kMaxInitialFramedrop;
+    return false;
+  }
+  // VideoStreamEncoderResourceManager::OnFrameDroppedDueToSize.
+  ++initial_framedrop_;
+  if (stream_adapter_.AdaptDown() == video::VideoStreamAdapter::Status::kValid) {
+    ++adapt_downs_;
+    video_adapter_.OnSinkWants(stream_adapter_.restrictions());
+  }
+  SM_EVENT(cfg_.events, now, "video_send", "initial_frame_drop", width * height, static_cast<double>(target.bps()));
+  return true;
+}
+
 void VideoSendController::OnEncoded(const EncodedFrameReport& r, Timestamp now) {
   ++encoded_;
+  // QualityScalerResource::OnEncodeCompleted: QP with the send time.
+  if (cfg_.quality_scaling && r.qp >= 0) scaler_.OnEncodedFrame(r.qp, now);
   dropper_.OnEncodedFrame(r.size, r.keyframe);
   if (cfg_.bitrate_adjuster) adjuster_.OnEncodedFrame(r.size, now);
   if (r.keyframe) {
@@ -125,6 +206,13 @@ void VideoSendController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("dropped_paused", dropped_[static_cast<int>(DropReason::kPaused)]);
   w.Counter("dropped_cwnd", dropped_[static_cast<int>(DropReason::kCongestionWindow)]);
   w.Counter("dropped_dropper", dropped_[static_cast<int>(DropReason::kFrameDropper)]);
+  if (cfg_.quality_scaling) {
+    w.Counter("dropped_size", dropped_[static_cast<int>(DropReason::kSize)]);
+    w.Counter("resolution_adapt_downs", adapt_downs_);
+    w.Counter("resolution_adapt_ups", adapt_ups_);
+    w.Gauge("resolution_adaptations", stream_adapter_.resolution_adaptations());
+    w.Gauge("encoded_pixels", configured_width_ * configured_height_);
+  }
   w.Gauge("paused", paused_ ? 1 : 0);
 }
 

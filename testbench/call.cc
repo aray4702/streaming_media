@@ -151,6 +151,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.time_to_first_frame_ms", "Call start -> first rendered frame"},
       {"video.avg_kbps", "Average encoded video bitrate (quality proxy)"},
       {"video.qp_mean", "Mean QP of encoded frames, from the encoder model both implementations share (testbench/encoder_model.h; H.264 0..51)"},
+      {"video.encode_height_mean", "Mean height of encoded frames (the captured height unless quality scaling adapts it, issue #84)"},
       {"video.keyframes", "Keyframes encoded"},
       {"video.keyframe_requests", "PLI/FIR received by the sender"},
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
@@ -545,6 +546,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.allocation_min_bitrate = s.video_min;
   vsc_cfg.allocation_max_bitrate = s.video_max;
   vsc_cfg.adjuster.min_bitrate = s.video_min;
+  vsc_cfg.quality_scaling = s.quality_scaling;
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;
@@ -558,6 +560,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   registry.Register("sender.rtcp", &sender.rtcp());
   registry.Register("sender.frame_dropper", &video_ctl.frame_dropper());
   registry.Register("sender.bitrate_adjuster", &video_ctl.bitrate_adjuster());
+  if (s.quality_scaling) {
+    registry.Register("sender.video_send", &video_ctl);
+    registry.Register("sender.quality_scaler", &video_ctl.quality_scaler());
+  }
   registry.Register("sender.protection", &protection);
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
@@ -589,7 +595,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
-  int64_t video_bytes_encoded = 0, qp_sum = 0;
+  int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
@@ -720,6 +726,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       next_frame_ms = k * 1000 / s.video_fps;
       // The library decides: encode or drop, keyframe or not, and the rate.
       const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
+      // The size the library asks for (the captured size unless quality scaling adapts it).
+      const int enc_w = dec.width, enc_h = dec.height;
       const DataRate vr = dec.target;
       const bool key = dec.keyframe;
       ++vt_row.captured;
@@ -738,11 +746,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
         bytes = std::max<int64_t>(bytes, 200);
         vt_row.encoded_bytes += bytes;
-        const int qp = EncoderModel::Qp(bytes, key, s.video_width, s.video_height, s.video_complexity);
+        const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
         vt_row.qp_sum += qp;
-        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(s.video_width, s.video_height, s.encoder_speed);
+        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
         qp_sum += qp;
-        video_ctl.OnEncoded({DataSize::Bytes(bytes), key}, now);
+        height_sum += enc_h;
+        video_ctl.OnEncoded({DataSize::Bytes(bytes), key, qp}, now);
         if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
@@ -983,6 +992,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] = frames_encoded ? static_cast<double>(qp_sum) / static_cast<double>(frames_encoded) : 0;
+    m["video.encode_height_mean"] = frames_encoded ? static_cast<double>(height_sum) / static_cast<double>(frames_encoded) : 0;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(frames_skipped);
