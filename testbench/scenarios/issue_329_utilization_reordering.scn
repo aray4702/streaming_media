@@ -1,0 +1,6 @@
+name issue_329_utilization_reordering
+describe 8 Mbps link, 5 ms jitter with reordering, no loss: cc.utilization_pct must not count retransmissions of packets that already arrived (issue #329)
+duration 60s
+at 0s capacity=8000kbps delay=30ms jitter=5ms
+expect cc.utilization_pct <= 100
+expect cc.utilization_pct > 96

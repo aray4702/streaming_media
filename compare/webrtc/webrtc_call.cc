@@ -555,7 +555,7 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
       {"net.<kind>_kbps / _loss_pct", "Counted at the forward link by SSRC: audio, video media, RTX with a payload, "
                                       "FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload "
                                       "after RTP padding is removed, including RTX with only its sequence number)"},
-      {"cc.goodput_kbps", "Excludes padding-only packets but includes RTX packets libwebrtc sends as padding"},
+      {"cc.goodput_kbps", "Each media sequence number counts once, as original or RTX (#329): excludes padding-only packets, RTX payload padding and RTX copies of packets that had already arrived"},
       {"sync.av_offset_*", "The audio playout point is AudioReceiveStream's Syncable::GetPlayoutRtpTimestamp, the "
                            "input libwebrtc's A/V sync uses, read after each 10 ms pull (the test bench reads its "
                            "jitter buffer's playout timestamp right after the pull)"},
@@ -659,6 +659,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.s = &s;
   model.rng = Random(s.seed + 13);
   int64_t media_bytes = 0, repair_bytes = 0, w_send = 0, w_good = 0;
+  testbench::FirstDelivery first_delivery;
   SeqNumUnwrapper<uint16_t> video_send_unwrap, video_recv_unwrap;
   std::map<int64_t, int64_t> video_send_ms;  // Unwrapped media sequence number -> send time.
   std::set<int64_t> video_received;
@@ -928,7 +929,21 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       RtpInfo r = ParseRtp(p.data);
       if (!r.ok) return;
       const int64_t wire = static_cast<int64_t>(p.data.size()) + kUdpIpOverhead;
-      if (r.payload_len > 0) w_good += wire;
+      if (r.payload_len > 0) {
+        // Each media sequence number counts once, as the test bench counts it (#329).
+        bool first = true;
+        if (r.ssrc == kAudioSsrc) {
+          first = first_delivery.Deliver(testbench::FirstDelivery::kAudio, r.seq);
+        } else if (r.ssrc == kVideoSsrc) {
+          first = first_delivery.Deliver(testbench::FirstDelivery::kVideo, r.seq);
+        } else if (r.ssrc == kRtxSsrc) {
+          // RTX with only its original sequence number is padding.
+          const uint8_t* osn = p.data.data() + r.payload_off;
+          first = r.payload_len > 2 &&
+                  first_delivery.Deliver(testbench::FirstDelivery::kVideo, static_cast<uint16_t>((osn[0] << 8) | osn[1]));
+        }
+        if (first) w_good += wire;
+      }
       if (r.ssrc == kAudioSsrc) {
         if (!audio_first.IsFinite()) audio_first = at;
         if (audio_ts0) {
