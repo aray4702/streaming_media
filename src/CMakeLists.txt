@@ -116,7 +116,8 @@ if(SM_WITH_VIDEO)
     video/codec_negotiation.cc
     video/frame_scaler.cc
     video/frame_scheduler.cc
-    video/quality_scaler.cc)
+    video/quality_scaler.cc
+    video/video_stream_adapter.cc)
   list(APPEND SM_SECTIONS video)
 endif()
 

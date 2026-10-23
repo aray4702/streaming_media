@@ -16,8 +16,27 @@
 // rate `EncodeDecision::target` by the encoder's measured overshoot (issue #5); the frame dropper keeps working on the
 // unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated.
 //
-// Not wired yet (note section 6): the quality scaler, CPU overuse detection and
-// the degradation ladder (the test bench's fake encoder reports no QP). The
+// `quality_scaling` (off by default; issue #84 step 4) adds libwebrtc's
+// QualityScalerResource with the MAINTAIN_FRAMERATE degradation preference of
+// a camera (video/adaptation/video_stream_encoder_resource_manager.cc,
+// quality_scaler_resource.cc): video::QualityScaler version 2 reads the QP of
+// each encoded frame (EncodedFrameReport::qp) and the frame dropper's drops
+// (kMediaOptimization); its high-QP signal adapts the resolution down and its
+// low-QP signal up, through video::VideoStreamAdapter, and video::VideoAdapter
+// turns the restrictions into the frame size the decision returns. Also
+// libwebrtc's initial frame drop (VideoStreamEncoder::DropDueToSize with the
+// resource manager's InitialFrameDropper): while the quality scaler runs and
+// no frame has passed it yet, up to 4 frames (kMaxInitialFramedrop) are
+// dropped as too large for the encoder target (above 320x240 under 300 kbps,
+// above 640x480 under 500 kbps; the encoder model reports no resolution
+// bitrate limits), each one adapting the resolution down. A new frame size
+// reconfigures the encoder, which makes the next frame a keyframe
+// (ReconfigureEncoder's encoder reset). Not ported: the start-bitrate reset of
+// the initial frame drop (QualityScalerSettings' InitialBitrateIntervalMs and
+// Factor are unset by default) and the dropped frame kept as `pending_frame_`.
+// With quality scaling the drop checks run in VideoStreamEncoder's order:
+// congestion window (OnFrame), initial frame drop, outage pause, frame dropper.
+// CPU overuse and the other degradation preferences are not wired yet. The
 // frame dropper is libwebrtc's, applied to keyframes too (issue #5).
 #pragma once
 
@@ -30,6 +49,8 @@
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
 #include "sm/rtp/session.h"
+#include "sm/video/quality_scaler.h"
+#include "sm/video/video_stream_adapter.h"
 
 namespace sm::rtp {
 
@@ -54,6 +75,13 @@ struct VideoSendControllerConfig {
   // a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last one it
   // passed on is ignored. 0 = off (the v1 behaviour; `keyframe v2` turns it on).
   TimeDelta min_keyframe_request_interval = TimeDelta::Zero();
+  // QualityScalerResource with MAINTAIN_FRAMERATE and the initial frame drop
+  // (see above). Off = the v1 behaviour: the captured size is encoded as is.
+  bool quality_scaling = false;
+  // EncoderInfo::ScalingSettings: H.264's QP thresholds (QualityScalingExperiment's
+  // default 24/37) and kDefaultMinPixelsPerFrame.
+  video::QpThresholds qp_thresholds;
+  int min_pixels_per_frame = 320 * 180;
   EventSink* events = nullptr;
 };
 
@@ -61,7 +89,8 @@ struct CapturedFrame {
   int width = 0, height = 0;
 };
 
-enum class DropReason { kNone, kPaused, kCongestionWindow, kFrameDropper };
+// kSize: VideoStreamEncoder::DropDueToSize (the initial frame drop).
+enum class DropReason { kNone, kPaused, kCongestionWindow, kFrameDropper, kSize };
 
 struct EncodeDecision {
   bool encode = false;
@@ -75,6 +104,7 @@ struct EncodeDecision {
 struct EncodedFrameReport {
   DataSize size;
   bool keyframe = false;
+  int qp = -1;  // EncodedImage::qp_; negative = not reported.
 };
 
 class VideoSendController : public MetricsSource {
@@ -93,6 +123,8 @@ class VideoSendController : public MetricsSource {
 
   const cc::FrameDropper& frame_dropper() const { return dropper_; }
   const cc::EncoderBitrateAdjuster& bitrate_adjuster() const { return adjuster_; }
+  const video::QualityScaler& quality_scaler() const { return scaler_; }
+  const video::VideoStreamAdapter& stream_adapter() const { return stream_adapter_; }
   bool paused() const { return paused_; }
   // VideoStreamEncoder::GetInputFramerateFps: the rate of captured frames over
   // the last 2970 ms (FrameCadenceAdapter's RateStatistics), or the configured
@@ -105,6 +137,15 @@ class VideoSendController : public MetricsSource {
   Session& session_;
   cc::FrameDropper dropper_;
   cc::EncoderBitrateAdjuster adjuster_;
+  // Quality scaling (cfg_.quality_scaling).
+  void OnQualityScalerSignal(video::QualityScaler::Signal signal);
+  bool QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now);
+  video::QualityScaler scaler_;
+  video::VideoStreamAdapter stream_adapter_;
+  video::VideoAdapter video_adapter_;
+  int initial_framedrop_ = 0;  // InitialFrameDropper::initial_framedrop_.
+  int configured_width_ = 0, configured_height_ = 0;  // The encoder's send_codec_ size.
+  uint64_t adapt_downs_ = 0, adapt_ups_ = 0;
   // RateStatistics (window 2970 ms, scale 1000) over captured frames.
   void UpdateFrameRate(Timestamp now);
   std::deque<int64_t> frame_times_ms_;
@@ -117,7 +158,7 @@ class VideoSendController : public MetricsSource {
   // time_last_packet_delivery_queue_; libwebrtc starts it at clock zero, which
   // a real or simulated clock is far past).
   Timestamp last_keyframe_request_ = Timestamp::MinusInfinity();
-  uint64_t dropped_[4] = {0, 0, 0, 0};
+  uint64_t dropped_[5] = {0, 0, 0, 0, 0};
   uint64_t encoded_ = 0, keyframes_ = 0, keyframe_requests_ignored_ = 0;
 };
 
