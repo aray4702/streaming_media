@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-92 scenarios, mean of 10 seeds. **179 gaps**: 76 behind libwebrtc, 103 ahead of it; 0 without an owner.
+94 scenarios, mean of 10 seeds. **180 gaps**: 77 behind libwebrtc, 103 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-172 gaps on `main`, 179 here: **0 closed, 7 opened**, 0 changed direction.
+173 gaps on `main`, 180 here: **0 closed, 7 opened**, 0 changed direction.
 
 Opened:
 
@@ -173,6 +173,7 @@ Opened:
 | issue_76_tcc_v2_high_jitter | `repair.overhead_pct` | 34.2 | 43.7 | ±2.5 | ahead | 9/10 | #21, #7, #29 |
 | issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
 | issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 97.7 | 113 | ±12.7 | ahead | 6/10 | #77 |
+| issue_84_quality_scaling_rate_rise | `cc.queue_p95_ms` | 54.5 | 42.7 | ±10 | behind | 6/10 | #19, #15, #48, #12, #61 |
 | issue_85_video_pause | `audio.interruptions` | 3 | 1.1 | ±0.5 | behind | 1/10 | #63 |
 | issue_85_video_pause | `audio.jb_delay_p95_ms` | 131 | 163 | ±24.5 | ahead | 9/10 | #63, #218 |
 | issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #63 |

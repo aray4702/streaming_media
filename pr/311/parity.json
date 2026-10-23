@@ -2130,6 +2130,23 @@
    ]
   },
   {
+   "scenario": "issue_84_quality_scaling_rate_rise",
+   "metric": "cc.queue_p95_ms",
+   "sm": 54.468,
+   "webrtc": 42.6541,
+   "band": 10,
+   "direction": "behind",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
+   ]
+  },
+  {
    "scenario": "issue_85_video_pause",
    "metric": "audio.interruptions",
    "sm": 3,
