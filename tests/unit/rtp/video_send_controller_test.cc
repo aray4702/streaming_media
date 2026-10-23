@@ -363,3 +363,41 @@ SM_TEST(VideoSendController, CpuUnderuseDoesNotUndoTheQualityScalersSteps) {
   SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
   SM_EXPECT_EQ(c.overuse_detector().encode_usage_percent().value_or(-1), 0);
 }
+
+SM_TEST(VideoSendController, NewResolutionRecreatesTheBitrateAdjuster) {
+  // VideoStreamEncoder::ReconfigureEncoder on a new frame size: a new
+  // EncoderBitrateAdjuster, whose first kMinFramesSinceLayoutChange (30)
+  // frames use kDefaultUtilizationFactor (1.2).
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  int t = 0;
+  EncodeDecision d;
+  do {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    t += 33;
+  } while (!d.encode);
+  c.OnEncoded({DataSize::Bytes(1000), true, 10}, At(t - 33));
+  const int64_t target_bps = s.rates().video_target.bps();
+  bool switched = false;
+  for (int i = 0; i < 300 && !switched; ++i, t += 33) {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (d.height > 360) {
+      switched = true;
+      SM_EXPECT_EQ(d.target.bps(), static_cast<int64_t>(static_cast<double>(target_bps) / 1.2 + 0.5));
+    } else if (i > 40) {
+      // More than 30 frames at an under-using encoder: no adjustment.
+      SM_EXPECT_EQ(d.target.bps(), target_bps);
+    }
+    // 1000 bytes a frame (240 kbps) under-uses the start rate.
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 10}, At(t));
+  }
+  SM_EXPECT_TRUE(switched);
+  // Thirty frames later the new adjuster trusts its detector again.
+  for (int i = 0; i < 35; ++i, t += 33) {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 10}, At(t));
+  }
+  SM_EXPECT_EQ(d.target.bps(), target_bps);
+}

@@ -99,6 +99,9 @@ class EncoderBitrateAdjuster : public MetricsSource {
   void OnEncodedFrame(DataSize size, Timestamp now);
   void OnFrameDropped(Timestamp now);
   void Reset(Timestamp now);
+  // Back to the state of a new adjuster, as VideoStreamEncoder::ReconfigureEncoder
+  // creates one: no detector yet, and frames_since_layout_change_ at zero.
+  void Recreate();
 
   double link_utilization_factor() const { return link_factor_; }
   double media_utilization_factor() const { return media_factor_; }

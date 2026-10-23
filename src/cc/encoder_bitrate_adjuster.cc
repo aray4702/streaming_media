@@ -265,6 +265,16 @@ void EncoderBitrateAdjuster::Reset(Timestamp now) {
   AdjustRate(last_target_, last_bandwidth_, last_fps_, now);
 }
 
+void EncoderBitrateAdjuster::Recreate() {
+  detector_.Reset();
+  detector_active_ = false;
+  frames_since_layout_change_ = 0;
+  last_target_ = last_bandwidth_ = DataRate();
+  last_fps_ = 0;
+  link_factor_ = media_factor_ = 1.0;
+  adjusted_ = DataRate();
+}
+
 void EncoderBitrateAdjuster::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("link_utilization_factor", link_factor_);
   w.Gauge("media_utilization_factor", media_factor_);
