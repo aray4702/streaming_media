@@ -4,11 +4,14 @@
 # QEMU for Linux ARM). Benchmark speed budgets are scaled for slow runners.
 # The test bench job compares every scenario against testbench/baseline.json;
 # `ci-ok` aggregates every job and is the required check for merging.
+# `merge_group` runs the same jobs on the merge queue's commit (the PR on top
+# of the PRs ahead of it), so main is tested as it will be after the merge.
 name: ci
 on:
   push:
     branches: [main]
   pull_request:
+  merge_group:
   workflow_dispatch:
 concurrency:
   group: ci-${{ github.ref }}
@@ -21,6 +24,7 @@ jobs:
     # at the start of every PR run. The label starts the Reviewer routine.
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions: {pull-requests: write}
     steps:
       - run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/ci-passed" >/dev/null 2>&1 || true
@@ -34,6 +38,7 @@ jobs:
           - {os: ubuntu-24.04, cc: clang-18, cxx: clang++-18}
           - {os: macos-14, cc: clang, cxx: clang++}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     env: {CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}", SM_BENCH_BUDGET_SCALE: "4"}
     steps:
       - uses: actions/checkout@v4
@@ -41,17 +46,20 @@ jobs:
       - run: ctest --preset native -j 4
   sanitizers:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: cmake --preset native-asan && cmake --build --preset native-asan -j 4
       - run: ctest --preset native-asan -j 4
   embedded-config:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - run: cmake --preset embedded && cmake --build --preset embedded -j 4
   wasm:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env: {SM_BENCH_BUDGET_SCALE: "4"}
     steps:
       - uses: actions/checkout@v4
@@ -66,14 +74,28 @@ jobs:
     # Cross toolchain + functional tests under QEMU. Speed gates are skipped
     # here (they would time the emulator); linux-arm64 runs them natively.
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y g++-aarch64-linux-gnu qemu-user
+      # The Azure Ubuntu mirror sometimes serves these ~70 MB at ~30 kB/s (26
+      # minutes on 2026-10-22), so the .deb files are kept between runs.
+      - uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-aarch64-ubuntu-24.04-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-aarch64-ubuntu-24.04-
+      - run: |
+          mkdir -p ~/apt-cache/partial
+          sudo apt-get update
+          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-cache" -o APT::Sandbox::User=root \
+            g++-aarch64-linux-gnu qemu-user
+          sudo chown -R "$USER" ~/apt-cache
       - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
       - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE bench
   linux-arm64:
     # Native Arm64 Linux (robots, Jetson, Graviton): full suite incl. speed gates.
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     env: {CC: gcc-13, CXX: g++-13, SM_BENCH_BUDGET_SCALE: "4"}
     steps:
       - uses: actions/checkout@v4
@@ -81,6 +103,7 @@ jobs:
       - run: ctest --preset native -j 4
   android:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     strategy: {matrix: {preset: [android-arm64, android-armv7]}}
     steps:
       - uses: actions/checkout@v4
@@ -88,12 +111,14 @@ jobs:
       - run: cmake --build out/${{ matrix.preset }} -j 4
   ios:
     runs-on: macos-14
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: cmake --preset ios && cmake --build out/ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO
   testbench:
     # Canonical platform for testbench/baseline.json (same as the cloud agents).
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env: {CC: gcc-13, CXX: g++-13}
     steps:
       - uses: actions/checkout@v4
@@ -122,6 +147,7 @@ jobs:
     # raw.githubusercontent.com (the Actions artifact host and github.io are
     # not reachable from their sandbox).
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
     permissions: {contents: write}
     env: {COMPARE_SEEDS: "10"}
     steps:
@@ -132,7 +158,18 @@ jobs:
           path: out/webrtc-deps
           key: webrtc-deps-ubuntu-24.04-${{ hashFiles('compare/webrtc/fetch.sh') }}
       - run: compare/webrtc/fetch.sh
-      - run: wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+      # clang 21 comes from apt.llvm.org through apt; keep its .deb files
+      # between runs too (the step once took 55 minutes).
+      - uses: actions/cache@v4
+        with:
+          path: ~/apt-cache
+          key: apt-llvm21-ubuntu-24.04-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: apt-llvm21-ubuntu-24.04-
+      - run: |
+          mkdir -p ~/apt-cache/partial
+          printf 'Dir::Cache::Archives "%s/apt-cache";\nAPT::Sandbox::User "root";\n' "$HOME" | sudo tee /etc/apt/apt.conf.d/90sm-apt-cache
+          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          sudo chown -R "$USER" ~/apt-cache
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare
         run: |
@@ -207,6 +244,7 @@ jobs:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions: {contents: read, issues: read, pull-requests: read}
     steps:
       - uses: actions/checkout@v4
@@ -218,6 +256,7 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [wasm]
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     permissions: {pages: write, id-token: write}
     environment: {name: github-pages, url: "${{ steps.deploy.outputs.page_url }}"}
     steps:
@@ -228,6 +267,7 @@ jobs:
     if: always()
     needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, compare-webrtc, fix-record]
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     permissions: {pull-requests: write}
     steps:
       - run: |
