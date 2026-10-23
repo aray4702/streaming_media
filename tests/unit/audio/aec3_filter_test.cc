@@ -1,4 +1,5 @@
-// Ports of libwebrtc's AEC3 linear-filter unit tests (`apm v2`, #240 step 2):
+// Ports of libwebrtc's AEC3 linear-filter unit tests (`apm v2`, #240 step 2),
+// plus a DFT check of the 128-point Ooura FFT under Aec3Fft (#240 step 6):
 // aec3_fft_unittest.cc, render_delay_buffer_unittest.cc,
 // adaptive_fir_filter_unittest.cc (FilterSize, FilterStatisticsAccess,
 // FilterAndAdapt), coarse_filter_update_gain_unittest.cc,
@@ -15,8 +16,10 @@
 #include "sm/audio/aec3_filter.h"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 
+#include "sm/audio/ooura_fft.h"
 #include "sm/core/random.h"
 #include "sm_test.h"
 
@@ -129,6 +132,33 @@ SM_TEST(Aec3Filter, FftAndIfft) {
     fft.Fft(&x, &X);
     fft.Ifft(X, &x);
     for (size_t j = 0; j < x.size(); ++j) SM_EXPECT_NEAR(x_ref[j], x[j], 0.001f);
+  }
+}
+
+// OouraFft (fft_size_128), which Aec3Fft runs on, against the DFT in double
+// precision: a[2k] = sum x[j] cos, a[2k+1] = sum x[j] sin (2 pi j k / 128),
+// a[1] the bin 64; the inverse is 64 times the input.
+SM_TEST(Aec3Filter, OouraFft128MatchesDft) {
+  const sm::audio::ooura::OouraFft128 fft;
+  Random random(42);
+  for (int trial = 0; trial < 10; ++trial) {
+    std::array<float, kFftLength> x;
+    for (float& v : x) v = static_cast<float>(random.Uniform(-32768.0, 32767.0));
+    std::array<float, kFftLength> a = x;
+    fft.Fft(a.data());
+    for (size_t k = 0; k <= kFftLengthBy2; ++k) {
+      double re = 0, im = 0;
+      for (size_t j = 0; j < kFftLength; ++j) {
+        const double phi = 2 * 3.14159265358979323846 * static_cast<double>(j * k) / kFftLength;
+        re += x[j] * std::cos(phi);
+        im += x[j] * std::sin(phi);
+      }
+      const float got_re = k == kFftLengthBy2 ? a[1] : a[2 * k];
+      SM_EXPECT_NEAR(re, got_re, 1.f);
+      if (k != 0 && k != kFftLengthBy2) SM_EXPECT_NEAR(im, a[2 * k + 1], 1.f);
+    }
+    fft.InverseFft(a.data());
+    for (size_t j = 0; j < kFftLength; ++j) SM_EXPECT_NEAR(64.f * x[j], a[j], 64.f * 32768.f * 1e-6f);
   }
 }
 

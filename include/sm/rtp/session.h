@@ -37,7 +37,6 @@
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
-#include "sm/loss/fec.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
@@ -107,10 +106,11 @@ struct VideoStreamConfig {
   std::optional<uint32_t> rtx_ssrc;
   uint8_t rtx_payload_type = 97;
   loss::RtxConfig rtx;
-  // Video RED+ULPFEC (here: the FEC stream) requested. Whether it runs is
-  // VideoFecEnabled(): it is off beside NACK for a codec without a picture id.
+  // Video RED+ULPFEC (RFC 2198, RFC 5109) requested, on the media SSRC with
+  // `ulpfec`'s payload types. Whether it runs is VideoFecEnabled(): it is off
+  // beside NACK for a codec without a picture id.
   bool fec = false;
-  loss::FecConfig fec_config;
+  loss::ulpfec::UlpfecConfig ulpfec;
   // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu). As libwebrtc's
   // RtpSenderVideo, the payload room of each frame is this packet capacity less
   // the header (with the extensions the next packet will carry), and the
@@ -244,7 +244,7 @@ class Session : public MetricsSource {
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now, bool keyframe = false);
   // FEC protection level for the next frames of a video stream.
-  void SetFecParams(VideoSendId id, const loss::FecParams& p);
+  void SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p);
 
   // --- Ingress ----------------------------------------------------------------
   // One datagram, RTP or RTCP (RFC 5761 demux by the payload-type byte),

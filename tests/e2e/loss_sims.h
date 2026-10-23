@@ -10,7 +10,7 @@
 #include <vector>
 
 #include "sm/core/dsp.h"
-#include "sm/loss/fec.h"
+#include "sm/core/seq_num.h"
 #include "sm/loss/keyframe_request.h"
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/plc.h"
@@ -18,12 +18,15 @@
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/loss/temporal_layers.h"
+#include "sm/loss/ulpfec.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
 
 namespace sm::e2e {
 
-// --- Video packet transport: NACK/RTX + FEC + adaptive protection ----------
+// --- Video packet transport: NACK/RTX + ULPFEC over RED + adaptive protection
+// Media is wrapped in RED and the ULPFEC packets share its SSRC and sequence
+// numbers, as libwebrtc sends them; FEC is generated as each packet is sent.
 
 struct VideoSimParams {
   sim::LinkConfig fwd;
@@ -31,7 +34,7 @@ struct VideoSimParams {
   double reverse_loss = 0.0;
   bool nack = true;
   bool adaptive = false;                     // ProtectionController decides FEC.
-  loss::FecParams fec;                       // Fixed FEC when !adaptive.
+  loss::ulpfec::FecProtectionParams fec;     // Fixed FEC when !adaptive.
   int packets_per_frame = 8;
   int fps = 30;
   TimeDelta duration = TimeDelta::Seconds(20);
@@ -57,13 +60,17 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
   rcfg.loss_rate = p.reverse_loss;
   sim::NetworkLink<std::vector<uint16_t>> rev(rcfg, p.seed + 1);
 
+  constexpr uint8_t kMediaPt = 96, kRtxPt = 97, kRedRtxPt = 99;
+  const ulpfec::UlpfecConfig fec_pts;
   RtxConfig rtx_cfg;
   rtx_cfg.rtx_ssrc = 2;
+  rtx_cfg.rtx_payload_type = kRtxPt;
+  rtx_cfg.red_payload_type = fec_pts.red_payload_type;
+  rtx_cfg.rtx_red_payload_type = kRedRtxPt;
   RtxSender rtx(rtx_cfg);
-  FecConfig fec_cfg;
-  FecEncoder fec_enc(fec_cfg);
-  fec_enc.SetParams(p.fec);
-  FecDecoder fec_dec(fec_cfg);
+  ulpfec::UlpfecGenerator fec_enc(fec_pts.red_payload_type, fec_pts.ulpfec_payload_type);
+  fec_enc.SetProtectionParameters(p.fec, p.fec);
+  ulpfec::UlpfecReceiver fec_dec(1, fec_pts.ulpfec_payload_type);
   NackTracker nack;
   const TimeDelta rtt = p.one_way_delay * 2;
   nack.UpdateRtt(rtt);
@@ -71,21 +78,34 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
 
   std::vector<Timestamp> sent_at;
   std::vector<Timestamp> arrived;
+  std::map<int64_t, size_t> media_index;  // Unwrapped sequence number -> media packet.
+  SeqNumUnwrapper<uint16_t> rx_unwrap;
   int64_t media_bytes = 0, extra_bytes = 0;
-  uint16_t seq = 0;
-  // Receiver-side loss/burst statistics for the adaptive controller.
+  uint8_t fill = 0;  // Payload bytes of the next media packet.
+  // Receiver-side loss statistics for the adaptive controller.
   uint64_t last_missing = 0, last_received = 0;
-  int64_t highest = -1;
-  uint64_t gap_events = 0, last_gap_events = 0;
 
+  // Any packet that holds a sequence number (media or FEC), as the NACK tracker sees it.
+  auto on_seq = [&](uint16_t seq, Timestamp now) {
+    nack.OnReceivedPacket(seq, rx_unwrap.Unwrap(seq) == 0, now);
+  };
   auto on_media = [&](const RtpPacket& m, Timestamp now) {
-    int64_t s = m.seq;  // Unwrapped below (single run < 65536 packets).
-    if (s < static_cast<int64_t>(arrived.size()) && !arrived[static_cast<size_t>(s)].IsFinite()) {
-      arrived[static_cast<size_t>(s)] = now;
+    auto it = media_index.find(rx_unwrap.PeekUnwrap(m.seq));
+    if (it != media_index.end() && !arrived[it->second].IsFinite()) arrived[it->second] = now;
+    on_seq(m.seq, now);
+  };
+  // A RED packet received or restored from RTX: RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader.
+  auto on_red = [&](const RtpPacket& red, Timestamp now) {
+    if (!red.payload.empty() && red.payload[0] == fec_pts.ulpfec_payload_type) on_seq(red.seq, now);
+    if (fec_dec.AddReceivedRedPacket(red)) {
+      for (auto& m : fec_dec.ProcessReceivedFec()) on_media(m, now);
     }
-    if (s > highest + 1) ++gap_events;
-    highest = std::max(highest, s);
-    nack.OnReceivedPacket(m.seq, s == 0, now);
+  };
+  int64_t tx_seq = 0;  // Unwrapped (a run stays under 65536 packets).
+  auto send_numbered = [&](RtpPacket pkt, Timestamp now) {
+    pkt.seq = static_cast<uint16_t>(tx_seq++);
+    fwd.Send(now, pkt, DataSize::Bytes(static_cast<int64_t>(pkt.size())));
+    return pkt;
   };
 
   const int frame_interval_ms = 1000 / p.fps;
@@ -95,34 +115,35 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
     if (t < p.duration.ms() && t % frame_interval_ms == 0) {
       for (int i = 0; i < p.packets_per_frame; ++i) {
         RtpPacket m;
-        m.seq = seq++;
         m.ssrc = 1;
-        m.payload_type = 96;
+        m.payload_type = fec_pts.red_payload_type;
         m.timestamp = static_cast<uint32_t>(t * 90);
         m.marker = i + 1 == p.packets_per_frame;
-        m.payload.assign(1000, static_cast<uint8_t>(m.seq));
+        m.payload.assign(1001, fill++);
+        m.payload[0] = kMediaPt;  // RED header.
+        media_index[tx_seq] = sent_at.size();
         sent_at.push_back(now);
         arrived.push_back(Timestamp::MinusInfinity());
+        m = send_numbered(std::move(m), now);
         media_bytes += static_cast<int64_t>(m.size());
         rtx.OnPacketSent(m, now);
-        for (RtpPacket& f : fec_enc.AddMediaPacket(m, m.marker)) {
+        // RtpSenderEgress: the packet without RED goes to the generator.
+        RtpPacket media = m;
+        media.payload_type = kMediaPt;
+        media.payload.erase(media.payload.begin());
+        fec_enc.AddPacketAndGenerateFec(media, false);
+        for (RtpPacket& f : fec_enc.GetFecPackets()) {
           extra_bytes += static_cast<int64_t>(f.size());
-          fwd.Send(now, f, DataSize::Bytes(static_cast<int64_t>(f.size())));
+          send_numbered(std::move(f), now);
         }
-        fwd.Send(now, m, DataSize::Bytes(static_cast<int64_t>(m.size())));
       }
     }
     fwd.ReceiveEach(now, [&](RtpPacket pkt, Timestamp at) {
-      if (pkt.payload_type == 96) {
-        on_media(pkt, at);
-        for (auto& r : fec_dec.OnMediaPacket(pkt)) on_media(r, at);
-      } else if (pkt.payload_type == 97) {
-        if (auto m = RestoreFromRtx(pkt, 1, 96)) {
-          on_media(*m, at);
-          for (auto& r : fec_dec.OnMediaPacket(*m)) on_media(r, at);
-        }
+      if (pkt.ssrc == rtx_cfg.rtx_ssrc) {
+        if (pkt.payload_type != kRedRtxPt) return;
+        if (auto m = RestoreFromRtx(pkt, 1, fec_pts.red_payload_type)) on_red(*m, at);
       } else {
-        for (auto& r : fec_dec.OnFecPacket(pkt)) on_media(r, at);
+        on_red(pkt, at);
       }
     });
     if (p.nack) {
@@ -138,14 +159,11 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
     if (p.adaptive && t % 500 == 0 && t > 0) {
       uint64_t missing = nack.stats().missing_detected - last_missing;
       uint64_t received = nack.stats().packets_received - last_received;
-      uint64_t gaps = gap_events - last_gap_events;
       last_missing = nack.stats().missing_detected;
       last_received = nack.stats().packets_received;
-      last_gap_events = gap_events;
       double loss = missing + received ? static_cast<double>(missing) / static_cast<double>(missing + received) : 0;
-      double burst = gaps ? static_cast<double>(missing) / static_cast<double>(gaps) : 1.0;
-      auto d = controller.Update({rtt, loss, burst, static_cast<double>(p.packets_per_frame)}, now);
-      fec_enc.SetParams(d.fec);
+      auto d = controller.Update({rtt, loss, static_cast<double>(p.packets_per_frame)}, now);
+      fec_enc.SetProtectionParameters(d.fec, d.fec);
     }
   }
 
@@ -173,7 +191,7 @@ inline VideoSimResult RunVideoSim(VideoSimParams p) {
   r.raw_loss = static_cast<double>(fwd.stats().lost) / static_cast<double>(fwd.stats().sent);
   r.nack_requests = nack.stats().nack_requests;
   r.retransmitted = rtx.stats().retransmitted;
-  r.fec_recovered = fec_dec.stats().recovered;
+  r.fec_recovered = fec_dec.GetPacketCounter().num_recovered_packets;
   return r;
 }
 

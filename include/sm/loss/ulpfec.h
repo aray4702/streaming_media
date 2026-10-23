@@ -53,6 +53,16 @@ inline constexpr size_t kRedForFecHeaderLength = 1;
 
 enum class FecMaskType { kRandom, kBursty };  // kFecMaskRandom, kFecMaskBursty
 
+// call/rtp_config.h UlpfecConfig, with the payload types Chrome offers
+// (red/ulpfec/rtx in its default SDP, as sm_compare configures libwebrtc).
+// Video RED and ULPFEC go on the media SSRC; a RED packet is resent on the
+// RTX SSRC with `red_rtx_payload_type` (rtx_associated_payload_types).
+struct UlpfecConfig {
+  uint8_t red_payload_type = 118;
+  uint8_t ulpfec_payload_type = 119;
+  uint8_t red_rtx_payload_type = 99;
+};
+
 // module_fec_types.h FecProtectionParams.
 struct FecProtectionParams {
   int fec_rate = 0;  // Q8: 0..255 FEC packets per 256 media packets.

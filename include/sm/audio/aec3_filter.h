@@ -36,11 +36,10 @@
 //   RenderSignalAnalyzer  masks the update around narrow-band render peaks
 //                       and stops it when the render excitation is poor.
 //
-// Differences that remain (tools/catalog.py 6.1): the FFT is fft4g's rdft at
-// n = 128 (sm/audio/fft4g.h), because libwebrtc's 128-point Ooura FFT
-// (common_audio/third_party/ooura/fft_size_128) is not in reference/; it is
-// the same algorithm with tables computed instead of stored. The portable C
-// paths, where x86 libwebrtc runs SSE2/AVX2 (same arithmetic, different float
+// The FFT is libwebrtc's 128-point Ooura FFT (sm/audio/ooura_fft.h, from
+// common_audio/third_party/ooura/fft_size_128), as aec3_fft.cc runs it.
+// Differences that remain (tools/catalog.py 6.1): the portable C paths,
+// where x86 libwebrtc runs SSE2/AVX2 (same arithmetic, different float
 // summation order). Several render channels are read as channel 0 for the
 // delay estimate (AlignmentMixer's downmix/adaptive selection isn't ported).
 // No data dumps or render-jitter logging. Subtractor takes the capture
@@ -60,6 +59,7 @@
 #include <vector>
 
 #include "sm/audio/aec3_delay.h"
+#include "sm/audio/ooura_fft.h"
 #include "sm/core/metrics.h"
 
 namespace sm::audio::aec3 {
@@ -288,9 +288,7 @@ class Aec3Fft {
   }
 
  private:
-  // fft4g work tables, built once in the constructor and only read after.
-  mutable std::array<size_t, 2 + 8> ip_{};
-  mutable std::array<float, kFftLength / 2> w_{};
+  const ooura::OouraFft128 ooura_fft_{};
 };
 
 // block.h: bands x channels x 64 samples.
