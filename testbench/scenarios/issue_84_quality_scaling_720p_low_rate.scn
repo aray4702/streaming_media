@@ -1,0 +1,15 @@
+name issue_84_quality_scaling_720p_low_rate
+describe 720p camera on a 400 kbps link with libwebrtc's quality scaling: the initial frame drop scales it down before the first frame, and the QP then stays inside the H.264 thresholds
+duration 30s
+quality_scaling on
+at 0s capacity=400kbps delay=30ms queue=300ms
+# Issue #84 step 4: QualityScalerResource with MAINTAIN_FRAMERATE and
+# VideoStreamEncoder::DropDueToSize (rtp::VideoSendController, `quality_scaling`).
+# The video target at the start is under 300 kbps, so 720p is dropped as too
+# large and the resolution steps down 3/5 at a time (VideoStreamAdapter)
+# through VideoAdapter's series 960x540, 640x360, 480x270, 320x180: four
+# dropped frames, then 320x180 for the call. Without quality scaling the same
+# link encodes 720p at QP > 37 (issue_84_encoder_qp_720p_low_rate).
+expect video.encode_height_mean < 360
+expect video.qp_mean <= 37
+expect video.render_fps > 25
