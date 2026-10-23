@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-91 scenarios, mean of 10 seeds. **182 gaps**: 76 behind libwebrtc, 106 ahead of it; 0 without an owner.
+92 scenarios, mean of 10 seeds. **179 gaps**: 76 behind libwebrtc, 103 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-175 gaps on `main`, 182 here: **0 closed, 7 opened**, 0 changed direction.
+172 gaps on `main`, 179 here: **0 closed, 7 opened**, 0 changed direction.
 
 Opened:
 
@@ -105,9 +105,6 @@ Opened:
 | issue_24_timing_v2_render_fps | `video.e2e_delay_p95_ms` | 2388 | 1949 | ±119 | behind | 10/10 | #24, #37 |
 | issue_24_timing_v2_render_fps | `video.longest_freeze_ms` | 1092 | 876 | ±186 | behind | 8/10 | #5, #37, #24 |
 | issue_24_timing_v2_render_fps | `video.render_fps` | 28.9 | 27.4 | ±1.4 | ahead | 7/10 | #37, #24 |
-| issue_256_audio_24khz | `audio.jb_delay_p95_ms` | 0 | 129 | ±41.5 | ahead | 10/10 | #63 |
-| issue_256_audio_24khz | `audio.longest_interruption_ms` | 0 | 28 | ±20 | ahead | 4/10 | #63 |
-| issue_256_audio_24khz | `audio.mouth_to_ear_p95_ms` | 81.0 | 219 | ±55.1 | ahead | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.concealed_pct` | 1.3 | 0.3 | ±0.5 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 370 | 119 | ±19.7 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.longest_interruption_ms` | 58 | 21 | ±20 | behind | 5/10 | #63 |
