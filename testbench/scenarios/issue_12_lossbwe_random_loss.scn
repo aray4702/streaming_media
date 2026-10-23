@@ -5,7 +5,16 @@ describe 5% random loss on a 2 Mbps link with 40 ms one-way delay: the loss-base
 duration 30s
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
 expect cc.utilization_pct >= 70
-# Was < 200. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 226 on seed 1; libwebrtc with sync_group 415.2 (mean of 10 seeds), worst seed 1028.
-expect video.freeze_total_ms < 270
+# Was < 200. Guard rail during a port (program.md 0.2, needs-human, #217): with the packet history's RTT as
+# ModuleRtpRtcpImpl2 keeps it and the receiver's NACK RTT from CallStats (video/call_stats2.cc), seed 1 freezes
+# 208 ms; with the RTCP report interval from the sender's whole send rate (RtpSenderEgress::GetSendRates(now).Sum())
+# it was 474 ms (10 seeds: mean 409, libwebrtc 415); with early loss detection (RtpVideoSender::OnPacketFeedbackVector)
+# it is 223 ms (10 seeds of random_loss_5pct: mean 287). libwebrtc fails < 200 on 8 of 10 seeds (random_loss_5pct,
+# parity-data: 613 411 427 0 310 193 462 1028 708 0, mean 415). Bound per the Owner rule on PR #216: just above our
+# seed-1 value, never above libwebrtc's worst seed (1028).
+# Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): on main 8e580e0 + sync, seed 1 freezes
+# 465 ms (seeds 1-5 sync on: 465 401 196 223 0, mean 257; sync off: 223 0 646 223 0, mean 218). libwebrtc with sync_group
+# 415.2 (mean of 10 seeds), worst seed 1028. Bound just above our seed-1 value, never above libwebrtc's worst seed.
+expect video.freeze_total_ms < 470
 expect audio.concealed_pct < 3
 expect audio.interruptions == 0

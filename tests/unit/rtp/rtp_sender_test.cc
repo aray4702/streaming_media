@@ -72,7 +72,7 @@ SM_TEST(RtpSender, VideoFrameNumbersPacketsAndMarksTheLastOne) {
     SM_EXPECT_TRUE(out[i].packet.payload == chunks[i]);
   }
   SM_EXPECT_TRUE(s.TakePackets().empty());
-  RtcpSenderState st = s.SenderState();
+  RtcpSenderState st = s.SenderState(Timestamp::Millis(0));
   SM_EXPECT_EQ(st.ssrc, 0x1111u);
   SM_EXPECT_EQ(st.packet_count, 3u);
   SM_EXPECT_EQ(st.octet_count, 350u);
@@ -143,7 +143,7 @@ SM_TEST(RtpSender, AudioRedCarriesThePreviousFrame) {
   SM_EXPECT_TRUE((*blocks)[0].payload == f1);
   SM_EXPECT_TRUE((*blocks)[1].primary);
   SM_EXPECT_TRUE((*blocks)[1].payload == f2);
-  SM_EXPECT_EQ(s.SenderState().clock_rate, 48000);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
 }
 
 SM_TEST(RtpSender, AudioWithoutRedIsOnePlainPacket) {
@@ -199,7 +199,7 @@ SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   SM_EXPECT_TRUE(s.TakeFecPackets().empty());
   SM_EXPECT_EQ(s.stats().fec_packets, 2u);
   // FEC packets are not in the sender report counts.
-  SM_EXPECT_EQ(s.SenderState().packet_count, 4u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 4u);
   // The FEC packets are not kept for retransmission.
   SM_EXPECT_EQ(s.rtx().history_size(), 4u);
 }

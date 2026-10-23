@@ -1,5 +1,6 @@
 sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
   SOURCES
+    unit/rtp/call_stats_test.cc
     unit/rtp/h264_test.cc
     unit/rtp/packet_router_test.cc
     unit/rtp/rtcp_engine_test.cc
@@ -10,6 +11,7 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
     unit/rtp/session_test.cc
     unit/rtp/video_send_controller_test.cc
   SUITES
+    CallStats
     H264
     PacketRouter
     RtcpEngine

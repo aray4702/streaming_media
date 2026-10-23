@@ -1,7 +1,8 @@
 // Congestion-window pushback over sim::NetworkLink (issue #53): a sender
 // session whose encoder keeps producing at the old rate after the bottleneck
 // drops 5x. With pushback the encoder drops frames and the data in flight
-// (and what the bottleneck has to drop) stays smaller than without it.
+// (on average after the drop) and what the bottleneck has to drop stay
+// smaller than without it.
 #include <algorithm>
 #include <vector>
 
@@ -30,6 +31,7 @@ SessionConfig MakeConfig(uint32_t ssrc, const char* cname, bool pushback) {
 struct Result {
   uint64_t queue_dropped = 0, frames_encoded = 0;
   int64_t max_in_flight = 0;
+  double mean_in_flight = 0;  // Over the 6 s after the drop.
   double min_ratio = 1.0;
   int64_t in_flight_end = 0;
   int64_t window_end = 0;  // The congestion window (target x (min feedback RTT + 350 ms)) at the end.
@@ -89,7 +91,9 @@ Result Run(bool pushback) {
     }
     b.TakeEvents();
     if (t >= 8000) {
-      res.max_in_flight = std::max(res.max_in_flight, a.send_side().gcc().history().InFlight().bytes());
+      const int64_t in_flight = a.send_side().gcc().history().InFlight().bytes();
+      res.max_in_flight = std::max(res.max_in_flight, in_flight);
+      res.mean_in_flight += static_cast<double>(in_flight) / static_cast<double>(end_ms - 8000);
       res.min_ratio = std::min(res.min_ratio, a.send_side().congestion_window().encoding_rate_ratio());
     }
   }
@@ -108,6 +112,8 @@ SM_TEST(E2E_CongestionWindowPushback, EncoderBacksOffWhenTheBottleneckFills) {
   SM_RECORD("without_queue_dropped", static_cast<double>(without.queue_dropped));
   SM_RECORD("with_max_in_flight", static_cast<double>(with.max_in_flight));
   SM_RECORD("without_max_in_flight", static_cast<double>(without.max_in_flight));
+  SM_RECORD("with_mean_in_flight", with.mean_in_flight);
+  SM_RECORD("without_mean_in_flight", without.mean_in_flight);
   SM_RECORD("with_frames_encoded", static_cast<double>(with.frames_encoded));
   SM_RECORD("without_frames_encoded", static_cast<double>(without.frames_encoded));
   SM_RECORD("with_min_ratio", with.min_ratio);
@@ -125,8 +131,11 @@ SM_TEST(E2E_CongestionWindowPushback, EncoderBacksOffWhenTheBottleneckFills) {
   // (2x and 1.5x) when the encoder took no share off for repair traffic;
   // libwebrtc's measured repair share (FecControllerDefault) makes the run
   // without pushback back off on its own, so the ratios no longer hold (issue
-  // #21, program.md 0.2 guard rails).
-  SM_EXPECT_LT(with.max_in_flight, without.max_in_flight);
+  // #21, program.md 0.2 guard rails). The data in flight is compared as its
+  // mean over the 6 s after the drop: its peak comes at the drop itself,
+  // before any feedback says the link has changed, and so before pushback can
+  // act (libwebrtc has no counterpart to this test; Owner on #315, issue #217).
+  SM_EXPECT_LT(with.mean_in_flight, without.mean_in_flight);
   SM_EXPECT_LT(with.queue_dropped, without.queue_dropped);
   SM_EXPECT_LT(with.sent_kbps_after_drop, without.sent_kbps_after_drop);
   SM_EXPECT_LE(with.in_flight_end, with.window_end);

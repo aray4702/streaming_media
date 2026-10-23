@@ -219,7 +219,7 @@ void Session::Start(Timestamp now) {
   if (!HasSendStreams()) return;
   if (cfg_.audio_rtcp && !audio_send_.empty() && !video_send_.empty()) {
     RtcpConfig r = MakeRtcpConfig(cfg_);
-    r.local_ssrc = audio_send_.front().sender->SenderState().ssrc;
+    r.local_ssrc = audio_send_.front().sender->config().ssrc;
     r.has_video = false;
     r.report_interval = TimeDelta::Zero();
     r.first_report_delay = TimeDelta::Zero();
@@ -292,7 +292,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {
-    UpdateSenderState();
+    UpdateSenderState(now);
     for (RtcpOutgoing& o : rtcp_.SendReport(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
@@ -350,9 +350,16 @@ void Session::MaybeUpdateFecRates(Timestamp now) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
+  pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
-  for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
   for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
+}
+
+// VideoReceiveStream2::OnRttUpdate: the maximum RTT goes to NackRequester
+// (RtpVideoStreamReceiver2::UpdateRtt) and the jitter estimator.
+void Session::OnCallStatsUpdate(const std::optional<CallStats::Update>& u) {
+  if (!u) return;
+  for (auto& v : video_recv_) v.receiver->OnRtt(TimeDelta::Millis(u->max_rtt_ms));
 }
 
 void Session::OnDecodeFailure(VideoRecvId id, Timestamp now) {
@@ -419,14 +426,17 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       if (a.ssrc == sr.ssrc) a.receiver->OnSenderReport(sr, now);
     }
   }
+  if (!in.report_blocks.empty()) last_report_block_ = now;
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
+    rtt_sum_ = rtt_sum_ + rtt_;
+    ++rtt_count_;
     send_.OnRtt(rtt_);
-    for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
     for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
-    for (auto& v : video_send_) v.sender->SetRtt(rtt_, now);
-    for (auto& a : audio_send_) a.sender->SetRtt(rtt_, now);
+    // The packet history and CallStats (so the video receivers) take their RTT
+    // from the 1 s periodic update, the history also from each NACK
+    // (PeriodicRttUpdate, the NACK loop below), not from every sample.
     SessionEvent e;
     e.type = SessionEventType::kRttUpdated;
     e.time = now;
@@ -457,6 +467,13 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   }
   for (const auto& n : in.nacks) {
     if (RtpSender* s = SenderForSsrc(n.media_ssrc)) {
+      if (!n.seqs.empty()) {
+        // ModuleRtpRtcpImpl2::OnReceivedNack: the RTT of the last periodic update,
+        // else the average of every sample; RTPSender::OnReceivedNack adds 5 ms.
+        TimeDelta rtt = periodic_rtt_;
+        if (rtt.IsZero() && rtt_count_ > 0) rtt = TimeDelta::Millis((rtt_sum_ / rtt_count_).ms());
+        s->SetRtt(TimeDelta::Millis(5) + rtt, now);
+      }
       s->OnNack(n.seqs, now, rtt_);
       EnqueueSenderPackets(*s, now);
     } else {
@@ -474,14 +491,42 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   }
 }
 
-void Session::UpdateSenderState() {
+void Session::UpdateSenderState(Timestamp now) {
   RtpSender* s = !video_send_.empty() ? video_send_.front().sender.get()
                                       : (!audio_send_.empty() ? audio_send_.front().sender.get() : nullptr);
-  if (s) rtcp_.SetSenderState(s->SenderState());
+  if (s) rtcp_.SetSenderState(s->SenderState(now));
+}
+
+// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s), with
+// RTCPReceiver::OnPeriodicRttUpdate. While sending, the last RTT sample goes
+// to the packet history and to CallStats if a report block arrived within the
+// interval. A receive stream reports its XR RTT to CallStats, here the
+// measurement SetRtt gave since the last update (GetAndResetXrRrRtt).
+void Session::PeriodicRttUpdate(Timestamp now) {
+  if (!HasSendStreams() && video_recv_.empty()) return;
+  if (!next_rtt_update_.IsFinite()) next_rtt_update_ = now + kRttUpdateInterval;
+  while (now >= next_rtt_update_) {
+    const Timestamp at = next_rtt_update_;
+    const Timestamp check_since = at - kRttUpdateInterval;
+    if (HasSendStreams() && have_rtt_ && rtt_count_ > 0 && last_report_block_ > check_since) {
+      periodic_rtt_ = TimeDelta::Millis(rtt_.ms());
+      OnCallStatsUpdate(call_stats_.OnRttUpdate(periodic_rtt_.ms(), at));
+      for (auto& v : video_send_) v.sender->SetRtt(periodic_rtt_, now);
+      for (auto& a : audio_send_) a.sender->SetRtt(periodic_rtt_, now);
+    }
+    if (!video_recv_.empty() && pending_rr_rtt_) {
+      OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
+      pending_rr_rtt_.reset();
+    }
+    next_rtt_update_ += kRttUpdateInterval;
+  }
 }
 
 void Session::Process(Timestamp now) {
   Start(now);
+  call_stats_.EnsureStarted(now);
+  PeriodicRttUpdate(now);
+  OnCallStatsUpdate(call_stats_.Process(now));
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
     RtpReceiver& r = *v.receiver;
@@ -523,13 +568,13 @@ void Session::Process(Timestamp now) {
   }
   if (HasSendStreams()) MaybeUpdateFecRates(now);
   // RTCP: reports and queued feedback.
-  UpdateSenderState();
+  UpdateSenderState(now);
   for (RtcpOutgoing& o : rtcp_.Process(now)) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
   }
   if (audio_rtcp_) {
-    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState());
+    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
@@ -572,6 +617,8 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
+  if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
+  next = std::min(next, call_stats_.NextProcessTime());
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
   if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
