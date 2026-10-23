@@ -230,7 +230,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
       sp.sender->OnPacketReleased(sp, now);
       // PacingController::ProcessPackets: the FEC the packet completed joins the queue.
       for (SenderPacket& f : sp.sender->TakeFecPackets()) Enqueue(std::move(f), now);
-      if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
+      if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo || sp.kind == PacketKind::kFec)) {
         sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
         // Feedback never covers more than a few seconds; bound the table.
         sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));
@@ -279,13 +279,27 @@ Timestamp SendSideController::NextProcessTime(Timestamp now) const {
 
 void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now) {
   if (!sent_media_.empty()) {
-    std::unordered_map<RtpSender*, std::vector<uint16_t>> acked;
+    // RtpVideoSender::OnPacketFeedbackVector (call/rtp_video_sender.cc:1001-1047). The feedback
+    // demuxer hands each stream the packets of its media SSRC only (not RTX or padding), in
+    // transport-wide order. A video stream's lost packets that no received packet of the stream
+    // follows may go unseen by the receiver's NACK, so they are resent now ("early loss
+    // detection"); the history's checks then hold back the NACK for them.
+    std::unordered_map<RtpSender*, std::vector<uint16_t>> acked, early_loss;
     for (const auto& p : fb.packets) {
-      if (!p.received) continue;
       auto it = sent_media_.find(p.seq);
       if (it == sent_media_.end()) continue;
-      acked[it->second.sender].push_back(it->second.seq);
+      RtpSender* sender = it->second.sender;
+      if (!p.received) {
+        if (sender->config().video) early_loss[sender].push_back(it->second.seq);
+        continue;
+      }
+      early_loss.erase(sender);
+      acked[sender].push_back(it->second.seq);
       sent_media_.erase(it);
+    }
+    for (auto& [sender, seqs] : early_loss) {
+      sender->OnEarlyLoss(seqs, now);
+      for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }

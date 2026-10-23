@@ -673,6 +673,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // as on libwebrtc's event clock. After the outage in issue #151 a NACK and the recovery keyframe meet in the
     // same tick; libwebrtc queues the NACK's resends first and the keyframe flushes them.
     reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    std::optional<TimeDelta> new_rtt;  // The sender's RTT sample this tick, for the receiver.
     for (const auto& e : sender.TakeEvents()) {
       video_ctl.OnSessionEvent(e);
       switch (e.type) {
@@ -684,6 +685,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
         case rtp::SessionEventType::kRttUpdated:
           rtt_samples.push_back(static_cast<double>(e.rtt.us()) / 1000.0);
+          new_rtt = e.rtt;
           break;
         case rtp::SessionEventType::kReportBlock:
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
@@ -823,9 +825,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         audio_first = at;
       }
     });
-    // The receiver learns the RTT the sender measured (a one-way receiver has
-    // no report blocks of its own to measure it from).
-    receiver.SetRtt(sender.rtt());
+    // The receiver learns each RTT sample the sender measures, in place of the
+    // XR DLRR RTT a receive-only libwebrtc stream measures (a one-way receiver
+    // has no report blocks of its own); its CallStats takes it at the next 1 s
+    // update.
+    if (new_rtt) receiver.SetRtt(*new_rtt);
     receiver.Process(now);
 
     // Render video.

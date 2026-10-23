@@ -82,6 +82,7 @@ void RtpSender::AssignSequenceNumber(SenderPacket& p) {
 }
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
+  send_rates_[static_cast<size_t>(p.kind)].Update(static_cast<int64_t>(p.packet.size()), now.ms());
   if (ulpfec_ && p.kind == PacketKind::kVideo) {
     // RtpSenderEgress::SendPacket: the media packet without its RED header (media PT
     // restored), then the FEC that it completes.
@@ -179,6 +180,18 @@ void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta 
   for (RtpPacket& r : rtx_.OnNack(seqs, now, rtt)) {
     ++stats_.rtx_packets;
     Queue(std::move(r), PacketKind::kRtx, cc::PacketPriority::kRetransmission);
+  }
+}
+
+void RtpSender::OnEarlyLoss(std::span<const uint16_t> seqs, Timestamp now) {
+  // Without RTX, libwebrtc would resend on the media SSRC; this sender only
+  // retransmits over RTX, as OnNack.
+  if (!cfg_.rtx_ssrc) return;
+  for (uint16_t seq : seqs) {
+    std::optional<RtpPacket> r = rtx_.ReSendEarlyLoss(seq, now);
+    if (!r) continue;
+    ++stats_.rtx_packets;
+    Queue(std::move(*r), PacketKind::kRtx, cc::PacketPriority::kRetransmission);
   }
 }
 
@@ -281,8 +294,15 @@ std::vector<SenderPacket> RtpSender::TakePackets() {
   return out;
 }
 
-RtcpSenderState RtpSender::SenderState() const {
+DataRate RtpSender::SendRate(Timestamp now) const {
+  int64_t bps = 0;
+  for (const RateStatistics& r : send_rates_) bps += r.Rate(now.ms()).value_or(0);
+  return DataRate::BitsPerSec(bps);
+}
+
+RtcpSenderState RtpSender::SenderState(Timestamp now) const {
   RtcpSenderState s;
+  s.send_bitrate = SendRate(now);
   s.ssrc = cfg_.ssrc;
   s.packet_count = sr_packets_;
   s.octet_count = sr_octets_;

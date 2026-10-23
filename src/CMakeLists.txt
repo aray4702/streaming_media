@@ -135,6 +135,7 @@ endif()
 if(SM_WITH_RTP)
   sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync sm::video SOURCES
     rtp/rtcp_engine.cc
+    rtp/call_stats.cc
     rtp/rtcp_sdes_bye.cc
     rtp/h264.cc
     rtp/rtp_receiver.cc

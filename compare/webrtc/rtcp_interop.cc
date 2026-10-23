@@ -7,11 +7,16 @@
 // rtp::SendSideController with MID, transport-wide sequence number and
 // abs-send-time extensions, RTX and padding on the RTX SSRC (plan PR 3), and
 // the H.264 payload format (RFC 6184 mode 1): rtp::H264Packetizer against
-// libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (plan PR 7).
+// libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (plan PR 7),
+// and ULPFEC over RED (issue #29): libwebrtc's UlpfecReceiver recovers
+// packets that loss::ulpfec::UlpfecGenerator protected, this library's
+// UlpfecReceiver recovers packets that libwebrtc's UlpfecGenerator protected,
+// and both generators make the same FEC payloads from the same media.
 // Exits non-zero on any mismatch.
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
@@ -26,22 +31,29 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/sender_report.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
+#include "api/environment/environment_factory.h"
 #include "api/rtp_header_extension_id.h"
+#include "modules/include/module_fec_types.h"
+#include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_format.h"
 #include "modules/rtp_rtcp/source/rtp_format_h264.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "modules/rtp_rtcp/source/ulpfec_generator.h"
+#include "modules/rtp_rtcp/source/ulpfec_receiver.h"
 #include "modules/rtp_rtcp/source/video_rtp_depacketizer_h264.h"
 #include "modules/video_coding/h26x_packet_buffer.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "system_wrappers/include/clock.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/loss/rtx.h"
+#include "sm/loss/ulpfec.h"
 #include "sm/rtp/rtcp_sdes_bye.h"
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
@@ -702,6 +714,183 @@ void H264WebrtcToSm() {
   Check(ok && frames > 10 && packets > frames, "H.264: packetized by libwebrtc, parsed and reassembled here");
   Check(same, "H.264: this packetizer makes the same payloads as libwebrtc's");
 }
+
+// ULPFEC over RED (RFC 5109, RFC 2198), as libwebrtc M157 sends it for video:
+// RED (PT 118) on the media SSRC, ULPFEC (PT 119) as RED's only block.
+constexpr int kFecRedPt = 118, kFecUlpfecPt = 119, kFecMediaPt = 96;
+constexpr uint32_t kFecSsrc = 0x1111;
+
+// One FEC block: `n` media packets of one frame starting at `seq_base` (a
+// block can cross the sequence number wrap), FEC rate `fec_rate` (Q8), and the
+// media packets the link loses.
+struct FecBlock {
+  const char* name;
+  int n;
+  uint16_t seq_base;
+  int fec_rate;
+  std::vector<int> lost;
+};
+
+// The media packets of a block, with varied sizes, a CSRC, a one-byte
+// extension and padding, so the recovery covers every header field the FEC
+// XOR protects (P, X, CC, M, PT, timestamp, length).
+std::vector<sm::RtpPacket> FecMedia(const FecBlock& b) {
+  std::vector<sm::RtpPacket> out;
+  for (int i = 0; i < b.n; ++i) {
+    sm::RtpPacket p;
+    p.payload_type = kFecMediaPt;
+    p.ssrc = kFecSsrc;
+    p.seq = static_cast<uint16_t>(b.seq_base + i);
+    p.timestamp = 90000;
+    p.marker = i == b.n - 1;
+    if (i % 5 == 1) p.csrcs = {0xC5C5C5C5};
+    if (i % 4 == 2) {
+      p.extension_profile = 0xBEDE;
+      p.extension = {0x10, static_cast<uint8_t>(i), 0, 0};  // id 1, one byte.
+    }
+    if (i % 6 == 3) p.padding_size = 4;
+    p.payload.resize(100 + (i * 397) % 1100);
+    for (size_t k = 0; k < p.payload.size(); ++k) p.payload[k] = static_cast<uint8_t>(i * 31 + k * 7);
+    out.push_back(std::move(p));
+  }
+  return out;
+}
+
+// A media packet as it travels in RED: one block, F bit clear, the media PT.
+sm::RtpPacket RedWrap(const sm::RtpPacket& p) {
+  sm::RtpPacket red = p;
+  red.payload_type = kFecRedPt;
+  red.payload.insert(red.payload.begin(), static_cast<uint8_t>(kFecMediaPt));
+  return red;
+}
+
+bool Lost(const FecBlock& b, int i) { return std::find(b.lost.begin(), b.lost.end(), i) != b.lost.end(); }
+
+class CollectRecovered : public webrtc::RecoveredPacketReceiver {
+ public:
+  void OnRecoveredPacket(const webrtc::RtpPacketReceived& packet) override {
+    if (packet.recovered()) recovered.emplace_back(packet.data(), packet.data() + packet.size());
+  }
+  std::vector<Bytes> recovered;
+};
+
+// This library protects the block, libwebrtc's UlpfecReceiver recovers the lost
+// packets byte for byte. Returns the FEC packets' RED payloads.
+std::vector<Bytes> UlpfecSmToWebrtc(const FecBlock& b) {
+  auto media = FecMedia(b);
+  sm::loss::ulpfec::UlpfecGenerator gen(kFecRedPt, kFecUlpfecPt);
+  sm::loss::ulpfec::FecProtectionParams params;
+  params.fec_rate = b.fec_rate;
+  params.max_fec_frames = 1;
+  gen.SetProtectionParameters(params, params);
+  for (const auto& p : media) gen.AddPacketAndGenerateFec(p, false);
+  auto fec = gen.GetFecPackets();
+
+  webrtc::SimulatedClock clock(webrtc::Timestamp::Millis(1000));
+  CollectRecovered sink;
+  webrtc::UlpfecReceiver receiver(kFecSsrc, kFecUlpfecPt, &sink, &clock);
+  bool ok = !fec.empty();
+  auto deliver = [&](const sm::RtpPacket& p) {
+    Bytes bytes = p.Serialize();
+    webrtc::RtpPacketReceived w(nullptr);
+    ok = ok && w.Parse(bytes.data(), bytes.size()) && receiver.AddReceivedRedPacket(w);
+    receiver.ProcessReceivedFec();
+  };
+  for (int i = 0; i < b.n; ++i)
+    if (!Lost(b, i)) deliver(RedWrap(media[i]));
+  std::vector<Bytes> payloads;
+  uint16_t seq = static_cast<uint16_t>(b.seq_base + b.n);
+  for (auto& f : fec) {
+    f.seq = seq++;
+    ok = ok && f.payload_type == kFecRedPt && !f.payload.empty() && f.payload[0] == kFecUlpfecPt;
+    payloads.push_back(f.payload);
+    deliver(f);
+  }
+  size_t want = 0;
+  for (int i = 0; i < b.n; ++i) {
+    if (!Lost(b, i)) continue;
+    ++want;
+    Bytes original = media[i].Serialize();
+    ok = ok && std::find(sink.recovered.begin(), sink.recovered.end(), original) != sink.recovered.end();
+  }
+  ok = ok && sink.recovered.size() == want && receiver.GetPacketCounter().num_recovered_packets == want;
+  std::string what = std::string("ULPFEC: protected here, recovered by libwebrtc (") + b.name + ")";
+  Check(ok, what.c_str());
+  return payloads;
+}
+
+// libwebrtc's UlpfecGenerator protects the block, this library's UlpfecReceiver
+// recovers the lost packets byte for byte. Returns the FEC packets' RED payloads.
+std::vector<Bytes> UlpfecWebrtcToSm(const FecBlock& b) {
+  auto media = FecMedia(b);
+  webrtc::SimulatedClock clock(webrtc::Timestamp::Millis(1000));
+  const webrtc::Environment env = webrtc::CreateEnvironment(&clock);
+  webrtc::UlpfecGenerator gen(env, kFecRedPt, kFecUlpfecPt);
+  webrtc::FecProtectionParams params;
+  params.fec_rate = b.fec_rate;
+  params.max_fec_frames = 1;
+  params.fec_mask_type = webrtc::kFecMaskRandom;
+  gen.SetProtectionParameters(params, params);
+  bool ok = true;
+  for (const auto& p : media) {
+    Bytes bytes = p.Serialize();
+    webrtc::RtpPacketToSend w(nullptr);
+    ok = ok && w.Parse(bytes.data(), bytes.size());
+    gen.AddPacketAndGenerateFec(w);
+  }
+  auto fec = gen.GetFecPackets();
+  ok = ok && !fec.empty();
+
+  sm::loss::ulpfec::UlpfecReceiver receiver(kFecSsrc, kFecUlpfecPt);
+  std::vector<sm::RtpPacket> out;
+  auto deliver = [&](const sm::RtpPacket& p) {
+    ok = ok && receiver.AddReceivedRedPacket(p);
+    for (auto& r : receiver.ProcessReceivedFec()) out.push_back(std::move(r));
+  };
+  for (int i = 0; i < b.n; ++i)
+    if (!Lost(b, i)) deliver(RedWrap(media[i]));
+  std::vector<Bytes> payloads;
+  uint16_t seq = static_cast<uint16_t>(b.seq_base + b.n);
+  for (auto& f : fec) {
+    f->SetSequenceNumber(seq++);
+    auto p = sm::RtpPacket::Parse(std::span<const uint8_t>(f->data(), f->size()));
+    ok = ok && p.has_value();
+    if (!p) continue;
+    payloads.push_back(p->payload);
+    deliver(*p);
+  }
+  // Delivered media comes back too; the lost sequence numbers are the recovered ones.
+  size_t recovered = 0;
+  for (int i = 0; i < b.n; ++i) {
+    if (!Lost(b, i)) continue;
+    Bytes original = media[i].Serialize();
+    for (const auto& r : out) {
+      if (r.seq != media[i].seq) continue;
+      ++recovered;
+      ok = ok && r.Serialize() == original;
+    }
+  }
+  ok = ok && recovered == b.lost.size() && receiver.GetPacketCounter().num_recovered_packets == b.lost.size();
+  std::string what = std::string("ULPFEC: protected by libwebrtc, recovered here (") + b.name + ")";
+  Check(ok, what.c_str());
+  return payloads;
+}
+
+void Ulpfec() {
+  // 8 packets at full protection use the 16-bit mask from the random table;
+  // 20 packets need the 48-bit mask (L bit) and interleaved masks, and cross
+  // the sequence number wrap.
+  const FecBlock blocks[] = {
+      {"8 packets, 16-bit mask, 3 lost", 8, 1000, 255, {1, 4, 6}},
+      {"20 packets, 48-bit mask, seq wrap, 2 lost", 20, 65530, 64, {0, 1}},
+  };
+  for (const auto& b : blocks) {
+    auto ours = UlpfecSmToWebrtc(b);
+    auto theirs = UlpfecWebrtcToSm(b);
+    std::string what = std::string("ULPFEC: same FEC payloads as libwebrtc's UlpfecGenerator (") + b.name + ")";
+    Check(!ours.empty() && ours == theirs, what.c_str());
+  }
+}
 }  // namespace
 
 int main() {
@@ -713,6 +902,7 @@ int main() {
   WebrtcToSender();
   H264SmToWebrtc();
   H264WebrtcToSm();
+  Ulpfec();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
     return 1;

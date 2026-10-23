@@ -49,6 +49,8 @@ struct RtxStats {
   uint64_t throttled = 0;   // Requested again within an RTT of the last send, or already pending in the pacer.
   uint64_t culled_acked = 0;  // Removed because the peer acknowledged them.
   uint64_t payload_padding = 0;  // RTX packets handed out as payload padding.
+  uint64_t early_loss_requests = 0;  // Resend requests from transport feedback (ReSendPacket).
+  uint64_t early_loss_resent = 0;    // Of those, resent (also counted in `retransmitted`).
   int64_t bytes_retransmitted = 0;
 };
 
@@ -60,8 +62,14 @@ class RtxSender : public MetricsSource {
   // Returns ready-to-send RTX packets for the requested sequence numbers. `rtt` is ignored: the
   // history uses the one given to SetRtt() (its own, -inf until a measurement).
   std::vector<RtpPacket> OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt);
+  // RTPSender::ReSendPacket for a packet that transport feedback reported lost
+  // (RtpVideoSender::OnPacketFeedbackVector's early loss detection): the same history
+  // checks as a NACK, outside the NACK counters.
+  std::optional<RtpPacket> ReSendEarlyLoss(uint16_t seq, Timestamp now);
   // A measured RTT (RtpPacketHistory::SetRtt): lengthens the retention and culls.
   void SetRtt(TimeDelta rtt, Timestamp now);
+  // The RTT the history holds (minus infinity until the first SetRtt).
+  TimeDelta rtt() const { return rtt_; }
   // The pacer sent the RTX packet for `original_seq` (RtpPacketHistory::MarkPacketAsSent).
   void MarkPacketAsSent(uint16_t original_seq, Timestamp now);
   // The peer acknowledged these sequence numbers (RtpPacketHistory::CullAcknowledgedPackets).
@@ -82,6 +90,9 @@ class RtxSender : public MetricsSource {
 
  private:
   uint8_t RtxPayloadType(const RtpPacket& original) const;
+  enum class ResendResult { kResent, kNotFound, kThrottled };
+  // RtpPacketHistory::GetPacketAndMarkAsPending with the RTX encapsulation.
+  ResendResult GetPacketAndMarkAsPending(uint16_t seq, Timestamp now, std::optional<RtpPacket>* out);
   struct Stored {
     std::optional<RtpPacket> packet;  // Empty: a hole left by a removed packet.
     Timestamp send_time = Timestamp::MinusInfinity();

@@ -148,6 +148,63 @@ SM_TEST(Session, NackFromThePeerIsAnsweredWithRtxOnTheRtxSsrc) {
   SM_EXPECT_EQ(rtx, 1u);
 }
 
+// ModuleRtpRtcpImpl2 (rtp_rtcp_impl2.cc PeriodicUpdate, OnReceivedNack; issue #217):
+// the packet history takes the RTT once a second from the last sample, and
+// 5 ms + that RTT on each NACK, not every sample as it arrives.
+SM_TEST(Session, PacketHistoryRttFollowsThePeriodicUpdateAndNacks) {
+  Pair p;
+  constexpr int64_t kOneWayMs = 40;
+  struct InFlight {
+    int64_t at;
+    bool to_b;
+    Bytes bytes;
+  };
+  std::vector<InFlight> wire;
+  const loss::RtxSender& history = p.a.video_sender(p.a_video).rtx();
+  int64_t first_sample_ms = -1;
+  TimeDelta history_at_first_sample = TimeDelta::Zero();
+  for (int64_t t = 0; t < 3100; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 33 == 0) {
+      auto chunks = test::MakeTestFrameChunks(t == 0, 1500, 1188);
+      p.a.SendVideoChunks(p.a_video, chunks, static_cast<uint32_t>(t * 90), now);
+    }
+    for (size_t i = 0; i < wire.size();) {
+      if (wire[i].at > t) {
+        ++i;
+        continue;
+      }
+      (wire[i].to_b ? p.b : p.a).OnPacket(wire[i].bytes, now);
+      wire.erase(wire.begin() + static_cast<std::ptrdiff_t>(i));
+    }
+    for (const auto& e : p.a.TakeEvents()) {
+      if (e.type == SessionEventType::kRttUpdated && first_sample_ms < 0) {
+        first_sample_ms = t;
+        history_at_first_sample = history.rtt();
+      }
+    }
+    p.a.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) wire.push_back({t + kOneWayMs, true, std::move(o.bytes)});
+    p.b.Process(now);
+    for (auto& o : p.b.TakeOutgoing()) wire.push_back({t + kOneWayMs, false, std::move(o.bytes)});
+    p.b.TakeEvents();
+  }
+  // The first sample doesn't reach the history; the next update (1 s ticks from the start) does.
+  SM_ASSERT_GE(first_sample_ms, 0);
+  SM_EXPECT_LT(first_sample_ms, 2000);
+  SM_EXPECT_TRUE(history_at_first_sample == TimeDelta::MinusInfinity());
+  SM_EXPECT_EQ(history.rtt().ms(), p.a.rtt().ms());
+  const int64_t periodic_ms = history.rtt().ms();
+  SM_EXPECT_GE(periodic_ms, 2 * kOneWayMs);
+  // A NACK sets 5 ms + the periodic RTT (RTPSender::OnReceivedNack).
+  RtcpConfig rc;
+  rc.local_ssrc = 2;
+  RtcpEngine peer(rc);
+  peer.QueueNack(0x200, std::vector<uint16_t>{1});
+  for (auto& r : peer.Process(Timestamp::Millis(3100))) p.a.OnPacket(r.bytes, Timestamp::Millis(3100));
+  SM_EXPECT_EQ(history.rtt().ms(), 5 + periodic_ms);
+}
+
 SM_TEST(Session, PliFromThePeerBecomesAKeyframeEvent) {
   Pair p;
   RtcpConfig rc;
@@ -283,6 +340,29 @@ SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
   p.b.SetRtt(TimeDelta::Millis(250));
   SM_EXPECT_EQ(p.b.rtt().ms(), 250);
   SM_EXPECT_TRUE(p.b.TakeEvents().empty());
+}
+
+// A receive-only video stream takes its NACK RTT from CallStats, as
+// VideoReceiveStream2::OnRttUpdate does: a measurement reaches it at the next
+// 1 s periodic update (ModuleRtpRtcpImpl2::PeriodicUpdate), and the largest
+// report of the last 1.5 s wins (call_stats2.cc).
+SM_TEST(Session, AReceiveOnlyVideoStreamTakesTheMaximumRttFromCallStats) {
+  Session s(Cfg(2));
+  VideoRecvId v = s.AddVideoReceive(Video());
+  const auto nack_rtt = [&] { return s.video_receiver(v).nack().rtt().ms(); };
+  Pump(s, 0, 100);
+  const int64_t initial = nack_rtt();
+  s.SetRtt(TimeDelta::Millis(250));
+  Pump(s, 100, 899);  // Up to 998 ms: before the first periodic update.
+  SM_EXPECT_EQ(nack_rtt(), initial);
+  Pump(s, 999, 2);  // The update at 1000 ms.
+  SM_EXPECT_EQ(nack_rtt(), 250);
+  s.SetRtt(TimeDelta::Millis(50));
+  Pump(s, 1001, 1000);  // 2000 ms: the 250 ms report is 1 s old and still the maximum.
+  SM_EXPECT_EQ(nack_rtt(), 250);
+  s.SetRtt(TimeDelta::Millis(60));
+  Pump(s, 2001, 1000);  // 3000 ms: 250 ms has expired; 60 is the largest left.
+  SM_EXPECT_EQ(nack_rtt(), 60);
 }
 
 SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
