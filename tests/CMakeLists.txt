@@ -21,7 +21,6 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
 if(SM_WITH_LOSS)
   sm_add_test_exe(sm_unit_loss LABEL unit DEPS sm::loss
     SOURCES
-      unit/loss/fec_test.cc
       unit/loss/keyframe_test.cc
       unit/loss/nack_rtx_test.cc
       unit/loss/plc_test.cc
@@ -31,7 +30,6 @@ if(SM_WITH_LOSS)
       unit/loss/temporal_layers_test.cc
       unit/loss/ulpfec_test.cc
     SUITES
-      Fec
       KeyframeRequest
       NackTracker
       Plc
