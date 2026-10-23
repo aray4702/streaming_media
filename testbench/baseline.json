@@ -4613,6 +4613,7 @@
    "video.delay_pacer_p95_ms": 70,
    "video.e2e_delay_p50_ms": 124,
    "video.e2e_delay_p95_ms": 151.6,
+   "video.encode_height_mean": 720,
    "video.encoder_dropped": 0,
    "video.frames_rendered": 60,
    "video.freeze_count": 8,
