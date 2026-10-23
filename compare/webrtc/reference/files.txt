@@ -206,3 +206,5 @@ rtc_base/numerics/moving_average.h
 rtc_base/numerics/moving_average.cc
 api/video_codecs/video_encoder.h
 api/video_codecs/video_encoder.cc
+video/call_stats2.h
+video/call_stats2.cc
