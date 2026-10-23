@@ -10,7 +10,7 @@ at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
 # Was < 200. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 251.4 ms (10 seeds), ours 221.2 on seed 1.
-# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off pending): was < 260. Ours 287.6 on seed 1;
+# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off 2026-10-23): was < 260. Ours 287.6 on seed 1;
 # libwebrtc per seed 261/214/293/246/251/272/218/249/258/253 on #328's compare-webrtc (worst 292.8).
 expect cc.queue_p95_ms < 290
 # Was < 5. Owner sign-off on PR #186 (program.md 0.2, 2026-10-20 18:37 UTC): libwebrtc 16.1% (10 seeds), ours 6.45 on seed 1.
@@ -18,9 +18,11 @@ expect cc.queue_p95_ms < 290
 # Provisional lock < 30 (Owner sign-off on PR #226, 2026-10-22), tracked to #217: with #217's first-feedback timing
 # and #272's call-start probe together, ours is 26.55 on seed 1 (main 6.47); 10-seed means main 10.92, #226 13.84,
 # libwebrtc 16.10; libwebrtc's worst seed in 1-10 is 36.0 (seed 3, yardstick #295). Restore < 13 when #217 recovers it.
-expect cc.queue_over_200ms_pct < 30
+# PR #328 (link_headroom, refs #326; Owner accepted 2026-10-23 9:34 AM PT, exception to the tight rule): was < 30.
+# Ours 36.6 on seed 1, 0.6 above libwebrtc's worst seed (36.0); 10-seed means ours 13.3 (main 10.9), libwebrtc 16.1.
+expect cc.queue_over_200ms_pct < 37
 # Was == 0. Owner rule on PR #226 (2026-10-20 4:15 PM PT): just above ours on seed 1 (1 with #217's first-feedback
 # timing), never above libwebrtc's worst seed in 1-10 (17; per seed 1/0/17/1/0/0/0/0/0/1).
-# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off pending): was <= 2. Ours 3 on seed 1; libwebrtc
+# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off 2026-10-23): was <= 2. Ours 3 on seed 1; libwebrtc
 # per seed 1/0/14/1/0/0/0/0/0/1 on #328's compare-webrtc (worst 14).
 expect video.freeze_count <= 3

@@ -11,6 +11,6 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 18s up
 expect video.frames_rendered > 850
-# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off pending): was < 9500. Ours 9809 on seed 1;
+# PR #328 (link_headroom, refs #326; program.md 0.2, Owner sign-off 2026-10-23): was < 9500. Ours 9809 on seed 1;
 # libwebrtc per seed 9825/10002/9788/9756/9766/9428/9742/9783/9766/9807 on #328's compare-webrtc (worst 10002).
 expect video.pause_total_ms < 9810
