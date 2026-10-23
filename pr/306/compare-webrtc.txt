@@ -58,7 +58,7 @@ bufferbloat - 1 Mbps uplink behind a 2 s deep router buffer
   video.avg_kbps                          817          812  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  65.6         65.4  =
-  cc.utilization_pct                     92.0         91.6  =
+  cc.utilization_pct                     92.0         91.5  =
   cc.queue_p95_ms                        51.5         48.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          57.9         55.5  =
@@ -109,7 +109,7 @@ burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
   video.avg_kbps                         1429         1477  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  87.9         93.9  =
-  cc.utilization_pct                     79.0         81.4  =
+  cc.utilization_pct                     77.4         79.8  =
   cc.queue_p95_ms                        40.6         51.1  sm
   cc.max_settle_ms                        240          250  =
   cc.rtt_p50_ms                           111          113  =
@@ -160,7 +160,7 @@ capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at
   video.avg_kbps                          881          890  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   294          286  =
-  cc.utilization_pct                     56.6         57.2  =
+  cc.utilization_pct                     56.3         56.9  =
   cc.queue_p95_ms                         291          279  =
   cc.max_settle_ms                      14680        14290  =
   cc.rtt_p50_ms                          69.7         72.2  =
@@ -211,7 +211,7 @@ clean_link - 2.5 Mbps link, 25 ms one-way, no impairments: the call must be flaw
   video.avg_kbps                         2138         2137  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  77.6         68.2  =
-  cc.utilization_pct                     91.5         91.4  =
+  cc.utilization_pct                     91.4         91.3  =
   cc.queue_p95_ms                        80.7         74.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          69.8         66.2  =
@@ -262,7 +262,7 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   video.avg_kbps                         1757         1785  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   225          234  =
-  cc.utilization_pct                     73.3         74.5  =
+  cc.utilization_pct                     73.3         74.4  =
   cc.queue_p95_ms                         232          251  sm
   cc.max_settle_ms                       3330         4500  sm
   cc.rtt_p50_ms                          63.0         64.5  =
@@ -313,7 +313,7 @@ high_jitter - Congested Wi-Fi: 40 ms jitter with reordering
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -364,7 +364,7 @@ issue_120_rtx_payload_padding - Wi-Fi to LTE handover with `cc v2`, `pacer v2` a
   video.avg_kbps                         1312         1289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1648         1838  sm
-  cc.utilization_pct                      104          103  =
+  cc.utilization_pct                     85.3         83.8  =
   cc.queue_p95_ms                         145          152  =
   cc.max_settle_ms                        730          740  =
   cc.rtt_p50_ms                           131          134  =
@@ -415,7 +415,7 @@ issue_120_rtx_payload_padding_capacity_drop - Capacity drops from 2.5 Mbps to 50
   video.avg_kbps                          881          890  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   294          286  =
-  cc.utilization_pct                     56.6         57.2  =
+  cc.utilization_pct                     56.3         56.9  =
   cc.queue_p95_ms                         291          279  =
   cc.max_settle_ms                      14680        14290  =
   cc.rtt_p50_ms                          69.7         72.2  =
@@ -466,7 +466,7 @@ issue_123_v2_allocation_min - 100 kbps link with every v2 switch plus audio v2: 
   video.avg_kbps                         32.4         32.8  =
   video.keyframe_requests                 2.9          3.2  =
   sync.av_offset_p95_ms                  7675         6450  webrtc
-  cc.utilization_pct                     99.0         98.9  =
+  cc.utilization_pct                     98.6         98.3  =
   cc.queue_p95_ms                         295          286  =
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           340          332  =
@@ -517,7 +517,7 @@ issue_124_bufferbloat_v2 - 1 Mbps uplink behind a 2 s deep router buffer, every 
   video.avg_kbps                          817          812  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  65.6         65.4  =
-  cc.utilization_pct                     92.0         91.6  =
+  cc.utilization_pct                     92.0         91.5  =
   cc.queue_p95_ms                        51.5         48.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          57.9         55.5  =
@@ -568,7 +568,7 @@ issue_124_burst_loss_v2 - 3% loss in bursts of ~6 packets, 2 Mbps, every v2 swit
   video.avg_kbps                         1429         1477  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  87.9         93.9  =
-  cc.utilization_pct                     79.0         81.4  =
+  cc.utilization_pct                     77.4         79.8  =
   cc.queue_p95_ms                        40.6         51.1  sm
   cc.max_settle_ms                        240          250  =
   cc.rtt_p50_ms                           111          113  =
@@ -619,7 +619,7 @@ issue_124_clean_link_v2 - 2.5 Mbps link, 25 ms one-way, no impairments, every v2
   video.avg_kbps                         2137         2134  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  76.7         73.8  =
-  cc.utilization_pct                     91.4         91.2  =
+  cc.utilization_pct                     91.3         91.2  =
   cc.queue_p95_ms                        76.8         72.0  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          68.3         65.7  =
@@ -721,7 +721,7 @@ issue_127_all_v2_no_stall - every v2 switch on, 1200 kbps, 120 ms delay, 30 ms j
   video.avg_kbps                          634          636  =
   video.keyframe_requests                 0.3          0.6  =
   sync.av_offset_p95_ms                   177          167  =
-  cc.utilization_pct                     80.1         80.9  =
+  cc.utilization_pct                     60.7         60.8  =
   cc.queue_p95_ms                        36.9         31.8  =
   cc.max_settle_ms                       1840         1460  =
   cc.rtt_p50_ms                           274          272  =
@@ -772,7 +772,7 @@ issue_127_pacer_v2_jitter_reorder_loss - pacer v2 with rtx v2 on a 4 Mbps link w
   video.avg_kbps                          848          884  =
   video.keyframe_requests                 0.4          0.4  =
   sync.av_offset_p95_ms                  76.0         69.1  =
-  cc.utilization_pct                     52.0         54.8  webrtc
+  cc.utilization_pct                     36.8         38.2  =
   cc.queue_p95_ms                         9.6          6.8  =
   cc.max_settle_ms                      18840        18535  =
   cc.rtt_p50_ms                           102          104  =
@@ -823,7 +823,7 @@ issue_12_lossbwe_burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50
   video.avg_kbps                         1429         1477  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  87.9         93.9  =
-  cc.utilization_pct                     79.0         81.4  =
+  cc.utilization_pct                     77.4         79.8  =
   cc.queue_p95_ms                        40.6         51.1  sm
   cc.max_settle_ms                        240          250  =
   cc.rtt_p50_ms                           111          113  =
@@ -874,7 +874,7 @@ issue_12_lossbwe_congestive - Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 
   video.avg_kbps                         1160         1146  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   297          270  webrtc
-  cc.utilization_pct                     90.0         89.0  =
+  cc.utilization_pct                     88.7         87.7  =
   cc.queue_p95_ms                        51.5         45.0  =
   cc.max_settle_ms                       1220         1470  =
   cc.rtt_p50_ms                          82.6         81.2  =
@@ -925,7 +925,7 @@ issue_12_lossbwe_high_jitter_no_loss - 40 ms jitter with reordering and no loss:
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -976,7 +976,7 @@ issue_12_lossbwe_policer - Policer: 1.5 Mbps enforced by dropping, no queueing (
   video.avg_kbps                          146          138  =
   video.keyframe_requests                 3.9          2.9  webrtc
   sync.av_offset_p95_ms                  2566         2873  sm
-  cc.utilization_pct                     13.8         13.3  =
+  cc.utilization_pct                     13.8         13.2  =
   cc.queue_p95_ms                         5.4            0  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          60.5           61  =
@@ -1027,7 +1027,7 @@ issue_12_lossbwe_random_loss - 5% random loss on a 2 Mbps link with 40 ms one-wa
   video.avg_kbps                         1418         1422  =
   video.keyframe_requests                 0.2          0.2  =
   sync.av_offset_p95_ms                  82.7         80.8  =
-  cc.utilization_pct                     79.0         79.6  =
+  cc.utilization_pct                     76.8         77.0  =
   cc.queue_p95_ms                        35.8         32.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.6         92.4  =
@@ -1078,7 +1078,7 @@ issue_12_lossbwe_shallow - Shallow buffer: 1.5 Mbps with a 20 ms drop-tail queue
   video.avg_kbps                          747          744  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   111          127  sm
-  cc.utilization_pct                     56.9         56.9  =
+  cc.utilization_pct                     56.5         56.3  =
   cc.queue_p95_ms                        16.5         12.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          62.3         62.6  =
@@ -1129,7 +1129,7 @@ issue_12_lossbwe_shallow_step - Shallow buffer with a capacity step 2 Mbps -> 1.
   video.avg_kbps                          733          736  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  84.8          113  sm
-  cc.utilization_pct                     56.0         56.3  =
+  cc.utilization_pct                     55.5         55.7  =
   cc.queue_p95_ms                        16.8         12.2  =
   cc.max_settle_ms                        640          560  =
   cc.rtt_p50_ms                          62.3         62.8  =
@@ -1174,7 +1174,7 @@ issue_133_all_v2_outage_15s - Video-only call, 15 s outage at 10 s: video must c
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         1673         1690  =
   video.keyframe_requests                   2            2  =
-  cc.utilization_pct                     99.7          101  =
+  cc.utilization_pct                     99.6          101  =
   cc.queue_p95_ms                        28.3         25.3  =
   cc.max_settle_ms                      15000        15000  =
   cc.rtt_p50_ms                          93.3         91.2  =
@@ -1219,7 +1219,7 @@ issue_133_all_v2_outage_3s - Video-only call, 3 s outage at 10 s: video must com
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         2298         2301  =
   video.keyframe_requests                   1            1  =
-  cc.utilization_pct                      102          103  =
+  cc.utilization_pct                      101          101  =
   cc.queue_p95_ms                         128          148  sm
   cc.max_settle_ms                      16840        14300  webrtc
   cc.rtt_p50_ms                          93.7         92.3  =
@@ -1264,7 +1264,7 @@ issue_133_all_v2_outage_8s - Video-only call, 8 s outage at 10 s: video must com
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         1993         2044  =
   video.keyframe_requests                   2            2  =
-  cc.utilization_pct                      100          103  =
+  cc.utilization_pct                     96.9         99.6  =
   cc.queue_p95_ms                         230          231  =
   cc.max_settle_ms                       2630         3170  sm
   cc.rtt_p50_ms                          93.7         94.2  =
@@ -1309,7 +1309,7 @@ issue_133_pacer_v2_outage_15s - Video-only call, 15 s outage at 10 s: video must
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         1673         1690  =
   video.keyframe_requests                   2            2  =
-  cc.utilization_pct                     99.7          101  =
+  cc.utilization_pct                     99.6          101  =
   cc.queue_p95_ms                        28.3         25.3  =
   cc.max_settle_ms                      15000        15000  =
   cc.rtt_p50_ms                          93.3         91.2  =
@@ -1354,7 +1354,7 @@ issue_133_pacer_v2_outage_3s - Video-only call, 3 s outage at 10 s: video must c
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         2298         2301  =
   video.keyframe_requests                   1            1  =
-  cc.utilization_pct                      102          103  =
+  cc.utilization_pct                      101          101  =
   cc.queue_p95_ms                         128          148  sm
   cc.max_settle_ms                      16840        14300  webrtc
   cc.rtt_p50_ms                          93.7         92.3  =
@@ -1399,7 +1399,7 @@ issue_133_pacer_v2_outage_8s - Video-only call, 8 s outage at 10 s: video must c
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         1993         2044  =
   video.keyframe_requests                   2            2  =
-  cc.utilization_pct                      100          103  =
+  cc.utilization_pct                     96.9         99.6  =
   cc.queue_p95_ms                         230          231  =
   cc.max_settle_ms                       2630         3170  sm
   cc.rtt_p50_ms                          93.7         94.2  =
@@ -1450,7 +1450,7 @@ issue_150_gcc_v2_high_jitter - 3 Mbps link, 40 ms jitter with reordering, every 
   video.avg_kbps                          563          561  =
   video.keyframe_requests                 0.6          0.5  =
   sync.av_offset_p95_ms                  62.2         58.3  =
-  cc.utilization_pct                     35.5         35.8  =
+  cc.utilization_pct                     25.4         25.4  =
   cc.queue_p95_ms                         7.8          4.2  =
   cc.max_settle_ms                      25648        26242  =
   cc.rtt_p50_ms                          87.3         88.9  =
@@ -1501,7 +1501,7 @@ issue_150_gcc_v2_high_jitter_seed10 - issue_150_gcc_v2_high_jitter with seed 10:
   video.avg_kbps                          608          561  sm
   video.keyframe_requests                 0.6          0.6  =
   sync.av_offset_p95_ms                  62.5         58.6  =
-  cc.utilization_pct                     38.5         35.9  sm
+  cc.utilization_pct                     27.2         25.4  =
   cc.queue_p95_ms                         8.5          4.3  =
   cc.max_settle_ms                      22960        25420  sm
   cc.rtt_p50_ms                          89.5         86.7  =
@@ -1552,7 +1552,7 @@ issue_150_gcc_v2_high_jitter_seed5 - issue_150_gcc_v2_high_jitter with seed 5: t
   video.avg_kbps                          636          600  sm
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  64.7         52.3  webrtc
-  cc.utilization_pct                     40.4         38.4  =
+  cc.utilization_pct                     28.3         26.9  =
   cc.queue_p95_ms                         8.9          4.9  =
   cc.max_settle_ms                      21810        25110  sm
   cc.rtt_p50_ms                          90.3         87.4  =
@@ -1603,7 +1603,7 @@ issue_151_outage_3s_v2 - 3 s outage with all v2 switches on: the receiver stops 
   video.avg_kbps                         1140         1141  =
   video.keyframe_requests                   1            1  =
   sync.av_offset_p95_ms                  75.6         70.8  =
-  cc.utilization_pct                     89.1         89.0  =
+  cc.utilization_pct                     88.9         88.9  =
   cc.queue_p95_ms                        43.5         39.9  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          74.2           72  =
@@ -1654,7 +1654,7 @@ issue_152_alr_request_probe_v2 - probe_v2_cross_traffic on seed 4: with libwebrt
   video.avg_kbps                         1764         1786  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   235          254  sm
-  cc.utilization_pct                     73.6         74.5  =
+  cc.utilization_pct                     73.6         74.4  =
   cc.queue_p95_ms                         233          248  sm
   cc.max_settle_ms                       4130         4100  =
   cc.rtt_p50_ms                          63.0         65.7  =
@@ -1705,7 +1705,7 @@ issue_154_shallow_drop_repair_v2 - Shallow bottleneck (20 ms) with a 3x capacity
   video.avg_kbps                          446          447  =
   video.keyframe_requests                 1.4          1.4  =
   sync.av_offset_p95_ms                  1584         2178  sm
-  cc.utilization_pct                     47.2         47.5  =
+  cc.utilization_pct                     46.8         46.9  =
   cc.queue_p95_ms                        16.2         11.1  =
   cc.max_settle_ms                       5490         5270  =
   cc.rtt_p50_ms                          61.4         61.9  =
@@ -1756,7 +1756,7 @@ issue_15_aimd_v2_clean_link - 2.5 Mbps link, 25 ms one-way, no impairments, `cc 
   video.avg_kbps                         2138         2137  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  77.6         68.2  =
-  cc.utilization_pct                     91.5         91.4  =
+  cc.utilization_pct                     91.4         91.3  =
   cc.queue_p95_ms                        80.7         74.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          69.8         66.2  =
@@ -1807,7 +1807,7 @@ issue_15_aimd_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottle
   video.avg_kbps                         1757         1785  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   225          234  =
-  cc.utilization_pct                     73.3         74.5  =
+  cc.utilization_pct                     73.3         74.4  =
   cc.queue_p95_ms                         232          251  sm
   cc.max_settle_ms                       3330         4500  sm
   cc.rtt_p50_ms                          63.0         64.5  =
@@ -1858,7 +1858,7 @@ issue_15_aimd_v2_random_loss - 5% random loss on a 2 Mbps link, `cc v2`: the del
   video.avg_kbps                         1418         1422  =
   video.keyframe_requests                 0.2          0.2  =
   sync.av_offset_p95_ms                  82.7         80.8  =
-  cc.utilization_pct                     79.0         79.6  =
+  cc.utilization_pct                     76.8         77.0  =
   cc.queue_p95_ms                        35.8         32.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.6         92.4  =
@@ -1909,7 +1909,7 @@ issue_18_random_loss_keyframes - 5% random loss: NACK repairs it, so the receive
   video.avg_kbps                         1418         1422  =
   video.keyframe_requests                 0.2          0.2  =
   sync.av_offset_p95_ms                  82.7         80.8  =
-  cc.utilization_pct                     79.0         79.6  =
+  cc.utilization_pct                     76.8         77.0  =
   cc.queue_p95_ms                        35.8         32.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.6         92.4  =
@@ -1960,7 +1960,7 @@ issue_19_cc_v2_high_jitter - 40 ms jitter with reordering, no queue: GoogCC's de
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -2011,7 +2011,7 @@ issue_204_cross_traffic_join - 2000 kbps of non-responsive cross traffic joins a
   video.avg_kbps                         1380         1393  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   303          444  sm
-  cc.utilization_pct                     58.4         58.8  =
+  cc.utilization_pct                     58.2         58.7  =
   cc.queue_p95_ms                         282          279  =
   cc.max_settle_ms                      12150        10520  webrtc
   cc.rtt_p50_ms                          91.8          105  sm
@@ -2062,7 +2062,7 @@ issue_21_shallow_drop_repair - Shallow bottleneck buffer (20 ms) with a 3x capac
   video.avg_kbps                          446          447  =
   video.keyframe_requests                 1.4          1.4  =
   sync.av_offset_p95_ms                  1584         2178  sm
-  cc.utilization_pct                     47.2         47.5  =
+  cc.utilization_pct                     46.8         46.9  =
   cc.queue_p95_ms                        16.2         11.1  =
   cc.max_settle_ms                       5490         5270  =
   cc.rtt_p50_ms                          61.4         61.9  =
@@ -2113,7 +2113,7 @@ issue_224_congestive_e2e_flip - Congestive loss (2.5 Mbps, 60 ms queue, drop to 
   video.avg_kbps                         1160         1146  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   297          270  webrtc
-  cc.utilization_pct                     90.0         89.0  =
+  cc.utilization_pct                     88.7         87.7  =
   cc.queue_p95_ms                        51.5         45.0  =
   cc.max_settle_ms                       1220         1470  =
   cc.rtt_p50_ms                          82.6         81.2  =
@@ -2164,7 +2164,7 @@ issue_23_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   video.avg_kbps                          881          890  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   294          286  =
-  cc.utilization_pct                     56.6         57.2  =
+  cc.utilization_pct                     56.3         56.9  =
   cc.queue_p95_ms                         291          279  =
   cc.max_settle_ms                      14680        14290  =
   cc.rtt_p50_ms                          69.7         72.2  =
@@ -2215,7 +2215,7 @@ issue_23_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier,
   video.avg_kbps                         1312         1289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1648         1838  sm
-  cc.utilization_pct                      104          103  =
+  cc.utilization_pct                     85.3         83.8  =
   cc.queue_p95_ms                         145          152  =
   cc.max_settle_ms                        730          740  =
   cc.rtt_p50_ms                           131          134  =
@@ -2266,7 +2266,7 @@ issue_23_low_bandwidth - 150 kbps link: audio must stay clean, video degrades gr
   video.avg_kbps                         71.7         70.5  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1807         1401  webrtc
-  cc.utilization_pct                     98.5         98.0  =
+  cc.utilization_pct                     98.0         97.4  =
   cc.queue_p95_ms                         414          395  =
   cc.max_settle_ms                        200          300  =
   cc.rtt_p50_ms                           250          232  webrtc
@@ -2317,7 +2317,7 @@ issue_23_outage_3s - 3 s outage (tunnel) in the middle of the call: the receiver
   video.avg_kbps                         1140         1141  =
   video.keyframe_requests                   1            1  =
   sync.av_offset_p95_ms                  75.6         70.8  =
-  cc.utilization_pct                     89.1         89.0  =
+  cc.utilization_pct                     88.9         88.9  =
   cc.queue_p95_ms                        43.5         39.9  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          74.2           72  =
@@ -2368,7 +2368,7 @@ issue_23_outage_500ms - 0.5 s outage on a 2 Mbps link: one keyframe is enough (T
   video.avg_kbps                         1610         1621  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  72.9         94.0  sm
-  cc.utilization_pct                     88.8         89.5  =
+  cc.utilization_pct                     88.3         88.9  =
   cc.queue_p95_ms                        47.6         64.0  sm
   cc.max_settle_ms                        350          430  =
   cc.rtt_p50_ms                          54.0         56.2  =
@@ -2419,7 +2419,7 @@ issue_24_timing_v2_clean_link - 2.5 Mbps link, 25 ms one-way, no impairments, ev
   video.avg_kbps                         2138         2137  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  77.6         68.2  =
-  cc.utilization_pct                     91.5         91.4  =
+  cc.utilization_pct                     91.4         91.3  =
   cc.queue_p95_ms                        80.7         74.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          69.8         66.2  =
@@ -2470,7 +2470,7 @@ issue_24_timing_v2_default - issue_53_cwnd_pushback's link with the default vide
   video.avg_kbps                          913          908  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1462         1495  =
-  cc.utilization_pct                     90.3         89.9  =
+  cc.utilization_pct                     89.4         88.9  =
   cc.queue_p95_ms                        94.9         85.4  =
   cc.max_settle_ms                       2290         2670  =
   cc.rtt_p50_ms                           132          126  =
@@ -2521,7 +2521,7 @@ issue_24_timing_v2_high_jitter - 40 ms jitter with reordering, every v2 switch a
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -2572,7 +2572,7 @@ issue_24_timing_v2_render_fps - issue_53_cwnd_pushback with every v2 switch and 
   video.avg_kbps                          913          908  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1462         1495  =
-  cc.utilization_pct                     90.3         89.9  =
+  cc.utilization_pct                     89.4         88.9  =
   cc.queue_p95_ms                        94.9         85.4  =
   cc.max_settle_ms                       2290         2670  =
   cc.rtt_p50_ms                           132          126  =
@@ -2623,7 +2623,7 @@ issue_256_audio_24khz - Audio + video call with 24 kHz audio and 3% loss: NetEq 
   video.avg_kbps                         1506         1491  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  69.4         76.7  =
-  cc.utilization_pct                     82.4         82.0  =
+  cc.utilization_pct                     81.4         80.6  =
   cc.queue_p95_ms                        34.7         37.7  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.9         90.1  =
@@ -2674,7 +2674,7 @@ issue_257_zero_max_payload - A video stream configured with max_payload_size 0 m
   video.avg_kbps                         1535         2110  webrtc
   video.keyframe_requests                 4.3            0  webrtc
   sync.av_offset_p95_ms                  2150         69.5  webrtc
-  cc.utilization_pct                     90.8         90.2  =
+  cc.utilization_pct                     90.5         90.1  =
   cc.queue_p95_ms                         300         45.3  webrtc
   cc.max_settle_ms                       1870          200  webrtc
   cc.rtt_p50_ms                           272         65.3  webrtc
@@ -2719,7 +2719,7 @@ issue_268_freeze_rule_outage - Video-only call, 3 s outage at 10 s: freezes coun
   video.time_to_first_frame_ms             72           71  =
   video.avg_kbps                         2298         2301  =
   video.keyframe_requests                   1            1  =
-  cc.utilization_pct                      102          103  =
+  cc.utilization_pct                      101          101  =
   cc.queue_p95_ms                         128          148  sm
   cc.max_settle_ms                      16840        14300  webrtc
   cc.rtt_p50_ms                          93.7         92.3  =
@@ -2770,7 +2770,7 @@ issue_283_longest_freeze_no_metrics - A 2 s outage freezes video for at least 2 
   video.avg_kbps                         1837         1839  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1197         1200  =
-  cc.utilization_pct                     88.2         88.3  =
+  cc.utilization_pct                     87.2         87.2  =
   cc.queue_p95_ms                        45.6         43.3  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          74.4         73.3  =
@@ -2821,7 +2821,7 @@ issue_298_audio_24khz_plays - Audio + video call captured at 24 kHz with 3% loss
   video.avg_kbps                         1506         1491  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  69.4         76.7  =
-  cc.utilization_pct                     82.4         82.0  =
+  cc.utilization_pct                     81.4         80.6  =
   cc.queue_p95_ms                        34.7         37.7  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.9         90.1  =
@@ -2872,7 +2872,7 @@ issue_29_ulpfec_over_red - 5% random loss with NACK off, so video FEC runs (Shou
   video.avg_kbps                         1131         1073  sm
   video.keyframe_requests                 8.3          8.5  =
   sync.av_offset_p95_ms                  96.5          120  sm
-  cc.utilization_pct                     79.0         78.0  =
+  cc.utilization_pct                     78.0         78.0  =
   cc.queue_p95_ms                        36.9         37.7  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          92.7         92.0  =
@@ -2905,6 +2905,57 @@ issue_29_ulpfec_over_red - 5% random loss with NACK off, so video FEC runs (Shou
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_329_utilization_reordering - 8 Mbps link, 5 ms jitter with reordering, no loss: cc.utilization_pct must not count retransmissions of packets that already arrived (issue
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.0          0.0  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms             5           11  =
+  audio.mouth_to_ear_p95_ms              94.8         96.4  =
+  audio.jb_delay_p95_ms                    40         41.0  =
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                18.2         17.5  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       30.0         29.8  =
+  video.e2e_delay_p95_ms                 53.5         58.3  =
+  video.time_to_first_frame_ms           59.2           60  =
+  video.avg_kbps                         2397         2391  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                  31.5         33.7  =
+  cc.utilization_pct                     98.9         98.7  =
+  cc.queue_p95_ms                        11.3          8.6  =
+  cc.max_settle_ms                        200          200  =
+  cc.rtt_p50_ms                          65.5         64.6  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                    35.2         37.1  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.7         70.3
+  net.video_kbps                         2485         2478
+  net.rtx_kbps                            897          929
+  net.padding_kbps                        1.3          0.3
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    194          189
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          306
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1386         1386
+  net.video_size_p90_b                   1466         1466
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1390         1386
+  net.rtx_size_p90_b                     1469         1468
+  net.rtx_size_max_b                     1488         1488
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.9          1.0  =
@@ -2923,7 +2974,7 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   video.avg_kbps                         71.7         70.5  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1807         1401  webrtc
-  cc.utilization_pct                     98.5         98.0  =
+  cc.utilization_pct                     98.0         97.4  =
   cc.queue_p95_ms                         414          395  =
   cc.max_settle_ms                        200          300  =
   cc.rtt_p50_ms                           250          232  webrtc
@@ -2974,7 +3025,7 @@ issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shall
   video.avg_kbps                          913          908  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1462         1495  =
-  cc.utilization_pct                     90.3         89.9  =
+  cc.utilization_pct                     89.4         88.9  =
   cc.queue_p95_ms                        94.9         85.4  =
   cc.max_settle_ms                       2290         2670  =
   cc.rtt_p50_ms                           132          126  =
@@ -3025,7 +3076,7 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   video.avg_kbps                         1757         1785  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   225          234  =
-  cc.utilization_pct                     73.3         74.5  =
+  cc.utilization_pct                     73.3         74.4  =
   cc.queue_p95_ms                         232          251  sm
   cc.max_settle_ms                       3330         4500  sm
   cc.rtt_p50_ms                          63.0         64.5  =
@@ -3076,7 +3127,7 @@ issue_5_bitrate_adjuster - libwebrtc's EncoderBitrateAdjuster on (issue
   video.avg_kbps                         1170         1170  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  47.5         43.5  =
-  cc.utilization_pct                     85.8         85.7  =
+  cc.utilization_pct                     85.7         85.6  =
   cc.queue_p95_ms                        47.2         36.7  webrtc
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          72.2         73.1  =
@@ -3127,7 +3178,7 @@ issue_5_burst15_freeze - 2% loss in 15-packet bursts: libwebrtc's frame dropper 
   video.avg_kbps                         1520         1508  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   106         98.7  =
-  cc.utilization_pct                     84.0         84.1  =
+  cc.utilization_pct                     82.0         81.5  =
   cc.queue_p95_ms                        46.6         40.4  =
   cc.max_settle_ms                        280          260  =
   cc.rtt_p50_ms                           115          112  =
@@ -3178,7 +3229,7 @@ issue_5_keyframe_flush - libwebrtc's pacer keyframe flush (issue
   video.avg_kbps                          873          883  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   297          289  =
-  cc.utilization_pct                     56.1         56.7  =
+  cc.utilization_pct                     55.9         56.4  =
   cc.queue_p95_ms                         291          282  =
   cc.max_settle_ms                      14910        14540  =
   cc.rtt_p50_ms                          69.5         72.5  =
@@ -3229,7 +3280,7 @@ issue_61_googcc_glue_congestive - Congestive loss with every v2 switch on: GoogC
   video.avg_kbps                         1160         1146  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   297          270  webrtc
-  cc.utilization_pct                     90.0         89.0  =
+  cc.utilization_pct                     88.7         87.7  =
   cc.queue_p95_ms                        51.5         45.0  =
   cc.max_settle_ms                       1220         1470  =
   cc.rtt_p50_ms                          82.6         81.2  =
@@ -3400,7 +3451,7 @@ issue_62_neteq_v2_cross_traffic - cross_traffic with NetEq's Expand (neteq v2, i
   video.avg_kbps                         1757         1785  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   225          234  =
-  cc.utilization_pct                     73.3         74.5  =
+  cc.utilization_pct                     73.3         74.4  =
   cc.queue_p95_ms                         232          251  sm
   cc.max_settle_ms                       3330         4500  sm
   cc.rtt_p50_ms                          63.0         64.5  =
@@ -3451,7 +3502,7 @@ issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2,
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -3542,7 +3593,7 @@ issue_76_packetization_v2 - Video payloads sized from the real header as libwebr
   video.avg_kbps                         1666         1604  =
   video.keyframe_requests                   0          0.1  =
   sync.av_offset_p95_ms                  61.0         60.4  =
-  cc.utilization_pct                     89.7         87.2  =
+  cc.utilization_pct                     69.5         67.0  =
   cc.queue_p95_ms                        30.5         25.6  =
   cc.max_settle_ms                        940         1130  =
   cc.rtt_p50_ms                          97.2         93.1  =
@@ -3593,7 +3644,7 @@ issue_76_rtx_v2_handover - Wi-Fi to LTE handover, RTX history as libwebrtc's Rtp
   video.avg_kbps                         1312         1289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1648         1838  sm
-  cc.utilization_pct                      104          103  =
+  cc.utilization_pct                     85.3         83.8  =
   cc.queue_p95_ms                         145          152  =
   cc.max_settle_ms                        730          740  =
   cc.rtt_p50_ms                           131          134  =
@@ -3644,7 +3695,7 @@ issue_76_rtx_v2_keyframe_flush - pacer v2 + rtx v2 + keyframe v2 together under 
   video.avg_kbps                          835          814  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   801          737  webrtc
-  cc.utilization_pct                     54.4         53.3  =
+  cc.utilization_pct                     53.5         52.3  =
   cc.queue_p95_ms                         274          262  =
   cc.max_settle_ms                      14070        14650  =
   cc.rtt_p50_ms                          67.4         70.8  =
@@ -3695,7 +3746,7 @@ issue_76_session_layer_v2 - Jittery lossy link with the RTP session layer as lib
   video.avg_kbps                         1482         1429  =
   video.keyframe_requests                 0.1          0.2  =
   sync.av_offset_p95_ms                  62.9         65.7  =
-  cc.utilization_pct                     84.9         82.5  =
+  cc.utilization_pct                     62.2         60.0  =
   cc.queue_p95_ms                        27.1         24.0  =
   cc.max_settle_ms                       2810         3160  =
   cc.rtt_p50_ms                          99.3         98.2  =
@@ -3746,7 +3797,7 @@ issue_76_tcc_v2_high_jitter - 40 ms jitter with reordering, transport-cc feedbac
   video.avg_kbps                          571          554  =
   video.keyframe_requests                 0.7          0.3  =
   sync.av_offset_p95_ms                  72.0         65.2  =
-  cc.utilization_pct                     36.1         35.3  =
+  cc.utilization_pct                     25.7         25.0  =
   cc.queue_p95_ms                         8.0          4.0  =
   cc.max_settle_ms                      24940        27250  sm
   cc.rtt_p50_ms                          89.0         89.9  =
@@ -3797,7 +3848,7 @@ issue_77_av_sync_clean_link - Lip sync (
   video.avg_kbps                         2138         2137  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  77.6         68.2  =
-  cc.utilization_pct                     91.5         91.4  =
+  cc.utilization_pct                     91.4         91.3  =
   cc.queue_p95_ms                        80.7         74.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          69.8         66.2  =
@@ -3848,7 +3899,7 @@ issue_7_no_fec_beside_nack - 5% random loss, H.264 with NACK: libwebrtc (ShouldD
   video.avg_kbps                         1418         1422  =
   video.keyframe_requests                 0.2          0.2  =
   sync.av_offset_p95_ms                  82.7         80.8  =
-  cc.utilization_pct                     79.0         79.6  =
+  cc.utilization_pct                     76.8         77.0  =
   cc.queue_p95_ms                        35.8         32.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.6         92.4  =
@@ -3950,7 +4001,7 @@ issue_84_encoder_qp_360p_low_rate - 360p camera on a 400 kbps link: the encoder 
   video.avg_kbps                          288          289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  97.7          112  sm
-  cc.utilization_pct                     92.6         92.9  =
+  cc.utilization_pct                     92.4         92.6  =
   cc.queue_p95_ms                        63.2         60.2  =
   cc.max_settle_ms                        100          100  =
   cc.rtt_p50_ms                          73.5         78.7  =
@@ -4001,7 +4052,7 @@ issue_84_encoder_qp_720p_low_rate - 720p camera on a 400 kbps link: the encoder 
   video.avg_kbps                          288          289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  97.7          112  sm
-  cc.utilization_pct                     92.6         92.9  =
+  cc.utilization_pct                     92.4         92.6  =
   cc.queue_p95_ms                        63.2         60.2  =
   cc.max_settle_ms                        100          100  =
   cc.rtt_p50_ms                          73.5         78.7  =
@@ -4052,7 +4103,7 @@ issue_84_quality_scaling_720p_low_rate - 720p camera on a 400 kbps link with lib
   video.avg_kbps                          288          289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   115          110  =
-  cc.utilization_pct                     92.6         92.8  =
+  cc.utilization_pct                     92.4         92.6  =
   cc.queue_p95_ms                        65.0         58.1  =
   cc.max_settle_ms                        100          100  =
   cc.rtt_p50_ms                          74.1         79.2  =
@@ -4154,7 +4205,7 @@ issue_85_video_pause - 10 s outage (tunnel) at 10 s: no video for 10 s. libwebrt
   video.avg_kbps                         1288         1299  =
   video.keyframe_requests                   1            1  =
   sync.av_offset_p95_ms                  90.7          118  sm
-  cc.utilization_pct                     87.8         88.5  =
+  cc.utilization_pct                     87.7         88.3  =
   cc.queue_p95_ms                        45.3         56.6  sm
   cc.max_settle_ms                        380         2610  sm
   cc.rtt_p50_ms                          93.5         94.0  =
@@ -4205,7 +4256,7 @@ lossy_feedback - Clean media path but 10% loss on the feedback path
   video.avg_kbps                         1520         1520  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  92.2          107  sm
-  cc.utilization_pct                     82.3         82.4  =
+  cc.utilization_pct                     82.3         82.3  =
   cc.queue_p95_ms                        46.2         49.8  =
   cc.max_settle_ms                       1780         1780  =
   cc.rtt_p50_ms                          72.9         70.2  =
@@ -4256,7 +4307,7 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   video.avg_kbps                         71.7         70.5  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1807         1401  webrtc
-  cc.utilization_pct                     98.5         98.0  =
+  cc.utilization_pct                     98.0         97.4  =
   cc.queue_p95_ms                         414          395  =
   cc.max_settle_ms                        200          300  =
   cc.rtt_p50_ms                           250          232  webrtc
@@ -4307,7 +4358,7 @@ low_fps_clean_link - 15 fps video on a clean 1.5 Mbps / 100 ms RTT link: audio d
   video.avg_kbps                         1265         1263  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   150          136  webrtc
-  cc.utilization_pct                     92.1         91.9  =
+  cc.utilization_pct                     92.0         91.9  =
   cc.queue_p95_ms                         110          106  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                           132          131  =
@@ -4358,7 +4409,7 @@ outage_3s - 3 s outage (tunnel) in the middle of the call
   video.avg_kbps                         1140         1141  =
   video.keyframe_requests                   1            1  =
   sync.av_offset_p95_ms                  75.6         70.8  =
-  cc.utilization_pct                     89.1         89.0  =
+  cc.utilization_pct                     88.9         88.9  =
   cc.queue_p95_ms                        43.5         39.9  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          74.2           72  =
@@ -4409,7 +4460,7 @@ pacer_v2_capacity_drop - capacity_drop with the libwebrtc PacingController (pace
   video.avg_kbps                          881          890  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   294          286  =
-  cc.utilization_pct                     56.6         57.2  =
+  cc.utilization_pct                     56.3         56.9  =
   cc.queue_p95_ms                         291          279  =
   cc.max_settle_ms                      14680        14290  =
   cc.rtt_p50_ms                          69.7         72.2  =
@@ -4460,7 +4511,7 @@ probe_v2_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   video.avg_kbps                          881          890  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   294          286  =
-  cc.utilization_pct                     56.6         57.2  =
+  cc.utilization_pct                     56.3         56.9  =
   cc.queue_p95_ms                         291          279  =
   cc.max_settle_ms                      14680        14290  =
   cc.rtt_p50_ms                          69.7         72.2  =
@@ -4511,7 +4562,7 @@ probe_v2_clean_link - 2.5 Mbps link, no impairments, `cc v2` and `pacer v2`: the
   video.avg_kbps                         2138         2137  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  77.6         68.2  =
-  cc.utilization_pct                     91.5         91.4  =
+  cc.utilization_pct                     91.4         91.3  =
   cc.queue_p95_ms                        80.7         74.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          69.8         66.2  =
@@ -4562,7 +4613,7 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   video.avg_kbps                         1757         1785  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   225          234  =
-  cc.utilization_pct                     73.3         74.5  =
+  cc.utilization_pct                     73.3         74.4  =
   cc.queue_p95_ms                         232          251  sm
   cc.max_settle_ms                       3330         4500  sm
   cc.rtt_p50_ms                          63.0         64.5  =
@@ -4613,7 +4664,7 @@ random_loss_5pct - 5% random loss on a 2 Mbps link with 40 ms one-way delay
   video.avg_kbps                         1418         1422  =
   video.keyframe_requests                 0.2          0.2  =
   sync.av_offset_p95_ms                  82.7         80.8  =
-  cc.utilization_pct                     79.0         79.6  =
+  cc.utilization_pct                     76.8         77.0  =
   cc.queue_p95_ms                        35.8         32.4  =
   cc.max_settle_ms                        200          200  =
   cc.rtt_p50_ms                          93.6         92.4  =
@@ -4664,7 +4715,7 @@ satellite - GEO satellite: 300 ms one-way, 1% loss, 1.5 Mbps
   video.avg_kbps                          980          965  =
   video.keyframe_requests                   0          0.1  =
   sync.av_offset_p95_ms                   454          453  =
-  cc.utilization_pct                     83.1         82.6  =
+  cc.utilization_pct                     72.0         70.9  =
   cc.queue_p95_ms                        37.1         38.2  =
   cc.max_settle_ms                        740          710  =
   cc.rtt_p50_ms                           620          619  =
@@ -4715,7 +4766,7 @@ very_low_capacity - 100 kbps link (audio 32 kbps + video): the stage-1 checkpoin
   video.avg_kbps                         32.4         32.8  =
   video.keyframe_requests                 2.9          3.2  =
   sync.av_offset_p95_ms                  7675         6450  webrtc
-  cc.utilization_pct                     99.0         98.9  =
+  cc.utilization_pct                     98.6         98.3  =
   cc.queue_p95_ms                         295          286  =
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           340          332  =
@@ -4766,7 +4817,7 @@ very_low_capacity_allocator_v2 - 100 kbps link with libwebrtc's BitrateAllocator
   video.avg_kbps                         32.4         32.8  =
   video.keyframe_requests                 2.9          3.2  =
   sync.av_offset_p95_ms                  7675         6450  webrtc
-  cc.utilization_pct                     99.0         98.9  =
+  cc.utilization_pct                     98.6         98.3  =
   cc.queue_p95_ms                         295          286  =
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           340          332  =
@@ -4817,7 +4868,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.avg_kbps                         1312         1289  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                  1648         1838  sm
-  cc.utilization_pct                      104          103  =
+  cc.utilization_pct                     85.3         83.8  =
   cc.queue_p95_ms                         145          152  =
   cc.max_settle_ms                        730          740  =
   cc.rtt_p50_ms                           131          134  =
@@ -4850,7 +4901,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 237, webrtc 96, tie 1704 (of the metrics shown)
+better: sm 236, webrtc 95, tie 1728 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
@@ -4859,5 +4910,5 @@ Metrics measured differently for libwebrtc:
   video.undecodable_frames: VideoReceiveStream frames_dropped
   repair.fec_recovered: Not reported: libwebrtc does not expose it
   net.<kind>_kbps / _loss_pct: Counted at the forward link by SSRC: audio, video media, RTX with a payload, FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload after RTP padding is removed, including RTX with only its sequence number)
-  cc.goodput_kbps: Excludes padding-only packets but includes RTX packets libwebrtc sends as padding
+  cc.goodput_kbps: Each media sequence number counts once, as original or RTX (#329): excludes padding-only packets, RTX payload padding and RTX copies of packets that had already arrived
   sync.av_offset_*: The audio playout point is AudioReceiveStream's Syncable::GetPlayoutRtpTimestamp, the input libwebrtc's A/V sync uses, read after each 10 ms pull (the test bench reads its jitter buffer's playout timestamp right after the pull)
