@@ -105,15 +105,12 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     v.enforce_min = true;
     // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
     allocator_.AddObserver("video", v, [this](DataRate alloc) {
-      // OnBitrateUpdated: protection = target - (encoder target + its packet overhead).
       // RtpVideoSender::OnBitrateUpdated sets encoder_target_rate_bps_ here, from the protection sent in
       // the last second, and the encoder keeps it until the next allocation.
-      const DataRate encoder = AllocatedVideoTarget(alloc);
-      video_encoder_target_ = encoder;
-      const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
-      DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
-      enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
-      return std::max(DataRate::Zero(), alloc - (encoder + enc_overhead));
+      const VideoAllocationSplit split = SplitVideoAllocation(alloc);
+      video_encoder_target_ = split.encoder_target;
+      video_link_allocation_ = split.link_allocation;
+      return split.protection;
     });
   }
   gcc_.SetMinAllocatable(allocator_.limits().min_allocatable);
@@ -392,12 +389,29 @@ DataRate SendSideController::OverheadRate(DataRate rate, int64_t packet_size_byt
   return DataRate::BitsPerSec(packets_per_sec * (cfg_.rtp_overhead_bytes + cfg_.transport_overhead_bytes) * 8);
 }
 
-DataRate SendSideController::AllocatedVideoTarget(DataRate alloc) const {
+SendSideController::VideoAllocationSplit SendSideController::SplitVideoAllocation(DataRate alloc) const {
+  // RtpVideoSender::OnBitrateUpdated (rtp_video_sender.cc:885-939). has_packet_feedback_: the payload
+  // rate is the allocation less the overhead rate; FecControllerDefault::UpdateFecRates keeps the share
+  // RTX and FEC do not take.
   const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
-  // has_packet_feedback_: the payload rate is the allocation less the overhead rate.
-  const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, cfg_.max_packet_size + cfg_.transport_overhead_bytes));
-  return std::min(cfg_.video_max, payload * keep);
+  const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
+  const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, pkt));
+  const DataRate encoder = payload * keep;  // encoder_target_rate_bps_, not yet capped at the encoder maximum.
+  // The protection is the allocation less the encoder target and its packet overhead.
+  DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
+  enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
+  VideoAllocationSplit out;
+  out.protection = std::max(DataRate::Zero(), alloc - (encoder + enc_overhead));
+  // VideoSendStreamImpl::OnBitrateUpdated (video_send_stream_impl.cc:902-914): the link allocation is the
+  // encoder target less the protection, taken before the target is capped at the encoder maximum, and at
+  // least the capped target. Above the maximum the encoder bitrate adjuster gets the difference as headroom.
+  const DataRate link = encoder > out.protection ? encoder - out.protection : DataRate::Zero();
+  out.encoder_target = std::min(cfg_.video_max, encoder);
+  out.link_allocation = cfg_.link_headroom ? std::max(out.encoder_target, link) : out.encoder_target;
+  return out;
 }
+
+DataRate SendSideController::AllocatedVideoTarget(DataRate alloc) const { return SplitVideoAllocation(alloc).encoder_target; }
 
 SendRates SendSideController::AllocatedRates() const {
   // VideoSendStreamImpl::OnBitrateUpdated: the encoder gets the allocation less
@@ -405,7 +419,14 @@ SendRates SendSideController::AllocatedRates() const {
   SendRates out;
   out.target = target_;
   out.audio_rate = allocator_.allocation("audio");
-  out.video_target = cfg_.control_handler ? video_encoder_target_ : AllocatedVideoTarget(allocator_.allocation("video"));
+  if (cfg_.control_handler) {
+    out.video_target = video_encoder_target_;
+    out.video_link_allocation = video_link_allocation_;
+  } else {
+    const VideoAllocationSplit split = SplitVideoAllocation(allocator_.allocation("video"));
+    out.video_target = split.encoder_target;
+    out.video_link_allocation = split.link_allocation;
+  }
   out.encoder_paused = cfg_.control_handler && control_handler_.encoder_paused();
   ApplyPushback(out);
   return out;

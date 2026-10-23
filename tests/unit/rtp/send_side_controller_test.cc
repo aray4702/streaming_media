@@ -462,3 +462,40 @@ SM_TEST(SendSideController, ControlHandlerKeepsTheEncoderTargetUntilTheNextUpdat
     }
   }
 }
+
+// Issue #326: VideoSendStreamImpl::OnBitrateUpdated (video_send_stream_impl.cc:902-914) takes the link
+// allocation, the encoder target less the protection, before it caps the target at the encoder maximum,
+// and RtpVideoSender::OnBitrateUpdated (rtp_video_sender.cc:885-939) computes the encoder overhead and
+// the protection from the uncapped target. A 3 Mbps video allocation with a 2.5 Mbps maximum: 253
+// packets/s (3000000 / (1488 x 8), rounded up) of 24 + 28 bytes leave a 2894752 bps payload; its own
+// overhead is 248 packets/s (2894752 / (1464 x 8)), so the protection is 3000000 - 2894752 - 103168 =
+// 2080 bps and the link allocation 2892672 bps, which is the encoder bitrate adjuster's headroom.
+SM_TEST(SendSideController, LinkAllocationIsTakenBeforeTheEncoderMaximumAsLibwebrtc) {
+  for (bool headroom : {true, false}) {
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(3000);
+    cfg.max_packet_size = 1460;
+    cfg.video_max = DataRate::KilobitsPerSec(2500);
+    cfg.link_headroom = headroom;
+    SendSideController c(cfg);
+    c.ConfigureAllocation(DataRate::Zero(), true);
+    c.Start(Timestamp::Millis(0));
+    SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 3000000);  // Up to twice the maximum.
+    const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+    SM_EXPECT_EQ(r.video_target.bps(), 2500000);
+    SM_EXPECT_EQ(r.video_link_allocation.bps(), headroom ? 2892672 : 2500000);
+  }
+}
+
+// Below the maximum the link allocation is the encoder target (max(target, target - protection)).
+SM_TEST(SendSideController, LinkAllocationIsTheEncoderTargetBelowTheMaximum) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+  SM_EXPECT_EQ(r.video_target.bps(), 1197256);
+  SM_EXPECT_EQ(r.video_link_allocation.bps(), 1197256);
+}
