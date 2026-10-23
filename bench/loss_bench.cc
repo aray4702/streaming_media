@@ -138,12 +138,15 @@ SM_BENCH(loss, TemporalLayers_ScheduleAndFilter) {
   st.BudgetNsPerItem(500);
 }
 
-SM_BENCH(loss, ProtectionController_Update) {
-  ProtectionController pc;
-  double l = 0;
+SM_BENCH(loss, FecControllerDefault_UpdateFecRates) {
+  FecControllerDefault c;
+  c.SetProtectionMethod(true, true);
+  int l = 0;
+  int64_t t = 0;
   for (auto _ : st) {
-    bench::DoNotOptimize(pc.Update({TimeDelta::Millis(120), l, 10}));
-    l = l > 0.2 ? 0 : l + 0.001;
+    bench::DoNotOptimize(c.UpdateFecRates(DataRate::KilobitsPerSec(1000), 30, static_cast<uint8_t>(l), 120, Timestamp::Millis(t)));
+    l = l > 50 ? 0 : l + 1;
+    t += 25;
   }
   st.BudgetNsPerItem(20000);
 }

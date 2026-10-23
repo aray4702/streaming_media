@@ -248,9 +248,11 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32
   return out;
 }
 
-void RtpSender::SetFecParams(const loss::ulpfec::FecProtectionParams& p) {
-  fec_params_ = p;
-  if (ulpfec_) ulpfec_->SetProtectionParameters(p, p);
+void RtpSender::SetFecParams(const loss::ulpfec::FecProtectionParams& delta,
+                             const loss::ulpfec::FecProtectionParams& key) {
+  fec_params_ = delta;
+  key_fec_params_ = key;
+  if (ulpfec_) ulpfec_->SetProtectionParameters(delta, key);
 }
 
 std::vector<SenderPacket> RtpSender::TakeFecPackets() {

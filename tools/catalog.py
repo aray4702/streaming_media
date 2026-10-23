@@ -77,8 +77,8 @@ ALGORITHMS = [
                "Remaining differences: the FEC enqueued after a pacer release goes out from the next pacer pass, where "
                "libwebrtc's `ProcessPackets` loop can send it in the same pass; one RTX payload type per stream plus "
                "the RED one, where libwebrtc maps each associated payload type; FEC packets are not in the sender "
-               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is still "
-               "`ProtectionController` (3.7) until #29's next step ports `FecControllerDefault`.",
+               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is "
+               "`FecControllerDefault` (3.7).",
          verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
                       "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
                       "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
@@ -155,19 +155,36 @@ ALGORITHMS = [
          verification="No defects found."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
          problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
-         headers=["loss/protection_controller.h"], unit=["Protection"], e2e=["E2E_Protection"],
-         bench=["loss/ProtectionController_Update", "loss/Q_Protection_adaptive_rtt300"],
+         headers=["loss/fec_controller.h"], unit=["FecController"], e2e=["E2E_Protection"],
+         bench=["loss/FecControllerDefault_UpdateFecRates", "loss/Q_Protection_adaptive_rtt300"],
          scenario="The NACK/RTX/FEC video simulation with the controller choosing FEC every 500 ms from measured "
-                  "loss, at RTT 20, 80 and 300 ms with 5% loss.",
+                  "loss, at RTT 18, 20, 80 and 300 ms with 5% loss; in the session, `issue_29_ulpfec_over_red`.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "The FEC rate is the smallest parity count that brings the binomial frame-loss probability under a "
-               "target that moves from 10% (low RTT, NACK still helps) to 1% (high RTT). This is an analytical "
-               "replacement for libwebrtc's lookup tables. Its decision is ULPFEC's `FecProtectionParams`: the rate "
-               "in Q8 (so that `NumFecPackets` gives back the parity count), one frame per block and random masks, "
-               "which `FecControllerDefault` always picks (`fec_controller_default.cc:138-143`); the burst-length "
-               "input that chose this library's interleaved masks is gone with them (#29).",
-         verification="No defects found. At low RTT the controller chooses NACK only (overhead equals the loss "
-                      "rate); at 300 ms RTT it reaches 98.8% on-time delivery at about 27% overhead. "
+               "A port of libwebrtc M157's `FecControllerDefault` (`modules/video_coding/fec_controller_default.cc`) "
+               "with `media_opt_util.cc`'s `VCMLossProtectionLogic`, `VCMFecMethod` and `VCMNackFecMethod` and the "
+               "`kFecRateTable` of `fec_rate_table.h`, copied value for value (#29). The method follows what the "
+               "stream has on (`kNackFec`, `kFec`, `kNack`, `kNone`); the loss is the max of the last 10 one-second "
+               "windows; the delta rate comes from the table by effective bits per frame and loss, at least 20% "
+               "with loss and more than one packet per frame, at most 128/255; key frames get at least twice that "
+               "and the loss; `kNackFec` sends no delta FEC below 20 ms RTT, none at all for small frames under "
+               "200 ms RTT (`BitRateTooLowForFec`), and spreads FEC over up to 6 frames by RTT. The rates are "
+               "converted to a share of the media packets (`ConvertFECRate`) and the masks are random. "
+               "`rtp::Session` owns one per video send stream, as `RtpVideoSender` does: it calls `UpdateFecRates` "
+               "when the target, the fraction lost or the RTT changes (`CongestionControlHandler::GetUpdate`), with "
+               "the video payload rate, the frames sent in the last second and GoogCC's fraction lost, and sets the "
+               "delta and key parameters on the sender; `UpdateWithEncodedData` runs on every frame and "
+               "`SetVideoEncodingData` on each encoder reconfiguration. The encoder rate half of `UpdateFecRates` "
+               "(the measured protection share, capped at 0.5) is `SendSideController::AllocatedVideoTarget`. "
+               "Remaining differences: the sent frame rate is counted over the last second here, where libwebrtc's "
+               "`SendStatisticsProxy::GetSendFrameRate` (not in `compare/webrtc/reference/`) uses its rate tracker; "
+               "`_corrFecCost` is not computed, since M157 reads it nowhere.",
+         verification="Unit tests (`FecController`) check the table rates against values worked out by hand from "
+                      "`kFecRateTable`, the first-partition minimum, the 128/255 cap, the 10 s max filter, the "
+                      "20 ms NACK-only threshold, `BitRateTooLowForFec`, `max_fec_frames` and the packets-per-frame "
+                      "filter. `E2E_Protection.AdaptiveAcrossRtt`: NACK only at 18 ms RTT (overhead 5%), FEC from "
+                      "20 ms (overhead 45% at 20 ms, 39% at 80, 35% at 300; libwebrtc's table at 1.9 Mbps and 5% loss), "
+                      "on time 99.3% or more. On `issue_29_ulpfec_over_red`, seeds 1-10, FEC goes from 375 to 392 "
+                      "kbps (libwebrtc 444) and video e2e p95 from 174 to 242 ms (libwebrtc 232). "
                       "Video RED+ULPFEC is off beside NACK for H.264 and Generic, as libwebrtc's "
                       "`ShouldDisableRedAndUlpfec` decides (`rtp::ShouldDisableRedAndUlpfec`, "
                       "[fix record #7](../../fixes/7-no-fec-beside-nack.md)); the controller only runs where "

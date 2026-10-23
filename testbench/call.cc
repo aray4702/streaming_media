@@ -18,7 +18,6 @@
 #include "sm/core/random.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
-#include "sm/loss/protection_controller.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
@@ -34,7 +33,6 @@ constexpr uint32_t kAudioSsrc = 1, kVideoSsrc = 2, kRtxSsrc = 3;
 constexpr uint32_t kSenderRtcpSsrc = 100, kReceiverRtcpSsrc = 200;
 constexpr uint8_t kAudioPt = 111, kAudioRedPt = 63, kVideoPt = 96, kRtxPt = 97;
 constexpr int64_t kUdpIpOverhead = 28;
-constexpr size_t kMaxVideoPayload = 1100;
 // WebRTC counts an audio interruption when concealment lasts over 150 ms
 // (RTCInboundRtpStreamStats.interruptionCount).
 constexpr int64_t kInterruptionMs = 150;
@@ -519,8 +517,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.keyframe.send_lntf = false;
   video_cfg.timing.version = s.timing_v2 ? 2 : 1;
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
-  // no video FEC (ShouldDisableRedAndUlpfec) and neither does the bench.
-  const bool video_fec = s.video && rtp::VideoFecEnabled(video_cfg);
+  // no video FEC (ShouldDisableRedAndUlpfec) and neither does the session.
   video_cfg.deliver_bitstream = false;  // The bench has no decoder.
 
   rtp::AudioSendId audio_send;
@@ -536,7 +533,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     video_recv = receiver.AddVideoReceive(video_cfg);
   }
 
-  // The encoder side: the frame dropper and the FEC protection decision.
+  // The encoder side: the frame dropper. The session decides the FEC protection (#29).
   rtp::VideoSendControllerConfig vsc_cfg;
   vsc_cfg.keyframe_interval = s.keyframe_interval;
   vsc_cfg.fps = s.video_fps;
@@ -550,9 +547,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.adjuster.min_bitrate = s.video_min;
   vsc_cfg.quality_scaling = s.quality_scaling;
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
-  loss::ProtectionConfig prot_cfg;
-  prot_cfg.events = &events;
-  loss::ProtectionController protection(prot_cfg);
   video::FreezeDetector freezes(&events);
   registry.Register("sender.session", &sender);
   registry.Register("sender.send_side", &sender.send_side());
@@ -566,7 +560,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     registry.Register("sender.video_send", &video_ctl);
     registry.Register("sender.quality_scaler", &video_ctl.quality_scaler());
   }
-  registry.Register("sender.protection", &protection);
+  if (s.video) registry.Register("sender.protection", &sender.fec_controller(video_send));
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
   registry.Register("receiver.freezes", &freezes);
@@ -599,6 +593,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
   int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
+  int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
@@ -688,14 +683,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case rtp::SessionEventType::kReportBlock:
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
           if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), now);
-          if (video_fec && e.ssrc == kVideoSsrc) {
-            loss::ProtectionInput in;
-            in.rtt = sender.rtt();
-            in.loss_rate = e.loss_fraction;
-            double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
-            in.packets_per_frame = pkts;
-            sender.SetFecParams(video_send, protection.Update(in, now).fec);
-          }
           break;
         case rtp::SessionEventType::kTargetRateChanged: break;
       }
@@ -728,6 +715,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
       // The size the library asks for (the captured size unless quality scaling adapts it).
       const int enc_w = dec.width, enc_h = dec.height;
+      // VideoSendStreamImpl::OnEncoderConfigurationChanged: the FEC controller takes the encoded size.
+      if (dec.encode && (enc_w != fec_width || enc_h != fec_height)) {
+        sender.SetVideoEncodingData(video_send, enc_w, enc_h);
+        fec_width = enc_w;
+        fec_height = enc_h;
+      }
       const DataRate vr = dec.target;
       const bool key = dec.keyframe;
       ++vt_row.captured;

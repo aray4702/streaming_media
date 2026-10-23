@@ -1,6 +1,7 @@
 #include "sm/rtp/session.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "sm/rtp/h264.h"
 
@@ -93,7 +94,11 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
   c.red_distance = a.red_distance;
-  audio_send_.push_back({std::make_unique<RtpSender>(c), a.nominal_rate, a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate});
+  SendStream as;
+  as.sender = std::make_unique<RtpSender>(c);
+  as.nominal_rate = a.nominal_rate;
+  as.allocation_rate = a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate;
+  audio_send_.push_back(std::move(as));
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   // AudioSendStream::ConfigureStream: with transport-cc (and allocate_audio_without_feedback_
   // off) the audio stream asks for periodic ALR probing (WebRTC-Audio-AlrProbing is on
@@ -114,7 +119,14 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.rtx = v.rtx;
   c.fec = VideoFecEnabled(v);
   c.ulpfec = v.ulpfec;
-  video_send_.push_back({std::make_unique<RtpSender>(c), DataRate::Zero()});
+  // RtpVideoSender's constructor: FecControllerDefault with the method the stream has on,
+  // sized for RtpConfig::max_packet_size.
+  SendStream vs;
+  vs.sender = std::make_unique<RtpSender>(c);
+  vs.fec = std::make_unique<loss::FecControllerDefault>(cfg_.events);
+  vs.fec->SetProtectionMethod(c.fec, v.nack);
+  vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
+  video_send_.push_back(std::move(vs));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
@@ -252,18 +264,30 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
   const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(f.data, limits);
-  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe);
+  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, f.data.size());
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                               Timestamp now, bool keyframe) {
+  size_t encoded_size = 0;
+  for (const auto& c : chunks) encoded_size += c.size();
+  SendVideoChunks(id, chunks, rtp_timestamp, now, keyframe, encoded_size);
+}
+
+void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
+                              Timestamp now, bool keyframe, size_t encoded_size) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   if (chunks.empty()) {
     ++stats_.empty_video_frames;
     return;
   }
   Start(now);
-  RtpSender& s = *video_send_[static_cast<size_t>(id.index)].sender;
+  SendStream& vs = video_send_[static_cast<size_t>(id.index)];
+  // RtpVideoSender::OnEncodedImage, and the sent frame rate SendStatisticsProxy counts.
+  vs.fec->UpdateWithEncodedData(encoded_size, keyframe, now);
+  if (!vs.first_frame.IsFinite()) vs.first_frame = now;
+  vs.frame_times.push_back(now);
+  RtpSender& s = *vs.sender;
   s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
@@ -280,6 +304,48 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
 void Session::SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   video_send_[static_cast<size_t>(id.index)].sender->SetFecParams(p);
+}
+
+void Session::SetVideoEncodingData(VideoSendId id, int width, int height, int num_temporal_layers) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
+  video_send_[static_cast<size_t>(id.index)].fec->SetEncodingData(
+      static_cast<size_t>(std::max(width, 0)), static_cast<size_t>(std::max(height, 0)),
+      static_cast<size_t>(std::max(num_temporal_layers, 0)), static_cast<size_t>(cfg_.send_side.max_packet_size));
+}
+
+int Session::SentFrameRate(SendStream& v, Timestamp now) {
+  // A rate over the last second, or over the time since the first frame within it.
+  while (!v.frame_times.empty() && v.frame_times.front() <= now - TimeDelta::Seconds(1)) v.frame_times.pop_front();
+  if (!v.first_frame.IsFinite()) return 0;
+  const TimeDelta window = std::min(TimeDelta::Seconds(1), now - v.first_frame);
+  if (window <= TimeDelta::Zero()) return 0;
+  return static_cast<int>(std::lround(static_cast<double>(v.frame_times.size()) * 1e6 / static_cast<double>(window.us())));
+}
+
+void Session::MaybeUpdateFecRates(Timestamp now) {
+  if (video_send_.empty()) return;
+  const cc::SendSideBandwidthEstimation& bwe = send_.gcc().send_side_bwe();
+  FecEstimate e;
+  e.target = send_.target();
+  // GoogCC sends the loss as fraction_loss / 255.0f, and BitrateAllocator takes it back as
+  // int(ratio * 255): RtpVideoSender's fraction lost.
+  const float loss_rate_ratio = static_cast<float>(bwe.fraction_loss()) / 255.0f;
+  e.fraction_loss = static_cast<uint8_t>(std::clamp(static_cast<int>(loss_rate_ratio * 255), 0, 255));
+  e.rtt = bwe.round_trip_time();
+  if (last_fec_estimate_ &&
+      (last_fec_estimate_->target == e.target &&
+       (e.target.IsZero() || (last_fec_estimate_->fraction_loss == e.fraction_loss && last_fec_estimate_->rtt == e.rtt)))) {
+    return;
+  }
+  last_fec_estimate_ = e;
+  const DataRate payload = send_.VideoPayloadRate();
+  for (SendStream& v : video_send_) {
+    const int fps = SentFrameRate(v, now);
+    if (auto r = v.fec->UpdateFecRates(payload, fps, e.fraction_loss, e.rtt.IsFinite() ? e.rtt.ms() : 0, now)) {
+      // ProtectionRequest: RtpRtcp::SetFecProtectionParams.
+      v.sender->SetFecParams(r->delta, r->key);
+    }
+  }
 }
 
 void Session::SetRtt(TimeDelta rtt) {
@@ -500,6 +566,7 @@ void Session::Process(Timestamp now) {
     last_target_ = send_.target();
     Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
   }
+  if (HasSendStreams()) MaybeUpdateFecRates(now);
   // RTCP: reports and queued feedback.
   UpdateSenderState(now);
   for (RtcpOutgoing& o : rtcp_.Process(now)) {
