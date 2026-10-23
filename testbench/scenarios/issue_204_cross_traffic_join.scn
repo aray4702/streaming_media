@@ -1,0 +1,11 @@
+name issue_204_cross_traffic_join
+describe 2000 kbps of non-responsive cross traffic joins a 3 Mbps bottleneck (300 ms queue) at 10 s and leaves at 25 s: the allocation holds between GoogCC updates, so the queue drains and video doesn't freeze for most of the cross traffic (#204)
+# The link of yardstick #294 (yardstick_204_cross_2000). libwebrtc (parity-data-pr/pr/294, seeds 1-10):
+# video.freeze_total_ms mean 3590, freeze_count 6.9.
+# main before the flip, seeds 1-10: 7547 2203 8396 5545 7703 2071 7359 7773 7478 2116 (mean 5819).
+# With `control_handler` and `send_rate_stats` on: 1849 1379 1382 5292 2540 1886 8100 1843 1808 846 (mean 2693).
+duration 40s
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps
+expect video.freeze_total_ms < 6000

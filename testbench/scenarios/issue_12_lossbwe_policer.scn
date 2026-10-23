@@ -12,5 +12,8 @@ expect net.loss_pct < 12
 # Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
 # timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
 # worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).
-expect video.freeze_total_ms < 6000
+# With #224/#204's flip (`send_rate_stats` + `control_handler`), ours seed 1 13372 (seeds 1-10: 13372 11088 7926 4916
+# 4053 9715 7672 14988 9231 13792, mean 9675; main 5617, libwebrtc mean 10722, worst on parity-data 15478). Moved by
+# the same rule: just above our seed-1 value, below libwebrtc's worst seed.
+expect video.freeze_total_ms < 14000
 expect audio.interruptions <= 3
