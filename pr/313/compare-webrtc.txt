@@ -1,10 +1,94 @@
 streaming_media vs libwebrtc M157.8103@{#0}, mean of 10 seed(s)
 [diag] issue_29_ulpfec_over_red seed 1: sm
 [diag] issue_29_ulpfec_over_red seed 1: webrtc
+[diag] issue_29_ulpfec_over_red seed 1: done
+[diag] issue_29_ulpfec_over_red seed 2: sm
+[diag] issue_29_ulpfec_over_red seed 2: webrtc
+[diag] issue_29_ulpfec_over_red seed 2: done
+[diag] issue_29_ulpfec_over_red seed 3: sm
+[diag] issue_29_ulpfec_over_red seed 3: webrtc
+[diag] issue_29_ulpfec_over_red seed 3: done
+[diag] issue_29_ulpfec_over_red seed 4: sm
+[diag] issue_29_ulpfec_over_red seed 4: webrtc
+[diag] issue_29_ulpfec_over_red seed 4: done
+[diag] issue_29_ulpfec_over_red seed 5: sm
+[diag] issue_29_ulpfec_over_red seed 5: webrtc
+[diag] issue_29_ulpfec_over_red seed 5: done
+[diag] issue_29_ulpfec_over_red seed 6: sm
+[diag] issue_29_ulpfec_over_red seed 6: webrtc
+[diag] issue_29_ulpfec_over_red seed 6: done
+[diag] issue_29_ulpfec_over_red seed 7: sm
+[diag] issue_29_ulpfec_over_red seed 7: webrtc
+[diag] issue_29_ulpfec_over_red seed 7: done
+[diag] issue_29_ulpfec_over_red seed 8: sm
+[diag] issue_29_ulpfec_over_red seed 8: webrtc
+[diag] issue_29_ulpfec_over_red seed 8: done
+[diag] issue_29_ulpfec_over_red seed 9: sm
+[diag] issue_29_ulpfec_over_red seed 9: webrtc
+[diag] issue_29_ulpfec_over_red seed 9: done
+[diag] issue_29_ulpfec_over_red seed 10: sm
+[diag] issue_29_ulpfec_over_red seed 10: webrtc
+[diag] issue_29_ulpfec_over_red seed 10: done
 
+issue_29_ulpfec_over_red - 5% random loss with NACK off, so video FEC runs (ShouldDisableRedAndUlpfec): ULPFEC over RED on the media SSRC, as libwebrtc sends it
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.3          0.3  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            25           27  =
+  audio.mouth_to_ear_p95_ms               185          189  =
+  audio.jb_delay_p95_ms                   102          105  =
+  video.freeze_count                      6.2          7.8  sm
+  video.freeze_total_ms                 19591        24237  sm
+  video.longest_freeze_ms                3512         3283  webrtc
+  video.pause_count                         1            0  webrtc
+  video.pause_total_ms                   6456            0  webrtc
+  video.render_fps                        3.6          3.0  sm
+  video.e2e_delay_p95_ms                  174          232  sm
+  video.time_to_first_frame_ms           95.1          167  sm
+  video.avg_kbps                         1130         1075  =
+  video.keyframe_requests                 8.2          8.2  =
+  sync.av_offset_p95_ms                  60.8          110  sm
+  cc.utilization_pct                     77.9         77.7  =
+  cc.queue_p95_ms                        36.2         34.0  =
+  cc.max_settle_ms                        200          200  =
+  cc.rtt_p50_ms                          94.7         92.0  =
+  net.loss_pct                            4.8          4.8  =
+  repair.overhead_pct                    32.0         38.9  sm
+  forward link per kind (information only)
+  net.audio_kbps                         70.1         69.4
+  net.video_kbps                         1176         1120
+  net.rtx_kbps                           19.7            0
+  net.padding_kbps                        0.4         23.1
+  net.fec_kbps                            375          444
+  net.audio_loss_pct                      4.8          4.9
+  net.video_loss_pct                      5.0          4.7
+  net.rtx_loss_pct                        5.0            0
+  net.padding_loss_pct                    3.3          4.9
+  net.audio_size_p50_b                    193          192
+  net.audio_size_p90_b                    224          217
+  net.audio_size_max_b                    274          304
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1277         1263
+  net.video_size_p90_b                   1415         1415
+  net.video_size_max_b                   1460         1462
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1374            0
+  net.rtx_size_p90_b                     1444            0
+  net.rtx_size_max_b                     1454            0
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
 
-#
-# Fatal error in: ../../../../_source/ubuntu-24.04_x86_64/webrtc/src/modules/rtp_rtcp/source/receive_statistics_impl.cc, line 322
-# last system error: 0
-# Check failed: frequency_hz > 0 (0 vs. 0)
-# 
+better: sm 7, webrtc 3, tie 12 (of the metrics shown)
+
+Metrics measured differently for libwebrtc:
+  audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
+  audio.net_delay_p95_ms: Measured from the capture time of the packet's first sample, (ts - first ts) / 48 ms, as the test bench measures from its RTP timestamp; the first packet is the frame of the 10 ms blocks captured at 0 and 10 ms
+  video.residual_loss_pct: Counts packets recovered by RTX but not by FEC (libwebrtc does not expose FEC-recovered packets), so it overstates residual loss when FEC recovers packets
+  video.undecodable_frames: VideoReceiveStream frames_dropped
+  repair.fec_recovered: Not reported: libwebrtc does not expose it
+  net.<kind>_kbps / _loss_pct: Counted at the forward link by SSRC: audio, video media, RTX with a payload, FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload after RTP padding is removed, including RTX with only its sequence number)
+  cc.goodput_kbps: Excludes padding-only packets but includes RTX packets libwebrtc sends as padding
+  sync.av_offset_*: The audio playout point is AudioReceiveStream's Syncable::GetPlayoutRtpTimestamp, the input libwebrtc's A/V sync uses, read after each 10 ms pull (the test bench reads its jitter buffer's playout timestamp right after the pull)
