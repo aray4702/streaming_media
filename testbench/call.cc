@@ -6,6 +6,7 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
+#include <map>
 #include <optional>
 #include <set>
 #include <unordered_map>
@@ -151,6 +152,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.time_to_first_frame_ms", "Call start -> first rendered frame"},
       {"video.avg_kbps", "Average encoded video bitrate (quality proxy)"},
       {"video.qp_mean", "Mean QP of encoded frames, from the encoder model both implementations share (testbench/encoder_model.h; H.264 0..51)"},
+      {"video.encode_height_mean", "Mean height of encoded frames (the captured height unless quality scaling adapts it, issue #84)"},
       {"video.keyframes", "Keyframes encoded"},
       {"video.keyframe_requests", "PLI/FIR received by the sender"},
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
@@ -416,6 +418,11 @@ void EvaluateExpectations(Report& rep) {
   }
 }
 
+int AudioCodecRate(int capture_rate) {
+  return capture_rate == 8000 || capture_rate == 16000 || capture_rate == 32000 || capture_rate == 48000 ? capture_rate
+                                                                                                           : 48000;
+}
+
 Report RunCall(const Scenario& s, const RunOptions& opt) {
   Report rep;
   rep.scenario = s;
@@ -432,7 +439,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
 
   // --- Media sources --------------------------------------------------------
-  const int sr = s.audio_sample_rate;
+  // The codec's rate, which the RTP clock, NetEq and the playout run at. libwebrtc resamples the capture to
+  // the encoder's rate before encoding (AudioState::UpdateAudioTransportWithSendingStreams), and Opus stamps
+  // its packets with a 48 kHz clock whatever it encodes at (audio_encoder_opus.cc kRtpTimestampRateHz), so a
+  // capture rate NetEq doesn't decode at (12, 24, 44.1 kHz) still plays: the bench runs those at 48 kHz
+  // (issue #298). It keeps the capture rate at 8, 16, 32 and 48 kHz.
+  const int sr = AudioCodecRate(s.audio_sample_rate);
   const size_t frame_samples = static_cast<size_t>(sr / 50);  // 20 ms.
   std::vector<float> speech;
   if (s.audio) speech = sim::SpeechLike(sr, s.duration.seconds() + 1, s.seed + 7, true);
@@ -534,6 +546,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.allocation_min_bitrate = s.video_min;
   vsc_cfg.allocation_max_bitrate = s.video_max;
   vsc_cfg.adjuster.min_bitrate = s.video_min;
+  vsc_cfg.quality_scaling = s.quality_scaling;
   rtp::VideoSendController video_ctl(vsc_cfg, sender);
   loss::ProtectionConfig prot_cfg;
   prot_cfg.events = &events;
@@ -547,6 +560,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   registry.Register("sender.rtcp", &sender.rtcp());
   registry.Register("sender.frame_dropper", &video_ctl.frame_dropper());
   registry.Register("sender.bitrate_adjuster", &video_ctl.bitrate_adjuster());
+  if (s.quality_scaling) {
+    registry.Register("sender.video_send", &video_ctl);
+    registry.Register("sender.quality_scaler", &video_ctl.quality_scaler());
+  }
   registry.Register("sender.protection", &protection);
   registry.Register("receiver.session", &receiver);
   registry.Register("receiver.rtcp", &receiver.rtcp());
@@ -557,7 +574,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
     registry.Register("receiver.video", &vr);
     registry.Register("receiver.nack", &vr.nack());
-    registry.Register("receiver.fec", &vr.fec());
+    if (vr.ulpfec()) registry.Register("receiver.ulpfec", vr.ulpfec());
+    if (const auto* gen = sender.video_sender(video_send).ulpfec()) registry.Register("sender.ulpfec", gen);
     registry.Register("receiver.packet_buffer", &vr.packet_buffer());
     registry.Register("receiver.keyframes", &vr.keyframes());
     if (s.timing_v2) {
@@ -578,12 +596,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
-  int64_t video_bytes_encoded = 0, qp_sum = 0;
+  int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
-  std::vector<int64_t> video_send_ms;  // By unwrapped media sequence number.
+  // Send time of each video media packet by unwrapped sequence number (ULPFEC packets share the
+  // sequence numbers and are not counted).
+  std::map<int64_t, int64_t> video_send_ms;
   SeqNumUnwrapper<uint16_t> video_sent_unwrap;
   double cross_debt = 0;
 
@@ -607,7 +627,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   double last_video_delay = 0;
   // Receiver-side burst tracking for the protection controller (a real
   // receiver would report this in RTCP XR); read when a report block arrives.
-  uint64_t last_gaps = 0, last_missing = 0;
 
   const int64_t end_ms = s.duration.ms();
   int64_t next_frame_ms = 0;
@@ -627,10 +646,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kVideo) {
-          video_send_ms.push_back(now.ms());
+          video_send_ms.emplace(video_sent_unwrap.Unwrap(RtpSeq(p.bytes)), now.ms());
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
           if (ft != frame_times.end()) ft->second.last_sent = now;
-          (void)video_sent_unwrap.Unwrap(RtpSeq(p.bytes));
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
@@ -667,14 +685,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
           if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), now);
           if (video_fec && e.ssrc == kVideoSsrc) {
-            const auto& rs = receiver.video_receiver(video_recv).stats();
-            uint64_t g = rs.gaps - last_gaps, m = rs.missing - last_missing;
-            last_gaps = rs.gaps;
-            last_missing = rs.missing;
             loss::ProtectionInput in;
             in.rtt = sender.rtt();
             in.loss_rate = e.loss_fraction;
-            in.mean_burst_length = g ? static_cast<double>(m) / static_cast<double>(g) : 1.0;
             double pkts = std::max(1.0, static_cast<double>(sender.rates().video_target.bps()) / 8 / s.video_fps / kMaxVideoPayload);
             in.packets_per_frame = pkts;
             sender.SetFecParams(video_send, protection.Update(in, now).fec);
@@ -709,6 +722,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       next_frame_ms = k * 1000 / s.video_fps;
       // The library decides: encode or drop, keyframe or not, and the rate.
       const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
+      // The size the library asks for (the captured size unless quality scaling adapts it).
+      const int enc_w = dec.width, enc_h = dec.height;
       const DataRate vr = dec.target;
       const bool key = dec.keyframe;
       ++vt_row.captured;
@@ -727,11 +742,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
         bytes = std::max<int64_t>(bytes, 200);
         vt_row.encoded_bytes += bytes;
-        const int qp = EncoderModel::Qp(bytes, key, s.video_width, s.video_height, s.video_complexity);
+        const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
         vt_row.qp_sum += qp;
-        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(s.video_width, s.video_height, s.encoder_speed);
+        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
         qp_sum += qp;
-        video_ctl.OnEncoded({DataSize::Bytes(bytes), key}, now);
+        height_sum += enc_h;
+        video_ctl.OnEncoded({DataSize::Bytes(bytes), key, qp}, now);
         if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
@@ -893,7 +909,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       smp.audio_concealed_pct = w_played ? 100.0 * static_cast<double>(w_conceal) / static_cast<double>(w_played) : 0;
       smp.video_fps = static_cast<double>(w_frames) * 10;
       smp.video_delay_ms = last_video_delay;
-      smp.fec_pct = s.video ? sender.video_sender(video_send).fec_params().protection * 100 : 0;
+      smp.fec_pct = s.video ? sender.video_sender(video_send).fec_params().fec_rate * 100.0 / 256 : 0;
       rep.timeseries.push_back(smp);
       w_send = w_good = w_frames = w_conceal = w_played = 0;
     }
@@ -972,6 +988,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] = frames_encoded ? static_cast<double>(qp_sum) / static_cast<double>(frames_encoded) : 0;
+    m["video.encode_height_mean"] = frames_encoded ? static_cast<double>(height_sum) / static_cast<double>(frames_encoded) : 0;
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(frames_skipped);
@@ -979,15 +996,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     {
       // Packets sent in the last second may still be in flight or under repair.
       int64_t counted = 0, lost = 0;
-      for (size_t i = 0; i < video_send_ms.size(); ++i) {
-        if (video_send_ms[i] > end_ms - 1000) break;
+      for (const auto& [useq, sent_ms] : video_send_ms) {
+        if (sent_ms > end_ms - 1000) break;
         ++counted;
-        lost += !received_seqs.Has(static_cast<int64_t>(i));
+        lost += !received_seqs.Has(useq);
       }
       m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
     }
     m["repair.nack_recovered"] = static_cast<double>(vrx.nack().stats().recovered);
-    m["repair.fec_recovered"] = static_cast<double>(vrx.fec().stats().recovered);
+    m["repair.fec_recovered"] =
+        vrx.ulpfec() ? static_cast<double>(vrx.ulpfec()->GetPacketCounter().num_recovered_packets) : 0;
   }
 
   // Congestion control: utilization, queueing and settle time.

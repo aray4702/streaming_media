@@ -12,7 +12,7 @@ using namespace sm::rtp;
 using Bytes = std::vector<uint8_t>;
 
 namespace {
-constexpr uint32_t kSsrc = 0x1111, kRtxSsrc = 0x2222, kFecSsrc = 0x3333;
+constexpr uint32_t kSsrc = 0x1111, kRtxSsrc = 0x2222;
 const test::TestVideoParser kParser;
 
 RtpSenderConfig SenderCfg() {
@@ -35,12 +35,18 @@ RtpReceiverConfig ReceiverCfg() {
 }
 
 // The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
-// (SendSideController::Process).
+// (SendSideController::Process), each followed by the FEC packets it completed.
 std::vector<SenderPacket> Release(RtpSender& s, Timestamp now) {
-  auto out = s.TakePackets();
-  for (auto& p : out) {
+  std::vector<SenderPacket> out;
+  for (auto& p : s.TakePackets()) {
     s.AssignSequenceNumber(p);
     s.OnPacketReleased(p, now);
+    out.push_back(std::move(p));
+    for (auto& f : s.TakeFecPackets()) {
+      s.AssignSequenceNumber(f);
+      s.OnPacketReleased(f, now);
+      out.push_back(std::move(f));
+    }
   }
   return out;
 }
@@ -359,35 +365,71 @@ SM_TEST(RtpReceiver, TransportSequenceNumbersOfEveryPacketReachTheFeedbackBuilde
   SM_EXPECT_EQ(reports[0].base_seq, 100);
 }
 
-SM_TEST(RtpReceiver, FecRecoversALostMediaPacket) {
+// RED + ULPFEC on the media SSRC (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader):
+// the lost media packet is recovered from FEC, and neither it nor the FEC packets are NACKed.
+SM_TEST(RtpReceiver, UlpfecRecoversALostMediaPacket) {
   RtpSenderConfig sc = SenderCfg();
   sc.fec = true;
-  sc.fec_config.fec_ssrc = kFecSsrc;
   RtpSender s(sc);
-  s.SetFecParams({.protection = 1.0});
+  s.SetFecParams({.fec_rate = 255, .max_fec_frames = 1});
   RtpReceiverConfig rc = ReceiverCfg();
   rc.fec = true;
-  rc.fec_config.fec_ssrc = kFecSsrc;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
   auto chunks = test::MakeTestFrameChunks(true, 4000, s.config().max_payload_size);
   s.SendVideoFrame(chunks, 0, Timestamp::Millis(0));
-  auto out = s.TakePackets();
   size_t media = 0, fec = 0;
-  for (auto& p : out) {
+  for (auto& p : Release(s, Timestamp::Millis(0))) {
     if (p.kind == PacketKind::kFec) {
       SM_EXPECT_TRUE(r.OnPacket(p.packet.Serialize(), Timestamp::Millis(30)) == ReceivedKind::kFec);
       ++fec;
     } else {
       if (media++ == 1) continue;  // The second media packet is lost.
-      r.OnPacket(p.packet.Serialize(), Timestamp::Millis(20));
+      SM_EXPECT_TRUE(r.OnPacket(p.packet.Serialize(), Timestamp::Millis(20)) == ReceivedKind::kMedia);
     }
   }
   SM_ASSERT_GE(media, 3u);
   SM_ASSERT_GE(fec, 1u);
-  r.Process(Timestamp::Millis(35));
-  SM_EXPECT_GE(r.fec().stats().recovered, 1u);
-  SM_EXPECT_EQ(r.stats().frames_received, 1u);  // Complete with the recovered packet.
+  // The next frame shows any sequence number left missing.
+  for (auto& b : SendFrame(s, 1, false, 800, Timestamp::Millis(33))) r.OnPacket(b, Timestamp::Millis(53));
+  r.Process(Timestamp::Millis(60));
+  SM_ASSERT_TRUE(r.ulpfec() != nullptr);
+  SM_EXPECT_EQ(r.ulpfec()->GetPacketCounter().num_recovered_packets, 1u);
+  SM_EXPECT_EQ(r.stats().fec, fec + 1);  // The second frame's FEC too.
+  SM_EXPECT_EQ(r.stats().frames_received, 2u);  // The first complete with the recovered packet.
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  auto frames = Run(r, 61, 600);
+  SM_EXPECT_EQ(frames.size(), 2u);
+}
+
+// A RED packet lost with no FEC to recover it is NACKed and resent on RTX with the RTX payload type
+// associated with RED; the restored RED packet completes the frame.
+SM_TEST(RtpReceiver, RedPacketRestoredFromRtx) {
+  RtpSenderConfig sc = SenderCfg();
+  sc.fec = true;
+  RtpSender s(sc);  // FEC rate 0: RED only.
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.fec = true;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  auto f0 = SendFrame(s, 0, true, 3000, Timestamp::Millis(0));
+  auto f1 = SendFrame(s, 1, false, 800, Timestamp::Millis(33));
+  SM_ASSERT_GE(f0.size(), 3u);
+  for (size_t i = 0; i < f0.size(); ++i)
+    if (i != 1) r.OnPacket(f0[i], Timestamp::Millis(20));
+  for (auto& b : f1) r.OnPacket(b, Timestamp::Millis(53));
+  r.Process(Timestamp::Millis(60));
+  SM_EXPECT_EQ(r.stats().frames_received, 1u);
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 1u);
+  s.OnNack(fb.nacks, Timestamp::Millis(80), TimeDelta::Millis(40));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  SM_EXPECT_EQ(rtx[0].packet.payload_type, sc.ulpfec.red_rtx_payload_type);
+  SM_EXPECT_TRUE(r.OnPacket(rtx[0].packet.Serialize(), Timestamp::Millis(100)) == ReceivedKind::kRtx);
+  r.Process(Timestamp::Millis(101));
+  SM_EXPECT_EQ(r.stats().frames_received, 2u);
+  SM_EXPECT_EQ(r.nack().stats().recovered, 1u);
 }
 
 namespace {

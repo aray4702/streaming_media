@@ -43,10 +43,11 @@ SM_TEST(E2E_Fec, RandomLossHighRtt) {
   p.fwd.loss_rate = 0.05;
   p.one_way_delay = TimeDelta::Millis(150);
   p.nack = false;
-  p.fec = {0.5, loss::FecMaskType::kBlock};
+  // 50% protection (Q8 128), one frame per block, random masks as FecControllerDefault picks.
+  p.fec = {.fec_rate = 128, .max_fec_frames = 1, .fec_mask_type = loss::ulpfec::FecMaskType::kRandom};
   auto r = RunVideoSim(p);
   VideoSimParams base = p;
-  base.fec.protection = 0;
+  base.fec.fec_rate = 0;
   auto b = RunVideoSim(base);
   SM_RECORD("fec_frames_on_time", r.frames_on_time);
   SM_RECORD("baseline_frames_on_time", b.frames_on_time);
@@ -56,20 +57,25 @@ SM_TEST(E2E_Fec, RandomLossHighRtt) {
   SM_EXPECT_GT(r.fec_recovered, 0u);
 }
 
-SM_TEST(E2E_Fec, InterleavedBeatsBlockOnBursts) {
+// fec_controller_default.cc:138-141: "kFecMaskBursty is more effective for consecutive losses".
+SM_TEST(E2E_Fec, BurstyMasksBeatRandomOnBursts) {
   VideoSimParams p;
   p.fwd.gilbert = true;
   p.fwd.p_good_to_bad = 0.015;
   p.fwd.p_bad_to_good = 0.4;
   p.one_way_delay = TimeDelta::Millis(150);
   p.nack = false;
-  p.fec = {0.5, loss::FecMaskType::kInterleaved};
-  auto inter = RunVideoSim(p);
-  p.fec.mask = loss::FecMaskType::kBlock;
-  auto block = RunVideoSim(p);
-  SM_RECORD("fec_burst_interleaved", inter.frames_on_time);
-  SM_RECORD("fec_burst_block", block.frames_on_time);
-  SM_EXPECT_GT(inter.frames_on_time, block.frames_on_time);
+  p.fec = {.fec_rate = 128, .max_fec_frames = 1, .fec_mask_type = loss::ulpfec::FecMaskType::kBursty};
+  auto bursty = RunVideoSim(p);
+  p.fec.fec_mask_type = loss::ulpfec::FecMaskType::kRandom;
+  auto random = RunVideoSim(p);
+  SM_RECORD("fec_burst_bursty_on_time", bursty.on_time);
+  SM_RECORD("fec_burst_random_on_time", random.on_time);
+  SM_RECORD("fec_burst_bursty_recovered", static_cast<double>(bursty.fec_recovered));
+  SM_RECORD("fec_burst_random_recovered", static_cast<double>(random.fec_recovered));
+  // Compared per packet: whole frames come out the same on this seed (97.7% each).
+  SM_EXPECT_GT(bursty.fec_recovered, random.fec_recovered);
+  SM_EXPECT_GT(bursty.on_time, random.on_time);
 }
 
 SM_TEST(E2E_Red, HalvesAudioLossAndMore) {

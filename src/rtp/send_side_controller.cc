@@ -190,6 +190,8 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     r.send_time = now;
     if (sp.sender) {
       sp.sender->OnPacketReleased(sp, now);
+      // PacingController::ProcessPackets: the FEC the packet completed joins the queue.
+      for (SenderPacket& f : sp.sender->TakeFecPackets()) Enqueue(std::move(f), now);
       if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo)) {
         sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
         // Feedback never covers more than a few seconds; bound the table.

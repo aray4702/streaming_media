@@ -39,34 +39,51 @@ SM_BENCH(loss, RtxSender_StoreAndResend) {
 }
 
 SM_BENCH(loss, FecEncode_10pkt_frame_50pct) {
-  FecEncoder enc;
-  enc.SetParams({0.5, FecMaskType::kInterleaved});
+  // ULPFEC as RtpSenderEgress drives it: each media packet as it is sent, FEC at the frame end.
+  ulpfec::UlpfecGenerator gen(118, 119);
+  const ulpfec::FecProtectionParams params{.fec_rate = 128, .max_fec_frames = 1};
+  gen.SetProtectionParameters(params, params);
   std::vector<RtpPacket> frame(10);
   for (int i = 0; i < 10; ++i) {
     frame[static_cast<size_t>(i)].seq = static_cast<uint16_t>(i);
+    frame[static_cast<size_t>(i)].marker = i == 9;
     frame[static_cast<size_t>(i)].payload.assign(1100, static_cast<uint8_t>(i));
   }
   for (auto _ : st) {
-    for (int i = 0; i < 10; ++i) bench::DoNotOptimize(enc.AddMediaPacket(frame[static_cast<size_t>(i)], i == 9));
+    for (int i = 0; i < 10; ++i) {
+      gen.AddPacketAndGenerateFec(frame[static_cast<size_t>(i)], false);
+      bench::DoNotOptimize(gen.GetFecPackets());
+    }
   }
   st.SetItemsPerIteration(10);  // Per media packet.
   st.BudgetNsPerItem(3000);
 }
 
 SM_BENCH(loss, FecDecode_RecoverOne) {
-  FecEncoder enc;
-  enc.SetParams({0.3, FecMaskType::kBlock});
-  std::vector<RtpPacket> frame(10), fec;
+  // 10 media packets in RED, 3 FEC packets (30%), the first media packet lost.
+  ulpfec::UlpfecGenerator gen(118, 119);
+  const ulpfec::FecProtectionParams params{.fec_rate = 77, .max_fec_frames = 1};
+  gen.SetProtectionParameters(params, params);
+  std::vector<RtpPacket> red(10), fec;
   for (int i = 0; i < 10; ++i) {
-    frame[static_cast<size_t>(i)].seq = static_cast<uint16_t>(i);
-    frame[static_cast<size_t>(i)].payload.assign(1100, static_cast<uint8_t>(i));
-    auto f = enc.AddMediaPacket(frame[static_cast<size_t>(i)], i == 9);
-    fec.insert(fec.end(), f.begin(), f.end());
+    RtpPacket m;
+    m.ssrc = 1;
+    m.payload_type = 96;
+    m.seq = static_cast<uint16_t>(i);
+    m.marker = i == 9;
+    m.payload.assign(1100, static_cast<uint8_t>(i));
+    gen.AddPacketAndGenerateFec(m, false);
+    red[static_cast<size_t>(i)] = m;
+    red[static_cast<size_t>(i)].payload_type = 118;
+    red[static_cast<size_t>(i)].payload.insert(red[static_cast<size_t>(i)].payload.begin(), 96);
+    for (RtpPacket& f : gen.GetFecPackets()) fec.push_back(std::move(f));
   }
+  for (size_t j = 0; j < fec.size(); ++j) fec[j].seq = static_cast<uint16_t>(10 + j);
   for (auto _ : st) {
-    FecDecoder dec;
-    for (int i = 1; i < 10; ++i) dec.OnMediaPacket(frame[static_cast<size_t>(i)]);
-    for (auto& f : fec) bench::DoNotOptimize(dec.OnFecPacket(f));
+    ulpfec::UlpfecReceiver rx(1, 119);
+    for (int i = 1; i < 10; ++i) rx.AddReceivedRedPacket(red[static_cast<size_t>(i)]);
+    for (auto& f : fec) rx.AddReceivedRedPacket(f);
+    bench::DoNotOptimize(rx.ProcessReceivedFec());
   }
   st.SetItemsPerIteration(13);
   st.BudgetNsPerItem(5000);
@@ -125,7 +142,7 @@ SM_BENCH(loss, ProtectionController_Update) {
   ProtectionController pc;
   double l = 0;
   for (auto _ : st) {
-    bench::DoNotOptimize(pc.Update({TimeDelta::Millis(120), l, 1.0, 10}));
+    bench::DoNotOptimize(pc.Update({TimeDelta::Millis(120), l, 10}));
     l = l > 0.2 ? 0 : l + 0.001;
   }
   st.BudgetNsPerItem(20000);
@@ -149,7 +166,7 @@ SM_BENCH_QUALITY(loss, Q_Fec_5pct_rtt300) {
   p.fwd.loss_rate = 0.05;
   p.one_way_delay = TimeDelta::Millis(150);
   p.nack = false;
-  p.fec = {0.5, FecMaskType::kBlock};
+  p.fec = {.fec_rate = 128, .max_fec_frames = 1, .fec_mask_type = ulpfec::FecMaskType::kRandom};
   auto r = e2e::RunVideoSim(p);
   st.Counter("frames_on_time", r.frames_on_time);
   st.Counter("overhead", r.overhead);

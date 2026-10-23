@@ -396,3 +396,23 @@ SM_TEST(TestbenchMetrics, AvSyncOffset) {
   SM_EXPECT_NEAR(m["sync.av_offset_p95_ms"], 43.75, 1e-9);
   SM_EXPECT_NEAR(m["sync.av_offset_max_ms"], 45, 1e-9);
 }
+
+// Issue #298: a capture rate NetEq doesn't decode at is encoded at Opus's
+// 48 kHz clock, as libwebrtc resamples the capture to the encoder, so the
+// audio plays and the jitter buffer is measured instead of discarded.
+SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRun) {
+  SM_EXPECT_EQ(AudioCodecRate(8000), 8000);
+  SM_EXPECT_EQ(AudioCodecRate(16000), 16000);
+  SM_EXPECT_EQ(AudioCodecRate(32000), 32000);
+  SM_EXPECT_EQ(AudioCodecRate(48000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(12000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(24000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(44100), 48000);
+  auto parsed = ParseScenario("name rate24\nduration 6s\nvideo off\naudio_sample_rate 24000\nat 0s capacity=2000kbps delay=40ms loss=3%\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_EXPECT_LT(rep.metrics.at("audio.time_to_first_ms"), 1000);
+  SM_EXPECT_GT(rep.metrics.at("audio.jb_delay_p95_ms"), 0);
+}

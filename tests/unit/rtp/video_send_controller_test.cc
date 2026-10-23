@@ -237,3 +237,85 @@ SM_TEST(VideoSendController, PeerKeyframeRequestsAreNotFilteredByDefault) {
   c.OnSessionEvent(e);
   SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(166)).keyframe);
 }
+
+// Issue #84 step 4: QualityScalerResource with MAINTAIN_FRAMERATE and the
+// initial frame drop (VideoStreamEncoder::DropDueToSize).
+SM_TEST(VideoSendController, QualityScalingDropsInitialFramesAndScalesDown) {
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  const int64_t target_bps = s.rates().video_target.bps();
+  SM_EXPECT_TRUE(target_bps >= 300000 && target_bps < 500000);  // The start rate: 640x480 at most.
+  // 720p is too large: frames are dropped, each one adapting down (960x540,
+  // then 640x360 through VideoAdapter's series), until one fits.
+  const int sizes[][2] = {{1280, 720}, {960, 540}};
+  int t = 0;
+  for (const auto& sz : sizes) {
+    auto d = c.OnCapturedFrame({1280, 720}, At(t));
+    SM_EXPECT_FALSE(d.encode);
+    SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+    SM_EXPECT_EQ(d.width, sz[0]);
+    SM_EXPECT_EQ(d.height, sz[1]);
+    t += 33;
+  }
+  auto d = c.OnCapturedFrame({1280, 720}, At(t));
+  SM_EXPECT_TRUE(d.encode);
+  SM_EXPECT_TRUE(d.keyframe);
+  SM_EXPECT_EQ(d.width, 640);
+  SM_EXPECT_EQ(d.height, 360);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  // The initial frame drop is over once a frame passed it.
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(t));
+  SM_EXPECT_TRUE(c.OnCapturedFrame({1280, 720}, At(t += 33)).width == 640);
+}
+
+SM_TEST(VideoSendController, QualityScalingAdaptsUpOnLowQpWithAKeyframe) {
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  int t = 0;
+  EncodeDecision d;
+  do {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    t += 33;
+  } while (!d.encode);
+  SM_EXPECT_EQ(d.height, 360);
+  c.OnEncoded({DataSize::Bytes(4000), true, 10}, At(t - 33));
+  // QP 10 (below H.264's low threshold 24): the scaler's check (2 s, 60
+  // frames) asks to adapt up: target 5/3 of 640x360, and 960x540 is the
+  // closest step under 12/5 of it.
+  int first_up_height = 0;
+  for (int i = 0; i < 300 && first_up_height == 0; ++i, t += 33) {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (d.height > 360) {
+      first_up_height = d.height;
+      SM_EXPECT_TRUE(d.keyframe);  // A new size resets the encoder.
+    }
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 10}, At(t));
+  }
+  SM_EXPECT_EQ(first_up_height, 540);
+  SM_EXPECT_GE(t, 2000);
+}
+
+SM_TEST(VideoSendController, QualityScalingInitialDropRunsBeforeThePause) {
+  // VideoStreamEncoder::MaybeEncodeVideoFrame: DropDueToSize (and
+  // OnMaybeEncodeFrame) come before EncoderPaused, so a paused encoder still
+  // adapts down for an oversized frame and a fitting frame ends the initial drop.
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  auto d = c.OnCapturedFrame({1280, 720}, At(0));
+  SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({1280, 720}, At(33)).reason == DropReason::kSize);
+  d = c.OnCapturedFrame({1280, 720}, At(66));
+  SM_EXPECT_TRUE(d.reason == DropReason::kPaused);
+  SM_EXPECT_EQ(d.height, 360);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  d = c.OnCapturedFrame({1280, 720}, At(99));
+  SM_EXPECT_TRUE(d.encode);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+}
