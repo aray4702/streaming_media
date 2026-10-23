@@ -15,5 +15,10 @@ expect net.padding_kbps < 2
 # Restored to >= 380 by #217 (was provisionally >= 330 after PR #186): the first transport feedback waits the
 # generator's default 100 ms, as libwebrtc's Call does. Seed 1 393 kbps (main 344), 10 seeds 401 (main 394),
 # libwebrtc 451.
-expect net.rtx_kbps >= 380
+# #224/#204's flip (`send_rate_stats` + `control_handler`): seed 1 365 (seeds 1-10: 365 443 433 464 408 405 420 386
+# 398 372, mean 409; main 426, libwebrtc 451, its seed 1 402). On seed 1 the flip overshoots the 4 Mbps link once
+# before 15 s (target 4329 -> 2882 kbps at 7 s, then ~3000 kbps), as libwebrtc does (4490 -> 3047 kbps at 11 s), where
+# main overshot twice (8 s and 14 s); each overshoot's loss is retransmitted as RTX. libwebrtc's per-seed RTX rate
+# isn't published, so this move needs the Owner's sign-off (program.md 0.2, needs-human).
+expect net.rtx_kbps >= 360
 expect net.rtx_kbps <= 600

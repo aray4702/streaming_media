@@ -63,14 +63,15 @@ struct SendSideConfig {
   // How the repair share is measured (issue #224). On: one RateStatistics per
   // media type, as RtpSenderEgress::GetSendRates, so a repair stream that has
   // just started (after 1.5 windows without one) counts at its rate since it
-  // started. Off: the bytes of each type over the last `repair_window`.
-  bool send_rate_stats = false;
+  // started. Off: the bytes of each type over the last `repair_window`. On by
+  // default since #224, together with `control_handler`.
+  bool send_rate_stats = true;
   // The transport's CongestionControlHandler between GoogCC and the allocator (cc/control_handler.h,
   // issue #204): the allocator, and with it the encoder target and its protection share, changes only
   // when the handler passes an update on, and the encoder pauses while the pacer queue is above 2 s.
-  // Off: every GoogCC update reallocates and the encoder reads the live protection share (until the
-  // port is judged against libwebrtc as a whole, program.md 0.2).
-  bool control_handler = false;
+  // Off: every GoogCC update reallocates and the encoder reads the live protection share. On by
+  // default since #224/#204, as libwebrtc's RtpTransportControllerSend.
+  bool control_handler = true;
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
   // With the allocator (RtpVideoSender::OnBitrateUpdated): the packet size

@@ -1,0 +1,13 @@
+name issue_224_congestive_e2e_flip
+describe Congestive loss (2.5 Mbps, 60 ms queue, drop to 800 kbps at 15 s): video e2e delay and lip-sync offset stay near libwebrtc's once the repair share comes from per-type RateStatistics and CongestionControlHandler gates the allocation (#224, #204)
+# Same link as issue_61_googcc_glue_congestive. libwebrtc (parity-data, seeds 1-10): video.e2e_delay_p95_ms
+# 231 490 390 486 285 426 478 557 414 442 (mean 420); sync.av_offset_p95_ms mean 307 (worst 445).
+# main before the flip: e2e p95 1052 on seed 1 (10 seeds mean 679), av offset p95 939 (mean 573).
+# With `send_rate_stats` and `control_handler` on: e2e p95 574 on seed 1 (seeds 1-10: 574 610 430 526 413 530
+# 394 448 467 450, mean 484), av offset p95 466 (mean 379).
+# Target (issue #224): within the parity band of libwebrtc's mean (420 ms, band ~96 ms).
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
+expect video.e2e_delay_p95_ms < 650
+expect sync.av_offset_p95_ms < 520

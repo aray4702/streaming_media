@@ -78,7 +78,7 @@ struct Scenario {
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
-  bool control_handler = false;  // `control_handler on|off`: libwebrtc's CongestionControlHandler (issue #204).
+  bool control_handler = true;  // `control_handler on|off`: libwebrtc's CongestionControlHandler (issue #204; default on since #224/#204).
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
@@ -87,7 +87,7 @@ struct Scenario {
   bool quality_scaling = false;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3).
-  bool send_rate_stats = false;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats).
+  bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
 
   // Congestion control.
