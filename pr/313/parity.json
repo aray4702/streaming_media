@@ -1,0 +1,6 @@
+{
+ "error": "Traceback (most recent call last):\n  File \"/home/runner/work/streaming_media/streaming_media/tools/parity_report.py\", line 221, in <module>\n    rc = main()\n         ^^^^^^\n  File \"/home/runner/work/streaming_media/streaming_media/tools/parity_report.py\", line 193, in main\n    data = load(a.compare_json)\n           ^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/streaming_media/streaming_media/tools/parity_report.py\", line 39, in load\n    with open(path) as f:\n         ^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'compare-webrtc.json'\n",
+ "extreme": [
+  "could not scan the input: FileNotFoundError(2, 'No such file or directory')"
+ ]
+}
