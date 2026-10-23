@@ -103,6 +103,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.trace.csv",
                     std::ios::binary)
           << sm::testbench::LinkTraceCsv(report.link_trace);
+      // The reverse link, `seq` the first NACKed sequence number (issue #217).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.reverse.csv",
+                    std::ios::binary)
+          << sm::testbench::LinkTraceCsv(report.reverse_trace);
       // The per-second video send decisions (issue #131).
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.video.csv",
                     std::ios::binary)

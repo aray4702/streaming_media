@@ -598,6 +598,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   sim::NetworkLink<Pkt> forward(fwd_state.cfg, s.seed);
   if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Pkt> reverse(links.reverse().cfg, s.seed + 1000003);
+  if (opt.link_trace) reverse.EnableTrace();
   // Applies the scenario's link changes due by `now`. The tick does it first thing, but SimTime runs its queues in
   // creation order, so a libwebrtc task due at the same millisecond as the tick (the receiver's transport feedback
   // timer, the pacer) can run before it and send on the old link. Each transport calls this before it sends, so a
@@ -712,7 +713,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
-                 DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
+                 DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead), sm::sim::LinkKind::kOther,
+                 sm::testbench::FirstNackedSeq(data));
   });
 
   // --- Streams ----------------------------------------------------------------
@@ -1220,6 +1222,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   testbench::AddLinkKindMetrics(ls, s, rep);
   if (opt.link_trace) rep.link_trace = forward.trace();
+  if (opt.link_trace) rep.reverse_trace = reverse.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   testbench::EvaluateExpectations(rep);

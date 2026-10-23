@@ -75,6 +75,8 @@ struct Report {
   std::map<std::string, int> events;      // Event counts by module/name.
   // Every packet offered to the forward link, when RunOptions::link_trace is set (issue #125).
   std::vector<sim::LinkTraceRecord> link_trace;
+  // Every packet offered to the reverse link, with the first NACKed sequence number as `seq` (issue #217).
+  std::vector<sim::LinkTraceRecord> reverse_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
   // The sender's GoogCC updates, when RunOptions::bwe_trace is set (issue #149).

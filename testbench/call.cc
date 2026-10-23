@@ -437,6 +437,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
   if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
+  if (opt.link_trace) reverse.EnableTrace();
 
   // --- Media sources --------------------------------------------------------
   // The codec's rate, which the RTP clock, NetEq and the playout run at. libwebrtc resamples the capture to
@@ -653,7 +654,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           if (ft != frame_times.end()) ft->second.last_sent = now;
         }
       }
-      const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      const int32_t seq = kind == Kind::kRtcp ? (is_forward ? -1 : FirstNackedSeq(p.bytes)) : p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
     }
   };
@@ -1025,6 +1026,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   AddLinkKindMetrics(ls, s, rep);
   if (opt.link_trace) rep.link_trace = forward.trace();
+  if (opt.link_trace) rep.reverse_trace = reverse.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   EvaluateExpectations(rep);

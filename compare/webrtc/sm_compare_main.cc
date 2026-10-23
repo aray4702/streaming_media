@@ -105,7 +105,8 @@ const std::vector<const char*>& InfoMetrics() {
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic";
+    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,"
+    "issue_12_lossbwe_shallow_step,issue_268_freeze_rule_outage";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -259,6 +260,9 @@ int main(int argc, char** argv) {
       if (opt.link_trace) {
         const std::string sm_csv = sm::testbench::LinkTraceCsv(ours.back().link_trace);
         const std::string rtc_csv = sm::testbench::LinkTraceCsv(theirs.back().link_trace);
+        // The reverse link, `seq` the first NACKed sequence number (issue #217).
+        const std::string sm_rev = sm::testbench::LinkTraceCsv(ours.back().reverse_trace);
+        const std::string rtc_rev = sm::testbench::LinkTraceCsv(theirs.back().reverse_trace);
         // The per-second video send decisions (issue #131), same scenario and seed.
         const std::string sm_video = sm::testbench::VideoTraceCsv(ours.back().video_trace);
         const std::string rtc_video = sm::testbench::VideoTraceCsv(theirs.back().video_trace);
@@ -274,7 +278,8 @@ int main(int argc, char** argv) {
                          ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
-                         ", \"webrtc_audio\": " + JsonString(rtc_audio) + "}";
+                         ", \"webrtc_audio\": " + JsonString(rtc_audio) +
+                         ", \"sm_reverse\": " + JsonString(sm_rev) + ", \"webrtc_reverse\": " + JsonString(rtc_rev) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -287,6 +292,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
           std::ofstream(stem + ".sm.audio.csv") << sm_audio;
           std::ofstream(stem + ".webrtc.audio.csv") << rtc_audio;
+          std::ofstream(stem + ".sm.reverse.csv") << sm_rev;
+          std::ofstream(stem + ".webrtc.reverse.csv") << rtc_rev;
         }
       }
       if (!dump_dir.empty()) {

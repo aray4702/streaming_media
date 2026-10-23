@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -12,6 +14,18 @@
 #include "sm/sim/network_link.h"
 
 namespace sm::testbench {
+
+// The reverse-link trace's `seq` for an RTCP compound: the first sequence number
+// its first generic NACK (RTPFB, FMT 1) asks for, else -1 (issue #217).
+inline int32_t FirstNackedSeq(std::span<const uint8_t> d) {
+  size_t off = 0;
+  while (off + 4 <= d.size()) {
+    const size_t len = (static_cast<size_t>((d[off + 2] << 8) | d[off + 3]) + 1) * 4;
+    if (d[off + 1] == 205 && (d[off] & 0x1f) == 1 && off + 14 <= d.size()) return (d[off + 12] << 8) | d[off + 13];
+    off += len;
+  }
+  return -1;
+}
 
 // Applies scenario link changes to an emulated link.
 struct LinkState {
