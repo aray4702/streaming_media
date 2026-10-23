@@ -115,7 +115,7 @@ One directive per line, and `#` starts a comment.
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate |
-| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | NetEq v2 (the default) runs only at 8, 16, 32 and 48 kHz and, as libwebrtc, discards the audio of any other rate (#256) |
+| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | The capture rate. The codec, RTP clock and NetEq run at it at 8, 16, 32 and 48 kHz; at 12, 24 and 44.1 kHz at Opus's 48 kHz clock, as libwebrtc resamples the capture to the encoder (#298) |
 | `video_fps <n>` | 30 | |
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |

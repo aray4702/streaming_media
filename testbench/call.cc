@@ -417,6 +417,11 @@ void EvaluateExpectations(Report& rep) {
   }
 }
 
+int AudioCodecRate(int capture_rate) {
+  return capture_rate == 8000 || capture_rate == 16000 || capture_rate == 32000 || capture_rate == 48000 ? capture_rate
+                                                                                                           : 48000;
+}
+
 Report RunCall(const Scenario& s, const RunOptions& opt) {
   Report rep;
   rep.scenario = s;
@@ -433,7 +438,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
 
   // --- Media sources --------------------------------------------------------
-  const int sr = s.audio_sample_rate;
+  // The codec's rate, which the RTP clock, NetEq and the playout run at. libwebrtc resamples the capture to
+  // the encoder's rate before encoding (AudioState::UpdateAudioTransportWithSendingStreams), and Opus stamps
+  // its packets with a 48 kHz clock whatever it encodes at (audio_encoder_opus.cc kRtpTimestampRateHz), so a
+  // capture rate NetEq doesn't decode at (12, 24, 44.1 kHz) still plays: the bench runs those at 48 kHz
+  // (issue #298). It keeps the capture rate at 8, 16, 32 and 48 kHz.
+  const int sr = AudioCodecRate(s.audio_sample_rate);
   const size_t frame_samples = static_cast<size_t>(sr / 50);  // 20 ms.
   std::vector<float> speech;
   if (s.audio) speech = sim::SpeechLike(sr, s.duration.seconds() + 1, s.seed + 7, true);
