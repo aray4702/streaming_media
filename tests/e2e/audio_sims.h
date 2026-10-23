@@ -9,6 +9,7 @@
 #include <numbers>
 #include <vector>
 
+#include "sm/audio/aec3.h"
 #include "sm/audio/agc1.h"
 #include "sm/audio/agc2.h"
 #include "sm/audio/agc_manager.h"
@@ -93,7 +94,11 @@ struct ChainConfig {
   // `GainControl` in kFixedDigital, the volume emulated by `CaptureLevels`
   // from 255, #242), and the NS is libwebrtc's (`ns::NoiseSuppressor`,
   // kHigh), which analyzes the capture before the AEC and suppresses after
-  // it, as APM does.
+  // it, as APM does. The echo canceller is libwebrtc's AEC3
+  // (`aec3::EchoCanceller3`, #240), fed and called as APM does: the render
+  // frame first, saturation checked on the capture after the pre-level
+  // adjustment, the stream delay set to 0 every frame, and the AGC1 volume
+  // changes flagged as echo path gain changes.
   bool apm_v2 = false;
   // With `apm_v2`: AGC2 (`agc2::GainController2` with its RNN VAD) instead
   // of AGC1.
@@ -113,6 +118,11 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   audio::EchoCancellerConfig ac;
   ac.sample_rate = fs;
   audio::EchoCanceller aec(ac);
+  // AEC3 is ~1 MB of state: on the heap, as the AGC1 objects below.
+  auto aec3_ptr = std::make_unique<audio::aec3::EchoCanceller3>(audio::aec3::Aec3Config{}, fs, 1, 1);
+  audio::aec3::EchoCanceller3& aec3 = *aec3_ptr;
+  const bool aec3_on = cc.aec && cc.apm_v2;
+  int last_applied_volume = -1;
   audio::NoiseSuppressorConfig nc;
   nc.sample_rate = fs;
   audio::NoiseSuppressor ns(nc);
@@ -164,6 +174,12 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   const size_t frame = static_cast<size_t>(fs / 100);
   for (size_t i = 0; i + frame <= r.out.size(); i += frame) {
     std::span<float> f(r.out.data() + i, frame);
+    if (aec3_on) {
+      // ProcessReverseStream: the render frame in the S16 range.
+      to_s16(std::span<const float>(c.far.data() + i, frame));
+      for (float& v : s16) v = std::clamp(v, -32768.0f, 32768.0f);
+      aec3.AnalyzeRender(std::span<const float>(s16));
+    }
     if (cc.hpf && cc.apm_v2) {
       hpf2.Process(f);
     } else if (cc.hpf) {
@@ -180,7 +196,17 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       from_s16(f);
     }
     if (cc.ns && cc.apm_v2) ns2.Analyze(f);
-    if (cc.aec) {
+    if (aec3_on) {
+      // An applied volume change is an echo path gain change, as APM's
+      // applied_input_volume_changed.
+      const int volume = agc1_on ? levels.GetAnalogMicGainLevel() : -1;
+      const bool level_change = agc1_on && last_applied_volume >= 0 && volume != last_applied_volume;
+      last_applied_volume = volume;
+      to_s16(f);
+      aec3.SetAudioBufferDelay(0);
+      aec3.ProcessCapture(std::span<float>(s16), level_change);
+      from_s16(f);
+    } else if (cc.aec) {
       aec.AnalyzeRender(std::span<const float>(c.far.data() + i, frame));
       aec.ProcessCapture(f);
     }
@@ -209,7 +235,8 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       agc.Process(f, v);
     }
   }
-  if (cc.aec) r.latency += aec.latency_samples();
+  // AEC3's block framer delays the capture by one 64-sample block.
+  if (cc.aec) r.latency += aec3_on ? audio::aec3::kBlockSize : aec.latency_samples();
   if (cc.ns) r.latency += cc.apm_v2 ? ns2.latency_samples() : ns.latency_samples();
   r.aec = aec.stats();
   return r;

@@ -406,6 +406,44 @@ SM_TEST(Session, TransportFeedbackIntervalFollowsTheLocalSendEstimate) {
   SM_EXPECT_NEAR(static_cast<double>(slow), 8, 2);
 }
 
+// Issue #217: Call::EnsureStarted starts ReceiveSideCongestionController's task
+// before the Call hears its start rate, so the generator's first Process runs on
+// its default 100 ms interval: libwebrtc's first feedback goes out at 100 ms,
+// then every 50 ms (at 300 kbps). Seed 1 of issue_120_rtx_payload_padding: the
+// first delay-based update is at 115 ms, then every 50 ms.
+SM_TEST(Session, TransportFeedbackFirstReportWaitsTheDefaultInterval) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  Session a(ca), b(cb);
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  auto a_audio = a.AddAudioSend(au);
+  b.AddAudioReceive(au, &dec);
+  Bytes frame(60, 7);
+  std::vector<int64_t> sent_at;
+  std::vector<std::pair<int64_t, Bytes>> link;  // 15 ms one-way delay.
+  uint64_t seen = 0;
+  for (int64_t t = 0; t < 400; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) a.SendAudio(a_audio, {960, frame, false}, now);
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) link.emplace_back(t + 15, std::move(o.bytes));
+    for (auto& [at, bytes] : link) {
+      if (at == t) b.OnPacket(bytes, now);
+    }
+    b.Process(now);
+    b.TakeOutgoing();
+    if (b.transport_feedback().stats().feedbacks > seen) {
+      seen = b.transport_feedback().stats().feedbacks;
+      sent_at.push_back(t);
+    }
+  }
+  SM_EXPECT_GE(sent_at.size(), static_cast<size_t>(6));
+  if (sent_at.size() < 6) return;
+  SM_EXPECT_EQ(sent_at[0], 100);
+  for (size_t i = 1; i < 6; ++i) SM_EXPECT_EQ(sent_at[i] - sent_at[i - 1], 50);
+}
+
 // RtpRtcpImpl2::OnSendingRtpFrame (#101): a report due within 100 ms is sent
 // ahead of a keyframe, not on the next Process tick.
 SM_TEST(Session, SendsADueSenderReportAheadOfAKeyframe) {
