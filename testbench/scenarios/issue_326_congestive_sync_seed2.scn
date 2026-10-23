@@ -1,0 +1,8 @@
+name issue_326_congestive_sync_seed2
+describe Yardstick for #326: issue_61_googcc_glue_congestive with lip sync on and seed 2, traced on both stacks (no expectations)
+duration 40s
+seed 2
+compare_seeds 1
+av_sync on
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
