@@ -124,6 +124,7 @@ One directive per line, and `#` starts a comment.
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
+| `send_rate_stats on\|off` | off | `on` takes the RTX/FEC share off the video encoder rate from per-type send rates as libwebrtc's `RtpSenderEgress::GetSendRates` keeps them (`RateStatistics`, 1 s): a repair stream that starts after 1.5 s without one counts at its rate since it started, not averaged over the second (#224). `off` averages every type over the last second |
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
 | `quality_scaling on\|off` | off | `on` runs libwebrtc's quality scaling (#84): `QualityScalerResource` on the encoder model's QP with `MAINTAIN_FRAMERATE` and the initial frame drop; the library picks the encoded resolution (`video.encode_height_mean`) |
 | `timing v1\|v2` | v2 (since #24) | v1 is the library's video receive timing (`VideoJitterEstimator`, `VideoTiming`, `FrameScheduler` with its 10 ms late-drop rule); v2 is libwebrtc's (`JitterEstimator`, `TimestampExtrapolator`, `VCMTiming`, and frame release as `VideoStreamBufferController`/`FrameDecodeTiming`: a late frame is skipped only when a later keyframe is decodable; #24) |
