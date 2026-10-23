@@ -160,7 +160,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"sync.av_offset_p95_ms", "95th percentile of the absolute A/V offset at each rendered frame (lip sync; audio and video calls only)"},
       {"sync.av_offset_max_ms", "Largest absolute A/V offset at a rendered frame"},
       {"cc.target_avg_kbps", "Average GCC target bitrate"},
-      {"cc.goodput_kbps", "Average media + repair bitrate delivered"},
+      {"cc.goodput_kbps", "Average bitrate of media delivered, each RTP sequence number counted once (original or RTX)"},
       {"cc.utilization_pct", "Delivered bitrate / usable capacity, over samples where the link is up and finite"},
       {"cc.queue_p95_ms", "95th percentile bottleneck queue delay (bufferbloat)"},
       {"cc.queue_max_ms", "Maximum bottleneck queue delay"},
@@ -623,6 +623,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // Per-sample window counters.
   int64_t w_send = 0, w_good = 0, w_frames = 0, w_conceal = 0, w_played = 0;
+  FirstDelivery first_delivery;  // goodput counts each media sequence number once (#329)
   double last_video_delay = 0;
   // Receiver-side burst tracking for the protection controller (a real
   // receiver would report this in RTCP XR); read when a report block arrives.
@@ -798,7 +799,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
       switch (w.kind) {
         case Kind::kAudio: {
-          w_good += wire;
+          if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
           int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
           audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
           audio_started = true;
@@ -807,7 +808,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case Kind::kVideo:
         case Kind::kRtx:
         case Kind::kFec: {
-          w_good += wire;
+          if (w.kind != Kind::kRtx) {
+            if (first_delivery.Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) w_good += wire;
+          } else if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
+            if (first_delivery.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1])))
+              w_good += wire;
+          }
           // The last media or RTX packet of a frame (RFC 4588 keeps the
           // original RTP timestamp) before it renders marks it complete.
           if (w.kind != Kind::kFec) {
