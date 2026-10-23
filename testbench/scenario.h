@@ -74,6 +74,7 @@ struct Scenario {
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
+  bool control_handler = false;  // `control_handler on|off`: libwebrtc's CongestionControlHandler (issue #204).
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = false;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync).

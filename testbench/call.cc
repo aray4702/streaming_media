@@ -463,6 +463,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.transport_overhead_bytes = kUdpIpOverhead;
     c.send_side.video_min = s.video_min;
     c.send_side.video_max = s.video_max;
+    c.send_side.control_handler = s.control_handler;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
     // the bench's packets are that size, so the overhead is too (issue #151).

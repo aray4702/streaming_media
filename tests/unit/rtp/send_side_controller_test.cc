@@ -322,3 +322,33 @@ SM_TEST(SendSideController, V2OverheadFollowsTheConfiguredPacketSizeAsLibwebrtc)
   SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
   SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256);
 }
+
+// `control_handler` (issue #204): RtpVideoSender::OnBitrateUpdated fixes the encoder target, with the
+// protection share sent in the last second, when an allocation arrives; the encoder keeps it until the
+// transport's CongestionControlHandler passes on the next update. Without the switch the share is read
+// live, as in VideoBudgetShrinksByTheMeasuredRepairShare.
+SM_TEST(SendSideController, ControlHandlerKeepsTheEncoderTargetUntilTheNextUpdate) {
+  for (bool handler : {false, true}) {
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(2000);
+    cfg.control_handler = handler;
+    SendSideController c(cfg);
+    c.ConfigureAllocation(DataRate::Zero(), true);
+    c.Start(Timestamp::Millis(0));
+    const int64_t before = c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps();
+    for (uint16_t i = 0; i < 12; ++i) {
+      c.Enqueue(Media(i, i % 4 == 3 ? PacketKind::kRtx : PacketKind::kVideo,
+                      i % 4 == 3 ? cc::PacketPriority::kRetransmission : cc::PacketPriority::kVideo, 500),
+                Timestamp::Millis(0));
+    }
+    for (int t = 0; t < 200; ++t) c.Process(Timestamp::Millis(t));
+    SM_EXPECT_NEAR(c.repair_share(), 0.25, 0.01);
+    SM_EXPECT_EQ(c.target().bps(), 2000000);  // No feedback: GoogCC's target has not moved.
+    const int64_t after = c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps();
+    if (handler) {
+      SM_EXPECT_EQ(after, before);
+    } else {
+      SM_EXPECT_NEAR(static_cast<double>(after), before * 0.75, 20000.0);
+    }
+  }
+}

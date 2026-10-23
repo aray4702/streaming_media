@@ -6,6 +6,7 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     unit/cc/bitrate_allocator_v2_test.cc
     unit/cc/bwe_test.cc
     unit/cc/congestion_window_pushback_test.cc
+    unit/cc/control_handler_test.cc
     unit/cc/delay_based_bwe_libwebrtc_test.cc
     unit/cc/encoder_bitrate_adjuster_test.cc
     unit/cc/goog_cc_network_control_test.cc
@@ -27,6 +28,7 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     BitrateEstimatorV2
     BitrateProber
     CongestionWindowPushback
+    ControlHandler
     DelayBwe
     DelayBweLibwebrtc
     DelayBweV2

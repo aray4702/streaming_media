@@ -31,6 +31,7 @@
 
 #include "sm/cc/bitrate_allocator_v2.h"
 #include "sm/cc/congestion_window_pushback.h"
+#include "sm/cc/control_handler.h"
 #include "sm/cc/outage_monitor.h"
 #include "sm/cc/pacer.h"
 #include "sm/cc/send_side_bwe.h"
@@ -58,6 +59,12 @@ struct SendSideConfig {
   // video encoder (libwebrtc FecControllerDefault::overhead_threshold_).
   double max_repair_share = 0.5;
   TimeDelta repair_window = TimeDelta::Seconds(1);
+  // The transport's CongestionControlHandler between GoogCC and the allocator (cc/control_handler.h,
+  // issue #204): the allocator, and with it the encoder target and its protection share, changes only
+  // when the handler passes an update on, and the encoder pauses while the pacer queue is above 2 s.
+  // Off: every GoogCC update reallocates and the encoder reads the live protection share (until the
+  // port is judged against libwebrtc as a whole, program.md 0.2).
+  bool control_handler = false;
   DataRate video_min = DataRate::KilobitsPerSec(30);
   DataRate video_max = DataRate::KilobitsPerSec(10000);
   // With the allocator (RtpVideoSender::OnBitrateUpdated): the packet size
@@ -79,6 +86,9 @@ struct SendRates {
   // (0 = none); `video_target` is already lowered to match. See
   // SendSideController::DropCapturedFrame().
   int frame_drop_interval = 0;
+  // `control_handler`: the last update passed on had a zero target (the pacer queue above 2 s), so the
+  // encoder drops every captured frame (VideoStreamEncoder::EncoderPaused).
+  bool encoder_paused = false;
 };
 
 // A datagram released by the pacer.
@@ -186,6 +196,10 @@ class SendSideController : public MetricsSource {
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
+  void PostTargetRate(Timestamp now);
+  void UpdateControlState(Timestamp now);
+  // The congestion-window reduce ratio the encoder takes: the one last passed on with the handler.
+  double reduce_ratio() const { return cfg_.control_handler ? reported_reduce_ratio_ : cwnd_.reduce_ratio(); }
   void ApplyPushback(SendRates& out) const;
   // `allocator v2`: the video allocation less the packet-overhead rate and the
   // protection share, at most the video maximum: the encoder target before the
@@ -203,6 +217,11 @@ class SendSideController : public MetricsSource {
   cc::CongestionWindowPushback cwnd_;
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
+  cc::CongestionControlHandler control_handler_;
+  // The reduce ratio of the last update passed on (BitrateAllocationUpdate::cwnd_reduce_ratio).
+  double reported_reduce_ratio_ = 0;
+  // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
+  DataRate video_encoder_target_;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;

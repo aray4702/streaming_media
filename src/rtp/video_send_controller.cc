@@ -69,7 +69,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   d.fps = fps;
   // As VideoStreamEncoder::OnFrame: the outage pause, then congestion-window
   // pushback (keyframes included), then the frame dropper (keyframes included).
-  if (paused_) {
+  if (paused_ || rates.encoder_paused) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
