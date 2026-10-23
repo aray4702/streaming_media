@@ -27,6 +27,10 @@ std::optional<RtpPacket> RestoreFromRtx(const RtpPacket& rtx, uint32_t media_ssr
 struct RtxConfig {
   uint32_t rtx_ssrc = 0;
   uint8_t rtx_payload_type = 97;
+  // RTPSender's rtx_payload_type_map_: a packet with `red_payload_type` (video
+  // RED, when ULPFEC is on) goes out with `rtx_red_payload_type` instead.
+  std::optional<uint8_t> red_payload_type;
+  uint8_t rtx_red_payload_type = 99;
   // libwebrtc's RtpPacketHistory (modules/rtp_rtcp/source/rtp_packet_history.cc, #76 group 2): a
   // packet enters when the pacer sends it (OnPacketSent), is kept for max(3 x RTT, 1 s) and
   // culled after three times that (or once `number_to_store` packets are held and the oldest
@@ -77,6 +81,7 @@ class RtxSender : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  uint8_t RtxPayloadType(const RtpPacket& original) const;
   struct Stored {
     std::optional<RtpPacket> packet;  // Empty: a hole left by a removed packet.
     Timestamp send_time = Timestamp::MinusInfinity();

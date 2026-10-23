@@ -203,13 +203,14 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   // order is VideoStreamEncoder's: the congestion-window drop (OnFrame), then
   // in MaybeEncodeVideoFrame the initial frame drop (DropDueToSize and
   // OnMaybeEncodeFrame), the pause (EncoderPaused) and the frame dropper.
-  if (paused_ && !cfg_.quality_scaling) {
+  const bool paused = paused_ || rates.encoder_paused;
+  if (paused && !cfg_.quality_scaling) {
     d.reason = DropReason::kPaused;
   } else if (session_.send_side().DropCapturedFrame()) {
     d.reason = DropReason::kCongestionWindow;
   } else if (cfg_.quality_scaling && QualityScalingDropsForSize(width, height, target, now)) {
     d.reason = DropReason::kSize;
-  } else if (paused_) {
+  } else if (paused) {
     d.reason = DropReason::kPaused;
   } else if (dropper_.ShouldDrop(fps)) {
     d.reason = DropReason::kFrameDropper;
