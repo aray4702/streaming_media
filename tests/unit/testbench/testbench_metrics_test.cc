@@ -416,3 +416,33 @@ SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRu
   SM_EXPECT_LT(rep.metrics.at("audio.time_to_first_ms"), 1000);
   SM_EXPECT_GT(rep.metrics.at("audio.jb_delay_p95_ms"), 0);
 }
+
+// Goodput counts each media sequence number once (#329): an RTX copy of a
+// packet that already arrived, or a link duplicate, is not new media.
+SM_TEST(TestbenchMetrics, FirstDeliveryCountsEachSequenceNumberOnce) {
+  FirstDelivery d;
+  SM_EXPECT_TRUE(d.Deliver(FirstDelivery::kVideo, 10));
+  SM_EXPECT_TRUE(d.Deliver(FirstDelivery::kVideo, 12));
+  SM_EXPECT_FALSE(d.Deliver(FirstDelivery::kVideo, 10));  // RTX after reordering
+  SM_EXPECT_TRUE(d.Deliver(FirstDelivery::kVideo, 11));   // late original
+  SM_EXPECT_FALSE(d.Deliver(FirstDelivery::kVideo, 11));
+  SM_EXPECT_TRUE(d.Deliver(FirstDelivery::kAudio, 10));   // streams are separate
+  // After a full wrap the same 16-bit value is a new packet.
+  for (uint32_t s = 13; s <= 65535 + 11; ++s) d.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>(s));
+  SM_EXPECT_TRUE(d.Deliver(FirstDelivery::kVideo, 12));
+  SM_EXPECT_FALSE(d.Deliver(FirstDelivery::kVideo, 12));
+}
+
+// The Tester's case: 5 ms jitter with reordering and no loss makes the
+// receiver NACK packets that are only late; their RTX copies are not goodput.
+SM_TEST(TestbenchMetrics, UtilizationExcludesResendsOfPacketsThatArrived) {
+  auto parsed = ParseScenario("name reorder\nduration 20s\nat 0s capacity=8000kbps delay=30ms jitter=5ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_EXPECT_GT(rep.metrics.at("net.rtx_kbps"), 100);
+  SM_EXPECT_LE(rep.metrics.at("cc.utilization_pct"), 100);
+  SM_EXPECT_LT(rep.metrics.at("cc.goodput_kbps"),
+               rep.metrics.at("net.video_kbps") + rep.metrics.at("net.audio_kbps") + 50);
+}
