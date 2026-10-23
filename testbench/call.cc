@@ -627,6 +627,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   const int64_t end_ms = s.duration.ms();
   int64_t next_frame_ms = 0;
+  // `encode_delay on`: frames still in the encoder, oldest first (issue #84).
+  struct PendingFrame {
+    Timestamp capture, done;
+    rtp::EncodedFrameReport report;
+    uint32_t rtp_ts;
+  };
+  std::deque<PendingFrame> encoding;
 
   // Sends what a session has ready onto its link; returns nothing to count
   // beyond the pacer-released bytes the caller tallies.
@@ -706,6 +713,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
 
     // --- Sender: video --------------------------------------------------------
+    // The encoder hands a frame to the library and the sender when it is done:
+    // at once, or after the encode-time model with `encode_delay on`.
+    auto frame_encoded = [&](const PendingFrame& f) {
+      video_ctl.OnEncoded(f.report, f.done);
+      frame_capture[f.rtp_ts] = f.capture;
+      frame_times[f.rtp_ts].capture = f.capture;
+      frame_times[f.rtp_ts].submitted = now;
+      const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
+      sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, now);
+    };
+    while (!encoding.empty() && encoding.front().done <= now) {
+      frame_encoded(encoding.front());
+      encoding.pop_front();
+    }
     if (s.video && t >= next_frame_ms) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
@@ -742,15 +763,17 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
         qp_sum += qp;
         height_sum += enc_h;
-        video_ctl.OnEncoded({DataSize::Bytes(bytes), key, qp}, now);
         if (key) ++keyframes_sent;
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
-        frame_capture[rtp_ts] = now;
-        frame_times[rtp_ts].capture = now;
-        frame_times[rtp_ts].submitted = now;
-        const auto frame = rtp::MakeFakeH264Frame(key, static_cast<size_t>(bytes));
-        sender.SendVideo(video_send, {rtp_ts, frame, key}, now);
+        const TimeDelta encode_time =
+            s.encode_delay ? TimeDelta::Micros(EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed)) : TimeDelta::Zero();
+        PendingFrame f{now, now + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts};
+        if (encode_time > TimeDelta::Zero()) {
+          encoding.push_back(f);
+        } else {
+          frame_encoded(f);
+        }
       }
     }
 

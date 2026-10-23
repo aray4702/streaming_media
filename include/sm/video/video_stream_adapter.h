@@ -17,11 +17,13 @@
 //     current maximum;
 //   - after a step it waits for the input frame size to change before taking
 //     another in the same direction (awaiting_frame_size_change_).
-// The other degradation preferences (BALANCED's frame-rate steps and
-// BalancedDegradationSettings, MAINTAIN_RESOLUTION) and the per-resource
-// bookkeeping of ResourceAdaptationProcessor are not ported: a camera call
-// uses MAINTAIN_FRAMERATE, and the quality scaler is the only resource wired
-// so far. BitrateConstraint allows every step when the encoder reports no
+// GetAdaptationDown / GetAdaptationUp compute a step without applying it and
+// ApplyAdaptation applies one, as libwebrtc's Adaptation objects do, so the
+// resource bookkeeping (rtp::VideoSendController's port of
+// ResourceAdaptationProcessor) can record a step it does not apply. The other
+// degradation preferences (BALANCED's frame-rate steps and
+// BalancedDegradationSettings, MAINTAIN_RESOLUTION) are not ported: a camera
+// call uses MAINTAIN_FRAMERATE. BitrateConstraint allows every step when the encoder reports no
 // resolution bitrate limits, which the test bench's encoder model does not.
 //
 // VideoAdapter is libwebrtc's api/video/video_adapter.cc AdaptFrameResolution
@@ -59,6 +61,17 @@ class VideoStreamAdapter {
   // The size of the last frame the encoder was given
   // (VideoStreamInputStateProvider::OnFrameSizeObserved); 0 = none yet.
   void OnFrameSizeObserved(int pixels) { frame_size_pixels_ = pixels; }
+  // A step: the restrictions and the resolution adaptation count it leads to
+  // (VideoAdaptationCounters; MAINTAIN_FRAMERATE has no frame-rate steps).
+  struct Adaptation {
+    Status status = Status::kLimitReached;
+    VideoSourceRestrictions restrictions;
+    int resolution_adaptations = 0;
+  };
+  Adaptation GetAdaptationDown() const;
+  Adaptation GetAdaptationUp() const;
+  // Applies a valid step computed on the current state.
+  void ApplyAdaptation(const Adaptation& a);
   // GetAdaptationDown / GetAdaptationUp, then ApplyAdaptation when valid.
   Status AdaptDown();
   Status AdaptUp();
@@ -68,7 +81,6 @@ class VideoStreamAdapter {
 
  private:
   struct AwaitingFrameSizeChange { bool pixels_increased; int frame_size_pixels; };
-  void Apply(const VideoSourceRestrictions& next, int counter_delta);
 
   int min_pixels_;
   int frame_size_pixels_ = 0;
