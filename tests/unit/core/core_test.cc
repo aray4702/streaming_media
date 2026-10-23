@@ -6,6 +6,7 @@
 #include "sm/core/event_log.h"
 #include "sm/core/fft.h"
 #include "sm/core/metrics.h"
+#include "sm/core/rate_statistics.h"
 #include "sm/core/random.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
@@ -358,4 +359,44 @@ SM_TEST(NetworkLink, TraceMarksOutageAndRandomLoss) {
   SM_ASSERT_EQ(link.trace().size(), 2u);
   SM_EXPECT_TRUE(link.trace()[0].outcome == sim::LinkOutcome::kDown);
   SM_EXPECT_TRUE(link.trace()[1].outcome == sim::LinkOutcome::kLost);
+}
+
+// libwebrtc's RateStatistics (rtc_base/rate_statistics.cc), as BitrateTracker
+// uses it: bytes in, bits per second out, over a 1 s window.
+SM_TEST(RateStatistics, ActiveWindowStartsAtTheFirstSample) {
+  RateStatistics r(1000, 8000.0f);
+  SM_EXPECT_FALSE(r.Rate(0).has_value());
+  r.Update(1000, 0);
+  // One sample in a window that is not yet full: no rate.
+  SM_EXPECT_FALSE(r.Rate(0).has_value());
+  SM_EXPECT_FALSE(r.Rate(50).has_value());
+  r.Update(1000, 99);
+  // 2000 bytes over the 100 ms since the first sample.
+  SM_EXPECT_EQ(*r.Rate(99), 160000);
+  // Once the window is full, the rate is over the whole second.
+  SM_EXPECT_EQ(*r.Rate(999), 16000);
+  // Buckets older than the window are forgotten.
+  SM_EXPECT_EQ(*r.Rate(1000), 8000);
+  SM_EXPECT_FALSE(r.Rate(1099).has_value());
+}
+
+SM_TEST(RateStatistics, RestartsAfterMoreThanOneAndAHalfWindowsWithoutSamples) {
+  RateStatistics r(1000, 8000.0f);
+  for (int64_t t = 0; t < 1000; t += 10) r.Update(100, t);
+  SM_EXPECT_EQ(*r.Rate(999), 80000);
+  // 2 s later the tracker is empty and its last sample is old: the window
+  // starts again at the new sample.
+  r.Update(1000, 3000);
+  r.Update(1000, 3049);
+  SM_EXPECT_EQ(*r.Rate(3049), 320000);
+}
+
+SM_TEST(RateStatistics, KeepsTheWindowStartWhenTheLastSampleIsRecent) {
+  RateStatistics r(1000, 8000.0f);
+  for (int64_t t = 0; t < 1000; t += 10) r.Update(100, t);
+  // 1.2 s after the last sample (under 1.5 windows): the window start stays,
+  // so the new samples count over the whole second.
+  r.Update(1000, 2190);
+  r.Update(1000, 2239);
+  SM_EXPECT_EQ(*r.Rate(2239), 16000);
 }

@@ -57,6 +57,7 @@ if(SM_WITH_CC)
     cc/frame_dropper.cc
     cc/encoder_bitrate_adjuster.cc
     cc/congestion_window_pushback.cc
+    cc/control_handler.cc
     cc/video_adaptation.cc
     cc/outage_monitor.cc)
   list(APPEND SM_SECTIONS cc)
