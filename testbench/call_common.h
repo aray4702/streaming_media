@@ -5,13 +5,42 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <limits>
 #include <utility>
 #include <vector>
 
 #include "scenario.h"
+#include "sm/core/seq_num.h"
 #include "sm/sim/network_link.h"
 
 namespace sm::testbench {
+
+// Goodput counts each media packet once (#329): the first delivery of an RTP
+// sequence number on a stream, as the original or as an RTX copy (RFC 4588
+// original sequence number). A copy whose original had already arrived (a
+// resend after reordering, RTX payload padding, a duplicate on the link) is
+// repair traffic and is not counted again.
+class FirstDelivery {
+ public:
+  enum Stream { kAudio = 0, kVideo = 1 };
+  // True the first time `seq` arrives on `stream`.
+  bool Deliver(Stream stream, uint16_t seq) {
+    State& st = streams_[stream];
+    const int64_t unwrapped = st.unwrap.Unwrap(seq);
+    int64_t& slot = st.slots[seq];
+    if (slot == unwrapped) return false;
+    slot = unwrapped;
+    return true;
+  }
+
+ private:
+  struct State {
+    SeqNumUnwrapper<uint16_t> unwrap;
+    std::vector<int64_t> slots = std::vector<int64_t>(65536, std::numeric_limits<int64_t>::min());
+  };
+  State streams_[2];
+};
 
 // Applies scenario link changes to an emulated link.
 struct LinkState {

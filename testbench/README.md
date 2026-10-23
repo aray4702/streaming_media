@@ -189,7 +189,11 @@ Link keys (any subset; unset keys keep their previous value):
   is late. It is libwebrtc's `RtpStreamsSynchronizer::GetStreamSyncOffsetInMs`
   (the `sync_offset_ms` stat) with exact capture times.
 - **Congestion control:**
-  - `cc.target_avg_kbps` and `cc.goodput_kbps`.
+  - `cc.target_avg_kbps` and `cc.goodput_kbps`. Goodput counts each media
+    RTP sequence number once, at its first delivery as the original or as an
+    RTX copy, so a resend of a packet that had already arrived (reordering,
+    RTX payload padding, a duplicate on the link) is not counted (#329).
+    `sm_compare` counts libwebrtc's side the same way.
   - `cc.utilization_pct`: goodput divided by the usable capacity, which is
     the link capacity or the media's maximum demand, whichever is lower.
   - Queue delay: `cc.queue_p95_ms`, `cc.queue_max_ms` and
