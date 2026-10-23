@@ -1,0 +1,7 @@
+name issue_61_googcc_glue_congestive_seed2
+describe issue_61_googcc_glue_congestive on seed 2, traced for both stacks by sm_compare (yardstick for #224: does libwebrtc detect the start-up overuse at about 3.6 s on every seed; no expect lines)
+seed 2
+compare_seeds 1
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps

@@ -226,10 +226,12 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
       "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,"
       "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms\n";
   auto num = [](int64_t v) { return v < 0 ? std::string() : std::to_string(v); };
+  // Ten significant digits: libwebrtc's arrival_ms is on the receiver's clock (about 1e8 ms), and the detector
+  // replay needs it to the millisecond (issue #224).
   auto real = [](double v) {
     if (std::isnan(v)) return std::string();
     char buf[32];
-    std::snprintf(buf, sizeof buf, "%.6g", v);
+    std::snprintf(buf, sizeof buf, "%.10g", v);
     return std::string(buf);
   };
   for (const auto& r : trace) {

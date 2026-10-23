@@ -331,14 +331,14 @@ SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumn
   trace[3].send_delta_ms = 5;
   trace[3].recv_delta_ms = 7.75;
   trace[3].send_ms = 3592;
-  trace[3].arrival_ms = 3659;
+  trace[3].arrival_ms = 100003659;  // libwebrtc's receiver clock: every digit is kept (issue #224).
   SM_EXPECT_EQ(BweTraceCsv(trace),
                "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,"
                "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms\n"
                "150000,delay_based,924666,overusing,,,,,,,,,,,\n"
                "150000,loss_based,900000,,13,40,decreasing,880000,5000000,,,,,,\n"
                "200000,target,900000,,,,,,,,,,,,\n"
-               "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,3659\n");
+               "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,100003659\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
