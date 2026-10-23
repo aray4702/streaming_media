@@ -882,7 +882,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
     uint32_t capturer = 0, queue = 0, rate = 0, cwnd = 0, encoder = 0;
-    int64_t bytes = 0, qp_sum = 0, encode_us_sum = 0;
+    int64_t bytes = 0, qp_sum = 0, encode_us_sum = 0, height_sum = 0;
   } vt_prev;
 
   std::function<void(int64_t)> tick = [&](int64_t t) {
@@ -1075,10 +1075,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           r.encoded_bytes = model.bytes - vt_prev.bytes;
           r.qp_sum = model.qp_sum - vt_prev.qp_sum;
           r.encode_us_sum = model.encode_us_sum - vt_prev.encode_us_sum;
+          r.height_sum = model.height_sum - vt_prev.height_sum;
           r.pacer_queue_ms = static_cast<double>(cs.pacer_delay_ms);
           vt_prev = {model.frames_captured, model.frames_encoded, vs.frames_dropped_by_capturer, vs.frames_dropped_by_encoder_queue,
                      vs.frames_dropped_by_rate_limiter, vs.frames_dropped_by_congestion_window,
-                     vs.frames_dropped_by_encoder, model.bytes, model.qp_sum, model.encode_us_sum};
+                     vs.frames_dropped_by_encoder, model.bytes, model.qp_sum, model.encode_us_sum, model.height_sum};
           rep.video_trace.push_back(r);
         }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;

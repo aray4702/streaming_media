@@ -7,7 +7,8 @@ video send path, in the same CSV for this library and for libwebrtc:
 
   t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-  dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean
+  dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
+  height_mean
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -15,8 +16,9 @@ congestion-window pushback -> dropped_congestion_window, paused encoder ->
 dropped_encoder_queue) and has no counterpart for dropped_capturer, the
 DropDueToSize path or dropped_encoder, which stay 0. qp_mean and
 encode_ms_mean (issue #84) come from the encoder model both stacks share
-(testbench/encoder_model.h); traces written before it lack them and read as
-0. CI publishes the traces
+(testbench/encoder_model.h), and height_mean is the mean encoded frame
+height (quality scaling, #84); traces written before them lack them and
+read as 0. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
 --trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
 
@@ -41,7 +43,7 @@ def parse(text):
     for r in csv.DictReader(io.StringIO(text)):
         row = {k: int(r[k]) for k in INTS}
         row["pacer_queue_ms"] = float(r["pacer_queue_ms"])
-        for k in ("qp_mean", "encode_ms_mean"):
+        for k in ("qp_mean", "encode_ms_mean", "height_mean"):
             row[k] = float(r.get(k) or 0)
         rows.append(row)
     return rows
@@ -67,6 +69,7 @@ def summarize(rows):
         # Means over encoded frames, weighting each second by its frames encoded.
         "qp_mean": sum(r["qp_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
         "encode_ms_mean": sum(r["encode_ms_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
+        "height_mean": sum(r["height_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
     }
 
 
@@ -82,7 +85,8 @@ def render(named):
             ("encoder target kbps (mean)", "encoder_target_kbps_mean"),
             ("allocator video target kbps (mean)", "alloc_target_kbps_mean"),
             ("paused/suspended seconds", "paused_seconds"), ("pacer queue max ms", "pacer_queue_ms_max"),
-            ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean")]
+            ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean"),
+            ("encoded height (mean)", "height_mean")]
     for label, key in rows:
         lines.append("%-32s" % label + "".join("%14s" % fmt(named[n][key]) for n in names))
     lines.append("dropped by reason")

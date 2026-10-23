@@ -204,6 +204,7 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[0].pacer_queue_ms = 12.54;
   trace[0].qp_sum = 24 * 33 + 12;  // Mean 33.5 over the 24 encoded frames.
   trace[0].encode_us_sum = 24 * 10000;
+  trace[0].height_sum = 24 * 360;
   trace[1].t_ms = 2000;
   trace[1].dropped_congestion_window = 2;
   trace[1].dropped_encoder_queue = 1;
@@ -211,9 +212,9 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   SM_EXPECT_EQ(VideoTraceCsv(trace),
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
                "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-               "encode_ms_mean\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00\n");  // No frame encoded: 0.
+               "encode_ms_mean,height_mean\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,360.0\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0.0\n");  // No frame encoded: 0.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
