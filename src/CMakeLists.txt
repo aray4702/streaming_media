@@ -18,7 +18,8 @@ if(SM_WITH_LOSS)
     loss/temporal_layers.cc
     loss/ulpfec.cc
     loss/ulpfec_tables.cc
-    loss/protection_controller.cc)
+    loss/fec_controller.cc
+    loss/fec_rate_table.cc)
   list(APPEND SM_SECTIONS loss)
 endif()
 

@@ -26,6 +26,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -37,6 +38,7 @@
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
+#include "sm/loss/fec_controller.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
@@ -243,8 +245,15 @@ class Session : public MetricsSource {
   // packetizer, or for tests of malformed payloads.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now, bool keyframe = false);
-  // FEC protection level for the next frames of a video stream.
+  // FEC protection level for the next frames of a video stream, for delta and
+  // key frames alike. With FEC on, the session sets it itself on each network
+  // estimate change (loss::FecControllerDefault, issue #29), which replaces this.
   void SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p);
+  // RtpVideoSender::SetEncodingData, on each encoder (re)configuration
+  // (VideoSendStreamImpl::OnEncoderConfigurationChanged): the resolution and
+  // temporal layers FecControllerDefault sizes the FEC for. Until the first
+  // call it assumes 704x576 and one layer.
+  void SetVideoEncodingData(VideoSendId id, int width, int height, int num_temporal_layers = 1);
 
   // --- Ingress ----------------------------------------------------------------
   // One datagram, RTP or RTCP (RFC 5761 demux by the payload-type byte),
@@ -282,6 +291,7 @@ class Session : public MetricsSource {
   const SendSideController& send_side() const { return send_; }
   SendSideController& send_side() { return send_; }
   const RtpSender& video_sender(VideoSendId id) const { return *video_send_[static_cast<size_t>(id.index)].sender; }
+  const loss::FecControllerDefault& fec_controller(VideoSendId id) const { return *video_send_[static_cast<size_t>(id.index)].fec; }
   const RtpSender& audio_sender(AudioSendId id) const { return *audio_send_[static_cast<size_t>(id.index)].sender; }
   const RtpReceiver& video_receiver(VideoRecvId id) const { return *video_recv_[static_cast<size_t>(id.index)].receiver; }
   const RtpReceiver& audio_receiver(AudioRecvId id) const { return *audio_recv_[static_cast<size_t>(id.index)].receiver; }
@@ -295,6 +305,11 @@ class Session : public MetricsSource {
     std::unique_ptr<RtpSender> sender;
     DataRate nominal_rate = DataRate::Zero();
     DataRate allocation_rate = DataRate::Zero();
+    // Video: RtpVideoSender's FecControllerDefault, and the times of the frames
+    // sent in the last second for the sent frame rate it takes.
+    std::unique_ptr<loss::FecControllerDefault> fec;
+    std::deque<Timestamp> frame_times;
+    Timestamp first_frame = Timestamp::MinusInfinity();
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;
@@ -319,6 +334,15 @@ class Session : public MetricsSource {
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
   void EnqueueSenderPackets(RtpSender& s, Timestamp now);
+  // SendVideoChunks with the encoded frame's size, for FecControllerDefault::UpdateWithEncodedData.
+  void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
+                       Timestamp now, bool keyframe, size_t encoded_size);
+  // RtpVideoSender::OnBitrateUpdated's FEC half: on each network estimate change
+  // (CongestionControlHandler::GetUpdate: the target, the loss or the RTT), each
+  // video stream's FecControllerDefault sets the protection of the next frames.
+  void MaybeUpdateFecRates(Timestamp now);
+  // SendStatisticsProxy::GetSendFrameRate: frames sent in the last second.
+  static int SentFrameRate(SendStream& v, Timestamp now);
   void UpdateSenderState();
   void Emit(SessionEvent e) { events_.push_back(e); }
   RtpSender* SenderForSsrc(uint32_t ssrc);
@@ -348,6 +372,13 @@ class Session : public MetricsSource {
   void UpdateTransportFeedbackRate();
   void ProcessTransportFeedback(Timestamp now);
   DataRate last_target_ = DataRate::Zero();
+  // The network estimate the FEC controllers last took (target, fraction lost 0-255, RTT).
+  struct FecEstimate {
+    DataRate target = DataRate::Zero();
+    uint8_t fraction_loss = 0;
+    TimeDelta rtt = TimeDelta::Zero();
+  };
+  std::optional<FecEstimate> last_fec_estimate_;
   TimeDelta rtt_ = TimeDelta::Millis(100);
   // Last report block per reported SSRC, for the loss between two reports (RtpTransportControllerSend::
   // OnReceivedRtcpReceiverReportBlocks).

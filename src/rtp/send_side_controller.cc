@@ -97,6 +97,12 @@ void SendSideController::Start(Timestamp now) { Apply(gcc_.Start(now), now); }
 
 void SendSideController::EnablePeriodicAlrProbing(bool enable) { gcc_.EnablePeriodicAlrProbing(enable); }
 
+DataRate SendSideController::VideoPayloadRate() const {
+  if (!allocation_configured_) return DataRate::Zero();
+  const DataRate alloc = allocator_.allocation("video");
+  return std::max(DataRate::Zero(), alloc - OverheadRate(alloc, cfg_.max_packet_size + cfg_.transport_overhead_bytes));
+}
+
 void SendSideController::SetPacingFactor(double factor) {
   gcc_.SetPacingFactor(factor);
   // OnStreamsConfig returns the new pacer config at once (GetPacingRates).

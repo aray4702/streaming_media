@@ -12,7 +12,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 3.6 | [Temporal scalability (L1T2/L1T3)](3-loss/3.6-temporal-layers.md) | 4 | 2 | 2 | pass | pass | pass | pass |
-| 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 6 | 1 | 2 | pass | pass | pass | pass |
+| 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 0 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 
 ## 4. Jitter, reordering and timing
 
@@ -68,7 +68,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | pass | pass | pass | pass |
+| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 8. Synchronization
 
