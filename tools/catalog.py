@@ -792,8 +792,9 @@ ALGORITHMS = [
                "issue #5): the encoder is configured with the target lowered by the measured overshoot. It runs in "
                "VideoSendController and is on by default as in M157 (RateControlSettings bitrate_adjuster = true, "
                "adjuster_use_headroom = true; `bitrate_adjuster off` in a scenario). The link allocation is "
-               "VideoSendStreamImpl::OnBitrateUpdated's, which equals the encoder target, so the adjuster's headroom "
-               "is only what the encoder allocation adds (zero here). Remaining differences (issue #5): the media "
+               "VideoSendStreamImpl::OnBitrateUpdated's (issue #326, `link_headroom on|off`, on): the encoder target "
+               "less the protection, taken before the target is capped at the encoder maximum, so a video allocation "
+               "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. Remaining differences (issue #5): the media "
                "utilization factor comes from the detector, not RateUtilizationTracker "
                "(rtc_base/rate_utilization_tracker); one stream with one temporal layer; rates adjusted per captured "
                "frame, not per bitrate update. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -802,7 +803,12 @@ ALGORITHMS = [
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframe bytes entered an uncapped "
                       "bucket and a run of keyframe requests made the dropper drop every delta frame for seconds. "
                       "Issue #5 ([fix record](../../fixes/5-frame-dropper-port.md)): replaced by the libwebrtc "
-                      "port (3 s cap, rescale on a rate drop); the 1.5 s cap and the keyframe exemption are gone."),
+                      "port (3 s cap, rescale on a rate drop); the 1.5 s cap and the keyframe exemption are gone. "
+                      "Issue #326: the link allocation was the capped encoder target, so above the 2.5 Mbps maximum "
+                      "the adjuster had no headroom and gave the encoder 2266-2270 kbps where libwebrtc gives "
+                      "2404-2466 (issue_326_congestive_sync seeds 3 and 5, t = 3 s, parity-data-pr/pr/327); the "
+                      "protection returned to the allocator also came from the capped target. Both now follow "
+                      "rtp_video_sender.cc:885-939 and video_send_stream_impl.cc:902-914."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
