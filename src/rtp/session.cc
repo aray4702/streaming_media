@@ -350,14 +350,17 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       if (a.ssrc == sr.ssrc) a.receiver->OnSenderReport(sr, now);
     }
   }
+  if (!in.report_blocks.empty()) last_report_block_ = now;
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
+    rtt_sum_ = rtt_sum_ + rtt_;
+    ++rtt_count_;
     send_.OnRtt(rtt_);
     for (auto& v : video_recv_) v.receiver->OnRtt(rtt_);
     for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
-    for (auto& v : video_send_) v.sender->SetRtt(rtt_, now);
-    for (auto& a : audio_send_) a.sender->SetRtt(rtt_, now);
+    // The packet history takes its RTT from the 1 s periodic update and from
+    // each NACK (PeriodicRttUpdate, the NACK loop below), not from every sample.
     SessionEvent e;
     e.type = SessionEventType::kRttUpdated;
     e.time = now;
@@ -388,6 +391,13 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   }
   for (const auto& n : in.nacks) {
     if (RtpSender* s = SenderForSsrc(n.media_ssrc)) {
+      if (!n.seqs.empty()) {
+        // ModuleRtpRtcpImpl2::OnReceivedNack: the RTT of the last periodic update,
+        // else the average of every sample; RTPSender::OnReceivedNack adds 5 ms.
+        TimeDelta rtt = periodic_rtt_;
+        if (rtt.IsZero() && rtt_count_ > 0) rtt = TimeDelta::Millis((rtt_sum_ / rtt_count_).ms());
+        s->SetRtt(TimeDelta::Millis(5) + rtt, now);
+      }
       s->OnNack(n.seqs, now, rtt_);
       EnqueueSenderPackets(*s, now);
     } else {
@@ -411,8 +421,26 @@ void Session::UpdateSenderState() {
   if (s) rtcp_.SetSenderState(s->SenderState());
 }
 
+// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s): while
+// sending, the last RTT sample goes to the packet history if a report block
+// arrived within the interval (RTCPReceiver::OnPeriodicRttUpdate).
+void Session::PeriodicRttUpdate(Timestamp now) {
+  if (!HasSendStreams()) return;
+  if (!next_rtt_update_.IsFinite()) next_rtt_update_ = now + kRttUpdateInterval;
+  while (now >= next_rtt_update_) {
+    const Timestamp check_since = next_rtt_update_ - kRttUpdateInterval;
+    if (have_rtt_ && rtt_count_ > 0 && last_report_block_ > check_since) {
+      periodic_rtt_ = TimeDelta::Millis(rtt_.ms());
+      for (auto& v : video_send_) v.sender->SetRtt(periodic_rtt_, now);
+      for (auto& a : audio_send_) a.sender->SetRtt(periodic_rtt_, now);
+    }
+    next_rtt_update_ += kRttUpdateInterval;
+  }
+}
+
 void Session::Process(Timestamp now) {
   Start(now);
+  PeriodicRttUpdate(now);
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
     RtpReceiver& r = *v.receiver;
@@ -502,6 +530,7 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
+  if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
   if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
   if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
   if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);

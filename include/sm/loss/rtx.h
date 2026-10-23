@@ -58,6 +58,8 @@ class RtxSender : public MetricsSource {
   std::vector<RtpPacket> OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt);
   // A measured RTT (RtpPacketHistory::SetRtt): lengthens the retention and culls.
   void SetRtt(TimeDelta rtt, Timestamp now);
+  // The RTT the history holds (minus infinity until the first SetRtt).
+  TimeDelta rtt() const { return rtt_; }
   // The pacer sent the RTX packet for `original_seq` (RtpPacketHistory::MarkPacketAsSent).
   void MarkPacketAsSent(uint16_t original_seq, Timestamp now);
   // The peer acknowledged these sequence numbers (RtpPacketHistory::CullAcknowledgedPackets).
