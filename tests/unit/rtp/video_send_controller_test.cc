@@ -319,3 +319,47 @@ SM_TEST(VideoSendController, QualityScalingInitialDropRunsBeforeThePause) {
   SM_EXPECT_TRUE(d.encode);
   SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
 }
+
+SM_TEST(VideoSendController, CpuOveruseAdaptsASlowEncoderDown) {
+  // EncodeUsageResource on OveruseFrameDetector (issue #84 step 5): every frame
+  // takes a whole frame interval from OnCapturedFrame to OnEncoded (100% usage,
+  // above the 85% threshold). After 120 samples and two overusing checks in a
+  // row it adapts down one step: 3/5 of 640x360, which VideoAdapter makes
+  // 480x270. QP 30 sits between the quality scaler's thresholds.
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  int t = 0, down_at = -1;
+  for (; t < 30000 && down_at < 0; t += 33) {
+    const auto d = c.OnCapturedFrame({640, 360}, At(t));
+    if (d.height < 360) down_at = t;
+    // 1000 bytes a frame (240 kbps) stays under the start rate: no frame dropper drops.
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 30}, At(t + 33));
+  }
+  SM_EXPECT_GE(down_at, 5000);  // Not before 120 samples and two checks.
+  SM_EXPECT_EQ(c.OnCapturedFrame({640, 360}, At(t)).height, 270);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 1);
+  // The new resolution resets the estimate (OveruseFrameDetector::ResetAll).
+  SM_EXPECT_FALSE(c.overuse_detector().encode_usage_percent().has_value());
+}
+
+SM_TEST(VideoSendController, CpuUnderuseDoesNotUndoTheQualityScalersSteps) {
+  // ResourceAdaptationProcessor::OnResourceUnderuse: the initial frame drop's
+  // two steps belong to the quality scaler, so an instant encoder's CPU
+  // underuse (usage 0%, after the 40 s ramp-up delay) is not the most limited
+  // resource and may not adapt up (kNotMostLimitedResource).
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  int height = 0;
+  for (int t = 0; t < 90000; t += 33) {
+    const auto d = c.OnCapturedFrame({1280, 720}, At(t));
+    height = d.height;
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1500), d.keyframe, 30}, At(t));
+  }
+  SM_EXPECT_EQ(height, 360);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  SM_EXPECT_EQ(c.overuse_detector().encode_usage_percent().value_or(-1), 0);
+}
