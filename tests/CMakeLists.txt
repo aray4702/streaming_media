@@ -29,6 +29,7 @@ if(SM_WITH_LOSS)
       unit/loss/red_test.cc
       unit/loss/rtcp_feedback_test.cc
       unit/loss/temporal_layers_test.cc
+      unit/loss/ulpfec_test.cc
     SUITES
       Fec
       KeyframeRequest
@@ -39,6 +40,7 @@ if(SM_WITH_LOSS)
       RtcpFeedback
       Rtx
       TemporalLayers
+      Ulpfec
   )
   sm_add_test_exe(sm_e2e_loss LABEL e2e DEPS sm::loss
     SOURCES

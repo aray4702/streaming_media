@@ -24,7 +24,7 @@ cmake --build out/compare -j 4 --target sm_apm_compare   # prints the table afte
 | Noise suppressor | `NoiseSuppressor`: Wiener filter, decision-directed SNR, 18 dB floor | `ns/` at `kHigh` (18 dB), the level `WebRtcVoiceEngine::ApplyOptions` sets |
 | Gain control | `AutomaticGainControl` (AGC2-style adaptive digital) + limiter | AGC1 `kAdaptiveAnalog`, the desktop default in `ApplyOptions`, with APM's analog mic gain emulation (no device volume in a simulation); and AGC2 adaptive digital at its defaults |
 | VAD | `Vad` | `webrtc::CreateVad(kVadNormal)` (`common_audio/vad`); APM itself no longer runs a VAD |
-| Transient suppressor | `TransientSuppressor` | none: M157's `audio_processing_impl.cc` has no transient suppression (the config field is deprecated) |
+| Transient suppressor | `TransientSuppressor`, off by default since #243 (`enabled = false`, as libwebrtc's deprecated config) | none: M157's `audio_processing_impl.cc` has no transient suppression (the config field is deprecated) |
 
 The chains match the e2e tests in `tests/e2e/audio_e2e_test.cc`: the
 high-pass filter runs first on every case, the double-talk case adds noise
@@ -100,8 +100,9 @@ covers the call metrics only). Read with about 1 dB as a tie:
   libwebrtc's desktop default drives the microphone volume (AGC1 analog);
   ours is digital only.
 - **VAD: no gap** on this signal.
-- **Transient suppressor: a difference in kind.** libwebrtc M157 has none
-  in APM; ours is extra.
+- **Transient suppressor: off by default, as libwebrtc** (#243). libwebrtc
+  M157 has none in APM; ours stays as an explicit opt-in
+  (`TransientSuppressorConfig::enabled`).
 
 ## Caveats
 

@@ -51,7 +51,7 @@ ALGORITHMS = [
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
     dict(id="3.2", slug="fec", title="Forward error correction (XOR, ULPFEC/FlexFEC style)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
-         headers=["loss/fec.h"], unit=["Fec"], e2e=["E2E_Fec"],
+         headers=["loss/fec.h", "loss/ulpfec.h"], unit=["Fec", "Ulpfec"], e2e=["E2E_Fec"],
          bench=["loss/FecEncode_10pkt_frame_50pct", "loss/FecDecode_RecoverOne", "loss/Q_Fec_5pct_rtt300"],
          scenario="Same video stream at 150 ms one-way delay (NACK disabled): random 5% loss with block masks, and "
                   "Gilbert-Elliott bursty loss comparing interleaved against block masks. Frames must be complete "
@@ -60,8 +60,20 @@ ALGORITHMS = [
                "Recovery is iterative (peeling decoder): every recovered packet is fed back, which can complete "
                "other parity equations. Masks are 64-bit, so groups are capped at 48 packets. The wire format is "
                "this library's own (documented in the header), not RFC 8627 FlexFEC; the masking and recovery "
-               "logic is the same.",
-         verification="A unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
+               "logic is the same. "
+               "Issue #29 replaces that format with ULPFEC (RFC 5109) over RED (RFC 2198), ported from libwebrtc M157 "
+               "(`forward_error_correction.cc`, `forward_error_correction_internal.cc`, `ulpfec_header_reader_writer.cc`, "
+               "`ulpfec_generator.cc`, `ulpfec_receiver.cc`): `loss/ulpfec.h`, with libwebrtc's random and bursty "
+               "packet mask tables (read from the pinned prebuilt libwebrtc, as `reference/` has only their headers), "
+               "interleaved masks above 12 packets, Q8 protection factors, kMinMediaPackets 4 above protection 80 and "
+               "kMaxExcessOverhead 50. Its first PR adds the module only; the session layer still sends the old format "
+               "until the next step of #29 switches it over and removes `loss/fec.h`.",
+         verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
+                      "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
+                      "the generator's block rules and RED wrapping, and a generator-to-receiver run with 5% loss. The "
+                      "bursty tables recover every run of up to m consecutive losses for all (k, m) up to 12, as "
+                      "`fec_private_tables_bursty.h` states; the test fails if the random table is used in their place. "
+                      "XOR FEC: a unit test initially expected 2 recoveries but the decoder recovered 3: a packet was "
                       "rebuilt from parity before its own late arrival, which is correct, so the expectation was "
                       "fixed."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
@@ -428,8 +440,16 @@ ALGORITHMS = [
                "reordered packet moves the window start back and is reported again, no gap older than 0x7FFE is "
                "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
                "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "
-               "`tcc` switch were deleted in #167.",
-         verification="No defects found; maximum arrival-time error 249 us."),
+               "`tcc` switch were deleted in #167. "
+               "The session sends the first periodic feedback after the generator's default 100 ms, "
+               "and the interval from the local send estimate applies from then on: "
+               "`Call::EnsureStarted` (call/call.cc) starts the task that runs "
+               "`ReceiveSideCongestionController::MaybeProcess` before the Call hears its start rate, and "
+               "`TransportSequenceNumberFeedbackGenenerator::Process` returns the delay to its next run (#217).",
+         verification="No defects found; maximum arrival-time error 249 us. Issue #217: the first feedback went out "
+                      "at 50 ms where libwebrtc's goes out at 100 ms, so the first probe estimate came from the first "
+                      "cluster alone (`issue_120_rtx_payload_padding` seed 1: 913 kbps at 65 ms, libwebrtc 1608 at "
+                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
@@ -543,7 +563,11 @@ ALGORITHMS = [
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
                "`issue_76_tcc_v2_high_jitter` (4.6; restored to `< 300` by #24). Provisional locks (PR #186, Owner 2026-10-20): "
                "`issue_53_cwnd_pushback` `video.render_fps` (`>= 14` under timing v1; restored to `>= 22` by #24) and "
-               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217).",
+               "`issue_120_rtx_payload_padding` `net.rtx_kbps >= 330` (was 380; libwebrtc 451, ours 344; tracked to #217; "
+               "restored to 380 by #217's first-feedback timing, see 5.1). Provisional lock (PR #226, Owner 2026-10-22): "
+               "`issue_5_adjuster_default` `cc.queue_over_200ms_pct < 30` (was `< 13`; ours 26.55 on seed 1 with #217's "
+               "first-feedback timing and #272's call-start probe; 10-seed mean 13.84, libwebrtc 16.10, worst seed 36.0; "
+               "tracked to #217).",
          verification="Covered by the 5.2 and 5.3 fixes. Pushback (issue #53, "
                       "[fix record](../../fixes/53-cwnd-pushback.md)): SendHistory counted packets of a lost "
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
@@ -1033,12 +1057,15 @@ ALGORITHMS = [
          bench=["audio/TransientSuppressor_10ms"],
          scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
                   "compared with and without suppression.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels. "
+               "Keeping it as an opt-in (`enabled = true`) for later stages is an Owner decision (#243, 2026-10-22).",
          verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
                       "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
                       "first millisecond, which holds most of a click's energy; attack is now instant. (3) A "
                       "60 ms envelope still held the speech level right after a word, so a 4 ms envelope (onset "
-                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB."),
+                      "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB. #243: off by default "
+                      "as libwebrtc (`TransientSuppressor.OffByDefaultAsLibwebrtc`: the audio passes unchanged); "
+                      "the tests that measure it opt in with `enabled = true`."),
     dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
          problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
                    "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
