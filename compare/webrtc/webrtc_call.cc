@@ -369,7 +369,21 @@ class ModelEncoder final : public w::VideoEncoder {
       ++m_->keyframes;
       m_->last_key_us = capture_us;
     }
-    cb_->OnEncodedImage(img, &info);
+    if (m_->s->encode_delay && encode_us > 0) {
+      // `encode_delay on` (issue #84 step 5): the encoder takes the model's
+      // encode time, so the encoded callback comes that much later, on the
+      // encoder queue, as an asynchronous encoder's would. VideoStreamEncoder
+      // then measures the time (OveruseFrameDetector's SendProcessingUsage1
+      // reads the clock at OnEncodedImage) and the frame is sent at that time.
+      std::weak_ptr<bool> alive = alive_;
+      w::TaskQueueBase::Current()->PostDelayedHighPrecisionTask(
+          [this, alive, img, info]() mutable {
+            if (alive.lock() && cb_) cb_->OnEncodedImage(img, &info);
+          },
+          w::TimeDelta::Micros(encode_us));
+    } else {
+      cb_->OnEncodedImage(img, &info);
+    }
     return WEBRTC_VIDEO_CODEC_OK;
   }
   EncoderInfo GetEncoderInfo() const override {
@@ -394,6 +408,7 @@ class ModelEncoder final : public w::VideoEncoder {
   VideoModel* m_;
   w::EncodedImageCallback* cb_ = nullptr;
   uint32_t rate_bps_ = 0;
+  std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
 };
 
 class ModelDecoder final : public w::VideoDecoder {

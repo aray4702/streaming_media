@@ -70,14 +70,19 @@ struct Scenario {
   int video_width = 1280, video_height = 720;  // `video_size <W>x<H>`: the captured resolution (issue #84).
   double video_complexity = 1;  // `video_complexity <x>`: content for the encoder's QP model (testbench/encoder_model.h).
   double encoder_speed = 1;     // `encoder_speed <x>`: CPU speed for the encode-time model (testbench/encoder_model.h).
+  // `encode_delay on|off`: the encoder takes the encode-time model's time, so a frame reaches the
+  // library and the sender that much after its capture, on both stacks (issue #84 step 5: what
+  // libwebrtc's CPU overuse detector measures). Off: encoding is instant, as before.
+  bool encode_delay = false;
   size_t video_max_payload = 1458 - 12;  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257).
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
-  // `quality_scaling on|off`: libwebrtc's QualityScalerResource with MAINTAIN_FRAMERATE and the
-  // initial frame drop, on the encoder model's QP (issue #84 step 4; off by default until judged
-  // against libwebrtc, as the port's switches were).
+  // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
+  // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
+  // encode time (issue #84 steps 4 and 5; off by default until judged against libwebrtc, as the
+  // port's switches were).
   bool quality_scaling = false;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = false;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync).

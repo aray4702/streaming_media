@@ -36,15 +36,34 @@
 // Factor are unset by default) and the dropped frame kept as `pending_frame_`.
 // With quality scaling the drop checks run in VideoStreamEncoder's order:
 // congestion window (OnFrame), initial frame drop, outage pause, frame dropper.
-// CPU overuse and the other degradation preferences are not wired yet. The
-// frame dropper is libwebrtc's, applied to keyframes too (issue #5).
+// The same switch adds libwebrtc's EncodeUsageResource (issue #84 step 5): an
+// encoder reports enable_cpu_overuse_detection by default, so with
+// MAINTAIN_FRAMERATE VideoStreamEncoderResourceManager::ConfigureEncodeUsageResource
+// starts it with the encoder (encode_usage_resource.cc). cc::CpuOveruseDetector
+// version 2 (OveruseFrameDetector, a software encoder's CpuOveruseOptions,
+// target frame rate = the codec's maximum) takes each encoded frame's start in
+// OnCapturedFrame and its completion in OnEncoded, so its encode time is the
+// time between the two calls (SendProcessingUsage1 measures on the clock); its
+// overuse adapts the resolution down and its underuse up. The two resources go
+// through a port of call/adaptation/resource_adaptation_processor.cc: each
+// keeps the restrictions it last asked for, an adapt-down is always applied,
+// and an adapt-up only for the resource that set the most adaptations (shared
+// with none), so CPU underuse cannot undo the quality scaler's steps or the
+// reverse. The initial frame drop counts as the quality scaler's
+// (MaybeInitializePixelLimitResource / OnFrameDroppedDueToSize). OnEncoded must
+// be called for every frame the decision allowed, in order: the controller
+// pairs them by count, where libwebrtc uses the RTP timestamp.
+// The other degradation preferences are not wired yet. The frame dropper is
+// libwebrtc's, applied to keyframes too (issue #5).
 #pragma once
 
 #include <cstdint>
 #include <deque>
+#include <optional>
 
 #include "sm/cc/encoder_bitrate_adjuster.h"
 #include "sm/cc/frame_dropper.h"
+#include "sm/cc/video_adaptation.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
@@ -75,8 +94,9 @@ struct VideoSendControllerConfig {
   // a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last one it
   // passed on is ignored. 0 = off (the v1 behaviour; `keyframe v2` turns it on).
   TimeDelta min_keyframe_request_interval = TimeDelta::Zero();
-  // QualityScalerResource with MAINTAIN_FRAMERATE and the initial frame drop
-  // (see above). Off = the v1 behaviour: the captured size is encoded as is.
+  // QualityScalerResource and EncodeUsageResource with MAINTAIN_FRAMERATE and
+  // the initial frame drop (see above). Off = the v1 behaviour: the captured
+  // size is encoded as is.
   bool quality_scaling = false;
   // EncoderInfo::ScalingSettings: H.264's QP thresholds (QualityScalingExperiment's
   // default 24/37) and kDefaultMinPixelsPerFrame.
@@ -125,6 +145,7 @@ class VideoSendController : public MetricsSource {
   const cc::EncoderBitrateAdjuster& bitrate_adjuster() const { return adjuster_; }
   const video::QualityScaler& quality_scaler() const { return scaler_; }
   const video::VideoStreamAdapter& stream_adapter() const { return stream_adapter_; }
+  const cc::CpuOveruseDetector& overuse_detector() const { return overuse_; }
   bool paused() const { return paused_; }
   // VideoStreamEncoder::GetInputFramerateFps: the rate of captured frames over
   // the last 2970 ms (FrameCadenceAdapter's RateStatistics), or the configured
@@ -137,8 +158,21 @@ class VideoSendController : public MetricsSource {
   Session& session_;
   cc::FrameDropper dropper_;
   cc::EncoderBitrateAdjuster adjuster_;
-  // Quality scaling (cfg_.quality_scaling).
-  void OnQualityScalerSignal(video::QualityScaler::Signal signal);
+  // Quality scaling and CPU adaptation (cfg_.quality_scaling).
+  enum Resource { kQualityResource = 0, kCpuResource = 1, kNumResources = 2 };
+  // ResourceAdaptationProcessor's adaptation_limits_by_resources_ entry.
+  struct ResourceLimit {
+    video::VideoSourceRestrictions restrictions;
+    int adaptations = 0;  // VideoAdaptationCounters::Total().
+  };
+  void OnQualityScalerSignal(video::QualityScaler::Signal signal, Timestamp now);
+  void OnCpuSignal(cc::CpuOveruseDetector::Signal signal, Timestamp now);
+  // ResourceAdaptationProcessor::OnResourceOveruse / OnResourceUnderuse.
+  void OnResourceOveruse(Resource r, Timestamp now);
+  void OnResourceUnderuse(Resource r, Timestamp now);
+  // VideoStreamAdapter::ApplyAdaptation with `r` as the reason, then the
+  // processor's OnVideoSourceRestrictionsUpdated and the sink wants.
+  void ApplyAdaptation(const video::VideoStreamAdapter::Adaptation& a, Resource r, Timestamp now);
   bool QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now);
   video::QualityScaler scaler_;
   video::VideoStreamAdapter stream_adapter_;
@@ -146,6 +180,10 @@ class VideoSendController : public MetricsSource {
   int initial_framedrop_ = 0;  // InitialFrameDropper::initial_framedrop_.
   int configured_width_ = 0, configured_height_ = 0;  // The encoder's send_codec_ size.
   uint64_t adapt_downs_ = 0, adapt_ups_ = 0;
+  cc::CpuOveruseDetector overuse_;
+  std::optional<ResourceLimit> limits_[kNumResources];
+  uint32_t encodes_started_ = 0, encodes_completed_ = 0;  // Pair OnFrameCaptured with OnFrameSent.
+  uint64_t cpu_adapt_downs_ = 0, cpu_adapt_ups_ = 0, adapt_ups_not_most_limited_ = 0;
   // RateStatistics (window 2970 ms, scale 1000) over captured frames.
   void UpdateFrameRate(Timestamp now);
   std::deque<int64_t> frame_times_ms_;
