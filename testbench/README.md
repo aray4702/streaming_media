@@ -115,7 +115,7 @@ One directive per line, and `#` starts a comment.
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate |
-| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | NetEq v2 (the default) runs only at 8, 16, 32 and 48 kHz and, as libwebrtc, discards the audio of any other rate (#256) |
+| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | The capture rate. The codec, RTP clock and NetEq run at it at 8, 16, 32 and 48 kHz; at 12, 24 and 44.1 kHz at Opus's 48 kHz clock, as libwebrtc resamples the capture to the encoder (#298) |
 | `video_fps <n>` | 30 | |
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
@@ -125,6 +125,7 @@ One directive per line, and `#` starts a comment.
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
+| `quality_scaling on\|off` | off | `on` runs libwebrtc's quality scaling (#84): `QualityScalerResource` on the encoder model's QP with `MAINTAIN_FRAMERATE` and the initial frame drop; the library picks the encoded resolution (`video.encode_height_mean`) |
 | `timing v1\|v2` | v2 (since #24) | v1 is the library's video receive timing (`VideoJitterEstimator`, `VideoTiming`, `FrameScheduler` with its 10 ms late-drop rule); v2 is libwebrtc's (`JitterEstimator`, `TimestampExtrapolator`, `VCMTiming`, and frame release as `VideoStreamBufferController`/`FrameDecodeTiming`: a late frame is skipped only when a later keyframe is decodable; #24) |
 | `neteq v1\|v2` | v2 | v1 is the library's audio target delay (`DelayManager`: 95th percentile of each packet's relative delay, 10 ms buckets) and its own operations; v2 is libwebrtc M157's NetEq (`DelayManager` with `UnderrunOptimizer` over 500 ms maxima in 20 ms buckets and `ReorderOptimizer`, `PacketArrivalHistory` over 2 s, 80 ms until the first estimate; `DecisionLogic`, `Expand`, `Merge`, `Accelerate`/`PreemptiveExpand`, Opus in-band FEC; #62), the default since #62 |
 | `av_sync on\|off` | on (since #77 step 3) | `on` puts audio and video in one sync group on both stacks (#77): the audio stream sends its own RTCP SR (as libwebrtc's audio RtpRtcp module) and the receiver runs `RtpStreamsSynchronizer` every second, setting both streams' minimum playout delays; `sm_compare` sets libwebrtc's `sync_group` on both receive streams. `off` plays each stream out on its own delay, as before |

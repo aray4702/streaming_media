@@ -158,7 +158,9 @@ SM_TEST(GainControl, NoGainOnSilenceAndClippingRecommendation) {
 }
 
 SM_TEST(TransientSuppressor, AttenuatesClicksKeepsTone) {
-  TransientSuppressor ts;
+  TransientSuppressorConfig tc;
+  tc.enabled = true;
+  TransientSuppressor ts(tc);
   // Background tone at -40 dBFS with a 3 ms click every 300 ms.
   auto x = sim::Sine(200, 16000, 3.0, 0.01f);
   Random rng(9);
@@ -184,6 +186,22 @@ SM_TEST(TransientSuppressor, AttenuatesClicksKeepsTone) {
   // Away from clicks the tone is untouched.
   std::span<const float> a(x.data() + 2400, 1600), b(y.data() + 2400, 1600);
   SM_EXPECT_GT(dsp::SnrDb(a, b), 40.0);
+}
+
+// libwebrtc M157's APM has no transient suppression, and its deprecated
+// Config::TransientSuppression::enabled is false (api/audio/audio_processing.h):
+// by default the audio passes unchanged (#243).
+SM_TEST(TransientSuppressor, OffByDefaultAsLibwebrtc) {
+  SM_EXPECT_FALSE(TransientSuppressorConfig{}.enabled);
+  TransientSuppressor ts;
+  auto y = sim::Sine(200, 16000, 1.0, 0.01f);
+  for (size_t c = 4800; c + 48 < y.size(); c += 4800) {
+    for (size_t i = 0; i < 48; ++i) y[c + i] += 0.4f * static_cast<float>(std::exp(-static_cast<double>(i) / 12));
+  }
+  const std::vector<float> orig = y;
+  for (size_t i = 0; i + 160 <= y.size(); i += 160) ts.Process(std::span<float>(y.data() + i, 160), false);
+  SM_EXPECT_TRUE(y == orig);
+  SM_EXPECT_EQ(ts.detected(), 0u);
 }
 
 SM_TEST(Resampler, DownsampleQualityAndAliasRejection) {

@@ -68,7 +68,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | pass | pass | pass | pass |
+| 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 8. Synchronization
 
