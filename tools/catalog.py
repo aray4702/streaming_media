@@ -91,8 +91,7 @@ ALGORITHMS = [
                       "sequence numbers) and `RtpReceiver.RedPacketRestoredFromRtx`. In the e2e simulation 50% random-mask "
                       "protection keeps 99.0% of frames on time at 5% loss (67.4% without); on Gilbert-Elliott bursts the "
                       "bursty masks recover 150 packets against 143 for the random ones. No stage-1 scenario sends video "
-                      "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged; a "
-                      "test-bench scenario with NACK off, compared with libwebrtc, is left to #29's acceptance step."),
+                      "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged."),
     dict(id="3.3", slug="red", title="RED audio redundancy (RFC 2198)",
          problems=["Lost audio frames -> RED redundancy for audio"],
          headers=["loss/red.h"], unit=["Red"], e2e=["E2E_Red"],
