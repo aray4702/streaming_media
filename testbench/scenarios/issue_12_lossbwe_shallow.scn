@@ -4,10 +4,6 @@ duration 40s
 at 0s capacity=1500kbps delay=30ms queue=20ms
 # 5 seeds (cc v2): net.loss_pct 8.2-14.7, freeze_total_ms 413-964, utilization 59-70 %. `cc v1`: loss 10.2-17.6 %.
 expect net.loss_pct < 16
-# Was < 1500. Guard rail during a port (program.md 0.2, #217): with the RTCP report interval from the sender's whole
-# send rate (RtpSenderEgress::GetSendRates(now).Sum()), seed 1 freezes 2155 ms (10 seeds: mean 2023, 9.6 freezes;
-# libwebrtc 1740, 8.9). libwebrtc fails < 1500 on 7 of 10 seeds (parity-data: 2367 1817 2720 1728 376 1771 1265 1520
-# 1731 2101). Bound per the Owner rule on PR #216: just above our seed-1 value, below libwebrtc's worst seed (2720).
-expect video.freeze_total_ms < 2200
+expect video.freeze_total_ms < 1500
 expect cc.utilization_pct >= 55
 expect audio.interruptions <= 3

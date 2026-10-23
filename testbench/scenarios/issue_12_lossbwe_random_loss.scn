@@ -8,9 +8,10 @@ expect cc.utilization_pct >= 70
 # Was < 200. Guard rail during a port (program.md 0.2, needs-human, #217): with the packet history's RTT as
 # ModuleRtpRtcpImpl2 keeps it and the receiver's NACK RTT from CallStats (video/call_stats2.cc), seed 1 freezes
 # 208 ms; with the RTCP report interval from the sender's whole send rate (RtpSenderEgress::GetSendRates(now).Sum())
-# it is 474 ms (10 seeds: mean 409, libwebrtc 415). libwebrtc fails < 200 on 8 of 10 seeds (random_loss_5pct,
+# it was 474 ms (10 seeds: mean 409, libwebrtc 415); with early loss detection (RtpVideoSender::OnPacketFeedbackVector)
+# it is 223 ms (10 seeds of random_loss_5pct: mean 287). libwebrtc fails < 200 on 8 of 10 seeds (random_loss_5pct,
 # parity-data: 613 411 427 0 310 193 462 1028 708 0, mean 415). Bound per the Owner rule on PR #216: just above our
 # seed-1 value, never above libwebrtc's worst seed (1028).
-expect video.freeze_total_ms < 500
+expect video.freeze_total_ms < 240
 expect audio.concealed_pct < 3
 expect audio.interruptions == 0
