@@ -32,6 +32,9 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       cwnd_(WithEvents(cfg.cwnd, cfg.events)),
       allocator_(cfg.events),
       transport_seq_(1),
+      video_rate_(cfg.repair_window.ms(), 8000.0f),
+      rtx_rate_(cfg.repair_window.ms(), 8000.0f),
+      fec_rate_(cfg.repair_window.ms(), 8000.0f),
       target_(cfg.gcc.start_rate),
       pushback_target_(cfg.gcc.start_rate) {
   pacer_.SetTransportOverhead(DataSize::Bytes(cfg_.transport_overhead_bytes));
@@ -233,6 +236,10 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
       (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();
+      // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:495): the RTP packet size, by media type.
+      const int64_t rtp_bytes = static_cast<int64_t>(r.bytes.size());
+      (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
+          .Update(rtp_bytes, now.ms());
     }
     window_.emplace_back(now, sent.size.bytes());
     window_bytes_ += sent.size.bytes();
@@ -241,6 +248,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     out.push_back(std::move(r));
   }
   ExpireRepair(now);
+  last_process_ = now;
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
     // The transport's pacer-queue task (kPacerQueueUpdateInterval, 25 ms, started with the controller's
@@ -339,9 +347,21 @@ void SendSideController::ExpireRepair(Timestamp now) {
 }
 
 double SendSideController::repair_share() const {
+  if (!cfg_.send_rate_stats) {
+    // FecControllerDefault::UpdateFecRates: (sent_nack + sent_fec) / (video + nack + fec).
+    const int64_t total = video_bytes_ + repair_bytes_;
+    return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
+  }
+  if (!last_process_.IsFinite()) return 0.0;
+  // RtpVideoSender::ProtectionRequest reads RtpSenderEgress::GetSendRates (rtp_video_sender.cc:973,
+  // rtp_sender_egress.cc:340): each type's rate, or zero when its tracker has none.
+  const int64_t now_ms = last_process_.ms();
+  const int64_t video = video_rate_.Rate(now_ms).value_or(0);
+  const int64_t nack = rtx_rate_.Rate(now_ms).value_or(0);
+  const int64_t fec = fec_rate_.Rate(now_ms).value_or(0);
   // FecControllerDefault::UpdateFecRates: (sent_nack + sent_fec) / (video + nack + fec).
-  const int64_t total = video_bytes_ + repair_bytes_;
-  return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
+  const int64_t total = video + nack + fec;
+  return total > 0 ? static_cast<double>(static_cast<float>(nack + fec) / static_cast<float>(total)) : 0.0;
 }
 
 DataRate SendSideController::OverheadRate(DataRate rate, int64_t packet_size_bytes) const {

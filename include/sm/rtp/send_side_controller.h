@@ -38,6 +38,7 @@
 #include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
+#include "sm/core/rate_statistics.h"
 #include "sm/core/units.h"
 #include "sm/rtp/rtp_sender.h"
 #include "sm/sync/header_extensions.h"
@@ -59,6 +60,11 @@ struct SendSideConfig {
   // video encoder (libwebrtc FecControllerDefault::overhead_threshold_).
   double max_repair_share = 0.5;
   TimeDelta repair_window = TimeDelta::Seconds(1);
+  // How the repair share is measured (issue #224). On: one RateStatistics per
+  // media type, as RtpSenderEgress::GetSendRates, so a repair stream that has
+  // just started (after 1.5 windows without one) counts at its rate since it
+  // started. Off: the bytes of each type over the last `repair_window`.
+  bool send_rate_stats = false;
   // The transport's CongestionControlHandler between GoogCC and the allocator (cc/control_handler.h,
   // issue #204): the allocator, and with it the encoder target and its protection share, changes only
   // when the handler passes an update on, and the encoder pauses while the pacer queue is above 2 s.
@@ -181,7 +187,10 @@ class SendSideController : public MetricsSource {
   // UpdateFecRates does: (sent_nack + sent_fec) / (video + nack + fec), capped at
   // `max_repair_share` (0.5).
   SendRates ComputeMeasuredRates(DataRate audio_wire_rate) const;
-  // Share of the non-audio bytes released in the last `repair_window` (as of the last Process()) that were RTX or FEC.
+  // Share of the video stream's send rate that was RTX or FEC, as of the last Process(): of the bytes
+  // released in the last `repair_window`, or with `send_rate_stats` of RtpSenderEgress::GetSendRates'
+  // rates (RateStatistics over `repair_window`), where a repair stream that has just started counts at
+  // its rate since it started.
   double repair_share() const;
 
   const cc::BitrateAllocatorV2& allocator() const { return allocator_; }
@@ -244,6 +253,10 @@ class SendSideController : public MetricsSource {
   void ExpireRepair(Timestamp now);
   std::deque<Released> repair_window_;
   int64_t repair_bytes_ = 0, video_bytes_ = 0;
+  // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
+  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
+  RateStatistics video_rate_, rtx_rate_, fec_rate_;
+  Timestamp last_process_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
   std::deque<std::pair<Timestamp, int64_t>> window_;
