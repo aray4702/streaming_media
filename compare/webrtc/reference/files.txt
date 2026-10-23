@@ -30,6 +30,8 @@ modules/rtp_rtcp/source/ulpfec_header_reader_writer.h
 modules/rtp_rtcp/source/ulpfec_header_reader_writer.cc
 modules/rtp_rtcp/source/fec_private_tables_bursty.h
 modules/rtp_rtcp/source/fec_private_tables_random.h
+modules/rtp_rtcp/source/fec_private_tables_bursty.cc
+modules/rtp_rtcp/source/fec_private_tables_random.cc
 modules/rtp_rtcp/source/rtp_format.h
 modules/rtp_rtcp/source/rtp_format.cc
 modules/rtp_rtcp/source/rtp_format_h264.h
@@ -182,3 +184,5 @@ rtc_base/numerics/moving_percentile_filter.h
 rtc_base/numerics/percentile_filter.h
 rtc_base/task_utils/repeating_task.h
 rtc_base/task_utils/repeating_task.cc
+modules/congestion_controller/rtp/control_handler.h
+modules/congestion_controller/rtp/control_handler.cc

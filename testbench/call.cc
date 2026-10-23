@@ -242,6 +242,21 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
   return out;
 }
 
+std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
+  std::string out = "t_ms,buffer_ms,target_ms,jb_delay_ms,received_ms,concealed_ms,accelerate_ms,decelerate_ms\n";
+  auto real = [](double v) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.4g", v);
+    return std::string(buf);
+  };
+  for (const auto& r : trace) {
+    out += std::to_string(r.t_ms) + "," + std::to_string(r.buffer_ms) + "," + std::to_string(r.target_ms) + "," +
+           (r.jb_delay_ms < 0 ? std::string() : real(r.jb_delay_ms)) + "," + real(r.received_ms) + "," +
+           real(r.concealed_ms) + "," + real(r.accelerate_ms) + "," + real(r.decelerate_ms) + "\n";
+  }
+  return out;
+}
+
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
@@ -583,6 +598,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // (jitterBufferDelay / jitterBufferEmittedCount over each pull).
   std::vector<double> jb_delay;
   uint64_t prev_jb_delay = 0, prev_jb_emitted = 0;
+  timing::AudioJitterBufferStats prev_jb_trace;  // The counters at the last pull, for rep.audio_trace.
   int64_t frames_rendered = 0;
   std::vector<float> audio_out(static_cast<size_t>(sr / 100));
 
@@ -805,10 +821,31 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
         av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
       }
-      const auto& jst = receiver.audio_receiver(audio_recv).jitter_buffer().stats();
+      const auto& jb = receiver.audio_receiver(audio_recv).jitter_buffer();
+      const auto& jst = jb.stats();
       if (const uint64_t emitted = jst.jitter_buffer_emitted_count - prev_jb_emitted; emitted > 0) {
         jb_delay.push_back(static_cast<double>(jst.jitter_buffer_delay_ms_samples - prev_jb_delay) /
                            static_cast<double>(emitted));
+      }
+      if (opt.audio_trace) {
+        // Issue #62: the jitter buffer after each pull, as sm_compare reads libwebrtc's GetStats.
+        const double ms_per_sample = 1000.0 / sr;
+        AudioTraceRow r;
+        r.t_ms = t;
+        r.buffer_ms = static_cast<int>(jb.CurrentLevelMs());
+        r.target_ms = jb.TargetDelayMs();
+        if (jst.jitter_buffer_emitted_count > prev_jb_emitted) r.jb_delay_ms = jb_delay.back();
+        r.received_ms = static_cast<double>(jst.total_samples_received - prev_jb_trace.total_samples_received) * ms_per_sample;
+        r.concealed_ms = static_cast<double>(jst.concealed_samples - prev_jb_trace.concealed_samples) * ms_per_sample;
+        r.accelerate_ms = static_cast<double>(jst.removed_samples_for_acceleration -
+                                              prev_jb_trace.removed_samples_for_acceleration) * ms_per_sample;
+        r.decelerate_ms = static_cast<double>(jst.inserted_samples_for_deceleration -
+                                              prev_jb_trace.inserted_samples_for_deceleration) * ms_per_sample;
+        rep.audio_trace.push_back(r);
+        prev_jb_trace.total_samples_received = jst.total_samples_received;
+        prev_jb_trace.concealed_samples = jst.concealed_samples;
+        prev_jb_trace.removed_samples_for_acceleration = jst.removed_samples_for_acceleration;
+        prev_jb_trace.inserted_samples_for_deceleration = jst.inserted_samples_for_deceleration;
       }
       prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
       prev_jb_emitted = jst.jitter_buffer_emitted_count;

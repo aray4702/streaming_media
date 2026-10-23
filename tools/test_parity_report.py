@@ -89,6 +89,24 @@ class Owners(unittest.TestCase):
         self.assertEqual(g[("outage_3s", "video.render_fps")], [20])
         self.assertEqual(g[("clean_link", "video.freeze_total_ms")], [])
 
+    def test_audio_delay_cells_belong_to_the_send_side_items(self):
+        # #62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266), so the
+        # remaining audio jitter-buffer and mouth-to-ear gaps are owned by the send-side items.
+        cells = {"cross_traffic": 204, "probe_v2_cross_traffic": 204, "issue_5_adjuster_default": 204,
+                 "low_bandwidth": 224, "issue_53_cwnd_pushback": 224, "issue_12_lossbwe_policer": 217,
+                 "issue_23_outage_500ms": 218, "issue_85_video_pause": 218}
+        metrics = {"audio.jb_delay_p95_ms": ([300] * 5, [400] * 5), "audio.mouth_to_ear_p95_ms": ([300] * 5, [400] * 5),
+                   "audio.concealed_pct": ([9] * 5, [1] * 5)}
+        d = data(*[scn(n, metrics) for n in cells])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners)}
+        self.assertEqual(len(g), 3 * len(cells))
+        for (name, metric), o in g.items():
+            self.assertNotIn(62, o, (name, metric))
+            if metric != "audio.concealed_pct":
+                self.assertIn(cells[name], o, (name, metric))
+
 
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):
