@@ -1,0 +1,14 @@
+name issue_331_low_bandwidth_av_offset_seed4
+describe low_bandwidth with seed 4: lip sync raises the audio delay past 2 s and the audio buffer must hold it (issue #331)
+# NetEq's PacketBuffer holds NetEq::Config::max_packets_in_buffer = 200 packets and flushes all of them only when
+# full (packet_buffer.cc InsertPacket); DelayConstraints caps the minimum delay at 75 % of that buffer (3 s of 20 ms
+# audio). Ours flushed above 100 packets (2 s), so once RtpStreamsSynchronizer had raised the audio delay past 2 s the
+# flush threw it away and the A/V offset came back (issue #331).
+# Seed 4: sync.av_offset_p95_ms 2355 -> 1892 ms (libwebrtc 1900 on main's compare-webrtc), median 1271 -> 1065 ms.
+# low_bandwidth seeds 1-10 mean 1765 -> 1708 ms (libwebrtc 1576, band 188); seeds 1-40 mean 1839 -> 1694 ms.
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+seed 4
+expect sync.av_offset_p95_ms < 1900
+expect sync.av_offset_p50_ms < 1150
+expect audio.concealed_pct < 5
