@@ -364,3 +364,44 @@ SM_TEST(VideoSendController, CpuUnderuseDoesNotUndoTheQualityScalersSteps) {
   SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
   SM_EXPECT_EQ(c.overuse_detector().encode_usage_percent().value_or(-1), 0);
 }
+
+SM_TEST(VideoSendController, NewFrameSizeStartsAFreshBitrateAdjuster) {
+  // Issue #346: VideoStreamEncoder::ReconfigureEncoder makes a new
+  // EncoderBitrateAdjuster (and resets the frame dropper) on a new frame size,
+  // so the encoder target is the allocation / kDefaultUtilizationFactor (1.2)
+  // for kMinFramesSinceLayoutChange (30) frames after every resolution switch.
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  const double allocation_kbps = s.rates().video_target.kbps();
+  int t = 0;
+  EncodeDecision d;
+  do {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    t += 33;
+  } while (!d.encode);
+  // Frames exactly on the encoder target: once the first 30 frames are past,
+  // the overshoot detector's factor is about 1.0. QP 10 makes the scaler adapt
+  // up after its 2 s check.
+  int switch_frame = -1, frames_after = 0;
+  double before_switch_kbps = 0;
+  for (int i = 0; i < 300; ++i, t += 33) {
+    const int height = d.height;
+    if (d.encode) c.OnEncoded({DataSize::Bytes(d.target.bps() / 8 / 30), d.keyframe, 10}, At(t - 33));
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (switch_frame < 0 && d.height != height) {
+      switch_frame = i;
+      SM_EXPECT_TRUE(d.keyframe);
+    }
+    if (switch_frame < 0) {
+      before_switch_kbps = d.target.kbps();
+    } else if (d.encode && frames_after++ < 30) {
+      SM_EXPECT_NEAR(d.target.kbps(), allocation_kbps / 1.2, 0.5);
+    }
+  }
+  SM_EXPECT_GE(switch_frame, 0);
+  // Before the switch the adjuster had learned a factor near 1.0.
+  SM_EXPECT_GT(before_switch_kbps, allocation_kbps / 1.1);
+  SM_EXPECT_GE(frames_after, 30);
+}

@@ -1,0 +1,10 @@
+name issue_346_reconfigure_capacity_drop
+describe capacity_drop with quality scaling on: the switch keyframes before the 2.5 -> 0.5 Mbps drop are libwebrtc's size (#346)
+duration 40s
+quality_scaling on
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+# libwebrtc seeds 1-3 (#344's compare-webrtc @ 3d46b11): loss 1.68/1.92/1.61 %. main before #346: 2.00/2.03/1.97 %.
+# With the port, seeds 1-5: 1.78/1.76/1.82/1.81/1.89 %. The line is libwebrtc's worst of seeds 1-3, rounded up.
+expect net.loss_pct < 1.95

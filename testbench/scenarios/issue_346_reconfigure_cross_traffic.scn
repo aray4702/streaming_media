@@ -1,0 +1,14 @@
+name issue_346_reconfigure_cross_traffic
+describe cross_traffic with quality scaling on: each resolution switch resets the frame dropper and the bitrate adjuster, as libwebrtc's ReconfigureEncoder (#346)
+duration 40s
+quality_scaling on
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+# libwebrtc on seed 1 (#344's compare-webrtc @ 3d46b11): 0 freezes, loss 0.0 %, e2e p95 249 ms.
+# main before #346: 14 freezes, loss 1.6 %, e2e p95 1008 ms (the switch keyframes are encoded at allocation / 1.03-1.11
+# instead of / 1.2, and the bottleneck queue stays full after cross traffic joins).
+# With the port, seeds 1-5: 0 freezes, loss 0.0 %, e2e p95 236/292/194/222/213 ms.
+expect video.freeze_count == 0
+expect net.loss_pct < 0.1
+expect video.e2e_delay_p95_ms < 320
