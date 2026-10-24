@@ -7,7 +7,8 @@ video send path, in the same CSV for this library and for libwebrtc:
 
   t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-  dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean
+  dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
+  encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -16,7 +17,11 @@ dropped_encoder_queue) and has no counterpart for dropped_capturer, the
 DropDueToSize path or dropped_encoder, which stay 0. qp_mean and
 encode_ms_mean (issue #84) come from the encoder model both stacks share
 (testbench/encoder_model.h); traces written before it lack them and read as
-0. CI publishes the traces
+0. encode_width/encode_height (the last frame encoded in the second, 0 when
+none was), keyframes, keyframe_bytes, rendered and max_render_gap_ms (the
+largest gap from the previous rendered frame to one rendered in the second)
+line up resolution switches and keyframes with freezes (issue #333); older
+traces read them as 0. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
 --trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
 
@@ -32,6 +37,7 @@ import sys
 
 DROPS = ["dropped_capturer", "dropped_encoder_queue", "dropped_rate_limiter",
          "dropped_congestion_window", "dropped_encoder"]
+LATER_INTS = ["encode_width", "encode_height", "keyframes", "keyframe_bytes", "rendered"]  # Issue #333.
 INTS = ["t_s", "encoder_target_bps", "alloc_target_bps", "captured", "encoded", *DROPS, "paused", "encoded_bytes"]
 
 
@@ -41,8 +47,10 @@ def parse(text):
     for r in csv.DictReader(io.StringIO(text)):
         row = {k: int(r[k]) for k in INTS}
         row["pacer_queue_ms"] = float(r["pacer_queue_ms"])
-        for k in ("qp_mean", "encode_ms_mean"):
+        for k in ("qp_mean", "encode_ms_mean", "max_render_gap_ms"):
             row[k] = float(r.get(k) or 0)
+        for k in LATER_INTS:
+            row[k] = int(r.get(k) or 0)
         rows.append(row)
     return rows
 
@@ -50,7 +58,9 @@ def parse(text):
 def summarize(rows):
     """Totals over the call, drops by reason, and rates per second."""
     secs = max(len(rows), 1)
-    total = {k: sum(r[k] for r in rows) for k in ["captured", "encoded", "encoded_bytes", *DROPS]}
+    total = {k: sum(r[k] for r in rows) for k in ["captured", "encoded", "encoded_bytes", "keyframes", "keyframe_bytes",
+                                                   "rendered", *DROPS]}
+    heights = [r["encode_height"] for r in rows if r["encode_height"] > 0]
     dropped = sum(total[k] for k in DROPS)
     return {
         "seconds": len(rows),
@@ -67,6 +77,12 @@ def summarize(rows):
         # Means over encoded frames, weighting each second by its frames encoded.
         "qp_mean": sum(r["qp_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
         "encode_ms_mean": sum(r["encode_ms_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
+        "keyframes": total["keyframes"],
+        "keyframe_bytes": total["keyframe_bytes"],
+        # Seconds whose last encoded height differs from the previous encoded second's.
+        "resolution_switches": sum(1 for a, b in zip(heights, heights[1:]) if a != b),
+        "rendered": total["rendered"],
+        "max_render_gap_ms": max((r["max_render_gap_ms"] for r in rows), default=0.0),
     }
 
 
@@ -82,7 +98,9 @@ def render(named):
             ("encoder target kbps (mean)", "encoder_target_kbps_mean"),
             ("allocator video target kbps (mean)", "alloc_target_kbps_mean"),
             ("paused/suspended seconds", "paused_seconds"), ("pacer queue max ms", "pacer_queue_ms_max"),
-            ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean")]
+            ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean"), ("keyframes", "keyframes"),
+            ("keyframe bytes", "keyframe_bytes"), ("resolution switches", "resolution_switches"),
+            ("frames rendered", "rendered"), ("longest render gap ms", "max_render_gap_ms")]
     for label, key in rows:
         lines.append("%-32s" % label + "".join("%14s" % fmt(named[n][key]) for n in names))
     lines.append("dropped by reason")
@@ -92,10 +110,12 @@ def render(named):
 
 
 def series(named_rows):
-    """Per-second encoder target against frames encoded, one pair of columns per stack."""
+    """Per-second encoder target, frames encoded, height, keyframes and rendering, one set of columns per stack."""
     names = list(named_rows)
     n = max(len(r) for r in named_rows.values())
-    head = "%4s" % "t_s" + "".join("%12s%8s%8s%8s" % (nm + " kbps", "enc", "drop", "pace") for nm in names)
+    head = "%4s" % "t_s" + "".join("%12s%8s%8s%8s%7s%5s%7s%8s" % (nm + " kbps", "enc", "drop", "pace", "height", "key",
+                                                                 "rend", "gap")
+                                   for nm in names)
     lines = [head]
     for i in range(n):
         cols = []
@@ -103,10 +123,11 @@ def series(named_rows):
             rows = named_rows[nm]
             if i < len(rows):
                 r = rows[i]
-                cols.append("%12.0f%8d%8d%8.0f" % (r["encoder_target_bps"] / 1000.0, r["encoded"],
-                                                    sum(r[k] for k in DROPS), r["pacer_queue_ms"]))
+                cols.append("%12.0f%8d%8d%8.0f%7d%5d%7d%8.0f" % (
+                    r["encoder_target_bps"] / 1000.0, r["encoded"], sum(r[k] for k in DROPS), r["pacer_queue_ms"],
+                    r["encode_height"], r["keyframes"], r["rendered"], r["max_render_gap_ms"]))
             else:
-                cols.append("%12s%8s%8s%8s" % ("-", "-", "-", "-"))
+                cols.append("%12s%8s%8s%8s%7s%5s%7s%8s" % (("-",) * 8))
         lines.append("%4d" % (i + 1) + "".join(cols))
     return "\n".join(lines)
 
