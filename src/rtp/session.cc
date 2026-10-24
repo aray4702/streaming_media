@@ -131,9 +131,15 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
   send_.SetPaddingSender(video_send_.back().sender.get());
-  // VideoSendStreamImpl: with transport-cc the stricter pacing factor
-  // (GetConfiguredPacingFactor, kStrictPacingMultiplier) applies from the start.
-  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) send_.SetPacingFactor(kStrictPacingMultiplier);
+  // VideoSendStreamImpl's constructor (video_send_stream_impl.cc:487-523): with
+  // transport-cc the stricter pacing factor (GetConfiguredPacingFactor,
+  // kStrictPacingMultiplier) applies from the start, and periodic ALR probing is
+  // set to RateControlSettings::UseAlrProbing(), off without field trials. That
+  // overrides the request an audio stream added earlier made (issue #355).
+  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) {
+    send_.SetPacingFactor(kStrictPacingMultiplier);
+    send_.EnablePeriodicAlrProbing(false);
+  }
   send_has_padding_ = true;
   return {static_cast<int>(video_send_.size()) - 1};
 }
