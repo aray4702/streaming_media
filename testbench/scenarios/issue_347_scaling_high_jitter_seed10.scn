@@ -1,7 +1,0 @@
-name issue_347_scaling_high_jitter_seed10
-describe Yardstick for #347: high_jitter with quality_scaling on and seed 10, traced on both stacks with the quality scaler's checks (no expectations)
-duration 30s
-seed 10
-compare_seeds 1
-quality_scaling on
-at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
