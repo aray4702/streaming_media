@@ -6,7 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-83 gaps on `main`, 81 here: **48 closed, 46 opened**, 0 changed direction.
+82 gaps on `main`, 81 here: **47 closed, 46 opened**, 0 changed direction.
 
 Closed:
 
@@ -17,7 +17,7 @@ Closed:
 | bufferbloat | `sync.av_offset_p95_ms` | 83.7 | 66.4 | ±16.4 | behind | 4/10 | #77 |
 | issue_120_rtx_payload_padding | `repair.overhead_pct` | 29.8 | 32.8 | ±2 | ahead | 5/10 | #21, #7, #29 |
 | issue_123_v2_allocation_min | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| issue_123_v2_allocation_min | `audio.longest_interruption_ms` | 203 | 116 | ±20 | behind | 10/10 | #63 |
+| issue_123_v2_allocation_min | `audio.longest_interruption_ms` | 205 | 118 | ±20 | behind | 10/10 | #63 |
 | issue_123_v2_allocation_min | `video.time_to_first_frame_ms` | 345 | 780 | ±101 | ahead | 10/10 | #24, #61 |
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 3.2 | 4.2 | ±0.8 | ahead | 8/10 | #23 |
 | issue_123_v2_allocation_min | `net.loss_pct` | 21.3 | 16.6 | ±3.2 | behind | 7/10 | #21, #61, #12 |
@@ -42,20 +42,19 @@ Closed:
 | issue_24_timing_v2_render_fps | `cc.queue_p95_ms` | 95.3 | 85.0 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_257_zero_max_payload | `cc.rtt_p50_ms` | 227 | 64.4 | ±11.3 | behind | 10/10 | #61 |
 | issue_257_zero_max_payload | `repair.overhead_pct` | 11.2 | 0.1 | ±2 | behind | 10/10 | #21, #7, #29 |
-| issue_283_longest_freeze_no_metrics | `audio.longest_interruption_ms` | 1831 | 1973 | ±98.7 | ahead | 1/10 | #63 |
+| issue_372_outage_interruption_count | `audio.mouth_to_ear_p95_ms` | 220 | 256 | ±30.2 | ahead | 7/10 | #63 |
+| issue_372_outage_interruption_count | `video.e2e_delay_p95_ms` | 129 | 145 | ±13.0 | ahead | 7/10 | #24, #37 |
 | issue_53_cwnd_pushback | `video.render_fps` | 29.3 | 27.4 | ±1.5 | ahead | 10/10 | #37, #24 |
 | issue_53_cwnd_pushback | `cc.queue_p95_ms` | 95.3 | 85.0 | ±10 | behind | 4/10 | #19, #15, #48, #12, #61 |
 | issue_76_rtx_v2_handover | `repair.overhead_pct` | 29.8 | 32.8 | ±2 | ahead | 5/10 | #21, #7, #29 |
 | issue_76_session_layer_v2 | `repair.overhead_pct` | 37.4 | 39.6 | ±2.0 | ahead | 5/10 | #21, #7, #29 |
-| issue_85_video_pause | `audio.interruptions` | 2.9 | 1.1 | ±0.5 | behind | 1/10 | #63 |
-| issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #63 |
 | very_low_capacity | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| very_low_capacity | `audio.longest_interruption_ms` | 203 | 116 | ±20 | behind | 10/10 | #63 |
+| very_low_capacity | `audio.longest_interruption_ms` | 205 | 118 | ±20 | behind | 10/10 | #63 |
 | very_low_capacity | `video.time_to_first_frame_ms` | 345 | 780 | ±101 | ahead | 10/10 | #24, #61 |
 | very_low_capacity | `video.keyframe_requests` | 3.2 | 4.2 | ±0.8 | ahead | 8/10 | #23 |
 | very_low_capacity | `net.loss_pct` | 21.3 | 16.6 | ±3.2 | behind | 7/10 | #21, #61, #12 |
 | very_low_capacity_allocator_v2 | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| very_low_capacity_allocator_v2 | `audio.longest_interruption_ms` | 203 | 116 | ±20 | behind | 10/10 | #63 |
+| very_low_capacity_allocator_v2 | `audio.longest_interruption_ms` | 205 | 118 | ±20 | behind | 10/10 | #63 |
 | very_low_capacity_allocator_v2 | `video.time_to_first_frame_ms` | 345 | 780 | ±101 | ahead | 10/10 | #24, #61 |
 | very_low_capacity_allocator_v2 | `video.keyframe_requests` | 3.2 | 4.2 | ±0.8 | ahead | 8/10 | #23 |
 | very_low_capacity_allocator_v2 | `net.loss_pct` | 21.3 | 16.6 | ±3.2 | behind | 7/10 | #21, #61, #12 |
@@ -123,7 +122,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_21_shallow_drop_repair | `video.freeze_count` | 2.5 | 2.9 (further) |
 | issue_23_low_bandwidth | `video.render_fps` | 1.4 | 2.0 (further) |
 | issue_257_zero_max_payload | `audio.concealed_pct` | 0.9 | 0.7 (closer) |
-| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 28 | 22.8 (closer) |
+| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 27.8 | 22.8 (closer) |
 | issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 808 | 442 (closer) |
 | issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 574 | 258 (closer) |
 | issue_257_zero_max_payload | `video.freeze_count` | 3.4 | 5.3 (further) |
