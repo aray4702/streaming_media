@@ -179,6 +179,13 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
       configured_height_ = height;
     }
   }
+  // VideoSendStream::Start registers the stream with the BitrateAllocator, and
+  // its OnBitrateUpdated reaches VideoStreamEncoder, before the camera delivers
+  // a frame. The encoder's first SetRates (ReconfigureEncoder,
+  // video_stream_encoder.cc:1446-1455) then carries that allocation, so the
+  // first keyframe is sized from it rather than from the target less the
+  // audio's nominal rate (issue #331).
+  session_.Start(now);
   const double fps = input_fps();
   const SendRates& rates = session_.rates();
   const DataRate target = rates.video_target;
