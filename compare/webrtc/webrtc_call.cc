@@ -13,6 +13,7 @@
 
 #include "call_common.h"
 #include "encoder_model.h"
+#include "model_h264.h"
 #include "sim_time.h"
 #include "sm/core/random.h"
 #include "sm/core/seq_num.h"
@@ -313,12 +314,18 @@ struct VideoModel {
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
   int64_t keyframe_bytes = 0;    // Total size of the keyframes (issue #333 trace).
   int last_width = 0, last_height = 0;  // Size of the last frame encoded (issue #333 trace).
-  std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;  // Filled by the decoder.
+  // Capture time by the encoder's RTP timestamp, filled by the encoder (issue #339). On the wire the
+  // timestamp carries RTPSender's random offset (rtp_sender.cc, timestamp_offset_); the send transport
+  // learns it from the first video packet, which belongs to the first frame encoded.
+  std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;
+  std::optional<uint32_t> first_rtp_ts;  // Encoder RTP timestamp of the first frame encoded.
+  std::optional<uint32_t> rtp_ts_offset;  // Wire RTP timestamp minus the encoder's.
 };
 
 // Frame sizes follow the allocated rate with +-20% variation and keyframes
-// are 4x larger, as in testbench/call.cc. The capture time travels in the
-// first 8 payload bytes so the receiver can measure capture-to-render delay.
+// are 4x larger, as in testbench/call.cc. The payload is the H.264 access
+// unit this library sends for that size (model_h264.h, issue #339), and the
+// capture time stays in VideoModel::capture_us_by_rtp for the receiver.
 // QP (EncodedImage::qp_) and the encode time (timing_) come from the encoder
 // model the test bench uses (testbench/encoder_model.h, issue #84).
 class ModelEncoder final : public w::VideoEncoder {
@@ -345,9 +352,10 @@ class ModelEncoder final : public w::VideoEncoder {
     double per_frame = static_cast<double>(rate_bps_) / 8 / m_->s->video_fps;
     int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2));
     bytes = std::max<int64_t>(bytes, 200);
-    auto buf = w::EncodedImageBuffer::Create(static_cast<size_t>(bytes));
-    std::memset(buf->data(), 0, buf->size());
-    std::memcpy(buf->data(), &capture_us, sizeof(capture_us));
+    const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
+    auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
+    m_->capture_us_by_rtp[frame.rtp_timestamp()] = capture_us;
+    if (!m_->first_rtp_ts) m_->first_rtp_ts = frame.rtp_timestamp();
     w::EncodedImage img;
     img.SetEncodedData(buf);
     img._frameType = key ? w::VideoFrameType::kVideoFrameKey : w::VideoFrameType::kVideoFrameDelta;
@@ -364,7 +372,11 @@ class ModelEncoder final : public w::VideoEncoder {
     m_->height_sum += frame.height();
     m_->encode_us_sum += encode_us;
     w::CodecSpecificInfo info;
-    info.codecType = w::kVideoCodecGeneric;
+    info.codecType = w::kVideoCodecH264;
+    info.codecSpecific.H264.packetization_mode = w::H264PacketizationMode::NonInterleaved;
+    info.codecSpecific.H264.temporal_idx = w::kNoTemporalIdx;
+    info.codecSpecific.H264.base_layer_sync = false;
+    info.codecSpecific.H264.idr_frame = key;
     ++m_->frames_encoded;
     m_->bytes += bytes;
     m_->last_width = frame.width();
@@ -418,16 +430,11 @@ class ModelEncoder final : public w::VideoEncoder {
 
 class ModelDecoder final : public w::VideoDecoder {
  public:
-  explicit ModelDecoder(VideoModel* m) : m_(m), buffer_(w::I420Buffer::Create(320, 180)) {
+  ModelDecoder() : buffer_(w::I420Buffer::Create(320, 180)) {
     w::I420Buffer::SetBlack(buffer_.get());
   }
   bool Configure(const Settings&) override { return true; }
   int32_t Decode(const w::EncodedImage& img, int64_t render_time_ms) override {
-    if (img.size() >= sizeof(int64_t)) {
-      int64_t capture_us = 0;
-      std::memcpy(&capture_us, img.data(), sizeof(capture_us));
-      m_->capture_us_by_rtp[img.RtpTimestamp()] = capture_us;
-    }
     w::VideoFrame f = w::VideoFrame::Builder()
                           .set_video_frame_buffer(buffer_)
                           .set_rtp_timestamp(img.RtpTimestamp())
@@ -443,15 +450,20 @@ class ModelDecoder final : public w::VideoDecoder {
   int32_t Release() override { return WEBRTC_VIDEO_CODEC_OK; }
 
  private:
-  VideoModel* m_;
   w::scoped_refptr<w::I420Buffer> buffer_;
   w::DecodedImageCallback* cb_ = nullptr;
 };
 
+// H.264 as Chrome offers it by default, in packetization mode 1, the mode our stack sends (sm/rtp/h264.h).
+w::SdpVideoFormat ModelH264Format() {
+  return w::SdpVideoFormat(
+      "H264", {{"profile-level-id", "42e01f"}, {"level-asymmetry-allowed", "1"}, {"packetization-mode", "1"}});
+}
+
 class ModelEncoderFactory final : public w::VideoEncoderFactory {
  public:
   explicit ModelEncoderFactory(VideoModel* m) : m_(m) {}
-  std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {w::SdpVideoFormat("Generic")}; }
+  std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
   std::unique_ptr<w::VideoEncoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
     return std::make_unique<ModelEncoder>(m_);
   }
@@ -462,14 +474,10 @@ class ModelEncoderFactory final : public w::VideoEncoderFactory {
 
 class ModelDecoderFactory final : public w::VideoDecoderFactory {
  public:
-  explicit ModelDecoderFactory(VideoModel* m) : m_(m) {}
-  std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {w::SdpVideoFormat("Generic")}; }
+  std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
   std::unique_ptr<w::VideoDecoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
-    return std::make_unique<ModelDecoder>(m_);
+    return std::make_unique<ModelDecoder>();
   }
-
- private:
-  VideoModel* m_;
 };
 
 // A camera that delivers frames when told to. Like libwebrtc's
@@ -588,10 +596,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   sender_env_factory.Set(sim.clock());
   sender_env_factory.Set(static_cast<w::TaskQueueFactory*>(&sim));
   if (opt.bwe_trace) sender_env_factory.Set(static_cast<w::RtcEventLog*>(&bwe_log));
-  // QualityScalingExperiment (on by default) gives the Generic codec of the
-  // encoder model QP thresholds 26/36; the model is H.264's QP scale, so the
-  // experiment's default string is passed with H.264's 24/37 in the Generic
-  // slot (rtc_base/experiments/quality_scaling_experiment.cc; issue #84).
+  // QualityScalingExperiment (on by default) gives H.264 the QP thresholds
+  // 24/37 (rtc_base/experiments/quality_scaling_experiment.cc; issue #84).
+  // The string is the experiment's default with 24/37 in the Generic slot as
+  // well, from when the model encoder reported the Generic codec; since it
+  // reports H.264 (issue #339), only the H.264 slot is read.
   if (s.quality_scaling) {
     sender_env_factory.Set(std::make_unique<w::FieldTrials>(
         "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
@@ -716,6 +725,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           if (!audio_ts0) audio_ts0 = r.ts;
           link_kind = sm::sim::LinkKind::kAudio;
         } else if (r.ssrc == kVideoSsrc) {
+          if (!model.rtp_ts_offset && model.first_rtp_ts) model.rtp_ts_offset = r.ts - *model.first_rtp_ts;
           bool fec = r.pt == kRedPt && (payload[0] & 0x7f) == kUlpfecPt;
           int64_t bytes = static_cast<int64_t>(r.payload_len) - (r.pt == kRedPt ? 1 : 0);
           link_kind = fec ? sm::sim::LinkKind::kFec : sm::sim::LinkKind::kVideo;
@@ -744,7 +754,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
   // --- Streams ----------------------------------------------------------------
   ModelEncoderFactory encoder_factory(&model);
-  ModelDecoderFactory decoder_factory(&model);
+  ModelDecoderFactory decoder_factory;
   auto allocator_factory = w::CreateBuiltinVideoBitrateAllocatorFactory();
   ModelSource source(s.video_width, s.video_height);
   RenderSink renderer([&](const w::VideoFrame& f) {
@@ -762,7 +772,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     ++w_frames;
     if (!video_first.IsFinite()) video_first = now;
     last_render = now;
-    auto it = model.capture_us_by_rtp.find(f.rtp_timestamp());
+    auto it = model.rtp_ts_offset ? model.capture_us_by_rtp.find(f.rtp_timestamp() - *model.rtp_ts_offset)
+                                  : model.capture_us_by_rtp.end();
     if (it != model.capture_us_by_rtp.end()) {
       av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
@@ -793,7 +804,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     if (s.video) {
       w::VideoSendStream::Config c(&send_transport);
-      c.rtp.payload_name = "Generic";
+      c.rtp.payload_name = "H264";
       c.rtp.payload_type = kVideoPt;
       c.rtp.ssrcs = {kVideoSsrc};
       c.rtp.extensions = extensions;
@@ -810,9 +821,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.encoder_settings.encoder_factory = &encoder_factory;
       c.encoder_settings.bitrate_allocator_factory = allocator_factory.get();
       w::VideoEncoderConfig ec;
-      ec.codec_type = w::kVideoCodecGeneric;
+      ec.codec_type = w::kVideoCodecH264;
       ec.content_type = w::VideoEncoderConfig::ContentType::kRealtimeVideo;
-      ec.video_format = w::SdpVideoFormat("Generic");
+      ec.video_format = ModelH264Format();
       ec.number_of_streams = 1;
       ec.simulcast_layers = std::vector<w::VideoStream>(1);
       ec.simulcast_layers[0].max_framerate = s.video_fps;
@@ -858,7 +869,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (s.nack) c.rtp.rtx_associated_payload_types[kRtxRedPt] = kRedPt;
       }
       c.decoder_factory = &decoder_factory;
-      c.decoders.push_back(w::VideoReceiveStreamInterface::Decoder(w::SdpVideoFormat("Generic"), kVideoPt));
+      c.decoders.push_back(w::VideoReceiveStreamInterface::Decoder(ModelH264Format(), kVideoPt));
       c.renderer = &renderer;
       if (s.av_sync) c.sync_group = "sm";
       video_recv = recv_call->CreateVideoReceiveStream(std::move(c));

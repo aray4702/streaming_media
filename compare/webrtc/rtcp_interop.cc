@@ -14,6 +14,7 @@
 // and both generators make the same FEC payloads from the same media.
 // Exits non-zero on any mismatch.
 #include <algorithm>
+#include <optional>
 #include <cstdio>
 #include <memory>
 #include <string>
@@ -58,6 +59,8 @@
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
 #include "sm/sync/header_extensions.h"
+
+#include "model_h264.h"
 
 namespace {
 using Bytes = std::vector<uint8_t>;
@@ -578,6 +581,11 @@ std::vector<Bytes> H264Frames() {
     frames.push_back(WithRealParameterSets(sm::rtp::MakeFakeH264Frame(true, bytes)));
     frames.push_back(sm::rtp::MakeFakeH264Frame(false, bytes));
   }
+  // The access units sm_compare's model encoder gives libwebrtc (issue #339).
+  for (size_t bytes : {200u, 3334u, 30000u}) {
+    frames.push_back(sm::compare::ModelAccessUnit(true, bytes));
+    frames.push_back(sm::compare::ModelAccessUnit(false, bytes));
+  }
   // Many small slices: STAP-A with more than two units, then a split one.
   Bytes slices;
   for (int k = 0; k < 40; ++k) {
@@ -713,6 +721,34 @@ void H264WebrtcToSm() {
   }
   Check(ok && frames > 10 && packets > frames, "H.264: packetized by libwebrtc, parsed and reassembled here");
   Check(same, "H.264: this packetizer makes the same payloads as libwebrtc's");
+}
+
+// sm_compare's model encoder (issue #339): its access units are this library's
+// for the same size, so both stacks send the same packets, and libwebrtc's
+// depacketizer takes its SPS and PPS (a keyframe of 320x192).
+void H264Model() {
+  bool same = true, parsed_ok = true;
+  for (size_t bytes : {200u, 1100u, 3334u, 30000u}) {
+    for (bool key : {true, false}) {
+      const Bytes model = sm::compare::ModelAccessUnit(key, bytes);
+      const Bytes ours = sm::rtp::MakeFakeH264Frame(key, bytes);
+      // Only the SPS and PPS payloads differ.
+      same = same && model.size() == ours.size() && std::equal(model.begin() + 27, model.end(), ours.begin() + 27);
+      if (!key) same = same && model == ours;
+      if (!key) continue;
+      auto payloads = sm::rtp::H264Packetizer::Packetize(model, kH264Limit);
+      webrtc::VideoRtpDepacketizerH264 dep;
+      auto parsed = payloads.empty() ? std::nullopt
+                                     : dep.Parse(webrtc::CopyOnWriteBuffer(payloads[0].data(), payloads[0].size()));
+      const bool ok = parsed && parsed->video_header.frame_type == webrtc::VideoFrameType::kVideoFrameKey &&
+                      parsed->video_header.is_first_packet_in_frame && parsed->video_header.width == 320 &&
+                      parsed->video_header.height == 192;
+      if (!ok) std::printf("    model keyframe of %zu bytes: first packet not taken as a 320x192 keyframe\n", bytes);
+      parsed_ok = parsed_ok && ok;
+    }
+  }
+  Check(same, "H.264 model encoder: this library's access units, same sizes");
+  Check(parsed_ok, "H.264 model encoder: libwebrtc parses its SPS and PPS");
 }
 
 // ULPFEC over RED (RFC 5109, RFC 2198), as libwebrtc M157 sends it for video:
@@ -902,6 +938,7 @@ int main() {
   WebrtcToSender();
   H264SmToWebrtc();
   H264WebrtcToSm();
+  H264Model();
   Ulpfec();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
