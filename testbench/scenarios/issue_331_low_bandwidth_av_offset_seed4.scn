@@ -1,0 +1,22 @@
+name issue_331_low_bandwidth_av_offset_seed4
+describe low_bandwidth with seed 4: lip sync raises the audio delay past 2 s and the audio buffer must hold it (issue #331)
+# NetEq's PacketBuffer holds NetEq::Config::max_packets_in_buffer = 200 packets and flushes all of them only when
+# full (packet_buffer.cc InsertPacket); DelayConstraints caps the minimum delay at 75 % of that buffer (3 s of 20 ms
+# audio). Ours flushed above 100 packets (2 s), so once RtpStreamsSynchronizer had raised the audio delay past 2 s the
+# flush threw it away and the A/V offset came back (issue #331).
+# Seed 4: sync.av_offset_p95_ms 2355 -> 1892 ms (libwebrtc 1900 on main's compare-webrtc), median 1271 -> 1065 ms.
+# low_bandwidth seeds 1-10 mean 1765 -> 1708 ms (libwebrtc 1576, band 188); seeds 1-40 mean 1839 -> 1694 ms.
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+seed 4
+# Guard rail moved by #356 (program.md 0.2). Provisional lock, accepted by the Owner on 2026-10-24 and tracked to #356, now #360 (below): with the receiver's RTT measured over XR
+# RRTR/DLRR as libwebrtc's, seed 4 reads p95 1937 ms and p50 1163 ms (#350 had `< 1900` and `< 1150`, ours 1892 and
+# 1065 then). libwebrtc seed 4: p95 1900. low_bandwidth seeds 1-10 p95 mean: libwebrtc 1576 (band 188), main 1708,
+# with XR 1724; p50 mean: libwebrtc 931, main 951, with XR 978.
+# Issue #355 (rate_utilization_tracker on by default, as libwebrtc): with the tracker and XR together, seed 4 reads p95
+# 1880 ms and p50 1112 ms, so the lines go back to #350's bounds (libwebrtc seed 4: p95 1900).
+# #356 closed with nothing left to port after #367 (main 74e965c, seeds 1-10: no gap on issue_346_reconfigure_capacity_drop).
+# The lock now follows #360 (RTCP first-report timing), which moves the same RTT samples.
+expect sync.av_offset_p95_ms < 1900
+expect sync.av_offset_p50_ms < 1150
+expect audio.concealed_pct < 5

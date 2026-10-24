@@ -328,6 +328,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "bitrate_adjuster") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: bitrate_adjuster on|off");
       s.bitrate_adjuster = tok[1] == "on";
+    } else if (key == "rate_utilization_tracker") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: rate_utilization_tracker on|off");
+      s.rate_utilization_tracker = tok[1] == "on";
     } else if (key == "encode_delay") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: encode_delay on|off");
       s.encode_delay = tok[1] == "on";
@@ -416,6 +419,8 @@ std::string FormatScenario(const Scenario& s) {
   rate("max_rate", s.max_rate, d.max_rate);
   if (s.keyframe_interval != d.keyframe_interval) o += "keyframe_interval " + FormatTime(s.keyframe_interval) + "\n";
   if (s.bitrate_adjuster != d.bitrate_adjuster) o += std::string("bitrate_adjuster ") + (s.bitrate_adjuster ? "on" : "off") + "\n";
+  if (s.rate_utilization_tracker != d.rate_utilization_tracker)
+    o += std::string("rate_utilization_tracker ") + (s.rate_utilization_tracker ? "on" : "off") + "\n";
   if (s.encode_delay != d.encode_delay) o += std::string("encode_delay ") + (s.encode_delay ? "on" : "off") + "\n";
   if (s.control_handler != d.control_handler) o += std::string("control_handler ") + (s.control_handler ? "on" : "off") + "\n";
   if (s.send_rate_stats != d.send_rate_stats) o += std::string("send_rate_stats ") + (s.send_rate_stats ? "on" : "off") + "\n";

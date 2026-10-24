@@ -83,6 +83,8 @@ class QualityScaler : public MetricsSource {
     Signal signal = Signal::kNone;
   };
   uint64_t checks() const { return checks_; }  // Checks with a CheckRecord so far.
+  // Version 2: when the next CheckQpTask is due (MinusInfinity before the first Check()).
+  Timestamp next_check() const { return next_check_; }
   const CheckRecord& last_check() const { return last_record_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

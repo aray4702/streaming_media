@@ -50,6 +50,12 @@ struct RtcpConfig {
   // Reduced-size RTCP (RFC 5506): early feedback is sent without the leading
   // SR/RR. Only when the peer negotiated it.
   bool reduced_size = false;
+  // Receiver reference time reports (RFC 3611 RRTR), libwebrtc's
+  // `rtcp_xr.receiver_reference_time_report`: while the endpoint sends no
+  // media, every report carries an RRTR, and the peer's DLRR echo gives the
+  // RTT a receive-only stream measures (RTCPReceiver::HandleXrDlrrReportBlock).
+  // Received RRTRs are echoed in a DLRR whatever this says, as RTCPSender does.
+  bool xr_rrtr = false;
   // Datagrams are split before they pass this size (libwebrtc's
   // kMaxRtcpPacketSize is the RTP MTU).
   size_t max_datagram_bytes = 1200;
@@ -99,6 +105,7 @@ struct RtcpIncoming {
   std::vector<timing::SenderReport> sender_reports;
   std::vector<timing::ReportBlock> report_blocks;  // From SR and RR, all senders.
   std::vector<TimeDelta> rtts;                     // One per usable report block.
+  std::vector<TimeDelta> xr_rtts;  // One per DLRR item that echoes our RRTR (with xr_rrtr).
   std::vector<loss::Nack> nacks;
   std::vector<cc::TransportFeedback> transport_feedback;
   std::vector<uint32_t> keyframe_requests;  // Media SSRC of each PLI / new FIR.
@@ -120,6 +127,8 @@ struct RtcpStats {
   uint64_t nack_received = 0, pli_received = 0, fir_received = 0, fir_duplicates = 0;
   uint64_t lntf_received = 0, transport_cc_received = 0, remb_received = 0;
   uint64_t sdes_received = 0, bye_received = 0;
+  uint64_t xr_sent = 0, rrtr_sent = 0, dlrr_items_sent = 0;
+  uint64_t xr_received = 0, rrtr_received = 0, dlrr_items_received = 0;
 };
 
 class RtcpEngine : public MetricsSource {
@@ -127,6 +136,9 @@ class RtcpEngine : public MetricsSource {
   // Incoming FIR sequence numbers are remembered for at most this many
   // (sender, media) pairs; the table is cleared when it fills.
   static constexpr size_t kMaxFirTracked = 64;
+  // RTCPReceiver's kMaxNumberOfStoredRrtrs: RRTR senders remembered until the
+  // next report echoes them.
+  static constexpr size_t kMaxStoredRrtrs = 300;
 
   explicit RtcpEngine(RtcpConfig cfg = {});
 
@@ -178,6 +190,10 @@ class RtcpEngine : public MetricsSource {
   std::vector<uint8_t> BuildReport(Timestamp now);
   void AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& packets);
   void EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out);
+  // RTCPSender::BuildExtendedReports for a report: an RRTR while sending no
+  // media (xr_rrtr), and a DLRR item per RRTR received since the last report
+  // (RTCPReceiver::ConsumeReceivedXrReferenceTimeInfo). Empty when neither.
+  std::vector<uint8_t> BuildExtendedReports(Timestamp now);
   std::vector<uint8_t> LeadingReport() const;
   void Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind kind, std::vector<RtcpOutgoing>& out);
 
@@ -203,6 +219,13 @@ class RtcpEngine : public MetricsSource {
   std::deque<std::pair<Timestamp, uint32_t>> rate_samples_;
   DataRate send_rate_ = DataRate::Zero();
   timing::RttEstimator rtt_;
+  // RTCPReceiver::RrtrInformation, oldest first; one per sender SSRC.
+  struct ReceivedRrtr {
+    uint32_t ssrc;
+    uint32_t remote_compact;  // The RRTR's NTP, compact.
+    uint32_t local_compact;   // Our NTP when it arrived, compact.
+  };
+  std::deque<ReceivedRrtr> received_rrtrs_;
   RtcpStats stats_;
 };
 

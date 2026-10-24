@@ -110,6 +110,70 @@ std::optional<ReceiverReport> ParseReceiverReport(std::span<const uint8_t> d) {
   return rr;
 }
 
+// --- Extended reports (RFC 3611) ---------------------------------------------
+
+namespace {
+constexpr uint8_t kRtcpXr = 207;
+constexpr uint8_t kBlockRrtr = 4;
+constexpr uint8_t kBlockDlrr = 5;
+}  // namespace
+
+std::vector<uint8_t> SerializeExtendedReports(const ExtendedReports& xr) {
+  const size_t items = std::min(xr.dlrr.size(), kMaxNumberOfDlrrItems);
+  size_t total = 8 + (xr.rrtr ? 12 : 0) + (items ? 4 + 12 * items : 0);
+  std::vector<uint8_t> b;
+  PutHeader(b, 0, kRtcpXr, total);
+  Put(b, xr.sender_ssrc, 4);
+  if (xr.rrtr) {
+    Put(b, kBlockRrtr, 1);
+    Put(b, 0, 1);
+    Put(b, 2, 2);  // Block length in 32-bit words, header excluded.
+    Put(b, xr.rrtr->value, 8);
+  }
+  if (items) {
+    Put(b, kBlockDlrr, 1);
+    Put(b, 0, 1);
+    Put(b, 3 * items, 2);
+    for (size_t i = 0; i < items; ++i) {
+      Put(b, xr.dlrr[i].ssrc, 4);
+      Put(b, xr.dlrr[i].last_rr, 4);
+      Put(b, xr.dlrr[i].delay_since_last_rr, 4);
+    }
+  }
+  return b;
+}
+
+std::optional<ExtendedReports> ParseExtendedReports(std::span<const uint8_t> d) {
+  if (d.size() < 8 || (d[0] >> 6) != 2 || d[1] != kRtcpXr) return std::nullopt;
+  size_t len = (Get(&d[2], 2) + 1) * 4;
+  if (len > d.size()) return std::nullopt;
+  // Padding (P bit) is counted in the length; the blocks end before it.
+  if (d[0] & 0x20) {
+    const size_t pad = d[len - 1];
+    if (pad == 0 || pad > len - 8) return std::nullopt;
+    len -= pad;
+  }
+  ExtendedReports xr;
+  xr.sender_ssrc = static_cast<uint32_t>(Get(&d[4], 4));
+  size_t pos = 8;
+  while (pos + 4 <= len) {
+    const uint8_t type = d[pos];
+    const size_t words = static_cast<size_t>(Get(&d[pos + 2], 2));
+    const size_t next = pos + 4 + 4 * words;
+    if (next > len) return std::nullopt;  // The block runs past the packet.
+    if (type == kBlockRrtr && words == 2) {
+      xr.rrtr = NtpTime{Get(&d[pos + 4], 8)};
+    } else if (type == kBlockDlrr && words % 3 == 0) {
+      for (size_t i = pos + 4; i < next; i += 12) {
+        xr.dlrr.push_back({static_cast<uint32_t>(Get(&d[i], 4)), static_cast<uint32_t>(Get(&d[i + 4], 4)),
+                           static_cast<uint32_t>(Get(&d[i + 8], 4))});
+      }
+    }
+    pos = next;
+  }
+  return xr;
+}
+
 // --- ReceiveStatistics -------------------------------------------------------
 
 void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival) {

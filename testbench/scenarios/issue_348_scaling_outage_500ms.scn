@@ -1,0 +1,15 @@
+name issue_348_scaling_outage_500ms
+describe issue_23_outage_500ms with quality scaling on: the scaler's 540p step, due at the frame captured as the link goes down, applies from the next frame as in libwebrtc, so a 360p frame is repaired first and the longest freeze stays near libwebrtc's (issue #348)
+duration 30s
+quality_scaling on
+at 0s  capacity=2000kbps delay=20ms queue=300ms
+at 10s down
+at 10.5s up
+reverse at 0s delay=20ms
+reverse at 10s down
+reverse at 10.5s up
+# libwebrtc seeds 1-10 (yardstick #364 and #324's compare-webrtc.json): 2 freezes on every seed, longest 536-584 ms,
+# total 802-901 ms. main before #348: 1 freeze of 745-821 ms. With the fix: 2 freezes, longest 539-583 ms, total 811-900 ms.
+expect video.longest_freeze_ms < 650
+expect video.freeze_total_ms < 950
+expect video.keyframe_requests <= 2

@@ -301,7 +301,6 @@ constexpr w::RtpHeaderExtensionId kTransportSeqExtId(1);
 constexpr int64_t kUdpIpOverhead = 28;
 constexpr int kAudioRate = 48000;
 constexpr int kAudioBlock = kAudioRate / 100;  // 10 ms.
-constexpr int64_t kInterruptionMs = 150;
 
 // --- RTP parsing for measurement --------------------------------------------
 
@@ -741,8 +740,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
   double last_video_delay = 0;
-  int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
-  int64_t interruptions = 0, interruption_ms = 0, w_conceal = 0, w_played = 0;
+  int64_t played_ms = 0, stretch_ms = 0;
+  uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
+  testbench::ConcealmentMeter concealment(kAudioRate);  // Issue #372: as testbench/call.cc.
   double audio_buffer_ms = 0;
   w::AudioReceiveStreamInterface::Stats prev_audio;
 
@@ -1108,20 +1108,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
         prev_audio = st;
         played_ms += 10;
-        ++w_played;
         if (stretched > 0) stretch_ms += 10;
-        if (total > 0 && concealed * 2 >= total) {
-          concealed_ms += 10;
-          ++w_conceal;
-          conceal_run += 10;
-        } else if (conceal_run > 0) {
-          longest_conceal = std::max(longest_conceal, conceal_run);
-          if (conceal_run > kInterruptionMs) {
-            ++interruptions;
-            interruption_ms += conceal_run;
-          }
-          conceal_run = 0;
-        }
+        concealment.OnPull(st.total_samples_received, st.concealed_samples, st.concealment_events);
+        w_played += concealment.pull_total();
+        w_conceal += concealment.pull_concealed();
       });
     }
 
@@ -1240,18 +1230,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   // --- Summary (same definitions as testbench/call.cc) ------------------------
   const sm::Timestamp end = sm::Timestamp::Millis(end_ms);
   auto& m = rep.metrics;
-  if (conceal_run > 0) {
-    longest_conceal = std::max(longest_conceal, conceal_run);
-    if (conceal_run > kInterruptionMs) {
-      ++interruptions;
-      interruption_ms += conceal_run;
-    }
-  }
+  concealment.Finish();
   if (s.audio) {
-    m["audio.concealed_pct"] = played_ms ? 100.0 * static_cast<double>(concealed_ms) / static_cast<double>(played_ms) : 100.0;
-    m["audio.interruptions"] = static_cast<double>(interruptions);
-    m["audio.interruption_ms"] = static_cast<double>(interruption_ms);
-    m["audio.longest_interruption_ms"] = static_cast<double>(longest_conceal);
+    m["audio.concealed_pct"] = concealment.concealed_pct();
+    m["audio.interruptions"] = static_cast<double>(concealment.interruptions());
+    m["audio.interruption_ms"] = static_cast<double>(concealment.interruption_ms());
+    m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = testbench::Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = testbench::Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay, 95);

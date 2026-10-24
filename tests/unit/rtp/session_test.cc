@@ -365,6 +365,33 @@ SM_TEST(Session, AReceiveOnlyVideoStreamTakesTheMaximumRttFromCallStats) {
   SM_EXPECT_EQ(nack_rtt(), 60);
 }
 
+// The session exports CallStats::LastProcessedRtt() as `call_stats_rtt_ms`,
+// what libwebrtc's Call::GetStats().rtt_ms reads (call.cc): -1 until the
+// first 1 s update, then the 70/30 smoothed average of the reports, not the
+// last raw RTT that rtt() returns (issue #370).
+SM_TEST(Session, ExportsCallStatsLastProcessedRtt) {
+  Session s(Cfg(2));
+  s.AddVideoReceive(Video());
+  const auto gauge = [&] {
+    MapMetricsWriter w;
+    s.ExportMetrics(w);
+    return w.Get("call_stats_rtt_ms", -2);
+  };
+  Pump(s, 0, 100);
+  SM_EXPECT_EQ(gauge(), -1.0);
+  s.SetRtt(TimeDelta::Millis(250));
+  Pump(s, 100, 899);  // Up to 998 ms: before the first periodic update.
+  SM_EXPECT_EQ(gauge(), -1.0);
+  Pump(s, 999, 2);  // The update at 1000 ms.
+  SM_EXPECT_EQ(gauge(), 250.0);
+  s.SetRtt(TimeDelta::Millis(50));
+  SM_EXPECT_EQ(s.rtt().ms(), 50);
+  SM_EXPECT_EQ(gauge(), 250.0);  // Until the next update.
+  Pump(s, 1001, 1000);           // 2000 ms: smoothed toward the 150 ms mean of the reports.
+  SM_EXPECT_GT(gauge(), 150.0);
+  SM_EXPECT_LT(gauge(), 250.0);
+}
+
 SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
   Session s(Cfg(2));
   NullDecoder dec;
@@ -583,23 +610,31 @@ SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
 }
 
 // #62: AudioSendStream::ConfigureStream asks for periodic ALR probing when the audio stream
-// has transport-cc (audio_send_stream.cc:297-308), so libwebrtc probes every 5 s in ALR in
-// every call with audio. Without transport-cc it does not.
+// has transport-cc (audio_send_stream.cc:297-308). Without transport-cc it does not.
+// #355: VideoSendStreamImpl's constructor then sets it to RateControlSettings::UseAlrProbing(),
+// off without field trials, when the video stream has transport-cc
+// (video_send_stream_impl.cc:487-523). So a call that adds audio and then video does not
+// probe periodically in ALR (yardstick #359: libwebrtc sends none on cross traffic), while
+// audio alone, or audio added after the video, does.
 SM_TEST(Session, AnAudioStreamWithTransportCcRequestsAlrProbing) {
-  auto alr_probing = [](bool audio, bool transport_cc) {
+  enum class Order { kAudioOnly, kAudioThenVideo, kVideoThenAudio, kVideoOnly };
+  auto alr_probing = [](Order order, bool transport_cc) {
     SessionConfig c = Cfg(1);
     if (!transport_cc) c.extensions = sync::ExtensionMap();
     Session s(c);
     AudioStreamConfig au;
     au.ssrc = 0x100;
-    if (audio) s.AddAudioSend(au);
-    s.AddVideoSend(Video());
+    if (order == Order::kVideoThenAudio || order == Order::kVideoOnly) s.AddVideoSend(Video());
+    if (order != Order::kVideoOnly) s.AddAudioSend(au);
+    if (order == Order::kAudioThenVideo) s.AddVideoSend(Video());
     s.Process(Timestamp::Millis(0));
     return s.send_side().gcc().probe_controller_v2().periodic_alr_probing();
   };
-  SM_EXPECT_TRUE(alr_probing(true, true));
-  SM_EXPECT_FALSE(alr_probing(true, false));
-  SM_EXPECT_FALSE(alr_probing(false, true));  // Video alone (not screen share) does not ask.
+  SM_EXPECT_TRUE(alr_probing(Order::kAudioOnly, true));
+  SM_EXPECT_FALSE(alr_probing(Order::kAudioThenVideo, true));  // The video stream turns it off.
+  SM_EXPECT_TRUE(alr_probing(Order::kVideoThenAudio, true));
+  SM_EXPECT_FALSE(alr_probing(Order::kVideoOnly, true));  // Video alone (not screen share) does not ask.
+  SM_EXPECT_FALSE(alr_probing(Order::kAudioThenVideo, false));
 }
 
 // #62: the initial exponential probes of an audio-only call are 3x and 6x the start rate,

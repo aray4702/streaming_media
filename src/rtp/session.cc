@@ -131,9 +131,15 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
   send_.SetPaddingSender(video_send_.back().sender.get());
-  // VideoSendStreamImpl: with transport-cc the stricter pacing factor
-  // (GetConfiguredPacingFactor, kStrictPacingMultiplier) applies from the start.
-  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) send_.SetPacingFactor(kStrictPacingMultiplier);
+  // VideoSendStreamImpl's constructor (video_send_stream_impl.cc:487-523): with
+  // transport-cc the stricter pacing factor (GetConfiguredPacingFactor,
+  // kStrictPacingMultiplier) applies from the start, and periodic ALR probing is
+  // set to RateControlSettings::UseAlrProbing(), off without field trials. That
+  // overrides the request an audio stream added earlier made (issue #355).
+  if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) {
+    send_.SetPacingFactor(kStrictPacingMultiplier);
+    send_.EnablePeriodicAlrProbing(false);
+  }
   send_has_padding_ = true;
   return {static_cast<int>(video_send_.size()) - 1};
 }
@@ -350,7 +356,8 @@ void Session::MaybeUpdateFecRates(Timestamp now) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
-  pending_rr_rtt_ = rtt;
+  // With RRTR on, the XR measurement is what goes to CallStats.
+  if (!cfg_.rtcp.xr_rrtr) pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
   for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
 }
@@ -427,6 +434,9 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     }
   }
   if (!in.report_blocks.empty()) last_report_block_ = now;
+  // RTCPReceiver::HandleXrDlrrReportBlock keeps the latest XR RTT for
+  // GetAndResetXrRrRtt at the next periodic update.
+  if (!in.xr_rtts.empty()) pending_rr_rtt_ = in.xr_rtts.back();
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
@@ -664,6 +674,8 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("empty_video_frames", stats_.empty_video_frames);
   w.Counter("nacks_unmatched", stats_.nacks_unmatched);
   w.Gauge("rtt_ms", static_cast<double>(rtt_.us()) / 1000.0);
+  // Call::GetStats().rtt_ms: CallStats::LastProcessedRtt(), -1 before the first update.
+  w.Gauge("call_stats_rtt_ms", static_cast<double>(call_stats_.LastProcessedRtt()));
   w.Gauge("target_kbps", send_.target().kbps());
 }
 
