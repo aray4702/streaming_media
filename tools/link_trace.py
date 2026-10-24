@@ -4,9 +4,13 @@
 `sm_compare` records every packet either stack offers to the forward link,
 for the first seed of the scenarios named by --trace (default
 very_low_capacity_allocator_v2), in the same CSV for this library and for
-libwebrtc: time_us,size,kind,seq,queue_bytes,outcome. CI publishes them in
-compare-webrtc.json under "traces"; with --trace-dir they are also written as
-<scenario>.<seed>.{sm,webrtc}.trace.csv.
+libwebrtc: time_us,size,kind,seq,queue_bytes,outcome,orig_seq (orig_seq is
+the original sequence number an RTX packet carries, -1 otherwise; issue #356).
+CI publishes them in compare-webrtc.json under "traces"; with --trace-dir they
+are also written as <scenario>.<seed>.{sm,webrtc}.trace.csv. The receiver's
+NACKed sequence numbers and PLI/FIR requests on the reverse link go to
+<scenario>.<seed>.{sm,webrtc}.rtcp.csv (time_us,type,seq) and "sm_rtcp" /
+"webrtc_rtcp" in the JSON.
 
 For each kind (audio, video, rtx, padding, fec, other) the summary shows the
 offered rate, the wire size (p50, p90, max and a histogram), the gap between

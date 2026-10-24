@@ -753,7 +753,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     const int64_t wire = static_cast<int64_t>(data.size()) + kUdpIpOverhead;
     // Counted the way the test bench counts: by SSRC, and padding is a packet with no payload.
     sm::sim::LinkKind link_kind = sm::sim::LinkKind::kOther;
-    int32_t trace_seq = -1;
+    int32_t trace_seq = -1, trace_orig_seq = -1;
     if (!rtcp && !IsRtcp(data)) {
       w::SentPacketInfo sent(o.packet_id, now.ms());
       sent.info.included_in_feedback = o.included_in_feedback;
@@ -787,16 +787,19 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
           repair_bytes += static_cast<int64_t>(r.payload_len) - 2;
           link_kind = sm::sim::LinkKind::kRtx;
+          trace_orig_seq = (payload[0] << 8) | payload[1];  // RFC 4588 OSN (issue #356 trace).
         } else if (r.ssrc == kRtxSsrc) {
           link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }
       }
     }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
-                 DataSize::Bytes(wire), link_kind, trace_seq);
+                 DataSize::Bytes(wire), link_kind, trace_seq, trace_orig_seq);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
+    // The receiver's NACKs and keyframe requests, parsed from the wire as the test bench does (issue #356).
+    if (opt.link_trace && (rtcp || IsRtcp(data))) sm::testbench::AppendFeedbackTrace(data, rel(sim.Now()).us(), rep.feedback_trace);
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
   });

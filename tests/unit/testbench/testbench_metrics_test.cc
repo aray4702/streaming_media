@@ -6,6 +6,8 @@
 #include "call.h"
 #include "call_common.h"
 #include "scenario.h"
+#include "sm/core/rtp_packet.h"
+#include "sm/loss/rtcp_feedback.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -144,14 +146,49 @@ SM_TEST(TestbenchMetrics, ACallReportsTheNewMetricsAndTheBreakdownAddsUp) {
 SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
   trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered});
-  trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop});
+  trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop, 812});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome\n"
-               "0,213,audio,7,0,delivered\n"
-               "20000,1200,rtx,65535,450,queue_drop\n"
-               "20500,60,other,-1,0,lost\n");
-  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,orig_seq\n"
+               "0,213,audio,7,0,delivered,-1\n"
+               "20000,1200,rtx,65535,450,queue_drop,812\n"
+               "20500,60,other,-1,0,lost,-1\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,orig_seq\n");
+}
+
+// Issue #356: an RTX packet's original sequence number, from its first two payload bytes.
+SM_TEST(TestbenchMetrics, RtxOriginalSeqReadsTheOsn) {
+  RtpPacket rtx;
+  rtx.ssrc = 3;
+  rtx.seq = 10;
+  rtx.payload = {0x12, 0x34, 0xAA};
+  const std::vector<uint8_t> bytes = rtx.Serialize();
+  SM_EXPECT_EQ(RtxOriginalSeq(bytes, 3), static_cast<int32_t>(0x1234));
+  SM_EXPECT_EQ(RtxOriginalSeq(bytes, 2), static_cast<int32_t>(-1));  // Not the RTX SSRC.
+  rtx.payload = {0x12};
+  SM_EXPECT_EQ(RtxOriginalSeq(rtx.Serialize(), 3), static_cast<int32_t>(-1));  // No OSN.
+}
+
+// Issue #356: the reverse-link feedback trace has a row per NACKed number, PLI and FIR.
+SM_TEST(TestbenchMetrics, FeedbackTraceListsNackedNumbersAndKeyframeRequests) {
+  loss::Nack nack;
+  nack.media_ssrc = 2;
+  nack.seqs = {100, 101, 140};
+  loss::Pli pli;
+  pli.media_ssrc = 2;
+  std::vector<std::vector<uint8_t>> parts = {loss::SerializeNack(nack), loss::SerializePli(pli)};
+  std::vector<uint8_t> rr = {0x80, 201, 0, 1, 0, 0, 0, 5};  // RR, no report blocks.
+  parts.insert(parts.begin(), rr);
+  const std::vector<uint8_t> dg = loss::BuildCompoundRtcp(parts);
+  SM_ASSERT_TRUE(!dg.empty());
+  std::vector<FeedbackTraceRow> rows;
+  AppendFeedbackTrace(dg, 2500, rows);
+  AppendFeedbackTrace(rr, 3000, rows);  // Nothing to record.
+  SM_EXPECT_EQ(FeedbackTraceCsv(rows), std::string("time_us,type,seq\n"
+                                                   "2500,nack,100\n"
+                                                   "2500,nack,101\n"
+                                                   "2500,nack,140\n"
+                                                   "2500,pli,-1\n"));
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {

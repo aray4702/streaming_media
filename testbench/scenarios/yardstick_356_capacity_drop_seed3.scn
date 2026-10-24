@@ -1,0 +1,8 @@
+name yardstick_356_capacity_drop_seed3
+describe issue_346_reconfigure_capacity_drop on seed 3, traced on both stacks for #356 (receiver NACKs, RTX OSNs, keyframe requests)
+duration 40s
+seed 3
+quality_scaling on
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps

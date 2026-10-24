@@ -3,7 +3,9 @@
 // experiences it (audio gaps, video freezes, delay, quality, recovery time).
 #pragma once
 
+#include <cstdint>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -82,6 +84,16 @@ struct AudioTraceRow {
   double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
 };
 
+// One NACKed sequence number or keyframe request that the receiver put on the
+// reverse link (issue #356), the same record for this library and for
+// libwebrtc: both harnesses parse the RTCP datagrams they send.
+struct FeedbackTraceRow {
+  enum class Type : uint8_t { kNack, kPli, kFir };
+  int64_t time_us = 0;  // Time the datagram was offered to the reverse link.
+  Type type = Type::kNack;
+  int32_t seq = -1;  // The NACKed media sequence number; -1 for PLI and FIR.
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -98,6 +110,8 @@ struct Report {
   std::vector<cc::BweTraceRow> bwe_trace;
   // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
   std::vector<AudioTraceRow> audio_trace;
+  // Every NACKed sequence number and keyframe request on the reverse link, when RunOptions::link_trace is set.
+  std::vector<FeedbackTraceRow> feedback_trace;
 };
 
 struct RunOptions {
@@ -159,6 +173,14 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
 // #196). v1 counts a 4 B extension, 49.6 kbps.
 DataRate AudioAllocationRate(const Scenario& s);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
+// The original sequence number an RTX packet (`datagram`, on `rtx_ssrc`)
+// carries in its first two payload bytes (RFC 4588); -1 for any other packet.
+int32_t RtxOriginalSeq(std::span<const uint8_t> datagram, uint32_t rtx_ssrc);
+// Appends one row per NACKed sequence number, PLI and FIR in an RTCP datagram
+// sent on the reverse link at `time_us`; other packets add nothing.
+void AppendFeedbackTrace(std::span<const uint8_t> datagram, int64_t time_us, std::vector<FeedbackTraceRow>& rows);
+// time_us,type,seq with type nack, pli or fir.
+std::string FeedbackTraceCsv(const std::vector<FeedbackTraceRow>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);

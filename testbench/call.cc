@@ -18,6 +18,7 @@
 #include "sm/core/random.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
+#include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/session.h"
@@ -265,11 +266,42 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,orig_seq\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
-           kOutcomes[static_cast<size_t>(r.outcome)] + "\n";
+           kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.orig_seq) + "\n";
+  }
+  return out;
+}
+
+int32_t RtxOriginalSeq(std::span<const uint8_t> datagram, uint32_t rtx_ssrc) {
+  auto p = RtpPacket::Parse(datagram);
+  if (!p || p->ssrc != rtx_ssrc || p->payload.size() < 2) return -1;
+  return (p->payload[0] << 8) | p->payload[1];
+}
+
+void AppendFeedbackTrace(std::span<const uint8_t> datagram, int64_t time_us, std::vector<FeedbackTraceRow>& rows) {
+  auto packets = loss::SplitCompoundRtcp(datagram);
+  if (!packets) return;
+  for (const auto& v : *packets) {
+    if (v.type == loss::RtcpType::kNack) {
+      if (auto n = loss::ParseNack(v.data)) {
+        for (uint16_t seq : n->seqs) rows.push_back({time_us, FeedbackTraceRow::Type::kNack, seq});
+      }
+    } else if (v.type == loss::RtcpType::kPli) {
+      rows.push_back({time_us, FeedbackTraceRow::Type::kPli, -1});
+    } else if (v.type == loss::RtcpType::kFir) {
+      rows.push_back({time_us, FeedbackTraceRow::Type::kFir, -1});
+    }
+  }
+}
+
+std::string FeedbackTraceCsv(const std::vector<FeedbackTraceRow>& trace) {
+  static const char* const kTypes[] = {"nack", "pli", "fir"};
+  std::string out = "time_us,type,seq\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.time_us) + "," + kTypes[static_cast<size_t>(r.type)] + "," + std::to_string(r.seq) + "\n";
   }
   return out;
 }
@@ -665,7 +697,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
-      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
+      const int32_t orig_seq = kind == Kind::kRtx ? RtxOriginalSeq(p.bytes, kRtxSsrc) : -1;
+      if (!is_forward && kind == Kind::kRtcp && opt.link_trace) AppendFeedbackTrace(p.bytes, now.us(), rep.feedback_trace);
+      link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq, orig_seq);
     }
   };
 
