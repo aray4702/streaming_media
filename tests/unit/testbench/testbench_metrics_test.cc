@@ -379,7 +379,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
     opt.bwe_trace = true;
     const Report rep = RunCall(*parsed.scenario, opt);
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0, detector = 0;
+    int delay = 0, loss = 0, target = 0, detector = 0, loss_bwe = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -393,9 +393,15 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
           SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2 && r.packets > 0);
           SM_EXPECT_TRUE(std::isfinite(r.modified_trend) && r.threshold > 0 && std::isfinite(r.send_delta_ms));
           break;
+        case cc::BweTraceRow::Kind::kLossBwe:
+          ++loss_bwe;
+          SM_EXPECT_TRUE(r.loss_state >= 0 && r.loss_state <= 3 && r.packets > 0);
+          SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.fraction_loss <= r.packets);
+          SM_EXPECT_TRUE(r.modified_trend >= 0 && r.threshold >= 0 && (r.arrival_ms == 0 || r.arrival_ms == 1));
+          break;
       }
     }
-    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0);
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0 && loss_bwe > 0);
   }
 }
 

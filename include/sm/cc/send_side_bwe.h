@@ -10,6 +10,7 @@
 
 #include <limits>
 #include <optional>
+#include <span>
 #include <vector>
 
 #include "sm/cc/alr_detector.h"
@@ -33,7 +34,16 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kLossBwe (issue #354): one row per transport feedback, after the controller took it,
+  // with LossBasedBweV2's state and inputs. bitrate_bps = its result estimate (-1 if not
+  // finite), loss_state = its state, loss_limit_bps = the loss-limited estimate (best
+  // candidate), instant_ub_bps = the instant upper bound, packets / fraction_loss = the
+  // feedback's packet results / how many of them were lost, and, reusing the double
+  // columns: modified_trend = the average reported loss ratio, threshold = the inherent
+  // loss, send_delta_ms = the acknowledged rate it holds (kbps, NaN none), recv_delta_ms =
+  // the delay-based estimate it was given (kbps, NaN infinite), send_ms = the
+  // bandwidth limit in the current window (kbps, NaN infinite), arrival_ms = 1 in ALR.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kLossBwe };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -141,6 +151,7 @@ class GccController : public MetricsSource {
   void TraceDetector(Timestamp now);
   void TraceDelayBased(Timestamp now, DataRate delay_est, bool updated);
   void TraceLossBased(Timestamp now);
+  void TraceLossBwe(Timestamp now, std::span<const PacketResult> results, bool in_alr);
   std::vector<ProbeCluster> RegisterProbes(std::vector<ProbeCluster> probes);
   GccConfig cfg_;
   DataRate configured_min_;

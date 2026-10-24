@@ -227,6 +227,7 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   ssbe_.UpdateLossBasedEstimator(results, alr_start_time.has_value(), now);
   target_ = ssbe_.target_rate();
   TraceLossBased(now);
+  TraceLossBwe(now, results, alr_start_time.has_value());
   std::vector<ProbeCluster> probes;
   NetworkControlUpdate u = MakeUpdate(now, {});
   probes = std::move(u.probes);
@@ -327,6 +328,33 @@ void GccController::TraceLossBased(Timestamp now) {
     trace_loss_fraction_ = fraction;
     trace_loss_time_ = now;
   }
+}
+
+// LossBasedBweV2's state and inputs after each feedback (issue #354); see BweTraceRow::Kind::kLossBwe.
+void GccController::TraceLossBwe(Timestamp now, std::span<const PacketResult> results, bool in_alr) {
+  if (!cfg_.bwe_trace) return;
+  const LossBasedBweV2& lb = ssbe_.loss_based();
+  const auto kbps = [](DataRate r) {
+    return r.IsFinite() ? static_cast<double>(r.bps()) / 1000.0 : std::numeric_limits<double>::quiet_NaN();
+  };
+  BweTraceRow r;
+  r.time_us = now.us();
+  r.kind = BweTraceRow::Kind::kLossBwe;
+  const LossBasedBweV2::Result res = lb.GetLossBasedResult();
+  r.bitrate_bps = res.bandwidth_estimate.IsFinite() ? res.bandwidth_estimate.bps() : -1;
+  r.loss_state = static_cast<int>(res.state);
+  r.loss_limit_bps = lb.loss_limited_bandwidth() && lb.loss_limited_bandwidth()->IsFinite() ? lb.loss_limited_bandwidth()->bps() : -1;
+  r.instant_ub_bps = lb.instant_upper_bound().IsFinite() ? lb.instant_upper_bound().bps() : -1;
+  r.packets = static_cast<int>(results.size());
+  r.fraction_loss = 0;
+  for (const auto& p : results) r.fraction_loss += p.received() ? 0 : 1;
+  r.modified_trend = lb.average_reported_loss_ratio();
+  r.threshold = lb.inherent_loss();
+  r.send_delta_ms = lb.acknowledged_bitrate() ? kbps(*lb.acknowledged_bitrate()) : std::numeric_limits<double>::quiet_NaN();
+  r.recv_delta_ms = kbps(lb.delay_based_estimate());
+  r.send_ms = kbps(lb.bandwidth_limit_in_current_window());
+  r.arrival_ms = in_alr ? 1 : 0;
+  cfg_.bwe_trace->push_back(r);
 }
 
 NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes) {
