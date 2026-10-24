@@ -860,38 +860,12 @@
   },
   {
    "scenario": "issue_346_reconfigure_capacity_drop",
-   "metric": "audio.interruptions",
-   "sm": 0.3,
-   "webrtc": 1.1,
-   "band": 0.5,
+   "metric": "video.freeze_total_ms",
+   "sm": 2921.2,
+   "webrtc": 3123.3,
+   "band": 187.5520964662589,
    "direction": "ahead",
-   "seeds_agree": 8,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_346_reconfigure_capacity_drop",
-   "metric": "audio.longest_interruption_ms",
-   "sm": 153,
-   "webrtc": 202,
-   "band": 20,
-   "direction": "ahead",
-   "seeds_agree": 7,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_346_reconfigure_capacity_drop",
-   "metric": "video.longest_freeze_ms",
-   "sm": 1865,
-   "webrtc": 2687.7,
-   "band": 624.8038003156582,
-   "direction": "ahead",
-   "seeds_agree": 6,
+   "seeds_agree": 5,
    "seeds": 10,
    "owners": [
     5,
@@ -902,11 +876,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "video.freeze_count",
-   "sm": 8.7,
+   "sm": 6.4,
    "webrtc": 2.3,
    "band": 1.2516655570345725,
    "direction": "behind",
-   "seeds_agree": 9,
+   "seeds_agree": 7,
    "seeds": 10,
    "owners": [
     5,
@@ -917,11 +891,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "video.freeze_total_ms",
-   "sm": 3401,
+   "sm": 2352.7,
    "webrtc": 1348.8,
    "band": 247.00688249520496,
    "direction": "behind",
-   "seeds_agree": 9,
+   "seeds_agree": 7,
    "seeds": 10,
    "owners": [
     5,
@@ -932,7 +906,7 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "video.longest_freeze_ms",
-   "sm": 632.8,
+   "sm": 537,
    "webrtc": 941,
    "band": 205.46099927290877,
    "direction": "ahead",
@@ -947,11 +921,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 659.15,
+   "sm": 590.42,
    "webrtc": 451.007,
    "band": 72.83413516423616,
    "direction": "behind",
-   "seeds_agree": 9,
+   "seeds_agree": 7,
    "seeds": 10,
    "owners": [
     24,
@@ -961,11 +935,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 282.597,
+   "sm": 276.834,
    "webrtc": 231.352,
-   "band": 21.38005677182983,
+   "band": 21.38712969183933,
    "direction": "behind",
-   "seeds_agree": 8,
+   "seeds_agree": 7,
    "seeds": 10,
    "owners": [
     77
@@ -974,11 +948,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_join",
    "metric": "cc.queue_p95_ms",
-   "sm": 282.662,
+   "sm": 283.83,
    "webrtc": 267.535,
-   "band": 14.133099999999999,
+   "band": 14.1915,
    "direction": "behind",
-   "seeds_agree": 6,
+   "seeds_agree": 4,
    "seeds": 10,
    "owners": [
     19,
@@ -989,38 +963,9 @@
    ]
   },
   {
-   "scenario": "issue_346_reconfigure_cross_join",
-   "metric": "cc.max_settle_ms",
-   "sm": 11040,
-   "webrtc": 8570,
-   "band": 1897.3958762238078,
-   "direction": "behind",
-   "seeds_agree": 7,
-   "seeds": 10,
-   "owners": [
-    15,
-    48,
-    61,
-    20
-   ]
-  },
-  {
-   "scenario": "issue_346_reconfigure_cross_traffic",
-   "metric": "audio.longest_interruption_ms",
-   "sm": 38,
-   "webrtc": 60,
-   "band": 21.081851067789195,
-   "direction": "ahead",
-   "seeds_agree": 5,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
    "scenario": "issue_346_reconfigure_cross_traffic",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 456.39,
+   "sm": 462.021,
    "webrtc": 528.522,
    "band": 42.20074815239918,
    "direction": "ahead",
@@ -1034,7 +979,7 @@
   {
    "scenario": "issue_346_reconfigure_cross_traffic",
    "metric": "audio.jb_delay_p95_ms",
-   "sm": 268.45,
+   "sm": 267.35,
    "webrtc": 309,
    "band": 22.82785822435191,
    "direction": "ahead",
@@ -1048,7 +993,7 @@
   {
    "scenario": "issue_346_reconfigure_cross_traffic",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 203.9,
+   "sm": 204.05,
    "webrtc": 232.01,
    "band": 14.830539062653418,
    "direction": "ahead",
@@ -1062,11 +1007,11 @@
   {
    "scenario": "issue_346_reconfigure_cross_traffic",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 221.814,
+   "sm": 231.355,
    "webrtc": 257.747,
    "band": 24.71306137090714,
    "direction": "ahead",
-   "seeds_agree": 10,
+   "seeds_agree": 8,
    "seeds": 10,
    "owners": [
     77
@@ -1075,7 +1020,7 @@
   {
    "scenario": "issue_346_reconfigure_cross_traffic",
    "metric": "cc.queue_p95_ms",
-   "sm": 154.796,
+   "sm": 161.279,
    "webrtc": 183.725,
    "band": 20.88792671909355,
    "direction": "ahead",
@@ -1090,92 +1035,11 @@
    ]
   },
   {
-   "scenario": "issue_346_reconfigure_outage_8s",
-   "metric": "cc.max_settle_ms",
-   "sm": 3730,
-   "webrtc": 2610,
-   "band": 975.7618106439251,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    15,
-    48,
-    61,
-    20
-   ]
-  },
-  {
-   "scenario": "issue_355_rate_tracker_ramp",
-   "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 170.627,
-   "webrtc": 159.594,
-   "band": 10,
-   "direction": "behind",
-   "seeds_agree": 5,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_355_rate_tracker_ramp",
-   "metric": "audio.jb_delay_p95_ms",
-   "sm": 90,
-   "webrtc": 79,
-   "band": 10,
-   "direction": "behind",
-   "seeds_agree": 5,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_355_rate_tracker_ramp",
-   "metric": "sync.av_offset_p95_ms",
-   "sm": 26.9277,
-   "webrtc": 16.3501,
-   "band": 10,
-   "direction": "behind",
-   "seeds_agree": 4,
-   "seeds": 10,
-   "owners": [
-    77
-   ]
-  },
-  {
    "scenario": "issue_356_capacity_drop_xr_rtt",
-   "metric": "audio.interruptions",
-   "sm": 0.3,
-   "webrtc": 1.1,
-   "band": 0.5,
-   "direction": "ahead",
-   "seeds_agree": 8,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_356_capacity_drop_xr_rtt",
-   "metric": "audio.longest_interruption_ms",
-   "sm": 147,
-   "webrtc": 204,
-   "band": 20,
-   "direction": "ahead",
-   "seeds_agree": 8,
-   "seeds": 10,
-   "owners": [
-    63
-   ]
-  },
-  {
-   "scenario": "issue_356_capacity_drop_xr_rtt",
-   "metric": "video.longest_freeze_ms",
-   "sm": 1941.1,
-   "webrtc": 2587.4,
-   "band": 643.7879568097973,
+   "metric": "video.freeze_total_ms",
+   "sm": 2921.2,
+   "webrtc": 3123.3,
+   "band": 187.5520964662589,
    "direction": "ahead",
    "seeds_agree": 5,
    "seeds": 10,
