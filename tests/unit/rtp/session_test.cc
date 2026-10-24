@@ -102,7 +102,7 @@ SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
 SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   Pair p;
   const Bytes frame = MakeFakeH264Frame(true, 5000);
-  p.a.SendVideo(p.a_video, {0, frame}, Timestamp::Millis(0));
+  p.a.SendVideo(p.a_video, {0, frame, true}, Timestamp::Millis(0));
   std::vector<RtpPacket> sent;
   for (auto& o : Pump(p.a, 0, 500)) {
     if (o.kind != OutgoingKind::kVideo) continue;
@@ -110,18 +110,52 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
     sent.push_back(*RtpPacket::Parse(o.bytes));
   }
   // SPS+PPS in a STAP-A, then the IDR slice in FU-A fragments; the marker is
-  // on the last packet only, and the payloads rebuild the access unit.
+  // on the last packet only, and the payloads rebuild the access unit (with
+  // the keyframe's SPS VUI rewritten, #342).
   SM_ASSERT_GE(sent.size(), 5u);
   SM_EXPECT_EQ(sent[0].payload[0] & 0x1F, kH264NalStapA);
   for (size_t i = 0; i < sent.size(); ++i) SM_EXPECT_EQ(sent[i].marker, i + 1 == sent.size());
   Bytes rebuilt;
   SM_EXPECT_TRUE(H264Depacketizer::Reassemble(sent, rebuilt));
-  SM_EXPECT_TRUE(rebuilt == frame);
+  SM_EXPECT_TRUE(rebuilt == ParseOutgoingBitstreamAndRewrite(frame));
   // Full-size chunks leave room for the header extensions.
   p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1188 * 3)}, Timestamp::Millis(500));
   for (auto& o : Pump(p.a, 500, 500)) {
     if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1200u);
   }
+}
+
+// FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
+// libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
+// STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta
+// frames are sent as given.
+SM_TEST(Session, KeyframeSpsGetsLibwebrtcsVui) {
+  Pair p;
+  p.a.SendVideo(p.a_video, {0, MakeFakeH264Frame(true, 3000), true}, Timestamp::Millis(0));
+  std::vector<OutgoingPacket> sent;
+  for (auto& o : Pump(p.a, 0, 300)) {
+    if (o.kind == OutgoingKind::kVideo) sent.push_back(std::move(o));
+  }
+  SM_ASSERT_GE(sent.size(), 2u);
+  const RtpPacket stap = *RtpPacket::Parse(sent[0].bytes);
+  SM_EXPECT_EQ(stap.payload[0] & 0x1F, kH264NalStapA);
+  // STAP-A header, then [size, SPS] and [size, PPS].
+  SM_ASSERT_GE(stap.payload.size(), 3u + 13u + 2u + 11u);
+  SM_EXPECT_EQ((stap.payload[1] << 8) | stap.payload[2], 13);
+  SM_EXPECT_EQ(stap.payload.size(), 1u + 2u + 13u + 2u + 11u);
+  SM_EXPECT_EQ(p.a.stats().sps.rewritten, 1u);
+  SM_EXPECT_EQ(p.a.stats().sps.parse_failures, 0u);
+
+  const Bytes delta = MakeFakeH264Frame(false, 500);
+  p.a.SendVideo(p.a_video, {3000, delta, false}, Timestamp::Millis(300));
+  std::vector<RtpPacket> delta_sent;
+  for (auto& o : Pump(p.a, 300, 300)) {
+    if (o.kind == OutgoingKind::kVideo) delta_sent.push_back(*RtpPacket::Parse(o.bytes));
+  }
+  Bytes rebuilt;
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(delta_sent, rebuilt));
+  SM_EXPECT_TRUE(rebuilt == delta);
+  SM_EXPECT_EQ(p.a.stats().sps.rewritten, 1u);
 }
 
 SM_TEST(Session, NackFromThePeerIsAnsweredWithRtxOnTheRtxSsrc) {
