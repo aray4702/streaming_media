@@ -16,15 +16,24 @@
 // to one detector that exists while the target and the frame rate are both
 // positive.
 //
+// With `newfangled_headroom_adjustment` the media utilization factor comes from
+// RateUtilizationTracker (video/rate_utilization_tracker.{h,cc}, issue #355), as
+// libwebrtc's default "newfangled headroom adjustment"
+// (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment not disabled): produced
+// bytes over the unadjusted target's byte budget, so an encoder that undershoots
+// reads below 1.0 and the link headroom can pay for the whole network overshoot.
+// Without it the factor is the detector's GetMediaRateUtilizationFactor(), as
+// with the field trial disabled.
+//
 // Differences from libwebrtc (tools/catalog.py 5.8):
-//  - libwebrtc takes the media utilization factor from `RateUtilizationTracker`
-//    (rtc_base/rate_utilization_tracker.*, "newfangled headroom adjustment",
-//    on by default). That file is not in compare/webrtc/reference/ (reported on
-//    #57). Until it is, the factor comes from the detector's own
-//    GetMediaRateUtilizationFactor(), which libwebrtc uses when the
-//    newfangled adjustment is disabled.
+//  - The tracker is off by default (issue #355): on, it gives libwebrtc's ramp
+//    after a reset, but the default suite then shows freezes that libwebrtc
+//    does not have, from our periodic ALR probe (issue #355's PR).
 //  - Rates are re-adjusted per captured frame, libwebrtc does it on every
-//    bitrate update (about every 25 ms to 1 s).
+//    bitrate update (about every 25 ms to 1 s). A rate update and a frame at the
+//    same time are one tracker data point, so the tracker's window is the same.
+//  - The tracker clamps a time earlier than its last data point to that point,
+//    where libwebrtc CHECKs.
 // Takes `now`, reads no clock.
 #pragma once
 
@@ -76,9 +85,43 @@ class EncoderOvershootDetector {
   int64_t media_buffer_level_bits_ = 0;
 };
 
+// RateUtilizationTracker (video/rate_utilization_tracker.cc): the bytes an
+// encoder produced over the bytes its target rate budgeted, across a sliding
+// window of at most `max_data_points` updates and `max_duration`. The budget
+// runs from the first produced data point to the last one plus the time the
+// last one needs at the current rate, so a frame just produced at its ideal
+// size reads 1.0.
+class RateUtilizationTracker {
+ public:
+  RateUtilizationTracker(size_t max_data_points, TimeDelta max_duration)
+      : max_data_points_(max_data_points), max_duration_(max_duration) {}
+
+  void OnDataRateChanged(DataRate rate, Timestamp time);
+  void OnDataProduced(DataSize size, Timestamp time);
+  std::optional<double> GetRateUtilizationFactor(Timestamp time) const;
+
+ private:
+  struct RateUsageUpdate {
+    Timestamp time;
+    DataRate target_rate;
+    DataSize produced_data;
+  };
+
+  void CullOldData(Timestamp time);
+
+  const size_t max_data_points_;
+  const TimeDelta max_duration_;
+  DataRate current_rate_;
+  std::deque<RateUsageUpdate> data_points_;
+};
+
 struct EncoderBitrateAdjusterConfig {
   // RateControlSettings: bitrate_adjuster and adjuster_use_headroom.
   bool utilize_bandwidth_headroom = true;
+  // WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment (on in libwebrtc
+  // unless disabled): the media utilization factor from RateUtilizationTracker.
+  // Off here until it is judged against libwebrtc (issue #355).
+  bool newfangled_headroom_adjustment = false;
   // Codec minimum bitrate (VideoCodec::minBitrate); 0 = none.
   DataRate min_bitrate;
 };
@@ -88,6 +131,8 @@ class EncoderBitrateAdjuster : public MetricsSource {
   static constexpr int64_t kWindowSizeMs = 3000;
   static constexpr size_t kMinFramesSinceLayoutChange = 30;
   static constexpr double kDefaultUtilizationFactor = 1.2;
+  // kMaxDataPointsInUtilizationTrackers.
+  static constexpr size_t kMaxDataPointsInUtilizationTrackers = 100;
 
   explicit EncoderBitrateAdjuster(EncoderBitrateAdjusterConfig cfg = {})
       : cfg_(cfg), detector_(kWindowSizeMs) {}
@@ -109,6 +154,7 @@ class EncoderBitrateAdjuster : public MetricsSource {
   EncoderBitrateAdjusterConfig cfg_;
   bool detector_active_ = false;
   EncoderOvershootDetector detector_;
+  std::optional<RateUtilizationTracker> media_rate_tracker_;
   size_t frames_since_layout_change_ = 0;
   DataRate last_target_, last_bandwidth_;
   double last_fps_ = 0;

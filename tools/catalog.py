@@ -311,6 +311,9 @@ ALGORITHMS = [
                "decodes up to 20 ms and borrows the rest of its 30 ms from the samples just played, inserting the "
                "period after them. BufferLevelFilter (buffer_level_filter.cc, Q8, factor 251-254 by target) is "
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
+               "The packet buffer holds NetEq::Config::max_packets_in_buffer (200) packets and is flushed "
+               "completely when a packet arrives to a full buffer, as PacketBuffer::InsertPacket without the "
+               "smart-flushing field trial (issue #331; version 1 keeps its own 100-packet limit). "
                "The stretch DSP is NetEq's (NetEqTimeStretch below), fed as NetEqImpl::DoAccelerate and "
                "DoPreemptiveExpand do: the decoded audio, or 30 ms borrowed from the end of the sync buffer. "
                "Differences that remain: fast accelerate is a plain accelerate, as "
@@ -749,8 +752,12 @@ ALGORITHMS = [
                "false), as in libwebrtc. "
                "Call start as libwebrtc's (#62): `rtp::Session` asks for periodic ALR probes when it adds an audio "
                "stream with transport-cc, as `AudioSendStream::ConfigureStream` does unless `WebRTC-Audio-AlrProbing` "
-               "is disabled (`audio_send_stream.cc:158-159, 297-308`), so every call with audio probes every 5 s in "
-               "ALR; the streams' `max_total_allocated_bitrate` reaches `ProbeController` after the initial probes, "
+               "is disabled (`audio_send_stream.cc:158-159, 297-308`), and turns them off again when it then adds a "
+               "video stream with transport-cc, as `VideoSendStreamImpl`'s constructor does with "
+               "`RateControlSettings::UseAlrProbing()` (off without field trials; `video_send_stream_impl.cc:487-523`), "
+               "so an audio-only call probes every 5 s in ALR and a call with video does not (#355: the ALR state and "
+               "probe clusters of both stacks are in the bwe trace of yardstick #359; libwebrtc's only probes after the "
+               "start are `RequestProbe`s); the streams' `max_total_allocated_bitrate` reaches `ProbeController` after the initial probes, "
                "because libwebrtc creates GoogCC when the network comes up, before the streams start "
                "(`rtp_transport_controller_send.cc:413-428, 747-773`), so an audio-only call's 3x and 6x probes are "
                "not capped at twice the audio allocation; and `BitrateProber` waits for a 200-byte RTP packet "
@@ -779,7 +786,7 @@ ALGORITHMS = [
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
          problems=["Encoder bitrate overshoot -> encoder rate control, frame dropper"],
-         headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster"], e2e=["E2E_FrameDropper"],
+         headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster", "RateUtilizationTracker"], e2e=["E2E_FrameDropper"],
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
@@ -801,10 +808,15 @@ ALGORITHMS = [
                "adjuster_use_headroom = true; `bitrate_adjuster off` in a scenario). The link allocation is "
                "VideoSendStreamImpl::OnBitrateUpdated's (issue #326, `link_headroom on|off`, on): the encoder target "
                "less the protection, taken before the target is capped at the encoder maximum, so a video allocation "
-               "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. Remaining differences (issue #5): the media "
-               "utilization factor comes from the detector, not RateUtilizationTracker "
-               "(rtc_base/rate_utilization_tracker); one stream with one temporal layer; rates adjusted per captured "
-               "frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. The media utilization factor can come from a port of "
+               "libwebrtc's RateUtilizationTracker (video/rate_utilization_tracker.cc; issue #355, "
+               "`rate_utilization_tracker on|off`, off by default): produced bytes over the unadjusted target's budget, "
+               "libwebrtc's default (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment). Remaining differences: the "
+               "tracker is off by default until it is judged against libwebrtc (#355: on, it matches libwebrtc's ramp "
+               "after a reset; the periodic ALR probe that then landed on cross traffic, where libwebrtc sends none, is gone since "
+               "a video stream turns periodic ALR probing off as libwebrtc's does, #355);"
+               "without it the factor comes from the detector; one stream with one temporal layer; rates adjusted per "
+               "captured frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -822,7 +834,12 @@ ALGORITHMS = [
                       "Issue #346 ([fix record](../../fixes/346-reconfigure-encoder-reset.md)): a resolution switch kept "
                       "the adjuster's learned factor (1.03-1.11) and the dropper's state, so the switch keyframes were "
                       "1.2x libwebrtc's (41 vs 34 kB at 2.5 Mbps); both are now reset as "
-                      "video_stream_encoder.cc:1430-1442 does."),
+                      "video_stream_encoder.cc:1430-1442 does. "
+                      "Issue #355: after a reset the encoder target came back to 2228-2317 kbps where libwebrtc's reaches "
+                      "the 2.5 Mbps cap within a second, because the media factor came from the overshoot detector (sized "
+                      "against the adjusted rate, never below 1.0) instead of RateUtilizationTracker (against the unadjusted "
+                      "target). With `rate_utilization_tracker on` the encoded rate over issue_346_reconfigure_cross_join's "
+                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
@@ -1314,7 +1331,12 @@ ALGORITHMS = [
                       "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
                       "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
                       "`QualityScalingExperiment`'s default string, whose H.264 slot is 24/37; the model encoder reports "
-                      "H.264 since #339). Step 5 adds the CPU resource and "
+                      "H.264 since #339). A CheckQpTask due at a frame's capture time runs after that frame was encoded, "
+                      "and its restriction reaches the source through a worker-queue task "
+                      "(`VideoStreamEncoder::OnVideoSourceRestrictionsUpdated`), so a step applies from the next "
+                      "frame; verified on yardstick #364, where both stacks then give the same checks, steps and "
+                      "freezes on `issue_23_outage_500ms` with scaling on "
+                      "([fix #348](https://github.com/aray4702/streaming_media/issues/348)). Step 5 adds the CPU resource and "
                       "`ResourceAdaptationProcessor`'s per-resource bookkeeping "
                       "(`call/adaptation/resource_adaptation_processor.cc`): each resource keeps the restrictions it "
                       "last asked for, and an adapt-up applies only for the resource with the most adaptations, "

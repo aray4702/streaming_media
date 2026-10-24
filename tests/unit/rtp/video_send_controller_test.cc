@@ -300,6 +300,35 @@ SM_TEST(VideoSendController, QualityScalingAdaptsUpOnLowQpWithAKeyframe) {
   SM_EXPECT_GE(t, 2000);
 }
 
+// libwebrtc's CheckQpTask due at a frame's capture time runs after that frame
+// was encoded, and the restriction reaches the source through a worker-queue
+// task (VideoStreamEncoder::OnVideoSourceRestrictionsUpdated), so the frame
+// captured at the check keeps the old size and the next one gets the new size
+// (issue #348).
+SM_TEST(VideoSendController, QualityScalerStepAppliesFromTheFrameAfterTheCheck) {
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = true;
+  VideoSendController c(cfg, s);
+  // 25 fps, so the checks (every 2 s from the first frame) are due exactly at
+  // capture times. The one at 4 s sees enough low-QP frames to adapt up.
+  int t = 0;
+  EncodeDecision d;
+  int first_up = -1, last_360 = -1;
+  for (; t <= 10000 && first_up < 0; t += 40) {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (last_360 >= 0 && d.height > 360) {
+      first_up = t;
+      SM_EXPECT_TRUE(d.keyframe);
+    } else if (d.encode && d.height == 360) {
+      last_360 = t;  // The initial frame drop has scaled 720p down to 360p.
+    }
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 10}, At(t));
+  }
+  SM_EXPECT_EQ(last_360, 4000);  // Encoded at 360p although the check is due now.
+  SM_EXPECT_EQ(first_up, 4040);
+}
+
 SM_TEST(VideoSendController, QualityScalingInitialDropRunsBeforeThePause) {
   // VideoStreamEncoder::MaybeEncodeVideoFrame: DropDueToSize (and
   // OnMaybeEncodeFrame) come before EncoderPaused, so a paused encoder still
