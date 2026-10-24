@@ -55,6 +55,31 @@ std::vector<uint8_t> SerializeReceiverReport(const ReceiverReport& rr);
 std::optional<SenderReport> ParseSenderReport(std::span<const uint8_t> data);
 std::optional<ReceiverReport> ParseReceiverReport(std::span<const uint8_t> data);
 
+// Extended reports (RFC 3611, PT 207) with the two blocks libwebrtc uses to
+// measure the RTT of an endpoint that sends no media: the receiver reference
+// time report (RRTR, block type 4) and the DLRR (block type 5), whose sub-blocks
+// echo the RRTRs received (rtcp_packet/extended_reports.cc, rrtr.cc, dlrr.cc).
+struct ReceiveTimeInfo {
+  uint32_t ssrc = 0;                 // Sender of the RRTR.
+  uint32_t last_rr = 0;              // Compact NTP of that RRTR.
+  uint32_t delay_since_last_rr = 0;  // 1/65536 s.
+};
+
+struct ExtendedReports {
+  uint32_t sender_ssrc = 0;
+  std::optional<NtpTime> rrtr;
+  std::vector<ReceiveTimeInfo> dlrr;
+};
+
+// ExtendedReports::kMaxNumberOfDlrrItems.
+inline constexpr size_t kMaxNumberOfDlrrItems = 50;
+
+// RRTR first, then one DLRR block with every item (ExtendedReports::Create).
+std::vector<uint8_t> SerializeExtendedReports(const ExtendedReports& xr);
+// Parses a single XR packet. Blocks of other types are skipped, and an RRTR
+// or DLRR block of the wrong length is ignored, as ExtendedReports::Parse does.
+std::optional<ExtendedReports> ParseExtendedReports(std::span<const uint8_t> data);
+
 struct ReceiveStatsSnapshot {
   uint32_t packets_received = 0;
   int64_t expected = 0;
