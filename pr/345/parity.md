@@ -6,7 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-103 gaps on `main`, 108 here: **4 closed, 9 opened**, 0 changed direction.
+104 gaps on `main`, 108 here: **4 closed, 8 opened**, 0 changed direction.
 
 Closed:
 
@@ -25,7 +25,6 @@ Opened:
 | issue_23_low_bandwidth | `video.render_fps` | 27.9 | 26.4 | ±1.4 | ahead | 6/10 | #37, #24 |
 | issue_257_zero_max_payload | `video.pause_total_ms` | 683 | 0 | ±100 | behind | 1/10 | #5, #37, #24 |
 | issue_329_utilization_reordering | `repair.overhead_pct` | 35.1 | 37.2 | ±2 | ahead | 5/10 | #21, #7, #29 |
-| issue_335_fps1_keyframe_packets | `video.time_to_first_frame_ms` | 558 | 610 | ±50 | ahead | 6/10 | #24, #61 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 26.4 | ±1.4 | ahead | 6/10 | #37, #24 |
 | low_bandwidth | `video.render_fps` | 27.9 | 26.4 | ±1.4 | ahead | 6/10 | #37, #24 |
 | very_low_capacity | `net.loss_pct` | 19.8 | 16.6 | ±3.2 | behind | 6/10 | #21, #61, #12 |
