@@ -49,6 +49,7 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     ProbeBitrateEstimatorV2
     ProbeControllerV2
     Probing
+    RateUtilizationTracker
     RobustThroughputEstimator
     SendSideBwe
     SendSideBweV2

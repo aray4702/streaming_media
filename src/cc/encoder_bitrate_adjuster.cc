@@ -146,6 +146,94 @@ void EncoderOvershootDetector::CullOldUpdates(int64_t time_ms) {
   }
 }
 
+// ---- RateUtilizationTracker (video/rate_utilization_tracker.cc) ------------
+
+namespace {
+// api/units/data_rate.h operator*(DataRate, TimeDelta): rounded to the byte.
+DataSize RateTimesDuration(DataRate rate, TimeDelta duration) {
+  const int64_t microbits = rate.bps() * duration.us();
+  return DataSize::Bytes((microbits + 4000000) / 8000000);
+}
+}  // namespace
+
+void RateUtilizationTracker::OnDataRateChanged(DataRate rate, Timestamp time) {
+  current_rate_ = rate;
+  // The first entry holds the first produced data, so only the rate is kept.
+  if (data_points_.empty()) return;
+  RateUsageUpdate& last_data_point = data_points_.back();
+  time = std::max(time, last_data_point.time);
+  if (last_data_point.time == time) {
+    last_data_point.target_rate = rate;
+  } else {
+    data_points_.push_back({time, rate, DataSize::Zero()});
+  }
+  CullOldData(time);
+}
+
+void RateUtilizationTracker::OnDataProduced(DataSize size, Timestamp time) {
+  if (data_points_.empty()) {
+    data_points_.push_back({time, current_rate_, size});
+  } else {
+    RateUsageUpdate& last_data_point = data_points_.back();
+    time = std::max(time, last_data_point.time);
+    if (last_data_point.time == time) {
+      last_data_point.produced_data += size;
+    } else {
+      data_points_.push_back({time, current_rate_, size});
+    }
+  }
+  CullOldData(time);
+}
+
+std::optional<double> RateUtilizationTracker::GetRateUtilizationFactor(Timestamp time) const {
+  if (data_points_.empty()) return std::nullopt;
+  time = std::max(time, data_points_.back().time);
+  DataSize allocated_send_data_size = DataSize::Zero();
+  DataSize total_produced_data = DataSize::Zero();
+  // The last time data was produced: how much it was, and how much rate budget
+  // has been allocated since then.
+  DataSize data_allocated_for_last_data = DataSize::Zero();
+  DataSize size_of_last_data = DataSize::Zero();
+  for (size_t i = 0; i < data_points_.size(); ++i) {
+    const RateUsageUpdate& update = data_points_[i];
+    total_produced_data += update.produced_data;
+    const DataSize allocated_since_previous_data_point =
+        i == 0 ? DataSize::Zero()
+               : RateTimesDuration(data_points_[i - 1].target_rate, update.time - data_points_[i - 1].time);
+    allocated_send_data_size += allocated_since_previous_data_point;
+    if (update.produced_data.bytes() == 0) {
+      // Just a rate update past the last seen produced data.
+      data_allocated_for_last_data =
+          std::min(size_of_last_data, data_allocated_for_last_data + allocated_since_previous_data_point);
+    } else {
+      // A newer data point with produced data: reset the accumulator.
+      size_of_last_data = update.produced_data;
+      data_allocated_for_last_data = DataSize::Zero();
+    }
+  }
+  // No allocated rate across all of the data points: ignore.
+  if (allocated_send_data_size.bytes() == 0 && current_rate_.IsZero()) return std::nullopt;
+  // The budget past the very last data point until the polling time, or the
+  // last produced data if that is larger (less the budget of rate updates after
+  // it was produced).
+  const RateUsageUpdate& last_update = data_points_.back();
+  const DataSize allocated_since_last_data_point = RateTimesDuration(last_update.target_rate, time - last_update.time);
+  allocated_send_data_size += std::max(allocated_since_last_data_point, size_of_last_data - data_allocated_for_last_data);
+  return static_cast<double>(total_produced_data.bytes()) / static_cast<double>(allocated_send_data_size.bytes());
+}
+
+void RateUtilizationTracker::CullOldData(Timestamp time) {
+  // Drop data points that are too old or over the count limit, and keep the
+  // first entry one with produced data, since the budget runs from its time.
+  const Timestamp oldest_included_time =
+      time.ms() > max_duration_.ms() ? time - max_duration_ : Timestamp::Micros(0);
+  while (!data_points_.empty() &&
+         (data_points_.front().time < oldest_included_time || data_points_.size() > max_data_points_ ||
+          data_points_.front().produced_data.bytes() == 0)) {
+    data_points_.pop_front();
+  }
+}
+
 // ---- EncoderBitrateAdjuster (video/encoder_bitrate_adjuster.cc) ------------
 
 namespace {
@@ -180,6 +268,17 @@ DataRate EncoderBitrateAdjuster::AdjustRate(DataRate target, DataRate bandwidth_
     detector_active_ = false;
     frames_since_layout_change_ = 0;
   }
+  if (cfg_.newfangled_headroom_adjustment) {
+    // One media rate tracker for the stream; it takes the unadjusted target.
+    if (target.IsZero()) {
+      media_rate_tracker_.reset();
+    } else {
+      if (!media_rate_tracker_) {
+        media_rate_tracker_.emplace(kMaxDataPointsInUtilizationTrackers, TimeDelta::Millis(kWindowSizeMs));
+      }
+      media_rate_tracker_->OnDataRateChanged(target, now);
+    }
+  }
 
   double link_utilization_factor, media_utilization_factor;
   if (frames_since_layout_change_ < kMinFramesSinceLayoutChange) {
@@ -191,7 +290,10 @@ DataRate EncoderBitrateAdjuster::AdjustRate(DataRate target, DataRate bandwidth_
     media_utilization_factor = 1.0;
   } else {
     link_utilization_factor = detector_.GetNetworkRateUtilizationFactor(now.ms()).value_or(kDefaultUtilizationFactor);
-    media_utilization_factor = detector_.GetMediaRateUtilizationFactor(now.ms()).value_or(kDefaultUtilizationFactor);
+    media_utilization_factor =
+        cfg_.newfangled_headroom_adjustment
+            ? media_rate_tracker_->GetRateUtilizationFactor(now).value_or(kDefaultUtilizationFactor)
+            : detector_.GetMediaRateUtilizationFactor(now.ms()).value_or(kDefaultUtilizationFactor);
   }
 
   DataRate wanted_overshoot_sum = DataRate::BitsPerSec(0);
@@ -252,15 +354,18 @@ DataRate EncoderBitrateAdjuster::AdjustRate(DataRate target, DataRate bandwidth_
 void EncoderBitrateAdjuster::OnEncodedFrame(DataSize size, Timestamp now) {
   ++frames_since_layout_change_;
   if (detector_active_) detector_.OnEncodedFrame(static_cast<size_t>(size.bytes()), now.ms());
+  if (media_rate_tracker_) media_rate_tracker_->OnDataProduced(size, now);
 }
 
 void EncoderBitrateAdjuster::OnFrameDropped(Timestamp now) {
   if (detector_active_) detector_.OnEncodedFrame(0, now.ms());
+  if (media_rate_tracker_) media_rate_tracker_->OnDataProduced(DataSize::Zero(), now);
 }
 
 void EncoderBitrateAdjuster::Reset(Timestamp now) {
   detector_.Reset();
   detector_active_ = false;
+  media_rate_tracker_.reset();
   // Re-create the detector at once with the last known rates.
   AdjustRate(last_target_, last_bandwidth_, last_fps_, now);
 }
