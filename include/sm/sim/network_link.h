@@ -78,6 +78,7 @@ struct LinkTraceRecord {
   int32_t seq = -1;         // RTP sequence number, or -1 when the packet has none.
   int32_t queue_bytes = 0;  // Bytes in the bottleneck queue at this arrival, before the packet.
   LinkOutcome outcome = LinkOutcome::kDelivered;
+  int32_t orig_seq = -1;    // An RTX packet's original sequence number (OSN), else -1 (issue #356).
 };
 
 struct LinkStats {
@@ -110,12 +111,14 @@ class NetworkLink {
   void EnableTrace() { trace_on_ = true; }
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
 
-  // `seq` is the packet's RTP sequence number (-1 when it has none); it is
+  // `seq` is the packet's RTP sequence number (-1 when it has none) and
+  // `orig_seq` the original sequence number an RTX packet carries; both are
   // only written to the trace.
-  void Send(Timestamp now, T packet, DataSize size, LinkKind kind = LinkKind::kOther, int32_t seq = -1) {
+  void Send(Timestamp now, T packet, DataSize size, LinkKind kind = LinkKind::kOther, int32_t seq = -1,
+            int32_t orig_seq = -1) {
     if (trace_on_) {
       trace_.push_back({now.us(), static_cast<int32_t>(size.bytes()), kind, seq,
-                        static_cast<int32_t>(QueuedBytes(now).bytes()), LinkOutcome::kDelivered});
+                        static_cast<int32_t>(QueuedBytes(now).bytes()), LinkOutcome::kDelivered, orig_seq});
     }
     LinkKindStats& ks = stats_.by_kind[static_cast<size_t>(kind)];
     ++stats_.sent;
