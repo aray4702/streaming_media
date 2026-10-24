@@ -3007,6 +3007,204 @@ issue_335_fps1_keyframe_packets - 1 fps video next to audio on a clean 2 Mbps li
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_346_reconfigure_capacity_drop - capacity_drop with quality scaling on: the switch keyframes before the 2.5 -> 0.5 Mbps drop are libwebrtc's size (
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     1.0          0.9  =
+  audio.interruptions                     0.3          1.1  sm
+  audio.longest_interruption_ms           154          202  sm
+  audio.mouth_to_ear_p95_ms               832          833  =
+  audio.jb_delay_p95_ms                   509          508  =
+  video.freeze_count                      2.7          1.9  webrtc
+  video.freeze_total_ms                  2985         3123  =
+  video.longest_freeze_ms                1718         2688  sm
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       28.5         28.3  =
+  video.e2e_delay_p95_ms                  574          459  webrtc
+  video.time_to_first_frame_ms            191          191  =
+  video.avg_kbps                          843          844  =
+  video.keyframe_requests                 0.1          0.5  =
+  sync.av_offset_p95_ms                   192          258  sm
+  cc.utilization_pct                     54.1         54.1  =
+  cc.queue_p95_ms                         294          287  =
+  cc.max_settle_ms                      14950        14980  =
+  cc.rtt_p50_ms                          67.8         74.3  =
+  net.loss_pct                            1.8          1.8  =
+  repair.overhead_pct                     3.5          3.7  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.3         69.7
+  net.video_kbps                          877          878
+  net.rtx_kbps                           32.5         33.8
+  net.padding_kbps                        0.4          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0          0.0
+  net.video_loss_pct                      2.1          2.2
+  net.rtx_loss_pct                       21.8         21.1
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    193          187
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          305
+  net.audio_queue_drops                     0          0.3
+  net.video_size_p50_b                   1316         1317
+  net.video_size_p90_b                   1448         1447
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                  76.1         76.9
+  net.rtx_size_p50_b                     1350         1379
+  net.rtx_size_p90_b                     1454         1460
+  net.rtx_size_max_b                     1481         1478
+  net.rtx_queue_drops                    26.1         26.1
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
+issue_346_reconfigure_cross_join - issue_204_cross_traffic_join with quality scaling on: link loss after 2 Mbps cross traffic joins at 10 s, just after the 540p switch (
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.7          0.6  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            59           47  =
+  audio.mouth_to_ear_p95_ms               732          698  =
+  audio.jb_delay_p95_ms                   396          380  =
+  video.freeze_count                        6          2.3  webrtc
+  video.freeze_total_ms                  2608         1349  webrtc
+  video.longest_freeze_ms                 677          941  sm
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.6         29.6  =
+  video.e2e_delay_p95_ms                  617          451  webrtc
+  video.time_to_first_frame_ms            200          200  =
+  video.avg_kbps                         1331         1369  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                   273          231  webrtc
+  cc.utilization_pct                     56.2         57.7  =
+  cc.queue_p95_ms                         288          268  webrtc
+  cc.max_settle_ms                      10810         8570  webrtc
+  cc.rtt_p50_ms                          94.4         98.7  =
+  net.loss_pct                            0.7          0.4  =
+  repair.overhead_pct                     1.1          0.7  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.3         69.7
+  net.video_kbps                         1382         1422
+  net.rtx_kbps                           16.5         10.3
+  net.padding_kbps                        0.7          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0          0.0
+  net.video_loss_pct                      0.7          0.5
+  net.rtx_loss_pct                        7.4         16.9
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    193          187
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          305
+  net.audio_queue_drops                     0          0.2
+  net.video_size_p50_b                   1338         1345
+  net.video_size_p90_b                   1452         1455
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                  37.8         26.7
+  net.rtx_size_p50_b                     1322         1316
+  net.rtx_size_p90_b                     1442         1442
+  net.rtx_size_max_b                     1475         1469
+  net.rtx_queue_drops                     5.3          6.7
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
+issue_346_reconfigure_cross_traffic - cross_traffic with quality scaling on: each resolution switch resets the frame dropper and the bitrate adjuster, as libwebrtc's ReconfigureEncoder (
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.4          0.5  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            43           60  =
+  audio.mouth_to_ear_p95_ms               478          529  sm
+  audio.jb_delay_p95_ms                   283          309  sm
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                12.1         12.6  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.8         29.8  =
+  video.e2e_delay_p95_ms                  227          232  =
+  video.time_to_first_frame_ms            185          185  =
+  video.avg_kbps                         1717         1748  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                   236          258  sm
+  cc.utilization_pct                     71.7         72.9  =
+  cc.queue_p95_ms                         161          184  sm
+  cc.max_settle_ms                       2490         2640  =
+  cc.rtt_p50_ms                          59.7         60.5  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                     0.1          0.1  =
+  forward link per kind (information only)
+  net.audio_kbps                         70.3         69.7
+  net.video_kbps                         1781         1814
+  net.rtx_kbps                            1.5          1.1
+  net.padding_kbps                        0.5          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    193          187
+  net.audio_size_p90_b                    224          215
+  net.audio_size_max_b                    278          305
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1358         1359
+  net.video_size_p90_b                   1458         1458
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1202         1161
+  net.rtx_size_p90_b                     1417         1373
+  net.rtx_size_max_b                     1417         1373
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
+issue_346_reconfigure_outage_8s - issue_133_all_v2_outage_8s with quality scaling on: switches at 5/7/9 s, then an 8 s outage (
+  metric                                   sm       webrtc  better
+  video.freeze_count                      2.3          1.5  webrtc
+  video.freeze_total_ms                   962          669  webrtc
+  video.longest_freeze_ms                 477          477  =
+  video.pause_count                         1            1  =
+  video.pause_total_ms                   9392         9731  =
+  video.render_fps                       22.8         22.7  =
+  video.e2e_delay_p95_ms                  467          393  webrtc
+  video.time_to_first_frame_ms            204          204  =
+  video.avg_kbps                         1980         2026  =
+  video.keyframe_requests                   2            2  =
+  cc.utilization_pct                     96.8         98.8  =
+  cc.queue_p95_ms                         238          219  webrtc
+  cc.max_settle_ms                       3650         2610  webrtc
+  cc.rtt_p50_ms                          91.5           96  =
+  net.loss_pct                            8.0          8.3  =
+  repair.overhead_pct                     5.7          5.6  =
+  forward link per kind (information only)
+  net.audio_kbps                            0            0
+  net.video_kbps                         2053         2101
+  net.rtx_kbps                            117          119
+  net.padding_kbps                        0.3          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                      8.5          8.7
+  net.rtx_loss_pct                        0.8          2.2
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                      0            0
+  net.audio_size_p90_b                      0            0
+  net.audio_size_max_b                      0            0
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1384         1386
+  net.video_size_p90_b                   1463         1463
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                  89.8         86.3
+  net.rtx_size_p50_b                     1372         1366
+  net.rtx_size_p90_b                     1467         1470
+  net.rtx_size_max_b                     1486         1487
+  net.rtx_queue_drops                     3.5           10
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.0          1.0  =
@@ -3987,30 +4185,30 @@ issue_84_cpu_overuse_slow_encoder - 720p camera with libwebrtc's adaptation on a
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.0          0.0  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            13           10  =
-  audio.mouth_to_ear_p95_ms               112          118  =
-  audio.jb_delay_p95_ms                    56         63.0  =
+  audio.longest_interruption_ms            10           10  =
+  audio.mouth_to_ear_p95_ms               109          118  =
+  audio.jb_delay_p95_ms                    54         63.0  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                32.1         16.5  =
+  video.longest_freeze_ms                30.3         16.5  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.9         29.9  =
-  video.e2e_delay_p95_ms                  121          119  =
+  video.e2e_delay_p95_ms                  120          119  =
   video.time_to_first_frame_ms            192          191  =
-  video.avg_kbps                         2476         2452  =
+  video.avg_kbps                         2416         2452  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  45.8         44.3  =
-  cc.utilization_pct                      102          101  =
-  cc.queue_p95_ms                        17.2         16.3  =
+  sync.av_offset_p95_ms                  45.7         44.3  =
+  cc.utilization_pct                     99.7          101  =
+  cc.queue_p95_ms                        16.7         16.3  =
   cc.max_settle_ms                        300          300  =
-  cc.rtt_p50_ms                          61.3         62.2  =
+  cc.rtt_p50_ms                          61.4         62.2  =
   net.loss_pct                              0            0  =
   repair.overhead_pct                     0.1          0.0  =
   forward link per kind (information only)
   net.audio_kbps                         70.7         70.3
-  net.video_kbps                         2567         2542
-  net.rtx_kbps                            1.5          0.5
+  net.video_kbps                         2505         2542
+  net.rtx_kbps                            1.6          0.5
   net.padding_kbps                        0.7          0.3
   net.fec_kbps                              0            0
   net.audio_loss_pct                        0            0
@@ -4021,13 +4219,13 @@ issue_84_cpu_overuse_slow_encoder - 720p camera with libwebrtc's adaptation on a
   net.audio_size_p90_b                    224          215
   net.audio_size_max_b                    278          306
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                   1392         1391
-  net.video_size_p90_b                   1466         1464
+  net.video_size_p50_b                   1389         1391
+  net.video_size_p90_b                   1464         1464
   net.video_size_max_b                   1486         1486
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                     1259         1157
-  net.rtx_size_p90_b                     1412         1298
-  net.rtx_size_max_b                     1419         1298
+  net.rtx_size_p50_b                     1318         1157
+  net.rtx_size_p90_b                     1456         1298
+  net.rtx_size_max_b                     1461         1298
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
   net.padding_size_p90_b                  303          303
@@ -4189,31 +4387,31 @@ issue_84_quality_scaling_720p_low_rate - 720p camera on a 400 kbps link with lib
 
 issue_84_quality_scaling_rate_rise - 720p camera with libwebrtc's quality scaling, 400 kbps for 10 s then 2.5 Mbps: the low QP at the higher rate scales the resolution back up to 720p
   metric                                   sm       webrtc  better
-  audio.concealed_pct                     0.5          0.4  =
+  audio.concealed_pct                     0.4          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms            68           63  =
-  audio.mouth_to_ear_p95_ms               229          222  =
-  audio.jb_delay_p95_ms                   136          136  =
+  audio.mouth_to_ear_p95_ms               222          222  =
+  audio.jb_delay_p95_ms                   135          136  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                11.2         13.1  =
+  video.longest_freeze_ms                16.7         13.1  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
-  video.e2e_delay_p95_ms                  116          106  =
+  video.e2e_delay_p95_ms                  106          106  =
   video.time_to_first_frame_ms            244          244  =
-  video.avg_kbps                          860          822  =
+  video.avg_kbps                          848          822  =
   video.keyframe_requests                   0            0  =
   sync.av_offset_p95_ms                   109          105  =
-  cc.utilization_pct                     48.7         46.6  =
-  cc.queue_p95_ms                        55.9         43.4  webrtc
+  cc.utilization_pct                     48.0         46.6  =
+  cc.queue_p95_ms                        49.5         43.4  =
   cc.max_settle_ms                      18170        18610  =
-  cc.rtt_p50_ms                          62.9         64.5  =
+  cc.rtt_p50_ms                          62.5         64.5  =
   net.loss_pct                              0            0  =
   repair.overhead_pct                     0.1          0.1  =
   forward link per kind (information only)
   net.audio_kbps                         70.3         69.7
-  net.video_kbps                          894          855
+  net.video_kbps                          881          855
   net.rtx_kbps                            0.7          0.7
   net.padding_kbps                        0.2          0.3
   net.fec_kbps                              0            0
@@ -4226,7 +4424,7 @@ issue_84_quality_scaling_rate_rise - 720p camera with libwebrtc's quality scalin
   net.audio_size_max_b                    278          305
   net.audio_queue_drops                     0            0
   net.video_size_p50_b                   1314         1311
-  net.video_size_p90_b                   1446         1445
+  net.video_size_p90_b                   1447         1445
   net.video_size_max_b                   1486         1486
   net.video_queue_drops                     0            0
   net.rtx_size_p50_b                     1158         1157
@@ -4952,7 +5150,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 244, webrtc 132, tie 1705 (of the metrics shown)
+better: sm 253, webrtc 144, tie 1766 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
