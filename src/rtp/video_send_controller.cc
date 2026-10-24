@@ -163,17 +163,18 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     if (frame.width > 0 && frame.height > 0) video_adapter_.AdaptFrameResolution(frame.width, frame.height, &width, &height);
     stream_adapter_.OnFrameSizeObserved(width * height);
     // ReconfigureEncoder for a new frame size: the encoder is reset and its
-    // next frame is a keyframe (next_frame_types_). It also creates a new
-    // EncoderBitrateAdjuster, whose first kMinFramesSinceLayoutChange frames
-    // use kDefaultUtilizationFactor, and resets the frame dropper
-    // (frame_dropper_.Reset(), then SetRates with the start bitrate, the
-    // encoder target, as below).
+    // next frame is a keyframe (next_frame_types_). The frame dropper is
+    // Reset() and its rates set again (SetRates(codec.startBitrate) below,
+    // the encoder target), and bitrate_adjuster_ is a new
+    // EncoderBitrateAdjuster, which uses kDefaultUtilizationFactor until
+    // kMinFramesSinceLayoutChange frames have been encoded
+    // (video/video_stream_encoder.cc l.1430-1442). Reset() is the same as a
+    // new adjuster: its overshoot detector is created again on the next
+    // AdjustRate, which restarts the frame count.
     if (width != configured_width_ || height != configured_height_) {
-      if (configured_width_ > 0) {
-        keyframe_needed_ = true;
-        adjuster_.Recreate();
-        dropper_.Reset();
-      }
+      if (configured_width_ > 0) keyframe_needed_ = true;
+      dropper_.Reset();
+      adjuster_.Reset(now);
       configured_width_ = width;
       configured_height_ = height;
     }
