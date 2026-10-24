@@ -1,0 +1,9 @@
+name issue_334_scaling_capacity_drop_seed1
+describe Yardstick for #334 (#84's flip): capacity_drop with quality_scaling on and seed 1, traced on both stacks (no expectations)
+duration 40s
+seed 1
+compare_seeds 1
+quality_scaling on
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps

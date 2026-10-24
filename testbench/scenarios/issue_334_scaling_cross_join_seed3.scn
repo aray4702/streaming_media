@@ -1,0 +1,9 @@
+name issue_334_scaling_cross_join_seed3
+describe Yardstick for #334 (#84's flip): issue_204_cross_traffic_join with quality_scaling on and seed 3, traced on both stacks (no expectations)
+duration 40s
+seed 3
+compare_seeds 1
+quality_scaling on
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps

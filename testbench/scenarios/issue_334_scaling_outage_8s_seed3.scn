@@ -1,0 +1,10 @@
+name issue_334_scaling_outage_8s_seed3
+describe Yardstick for #334 (#84's flip): issue_133_all_v2_outage_8s with quality_scaling on and seed 3, traced on both stacks (no expectations)
+duration 40s
+seed 3
+compare_seeds 1
+quality_scaling on
+audio off
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s down
+at 18s up

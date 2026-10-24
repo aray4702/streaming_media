@@ -1,0 +1,7 @@
+name issue_334_scaling_policer_seed1
+describe Yardstick for #334 (#84's flip): issue_12_lossbwe_policer with quality_scaling on and seed 1, traced on both stacks (no expectations)
+duration 40s
+seed 1
+compare_seeds 1
+quality_scaling on
+at 0s capacity=1500kbps delay=30ms queue=5ms

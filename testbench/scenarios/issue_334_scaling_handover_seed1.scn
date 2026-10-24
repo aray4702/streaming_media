@@ -1,0 +1,12 @@
+name issue_334_scaling_handover_seed1
+describe Yardstick for #334 (#84's flip): wifi_to_lte_handover with quality_scaling on and seed 1, traced on both stacks (no expectations)
+duration 40s
+seed 1
+compare_seeds 1
+quality_scaling on
+at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
+at 15s down
+at 16.5s up capacity=1200kbps delay=60ms jitter=15ms loss=1%
+reverse at 0s delay=15ms
+reverse at 15s down
+reverse at 16.5s up delay=60ms

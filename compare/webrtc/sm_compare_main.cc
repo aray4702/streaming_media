@@ -105,7 +105,21 @@ const std::vector<const char*>& InfoMetrics() {
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
     "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic";
+    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,"
+    // Issue #334: quality_scaling on copies of #84's family representatives.
+    "issue_334_scaling_capacity_drop_seed1,"
+    "issue_334_scaling_capacity_drop_seed2,"
+    "issue_334_scaling_capacity_drop_seed3,"
+    "issue_334_scaling_cross_join_seed1,"
+    "issue_334_scaling_cross_join_seed2,"
+    "issue_334_scaling_cross_join_seed3,"
+    "issue_334_scaling_cross_traffic_seed1,"
+    "issue_334_scaling_handover_seed1,"
+    "issue_334_scaling_high_jitter_seed1,"
+    "issue_334_scaling_outage_8s_seed1,"
+    "issue_334_scaling_outage_8s_seed2,"
+    "issue_334_scaling_outage_8s_seed3,"
+    "issue_334_scaling_policer_seed1";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
