@@ -365,6 +365,33 @@ SM_TEST(Session, AReceiveOnlyVideoStreamTakesTheMaximumRttFromCallStats) {
   SM_EXPECT_EQ(nack_rtt(), 60);
 }
 
+// The session exports CallStats::LastProcessedRtt() as `call_stats_rtt_ms`,
+// what libwebrtc's Call::GetStats().rtt_ms reads (call.cc): -1 until the
+// first 1 s update, then the 70/30 smoothed average of the reports, not the
+// last raw RTT that rtt() returns (issue #370).
+SM_TEST(Session, ExportsCallStatsLastProcessedRtt) {
+  Session s(Cfg(2));
+  s.AddVideoReceive(Video());
+  const auto gauge = [&] {
+    MapMetricsWriter w;
+    s.ExportMetrics(w);
+    return w.Get("call_stats_rtt_ms", -2);
+  };
+  Pump(s, 0, 100);
+  SM_EXPECT_EQ(gauge(), -1.0);
+  s.SetRtt(TimeDelta::Millis(250));
+  Pump(s, 100, 899);  // Up to 998 ms: before the first periodic update.
+  SM_EXPECT_EQ(gauge(), -1.0);
+  Pump(s, 999, 2);  // The update at 1000 ms.
+  SM_EXPECT_EQ(gauge(), 250.0);
+  s.SetRtt(TimeDelta::Millis(50));
+  SM_EXPECT_EQ(s.rtt().ms(), 50);
+  SM_EXPECT_EQ(gauge(), 250.0);  // Until the next update.
+  Pump(s, 1001, 1000);           // 2000 ms: smoothed toward the 150 ms mean of the reports.
+  SM_EXPECT_GT(gauge(), 150.0);
+  SM_EXPECT_LT(gauge(), 250.0);
+}
+
 SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
   Session s(Cfg(2));
   NullDecoder dec;
