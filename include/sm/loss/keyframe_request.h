@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <deque>
 #include <map>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -78,10 +79,12 @@ class KeyframeRequester : public MetricsSource {
   // Packets of a frame are permanently lost (NACK gave up).
   void OnFrameLost(int64_t frame_id, Timestamp now);
   void OnDecoderError(Timestamp now);
-  // A media packet arrived (`keyframe_packet`: it belongs to a
-  // keyframe). Feeds the decode time-out, which does not fire while a keyframe
-  // is arriving or when the stream is idle.
-  void OnMediaPacket(Timestamp now, bool keyframe_packet);
+  // A media packet arrived (`keyframe_packet`: the depacketizer marks it as
+  // part of a keyframe). Feeds the decode time-out, which does not fire while a
+  // keyframe is arriving or when the stream is idle. With `rtp_timestamp`, a
+  // packet of the last keyframe's RTP timestamp counts as a keyframe packet
+  // too (RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps, issue #335).
+  void OnMediaPacket(Timestamp now, bool keyframe_packet, std::optional<uint32_t> rtp_timestamp = std::nullopt);
   // A trigger decided elsewhere (the NACK list overflowed). Merged
   // with the other triggers of the same Process(). `reason` is an event name.
   void OnExternalRequest(Timestamp now, const char* reason);
@@ -117,6 +120,7 @@ class KeyframeRequester : public MetricsSource {
   Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last frame released, or the first Process().
   Timestamp last_packet_ = Timestamp::MinusInfinity();
   Timestamp last_keyframe_packet_ = Timestamp::MinusInfinity();
+  std::optional<uint32_t> last_keyframe_rtp_timestamp_;  // last_received_keyframe_rtp_timestamp_.
   bool need_request_ = false;
   bool need_fir_ = false;
   bool request_pending_ = false;
