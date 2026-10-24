@@ -1,0 +1,6 @@
+name issue_335_fps1_clean
+describe 1 fps video next to audio on a clean 2 Mbps link (issue #335; yardstick: libwebrtc's numbers first)
+duration 30s
+seed 1
+video_fps 1
+at 0s capacity=2Mbps delay=40ms

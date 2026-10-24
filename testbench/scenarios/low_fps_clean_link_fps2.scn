@@ -1,0 +1,5 @@
+name low_fps_clean_link_fps2
+describe 2 fps video (issue #335 yardstick) on a clean 1.5 Mbps / 100 ms RTT link
+duration 60s
+video_fps 2
+at 0s capacity=1500kbps delay=50ms
