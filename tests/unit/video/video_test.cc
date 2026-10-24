@@ -483,6 +483,35 @@ SM_TEST(QualityScaler, V2SmoothsQpOverTime) {
   SM_EXPECT_NEAR(q.average_qp(), 39.64, 0.01);
 }
 
+SM_TEST(QualityScaler, V2RecordsTheChecksLibwebrtcLogs) {
+  // Issue #347: the checks QualityScaler::CheckQp logs, with the values it
+  // logs ("Checking average QP H (L)." or "Reporting high QP, framedrop
+  // percent N"); a check with too few frames logs nothing.
+  auto q = V2Scaler();
+  SM_EXPECT_EQ(q.checks(), static_cast<uint64_t>(0));
+  SM_EXPECT_TRUE(FirstCheck(q, [&] { for (int i = 0; i < 59; ++i) q.OnEncodedFrame(20, Ms(0)); }) ==
+                 QualityScaler::Signal::kNone);
+  SM_EXPECT_EQ(q.checks(), static_cast<uint64_t>(0));
+  SM_EXPECT_EQ(q.last_check().qp_high, -1);
+  q.OnEncodedFrame(20, Ms(2000));
+  SM_EXPECT_TRUE(q.Check(Ms(4000)) == QualityScaler::Signal::kNone);  // 20 is between 15 and 40.
+  SM_EXPECT_EQ(q.checks(), static_cast<uint64_t>(1));
+  SM_EXPECT_EQ(q.last_check().qp_high, 20);
+  SM_EXPECT_EQ(q.last_check().qp_low, 20);
+  SM_EXPECT_EQ(q.last_check().drop_pct, -1);
+  SM_EXPECT_TRUE(q.last_check().signal == QualityScaler::Signal::kNone);
+  for (int i = 0; i < 150; ++i) q.OnFrameDropped();
+  SM_EXPECT_TRUE(q.Check(Ms(6000)) == QualityScaler::Signal::kAdaptDown);
+  SM_EXPECT_EQ(q.checks(), static_cast<uint64_t>(2));
+  SM_EXPECT_EQ(q.last_check().qp_high, -1);
+  SM_EXPECT_EQ(q.last_check().drop_pct, 100);
+  SM_EXPECT_TRUE(q.last_check().signal == QualityScaler::Signal::kAdaptDown);
+  for (int i = 0; i < 60; ++i) q.OnEncodedFrame(15, Ms(6000));
+  SM_EXPECT_TRUE(q.Check(Ms(11000)) == QualityScaler::Signal::kAdaptUp);
+  SM_EXPECT_EQ(q.last_check().qp_low, 15);
+  SM_EXPECT_TRUE(q.last_check().signal == QualityScaler::Signal::kAdaptUp);
+}
+
 // Ports of call/adaptation/video_stream_adapter_unittest.cc (MAINTAIN_FRAMERATE)
 // and the VideoAdapter scale series (api/video/video_adapter.cc), issue #84.
 namespace {
