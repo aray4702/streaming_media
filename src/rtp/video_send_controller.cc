@@ -157,7 +157,17 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   if (cfg_.quality_scaling) {
     // The quality scaler's CheckQpTask, then the source's VideoAdapter with the
     // sink wants, then the frame size the encoder sees (OnFrameSizeObserved).
-    OnQualityScalerSignal(scaler_.Check(now), now);
+    // A task due at a frame's capture time runs on the encoder queue after that
+    // frame was encoded and its QP reported, and the restriction it sets
+    // reaches the source through a worker-queue task
+    // (VideoStreamEncoder::OnVideoSourceRestrictionsUpdated), so it applies
+    // from the next frame. Each task due before this frame runs here, at its
+    // due time (issue #348).
+    if (!scaler_.next_check().IsFinite()) scaler_.Check(now);
+    while (scaler_.next_check() < now) {
+      const Timestamp due = scaler_.next_check();
+      OnQualityScalerSignal(scaler_.Check(due), due);
+    }
     // OveruseFrameDetector's CheckForOveruse task.
     OnCpuSignal(overuse_.Check(now), now);
     if (frame.width > 0 && frame.height > 0) video_adapter_.AdaptFrameResolution(frame.width, frame.height, &width, &height);

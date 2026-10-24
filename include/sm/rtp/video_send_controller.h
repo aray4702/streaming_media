@@ -34,6 +34,10 @@
 // (ReconfigureEncoder's encoder reset). Not ported: the start-bitrate reset of
 // the initial frame drop (QualityScalerSettings' InitialBitrateIntervalMs and
 // Factor are unset by default) and the dropped frame kept as `pending_frame_`.
+// The quality scaler's CheckQpTask due at a frame's capture time runs after
+// that frame was encoded and its QP reported, and its restriction reaches the
+// source through a worker-queue task (OnVideoSourceRestrictionsUpdated), so a
+// step applies from the next frame (issue #348).
 // With quality scaling the drop checks run in VideoStreamEncoder's order:
 // congestion window (OnFrame), initial frame drop, outage pause, frame dropper.
 // The same switch adds libwebrtc's EncodeUsageResource (issue #84 step 5): an
