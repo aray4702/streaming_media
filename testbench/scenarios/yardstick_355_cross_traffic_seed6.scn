@@ -1,0 +1,9 @@
+name yardstick_355_cross_traffic_seed6
+describe issue_346_reconfigure_cross_traffic on seed 6 with rate_utilization_tracker on, traced on both stacks for #355 (ALR state, probe clusters)
+duration 40s
+seed 6
+quality_scaling on
+rate_utilization_tracker on
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps

@@ -53,6 +53,8 @@
 #include "api/transport/network_control.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "logging/rtc_event_log/events/rtc_event_probe_cluster_created.h"
+#include "logging/rtc_event_log/events/rtc_event_alr_state.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
@@ -100,7 +102,8 @@ using testbench::VideoTraceRow;
 
 // Records the sender's GoogCC events (issue #149) in this library's BweTraceRow layout:
 // RtcEventBweUpdateDelayBased (delay_based_bwe.cc) and RtcEventBweUpdateLossBased
-// (send_side_bandwidth_estimation.cc). LossBasedBweV2's own state (LossBasedState, the
+// (send_side_bandwidth_estimation.cc), plus RtcEventAlrState (alr_detector.cc) and
+// RtcEventProbeClusterCreated (probe_controller.cc). LossBasedBweV2's own state (LossBasedState, the
 // loss-limited estimate) has no event or public accessor in the prebuilt libwebrtc, so
 // those columns stay empty here.
 class BweTraceLog final : public w::RtcEventLog {
@@ -125,6 +128,18 @@ class BweTraceLog final : public w::RtcEventLog {
         r.bitrate_bps = e->bitrate_bps();
         r.fraction_loss = e->fraction_loss();
         r.packets = e->total_packets();
+        break;
+      }
+      case w::RtcEvent::Type::AlrStateEvent: {  // AlrDetector::OnBytesSent (issue #355).
+        r.kind = cc::BweTraceRow::Kind::kAlr;
+        r.bitrate_bps = static_cast<const w::RtcEventAlrState*>(event.get())->in_alr() ? 1 : 0;
+        break;
+      }
+      case w::RtcEvent::Type::ProbeClusterCreated: {  // ProbeController::CreateProbeClusterConfig (issue #355).
+        const auto* e = static_cast<const w::RtcEventProbeClusterCreated*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kProbe;
+        r.bitrate_bps = e->bitrate_bps();
+        r.packets = e->id();
         break;
       }
       default:

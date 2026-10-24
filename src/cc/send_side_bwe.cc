@@ -58,7 +58,17 @@ GccController::GccController(GccConfig cfg)
 }
 
 std::vector<ProbeCluster> GccController::RegisterProbes(std::vector<ProbeCluster> probes) {
-  for (const auto& p : probes) probe_est_.SetClusterInfo(p);
+  for (const auto& p : probes) {
+    probe_est_.SetClusterInfo(p);
+    if (cfg_.bwe_trace) {
+      BweTraceRow r;
+      r.time_us = p.at_time.us();
+      r.kind = BweTraceRow::Kind::kProbe;
+      r.bitrate_bps = p.rate.bps();
+      r.packets = p.id;
+      cfg_.bwe_trace->push_back(r);
+    }
+  }
   return probes;
 }
 
@@ -138,7 +148,16 @@ DataRate GccController::PaddingRate() const {
 void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int probe_cluster) {
   history_.OnPacketSent(seq, t, size, probe_cluster);
   // GoogCcNetworkController::OnSentPacket.
+  const bool was_in_alr = alr_.GetApplicationLimitedRegionStartTime().has_value();
   alr_.OnBytesSent(size, t);
+  const bool in_alr = alr_.GetApplicationLimitedRegionStartTime().has_value();
+  if (cfg_.bwe_trace && in_alr != was_in_alr) {
+    BweTraceRow r;
+    r.time_us = t.us();
+    r.kind = BweTraceRow::Kind::kAlr;
+    r.bitrate_bps = in_alr ? 1 : 0;
+    cfg_.bwe_trace->push_back(r);
+  }
   acked_v2_.SetAlr(alr_.GetApplicationLimitedRegionStartTime().has_value());
   if (!first_packet_sent_) {
     first_packet_sent_ = true;
