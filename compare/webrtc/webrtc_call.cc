@@ -1,6 +1,7 @@
 #include "webrtc_call.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <functional>
 #include <map>
@@ -135,6 +136,52 @@ class BweTraceLog final : public w::RtcEventLog {
  private:
   std::function<int64_t()> now_us_;
   std::vector<cc::BweTraceRow>* rows_;
+};
+
+// libwebrtc's QualityScaler state for the per-second video trace (issue #347).
+// The scaler is internal to VideoStreamEncoder and has no stats or event, but
+// QualityScaler::CheckQp logs every check that observed enough frames, with
+// the values its decision reads (modules/video_coding/utility/quality_scaler.cc
+// l.288 and l.300): "Reporting high QP, framedrop percent N" and "Checking
+// average QP H (L).", and the constructor logs "QP thresholds: low: L, high: H"
+// (l.221). This sink reads those lines at the simulated time they are logged.
+class QualityScalerLog final : public w::LogSink {
+ public:
+  struct Check {
+    int64_t time_us = 0;
+    int qp_high = -1, qp_low = -1, drop_pct = -1;
+    int signal = 0;  // -1 high QP (adapt down), +1 low QP (adapt up), as VideoTraceRow::qs_signal.
+  };
+  explicit QualityScalerLog(std::function<int64_t()> now_us) : now_us_(std::move(now_us)) {}
+  ~QualityScalerLog() override { Stop(); }
+  void Start() {
+    w::LogMessage::AddLogToStream(this, w::LS_INFO);
+    started_ = true;
+  }
+  void Stop() {
+    if (started_) w::LogMessage::RemoveLogToStream(this);
+    started_ = false;
+  }
+  using w::LogSink::OnLogMessage;
+  void OnLogMessage(const std::string& msg) override {
+    int a = 0, b = 0;
+    if (const char* p = std::strstr(msg.c_str(), "QP thresholds: low: ")) {
+      if (std::sscanf(p, "QP thresholds: low: %d, high: %d", &a, &b) == 2) low_ = a, high_ = b;
+    } else if (const char* p = std::strstr(msg.c_str(), "Reporting high QP, framedrop percent ")) {
+      if (std::sscanf(p, "Reporting high QP, framedrop percent %d", &a) == 1) checks.push_back({now_us_(), -1, -1, a, -1});
+    } else if (const char* p = std::strstr(msg.c_str(), "Checking average QP ")) {
+      if (std::sscanf(p, "Checking average QP %d (%d)", &a, &b) == 2) {
+        // CheckQp's decision on the logged values.
+        checks.push_back({now_us_(), a, b, -1, a > high_ ? -1 : b <= low_ ? 1 : 0});
+      }
+    }
+  }
+  std::vector<Check> checks;
+
+ private:
+  std::function<int64_t()> now_us_;
+  bool started_ = false;
+  int low_ = 24, high_ = 37;  // The H.264 thresholds RunWebrtcCall's field trial sets, until the scaler logs its own.
 };
 
 // The sender's network controller: libwebrtc's GoogCC, exactly as RtpTransportControllerSend creates it without an
@@ -607,6 +654,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   }
   DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
   const w::Environment sender_env = sender_env_factory.Create();
+  QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
+  if (opt.video_trace && s.video && s.quality_scaling) qs_log.Start();
 
   auto sender_q = sim.CreateTaskQueue("sender", w::TaskQueueFactory::Priority::kNormal);
   auto receiver_q = sim.CreateTaskQueue("receiver", w::TaskQueueFactory::Priority::kNormal);
@@ -1143,6 +1192,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   };
   net_q->PostTask([&] { tick(0); });
   sim.RunUntil(t0 + w::TimeDelta::Millis(end_ms));
+  qs_log.Stop();
   stopping = true;
 
   // --- Final stats and teardown ---------------------------------------------
@@ -1216,6 +1266,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (sec < render_by_second.size()) {
         r.rendered = render_by_second[sec].rendered;
         r.max_render_gap_ms = render_by_second[sec].max_gap_ms;
+      }
+      // The scaler checks in [t_ms - 1000, t_ms), as the test bench counts them (issue #347).
+      for (const QualityScalerLog::Check& c : qs_log.checks) {
+        if (c.time_us < (r.t_ms - 1000) * 1000 || c.time_us >= r.t_ms * 1000) continue;
+        ++r.qs_checks;
+        r.qs_qp_high = c.qp_high;
+        r.qs_qp_low = c.qp_low;
+        r.qs_drop_pct = c.drop_pct;
+        r.qs_signal = c.signal;
       }
     }
     const auto& fz = freezes.stats();
