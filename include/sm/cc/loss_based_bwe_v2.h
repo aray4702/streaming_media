@@ -115,6 +115,9 @@ class LossBasedBweV2 : public MetricsSource {
   int num_observations() const { return num_observations_; }
   std::optional<DataRate> loss_limited_bandwidth() const { return current_best_estimate_.loss_limited_bandwidth; }
   DataRate instant_upper_bound() const { return GetInstantUpperBound(); }
+  std::optional<DataRate> acknowledged_bitrate() const { return acknowledged_bitrate_; }
+  DataRate delay_based_estimate() const { return delay_based_estimate_; }
+  DataRate bandwidth_limit_in_current_window() const { return bandwidth_limit_in_current_window_; }
   const LossBasedBweV2Config& config() const { return cfg_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

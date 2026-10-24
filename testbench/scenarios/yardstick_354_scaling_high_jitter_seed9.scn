@@ -1,0 +1,7 @@
+name yardstick_354_scaling_high_jitter_seed9
+describe Yardstick for #354: high_jitter with quality_scaling on and seed 9, traced on both stacks with LossBasedBweV2's state and inputs (no expectations)
+duration 30s
+seed 9
+compare_seeds 1
+quality_scaling on
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms

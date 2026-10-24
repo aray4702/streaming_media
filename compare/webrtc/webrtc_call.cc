@@ -6,6 +6,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <limits>
 #include <optional>
 #include <set>
 #include <span>
@@ -58,6 +59,8 @@
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
+#include "modules/congestion_controller/goog_cc/loss_based_bwe_v2.h"
+#include "modules/congestion_controller/goog_cc/send_side_bandwidth_estimation.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -86,11 +89,39 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // SendSideBandwidthEstimation and GoogCcNetworkController declare the same friend (issue #354).
+  static const LossBasedBweV2* LossV2(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->bandwidth_estimation_.loss_based_bandwidth_estimator_v2_.get();
+  }
+  static bool InAlr(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->alr_detector_.GetApplicationLimitedRegionStartTime().has_value();
+  }
 };
 }  // namespace webrtc
 
 namespace sm::compare {
 namespace {
+
+// LossBasedBweV2 declares no friend, so its state for the loss_bwe rows (issue #354) is read
+// through pointers to its private members, which an explicit instantiation may name
+// ([temp.spec.general]/6: access checking does not apply to explicit instantiation arguments).
+template <class Tag, auto Member>
+struct LossBweMember {
+  friend constexpr auto Get(Tag) { return Member; }
+};
+#define SM_LOSS_BWE_MEMBER(tag, member)        \
+  struct tag {                                 \
+    friend constexpr auto Get(tag);            \
+  };                                           \
+  template struct LossBweMember<tag, &webrtc::LossBasedBweV2::member>
+SM_LOSS_BWE_MEMBER(LbBest, current_best_estimate_);
+SM_LOSS_BWE_MEMBER(LbAvgLoss, average_reported_loss_ratio_);
+SM_LOSS_BWE_MEMBER(LbAcked, acknowledged_bitrate_);
+SM_LOSS_BWE_MEMBER(LbDelayBased, delay_based_estimate_);
+SM_LOSS_BWE_MEMBER(LbWindowLimit, bandwidth_limit_in_current_window_);
+SM_LOSS_BWE_MEMBER(LbInstantUb, cached_instant_upper_bound_);
+SM_LOSS_BWE_MEMBER(LbMaxBitrate, max_bitrate_);
+#undef SM_LOSS_BWE_MEMBER
 
 namespace w = webrtc;
 using testbench::Report;
@@ -217,6 +248,9 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
     if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
     const size_t first_row = rows_->size();
     Replay(m);
+    int lost = 0;
+    for (const w::PacketResult& p : m.packet_feedbacks) lost += p.IsReceived() ? 0 : 1;
+    const int results = static_cast<int>(m.packet_feedbacks.size());
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
     using P = w::GoogCcStatePrinter;
     const w::TrendlineEstimator* live = P::Detector(P::Delay(inner_.get()));
@@ -224,10 +258,39 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
+    TraceLossBwe(results, lost);
     return u;
   }
 
  private:
+  // The loss_bwe row (cc::BweTraceRow::Kind::kLossBwe), as GccController::TraceLossBwe writes ours.
+  void TraceLossBwe(int results, int lost) {
+    const w::LossBasedBweV2* lb = w::GoogCcStatePrinter::LossV2(inner_.get());
+    if (!lb) return;
+    const auto bps = [](w::DataRate r) { return r.IsFinite() ? r.bps() : int64_t{-1}; };
+    const auto kbps = [](w::DataRate r) { return r.IsFinite() ? r.kbps<double>() : std::numeric_limits<double>::quiet_NaN(); };
+    cc::BweTraceRow r;
+    r.time_us = now_us_();
+    r.kind = cc::BweTraceRow::Kind::kLossBwe;
+    const w::LossBasedBweV2::Result res = lb->GetLossBasedResult();
+    r.bitrate_bps = bps(res.bandwidth_estimate);
+    r.loss_state = static_cast<int>(res.state);
+    const auto& best = lb->*Get(LbBest{});
+    r.loss_limit_bps = bps(best.loss_limited_bandwidth);
+    const std::optional<w::DataRate>& ub = lb->*Get(LbInstantUb{});
+    r.instant_ub_bps = bps(ub.value_or(lb->*Get(LbMaxBitrate{})));  // GetInstantUpperBound.
+    r.packets = results;
+    r.fraction_loss = lost;
+    r.modified_trend = lb->*Get(LbAvgLoss{});
+    r.threshold = best.inherent_loss;
+    const std::optional<w::DataRate>& acked = lb->*Get(LbAcked{});
+    r.send_delta_ms = acked ? kbps(*acked) : std::numeric_limits<double>::quiet_NaN();
+    r.recv_delta_ms = kbps(lb->*Get(LbDelayBased{}));
+    r.send_ms = kbps(lb->*Get(LbWindowLimit{}));
+    r.arrival_ms = w::GoogCcStatePrinter::InAlr(inner_.get()) ? 1 : 0;
+    rows_->push_back(r);
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
