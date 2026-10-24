@@ -211,7 +211,9 @@ SM_TEST(EncoderBitrateAdjuster, RateUtilizationTrackerLetsHeadroomPayForBursts) 
   EncoderBitrateAdjusterConfig cfg;
   cfg.newfangled_headroom_adjustment = true;
   EncoderBitrateAdjuster tracker(cfg);
-  EncoderBitrateAdjuster detector;
+  EncoderBitrateAdjusterConfig detector_cfg;
+  detector_cfg.newfangled_headroom_adjustment = false;
+  EncoderBitrateAdjuster detector(detector_cfg);
   DataRate a, b;
   for (int i = 0; i < 180; ++i) {
     const Timestamp now = Timestamp::Micros(i * 1000000 / 30);
@@ -243,4 +245,12 @@ SM_TEST(EncoderBitrateAdjuster, ResetStartsANewRateUtilizationTracker) {
   const DataRate r = Run(a, 40, 4167, Kbps(1000), Kbps(1400), 2200);
   SM_EXPECT_LT(a.media_utilization_factor(), 1.0);
   SM_EXPECT_NEAR(r.kbps(), 1000.0, 1.5);
+}
+
+SM_TEST(EncoderBitrateAdjuster, RateUtilizationTrackerIsOnByDefault) {
+  // libwebrtc runs the newfangled headroom adjustment unless
+  // WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment is disabled
+  // (encoder_bitrate_adjuster.cc:66-67), so the default here is the tracker too
+  // (issue #355).
+  SM_EXPECT_TRUE(EncoderBitrateAdjusterConfig{}.newfangled_headroom_adjustment);
 }
