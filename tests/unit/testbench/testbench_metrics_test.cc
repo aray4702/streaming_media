@@ -472,3 +472,48 @@ SM_TEST(TestbenchMetrics, UtilizationExcludesResendsOfPacketsThatArrived) {
   SM_EXPECT_LT(rep.metrics.at("cc.goodput_kbps"),
                rep.metrics.at("net.video_kbps") + rep.metrics.at("net.audio_kbps") + 50);
 }
+
+// Issue #372: NetEq expands by whole periods (here 12.5 ms at 16 kHz), so one
+// pull in five plays leftover expanded samples and adds none. The event still
+// lasts the whole expansion, as StatisticsCalculator::EndExpandEvent counts it.
+SM_TEST(TestbenchMetrics, ConcealmentEventSpansPullsThatAddNoConcealedSamples) {
+  ConcealmentMeter m(16000);
+  uint64_t total = 0, concealed = 0, events = 0;
+  for (int i = 0; i < 100; ++i) m.OnPull(total += 160, concealed, events);  // 1 s of decoded audio
+  ++events;
+  for (int i = 0; i < 300; ++i) {  // a 3 s outage
+    if (i % 5 != 4) concealed += 200;
+    m.OnPull(total += 160, concealed, events);
+  }
+  SM_EXPECT_EQ(m.pull_concealed(), 0u);  // the last pull played leftovers
+  for (int i = 0; i < 100; ++i) m.OnPull(total += 160, concealed, events);
+  m.Finish();
+  SM_EXPECT_EQ(m.interruptions(), 1);
+  SM_EXPECT_EQ(m.interruption_ms(), 3000);
+  SM_EXPECT_EQ(m.longest_event_ms(), 3000);
+  SM_EXPECT_NEAR(m.concealed_pct(), 60.0, 1e-9);
+}
+
+// Events under 150 ms set the longest event but are not interruptions;
+// 150 ms is one (kInterruptionLenMs, >=). An open event ends at Finish().
+SM_TEST(TestbenchMetrics, ShortConcealmentEventsAreNotInterruptions) {
+  ConcealmentMeter m(48000);
+  uint64_t total = 0, concealed = 0, events = 0;
+  m.OnPull(total += 480, concealed, ++events);
+  for (int i = 0; i < 14; ++i) m.OnPull(total += 480, concealed += 480, events);  // 140 ms
+  m.OnPull(total += 480, concealed, events);
+  SM_EXPECT_EQ(m.interruptions(), 0);
+  m.OnPull(total += 480, concealed, ++events);  // ends the 140 ms event
+  SM_EXPECT_EQ(m.longest_event_ms(), 140);
+  SM_EXPECT_EQ(m.interruptions(), 0);
+  for (int i = 0; i < 15; ++i) m.OnPull(total += 480, concealed += 480, events);  // 150 ms, still open
+  m.Finish();
+  SM_EXPECT_EQ(m.interruptions(), 1);
+  SM_EXPECT_EQ(m.interruption_ms(), 150);
+  SM_EXPECT_EQ(m.longest_event_ms(), 150);
+}
+
+SM_TEST(TestbenchMetrics, NoAudioPlayedIsAllConcealed) {
+  ConcealmentMeter m(16000);
+  SM_EXPECT_NEAR(m.concealed_pct(), 100.0, 1e-9);
+}
