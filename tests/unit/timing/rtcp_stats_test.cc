@@ -148,3 +148,57 @@ SM_TEST(RtcpStats, JitterIsRescaledWhenThePayloadFrequencyChanges) {
   same.OnPacket(1, 3000, Timestamp::Millis(40), 90000);
   SM_EXPECT_EQ(same.jitter_frequency(), 90000);
 }
+
+// RFC 3611 extended reports, as libwebrtc's rtcp_packet::ExtendedReports
+// lays them out: RRTR first, then one DLRR block with every item (issue #356).
+SM_TEST(RtcpStats, ExtendedReportsRoundTrip) {
+  ExtendedReports xr;
+  xr.sender_ssrc = 0x11223344;
+  xr.rrtr = NtpTime{0x0102030405060708ULL};
+  xr.dlrr = {{7, 0xAABBCCDD, 0x00010000}, {9, 0x12345678, 0x8000}};
+  const auto b = SerializeExtendedReports(xr);
+  SM_ASSERT_EQ(b.size(), 8u + 12u + 4u + 24u);
+  SM_EXPECT_EQ(b[1], 207);
+  SM_EXPECT_EQ((b[2] << 8) | b[3], 11);  // Length in words minus one.
+  SM_EXPECT_EQ(b[8], 4);                  // RRTR block type,
+  SM_EXPECT_EQ((b[10] << 8) | b[11], 2);  // two words.
+  SM_EXPECT_EQ(b[20], 5);                 // DLRR block type,
+  SM_EXPECT_EQ((b[22] << 8) | b[23], 6);  // three words per item.
+  auto p = ParseExtendedReports(b);
+  SM_ASSERT_TRUE(p.has_value());
+  SM_EXPECT_EQ(p->sender_ssrc, 0x11223344u);
+  SM_ASSERT_TRUE(p->rrtr.has_value());
+  SM_EXPECT_EQ(p->rrtr->value, 0x0102030405060708ULL);
+  SM_ASSERT_EQ(p->dlrr.size(), 2u);
+  SM_EXPECT_EQ(p->dlrr[1].ssrc, 9u);
+  SM_EXPECT_EQ(p->dlrr[1].last_rr, 0x12345678u);
+  SM_EXPECT_EQ(p->dlrr[1].delay_since_last_rr, 0x8000u);
+
+  // Only an RRTR: no DLRR block at all.
+  ExtendedReports only;
+  only.rrtr = NtpTime{1};
+  SM_EXPECT_EQ(SerializeExtendedReports(only).size(), 20u);
+  // At most kMaxNumberOfDlrrItems items.
+  ExtendedReports many;
+  many.dlrr.resize(kMaxNumberOfDlrrItems + 5);
+  SM_EXPECT_EQ(SerializeExtendedReports(many).size(), 8u + 4u + 12u * kMaxNumberOfDlrrItems);
+}
+
+SM_TEST(RtcpStats, ExtendedReportsSkipUnknownAndMisSizedBlocks) {
+  // Header (5 words after it), sender SSRC, an unknown block of one word, an
+  // RRTR claiming one word (ignored), and a DLRR whose length is not a
+  // multiple of three (ignored).
+  std::vector<uint8_t> b = {0x80, 207, 0, 6, 0, 0, 0, 1,
+                            42, 0, 0, 1, 1, 2, 3, 4,
+                            4, 0, 0, 1, 9, 9, 9, 9,
+                            5, 0, 0, 1, 7, 7, 7, 7};
+  b[3] = static_cast<uint8_t>(b.size() / 4 - 1);
+  auto p = ParseExtendedReports(b);
+  SM_ASSERT_TRUE(p.has_value());
+  SM_EXPECT_FALSE(p->rrtr.has_value());
+  SM_EXPECT_TRUE(p->dlrr.empty());
+  // A block that runs past the packet makes it malformed.
+  std::vector<uint8_t> bad = {0x80, 207, 0, 3, 0, 0, 0, 1, 4, 0, 0, 2, 1, 2, 3, 4};
+  SM_EXPECT_FALSE(ParseExtendedReports(bad).has_value());
+  SM_EXPECT_FALSE(ParseExtendedReports(std::vector<uint8_t>{0x80, 207, 0}).has_value());
+}

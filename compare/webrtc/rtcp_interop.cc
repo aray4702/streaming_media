@@ -11,7 +11,10 @@
 // and ULPFEC over RED (issue #29): libwebrtc's UlpfecReceiver recovers
 // packets that loss::ulpfec::UlpfecGenerator protected, this library's
 // UlpfecReceiver recovers packets that libwebrtc's UlpfecGenerator protected,
-// and both generators make the same FEC payloads from the same media.
+// and both generators make the same FEC payloads from the same media, and the
+// RFC 3611 extended reports a receive-only endpoint measures its RTT with:
+// RRTR and DLRR both ways, and rtp::RtcpEngine's receiver report and NACK
+// compounds with the RRTR in libwebrtc's order (issue #356).
 // Exits non-zero on any mismatch.
 #include <algorithm>
 #include <optional>
@@ -24,6 +27,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/fir.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/loss_notification.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
@@ -1054,6 +1058,74 @@ void Ulpfec() {
     Check(!ours.empty() && ours == theirs, what.c_str());
   }
 }
+// Extended reports (RFC 3611): RRTR and DLRR in both directions, and the
+// engine's compounds as libwebrtc's CommonHeader walks them (issue #356).
+void ExtendedReports() {
+  std::printf("extended reports (RRTR, DLRR)\n");
+  {
+    sm::timing::ExtendedReports xr;
+    xr.sender_ssrc = 0x11223344;
+    xr.rrtr = sm::timing::NtpTime{0x0102030405060708ULL};
+    xr.dlrr = {{7, 0xAABBCCDD, 0x00010000}, {9, 0x12345678, 0x8000}};
+    Bytes b = sm::timing::SerializeExtendedReports(xr);
+    webrtc::rtcp::ExtendedReports w;
+    bool ok = WebrtcParse(b.data(), b.size(), w);
+    ok = ok && w.sender_ssrc() == 0x11223344 && w.rrtr() &&
+         static_cast<uint64_t>(w.rrtr()->ntp()) == 0x0102030405060708ULL && w.dlrr().sub_blocks().size() == 2 &&
+         w.dlrr().sub_blocks()[0] == webrtc::rtcp::ReceiveTimeInfo(7, 0xAABBCCDD, 0x00010000) &&
+         w.dlrr().sub_blocks()[1] == webrtc::rtcp::ReceiveTimeInfo(9, 0x12345678, 0x8000);
+    Check(ok, "this library -> libwebrtc: XR with RRTR and two DLRR items");
+  }
+  {
+    webrtc::rtcp::ExtendedReports w;
+    w.SetSenderSsrc(0x0A0B0C0D);
+    webrtc::rtcp::Rrtr rrtr;
+    rrtr.SetNtp(webrtc::NtpTime(0x1112131415161718ULL));
+    w.SetRrtr(rrtr);
+    w.AddDlrrItem(webrtc::rtcp::ReceiveTimeInfo(0x01020304, 0x0BADF00D, 1234));
+    Bytes b = WebrtcBuild(w);
+    auto xr = sm::timing::ParseExtendedReports(b);
+    bool ok = xr && xr->sender_ssrc == 0x0A0B0C0D && xr->rrtr && xr->rrtr->value == 0x1112131415161718ULL &&
+              xr->dlrr.size() == 1 && xr->dlrr[0].ssrc == 0x01020304 && xr->dlrr[0].last_rr == 0x0BADF00D &&
+              xr->dlrr[0].delay_since_last_rr == 1234;
+    Check(ok, "libwebrtc -> this library: XR with RRTR and a DLRR item");
+  }
+  {
+    // A receive-only engine: a NACK compound, then its report, each ends with the RRTR.
+    sm::timing::ReceiveStatistics stats(0x1234, 90000);
+    stats.OnPacket(1, 0, sm::Timestamp::Millis(0));
+    stats.OnPacket(3, 3000, sm::Timestamp::Millis(40));
+    sm::rtp::RtcpConfig c;
+    c.local_ssrc = 100;
+    c.cname = "user@host";
+    c.xr_rrtr = true;
+    c.first_report_delay = sm::TimeDelta::Millis(500);
+    sm::rtp::RtcpEngine rx(c);
+    rx.AddReceiveStatistics(&stats);
+    rx.Process(sm::Timestamp::Millis(0));
+    const std::vector<uint16_t> seqs = {2};
+    rx.QueueNack(0x1234, seqs);
+    auto nack = rx.Process(sm::Timestamp::Millis(100));
+    std::vector<sm::rtp::RtcpOutgoing> report;
+    for (int64_t t = 101; t <= 2000 && report.empty(); ++t) report = rx.Process(sm::Timestamp::Millis(t));
+    auto walk = [](const Bytes& d, std::vector<uint8_t> types) {
+      webrtc::rtcp::CommonHeader h;
+      const uint8_t* p = d.data();
+      const uint8_t* end = d.data() + d.size();
+      for (uint8_t t : types) {
+        if (p >= end || !h.Parse(p, end - p) || h.type() != t) return false;
+        if (t == webrtc::rtcp::ExtendedReports::kPacketType) {
+          webrtc::rtcp::ExtendedReports xr;
+          if (!xr.Parse(h) || xr.sender_ssrc() != 100 || !xr.rrtr()) return false;
+        }
+        p = h.NextPacket();
+      }
+      return p == end;
+    };
+    Check(nack.size() == 1 && walk(nack[0].bytes, {201, 202, 205, 207}), "engine NACK compound: RR, SDES, NACK, XR (RRTR)");
+    Check(report.size() == 1 && walk(report[0].bytes, {201, 202, 207}), "engine receiver report: RR, SDES, XR (RRTR)");
+  }
+}
 }  // namespace
 
 int main() {
@@ -1068,6 +1140,7 @@ int main() {
   H264Model();
   H264SpsVuiRewrite();
   Ulpfec();
+  ExtendedReports();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
     return 1;

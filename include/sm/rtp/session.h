@@ -268,6 +268,8 @@ class Session : public MetricsSource {
   // It takes the place of a receive-only stream's XR DLRR RTT: the next 1 s
   // periodic update hands it to CallStats, whose maximum feeds the video
   // receivers' NACK and jitter estimate (VideoReceiveStream2::OnRttUpdate).
+  // With `rtcp.xr_rrtr` the session measures that RTT itself, and this one
+  // does not go to CallStats.
   // The congestion controller and the audio receivers take it at once. It
   // raises no event.
   void SetRtt(TimeDelta rtt);
@@ -407,8 +409,9 @@ class Session : public MetricsSource {
   TimeDelta rtt_sum_ = TimeDelta::Zero();
   int64_t rtt_count_ = 0;
   // CallStats for the video receivers, fed by the periodic update: the
-  // sender's periodic RTT, and a receive-only stream's RTT from SetRtt
-  // (RTCPReceiver::GetAndResetXrRrRtt: each measurement once).
+  // sender's periodic RTT, and a receive-only stream's RTT from the XR DLRR
+  // (rtcp.xr_rrtr) or else SetRtt (RTCPReceiver::GetAndResetXrRrRtt: each
+  // measurement once).
   CallStats call_stats_;
   std::optional<TimeDelta> pending_rr_rtt_;
   void OnCallStatsUpdate(const std::optional<CallStats::Update>& u);

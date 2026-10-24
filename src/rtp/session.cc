@@ -366,7 +366,8 @@ void Session::MaybeUpdateFecRates(Timestamp now) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
-  pending_rr_rtt_ = rtt;
+  // With RRTR on, the XR measurement is what goes to CallStats.
+  if (!cfg_.rtcp.xr_rrtr) pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
   for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
 }
@@ -443,6 +444,9 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     }
   }
   if (!in.report_blocks.empty()) last_report_block_ = now;
+  // RTCPReceiver::HandleXrDlrrReportBlock keeps the latest XR RTT for
+  // GetAndResetXrRrRtt at the next periodic update.
+  if (!in.xr_rtts.empty()) pending_rr_rtt_ = in.xr_rtts.back();
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
