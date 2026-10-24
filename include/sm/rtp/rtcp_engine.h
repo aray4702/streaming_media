@@ -41,7 +41,7 @@ struct RtcpConfig {
   // (libwebrtc's rtcp_report_interval_ms).
   TimeDelta report_interval = TimeDelta::Zero();
   // Time from the first Process call to the first report; zero = half the
-  // interval, like RTCPSender. Lets the test bench keep its report phases.
+  // nominal interval with no random draw, like RTCPSender's constructor. Lets the test bench keep its report phases.
   TimeDelta first_report_delay = TimeDelta::Zero();
   // Intervals follow libwebrtc's `RTCPSender::ComputeTimeUntilNextReport`
   // (#76): every interval is a whole number of milliseconds drawn from
@@ -175,6 +175,7 @@ class RtcpEngine : public MetricsSource {
 
  private:
   TimeDelta Interval();
+  TimeDelta NominalInterval() const;
   std::vector<uint8_t> BuildReport(Timestamp now);
   void AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& packets);
   void EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out);

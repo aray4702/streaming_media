@@ -47,11 +47,32 @@ SM_TEST(RtcpEngine, RandomizedIntervalsStayInRangeAndAreDeterministic) {
   SM_EXPECT_GT(a.size(), 45u);
   SM_EXPECT_LT(a.size(), 80u);
   SM_ASSERT_GT(a.size(), 2u);
-  SM_EXPECT_GE(a[0], 250);  // 0.5 * (0.5 .. 1.5) s
-  SM_EXPECT_LE(a[0], 750);
+  SM_EXPECT_EQ(a[0], 500);  // half the nominal 1 s, no random draw
   for (size_t i = 1; i < a.size(); ++i) {
     SM_EXPECT_GE(a[i] - a[i - 1], 500);
     SM_EXPECT_LE(a[i] - a[i - 1], 1501);
+  }
+}
+
+// RTCPSender's constructor schedules the first report at report_interval_ / 2
+// with no random draw (rtcp_sender.cc:171): 0.5 s with video and 2.5 s for an
+// audio-only sender, on every seed (#331).
+SM_TEST(RtcpEngine, FirstReportAtHalfTheNominalIntervalOnEverySeed) {
+  for (uint64_t seed = 1; seed <= 8; ++seed) {
+    RtcpConfig video;
+    video.seed = seed;
+    RtcpEngine v(video);
+    auto vt = ReportTimes(v, 600);
+    SM_ASSERT_GE(vt.size(), 1u);
+    SM_EXPECT_EQ(vt[0], 500);
+
+    RtcpConfig audio;
+    audio.seed = seed;
+    audio.has_video = false;
+    RtcpEngine a(audio);
+    auto at = ReportTimes(a, 2600);
+    SM_ASSERT_EQ(at.size(), 1u);
+    SM_EXPECT_EQ(at[0], 2500);
   }
 }
 
