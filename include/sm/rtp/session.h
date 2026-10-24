@@ -44,6 +44,7 @@
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
+#include "sm/rtp/sps_vui_rewriter.h"
 #include "sm/sync/header_extensions.h"
 
 namespace sm::rtp {
@@ -222,6 +223,7 @@ struct SessionStats {
   uint64_t empty_video_frames = 0;
   uint64_t nacks_unmatched = 0;  // NACK for an SSRC with no sender.
   uint64_t datagrams_out = 0;
+  SpsRewriteStats sps;  // Keyframe SPS units: VUI rewritten, already fine, or not parsed (#342).
 };
 
 class Session : public MetricsSource {

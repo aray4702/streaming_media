@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "sm/rtp/h264.h"
+#include "sm/rtp/sps_vui_rewriter.h"
 
 namespace sm::rtp {
 namespace {
@@ -255,6 +256,15 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     ++stats_.empty_video_frames;
     return;
   }
+  // VideoStreamEncoder::AugmentEncodedImage -> FrameEncodeMetadataWriter::UpdateBitstream: the
+  // SPS of a keyframe gets a VUI that forbids frame reordering, and AUDs are dropped (#342).
+  std::vector<uint8_t> rewritten;
+  std::span<const uint8_t> data = f.data;
+  if (f.keyframe) {
+    rewritten = ParseOutgoingBitstreamAndRewrite(f.data, &stats_.sps);
+    // A frame without start codes (one bare NAL unit, which the packetizer takes) is sent as is.
+    if (!rewritten.empty()) data = rewritten;
+  }
   // rtp_sender_video.cc: packet_capacity, less FecPacketOverhead with FEC, less the header of a
   // middle packet. The first, last and single packets carry no extension the middle one
   // lacks here (transport-cc, abs-send-time and MID go on every packet), so
@@ -263,8 +273,8 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   const size_t header = s.MediaHeaderSize();
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
-  const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(f.data, limits);
-  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, f.data.size());
+  const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(data, limits);
+  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size());
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
@@ -663,6 +673,9 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("unroutable", stats_.unroutable);
   w.Counter("empty_video_frames", stats_.empty_video_frames);
   w.Counter("nacks_unmatched", stats_.nacks_unmatched);
+  w.Counter("sps_vui_rewritten", stats_.sps.rewritten);
+  w.Counter("sps_vui_ok", stats_.sps.vui_ok);
+  w.Counter("sps_parse_failures", stats_.sps.parse_failures);
   w.Gauge("rtt_ms", static_cast<double>(rtt_.us()) / 1000.0);
   w.Gauge("target_kbps", send_.target().kbps());
 }
