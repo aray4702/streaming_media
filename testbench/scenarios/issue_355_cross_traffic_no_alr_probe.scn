@@ -1,0 +1,17 @@
+name issue_355_cross_traffic_no_alr_probe
+describe issue_346_reconfigure_cross_traffic with rate_utilization_tracker on: a call with video sends no periodic ALR probe, as libwebrtc's VideoSendStreamImpl turns them off (#355)
+duration 40s
+quality_scaling on
+rate_utilization_tracker on
+at 0s  capacity=3000kbps delay=25ms queue=300ms
+at 10s cross=1500kbps
+at 25s cross=0kbps
+# libwebrtc (yardstick #359, seeds 1, 5, 6): ALR from about 6.4 s, no periodic ALR probe; its only probes after
+# the start are RequestProbe's (0.85 x the estimate before the drop) on underuse -> normal, at 12.1 s on seeds 5 and 6.
+# libwebrtc on seed 1 (#344): 0 freezes, loss 0.0 %, e2e p95 249 ms.
+# main before #355's fix: the periodic ALR probe goes out 5 s after the ALR start (11.45 s), on the cross traffic;
+# seeds 1-10 freeze on 1, 5, 6, 9, 10, loss up to 0.08 %, e2e p95 340 ms on seed 1.
+# With the fix, seeds 1-10: 0 freezes, loss 0.0 %, e2e p95 193-268 ms.
+expect video.freeze_count == 0
+expect net.loss_pct < 0.02
+expect video.e2e_delay_p95_ms < 300
