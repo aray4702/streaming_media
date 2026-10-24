@@ -13,5 +13,8 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s down
 at 13s up
 expect video.frames_rendered > 1000
+# Issue #355 (rate_utilization_tracker on by default): held at the old bounds by the Owner (2026-10-24). With the
+# tracker on, seed 1 has 3 freezes, 6251 ms, against libwebrtc's 1, 714 ms. The cause is #368 (our receiver renders a lone
+# frame after the outage and then stalls), which lands before #355's flip.
 expect video.freeze_count <= 2
 expect video.freeze_total_ms < 5200

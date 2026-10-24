@@ -13,5 +13,9 @@ reverse at 0s delay=15ms
 reverse at 15s down
 reverse at 16.5s up delay=60ms
 expect repair.overhead_pct < 45
-expect video.residual_loss_pct < 0.5
+# Issue #355 with #361 (program.md 0.2; accepted by the Owner on 2026-10-24 at < 0.75): was < 0.5. With the tracker and XR RTT, seed 1 gives up on packets
+# and requests a keyframe (0.68 %, 1 request); seeds 2-10 have 0. libwebrtc requests keyframes here too (0.2 per seed
+# on main's compare-webrtc). Longest freeze seeds 1-10 mean 2028 ms, libwebrtc 2036. libwebrtc's per-seed residual loss
+# isn't in sm_compare's data.
+expect video.residual_loss_pct < 0.75
 expect video.longest_freeze_ms < 6000

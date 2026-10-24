@@ -26,9 +26,6 @@
 // with the field trial disabled.
 //
 // Differences from libwebrtc (tools/catalog.py 5.8):
-//  - The tracker is off by default (issue #355): on, it gives libwebrtc's ramp
-//    after a reset, but the default suite then shows freezes that libwebrtc
-//    does not have, from our periodic ALR probe (issue #355's PR).
 //  - Rates are re-adjusted per captured frame, libwebrtc does it on every
 //    bitrate update (about every 25 ms to 1 s). A rate update and a frame at the
 //    same time are one tracker data point, so the tracker's window is the same.
@@ -120,8 +117,8 @@ struct EncoderBitrateAdjusterConfig {
   bool utilize_bandwidth_headroom = true;
   // WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment (on in libwebrtc
   // unless disabled): the media utilization factor from RateUtilizationTracker.
-  // Off here until it is judged against libwebrtc (issue #355).
-  bool newfangled_headroom_adjustment = false;
+  // On by default, as libwebrtc (issue #355).
+  bool newfangled_headroom_adjustment = true;
   // Codec minimum bitrate (VideoCodec::minBitrate); 0 = none.
   DataRate min_bitrate;
 };
