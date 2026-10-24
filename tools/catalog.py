@@ -1408,7 +1408,7 @@ ALGORITHMS = [
                   "flow in both directions at the scheduled intervals, RTT is measured from SR and RR, and feedback "
                   "requests reach the module that acts on them.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
-               "without, randomization 0.5 to 1.5x, first report at half the interval) and for the compound layout "
+               "without, randomization 0.5 to 1.5x, first report at half the nominal interval with no random draw, #360) and for the compound layout "
                "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
                "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
