@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-104 scenarios, mean of 10 seeds. **110 gaps**: 43 behind libwebrtc, 67 ahead of it; 0 without an owner.
+105 scenarios, mean of 10 seeds. **113 gaps**: 46 behind libwebrtc, 67 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-112 gaps on `main`, 110 here: **3 closed, 1 opened**, 0 changed direction.
+112 gaps on `main`, 113 here: **3 closed, 4 opened**, 0 changed direction.
 
 Closed:
 
@@ -21,6 +21,9 @@ Opened:
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
 | issue_331_low_bandwidth_av_offset_seed4 | `video.render_fps` | 27.9 | 26.3 | ±1.4 | ahead | 7/10 | #37, #24 |
+| issue_355_rate_tracker_ramp | `audio.mouth_to_ear_p95_ms` | 171 | 160 | ±10 | behind | 5/10 | #63 |
+| issue_355_rate_tracker_ramp | `audio.jb_delay_p95_ms` | 90 | 79 | ±10 | behind | 5/10 | #63 |
+| issue_355_rate_tracker_ramp | `sync.av_offset_p95_ms` | 26.9 | 16.4 | ±10 | behind | 4/10 | #77 |
 
 ### Gaps
 
@@ -102,6 +105,9 @@ Opened:
 | issue_346_reconfigure_cross_traffic | `audio.mouth_to_ear_p95_ms` | 479 | 529 | ±42.2 | ahead | 8/10 | #63, #204 |
 | issue_346_reconfigure_cross_traffic | `cc.queue_p95_ms` | 161 | 184 | ±20.9 | ahead | 9/10 | #19, #15, #48, #12, #61 |
 | issue_346_reconfigure_outage_8s | `cc.max_settle_ms` | 3680 | 2610 | ±976 | behind | 6/10 | #15, #48, #61, #20 |
+| issue_355_rate_tracker_ramp | `audio.jb_delay_p95_ms` | 90 | 79 | ±10 | behind | 5/10 | #63 |
+| issue_355_rate_tracker_ramp | `audio.mouth_to_ear_p95_ms` | 171 | 160 | ±10 | behind | 5/10 | #63 |
+| issue_355_rate_tracker_ramp | `sync.av_offset_p95_ms` | 26.9 | 16.4 | ±10 | behind | 4/10 | #77 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 26.4 | ±1.4 | ahead | 6/10 | #37, #24 |
 | issue_53_cwnd_pushback | `cc.queue_p95_ms` | 95.3 | 85.0 | ±10 | behind | 5/10 | #19, #15, #48, #12, #61 |
 | issue_53_cwnd_pushback | `video.render_fps` | 29.3 | 27.4 | ±1.5 | ahead | 9/10 | #37, #24 |
