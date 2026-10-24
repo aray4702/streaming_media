@@ -305,6 +305,9 @@ class Session : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  // Starts the session before the first encode decision (VideoSendController::OnCapturedFrame).
+  friend class VideoSendController;
+
   struct SendStream {
     std::unique_ptr<RtpSender> sender;
     DataRate nominal_rate = DataRate::Zero();
