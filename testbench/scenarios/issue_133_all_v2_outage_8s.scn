@@ -18,7 +18,7 @@ expect video.frames_rendered > 850
 # libwebrtc per seed 9825/9798/9780/9952/9773/9791/9404/10061/9769/9759 on main's compare-webrtc after #340 (seed 1 9825).
 # Issue #355 (rate_utilization_tracker on by default, as libwebrtc; program.md 0.2, needs-human): was < 9820. Ours 9952
 # on seed 1 (seeds 1-10 mean 9864; 9900 without); libwebrtc's seed 1 is 9825 and its worst 10061, as above.
-# After #361 (XR RTT) merged in (program.md 0.2, needs-human): was < 10000. Seeds 1-10 with the tracker 10198/9387/10120/
+# After #361 (XR RTT) merged in (program.md 0.2; accepted by the Owner on 2026-10-24): was < 10000. Seeds 1-10 with the tracker 10198/9387/10120/
 # 9434/10117/10211/9399/9874/9794/9827 (mean 9836), without 9439/9743/10052/9846/9781/10147/9763/10008/9952/9819 (mean
 # 9855); libwebrtc mean 9791, worst 10061. Seed 1 is past libwebrtc's worst seed.
 expect video.pause_total_ms < 10250
