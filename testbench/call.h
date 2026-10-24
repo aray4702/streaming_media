@@ -51,6 +51,15 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
   // Sums over the encoded frames of the second, from testbench/encoder_model.h (issue #84).
   int64_t qp_sum = 0, encode_us_sum = 0;
+  // Resolution and keyframes, for lining up switches and keyframe bursts (issue #333).
+  int encode_width = 0, encode_height = 0;  // Size of the last frame encoded in the second; 0 when none was.
+  int keyframes = 0;                        // Keyframes encoded in the second (periodic and requested).
+  int64_t keyframe_bytes = 0;               // Their total size.
+  // Receive side (issue #333): frames rendered in the second, and the largest
+  // gap from the previous rendered frame to one rendered in the second (0 when
+  // none was, so a freeze shows as rendered=0 rows ended by one long gap).
+  int rendered = 0;
+  double max_render_gap_ms = 0;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for
