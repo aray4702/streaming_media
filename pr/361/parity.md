@@ -1,6 +1,6 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-108 scenarios, mean of 10 seeds. **95 gaps**: 49 behind libwebrtc, 46 ahead of it; 0 without an owner.
+109 scenarios, mean of 10 seeds. **95 gaps**: 49 behind libwebrtc, 46 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
@@ -77,7 +77,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_257_zero_max_payload | `video.longest_freeze_ms` | 1340 | 1856 (further) |
 | issue_257_zero_max_payload | `video.e2e_delay_p95_ms` | 2821 | 2500 (closer) |
 | issue_257_zero_max_payload | `video.keyframe_requests` | 3.6 | 5 (further) |
-| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 202 | 145 (closer) |
+| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 186 | 158 (closer) |
 | issue_257_zero_max_payload | `net.loss_pct` | 11.8 | 9.2 (closer) |
 | issue_257_zero_max_payload | `repair.overhead_pct` | 13.3 | 10.2 (closer) |
 | issue_346_reconfigure_cross_join | `video.freeze_total_ms` | 1198 | 1004 (closer) |
@@ -134,7 +134,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 980 | 205 | ±49.0 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `cc.max_settle_ms` | 1870 | 200 | ±500 | behind | 8/10 | #15, #48, #61, #20 |
 | issue_257_zero_max_payload | `cc.queue_p95_ms` | 300 | 45.3 | ±15.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 209 | 64.4 | ±10.5 | behind | 9/10 | #61 |
+| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 222 | 64.4 | ±11.1 | behind | 10/10 | #61 |
 | issue_257_zero_max_payload | `net.loss_pct` | 9.2 | 0 | ±0.5 | behind | 10/10 | #21, #61, #12 |
 | issue_257_zero_max_payload | `repair.overhead_pct` | 10.2 | 0.1 | ±2 | behind | 10/10 | #21, #7, #29 |
 | issue_257_zero_max_payload | `sync.av_offset_p95_ms` | 1944 | 71.9 | ±97.2 | behind | 10/10 | #77 |

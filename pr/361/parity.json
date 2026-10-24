@@ -776,11 +776,11 @@
   {
    "scenario": "issue_257_zero_max_payload",
    "metric": "cc.rtt_p50_ms",
-   "sm": 209.441,
+   "sm": 222.2,
    "webrtc": 64.4,
-   "band": 10.472050000000001,
+   "band": 11.11,
    "direction": "behind",
-   "seeds_agree": 9,
+   "seeds_agree": 10,
    "seeds": 10,
    "owners": [
     61
