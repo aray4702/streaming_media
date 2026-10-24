@@ -188,7 +188,8 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
     last_received_rtp_timestamp_ = p.timestamp;
     last_received_rtp_time_ = now;
   }
-  keyframes_.OnMediaPacket(now, info.idr || info.sps || info.pps);
+  // UpdatePacketReceiveTimestamps runs for packets received as they were sent only.
+  if (!recovered) keyframes_.OnMediaPacket(now, info.keyframe, p.timestamp);
   TrackSequence(p.seq);
   // The NACK tracker wants to know where keyframes start: the packet that
   // opens a keyframe access unit carries the parameter sets or the IDR slice.

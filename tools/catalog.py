@@ -140,6 +140,10 @@ ALGORITHMS = [
                "The receiver asks on libwebrtc's RtpVideoStreamReceiver2 triggers (issue #23): the first assembled frame is "
                "not a keyframe, a decoder error, a NACK list or packet buffer overflow, and the decode time-out "
                "(200 ms before the first frame, 3 s after; not while a keyframe is arriving or the stream is idle). "
+               "A keyframe is arriving while a packet came within 200 ms whose depacketized frame type is key (every "
+               "FU-A fragment of an IDR slice, an SPS or IDR NAL unit) or that has the last keyframe's RTP timestamp, "
+               "counting packets received as sent only (RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps, "
+               "issue #335). "
                "A blocked frame is left to NACK: there is no repair window, retry timer or receiver throttle (the v1 "
                "policy that had them was deleted in #167). Wire formats (loss/"
                "rtcp_feedback.h): PLI (RFC 4585 6.3.1), FIR (RFC 5104 4.3.1, with its own request sequence number), "
@@ -152,7 +156,10 @@ ALGORITHMS = [
          verification="Pass threshold derived analytically: each unrecoverable loss costs libwebrtc's decode time-out "
                       "(3 s from the last released frame) + RTT + keyframe transit, about 93 frames, so the longest freeze is "
                       "3.1 s and 2% frame loss leaves 28-49% of frames decodable on seeds 1-5 (3-10% without keyframe "
-                      "requests). The v1 repair window gave 83% and 0.5 s until #167 deleted it."),
+                      "requests). The v1 repair window gave 83% and 0.5 s until #167 deleted it. "
+                      "[#335](../../fixes/335-keyframe-packets.md): a 1 fps keyframe that took 0.5 s to arrive was asked "
+                      "for again at 400 ms because only its first packet counted as a keyframe packet; with every packet "
+                      "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms)."),
     dict(id="3.6", slug="temporal-layers", title="Temporal scalability (L1T2/L1T3)",
          problems=["A single loss breaking every later frame -> Temporal layers / SVC: dependent frames can be dropped safely"],
          headers=["loss/temporal_layers.h"], unit=["TemporalLayers"], e2e=["E2E_TemporalLayers"],
@@ -1299,8 +1306,8 @@ ALGORITHMS = [
                       "target, each adapting down), from `call/adaptation/` and `api/video/video_adapter.cc` "
                       "(reference files of #302). `sm_compare` runs libwebrtc with the same settings "
                       "(`ScalingSettings(24, 37)`, `MAINTAIN_FRAMERATE`, its own `VideoAdapter` in the source, and "
-                      "`QualityScalingExperiment`'s default string with H.264's 24/37 in the Generic slot, since "
-                      "the encoder model is H.264's QP scale). Step 5 adds the CPU resource and "
+                      "`QualityScalingExperiment`'s default string, whose H.264 slot is 24/37; the model encoder reports "
+                      "H.264 since #339). Step 5 adds the CPU resource and "
                       "`ResourceAdaptationProcessor`'s per-resource bookkeeping "
                       "(`call/adaptation/resource_adaptation_processor.cc`): each resource keeps the restrictions it "
                       "last asked for, and an adapt-up applies only for the resource with the most adaptations, "

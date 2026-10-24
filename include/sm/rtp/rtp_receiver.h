@@ -57,6 +57,7 @@ struct VideoPayloadInfo {
   bool idr = false;          // Carries (the start of) an IDR slice: picture data of a keyframe.
   bool sps = false;          // Carries a sequence parameter set.
   bool pps = false;          // Carries a picture parameter set.
+  bool keyframe = false;     // The depacketizer's frame type is key (the packet belongs to a keyframe).
 };
 
 class VideoPayloadParser {

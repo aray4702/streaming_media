@@ -88,9 +88,14 @@ void KeyframeRequester::OnDecoderError(Timestamp now) {
   SM_EVENT(cfg_.events, now, "keyframe", "trigger_decoder_error", 0, last_received_);
 }
 
-void KeyframeRequester::OnMediaPacket(Timestamp now, bool keyframe_packet) {
+void KeyframeRequester::OnMediaPacket(Timestamp now, bool keyframe_packet, std::optional<uint32_t> rtp_timestamp) {
   last_packet_ = now;
-  if (keyframe_packet) last_keyframe_packet_ = now;
+  // UpdatePacketReceiveTimestamps: a keyframe packet, or any packet of the
+  // last keyframe's RTP timestamp (its parameter sets and fragments).
+  if (keyframe_packet || (rtp_timestamp && rtp_timestamp == last_keyframe_rtp_timestamp_)) {
+    last_keyframe_packet_ = now;
+    if (rtp_timestamp) last_keyframe_rtp_timestamp_ = rtp_timestamp;
+  }
 }
 
 void KeyframeRequester::OnExternalRequest(Timestamp now, const char* reason) {

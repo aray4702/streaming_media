@@ -208,3 +208,7 @@ api/video_codecs/video_encoder.h
 api/video_codecs/video_encoder.cc
 video/call_stats2.h
 video/call_stats2.cc
+video/frame_encode_metadata_writer.h
+video/frame_encode_metadata_writer.cc
+common_video/h264/sps_vui_rewriter.h
+common_video/h264/sps_vui_rewriter.cc
