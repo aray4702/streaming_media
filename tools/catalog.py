@@ -1412,7 +1412,7 @@ ALGORITHMS = [
                "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
                "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum, at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). With `xr_rrtr` (libwebrtc's `rtcp_xr.receiver_reference_time_report`) a receive-only engine adds an RFC 3611 RRTR to every report and takes the RTT from the sender's DLRR echo (RTCPSender::BuildExtendedReports, RTCPReceiver::HandleXrDlrrReportBlock); every engine echoes the RRTRs it received in a DLRR on its next report, and the XR goes last in the compound (issue #356). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "
@@ -1468,7 +1468,8 @@ ALGORITHMS = [
                "codecs, the frame dropper and the quality scaler, and reads the rates the session publishes. "
                "The video receivers take their RTT from CallStats (video/call_stats2.cc: the maximum of the reports "
                "of the last 1.5 s, on each report and every 1 s), fed by the 1 s periodic update; a receive-only "
-               "endpoint's measurement comes from SetRtt in place of libwebrtc's XR DLRR RTT (#217).",
+               "endpoint's measurement comes from the XR DLRR echo with `rtcp.xr_rrtr` (as libwebrtc's GetAndResetXrRrRtt, issue #356; the test "
+               "bench turns it on with video, as sm_compare does on libwebrtc's side), else from SetRtt (#217).",
          verification="Introduced by #32 plan PRs 5 and 6. Switching the test bench changed baseline metrics only "
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),

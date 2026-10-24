@@ -9,8 +9,12 @@ describe low_bandwidth with seed 4: lip sync raises the audio delay past 2 s and
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 seed 4
-# Issue #355 (rate_utilization_tracker on by default, as libwebrtc; program.md 0.2; Owner, 2026-10-24: provisional lock, tracked to #356): was < 1900. Ours 1902.0
-# on seed 4 (1892 without); libwebrtc 1902.7 on the same seed in main's compare-webrtc.
-expect sync.av_offset_p95_ms < 1905
+# Guard rail moved by #356 (program.md 0.2). Provisional lock, accepted by the Owner on 2026-10-24 and tracked to #356: with the receiver's RTT measured over XR
+# RRTR/DLRR as libwebrtc's, seed 4 reads p95 1937 ms and p50 1163 ms (#350 had `< 1900` and `< 1150`, ours 1892 and
+# 1065 then). libwebrtc seed 4: p95 1900. low_bandwidth seeds 1-10 p95 mean: libwebrtc 1576 (band 188), main 1708,
+# with XR 1724; p50 mean: libwebrtc 931, main 951, with XR 978.
+# Issue #355 (rate_utilization_tracker on by default, as libwebrtc): with the tracker and XR together, seed 4 reads p95
+# 1880 ms and p50 1112 ms, so the lines go back to #350's bounds (libwebrtc seed 4: p95 1900). Still tracked to #356.
+expect sync.av_offset_p95_ms < 1900
 expect sync.av_offset_p50_ms < 1150
 expect audio.concealed_pct < 5
