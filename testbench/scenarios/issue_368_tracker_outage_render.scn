@@ -16,4 +16,5 @@ at 10s down
 at 13s up
 expect video.frames_rendered > 1000
 expect video.freeze_count <= 1
-expect video.freeze_total_ms < 5200
+# The bound is libwebrtc's worst seed (4969 ms), the tight rule's cap (coordinator, 2026-10-24).
+expect video.freeze_total_ms < 4969
