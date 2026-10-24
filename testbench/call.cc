@@ -202,14 +202,14 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-      "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,qs_checks,qs_qp_high,"
-      "qs_qp_low,qs_drop_pct,qs_signal\n";
-  char ms[96], gap[32];
+      "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,"
+      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n";
+  char ms[96], gap[64];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
     std::snprintf(ms, sizeof(ms), "%.1f,%.1f,%.2f", r.pacer_queue_ms, static_cast<double>(r.qp_sum) / n,
                   static_cast<double>(r.encode_us_sum) / 1000.0 / n);
-    std::snprintf(gap, sizeof(gap), "%.1f", r.max_render_gap_ms);
+    std::snprintf(gap, sizeof(gap), "%.1f,%.1f", r.max_render_gap_ms, static_cast<double>(r.height_sum) / n);
     out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
            std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
            std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
@@ -774,6 +774,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
         qp_sum += qp;
         height_sum += enc_h;
+        vt_row.height_sum += enc_h;
         if (key) ++keyframes_sent;
         vt_row.encode_width = enc_w;
         vt_row.encode_height = enc_h;

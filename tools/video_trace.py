@@ -9,7 +9,7 @@ video send path, in the same CSV for this library and for libwebrtc:
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
   dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
   encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
-  qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal
+  height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -22,7 +22,9 @@ encode_ms_mean (issue #84) come from the encoder model both stacks share
 none was), keyframes, keyframe_bytes, rendered and max_render_gap_ms (the
 largest gap from the previous rendered frame to one rendered in the second)
 line up resolution switches and keyframes with freezes (issue #333); older
-traces read them as 0. The qs_* columns (issue #347) are the quality
+traces read them as 0. height_mean is the mean encoded frame height
+(quality scaling, #84); traces written before it read it as 0. The qs_*
+columns (issue #347) are the quality
 scaler's checks that observed enough frames, as libwebrtc's QualityScaler::
 CheckQp logs them: how many fell in the second, and the last one's smoothed
 QP (high and low filter, as int), frame-drop percent when that reported high
@@ -54,7 +56,7 @@ def parse(text):
     for r in csv.DictReader(io.StringIO(text)):
         row = {k: int(r[k]) for k in INTS}
         row["pacer_queue_ms"] = float(r["pacer_queue_ms"])
-        for k in ("qp_mean", "encode_ms_mean", "max_render_gap_ms"):
+        for k in ("qp_mean", "encode_ms_mean", "max_render_gap_ms", "height_mean"):
             row[k] = float(r.get(k) or 0)
         for k in LATER_INTS:
             row[k] = int(r.get(k) or 0)
@@ -88,6 +90,7 @@ def summarize(rows):
         # Means over encoded frames, weighting each second by its frames encoded.
         "qp_mean": sum(r["qp_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
         "encode_ms_mean": sum(r["encode_ms_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
+        "height_mean": sum(r["height_mean"] * r["encoded"] for r in rows) / max(total["encoded"], 1),
         "keyframes": total["keyframes"],
         "keyframe_bytes": total["keyframe_bytes"],
         # Seconds whose last encoded height differs from the previous encoded second's.
@@ -116,6 +119,7 @@ def render(named):
             ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean"), ("keyframes", "keyframes"),
             ("keyframe bytes", "keyframe_bytes"), ("resolution switches", "resolution_switches"),
             ("frames rendered", "rendered"), ("longest render gap ms", "max_render_gap_ms"),
+            ("encoded height (mean)", "height_mean"),
             ("quality scaler checks", "qs_checks"), ("scaler adapt-up seconds", "qs_up_seconds"),
             ("scaler adapt-down seconds", "qs_down_seconds")]
     for label, key in rows:

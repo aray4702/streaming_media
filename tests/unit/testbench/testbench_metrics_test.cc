@@ -210,6 +210,7 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[0].keyframe_bytes = 1600;
   trace[0].rendered = 23;
   trace[0].max_render_gap_ms = 66.66;
+  trace[0].height_sum = 24 * 360;
   trace[0].qs_checks = 1;
   trace[0].qs_qp_high = 25;
   trace[0].qs_qp_low = 24;
@@ -221,10 +222,10 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   SM_EXPECT_EQ(VideoTraceCsv(trace),
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
                "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-               "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,qs_checks,"
-               "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,1,25,24,-1,1\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0,-1,-1,-1,0\n");  // No frame encoded: 0.
+               "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,"
+               "qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,360.0,1,25,24,-1,1\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0.0,0,-1,-1,-1,0\n");  // No frame encoded: 0.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
@@ -246,9 +247,16 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
                                  r.dropped_congestion_window + r.dropped_encoder);
     dropped += r.captured - r.encoded;
     bytes += r.encoded_bytes;
-    // Issue #333: the encoded size is the scenario's (no quality scaling), 0 in a second with nothing encoded.
-    SM_EXPECT_EQ(r.encode_height, r.encoded > 0 ? parsed.scenario->video_height : 0);
-    SM_EXPECT_EQ(r.encode_width, r.encoded > 0 ? parsed.scenario->video_width : 0);
+    // Issue #333: the encoded size is at most the scenario's (quality scaling, issue #84, may lower it), 0 in a
+    // second with nothing encoded.
+    if (r.encoded > 0) {
+      SM_EXPECT_TRUE(r.encode_height > 0 && r.encode_height <= parsed.scenario->video_height);
+      SM_EXPECT_TRUE(r.encode_width > 0 && r.encode_width <= parsed.scenario->video_width);
+      SM_EXPECT_TRUE(r.height_sum > 0 && r.height_sum <= static_cast<int64_t>(r.encoded) * parsed.scenario->video_height);
+    } else {
+      SM_EXPECT_EQ(r.encode_height, 0);
+      SM_EXPECT_EQ(r.encode_width, 0);
+    }
     SM_EXPECT_TRUE(r.keyframes <= r.encoded);
     SM_EXPECT_TRUE(r.keyframe_bytes <= r.encoded_bytes);
     if (r.rendered == 0) SM_EXPECT_EQ(r.max_render_gap_ms, 0.0);
