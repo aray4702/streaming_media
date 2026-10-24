@@ -204,6 +204,12 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[0].pacer_queue_ms = 12.54;
   trace[0].qp_sum = 24 * 33 + 12;  // Mean 33.5 over the 24 encoded frames.
   trace[0].encode_us_sum = 24 * 10000;
+  trace[0].encode_width = 640;
+  trace[0].encode_height = 360;
+  trace[0].keyframes = 1;
+  trace[0].keyframe_bytes = 1600;
+  trace[0].rendered = 23;
+  trace[0].max_render_gap_ms = 66.66;
   trace[1].t_ms = 2000;
   trace[1].dropped_congestion_window = 2;
   trace[1].dropped_encoder_queue = 1;
@@ -211,9 +217,9 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   SM_EXPECT_EQ(VideoTraceCsv(trace),
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
                "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-               "encode_ms_mean\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00\n");  // No frame encoded: 0.
+               "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0\n");  // No frame encoded: 0.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
@@ -225,7 +231,8 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
   opt.video_trace = true;
   const Report rep = RunCall(*parsed.scenario, opt);
   SM_ASSERT_EQ(rep.video_trace.size(), static_cast<size_t>(6));
-  int64_t dropped = 0, bytes = 0;
+  int64_t dropped = 0, bytes = 0, keyframes = 0, key_bytes = 0, rendered = 0;
+  double longest_gap = 0;
   for (size_t i = 0; i < rep.video_trace.size(); ++i) {
     const VideoTraceRow& r = rep.video_trace[i];
     SM_EXPECT_EQ(r.t_ms, static_cast<int64_t>((i + 1) * 1000));
@@ -234,7 +241,21 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
                                  r.dropped_congestion_window + r.dropped_encoder);
     dropped += r.captured - r.encoded;
     bytes += r.encoded_bytes;
+    // Issue #333: the encoded size is the scenario's (no quality scaling), 0 in a second with nothing encoded.
+    SM_EXPECT_EQ(r.encode_height, r.encoded > 0 ? parsed.scenario->video_height : 0);
+    SM_EXPECT_EQ(r.encode_width, r.encoded > 0 ? parsed.scenario->video_width : 0);
+    SM_EXPECT_TRUE(r.keyframes <= r.encoded);
+    SM_EXPECT_TRUE(r.keyframe_bytes <= r.encoded_bytes);
+    if (r.rendered == 0) SM_EXPECT_EQ(r.max_render_gap_ms, 0.0);
+    keyframes += r.keyframes;
+    key_bytes += r.keyframe_bytes;
+    rendered += r.rendered;
+    longest_gap = std::max(longest_gap, r.max_render_gap_ms);
   }
+  SM_EXPECT_EQ(static_cast<double>(keyframes), rep.metrics.at("video.keyframes"));
+  SM_EXPECT_TRUE(key_bytes > 0);
+  SM_EXPECT_EQ(static_cast<double>(rendered), rep.metrics.at("video.frames_rendered"));
+  SM_EXPECT_TRUE(longest_gap > 0);
   SM_EXPECT_EQ(static_cast<double>(dropped), rep.metrics.at("video.encoder_dropped"));
   SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
 }
