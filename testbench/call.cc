@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <unordered_map>
 
 #include "encoder_model.h"
@@ -47,6 +48,23 @@ struct Fwd {
 struct Rev {
   std::vector<uint8_t> bytes;
 };
+
+// One gauge of a session's exported metrics (-1 if it has none), so the bench reads library state
+// without a test-only accessor.
+double SessionGauge(const rtp::Session& session, std::string_view name) {
+  struct OneGauge : MetricsWriter {
+    std::string_view name;
+    double value = -1;
+    void Counter(std::string_view, uint64_t) override {}
+    void Gauge(std::string_view n, double v) override {
+      if (n == name) value = v;
+    }
+    void Hist(std::string_view, const Histogram&) override {}
+  } w;
+  w.name = name;
+  session.ExportMetrics(w);
+  return w.value;
+}
 
 sim::LinkKind LinkKindOf(Kind k) {
   switch (k) {
@@ -170,7 +188,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.target_max_drop_pct", "Largest fall of the target below its peak of the preceding 5 s, outside the first 5 s and the 5 s after each link change"},
       {"cc.max_settle_ms", "Longest time after a link change until the target settles in [0.5, 1.0] x usable capacity"},
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
-      {"cc.rtt_p50_ms", "Median RTT measured by RTCP, sampled every 100 ms once the first sample has arrived"},
+      {"cc.rtt_p50_ms", "Median of the sender's CallStats RTT (the smoothed average of the 1 s RTCP RTT reports, as libwebrtc's Call::GetStats().rtt_ms), sampled every 100 ms once it has a value"},
       {"net.loss_pct", "Forward link loss (random, burst, outage and queue drops)"},
       {"net.audio_loss_pct", "Forward link loss of audio packets (random, burst, outage and queue drops)"},
       {"net.video_loss_pct", "Forward link loss of video media packets"},
@@ -613,7 +631,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
-  bool have_rtt = false;  // Whether the sender has an RTCP RTT sample (cc.rtt_p50_ms).
   bool audio_started = false;
   Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
@@ -694,7 +711,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case rtp::SessionEventType::kEncoderPause:
         case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
         case rtp::SessionEventType::kRttUpdated:
-          have_rtt = true;
           new_rtt = e.rtt;
           break;
         case rtp::SessionEventType::kReportBlock:
@@ -961,11 +977,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       smp.send_kbps = static_cast<double>(w_send) * 8 / 100;
       smp.goodput_kbps = static_cast<double>(w_good) * 8 / 100;
       smp.queue_ms = queue_ms;
-      smp.rtt_ms = static_cast<double>(sender.rtt().us()) / 1000.0;
-      // Sampled every 100 ms, as sm_compare's libwebrtc side samples Call::GetStats().rtt_ms
-      // (compare/webrtc/webrtc_call.cc), not once per RTCP sample: those are not evenly spaced in
-      // time (cross_traffic seed 1: median of the RTCP samples 316 ms, of 100 ms samples 67 ms).
-      if (have_rtt) rtt_samples.push_back(smp.rtt_ms);
+      // The sender's CallStats::LastProcessedRtt() (the 70/30 smoothed average of the 1 s reports), as
+      // sm_compare's libwebrtc side samples Call::GetStats().rtt_ms (compare/webrtc/webrtc_call.cc,
+      // reference/call/call.cc), not the last raw report-block RTT (issue #370). Sampled every 100 ms, not
+      // once per RTCP sample: those are not evenly spaced in time (cross_traffic seed 1: median of the
+      // RTCP samples 316 ms, of 100 ms samples 67 ms).
+      const double call_rtt_ms = SessionGauge(sender, "call_stats_rtt_ms");
+      smp.rtt_ms = call_rtt_ms > 0 ? call_rtt_ms : 0;
+      if (call_rtt_ms > 0) rtt_samples.push_back(call_rtt_ms);
       smp.audio_buffer_ms = s.audio ? receiver.audio_receiver(audio_recv).jitter_buffer().CurrentLevelMs() : 0;
       smp.audio_concealed_pct = w_played ? 100.0 * static_cast<double>(w_conceal) / static_cast<double>(w_played) : 0;
       smp.video_fps = static_cast<double>(w_frames) * 10;
