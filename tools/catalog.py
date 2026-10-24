@@ -804,7 +804,10 @@ ALGORITHMS = [
                "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. Remaining differences (issue #5): the media "
                "utilization factor comes from the detector, not RateUtilizationTracker "
                "(rtc_base/rate_utilization_tracker); one stream with one temporal layer; rates adjusted per captured "
-               "frame, not per bitrate update. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
+               "frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
+               "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
+               "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
                "request only sets next_frame_types_ (sticky until a keyframe is encoded, as here) and the keyframe "
                "then goes through the frame dropper like any frame.",
          verification="Issue #53 ([fix record](../../fixes/53-cwnd-pushback.md)): keyframe bytes entered an uncapped "
@@ -815,7 +818,11 @@ ALGORITHMS = [
                       "the adjuster had no headroom and gave the encoder 2266-2270 kbps where libwebrtc gives "
                       "2404-2466 (issue_326_congestive_sync seeds 3 and 5, t = 3 s, parity-data-pr/pr/327); the "
                       "protection returned to the allocator also came from the capped target. Both now follow "
-                      "rtp_video_sender.cc:885-939 and video_send_stream_impl.cc:902-914."),
+                      "rtp_video_sender.cc:885-939 and video_send_stream_impl.cc:902-914. "
+                      "Issue #346 ([fix record](../../fixes/346-reconfigure-encoder-reset.md)): a resolution switch kept "
+                      "the adjuster's learned factor (1.03-1.11) and the dropper's state, so the switch keyframes were "
+                      "1.2x libwebrtc's (41 vs 34 kB at 2.5 Mbps); both are now reset as "
+                      "video_stream_encoder.cc:1430-1442 does."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
