@@ -202,7 +202,8 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-      "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean\n";
+      "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,"
+      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n";
   char ms[96], gap[64];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
@@ -216,7 +217,8 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
            std::to_string(r.dropped_encoder) + "," + std::to_string(r.paused) + "," + std::to_string(r.encoded_bytes) +
            "," + ms + "," + std::to_string(r.encode_width) + "," + std::to_string(r.encode_height) + "," +
            std::to_string(r.keyframes) + "," + std::to_string(r.keyframe_bytes) + "," + std::to_string(r.rendered) + "," +
-           gap + "\n";
+           gap + "," + std::to_string(r.qs_checks) + "," + std::to_string(r.qs_qp_high) + "," +
+           std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "\n";
   }
   return out;
 }
@@ -599,6 +601,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   int64_t media_bytes = 0, repair_bytes = 0;
@@ -936,6 +939,17 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       vt_row.alloc_target_bps = sender.rates().video_target.bps();
       vt_row.paused = video_ctl.paused() ? 1 : 0;
       vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now).us()) / 1000.0;
+      const video::QualityScaler& qs = video_ctl.quality_scaler();
+      if (qs.checks() > vt_qs_checks) {
+        using Signal = video::QualityScaler::Signal;
+        const auto& c = qs.last_check();
+        vt_row.qs_checks = static_cast<int>(qs.checks() - vt_qs_checks);
+        vt_row.qs_qp_high = c.qp_high;
+        vt_row.qs_qp_low = c.qp_low;
+        vt_row.qs_drop_pct = c.drop_pct;
+        vt_row.qs_signal = c.signal == Signal::kAdaptDown ? -1 : c.signal == Signal::kAdaptUp ? 1 : 0;
+        vt_qs_checks = qs.checks();
+      }
       rep.video_trace.push_back(vt_row);
       vt_row = VideoTraceRow{};
     }

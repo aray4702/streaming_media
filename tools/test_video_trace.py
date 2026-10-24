@@ -51,6 +51,22 @@ class Summary(unittest.TestCase):
         # A trace from before issue #333 reads the new columns as 0.
         self.assertEqual(vt.summarize(vt.parse(SM))["keyframes"], 0)
 
+    def test_quality_scaler_checks(self):
+        head = HEAD.rstrip("\n") + (",qp_mean,encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,"
+                                    "rendered,max_render_gap_ms,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n")
+        rows = vt.parse(head + "1,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,30.0,1.00,320,180,1,1200,30,40.0,0,-1,-1,-1,0\n"
+                               "2,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,30.0,1.00,320,180,0,0,30,40.0,1,30,31,-1,0\n"
+                               "3,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,30.0,1.00,320,180,0,0,30,40.0,1,25,24,-1,1\n"
+                               "4,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,30.0,1.00,480,270,0,0,30,40.0,1,-1,-1,72,-1\n")
+        self.assertEqual((rows[2]["qs_qp_high"], rows[2]["qs_qp_low"]), (25, 24))
+        self.assertEqual(rows[3]["qs_drop_pct"], 72)
+        s = vt.summarize(rows)
+        self.assertEqual((s["qs_checks"], s["qs_up_seconds"], s["qs_down_seconds"]), (3, 1, 1))
+        # A trace from before issue #347 has no checks and reads the values as -1.
+        old = vt.parse(SM)
+        self.assertEqual((old[0]["qs_checks"], old[0]["qs_qp_low"]), (0, -1))
+        self.assertEqual(vt.summarize(old)["qs_checks"], 0)
+
     def test_paused_and_other_reasons(self):
         s = vt.summarize(vt.parse(RTC))
         self.assertEqual(s["paused_seconds"], 1)

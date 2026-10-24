@@ -61,6 +61,14 @@ struct VideoTraceRow {
   int rendered = 0;
   double max_render_gap_ms = 0;
   int64_t height_sum = 0;  // Encoded frame heights (quality scaling, issue #84).
+  // Quality scaler (issue #347): the checks in the second that observed enough
+  // frames (libwebrtc logs them in QualityScaler::CheckQp), and the last one's
+  // smoothed QP as the decision reads it, its frame-drop percent when that
+  // reported high QP, and its signal (-1 adapt down, +1 adapt up, 0 none).
+  // -1 where there was no such check or value.
+  int qs_checks = 0;
+  int qs_qp_high = -1, qs_qp_low = -1, qs_drop_pct = -1;
+  int qs_signal = 0;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for
