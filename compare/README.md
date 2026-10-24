@@ -78,6 +78,22 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   ±20%, keyframes 4x), so video differences come from transport, repair
   and buffering, not from codec quality. libwebrtc's own frame dropper
   is active, as it is for software encoders.
+- **The same packets (issue #339).** libwebrtc runs the H.264 codec, as
+  this library does: the model encoder reports `kVideoCodecH264` in
+  packetization mode 1 (`profile-level-id=42e01f`,
+  `level-asymmetry-allowed=1`, `packetization-mode=1`), and the receiver
+  has an H.264 decoder format. Each frame's payload is the Annex-B access
+  unit this library's sender makes for the same size
+  (`rtp::MakeFakeH264Frame`: a keyframe is [SPS, PPS, IDR slice], a delta
+  frame one non-IDR slice), so libwebrtc's `RtpPacketizerH264` and this
+  library's packetizer cut it into the same STAP-A and FU-A packets. The
+  SPS and PPS bytes are replaced by valid parameter sets of the same sizes
+  (`kModelSps`, `kModelPps`), because libwebrtc's depacketizer drops a
+  packet whose SPS or PPS does not parse
+  (`video_rtp_depacketizer_h264.cc`). The SPS describes a 320x192
+  picture, since a 1280x720 one does not fit in its 7 bytes; the model
+  decoder ignores it. The capture time of each frame stays on the sender,
+  keyed by RTP timestamp, so the payload carries nothing else.
 - **The same metrics.** Metric names and formulas are the test bench's.
   `testbench::AddCcMetrics` computes the congestion-control summary for
   both libraries. Freezes use the same `video::FreezeDetector`.
