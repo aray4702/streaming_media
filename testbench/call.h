@@ -51,6 +51,15 @@ struct VideoTraceRow {
   double pacer_queue_ms = 0;
   // Sums over the encoded frames of the second, from testbench/encoder_model.h (issue #84).
   int64_t qp_sum = 0, encode_us_sum = 0;
+  // Resolution and keyframes, for lining up switches and keyframe bursts (issue #333).
+  int encode_width = 0, encode_height = 0;  // Size of the last frame encoded in the second; 0 when none was.
+  int keyframes = 0;                        // Keyframes encoded in the second (periodic and requested).
+  int64_t keyframe_bytes = 0;               // Their total size.
+  // Receive side (issue #333): frames rendered in the second, and the largest
+  // gap from the previous rendered frame to one rendered in the second (0 when
+  // none was, so a freeze shows as rendered=0 rows ended by one long gap).
+  int rendered = 0;
+  double max_render_gap_ms = 0;
   int64_t height_sum = 0;  // Encoded frame heights (quality scaling, issue #84).
 };
 
@@ -123,8 +132,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-// dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,height_mean.
-// The last three are means over the second's encoded frames (0 when none), from
+// dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
+// encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
+// height_mean. qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
 // the encoder model both implementations share (testbench/encoder_model.h,
 // issue #84). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop

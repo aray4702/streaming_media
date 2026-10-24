@@ -311,6 +311,8 @@ struct VideoModel {
   int64_t height_sum = 0;                  // Encoded frame heights (quality scaling, issue #84).
   int64_t last_key_us = INT64_MIN / 2;
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
+  int64_t keyframe_bytes = 0;    // Total size of the keyframes (issue #333 trace).
+  int last_width = 0, last_height = 0;  // Size of the last frame encoded (issue #333 trace).
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;  // Filled by the decoder.
 };
 
@@ -365,8 +367,11 @@ class ModelEncoder final : public w::VideoEncoder {
     info.codecType = w::kVideoCodecGeneric;
     ++m_->frames_encoded;
     m_->bytes += bytes;
+    m_->last_width = frame.width();
+    m_->last_height = frame.height();
     if (key) {
       ++m_->keyframes;
+      m_->keyframe_bytes += bytes;
       m_->last_key_us = capture_us;
     }
     if (m_->s->encode_delay && encode_us > 0) {
@@ -668,6 +673,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
   sm::Timestamp audio_first = sm::Timestamp::MinusInfinity(), video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
+  // Frames rendered and the largest render gap, per second of render time (issue #333 trace).
+  struct RenderSecond {
+    int rendered = 0;
+    double max_gap_ms = 0;
+  };
+  std::vector<RenderSecond> render_by_second;
   video::FreezeDetector freezes;
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
@@ -739,6 +750,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   RenderSink renderer([&](const w::VideoFrame& f) {
     const sm::Timestamp now = rel(sim.Now());
     freezes.OnFrameRendered(now);
+    if (opt.video_trace && now.us() >= 0) {
+      const size_t sec = static_cast<size_t>(now.us() / 1000000);
+      if (render_by_second.size() <= sec) render_by_second.resize(sec + 1);
+      ++render_by_second[sec].rendered;
+      if (last_render.IsFinite())
+        render_by_second[sec].max_gap_ms =
+            std::max(render_by_second[sec].max_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
+    }
     ++frames_rendered;
     ++w_frames;
     if (!video_first.IsFinite()) video_first = now;
@@ -884,6 +903,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     int64_t captured = 0, encoded = 0;
     uint32_t capturer = 0, queue = 0, rate = 0, cwnd = 0, encoder = 0;
     int64_t bytes = 0, qp_sum = 0, encode_us_sum = 0, height_sum = 0;
+    int64_t keyframes = 0, keyframe_bytes = 0;
   } vt_prev;
 
   std::function<void(int64_t)> tick = [&](int64_t t) {
@@ -1092,9 +1112,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           r.encode_us_sum = model.encode_us_sum - vt_prev.encode_us_sum;
           r.height_sum = model.height_sum - vt_prev.height_sum;
           r.pacer_queue_ms = static_cast<double>(cs.pacer_delay_ms);
+          if (r.encoded > 0) {
+            r.encode_width = model.last_width;
+            r.encode_height = model.last_height;
+          }
+          r.keyframes = static_cast<int>(model.keyframes - vt_prev.keyframes);
+          r.keyframe_bytes = model.keyframe_bytes - vt_prev.keyframe_bytes;
           vt_prev = {model.frames_captured, model.frames_encoded, vs.frames_dropped_by_capturer, vs.frames_dropped_by_encoder_queue,
                      vs.frames_dropped_by_rate_limiter, vs.frames_dropped_by_congestion_window,
-                     vs.frames_dropped_by_encoder, model.bytes, model.qp_sum, model.encode_us_sum, model.height_sum};
+                     vs.frames_dropped_by_encoder, model.bytes, model.qp_sum, model.encode_us_sum, model.height_sum,
+                     model.keyframes, model.keyframe_bytes};
           rep.video_trace.push_back(r);
         }
         smp.rtt_ms = cs.rtt_ms > 0 ? static_cast<double>(cs.rtt_ms) : 0;
@@ -1173,6 +1200,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["audio.time_to_first_ms"] = audio_first.IsFinite() ? static_cast<double>(audio_first.ms()) : static_cast<double>(end_ms);
   }
   if (s.video) {
+    // The row ending at t_ms counts the frames rendered in [t_ms - 1000, t_ms), as the test bench does.
+    for (VideoTraceRow& r : rep.video_trace) {
+      const size_t sec = static_cast<size_t>(r.t_ms / 1000 - 1);
+      if (sec < render_by_second.size()) {
+        r.rendered = render_by_second[sec].rendered;
+        r.max_render_gap_ms = render_by_second[sec].max_gap_ms;
+      }
+    }
     const auto& fz = freezes.stats();
     double freeze_count = static_cast<double>(fz.freeze_count);
     double freeze_total = fz.total_freezes_ms;
