@@ -318,13 +318,18 @@ void SendHistory::OnPacketSent(uint16_t seq, Timestamp send_time, DataSize size,
 std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, Timestamp now) {
   std::vector<PacketResult> out;
   auto arrivals = fb.ArrivalTimes();
+  // TransportFeedbackAdapter::ProcessTransportFeedback rounds each packet's time
+  // since the feedback's base time down to 1 ms (RoundDownTo, i.e. toward zero)
+  // before the estimators see it.
+  const int64_t base_us = static_cast<int64_t>(fb.reference_time) * kRefUnitUs;
   size_t ai = 0;
   for (const auto& p : fb.packets) {
     int64_t s = unwrapper_.PeekUnwrap(p.seq);
     auto it = sent_.find(s);
     Timestamp arrival = Timestamp::PlusInfinity();
     if (p.received) {
-      arrival = arrivals[ai++].second;
+      const int64_t since_base_us = arrivals[ai++].second.us() - base_us;
+      arrival = Timestamp::Micros(base_us + since_base_us / 1000 * 1000);
     }
     if (it == sent_.end()) continue;
     // libwebrtc's TransportFeedbackAdapter erases a packet from its history

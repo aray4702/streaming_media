@@ -63,6 +63,21 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
   SM_EXPECT_TRUE(b.Build().empty());
 }
 
+// TransportFeedbackAdapter::ProcessTransportFeedback (issue #354): the estimators get each
+// packet's time since the feedback's base time rounded down to 1 ms, toward zero.
+SM_TEST(TransportFeedback, HistoryRoundsReceiveTimesToTheMillisecond) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 3; ++s) h.OnPacketSent(s, Timestamp::Millis(600 + s), DataSize::Bytes(500));
+  TransportFeedback fb;
+  fb.reference_time = 10;  // Base time 640 ms.
+  fb.packets = {{0, true, 7}, {1, true, 6}, {2, true, -16}};  // 1.75, 3.25 and -0.75 ms after the base.
+  const auto res = h.OnFeedback(fb, Timestamp::Millis(700));
+  SM_ASSERT_EQ(res.size(), 3u);
+  SM_EXPECT_EQ(res[0].receive_time.us(), 641000);
+  SM_EXPECT_EQ(res[1].receive_time.us(), 643000);
+  SM_EXPECT_EQ(res[2].receive_time.us(), 640000);
+}
+
 SM_TEST(TransportFeedback, SplitsWhenDeltaOverflows) {
   TransportFeedbackBuilder b;
   b.OnPacket(1, Timestamp::Millis(0));
