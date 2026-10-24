@@ -1,0 +1,11 @@
+name issue_355_rate_tracker_ramp
+describe issue_346_reconfigure_cross_join's first 10 s with rate_utilization_tracker on: after each resolution switch the encoder target gets back to the 2.5 Mbps cap within a second, as libwebrtc's EncoderBitrateAdjuster with RateUtilizationTracker (#355)
+duration 10s
+quality_scaling on
+rate_utilization_tracker on
+at 0s capacity=3000kbps delay=40ms queue=300ms
+# Encoded video, seconds 1-10 of the per-second video trace, seed 1: libwebrtc 2321 kbps (parity-data traces,
+# issue_346_reconfigure_cross_join.1.webrtc.video.csv), this switch 2328, without it (main) 2221.
+# Encoder target 1 s after the 270p and 360p switches: libwebrtc 2500 kbps, this switch 2500, without it 2254.
+expect video.avg_kbps > 2280
+expect video.freeze_count == 0

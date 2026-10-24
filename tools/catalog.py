@@ -782,7 +782,7 @@ ALGORITHMS = [
                       "priority between audio and screen); the expectation was corrected."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
          problems=["Encoder bitrate overshoot -> encoder rate control, frame dropper"],
-         headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster"], e2e=["E2E_FrameDropper"],
+         headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster", "RateUtilizationTracker"], e2e=["E2E_FrameDropper"],
          bench=["cc/FrameDropper_and_Overshoot", "cc/Q_FrameDropper_overshoot160"],
          scenario="An encoder that overshoots its target by 60% in the closed loop, with and without the "
                   "frame dropper; the sent video rate is compared with the target.",
@@ -804,10 +804,14 @@ ALGORITHMS = [
                "adjuster_use_headroom = true; `bitrate_adjuster off` in a scenario). The link allocation is "
                "VideoSendStreamImpl::OnBitrateUpdated's (issue #326, `link_headroom on|off`, on): the encoder target "
                "less the protection, taken before the target is capped at the encoder maximum, so a video allocation "
-               "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. Remaining differences (issue #5): the media "
-               "utilization factor comes from the detector, not RateUtilizationTracker "
-               "(rtc_base/rate_utilization_tracker); one stream with one temporal layer; rates adjusted per captured "
-               "frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "above the maximum gives the adjuster headroom; below the maximum it equals the encoder target. The media utilization factor can come from a port of "
+               "libwebrtc's RateUtilizationTracker (video/rate_utilization_tracker.cc; issue #355, "
+               "`rate_utilization_tracker on|off`, off by default): produced bytes over the unadjusted target's budget, "
+               "libwebrtc's default (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment). Remaining differences: the "
+               "tracker is off by default until it is judged against libwebrtc (#355: on, it matches libwebrtc's ramp "
+               "after a reset, but our periodic ALR probe then lands on cross traffic where libwebrtc sends none); "
+               "without it the factor comes from the detector; one stream with one temporal layer; rates adjusted per "
+               "captured frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -825,7 +829,12 @@ ALGORITHMS = [
                       "Issue #346 ([fix record](../../fixes/346-reconfigure-encoder-reset.md)): a resolution switch kept "
                       "the adjuster's learned factor (1.03-1.11) and the dropper's state, so the switch keyframes were "
                       "1.2x libwebrtc's (41 vs 34 kB at 2.5 Mbps); both are now reset as "
-                      "video_stream_encoder.cc:1430-1442 does."),
+                      "video_stream_encoder.cc:1430-1442 does. "
+                      "Issue #355: after a reset the encoder target came back to 2228-2317 kbps where libwebrtc's reaches "
+                      "the 2.5 Mbps cap within a second, because the media factor came from the overshoot detector (sized "
+                      "against the adjusted rate, never below 1.0) instead of RateUtilizationTracker (against the unadjusted "
+                      "target). With `rate_utilization_tracker on` the encoded rate over issue_346_reconfigure_cross_join's "
+                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
