@@ -1,47 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-108 scenarios, mean of 10 seeds. **142 gaps**: 56 behind libwebrtc, 86 ahead of it; 0 without an owner.
+103 scenarios, mean of 10 seeds. **112 gaps**: 46 behind libwebrtc, 66 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-112 gaps on `main`, 142 here: **0 closed, 30 opened**, 0 changed direction.
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_347_scaling_high_jitter_seed1 | `audio.mouth_to_ear_p95_ms` | 270 | 219 | ±13.5 | behind | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed1 | `audio.jb_delay_p95_ms` | 150 | 100 | ±10 | behind | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed1 | `video.e2e_delay_p95_ms` | 215 | 263 | ±13.1 | ahead | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed1 | `video.time_to_first_frame_ms` | 200 | 665 | ±50 | ahead | 1/1 | #24, #61 |
-| issue_347_scaling_high_jitter_seed1 | `video.keyframe_requests` | 0 | 2 | ±0.5 | ahead | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed1 | `sync.av_offset_p95_ms` | 85 | 126 | ±10 | ahead | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed1 | `repair.overhead_pct` | 35.7 | 41.6 | ±2.1 | ahead | 1/1 | #21, #7, #29 |
-| issue_347_scaling_high_jitter_seed10 | `audio.mouth_to_ear_p95_ms` | 222 | 270 | ±13.5 | ahead | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed10 | `audio.jb_delay_p95_ms` | 100 | 150 | ±10 | ahead | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed10 | `video.avg_kbps` | 697 | 438 | ±34.9 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed10 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed10 | `cc.utilization_pct` | 30.9 | 20.5 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed10 | `cc.max_settle_ms` | 16800 | 30000 | ±1500 | ahead | 1/1 | #15, #48, #61, #20 |
-| issue_347_scaling_high_jitter_seed10 | `repair.overhead_pct` | 47.4 | 38.7 | ±2.4 | behind | 1/1 | #21, #7, #29 |
-| issue_347_scaling_high_jitter_seed2 | `video.e2e_delay_p95_ms` | 176 | 187 | ±10 | ahead | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed2 | `video.avg_kbps` | 585 | 485 | ±29.2 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed2 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed2 | `sync.av_offset_p95_ms` | 58.9 | 45.4 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed2 | `cc.utilization_pct` | 26.2 | 22.2 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed3 | `video.e2e_delay_p95_ms` | 182 | 156 | ±10 | behind | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed3 | `video.time_to_first_frame_ms` | 209 | 469 | ±50 | ahead | 1/1 | #24, #61 |
-| issue_347_scaling_high_jitter_seed3 | `video.avg_kbps` | 358 | 288 | ±20 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed3 | `video.keyframe_requests` | 0 | 1 | ±0.5 | ahead | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed3 | `sync.av_offset_p95_ms` | 67.2 | 43.8 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed3 | `cc.utilization_pct` | 17.1 | 14.3 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed9 | `video.time_to_first_frame_ms` | 230 | 382 | ±50 | ahead | 1/1 | #24, #61 |
-| issue_347_scaling_high_jitter_seed9 | `video.avg_kbps` | 780 | 619 | ±39.0 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed9 | `sync.av_offset_p95_ms` | 54.5 | 33.8 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed9 | `cc.utilization_pct` | 34.1 | 27.6 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed9 | `repair.overhead_pct` | 49.5 | 46.8 | ±2.5 | behind | 1/1 | #21, #7, #29 |
+112 gaps on `main`, 112 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
@@ -123,36 +88,6 @@ Opened:
 | issue_346_reconfigure_cross_traffic | `audio.mouth_to_ear_p95_ms` | 479 | 529 | ±42.2 | ahead | 8/10 | #63, #204 |
 | issue_346_reconfigure_cross_traffic | `cc.queue_p95_ms` | 161 | 184 | ±20.9 | ahead | 9/10 | #19, #15, #48, #12, #61 |
 | issue_346_reconfigure_outage_8s | `cc.max_settle_ms` | 3680 | 2610 | ±976 | behind | 6/10 | #15, #48, #61, #20 |
-| issue_347_scaling_high_jitter_seed1 | `audio.jb_delay_p95_ms` | 150 | 100 | ±10 | behind | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed1 | `audio.mouth_to_ear_p95_ms` | 270 | 219 | ±13.5 | behind | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed1 | `repair.overhead_pct` | 35.7 | 41.6 | ±2.1 | ahead | 1/1 | #21, #7, #29 |
-| issue_347_scaling_high_jitter_seed1 | `sync.av_offset_p95_ms` | 85 | 126 | ±10 | ahead | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed1 | `video.e2e_delay_p95_ms` | 215 | 263 | ±13.1 | ahead | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed1 | `video.keyframe_requests` | 0 | 2 | ±0.5 | ahead | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed1 | `video.time_to_first_frame_ms` | 200 | 665 | ±50 | ahead | 1/1 | #24, #61 |
-| issue_347_scaling_high_jitter_seed10 | `audio.jb_delay_p95_ms` | 100 | 150 | ±10 | ahead | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed10 | `audio.mouth_to_ear_p95_ms` | 222 | 270 | ±13.5 | ahead | 1/1 | #63 |
-| issue_347_scaling_high_jitter_seed10 | `cc.max_settle_ms` | 16800 | 30000 | ±1500 | ahead | 1/1 | #15, #48, #61, #20 |
-| issue_347_scaling_high_jitter_seed10 | `cc.utilization_pct` | 30.9 | 20.5 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed10 | `repair.overhead_pct` | 47.4 | 38.7 | ±2.4 | behind | 1/1 | #21, #7, #29 |
-| issue_347_scaling_high_jitter_seed10 | `video.avg_kbps` | 697 | 438 | ±34.9 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed10 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed2 | `cc.utilization_pct` | 26.2 | 22.2 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed2 | `sync.av_offset_p95_ms` | 58.9 | 45.4 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed2 | `video.avg_kbps` | 585 | 485 | ±29.2 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed2 | `video.e2e_delay_p95_ms` | 176 | 187 | ±10 | ahead | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed2 | `video.keyframe_requests` | 1 | 0 | ±0.5 | behind | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed3 | `cc.utilization_pct` | 17.1 | 14.3 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed3 | `sync.av_offset_p95_ms` | 67.2 | 43.8 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed3 | `video.avg_kbps` | 358 | 288 | ±20 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed3 | `video.e2e_delay_p95_ms` | 182 | 156 | ±10 | behind | 1/1 | #24, #37 |
-| issue_347_scaling_high_jitter_seed3 | `video.keyframe_requests` | 0 | 1 | ±0.5 | ahead | 1/1 | #23 |
-| issue_347_scaling_high_jitter_seed3 | `video.time_to_first_frame_ms` | 209 | 469 | ±50 | ahead | 1/1 | #24, #61 |
-| issue_347_scaling_high_jitter_seed9 | `cc.utilization_pct` | 34.1 | 27.6 | ±2 | ahead | 1/1 | #19, #15, #48, #12, #61 |
-| issue_347_scaling_high_jitter_seed9 | `repair.overhead_pct` | 49.5 | 46.8 | ±2.5 | behind | 1/1 | #21, #7, #29 |
-| issue_347_scaling_high_jitter_seed9 | `sync.av_offset_p95_ms` | 54.5 | 33.8 | ±10 | behind | 1/1 | #77 |
-| issue_347_scaling_high_jitter_seed9 | `video.avg_kbps` | 780 | 619 | ±39.0 | ahead | 1/1 | #37, #61 |
-| issue_347_scaling_high_jitter_seed9 | `video.time_to_first_frame_ms` | 230 | 382 | ±50 | ahead | 1/1 | #24, #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1765 | 1576 | ±188 | behind | 6/10 | #77 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 26.4 | ±1.4 | ahead | 6/10 | #37, #24 |
 | issue_53_cwnd_pushback | `cc.queue_p95_ms` | 95.3 | 85.0 | ±10 | behind | 5/10 | #19, #15, #48, #12, #61 |
