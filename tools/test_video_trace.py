@@ -36,6 +36,21 @@ class Summary(unittest.TestCase):
         # A trace from before issue #84 has neither column.
         self.assertEqual(vt.summarize(vt.parse(SM))["qp_mean"], 0.0)
 
+    def test_resolution_keyframes_and_rendering(self):
+        head = HEAD.rstrip("\n") + (",qp_mean,encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,"
+                                    "rendered,max_render_gap_ms\n")
+        rows = vt.parse(head + "1,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,40.0,10.00,640,360,1,1200,30,40.0\n"
+                               "2,50000,60000,30,0,0,0,30,0,0,0,0,1.0,0.0,0.00,0,0,0,0,0,0.0\n"
+                               "3,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,40.0,10.00,480,270,2,2000,10,1450.5\n")
+        s = vt.summarize(rows)
+        self.assertEqual((s["keyframes"], s["keyframe_bytes"]), (3, 3200))
+        self.assertEqual(s["resolution_switches"], 1)  # 360 -> 270; the second with no frame is skipped
+        self.assertEqual(s["rendered"], 40)
+        self.assertEqual(s["max_render_gap_ms"], 1450.5)
+        self.assertIn(" 270    2     10    1450", vt.series({"sm": rows}))
+        # A trace from before issue #333 reads the new columns as 0.
+        self.assertEqual(vt.summarize(vt.parse(SM))["keyframes"], 0)
+
     def test_paused_and_other_reasons(self):
         s = vt.summarize(vt.parse(RTC))
         self.assertEqual(s["paused_seconds"], 1)

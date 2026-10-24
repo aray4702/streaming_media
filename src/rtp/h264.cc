@@ -19,6 +19,7 @@ bool StartsFrame(uint8_t type, std::span<const uint8_t> nal) {
 void Note(H264PayloadInfo& info, uint8_t type, std::span<const uint8_t> nal) {
   if (type == kH264NalIdr) info.idr = true;
   if (type == kH264NalSps) info.sps = true;
+  if (type == kH264NalIdr || type == kH264NalSps) info.keyframe = true;
   if (type == kH264NalPps) info.pps = true;
   if (StartsFrame(type, nal)) info.first_packet_in_frame = true;
 }
@@ -230,6 +231,7 @@ H264PayloadInfo H264Depacketizer::Parse(std::span<const uint8_t> p) {
     info.fu_start = start;
     info.fu_end = end;
     info.fu_continuation = !start;
+    if ((p[1] & 0x1F) == kH264NalIdr) info.keyframe = true;
     if (start) {
       // The first byte after the FU header is the first byte after the NAL header.
       const uint8_t nt = p[1] & 0x1F;
@@ -293,6 +295,7 @@ VideoPayloadInfo H264PayloadParser::Parse(const RtpPacket& p) const {
   i.valid = h.valid;
   i.frame_start = h.first_packet_in_frame;
   i.idr = h.idr;
+  i.keyframe = h.keyframe;
   i.sps = h.sps;
   i.pps = h.pps;
   return i;

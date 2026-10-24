@@ -1,0 +1,22 @@
+name issue_335_fps1_keyframe_packets
+describe 1 fps video next to audio on a clean 2 Mbps link: no keyframe request while a long keyframe arrives, so audio stays near libwebrtc's delay (issue #335)
+duration 30s
+seed 1
+video_fps 1
+at 0s capacity=2Mbps delay=40ms
+# The Tester's repro (#335). The first keyframe takes ~0.5 s to arrive; the
+# receiver counted only its first packet as a keyframe packet, asked for
+# another keyframe at 400 ms, and the 4x keyframes then filled the bottleneck.
+# libwebrtc M157 on this scenario (sm_compare, yardstick PR #338, seeds 1-10):
+# mouth-to-ear p95 823-1040 ms (mean 890), jitter buffer p95 680-780 ms,
+# concealed 0.03-1.1 %, queue p95 63-302 ms, no keyframe requests, render fps
+# 0.93-1.0. Bounds sit just above ours on seeds 1-5 and not above libwebrtc's
+# worst seed.
+# Target (issue #335, Tester): mouth-to-ear p95 < 400, jb p95 < 300; libwebrtc
+# doesn't meet those either at 1 fps.
+expect video.keyframe_requests == 0
+expect video.render_fps >= 0.99
+expect audio.mouth_to_ear_p95_ms < 910
+expect audio.jb_delay_p95_ms < 750
+expect audio.concealed_pct < 0.7
+expect cc.queue_p95_ms < 195

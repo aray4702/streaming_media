@@ -202,18 +202,21 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
-      "encode_ms_mean\n";
-  char ms[96];
+      "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms\n";
+  char ms[96], gap[32];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
     std::snprintf(ms, sizeof(ms), "%.1f,%.1f,%.2f", r.pacer_queue_ms, static_cast<double>(r.qp_sum) / n,
                   static_cast<double>(r.encode_us_sum) / 1000.0 / n);
+    std::snprintf(gap, sizeof(gap), "%.1f", r.max_render_gap_ms);
     out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
            std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
            std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
            std::to_string(r.dropped_rate_limiter) + "," + std::to_string(r.dropped_congestion_window) + "," +
            std::to_string(r.dropped_encoder) + "," + std::to_string(r.paused) + "," + std::to_string(r.encoded_bytes) +
-           "," + ms + "\n";
+           "," + ms + "," + std::to_string(r.encode_width) + "," + std::to_string(r.encode_height) + "," +
+           std::to_string(r.keyframes) + "," + std::to_string(r.keyframe_bytes) + "," + std::to_string(r.rendered) + "," +
+           gap + "\n";
   }
   return out;
 }
@@ -769,6 +772,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         qp_sum += qp;
         height_sum += enc_h;
         if (key) ++keyframes_sent;
+        vt_row.encode_width = enc_w;
+        vt_row.encode_height = enc_h;
+        if (key) {
+          ++vt_row.keyframes;
+          vt_row.keyframe_bytes += bytes;
+        }
         video_bytes_encoded += bytes;
         const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
         const TimeDelta encode_time =
@@ -844,6 +853,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
         if (!f.render) continue;
         freezes.OnFrameRendered(now);
+        ++vt_row.rendered;
+        if (last_render.IsFinite())
+          vt_row.max_render_gap_ms = std::max(vt_row.max_render_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
         ++frames_rendered;
         ++w_frames;
         if (!video_first.IsFinite()) video_first = now;
