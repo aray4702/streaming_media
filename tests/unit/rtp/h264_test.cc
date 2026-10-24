@@ -192,6 +192,19 @@ SM_TEST(H264, ParserReportsKeyframeParts) {
   SM_EXPECT_TRUE(c.valid && !c.frame_start && !c.idr);
 }
 
+SM_TEST(H264, EveryPacketOfAnIdrIsAKeyframePacket) {
+  // VideoRtpDepacketizerH264 (ParseFuaNalu) reads the original NAL type from
+  // every FU-A fragment, so each fragment of an IDR slice is kVideoFrameKey;
+  // the STAP-A with the SPS is key too (ProcessStapAOrSingleNalu). Issue #335.
+  H264PayloadParser parser;
+  auto key = AsPackets(H264Packetizer::Packetize(MakeFakeH264Frame(true, 6000), 1188));
+  SM_ASSERT_TRUE(key.size() > 3);
+  for (const auto& p : key) SM_EXPECT_TRUE(parser.Parse(p).keyframe);
+  auto delta = AsPackets(H264Packetizer::Packetize(MakeFakeH264Frame(false, 6000), 1188));
+  SM_ASSERT_TRUE(delta.size() > 2);
+  for (const auto& p : delta) SM_EXPECT_FALSE(parser.Parse(p).keyframe);
+}
+
 SM_TEST(H264, FakeEncoderFramesHaveTheStatedStructure) {
   Bytes key = MakeFakeH264Frame(true, 1000);
   SM_EXPECT_EQ(key.size(), 1000u);

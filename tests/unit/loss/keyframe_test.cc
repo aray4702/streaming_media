@@ -166,3 +166,26 @@ SM_TEST(KeyframeRequest, ExternalAndDecoderTriggersMakeOneRequest) {
   SM_EXPECT_EQ(CountType(k.Process(Ms(11)), FeedbackType::kPli), 1u);
   SM_EXPECT_EQ(CountType(k.Process(Ms(12)), FeedbackType::kPli), 0u);
 }
+
+SM_TEST(KeyframeRequest, NoRequestWhileALongKeyframeIsArriving) {
+  // A keyframe that takes longer than max_wait_for_keyframe (200 ms) to arrive
+  // is not asked for again while its packets keep coming: every packet of it
+  // counts as a keyframe packet, by its frame type or by the keyframe's RTP
+  // timestamp (RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps). In
+  // issue #335 a 1 fps call asked again at 400 ms, when only the first packet
+  // of the first keyframe counted.
+  KeyframeRequester k;
+  SM_EXPECT_TRUE(k.Process(Ms(0)).empty());
+  k.OnMediaPacket(Ms(10), true, 1000u);
+  size_t asked = 0;
+  for (int64_t t = 50; t <= 900; t += 50) {
+    // Fragments of the same keyframe: key by frame type, then only by RTP timestamp.
+    k.OnMediaPacket(Ms(t), t < 300, 1000u);
+    asked += CountType(k.Process(Ms(t)), FeedbackType::kPli);
+  }
+  SM_EXPECT_EQ(asked, 0u);
+  // Delta packets of another frame don't count: 200 ms later the wait fires.
+  k.OnMediaPacket(Ms(950), false, 4000u);
+  k.OnMediaPacket(Ms(1150), false, 4000u);
+  SM_EXPECT_EQ(CountType(k.Process(Ms(1150)), FeedbackType::kPli), 1u);
+}
