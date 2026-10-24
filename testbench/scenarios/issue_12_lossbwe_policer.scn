@@ -8,7 +8,9 @@ at 0s capacity=1500kbps delay=30ms queue=5ms
 # libwebrtc seeds 1-10: 12.22 8.41 9.95 15.97 10.58 10.84 11.68 11.90 12.11 11.83 (worst 15.97, mean 11.55).
 # With #216 (timing v2) and #217's first-feedback timing together, ours is 11.83 on seed 1, so the original bound holds;
 # the Owner's rule on PR #226 keeps the tighter of the two PRs' bounds (#216 < 14, #226 < 13), and < 12 is tighter.
-expect net.loss_pct < 12
+# PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was < 12. Ours 13.81 on seed 1;
+# libwebrtc per seed 12.5/14.1/5.9/14.9/12.8/9.9/13.3/14.1/15.0/11.0 on main's compare-webrtc after #340 (seed 1 fails < 12; worst 15.0).
+expect net.loss_pct < 14
 # Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
 # timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
 # worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).
