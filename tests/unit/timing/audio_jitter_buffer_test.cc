@@ -111,6 +111,30 @@ SM_TEST(AudioJitterBuffer, V2KeepsTheHigherPriorityPacketPerTimestamp) {
   SM_EXPECT_TRUE((AudioPacketPriority{0, 0} < AudioPacketPriority{0, 1}));
 }
 
+// Issue #331: PacketBuffer::InsertPacket flushes a full buffer completely
+// before inserting, and NetEq::Config::max_packets_in_buffer is 200 (4 s of
+// 20 ms packets, the capacity DelayConstraints caps the minimum delay by).
+// A/V sync on a slow link raises the audio delay past 2 s without a flush.
+SM_TEST(AudioJitterBuffer, V2HoldsTwoHundredPacketsThenFlushesThemAll) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  AudioJitterBuffer jb(cfg);
+  for (int i = 0; i < 200; ++i) {
+    jb.InsertPacket(static_cast<uint32_t>(i * 320), std::vector<float>(320, 0.1f), Timestamp::Millis(i));
+  }
+  SM_EXPECT_EQ(jb.stats().buffer_flushes, 0u);
+  // The 201st packet finds the buffer full: everything before it goes.
+  jb.InsertPacket(200 * 320, std::vector<float>(320, 0.5f), Timestamp::Millis(200));
+  SM_EXPECT_EQ(jb.stats().buffer_flushes, 1u);
+  jb.InsertPacket(201 * 320, std::vector<float>(320, 0.5f), Timestamp::Millis(201));
+  SM_EXPECT_EQ(jb.stats().buffer_flushes, 1u);
+  // Playout starts at the packet that came in on the flush.
+  std::vector<float> out(160);
+  jb.GetAudio(out, Timestamp::Millis(210));
+  SM_ASSERT_TRUE(jb.PlayoutTimestamp().has_value());
+  SM_EXPECT_GE(*jb.PlayoutTimestamp(), 200u * 320u);
+}
+
 SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
   AudioJitterBuffer jb;
   jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));

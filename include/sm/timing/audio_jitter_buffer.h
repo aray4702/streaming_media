@@ -62,6 +62,8 @@ struct AudioJitterBufferConfig {
   // NetEqSupportsSampleRate accepts, and discards the packets of any other.
   int sample_rate = 16000;
   int packet_ms = 20;
+  // Version 1 only: above this many packets, all but the newest 3 are
+  // dropped. Version 2 holds neteq_delay.max_packets_in_buffer, as NetEq.
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
