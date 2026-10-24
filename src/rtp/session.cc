@@ -683,6 +683,8 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("sps_vui_ok", stats_.sps.vui_ok);
   w.Counter("sps_parse_failures", stats_.sps.parse_failures);
   w.Gauge("rtt_ms", static_cast<double>(rtt_.us()) / 1000.0);
+  // Call::GetStats().rtt_ms: CallStats::LastProcessedRtt(), -1 before the first update.
+  w.Gauge("call_stats_rtt_ms", static_cast<double>(call_stats_.LastProcessedRtt()));
   w.Gauge("target_kbps", send_.target().kbps());
 }
 

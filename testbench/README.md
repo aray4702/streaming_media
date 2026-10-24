@@ -208,7 +208,10 @@ Link keys (any subset; unset keys keep their previous value):
     rate (100 ms windows after the first 2 s, all traffic) is above the
     target, in % of the target. `cc.send_over_target_ms` counts the time
     above 1.5 x the target.
-  - `cc.rtt_p50_ms`.
+  - `cc.rtt_p50_ms`: the median, over 100 ms samples, of the sender's
+    `CallStats::LastProcessedRtt()` (the 70/30 smoothed average of the 1 s
+    RTCP RTT reports), which is what `sm_compare`'s libwebrtc side samples
+    (`Call::GetStats().rtt_ms`), not the last raw RTT (issue #370).
 - **Network and repair:** `net.loss_pct`, `repair.overhead_pct`,
   `repair.nack_recovered`, `repair.fec_recovered`. Per kind on the forward
   link (information only, issue #117): `net.audio_kbps`, `net.video_kbps`,
