@@ -9,6 +9,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <string_view>
 #include <unordered_map>
 
 #include "encoder_model.h"
@@ -33,9 +34,6 @@ constexpr uint32_t kAudioSsrc = 1, kVideoSsrc = 2, kRtxSsrc = 3;
 constexpr uint32_t kSenderRtcpSsrc = 100, kReceiverRtcpSsrc = 200;
 constexpr uint8_t kAudioPt = 111, kAudioRedPt = 63, kVideoPt = 96, kRtxPt = 97;
 constexpr int64_t kUdpIpOverhead = 28;
-// WebRTC counts an audio interruption when concealment lasts over 150 ms
-// (RTCInboundRtpStreamStats.interruptionCount).
-constexpr int64_t kInterruptionMs = 150;
 
 // What a datagram is on the link, for the accounting only: the receiver
 // session works from the bytes.
@@ -47,6 +45,23 @@ struct Fwd {
 struct Rev {
   std::vector<uint8_t> bytes;
 };
+
+// One gauge of a session's exported metrics (-1 if it has none), so the bench reads library state
+// without a test-only accessor.
+double SessionGauge(const rtp::Session& session, std::string_view name) {
+  struct OneGauge : MetricsWriter {
+    std::string_view name;
+    double value = -1;
+    void Counter(std::string_view, uint64_t) override {}
+    void Gauge(std::string_view n, double v) override {
+      if (n == name) value = v;
+    }
+    void Hist(std::string_view, const Histogram&) override {}
+  } w;
+  w.name = name;
+  session.ExportMetrics(w);
+  return w.value;
+}
 
 sim::LinkKind LinkKindOf(Kind k) {
   switch (k) {
@@ -121,10 +136,11 @@ class ReceivedSeqs : public rtp::VideoMediaObserver {
 
 const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   static const std::vector<std::pair<std::string, std::string>> k = {
-      {"audio.concealed_pct", "Share of played audio that was synthesized by concealment (after the first packet)"},
-      {"audio.interruptions", "Concealment runs longer than 150 ms (WebRTC interruptionCount)"},
+      {"audio.concealed_pct", "Concealed samples in percent of the samples played (concealedSamples / "
+                              "totalSamplesReceived, after the first packet)"},
+      {"audio.interruptions", "Concealment events of 150 ms or more (WebRTC interruptionCount)"},
       {"audio.interruption_ms", "Total duration of those interruptions"},
-      {"audio.longest_interruption_ms", "Longest continuous concealment run"},
+      {"audio.longest_interruption_ms", "Longest concealment event (its concealed samples)"},
       {"audio.jb_delay_p50_ms", "Median jitter buffer delay per 10 ms of playout (jitterBufferDelay / "
                                  "jitterBufferEmittedCount: packet buffer waiting time, as sm_compare reads libwebrtc's)"},
       {"audio.jb_delay_p95_ms", "95th percentile of the same"},
@@ -170,7 +186,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"cc.target_max_drop_pct", "Largest fall of the target below its peak of the preceding 5 s, outside the first 5 s and the 5 s after each link change"},
       {"cc.max_settle_ms", "Longest time after a link change until the target settles in [0.5, 1.0] x usable capacity"},
       {"cc.unsettled", "Link changes after which the target never settled before the next change"},
-      {"cc.rtt_p50_ms", "Median RTT measured by RTCP, sampled every 100 ms once the first sample has arrived"},
+      {"cc.rtt_p50_ms", "Median of the sender's CallStats RTT (the smoothed average of the 1 s RTCP RTT reports, as libwebrtc's Call::GetStats().rtt_ms), sampled every 100 ms once it has a value"},
       {"net.loss_pct", "Forward link loss (random, burst, outage and queue drops)"},
       {"net.audio_loss_pct", "Forward link loss of audio packets (random, burst, outage and queue drops)"},
       {"net.video_loss_pct", "Forward link loss of video media packets"},
@@ -495,6 +511,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // Receiver reports on the call's 1 s grid, half a period after the sender's.
   if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
   receiver_cfg.av_sync = s.av_sync;  // Issue #77.
+  // The receiver measures its RTT as sm_compare's libwebrtc receiver does:
+  // RRTR in its reports, the sender's DLRR echo (rtcp_xr.receiver_reference_time_report, issue #356).
+  receiver_cfg.rtcp.xr_rrtr = s.video;
   rtp::Session sender(sender_cfg), receiver(receiver_cfg);
 
   rtp::AudioStreamConfig audio_cfg;
@@ -613,13 +632,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
-  bool have_rtt = false;  // Whether the sender has an RTCP RTT sample (cc.rtt_p50_ms).
   bool audio_started = false;
   Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
   AvSyncMeter av_sync;  // Issue #63.
-  int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
-  int64_t interruptions = 0, interruption_ms = 0;
+  int64_t played_ms = 0, stretch_ms = 0;
+  ConcealmentMeter concealment(sr);  // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
   // (jitterBufferDelay / jitterBufferEmittedCount over each pull).
   std::vector<double> jb_delay;
@@ -629,7 +647,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::vector<float> audio_out(static_cast<size_t>(sr / 100));
 
   // Per-sample window counters.
-  int64_t w_send = 0, w_good = 0, w_frames = 0, w_conceal = 0, w_played = 0;
+  int64_t w_send = 0, w_good = 0, w_frames = 0;
+  uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
   FirstDelivery first_delivery;  // goodput counts each media sequence number once (#329)
   double last_video_delay = 0;
   // Receiver-side burst tracking for the protection controller (a real
@@ -694,7 +713,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case rtp::SessionEventType::kEncoderPause:
         case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
         case rtp::SessionEventType::kRttUpdated:
-          have_rtt = true;
           new_rtt = e.rtt;
           break;
         case rtp::SessionEventType::kReportBlock:
@@ -845,9 +863,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         audio_first = at;
       }
     });
-    // The receiver learns each RTT sample the sender measures, in place of the
-    // XR DLRR RTT a receive-only libwebrtc stream measures (a one-way receiver
-    // has no report blocks of its own); its CallStats takes it at the next 1 s
+    // The receiver learns each RTT sample the sender measures, for its
+    // congestion controller and audio receivers (a one-way receiver has no
+    // report blocks of its own). With video its CallStats takes the RTT it
+    // measures over XR instead (issue #356); without, this one at the next 1 s
     // update.
     if (new_rtt) receiver.SetRtt(*new_rtt);
     receiver.Process(now);
@@ -912,20 +931,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
       prev_jb_emitted = jst.jitter_buffer_emitted_count;
       played_ms += 10;
-      ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
-      if (op == timing::AudioOperation::kExpand) {
-        concealed_ms += 10;
-        ++w_conceal;
-        conceal_run += 10;
-      } else if (conceal_run > 0) {
-        longest_conceal = std::max(longest_conceal, conceal_run);
-        if (conceal_run > kInterruptionMs) {
-          ++interruptions;
-          interruption_ms += conceal_run;
-        }
-        conceal_run = 0;
-      }
+      concealment.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+      w_played += concealment.pull_total();
+      w_conceal += concealment.pull_concealed();
     }
 
     // Receiver feedback (NACK, keyframe requests, transport-cc, reports).
@@ -961,11 +970,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       smp.send_kbps = static_cast<double>(w_send) * 8 / 100;
       smp.goodput_kbps = static_cast<double>(w_good) * 8 / 100;
       smp.queue_ms = queue_ms;
-      smp.rtt_ms = static_cast<double>(sender.rtt().us()) / 1000.0;
-      // Sampled every 100 ms, as sm_compare's libwebrtc side samples Call::GetStats().rtt_ms
-      // (compare/webrtc/webrtc_call.cc), not once per RTCP sample: those are not evenly spaced in
-      // time (cross_traffic seed 1: median of the RTCP samples 316 ms, of 100 ms samples 67 ms).
-      if (have_rtt) rtt_samples.push_back(smp.rtt_ms);
+      // The sender's CallStats::LastProcessedRtt() (the 70/30 smoothed average of the 1 s reports), as
+      // sm_compare's libwebrtc side samples Call::GetStats().rtt_ms (compare/webrtc/webrtc_call.cc,
+      // reference/call/call.cc), not the last raw report-block RTT (issue #370). Sampled every 100 ms, not
+      // once per RTCP sample: those are not evenly spaced in time (cross_traffic seed 1: median of the
+      // RTCP samples 316 ms, of 100 ms samples 67 ms).
+      const double call_rtt_ms = SessionGauge(sender, "call_stats_rtt_ms");
+      smp.rtt_ms = call_rtt_ms > 0 ? call_rtt_ms : 0;
+      if (call_rtt_ms > 0) rtt_samples.push_back(call_rtt_ms);
       smp.audio_buffer_ms = s.audio ? receiver.audio_receiver(audio_recv).jitter_buffer().CurrentLevelMs() : 0;
       smp.audio_concealed_pct = w_played ? 100.0 * static_cast<double>(w_conceal) / static_cast<double>(w_played) : 0;
       smp.video_fps = static_cast<double>(w_frames) * 10;
@@ -979,19 +991,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // --- Summary ----------------------------------------------------------------
   const Timestamp end = Timestamp::Millis(end_ms);
   auto& m = rep.metrics;
-  if (conceal_run > 0) {
-    longest_conceal = std::max(longest_conceal, conceal_run);
-    if (conceal_run > kInterruptionMs) {
-      ++interruptions;
-      interruption_ms += conceal_run;
-    }
-  }
+  concealment.Finish();
   if (s.audio) {
     const auto& jbs = receiver.audio_receiver(audio_recv).jitter_buffer().stats();
-    m["audio.concealed_pct"] = played_ms ? 100.0 * static_cast<double>(concealed_ms) / static_cast<double>(played_ms) : 100.0;
-    m["audio.interruptions"] = static_cast<double>(interruptions);
-    m["audio.interruption_ms"] = static_cast<double>(interruption_ms);
-    m["audio.longest_interruption_ms"] = static_cast<double>(longest_conceal);
+    m["audio.concealed_pct"] = concealment.concealed_pct();
+    m["audio.interruptions"] = static_cast<double>(concealment.interruptions());
+    m["audio.interruption_ms"] = static_cast<double>(concealment.interruption_ms());
+    m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);

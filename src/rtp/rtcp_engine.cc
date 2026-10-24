@@ -171,9 +171,27 @@ void RtcpEngine::AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& 
   }
 }
 
+std::vector<uint8_t> RtcpEngine::BuildExtendedReports(Timestamp now) {
+  timing::ExtendedReports xr;
+  xr.sender_ssrc = sender_ && sender_->ssrc ? sender_->ssrc : cfg_.local_ssrc;
+  if (!sender_ && cfg_.xr_rrtr) xr.rrtr = timing::NtpTime::FromTimestamp(now);
+  const uint32_t now_compact = timing::NtpTime::FromTimestamp(now).Compact();
+  while (!received_rrtrs_.empty() && xr.dlrr.size() < timing::kMaxNumberOfDlrrItems) {
+    const ReceivedRrtr& r = received_rrtrs_.front();
+    xr.dlrr.push_back({r.ssrc, r.remote_compact, now_compact - r.local_compact});
+    received_rrtrs_.pop_front();
+  }
+  if (!xr.rrtr && xr.dlrr.empty()) return {};
+  ++stats_.xr_sent;
+  if (xr.rrtr) ++stats_.rrtr_sent;
+  stats_.dlrr_items_sent += xr.dlrr.size();
+  return timing::SerializeExtendedReports(xr);
+}
+
 void RtcpEngine::EmitReport(Timestamp now, std::vector<RtcpOutgoing>& out) {
   std::vector<std::vector<uint8_t>> packets;
   AppendReport(now, packets);
+  if (auto xr = BuildExtendedReports(now); !xr.empty()) packets.push_back(std::move(xr));
   ++stats_.reports_sent;
   SM_EVENT(cfg_.events, now, "rtcp", sender_ ? "sr" : "rr", packets[0].size(), cfg_.local_ssrc);
   Flush(packets, RtcpOutKind::kReport, out);
@@ -220,9 +238,17 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   // Early feedback: one compound per max_datagram_bytes.
   std::vector<std::vector<uint8_t>> packets;
   size_t bytes = 0;
+  // The XR of a compound that carries the report goes last, after the
+  // feedback (RTCPSender's report flags are ordered by packet type).
+  std::vector<uint8_t> xr;
+  auto flush = [&] {
+    if (!xr.empty()) packets.push_back(std::move(xr));
+    xr.clear();
+    Flush(packets, RtcpOutKind::kFeedback, out);
+  };
   for (auto& q : queue_) {
     if (!packets.empty() && bytes + q.bytes.size() > cfg_.max_datagram_bytes) {
-      Flush(packets, RtcpOutKind::kFeedback, out);
+      flush();
       bytes = 0;
     }
     if (packets.empty() && !cfg_.reduced_size) {
@@ -231,6 +257,8 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
         // adds the full SR/RR (report blocks) and SDES to NACK, PLI, FIR and
         // loss notification, and restarts the report timer.
         AppendReport(now, packets);
+        xr = BuildExtendedReports(now);
+        bytes += xr.size();
         next_report_ = now + Interval();
       } else {
         packets.push_back(LeadingReport());
@@ -251,7 +279,7 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
     packets.push_back(std::move(q.bytes));
   }
   queue_.clear();
-  Flush(packets, RtcpOutKind::kFeedback, out);
+  flush();
   return out;
 }
 
@@ -384,6 +412,38 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
           ok = false;
         }
         break;
+      case loss::RtcpType::kXr:
+        if (auto xr = timing::ParseExtendedReports(p.data)) {
+          ++stats_.xr_received;
+          const uint32_t now_compact = timing::NtpTime::FromTimestamp(now).Compact();
+          if (xr->rrtr) {
+            // RTCPReceiver::HandleXrReceiveReferenceTime: the latest RRTR per sender.
+            ++stats_.rrtr_received;
+            auto it = std::find_if(received_rrtrs_.begin(), received_rrtrs_.end(),
+                                   [&](const ReceivedRrtr& r) { return r.ssrc == xr->sender_ssrc; });
+            if (it != received_rrtrs_.end()) {
+              it->remote_compact = xr->rrtr->Compact();
+              it->local_compact = now_compact;
+            } else if (received_rrtrs_.size() < kMaxStoredRrtrs) {
+              received_rrtrs_.push_back({xr->sender_ssrc, xr->rrtr->Compact(), now_compact});
+            }
+          }
+          for (const auto& rti : xr->dlrr) {
+            // HandleXrDlrrReportBlock: only an echo of our own RRTR, only with
+            // the measurement on, and not before the peer has received one.
+            ++stats_.dlrr_items_received;
+            const bool ours = rti.ssrc == cfg_.local_ssrc ||
+                              std::find(local_ssrcs_.begin(), local_ssrcs_.end(), rti.ssrc) != local_ssrcs_.end();
+            if (!ours || !cfg_.xr_rrtr || rti.last_rr == 0) continue;
+            const uint32_t rtt_compact = now_compact - rti.delay_since_last_rr - rti.last_rr;
+            // CompactNtpRttToTimeDelta, as for report blocks.
+            TimeDelta rtt = rtt_compact > 0x80000000u ? TimeDelta::Zero() : timing::CompactNtpToDelta(rtt_compact);
+            in.xr_rtts.push_back(std::max(rtt, TimeDelta::Millis(1)));
+          }
+        } else {
+          ok = false;
+        }
+        break;
       case loss::RtcpType::kOther:
         ++in.ignored;
         ++stats_.ignored;
@@ -424,6 +484,12 @@ void RtcpEngine::ExportMetrics(MetricsWriter& w) const {
   w.Counter("remb_received", stats_.remb_received);
   w.Counter("sdes_received", stats_.sdes_received);
   w.Counter("bye_received", stats_.bye_received);
+  w.Counter("xr_sent", stats_.xr_sent);
+  w.Counter("rrtr_sent", stats_.rrtr_sent);
+  w.Counter("dlrr_items_sent", stats_.dlrr_items_sent);
+  w.Counter("xr_received", stats_.xr_received);
+  w.Counter("rrtr_received", stats_.rrtr_received);
+  w.Counter("dlrr_items_received", stats_.dlrr_items_received);
   w.Gauge("fir_tracked", static_cast<double>(fir_seq_in_.size()));
   w.Gauge("queued_feedback", static_cast<double>(queue_.size()));
   rtt_.ExportMetrics(w);

@@ -158,8 +158,11 @@ Link keys (any subset; unset keys keep their previous value):
 
 `sm_testbench --metrics` prints the authoritative list. In summary:
 
-- **Audio:** `concealed_pct`, `interruptions` (concealment runs over
-  150 ms), `longest_interruption_ms`, jitter buffer delay
+- **Audio:** `concealed_pct` (concealed samples over samples played),
+  `interruptions` (concealment events of 150 ms or more, from the jitter
+  buffer's `concealed_samples` and `concealment_events` as libwebrtc's
+  `StatisticsCalculator` counts them; both stacks use
+  `ConcealmentMeter` in `call_common.h`), `longest_interruption_ms`, jitter buffer delay
   (`jb_delay_p50/p95_ms`), `net_delay_p95_ms`, `mouth_to_ear_p95_ms`,
   `stretch_pct`, `late_discards`, `time_to_first_ms`.
 - **Video:** `freeze_count`, `freeze_total_ms` and `longest_freeze_ms`
@@ -208,7 +211,10 @@ Link keys (any subset; unset keys keep their previous value):
     rate (100 ms windows after the first 2 s, all traffic) is above the
     target, in % of the target. `cc.send_over_target_ms` counts the time
     above 1.5 x the target.
-  - `cc.rtt_p50_ms`.
+  - `cc.rtt_p50_ms`: the median, over 100 ms samples, of the sender's
+    `CallStats::LastProcessedRtt()` (the 70/30 smoothed average of the 1 s
+    RTCP RTT reports), which is what `sm_compare`'s libwebrtc side samples
+    (`Call::GetStats().rtt_ms`), not the last raw RTT (issue #370).
 - **Network and repair:** `net.loss_pct`, `repair.overhead_pct`,
   `repair.nack_recovered`, `repair.fec_recovered`. Per kind on the forward
   link (information only, issue #117): `net.audio_kbps`, `net.video_kbps`,

@@ -1,0 +1,9 @@
+name issue_355_rate_tracker_default
+describe issue_355_rate_tracker_ramp with the default settings: RateUtilizationTracker is on by default, as libwebrtc's EncoderBitrateAdjuster (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment not disabled), so the encoder target gets back to the 2.5 Mbps cap within a second after each resolution switch (#355)
+duration 10s
+quality_scaling on
+at 0s capacity=3000kbps delay=40ms queue=300ms
+# Encoded video, seconds 1-10, seed 1: libwebrtc 2321 kbps (parity-data traces,
+# issue_346_reconfigure_cross_join.1.webrtc.video.csv), this default 2328, the old default (detector) 2221.
+expect video.avg_kbps > 2280
+expect video.freeze_count == 0

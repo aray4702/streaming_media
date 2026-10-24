@@ -82,9 +82,9 @@ struct Scenario {
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
   // `rate_utilization_tracker on|off`: the adjuster's media utilization factor from libwebrtc's
   // RateUtilizationTracker, its default "newfangled headroom adjustment" (issue #355;
-  // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). Off by default until judged
-  // against libwebrtc, as the port's switches were.
-  bool rate_utilization_tracker = false;
+  // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). On by default, as libwebrtc
+  // (since #355's flip, after #362 turned periodic ALR probing off for video).
+  bool rate_utilization_tracker = true;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; off by default until judged against libwebrtc, as the
