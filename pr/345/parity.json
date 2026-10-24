@@ -773,9 +773,9 @@
   {
    "scenario": "issue_257_zero_max_payload",
    "metric": "cc.rtt_p50_ms",
-   "sm": 268.57,
+   "sm": 251.85,
    "webrtc": 64.4,
-   "band": 13.4285,
+   "band": 12.592500000000001,
    "direction": "behind",
    "seeds_agree": 10,
    "seeds": 10,

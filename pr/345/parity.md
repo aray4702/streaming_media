@@ -111,7 +111,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 1035 | 205 | ±51.7 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `cc.max_settle_ms` | 1870 | 200 | ±500 | behind | 8/10 | #15, #48, #61, #20 |
 | issue_257_zero_max_payload | `cc.queue_p95_ms` | 300 | 45.3 | ±15.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 269 | 64.4 | ±13.4 | behind | 10/10 | #61 |
+| issue_257_zero_max_payload | `cc.rtt_p50_ms` | 252 | 64.4 | ±12.6 | behind | 10/10 | #61 |
 | issue_257_zero_max_payload | `net.loss_pct` | 11.9 | 0 | ±0.6 | behind | 10/10 | #21, #61, #12 |
 | issue_257_zero_max_payload | `repair.overhead_pct` | 13.5 | 0.1 | ±2 | behind | 10/10 | #21, #7, #29 |
 | issue_257_zero_max_payload | `sync.av_offset_p95_ms` | 2108 | 71.9 | ±105 | behind | 10/10 | #77 |
