@@ -158,8 +158,11 @@ Link keys (any subset; unset keys keep their previous value):
 
 `sm_testbench --metrics` prints the authoritative list. In summary:
 
-- **Audio:** `concealed_pct`, `interruptions` (concealment runs over
-  150 ms), `longest_interruption_ms`, jitter buffer delay
+- **Audio:** `concealed_pct` (concealed samples over samples played),
+  `interruptions` (concealment events of 150 ms or more, from the jitter
+  buffer's `concealed_samples` and `concealment_events` as libwebrtc's
+  `StatisticsCalculator` counts them; both stacks use
+  `ConcealmentMeter` in `call_common.h`), `longest_interruption_ms`, jitter buffer delay
   (`jb_delay_p50/p95_ms`), `net_delay_p95_ms`, `mouth_to_ear_p95_ms`,
   `stretch_pct`, `late_discards`, `time_to_first_ms`.
 - **Video:** `freeze_count`, `freeze_total_ms` and `longest_freeze_ms`

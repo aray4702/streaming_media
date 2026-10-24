@@ -34,9 +34,6 @@ constexpr uint32_t kAudioSsrc = 1, kVideoSsrc = 2, kRtxSsrc = 3;
 constexpr uint32_t kSenderRtcpSsrc = 100, kReceiverRtcpSsrc = 200;
 constexpr uint8_t kAudioPt = 111, kAudioRedPt = 63, kVideoPt = 96, kRtxPt = 97;
 constexpr int64_t kUdpIpOverhead = 28;
-// WebRTC counts an audio interruption when concealment lasts over 150 ms
-// (RTCInboundRtpStreamStats.interruptionCount).
-constexpr int64_t kInterruptionMs = 150;
 
 // What a datagram is on the link, for the accounting only: the receiver
 // session works from the bytes.
@@ -139,10 +136,11 @@ class ReceivedSeqs : public rtp::VideoMediaObserver {
 
 const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   static const std::vector<std::pair<std::string, std::string>> k = {
-      {"audio.concealed_pct", "Share of played audio that was synthesized by concealment (after the first packet)"},
-      {"audio.interruptions", "Concealment runs longer than 150 ms (WebRTC interruptionCount)"},
+      {"audio.concealed_pct", "Concealed samples in percent of the samples played (concealedSamples / "
+                              "totalSamplesReceived, after the first packet)"},
+      {"audio.interruptions", "Concealment events of 150 ms or more (WebRTC interruptionCount)"},
       {"audio.interruption_ms", "Total duration of those interruptions"},
-      {"audio.longest_interruption_ms", "Longest continuous concealment run"},
+      {"audio.longest_interruption_ms", "Longest concealment event (its concealed samples)"},
       {"audio.jb_delay_p50_ms", "Median jitter buffer delay per 10 ms of playout (jitterBufferDelay / "
                                  "jitterBufferEmittedCount: packet buffer waiting time, as sm_compare reads libwebrtc's)"},
       {"audio.jb_delay_p95_ms", "95th percentile of the same"},
@@ -638,8 +636,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
   AvSyncMeter av_sync;  // Issue #63.
-  int64_t played_ms = 0, concealed_ms = 0, stretch_ms = 0, conceal_run = 0, longest_conceal = 0;
-  int64_t interruptions = 0, interruption_ms = 0;
+  int64_t played_ms = 0, stretch_ms = 0;
+  ConcealmentMeter concealment(sr);  // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
   // (jitterBufferDelay / jitterBufferEmittedCount over each pull).
   std::vector<double> jb_delay;
@@ -649,7 +647,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::vector<float> audio_out(static_cast<size_t>(sr / 100));
 
   // Per-sample window counters.
-  int64_t w_send = 0, w_good = 0, w_frames = 0, w_conceal = 0, w_played = 0;
+  int64_t w_send = 0, w_good = 0, w_frames = 0;
+  uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
   FirstDelivery first_delivery;  // goodput counts each media sequence number once (#329)
   double last_video_delay = 0;
   // Receiver-side burst tracking for the protection controller (a real
@@ -932,20 +931,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
       prev_jb_emitted = jst.jitter_buffer_emitted_count;
       played_ms += 10;
-      ++w_played;
       if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
-      if (op == timing::AudioOperation::kExpand) {
-        concealed_ms += 10;
-        ++w_conceal;
-        conceal_run += 10;
-      } else if (conceal_run > 0) {
-        longest_conceal = std::max(longest_conceal, conceal_run);
-        if (conceal_run > kInterruptionMs) {
-          ++interruptions;
-          interruption_ms += conceal_run;
-        }
-        conceal_run = 0;
-      }
+      concealment.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+      w_played += concealment.pull_total();
+      w_conceal += concealment.pull_concealed();
     }
 
     // Receiver feedback (NACK, keyframe requests, transport-cc, reports).
@@ -1002,19 +991,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // --- Summary ----------------------------------------------------------------
   const Timestamp end = Timestamp::Millis(end_ms);
   auto& m = rep.metrics;
-  if (conceal_run > 0) {
-    longest_conceal = std::max(longest_conceal, conceal_run);
-    if (conceal_run > kInterruptionMs) {
-      ++interruptions;
-      interruption_ms += conceal_run;
-    }
-  }
+  concealment.Finish();
   if (s.audio) {
     const auto& jbs = receiver.audio_receiver(audio_recv).jitter_buffer().stats();
-    m["audio.concealed_pct"] = played_ms ? 100.0 * static_cast<double>(concealed_ms) / static_cast<double>(played_ms) : 100.0;
-    m["audio.interruptions"] = static_cast<double>(interruptions);
-    m["audio.interruption_ms"] = static_cast<double>(interruption_ms);
-    m["audio.longest_interruption_ms"] = static_cast<double>(longest_conceal);
+    m["audio.concealed_pct"] = concealment.concealed_pct();
+    m["audio.interruptions"] = static_cast<double>(concealment.interruptions());
+    m["audio.interruption_ms"] = static_cast<double>(concealment.interruption_ms());
+    m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);

@@ -42,6 +42,74 @@ class FirstDelivery {
   State streams_[2];
 };
 
+// Audio concealment from the jitter buffer's lifetime counters, read after
+// every 10 ms pull and computed the same way for both stacks (#372):
+// totalSamplesReceived, concealedSamples and concealmentEvents, from NetEq's
+// GetStats on libwebrtc's side. A concealment event lasts the concealed
+// samples added from its concealmentEvents increment to the next one, and is
+// an interruption at 150 ms or more, as libwebrtc's
+// StatisticsCalculator::EndExpandEvent counts interruptionCount
+// (reference/modules/audio_coding/neteq/statistics_calculator.cc).
+//
+// The pull's operation, or the samples concealed within one pull, would miss
+// part of an expansion: NetEqImpl::DoExpand adds whole Expand periods (12.6 ms
+// each on #372's outage), so every few pulls play out the expanded samples
+// left in the sync buffer with a Normal operation and add no concealed samples.
+class ConcealmentMeter {
+ public:
+  static constexpr int64_t kInterruptionMs = 150;  // statistics_calculator.cc kInterruptionLenMs.
+
+  explicit ConcealmentMeter(int sample_rate_hz) : sample_rate_hz_(sample_rate_hz) {}
+
+  // The counters after a pull. Sets pull_total() and pull_concealed().
+  void OnPull(uint64_t total_samples, uint64_t concealed_samples, uint64_t concealment_events) {
+    pull_total_ = total_samples - prev_total_;
+    pull_concealed_ = concealed_samples - prev_concealed_;
+    prev_total_ = total_samples;
+    prev_concealed_ = concealed_samples;
+    total_ += pull_total_;
+    concealed_ += pull_concealed_;
+    if (concealment_events != prev_events_) {
+      EndEvent();
+      prev_events_ = concealment_events;
+      in_event_ = true;
+    }
+    if (in_event_) event_samples_ += pull_concealed_;
+  }
+  // Ends the open event at the end of the call.
+  void Finish() { EndEvent(); }
+
+  uint64_t pull_total() const { return pull_total_; }
+  uint64_t pull_concealed() const { return pull_concealed_; }
+  // Concealed samples in percent of the samples played (100 if none were).
+  double concealed_pct() const {
+    return total_ ? 100.0 * static_cast<double>(concealed_) / static_cast<double>(total_) : 100.0;
+  }
+  int64_t interruptions() const { return interruptions_; }
+  int64_t interruption_ms() const { return interruption_ms_; }
+  int64_t longest_event_ms() const { return longest_event_ms_; }
+
+ private:
+  void EndEvent() {
+    if (!in_event_) return;
+    const int64_t ms = static_cast<int64_t>(1000 * event_samples_ / static_cast<uint64_t>(sample_rate_hz_));
+    longest_event_ms_ = std::max(longest_event_ms_, ms);
+    if (ms >= kInterruptionMs) {
+      ++interruptions_;
+      interruption_ms_ += ms;
+    }
+    in_event_ = false;
+    event_samples_ = 0;
+  }
+
+  int sample_rate_hz_;
+  uint64_t prev_total_ = 0, prev_concealed_ = 0, prev_events_ = 0;
+  uint64_t pull_total_ = 0, pull_concealed_ = 0, total_ = 0, concealed_ = 0;
+  bool in_event_ = false;
+  uint64_t event_samples_ = 0;
+  int64_t interruptions_ = 0, interruption_ms_ = 0, longest_event_ms_ = 0;
+};
+
 // Applies scenario link changes to an emulated link.
 struct LinkState {
   sim::LinkConfig cfg;
