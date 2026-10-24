@@ -167,6 +167,7 @@ RtcpType Classify(std::span<const uint8_t> pkt, uint8_t pt, uint8_t fmt) {
     case kRtcpRr: return RtcpType::kReceiverReport;
     case kRtcpSdes: return RtcpType::kSdes;
     case kRtcpBye: return RtcpType::kBye;
+    case kRtcpXr: return RtcpType::kXr;
     case kRtcpRtpfb:
       if (fmt == kFmtNack) return RtcpType::kNack;
       if (fmt == 15) return RtcpType::kTransportCc;

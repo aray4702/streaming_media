@@ -261,7 +261,8 @@ SM_TEST(RtcpEngine, DispatchTableSendsEachTypeToItsOwnList) {
                            timing::SerializeSenderReport(sr),
                            SerializeSdes(std::span<const SdesChunk>(&chunk, 1)),
                            SerializeBye(bye),
-                           Bytes{0x80, 207, 0, 1, 0, 0, 0, 1}};  // XR: valid header, not interpreted.
+                           timing::SerializeExtendedReports({.sender_ssrc = 1, .rrtr = timing::NtpTime{5}, .dlrr = {}}),
+                           Bytes{0x80, 204, 0, 2, 0, 0, 0, 1, 'n', 'a', 'm', 'e'}};  // APP: valid header, not interpreted.
   Bytes dg = loss::BuildCompoundRtcp(pk);
   SM_ASSERT_TRUE(!dg.empty());
   RtcpEngine e;
@@ -276,6 +277,7 @@ SM_TEST(RtcpEngine, DispatchTableSendsEachTypeToItsOwnList) {
   SM_EXPECT_EQ(in.sender_reports.size(), 1u);
   SM_EXPECT_EQ(in.sdes.size(), 1u);
   SM_EXPECT_EQ(in.byes.size(), 1u);
+  SM_EXPECT_EQ(e.stats().rrtr_received, 1u);
   SM_EXPECT_EQ(in.ignored, 1u);
   SM_EXPECT_EQ(e.stats().malformed, 0u);
 }
@@ -480,4 +482,120 @@ SM_TEST(RtcpEngine, ReportDueWithin100msIsSentBeforeAKeyframe) {
   RtcpEngine audio(a);
   audio.Process(Timestamp::Millis(0));
   SM_EXPECT_FALSE(audio.ReportDue(Timestamp::Millis(900), true));
+}
+
+// A receive-only endpoint measures the RTT over XR (issue #356): its report
+// carries an RRTR, the sender echoes it in a DLRR on its next report, and
+// RTT = arrival - LRR - DLRR (RTCPReceiver::HandleXrDlrrReportBlock).
+SM_TEST(RtcpEngine, ReceiveOnlyRttFromRrtrAndDlrr) {
+  RtcpConfig rc;
+  rc.local_ssrc = 8;
+  rc.xr_rrtr = true;
+  rc.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine receiver(rc);
+  RtcpConfig sc;
+  sc.local_ssrc = 1;
+  sc.first_report_delay = TimeDelta::Millis(600);
+  RtcpEngine sender(sc);
+  sender.SetSenderState({.ssrc = 7});
+  sender.AddLocalMediaSsrc(7);
+  receiver.Process(Timestamp::Millis(0));
+  sender.Process(Timestamp::Millis(0));
+
+  // The receiver's report at 500 ms: RR, then XR with the RRTR.
+  auto rr = receiver.Process(Timestamp::Millis(500));
+  SM_ASSERT_EQ(rr.size(), 1u);
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(rr[0].bytes) == std::vector<T>{T::kReceiverReport, T::kXr}));
+  auto in_tx = sender.OnRtcp(rr[0].bytes, Timestamp::Millis(520));
+  SM_EXPECT_TRUE(in_tx.xr_rtts.empty());
+
+  // The sender's report at 600 ms echoes it, 80 ms after it arrived.
+  auto sr = sender.Process(Timestamp::Millis(600));
+  SM_ASSERT_EQ(sr.size(), 1u);
+  SM_EXPECT_TRUE((Types(sr[0].bytes) == std::vector<T>{T::kSenderReport, T::kXr}));
+  auto split = loss::SplitCompoundRtcp(sr[0].bytes);
+  auto xr = timing::ParseExtendedReports((*split)[1].data);
+  SM_ASSERT_TRUE(xr.has_value());
+  SM_EXPECT_FALSE(xr->rrtr.has_value());  // A media sender sends no RRTR.
+  SM_ASSERT_EQ(xr->dlrr.size(), 1u);
+  SM_EXPECT_EQ(xr->dlrr[0].ssrc, 8u);
+  SM_EXPECT_NEAR(timing::CompactNtpToDelta(xr->dlrr[0].delay_since_last_rr).ms_f(), 80.0, 0.1);
+
+  // Arriving at 640 ms: 640 - 500 - 80 = 60 ms.
+  auto in_rx = receiver.OnRtcp(sr[0].bytes, Timestamp::Millis(640));
+  SM_ASSERT_EQ(in_rx.xr_rtts.size(), 1u);
+  SM_EXPECT_NEAR(in_rx.xr_rtts[0].ms_f(), 60.0, 0.1);
+  SM_EXPECT_TRUE(in_rx.rtts.empty());
+
+  // Each RRTR is echoed once.
+  std::vector<RtcpOutgoing> next;
+  for (int64_t t = 601; t <= 3000 && next.empty(); ++t) next = sender.Process(Timestamp::Millis(t));
+  SM_ASSERT_EQ(next.size(), 1u);
+  SM_EXPECT_TRUE((Types(next[0].bytes) == std::vector<T>{T::kSenderReport}));
+  SM_EXPECT_EQ(sender.stats().dlrr_items_sent, 1u);
+  SM_EXPECT_EQ(receiver.stats().rrtr_sent, 1u);
+}
+
+// Without the measurement the receiver sends no RRTR and ignores a DLRR, and
+// an echo of another endpoint's RRTR gives no RTT.
+SM_TEST(RtcpEngine, DlrrCountsOnlyWithRrtrOnAndForOurSsrc) {
+  RtcpConfig rc;
+  rc.local_ssrc = 8;
+  rc.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine off(rc);
+  off.Process(Timestamp::Millis(0));
+  auto rr = off.Process(Timestamp::Millis(500));
+  SM_ASSERT_EQ(rr.size(), 1u);
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(rr[0].bytes) == std::vector<T>{T::kReceiverReport}));
+
+  timing::ExtendedReports xr;
+  xr.sender_ssrc = 1;
+  xr.dlrr = {{8, timing::NtpTime::FromTimestamp(Timestamp::Millis(500)).Compact(), 0}};
+  std::vector<std::vector<uint8_t>> packets = {timing::SerializeReceiverReport({.ssrc = 1}),
+                                               timing::SerializeExtendedReports(xr)};
+  const auto datagram = loss::BuildCompoundRtcp(packets);
+  SM_EXPECT_TRUE(off.OnRtcp(datagram, Timestamp::Millis(600)).xr_rtts.empty());
+
+  rc.xr_rrtr = true;
+  RtcpEngine on(rc);
+  auto in = on.OnRtcp(datagram, Timestamp::Millis(600));
+  SM_ASSERT_EQ(in.xr_rtts.size(), 1u);
+  SM_EXPECT_NEAR(in.xr_rtts[0].ms_f(), 100.0, 0.1);
+  xr.dlrr[0].ssrc = 9;
+  packets[1] = timing::SerializeExtendedReports(xr);
+  SM_EXPECT_TRUE(on.OnRtcp(loss::BuildCompoundRtcp(packets), Timestamp::Millis(600)).xr_rtts.empty());
+  // LRR zero: the peer had no RRTR to echo.
+  xr.dlrr[0] = {8, 0, 0};
+  packets[1] = timing::SerializeExtendedReports(xr);
+  SM_EXPECT_TRUE(on.OnRtcp(loss::BuildCompoundRtcp(packets), Timestamp::Millis(600)).xr_rtts.empty());
+  SM_EXPECT_EQ(on.stats().xr_received, 3u);
+}
+
+// A NACK compound carries the full report and so the RRTR too, after the
+// feedback, as RTCPSender orders its report flags.
+SM_TEST(RtcpEngine, NackCompoundCarriesTheRrtrLast) {
+  timing::ReceiveStatistics stats(0x1234, 90000);
+  stats.OnPacket(1, 0, Timestamp::Millis(0));
+  stats.OnPacket(3, 3000, Timestamp::Millis(40));
+  RtcpConfig c;
+  c.local_ssrc = 100;
+  c.cname = "user@host";
+  c.xr_rrtr = true;
+  c.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine rx(c);
+  rx.AddReceiveStatistics(&stats);
+  rx.Process(Timestamp::Millis(0));
+  const std::vector<uint16_t> seqs = {2};
+  rx.QueueNack(0x1234, seqs);
+  auto out = rx.Process(Timestamp::Millis(100));
+  SM_ASSERT_EQ(out.size(), 1u);
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kSdes, T::kNack, T::kXr}));
+  // Transport-cc goes without a report, so without an RRTR.
+  rx.QueueTransportFeedback(cc::TransportFeedback{});
+  out = rx.Process(Timestamp::Millis(200));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
 }

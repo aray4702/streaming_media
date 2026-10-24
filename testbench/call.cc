@@ -495,6 +495,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // Receiver reports on the call's 1 s grid, half a period after the sender's.
   if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
   receiver_cfg.av_sync = s.av_sync;  // Issue #77.
+  // The receiver measures its RTT as sm_compare's libwebrtc receiver does:
+  // RRTR in its reports, the sender's DLRR echo (rtcp_xr.receiver_reference_time_report, issue #356).
+  receiver_cfg.rtcp.xr_rrtr = s.video;
   rtp::Session sender(sender_cfg), receiver(receiver_cfg);
 
   rtp::AudioStreamConfig audio_cfg;
@@ -845,9 +848,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         audio_first = at;
       }
     });
-    // The receiver learns each RTT sample the sender measures, in place of the
-    // XR DLRR RTT a receive-only libwebrtc stream measures (a one-way receiver
-    // has no report blocks of its own); its CallStats takes it at the next 1 s
+    // The receiver learns each RTT sample the sender measures, for its
+    // congestion controller and audio receivers (a one-way receiver has no
+    // report blocks of its own). With video its CallStats takes the RTT it
+    // measures over XR instead (issue #356); without, this one at the next 1 s
     // update.
     if (new_rtt) receiver.SetRtt(*new_rtt);
     receiver.Process(now);

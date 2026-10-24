@@ -1,0 +1,16 @@
+name issue_356_capacity_drop_xr_rtt
+describe capacity_drop with quality scaling on, seed 2: the receiver measures its RTT over XR RRTR/DLRR as libwebrtc's does, so its NACK retries and the repair after the drop match (#356)
+duration 40s
+quality_scaling on
+seed 2
+at 0s  capacity=2500kbps delay=30ms queue=400ms
+at 10s capacity=500kbps
+at 25s capacity=2500kbps
+# Seed 2 is one of #356's yardstick seeds (#358). Before the drop the receiver's RTT comes from the DLRR echoes,
+# which see a short forward queue, so it retries NACKs every 80 ms as libwebrtc's does (ours was 100 ms with the
+# sender's RR samples on seeds 1 and 3). The repair after the drop then ends past libwebrtc's 3 s kMaxWaitForFrame
+# and the receiver asks for a keyframe, as libwebrtc's does on this seed.
+# libwebrtc seed 2 (parity-data @ main): keyframe_requests 1, longest freeze 3103 ms. main before #356: 0, 1898 ms.
+# With the port: 1, 3071 ms.
+expect video.keyframe_requests >= 1
+expect video.longest_freeze_ms > 2500
