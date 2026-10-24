@@ -99,15 +99,25 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
     if (cfg_.version >= 2 && priority < it->second.priority) it->second = Packet{std::move(pcm), arrival, ticks_, priority};
     return;
   }
+  if (cfg_.version >= 2 && queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
+    // PacketBuffer::InsertPacket (packet_buffer.cc): a full buffer (NetEq::
+    // Config::max_packets_in_buffer, the capacity DelayConstraints assumes)
+    // is flushed completely before the new packet goes in (issue #331).
+    queue_.clear();
+    next_ts_ = ts;
+    sync_.assign(expand_.overlap_length(), 0.0f);  // NetEqImpl::FlushBuffers.
+    ++stats_.buffer_flushes;
+    decision_.NotifyBufferFlush();
+    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
+  }
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
   queue_.emplace(ts, Packet{std::move(pcm), arrival, ticks_, priority});
-  if (queue_.size() > cfg_.max_packets) {
+  if (cfg_.version < 2 && queue_.size() > cfg_.max_packets) {
     // Far too much audio: drop everything but the newest few packets.
     while (queue_.size() > 3) queue_.erase(queue_.begin());
     next_ts_ = queue_.begin()->first;
     sync_.clear();
-    if (cfg_.version >= 2) sync_.assign(expand_.overlap_length(), 0.0f);  // NetEqImpl::FlushBuffers.
     ++stats_.buffer_flushes;
     decision_.NotifyBufferFlush();
     SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);

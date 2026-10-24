@@ -81,14 +81,28 @@ void QualityScaler::ClearSamplesV2() {
   low_.filtered = -1.0f;
 }
 
-QualityScaler::Result QualityScaler::CheckQpV2() const {
+QualityScaler::Result QualityScaler::CheckQpV2() {
   const size_t frames = std::min(drop_count_, kDropWindow);
   if (frames < kMinFramesNeededToScale) return Result::kInsufficientSamples;
   // MovingAverage::GetAverageRoundedDown.
-  if (drop_sum_ / static_cast<int>(frames) >= kFramedropPercentThreshold) return Result::kHighQp;
+  const int drop_pct = drop_sum_ / static_cast<int>(frames);
+  if (drop_pct >= kFramedropPercentThreshold) {
+    ++checks_;
+    last_record_ = {-1, -1, drop_pct, Signal::kAdaptDown};
+    return Result::kHighQp;
+  }
   if (high_.filtered != -1.0f && low_.filtered != -1.0f) {
-    if (static_cast<int>(high_.filtered) > cfg_.thresholds.high) return Result::kHighQp;
-    if (static_cast<int>(low_.filtered) <= cfg_.thresholds.low) return Result::kLowQp;
+    const int qp_high = static_cast<int>(high_.filtered), qp_low = static_cast<int>(low_.filtered);
+    ++checks_;
+    last_record_ = {qp_high, qp_low, -1, Signal::kNone};
+    if (qp_high > cfg_.thresholds.high) {
+      last_record_.signal = Signal::kAdaptDown;
+      return Result::kHighQp;
+    }
+    if (qp_low <= cfg_.thresholds.low) {
+      last_record_.signal = Signal::kAdaptUp;
+      return Result::kLowQp;
+    }
   }
   return Result::kNormalQp;
 }

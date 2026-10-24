@@ -73,6 +73,17 @@ class QualityScaler : public MetricsSource {
   // does nothing there.
   void OnResolutionChanged();
   double average_qp() const { return avg_qp_; }
+  // Version 2: the last check that observed enough frames, as libwebrtc logs
+  // it in QualityScaler::CheckQp ("Reporting high QP, framedrop percent N" or
+  // "Checking average QP H (L)."), for the per-second video trace (#347).
+  // -1 where that check had no such value.
+  struct CheckRecord {
+    int qp_high = -1, qp_low = -1;  // The smoothed QP the decision read, as int.
+    int drop_pct = -1;              // The frame-drop percent, when it reported high QP.
+    Signal signal = Signal::kNone;
+  };
+  uint64_t checks() const { return checks_; }  // Checks with a CheckRecord so far.
+  const CheckRecord& last_check() const { return last_record_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
@@ -85,7 +96,7 @@ class QualityScaler : public MetricsSource {
   };
   enum class Result { kInsufficientSamples, kNormalQp, kHighQp, kLowQp };
   Signal CheckV2(Timestamp now);
-  Result CheckQpV2() const;
+  Result CheckQpV2();
   TimeDelta NextCheckDelayV2() const;
   void ClearSamplesV2();
 
@@ -103,6 +114,8 @@ class QualityScaler : public MetricsSource {
   int frames_ = 0, dropped_ = 0;
   Timestamp last_check_ = Timestamp::MinusInfinity();
   uint64_t downs_ = 0, ups_ = 0;
+  uint64_t checks_ = 0;
+  CheckRecord last_record_;
 };
 
 }  // namespace sm::video

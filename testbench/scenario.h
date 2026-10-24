@@ -80,6 +80,11 @@ struct Scenario {
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
   bool control_handler = true;  // `control_handler on|off`: libwebrtc's CongestionControlHandler (issue #204; default on since #224/#204).
   bool bitrate_adjuster = true;  // `bitrate_adjuster on|off`: libwebrtc's EncoderBitrateAdjuster (default on as in M157, issue #5).
+  // `rate_utilization_tracker on|off`: the adjuster's media utilization factor from libwebrtc's
+  // RateUtilizationTracker, its default "newfangled headroom adjustment" (issue #355;
+  // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). Off by default until judged
+  // against libwebrtc, as the port's switches were.
+  bool rate_utilization_tracker = false;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; off by default until judged against libwebrtc, as the

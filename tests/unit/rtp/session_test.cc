@@ -617,23 +617,31 @@ SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
 }
 
 // #62: AudioSendStream::ConfigureStream asks for periodic ALR probing when the audio stream
-// has transport-cc (audio_send_stream.cc:297-308), so libwebrtc probes every 5 s in ALR in
-// every call with audio. Without transport-cc it does not.
+// has transport-cc (audio_send_stream.cc:297-308). Without transport-cc it does not.
+// #355: VideoSendStreamImpl's constructor then sets it to RateControlSettings::UseAlrProbing(),
+// off without field trials, when the video stream has transport-cc
+// (video_send_stream_impl.cc:487-523). So a call that adds audio and then video does not
+// probe periodically in ALR (yardstick #359: libwebrtc sends none on cross traffic), while
+// audio alone, or audio added after the video, does.
 SM_TEST(Session, AnAudioStreamWithTransportCcRequestsAlrProbing) {
-  auto alr_probing = [](bool audio, bool transport_cc) {
+  enum class Order { kAudioOnly, kAudioThenVideo, kVideoThenAudio, kVideoOnly };
+  auto alr_probing = [](Order order, bool transport_cc) {
     SessionConfig c = Cfg(1);
     if (!transport_cc) c.extensions = sync::ExtensionMap();
     Session s(c);
     AudioStreamConfig au;
     au.ssrc = 0x100;
-    if (audio) s.AddAudioSend(au);
-    s.AddVideoSend(Video());
+    if (order == Order::kVideoThenAudio || order == Order::kVideoOnly) s.AddVideoSend(Video());
+    if (order != Order::kVideoOnly) s.AddAudioSend(au);
+    if (order == Order::kAudioThenVideo) s.AddVideoSend(Video());
     s.Process(Timestamp::Millis(0));
     return s.send_side().gcc().probe_controller_v2().periodic_alr_probing();
   };
-  SM_EXPECT_TRUE(alr_probing(true, true));
-  SM_EXPECT_FALSE(alr_probing(true, false));
-  SM_EXPECT_FALSE(alr_probing(false, true));  // Video alone (not screen share) does not ask.
+  SM_EXPECT_TRUE(alr_probing(Order::kAudioOnly, true));
+  SM_EXPECT_FALSE(alr_probing(Order::kAudioThenVideo, true));  // The video stream turns it off.
+  SM_EXPECT_TRUE(alr_probing(Order::kVideoThenAudio, true));
+  SM_EXPECT_FALSE(alr_probing(Order::kVideoOnly, true));  // Video alone (not screen share) does not ask.
+  SM_EXPECT_FALSE(alr_probing(Order::kAudioThenVideo, false));
 }
 
 // #62: the initial exponential probes of an audio-only call are 3x and 6x the start rate,

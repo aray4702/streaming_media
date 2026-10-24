@@ -159,3 +159,88 @@ SM_TEST(EncoderBitrateAdjuster, DroppedFramesCountNoBytesAndResetRestarts) {
   a.Reset(Timestamp::Millis(2200));
   SM_EXPECT_NEAR(a.adjusted().kbps(), 833.3, 0.1);  // Warm-up again after Reset.
 }
+
+// RateUtilizationTracker (video/rate_utilization_tracker.cc, issue #355).
+
+SM_TEST(RateUtilizationTracker, NoProducedDataGivesNoFactor) {
+  RateUtilizationTracker t(100, TimeDelta::Seconds(3));
+  t.OnDataRateChanged(Kbps(1000), Timestamp::Millis(0));
+  SM_EXPECT_FALSE(t.GetRateUtilizationFactor(Timestamp::Millis(100)).has_value());
+}
+
+SM_TEST(RateUtilizationTracker, DataJustProducedReadsOne) {
+  // The budget runs until the last data point could be sent at the current rate.
+  RateUtilizationTracker t(100, TimeDelta::Seconds(3));
+  t.OnDataRateChanged(Kbps(1000), Timestamp::Millis(0));
+  t.OnDataProduced(DataSize::Bytes(4167), Timestamp::Millis(0));
+  SM_EXPECT_NEAR(*t.GetRateUtilizationFactor(Timestamp::Millis(0)), 1.0, 1e-9);
+}
+
+SM_TEST(RateUtilizationTracker, UndershootReadsBelowOne) {
+  // An encoder making 80% of the target: 0.8, where the overshoot detector's
+  // per-frame factors never go below 1.0.
+  RateUtilizationTracker t(100, TimeDelta::Seconds(3));
+  t.OnDataRateChanged(Kbps(1000), Timestamp::Millis(0));
+  for (int i = 0; i < 60; ++i) t.OnDataProduced(DataSize::Bytes(4167 * 8 / 10), Timestamp::Micros(i * 1000000 / 30));
+  SM_EXPECT_NEAR(*t.GetRateUtilizationFactor(Timestamp::Micros(59 * 1000000 / 30)), 0.8, 0.01);
+}
+
+SM_TEST(RateUtilizationTracker, RateChangesSplitTheBudgetAndOldPointsAreCulled) {
+  RateUtilizationTracker t(100, TimeDelta::Seconds(3));
+  t.OnDataRateChanged(Kbps(1000), Timestamp::Millis(0));
+  // 1 s at 1000 kbps with 2x frames. The budget is the 29 frame intervals plus
+  // the last frame's own size: 30 x 2 / (29 + 2) = 1.935.
+  for (int i = 0; i < 30; ++i) t.OnDataProduced(DataSize::Bytes(4167 * 2), Timestamp::Micros(i * 1000000 / 30));
+  SM_EXPECT_NEAR(*t.GetRateUtilizationFactor(Timestamp::Micros(29 * 1000000 / 30)), 1.935, 0.005);
+  // Then 500 kbps with frames on target. After 1 s the budget of both rates
+  // counts (312510 B over 187500 B); after 4 s the first second is out of the 3 s window (and of the
+  // 100 data points).
+  t.OnDataRateChanged(Kbps(500), Timestamp::Millis(1000));
+  for (int i = 30; i < 60; ++i) t.OnDataProduced(DataSize::Bytes(2083), Timestamp::Micros(i * 1000000 / 30));
+  SM_EXPECT_NEAR(*t.GetRateUtilizationFactor(Timestamp::Micros(59 * 1000000 / 30)), 1.67, 0.03);
+  for (int i = 60; i < 150; ++i) t.OnDataProduced(DataSize::Bytes(2083), Timestamp::Micros(i * 1000000 / 30));
+  SM_EXPECT_NEAR(*t.GetRateUtilizationFactor(Timestamp::Micros(149 * 1000000 / 30)), 1.0, 0.01);
+}
+
+SM_TEST(EncoderBitrateAdjuster, RateUtilizationTrackerLetsHeadroomPayForBursts) {
+  // A frame of 4x every 10 and 2/3 between: the encoder makes its target on
+  // average, but the link sees bursts. The tracker's media factor is 1.0, so the
+  // whole link overshoot is wanted and the headroom grants it. The overshoot
+  // detector's media factor counts the bursts too and leaves the encoder less
+  // (issue #355).
+  EncoderBitrateAdjusterConfig cfg;
+  cfg.newfangled_headroom_adjustment = true;
+  EncoderBitrateAdjuster tracker(cfg);
+  EncoderBitrateAdjuster detector;
+  DataRate a, b;
+  for (int i = 0; i < 180; ++i) {
+    const Timestamp now = Timestamp::Micros(i * 1000000 / 30);
+    a = tracker.AdjustRate(Kbps(1000), Kbps(1400), 30, now);
+    b = detector.AdjustRate(Kbps(1000), Kbps(1400), 30, now);
+    const int64_t bytes = (i % 10 == 0) ? 4167 * 4 : 4167 * 2 / 3;
+    tracker.OnEncodedFrame(DataSize::Bytes(bytes), now);
+    detector.OnEncodedFrame(DataSize::Bytes(bytes), now);
+  }
+  SM_EXPECT_GT(tracker.link_utilization_factor(), 1.2);
+  SM_EXPECT_NEAR(tracker.media_utilization_factor(), 1.0, 0.01);
+  SM_EXPECT_GT(detector.media_utilization_factor(), 1.1);
+  SM_EXPECT_NEAR(a.kbps(), 1000.0, 1.5);
+  SM_EXPECT_LT(b.kbps(), 900.0);
+}
+
+SM_TEST(EncoderBitrateAdjuster, ResetStartsANewRateUtilizationTracker) {
+  // Before the reset the encoder makes twice its target. After it, the encoder
+  // follows the rate it is given (833 kbps for the warm-up): the new tracker
+  // sees only that, reads below 1.0 against the 1000 kbps target, and the
+  // headroom gives the encoder its whole target again, as libwebrtc's does
+  // after a resolution switch.
+  EncoderBitrateAdjusterConfig cfg;
+  cfg.newfangled_headroom_adjustment = true;
+  EncoderBitrateAdjuster a(cfg);
+  Run(a, 60, 4167 * 2, Kbps(1000), Kbps(1400), 0);
+  a.Reset(Timestamp::Millis(2100));
+  SM_EXPECT_NEAR(a.adjusted().kbps(), 833.3, 0.1);  // Warm-up again after Reset.
+  const DataRate r = Run(a, 40, 4167, Kbps(1000), Kbps(1400), 2200);
+  SM_EXPECT_LT(a.media_utilization_factor(), 1.0);
+  SM_EXPECT_NEAR(r.kbps(), 1000.0, 1.5);
+}

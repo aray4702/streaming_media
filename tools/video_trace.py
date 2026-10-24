@@ -8,7 +8,8 @@ video send path, in the same CSV for this library and for libwebrtc:
   t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
   dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
-  encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms
+  encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
+  qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -21,7 +22,12 @@ encode_ms_mean (issue #84) come from the encoder model both stacks share
 none was), keyframes, keyframe_bytes, rendered and max_render_gap_ms (the
 largest gap from the previous rendered frame to one rendered in the second)
 line up resolution switches and keyframes with freezes (issue #333); older
-traces read them as 0. CI publishes the traces
+traces read them as 0. The qs_* columns (issue #347) are the quality
+scaler's checks that observed enough frames, as libwebrtc's QualityScaler::
+CheckQp logs them: how many fell in the second, and the last one's smoothed
+QP (high and low filter, as int), frame-drop percent when that reported high
+QP, and signal (-1 adapt down, +1 adapt up); -1 where there was none, and
+older traces read them so. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
 --trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
 
@@ -38,6 +44,7 @@ import sys
 DROPS = ["dropped_capturer", "dropped_encoder_queue", "dropped_rate_limiter",
          "dropped_congestion_window", "dropped_encoder"]
 LATER_INTS = ["encode_width", "encode_height", "keyframes", "keyframe_bytes", "rendered"]  # Issue #333.
+QS_INTS = ["qs_qp_high", "qs_qp_low", "qs_drop_pct"]  # Issue #347; -1 when absent.
 INTS = ["t_s", "encoder_target_bps", "alloc_target_bps", "captured", "encoded", *DROPS, "paused", "encoded_bytes"]
 
 
@@ -51,6 +58,10 @@ def parse(text):
             row[k] = float(r.get(k) or 0)
         for k in LATER_INTS:
             row[k] = int(r.get(k) or 0)
+        row["qs_checks"] = int(r.get("qs_checks") or 0)
+        row["qs_signal"] = int(r.get("qs_signal") or 0)
+        for k in QS_INTS:
+            row[k] = int(r.get(k) or -1)
         rows.append(row)
     return rows
 
@@ -83,6 +94,10 @@ def summarize(rows):
         "resolution_switches": sum(1 for a, b in zip(heights, heights[1:]) if a != b),
         "rendered": total["rendered"],
         "max_render_gap_ms": max((r["max_render_gap_ms"] for r in rows), default=0.0),
+        # Quality scaler (issue #347): its checks, and the seconds whose last check signalled each way.
+        "qs_checks": sum(r["qs_checks"] for r in rows),
+        "qs_up_seconds": sum(1 for r in rows if r["qs_signal"] > 0),
+        "qs_down_seconds": sum(1 for r in rows if r["qs_signal"] < 0),
     }
 
 
@@ -100,7 +115,9 @@ def render(named):
             ("paused/suspended seconds", "paused_seconds"), ("pacer queue max ms", "pacer_queue_ms_max"),
             ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean"), ("keyframes", "keyframes"),
             ("keyframe bytes", "keyframe_bytes"), ("resolution switches", "resolution_switches"),
-            ("frames rendered", "rendered"), ("longest render gap ms", "max_render_gap_ms")]
+            ("frames rendered", "rendered"), ("longest render gap ms", "max_render_gap_ms"),
+            ("quality scaler checks", "qs_checks"), ("scaler adapt-up seconds", "qs_up_seconds"),
+            ("scaler adapt-down seconds", "qs_down_seconds")]
     for label, key in rows:
         lines.append("%-32s" % label + "".join("%14s" % fmt(named[n][key]) for n in names))
     lines.append("dropped by reason")
