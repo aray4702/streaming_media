@@ -1588,6 +1588,239 @@
    ]
   },
   {
+   "scenario": "issue_346_reconfigure_capacity_drop",
+   "metric": "audio.interruptions",
+   "sm": 0.3,
+   "webrtc": 1.1,
+   "band": 0.5,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    63
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_capacity_drop",
+   "metric": "audio.longest_interruption_ms",
+   "sm": 154,
+   "webrtc": 202,
+   "band": 20,
+   "direction": "ahead",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    63
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_capacity_drop",
+   "metric": "video.longest_freeze_ms",
+   "sm": 1642.7,
+   "webrtc": 2687.7,
+   "band": 624.8038003156582,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "audio.mouth_to_ear_p95_ms",
+   "sm": 750.49,
+   "webrtc": 698.045,
+   "band": 37.5245,
+   "direction": "behind",
+   "seeds_agree": 4,
+   "seeds": 10,
+   "owners": [
+    63
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 415,
+   "webrtc": 380,
+   "band": 20.75,
+   "direction": "behind",
+   "seeds_agree": 4,
+   "seeds": 10,
+   "owners": [
+    63
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "video.freeze_count",
+   "sm": 7.7,
+   "webrtc": 2.3,
+   "band": 1.2516655570345725,
+   "direction": "behind",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "video.freeze_total_ms",
+   "sm": 3210.5,
+   "webrtc": 1348.8,
+   "band": 247.00688249520496,
+   "direction": "behind",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "video.e2e_delay_p95_ms",
+   "sm": 692.265,
+   "webrtc": 451.007,
+   "band": 72.83413516423616,
+   "direction": "behind",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    24,
+    37
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "sync.av_offset_p95_ms",
+   "sm": 299.213,
+   "webrtc": 231.352,
+   "band": 21.38712969183933,
+   "direction": "behind",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    77
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "cc.queue_p95_ms",
+   "sm": 287.242,
+   "webrtc": 267.535,
+   "band": 14.362100000000002,
+   "direction": "behind",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "cc.max_settle_ms",
+   "sm": 12030,
+   "webrtc": 8570,
+   "band": 1897.3958762238078,
+   "direction": "behind",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    15,
+    48,
+    61,
+    20
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_join",
+   "metric": "net.loss_pct",
+   "sm": 0.893544,
+   "webrtc": 0.38584,
+   "band": 0.5,
+   "direction": "behind",
+   "seeds_agree": 3,
+   "seeds": 10,
+   "owners": [
+    21,
+    61,
+    12
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_traffic",
+   "metric": "audio.mouth_to_ear_p95_ms",
+   "sm": 478.608,
+   "webrtc": 528.522,
+   "band": 42.20074815239918,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    63,
+    204
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_traffic",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 284,
+   "webrtc": 309,
+   "band": 22.82785822435191,
+   "direction": "ahead",
+   "seeds_agree": 7,
+   "seeds": 10,
+   "owners": [
+    63,
+    204
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_cross_traffic",
+   "metric": "cc.queue_p95_ms",
+   "sm": 161.25,
+   "webrtc": 183.725,
+   "band": 20.88792671909355,
+   "direction": "ahead",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    19,
+    15,
+    48,
+    12,
+    61
+   ]
+  },
+  {
+   "scenario": "issue_346_reconfigure_outage_8s",
+   "metric": "cc.max_settle_ms",
+   "sm": 3680,
+   "webrtc": 2610,
+   "band": 975.7618106439251,
+   "direction": "behind",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    15,
+    48,
+    61,
+    20
+   ]
+  },
+  {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "video.render_fps",
    "sm": 27.55,
