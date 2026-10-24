@@ -15,4 +15,6 @@ expect video.frames_rendered > 850
 # libwebrtc per seed 9825/10002/9788/9756/9766/9428/9742/9783/9766/9807 on #328's compare-webrtc (worst 10002).
 # PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was < 9810. Ours 9817 on seed 1;
 # libwebrtc per seed 9825/9798/9780/9952/9773/9791/9404/10061/9769/9759 on main's compare-webrtc after #340 (seed 1 9825).
-expect video.pause_total_ms < 9820
+# Issue #355 (rate_utilization_tracker on by default, as libwebrtc; program.md 0.2, needs-human): was < 9820. Ours 9952
+# on seed 1 (seeds 1-10 mean 9864; 9900 without); libwebrtc's seed 1 is 9825 and its worst 10061, as above.
+expect video.pause_total_ms < 10000
