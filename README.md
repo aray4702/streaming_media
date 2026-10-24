@@ -12,7 +12,7 @@ it continuously.
 
 ## The program
 
-The library evolves through a loop that [program.md](program.md) defines,
+The library evolves through a loop that [program.md](agents/program.md) defines,
 run by three AI agents with GitHub as the shared record:
 
 ```
@@ -34,19 +34,19 @@ run by three AI agents with GitHub as the shared record:
   [baseline](testbench/baseline.json) and "gaming" (loosened thresholds).
   A PR merges automatically once it has the Reviewer's approval and every
   platform in CI is green.
-- **Owner** (a person) sets direction through `program.md` and `roadmap`
+- **Owner** (a person) sets direction through `agents/program.md` and `roadmap`
   issues, and decides anything an agent labels `needs-human`.
 
 Progress is measured, not asserted: a change has to improve the
 user-experience metrics or leave them unchanged, and every problem found
 becomes a scenario that keeps it fixed. The goals, labels, quality gates
-and guardrails are in [program.md](program.md), and the agents'
+and guardrails are in [program.md](agents/program.md), and the agents'
 instructions are in [agents/](agents/).
 
 ## Scope
 
 The library grows in two stages, both measured on the same test bench
-([program.md section 0.1](program.md#01-scope-and-stages)):
+([program.md section 0.1](agents/program.md#01-scope-and-stages)):
 
 1. **Baseline: what WebRTC handles** (current stage). These are the
    problems in sections 3-8 of
@@ -98,7 +98,7 @@ Background research:
 
 The library:
 
-- [Program](program.md): vision, goals, agent roles, quality gates and
+- [Program](agents/program.md): vision, goals, agent roles, quality gates and
   guardrails of the self-evolution loop.
 - [Test bench](testbench/README.md): a whole call through the library over
   a scripted unreliable link (loss, bursts, jitter, outages, capacity
@@ -212,7 +212,7 @@ bench/                                                   benchmarks
 examples/                                                usage example
 testbench/                                               call test bench, scenarios, baseline
 web/                                                     WebAssembly bindings and demo page
-agents/                                                  instructions for the Tester, Fixer and Reviewer agents
+agents/                                                  the program and the Tester, Fixer, Reviewer and Coordinator instructions
 tools/                                                   run_all.sh, gen_docs.py, catalog.py, testbench_compare.py
 docs/                                                    research, design, algorithms, results
 ```

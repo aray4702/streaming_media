@@ -3,7 +3,7 @@
 `sm_testbench` runs a complete one-way audio + video call through the
 library over emulated links whose impairments change on a script. It
 reports what a user of the call would experience. It is the tool the
-agents in [program.md](../program.md) use to find, reproduce and guard
+agents in [program.md](../agents/program.md) use to find, reproduce and guard
 against problems.
 
 ```sh

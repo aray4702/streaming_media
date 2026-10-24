@@ -1,6 +1,6 @@
 # Common rules for every agent
 
-Read `program.md` first; it defines the process. This file holds the
+Read `agents/program.md` first; it defines the process. This file holds the
 practical details every role shares.
 
 ## Environment
