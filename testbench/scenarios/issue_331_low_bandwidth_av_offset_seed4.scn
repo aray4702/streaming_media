@@ -9,7 +9,7 @@ describe low_bandwidth with seed 4: lip sync raises the audio delay past 2 s and
 duration 40s
 at 0s capacity=150kbps delay=40ms queue=500ms
 seed 4
-# Guard rail moved by #356 (program.md 0.2, needs the Owner's sign-off): with the receiver's RTT measured over XR
+# Guard rail moved by #356 (program.md 0.2). Provisional lock, accepted by the Owner on 2026-10-24 and tracked to #356: with the receiver's RTT measured over XR
 # RRTR/DLRR as libwebrtc's, seed 4 reads p95 1937 ms and p50 1163 ms (#350 had `< 1900` and `< 1150`, ours 1892 and
 # 1065 then). libwebrtc seed 4: p95 1900. low_bandwidth seeds 1-10 p95 mean: libwebrtc 1576 (band 188), main 1708,
 # with XR 1724; p50 mean: libwebrtc 931, main 951, with XR 978.
