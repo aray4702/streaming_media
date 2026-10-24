@@ -1,0 +1,19 @@
+name issue_368_tracker_outage_render
+describe issue_268_freeze_rule_outage with rate_utilization_tracker on: after the 3 s outage the video recovers with one freeze, as libwebrtc (issue #368)
+# With the tracker on, our receiver used to render the post-outage keyframe alone at ~14.7 s and then
+# wait ~1.1 s for a retransmission of the next delta frame: seed 1 had 3 freezes, 6251 ms (main @ 55bf3d9).
+# The retry interval of that NACK follows the receiver's RTT. libwebrtc's receiver measures it over
+# XR RRTR/DLRR (modules/rtp_rtcp/source/rtcp_receiver.cc, video/video_receive_stream2.cc), and
+# so does ours since #361; with it the stall after the keyframe is ~0.39 s and seed 1 has 1 freeze, 4641 ms.
+# libwebrtc (parity-data traces, issue_268_freeze_rule_outage, tracker on as its default): 1 freeze on
+# seeds 1-10, total 714-4969 ms. Ours seeds 1-10: 1 freeze on every seed, total 233-4641 ms.
+seed 1
+duration 40s
+audio off
+rate_utilization_tracker on
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s down
+at 13s up
+expect video.frames_rendered > 1000
+expect video.freeze_count <= 1
+expect video.freeze_total_ms < 5200
