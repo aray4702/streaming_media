@@ -58,6 +58,19 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   if (window) cwnd_.UpdateWindow(target_);
   // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+  // The congestion-window trace (issue #331): a row per feedback and process interval, and
+  // whenever the reduce ratio GoogCC hands on changes.
+  if (cfg_.gcc.bwe_trace && (window || cwnd_.reduce_ratio() != trace_reduce_ratio_)) {
+    cc::BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = cc::BweTraceRow::Kind::kCwnd;
+    r.bitrate_bps = target_.bps();
+    r.cwnd_bytes = cwnd_.data_window() ? cwnd_.data_window()->bytes() : -1;
+    r.in_flight_bytes = gcc_.history().InFlight().bytes();
+    r.reduce_ratio = cwnd_.reduce_ratio();
+    cfg_.gcc.bwe_trace->push_back(r);
+    trace_reduce_ratio_ = cwnd_.reduce_ratio();
+  }
 }
 
 // GoogCC's MaybeTriggerOnNetworkChanged hands its TargetTransferRate to the transport's

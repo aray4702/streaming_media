@@ -177,7 +177,8 @@ python3 tools/video_trace.py sm.video.csv webrtc.video.csv
 ### The bandwidth-estimate trace (issue #149)
 
 The same runs record the sender's GoogCC estimates in one CSV for both stacks:
-`time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps`.
+`time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps`
+(then the `detector` and `cwnd` columns).
 libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 (`BweTraceLog` in `webrtc_call.cc`):
 
@@ -186,6 +187,7 @@ libwebrtc's side comes from an `RtcEventLog` sink on the sender's `Environment`
 | `delay_based` | `RtcEventBweUpdateDelayBased` (`delay_based_bwe.cc`): AIMD estimate and trendline state, when either changes | `GccController::TraceDelayBased`, same condition |
 | `loss_based` | `RtcEventBweUpdateLossBased` (`send_side_bandwidth_estimation.cc`): the send-side target, fraction lost and packets, when the target or fraction changes, and every 5 s | `GccController::TraceLossBased`, same condition |
 | `target` | `Call::Stats::send_bandwidth_bps` every 100 ms, when it changes | the controller's target, when it changes |
+| `cwnd` | the congestion-window pushback state (issue #331), from the sender's `NetworkControllerInterface` wrapper: per transport feedback and process interval and when the ratio changes, `cwnd_bytes` (`GoogCcNetworkController::current_data_window_`), `in_flight_bytes` (the last `SentPacket` / `TransportPacketsFeedback::data_in_flight`) and `reduce_ratio` (the `cwnd_reduce_ratio` of the last `TargetTransferRate`) | `SendSideController::UpdatePushback`, same condition |
 
 `loss_state`, `loss_limit_bps` and `instant_ub_bps` (`LossBasedBweV2`'s state,
 loss-limited estimate and instant upper bound) are filled for this library only:

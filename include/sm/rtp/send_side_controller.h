@@ -250,6 +250,7 @@ class SendSideController : public MetricsSource {
   cc::CongestionControlHandler control_handler_;
   // The reduce ratio of the last update passed on (BitrateAllocationUpdate::cwnd_reduce_ratio).
   double reported_reduce_ratio_ = 0;
+  double trace_reduce_ratio_ = -1;  // The reduce ratio of the last kCwnd trace row.
   // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
   DataRate video_encoder_target_;
   DataRate video_link_allocation_;  // VideoSendStreamImpl's link_allocation as of the last allocation.
