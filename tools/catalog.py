@@ -113,10 +113,14 @@ ALGORITHMS = [
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
          verification="No defects found; results match the analytical p^2 and p^3. The test bench's Opus send path (issue #126) "
-                      "feeds it frames the size of libwebrtc's Opus output (`testbench/opus_model.h`): speech of 72 B on "
+                      "feeds it frames the size of libwebrtc's Opus output (`testbench/opus_model.h`): speech of 71 B on "
                       "average, digital silence of 3-35 B. Deviation: the sizes are a model fitted to libwebrtc's forward-link "
-                      "trace, not libopus; the encoder defaults (20 ms, 32 kbps, VBR, DTX off, 6-510 kbps) follow "
-                      "`audio_encoder_opus_config.h`."),
+                      "traces, not libopus; the encoder defaults (20 ms, 32 kbps, VBR, DTX off, 6-510 kbps) follow "
+                      "`audio_encoder_opus_config.h`. Issue #375 calibrated the model on the distribution, not only the mean "
+                      "(7 seeds of parity-data traces): free frames (67.5 B, 61 B in the first 1.4 s), runs held at the nominal "
+                      "81 B (18 % of frames), and 95-158 B bursts, none in the first 1.4 s. The 200 B RTP packets that start "
+                      "the start probe are 3.7 % of audio packets, the first at a median 3.4 s over 100 seeds (libwebrtc "
+                      "3.6 % and 3.8 s); before, 9 % of packets and within the first second on almost every scenario."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
          headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],

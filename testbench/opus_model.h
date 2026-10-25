@@ -15,13 +15,12 @@
 //       a 4 byte header per redundant block and 1 byte for the primary
 //       (src/loss/red.cc already writes this layout)
 //
-// Frame sizes are a model, not libopus: libwebrtc's sizes were read off the
-// forward-link trace of `very_low_capacity_allocator_v2` (tools/link_trace.py,
-// seed 1, 2000 packets) by removing the headers and the redundant block:
-//   speech       mean 72.1 B, sd 12.9 B, lag-1 autocorrelation 0.89 at 32 kbps
-//   digital zero a constant 3, 17, 21, 32 or 35 B for the whole silent run
-//   onset        up to 144 B (the first frame after digital zero)
-// Listed as a deviation in tools/catalog.py (the size model stands in for libopus).
+// Frame sizes are a model, not libopus: libwebrtc's sizes were read off its
+// forward-link traces by removing the headers and the redundant block, first
+// on `very_low_capacity_allocator_v2` (issue #126: the mean and the silence
+// sizes), then on 7 seeds of parity-data's traces (issue #375: the
+// distribution; see OpusSizeModel). Listed as a deviation in tools/catalog.py
+// (the size model stands in for libopus).
 //
 // In-band FEC (LBRR, issue #62), as libwebrtc sends it with sm_compare's
 // format (`useinbandfec=1`, compare/webrtc/webrtc_call.cc):
@@ -84,14 +83,61 @@ inline int OpusBitrateBps(int allocation_bps, size_t overhead_bytes_per_packet, 
 }
 
 // Bytes of one 20 ms Opus frame for the given input.
+//
+// Calibrated on libwebrtc's frames (issue #375), decoded from the per-packet
+// forward-link traces on parity-data (traces/, the first seed of 7 scenarios
+// with different speech: seeds 1, 2, 3, 4, 5, 7 and 10; 10500 frames, where a
+// RED packet is 53 B plus the previous and the current frame). At 32 kbps
+// libopus's speech frames are in one of three states:
+//   free     mean 67.5 B, sd 11 B, lag-1 autocorrelation 0.71, about +7 B per unit of
+//            log(rms / previous rms) (louder speech is larger); 64 % of the frames
+//   held     exactly the nominal size and the TOC byte (81 B) for 3-73 frames, mean 16;
+//            18 % of the frames. Half of the 115 runs start right after a burst, the
+//            others from free frames
+//   burst    1-4 frames of 95-158 B (mean 107 B, sd 13 B), 115 of them, starting more
+//            often while the loudness rises; half are followed by a held run
+// The encoder starts quieter: the first 1.4 s has neither bursts nor held runs
+// and its free frames are 61 B (sd 9.2 B). The free frames reach their later
+// level by about 2.8 s (64.5 B in 1.4-2.8 s); 4 of the 115 bursts start in the
+// first 3 s, and the first one on a seed comes at 1.39-10.2 s (median 3.8 s).
+// The bursts and held runs ramp up over 2.1 s after the first 1.4 s, a
+// compromise between those two: over 100 seeds the model's first 200 B RTP
+// packet comes at a median 3.4 s (libwebrtc 3.8 s on 7 seeds), and 3.7 % of
+// the audio packets are 200 B or more (libwebrtc 3.6 %).
+// The bursts are what makes a 200 B RTP packet (a burst frame next to a held
+// or a burst frame). That packet starts the start probe (BitrateProber's
+// min(RecommendedMinProbeSize, 200 B)), so the share of those packets
+// (1.4-4.9 % per seed, 3.6 % over all) and the time of the first one
+// (1.39-10.2 s) are what the calibration is judged by.
+// Digital silence is a constant 3, 17, 21, 32 or 35 B for the whole silent run;
+// the first frame after it is 73 B on average (sd 25 B, 22-131 B).
 class OpusSizeModel {
  public:
-  static constexpr double kSpeechShare = 74.0 / 80.0;  // Mean frame / (32 kbps * 20 ms).
-  static constexpr double kSpeechSd = 10.0 / 80.0;     // As a share of the nominal frame at the bitrate.
-  static constexpr double kAutocorrelation = 0.89;
+  // Shares of the nominal frame (the CBR size at the bitrate: 80 B at 32 kbps).
+  static constexpr double kFreeShare = 67.5 / 80.0;
+  static constexpr double kFreeSdShare = 10.6 / 80.0;     // With the loudness term's 3 B: 11 B.
+  static constexpr double kFreeStartShare = 61.0 / 80.0;  // Before the ramp (the first 1.4 s).
+  static constexpr double kFreeStartSdShare = 8.7 / 80.0;  // 9.2 B with the loudness term.
+  static constexpr double kAutocorrelation = 0.71;
+  static constexpr double kLoudnessShare = 7.0 / 80.0;  // Per unit of log(rms / previous rms).
+  static constexpr double kFreeMaxShare = 94.0 / 80.0;  // Larger frames are bursts.
+  static constexpr double kHeldEnd = 1.0 / 16;          // Per frame: held runs last 16 frames on average.
+  static constexpr double kHeldStart = 0.009;           // Per free frame.
+  static constexpr double kHeldAfterBurst = 0.5;
+  static constexpr double kBurstRate = 0.0095;           // Per speech frame, before the loudness factor.
+  static constexpr double kBurstRise = 2.0;             // Rate x (1 + kBurstRise * rise of log rms).
+  static constexpr int64_t kWarmupFrames = 70;          // 1.4 s without bursts or held runs,
+  static constexpr int64_t kRampFrames = 105;           // then their rates ramp up over 2.1 s,
+  static constexpr int64_t kFreeRampFrames = 70;        // and the free frames' level over 1.4 s.
+  static constexpr double kBurstMeanShare = 107.0 / 80.0;
+  static constexpr double kBurstSdShare = 13.0 / 80.0;
+  static constexpr double kBurstMinShare = 95.0 / 80.0;
+  static constexpr double kOnsetMeanShare = 73.0 / 80.0;  // The 99 first frames after digital zero.
+  static constexpr double kOnsetSdShare = 25.0 / 80.0;
+  static constexpr size_t kOnsetMin = 22;
   static constexpr double kSilenceRms = 1e-5;
-  static constexpr size_t kMinSpeechShare = 36;        // Observed floor at 32 kbps.
-  static constexpr size_t kMaxFrame = 144;
+  static constexpr size_t kMinSpeechShare = 36;          // Observed floor at 32 kbps.
+  static constexpr size_t kMaxFrame = 158;
 
   OpusSizeModel(uint64_t seed, int bitrate_bps) : rng_(seed), bitrate_bps_(bitrate_bps) {}
 
@@ -105,23 +151,52 @@ class OpusSizeModel {
     for (float v : frame) e += static_cast<double>(v) * v;
     const double rms = frame.empty() ? 0.0 : std::sqrt(e / static_cast<double>(frame.size()));
     const double nominal = static_cast<double>(bitrate_bps_) / 8.0 * 0.02;  // CBR size of the frame.
+    const double scale = nominal / 80.0;
     ++frames_;
     if (rms < kSilenceRms) {
       if (!silent_) {
         silent_ = true;
+        burst_left_ = 0;
+        held_ = false;
         // Weights of the 18 silent runs in the trace: 3 x6, 17 x5, 21 x2, 32 x1, 35 x4.
         const int64_t k = rng_.UniformInt(0, 17);
         silence_bytes_ = k < 6 ? 3 : k < 11 ? 17 : k < 13 ? 21 : k < 14 ? 32 : 35;
       }
+      prev_rms_ = 0;
       return silence_bytes_;
     }
     const bool onset = silent_;
     silent_ = false;
+    const double rise = prev_rms_ > 0 ? std::clamp(std::log(rms / prev_rms_), -1.5, 1.5) : 0.0;
+    prev_rms_ = rms;
     state_ = kAutocorrelation * state_ + std::sqrt(1 - kAutocorrelation * kAutocorrelation) * rng_.Gaussian();
-    double bytes = nominal * kSpeechShare + state_ * nominal * kSpeechSd;
-    if (onset) bytes = std::max(bytes, nominal * rng_.Uniform(0.9, 1.8));  // The first frame after digital zero.
-    const double lo = static_cast<double>(kMinSpeechShare) * nominal / 80.0;
-    const double hi = static_cast<double>(kMaxFrame) * nominal / 80.0;
+    const double ramp = std::clamp(static_cast<double>(frames_ - kWarmupFrames) / kRampFrames, 0.0, 1.0);
+    const double free_ramp = std::clamp(static_cast<double>(frames_ - kWarmupFrames) / kFreeRampFrames, 0.0, 1.0);
+    double bytes;
+    if (onset) {  // The first frame after digital zero, often only partly speech.
+      bytes = std::max(nominal * (kOnsetMeanShare + kOnsetSdShare * rng_.Gaussian()), static_cast<double>(kOnsetMin) * scale);
+    } else {
+      if (burst_left_ == 0 && rng_.Bernoulli(ramp * kBurstRate * (1 + kBurstRise * std::max(0.0, rise)))) {
+        // Lengths 1-4 of the 115 bursts: 43, 30, 20, 19 of 112 (5 and 6 counted as 4).
+        const int64_t k = rng_.UniformInt(0, 111);
+        burst_left_ = k < 43 ? 1 : k < 73 ? 2 : k < 93 ? 3 : 4;
+        held_ = false;
+      }
+      if (burst_left_ > 0) {
+        bytes = std::max(nominal * (kBurstMeanShare + kBurstSdShare * rng_.Gaussian()), nominal * kBurstMinShare);
+        if (--burst_left_ == 0) held_ = rng_.Bernoulli(kHeldAfterBurst);
+      } else if (held_) {
+        bytes = nominal + 1;  // The nominal size and the TOC byte.
+        held_ = !rng_.Bernoulli(kHeldEnd);
+      } else {
+        const double mean = kFreeStartShare + free_ramp * (kFreeShare - kFreeStartShare);
+        const double sd = kFreeStartSdShare + free_ramp * (kFreeSdShare - kFreeStartSdShare);
+        bytes = std::min(nominal * (mean + sd * state_ + kLoudnessShare * rise), nominal * kFreeMaxShare);
+        held_ = rng_.Bernoulli(ramp * kHeldStart);
+      }
+    }
+    const double lo = static_cast<double>(onset ? kOnsetMin : kMinSpeechShare) * scale;
+    const double hi = static_cast<double>(kMaxFrame) * scale;
     return static_cast<size_t>(std::lround(std::clamp(bytes, lo, hi)));
   }
 
@@ -129,7 +204,10 @@ class OpusSizeModel {
   Random rng_;
   int bitrate_bps_;
   double state_ = 0;
+  double prev_rms_ = 0;
   bool silent_ = false;
+  bool held_ = false;
+  int64_t burst_left_ = 0;
   size_t silence_bytes_ = 3;
   int64_t frames_ = 0;
 };
