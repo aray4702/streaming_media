@@ -1,0 +1,6 @@
+name issue_335_fps1_keyframe_packets_seed5
+describe Yardstick for #375 (draft, not for merge): issue_335_fps1_keyframe_packets on seed 5, traced on both stacks
+duration 30s
+seed 5
+video_fps 1
+at 0s capacity=2Mbps delay=40ms
