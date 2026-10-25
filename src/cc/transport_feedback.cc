@@ -270,7 +270,13 @@ std::vector<TransportFeedback> TransportFeedbackBuilder::Build() {
         prev_us = ref_units * kRefUnitUs;
         started = true;
       }
-      ticks = (it->second.us() - prev_us) / kTickUs;
+      {
+        // Rounded to the nearest 250 us tick (half away from zero), as rtcp::TransportFeedback::AddReceivedPacket
+        // does; truncating put about 1 in 8 arrivals a millisecond early once the sender rounds to 1 ms (#365).
+        int64_t d = it->second.us() - prev_us;
+        d += d < 0 ? -(kTickUs / 2) : kTickUs / 2;
+        ticks = d / kTickUs;
+      }
       // A message that cannot take another packet ends; the rest goes in the next one.
       if (!fb.packets.empty() && (ticks < -32768 || ticks > 32767 || fb.packets.size() + static_cast<size_t>(s - next) + 1 > 0xFFFF)) break;
       for (int64_t m = next; m < s; ++m) {
@@ -318,13 +324,18 @@ void SendHistory::OnPacketSent(uint16_t seq, Timestamp send_time, DataSize size,
 std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, Timestamp now) {
   std::vector<PacketResult> out;
   auto arrivals = fb.ArrivalTimes();
+  // TransportFeedbackAdapter::ProcessTransportFeedback rounds each packet's time
+  // since the feedback's base time down to 1 ms (RoundDownTo, i.e. toward zero)
+  // before the estimators see it.
+  const int64_t base_us = static_cast<int64_t>(fb.reference_time) * kRefUnitUs;
   size_t ai = 0;
   for (const auto& p : fb.packets) {
     int64_t s = unwrapper_.PeekUnwrap(p.seq);
     auto it = sent_.find(s);
     Timestamp arrival = Timestamp::PlusInfinity();
     if (p.received) {
-      arrival = arrivals[ai++].second;
+      const int64_t since_base_us = arrivals[ai++].second.us() - base_us;
+      arrival = Timestamp::Micros(base_us + since_base_us / 1000 * 1000);
     }
     if (it == sent_.end()) continue;
     // libwebrtc's TransportFeedbackAdapter erases a packet from its history

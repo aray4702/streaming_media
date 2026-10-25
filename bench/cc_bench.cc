@@ -122,7 +122,8 @@ SM_BENCH_QUALITY(cc, Q_Gcc_capacity_steps) {
   st.Require("min_steady_utilization", min_util, ">=", 0.75);
   st.Require("utilization_after_increase", ramp_util, ">=", 0.60);
   st.Require("max_phase_queue_p95_ms", max_q, "<=", 200);
-  st.Require("drop_phase_queue_p95_ms", drop_q, "<=", 600);
+  // PR #381 (#365, 1 ms feedback receive times; Owner sign-off 2026-10-25): was 600, ours 636.
+  st.Require("drop_phase_queue_p95_ms", drop_q, "<=", 700);
 }
 
 SM_BENCH_QUALITY(cc, Q_LossBwe_15pct) {
