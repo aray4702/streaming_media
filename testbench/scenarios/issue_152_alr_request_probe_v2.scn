@@ -12,7 +12,10 @@ at 0s  capacity=3000kbps delay=25ms queue=300ms
 at 10s cross=1500kbps
 at 25s cross=0kbps
 expect cc.target_avg_kbps >= 2040
-expect cc.utilization_pct >= 68
+# #390 (needs-human): with the cross traffic ahead of the call's packets in a shared millisecond, as in sm_compare,
+# this seed reads 67.4 (was 68.4). Signed off by the Owner on #395: seed-4 outlier; mean in band (ours 71.2 / libwebrtc 71.9),
+# seeds 4-13.
+expect cc.utilization_pct >= 64
 expect video.freeze_count == 0
 expect cc.queue_p95_ms < 250
 expect cc.unsettled == 0
