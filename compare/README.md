@@ -4,7 +4,7 @@
 other real-time media stacks, over the same emulated links, and reports
 the same user-experience metrics side by side. It measures how far this
 library is from the stage 1 bar in
-[program.md section 0.1](../program.md#01-scope-and-stages): parity with
+[program.md section 0.1](../agents/program.md#01-scope-and-stages): parity with
 libwebrtc on the problems in sections 3-8.
 
 | Library | Status | Directory |
