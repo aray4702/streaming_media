@@ -383,11 +383,15 @@ Follow libwebrtc's `FakeH264Encoder` (`test/fake_encoder.cc`):
   (`0x67`) is 8 bytes, PPS (`0x68`) 11 bytes, then the IDR (`0x65`) to the end
   of the frame, on every 10th frame (`kIdrFrequency = 10`); every other frame
   is one non-IDR NAL (`0x41`). There is no licence question. We follow it with
-  two deliberate differences: (a) the SPS/PPS/IDR frame is emitted when the
+  three deliberate differences: (a) the SPS/PPS/IDR frame is emitted when the
   encoder model makes a key frame, not on a fixed 1-in-10 cycle (libwebrtc's
   fake ignores key frame requests here); (b) the multi-slice split below is
   ours, because libwebrtc's fake emits one NAL per frame, so keep it only if
   needed to exercise STAP-A and FU-A (FU-A already occurs with one large NAL);
+  (c) since #342 the SPS and PPS are valid parameter sets of the same sizes
+  (the ones sm_compare's model encoder gives libwebrtc, #339), so the
+  session's outgoing SPS VUI rewrite (libwebrtc's `SpsVuiRewriter`) applies to
+  them as it does on libwebrtc's side;
 - a delta frame is one non-IDR slice (type 1);
 - every NAL is padded with filler payload bytes so the NAL sizes add up to the
   modelled frame size (keyframe 4x, delta 0.8x to 1.2x of the per-frame

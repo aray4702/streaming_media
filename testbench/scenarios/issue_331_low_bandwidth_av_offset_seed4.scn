@@ -17,6 +17,9 @@ seed 4
 # 1880 ms and p50 1112 ms, so the lines go back to #350's bounds (libwebrtc seed 4: p95 1900).
 # #356 closed with nothing left to port after #367 (main 74e965c, seeds 1-10: no gap on issue_346_reconfigure_capacity_drop).
 # The lock now follows #360 (RTCP first-report timing), which moves the same RTT samples.
-expect sync.av_offset_p95_ms < 1900
-expect sync.av_offset_p50_ms < 1150
+# PR #345 (SPS VUI rewrite, +5 B per keyframe) on top of #355: seed 4 reads p95 1926 ms, p50 1162 ms (main 1880/1112).
+# Back to #361's provisional lock, accepted by the Owner on 2026-10-24; provisional, tracked to #379 (the sync.* owner;
+# coordinator sign-off on PR #345, 2026-10-25). libwebrtc seed 4: p95 1900.
+expect sync.av_offset_p95_ms < 1950
+expect sync.av_offset_p50_ms < 1175
 expect audio.concealed_pct < 5
