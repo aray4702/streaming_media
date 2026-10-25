@@ -499,8 +499,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.control_handler = s.control_handler;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
-    // the bench's packets are that size, so the overhead is too (issue #151).
-    c.send_side.max_packet_size = 1460;
+    // the bench's packets are that size, so the overhead is too (issue #151). A scenario that sets
+    // `video_max_payload` gets the packetizer's whole-packet limit, payload plus the 12-byte fixed
+    // header clamped to 100-1500 as rtp::RtpSender does, as in sm_compare's libwebrtc call (#379).
+    c.send_side.max_packet_size =
+        s.video_max_payload != Scenario{}.video_max_payload
+            ? static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500))
+            : 1460;
     c.events = &events;
     return c;
   };
