@@ -11,6 +11,9 @@ expect video.e2e_delay_p95_ms < 150
 # Issue #355 (rate_utilization_tracker on by default, as libwebrtc; program.md 0.2, needs-human): was < 60. Ours 67.8
 # on seed 1; libwebrtc per seed 44/86/52/53/67/138/94/47/80/89 (mean 74.9) on main's compare-webrtc, ours with the
 # tracker 68/89/58/57/75/144/93/49/81/89 (mean 80.4; 82.3 without).
-expect cc.queue_p95_ms < 70
+# PR #381 (#365, 1 ms feedback receive times and nearest-tick transport-cc deltas, as libwebrtc; program.md 0.2, Owner sign-off
+# 2026-10-25 8:49 AM PT, tight rule; not a gap on the means): was < 70. Ours 76.5 on seed 1 (seeds 1-10 mean 80.5);
+# libwebrtc seed 1 44.5, worst of seeds 1-10 90.5 (mean 71.2; fails < 70 on 6 of 10). About 12 % above ours, below libwebrtc's worst.
+expect cc.queue_p95_ms < 86
 expect cc.unsettled == 0
 expect cc.utilization_pct >= 86

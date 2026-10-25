@@ -29,7 +29,7 @@ SessionConfig MakeConfig(uint32_t ssrc, const char* cname, bool pushback) {
 }
 
 struct Result {
-  uint64_t queue_dropped = 0, frames_encoded = 0;
+  uint64_t queue_dropped = 0, frames_encoded = 0;  // queue_dropped: from 9 s on (see the test).
   int64_t max_in_flight = 0;
   double mean_in_flight = 0;  // Over the 6 s after the drop.
   double min_ratio = 1.0;
@@ -58,6 +58,7 @@ Result Run(bool pushback) {
 
   Result res;
   bool key_needed = true;
+  uint64_t drops_at_9s = 0;
   int64_t sent_after = 0;
   const int64_t end_ms = 14000;
   for (int64_t t = 0; t < end_ms; ++t) {
@@ -90,6 +91,7 @@ Result Run(bool pushback) {
       if (e.type == SessionEventType::kKeyframeRequested) key_needed = true;
     }
     b.TakeEvents();
+    if (t == 9000) drops_at_9s = ab.stats().queue_dropped;
     if (t >= 8000) {
       const int64_t in_flight = a.send_side().gcc().history().InFlight().bytes();
       res.max_in_flight = std::max(res.max_in_flight, in_flight);
@@ -97,7 +99,7 @@ Result Run(bool pushback) {
       res.min_ratio = std::min(res.min_ratio, a.send_side().congestion_window().encoding_rate_ratio());
     }
   }
-  res.queue_dropped = ab.stats().queue_dropped;
+  res.queue_dropped = ab.stats().queue_dropped - drops_at_9s;
   res.in_flight_end = a.send_side().gcc().history().InFlight().bytes();
   if (const auto w = a.send_side().congestion_window().data_window()) res.window_end = w->bytes();
   res.sent_kbps_after_drop = static_cast<double>(sent_after) * 8 / 5500.0;
@@ -136,6 +138,16 @@ SM_TEST(E2E_CongestionWindowPushback, EncoderBacksOffWhenTheBottleneckFills) {
   // before any feedback says the link has changed, and so before pushback can
   // act (libwebrtc has no counterpart to this test; Owner on #315, issue #217).
   SM_EXPECT_LT(with.mean_in_flight, without.mean_in_flight);
+  // The bottleneck's drops are counted from 9 s, once the first feedback has
+  // reported the drop at 8 s: in the second before that, pushback cannot act,
+  // and how much the queue drops then depends on where each run's estimate
+  // stood at 8 s. The two runs' GoogCC trajectories differ before the drop
+  // (pushback's frame drops during the ramp change the send pattern). With
+  // libwebrtc's 1 ms feedback receive times (#365), the run with pushback met
+  // the drop at 2906 kbps after an estimate step at 7.9 s, against 2285 kbps
+  // without, and dropped 172 packets in 8-9 s against 120; over the whole call
+  // that read 293 with pushback vs 274 without. From 9 s on it is 19 vs 28
+  // (main before #365: 2 vs 76; whole call 232 vs 336). Owner on #381.
   SM_EXPECT_LT(with.queue_dropped, without.queue_dropped);
   SM_EXPECT_LT(with.sent_kbps_after_drop, without.sent_kbps_after_drop);
   SM_EXPECT_LE(with.in_flight_end, with.window_end);

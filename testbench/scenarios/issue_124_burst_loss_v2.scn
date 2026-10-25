@@ -20,5 +20,8 @@ expect cc.queue_p95_ms < 75
 # libwebrtc's worst seed in 1-10. Ours seed 1 304.4 (timing v2); the suggested < 330 is above libwebrtc's worst seed, so
 # the bound is that seed's value. libwebrtc seeds 1-10: 305.95 304.60 296.60 243.00 239.25 236.72 288.35 314.08 285.63
 # 236.00 (worst 314.08, mean 275.0).
-expect video.e2e_delay_p95_ms < 314.08
+# PR #381 (#365, 1 ms feedback receive times and nearest-tick transport-cc deltas, as libwebrtc; program.md 0.2, Owner sign-off
+# 2026-10-25 8:49 AM PT, tight rule; not a gap on the means): was < 314.08. Ours 321.6 on seed 1 (mean 292.8);
+# libwebrtc seed 1 277.3, worst of seeds 1-10 335.6 (mean 276.4; fails < 314.08 on 2 of 10). Capped at libwebrtc's worst seed.
+expect video.e2e_delay_p95_ms < 335.6
 expect cc.utilization_pct >= 78

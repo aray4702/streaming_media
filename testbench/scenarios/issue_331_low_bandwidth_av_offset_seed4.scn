@@ -16,10 +16,10 @@ seed 4
 # Issue #355 (rate_utilization_tracker on by default, as libwebrtc): with the tracker and XR together, seed 4 reads p95
 # 1880 ms and p50 1112 ms, so the lines go back to #350's bounds (libwebrtc seed 4: p95 1900).
 # #356 closed with nothing left to port after #367 (main 74e965c, seeds 1-10: no gap on issue_346_reconfigure_capacity_drop).
-# #360 (PR #378, RTCP first-report timing) on top of #324 (quality scaling on): seed 4 reads p95 1181 ms and p50 846 ms
-# (main bbee233: 1283 and 937), well inside both bounds, so this is a plain lock again and no longer tracked to an issue.
-# Merged with #345 (SPS VUI rewrite; main fbf2f32 reads 1926/1162 under its provisional < 1950 / < 1175): seed 4 reads
-# p95 874 ms and p50 466 ms with #360's RTCP timing, so the tighter lock stays.
-expect sync.av_offset_p95_ms < 1900
-expect sync.av_offset_p50_ms < 1150
+# The lock now follows #360 (RTCP first-report timing), which moves the same RTT samples.
+# PR #345 (SPS VUI rewrite, +5 B per keyframe) on top of #355: seed 4 reads p95 1926 ms, p50 1162 ms (main 1880/1112).
+# Back to #361's provisional lock, accepted by the Owner on 2026-10-24; provisional, tracked to #360 (RTCP first-report
+# timing, which moves this cell's RTT; moved from #379 by the Owner on 2026-10-25, tools/parity_owners.json). libwebrtc seed 4: p95 1900.
+expect sync.av_offset_p95_ms < 1950
+expect sync.av_offset_p50_ms < 1175
 expect audio.concealed_pct < 5

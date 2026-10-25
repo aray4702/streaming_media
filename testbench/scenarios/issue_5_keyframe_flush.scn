@@ -8,12 +8,9 @@ seed 2
 at 0s  capacity=2500kbps delay=30ms queue=400ms
 at 10s capacity=500kbps
 at 25s capacity=2500kbps
-# PR #378 (#360, first RTCP report at half the nominal interval on both sides): was < 3000. Ours on seed 2 (this
-# scenario's seed): 3277 at bed8547. The bound is the one signed off at 1852985 (ours 3125 then, 10 % above it), so it
-# is 5 % above today's value; pending the Owner's decision on #378.
-# seed-1 outlier; mean in band (ours 3040 / libwebrtc 3104)
-expect video.freeze_total_ms < 3440
+# PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was < 3000. Ours 3021 on seed 1;
+# libwebrtc seeds 1-10 1957-3109. Tight rule, capped at libwebrtc's worst seed.
+expect video.freeze_total_ms < 3109
 # PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was < 1700. Ours 2223 on seed 2;
 # libwebrtc 2258 on seed 2 (mean of seeds 2-11 2090) on main's compare-webrtc after #340, which also misses < 1700.
-# PR #378 (#360): was < 2240. Ours 3057 on seed 2. seed-1 outlier; mean in band (ours 2306 / libwebrtc 2587)
-expect video.longest_freeze_ms < 3370
+expect video.longest_freeze_ms < 2240

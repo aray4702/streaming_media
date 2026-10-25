@@ -63,6 +63,42 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
   SM_EXPECT_TRUE(b.Build().empty());
 }
 
+// TransportFeedbackAdapter::ProcessTransportFeedback (issue #354): the estimators get each
+// packet's time since the feedback's base time rounded down to 1 ms, toward zero.
+SM_TEST(TransportFeedback, HistoryRoundsReceiveTimesToTheMillisecond) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 3; ++s) h.OnPacketSent(s, Timestamp::Millis(600 + s), DataSize::Bytes(500));
+  TransportFeedback fb;
+  fb.reference_time = 10;  // Base time 640 ms.
+  fb.packets = {{0, true, 7}, {1, true, 6}, {2, true, -16}};  // 1.75, 3.25 and -0.75 ms after the base.
+  const auto res = h.OnFeedback(fb, Timestamp::Millis(700));
+  SM_ASSERT_EQ(res.size(), 3u);
+  SM_EXPECT_EQ(res[0].receive_time.us(), 641000);
+  SM_EXPECT_EQ(res[1].receive_time.us(), 643000);
+  SM_EXPECT_EQ(res[2].receive_time.us(), 640000);
+}
+
+// rtcp::TransportFeedback::AddReceivedPacket (#365): each delta is rounded to the nearest
+// 250 us tick, half away from zero, and the next delta is taken from the rounded time.
+SM_TEST(TransportFeedback, BuilderRoundsDeltasToTheNearestTick) {
+  TransportFeedbackBuilder b;
+  b.OnPacket(0, Timestamp::Micros(640000));  // The base: 10 * 64 ms.
+  b.OnPacket(1, Timestamp::Micros(640875));  // 3.5 ticks: 4 (truncating gave 3).
+  b.OnPacket(2, Timestamp::Micros(641130));  // 0.52 ticks after 641000: 1.
+  b.OnPacket(3, Timestamp::Micros(641375));  // Exactly half a tick after 641250: 1.
+  b.OnPacket(4, Timestamp::Micros(641100));  // -1.6 ticks after 641500: -2.
+  b.OnPacket(5, Timestamp::Micros(640874));  // -0.504 ticks after 641000: -1.
+  auto fbs = b.Build();
+  SM_ASSERT_EQ(fbs.size(), 1u);
+  const std::vector<int64_t> want = {0, 4, 1, 1, -2, -1};
+  SM_ASSERT_EQ(fbs[0].packets.size(), want.size());
+  for (size_t i = 0; i < want.size(); ++i) SM_EXPECT_EQ(fbs[0].packets[i].delta_ticks, want[i]);
+  const auto t = fbs[0].ArrivalTimes();
+  SM_ASSERT_EQ(t.size(), want.size());
+  SM_EXPECT_EQ(t[1].second.us(), 641000);
+  SM_EXPECT_EQ(t[5].second.us(), 640750);
+}
+
 SM_TEST(TransportFeedback, SplitsWhenDeltaOverflows) {
   TransportFeedbackBuilder b;
   b.OnPacket(1, Timestamp::Millis(0));

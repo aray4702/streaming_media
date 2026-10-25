@@ -1126,6 +1126,36 @@ void ExtendedReports() {
     Check(report.size() == 1 && walk(report[0].bytes, {201, 202, 207}), "engine receiver report: RR, SDES, XR (RRTR)");
   }
 }
+// Transport-cc built here and by libwebrtc's rtcp::TransportFeedback (as its feedback generator
+// fills it) from arrivals between 250 us ticks, reordered ones included, must carry the same deltas:
+// AddReceivedPacket rounds each delta to the nearest tick (#365).
+void TransportFeedbackSubMs() {
+  std::printf("transport-cc with sub-tick arrivals\n");
+  const std::vector<std::pair<uint16_t, int64_t>> arrivals = {
+      {65530, 1000000}, {65531, 1000875}, {65532, 1001125}, {65533, 1002620}, {65534, 1003374},
+      {65535, 1003376}, {0, 1009990},     {1, 1008401},     {2, 1010125},     {3, 1010249}};
+  sm::cc::TransportFeedbackBuilder b(0x4444, 0x5555);
+  for (auto [seq, us] : arrivals) b.OnPacket(seq, sm::Timestamp::Micros(us));
+  auto ours = b.Build();
+  webrtc::rtcp::TransportFeedback w;
+  w.SetSenderSsrc(0x4444);
+  w.SetMediaSsrc(0x5555);
+  w.SetBase(arrivals[0].first, webrtc::Timestamp::Micros(arrivals[0].second));
+  w.SetFeedbackSequenceNumber(0);
+  bool ok = ours.size() == 1;
+  for (auto [seq, us] : arrivals) ok = ok && w.AddReceivedPacket(seq, webrtc::Timestamp::Micros(us));
+  // libwebrtc parses ours; both carry the same base time and the same delta for every packet.
+  const Bytes bytes = ok ? sm::cc::SerializeTransportFeedback(ours[0]) : Bytes{};
+  webrtc::rtcp::TransportFeedback parsed;
+  ok = ok && WebrtcParse(bytes.data(), bytes.size(), parsed) && parsed.BaseTime() == w.BaseTime();
+  const auto& a = parsed.GetReceivedPackets();
+  const auto& e = w.GetReceivedPackets();
+  ok = ok && a.size() == e.size() && e.size() == arrivals.size();
+  for (size_t i = 0; ok && i < e.size(); ++i)
+    ok = a[i].sequence_number() == e[i].sequence_number() && a[i].delta() == e[i].delta();
+  Check(ok, "transport-cc: sub-tick arrivals, same deltas as libwebrtc's");
+}
+
 }  // namespace
 
 int main() {
@@ -1141,6 +1171,7 @@ int main() {
   H264SpsVuiRewrite();
   Ulpfec();
   ExtendedReports();
+  TransportFeedbackSubMs();
   if (g_failures) {
     std::printf("%d interop check(s) failed\n", g_failures);
     return 1;

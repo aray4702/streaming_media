@@ -140,6 +140,17 @@ SM_TEST(TestbenchMetrics, ACallReportsTheNewMetricsAndTheBreakdownAddsUp) {
                         m.at("video.delay_jitter_buffer_p95_ms") + 1.0);
 }
 
+// Issue #379: the bench has no decoder and reports decoding in 0 ms, as sm_compare's ModelDecoder, so
+// VCMTiming's decode-time estimate stays at 0 and its TargetDelay floor is the render delay alone.
+SM_TEST(TestbenchMetrics, TheReceiverDecodesInNoTimeAsSmComparesModelDecoder) {
+  auto parsed = ParseScenario("duration 4s\nat 0s capacity=2500kbps delay=25ms queue=300ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  const Report rep = RunCall(*parsed.scenario);
+  SM_ASSERT_TRUE(rep.library.count("receiver.vcm_timing.decode_p95_ms") == 1);
+  SM_EXPECT_GT(rep.library.at("receiver.vcm_timing.decoded_frames"), 0.0);
+  SM_EXPECT_EQ(rep.library.at("receiver.vcm_timing.decode_p95_ms"), 0.0);
+}
+
 // The forward-link trace (issue #125): one record per packet offered to the link.
 SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
