@@ -494,7 +494,8 @@ ALGORITHMS = [
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
                   "real wire format, parsed and joined with the send history. Each packet must be reported received "
                   "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
-                  "re-reports it), with arrival-time error within the 250 us quantization.",
+                  "re-reports it), with arrival-time error within the 250 us quantization of the wire, and each time since the feedback's base "
+                  "time handed to the estimators rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter (#365).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "

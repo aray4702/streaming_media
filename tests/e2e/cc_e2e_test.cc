@@ -43,6 +43,9 @@ struct L1T3 {
 // libwebrtc's generator reports a reordered packet again once it arrives, so
 // a packet first reported lost can come back received; it is never reported
 // received twice (SendHistory drops a second report, as TransportFeedbackAdapter).
+// The wire carries arrival times in 250 us ticks; SendHistory then hands the
+// estimators each time since the feedback's base time rounded down to 1 ms, as
+// TransportFeedbackAdapter::ProcessTransportFeedback does (issue #365).
 SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization) {
   sim::LinkConfig f;
   f.base_delay = TimeDelta::Millis(25);
@@ -55,6 +58,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
   std::map<int64_t, Timestamp> true_arrival;
   std::map<int64_t, int> reported, received;
   int64_t max_err_us = 0;
+  int not_rounded = 0;
   uint16_t seq = 0;
   for (int64_t t = 0; t < 30000; ++t) {
     Timestamp now = Timestamp::Millis(t);
@@ -72,10 +76,18 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
     }
     rev.ReceiveEach(now, [&](std::vector<uint8_t> b, Timestamp) {
       auto fb = ParseTransportFeedback(b);
+      std::map<uint16_t, Timestamp> wire;
+      for (const auto& [s, at] : fb->ArrivalTimes()) {
+        wire[s] = at;
+        max_err_us = std::max<int64_t>(max_err_us, std::llabs(at.us() - true_arrival[s].us()));
+      }
+      const int64_t base_us = static_cast<int64_t>(fb->reference_time) * 64000;
       for (const auto& r : history.OnFeedback(*fb, now)) {
         ++reported[r.seq];
-        if (r.received()) ++received[r.seq];
-        if (r.received()) max_err_us = std::max<int64_t>(max_err_us, std::llabs(r.receive_time.us() - true_arrival[r.seq].us()));
+        if (!r.received()) continue;
+        ++received[r.seq];
+        const int64_t since_base_us = wire.at(static_cast<uint16_t>(r.seq)).us() - base_us;
+        not_rounded += r.receive_time.us() != base_us + since_base_us / 1000 * 1000;
       }
     });
   }
@@ -86,6 +98,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
   SM_EXPECT_EQ(dup, 0);
   SM_EXPECT_GE(static_cast<double>(reported.size()) / seq, 0.99);
   SM_EXPECT_LE(max_err_us, 250);
+  SM_EXPECT_EQ(not_rounded, 0);
 }
 
 SM_TEST(E2E_DelayBwe, TracksCapacityStepsWithLowQueueing) {

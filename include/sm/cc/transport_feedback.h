@@ -5,7 +5,9 @@
 // receiver reports, per sequence number, whether it arrived and the arrival
 // time (250 us resolution); the sender joins that with its send history to
 // get per-packet (send time, receive time, size) results, which feed the
-// delay-based and loss-based estimators.
+// delay-based and loss-based estimators. As libwebrtc's
+// TransportFeedbackAdapter::ProcessTransportFeedback, each receive time's
+// offset from the feedback's base time is rounded down to 1 ms first (#365).
 #pragma once
 
 #include <cstdint>
