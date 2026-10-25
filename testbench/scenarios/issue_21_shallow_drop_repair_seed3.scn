@@ -1,0 +1,10 @@
+name issue_21_shallow_drop_repair_seed3
+describe issue_21_shallow_drop_repair with seed 3, traced on both stacks (yardstick for #403; not for merging)
+seed 3
+duration 40s
+at 0s  capacity=1500kbps delay=30ms queue=20ms
+at 10s capacity=500kbps
+at 25s capacity=1500kbps
+expect repair.overhead_pct < 100
+expect video.residual_loss_pct < 3
+expect audio.interruptions <= 1
