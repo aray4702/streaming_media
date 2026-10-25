@@ -11,6 +11,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   RUN coordinator  start the cloud Coordinator when something needs judgment
                  (a new unplaced issue, a needs-human label, a Fixer comment on
                  a work-list item) and no local coordinator holds the lease
+  RUN tester     start a Tester run when fixes wait to be verified (an
+                 agent-found or bug issue closed) or main moved a lot (3+ merges)
+                 since its last run
   STALE          report an in-progress item with no Fixer activity
   NOTIFY         forward each new "NEEDS YOU:" comment on the log issue to the
                  Owner's Discord channel (GitHub doesn't notify the Owner about
@@ -42,6 +45,9 @@ CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is a
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
 SCHEDULED_FIXER_MINUTE = 15  # the Fixer routine's own cron minute
 SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
+TESTER_GAP_MIN = 180       # a Tester run takes up to an hour; keep runs apart
+TESTER_MERGES = 3          # merges to main since its last run that call for a new one
+TESTER_SCHEDULE = (34, (0, 6, 12, 18))  # its own cron: minute, UTC hours
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -294,6 +300,42 @@ class Dispatcher:
             start_routine("COORDINATOR")
             self.record_dispatch("coordinator")
 
+    def tester(self):
+        logs = [i for i in gh(f"repos/{self.r}/issues?state=open&labels=agent-log&per_page=100") or []
+                if i["title"].strip().lower() == "tester run log"]
+        marks = [self.last_dispatch("tester")]
+        if logs:
+            comments = gh(f"repos/{self.r}/issues/{logs[0]['number']}/comments?per_page=100", paginate=True) or []
+            marks += [c["created_at"] for c in comments if "sm-agent: tester" in (c["body"] or "")]
+        marks = [m for m in marks if m]
+        if not marks:
+            return self.note("tester", "no previous Tester run found")
+        last = max(marks)
+        if minutes_ago(last) < TESTER_GAP_MIN:
+            return self.note("tester", f"last run {minutes_ago(last):.0f} min ago (< {TESTER_GAP_MIN})")
+        minute, hours = TESTER_SCHEDULE
+        nxt = min((NOW.replace(hour=h, minute=minute, second=0, microsecond=0) + dt.timedelta(days=d)
+                   for d in (0, 1) for h in hours
+                   if NOW.replace(hour=h, minute=minute, second=0, microsecond=0) + dt.timedelta(days=d) > NOW))
+        if (nxt - NOW).total_seconds() < 45 * 60:
+            return self.note("tester", f"scheduled run due at {nxt:%H:%M}Z")
+        fixed = [i["number"] for i in gh(f"repos/{self.r}/issues?state=closed&since={last}&per_page=100") or []
+                 if "pull_request" not in i and (i.get("closed_at") or "") > last
+                 and labels(i) & {"agent-found", "bug"}]
+        merged = [p["number"] for p in gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
+                  if (p.get("merged_at") or "") > last]
+        why = []
+        if fixed:
+            why.append("fixes to verify: " + ", ".join(f"#{n}" for n in fixed))
+        if len(merged) >= TESTER_MERGES:
+            why.append(f"{len(merged)} merges since its last run")
+        if not why:
+            return self.note("tester", f"nothing new since {last} ({len(merged)} merges)")
+        self.say("RUN", "tester", "; ".join(why))
+        if self.live:
+            start_routine("TESTER")
+            self.record_dispatch("tester")
+
     def notify(self):
         last = self.last_dispatch("notify")
         since = last or (NOW - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -328,6 +370,7 @@ class Dispatcher:
         self.fixer()
         self.reviewer()
         self.coordinator()
+        self.tester()
         self.notify()
         self.stale()
         if not self.actions:
@@ -335,7 +378,7 @@ class Dispatcher:
 
 
 ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
-            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f"}
+            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB"}
 
 
 def start_routine(name):
