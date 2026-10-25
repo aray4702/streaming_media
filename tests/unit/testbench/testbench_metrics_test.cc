@@ -182,6 +182,38 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
   SM_EXPECT_TRUE(std::abs(static_cast<double>(video_bytes) * 8 / 1000.0 / 4.0 - video_kbps) < 0.01);
 }
 
+// Issue #390: in a millisecond where the cross traffic and the call both send, the cross traffic reaches the
+// bottleneck first, as in sm_compare (its tick sends the cross traffic before libwebrtc's pacer runs). At a full
+// drop-tail queue the second arrival is the one dropped, so the order decides whose packets are lost.
+SM_TEST(TestbenchMetrics, CrossTrafficEntersTheBottleneckBeforeTheCallsPacketsOfTheSameMillisecond) {
+  auto parsed = ParseScenario(
+      "name crossorder\nduration 3s\nat 0s capacity=3000kbps delay=40ms queue=300ms\nat 1s cross=2000kbps\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  opt.link_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  auto is_cross = [](const sim::LinkTraceRecord& r) { return r.kind == sim::LinkKind::kOther && r.size == 1200; };
+  int shared = 0;
+  for (size_t i = 0; i < rep.link_trace.size();) {
+    size_t j = i;
+    while (j < rep.link_trace.size() && rep.link_trace[j].time_us == rep.link_trace[i].time_us) ++j;
+    bool seen_call = false, cross_after_call = false, any_cross = false, any_call = false;
+    for (size_t k = i; k < j; ++k) {
+      if (is_cross(rep.link_trace[k])) {
+        any_cross = true;
+        cross_after_call |= seen_call;
+      } else if (rep.link_trace[k].kind != sim::LinkKind::kOther) {
+        any_call = seen_call = true;
+      }
+    }
+    shared += any_cross && any_call;
+    SM_EXPECT_TRUE(!cross_after_call);
+    i = j;
+  }
+  SM_EXPECT_TRUE(shared > 10);  // Both send in the same millisecond often enough for the order to matter.
+}
+
 // libwebrtc's AudioSendStream registers 32000 + 48 B / 20 ms with BitrateAllocator
 // (issue #196: 51200 in sm_compare once the route arrives after Start, PR #198).
 SM_TEST(TestbenchMetrics, AudioAllocationRateIsLibwebrtcs) {
