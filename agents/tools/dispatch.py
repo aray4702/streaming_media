@@ -8,6 +8,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN reviewer   start a Reviewer run when a green PR has waited for review
+  RUN coordinator  start the cloud Coordinator when something needs judgment
+                 (a new unplaced issue, a needs-human label, a Fixer comment on
+                 a work-list item) and no local coordinator holds the lease
   STALE          report an in-progress item with no Fixer activity
 
 Judgment (placement, sign-offs, re-planning, escalation) stays with the
@@ -35,6 +38,7 @@ STALE_MIN = 90             # in-progress item without Fixer activity
 CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is active
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
 SCHEDULED_FIXER_MINUTE = 15  # the Fixer routine's own cron minute
+SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -245,6 +249,48 @@ class Dispatcher:
                 self.record_dispatch("reviewer")
             return
 
+    def coordinator(self):
+        lease = re.search(r"local-coordinator-lease: ([0-9TZ:-]+)", self.log_body)
+        if lease and ts(lease[1]) > NOW:
+            return self.note("coordinator", f"local coordinator holds the lease until {lease[1]}")
+        # Events since the coordinator last looked: its last start by this
+        # dispatcher, or its last comment on the log issue.
+        marks = [self.last_dispatch("coordinator")]
+        log = gh(f"repos/{self.r}/issues/{LOG_ISSUE}/comments?per_page=100", paginate=True) or []
+        marks += [c["created_at"] for c in log if (c["body"] or "").startswith(
+            ("Owner (coordinator):", "Owner (local coordinator):"))]
+        marks = [m for m in marks if m]
+        since = max(marks) if marks else (NOW - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        roadmap = gh(f"repos/{self.r}/issues/{ROADMAP}")["body"]
+        listed = {int(m) for m in re.findall(r"#(\d+)", roadmap)}
+        reasons = []
+        for i in gh(f"repos/{self.r}/issues?state=open&since={since}&per_page=100") or []:
+            n, lab = i["number"], labels(i)
+            if i["created_at"] > since and "pull_request" not in i and n not in listed \
+                    and n not in (ROADMAP, LOG_ISSUE) and "agent-log" not in lab:
+                reasons.append(f"#{n} is new and not on #{ROADMAP}")
+            if "needs-human" in lab and n != LOG_ISSUE:
+                reasons.append(f"#{n} carries needs-human")
+        comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
+        for c in comments:
+            n = int(c["issue_url"].rsplit("/", 1)[1])
+            if "/pull/" in c["html_url"]:
+                continue  # PR threads are the Reviewer's and the Fixer's; work-list issues only
+            if "sm-agent: fixer" in (c["body"] or "") and n in listed:
+                reasons.append(f"Fixer commented on #{n}")
+        reasons = sorted(set(reasons))
+        if not reasons:
+            return self.note("coordinator", f"nothing new since {since}")
+        last = self.last_dispatch("coordinator")
+        if last and minutes_ago(last) < DISPATCH_GAP_MIN:
+            return self.say("HOLD", "coordinator", f"{len(reasons)} events, but dispatched {minutes_ago(last):.0f} min ago")
+        if 0 <= (SCHEDULED_COORDINATOR_MINUTE - NOW.minute) % 60 <= 10:
+            return self.say("HOLD", "coordinator", "the scheduled Coordinator run is due within 10 min")
+        self.say("RUN", "coordinator", "; ".join(reasons[:4]) + (" ..." if len(reasons) > 4 else ""))
+        if self.live:
+            start_routine("COORDINATOR")
+            self.record_dispatch("coordinator")
+
     def stale(self):
         for issue in gh(f"repos/{self.r}/issues?state=open&labels=in-progress&per_page=100") or []:
             if "pull_request" in issue:
@@ -263,12 +309,14 @@ class Dispatcher:
         self.merges()
         self.fixer()
         self.reviewer()
+        self.coordinator()
         self.stale()
         if not self.actions:
             print("nothing to do")
 
 
-ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p"}
+ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
+            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f"}
 
 
 def start_routine(name):

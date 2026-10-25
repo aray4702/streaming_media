@@ -1,13 +1,14 @@
 # Mechanical dispatcher for the agent loop (agents/tools/dispatch.py,
 # agents/coordinator.md). Turns on auto-merge, keeps one approved PR up to
-# date, and starts Fixer and Reviewer routine runs, on repo events and every
-# 15 minutes.
+# date, and starts Fixer, Reviewer and cloud Coordinator routine runs, on repo
+# events and every 15 minutes.
 #
 # Mode: the repository variable SM_DISPATCH_MODE. Anything other than "live"
 # is a dry run that only writes its decisions to the job summary.
 # Secrets: SM_APP_ID, SM_APP_PRIVATE_KEY (the Reviewer App, already used by
-# reviewer-relay.yml), SM_ROUTINE_FIXER_TOKEN and SM_ROUTINE_REVIEWER_TOKEN
-# (each routine's API trigger token from claude.ai/code/routines).
+# reviewer-relay.yml), SM_ROUTINE_FIXER_TOKEN, SM_ROUTINE_REVIEWER_TOKEN and
+# SM_ROUTINE_COORDINATOR_TOKEN (each routine's API trigger token from
+# claude.ai/code/routines).
 name: dispatcher
 on:
   schedule:
@@ -48,6 +49,7 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           SM_ROUTINE_FIXER_TOKEN: ${{ secrets.SM_ROUTINE_FIXER_TOKEN }}
           SM_ROUTINE_REVIEWER_TOKEN: ${{ secrets.SM_ROUTINE_REVIEWER_TOKEN }}
+          SM_ROUTINE_COORDINATOR_TOKEN: ${{ secrets.SM_ROUTINE_COORDINATOR_TOKEN }}
           MODE: ${{ vars.SM_DISPATCH_MODE }}
         run: |
           flag=""; [ "$MODE" = live ] && flag="--live"
