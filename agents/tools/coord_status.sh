@@ -2,7 +2,7 @@
 # Coordinator tick snapshot (agents/coordinator.md, "Each tick" step 2).
 # REST only (the cloud sandbox blocks GraphQL); runs on Linux and macOS.
 #
-#   bash tools/agents/coord_status.sh
+#   bash agents/tools/coord_status.sh
 R=${SM_REPO:-aray4702/streaming_media}
 ROADMAP=${SM_ROADMAP:-64}
 BOT='streaming-media-reviewer[bot]'
