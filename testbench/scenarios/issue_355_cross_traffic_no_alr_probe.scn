@@ -15,5 +15,6 @@ at 25s cross=0kbps
 expect video.freeze_count == 0
 expect net.loss_pct < 0.02
 # #390 (needs-human): with the cross traffic ahead of the call's packets in a shared millisecond, as in sm_compare,
-# seed 1 takes two queue drops and reads 373 ms. Seed-1 outlier; mean in band (ours 237 / libwebrtc 232, seeds 1-10).
+# seed 1 takes two queue drops and reads 373 ms. Signed off by the Owner on #395: seed-1 outlier; mean in band
+# (ours 237 / libwebrtc 232), seeds 1-10.
 expect video.e2e_delay_p95_ms < 395
