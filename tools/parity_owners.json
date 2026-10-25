@@ -40,7 +40,7 @@
     {"scenario": "issue_23_outage_500ms", "metric": "audio.mouth_to_ear_p95_ms", "issues": [218], "note": "#62 closed (Owner 2026-10-22): #266 seed 1, targets change on the same 10 ms tick; libwebrtc's audio queue peak in the ramp after the outage is one 20 ms bucket higher (outage_500ms 126 vs 110 ms, target 88.3 vs 75.4); send side."},
     {"scenario": "issue_85_video_pause", "metric": "audio.jb_delay_*", "issues": [218], "note": "#62 closed (Owner 2026-10-22): #266 seed 1, targets change on the same 10 ms tick; libwebrtc's audio queue peak in the ramp after the outage is one 20 ms bucket higher (outage_500ms 126 vs 110 ms, target 88.3 vs 75.4); send side."},
     {"scenario": "issue_85_video_pause", "metric": "audio.mouth_to_ear_p95_ms", "issues": [218], "note": "#62 closed (Owner 2026-10-22): #266 seed 1, targets change on the same 10 ms tick; libwebrtc's audio queue peak in the ramp after the outage is one 20 ms bucket higher (outage_500ms 126 vs 110 ms, target 88.3 vs 75.4); send side."},
-    {"metric": "sync.*", "issues": [77]},
+    {"metric": "sync.*", "issues": [379]},
     {"scenario": "wifi_to_lte_handover", "metric": "*", "issues": [20]},
     {"scenario": "outage_*", "metric": "*", "issues": [20]},
     {"scenario": "high_jitter", "metric": "*", "issues": [19, 24]}

@@ -788,7 +788,8 @@ ALGORITHMS = [
                "the lower bound of GCC's target (`min_total_allocated_bitrate`, `use_min_allocatable_as_lower_bound_`). "
                "The video stream follows `VideoSendStreamImpl`'s encoder activity check (`video_send_stream_impl.cc`, `kEncoderTimeOut` 2 s; issue #375): "
                "with no frame encoded since the last check it leaves the allocator, and an encoder reconfiguration or the next encoded frame "
-               "registers it again; each change of the limits reaches GoogCC as `OnStreamsConfig`, so a stream that comes back can start "
+               "registers it again (a reconfiguration is posted to the worker queue, so a check due at the same instant runs first); "
+               "each change of the limits reaches GoogCC as `OnStreamsConfig`, so a stream that comes back can start "
                "an allocation probe (`ProbeController::OnMaxTotalAllocatedBitrate`). "
                "Remaining: the elastic allocation (off by default in libwebrtc), the padding limit (`max_padding_rate`, with the prober, #48), "
                "the per-packet overhead libwebrtc takes off the video payload rate, and the audio min and max from Opus's frame-length range (not in `reference/`, #57).",
@@ -796,7 +797,10 @@ ALGORITHMS = [
                       "priority between audio and screen); the expectation was corrected. "
                       "Issue #375: at 1 fps with quality scaling, libwebrtc's start probe sends a third cluster at 2x the 300 kbps estimate "
                       "(an allocation probe after the video stream timed out and re-registered); with the activity check ours sends it too "
-                      "(642 vs 627 kbps on `issue_335_fps1_keyframe_packets` seed 1)."),
+                      "(642 vs 627 kbps on `issue_335_fps1_keyframe_packets` seed 1). "
+                      "With the check due at 2 s running before that instant's reconfiguration, the probe starts at 2 s, as libwebrtc's, "
+                      "and its result comes after the probe controller's 1 s wait, so no further probe follows: the target ramps from 642 kbps, "
+                      "and video kbps and utilization over seeds 1-10 read 932 and 51.6 % (libwebrtc 930 and 51.6 %; PR #388)."),
     dict(id="5.8", slug="frame-dropper", title="Encoder overshoot control (frame dropper)",
          problems=["Encoder bitrate overshoot -> encoder rate control, frame dropper"],
          headers=["cc/frame_dropper.h", "cc/encoder_bitrate_adjuster.h"], unit=["FrameDropper", "EncoderOvershootDetector", "EncoderBitrateAdjuster", "RateUtilizationTracker"], e2e=["E2E_FrameDropper"],
