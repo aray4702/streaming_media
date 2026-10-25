@@ -112,7 +112,8 @@ class Owners(unittest.TestCase):
         # an audio jitter-buffer, video-delay or RTT gap, so that item owns it.
         cells = {"lossy_feedback": [365], "issue_12_lossbwe_shallow_step": [24, 37],
                  "issue_12_lossbwe_shallow": [24, 37], "issue_331_low_bandwidth_av_offset_seed4": [360],
-                 "issue_76_session_layer_v2": [63]}
+                 "issue_76_session_layer_v2": [63],
+                 "issue_152_alr_request_probe_v2": [360]}
         metrics = {"sync.av_offset_p95_ms": ([300] * 5, [100] * 5)}
         d = data(*[scn(n, metrics) for n in cells] + [scn("clean_link", metrics)])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
