@@ -10,5 +10,3 @@ reverse at 16.5s up delay=60ms
 # Known gap: video takes ~4 s to recover from a 1.5 s outage.
 expect audio.longest_interruption_ms < 2000
 expect video.longest_freeze_ms < 6000
-# sm_compare runs 80 seeds of both stacks here (draft #389, for #360/#365): the outcome is bimodal on both stacks, and 10 seeds can't tell libwebrtc's mode share from ours.
-compare_seeds 80

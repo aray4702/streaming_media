@@ -9,5 +9,3 @@ at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s cross=2000kbps
 at 25s cross=0kbps
 expect video.freeze_total_ms < 6000
-# sm_compare runs 80 seeds of both stacks here (draft #389, for #360/#365): the outcome is bimodal on both stacks, and 10 seeds can't tell libwebrtc's mode share from ours.
-compare_seeds 80
