@@ -142,6 +142,7 @@ if(SM_WITH_RTP)
     rtp/rtp_sender.cc
     rtp/send_side_controller.cc
     rtp/session.cc
+    rtp/sps_vui_rewriter.cc
     rtp/video_send_controller.cc)
   list(APPEND SM_SECTIONS rtp)
 endif()

@@ -1486,17 +1486,23 @@ ALGORITHMS = [
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.5", slug="h264", title="H.264 packetization (RFC 6184) and fake encoder",
          problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A"],
-         headers=["rtp/h264.h", "rtp/fake_h264.h"], unit=["H264"], e2e=["E2E_RtpSession"], bench=[],
+         headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
                   "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RtpPacketizerH264 and VideoRtpDepacketizerH264 (checked by the interop test "
                "against H26xPacketBuffer). The fake encoder follows FakeH264Encoder and differs in making a keyframe "
-               "when asked and never writing a zero byte into the filler. An IDR alone counts as a keyframe, as in "
-               "libwebrtc by default.",
+               "when asked, in valid SPS and PPS of the filler's sizes (sm_compare's model encoder, #339), and in "
+               "never writing a zero byte into the filler. An IDR alone counts as a keyframe, as in "
+               "libwebrtc by default. Before packetizing a keyframe the session rewrites its SPS VUI as "
+               "libwebrtc's FrameEncodeMetadataWriter::UpdateBitstream and SpsVuiRewriter do (#342): a VUI with "
+               "bitstream_restriction (no frame reordering) is added or fixed, and AUDs are dropped. There is no "
+               "color space input (the encoders modelled set none, so the video signal type is copied).",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "
-                      "suites yet."),
+                      "suites yet. #342: the keyframe's STAP-A [SPS, PPS] is 77 B on both stacks (72 B before), "
+                      "checked on `clean_link`'s per-packet trace against libwebrtc's, and the rewritten bytes are "
+                      "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units)."),
 ]
 
 # Problem rows from sections 3-8 that are platform glue, codec internals or

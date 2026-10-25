@@ -18,6 +18,8 @@ seed 4
 # #356 closed with nothing left to port after #367 (main 74e965c, seeds 1-10: no gap on issue_346_reconfigure_capacity_drop).
 # #360 (PR #378, RTCP first-report timing) on top of #324 (quality scaling on): seed 4 reads p95 1181 ms and p50 846 ms
 # (main bbee233: 1283 and 937), well inside both bounds, so this is a plain lock again and no longer tracked to an issue.
+# Merged with #345 (SPS VUI rewrite; main fbf2f32 reads 1926/1162 under its provisional < 1950 / < 1175): seed 4 reads
+# p95 874 ms and p50 466 ms with #360's RTCP timing, so the tighter lock stays.
 expect sync.av_offset_p95_ms < 1900
 expect sync.av_offset_p50_ms < 1150
 expect audio.concealed_pct < 5
