@@ -127,7 +127,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_21_shallow_drop_repair | `video.keyframe_requests` | 1.6 | 0.6 | ±0.5 | behind | 8/10 | #23 |
 | issue_224_congestive_e2e_flip | `net.loss_pct` | 4.4 | 3.4 | ±0.8 | behind | 7/10 | #21, #61, #12 |
 | issue_23_capacity_drop | `video.freeze_total_ms` | 2933 | 3123 | ±188 | ahead | 4/10 | #5, #37, #24 |
-| issue_23_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2140 | ±179 | ahead | 7/10 | #63, #224 |
+| issue_23_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2139 | ±180 | ahead | 7/10 | #63, #224 |
 | issue_23_low_bandwidth | `cc.rtt_p50_ms` | 143 | 238 | ±80.3 | ahead | 8/10 | #61 |
 | issue_23_low_bandwidth | `video.render_fps` | 27.9 | 25.7 | ±1.4 | ahead | 8/10 | #37, #24 |
 | issue_23_outage_500ms | `cc.queue_p95_ms` | 55.9 | 45.2 | ±10 | behind | 3/10 | #19, #15, #48, #12, #61 |
@@ -147,7 +147,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_348_scaling_outage_500ms | `cc.queue_p95_ms` | 55.9 | 45.2 | ±10 | behind | 3/10 | #19, #15, #48, #12, #61 |
 | issue_356_capacity_drop_xr_rtt | `video.freeze_total_ms` | 2933 | 3123 | ±188 | ahead | 4/10 | #5, #37, #24 |
 | issue_390_cross_join_seed15 | `video.longest_freeze_ms` | 609 | 916 | ±205 | ahead | 8/10 | #5, #37, #24 |
-| issue_48_prober_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2140 | ±179 | ahead | 7/10 | #63, #224 |
+| issue_48_prober_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2139 | ±180 | ahead | 7/10 | #63, #224 |
 | issue_48_prober_low_bandwidth | `cc.rtt_p50_ms` | 143 | 238 | ±80.3 | ahead | 8/10 | #61 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.7 | ±1.4 | ahead | 8/10 | #37, #24 |
 | issue_61_googcc_glue_congestive | `net.loss_pct` | 4.4 | 3.4 | ±0.8 | behind | 7/10 | #21, #61, #12 |
@@ -164,7 +164,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 102 | 114 | ±10 | ahead | 6/10 | #379 |
 | issue_84_encoder_qp_720p_low_rate | `audio.jb_delay_p95_ms` | 130 | 146 | ±15.8 | ahead | 4/10 | #63 |
 | issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 102 | 114 | ±10 | ahead | 6/10 | #379 |
-| low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2140 | ±179 | ahead | 7/10 | #63, #224 |
+| low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1954 | 2139 | ±180 | ahead | 7/10 | #63, #224 |
 | low_bandwidth | `cc.rtt_p50_ms` | 143 | 238 | ±80.3 | ahead | 8/10 | #61 |
 | low_bandwidth | `video.render_fps` | 27.9 | 25.7 | ±1.4 | ahead | 8/10 | #37, #24 |
 | pacer_v2_capacity_drop | `video.freeze_total_ms` | 2933 | 3123 | ±188 | ahead | 4/10 | #5, #37, #24 |
