@@ -4049,7 +4049,7 @@
    "video.time_to_first_frame_ms": 186,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "issue_24_timing_v2_clean_link"
  },
  {
@@ -6472,7 +6472,7 @@
    "video.time_to_first_frame_ms": 191,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "issue_5_keyframe_flush"
  },
  {

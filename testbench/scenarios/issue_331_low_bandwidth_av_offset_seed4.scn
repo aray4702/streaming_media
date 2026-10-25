@@ -16,7 +16,8 @@ seed 4
 # Issue #355 (rate_utilization_tracker on by default, as libwebrtc): with the tracker and XR together, seed 4 reads p95
 # 1880 ms and p50 1112 ms, so the lines go back to #350's bounds (libwebrtc seed 4: p95 1900).
 # #356 closed with nothing left to port after #367 (main 74e965c, seeds 1-10: no gap on issue_346_reconfigure_capacity_drop).
-# The lock now follows #360 (RTCP first-report timing), which moves the same RTT samples.
+# #360 (PR #378, RTCP first-report timing) on top of #324 (quality scaling on): seed 4 reads p95 1181 ms and p50 846 ms
+# (main bbee233: 1283 and 937), well inside both bounds, so this is a plain lock again and no longer tracked to an issue.
 expect sync.av_offset_p95_ms < 1900
 expect sync.av_offset_p50_ms < 1150
 expect audio.concealed_pct < 5
