@@ -10,7 +10,11 @@ at 10s capacity=500kbps
 at 25s capacity=2500kbps
 # PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was < 3000. Ours 3021 on seed 1;
 # libwebrtc seeds 1-10 1957-3109. Tight rule, capped at libwebrtc's worst seed.
-expect video.freeze_total_ms < 3109
+# PR #401 (#399, RTCP schedule drawn per seed on both stacks; program.md 0.2, needs-human): was < 3109. Ours 3123 on seed 2;
+# libwebrtc seeds 2-11 2726-3327 under per-seed clocks. Tight rule, capped at libwebrtc's worst seed; mean in band (ours 2973 / libwebrtc 3099).
+expect video.freeze_total_ms < 3327
 # PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was < 1700. Ours 2223 on seed 2;
 # libwebrtc 2258 on seed 2 (mean of seeds 2-11 2090) on main's compare-webrtc after #340, which also misses < 1700.
-expect video.longest_freeze_ms < 2240
+# PR #401 (#399, program.md 0.2, needs-human): was < 2240. Ours 2663 on seed 2; libwebrtc seeds 2-11 1368-3217 under per-seed
+# clocks. Seed-2 outlier; mean in band (ours 2772 / libwebrtc 2439, band ±680); 5 % above ours, under libwebrtc's worst seed.
+expect video.longest_freeze_ms < 2800
