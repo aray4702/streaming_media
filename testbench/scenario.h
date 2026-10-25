@@ -87,9 +87,9 @@ struct Scenario {
   bool rate_utilization_tracker = true;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
-  // encode time (issue #84 steps 4 and 5; off by default until judged against libwebrtc, as the
-  // port's switches were).
-  bool quality_scaling = false;
+  // encode time (issue #84 steps 4 and 5; on by default since #84's flip, on both stacks of
+  // sm_compare, as libwebrtc runs a camera whose encoder reports QP).
+  bool quality_scaling = true;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3).
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
