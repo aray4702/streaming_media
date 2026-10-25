@@ -499,8 +499,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.control_handler = s.control_handler;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
-    // the bench's packets are that size, so the overhead is too (issue #151).
-    c.send_side.max_packet_size = 1460;
+    // the bench's packets are that size, so the overhead is too (issue #151). A scenario that sets
+    // `video_max_payload` gets the packetizer's whole-packet limit, payload plus the 12-byte fixed
+    // header clamped to 100-1500 as rtp::RtpSender does, as in sm_compare's libwebrtc call (#379).
+    c.send_side.max_packet_size =
+        s.video_max_payload != Scenario{}.video_max_payload
+            ? static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500))
+            : 1460;
     c.events = &events;
     return c;
   };
@@ -814,9 +819,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       }
     }
 
-    // --- Sender: pacer, RTCP and cross traffic ----------------------------------
-    sender.Process(now);
-    put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
+    // --- Cross traffic, then the sender: pacer and RTCP --------------------------
+    // The cross traffic of a tick reaches the bottleneck before the call's packets of the same millisecond, as in
+    // sm_compare, whose tick sends it before libwebrtc's pacer runs (issue #390). When the drop-tail queue is full,
+    // the packet that arrives second is the one dropped; with the call's packets first, the cross traffic took
+    // those drops, and the call kept more throughput than libwebrtc's on the same link.
     if (fwd_state.cross.bps() > 0) {
       cross_debt += static_cast<double>(fwd_state.cross.bps()) / 8 / 1000;
       while (cross_debt >= 1200) {
@@ -824,6 +831,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         forward.Send(now, Fwd{}, DataSize::Bytes(1200));
       }
     }
+    sender.Process(now);
+    put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
 
     // --- Receiver -----------------------------------------------------------
     forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {

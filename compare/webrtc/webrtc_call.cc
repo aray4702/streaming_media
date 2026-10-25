@@ -905,6 +905,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.rtp.payload_type = kVideoPt;
       c.rtp.ssrcs = {kVideoSsrc};
       c.rtp.extensions = extensions;
+      // `video_max_payload` (issue #257): the same whole-packet limit this library's sender uses,
+      // payload plus the 12-byte fixed header, clamped to the 100-1500 bytes
+      // RTPSender::SetMaxRtpPacketSize accepts (rtp_sender.cc:307-312), as rtp::RtpSender clamps it.
+      // Scenarios that leave it at the default keep libwebrtc's own (kDefaultMaxPacketSize, 1460).
+      if (s.video_max_payload != Scenario{}.video_max_payload) {
+        c.rtp.max_packet_size = std::clamp<size_t>(s.video_max_payload + 12, 100, 1500);
+      }
       if (s.nack) {
         c.rtp.nack.rtp_history_ms = 1000;
         c.rtp.rtx.payload_type = kRtxPt;
