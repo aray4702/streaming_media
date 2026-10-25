@@ -24,7 +24,7 @@ cat > review.json <<'JSON'
  "comments": ["..."],
  "labels": ["needs-human"]}
 JSON
-tools/agents/reviewer_post.sh review.json   # dispatches .github/workflows/reviewer-relay.yml and waits
+agents/tools/reviewer_post.sh review.json   # dispatches .github/workflows/reviewer-relay.yml and waits
 ```
 
 The relay posts as `streaming-media-reviewer[bot]` and prints the URL of

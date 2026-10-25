@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Posts the Reviewer agent's output as streaming-media-reviewer[bot] by
 # dispatching the reviewer-relay workflow, then waits for it and prints the
-# result. Usage: tools/agents/reviewer_post.sh payload.json
-# See tools/agents/reviewer_relay.py for the payload format.
+# result. Usage: agents/tools/reviewer_post.sh payload.json
+# See agents/tools/reviewer_relay.py for the payload format.
 set -euo pipefail
 REPO=aray4702/streaming_media
 payload_file=${1:?usage: reviewer_post.sh payload.json}

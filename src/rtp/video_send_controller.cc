@@ -187,6 +187,9 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
       adjuster_.Reset(now);
       configured_width_ = width;
       configured_height_ = height;
+      // VideoSendStreamImpl::OnEncoderConfigurationChanged: the running stream
+      // registers with the allocator again, also after an encoder time-out.
+      session_.send_side().OnVideoEncoderReconfigured(now);
     }
   }
   // VideoSendStream::Start registers the stream with the BitrateAllocator, and

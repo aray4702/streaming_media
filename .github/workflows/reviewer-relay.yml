@@ -2,7 +2,7 @@
 #
 # The Reviewer runs as a cloud routine whose GitHub proxy only carries the
 # owner's credentials, so it cannot authenticate as the App itself. Instead it
-# dispatches this workflow (tools/agents/reviewer_post.sh) with its review as
+# dispatches this workflow (agents/tools/reviewer_post.sh) with its review as
 # the payload; the App's private key lives only in this repository's Actions
 # secrets (SM_APP_ID, SM_APP_PRIVATE_KEY).
 name: reviewer-relay
@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       payload:
-        description: base64(gzip(JSON)) produced by tools/agents/reviewer_post.sh
+        description: base64(gzip(JSON)) produced by agents/tools/reviewer_post.sh
         required: true
 permissions:
   contents: read
@@ -34,4 +34,4 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
           PAYLOAD: ${{ inputs.payload }}
           REPO: ${{ github.repository }}
-        run: python3 tools/agents/reviewer_relay.py
+        run: python3 agents/tools/reviewer_relay.py
