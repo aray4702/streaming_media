@@ -12,6 +12,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  (a new unplaced issue, a needs-human label, a Fixer comment on
                  a work-list item) and no local coordinator holds the lease
   STALE          report an in-progress item with no Fixer activity
+  NOTIFY         forward each new "NEEDS YOU:" comment on the log issue to the
+                 Owner's Discord channel (GitHub doesn't notify the Owner about
+                 posts from their own account, which the agents post as)
 
 Judgment (placement, sign-offs, re-planning, escalation) stays with the
 coordinator. By default this only prints what it would do (dry run); --live
@@ -291,6 +294,21 @@ class Dispatcher:
             start_routine("COORDINATOR")
             self.record_dispatch("coordinator")
 
+    def notify(self):
+        last = self.last_dispatch("notify")
+        since = last or (NOW - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        new = [c for c in gh(f"repos/{self.r}/issues/{LOG_ISSUE}/comments?since={since}&per_page=100") or []
+               if "NEEDS YOU" in (c["body"] or "").split("\n", 1)[0] and c["created_at"] > since]
+        if not new:
+            return self.note("notify", f"no new NEEDS YOU since {since}")
+        for c in new:
+            first = (c["body"] or "").split("\n", 1)[0][:300]
+            self.say("NOTIFY", "discord", f"{c['html_url']} {first[:80]}")
+            if self.live:
+                post_discord(f"**streaming_media needs you**\n{first}\n{c['html_url']}")
+        if self.live:
+            self.record_dispatch("notify")
+
     def stale(self):
         for issue in gh(f"repos/{self.r}/issues?state=open&labels=in-progress&per_page=100") or []:
             if "pull_request" in issue:
@@ -310,6 +328,7 @@ class Dispatcher:
         self.fixer()
         self.reviewer()
         self.coordinator()
+        self.notify()
         self.stale()
         if not self.actions:
             print("nothing to do")
@@ -335,6 +354,20 @@ def start_routine(name):
     with urllib.request.urlopen(req, timeout=30) as resp:
         body = json.loads(resp.read() or b"{}")
     print(f"  started {name.lower()}: {body.get('claude_code_session_url', '?')}")
+
+
+def post_discord(text):
+    """Post to the Owner's Discord channel through a webhook (SM_DISCORD_WEBHOOK)."""
+    url = os.environ.get("SM_DISCORD_WEBHOOK")
+    if not url:
+        raise RuntimeError("SM_DISCORD_WEBHOOK not set")
+    import urllib.request
+    req = urllib.request.Request(url, method="POST",
+                                 data=json.dumps({"content": text[:1900],
+                                                  "allowed_mentions": {"parse": []}}).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": "streaming-media-dispatcher"})
+    urllib.request.urlopen(req, timeout=30).close()
 
 
 def main():

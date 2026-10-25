@@ -8,7 +8,8 @@
 # Secrets: SM_APP_ID, SM_APP_PRIVATE_KEY (the Reviewer App, already used by
 # reviewer-relay.yml), SM_ROUTINE_FIXER_TOKEN, SM_ROUTINE_REVIEWER_TOKEN and
 # SM_ROUTINE_COORDINATOR_TOKEN (each routine's API trigger token from
-# claude.ai/code/routines).
+# claude.ai/code/routines), and SM_DISCORD_WEBHOOK (the Owner's channel, for
+# forwarding NEEDS YOU escalations).
 name: dispatcher
 on:
   schedule:
@@ -50,6 +51,7 @@ jobs:
           SM_ROUTINE_FIXER_TOKEN: ${{ secrets.SM_ROUTINE_FIXER_TOKEN }}
           SM_ROUTINE_REVIEWER_TOKEN: ${{ secrets.SM_ROUTINE_REVIEWER_TOKEN }}
           SM_ROUTINE_COORDINATOR_TOKEN: ${{ secrets.SM_ROUTINE_COORDINATOR_TOKEN }}
+          SM_DISCORD_WEBHOOK: ${{ secrets.SM_DISCORD_WEBHOOK }}
           MODE: ${{ vars.SM_DISPATCH_MODE }}
         run: |
           flag=""; [ "$MODE" = live ] && flag="--live"
