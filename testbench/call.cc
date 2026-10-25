@@ -219,7 +219,8 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
       "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,"
-      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n";
+      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,sync_audio_delay_ms,sync_video_current_ms,sync_video_target_ms,"
+      "sync_video_min_playout_ms\n";
   char ms[96], gap[64];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
@@ -234,7 +235,9 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
            "," + ms + "," + std::to_string(r.encode_width) + "," + std::to_string(r.encode_height) + "," +
            std::to_string(r.keyframes) + "," + std::to_string(r.keyframe_bytes) + "," + std::to_string(r.rendered) + "," +
            gap + "," + std::to_string(r.qs_checks) + "," + std::to_string(r.qs_qp_high) + "," +
-           std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "\n";
+           std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "," +
+           std::to_string(r.sync_audio_delay_ms) + "," + std::to_string(r.sync_video_current_ms) + "," +
+           std::to_string(r.sync_video_target_ms) + "," + std::to_string(r.sync_video_min_playout_ms) + "\n";
   }
   return out;
 }
@@ -964,6 +967,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_row.qs_drop_pct = c.drop_pct;
         vt_row.qs_signal = c.signal == Signal::kAdaptDown ? -1 : c.signal == Signal::kAdaptUp ? 1 : 0;
         vt_qs_checks = qs.checks();
+      }
+      if (s.audio && s.video && s.timing_v2) {
+        // Issue #379: what RtpStreamsSynchronizer reads and sets (RtpReceiver::SyncInfo).
+        const timing::VcmTiming& vt = receiver.video_receiver(video_recv).vcm_timing();
+        vt_row.sync_audio_delay_ms = receiver.audio_receiver(audio_recv).jitter_buffer().FilteredCurrentDelayMs();
+        vt_row.sync_video_current_ms = static_cast<int>(vt.current_delay().ms());
+        vt_row.sync_video_target_ms = static_cast<int>(vt.TargetDelay().ms());
+        vt_row.sync_video_min_playout_ms = static_cast<int>(vt.min_playout_delay().ms());
       }
       rep.video_trace.push_back(vt_row);
       vt_row = VideoTraceRow{};

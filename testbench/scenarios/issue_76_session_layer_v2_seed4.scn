@@ -1,0 +1,8 @@
+name issue_76_session_layer_v2_seed4
+describe issue_76_session_layer_v2 with seed 4, traced for the lip-sync state (yardstick for #379; not for merging)
+# Groups 3-6 are parity-only on this scenario: no metric moves against `rtcp v1`/`keyframe v1`.
+# Target (#76): the call holds up with libwebrtc's report timing and packet buffer.
+seed 4
+duration 30s
+at 0s capacity=3000kbps delay=40ms jitter=15ms reorder=on loss=1% queue=200ms
+reverse at 0s delay=40ms

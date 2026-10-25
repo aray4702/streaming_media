@@ -69,6 +69,14 @@ struct VideoTraceRow {
   int qs_checks = 0;
   int qs_qp_high = -1, qs_qp_low = -1, qs_drop_pct = -1;
   int qs_signal = 0;
+  // Lip-sync inputs and output at the end of the second (issue #379), as
+  // VideoReceiveStream::Stats and AudioReceiveStream::Stats report them: the
+  // audio delay estimate (Syncable::Info::current_delay of the audio stream),
+  // VCMTiming's current and target delay (the target is the video stream's
+  // current_delay that RtpStreamsSynchronizer reads) and its minimum playout
+  // delay (what the synchronizer set). -1 without an audio and a video
+  // receive stream.
+  int sync_audio_delay_ms = -1, sync_video_current_ms = -1, sync_video_target_ms = -1, sync_video_min_playout_ms = -1;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for
@@ -142,7 +150,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
 // dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
 // encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
-// height_mean. qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
+// height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,sync_audio_delay_ms,
+// sync_video_current_ms,sync_video_target_ms,sync_video_min_playout_ms.
+// qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
 // the encoder model both implementations share (testbench/encoder_model.h,
 // issue #84). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop

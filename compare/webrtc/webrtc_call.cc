@@ -736,6 +736,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     double max_gap_ms = 0;
   };
   std::vector<RenderSecond> render_by_second;
+  // AudioReceiveStream and VideoReceiveStream stats at the end of each second (issue #379 trace).
+  struct SyncSecond {
+    int audio_delay_ms = -1, video_current_ms = -1, video_target_ms = -1, video_min_playout_ms = -1;
+  };
+  std::vector<SyncSecond> sync_by_second;
   video::FreezeDetector freezes;
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
@@ -1121,6 +1126,18 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         w_conceal += concealment.pull_concealed();
       });
     }
+    // Issue #379: the lip-sync state at the end of each second, as the test bench samples it.
+    if (opt.video_trace && audio_recv && video_recv && t % 1000 == 999) {
+      receiver_q->PostTask([&, sec = static_cast<size_t>(t / 1000)] {
+        const w::VideoReceiveStreamInterface::Stats vs = video_recv->GetStats();
+        if (sync_by_second.size() <= sec) sync_by_second.resize(sec + 1);
+        SyncSecond& ss = sync_by_second[sec];
+        ss.audio_delay_ms = static_cast<int>(audio_recv->GetStats(false).delay_estimate_ms);
+        ss.video_current_ms = vs.current_delay_ms;
+        ss.video_target_ms = vs.target_delay_ms;
+        ss.video_min_playout_ms = vs.min_playout_delay_ms;
+      });
+    }
 
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
@@ -1258,6 +1275,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (sec < render_by_second.size()) {
         r.rendered = render_by_second[sec].rendered;
         r.max_render_gap_ms = render_by_second[sec].max_gap_ms;
+      }
+      if (sec < sync_by_second.size()) {
+        r.sync_audio_delay_ms = sync_by_second[sec].audio_delay_ms;
+        r.sync_video_current_ms = sync_by_second[sec].video_current_ms;
+        r.sync_video_target_ms = sync_by_second[sec].video_target_ms;
+        r.sync_video_min_playout_ms = sync_by_second[sec].video_min_playout_ms;
       }
       // The scaler checks in [t_ms - 1000, t_ms), as the test bench counts them (issue #347).
       for (const QualityScalerLog::Check& c : qs_log.checks) {
