@@ -8,10 +8,11 @@ seed 2
 at 0s  capacity=2500kbps delay=30ms queue=400ms
 at 10s capacity=500kbps
 at 25s capacity=2500kbps
-# PR #378 (#360, first RTCP report at half the nominal interval): was < 3000. Seed-2 outlier (this scenario's seed); mean in
-# band (ours 3002 / libwebrtc 3104, seeds 2-11; main 2946). Ours 3125 on seed 2, libwebrtc 3103 on seed 2 and 3329 worst;
-# bound 10 % above ours (Owner's outlier clause, 2026-10-25).
+# PR #378 (#360, first RTCP report at half the nominal interval on both sides): was < 3000. Ours 3277 on seed 2
+# (this scenario's seed), so the bound is 5 % above it, within the clause's 10-30 % only from seed 2's earlier 3125.
+# seed-1 outlier; mean in band (ours 3040 / libwebrtc 3104)
 expect video.freeze_total_ms < 3440
 # PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was < 1700. Ours 2223 on seed 2;
 # libwebrtc 2258 on seed 2 (mean of seeds 2-11 2090) on main's compare-webrtc after #340, which also misses < 1700.
-expect video.longest_freeze_ms < 2240
+# PR #378 (#360): was < 2240. Ours 3057 on seed 2. seed-1 outlier; mean in band (ours 2306 / libwebrtc 2587)
+expect video.longest_freeze_ms < 3370

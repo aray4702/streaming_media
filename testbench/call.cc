@@ -508,8 +508,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
   sender_cfg.audio_rtcp = s.av_sync;  // The audio SR lip sync needs (issue #77).
   rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
-  // Receiver reports on the call's 1 s grid, half a period after the sender's.
-  if (s.video) receiver_cfg.rtcp.first_report_delay = TimeDelta::Millis(1000);
+  // The receiver's first report goes out at half its nominal interval, as the
+  // sender's does: libwebrtc's receive streams have their own RTCPSender, whose
+  // constructor schedules report_interval_ / 2 (rtcp_sender.cc:171), so 0.5 s
+  // with video (issue #360; the receiver used to wait 1 s).
   receiver_cfg.av_sync = s.av_sync;  // Issue #77.
   // The receiver measures its RTT as sm_compare's libwebrtc receiver does:
   // RRTR in its reports, the sender's DLRR echo (rtcp_xr.receiver_reference_time_report, issue #356).
