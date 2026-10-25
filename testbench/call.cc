@@ -550,6 +550,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // NACK only, and so does the bench.
   video_cfg.keyframe.send_lntf = false;
   video_cfg.timing.version = s.timing_v2 ? 2 : 1;
+  // The bench has no decoder, so it reports decoding in no time, as sm_compare's ModelDecoder does: it decodes
+  // inside Decode() in simulated time, so libwebrtc's decode-time filter (decode_time_percentile_filter.cc) sees
+  // 0 ms and VCMTiming's TargetDelay floor is the 10 ms render delay alone (timing.cc). Issue #379.
+  video_cfg.decode_time = TimeDelta::Zero();
   // The bench's H.264 stream has no picture id, so with NACK on libwebrtc sends
   // no video FEC (ShouldDisableRedAndUlpfec) and neither does the session.
   video_cfg.deliver_bitstream = false;  // The bench has no decoder.

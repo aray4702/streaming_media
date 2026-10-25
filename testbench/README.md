@@ -99,7 +99,9 @@ link emulation and the measurement.
     NACK timing; a real receiver would measure it itself with RTCP XR.
   - Loss burstiness is read from the receiver directly; a real receiver
     would report it in XR.
-  - There is no decoder, and decode time is fixed at 5 ms.
+  - There is no decoder, and decoding takes no time (0 ms), as in
+    `sm_compare`'s `ModelDecoder`, so both stacks' `VCMTiming` see the
+    same decode time (issue #379; it was a fixed 5 ms).
 
 ## Scenario format
 
