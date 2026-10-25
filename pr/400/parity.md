@@ -1,6 +1,6 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-112 scenarios, mean of 10 seeds. **78 gaps**: 14 behind libwebrtc, 64 ahead of it; 3 without an owner.
+112 scenarios, mean of 10 seeds. **78 gaps**: 14 behind libwebrtc, 64 ahead of it; 2 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
@@ -14,7 +14,7 @@ Opened:
 |---|---|---|---|---|---|---|---|
 | issue_12_lossbwe_shallow | `audio.mouth_to_ear_p95_ms` | 134 | 146 | ±10 | ahead | 5/10 | #63 |
 | issue_12_lossbwe_shallow | `audio.jb_delay_p95_ms` | 79 | 91 | ±10 | ahead | 5/10 | #63 |
-| issue_152_alr_request_probe_v2 | `sync.av_offset_p95_ms` | 244 | 259 | ±13.0 | ahead | 6/10 | **none** |
+| issue_152_alr_request_probe_v2 | `sync.av_offset_p95_ms` | 244 | 259 | ±13.0 | ahead | 6/10 | #360 |
 
 Still gaps, distance to libwebrtc changed by more than 10%:
 
@@ -47,7 +47,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_133_pacer_v2_outage_8s | `cc.max_settle_ms` | 4670 | 2610 | ±976 | behind | 3/10 | #15, #48, #61, #20 |
 | issue_150_gcc_v2_high_jitter_seed10 | `repair.overhead_pct` | 38.8 | 43.8 | ±4.1 | ahead | 7/10 | #21, #7, #29 |
 | issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 227 | 342 | ±109 | ahead | 6/10 | #24, #61 |
-| issue_152_alr_request_probe_v2 | `sync.av_offset_p95_ms` | 244 | 259 | ±13.0 | ahead | 6/10 | **none** |
+| issue_152_alr_request_probe_v2 | `sync.av_offset_p95_ms` | 244 | 259 | ±13.0 | ahead | 6/10 | #360 |
 | issue_154_shallow_drop_repair_v2 | `video.freeze_count` | 3.3 | 6.8 | ±2.6 | ahead | 9/10 | #5, #37, #24 |
 | issue_154_shallow_drop_repair_v2 | `video.keyframe_requests` | 1.6 | 0.6 | ±0.5 | behind | 8/10 | #23 |
 | issue_19_cc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23 |
@@ -109,7 +109,6 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| issue_152_alr_request_probe_v2 | `sync.av_offset_p95_ms` | 244 | 259 | ±13.0 | ahead | 6/10 | **none** |
 | issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 102 | 114 | ±10 | ahead | 6/10 | **none** |
 | issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 102 | 114 | ±10 | ahead | 6/10 | **none** |
 
