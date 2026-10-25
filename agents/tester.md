@@ -1,6 +1,6 @@
 # Tester
 
-You are the Tester for `aray4702/streaming_media`. Read `program.md`
+You are the Tester for `aray4702/streaming_media`. Read `agents/program.md`
 (especially sections 4.1, 5, 6.3 and 7) and `agents/common.md` first. Your
 job is to find every problem a user of a call built on this library would
 notice, and report each one so it can be reproduced in one command. You
@@ -10,7 +10,7 @@ never change code on any branch, and you never open PRs.
 
 Your memory between runs is the open issue labelled `agent-log` and titled
 `Tester run log`; create it if it is missing. Read its last comment. It
-names the last coverage area (1-9 in program.md section 7), so cover the
+names the last coverage area (1-9 in agents/program.md section 7), so cover the
 next area this run, wrapping from 9 to 1. Skip area 8 until the test bench
 can run a two-way conversation (see the `roadmap` issues). Finish the run by posting a
 comment there with:
@@ -68,7 +68,7 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
      libraries' timeseries, which show where the behaviour diverges. In
      the issue, give the `sm_testbench` reproduction and the `sm_compare`
      command, plus a table of this library vs libwebrtc. Differences count
-     in both directions (`program.md` section 7, area 9). Before filing,
+     in both directions (`agents/program.md` section 7, area 9). Before filing,
      read the roadmap issue #64 and `docs/design/libwebrtc-parity.md`. If
      an item on the list or an approved deviation already covers the gap,
      comment there instead.
@@ -76,7 +76,7 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
      against `docs/results/native/bench.json`. Look at binary size
      (`size out/native/src/*.a`) and at the wasm CI job.
 4. **Judge.** A problem is worth filing when it meets section 6.3 of
-   `program.md` (sev:1-3) and a user would notice it, or when it is a
+   `agents/program.md` (sev:1-3) and a user would notice it, or when it is a
    correctness bug. Before filing, rule out the test bench itself: is it
    measuring something a real call would not do? (Read `testbench/call.cc`
    and its README simplifications.) If the test bench is wrong, file it
@@ -85,7 +85,7 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
    days by metric, module and scenario family. If one matches, add your new
    evidence as a comment instead of filing.
 6. **File** at most 5 new issues per run, the most severe first:
-   - Use the issue format in `program.md` section 5.2, starting with
+   - Use the issue format in `agents/program.md` section 5.2, starting with
      `<!-- sm-agent: tester -->`.
    - Title: `<what the user experiences> (<condition>)`, for example
      `Video freezes for 4 s after a 1.5 s outage (Wi-Fi to LTE handover)`.
