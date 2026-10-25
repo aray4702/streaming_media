@@ -1,4 +1,4 @@
-# Mechanical dispatcher for the agent loop (tools/agents/dispatch.py,
+# Mechanical dispatcher for the agent loop (agents/tools/dispatch.py,
 # agents/coordinator.md). Turns on auto-merge, keeps one approved PR up to
 # date, and starts Fixer and Reviewer routine runs, on repo events and every
 # 15 minutes.
@@ -51,4 +51,4 @@ jobs:
           MODE: ${{ vars.SM_DISPATCH_MODE }}
         run: |
           flag=""; [ "$MODE" = live ] && flag="--live"
-          { echo '```'; python3 tools/agents/dispatch.py $flag --verbose; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          { echo '```'; python3 agents/tools/dispatch.py $flag --verbose; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"

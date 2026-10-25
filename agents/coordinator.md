@@ -136,7 +136,7 @@ To escalate:
 ## Each tick
 
 1. **Lease:** local mode renews it; cloud mode checks it (see above).
-2. **Snapshot:** run `bash tools/agents/coord_status.sh`. It prints:
+2. **Snapshot:** run `bash agents/tools/coord_status.sh`. It prints:
    - #64's state (NEXT / PARALLEL / LATER, BUSY / FREE, TICK-NEEDED);
    - in-progress ages (STALE over 90 min);
    - open PRs with `ci-ok`, the Reviewer's state, merge state and auto-merge;

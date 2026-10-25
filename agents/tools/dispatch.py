@@ -14,7 +14,7 @@ Judgment (placement, sign-offs, re-planning, escalation) stays with the
 coordinator. By default this only prints what it would do (dry run); --live
 acts. Uses `gh api` (REST), so it runs locally and in GitHub Actions.
 
-  python3 tools/agents/dispatch.py [--live] [--repo owner/name]
+  python3 agents/tools/dispatch.py [--live] [--repo owner/name]
 """
 import argparse
 import datetime as dt
