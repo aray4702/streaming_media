@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-110 scenarios, mean of 10 seeds. **97 gaps**: 45 behind libwebrtc, 52 ahead of it; 0 without an owner.
+111 scenarios, mean of 10 seeds. **96 gaps**: 44 behind libwebrtc, 52 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-83 gaps on `main`, 97 here: **7 closed, 21 opened**, 0 changed direction.
+82 gaps on `main`, 96 here: **7 closed, 21 opened**, 0 changed direction.
 
 Closed:
 
@@ -77,7 +77,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | high_jitter | `repair.overhead_pct` | 40.2 | 44.3 | ±4.1 | ahead | 4/10 | #21, #7, #29, #19, #24 |
 | issue_120_rtx_payload_padding | `repair.overhead_pct` | 30.0 | 32.8 | ±2 | ahead | 5/10 | #21, #7, #29 |
 | issue_123_v2_allocation_min | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| issue_123_v2_allocation_min | `audio.longest_interruption_ms` | 204 | 116 | ±20 | behind | 10/10 | #63 |
+| issue_123_v2_allocation_min | `audio.longest_interruption_ms` | 206 | 118 | ±20 | behind | 10/10 | #63 |
 | issue_123_v2_allocation_min | `repair.overhead_pct` | 34.3 | 48.3 | ±9.2 | ahead | 8/10 | #21, #7, #29 |
 | issue_123_v2_allocation_min | `video.keyframe_requests` | 3 | 4.2 | ±0.8 | ahead | 7/10 | #23 |
 | issue_123_v2_allocation_min | `video.render_fps` | 10.9 | 9.1 | ±1.2 | ahead | 9/10 | #37, #24 |
@@ -119,9 +119,9 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_24_timing_v2_high_jitter | `repair.overhead_pct` | 40.2 | 44.3 | ±4.1 | ahead | 4/10 | #21, #7, #29 |
 | issue_24_timing_v2_render_fps | `cc.queue_p95_ms` | 95.4 | 85.0 | ±10 | behind | 5/10 | #19, #15, #48, #12, #61 |
 | issue_24_timing_v2_render_fps | `video.render_fps` | 29.3 | 27.4 | ±1.5 | ahead | 10/10 | #37, #24 |
-| issue_257_zero_max_payload | `audio.concealed_pct` | 1.3 | 0.3 | ±0.5 | behind | 10/10 | #63 |
+| issue_257_zero_max_payload | `audio.concealed_pct` | 1.2 | 0.3 | ±0.5 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 712 | 123 | ±35.6 | behind | 10/10 | #63 |
-| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 50 | 22 | ±20 | behind | 4/10 | #63 |
+| issue_257_zero_max_payload | `audio.longest_interruption_ms` | 51.6 | 23.8 | ±20 | behind | 5/10 | #63 |
 | issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 1027 | 205 | ±51.4 | behind | 10/10 | #63 |
 | issue_257_zero_max_payload | `cc.max_settle_ms` | 1870 | 200 | ±500 | behind | 8/10 | #15, #48, #61, #20 |
 | issue_257_zero_max_payload | `cc.queue_p95_ms` | 300 | 45.3 | ±15.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
@@ -137,12 +137,13 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_257_zero_max_payload | `video.longest_freeze_ms` | 1613 | 13.3 | ±100 | behind | 10/10 | #5, #37, #24 |
 | issue_257_zero_max_payload | `video.render_fps` | 21.4 | 29.8 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_257_zero_max_payload | `video.time_to_first_frame_ms` | 149 | 54 | ±50 | behind | 10/10 | #24, #61 |
-| issue_283_longest_freeze_no_metrics | `audio.longest_interruption_ms` | 1831 | 1973 | ±98.7 | ahead | 1/10 | #63 |
 | issue_329_utilization_reordering | `repair.overhead_pct` | 32.2 | 37.2 | ±2 | ahead | 10/10 | #21, #7, #29 |
 | issue_331_low_bandwidth_av_offset_seed4 | `video.render_fps` | 27.8 | 26.3 | ±1.4 | ahead | 6/10 | #37, #24 |
 | issue_346_reconfigure_cross_join | `sync.av_offset_p95_ms` | 255 | 231 | ±21.4 | behind | 3/10 | #77 |
 | issue_346_reconfigure_cross_join | `video.freeze_count` | 4.8 | 2.3 | ±1.3 | behind | 4/10 | #5, #37, #24 |
 | issue_346_reconfigure_cross_join | `video.freeze_total_ms` | 2156 | 1349 | ±247 | behind | 4/10 | #5, #37, #24 |
+| issue_372_outage_interruption_count | `audio.mouth_to_ear_p95_ms` | 222 | 256 | ±30.2 | ahead | 7/10 | #63 |
+| issue_372_outage_interruption_count | `video.e2e_delay_p95_ms` | 129 | 145 | ±13.0 | ahead | 7/10 | #24, #37 |
 | issue_53_cwnd_pushback | `cc.queue_p95_ms` | 95.4 | 85.0 | ±10 | behind | 5/10 | #19, #15, #48, #12, #61 |
 | issue_53_cwnd_pushback | `video.render_fps` | 29.3 | 27.4 | ±1.5 | ahead | 10/10 | #37, #24 |
 | issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 150 | 167 | ±10 | ahead | 8/10 | #63 |
@@ -152,16 +153,14 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_76_packetization_v2 | `repair.overhead_pct` | 29.7 | 32.4 | ±2 | ahead | 6/10 | #21, #7, #29 |
 | issue_76_rtx_v2_handover | `repair.overhead_pct` | 30.0 | 32.8 | ±2 | ahead | 5/10 | #21, #7, #29 |
 | issue_76_tcc_v2_high_jitter | `repair.overhead_pct` | 40.2 | 44.3 | ±4.1 | ahead | 4/10 | #21, #7, #29 |
-| issue_85_video_pause | `audio.interruptions` | 2.9 | 1.1 | ±0.5 | behind | 1/10 | #63 |
-| issue_85_video_pause | `audio.longest_interruption_ms` | 9032 | 9942 | ±497 | ahead | 1/10 | #63 |
 | very_low_capacity | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| very_low_capacity | `audio.longest_interruption_ms` | 204 | 116 | ±20 | behind | 10/10 | #63 |
+| very_low_capacity | `audio.longest_interruption_ms` | 206 | 118 | ±20 | behind | 10/10 | #63 |
 | very_low_capacity | `repair.overhead_pct` | 34.3 | 48.3 | ±9.2 | ahead | 8/10 | #21, #7, #29 |
 | very_low_capacity | `video.keyframe_requests` | 3 | 4.2 | ±0.8 | ahead | 7/10 | #23 |
 | very_low_capacity | `video.render_fps` | 10.9 | 9.1 | ±1.2 | ahead | 9/10 | #37, #24 |
 | very_low_capacity | `video.time_to_first_frame_ms` | 345 | 780 | ±101 | ahead | 10/10 | #24, #61 |
 | very_low_capacity_allocator_v2 | `audio.interruptions` | 1 | 0 | ±0.5 | behind | 10/10 | #63 |
-| very_low_capacity_allocator_v2 | `audio.longest_interruption_ms` | 204 | 116 | ±20 | behind | 10/10 | #63 |
+| very_low_capacity_allocator_v2 | `audio.longest_interruption_ms` | 206 | 118 | ±20 | behind | 10/10 | #63 |
 | very_low_capacity_allocator_v2 | `repair.overhead_pct` | 34.3 | 48.3 | ±9.2 | ahead | 8/10 | #21, #7, #29 |
 | very_low_capacity_allocator_v2 | `video.keyframe_requests` | 3 | 4.2 | ±0.8 | ahead | 7/10 | #23 |
 | very_low_capacity_allocator_v2 | `video.render_fps` | 10.9 | 9.1 | ±1.2 | ahead | 9/10 | #37, #24 |
