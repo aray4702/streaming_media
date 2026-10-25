@@ -60,6 +60,7 @@ struct VideoTraceRow {
   // none was, so a freeze shows as rendered=0 rows ended by one long gap).
   int rendered = 0;
   double max_render_gap_ms = 0;
+  int64_t height_sum = 0;  // Encoded frame heights (quality scaling, issue #84).
   // Quality scaler (issue #347): the checks in the second that observed enough
   // frames (libwebrtc logs them in QualityScaler::CheckQp), and the last one's
   // smoothed QP as the decision reads it, its frame-drop percent when that
@@ -139,8 +140,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
-// dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean.
-// The last two are means over the second's encoded frames (0 when none), from
+// dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
+// encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
+// height_mean. qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
 // the encoder model both implementations share (testbench/encoder_model.h,
 // issue #84). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop

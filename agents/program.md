@@ -2,9 +2,11 @@
 
 This document defines how the library improves itself. Three agents
 (Tester, Fixer and Reviewer) find problems, fix them and review the fixes,
-with GitHub as the shared record. A human owner sets direction and handles
-anything an agent escalates. Every agent reads this file at the start of a
-run, and if this file and an agent's prompt disagree, this file wins.
+with GitHub as the shared record. A coordinator agent keeps the roadmap
+moving for the Owner ([coordinator.md](coordinator.md)). A human owner sets
+direction and handles anything an agent escalates. Every agent reads this
+file at the start of a run, and if this file and an agent's prompt
+disagree, this file wins.
 
 - Repository: https://github.com/aray4702/streaming_media (public)
 - Owner: @aray4702
@@ -23,7 +25,7 @@ run, and if this file and an agent's prompt disagree, this file wins.
 The library grows in two stages. Each one is measured on the same test bench.
 
 1. **Baseline: duplicate libwebrtc.** These are the problems in sections
-   3-8 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md):
+   3-8 of [Problems WebRTC solves](../docs/02-webrtc-problems-solved.md):
    packet loss, jitter and timing, congestion control, audio quality,
    video quality and synchronization. The goal is to **do what libwebrtc
    does**: the same algorithms, constants and default settings as
@@ -208,15 +210,15 @@ The loop is:
 
 | Part | Where | What it gives the agents |
 |---|---|---|
-| Core library | `include/sm/`, `src/` | 48 algorithms from sections 3-8 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): loss repair, jitter and timing, congestion control, audio processing, video adaptation, synchronization. Portable C++20 with no dependencies; APIs take `Timestamp now` and never read a clock or start a thread. |
+| Core library | `include/sm/`, `src/` | 48 algorithms from sections 3-8 of [Problems WebRTC solves](../docs/02-webrtc-problems-solved.md): loss repair, jitter and timing, congestion control, audio processing, video adaptation, synchronization. Portable C++20 with no dependencies; APIs take `Timestamp now` and never read a clock or start a thread. |
 | Unit and e2e tests | `tests/` | One CTest entry per algorithm (`unit.*`, `e2e.*`). |
 | Benchmarks | `bench/` | Speed and quality benchmarks with pass/fail budgets (`sm_bench`). |
 | Metrics and events | `include/sm/core/metrics.h`, `event_log.h` | Every module exports metrics (`MetricsSource`) and records its decisions (`SM_EVENT`). |
-| Test bench | `testbench/` | A complete one-way audio + video call through the library over emulated links. Scenarios script link failures over time and state the user-experience expectations the call must meet. See [testbench/README.md](testbench/README.md). |
+| Test bench | `testbench/` | A complete one-way audio + video call through the library over emulated links. Scenarios script link failures over time and state the user-experience expectations the call must meet. See [testbench/README.md](../testbench/README.md). |
 | Scenario suite | `testbench/scenarios/*.scn` | The regression suite. Every scenario runs in CI; any failed expectation fails CI. |
 | Baseline results | `testbench/baseline.json` | Metrics of every scenario on `main`. CI compares each PR against it. |
 | Browser port | `web/` | WebAssembly build with a JS API (`runScenario`, plus bindings for library components) and a demo page that runs scenarios and plots them in the browser. |
-| Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](compare/README.md) and [the latest results](docs/results/compare-webrtc.md). |
+| Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](../compare/README.md) and [the latest results](../docs/results/compare-webrtc.md). |
 | CI | `.github/workflows/ci.yml` | Linux GCC/Clang, macOS, ASan+UBSan, no-exceptions/RTTI, WebAssembly (Node), Linux aarch64 under QEMU, Android and iOS cross-builds, test bench + baseline comparison. The aggregate job `ci-ok` is the required status check. |
 
 ### 3.1 Test bench link impairments
@@ -271,11 +273,17 @@ conversation:
 | Reads | `main`, test bench, existing issues | Issues labelled `agent-found` or `bug`, comments on its PRs | Open PRs, their diffs, CI results, comments | Everything |
 | Writes | Issues (and comments on its own issues) | Branches `fix/<issue>-<slug>`, PRs, replies to comments | PR reviews (comment, request changes, approve) and replies | Anything |
 | Must not | Push code or open PRs | Push to `main`, approve PRs, edit protected paths | Push code or merge by hand | |
-| Instructions | [agents/tester.md](agents/tester.md) | [agents/fixer.md](agents/fixer.md) | [agents/reviewer.md](agents/reviewer.md) | |
+| Instructions | [agents/tester.md](tester.md) | [agents/fixer.md](fixer.md) | [agents/reviewer.md](reviewer.md) | |
 
 The Reviewer has its own identity because GitHub does not let a PR's author
 approve it. Fixer PRs are authored by @aray4702, so the approval has to come
 from a different account, which is the App.
+
+The **Coordinator** acts for the Owner within a written mandate: it owns the
+roadmap's order, places Tester findings, clears stale labels, signs off
+guard-rail lines under the Owner's standing rule, and turns on auto-merge.
+It runs as a cloud routine, or as the Owner's local Claude session while
+that session holds a lease. Its rules are in [coordinator.md](coordinator.md).
 
 ### 4.1 Tester
 
@@ -453,7 +461,7 @@ docs/fixes/<N>-<slug>.md
   the Tester's `agent-log` issue), never in local files, so each run starts
   fresh and is idempotent.
 - Practical details shared by all agents (build commands, the REST calls
-  to use, markers, trust rules) are in [agents/common.md](agents/common.md).
+  to use, markers, trust rules) are in [agents/common.md](common.md).
 
 ## 6. Quality gates
 
@@ -530,7 +538,7 @@ Every problem found in the library (an issue labelled `agent-found`, `bug`,
    commit before the fix, passes after it, and then runs in CI for good, so
    the problem cannot come back unnoticed.
 2. **A fix record.** `docs/fixes/<N>-<slug>.md`, from
-   [docs/fixes/TEMPLATE.md](docs/fixes/TEMPLATE.md), with these sections:
+   [docs/fixes/TEMPLATE.md](../docs/fixes/TEMPLATE.md), with these sections:
    - **Issue:** what the user experienced, and who found it.
    - **Root cause:** the mechanism, with code references.
    - **Fix:** what changed.
@@ -538,7 +546,7 @@ Every problem found in the library (an issue labelled `agent-found`, `bug`,
    - **Results:** the reproduction across seeds before and after, plus the
      suite comparison against the baseline.
 
-   [docs/fixes/README.md](docs/fixes/README.md) indexes every record. It is
+   [docs/fixes/README.md](../docs/fixes/README.md) indexes every record. It is
    generated by `tools/fixes_index.py`.
 
 **Partial fixes.** Sometimes a fix removes a real part of the problem but
@@ -607,8 +615,8 @@ area it covered in each issue's notes:
 ## 8. Guardrails
 
 - **Protected paths** (only the Owner changes them; agents label
-  `needs-human`): `program.md`, `agents/`, `.github/`, `CMakePresets.json`
-  toolchain entries, and `LICENSE`.
+  `needs-human`): `agents/` (including this file), `.github/`,
+  `CMakePresets.json` toolchain entries, and `LICENSE`.
 - **No direct pushes to `main`.** Branch protection requires a PR, the
   `ci-ok` check and one approval. The Owner keeps admin bypass for
   emergencies.
@@ -634,7 +642,7 @@ area it covered in each issue's notes:
 
 | Item | Setting |
 |---|---|
-| Routines | Cloud environment `Default`, model `claude-sonnet-5-5`; each routine's prompt says "Read program.md and agents/<role>.md, then do one run." |
+| Routines | Cloud environment `Default`. Fixer and Coordinator on `claude-opus-5-5`, Reviewer and Tester on `claude-sonnet-5-5`. Each routine's prompt says "Read agents/program.md, agents/common.md and agents/<role>.md, then do one run." |
 | Cloud tooling | Linux x86_64, 4 cores, g++ 13, clang, cmake, ninja, node 22, `gh`, jq, openssl. No Emscripten (the wasm checks run in CI). |
 | GitHub access from routines | `git push` and REST (`gh api`) work as @aray4702 through the session proxy. GraphQL is blocked, so use REST. Auto-merge uses `PUT /repos/{o}/{r}/pulls/{n}/ccr/auto_merge`, and review threads use `/pulls/{n}/ccr/review_threads`. |
 | Reviewer identity | GitHub App `streaming-media-reviewer`, installed on this repo only, with Pull requests: write, Contents: write (needed for its approval to count), Issues: write, Checks: read, Metadata: read. The cloud proxy replaces credentials and blocks the App token endpoint, so the Reviewer routine cannot authenticate as the App itself. It dispatches `.github/workflows/reviewer-relay.yml` (`tools/agents/reviewer_post.sh`), which holds the App key as Actions secrets (`SM_APP_ID`, `SM_APP_PRIVATE_KEY`) and posts the review as `streaming-media-reviewer[bot]`. Only the Owner's account can dispatch it. |

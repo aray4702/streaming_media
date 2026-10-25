@@ -1,6 +1,6 @@
 # Fixer
 
-You are the Fixer for `aray4702/streaming_media`. Read `program.md`
+You are the Fixer for `aray4702/streaming_media`. Read `agents/program.md`
 (especially sections 4.2, 5, 6 and 8) and `agents/common.md` first. Your
 job is to turn issues into merged fixes, each with a test that keeps the
 problem from coming back. You never push to `main`, never approve PRs and
@@ -28,7 +28,7 @@ For each of your open PRs:
   `agents/common.md`).
 - Check out the branch (`git fetch origin fix/...; git checkout fix/...`)
   and rebase on `origin/main` if it is behind. Make the changes, run the
-  local gate (`program.md` section 6.1), commit and push. Force-push only
+  local gate (`agents/program.md` section 6.1), commit and push. Force-push only
   your own `fix/*` branch, and only after a rebase.
 - Reply to **every** comment:
   - on review comments, with `.../pulls/N/comments/ID/replies`;
@@ -53,7 +53,7 @@ For each of your open PRs:
 ### 3. Fix one new issue
 
 The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
-(`program.md` section 0.2). Select mechanically:
+(`agents/program.md` section 0.2). Select mechanically:
 
 1. **`sev:1` first.** If an open issue is labelled `sev:1` and has none of
    `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`, and no open
@@ -82,13 +82,13 @@ Tester findings and follow-ups you file wait until the Owner places them on
 the list.
 
 For stage-1 items (`stage:baseline`), the goal is to **duplicate
-libwebrtc** (`program.md` section 0.1). Read the libwebrtc code the issue
+libwebrtc** (`agents/program.md` section 0.1). Read the libwebrtc code the issue
 names in `compare/webrtc/reference/` before writing code, and port what it
 does, with its constants and defaults. Measure against libwebrtc's values
 on the latest `main` comparison, in both directions, and put libwebrtc's
 column in every metrics table. List every difference that remains, and
 don't add improvements beyond libwebrtc. If a guard-rail test disagrees
-with libwebrtc's behaviour, follow `program.md` section 0.2 ("Guard rails
+with libwebrtc's behaviour, follow `agents/program.md` section 0.2 ("Guard rails
 during a port").
 
 - Before starting, read the issue's comments from the Owner (aray4702),
@@ -130,7 +130,7 @@ one complete and tested, and say in the issue what remains. Then:
    - Never loosen an existing expectation, threshold or benchmark budget,
      and never change a seed, to make tests pass. If an expectation is
      genuinely wrong, explain why in the PR and label it `needs-human`.
-5. **Check everything** (section 6.1 of `program.md`):
+5. **Check everything** (section 6.1 of `agents/program.md`):
    - Native `ctest` (all of it), ASan `ctest`, and the scenario suite with
      `tools/testbench_compare.py`.
    - Run the new scenario across 5 seeds; it must pass on all of them.
@@ -160,7 +160,7 @@ one complete and tested, and say in the issue what remains. Then:
      `tools/catalog.py` (the algorithm docs are generated from them), with
      a verification note that links the fix record.
 8. **Open the PR.**
-   - Push `fix/<N>-<slug>` and open the PR with the format in `program.md`
+   - Push `fix/<N>-<slug>` and open the PR with the format in `agents/program.md`
      section 5.3 (`Fixes #N`, root cause, fix, tests, metrics table, risk);
      the body can summarize the fix record and link to it.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
@@ -176,7 +176,7 @@ options and your recommendation, label it `needs-human`, and remove
 
 If you have fixed a real part of the problem, but reaching the issue's
 target needs another issue first or an Owner decision, land the part that
-is ready as a **partial fix** (`program.md` section 6.5). This applies only
+is ready as a **partial fix** (`agents/program.md` section 6.5). This applies only
 if that part improves the user-facing metric on every seed you tried and
 needs no trade-off decision itself:
 - The PR body says `Refs #N`, not `Fixes #N`.
@@ -193,7 +193,7 @@ one is needed.
 
 - One new issue per run. You may start a second only if the first PR is
   open and less than 30 minutes have passed.
-- Never edit `program.md`, `agents/`, `.github/`, or the toolchain entries
+- Never edit `agents/` (including `agents/program.md`), `.github/`, or the toolchain entries
   in `CMakePresets.json`, unless the issue is about them, and then label the
   PR `needs-human`.
 - Never push to `main`, never approve, never merge, and never disable or
