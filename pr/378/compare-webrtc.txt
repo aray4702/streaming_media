@@ -2253,8 +2253,8 @@ issue_23_low_bandwidth - 150 kbps link: audio must stay clean, video degrades gr
   audio.concealed_pct                     1.0          1.0  =
   audio.interruptions                     0.7          0.5  =
   audio.longest_interruption_ms           151          148  =
-  audio.mouth_to_ear_p95_ms              2358         2343  =
-  audio.jb_delay_p95_ms                  1907         1925  =
+  audio.mouth_to_ear_p95_ms              2358         2341  =
+  audio.jb_delay_p95_ms                  1907         1923  =
   video.freeze_count                      2.8          1.6  webrtc
   video.freeze_total_ms                  1820          785  webrtc
   video.longest_freeze_ms                 606          192  webrtc
@@ -2862,7 +2862,7 @@ issue_29_ulpfec_over_red - 5% random loss with NACK off, so video FEC runs (Shou
   audio.mouth_to_ear_p95_ms               198          252  sm
   audio.jb_delay_p95_ms                   109          153  sm
   video.freeze_count                        7          6.9  =
-  video.freeze_total_ms                 21751        21193  =
+  video.freeze_total_ms                 21751        21192  =
   video.longest_freeze_ms                3294         3318  =
   video.pause_count                       0.1          0.3  =
   video.pause_total_ms                    624         1875  sm
@@ -2961,8 +2961,8 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   audio.concealed_pct                     1.0          1.0  =
   audio.interruptions                     0.8          0.4  =
   audio.longest_interruption_ms           152          146  =
-  audio.mouth_to_ear_p95_ms              2356         2375  =
-  audio.jb_delay_p95_ms                  1917         1943  =
+  audio.mouth_to_ear_p95_ms              2356         2373  =
+  audio.jb_delay_p95_ms                  1917         1941  =
   video.freeze_count                      2.9          1.8  webrtc
   video.freeze_total_ms                  1870          892  webrtc
   video.longest_freeze_ms                 576          257  webrtc
@@ -2973,7 +2973,7 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   video.time_to_first_frame_ms            250          258  =
   video.avg_kbps                         71.2         71.8  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  1596         1583  =
+  sync.av_offset_p95_ms                  1596         1584  =
   cc.utilization_pct                     97.9         97.8  =
   cc.queue_p95_ms                         396          380  =
   cc.max_settle_ms                        200          200  =
@@ -3612,8 +3612,8 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   audio.concealed_pct                     1.0          1.0  =
   audio.interruptions                     0.7          0.5  =
   audio.longest_interruption_ms           151          148  =
-  audio.mouth_to_ear_p95_ms              2358         2343  =
-  audio.jb_delay_p95_ms                  1907         1925  =
+  audio.mouth_to_ear_p95_ms              2358         2341  =
+  audio.jb_delay_p95_ms                  1907         1923  =
   video.freeze_count                      2.8          1.6  webrtc
   video.freeze_total_ms                  1820          785  webrtc
   video.longest_freeze_ms                 606          192  webrtc
@@ -4945,8 +4945,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.0          1.0  =
   audio.interruptions                     0.7          0.5  =
   audio.longest_interruption_ms           151          148  =
-  audio.mouth_to_ear_p95_ms              2358         2343  =
-  audio.jb_delay_p95_ms                  1907         1925  =
+  audio.mouth_to_ear_p95_ms              2358         2341  =
+  audio.jb_delay_p95_ms                  1907         1923  =
   video.freeze_count                      2.8          1.6  webrtc
   video.freeze_total_ms                  1820          785  webrtc
   video.longest_freeze_ms                 606          192  webrtc
