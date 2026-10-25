@@ -15,5 +15,8 @@ expect cc.queue_p95_ms < 65
 expect video.freeze_count == 0
 expect audio.mouth_to_ear_p95_ms < 280
 # Was < 100. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 123 on seed 1 after #315 (main 8e580e0; was 100); libwebrtc with sync_group 121.5 (mean of 10 seeds), worst seed 150, so libwebrtc fails < 100 too.
-expect video.e2e_delay_p95_ms < 125
+# Was < 125. Test bench decode time 0 ms, as sm_compare's ModelDecoder (#379, Owner 2026-10-25): lip sync now sees
+# the same video delay as libwebrtc and raises video playout to follow audio. Seed-1 outlier; mean in band (ours 121.5 /
+# libwebrtc 112.6, band +-10; seeds 1-10 ours 127 130 124 102 122 128 134 117 130 101, libwebrtc worst 121). 10 % above ours.
+expect video.e2e_delay_p95_ms < 140
 expect cc.utilization_pct >= 86
