@@ -4,7 +4,10 @@ describe 5% random loss on a 2 Mbps link with 40 ms one-way delay: the loss-base
 # 5 seeds (cc v2): utilization 75.7-82.1 %, video 1311-1420 kbps, no freezes. `cc v1`: 35-53 %. libwebrtc (CI compare-webrtc, random_loss_5pct): 76 %, 1355 kbps.
 duration 30s
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
-expect cc.utilization_pct >= 70
+# PR for #375 (Opus size model calibrated to libopus; the start probe moves; program.md 0.2, needs-human): was >= 70. Ours 69.84 on seed 1;
+# libwebrtc 68.07 on seed 1, worst of seeds 1-10 67.29 (mean 71.9), on #324's compare-webrtc. Owner (PR #382): the allowed margin,
+# capped at libwebrtc's worst seed.
+expect cc.utilization_pct >= 67.3
 # Was < 200. Guard rail during a port (program.md 0.2, needs-human, #217): with the packet history's RTT as
 # ModuleRtpRtcpImpl2 keeps it and the receiver's NACK RTT from CallStats (video/call_stats2.cc), seed 1 freezes
 # 208 ms; with the RTCP report interval from the sender's whole send rate (RtpSenderEgress::GetSendRates(now).Sum())
