@@ -1,0 +1,7 @@
+name yardstick_390_cross_join_seed62
+describe issue_204_cross_traffic_join on seed 62 (main 2397f02 sticks on 5, 62 and 76; 15 is the control): congestion-window pushback and RTT rows traced on both stacks (yardstick for #390), no expectations
+duration 40s
+seed 62
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps
