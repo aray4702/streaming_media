@@ -1,0 +1,7 @@
+name yardstick_389_cross_join_seed22
+describe issue_204_cross_traffic_join on seed 22, where ours falls into the stuck mode (draft #389, for #360/#365): traced on both stacks, no expectations
+duration 40s
+seed 22
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps
