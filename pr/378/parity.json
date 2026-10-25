@@ -562,7 +562,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 1233.41,
    "webrtc": 1564.58,
-   "band": 315.0336724313062,
+   "band": 315.0331684847732,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
@@ -699,8 +699,8 @@
    "scenario": "issue_331_low_bandwidth_av_offset_seed4",
    "metric": "sync.av_offset_p95_ms",
    "sm": 1184.27,
-   "webrtc": 1565.77,
-   "band": 327.9255733462159,
+   "webrtc": 1565.78,
+   "band": 327.9255236601411,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
@@ -864,7 +864,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 1233.41,
    "webrtc": 1564.58,
-   "band": 315.0336724313062,
+   "band": 315.0331684847732,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
@@ -1004,7 +1004,9 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": []
+   "owners": [
+    360
+   ]
   },
   {
    "scenario": "issue_84_encoder_qp_720p_low_rate",
@@ -1015,7 +1017,9 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": []
+   "owners": [
+    360
+   ]
   },
   {
    "scenario": "low_bandwidth",
@@ -1036,7 +1040,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 1233.41,
    "webrtc": 1564.58,
-   "band": 315.0336724313062,
+   "band": 315.0331684847732,
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,

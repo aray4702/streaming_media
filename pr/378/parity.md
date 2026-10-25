@@ -1,6 +1,6 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-112 scenarios, mean of 10 seeds. **84 gaps**: 22 behind libwebrtc, 62 ahead of it; 5 without an owner.
+112 scenarios, mean of 10 seeds. **84 gaps**: 22 behind libwebrtc, 62 ahead of it; 3 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
@@ -178,8 +178,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 1415 | 1543 | ±116 | ahead | 5/10 | #24, #37 |
 | issue_76_tcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23 |
 | issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61 |
-| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | **none** |
-| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | **none** |
+| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | #360 |
+| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | #360 |
 | low_bandwidth | `cc.rtt_p50_ms` | 145 | 238 | ±80.3 | ahead | 8/10 | #61 |
 | low_bandwidth | `sync.av_offset_p95_ms` | 1233 | 1565 | ±315 | ahead | 7/10 | **none** |
 | low_bandwidth | `video.render_fps` | 27.9 | 25.7 | ±1.4 | ahead | 9/10 | #37, #24 |
@@ -200,7 +200,5 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 |---|---|---|---|---|---|---|---|
 | issue_23_low_bandwidth | `sync.av_offset_p95_ms` | 1233 | 1565 | ±315 | ahead | 7/10 | **none** |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1233 | 1565 | ±315 | ahead | 7/10 | **none** |
-| issue_84_encoder_qp_360p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | **none** |
-| issue_84_encoder_qp_720p_low_rate | `sync.av_offset_p95_ms` | 103 | 114 | ±10 | ahead | 6/10 | **none** |
 | low_bandwidth | `sync.av_offset_p95_ms` | 1233 | 1565 | ±315 | ahead | 7/10 | **none** |
 
