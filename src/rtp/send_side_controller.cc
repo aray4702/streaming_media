@@ -5,6 +5,9 @@
 namespace sm::rtp {
 
 namespace {
+// video_send_stream_impl.cc:84: the encoder activity check interval.
+constexpr TimeDelta kEncoderTimeOut = TimeDelta::Seconds(2);
+
 cc::GccConfig WithEvents(cc::GccConfig c, EventSink* e) {
   if (!c.events) c.events = e;
   return c;
@@ -103,16 +106,21 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
     v.min = cfg_.video_min;
     v.max = cfg_.video_max;
     v.enforce_min = true;
+    video_alloc_cfg_ = v;
     // OnBitrateUpdated: the protection is the share RTX and FEC take (FecControllerDefault).
-    allocator_.AddObserver("video", v, [this](DataRate alloc) {
+    video_observer_ = [this](DataRate alloc) {
       // RtpVideoSender::OnBitrateUpdated sets encoder_target_rate_bps_ here, from the protection sent in
       // the last second, and the encoder keeps it until the next allocation.
+      video_allocation_ = alloc;
       const VideoAllocationSplit split = SplitVideoAllocation(alloc);
       video_encoder_target_ = split.encoder_target;
       video_link_allocation_ = split.link_allocation;
       return split.protection;
-    });
+    };
+    allocator_.AddObserver("video", v, video_observer_);
+    video_registered_ = true;
   }
+  notified_limits_ = allocator_.limits();
   gcc_.SetMinAllocatable(allocator_.limits().min_allocatable);
   // SetAllocatedSendBitrateLimits: streams_config.max_total_allocated_bitrate.
   for (const auto& c : gcc_.OnMaxTotalAllocatedBitrate(allocator_.limits().max_allocatable, Timestamp::Micros(0))) pacer_.AddProbeCluster(c);
@@ -122,13 +130,75 @@ void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool vide
 void SendSideController::Start(Timestamp now) {
   Apply(gcc_.Start(now), now);
   PostTargetRate(now);
+  // StartupVideoSendStream: the activity check starts kEncoderTimeOut after the stream.
+  if (video_registered_) next_video_activity_check_ = now + kEncoderTimeOut;
+}
+
+void SendSideController::RegisterVideo(Timestamp now) {
+  allocator_.AddObserver("video", video_alloc_cfg_, video_observer_);
+  video_registered_ = true;
+  NotifyAllocationLimits(now);
+}
+
+void SendSideController::UnregisterVideo(Timestamp now) {
+  allocator_.RemoveObserver("video");
+  video_registered_ = false;
+  NotifyAllocationLimits(now);
+}
+
+void SendSideController::NotifyAllocationLimits(Timestamp now) {
+  const cc::AllocationLimits& l = allocator_.limits();
+  if (l == notified_limits_) return;
+  const bool min_changed = l.min_allocatable != notified_limits_.min_allocatable;
+  const bool padding_changed = l.max_padding != notified_limits_.max_padding;
+  notified_limits_ = l;
+  for (const auto& c : gcc_.OnMaxTotalAllocatedBitrate(l.max_allocatable, now)) pacer_.AddProbeCluster(c);
+  if (min_changed) gcc_.UpdateMinAllocatable(l.min_allocatable);
+  if (min_changed || padding_changed) {
+    gcc_.SetPacingLimits(l.min_allocatable, l.max_padding);
+    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+  }
+}
+
+void SendSideController::CheckVideoActivity(Timestamp at) {
+  if (!video_activity_) {
+    // SignalEncoderTimedOut: only a stream that is supposed to produce frames leaves the allocator.
+    if (!video_timed_out_ && video_registered_ && !video_encoder_target_.IsZero()) {
+      ++video_timeouts_;
+      SM_EVENT(cfg_.events, at, "send_side", "video_encoder_timed_out", allocator_.limits().max_allocatable.kbps(), 0);
+      UnregisterVideo(at);
+    }
+    video_timed_out_ = true;
+    video_disable_padding_ = true;
+  } else if (video_timed_out_) {
+    RegisterVideo(at);  // SignalEncoderActive.
+    SM_EVENT(cfg_.events, at, "send_side", "video_encoder_active", allocator_.limits().max_allocatable.kbps(), 0);
+    video_timed_out_ = false;
+  }
+  video_activity_ = false;
+}
+
+void SendSideController::OnVideoFrameEncoded(Timestamp now) {
+  if (!next_video_activity_check_.IsFinite()) return;
+  video_activity_ = true;
+  if (video_disable_padding_) {
+    video_disable_padding_ = false;
+    RegisterVideo(now);  // To ensure that padding bitrate is propagated to the bitrate allocator.
+    SM_EVENT(cfg_.events, now, "send_side", "video_encoder_active", allocator_.limits().max_allocatable.kbps(), 1);
+  }
+}
+
+void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
+  // IsRunning(): the send stream is started, so the allocator gets the new limits.
+  if (next_video_activity_check_.IsFinite()) RegisterVideo(now);
 }
 
 void SendSideController::EnablePeriodicAlrProbing(bool enable) { gcc_.EnablePeriodicAlrProbing(enable); }
 
 DataRate SendSideController::VideoPayloadRate() const {
   if (!allocation_configured_) return DataRate::Zero();
-  const DataRate alloc = allocator_.allocation("video");
+  // RtpVideoSender keeps its last allocation while the stream is out of the allocator.
+  const DataRate alloc = video_allocation_;
   return std::max(DataRate::Zero(), alloc - OverheadRate(alloc, cfg_.max_packet_size + cfg_.transport_overhead_bytes));
 }
 
@@ -252,6 +322,11 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   }
   ExpireRepair(now);
   last_process_ = now;
+  while (next_video_activity_check_ <= now) {
+    const Timestamp due = next_video_activity_check_;
+    next_video_activity_check_ = due + kEncoderTimeOut;
+    CheckVideoActivity(due);
+  }
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
     // The transport's pacer-queue task (kPacerQueueUpdateInterval, 25 ms, started with the controller's
@@ -271,6 +346,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
 Timestamp SendSideController::NextProcessTime(Timestamp now) const {
   Timestamp next = pacer_.NextSendTime(now);
   if (last_gcc_.IsFinite()) next = std::min(next, last_gcc_ + cfg_.gcc_interval);
+  next = std::min(next, next_video_activity_check_);
   return std::max(next, now);
 }
 
@@ -453,6 +529,7 @@ void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("released_bytes", static_cast<uint64_t>(stats_.released_bytes));
   w.Gauge("target_kbps", target_.kbps());
   w.Counter("cwnd_frames_dropped", cwnd_frames_dropped_);
+  w.Counter("video_timeouts", video_timeouts_);
 }
 
 }  // namespace sm::rtp

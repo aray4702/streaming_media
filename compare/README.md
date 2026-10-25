@@ -29,8 +29,8 @@ out/compare/sm_video_compare                                       # freeze dete
 
 The build needs clang 21 or newer (Apple clang 21 works): the libc++ the
 binary was built with rejects older compilers. On Ubuntu, install it with
-`wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21` and configure
-with `CXX=clang++-21`.
+`curl -fsSL -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh && sudo bash /tmp/llvm.sh 21`
+and configure with `CXX=clang++-21`.
 
 The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
 20 s, and the same seed gives the same result.

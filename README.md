@@ -212,7 +212,7 @@ bench/                                                   benchmarks
 examples/                                                usage example
 testbench/                                               call test bench, scenarios, baseline
 web/                                                     WebAssembly bindings and demo page
-agents/                                                  the program and the Tester, Fixer, Reviewer and Coordinator instructions
+agents/                                                  the program, the agents' instructions and their scripts (tools/)
 tools/                                                   run_all.sh, gen_docs.py, catalog.py, testbench_compare.py
 docs/                                                    research, design, algorithms, results
 ```
