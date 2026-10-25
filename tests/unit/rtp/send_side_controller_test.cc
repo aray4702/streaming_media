@@ -499,3 +499,53 @@ SM_TEST(SendSideController, LinkAllocationIsTheEncoderTargetBelowTheMaximum) {
   SM_EXPECT_EQ(r.video_target.bps(), 1197256);
   SM_EXPECT_EQ(r.video_link_allocation.bps(), 1197256);
 }
+
+// Issue #375: VideoSendStreamImpl's encoder activity check (video_send_stream_impl.cc:84, 677-760).
+// Every kEncoderTimeOut (2 s) from the start, a video stream that encoded nothing since the last
+// check leaves the BitrateAllocator, so max_total_allocated_bitrate falls to the audio's; an
+// encoder reconfiguration (OnEncoderConfigurationChanged) or the next encoded frame
+// (OnEncodedImage after the time-out) registers it again.
+SM_TEST(SendSideController, VideoLeavesTheAllocatorAfterTwoSecondsWithoutAnEncodedFrame) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(300);
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);
+  const int64_t both = c.allocator().limits().max_allocatable.bps();
+  SM_EXPECT_EQ(both, DataRate::KilobitsPerSec(50).bps() + cfg.video_max.bps());
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t < 2000; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_TRUE(c.video_registered());  // The first check is due at 2 s.
+  c.Process(Timestamp::Millis(2000));
+  SM_EXPECT_FALSE(c.video_registered());
+  SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), DataRate::KilobitsPerSec(50).bps());
+  SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 0);
+  // The encoder keeps the target it last got (no OnBitrateUpdated after RemoveObserver).
+  SM_EXPECT_GT(c.ComputeMeasuredRates(DataRate::KilobitsPerSec(50)).video_target.bps(), 0);
+  SM_EXPECT_GT(c.VideoPayloadRate().bps(), 0);
+  // A new frame size reconfigures the encoder: the running stream registers again.
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(3000));
+  SM_EXPECT_TRUE(c.video_registered());
+  SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
+  SM_EXPECT_GT(c.allocator().allocation("video").bps(), 0);
+  // Still no frame at the 4 s check: timed_out_ is already set, so it stays registered.
+  for (int t = 3001; t <= 4000; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_TRUE(c.video_registered());
+}
+
+SM_TEST(SendSideController, EncodedFramesKeepVideoInTheAllocator) {
+  SendSideController c;
+  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t <= 10000; ++t) {
+    if (t % 100 == 50) c.OnVideoFrameEncoded(Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+  }
+  SM_EXPECT_TRUE(c.video_registered());
+  // Frames stop after 9.95 s: the 10 s check still saw one, the 12 s check sees none and removes it.
+  for (int t = 10001; t <= 12000; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_FALSE(c.video_registered());
+  // The first frame after the time-out registers it at once (disable_padding_).
+  c.OnVideoFrameEncoded(Timestamp::Millis(12500));
+  SM_EXPECT_TRUE(c.video_registered());
+  SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), DataRate::KilobitsPerSec(50).bps() + SendSideConfig{}.video_max.bps());
+}
