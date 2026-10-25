@@ -107,6 +107,22 @@ class Owners(unittest.TestCase):
             if metric != "audio.concealed_pct":
                 self.assertIn(cells[name], o, (name, metric))
 
+    def test_sync_cells_follow_the_items_that_own_their_inputs(self):
+        # #379 (Owner 2026-10-25): lip sync matches libwebrtc (yardstick #396); each offset cell follows
+        # an audio jitter-buffer, video-delay or RTT gap, so that item owns it.
+        cells = {"lossy_feedback": [365], "issue_12_lossbwe_shallow_step": [24, 37],
+                 "issue_12_lossbwe_shallow": [24, 37], "issue_331_low_bandwidth_av_offset_seed4": [360],
+                 "issue_76_session_layer_v2": [63]}
+        metrics = {"sync.av_offset_p95_ms": ([300] * 5, [100] * 5)}
+        d = data(*[scn(n, metrics) for n in cells] + [scn("clean_link", metrics)])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        g = {x["scenario"]: x["owners"] for x in pr.report(d, owners)}
+        for name, o in cells.items():
+            self.assertEqual(g[name], o, name)
+        self.assertNotIn(379, sum(g.values(), []))
+        self.assertEqual(g["clean_link"], [])  # A new sync gap needs an owner placed on the roadmap.
+
 
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):
