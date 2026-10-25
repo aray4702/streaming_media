@@ -15,4 +15,8 @@ at 25s capacity=2500kbps
 # This scenario used seed 2 until #366 merged; with #366 seed 2 no longer reaches the timeout (0, 1624 ms;
 # libwebrtc 1, 3103 ms). On seeds 1-10 the port still moves both cells toward libwebrtc (see #361).
 expect video.keyframe_requests >= 1
-expect video.longest_freeze_ms > 2500
+# PR #381 (#365, 1 ms feedback receive times and nearest-tick transport-cc deltas, as libwebrtc; program.md 0.2, Owner sign-off
+# 2026-10-25 8:49 AM PT, tight rule; not a gap on the means): was > 2500. Ours 2306 on seed 1 (mean 2398);
+# libwebrtc seed 1 3031, worst of seeds 1-10 1253 (mean 2688; fails > 2500 on 3 of 10). About 12 % below ours, above libwebrtc's worst.
+# The keyframe_requests line above is left unchanged pending the Owner's answer on #111.
+expect video.longest_freeze_ms > 2030
