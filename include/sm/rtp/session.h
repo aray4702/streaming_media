@@ -412,6 +412,9 @@ class Session : public MetricsSource {
   // measurement once).
   CallStats call_stats_;
   std::optional<TimeDelta> pending_rr_rtt_;
+  // Every XR DLRR measurement, for the `xr_rtts` / `xr_rtt_ms` metrics (issue #360).
+  uint64_t xr_rtts_ = 0;
+  TimeDelta last_xr_rtt_ = TimeDelta::Zero();
   void OnCallStatsUpdate(const std::optional<CallStats::Update>& u);
   SessionStats stats_;
   std::unique_ptr<SyncableStream> sync_audio_, sync_video_;

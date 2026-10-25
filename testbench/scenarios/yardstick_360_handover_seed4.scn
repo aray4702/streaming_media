@@ -1,0 +1,11 @@
+name yardstick_360_handover_seed4
+describe wifi_to_lte_handover with seed 4, traced on both stacks for #360's RTT yardstick (no expectations)
+duration 40s
+at 0s  capacity=4000kbps delay=15ms jitter=5ms queue=200ms
+at 15s down
+at 16.5s up capacity=1200kbps delay=60ms jitter=15ms loss=1%
+reverse at 0s delay=15ms
+reverse at 15s down
+reverse at 16.5s up delay=60ms
+# Known gap: video takes ~4 s to recover from a 1.5 s outage.
+seed 4

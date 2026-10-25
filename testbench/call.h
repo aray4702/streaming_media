@@ -83,6 +83,24 @@ struct AudioTraceRow {
   double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
 };
 
+// One event on the RTT path (issue #360), the same record for this library and
+// for libwebrtc. `side` is 's' (sender) or 'r' (receiver). `event` is one of:
+// sr, rr, xr: an outgoing RTCP packet of that type (one row per packet in the
+//   compound datagram; value_ms is the datagram's size in bytes);
+// rb_rtt: an RTT the sender computed from a report block (libwebrtc: the video
+//   stream's ReportBlockData::last_rtt each time num_rtts grows);
+// xr_rtt: an RTT the receiver computed from an XR DLRR (libwebrtc: the video
+//   receive stream's round_trip_time each time round_trip_time_measurements grows);
+// call_rtt: that side's CallStats RTT (Call::GetStats().rtt_ms) when it changed.
+// call_rtt, xr_rtt and libwebrtc's rb_rtt are polled every 10 ms, so their times are on that grid; this
+// library's rb_rtt row is at the millisecond the report arrived.
+struct RttTraceRow {
+  int64_t t_ms = 0;
+  char side = 's';
+  std::string event;
+  double value_ms = -1;
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -99,6 +117,8 @@ struct Report {
   std::vector<cc::BweTraceRow> bwe_trace;
   // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
   std::vector<AudioTraceRow> audio_trace;
+  // RTCP send times and RTT samples on both sides, when RunOptions::rtt_trace is set (issue #360).
+  std::vector<RttTraceRow> rtt_trace;
 };
 
 struct RunOptions {
@@ -108,6 +128,7 @@ struct RunOptions {
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
   bool audio_trace = false;  // Fill Report::audio_trace.
+  bool rtt_trace = false;    // Fill Report::rtt_trace.
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
@@ -168,6 +189,11 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
+// Report::rtt_trace as CSV: t_ms,side,event,value_ms.
+std::string RttTraceCsv(const std::vector<RttTraceRow>& trace);
+// Appends one sr, rr or xr row per such packet in an outgoing RTCP datagram
+// (other packet types and RTP datagrams add nothing).
+void TraceRtcpOut(const std::vector<uint8_t>& datagram, int64_t t_ms, char side, std::vector<RttTraceRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

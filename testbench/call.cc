@@ -48,6 +48,24 @@ struct Rev {
 
 // One gauge of a session's exported metrics (-1 if it has none), so the bench reads library state
 // without a test-only accessor.
+double SessionGauge(const rtp::Session& session, std::string_view name);
+
+// One counter of a session's exported metrics (0 if it has none).
+uint64_t SessionCounter(const rtp::Session& session, std::string_view name) {
+  struct OneCounter : MetricsWriter {
+    std::string_view name;
+    uint64_t value = 0;
+    void Counter(std::string_view n, uint64_t v) override {
+      if (n == name) value = v;
+    }
+    void Gauge(std::string_view, double) override {}
+    void Hist(std::string_view, const Histogram&) override {}
+  } w;
+  w.name = name;
+  session.ExportMetrics(w);
+  return w.value;
+}
+
 double SessionGauge(const rtp::Session& session, std::string_view name) {
   struct OneGauge : MetricsWriter {
     std::string_view name;
@@ -276,6 +294,31 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
            real(r.concealed_ms) + "," + real(r.accelerate_ms) + "," + real(r.decelerate_ms) + "\n";
   }
   return out;
+}
+
+std::string RttTraceCsv(const std::vector<RttTraceRow>& trace) {
+  std::string out = "t_ms,side,event,value_ms\n";
+  // Rows come from both sides' callbacks; list them in time order.
+  std::vector<RttTraceRow> sorted = trace;
+  std::stable_sort(sorted.begin(), sorted.end(), [](const RttTraceRow& a, const RttTraceRow& b) { return a.t_ms < b.t_ms; });
+  for (const auto& r : sorted) {
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "%.4g", r.value_ms);
+    out += std::to_string(r.t_ms) + "," + std::string(1, r.side) + "," + r.event + "," + buf + "\n";
+  }
+  return out;
+}
+
+void TraceRtcpOut(const std::vector<uint8_t>& datagram, int64_t t_ms, char side, std::vector<RttTraceRow>& rows) {
+  // RFC 3550 compound packet: version 2, packet type 200-207 in the second byte, length in 32-bit words - 1.
+  size_t pos = 0;
+  while (pos + 4 <= datagram.size() && (datagram[pos] >> 6) == 2) {
+    const uint8_t pt = datagram[pos + 1];
+    if (pt < 200 || pt > 207) return;
+    const char* name = pt == 200 ? "sr" : pt == 201 ? "rr" : pt == 207 ? "xr" : nullptr;
+    if (name) rows.push_back({t_ms, side, name, static_cast<double>(datagram.size())});
+    pos += (static_cast<size_t>(datagram[pos + 2]) << 8 | datagram[pos + 3]) * 4 + 4;
+  }
 }
 
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
@@ -651,6 +694,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
   FirstDelivery first_delivery;  // goodput counts each media sequence number once (#329)
   double last_video_delay = 0;
+  double rt_send_call = -2, rt_recv_call = -2;  // rep.rtt_trace's last CallStats RTTs (issue #360).
+  uint64_t rt_xr_count = 0;
   // Receiver-side burst tracking for the protection controller (a real
   // receiver would report this in RTCP XR); read when a report block arrives.
 
@@ -684,6 +729,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           if (ft != frame_times.end()) ft->second.last_sent = now;
         }
       }
+      if (opt.rtt_trace && kind == Kind::kRtcp) TraceRtcpOut(p.bytes, now.ms(), is_forward ? 's' : 'r', rep.rtt_trace);
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
     }
@@ -714,6 +760,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
         case rtp::SessionEventType::kRttUpdated:
           new_rtt = e.rtt;
+          if (opt.rtt_trace) rep.rtt_trace.push_back({t, 's', "rb_rtt", static_cast<double>(e.rtt.us()) / 1000.0});
           break;
         case rtp::SessionEventType::kReportBlock:
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
@@ -871,6 +918,18 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // update.
     if (new_rtt) receiver.SetRtt(*new_rtt);
     receiver.Process(now);
+    if (opt.rtt_trace && t % 10 == 0) {
+      // Polled on the same 10 ms grid as sm_compare's libwebrtc side (issue #360).
+      const double send_call = SessionGauge(sender, "call_stats_rtt_ms");
+      const double recv_call = SessionGauge(receiver, "call_stats_rtt_ms");
+      if (send_call != rt_send_call) rep.rtt_trace.push_back({t, 's', "call_rtt", send_call});
+      if (recv_call != rt_recv_call) rep.rtt_trace.push_back({t, 'r', "call_rtt", recv_call});
+      rt_send_call = send_call;
+      rt_recv_call = recv_call;
+      const uint64_t xr = SessionCounter(receiver, "xr_rtts");
+      if (xr != rt_xr_count) rep.rtt_trace.push_back({t, 'r', "xr_rtt", SessionGauge(receiver, "xr_rtt_ms")});
+      rt_xr_count = xr;
+    }
 
     // Render video.
     if (s.video) {

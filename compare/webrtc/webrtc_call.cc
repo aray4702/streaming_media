@@ -746,6 +746,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   double audio_buffer_ms = 0;
   w::AudioReceiveStreamInterface::Stats prev_audio;
 
+  // rep.rtt_trace's last values (issue #360), each read on its own call's queue.
+  struct {
+    int64_t send_call = -2, recv_call = -2, rb_count = 0, xr_count = 0;
+  } rt;
+
   // --- Transports -------------------------------------------------------------
   LinkTransport send_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions& o) {
     const w::Timestamp now = sim.Now();
@@ -754,6 +759,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Counted the way the test bench counts: by SSRC, and padding is a packet with no payload.
     sm::sim::LinkKind link_kind = sm::sim::LinkKind::kOther;
     int32_t trace_seq = -1;
+    if (opt.rtt_trace && (rtcp || IsRtcp(data))) {
+      testbench::TraceRtcpOut(std::vector<uint8_t>(data.begin(), data.end()), (now - t0).ms(), 's', rep.rtt_trace);
+    }
     if (!rtcp && !IsRtcp(data)) {
       w::SentPacketInfo sent(o.packet_id, now.ms());
       sent.info.included_in_feedback = o.included_in_feedback;
@@ -797,6 +805,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
+    if (opt.rtt_trace && (rtcp || IsRtcp(data))) {
+      testbench::TraceRtcpOut(std::vector<uint8_t>(data.begin(), data.end()), (sim.Now() - t0).ms(), 'r', rep.rtt_trace);
+    }
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
   });
@@ -1118,6 +1129,34 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.rtt_trace && t % 10 == 0) {
+      // The RTT path every 10 ms (issue #360), as testbench/call.cc polls its own.
+      sender_q->PostTask([&, t] {
+        const int64_t call = send_call->GetStats().rtt_ms;
+        if (call != rt.send_call) rep.rtt_trace.push_back({t, 's', "call_rtt", static_cast<double>(call)});
+        rt.send_call = call;
+        if (!video_send) return;
+        const w::VideoSendStream::Stats vs = video_send->GetStats();
+        auto it = vs.substreams.find(kVideoSsrc);
+        if (it == vs.substreams.end() || !it->second.report_block_data) return;
+        const auto& rb = *it->second.report_block_data;
+        const int64_t n = static_cast<int64_t>(rb.num_rtts());
+        if (n != rt.rb_count) rep.rtt_trace.push_back({t, 's', "rb_rtt", static_cast<double>(rb.last_rtt().us()) / 1000.0});
+        rt.rb_count = n;
+      });
+      receiver_q->PostTask([&, t] {
+        const int64_t call = recv_call->GetStats().rtt_ms;
+        if (call != rt.recv_call) rep.rtt_trace.push_back({t, 'r', "call_rtt", static_cast<double>(call)});
+        rt.recv_call = call;
+        if (!video_recv) return;
+        const auto vr = video_recv->GetStats();
+        const int64_t n = static_cast<int64_t>(vr.round_trip_time_measurements);
+        if (n != rt.xr_count && vr.round_trip_time) {
+          rep.rtt_trace.push_back({t, 'r', "xr_rtt", static_cast<double>(vr.round_trip_time->us()) / 1000.0});
+        }
+        rt.xr_count = n;
+      });
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;

@@ -436,7 +436,11 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   if (!in.report_blocks.empty()) last_report_block_ = now;
   // RTCPReceiver::HandleXrDlrrReportBlock keeps the latest XR RTT for
   // GetAndResetXrRrRtt at the next periodic update.
-  if (!in.xr_rtts.empty()) pending_rr_rtt_ = in.xr_rtts.back();
+  if (!in.xr_rtts.empty()) {
+    pending_rr_rtt_ = in.xr_rtts.back();
+    last_xr_rtt_ = in.xr_rtts.back();
+    xr_rtts_ += in.xr_rtts.size();
+  }
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
@@ -676,6 +680,9 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("rtt_ms", static_cast<double>(rtt_.us()) / 1000.0);
   // Call::GetStats().rtt_ms: CallStats::LastProcessedRtt(), -1 before the first update.
   w.Gauge("call_stats_rtt_ms", static_cast<double>(call_stats_.LastProcessedRtt()));
+  // XR DLRR round trips measured as a receive-only endpoint (issue #360).
+  w.Counter("xr_rtts", xr_rtts_);
+  w.Gauge("xr_rtt_ms", static_cast<double>(last_xr_rtt_.us()) / 1000.0);
   w.Gauge("target_kbps", send_.target().kbps());
 }
 
