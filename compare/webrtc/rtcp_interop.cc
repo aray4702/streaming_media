@@ -23,6 +23,7 @@
 #include <string>
 #include <vector>
 
+#include "common_video/h264/sps_vui_rewriter.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/compound_packet.h"
@@ -62,6 +63,7 @@
 #include "sm/rtp/rtcp_sdes_bye.h"
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
+#include "sm/rtp/sps_vui_rewriter.h"
 #include "sm/sync/header_extensions.h"
 
 #include "model_h264.h"
@@ -496,8 +498,8 @@ void WebrtcToSender() {
 // H.264 access units of the shapes the test bench produces (keyframe with SPS
 // and PPS, delta frames from one packet to many) and a few with several NAL
 // units, at the payload limit the bench uses.
-// libwebrtc's depacketizer parses SPS and PPS, so unlike the fake encoder's
-// filler these are real parameter sets (Constrained Baseline, 640x480).
+// libwebrtc's depacketizer parses SPS and PPS; unlike the fake encoder's
+// 320x192 parameter sets these are 640x480 ones (Constrained Baseline).
 struct BitWriter {
   Bytes out;
   int used = 8;  // Bits used in the last byte; 8 means start a new one.
@@ -736,9 +738,7 @@ void H264Model() {
     for (bool key : {true, false}) {
       const Bytes model = sm::compare::ModelAccessUnit(key, bytes);
       const Bytes ours = sm::rtp::MakeFakeH264Frame(key, bytes);
-      // Only the SPS and PPS payloads differ.
-      same = same && model.size() == ours.size() && std::equal(model.begin() + 27, model.end(), ours.begin() + 27);
-      if (!key) same = same && model == ours;
+      same = same && model == ours;
       if (!key) continue;
       auto payloads = sm::rtp::H264Packetizer::Packetize(model, kH264Limit);
       webrtc::VideoRtpDepacketizerH264 dep;
@@ -751,8 +751,135 @@ void H264Model() {
       parsed_ok = parsed_ok && ok;
     }
   }
-  Check(same, "H.264 model encoder: this library's access units, same sizes");
+  Check(same, "H.264 model encoder: this library's access units");
   Check(parsed_ok, "H.264 model encoder: libwebrtc parses its SPS and PPS");
+}
+
+// An SPS (with its NAL header) for the VUI rewrite check (#342): Baseline, or
+// High with a scaling matrix; `vui` 0 none, 1 without bitstream_restriction,
+// 2 with it allowing reordering, 3 with it already as libwebrtc wants.
+Bytes TestSps(bool high, int poc_type, int vui) {
+  BitWriter w;
+  w.Bits(0x67, 8);
+  w.Bits(high ? 100 : 66, 8);  // profile_idc
+  w.Bits(high ? 0 : 0xC0, 8);  // constraint flags
+  w.Bits(31, 8);               // level_idc
+  w.Ue(0);                     // seq_parameter_set_id
+  if (high) {
+    w.Ue(1);   // chroma_format_idc
+    w.Ue(0);   // bit_depth_luma_minus8
+    w.Ue(0);   // bit_depth_chroma_minus8
+    w.Bit(0);  // qpprime_y_zero_transform_bypass_flag
+    w.Bit(1);  // seq_scaling_matrix_present_flag
+    for (int i = 0; i < 8; ++i) {
+      w.Bit(i == 0 || i == 6);  // seq_scaling_list_present_flag
+      if (i == 0) {
+        for (int j = 0; j < 16; ++j) w.Se(j == 0 ? 8 : 1);
+      } else if (i == 6) {
+        w.Se(-8);  // nextScale 0: use the default list
+      }
+    }
+  }
+  w.Ue(4);  // log2_max_frame_num_minus4
+  w.Ue(static_cast<uint32_t>(poc_type));
+  if (poc_type == 0) w.Ue(2);  // log2_max_pic_order_cnt_lsb_minus4
+  if (poc_type == 1) {
+    w.Bit(0);  // delta_pic_order_always_zero_flag
+    w.Se(-1);  // offset_for_non_ref_pic
+    w.Se(0);   // offset_for_top_to_bottom_field
+    w.Ue(2);   // num_ref_frames_in_pic_order_cnt_cycle
+    w.Se(3);
+    w.Se(-2);
+  }
+  w.Ue(high ? 4 : 1);  // max_num_ref_frames
+  w.Bit(0);            // gaps_in_frame_num_value_allowed_flag
+  w.Ue(79);            // pic_width_in_mbs_minus1 (1280)
+  w.Ue(44);            // pic_height_in_map_units_minus1 (720)
+  w.Bit(1);            // frame_mbs_only_flag
+  w.Bit(1);            // direct_8x8_inference_flag
+  w.Bit(1);            // frame_cropping_flag
+  w.Ue(0);
+  w.Ue(0);
+  w.Ue(0);
+  w.Ue(4);
+  w.Bit(vui != 0);  // vui_parameters_present_flag
+  if (vui != 0) {
+    w.Bit(1);  // aspect_ratio_info_present_flag
+    w.Bits(255, 8);
+    w.Bits(4, 16);
+    w.Bits(3, 16);
+    w.Bit(0);  // overscan_info_present_flag
+    w.Bit(1);  // video_signal_type_present_flag
+    w.Bits(5, 3);
+    w.Bit(1);
+    w.Bit(1);
+    w.Bits(1, 8);
+    w.Bits(1, 8);
+    w.Bits(1, 8);
+    w.Bit(0);  // chroma_loc_info_present_flag
+    w.Bit(1);  // timing_info_present_flag
+    w.Bits(1, 32);
+    w.Bits(60, 32);
+    w.Bit(0);
+    w.Bit(1);  // nal_hrd_parameters_present_flag
+    w.Ue(0);
+    w.Bits(0x34, 8);
+    w.Ue(1000);
+    w.Ue(2000);
+    w.Bit(0);
+    w.Bits(0x5A5A5, 20);
+    w.Bit(0);  // vcl_hrd_parameters_present_flag
+    w.Bit(0);  // low_delay_hrd_flag
+    w.Bit(0);  // pic_struct_present_flag
+    w.Bit(vui != 1);  // bitstream_restriction_flag
+    if (vui != 1) {
+      w.Bit(1);
+      w.Ue(2);
+      w.Ue(1);
+      w.Ue(16);
+      w.Ue(16);
+      w.Ue(vui == 2 ? 2 : 0);              // max_num_reorder_frames
+      w.Ue(vui == 2 ? 6 : (high ? 4 : 1));  // max_dec_frame_buffering
+    }
+  }
+  Bytes rbsp = w.Finish();
+  Bytes nal = {rbsp[0]};
+  sm::rtp::WriteRbsp(std::span<const uint8_t>(rbsp).subspan(1), nal);
+  return nal;
+}
+
+// The outgoing SPS VUI rewrite (#342): this library's
+// ParseOutgoingBitstreamAndRewrite gives libwebrtc's bytes
+// (SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite without a color space).
+void H264SpsVuiRewrite() {
+  std::vector<Bytes> units;
+  for (bool high : {false, true}) {
+    for (int poc : {0, 1, 2}) {
+      for (int vui : {0, 1, 2, 3}) units.push_back(TestSps(high, poc, vui));
+    }
+  }
+  bool same = true;
+  int n = 0;
+  for (const Bytes& sps : units) {
+    // [AUD, SPS, PPS, IDR] with 4- and 3-byte start codes.
+    Bytes au = {0, 0, 0, 1, 0x09, 0xF0, 0, 0, 0, 1};
+    au.insert(au.end(), sps.begin(), sps.end());
+    au.insert(au.end(), {0, 0, 1, 0x68});
+    au.insert(au.end(), sm::rtp::kFakeH264Pps, sm::rtp::kFakeH264Pps + sizeof(sm::rtp::kFakeH264Pps));
+    au.insert(au.end(), {0, 0, 0, 1, 0x65, 0xAA, 0x11, 0x22});
+    const Bytes ours = sm::rtp::ParseOutgoingBitstreamAndRewrite(au);
+    webrtc::Buffer theirs = webrtc::SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite(au, nullptr);
+    const bool ok = ours.size() == theirs.size() && std::equal(ours.begin(), ours.end(), theirs.data());
+    if (!ok) std::printf("    SPS case %d: %zu bytes here, %zu in libwebrtc\n", n, ours.size(), theirs.size());
+    same = same && ok;
+    ++n;
+  }
+  const Bytes model = sm::compare::ModelAccessUnit(true, 200);
+  webrtc::Buffer theirs = webrtc::SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite(model, nullptr);
+  const Bytes ours = sm::rtp::ParseOutgoingBitstreamAndRewrite(model);
+  same = same && ours.size() == theirs.size() && std::equal(ours.begin(), ours.end(), theirs.data()) &&
+         ours.size() == model.size() + 5;
+  Check(same, "H.264 SPS VUI rewrite: the same bytes as libwebrtc's SpsVuiRewriter (25 access units)");
 }
 
 // ULPFEC over RED (RFC 5109, RFC 2198), as libwebrtc M157 sends it for video:
@@ -1011,6 +1138,7 @@ int main() {
   H264SmToWebrtc();
   H264WebrtcToSm();
   H264Model();
+  H264SpsVuiRewrite();
   Ulpfec();
   ExtendedReports();
   if (g_failures) {
