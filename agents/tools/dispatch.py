@@ -48,6 +48,9 @@ SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
 TESTER_GAP_MIN = 180       # a Tester run takes up to an hour; keep runs apart
 TESTER_MERGES = 3          # merges to main since its last run that call for a new one
 TESTER_SCHEDULE = (34, (0, 6, 12, 18))  # its own cron: minute, UTC hours
+TESTER_RUN_MIN = 90        # a run that started this recently may not have posted its log yet
+MERGE_FIXER_MIN = 20       # a closed PR starts a Fixer run by itself (GitHub event trigger)
+PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merges that change the product or its measurement
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 
 NOW = dt.datetime.now(dt.timezone.utc)
@@ -207,6 +210,11 @@ class Dispatcher:
             first = False
         return (cand or None), in_progress
 
+    def closed_pulls(self):
+        if not hasattr(self, "_closed"):
+            self._closed = gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
+        return self._closed
+
     def recent_fixer_claim(self):
         since = (NOW - dt.timedelta(minutes=CLAIM_WINDOW_MIN)).strftime("%Y-%m-%dT%H:%M:%SZ")
         comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
@@ -218,12 +226,21 @@ class Dispatcher:
         if not cand:
             return self.note("fixer", f"no free eligible #{ROADMAP} item ({in_progress} in progress)")
         n = cand["number"]
-        waited = minutes_ago(cand["updated_at"])
+        # Free since: the issue's last update, or the moment a PR on it closed
+        # (merging a PR doesn't touch the issue, but it frees the item).
+        free_since = max([cand["updated_at"]] + [
+            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
+            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
+        waited = minutes_ago(free_since)
+        recent_close = [p for p in self.closed_pulls()
+                        if p.get("closed_at") and minutes_ago(p["closed_at"]) < MERGE_FIXER_MIN]
         last = self.last_dispatch("fixer")
         if in_progress >= MAX_IN_PROGRESS:
             return self.say("HOLD", "fixer", f"#{n} free but {in_progress} items in progress")
         if waited < FIXER_WAIT_MIN:
             return self.say("HOLD", "fixer", f"#{n} free for {waited:.0f} min (< {FIXER_WAIT_MIN})")
+        if recent_close:
+            return self.say("HOLD", "fixer", f"PR #{recent_close[0]['number']} closed {minutes_ago(recent_close[0]['closed_at']):.0f} min ago; its event already starts a Fixer run")
         if self.recent_fixer_claim():
             return self.say("HOLD", "fixer", "a Fixer claimed work in the last 30 min")
         if last and minutes_ago(last) < DISPATCH_GAP_MIN:
@@ -307,13 +324,19 @@ class Dispatcher:
         if logs:
             comments = gh(f"repos/{self.r}/issues/{logs[0]['number']}/comments?per_page=100", paginate=True) or []
             marks += [c["created_at"] for c in comments if "sm-agent: tester" in (c["body"] or "")]
+        # A scheduled run posts its log only when it ends, so count a slot
+        # that started in the last TESTER_RUN_MIN minutes as a run.
+        minute, hours = TESTER_SCHEDULE
+        slots = [NOW.replace(hour=h, minute=minute, second=0, microsecond=0) - dt.timedelta(days=d)
+                 for d in (0, 1) for h in hours]
+        started = [t for t in slots if dt.timedelta(0) <= NOW - t < dt.timedelta(minutes=TESTER_RUN_MIN)]
+        marks += [t.strftime("%Y-%m-%dT%H:%M:%SZ") for t in started]
         marks = [m for m in marks if m]
         if not marks:
             return self.note("tester", "no previous Tester run found")
         last = max(marks)
         if minutes_ago(last) < TESTER_GAP_MIN:
             return self.note("tester", f"last run {minutes_ago(last):.0f} min ago (< {TESTER_GAP_MIN})")
-        minute, hours = TESTER_SCHEDULE
         nxt = min((NOW.replace(hour=h, minute=minute, second=0, microsecond=0) + dt.timedelta(days=d)
                    for d in (0, 1) for h in hours
                    if NOW.replace(hour=h, minute=minute, second=0, microsecond=0) + dt.timedelta(days=d) > NOW))
@@ -322,15 +345,19 @@ class Dispatcher:
         fixed = [i["number"] for i in gh(f"repos/{self.r}/issues?state=closed&since={last}&per_page=100") or []
                  if "pull_request" not in i and (i.get("closed_at") or "") > last
                  and labels(i) & {"agent-found", "bug"}]
-        merged = [p["number"] for p in gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
-                  if (p.get("merged_at") or "") > last]
+        merged = []
+        for p in self.closed_pulls():
+            if (p.get("merged_at") or "") > last:
+                files = [f["filename"] for f in gh(f"repos/{self.r}/pulls/{p['number']}/files?per_page=100") or []]
+                if any(f.startswith(PRODUCT_PATHS) for f in files):
+                    merged.append(p["number"])  # system-only merges (agents/, .github/, docs) don't count
         why = []
         if fixed:
             why.append("fixes to verify: " + ", ".join(f"#{n}" for n in fixed))
         if len(merged) >= TESTER_MERGES:
-            why.append(f"{len(merged)} merges since its last run")
+            why.append(f"{len(merged)} product merges since its last run")
         if not why:
-            return self.note("tester", f"nothing new since {last} ({len(merged)} merges)")
+            return self.note("tester", f"nothing new since {last} ({len(merged)} product merges)")
         self.say("RUN", "tester", "; ".join(why))
         if self.live:
             start_routine("TESTER")
