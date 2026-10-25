@@ -295,7 +295,9 @@ SM_TEST(TestbenchMetrics, AudioTraceCsvWritesOneLinePerPullAndLeavesJbDelayEmpty
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheAudioTraceOnRequestAndItAgreesWithTheMetrics) {
-  auto parsed = ParseScenario("name atrace\nduration 6s\nat 0s capacity=1000kbps delay=30ms loss=5% queue=200ms\n");
+  // 10 % loss: at 5 % RED repaired every audio loss of this 6 s call once the Opus size model
+  // moved the start probe (issue #375), and the test needs some concealment in the trace.
+  auto parsed = ParseScenario("name atrace\nduration 6s\nat 0s capacity=1000kbps delay=30ms loss=10% queue=200ms\n");
   SM_ASSERT_TRUE(parsed.scenario.has_value());
   RunOptions opt;
   opt.library_metrics = false;
@@ -318,7 +320,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheAudioTraceOnRequestAndItAgreesWithTheMe
   // The rows carry exactly the values audio.jb_delay_* are computed from.
   SM_EXPECT_EQ(Percentile(jb, 50), rep.metrics.at("audio.jb_delay_p50_ms"));
   SM_EXPECT_EQ(Percentile(jb, 95), rep.metrics.at("audio.jb_delay_p95_ms"));
-  SM_EXPECT_TRUE(concealed > 0);  // 5 % loss conceals some audio.
+  SM_EXPECT_TRUE(concealed > 0);  // 10 % loss conceals some audio.
   SM_EXPECT_TRUE(stretched > 0);
 }
 

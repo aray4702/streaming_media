@@ -38,22 +38,70 @@ SM_TEST(OpusModel, SilenceIsSmallAndConstantPerRun) {
 }
 
 SM_TEST(OpusModel, SpeechMatchesLibwebrtcs32kbpsFrames) {
+  // libwebrtc's frames on parity-data's traces (issue #375): 71.1 B, sd 12.9 B; 17.6 % held at 81 B; 95-158 B in bursts.
   const auto speech = sim::SpeechLike(16000, 60, 8, false);  // No pauses: all frames carry speech.
   OpusSizeModel m(5, 32000);
   double sum = 0, sum2 = 0;
-  size_t lo = 1000, hi = 0, n = 0;
+  size_t lo = 1000, hi = 0, n = 0, held = 0, burst = 0;
   for (size_t off = 0; off + 320 <= speech.size(); off += 320, ++n) {
     const size_t b = m.NextFrameBytes(std::span<const float>(speech.data() + off, 320));
     sum += static_cast<double>(b);
     sum2 += static_cast<double>(b) * static_cast<double>(b);
     lo = std::min(lo, b);
     hi = std::max(hi, b);
+    held += b == 81;
+    burst += b >= 95;
   }
   const double mean = sum / static_cast<double>(n);
   const double sd = std::sqrt(sum2 / static_cast<double>(n) - mean * mean);
-  SM_EXPECT_TRUE(mean > 68 && mean < 80);  // libwebrtc: 72 B on speech, 20 ms at 32 kbps VBR.
-  SM_EXPECT_TRUE(sd > 6 && sd < 20);       // libwebrtc: 12.9 B.
-  SM_EXPECT_TRUE(lo >= 36 && hi <= 144);
+  SM_EXPECT_TRUE(mean > 67 && mean < 75);
+  SM_EXPECT_TRUE(sd > 10 && sd < 16);
+  SM_EXPECT_TRUE(static_cast<double>(held) > 0.10 * static_cast<double>(n) && static_cast<double>(held) < 0.26 * static_cast<double>(n));
+  SM_EXPECT_TRUE(static_cast<double>(burst) > 0.01 * static_cast<double>(n) && static_cast<double>(burst) < 0.05 * static_cast<double>(n));
+  SM_EXPECT_TRUE(lo >= 36 && hi <= 158);
+}
+
+// The 200 B RTP packets (RED: 25 B of headers, the previous and the current
+// frame) start the start probe, so their share and the time of the first one
+// follow libwebrtc's (issue #375): 3.6 % of audio packets over seeds 1, 2, 3,
+// 4, 5, 7 and 10 (1.4-4.9 % per seed), the first at 1.39-10.2 s (median 3.79 s).
+SM_TEST(OpusModel, LargeRedPacketsAsLibwebrtcs) {
+  std::vector<double> firsts;
+  size_t large = 0, packets = 0;
+  double early = 0, later = 0;
+  size_t n_early = 0, n_later = 0;
+  for (uint64_t seed = 1; seed <= 10; ++seed) {
+    const auto speech = sim::SpeechLike(16000, 30, seed + 7, true);  // As testbench/call.cc.
+    OpusSizeModel m(seed + 17, 32000);
+    size_t prev = 0;
+    double first = -1;
+    for (size_t k = 0; (k + 1) * 320 <= speech.size(); ++k) {
+      const size_t b = m.NextFrameBytes(std::span<const float>(speech.data() + k * 320, 320));
+      if (k > 0 && 25 + prev + b >= 200) {
+        ++large;
+        if (first < 0) first = static_cast<double>(k) * 0.02;
+      }
+      if (b >= 36 && b < 95 && b != 81) {  // Free frames: quieter before the encoder's ramp.
+        if (k < 70) {
+          early += static_cast<double>(b);
+          ++n_early;
+        } else if (k >= 140) {
+          later += static_cast<double>(b);
+          ++n_later;
+        }
+      }
+      ++packets;
+      prev = b;
+    }
+    firsts.push_back(first < 0 ? 30 : first);
+  }
+  const double share = static_cast<double>(large) / static_cast<double>(packets);
+  SM_EXPECT_TRUE(share > 0.025 && share < 0.05);
+  std::sort(firsts.begin(), firsts.end());
+  SM_EXPECT_TRUE(firsts[5] > 2.5 && firsts[5] < 5.5);  // Median.
+  SM_EXPECT_TRUE(firsts[1] > 1.2);                      // At most 1 of 10 seeds before libwebrtc's earliest.
+  SM_EXPECT_TRUE(early / static_cast<double>(n_early) < 64);   // libwebrtc: 61 B in the first 1.4 s,
+  SM_EXPECT_TRUE(later / static_cast<double>(n_later) > 65);   // 67.5 B after 2.8 s.
 }
 
 SM_TEST(OpusModel, SizeScalesWithTheBitrateAndIsDeterministic) {
