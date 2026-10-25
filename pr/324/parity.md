@@ -81,7 +81,7 @@ Opened:
 | issue_24_timing_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61 |
 | issue_24_timing_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23 |
 | issue_29_ulpfec_over_red | `video.freeze_count` | 9.1 | 7.4 | ±1.3 | behind | 7/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 24687 | 20966 | ±2845 | behind | 7/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 24687 | 20963 | ±2840 | behind | 7/10 | #5, #37, #24 |
 | issue_335_fps1_keyframe_packets | `audio.concealed_pct` | 3.7 | 0.5 | ±1.5 | behind | 9/10 | #63 |
 | issue_335_fps1_keyframe_packets | `audio.mouth_to_ear_p95_ms` | 1685 | 979 | ±426 | behind | 9/10 | #63 |
 | issue_335_fps1_keyframe_packets | `audio.jb_delay_p95_ms` | 1083 | 806 | ±225 | behind | 9/10 | #63 |
@@ -187,7 +187,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_257_zero_max_payload | `video.render_fps` | 22.2 | 29.7 | ±1.5 | behind | 10/10 | #37, #24 |
 | issue_257_zero_max_payload | `video.time_to_first_frame_ms` | 289 | 186 | ±50 | behind | 10/10 | #24, #61 |
 | issue_29_ulpfec_over_red | `video.freeze_count` | 9.1 | 7.4 | ±1.3 | behind | 7/10 | #5, #37, #24 |
-| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 24687 | 20966 | ±2845 | behind | 7/10 | #5, #37, #24 |
+| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 24687 | 20963 | ±2840 | behind | 7/10 | #5, #37, #24 |
 | issue_329_utilization_reordering | `repair.overhead_pct` | 32.5 | 37.1 | ±2 | ahead | 10/10 | #21, #7, #29 |
 | issue_331_low_bandwidth_av_offset_seed4 | `video.render_fps` | 27.8 | 25.5 | ±1.4 | ahead | 10/10 | #37, #24 |
 | issue_335_fps1_keyframe_packets | `audio.concealed_pct` | 3.7 | 0.5 | ±1.5 | behind | 9/10 | #63 |
