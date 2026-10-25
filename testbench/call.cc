@@ -506,6 +506,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         s.video_max_payload != Scenario{}.video_max_payload
             ? static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500))
             : 1460;
+    // libwebrtc's RTCPSender seeds its report-interval draws from the clock (rtcp_sender.cc:130), and sm_compare
+    // starts that clock per seed, so every scenario seed draws its own RTCP schedule (issue #399). Seed 1 keeps
+    // the schedule every seed drew before. Both ends get the seed, as both of libwebrtc's are built at the same time.
+    c.seed = s.seed;
     c.events = &events;
     return c;
   };
