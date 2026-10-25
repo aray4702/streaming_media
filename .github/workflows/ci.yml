@@ -168,7 +168,12 @@ jobs:
       - run: |
           mkdir -p ~/apt-cache/partial
           printf 'Dir::Cache::Archives "%s/apt-cache";\nAPT::Sandbox::User "root";\n' "$HOME" | sudo tee /etc/apt/apt.conf.d/90sm-apt-cache
-          wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21
+          # Download first and fail loudly: piping into bash hides a failed
+          # download (bash runs an empty script and succeeds), and the next
+          # step then reports a missing compiler instead.
+          curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo bash /tmp/llvm.sh 21
+          command -v clang++-21 >/dev/null || { echo "::error::clang++-21 is not installed after llvm.sh (apt.llvm.org)"; exit 1; }
           sudo chown -R "$USER" ~/apt-cache
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare
