@@ -532,6 +532,28 @@ SM_TEST(SendSideController, VideoLeavesTheAllocatorAfterTwoSecondsWithoutAnEncod
   SM_EXPECT_TRUE(c.video_registered());
 }
 
+SM_TEST(SendSideController, ActivityCheckDueAtAReconfigurationRunsFirst) {
+  // The encoder queue posts OnEncoderConfigurationChanged to the worker queue, so
+  // the activity task due at the same instant runs before it: the stream times
+  // out and the reconfiguration registers it again at once (issue #375).
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(300);
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);
+  const int64_t both = c.allocator().limits().max_allocatable.bps();
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t < 2000; ++t) c.Process(Timestamp::Millis(t));
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(2000));
+  SM_EXPECT_TRUE(c.video_registered());
+  SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
+  // The 2 s check already ran: the Process call at 2 s does not remove it again.
+  c.Process(Timestamp::Millis(2000));
+  SM_EXPECT_TRUE(c.video_registered());
+  // The next check is at 4 s; timed_out_ is set, so a frameless stream stays.
+  for (int t = 2001; t <= 4000; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_TRUE(c.video_registered());
+}
+
 SM_TEST(SendSideController, EncodedFramesKeepVideoInTheAllocator) {
   SendSideController c;
   c.ConfigureAllocation(DataRate::KilobitsPerSec(50), true);

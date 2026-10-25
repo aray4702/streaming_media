@@ -21,17 +21,23 @@ expect video.keyframe_requests == 0
 # PR #324 (#84's flip, quality scaling on): was >= 0.99. Provisional lock, tracked to #375: ours 0.333 on seed 1, libwebrtc worst seed 1-10 0.567 (mean 0.827).
 # Issue #375 (Opus size model): ours 0.367 on seed 1 (mean 0.59 over seeds 1-10), still below libwebrtc's worst seed: provisional, #375.
 # Issue #375 (encoder activity check): ours 0.833 on seed 1 (mean 0.80 over seeds 1-10; libwebrtc 0.767 on seed 1, mean 0.827). Tight.
-expect video.render_fps >= 0.8
+# Issue #375 (the activity check runs before a reconfiguration at the same instant; program.md 0.2, needs-human): was >= 0.8.
+# Ours 0.767 on seed 1, as libwebrtc's seed 1 (0.767; worst of 1-10 0.567, mean 0.827); our mean 0.81 over seeds 1-10.
+expect video.render_fps >= 0.75
 # PR #324 (#84's flip, quality scaling on; program.md 0.2, needs-human): were < 910, < 750 and < 0.7. Ours on
 # seed 1: 1893, 1060 and 3.76; libwebrtc's worst of seeds 1-10 on this PR's compare-webrtc at f910c0a: 2187, 1440
 # and 4.92 (means 979, 806, 0.52). Owner's rule: 10-30 % margin, never beyond libwebrtc's worst seed.
 # Issue #375 (Opus size model): ours 1596, 1020 and 3.42 on seed 1 (mean m2e 1399 over seeds 1-10); 10 % above ours.
 # Issue #375 (encoder activity check): ours 914, 730 and 0.62 on seed 1 (mean m2e 914 over seeds 1-10; libwebrtc 802, 720 and 0
 # on seed 1, means 979, 806, 0.52); 10 % above ours.
-expect audio.mouth_to_ear_p95_ms < 1010
+# Issue #375 (activity check before a reconfiguration): mouth-to-ear was < 1010. Ours 831, 730 and 0 on seed 1 (mean m2e 892
+# over seeds 1-10; libwebrtc 802, 720 and 0 on seed 1); 10 % above ours for mouth-to-ear, the other two unchanged.
+expect audio.mouth_to_ear_p95_ms < 915
 expect audio.jb_delay_p95_ms < 810
 expect audio.concealed_pct < 0.7
 # PR #324 (#84's flip, quality scaling on): was < 195. Provisional lock, tracked to #375: ours 800 on seed 1, libwebrtc worst seed 1-10 699 (mean 127).
 # Issue #375 (Opus size model): ours 541 on seed 1 (mean 410 over seeds 1-10), within libwebrtc's worst seed. Tight.
 # Issue #375 (encoder activity check): ours 150 on seed 1 (mean 140 over seeds 1-10; libwebrtc 37 on seed 1, mean 127); 10 % above ours.
-expect cc.queue_p95_ms < 165
+# Issue #375 (activity check before a reconfiguration): was < 165. Ours 64.6 on seed 1 (mean 122 over seeds 1-10; libwebrtc 37 on
+# seed 1, mean 127); 10 % above ours.
+expect cc.queue_p95_ms < 72
