@@ -57,6 +57,9 @@ struct Scenario {
   TimeDelta duration = TimeDelta::Seconds(30);
   uint64_t seed = 1;
   int compare_seeds = 0;  // `compare_seeds N`: read only by sm_compare, overrides its --seeds for this scenario (0 = use --seeds).
+  // `compare_clock_start S`: read only by sm_compare, the libwebrtc side's simulated clock at the call's start, in
+  // seconds (0 = 100000). RTCPSender seeds its report-interval draws from that clock (yardstick for #390).
+  int64_t compare_clock_start_s = 0;
 
   // Media.
   bool audio = true;

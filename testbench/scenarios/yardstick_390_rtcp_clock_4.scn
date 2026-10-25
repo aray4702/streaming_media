@@ -1,0 +1,10 @@
+name yardstick_390_rtcp_clock_4
+describe issue_204_cross_traffic_join with libwebrtc's clock starting at 131676 s, so its RTCPSender draws another RTCP schedule: does libwebrtc stick above capacity on any of 80 seeds under it (yardstick for #390)
+# libwebrtc on its default clock (100000 s): 0 of 80 seeds stuck (>= 10 freezes), #389. Ours: 3 of 80 on main's schedule,
+# 5 of 80 under a schedule drawn as libwebrtc's. Our side is unchanged by this key.
+compare_seeds 80
+compare_clock_start 131676
+duration 40s
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps

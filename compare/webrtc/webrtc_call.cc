@@ -628,7 +628,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   Report rep;
   rep.scenario = s;
 
-  const w::Timestamp t0 = w::Timestamp::Seconds(100000);
+  // RTCPSender seeds random_ from this clock (rtcp_sender.cc:130), so it picks the RTCP schedule of every seed;
+  // `compare_clock_start` moves it (#390).
+  const w::Timestamp t0 = w::Timestamp::Seconds(s.compare_clock_start_s > 0 ? s.compare_clock_start_s : 100000);
   SimTime sim(t0);
   w::ScopedYieldPolicy yield_policy(&sim);
   auto rel = [&](w::Timestamp t) { return sm::Timestamp::Micros((t - t0).us()); };
