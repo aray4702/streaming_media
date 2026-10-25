@@ -14,6 +14,8 @@ timing v2
 # knows the sender's RTT, while libwebrtc's receive-only Call in sm_compare
 # has none (without the RTT term ours is p50 83-98, p95 130-199).
 expect video.e2e_delay_p95_ms < 250
-expect video.e2e_delay_p50_ms < 170
+# PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was < 170. Seed-1 outlier; mean in band
+# (ours 141.7 / libwebrtc 125.2, seeds 1-10; ours 176 on seed 1, main 175 on seed 8). Outlier clause: 10 % above ours.
+expect video.e2e_delay_p50_ms < 194
 expect video.freeze_total_ms < 500
 expect video.render_fps >= 29

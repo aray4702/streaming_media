@@ -498,10 +498,12 @@ ALGORITHMS = [
          scenario="7 500 packets over 5% loss with jitter (reordering); feedback every 50 ms serialized to the "
                   "real wire format, parsed and joined with the send history. Each packet must be reported received "
                   "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
-                  "re-reports it), with arrival-time error within the 250 us quantization.",
+                  "re-reports it), with arrival-time error within the 250 us quantization of the wire, and each time since the feedback's base "
+                  "time handed to the estimators rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter (#365).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
-               "vectors. The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "
+               "vectors. Each arrival delta is rounded to the nearest 250 us tick, half away from zero, as "
+               "rtcp::TransportFeedback::AddReceivedPacket does (#365; checked against libwebrtc's builder by sm_rtcp_interop). The builder is libwebrtc's TransportSequenceNumberFeedbackGenenerator: arrivals stay 500 ms, a "
                "reordered packet moves the window start back and is reported again, no gap older than 0x7FFE is "
                "reported, a message that cannot take another packet ends, and the interval follows 5% of the local "
                "send estimate (50-250 ms, 100 ms to start). Its v1 builder (each arrival once, fixed 50 ms) and the "

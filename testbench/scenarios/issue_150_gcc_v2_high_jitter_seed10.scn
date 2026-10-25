@@ -10,9 +10,8 @@ duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 seed 10
 expect cc.utilization_pct < 55
-# PR #345 (#342, SPS VUI rewrite as libwebrtc's SpsVuiRewriter; program.md 0.2): was >= 25, which libwebrtc's own seed 10
-# fails (20.5). Seed-1 outlier; mean in band (ours 23.07 / libwebrtc 23.5, seeds 10-19; main 23.06; ours 23.21 on seed 10).
-# Outlier clause: 10 % below ours.
-expect cc.utilization_pct >= 20.9
+# PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was >= 25. Ours 23.84 on seed 10 (22.65 with #345 merged; #345 alone set >= 20.9, this line is the tighter);
+# libwebrtc seeds 10-19 18.5-34.3 (fails >= 25 on 6 of 10). Tight rule: about 12 % below ours, not below libwebrtc's worst.
+expect cc.utilization_pct >= 21
 expect cc.queue_p95_ms < 40
 expect video.freeze_count == 0
