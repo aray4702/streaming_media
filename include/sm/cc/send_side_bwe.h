@@ -33,7 +33,14 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kCwnd: the congestion-window pushback (issue #390), on every transport feedback
+  // (packets = 1) and on each sent packet that changes the reduce ratio (packets = 0):
+  // bitrate_bps = the target the window is computed from (libwebrtc's
+  // last_loss_based_target_rate_), loss_limit_bps = the data window in bytes,
+  // instant_ub_bps = the bytes in flight, modified_trend = the cwnd reduce ratio,
+  // threshold = the smallest feedback max-RTT (ms) in the window.
+  // kRtt: an RTT update handed to GoogCC (OnRoundTripTimeUpdate), modified_trend = RTT in ms.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kCwnd, kRtt };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -139,6 +146,9 @@ class GccController : public MetricsSource {
   const SendSideBandwidthEstimation& send_side_bwe() const { return ssbe_; }
   const SendHistory& history() const { return history_; }
   void ExportMetrics(MetricsWriter& w) const override;
+  // A kCwnd row of the GoogCC trace (issue #390); a no-op without bwe_trace.
+  void TraceCwnd(Timestamp now, DataRate target, std::optional<DataSize> window, DataSize in_flight, double reduce_ratio,
+                 std::optional<int64_t> min_rtt_ms, bool feedback);
 
  private:
   NetworkControlUpdate MakeUpdate(Timestamp now, std::vector<ProbeCluster> probes);

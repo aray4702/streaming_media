@@ -236,6 +236,7 @@ class SendSideController : public MetricsSource {
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
+  void TraceCwnd(Timestamp now, bool feedback);
   void PostTargetRate(Timestamp now);
   void UpdateControlState(Timestamp now);
   // The congestion-window reduce ratio the encoder takes: the one last passed on with the handler.
@@ -289,6 +290,7 @@ class SendSideController : public MetricsSource {
   cc::AllocationLimits notified_limits_;
   uint64_t video_timeouts_ = 0;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
+  double traced_reduce_ratio_ = 0.0;  // The reduce ratio of the last kCwnd trace row.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;

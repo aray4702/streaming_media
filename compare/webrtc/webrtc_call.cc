@@ -86,6 +86,18 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // The congestion-window pushback inputs (issue #390).
+  static std::optional<DataSize> DataWindow(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->current_data_window_;
+  }
+  static DataRate WindowTarget(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->last_loss_based_target_rate_;
+  }
+  static std::optional<int64_t> MinFeedbackRtt(const NetworkControllerInterface* c) {
+    const auto& rtts = static_cast<const GoogCcNetworkController*>(c)->feedback_max_rtts_;
+    if (rtts.empty()) return std::nullopt;
+    return *std::min_element(rtts.begin(), rtts.end());
+  }
 };
 }  // namespace webrtc
 
@@ -200,8 +212,25 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
   w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
   w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
-  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override {
+    if (!m.smoothed && !m.round_trip_time.IsZero()) {  // What GoogCC hands DelayBasedBwe (issue #390).
+      cc::BweTraceRow r;
+      r.time_us = now_us_();
+      r.kind = cc::BweTraceRow::Kind::kRtt;
+      r.modified_trend = static_cast<double>(m.round_trip_time.us()) / 1000.0;
+      rows_->push_back(r);
+    }
+    return inner_->OnRoundTripTimeUpdate(m);
+  }
+  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override {
+    const w::DataSize in_flight = m.data_in_flight;
+    w::NetworkControlUpdate u = inner_->OnSentPacket(m);
+    // A sent packet that changes the pushback's reduce ratio (issue #390).
+    if (u.target_rate && u.target_rate->cwnd_reduce_ratio != traced_reduce_ratio_) {
+      TraceCwnd(in_flight, u.target_rate->cwnd_reduce_ratio, false);
+    }
+    return u;
+  }
   w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
   w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
   w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
@@ -216,6 +245,7 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
     if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
     const size_t first_row = rows_->size();
+    const w::DataSize in_flight = m.data_in_flight;
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
     using P = w::GoogCcStatePrinter;
@@ -224,10 +254,27 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
+    TraceCwnd(in_flight, u.target_rate ? u.target_rate->cwnd_reduce_ratio : traced_reduce_ratio_, true);
     return u;
   }
 
  private:
+  // One kCwnd row (issue #390): the window and its target, the bytes in flight GoogCC was given, the reduce ratio.
+  void TraceCwnd(w::DataSize in_flight, double reduce_ratio, bool feedback) {
+    traced_reduce_ratio_ = reduce_ratio;
+    cc::BweTraceRow r;
+    r.time_us = now_us_();
+    r.kind = cc::BweTraceRow::Kind::kCwnd;
+    r.bitrate_bps = w::GoogCcStatePrinter::WindowTarget(inner_.get()).bps();
+    r.packets = feedback ? 1 : 0;
+    const std::optional<w::DataSize> window = w::GoogCcStatePrinter::DataWindow(inner_.get());
+    r.loss_limit_bps = window ? window->bytes() : -1;
+    r.instant_ub_bps = in_flight.bytes();
+    r.modified_trend = reduce_ratio;
+    if (auto rtt = w::GoogCcStatePrinter::MinFeedbackRtt(inner_.get())) r.threshold = static_cast<double>(*rtt);
+    rows_->push_back(r);
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
@@ -274,6 +321,7 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   std::unique_ptr<w::InterArrivalDelta> inter_arrival_;
   std::unique_ptr<w::TrendlineEstimator> detector_;
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
+  double traced_reduce_ratio_ = 0.0;  // The reduce ratio of the last kCwnd row.
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {

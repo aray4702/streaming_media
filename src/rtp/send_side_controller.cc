@@ -63,6 +63,13 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
 }
 
+// The pushback state for the GoogCC trace (issue #390).
+void SendSideController::TraceCwnd(Timestamp now, bool feedback) {
+  traced_reduce_ratio_ = cwnd_.reduce_ratio();
+  gcc_.TraceCwnd(now, target_, cwnd_.data_window(), gcc_.history().InFlight(), cwnd_.reduce_ratio(),
+                 cwnd_.min_feedback_rtt_ms(), feedback);
+}
+
 // GoogCC's MaybeTriggerOnNetworkChanged hands its TargetTransferRate to the transport's
 // CongestionControlHandler (drop-frame-only pushback: the loss-based target and the reduce ratio). It runs
 // after feedback, on the process interval and, with congestion-window pushback, for every sent packet.
@@ -316,6 +323,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     }
     if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
+    if (cwnd_.reduce_ratio() != traced_reduce_ratio_) TraceCwnd(now, false);
     if (cfg_.cwnd.enabled) PostTargetRate(now);
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
@@ -386,6 +394,7 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
   Apply(gcc_.OnTransportFeedback(fb, now), now);
   if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
   UpdatePushback(now, true);
+  TraceCwnd(now, true);
   PostTargetRate(now);
   outage_.OnFeedback(now);
 }

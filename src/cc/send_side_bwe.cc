@@ -159,6 +159,14 @@ void GccController::OnRttUpdate(TimeDelta rtt) {
   // RtpTransportControllerSend::OnRttUpdate: `rtt.RoundTo(1 ms)`, and a zero RTT is not passed on.
   rtt = TimeDelta::Millis((rtt.us() + 500) / 1000);
   if (rtt.IsZero()) return;
+  if (cfg_.bwe_trace) {
+    BweTraceRow r;
+    // Stamped no earlier than the last row (the controller's clock moves only with its own calls).
+    r.time_us = std::max(last_now_.us(), cfg_.bwe_trace->empty() ? int64_t{0} : cfg_.bwe_trace->back().time_us);
+    r.kind = BweTraceRow::Kind::kRtt;
+    r.modified_trend = static_cast<double>(rtt.us()) / 1000.0;
+    cfg_.bwe_trace->push_back(r);
+  }
   last_rtt_ = rtt;
   delay_.SetRtt(rtt);
   ssbe_.UpdateRtt(rtt, last_now_);
@@ -273,6 +281,21 @@ NetworkControlUpdate GccController::ResetEstimate(DataRate rate, Timestamp now) 
   if (cfg_.enable_probing) probes = probe2_.SetBitrates(cfg_.min_rate, target_, cfg_.max_rate, now);
   SM_EVENT(cfg_.events, now, "gcc", "reset", rate.bps(), 0);
   return MakeUpdate(now, RegisterProbes(std::move(probes)));
+}
+
+void GccController::TraceCwnd(Timestamp now, DataRate target, std::optional<DataSize> window, DataSize in_flight,
+                              double reduce_ratio, std::optional<int64_t> min_rtt_ms, bool feedback) {
+  if (!cfg_.bwe_trace) return;
+  BweTraceRow r;
+  r.time_us = now.us();
+  r.kind = BweTraceRow::Kind::kCwnd;
+  r.bitrate_bps = target.bps();
+  r.packets = feedback ? 1 : 0;
+  r.loss_limit_bps = window ? window->bytes() : -1;
+  r.instant_ub_bps = in_flight.bytes();
+  r.modified_trend = reduce_ratio;
+  if (min_rtt_ms) r.threshold = static_cast<double>(*min_rtt_ms);
+  cfg_.bwe_trace->push_back(r);
 }
 
 // The trendline updates of this feedback, one row per send-time group (issue #152).

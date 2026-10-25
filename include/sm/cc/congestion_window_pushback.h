@@ -20,6 +20,7 @@
 // build a queue when pushback occurs.
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -66,6 +67,11 @@ class CongestionWindowPushback : public MetricsSource {
   double reduce_ratio() const { return reduce_ratio_; }
   double encoding_rate_ratio() const { return ratio_; }
   std::optional<DataSize> data_window() const { return window_; }
+  // The smallest feedback max-RTT (ms) in the window, if any (for the trace).
+  std::optional<int64_t> min_feedback_rtt_ms() const {
+    if (rtts_ms_.empty()) return std::nullopt;
+    return *std::min_element(rtts_ms_.begin(), rtts_ms_.end());
+  }
 
   // Encoder side: drop every N-th captured frame (0 = none) and the target
   // the encoder rate control then gets. Mirrors

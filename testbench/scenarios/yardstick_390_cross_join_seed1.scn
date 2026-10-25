@@ -1,0 +1,7 @@
+name yardstick_390_cross_join_seed1
+describe issue_204_cross_traffic_join on seed 1 (main's stuck seeds are 15, 25 and 30): congestion-window pushback and RTT rows traced on both stacks (yardstick for #390), no expectations
+duration 40s
+seed 1
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps
