@@ -299,6 +299,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   }
   Start(now);
   SendStream& vs = video_send_[static_cast<size_t>(id.index)];
+  // VideoSendStreamImpl::OnEncodedImage: encoder activity (issue #375).
+  send_.OnVideoFrameEncoded(now);
   // RtpVideoSender::OnEncodedImage, and the sent frame rate SendStatisticsProxy counts.
   vs.fec->UpdateWithEncodedData(encoded_size, keyframe, now);
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;

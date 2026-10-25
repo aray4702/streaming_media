@@ -116,6 +116,13 @@ void GccController::SetMinAllocatable(DataRate r) {
   cfg_.start_rate = std::max(cfg_.start_rate, cfg_.min_rate);
 }
 
+void GccController::UpdateMinAllocatable(DataRate r) {
+  cfg_.min_rate = std::max(configured_min_, r);
+  if (cfg_.max_rate < cfg_.min_rate) cfg_.max_rate = cfg_.min_rate;
+  delay_.SetMinRate(cfg_.min_rate);
+  ssbe_.SetMinMaxBitrate(cfg_.min_rate, cfg_.max_rate);
+}
+
 void GccController::SetPacingLimits(DataRate min_total_allocated, DataRate max_padding) {
   min_total_allocated_ = min_total_allocated;
   max_padding_ = max_padding;

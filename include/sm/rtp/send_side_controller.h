@@ -152,6 +152,23 @@ class SendSideController : public MetricsSource {
   // is off by default) is registered when `video` is true.
   void ConfigureAllocation(DataRate audio_wire_rate, bool video);
 
+  // VideoSendStreamImpl's encoder activity check (video_send_stream_impl.cc:84,
+  // 677-760, 846-875): every kEncoderTimeOut (2 s) from Start(), a video stream
+  // that encoded no frame since the last check and has a non-zero encoder target
+  // leaves the BitrateAllocator (SignalEncoderTimedOut); the first check that
+  // sees a frame again, or the frame itself after a time-out (OnEncodedImage,
+  // disable_padding_), registers it again (SignalEncoderActive), and so does an
+  // encoder reconfiguration while the check runs (OnEncoderConfigurationChanged).
+  // Each change of the allocation limits goes to GoogCC as OnStreamsConfig
+  // (BitrateAllocator::UpdateAllocationLimits -> OnAllocationLimitsChanged), so a
+  // stream that comes back raises max_total_allocated_bitrate and may start an
+  // allocation probe (ProbeController::OnMaxTotalAllocatedBitrate). The video
+  // stream's pad-up rate is 0 (CalculateMaxPadBitrateBps for one stream without
+  // min_transmit_bitrate), so disable_padding_ changes no limit.
+  void OnVideoFrameEncoded(Timestamp now);
+  void OnVideoEncoderReconfigured(Timestamp now);
+  bool video_registered() const { return video_registered_; }
+
   // The stream whose SSRC pads and probes. Not owned.
   void SetPaddingSender(RtpSender* sender);
 
@@ -238,6 +255,12 @@ class SendSideController : public MetricsSource {
   // RtpVideoSender::CalculateOverheadRate (frame-rate option off).
   DataRate OverheadRate(DataRate rate, int64_t packet_size_bytes) const;
   void WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const;
+  // The encoder activity task due at `at` (check_encoder_activity_task_).
+  void CheckVideoActivity(Timestamp at);
+  void RegisterVideo(Timestamp now);    // AddObserver(this, GetAllocationConfig()).
+  void UnregisterVideo(Timestamp now);  // RemoveObserver(this).
+  // RtpTransportControllerSend::OnAllocationLimitsChanged -> GoogCC OnStreamsConfig.
+  void NotifyAllocationLimits(Timestamp now);
 
   SendSideConfig cfg_;
   const sync::ExtensionMap* extensions_;
@@ -253,6 +276,16 @@ class SendSideController : public MetricsSource {
   // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
   DataRate video_encoder_target_;
   DataRate video_link_allocation_;  // VideoSendStreamImpl's link_allocation as of the last allocation.
+  DataRate video_allocation_;       // The video stream's last allocation, kept while it is unregistered.
+  cc::StreamAllocationConfig video_alloc_cfg_;
+  cc::BitrateAllocatorV2::Observer video_observer_;
+  bool video_registered_ = false;
+  bool video_activity_ = false;    // activity_
+  bool video_timed_out_ = false;   // timed_out_
+  bool video_disable_padding_ = true;  // disable_padding_
+  Timestamp next_video_activity_check_ = Timestamp::PlusInfinity();
+  cc::AllocationLimits notified_limits_;
+  uint64_t video_timeouts_ = 0;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
