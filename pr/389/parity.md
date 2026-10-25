@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-115 scenarios, mean of 10 seeds. **123 gaps**: 59 behind libwebrtc, 64 ahead of it; 0 without an owner.
+115 scenarios, mean of 10 seeds. **108 gaps**: 44 behind libwebrtc, 64 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-89 gaps on `main`, 123 here: **33 closed, 67 opened**, 0 changed direction.
+73 gaps on `main`, 108 here: **32 closed, 67 opened**, 0 changed direction.
 
 Closed:
 
@@ -27,7 +27,6 @@ Closed:
 | issue_23_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1941 | 2139 | ±180 | ahead | 7/10 | #63, #224 |
 | issue_24_timing_v2_high_jitter | `audio.mouth_to_ear_p95_ms` | 265 | 241 | ±17.8 | behind | 6/10 | #63 |
 | issue_24_timing_v2_high_jitter | `audio.jb_delay_p95_ms` | 146 | 122 | ±18.1 | behind | 6/10 | #63 |
-| issue_257_zero_max_payload | `audio.concealed_pct` | 1.0 | 0.3 | ±0.5 | behind | 9/10 | #63 |
 | issue_48_prober_low_bandwidth | `audio.mouth_to_ear_p95_ms` | 1941 | 2139 | ±180 | ahead | 7/10 | #63, #224 |
 | issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 155 | 167 | ±10 | ahead | 6/10 | #63 |
 | issue_62_neteq_v2_audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 155 | 167 | ±10 | ahead | 6/10 | #63 |
@@ -129,11 +128,6 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_150_gcc_v2_high_jitter_seed10 | `video.e2e_delay_p95_ms` | 11.4 | 22.1 (further) |
 | issue_154_shallow_drop_repair_v2 | `video.keyframe_requests` | 0.9 | 1.1 (further) |
 | issue_21_shallow_drop_repair | `video.keyframe_requests` | 0.9 | 1.1 (further) |
-| issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 417 | 500 (further) |
-| issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 275 | 339 (further) |
-| issue_257_zero_max_payload | `video.keyframe_requests` | 1.6 | 1.3 (closer) |
-| issue_257_zero_max_payload | `cc.utilization_pct` | 12.2 | 10.6 (closer) |
-| issue_257_zero_max_payload | `net.loss_pct` | 0.5 | 0.8 (further) |
 | issue_29_ulpfec_over_red | `video.pause_total_ms` | 1243 | 617 (closer) |
 | issue_331_low_bandwidth_av_offset_seed4 | `sync.av_offset_p95_ms` | 332 | 384 (further) |
 | very_low_capacity | `repair.overhead_pct` | 13.5 | 17.7 (further) |
@@ -187,21 +181,6 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_23_low_bandwidth | `video.render_fps` | 27.9 | 25.7 | ±1.4 | ahead | 9/10 | #37, #24 |
 | issue_24_timing_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23 |
 | issue_24_timing_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61 |
-| issue_257_zero_max_payload | `audio.jb_delay_p95_ms` | 464 | 125 | ±23.2 | behind | 10/10 | #63 |
-| issue_257_zero_max_payload | `audio.mouth_to_ear_p95_ms` | 706 | 205 | ±35.3 | behind | 10/10 | #63 |
-| issue_257_zero_max_payload | `cc.max_settle_ms` | 3720 | 300 | ±500 | behind | 9/10 | #15, #48, #61, #20 |
-| issue_257_zero_max_payload | `cc.queue_p95_ms` | 220 | 43.5 | ±11.0 | behind | 10/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `cc.utilization_pct` | 75.0 | 85.7 | ±4.3 | behind | 9/10 | #19, #15, #48, #12, #61 |
-| issue_257_zero_max_payload | `net.loss_pct` | 0.8 | 0 | ±0.5 | behind | 4/10 | #21, #61, #12 |
-| issue_257_zero_max_payload | `sync.av_offset_p95_ms` | 1014 | 57.0 | ±50.7 | behind | 10/10 | #379 |
-| issue_257_zero_max_payload | `video.avg_kbps` | 1433 | 2002 | ±100 | behind | 10/10 | #37, #61 |
-| issue_257_zero_max_payload | `video.e2e_delay_p95_ms` | 1325 | 122 | ±66.2 | behind | 10/10 | #24, #37 |
-| issue_257_zero_max_payload | `video.freeze_count` | 4.8 | 0 | ±0.5 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.freeze_total_ms` | 3029 | 0 | ±151 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.keyframe_requests` | 1.3 | 0 | ±0.5 | behind | 7/10 | #23 |
-| issue_257_zero_max_payload | `video.longest_freeze_ms` | 1112 | 11.6 | ±100 | behind | 10/10 | #5, #37, #24 |
-| issue_257_zero_max_payload | `video.render_fps` | 22.9 | 29.7 | ±1.5 | behind | 10/10 | #37, #24 |
-| issue_257_zero_max_payload | `video.time_to_first_frame_ms` | 281 | 186 | ±50 | behind | 10/10 | #24, #61 |
 | issue_283_longest_freeze_no_metrics | `video.freeze_count` | 2 | 1.4 | ±0.5 | behind | 6/10 | #5, #37, #24 |
 | issue_283_longest_freeze_no_metrics | `video.freeze_total_ms` | 2287 | 2152 | ±118 | behind | 6/10 | #5, #37, #24 |
 | issue_29_ulpfec_over_red | `video.keyframe_requests` | 6.5 | 7.2 | ±0.6 | ahead | 5/10 | #23 |
