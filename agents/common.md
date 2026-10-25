@@ -21,10 +21,12 @@ practical details every role shares.
   The test bench binary is `out/native/testbench/sm_testbench` (see
   `testbench/README.md`).
 - `sm_compare` (coverage area 9) needs clang 21 or newer, because it builds
-  against the libc++ that the prebuilt libwebrtc uses. Install it with
-  `wget -qO- https://apt.llvm.org/llvm.sh | sudo bash -s -- 21` if
-  `clang++-21` is missing. If that fails, say so in the run log and pick
-  the next area instead.
+  against the libc++ that the prebuilt libwebrtc uses. If `clang++-21` is
+  missing, install it with
+  `curl -fsSL --retry 5 -o /tmp/llvm.sh https://apt.llvm.org/llvm.sh && sudo bash /tmp/llvm.sh 21`
+  (not `wget -qO- … | bash`, which succeeds silently when the download
+  fails), then check `command -v clang++-21`. If that fails, say so in the
+  run log and pick the next area instead.
   ```sh
   compare/webrtc/fetch.sh                      # prebuilt libwebrtc + matching libc++, ~110 MB
   CXX=clang++-21 cmake -S compare/webrtc -B out/compare -G Ninja -DCMAKE_BUILD_TYPE=Release
