@@ -9,6 +9,7 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
     unit/rtp/rtp_sender_test.cc
     unit/rtp/send_side_controller_test.cc
     unit/rtp/session_test.cc
+    unit/rtp/sps_vui_rewriter_test.cc
     unit/rtp/video_send_controller_test.cc
   SUITES
     CallStats
@@ -20,6 +21,7 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
     RtpSender
     SendSideController
     Session
+    SpsVuiRewriter
     VideoSendController
 )
 sm_add_test_exe(sm_e2e_rtp LABEL e2e DEPS sm::rtp
