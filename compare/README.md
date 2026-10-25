@@ -68,7 +68,11 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   traffic as `sm_testbench`. A link change at time t applies to every
   packet sent at t or later on both stacks: each transport applies the
   changes due before it sends, because a libwebrtc task due in the same
-  millisecond can run before the harness tick (issue #151).
+  millisecond can run before the harness tick (issue #151). Within a
+  millisecond the cross traffic reaches the bottleneck before the call's
+  packets on both stacks: `sm_compare`'s tick sends it before libwebrtc's
+  pacer runs, and `sm_testbench` sends it before its sender's packets. At a
+  full drop-tail queue the second arrival is dropped (issue #390).
 - **Simulated time.** Release builds of libwebrtc leave out its
   simulated-time test harness, so [sim_time.cc](webrtc/sim_time.cc)
   provides one: a clock plus task queues that jump from one due task to

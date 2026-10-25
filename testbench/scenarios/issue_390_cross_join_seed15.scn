@@ -1,0 +1,17 @@
+name issue_390_cross_join_seed15
+describe issue_204_cross_traffic_join on seed 15: when the 2 Mbps cross traffic and the call's packets reach the full 300 ms queue in the same millisecond, the cross traffic goes first, as in sm_compare, so the call takes its share of the drops and its rate falls below the free 1 Mbps after the second cut (#390)
+# main before the fix: the test bench put the call's packets of a tick ahead of the cross traffic, so the cross traffic
+# took the drop-tail drops (#392's traces: 8-15 % of ours dropped in 10.4-11.4 s against 15-19 % of libwebrtc's, on
+# all four seeds traced). Ours kept about 1.13 Mbps through the second after the second cut, the queue stayed full,
+# and the call stuck above capacity: 15 freezes, 5434 ms. Seeds 1-80 on main: 9 stuck (>= 10 freezes), mean 4.75
+# freezes. libwebrtc: 0 of 80 stuck, mean 2.76, at most 9 on one seed (#389, compare_seeds 80).
+# With the fix, this seed: 4 freezes, 1886 ms. Seeds 1-80: 3 stuck (seeds 5, 62, 76), mean 3.27.
+# Target (issue #390): stuck-mode share 0 of 80, as libwebrtc.
+duration 40s
+seed 15
+at 0s capacity=3000kbps delay=40ms queue=300ms
+at 10s cross=2000kbps
+at 25s cross=0kbps
+expect video.freeze_count <= 9
+expect video.freeze_total_ms < 3000
+expect cc.queue_p95_ms < 285

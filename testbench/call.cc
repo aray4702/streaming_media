@@ -814,9 +814,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       }
     }
 
-    // --- Sender: pacer, RTCP and cross traffic ----------------------------------
-    sender.Process(now);
-    put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
+    // --- Cross traffic, then the sender: pacer and RTCP --------------------------
+    // The cross traffic of a tick reaches the bottleneck before the call's packets of the same millisecond, as in
+    // sm_compare, whose tick sends it before libwebrtc's pacer runs (issue #390). When the drop-tail queue is full,
+    // the packet that arrives second is the one dropped; with the call's packets first, the cross traffic took
+    // those drops, and the call kept more throughput than libwebrtc's on the same link.
     if (fwd_state.cross.bps() > 0) {
       cross_debt += static_cast<double>(fwd_state.cross.bps()) / 8 / 1000;
       while (cross_debt >= 1200) {
@@ -824,6 +826,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         forward.Send(now, Fwd{}, DataSize::Bytes(1200));
       }
     }
+    sender.Process(now);
+    put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
 
     // --- Receiver -----------------------------------------------------------
     forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
