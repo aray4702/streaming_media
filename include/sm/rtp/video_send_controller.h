@@ -16,7 +16,8 @@
 // rate `EncodeDecision::target` by the encoder's measured overshoot (issue #5); the frame dropper keeps working on the
 // unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated.
 //
-// `quality_scaling` (off by default; issue #84 step 4) adds libwebrtc's
+// `quality_scaling` (on by default since #84's flip, as libwebrtc for a camera
+// whose encoder reports scaling settings; issue #84 step 4) adds libwebrtc's
 // QualityScalerResource with the MAINTAIN_FRAMERATE degradation preference of
 // a camera (video/adaptation/video_stream_encoder_resource_manager.cc,
 // quality_scaler_resource.cc): video::QualityScaler version 2 reads the QP of
@@ -99,9 +100,10 @@ struct VideoSendControllerConfig {
   // passed on is ignored. 0 = off (the v1 behaviour; `keyframe v2` turns it on).
   TimeDelta min_keyframe_request_interval = TimeDelta::Zero();
   // QualityScalerResource and EncodeUsageResource with MAINTAIN_FRAMERATE and
-  // the initial frame drop (see above). Off = the v1 behaviour: the captured
+  // the initial frame drop (see above). On by default, as libwebrtc (issue #84's flip).
+  // Off = the v1 behaviour: the captured
   // size is encoded as is.
-  bool quality_scaling = false;
+  bool quality_scaling = true;
   // EncoderInfo::ScalingSettings: H.264's QP thresholds (QualityScalingExperiment's
   // default 24/37) and kDefaultMinPixelsPerFrame.
   video::QpThresholds qp_thresholds;

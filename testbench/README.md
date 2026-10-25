@@ -3,7 +3,7 @@
 `sm_testbench` runs a complete one-way audio + video call through the
 library over emulated links whose impairments change on a script. It
 reports what a user of the call would experience. It is the tool the
-agents in [program.md](../program.md) use to find, reproduce and guard
+agents in [program.md](../agents/program.md) use to find, reproduce and guard
 against problems.
 
 ```sh
@@ -128,7 +128,7 @@ One directive per line, and `#` starts a comment.
 | `link_headroom on\|off` | on | `on` gives the encoder bitrate adjuster libwebrtc's `link_allocation` (`VideoSendStreamImpl::OnBitrateUpdated`): the video allocation less overhead and protection, taken before the encoder target is capped at the maximum, so an allocation above the maximum is headroom the adjuster can let the encoder use. `off` passes the capped target, with no headroom (#326) |
 | `send_rate_stats on\|off` | off | `on` takes the RTX/FEC share off the video encoder rate from per-type send rates as libwebrtc's `RtpSenderEgress::GetSendRates` keeps them (`RateStatistics`, 1 s): a repair stream that starts after 1.5 s without one counts at its rate since it started, not averaged over the second (#224). `off` averages every type over the last second |
 | `bitrate_adjuster on\|off` | on | `on` runs libwebrtc's `EncoderBitrateAdjuster` (#5): the encoder is configured with a rate lowered by its measured overshoot |
-| `quality_scaling on\|off` | off | `on` runs libwebrtc's quality scaling (#84): `QualityScalerResource` on the encoder model's QP and `EncodeUsageResource` (CPU overuse) on its encode time, with `MAINTAIN_FRAMERATE` and the initial frame drop; the library picks the encoded resolution (`video.encode_height_mean`) |
+| `quality_scaling on\|off` | on | `on` runs libwebrtc's quality scaling (#84): `QualityScalerResource` on the encoder model's QP and `EncodeUsageResource` (CPU overuse) on its encode time, with `MAINTAIN_FRAMERATE` and the initial frame drop; the library picks the encoded resolution (`video.encode_height_mean`) |
 | `timing v1\|v2` | v2 (since #24) | v1 is the library's video receive timing (`VideoJitterEstimator`, `VideoTiming`, `FrameScheduler` with its 10 ms late-drop rule); v2 is libwebrtc's (`JitterEstimator`, `TimestampExtrapolator`, `VCMTiming`, and frame release as `VideoStreamBufferController`/`FrameDecodeTiming`: a late frame is skipped only when a later keyframe is decodable; #24) |
 | `neteq v1\|v2` | v2 | v1 is the library's audio target delay (`DelayManager`: 95th percentile of each packet's relative delay, 10 ms buckets) and its own operations; v2 is libwebrtc M157's NetEq (`DelayManager` with `UnderrunOptimizer` over 500 ms maxima in 20 ms buckets and `ReorderOptimizer`, `PacketArrivalHistory` over 2 s, 80 ms until the first estimate; `DecisionLogic`, `Expand`, `Merge`, `Accelerate`/`PreemptiveExpand`, Opus in-band FEC; #62), the default since #62 |
 | `av_sync on\|off` | on (since #77 step 3) | `on` puts audio and video in one sync group on both stacks (#77): the audio stream sends its own RTCP SR (as libwebrtc's audio RtpRtcp module) and the receiver runs `RtpStreamsSynchronizer` every second, setting both streams' minimum playout delays; `sm_compare` sets libwebrtc's `sync_group` on both receive streams. `off` plays each stream out on its own delay, as before |

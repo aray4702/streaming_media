@@ -11,7 +11,8 @@ timing v2
 # FrameScheduler drops frames more than 10 ms late whenever a newer one is due.
 # Seeds 1-10: timing v1 16.0-20.8 fps; timing v2 28.8-29.2; libwebrtc on
 # issue_53_cwnd_pushback 27-28 (mean 27.5, parity-data main be4bfbc).
-expect video.render_fps >= 28
+# PR #324 (#84's flip, quality scaling on): was >= 28. Owner sign-off 2026-10-24: ours 27.56 on seed 1, libwebrtc worst seed 1-10 27.52 (mean 27.57).
+expect video.render_fps >= 27.5
 expect video.residual_loss_pct <= 1.0
 # Freezes: timing v1 2806-5621 ms, timing v2 1616-3793, libwebrtc 1512-4207.
 expect video.freeze_total_ms < 5000

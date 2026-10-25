@@ -11,5 +11,6 @@ at 15s capacity=800kbps
 # (#180): net.loss_pct over seeds 1-10 is 3.7-6.3 (mean 4.9; seed 1 4.4), against libwebrtc's 2.7-5.8 (mean 4.5).
 expect net.loss_pct < 7
 expect cc.send_over_target_ms < 1000
-expect cc.utilization_pct > 86
+# PR #324 (#84's flip, quality scaling on): was > 86. Owner sign-off 2026-10-24: ours 83.74 on seed 1, libwebrtc worst seed 1-10 81.95 (mean 84.67).
+expect cc.utilization_pct > 82
 expect video.avg_kbps > 1080

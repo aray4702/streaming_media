@@ -14,6 +14,7 @@ expect cc.utilization_pct >= 70
 # seed-1 value, never above libwebrtc's worst seed (1028).
 # With #224/#204's flip (`send_rate_stats` + `control_handler`), ours seed 1 447 (seeds 1-10: 447 534 464 870 235 752
 # 0 718 441 0, mean 446; main 287, libwebrtc 415). Moved by the same rule.
-expect video.freeze_total_ms < 460
+# PR #324 (#84's flip, quality scaling on): was < 460. Provisional lock, tracked to #376 (Owner option A, 2026-10-24): ours 1313 on seed 1, libwebrtc worst seed 1-10 769 (mean 472).
+expect video.freeze_total_ms < 1450
 expect audio.concealed_pct < 3
 expect audio.interruptions == 0
