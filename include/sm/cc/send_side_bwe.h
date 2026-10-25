@@ -33,7 +33,11 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kProbe: one received probe packet as ProbeBitrateEstimator gets it (yardstick for #365):
+  // packets = the cluster id, bitrate_bps = its size in bytes, send_ms / arrival_ms its send and
+  // receive time at microsecond precision. kProbeResult: an estimate ProbeBitrateEstimator
+  // returned (bitrate_bps), packets = the cluster id.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kProbe, kProbeResult };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

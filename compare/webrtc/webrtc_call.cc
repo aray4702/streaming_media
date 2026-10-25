@@ -53,6 +53,7 @@
 #include "api/transport/network_control.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "logging/rtc_event_log/events/rtc_event_probe_result_success.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
@@ -125,6 +126,13 @@ class BweTraceLog final : public w::RtcEventLog {
         r.bitrate_bps = e->bitrate_bps();
         r.fraction_loss = e->fraction_loss();
         r.packets = e->total_packets();
+        break;
+      }
+      case w::RtcEvent::Type::ProbeResultSuccess: {  // ProbeBitrateEstimator (#365 yardstick).
+        const auto* e = static_cast<const w::RtcEventProbeResultSuccess*>(event.get());
+        r.kind = cc::BweTraceRow::Kind::kProbeResult;
+        r.bitrate_bps = e->bitrate_bps();
+        r.packets = e->id();
         break;
       }
       default:
@@ -237,6 +245,17 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
       last_seen_packet_ = w::Timestamp::MinusInfinity();
     }
     for (const w::PacketResult& p : m.SortedByReceiveTime()) {
+      // The received probe packets ProbeBitrateEstimator gets (#365 yardstick), at microsecond precision.
+      if (p.sent_packet.pacing_info.probe_cluster_id != w::PacedPacketInfo::kNotAProbe && p.IsReceived()) {
+        cc::BweTraceRow pr;
+        pr.time_us = now_us_();
+        pr.kind = cc::BweTraceRow::Kind::kProbe;
+        pr.packets = p.sent_packet.pacing_info.probe_cluster_id;
+        pr.bitrate_bps = p.sent_packet.size.bytes();
+        pr.send_ms = static_cast<double>((p.sent_packet.send_time - t0_).us()) / 1000;
+        pr.arrival_ms = static_cast<double>(p.receive_time.us()) / 1000;  // The receiver's clock, as the feedback carries it.
+        rows_->push_back(pr);
+      }
       if (last_seen_packet_.IsInfinite() || m.feedback_time - last_seen_packet_ > kStreamTimeOut) {
         inter_arrival_ = std::make_unique<w::InterArrivalDelta>(kSendTimeGroupLength);
         detector_ = std::make_unique<w::TrendlineEstimator>(env_.field_trials(), nullptr);

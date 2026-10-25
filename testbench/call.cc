@@ -240,7 +240,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "probe", "probe_result"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
@@ -253,12 +253,20 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
     std::snprintf(buf, sizeof buf, "%.6g", v);
     return std::string(buf);
   };
+  // Probe rows carry microsecond send and receive times (#365 yardstick).
+  auto us = [](double v) {
+    if (std::isnan(v)) return std::string();
+    char buf[48];
+    std::snprintf(buf, sizeof buf, "%.3f", v);
+    return std::string(buf);
+  };
   for (const auto& r : trace) {
+    const bool probe = r.kind == cc::BweTraceRow::Kind::kProbe;
     out += std::to_string(r.time_us) + "," + kKinds[static_cast<size_t>(r.kind)] + "," + std::to_string(r.bitrate_bps) + "," +
            (r.detector < 0 ? "" : kDetector[r.detector]) + "," + num(r.fraction_loss) + "," + num(r.packets) + "," +
            (r.loss_state < 0 ? "" : kLossState[r.loss_state]) + "," + num(r.loss_limit_bps) + "," + num(r.instant_ub_bps) + "," +
            real(r.modified_trend) + "," + real(r.threshold) + "," + real(r.send_delta_ms) + "," + real(r.recv_delta_ms) + "," +
-           real(r.send_ms) + "," + real(r.arrival_ms) + "\n";
+           (probe ? us(r.send_ms) : real(r.send_ms)) + "," + (probe ? us(r.arrival_ms) : real(r.arrival_ms)) + "\n";
   }
   return out;
 }

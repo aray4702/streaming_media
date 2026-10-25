@@ -206,7 +206,25 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   std::optional<DataRate> acked = acked_v2_.bitrate();
   ssbe_.SetAcknowledgedRate(acked, now);
   for (const auto& r : SortedByReceiveTime(results)) {
-    if (r.probe_cluster >= 0) probe_est_.OnPacketResult(r);
+    if (r.probe_cluster < 0) continue;
+    if (cfg_.bwe_trace && r.received()) {
+      BweTraceRow t;
+      t.time_us = now.us();
+      t.kind = BweTraceRow::Kind::kProbe;
+      t.packets = r.probe_cluster;
+      t.bitrate_bps = r.size.bytes();
+      t.send_ms = static_cast<double>(r.send_time.us()) / 1000;
+      t.arrival_ms = static_cast<double>(r.receive_time.us()) / 1000;
+      cfg_.bwe_trace->push_back(t);
+    }
+    if (const auto est = probe_est_.OnPacketResult(r); est && cfg_.bwe_trace) {
+      BweTraceRow t;
+      t.time_us = now.us();
+      t.kind = BweTraceRow::Kind::kProbeResult;
+      t.packets = r.probe_cluster;
+      t.bitrate_bps = est->bps();
+      cfg_.bwe_trace->push_back(t);
+    }
   }
   std::optional<DataRate> probe = probe_est_.FetchAndResetLastEstimate();
   if (probe && acked) {
