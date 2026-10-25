@@ -49,12 +49,27 @@ were deleted in #167.
 The change came from `fix/354-feedback-ms-receive-times` (389806f),
 re-applied on `main` after #324.
 
+**Receiver side (#387's yardstick).** With the 1 ms rounding in place, the
+detector rows of `issue_256_audio_24khz` and `issue_23_outage_500ms` (seed 1)
+still differed from libwebrtc's by 1 ms on some groups (receive deltas 29/11
+against libwebrtc's 30/10). Our `TransportFeedbackBuilder` truncated each
+arrival delta to a 250 us tick, while `rtcp::TransportFeedback::AddReceivedPacket`
+rounds it to the nearest tick, half away from zero. About 1 arrival in 8 then
+crossed a millisecond boundary only on our side once the sender rounded down.
+The builder now rounds to the nearest tick. With it, those detector rows match
+libwebrtc's. `rtcp_packet/transport_feedback.cc` is not in
+`compare/webrtc/reference/`, so the new `sm_rtcp_interop` check
+"transport-cc: sub-tick arrivals" compares our deltas with libwebrtc's builder
+on reordered sub-tick arrivals.
+
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
 | `tests/unit/cc/transport_feedback_test.cc` `TransportFeedback.HistoryRoundsReceiveTimesToTheMillisecond` | times 641.75 / 643.25 / 639.25 ms (expected 641 / 643 / 640) | passes |
 | `tests/e2e/cc_e2e_test.cc` `E2E_TransportFeedback.EveryPacketReportedReceivedOnceWithinQuantization` | the new check that each received result is the wire time rounded down to 1 ms since base fails on every packet with a sub-ms offset | passes; the wire's own error against the true arrival is still held to <= 250 us |
+| `tests/unit/cc/transport_feedback_test.cc` `TransportFeedback.BuilderRoundsDeltasToTheNearestTick` | deltas 0 / 3 / 1 / 1 / 0 / -1 (truncated) instead of 0 / 4 / 1 / 1 / -2 / -1 | passes |
+| `sm_rtcp_interop` "transport-cc: sub-tick arrivals, same deltas as libwebrtc's" | runs in CI's `compare-webrtc` only | runs in CI's `compare-webrtc` only |
 
 The e2e test used to hold `SendHistory`'s output to 250 us of the true
 arrival time. That bound was the wire's quantization, and libwebrtc's

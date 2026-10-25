@@ -270,7 +270,13 @@ std::vector<TransportFeedback> TransportFeedbackBuilder::Build() {
         prev_us = ref_units * kRefUnitUs;
         started = true;
       }
-      ticks = (it->second.us() - prev_us) / kTickUs;
+      {
+        // Rounded to the nearest 250 us tick (half away from zero), as rtcp::TransportFeedback::AddReceivedPacket
+        // does; truncating put about 1 in 8 arrivals a millisecond early once the sender rounds to 1 ms (#365).
+        int64_t d = it->second.us() - prev_us;
+        d += d < 0 ? -(kTickUs / 2) : kTickUs / 2;
+        ticks = d / kTickUs;
+      }
       // A message that cannot take another packet ends; the rest goes in the next one.
       if (!fb.packets.empty() && (ticks < -32768 || ticks > 32767 || fb.packets.size() + static_cast<size_t>(s - next) + 1 > 0xFFFF)) break;
       for (int64_t m = next; m < s; ++m) {
