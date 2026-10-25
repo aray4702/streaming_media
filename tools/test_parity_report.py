@@ -110,10 +110,12 @@ class Owners(unittest.TestCase):
     def test_sync_cells_follow_the_items_that_own_their_inputs(self):
         # #379 (Owner 2026-10-25): lip sync matches libwebrtc (yardstick #396); each offset cell follows
         # an audio jitter-buffer, video-delay or RTT gap, so that item owns it.
-        cells = {"lossy_feedback": [365], "issue_12_lossbwe_shallow_step": [24, 37],
+        # #365 closed: its lossy_feedback cell and the issue_84 low-rate cells went to #360 (Owner 2026-10-25).
+        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37],
                  "issue_12_lossbwe_shallow": [24, 37], "issue_331_low_bandwidth_av_offset_seed4": [360],
                  "issue_76_session_layer_v2": [63],
-                 "issue_152_alr_request_probe_v2": [360]}
+                 "issue_152_alr_request_probe_v2": [360],
+                 "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
         metrics = {"sync.av_offset_p95_ms": ([300] * 5, [100] * 5)}
         d = data(*[scn(n, metrics) for n in cells] + [scn("clean_link", metrics)])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
