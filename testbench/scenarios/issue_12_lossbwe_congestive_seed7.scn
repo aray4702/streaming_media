@@ -1,0 +1,10 @@
+name issue_12_lossbwe_congestive_seed7
+describe issue_12_lossbwe_congestive with seed 7, traced on both stacks (yardstick for #402; not for merging)
+seed 7
+duration 40s
+at 0s capacity=2500kbps delay=30ms queue=60ms
+at 15s capacity=800kbps
+expect net.loss_pct < 12
+expect video.freeze_total_ms < 4000
+expect cc.queue_p95_ms < 60
+expect audio.interruptions <= 3
