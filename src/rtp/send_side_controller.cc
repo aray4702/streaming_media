@@ -188,7 +188,18 @@ void SendSideController::OnVideoFrameEncoded(Timestamp now) {
   }
 }
 
+void SendSideController::RunDueVideoActivityChecks(Timestamp now) {
+  while (next_video_activity_check_ <= now) {
+    const Timestamp due = next_video_activity_check_;
+    next_video_activity_check_ = due + kEncoderTimeOut;
+    CheckVideoActivity(due);
+  }
+}
+
 void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
+  // The encoder queue posts OnEncoderConfigurationChanged to the worker queue, so
+  // an activity task already due at `now` runs before it (issue #375).
+  RunDueVideoActivityChecks(now);
   // IsRunning(): the send stream is started, so the allocator gets the new limits.
   if (next_video_activity_check_.IsFinite()) RegisterVideo(now);
 }
@@ -322,11 +333,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   }
   ExpireRepair(now);
   last_process_ = now;
-  while (next_video_activity_check_ <= now) {
-    const Timestamp due = next_video_activity_check_;
-    next_video_activity_check_ = due + kEncoderTimeOut;
-    CheckVideoActivity(due);
-  }
+  RunDueVideoActivityChecks(now);
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
     // The transport's pacer-queue task (kPacerQueueUpdateInterval, 25 ms, started with the controller's
