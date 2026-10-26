@@ -112,7 +112,8 @@ Rules:
 
 - **In order; in parallel only where marked.** The Fixer may start the
   first unchecked item on the list whose issue is open. If that item is
-  `in-progress`, labelled `needs-human`, or has an open PR, the Fixer may go
+  `in-progress`, labelled `needs-human`, `needs-builder` or `blocked`, or
+  has an open PR, the Fixer may go
   further down only to items labelled `parallel-ok`: it takes the first
   free one, and stops at the first free item that is not `parallel-ok`. The
   Owner (or the coordinator) sets `parallel-ok` on items that depend on
@@ -280,10 +281,16 @@ approve it. Fixer PRs are authored by @aray4702, so the approval has to come
 from a different account, which is the App.
 
 The **Coordinator** acts for the Owner within a written mandate: it owns the
-roadmap's order, places Tester findings, clears stale labels, signs off
-guard-rail lines under the Owner's standing rule, and turns on auto-merge.
-It runs as a cloud routine, or as the Owner's local Claude session while
-that session holds a lease. Its rules are in [coordinator.md](coordinator.md).
+roadmap's order, places Tester findings, clears stale labels and signs off
+guard-rail lines under the Owner's standing rules. It runs as a cloud
+routine. Its rules are in [coordinator.md](coordinator.md).
+
+The **Dispatcher** (`agents/tools/dispatch.py`, a workflow, not an LLM)
+does the mechanical work: it starts agent runs, turns on auto-merge and
+keeps one approved PR up to date. The **Builder** maintains the agent system
+itself and answers system escalations; its rules are in
+[builder.md](builder.md). The Owner's local Claude session is the Builder's
+interactive window.
 
 ### 4.1 Tester
 
@@ -394,6 +401,12 @@ a comment addressed to it, or no review yet:
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
 | `stage:baseline` / `stage:ai` | The stage a `roadmap` issue belongs to (section 0.1) | Owner |
 | `stage:later` | An improvement beyond libwebrtc; waits until stage 1 is done | Owner |
+| `blocked` | Waits on a named item (its comment says `Blocked by #N`) | Coordinator |
+| `needs-builder` | A system question for the Builder (`agents/builder.md`) | Coordinator, any agent |
+| `needs-probe` | A risky PR the Tester probes before the Reviewer reviews it | Fixer, Coordinator |
+| `owner-approved` | The Owner approved a measurement fix whose parity got worse; the Dispatcher may auto-merge it | Coordinator, recording the Owner's decision |
+| `record` | An issue that is a record, not a work item (the roadmap #64, the log #111, the Tester run log, the watch list); work handling skips it | Coordinator, Builder |
+| `parallel-ok` | May run while items above it are busy (section 0.2) | Coordinator |
 
 Milestones `Stage 1 · Phase N` group the roadmap issue's work list (section
 0.2). The list, not the milestone, sets the order.
@@ -452,7 +465,7 @@ docs/fixes/<N>-<slug>.md
 ### 5.4 Agent markers and loop prevention
 
 - Every agent comment, issue and review body starts with
-  `<!-- sm-agent: tester|fixer|reviewer -->`. Agents ignore content that
+  `<!-- sm-agent: tester|fixer|reviewer|coordinator|builder -->`. Agents ignore content that
   carries their own marker, so they never reply to themselves.
 - A comment "addressed to" an agent is any newer comment without that
   agent's marker on a thread the agent owns (its issue or PR), or one that

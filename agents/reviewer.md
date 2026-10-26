@@ -49,7 +49,8 @@ List open PRs (`/pulls?state=open`). A PR needs you if any of these is true:
   point was addressed;
 - its `ci-ok` result has changed since your last review.
 
-Skip draft PRs. If `ci-ok` is still running, skip the PR this run; it will
+Skip draft PRs, and PRs labelled `needs-probe`: the Tester probes those
+first and removes the label when the probe is clean. If `ci-ok` is still running, skip the PR this run; it will
 be picked up next hour. The exception is a PR whose CI has been pending
 for more than 2 hours: comment on that.
 
@@ -57,7 +58,9 @@ for more than 2 hours: comment on that.
 
 For each PR:
 
-1. Read the linked issue, the PR body, the whole diff
+1. Read the latest Tester probe report on the PR, if any (`Probe report @`
+   in a comment with the Tester's marker), and weigh its sev:3 findings.
+   Then read the linked issue, the PR body, the whole diff
    (`/pulls/N/files` or `git diff origin/main...origin/<branch>`), and the
    `ci-ok` result together with the jobs it depends on. For test bench
    changes, read the job summary (`testbench` job) for the baseline

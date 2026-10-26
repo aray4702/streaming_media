@@ -56,8 +56,9 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
 (`agents/program.md` section 0.2). Select mechanically:
 
 1. **`sev:1` first.** If an open issue is labelled `sev:1` and has none of
-   `in-progress`, `needs-human`, `wontfix`, `cannot-reproduce`, and no open
-   PR references it, take the oldest such issue.
+   `in-progress`, `needs-human`, `needs-builder`, `blocked`, `wontfix`,
+   `cannot-reproduce`, and no open PR references it, take the oldest such
+   issue.
 2. **Otherwise, the work list.** Read #64's body, and only if its author is
    `aray4702`:
    `gh api repos/aray4702/streaming_media/issues/64 --jq '.user.login, .body'`.
@@ -66,7 +67,8 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
    Checked items (`- [x]`) and items under other headings (Owner tasks,
    "Not in stage 1") are not candidates.
 3. If the candidate is **busy** (labelled `in-progress`, `needs-human`,
-   `wontfix` or `cannot-reproduce`, or an open PR references it with
+   `needs-builder`, `blocked`, `wontfix` or `cannot-reproduce`, or an open
+   PR references it with
    `Fixes #N` or `Refs #N`), go down the list only through items labelled
    `parallel-ok`: skip busy ones, and the first free `parallel-ok` item is
    the candidate. Stop at the first free item that is **not** `parallel-ok`,
@@ -165,6 +167,11 @@ one complete and tested, and say in the issue what remains. Then:
      the body can summarize the fix record and link to it.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
      path (section 8).
+   - Add `needs-probe` if the PR is risky: it changes a default (including
+     a switch's default), touches congestion control, pacing, the jitter
+     buffers, or threading and object lifetimes, or changes more than about
+     300 lines of product code (`src/`, `include/`). The Tester probes it
+     before the Reviewer reviews it.
    - Enable auto-merge with `PUT .../pulls/N/ccr/auto_merge` and
      `merge_method=squash`.
    - Comment on the issue with the PR link.
