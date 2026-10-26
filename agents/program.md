@@ -658,7 +658,11 @@ area it covered in each issue's notes:
   #64 work order, PRs, issues, agents, Dispatcher, #111 log) and the
   Owner's controls: comment, label, close, merge, the stop switch, the
   Dispatcher's mode, a Dispatcher run and a local dry run. It acts with
-  the Owner's own `gh` login; agents don't use it.
+  the Owner's own `gh` login; agents don't use it. The same tabs and
+  controls are on the command line: `python3 agents/tools/smctl.py` (tabs
+  in the terminal; `smctl <tab>` prints one, `smctl --help` lists the
+  controls), and `smctl dashboard start|stop|status` runs the page in
+  the background.
 
 ## 9. Infrastructure
 
