@@ -1,5 +1,6 @@
 // The parity metrics of the test bench (issue #60): the video delay
 // breakdown, the largest target cut and the send rate over the target.
+#include <algorithm>
 #include <cmath>
 #include <map>
 
@@ -223,6 +224,46 @@ SM_TEST(TestbenchMetrics, CrossTrafficEntersTheBottleneckBeforeTheCallsPacketsOf
     i = j;
   }
   SM_EXPECT_TRUE(shared > 10);  // Both send in the same millisecond often enough for the order to matter.
+}
+
+// Issue #410: the bottleneck queue is sampled every 10 ms after the tick's cross traffic and before the call's own
+// packets of that millisecond, as sm_compare samples it before libwebrtc's encoder and pacer tasks of the same
+// millisecond run. Rebuilt from the link trace on that phase, the samples give the metric exactly. Opus packets
+// leave at 10, 30, 50 ms, all on sample points; counting them in the sample they arrive at made the p95 the time
+// to serialize one audio packet instead of the idle link libwebrtc's harness measures.
+SM_TEST(TestbenchMetrics, QueueIsSampledBeforeTheCallsPacketsOfTheSameMillisecond) {
+  auto parsed = ParseScenario("name queuephase\nduration 3s\nvideo off\nat 0s capacity=200kbps delay=30ms queue=300ms\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  RunOptions opt;
+  opt.library_metrics = false;
+  opt.link_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_ASSERT_TRUE(!rep.link_trace.empty());
+  constexpr double kBytesPerMs = 200000.0 / 8 / 1000;
+  std::vector<double> samples;
+  size_t i = 0;
+  double backlog_bytes = 0;  // Queued right after the last packet offered before the sample.
+  int64_t last_us = 0;
+  int at_audio_send = 0;
+  for (int64_t t_us = 0; t_us < 3000000; t_us += 10000) {
+    bool audio_now = false;
+    for (; i < rep.link_trace.size() && rep.link_trace[i].time_us <= t_us; ++i) {
+      const auto& r = rep.link_trace[i];
+      if (r.time_us == t_us) {
+        audio_now |= r.kind == sim::LinkKind::kAudio;
+        continue;  // This millisecond's packets come after the sample.
+      }
+      backlog_bytes = r.queue_bytes + (r.outcome == sim::LinkOutcome::kDelivered ? r.size : 0);
+      last_us = r.time_us;
+    }
+    // Rewind to the packets of this millisecond for the next sample.
+    while (i > 0 && rep.link_trace[i - 1].time_us == t_us) --i;
+    at_audio_send += audio_now;
+    samples.push_back(std::max(0.0, backlog_bytes - static_cast<double>(t_us - last_us) / 1000 * kBytesPerMs) / kBytesPerMs);
+  }
+  SM_EXPECT_TRUE(at_audio_send > 120);  // Half of the 300 samples fall on an audio send.
+  SM_EXPECT_TRUE(std::abs(Percentile(samples, 95) - rep.metrics.at("cc.queue_p95_ms")) < 1e-6);
+  SM_EXPECT_TRUE(rep.metrics.at("cc.queue_p95_ms") < 0.5);
 }
 
 // libwebrtc's AudioSendStream registers 32000 + 48 B / 20 ms with BitrateAllocator
