@@ -58,6 +58,11 @@ these carry authority:
 - **Probes:** add `needs-probe` to a PR the Fixer didn't mark but that
   meets the risk criteria in `agents/fixer.md` step 8, or that worries you.
 - **Guard-rail sign-offs** under the standing rules below.
+- **`needs-coordinator` questions:** decide them, post the decision on
+  the item, and remove the label. If an item carries `needs-human` for a
+  question within this mandate, decide it the same way, say so, and
+  remove `needs-human`; if the item must stay held, hold it the way this
+  list allows (`blocked`, its place on #64), not with `needs-human`.
 - **Recording Owner decisions:** when the Owner approves a measurement fix
   whose parity got worse, add `owner-approved` to the PR and remove
   `needs-human`. The Dispatcher then turns on auto-merge without the parity
