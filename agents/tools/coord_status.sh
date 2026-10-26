@@ -25,7 +25,7 @@ while read -r line; do
   if [[ $st == closed* ]]; then echo "TICK-NEEDED #$n (closed but unchecked)"; continue; fi
   prs=$(jq -r --arg n "$n" '.[]|select(.body|test("(Fixes|Refs|Closes) #"+$n+"\\b"))|.number' <<<"$open_prs" | tr '\n' ' ')
   [[ $st == *in-progress* ]] && inprog=$((inprog+1))
-  if [[ $st == *in-progress* || $st == *needs-human* || -n $prs ]]; then busy=BUSY; else busy=FREE; fi
+  if [[ $st == *in-progress* || $st == *needs-human* || $st == *needs-builder* || $st == *blocked* || -n $prs ]]; then busy=BUSY; else busy=FREE; fi
   if [[ -z $cand ]]; then cand=$n; kind=NEXT
   elif [[ $st == *parallel-ok* ]]; then kind=PARALLEL
   else kind=LATER; fi
@@ -59,5 +59,5 @@ gh api "repos/$R/issues?state=open&labels=sev:1&per_page=50" --jq '.[]|select(.p
 listed=$(printf '%s\n' "$body" | grep -oE '#[0-9]+' | tr -d '#' | sort -u)
 gh api "repos/$R/issues?state=open&per_page=100" --jq '.[]|select(.pull_request==null)|"\(.number)\t\(.created_at)\t\([.labels[].name]|join(","))\t\(.title[0:60])"' |
 while IFS=$'\t' read -r n c l t; do
-  grep -qx "$n" <<<"$listed" || [[ $l == *agent-log* || $n == "$ROADMAP" ]] || echo "UNPLACED #$n $c [$l] $t"
+  grep -qx "$n" <<<"$listed" || [[ $l == *agent-log* || $l == *record* || $l == *goal* || $n == "$ROADMAP" ]] || echo "UNPLACED #$n $c [$l] $t"
 done

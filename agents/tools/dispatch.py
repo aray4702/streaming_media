@@ -44,6 +44,7 @@ PROTECTED = (".github/", "agents/")
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
 NEEDS_PROBE = "needs-probe"  # a risky PR the Tester probes before the Reviewer reviews it
+RECORD_LABELS = {"record", "goal", "agent-log"}  # records, not work items
 MAX_IN_PROGRESS = 5
 FIXER_WAIT_MIN = 60        # pace rule: extra Fixer run only after an item waited this long
 REVIEW_WAIT_MIN = 30       # green PR without a review on its head
@@ -217,7 +218,7 @@ class Dispatcher:
                 continue
             lab = labels(issue)
             in_progress += "in-progress" in lab
-            busy = bool(lab & {"in-progress", "needs-human", NEEDS_BUILDER, "wontfix", "cannot-reproduce"}) or n in refs
+            busy = bool(lab & {"in-progress", "needs-human", NEEDS_BUILDER, "blocked", "wontfix", "cannot-reproduce"}) or n in refs
             if walking:
                 if not busy and (first or "parallel-ok" in lab):
                     cand, walking = issue, False
@@ -312,7 +313,7 @@ class Dispatcher:
         for i in gh(f"repos/{self.r}/issues?state=open&since={since}&per_page=100") or []:
             n, lab = i["number"], labels(i)
             if i["created_at"] > since and "pull_request" not in i and n not in listed \
-                    and n not in (ROADMAP, LOG_ISSUE) and "agent-log" not in lab:
+                    and n not in (ROADMAP, LOG_ISSUE) and not lab & RECORD_LABELS:
                 reasons.append(f"#{n} is new and not on #{ROADMAP}")
             if "needs-human" in lab and n != LOG_ISSUE:
                 reasons.append(f"#{n} carries needs-human")
