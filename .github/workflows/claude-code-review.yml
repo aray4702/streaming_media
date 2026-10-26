@@ -12,6 +12,9 @@ on:
 
 jobs:
   claude-review:
+    # Skip pushes by the reviewer bot: they only merge main into the branch
+    # (the Dispatcher's update-branch), and the action fails for bot actors.
+    if: github.actor != 'streaming-media-reviewer[bot]'
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
