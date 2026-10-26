@@ -2,7 +2,8 @@ name satellite
 describe GEO satellite: 300 ms one-way, 1% loss, 1.5 Mbps
 # sm_compare runs 80 seeds here (#420). On 10 seeds the freeze cells turned on libwebrtc's seed spread (sd ~1700 ms
 # on main, ~620 ms after #416) while ours stayed put (seeds 1-80 on main fe3f555: freeze_count 30.9, freeze_total_ms
-# 13475, sd 1868).
+# 13475, sd 1868). libwebrtc on seeds 1-80 (#424, with #416's CNAME): freeze_count 30.9, freeze_total_ms 13366, sd 1654,
+# so both freeze cells are in band.
 compare_seeds 80
 duration 40s
 at 0s capacity=1500kbps delay=300ms jitter=10ms loss=1% queue=600ms

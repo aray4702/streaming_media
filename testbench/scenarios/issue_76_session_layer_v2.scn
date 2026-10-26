@@ -4,6 +4,7 @@ describe Jittery lossy link with the RTP session layer as libwebrtc: RTCP report
 # Target (#76): the call holds up with libwebrtc's report timing and packet buffer.
 # sm_compare runs 80 seeds here (#420): on 10 seeds the audio mouth-to-ear p95 cell turned on one libwebrtc outlier
 # (seed 7: 260 ms on main). Ours on seeds 1-80 (main fe3f555): mouth_to_ear_p95 186 ms (sd 23), jb_delay_p95 94 ms.
+# libwebrtc on seeds 1-80 (#424, with #416's CNAME): 181 ms (sd 20) and 89 ms, in band; av_offset_p95 57.5 vs 55.9 ms.
 compare_seeds 80
 seed 1
 duration 30s
