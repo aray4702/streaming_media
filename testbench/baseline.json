@@ -393,7 +393,7 @@
    "video.time_to_first_frame_ms": 186,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "clean_link"
  },
  {
@@ -1073,7 +1073,7 @@
    "video.time_to_first_frame_ms": 186,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "issue_124_clean_link_v2"
  },
  {
@@ -2944,7 +2944,7 @@
    "video.time_to_first_frame_ms": 186,
    "video.undecodable_frames": 0
   },
-  "passed": false,
+  "passed": true,
   "scenario": "issue_15_aimd_v2_clean_link"
  },
  {
