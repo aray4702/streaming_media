@@ -4,6 +4,11 @@ describe 2000 kbps of non-responsive cross traffic joins a 3 Mbps bottleneck (30
 # video.freeze_total_ms mean 3590, freeze_count 6.9.
 # main before the flip, seeds 1-10: 7547 2203 8396 5545 7703 2071 7359 7773 7478 2116 (mean 5819).
 # With `control_handler` and `send_rate_stats` on: 1849 1379 1382 5292 2540 1886 8100 1843 1808 846 (mean 2693).
+# sm_compare runs 80 seeds here (#408). Both stacks enter the stuck mode of #390 (cuts end above the free 1 Mbps,
+# the queue stays full, about 10 freezes) on about 2.5 % of seeds, depending on the RTCP phase at the join: libwebrtc
+# 10 of 400 seed-runs over five RTCPSender schedules (#397), ours 3 of 80 on main d02f90f (seeds 5, 74, 75; mean 2.99
+# freezes). On 10 seeds one stuck draw moves the mean by about 0.9 freezes and decides the cell, as seed 5 did after #378.
+compare_seeds 80
 duration 40s
 at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s cross=2000kbps
