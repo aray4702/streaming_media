@@ -2,6 +2,9 @@ name issue_76_session_layer_v2
 describe Jittery lossy link with the RTP session layer as libwebrtc: RTCP report timing, RTT floor, receive-statistics jitter guards, packet buffer sizing (#76 groups 3-6)
 # Groups 3-6 are parity-only on this scenario: no metric moves against `rtcp v1`/`keyframe v1`.
 # Target (#76): the call holds up with libwebrtc's report timing and packet buffer.
+# sm_compare runs 80 seeds here (#420): on 10 seeds the audio mouth-to-ear p95 cell turned on one libwebrtc outlier
+# (seed 7: 260 ms on main). Ours on seeds 1-80 (main fe3f555): mouth_to_ear_p95 186 ms (sd 23), jb_delay_p95 94 ms.
+compare_seeds 80
 seed 1
 duration 30s
 at 0s capacity=3000kbps delay=40ms jitter=15ms reorder=on loss=1% queue=200ms
