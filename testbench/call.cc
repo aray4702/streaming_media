@@ -841,6 +841,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         forward.Send(now, Fwd{}, DataSize::Bytes(1200));
       }
     }
+    // The bottleneck queue is sampled here, after the tick's cross traffic and before the call's own packets of
+    // this millisecond, as in sm_compare: its tick measures the link before libwebrtc's encoder and pacer tasks of
+    // the same millisecond run (issue #410). Audio leaves on multiples of 10 ms and every third video frame on a
+    // multiple of 100 ms, so sampling after them counted their own bytes in up to a tenth of the samples.
+    const double queue_ms = QueueDelayMs(forward, fwd_state, now);
     sender.Process(now);
     put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
 
@@ -961,7 +966,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, now, false);
 
     // --- Measurement ----------------------------------------------------------
-    double queue_ms = QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
     if (opt.video_trace && t % 1000 == 999) {
       vt_row.t_ms = t + 1;

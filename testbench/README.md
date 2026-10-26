@@ -203,7 +203,10 @@ Link keys (any subset; unset keys keep their previous value):
   - `cc.utilization_pct`: goodput divided by the usable capacity, which is
     the link capacity or the media's maximum demand, whichever is lower.
   - Queue delay: `cc.queue_p95_ms`, `cc.queue_max_ms` and
-    `cc.queue_over_200ms_pct`.
+    `cc.queue_over_200ms_pct`, from the bottleneck queue sampled every
+    10 ms after the millisecond's cross traffic and before the call's own
+    packets of that millisecond, as `sm_compare` samples libwebrtc's link
+    (#410).
   - `cc.max_settle_ms`: the time after each link change until the target
     is within [0.5, 1.0] x usable capacity. `cc.unsettled` counts link
     changes where it never got there.
