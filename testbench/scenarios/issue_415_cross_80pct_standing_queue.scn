@@ -1,8 +1,26 @@
 name issue_415_cross_80pct_standing_queue
-describe An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300 ms drop-tail queue) at 20 s, leaving 200 kbps for the call (#415)
-# Tester repro from #415 (commit d673ea9, seeds 1-8): the call keeps the 300 ms queue full for the rest of the call,
-# cc.queue_over_200ms_pct 66.2-66.4, video.freeze_total_ms 13833-25586. First step: measure libwebrtc on the same
-# link through sm_compare (10 seeds; traced packet by packet in kDefaultTraced). expect lines follow that measurement.
+describe An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300 ms drop-tail queue) at 20 s, leaving 200 kbps for the call: libwebrtc keeps the queue full too, so this is parity, held at libwebrtc's level (#415)
+# Tester repro from #415 (commit d673ea9): the call keeps the 300 ms queue full for the rest of the call (queue over
+# 200 ms 66 % of the call, 14-29 s of freezes). A full drop-tail FIFO gives a flat delay gradient, and the call's loss
+# (about 7 %) holds its share by arrival rate. libwebrtc does the same (#417's compare-webrtc, seeds 1-10, @ c5f159c):
+#   metric                   ours mean (min-max)      libwebrtc mean (min-max)
+#   cc.queue_p95_ms          296.9 (296.5-297.2)      294.7 (294.4-294.9)
+#   video.freeze_total_ms    22986 (13833-29274)      24760 (21243-28554)
+#   video.freeze_count       38.9 (25-49)             38.2 (32-44)
+#   video.longest_freeze_ms  1824 (1216-3116)         2233 (1555-3203)
+#   video.e2e_delay_p95_ms   1659 (1188-2336)         1773 (1436-2267)
+#   cc.utilization_pct       49.7 (48.6-50.9)         49.8 (48.6-50.8)
+#   net.loss_pct             7.2 (5.8-8.2)            7.4 (6.5-8.1)
+# No gap in the parity report. The expect lines hold the call at libwebrtc's worst seed plus about 10 %, so a change
+# that makes this case worse than libwebrtc fails here; the queue itself is capped by the 300 ms buffer on both stacks.
 duration 60s
 at 0s capacity=1000kbps delay=20ms queue=300ms
 at 20s cross=800kbps
+expect video.freeze_total_ms < 31500
+expect video.freeze_count <= 49
+expect video.longest_freeze_ms < 3600
+expect video.e2e_delay_p95_ms < 2500
+expect cc.utilization_pct > 44
+expect net.loss_pct < 9
+expect audio.concealed_pct < 1
+expect audio.mouth_to_ear_p95_ms < 710
