@@ -238,6 +238,12 @@ jobs:
             fi
             rm -rf "pr/$PR" && mkdir -p "pr/$PR"
             cp ../compare-webrtc.json ../compare-webrtc.txt ../parity.json ../parity.md "pr/$PR/"
+            # Prune results of PRs closed more than 7 days ago, so the
+            # branch keeps only what agents may still read.
+            cutoff=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+            old=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls?state=closed&per_page=100" \
+                    --jq ".[] | select(.closed_at < \"$cutoff\") | .number" 2>/dev/null || true)
+            for n in $old; do if [ -d "pr/$n" ]; then git rm -rq "pr/$n"; fi; done
             printf 'PR #%s @ %s\n' "$PR" "$HEAD_SHA" > "pr/$PR/HEAD"
             git add -A
             git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "compare-webrtc for PR #$PR @ $HEAD_SHA" || exit 0

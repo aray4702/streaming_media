@@ -43,7 +43,14 @@ these carry authority:
   merge into an existing item, or `stage:later` / `wontfix` with a reason.
   Never use `wontfix` on an Owner-filed wish.
 - **Holding and releasing work:** clear stale `in-progress` labels (the
-  Dispatcher reports them as STALE), including on parked items.
+  Dispatcher reports them as STALE), including on parked items. An item
+  that waits on another gets `blocked` and a comment `Blocked by #N`;
+  remove the label when #N closes.
+- **Closing:** close with the reason in the first line of the comment:
+  *completed* (its PR merged), *explained* (no change needed, with the
+  evidence), *duplicate of #N*, or *won't fix* (with the decision that
+  made it so). Use GitHub's `completed`, `duplicate` or `not_planned`
+  state reason to match.
 - **Fixer answers** that follow `agents/program.md` 0.1/0.2 directly: do
   what libwebrtc does, port it as a unit behind a switch, judge it against
   libwebrtc. When a Fixer lacks libwebrtc-side data, point it to the draft
@@ -131,6 +138,20 @@ To escalate to the Owner:
    - quote the decision with its time on the item and on #111;
    - remove `needs-human`;
    - tell the Fixer exactly what to push.
+
+## Records
+
+Record issues carry the `record` label and are never work items: the
+roadmap #64, this log #111, the Tester run log, and the **watch list**
+(the pinned issue titled `Watch list`). Keep two of them current:
+- **Decision index**, in #111's body: one line per Owner decision or
+  standing rule in force, with its date and a link to where it was made.
+  Add a line when the Owner decides; strike through one that a later
+  decision replaces.
+- **Watch list:** risks that could stall the work, each with the signal
+  to watch, its threshold and when you last checked. Check it in your
+  daily summary; raise a risk past its threshold as an item or an
+  escalation.
 
 ## Each run
 
