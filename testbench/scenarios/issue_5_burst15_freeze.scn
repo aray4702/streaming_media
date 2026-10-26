@@ -1,5 +1,8 @@
 name issue_5_burst15_freeze
 describe 2% loss in 15-packet bursts: libwebrtc's frame dropper keeps video freezes short (issue #5, partial)
+# sm_compare runs 80 seeds here (seeds 7-86; #410). Ours on main f2d580c: cc.queue_p95_ms 45.2 on the first 10 seeds,
+# 41.2 on 80 (sd 11.2).
+compare_seeds 80
 duration 30s
 seed 7
 # Target (issue #5): video.longest_freeze_ms < 1000 and video.freeze_count <= 2, with

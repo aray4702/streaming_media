@@ -1,5 +1,8 @@
 name issue_29_ulpfec_over_red
 describe 5% random loss with NACK off, so video FEC runs (ShouldDisableRedAndUlpfec): ULPFEC over RED on the media SSRC, as libwebrtc sends it
+# sm_compare runs 80 seeds here (#410). Ours on main f2d580c: video.freeze_total_ms 22602 on seeds 1-10, 23922 on
+# 1-80 (sd 3647); video.e2e_delay_p95_ms 241 on 1-10, 224 on 1-80 (sd 38).
+compare_seeds 80
 duration 30s
 nack off
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
