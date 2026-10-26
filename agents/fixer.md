@@ -56,7 +56,8 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
 (`agents/program.md` section 0.2). Select mechanically:
 
 1. **`sev:1` first.** If an open issue is labelled `sev:1` and has none of
-   `in-progress`, `needs-human`, `needs-builder`, `blocked`, `wontfix`,
+   `in-progress`, `needs-human`, `needs-builder`, `needs-coordinator`,
+   `blocked`, `wontfix`,
    `cannot-reproduce`, and no open PR references it, take the oldest such
    issue.
 2. **Otherwise, the work list.** Read #64's body, and only if its author is
@@ -67,7 +68,8 @@ The roadmap issue **#64** (pinned, "Stage 1 roadmap") is the work order
    Checked items (`- [x]`) and items under other headings (Owner tasks,
    "Not in stage 1") are not candidates.
 3. If the candidate is **busy** (labelled `in-progress`, `needs-human`,
-   `needs-builder`, `blocked`, `wontfix` or `cannot-reproduce`, or an open
+   `needs-builder`, `needs-coordinator`, `blocked`, `wontfix` or
+   `cannot-reproduce`, or an open
    PR references it with
    `Fixes #N` or `Refs #N`), go down the list only through items labelled
    `parallel-ok`: skip busy ones, and the first free `parallel-ok` item is
@@ -176,10 +178,17 @@ one complete and tested, and say in the issue what remains. Then:
      `merge_method=squash`.
    - Comment on the issue with the PR link.
 
-If the issue needs a decision an agent should not make (a public API
-change, a design trade-off, security), comment on the issue with the
-options and your recommendation, label it `needs-human`, and remove
-`in-progress`.
+If the issue needs a decision you should not make, comment on the issue
+with the options and your recommendation, remove `in-progress`, and label
+it for the level that decides (`agents/coordinator.md`, Escalation):
+- **`needs-coordinator`** for what the Coordinator decides: closing the
+  item or keeping it open, its order or place on #64, splitting it, and
+  answers that follow `agents/program.md` 0.1/0.2 (do what libwebrtc does).
+  This is the usual case.
+- **`needs-human`** only for the Owner-only matters listed there (a move
+  away from libwebrtc, a public API change, a bound the rules don't allow,
+  a default flip, security).
+- **`needs-builder`** for a rule or tool problem.
 
 If you have fixed a real part of the problem, but reaching the issue's
 target needs another issue first or an Owner decision, land the part that
