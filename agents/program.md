@@ -280,10 +280,16 @@ approve it. Fixer PRs are authored by @aray4702, so the approval has to come
 from a different account, which is the App.
 
 The **Coordinator** acts for the Owner within a written mandate: it owns the
-roadmap's order, places Tester findings, clears stale labels, signs off
-guard-rail lines under the Owner's standing rule, and turns on auto-merge.
-It runs as a cloud routine, or as the Owner's local Claude session while
-that session holds a lease. Its rules are in [coordinator.md](coordinator.md).
+roadmap's order, places Tester findings, clears stale labels and signs off
+guard-rail lines under the Owner's standing rules. It runs as a cloud
+routine. Its rules are in [coordinator.md](coordinator.md).
+
+The **Dispatcher** (`agents/tools/dispatch.py`, a workflow, not an LLM)
+does the mechanical work: it starts agent runs, turns on auto-merge and
+keeps one approved PR up to date. The **Builder** maintains the agent system
+itself and answers system escalations; its rules are in
+[builder.md](builder.md). The Owner's local Claude session is the Builder's
+interactive window.
 
 ### 4.1 Tester
 
@@ -452,7 +458,7 @@ docs/fixes/<N>-<slug>.md
 ### 5.4 Agent markers and loop prevention
 
 - Every agent comment, issue and review body starts with
-  `<!-- sm-agent: tester|fixer|reviewer -->`. Agents ignore content that
+  `<!-- sm-agent: tester|fixer|reviewer|coordinator|builder -->`. Agents ignore content that
   carries their own marker, so they never reply to themselves.
 - A comment "addressed to" an agent is any newer comment without that
   agent's marker on a thread the agent owns (its issue or PR), or one that
