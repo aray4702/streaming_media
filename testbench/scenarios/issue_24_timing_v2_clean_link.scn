@@ -19,9 +19,7 @@ at 0s capacity=2500kbps delay=25ms queue=300ms
 expect video.e2e_delay_p50_ms >= 68
 # Was < 85. Lip sync on by default (#77 step 3, PR #306; program.md 0.2, needs Owner sign-off): ours 102 on seed 1; libwebrtc with sync_group 116.1 (mean of 10 seeds, so libwebrtc fails < 85 too; the per-seed values are not published, so the bound stays below the mean, which no worst seed is below).
 # PR #324 (#84's flip, quality scaling on): was < 115. Provisional lock, tracked to #376: ours 117 on seed 1; libwebrtc per-seed values not published (mean 113.7).
-# PR #378 (#360, first RTCP report at half the nominal interval on both sides): was < 120. Ours 130 on seed 1.
-# seed-1 outlier; mean in band (ours 109.4 / libwebrtc 113.7)
-expect video.e2e_delay_p50_ms < 145
+expect video.e2e_delay_p50_ms < 120
 expect video.e2e_delay_p95_ms < 200
 # PR #324 (#84's flip, quality scaling on): was < 60. Owner sign-off 2026-10-24: ours 186 on seed 1, libwebrtc worst seed 1-10 186 (186 on every seed of both stacks: the initial frame drop at the 300 kbps start rate).
 expect video.time_to_first_frame_ms < 190
