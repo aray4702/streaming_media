@@ -83,6 +83,16 @@ struct AudioTraceRow {
   double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
 };
 
+// One video frame from capture to render (issue #409), the same record for this
+// library and for libwebrtc, for lining up which frames each stack renders and
+// when. Times are from the call start in us; -1 where the frame has none.
+struct FrameTraceRow {
+  int64_t capture_us = -1;
+  int64_t last_arrival_us = -1;   // Last media or RTX packet of the frame that arrived before it rendered.
+  int64_t target_render_us = -1;  // The render time the receiver's timing gave the frame.
+  int64_t render_us = -1;         // Rendered; -1 if it never was.
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -99,12 +109,14 @@ struct Report {
   std::vector<cc::BweTraceRow> bwe_trace;
   // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
   std::vector<AudioTraceRow> audio_trace;
+  // Every video frame sent, by capture time, when RunOptions::video_trace is set (issue #409).
+  std::vector<FrameTraceRow> frame_trace;
 };
 
 struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
-  bool video_trace = false;  // Fill Report::video_trace.
+  bool video_trace = false;  // Fill Report::video_trace and Report::frame_trace.
   bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
   bool audio_trace = false;  // Fill Report::audio_trace.
@@ -168,6 +180,9 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
+// Report::frame_trace as CSV: capture_us,last_arrival_us,target_render_us,render_us
+// (-1 where the frame has no such time).
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
@@ -179,6 +194,7 @@ struct VideoFrameTimes {
   Timestamp last_sent = Timestamp::MinusInfinity();   // Last media packet left the pacer.
   Timestamp complete = Timestamp::MinusInfinity();    // Last media or RTX packet of the frame arrived.
   Timestamp rendered = Timestamp::MinusInfinity();
+  Timestamp target_render = Timestamp::MinusInfinity();  // The receiver's render time for it (issue #409 trace).
 };
 
 // Adds video.delay_encode_ms (mean), video.delay_pacer_p95_ms,

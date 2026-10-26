@@ -278,6 +278,15 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
   return out;
 }
 
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace) {
+  std::string out = "capture_us,last_arrival_us,target_render_us,render_us\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.capture_us) + "," + std::to_string(r.last_arrival_us) + "," +
+           std::to_string(r.target_render_us) + "," + std::to_string(r.render_us) + "\n";
+  }
+  return out;
+}
+
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
@@ -894,6 +903,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Render video.
     if (s.video) {
       for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+        if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.target_render = f.render_time;
         if (!f.render) continue;
         freezes.OnFrameRendered(now);
         ++vt_row.rendered;
@@ -1070,6 +1080,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       all.reserve(frame_times.size());
       for (const auto& [ts, ft] : frame_times) all.push_back(ft);
       AddVideoDelayMetrics(all, rep);
+      if (opt.video_trace) {
+        auto us = [](Timestamp t) { return t.IsFinite() ? t.us() : int64_t{-1}; };
+        for (const auto& ft : all) {
+          rep.frame_trace.push_back({us(ft.capture), us(ft.complete), us(ft.target_render), us(ft.rendered)});
+        }
+        std::sort(rep.frame_trace.begin(), rep.frame_trace.end(),
+                  [](const FrameTraceRow& a, const FrameTraceRow& b) { return a.capture_us < b.capture_us; });
+      }
     }
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
     av_sync.AddMetrics(m);

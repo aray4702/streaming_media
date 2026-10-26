@@ -1,0 +1,19 @@
+name issue_409_cwnd_pushback_seed7
+describe issue_53_cwnd_pushback on seed 7, traced frame by frame on both stacks (issue #409 yardstick)
+seed 7
+duration 25s
+at 0s  capacity=2500kbps delay=30ms queue=100ms
+at 8s  capacity=500kbps
+# Congestion-window pushback (cc/congestion_window_pushback.h) drops frames while
+# the data in flight exceeds the window, so far less video overflows the buffer
+# and is lost for good. Without it 1.4-4.8% of the video packets are never
+# recovered on every seed 1-20; with it 0-0.84%.
+expect video.residual_loss_pct <= 1.0
+# Restored to >= 22 by #24 (timing v2 default; was a provisional >= 14 under timing v1, Owner sign-off on PR #186).
+# libwebrtc 27.4 fps (10 seeds).
+expect video.render_fps >= 22
+expect audio.interruptions <= 1
+# Target (issue #53): the send rate stays within 1.5x of the target from 1 s
+# after the target falls, so cc.send_over_target_ms stays near 0. Not yet met:
+# the pacer still drains a backlog of retransmissions (issue #21) at up to
+# 2 Mbps for about 2 s after the drop (cc.send_over_target_ms ~3000).

@@ -742,6 +742,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     double max_gap_ms = 0;
   };
   std::vector<RenderSecond> render_by_second;
+  // Every video frame that reached the receiver, by its RTP timestamp, from capture to render (issue #409 trace).
+  std::map<uint32_t, testbench::FrameTraceRow> frame_rows;
+  auto frame_row = [&](uint32_t rtp_ts) -> testbench::FrameTraceRow& {
+    testbench::FrameTraceRow& fr = frame_rows[rtp_ts];
+    if (fr.capture_us < 0 && model.rtp_ts_offset) {
+      auto it = model.capture_us_by_rtp.find(rtp_ts - *model.rtp_ts_offset);
+      if (it != model.capture_us_by_rtp.end()) fr.capture_us = it->second - t0.us();
+    }
+    return fr;
+  };
   video::FreezeDetector freezes;
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
@@ -815,6 +825,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   RenderSink renderer([&](const w::VideoFrame& f) {
     const sm::Timestamp now = rel(sim.Now());
     freezes.OnFrameRendered(now);
+    if (opt.video_trace) {
+      testbench::FrameTraceRow& fr = frame_row(f.rtp_timestamp());
+      fr.render_us = now.us();
+      fr.target_render_us = f.render_time_ms() * 1000 - t0.us();  // ModelDecoder carries the render time.
+    }
     if (opt.video_trace && now.us() >= 0) {
       const size_t sec = static_cast<size_t>(now.us() / 1000000);
       if (render_by_second.size() <= sec) render_by_second.resize(sec + 1);
@@ -1050,7 +1065,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
         if (!fec) video_received.insert(video_recv_unwrap.Unwrap(r.seq));
+        // The last media or RTX packet of a frame before it renders, as testbench/call.cc's VideoFrameTimes::complete.
+        if (!fec && opt.video_trace) {
+          testbench::FrameTraceRow& fr = frame_row(r.ts);
+          if (fr.render_us < 0) fr.last_arrival_us = at.us();
+        }
       } else if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
+        if (opt.video_trace && r.payload_len > 2) {  // RFC 4588 keeps the original RTP timestamp.
+          testbench::FrameTraceRow& fr = frame_row(r.ts);
+          if (fr.render_us < 0) fr.last_arrival_us = at.us();
+        }
         uint16_t osn = static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]);
         int64_t u = video_recv_unwrap.Unwrap(osn);
         if (video_received.insert(u).second) ++nack_recovered;
@@ -1353,6 +1377,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   testbench::AddLinkKindMetrics(ls, s, rep);
   if (opt.link_trace) rep.link_trace = forward.trace();
+  if (opt.video_trace) {
+    for (const auto& [ts, fr] : frame_rows) rep.frame_trace.push_back(fr);
+    std::sort(rep.frame_trace.begin(), rep.frame_trace.end(),
+              [](const testbench::FrameTraceRow& a, const testbench::FrameTraceRow& b) { return a.capture_us < b.capture_us; });
+  }
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   testbench::EvaluateExpectations(rep);

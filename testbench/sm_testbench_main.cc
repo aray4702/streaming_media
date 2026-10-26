@@ -115,6 +115,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.audio.csv",
                     std::ios::binary)
           << sm::testbench::AudioTraceCsv(report.audio_trace);
+      // Every video frame from capture to render (issue #409).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.frames.csv",
+                    std::ios::binary)
+          << sm::testbench::FrameTraceCsv(report.frame_trace);
     }
     if (!quiet) {
       std::printf("%s", sm::testbench::ToText(report).c_str());
