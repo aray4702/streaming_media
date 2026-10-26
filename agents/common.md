@@ -110,13 +110,19 @@ practical details every role shares.
   | Comment | `jq -n --rawfile b c.md '{body:$b}' \| gh api repos/aray4702/streaming_media/issues/N/comments --input -` |
   | Add or remove a label | `gh api repos/aray4702/streaming_media/issues/N/labels -f 'labels[]=in-progress'`; `gh api -X DELETE repos/aray4702/streaming_media/issues/N/labels/in-progress` |
   | Open PR | `jq -n ... '{title, head:"fix/12-x", base:"main", body}' \| gh api repos/aray4702/streaming_media/pulls --input -` |
-  | PR reviews, review comments, conversation comments | `.../pulls/N/reviews`, `.../pulls/N/comments`, `.../issues/N/comments` |
+  | PR reviews, review comments, conversation comments | `.../pulls/N/reviews`, `.../pulls/N/comments`, `.../issues/N/comments` (all lists: read every page, below) |
   | Reply to a review comment | `gh api repos/aray4702/streaming_media/pulls/N/comments/ID/replies -f body=...` |
   | Review threads (resolve state) | `gh api repos/aray4702/streaming_media/pulls/N/ccr/review_threads`; resolve with `-X POST .../pulls/N/ccr/comments/ID/resolve` |
   | Enable auto-merge | `gh api -X PUT repos/aray4702/streaming_media/pulls/N/ccr/auto_merge -f merge_method=squash` |
   | CI status | `gh api repos/aray4702/streaming_media/commits/SHA/check-runs --jq '.check_runs[] \| {name, status, conclusion}'` (the gate is `ci-ok`) |
   | Workflow logs | `gh api repos/aray4702/streaming_media/actions/runs?head_sha=SHA`, then `.../actions/jobs/JOB/logs` |
 
+- **List reads return one page** (30 items unless `per_page` says more), so
+  a long thread's newest comments are not in the first response. Read every
+  page and join them before you filter or take the last items:
+  `gh api --paginate 'repos/aray4702/streaming_media/issues/N/comments?per_page=100' | jq -s 'add | .[-5:]'`.
+  `--jq` runs on each page separately, so don't use it for `.[-N:]` or counts
+  with `--paginate`.
 - Write bodies to a file and pass them with `--rawfile` or `--input`, so
   that Markdown, backticks and newlines survive.
 - Commits: `git -c user.name="streaming-media-agent" -c user.email="aray4702@users.noreply.github.com" commit ...`,
