@@ -4525,46 +4525,46 @@ issue_76_session_layer_v2 - Jittery lossy link with the RTP session layer as lib
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.1          0.1  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          22.9         18.2  =
-  audio.mouth_to_ear_p95_ms               191          170  webrtc
-  audio.jb_delay_p95_ms                    99         80.0  webrtc
-  video.freeze_count                      0.9            1  =
-  video.freeze_total_ms                   211          235  =
-  video.longest_freeze_ms                 141          162  =
+  audio.longest_interruption_ms          20.4         19.7  =
+  audio.mouth_to_ear_p95_ms               186          181  =
+  audio.jb_delay_p95_ms                  93.9         88.9  =
+  video.freeze_count                      0.7          0.5  =
+  video.freeze_total_ms                   155          118  =
+  video.longest_freeze_ms                 137          114  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.7         29.7  =
-  video.e2e_delay_p95_ms                  154          154  =
-  video.time_to_first_frame_ms            213          271  sm
-  video.avg_kbps                         1336         1272  =
+  video.e2e_delay_p95_ms                  156          154  =
+  video.time_to_first_frame_ms            220          275  sm
+  video.avg_kbps                         1334         1301  =
   video.keyframe_requests                 0.3          0.4  =
-  sync.av_offset_p95_ms                  60.6         47.8  webrtc
-  cc.utilization_pct                     56.2         53.7  =
-  cc.queue_p95_ms                        21.7         18.9  =
-  cc.max_settle_ms                       4340         4520  =
-  cc.rtt_p50_ms                          94.6         94.7  =
-  net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                    38.1         39.6  =
+  sync.av_offset_p95_ms                  57.5         55.9  =
+  cc.utilization_pct                     56.1         54.9  =
+  cc.queue_p95_ms                        21.3         20.4  =
+  cc.max_settle_ms                       4276         4372  =
+  cc.rtt_p50_ms                          95.4         95.6  =
+  net.loss_pct                            1.0          1.0  =
+  repair.overhead_pct                    38.2         40.3  sm
   forward link per kind (information only)
-  net.audio_kbps                         67.0         69.3
-  net.video_kbps                         1387         1321
-  net.rtx_kbps                            550          534
-  net.padding_kbps                        0.7          0.9
+  net.audio_kbps                         66.9         69.7
+  net.video_kbps                         1385         1352
+  net.rtx_kbps                            552          557
+  net.padding_kbps                        0.9          0.9
   net.fec_kbps                              0            0
-  net.audio_loss_pct                      0.9          1.0
+  net.audio_loss_pct                      1.0          1.0
   net.video_loss_pct                      1.0          1.0
-  net.rtx_loss_pct                        1.0          0.8
-  net.padding_loss_pct                    0.3            0
-  net.audio_size_p50_b                    182          190
-  net.audio_size_p90_b                    215          217
-  net.audio_size_max_b                    302          302
+  net.rtx_loss_pct                        1.0          1.0
+  net.padding_loss_pct                    1.2          1.0
+  net.audio_size_p50_b                    181          193
+  net.audio_size_p90_b                    215          218
+  net.audio_size_max_b                    300          298
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                   1328         1320
-  net.video_size_p90_b                   1450         1447
+  net.video_size_p50_b                   1325         1322
+  net.video_size_p90_b                   1450         1448
   net.video_size_max_b                   1486         1486
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                     1338         1329
-  net.rtx_size_p90_b                     1455         1452
+  net.rtx_size_p50_b                     1334         1331
+  net.rtx_size_p90_b                     1455         1453
   net.rtx_size_max_b                     1488         1488
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
@@ -5494,46 +5494,46 @@ satellite - GEO satellite: 300 ms one-way, 1% loss, 1.5 Mbps
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          34.4         26.4  =
-  audio.mouth_to_ear_p95_ms               563          573  =
-  audio.jb_delay_p95_ms                   210          222  sm
-  video.freeze_count                     30.9         28.3  webrtc
-  video.freeze_total_ms                 13271        12350  webrtc
-  video.longest_freeze_ms                 772          803  =
+  audio.longest_interruption_ms          29.9         32.6  =
+  audio.mouth_to_ear_p95_ms               573          579  =
+  audio.jb_delay_p95_ms                   217          225  =
+  video.freeze_count                     30.9         30.9  =
+  video.freeze_total_ms                 13475        13366  =
+  video.longest_freeze_ms                 889          787  webrtc
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
-  video.render_fps                       29.2         29.1  =
-  video.e2e_delay_p95_ms                  922          920  =
-  video.time_to_first_frame_ms            472          538  sm
-  video.avg_kbps                          946          934  =
-  video.keyframe_requests                   0          0.3  =
-  sync.av_offset_p95_ms                   458          450  =
-  cc.utilization_pct                     69.4         68.8  =
-  cc.queue_p95_ms                        30.1         27.7  =
-  cc.max_settle_ms                        900          900  =
-  cc.rtt_p50_ms                           618          616  =
-  net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                    16.7         17.8  =
+  video.render_fps                       29.1         28.9  =
+  video.e2e_delay_p95_ms                  932          928  =
+  video.time_to_first_frame_ms            503          648  sm
+  video.avg_kbps                          943          934  =
+  video.keyframe_requests                 0.2          0.8  sm
+  sync.av_offset_p95_ms                   469          459  =
+  cc.utilization_pct                     69.2         68.8  =
+  cc.queue_p95_ms                        32.0         31.1  =
+  cc.max_settle_ms                       1066         1122  =
+  cc.rtt_p50_ms                           617          618  =
+  net.loss_pct                            1.0          1.0  =
+  repair.overhead_pct                    16.6         18.3  =
   forward link per kind (information only)
-  net.audio_kbps                         67.4         69.7
-  net.video_kbps                          984          971
-  net.rtx_kbps                            174          178
+  net.audio_kbps                         67.0         69.8
+  net.video_kbps                          981          971
+  net.rtx_kbps                            173          183
   net.padding_kbps                        0.3          0.3
   net.fec_kbps                              0            0
-  net.audio_loss_pct                      0.9          1.0
-  net.video_loss_pct                      0.9          0.9
+  net.audio_loss_pct                      1.0          1.0
+  net.video_loss_pct                      1.0          1.0
   net.rtx_loss_pct                        1.0          1.0
-  net.padding_loss_pct                      0            0
-  net.audio_size_p50_b                    183          192
+  net.padding_loss_pct                    1.9          1.4
+  net.audio_size_p50_b                    182          194
   net.audio_size_p90_b                    215          218
-  net.audio_size_max_b                    303          309
+  net.audio_size_max_b                    303          303
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                   1254         1248
-  net.video_size_p90_b                   1430         1426
+  net.video_size_p50_b                   1253         1249
+  net.video_size_p90_b                   1426         1427
   net.video_size_max_b                   1486         1486
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                     1251         1242
-  net.rtx_size_p90_b                     1429         1423
+  net.rtx_size_p50_b                     1251         1248
+  net.rtx_size_p90_b                     1426         1430
   net.rtx_size_max_b                     1487         1487
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
@@ -5694,7 +5694,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 215, webrtc 107, tie 2066 (of the metrics shown)
+better: sm 216, webrtc 103, tie 2069 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

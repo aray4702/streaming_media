@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-114 scenarios, mean of 10 seeds. **70 gaps**: 23 behind libwebrtc, 47 ahead of it; 0 without an owner.
+114 scenarios, mean of 10 seeds. **66 gaps**: 18 behind libwebrtc, 48 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-78 gaps on `main`, 70 here: **9 closed, 1 opened**, 0 changed direction.
+74 gaps on `main`, 66 here: **9 closed, 1 opened**, 0 changed direction.
 
 Closed:
 
@@ -87,17 +87,13 @@ Opened:
 | issue_76_packetization_v2 | `repair.overhead_pct` | 29.6 | 31.9 | ±2 | ahead | 5/10 | #21, #7, #29, #411 |
 | issue_76_rtx_v2_keyframe_flush | `sync.av_offset_p95_ms` | 851 | 1036 | ±144 | ahead | 5/10 | #411 |
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 1255 | 1516 | ±144 | ahead | 5/10 | #24, #37, #411 |
-| issue_76_session_layer_v2 | `audio.jb_delay_p95_ms` | 99 | 80 | ±16.3 | behind | 6/10 | #63, #420 |
-| issue_76_session_layer_v2 | `audio.mouth_to_ear_p95_ms` | 191 | 170 | ±18.7 | behind | 7/10 | #63, #420 |
-| issue_76_session_layer_v2 | `sync.av_offset_p95_ms` | 60.6 | 47.8 | ±10 | behind | 6/10 | #63, #420 |
+| issue_76_session_layer_v2 | `repair.overhead_pct` | 38.2 | 40.3 | ±2.0 | ahead | 43/80 | #21, #7, #29, #411 |
 | issue_76_tcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
 | issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61, #411 |
 | low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
 | pacer_v2_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | probe_v2_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
-| satellite | `video.freeze_count` | 30.9 | 28.3 | ±1.8 | behind | 7/10 | #5, #37, #24, #420 |
-| satellite | `video.freeze_total_ms` | 13271 | 12350 | ±697 | behind | 8/10 | #5, #37, #24, #420 |
 | very_low_capacity | `repair.overhead_pct` | 38.3 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29, #411 |
 | very_low_capacity | `video.render_fps` | 12.2 | 9.2 | ±1.5 | ahead | 9/10 | #37, #24, #411 |
 | very_low_capacity_allocator_v2 | `repair.overhead_pct` | 38.3 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29, #411 |
