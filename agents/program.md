@@ -112,7 +112,8 @@ Rules:
 
 - **In order; in parallel only where marked.** The Fixer may start the
   first unchecked item on the list whose issue is open. If that item is
-  `in-progress`, labelled `needs-human`, or has an open PR, the Fixer may go
+  `in-progress`, labelled `needs-human`, `needs-builder` or `blocked`, or
+  has an open PR, the Fixer may go
   further down only to items labelled `parallel-ok`: it takes the first
   free one, and stops at the first free item that is not `parallel-ok`. The
   Owner (or the coordinator) sets `parallel-ok` on items that depend on
@@ -400,6 +401,12 @@ a comment addressed to it, or no review yet:
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
 | `stage:baseline` / `stage:ai` | The stage a `roadmap` issue belongs to (section 0.1) | Owner |
 | `stage:later` | An improvement beyond libwebrtc; waits until stage 1 is done | Owner |
+| `blocked` | Waits on a named item (its comment says `Blocked by #N`) | Coordinator |
+| `needs-builder` | A system question for the Builder (`agents/builder.md`) | Coordinator, any agent |
+| `needs-probe` | A risky PR the Tester probes before the Reviewer reviews it | Fixer, Coordinator |
+| `owner-approved` | The Owner approved a measurement fix whose parity got worse; the Dispatcher may auto-merge it | Coordinator, recording the Owner's decision |
+| `record` | An issue that is a record, not a work item (the roadmap #64, the log #111, the Tester run log, the watch list); work handling skips it | Coordinator, Builder |
+| `parallel-ok` | May run while items above it are busy (section 0.2) | Coordinator |
 
 Milestones `Stage 1 · Phase N` group the roadmap issue's work list (section
 0.2). The list, not the milestone, sets the order.
