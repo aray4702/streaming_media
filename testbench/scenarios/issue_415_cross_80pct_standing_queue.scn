@@ -1,0 +1,8 @@
+name issue_415_cross_80pct_standing_queue
+describe An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300 ms drop-tail queue) at 20 s, leaving 200 kbps for the call (#415)
+# Tester repro from #415 (commit d673ea9, seeds 1-8): the call keeps the 300 ms queue full for the rest of the call,
+# cc.queue_over_200ms_pct 66.2-66.4, video.freeze_total_ms 13833-25586. First step: measure libwebrtc on the same
+# link through sm_compare (10 seeds; traced packet by packet in kDefaultTraced). expect lines follow that measurement.
+duration 60s
+at 0s capacity=1000kbps delay=20ms queue=300ms
+at 20s cross=800kbps
