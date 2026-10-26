@@ -11,8 +11,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   RUN reviewer   start a Reviewer run when a green PR has waited for review, or
                  when needs-human was removed after its last review on the head
   RUN coordinator  start the cloud Coordinator when something needs judgment
-                 (a new unplaced issue, a needs-human label, a Fixer comment on
-                 a work-list item)
+                 (a new unplaced issue, a needs-human or needs-coordinator
+                 label, a Fixer comment on a work-list item)
   RUN builder    start the Builder when an issue or PR carries needs-builder
   RUN tester     start a Tester run when fixes wait to be verified (an
                  agent-found or bug issue closed) or main moved a lot (3+ merges)
@@ -43,6 +43,7 @@ LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
+NEEDS_COORDINATOR = "needs-coordinator"  # a question the Coordinator decides; holds the item meanwhile
 NEEDS_PROBE = "needs-probe"  # a risky PR the Tester probes before the Reviewer reviews it
 RECORD_LABELS = {"record", "goal", "agent-log"}  # records, not work items
 MAX_IN_PROGRESS = 5
@@ -218,7 +219,7 @@ class Dispatcher:
                 continue
             lab = labels(issue)
             in_progress += "in-progress" in lab
-            busy = bool(lab & {"in-progress", "needs-human", NEEDS_BUILDER, "blocked", "wontfix", "cannot-reproduce"}) or n in refs
+            busy = bool(lab & {"in-progress", "needs-human", NEEDS_BUILDER, NEEDS_COORDINATOR, "blocked", "wontfix", "cannot-reproduce"}) or n in refs
             if walking:
                 if not busy and (first or "parallel-ok" in lab):
                     cand, walking = issue, False
@@ -317,6 +318,8 @@ class Dispatcher:
                 reasons.append(f"#{n} is new and not on #{ROADMAP}")
             if "needs-human" in lab and n != LOG_ISSUE:
                 reasons.append(f"#{n} carries needs-human")
+            if NEEDS_COORDINATOR in lab:
+                reasons.append(f"#{n} carries {NEEDS_COORDINATOR}")
         comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
         for c in comments:
             n = int(c["issue_url"].rsplit("/", 1)[1])

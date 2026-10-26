@@ -112,7 +112,8 @@ Rules:
 
 - **In order; in parallel only where marked.** The Fixer may start the
   first unchecked item on the list whose issue is open. If that item is
-  `in-progress`, labelled `needs-human`, `needs-builder` or `blocked`, or
+  `in-progress`, labelled `needs-human`, `needs-builder`,
+  `needs-coordinator` or `blocked`, or
   has an open PR, the Fixer may go
   further down only to items labelled `parallel-ok`: it takes the first
   free one, and stops at the first free item that is not `parallel-ok`. The
@@ -403,6 +404,7 @@ a comment addressed to it, or no review yet:
 | `stage:later` | An improvement beyond libwebrtc; waits until stage 1 is done | Owner |
 | `blocked` | Waits on a named item (its comment says `Blocked by #N`) | Coordinator |
 | `needs-builder` | A system question for the Builder (`agents/builder.md`) | Coordinator, any agent |
+| `needs-coordinator` | A question the Coordinator decides (closing, order, placement); holds the item from Fixers until it answers | Fixer, any agent |
 | `needs-probe` | A risky PR the Tester probes before the Reviewer reviews it | Fixer, Coordinator |
 | `owner-approved` | The Owner approved a measurement fix whose parity got worse; the Dispatcher may auto-merge it | Coordinator, recording the Owner's decision |
 | `record` | An issue that is a record, not a work item (the roadmap #64, the log #111, the Tester run log, the watch list); work handling skips it | Coordinator, Builder |
