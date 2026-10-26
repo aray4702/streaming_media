@@ -16,7 +16,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   RUN builder    start the Builder when an issue or PR carries needs-builder
   RUN tester     start a Tester run when fixes wait to be verified (an
                  agent-found or bug issue closed) or main moved a lot (3+ merges)
-                 since its last run
+                 since its last run, or when a green PR waits for its probe
+                 (needs-probe)
   STALE          report an in-progress item with no Fixer activity
   NOTIFY         forward each new "NEEDS YOU:" comment on the log issue to the
                  Owner's Discord channel (GitHub doesn't notify the Owner about
@@ -42,6 +43,7 @@ LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
+NEEDS_PROBE = "needs-probe"  # a risky PR the Tester probes before the Reviewer reviews it
 MAX_IN_PROGRESS = 5
 FIXER_WAIT_MIN = 60        # pace rule: extra Fixer run only after an item waited this long
 REVIEW_WAIT_MIN = 30       # green PR without a review on its head
@@ -269,7 +271,7 @@ class Dispatcher:
     def reviewer(self):
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
             n, sha = pr["number"], pr["head"]["sha"]
-            if pr["draft"] or "needs-human" in labels(pr):
+            if pr["draft"] or labels(pr) & {"needs-human", NEEDS_PROBE}:
                 continue
             ci, done = self.ci_ok(sha)
             if ci != "success" or not done:
@@ -334,7 +336,31 @@ class Dispatcher:
             start_routine("COORDINATOR")
             self.record_dispatch("coordinator")
 
+    def probe_waiting(self):
+        """The oldest green, non-draft needs-probe PR without a probe report on its head."""
+        for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
+            if pr["draft"] or NEEDS_PROBE not in labels(pr):
+                continue
+            sha = pr["head"]["sha"]
+            if self.ci_ok(sha)[0] != "success":
+                continue
+            comments = gh(f"repos/{self.r}/issues/{pr['number']}/comments?per_page=100", paginate=True) or []
+            if not any("sm-agent: tester" in (c["body"] or "") and f"Probe report @{sha[:7]}" in (c["body"] or "")
+                       for c in comments):
+                return pr["number"]
+        return None
+
     def tester(self):
+        probe = self.probe_waiting()
+        if probe:
+            last = self.last_dispatch("tester")
+            if last and minutes_ago(last) < TESTER_RUN_MIN:
+                return self.say("HOLD", "tester", f"PR #{probe} waits for its probe, but a Tester run started {minutes_ago(last):.0f} min ago")
+            self.say("RUN", "tester", f"PR #{probe} waits for its probe ({NEEDS_PROBE})")
+            if self.live:
+                start_routine("TESTER")
+                self.record_dispatch("tester")
+            return
         logs = [i for i in gh(f"repos/{self.r}/issues?state=open&labels=agent-log&per_page=100") or []
                 if i["title"].strip().lower() == "tester run log"]
         marks = [self.last_dispatch("tester")]

@@ -48,6 +48,8 @@ these carry authority:
   what libwebrtc does, port it as a unit behind a switch, judge it against
   libwebrtc. When a Fixer lacks libwebrtc-side data, point it to the draft
   yardstick path in `agents/common.md`.
+- **Probes:** add `needs-probe` to a PR the Fixer didn't mark but that
+  meets the risk criteria in `agents/fixer.md` step 8, or that worries you.
 - **Guard-rail sign-offs** under the standing rules below.
 - **Recording Owner decisions:** when the Owner approves a measurement fix
   whose parity got worse, add `owner-approved` to the PR and remove
