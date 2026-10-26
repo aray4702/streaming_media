@@ -1,5 +1,10 @@
 name issue_346_reconfigure_cross_join
 describe issue_204_cross_traffic_join with quality scaling on: link loss after 2 Mbps cross traffic joins at 10 s, just after the 540p switch (#346)
+# sm_compare runs 80 seeds here (#408). Both stacks enter the stuck mode of #390 (cuts end above the free 1 Mbps,
+# the queue stays full, about 10 freezes) on about 2.5 % of seeds, depending on the RTCP phase at the join: libwebrtc
+# 10 of 400 seed-runs over five RTCPSender schedules (#397), ours 3 of 80 on main d02f90f (seeds 5, 74, 75; mean 2.99
+# freezes). On 10 seeds one stuck draw moves the mean by about 0.9 freezes and decides the cell, as seed 5 did after #378.
+compare_seeds 80
 duration 40s
 quality_scaling on
 at 0s capacity=3000kbps delay=40ms queue=300ms
