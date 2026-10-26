@@ -17,9 +17,13 @@ void RtcpEngine::AddReceiveStatistics(timing::ReceiveStatistics* stats) {
 }
 void RtcpEngine::AddLocalMediaSsrc(uint32_t ssrc) { local_ssrcs_.push_back(ssrc); }
 
+TimeDelta RtcpEngine::NominalInterval() const {
+  return cfg_.report_interval.IsZero() ? (cfg_.has_video ? kVideoReportInterval : kAudioReportInterval)
+                                       : cfg_.report_interval;
+}
+
 TimeDelta RtcpEngine::Interval() {
-  TimeDelta nominal = cfg_.report_interval.IsZero() ? (cfg_.has_video ? kVideoReportInterval : kAudioReportInterval)
-                                                    : cfg_.report_interval;
+  const TimeDelta nominal = NominalInterval();
   TimeDelta min_interval = nominal;
   if (cfg_.has_video && sender_ && send_rate_ > DataRate::BitsPerSec(72'000)) {
     min_interval = std::min(TimeDelta::Millis(360'000 / ((send_rate_.bps() + 500) / 1000)), nominal);
@@ -214,8 +218,11 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   if (sender_) UpdateSendRate(now);
   if (!started_) {
     started_ = true;
+    // RTCPSender's constructor: SetNextRtcpSendEvaluationDuration(
+    // report_interval_ / 2), half the nominal interval with no random draw
+    // (rtcp_sender.cc:171), so the first audio SR goes out at 2.5 s (#331).
     TimeDelta first = cfg_.first_report_delay;
-    if (first.IsZero()) first = Interval() / 2;
+    if (first.IsZero()) first = NominalInterval() / 2;
     next_report_ = now + first;
   }
 
