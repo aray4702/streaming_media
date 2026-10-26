@@ -112,9 +112,10 @@ class Owners(unittest.TestCase):
         # an audio jitter-buffer, video-delay or RTT gap, so that item owns it.
         # #365 closed: its lossy_feedback cell and the issue_84 low-rate cells went to #360 (Owner 2026-10-25).
         # #406: #360 closed; the shallow and low-bandwidth cells still on main went to #411 as well.
+        # #409: #63 closed; the session-layer cell #416 opened again went to #420 as well.
         cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 411],
                  "issue_12_lossbwe_shallow": [24, 37, 411], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
-                 "issue_76_session_layer_v2": [63],
+                 "issue_76_session_layer_v2": [63, 420],
                  "issue_152_alr_request_probe_v2": [360],
                  "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
         metrics = {"sync.av_offset_p95_ms": ([300] * 5, [100] * 5)}
@@ -144,6 +145,27 @@ class Owners(unittest.TestCase):
                  ("low_bandwidth", "cc.rtt_p50_ms"): 411,
                  ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
                  ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
+        d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners)}
+        self.assertEqual(len(g), len(cells))
+        for cell, issue in cells.items():
+            self.assertIn(issue, g[cell], cell)
+
+    def test_gaps_opened_by_416_have_an_open_owner(self):
+        # #409 (Owner 2026-10-26): #416 moved only libwebrtc's side; the gaps it opened go to #420 (behind
+        # on 7/10+ seeds), #410 (behind by sign) and #409 (capacity-drop freeze count, seed spread).
+        cells = {("satellite", "video.freeze_count"): 420,
+                 ("satellite", "video.freeze_total_ms"): 420,
+                 ("issue_76_session_layer_v2", "audio.mouth_to_ear_p95_ms"): 420,
+                 ("issue_76_session_layer_v2", "audio.jb_delay_p95_ms"): 420,
+                 ("issue_76_session_layer_v2", "sync.av_offset_p95_ms"): 420,
+                 ("capacity_drop", "cc.queue_p95_ms"): 410,
+                 ("issue_5_keyframe_flush", "cc.queue_p95_ms"): 410,
+                 ("issue_29_ulpfec_over_red", "video.e2e_delay_p95_ms"): 410,
+                 ("probe_v2_capacity_drop", "video.freeze_count"): 409,
+                 ("issue_53_cwnd_pushback", "video.freeze_count"): 409}
         d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
