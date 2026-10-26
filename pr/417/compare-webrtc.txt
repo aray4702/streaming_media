@@ -3658,7 +3658,7 @@ issue_390_cross_join_seed15 - issue_204_cross_traffic_join on seed 15: when the 
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-issue_415_cross_80pct_standing_queue - An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300 ms drop-tail queue) at 20 s, leaving 200 kbps for the call (
+issue_415_cross_80pct_standing_queue - An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300 ms drop-tail queue) at 20 s, leaving 200 kbps for the call: libwebrtc keeps the queue full too, so this is parity, held at libwebrtc's level (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0          0.1  =
