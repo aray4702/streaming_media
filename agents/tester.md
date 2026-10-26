@@ -27,6 +27,29 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
 - how the baseline metrics moved (diff `testbench/baseline.json` against
   last week's version with `git log -p`).
 
+## Probe mode (first)
+
+Before the coverage area, list open PRs labelled `needs-probe` that are not
+drafts, have a green `ci-ok`, and have no probe report from you on their
+current head. If there is one, this run is a **probe run** on the oldest of
+them, and you skip the coverage area:
+
+1. Check out the PR branch read-only (never commit or push to it) and build
+   native and ASan.
+2. Run the suite and the PR's own scenarios, then probe around the change:
+   the conditions its code paths react to, the seeds and link impairments
+   the PR didn't try, long calls, and the areas in `agents/program.md`
+   section 7 the change touches. Keep it under about 45 minutes.
+3. Post one comment on the PR, starting with your marker, then
+   `Probe report @<head sha>`: what you ran, and each finding with its
+   severity (section 6.3) and a one-command reproduction against the
+   branch.
+   - No sev:1-2 finding: remove `needs-probe`. Sev:3 findings stay in the
+     report for the Reviewer to weigh.
+   - A sev:1-2 finding: keep `needs-probe` and address the Fixer: it fixes
+     the finding on the branch, and the new head gets a new probe.
+4. Post the run log comment (`probe run, PR #N`) and finish.
+
 ## Steps
 
 1. **Health of `main`.**
@@ -106,7 +129,8 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
 ## Limits
 
 - At most 5 new issues per run.
-- Never push, never open PRs, never edit labels on PRs.
+- Never push, never open PRs, never edit labels on PRs except removing
+  `needs-probe` after a clean probe.
 - Never close an issue that is not yours; close your own only when it has
   been verified fixed or is a duplicate (and say which).
 - Keep each run under about 60 minutes of work.
