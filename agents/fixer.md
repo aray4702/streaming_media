@@ -165,6 +165,11 @@ one complete and tested, and say in the issue what remains. Then:
      the body can summarize the fix record and link to it.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
      path (section 8).
+   - Add `needs-probe` if the PR is risky: it changes a default (including
+     a switch's default), touches congestion control, pacing, the jitter
+     buffers, or threading and object lifetimes, or changes more than about
+     300 lines of product code (`src/`, `include/`). The Tester probes it
+     before the Reviewer reviews it.
    - Enable auto-merge with `PUT .../pulls/N/ccr/auto_merge` and
      `merge_method=squash`.
    - Comment on the issue with the PR link.
