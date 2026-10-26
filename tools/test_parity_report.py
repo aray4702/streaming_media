@@ -111,8 +111,9 @@ class Owners(unittest.TestCase):
         # #379 (Owner 2026-10-25): lip sync matches libwebrtc (yardstick #396); each offset cell follows
         # an audio jitter-buffer, video-delay or RTT gap, so that item owns it.
         # #365 closed: its lossy_feedback cell and the issue_84 low-rate cells went to #360 (Owner 2026-10-25).
-        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37],
-                 "issue_12_lossbwe_shallow": [24, 37], "issue_331_low_bandwidth_av_offset_seed4": [360],
+        # #406: #360 closed; the shallow and low-bandwidth cells still on main went to #411 as well.
+        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 411],
+                 "issue_12_lossbwe_shallow": [24, 37, 411], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
                  "issue_76_session_layer_v2": [63],
                  "issue_152_alr_request_probe_v2": [360],
                  "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
@@ -125,6 +126,31 @@ class Owners(unittest.TestCase):
             self.assertEqual(g[name], o, name)
         self.assertNotIn(379, sum(g.values(), []))
         self.assertEqual(g["clean_link"], [])  # A new sync gap needs an owner placed on the roadmap.
+
+    def test_stage1_exit_cells_have_an_open_owner(self):
+        # #406 (Owner 2026-10-25): every gap on main after #378 is re-owned from closed issues to the
+        # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
+        cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
+                 ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
+                 ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
+                 ("issue_24_timing_v2_default", "video.freeze_total_ms"): 409,
+                 ("issue_5_burst15_freeze", "cc.queue_p95_ms"): 410,
+                 ("burst_loss", "audio.jb_delay_p95_ms"): 410,
+                 ("issue_29_ulpfec_over_red", "video.freeze_total_ms"): 410,
+                 ("high_jitter", "video.time_to_first_frame_ms"): 411,
+                 ("issue_21_shallow_drop_repair", "video.freeze_count"): 411,
+                 ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 411,
+                 ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 411,
+                 ("low_bandwidth", "cc.rtt_p50_ms"): 411,
+                 ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
+                 ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
+        d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners)}
+        self.assertEqual(len(g), len(cells))
+        for cell, issue in cells.items():
+            self.assertIn(issue, g[cell], cell)
 
 
 class Delta(unittest.TestCase):
