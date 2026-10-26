@@ -42,7 +42,7 @@ Opened:
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_53_cwnd_pushback | `video.freeze_count` | 3.1 | 2.3 | ±0.7 | behind | 6/10 | #5, #37, #24 |
 | issue_5_keyframe_flush | `cc.queue_p95_ms` | 299 | 281 | ±14.9 | behind | 5/10 | #19, #15, #48, #12, #61 |
-| issue_76_session_layer_v2 | `repair.overhead_pct` | 38.2 | 40.3 | ±2.0 | ahead | 43/80 | #21, #7, #29 |
+| issue_76_session_layer_v2 | `repair.overhead_pct` | 38.2 | 40.3 | ±2.0 | ahead | 43/80 | #21, #7, #29, #411 |
 | low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | pacer_v2_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24 |
 | pacer_v2_capacity_drop | `cc.queue_p95_ms` | 300 | 281 | ±15.0 | behind | 5/10 | #19, #15, #48, #12, #61 |
@@ -136,7 +136,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_76_packetization_v2 | `repair.overhead_pct` | 29.6 | 31.9 | ±2 | ahead | 5/10 | #21, #7, #29, #411 |
 | issue_76_rtx_v2_keyframe_flush | `sync.av_offset_p95_ms` | 851 | 1036 | ±144 | ahead | 5/10 | #411 |
 | issue_76_rtx_v2_keyframe_flush | `video.e2e_delay_p95_ms` | 1255 | 1516 | ±144 | ahead | 5/10 | #24, #37, #411 |
-| issue_76_session_layer_v2 | `repair.overhead_pct` | 38.2 | 40.3 | ±2.0 | ahead | 43/80 | #21, #7, #29 |
+| issue_76_session_layer_v2 | `repair.overhead_pct` | 38.2 | 40.3 | ±2.0 | ahead | 43/80 | #21, #7, #29, #411 |
 | issue_76_tcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
 | issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61, #411 |
 | low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
