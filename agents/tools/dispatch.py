@@ -4,13 +4,16 @@
 Applies the coordinator's rule-based duties without an LLM, so they run on
 every GitHub event and every 15 minutes instead of on a coordinator tick:
 
-  AUTOMERGE      turn on squash auto-merge for an approved, green PR
+  AUTOMERGE      turn on squash auto-merge for an approved, green PR (parity
+                 closed > opened, or the Owner approved it: owner-approved)
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
   RUN fixer      start a Fixer run when an eligible #64 item has waited
-  RUN reviewer   start a Reviewer run when a green PR has waited for review
+  RUN reviewer   start a Reviewer run when a green PR has waited for review, or
+                 when needs-human was removed after its last review on the head
   RUN coordinator  start the cloud Coordinator when something needs judgment
                  (a new unplaced issue, a needs-human label, a Fixer comment on
-                 a work-list item) and no local coordinator holds the lease
+                 a work-list item)
+  RUN builder    start the Builder when an issue or PR carries needs-builder
   RUN tester     start a Tester run when fixes wait to be verified (an
                  agent-found or bug issue closed) or main moved a lot (3+ merges)
                  since its last run
@@ -37,6 +40,8 @@ BOT = "streaming-media-reviewer[bot]"
 ROADMAP = 64
 LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
+OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
+NEEDS_BUILDER = "needs-builder"
 MAX_IN_PROGRESS = 5
 FIXER_WAIT_MIN = 60        # pace rule: extra Fixer run only after an item waited this long
 REVIEW_WAIT_MIN = 30       # green PR without a review on its head
@@ -45,6 +50,8 @@ CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is a
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
 SCHEDULED_FIXER_MINUTE = 15  # the Fixer routine's own cron minute
 SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
+COORDINATOR_POSTS = ("<!-- sm-agent: coordinator -->",
+                     "Owner (coordinator)", "Owner (local coordinator)")  # the last two: before 2026-10-26
 TESTER_GAP_MIN = 180       # a Tester run takes up to an hour; keep runs apart
 TESTER_MERGES = 3          # merges to main since its last run that call for a new one
 TESTER_SCHEDULE = (34, (0, 6, 12, 18))  # its own cron: minute, UTC hours
@@ -113,6 +120,11 @@ class Dispatcher:
                 if x["user"]["login"] == BOT]
         return revs[-1] if revs else None
 
+    def needs_human_cleared_after(self, number, when):
+        events = gh(f"repos/{self.r}/issues/{number}/events?per_page=100", paginate=True) or []
+        return any(e.get("event") == "unlabeled" and (e.get("label") or {}).get("name") == "needs-human"
+                   and e["created_at"] > when for e in events)
+
     def parity_ok(self, pr):
         """closed > opened (or nothing opened) on this head's published report."""
         base = f"repos/{self.r}/contents/pr/{pr['number']}"
@@ -169,6 +181,8 @@ class Dispatcher:
                 continue  # the Owner merges protected paths
             if pr["auto_merge"] is None:
                 ok, why = self.parity_ok(pr)
+                if not ok and OWNER_APPROVED in labels(pr):
+                    ok, why = True, f"{why}; Owner-approved ({OWNER_APPROVED})"
                 if not ok:
                     self.say("WAIT", f"PR #{n}", f"approved and green, but {why}")
                     continue
@@ -201,7 +215,7 @@ class Dispatcher:
                 continue
             lab = labels(issue)
             in_progress += "in-progress" in lab
-            busy = bool(lab & {"in-progress", "needs-human", "wontfix", "cannot-reproduce"}) or n in refs
+            busy = bool(lab & {"in-progress", "needs-human", NEEDS_BUILDER, "wontfix", "cannot-reproduce"}) or n in refs
             if walking:
                 if not busy and (first or "parallel-ok" in lab):
                     cand, walking = issue, False
@@ -261,30 +275,33 @@ class Dispatcher:
             if ci != "success" or not done:
                 continue
             rev = self.bot_review(n)
+            cleared = False
             if rev and rev["commit_id"] == sha:
-                continue
+                # Reviewed this head already. Review again only if it wasn't an
+                # approval and needs-human was removed after that review (the
+                # Owner or the Coordinator answered what the review waited on).
+                if rev["state"] == "APPROVED" or not self.needs_human_cleared_after(n, rev["submitted_at"]):
+                    continue
+                cleared = True
             waited = minutes_ago(done)
-            if waited < REVIEW_WAIT_MIN:
+            if waited < REVIEW_WAIT_MIN and not cleared:
                 continue
             last = self.last_dispatch("reviewer")
             if last and minutes_ago(last) < DISPATCH_GAP_MIN:
                 return self.say("HOLD", "reviewer", f"PR #{n} waiting, but dispatched {minutes_ago(last):.0f} min ago")
-            self.say("RUN", "reviewer", f"PR #{n} green for {waited:.0f} min with no review on {sha[:7]}")
+            self.say("RUN", "reviewer", f"PR #{n}: needs-human cleared after its {rev['state']} review on {sha[:7]}"
+                     if cleared else f"PR #{n} green for {waited:.0f} min with no review on {sha[:7]}")
             if self.live:
                 start_routine("REVIEWER")
                 self.record_dispatch("reviewer")
             return
 
     def coordinator(self):
-        lease = re.search(r"local-coordinator-lease: ([0-9TZ:-]+)", self.log_body)
-        if lease and ts(lease[1]) > NOW:
-            return self.note("coordinator", f"local coordinator holds the lease until {lease[1]}")
         # Events since the coordinator last looked: its last start by this
         # dispatcher, or its last comment on the log issue.
         marks = [self.last_dispatch("coordinator")]
         log = gh(f"repos/{self.r}/issues/{LOG_ISSUE}/comments?per_page=100", paginate=True) or []
-        marks += [c["created_at"] for c in log if (c["body"] or "").startswith(
-            ("Owner (coordinator):", "Owner (local coordinator):"))]
+        marks += [c["created_at"] for c in log if (c["body"] or "").startswith(COORDINATOR_POSTS)]
         marks = [m for m in marks if m]
         since = max(marks) if marks else (NOW - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         roadmap = gh(f"repos/{self.r}/issues/{ROADMAP}")["body"]
@@ -363,6 +380,21 @@ class Dispatcher:
             start_routine("TESTER")
             self.record_dispatch("tester")
 
+    def builder(self):
+        waiting = [i["number"] for i in gh(f"repos/{self.r}/issues?state=open&labels={NEEDS_BUILDER}&per_page=100",
+                                           paginate=True) or []]
+        if not waiting:
+            return self.note("builder", f"nothing labelled {NEEDS_BUILDER}")
+        last = self.last_dispatch("builder")
+        if last and minutes_ago(last) < DISPATCH_GAP_MIN:
+            return self.say("HOLD", "builder", f"{len(waiting)} waiting, but dispatched {minutes_ago(last):.0f} min ago")
+        if self.live and not os.environ.get("SM_ROUTINE_BUILDER_TOKEN"):
+            return self.say("HOLD", "builder", "SM_ROUTINE_BUILDER_TOKEN not set")
+        self.say("RUN", "builder", f"{NEEDS_BUILDER} on " + ", ".join(f"#{n}" for n in waiting[:5]))
+        if self.live:
+            start_routine("BUILDER")
+            self.record_dispatch("builder")
+
     def notify(self):
         last = self.last_dispatch("notify")
         since = last or (NOW - dt.timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -398,6 +430,7 @@ class Dispatcher:
         self.reviewer()
         self.coordinator()
         self.tester()
+        self.builder()
         self.notify()
         self.stale()
         if not self.actions:
@@ -405,7 +438,8 @@ class Dispatcher:
 
 
 ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
-            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB"}
+            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB",
+            "BUILDER": "trig_011EsE9gCQAkUHobh2WwjQcn"}
 
 
 def start_routine(name):
