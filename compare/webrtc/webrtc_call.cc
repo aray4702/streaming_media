@@ -294,6 +294,11 @@ class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
+// The sender's SDES CNAME, the one testbench/call.cc gives this library's sender (16 characters). libwebrtc's
+// media engine always sets one from the SDP (webrtc_video_engine.cc:1963, webrtc_voice_engine.cc:878); left
+// empty, RTCPSender still adds SDES to every SR (rtcp_sender.cc:713) with an empty CNAME, and each forward-link
+// RTCP packet was 16 bytes shorter than ours (68/92 vs 84/108 B, issue #409).
+constexpr char kSenderCname[] = "sender@testbench";
 // Payload types as Chrome offers them (red/ulpfec/rtx as in its default SDP).
 constexpr int kOpusPt = 111, kAudioRedPt = 63, kVideoPt = 125, kRtxPt = 98, kRedPt = 118, kUlpfecPt = 119,
               kRtxRedPt = 99;
@@ -846,6 +851,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     if (s.audio) {
       w::AudioSendStream::Config c(&send_transport);
       c.rtp.ssrc = kAudioSsrc;
+      c.rtp.c_name = kSenderCname;
       c.rtp.extensions = extensions;
       // Chrome's default Opus parameters.
       c.send_codec_spec = w::AudioSendStream::Config::SendCodecSpec(
@@ -862,6 +868,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       c.rtp.payload_name = "H264";
       c.rtp.payload_type = kVideoPt;
       c.rtp.ssrcs = {kVideoSsrc};
+      c.rtp.c_name = kSenderCname;
       c.rtp.extensions = extensions;
       // `video_max_payload` (issue #257): the same whole-packet limit this library's sender uses,
       // payload plus the 12-byte fixed header, clamped to the 100-1500 bytes
