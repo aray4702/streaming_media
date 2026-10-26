@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Console</title>
+<style>
+:root {
+  --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
+  --accent: #2f5bd3; --ok: #1f7a3e; --warn: #9a6400; --bad: #b3261e; --chip: #efeee9;
+  --ok-bg: #e5f3ea; --warn-bg: #fbf0d9; --bad-bg: #fbe5e3; --info-bg: #e7edfb;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --text: #ecebe6; --muted: #9b9a94; --line: #34332f;
+    --accent: #8ba9ff; --ok: #6fcf8f; --warn: #e3b55a; --bad: #ff8a80; --chip: #2b2a27;
+    --ok-bg: #1d3325; --warn-bg: #3a2e14; --bad-bg: #3d1f1c; --info-bg: #1f2a45;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, system-ui, sans-serif; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; }
+header .repo { color: var(--muted); }
+header .spacer { flex: 1; }
+nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
+nav button { border: 0; background: none; color: var(--muted); padding: 10px 12px; font: inherit; cursor: pointer; border-bottom: 2px solid transparent; white-space: nowrap; }
+nav button.on { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+nav .count { font-size: 11px; background: var(--bad-bg); color: var(--bad); border-radius: 8px; padding: 0 6px; margin-left: 4px; }
+main { padding: 16px 20px 60px; max-width: 1400px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+.big { font-size: 26px; font-weight: 600; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; background: var(--panel); }
+tr:last-child td { border-bottom: 0; }
+.tablewrap { overflow-x: auto; }
+.chip { display: inline-block; font-size: 11px; padding: 1px 7px; margin: 1px 2px 1px 0; border-radius: 10px; background: var(--chip); white-space: nowrap; }
+.chip.bad { background: var(--bad-bg); color: var(--bad); }
+.chip.warn { background: var(--warn-bg); color: var(--warn); }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.info { background: var(--info-bg); color: var(--accent); }
+.pill { font-size: 12px; padding: 3px 10px; border-radius: 12px; font-weight: 600; }
+.btn { font: inherit; font-size: 13px; padding: 5px 11px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.danger { color: var(--bad); border-color: var(--bad); }
+.btn:disabled { opacity: .5; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+ul.plain { list-style: none; margin: 0; padding: 0; }
+ul.plain li { padding: 4px 0; border-bottom: 1px solid var(--line); }
+ul.plain li:last-child { border-bottom: 0; }
+pre { white-space: pre-wrap; word-break: break-word; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; font-size: 12px; max-height: 520px; overflow: auto; }
+.logitem { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.logitem .body { white-space: pre-wrap; word-break: break-word; margin-top: 6px; }
+.logitem.needs { border-left: 4px solid var(--bad); }
+textarea, input, select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+textarea { width: 100%; min-height: 90px; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); width: min(560px, 94vw); padding: 18px; }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+dialog h3 { margin: 0 0 4px; font-size: 15px; }
+dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 12px; }
+#toast { position: fixed; bottom: 18px; right: 18px; max-width: 460px; padding: 10px 14px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 4px 16px rgba(0,0,0,.15); display: none; z-index: 5; white-space: pre-wrap; }
+#toast.err { border-color: var(--bad); color: var(--bad); }
+.err { color: var(--bad); }
+.done td { color: var(--muted); }
+@media (max-width: 640px) { header, nav, main { padding-left: 16px; padding-right: 16px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Agent Console</h1>
+  <span class="repo">__REPO__</span>
+  <span id="stopBadge"></span>
+  <span id="modeBadge"></span>
+  <span class="spacer"></span>
+  <span class="muted small" id="stamp"></span>
+  <button class="btn" id="refresh" title="Reload this tab from GitHub (bypasses the 60 s cache)">Refresh</button>
+</header>
+<nav id="tabs"></nav>
+<main id="view"><p class="muted">Loading…</p></main>
+<div id="toast"></div>
+
+<dialog id="dlg">
+  <h3 id="dlgTitle"></h3>
+  <div class="muted small" id="dlgSub"></div>
+  <section>
+    <b>Comment as the Owner</b>
+    <div class="muted small">Posted from your account with no agent marker, so the agents read it as your words.</div>
+    <textarea id="dlgComment" placeholder="Your reply"></textarea>
+    <div class="row"><button class="btn primary" id="dlgPost">Post comment</button></div>
+  </section>
+  <section>
+    <b>Labels</b>
+    <div class="row" id="dlgLabels"></div>
+    <div class="row">
+      <input id="dlgLabel" list="labelList" placeholder="label">
+      <datalist id="labelList"></datalist>
+      <button class="btn" id="dlgAddLabel">Add label</button>
+    </div>
+  </section>
+  <section id="dlgCloseSec">
+    <b>Close issue</b>
+    <div class="row">
+      <select id="dlgReason"><option value="completed">completed / explained / duplicate</option><option value="not_planned">won't fix</option></select>
+      <button class="btn danger" id="dlgClose">Close with the comment above</button>
+    </div>
+  </section>
+  <section id="dlgMergeSec">
+    <b>Merge PR</b>
+    <div class="muted small">Squash merge now. Use it for protected-path PRs (agents/, .github/) that only you merge.</div>
+    <div class="row"><button class="btn danger" id="dlgMerge">Squash and merge</button></div>
+  </section>
+  <div class="row" style="justify-content:flex-end"><button class="btn" id="dlgCancel">Close</button></div>
+</dialog>
+
+<script>
+const TOKEN = "__TOKEN__", REPO = "__REPO__";
+const TABS = [["overview", "Overview"], ["work", "Work order"], ["prs", "PRs"], ["issues", "Issues"],
+              ["agents", "Agents"], ["dispatcher", "Dispatcher"], ["log", "Log #111"]];
+const KNOWN_LABELS = ["needs-human", "needs-coordinator", "needs-builder", "needs-probe", "blocked", "in-progress",
+  "parallel-ok", "owner-approved", "wontfix", "stage:later", "stage:baseline", "stage:ai", "roadmap", "record"];
+let tab = (() => {
+  const h = location.hash.slice(1);
+  if (TABS.some(([k]) => k === h)) return h;
+  try { return localStorage.getItem("sm-console-tab") || "overview"; } catch (e) { return "overview"; }
+})();
+let showDone = false, issueFilter = "";
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+const gh = n => `https://github.com/${REPO}/issues/${n}`;
+const ref = n => `<a href="${gh(n)}" target="_blank">#${n}</a>`;
+const md = s => s.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>").replace(/`([^`\n]+)`/g, "<code>$1</code>");
+const linkify = s => md(esc(s)).replace(/(https?:\/\/[^\s)<]+)/g, '<a href="$1" target="_blank">$1</a>')
+  .replace(/(^|[\s(\[,>/])#(\d+)\b/g, (m, p, n) => `${p}<a href="${gh(n)}" target="_blank">#${n}</a>`);
+const PT = {timeZone: "America/Los_Angeles"};
+function when(iso) {
+  if (!iso) return "—";
+  const t = new Date(iso), mins = Math.round((Date.now() - t) / 60000);
+  const abs = t.toLocaleString("en-US", {...PT, weekday: "short", hour: "numeric", minute: "2-digit"});
+  const rel = Math.abs(mins) < 60 ? `${Math.abs(mins)} min` : Math.abs(mins) < 2880 ? `${Math.round(Math.abs(mins) / 60)} h` : `${Math.round(Math.abs(mins) / 1440)} d`;
+  return `<span title="${esc(t.toLocaleString("en-US", PT))} PT">${abs} <span class="muted">(${mins >= 0 ? rel + " ago" : "in " + rel})</span></span>`;
+}
+const LABEL_CLASS = {"needs-human": "bad", "sev:1": "bad", "needs-coordinator": "warn", "needs-builder": "warn",
+  "needs-probe": "warn", "blocked": "warn", "in-progress": "info", "parallel-ok": "ok", "owner-approved": "ok", "ci-passed": "ok"};
+const chips = ls => (ls || []).map(l => `<span class="chip ${LABEL_CLASS[l] || ""}">${esc(l)}</span>`).join("");
+
+function toast(msg, err) {
+  const t = $("#toast"); t.textContent = msg; t.className = err ? "err" : ""; t.style.display = "block";
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = "none", err ? 9000 : 5000);
+}
+async function api(view, fresh) {
+  const r = await fetch(`/api/${view}${fresh ? "?fresh=1" : ""}`);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+async function act(a, confirmText) {
+  if (confirmText && !confirm(confirmText)) return null;
+  const r = await fetch("/api/action", {method: "POST", headers: {"Content-Type": "application/json", "X-Console-Token": TOKEN}, body: JSON.stringify(a)});
+  const j = await r.json().catch(() => ({ok: false, error: r.statusText}));
+  if (!j.ok) { toast(j.error || "failed", true); return null; }
+  return j.result;
+}
+
+function renderTabs(counts = {}) {
+  $("#tabs").innerHTML = TABS.map(([k, name]) =>
+    `<button data-tab="${k}" class="${k === tab ? "on" : ""}">${name}${counts[k] ? `<span class="count">${counts[k]}</span>` : ""}</button>`).join("");
+  document.querySelectorAll("#tabs button").forEach(b => b.onclick = () => { tab = b.dataset.tab; history.replaceState(null, "", "#" + tab); try { localStorage.setItem("sm-console-tab", tab); } catch (e) {} load(); });
+}
+let navCounts = {};
+async function load(fresh) {
+  renderTabs(navCounts);
+  const v = $("#view");
+  v.innerHTML = '<p class="muted">Loading from GitHub…</p>';
+  try {
+    const data = await api(tab, fresh);
+    v.innerHTML = RENDER[tab](data);
+    (BIND[tab] || (() => {}))(data);
+    $("#stamp").textContent = "Updated " + new Date().toLocaleTimeString("en-US", {...PT, hour: "numeric", minute: "2-digit"}) + " PT";
+  } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
+}
+async function badges(fresh) {
+  try {
+    const d = await api("dispatcher", fresh);
+    $("#stopBadge").innerHTML = d.stop ? `<a class="pill" style="background:var(--bad-bg);color:var(--bad)" href="${d.stop.url}" target="_blank">AGENTS STOPPED</a>`
+      : `<span class="pill" style="background:var(--ok-bg);color:var(--ok)">agents running</span>`;
+    const live = d.mode === "live";
+    $("#modeBadge").innerHTML = `<span class="pill" style="background:${live ? "var(--info-bg)" : "var(--warn-bg)"};color:${live ? "var(--accent)" : "var(--warn)"}">dispatcher ${esc(d.mode)}</span>`;
+  } catch (e) {}
+}
+
+// ---- item dialog ----------------------------------------------------------
+let dlgItem = null;
+function openItem(n, title, labels, isPR) {
+  dlgItem = {n, labels: labels || [], isPR};
+  $("#dlgTitle").innerHTML = `${isPR ? "PR" : "Issue"} ${ref(n)}`;
+  $("#dlgSub").textContent = title || "";
+  $("#dlgComment").value = "";
+  $("#dlgCloseSec").style.display = isPR ? "none" : "";
+  $("#dlgMergeSec").style.display = isPR ? "" : "none";
+  drawDlgLabels();
+  $("#labelList").innerHTML = KNOWN_LABELS.map(l => `<option value="${l}">`).join("");
+  $("#dlg").showModal();
+}
+function drawDlgLabels() {
+  $("#dlgLabels").innerHTML = dlgItem.labels.length ? dlgItem.labels.map(l =>
+    `<span class="chip ${LABEL_CLASS[l] || ""}">${esc(l)} <a href="#" data-rm="${esc(l)}" title="Remove">×</a></span>`).join("") : '<span class="muted small">no labels</span>';
+  document.querySelectorAll("[data-rm]").forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const l = a.dataset.rm;
+    if (await act({kind: "label", n: dlgItem.n, op: "remove", label: l}, `Remove "${l}" from #${dlgItem.n}?`)) {
+      dlgItem.labels = dlgItem.labels.filter(x => x !== l); drawDlgLabels(); toast(`Removed ${l}`); dirty = true;
+    }
+  });
+}
+let dirty = false;
+$("#dlgCancel").onclick = () => { $("#dlg").close(); if (dirty) { dirty = false; load(true); } };
+$("#dlgPost").onclick = async () => {
+  const body = $("#dlgComment").value.trim(); if (!body) return toast("Write a comment first", true);
+  const r = await act({kind: "comment", n: dlgItem.n, body}, `Post this comment on #${dlgItem.n} as you?`);
+  if (r) { toast("Posted: " + r); $("#dlgComment").value = ""; dirty = true; }
+};
+$("#dlgAddLabel").onclick = async () => {
+  const l = $("#dlgLabel").value.trim(); if (!l) return;
+  if (await act({kind: "label", n: dlgItem.n, op: "add", label: l}, `Add "${l}" to #${dlgItem.n}?`)) {
+    dlgItem.labels.push(l); $("#dlgLabel").value = ""; drawDlgLabels(); toast(`Added ${l}`); dirty = true;
+  }
+};
+$("#dlgClose").onclick = async () => {
+  const reason = $("#dlgReason").value, body = $("#dlgComment").value.trim();
+  const r = await act({kind: "close", n: dlgItem.n, reason, body}, `Close #${dlgItem.n} as ${reason}${body ? " with your comment" : " with no comment"}?`);
+  if (r) { toast(r); $("#dlg").close(); load(true); }
+};
+$("#dlgMerge").onclick = async () => {
+  const r = await act({kind: "merge", n: dlgItem.n}, `Squash-merge PR #${dlgItem.n} into main now?`);
+  if (r) { toast(r); $("#dlg").close(); load(true); }
+};
+function bindItemButtons(lookup) {
+  document.querySelectorAll("[data-item]").forEach(b => b.onclick = () => {
+    const it = lookup(+b.dataset.item); openItem(it.n, it.title, it.labels, b.dataset.pr === "1");
+  });
+}
+const actBtn = (n, pr) => `<button class="btn small" data-item="${n}" data-pr="${pr ? 1 : 0}">Act</button>`;
+
+// ---- tab renderers --------------------------------------------------------
+const RENDER = {
+  overview(o) {
+    navCounts = {overview: o.needs_you.length};
+    renderTabs(navCounts);
+    const w = o.work;
+    const needs = o.needs_you.length ? `<ul class="plain">${o.needs_you.map(x =>
+      `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">#${x.n}</a> ${esc(x.title)} ${actBtn(x.n, x.kind === "PR")}</li>`).join("")}</ul>`
+      : '<p class="muted">Nothing labelled <code>needs-human</code>.</p>';
+    const asks = o.asks_24h.length ? `<div class="small" style="margin-top:8px"><b>NEEDS YOU posts on #111, last 24 h</b> (a later post may withdraw one)<ul class="plain">${o.asks_24h.map(a =>
+      `<li><a href="${a.url}" target="_blank">${when(a.at)}</a>: ${md(esc(a.first))}</li>`).join("")}</ul></div>` : "";
+    const heads = o.next_items.map(i => `<tr><td>${ref(i.n)}</td><td><span class="chip ${i.role === "next" ? "ok" : i.role === "busy" ? "info" : "warn"}">${i.role}</span></td><td>${esc(i.title)}<div>${chips(i.labels)}</div></td></tr>`).join("");
+    const held = Object.entries(o.held).map(([k, ns]) => `<div class="row"><span class="chip ${LABEL_CLASS[k] || ""}">${k}</span> ${ns.length ? ns.map(ref).join(", ") : '<span class="muted">none</span>'}</div>`).join("");
+    const agents = o.agents.map(a => `<tr><td>${a.role}</td><td>${a.last_post ? `<a href="${a.last_post.url}" target="_blank">${when(a.last_post.at)}</a>` : '<span class="muted">none in 48 h</span>'}</td><td>${when(a.next)}</td></tr>`).join("");
+    const run = o.last_run;
+    return `<div class="grid">
+      <div class="card"><h2>Needs you</h2>${needs}${asks}</div>
+      <div class="card"><h2>Stage 1 work order</h2>
+        <div class="row"><span class="big">${w.open}</span><span class="muted">open items on #64</span><span class="big" style="margin-left:14px">${w.done}</span><span class="muted">done</span></div>
+        <div class="row">in-progress ${w.in_progress} / ${w.max_in_progress} · next free item: ${w.next_free ? ref(w.next_free) : '<span class="muted">none (head busy)</span>'}</div>
+        <table>${heads || '<tr><td class="muted">no open items</td></tr>'}</table></div>
+      <div class="card"><h2>Held items</h2>${held}
+        <div class="row"><span class="chip">unplaced</span> ${o.unplaced.length ? o.unplaced.map(i => ref(i.n)).join(", ") : '<span class="muted">none</span>'}</div></div>
+      <div class="card"><h2>Agents</h2><table><tr><th>role</th><th>last post</th><th>next scheduled run</th></tr>${agents}</table></div>
+      <div class="card"><h2>Dispatcher</h2>
+        <div class="row">mode <b>${esc(o.mode)}</b> · ${o.stop ? `<a class="err" href="${o.stop.url}" target="_blank">STOP AGENTS is open</a>` : "agents running"}</div>
+        <div class="row">last run ${run ? `<a href="${run.url}" target="_blank">${when(run.at)}</a> <span class="chip ${run.conclusion === "success" ? "ok" : run.conclusion ? "bad" : "info"}">${esc(run.conclusion || run.status)}</span> <span class="muted">${esc(run.event)}</span>` : "—"}</div>
+        <div class="row">open PRs: ${o.prs}</div></div>
+    </div>`;
+  },
+  work(w) {
+    const rows = w.items.filter(i => showDone || !i.done).map(i => i.done
+      ? `<tr class="done"><td>${ref(i.n)}</td><td>${esc(i.section)}</td><td colspan="4">✓ ${linkify(i.text)}</td></tr>`
+      : `<tr><td>${ref(i.n)}</td><td class="small">${esc(i.section)}</td>
+          <td>${esc(i.title || i.text)}<div class="muted small">${linkify(i.text.length > 320 ? i.text.slice(0, 320) + "…" : i.text)}</div></td>
+          <td><span class="chip ${i.closed ? "warn" : i.status === "free" ? "ok" : "info"}">${esc(i.status)}</span>${i.role && i.role !== i.status ? `<div><span class="chip ${i.role === "next" ? "ok" : "warn"}">${i.role}</span></div>` : ""}</td>
+          <td>${chips(i.labels)}</td><td>${(i.prs || []).map(p => `<a href="https://github.com/${REPO}/pull/${p}" target="_blank">#${p}</a>`).join(" ")}</td>
+          <td>${i.closed ? "" : actBtn(i.n)}</td></tr>`).join("");
+    return `<div class="row"><span><b>${w.open}</b> open, <b>${w.done}</b> done · in-progress ${w.in_progress}/${w.max_in_progress} · next free ${w.next_free ? ref(w.next_free) : "none"}</span>
+      <span class="spacer"></span><label><input type="checkbox" id="showDone" ${showDone ? "checked" : ""}> show done items</label>
+      <a href="${w.roadmap_url}" target="_blank">edit #64 on GitHub</a></div>
+      ${w.roadmap_author !== "aray4702" ? '<p class="err">#64 is not authored by aray4702; the Fixer ignores it.</p>' : ""}
+      <p class="muted small"><b>next</b> = what a Fixer takes now; <b>busy</b> = held (label or open PR), the walk continues only through <code>parallel-ok</code> items; <b>waits</b> = free but not <code>parallel-ok</code>, so the walk stops there.</p>
+      <div class="tablewrap"><table><tr><th>#</th><th>phase</th><th>item</th><th>status</th><th>labels</th><th>PRs</th><th></th></tr>${rows}</table></div>`;
+  },
+  prs(p) {
+    const rows = p.prs.map(x => {
+      const ci = x.ci_ok === "success" ? "ok" : x.ci_ok === "failure" ? "bad" : "info";
+      const rv = x.review ? `<a href="${x.review.url}" target="_blank"><span class="chip ${x.review.state === "APPROVED" ? "ok" : x.review.state === "CHANGES_REQUESTED" ? "bad" : ""}">${x.review.state.toLowerCase()}</span></a>${x.review.on_head ? "" : '<div class="muted small">older head</div>'}` : '<span class="muted">none</span>';
+      return `<tr><td><a href="${x.url}" target="_blank">#${x.n}</a></td>
+        <td>${esc(x.title)}${x.draft ? ' <span class="chip">draft</span>' : ""}${x.protected ? ' <span class="chip warn" title="touches agents/ or .github/: the Owner merges">protected</span>' : ""}
+          <div class="muted small">${esc(x.branch)} @ ${x.head} · ${x.files} files · updated ${when(x.updated)}</div><div>${chips(x.labels)}</div></td>
+        <td><span class="chip ${ci}">ci-ok ${esc(x.ci_ok)}</span>${x.failed.length ? `<div class="small err">failed: ${x.failed.map(esc).join(", ")}</div>` : ""}${x.running.length ? `<div class="small muted">running: ${x.running.map(esc).join(", ")}</div>` : ""}</td>
+        <td>${rv}</td><td>${x.auto_merge ? '<span class="chip ok">on</span>' : '<span class="muted">off</span>'}</td>
+        <td class="small">${esc(x.mergeable_state)}</td><td>${actBtn(x.n, true)}</td></tr>`;
+    }).join("");
+    return `<div class="tablewrap"><table><tr><th>#</th><th>PR</th><th>CI</th><th>bot review</th><th>auto-merge</th><th>merge state</th><th></th></tr>${rows || '<tr><td colspan="7" class="muted">No open PRs.</td></tr>'}</table></div>`;
+  },
+  issues(d) {
+    const f = issueFilter.toLowerCase();
+    const list = d.issues.filter(i => !f || (`#${i.n} ${i.title} ${i.labels.join(" ")}`).toLowerCase().includes(f));
+    const rows = list.map(i => `<tr><td>${ref(i.n)}</td><td>${esc(i.title)}<div>${chips(i.labels)}</div></td>
+      <td>${i.record ? '<span class="chip">record</span>' : i.placed ? '<span class="chip ok">on #64</span>' : '<span class="chip warn">not on #64</span>'}</td>
+      <td>${i.prs.map(p => `<a href="https://github.com/${REPO}/pull/${p}" target="_blank">#${p}</a>`).join(" ")}</td>
+      <td class="small">${when(i.updated)}</td><td>${actBtn(i.n)}</td></tr>`).join("");
+    return `<div class="row"><input id="filter" placeholder="filter by number, title or label" value="${esc(issueFilter)}" style="min-width:280px"><span class="muted">${list.length} of ${d.issues.length} open issues</span></div>
+      <div class="tablewrap"><table><tr><th>#</th><th>issue</th><th>placed</th><th>PRs</th><th>updated</th><th></th></tr>${rows}</table></div>`;
+  },
+  agents(a) {
+    const rows = a.roles.map(r => `<tr><td><b>${r.role}</b></td>
+      <td>${r.last_post ? `<a href="${r.last_post.url}" target="_blank">${when(r.last_post.at)}</a> on ${ref(r.last_post.n)}<div class="muted small">${md(esc(r.last_post.first))}</div>` : '<span class="muted">none in 48 h</span>'}</td>
+      <td>${r.posts_48h}</td><td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">—</span>'}</td>
+      <td><code>${esc(r.cron)}</code> UTC<div class="small">next ${when(r.next)}</div></td>
+      <td><a href="https://claude.ai/code/routines/${r.routine}" target="_blank" class="small">${esc(r.routine)}</a></td></tr>`).join("");
+    return `<div class="tablewrap"><table><tr><th>role</th><th>last post</th><th>posts (48 h)</th><th>last started by the Dispatcher</th><th>schedule</th><th>routine</th></tr>${rows}</table></div>
+      <p class="muted small">The reviewer posts as <code>streaming-media-reviewer[bot]</code>; the other roles post as aray4702 with an <code>sm-agent</code> marker. Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
+  },
+  dispatcher(d) {
+    const rows = d.runs.map(r => `<tr><td><a href="${r.url}" target="_blank">${when(r.at)}</a></td><td>${esc(r.event)}</td>
+      <td><span class="chip ${r.conclusion === "success" ? "ok" : r.conclusion ? "bad" : "info"}">${esc(r.conclusion || r.status)}</span></td></tr>`).join("");
+    return `<div class="grid">
+      <div class="card"><h2>Stop switch</h2>
+        <p>${d.stop ? `<b class="err">Stopped</b> by <a href="${d.stop.url}" target="_blank">#${d.stop.n}</a>. The Dispatcher does nothing while it is open.` : "Running. Stopping opens a <code>STOP AGENTS</code> issue; the Dispatcher then starts no runs and merges nothing. Scheduled routine runs still start, and they check it too."}</p>
+        <div class="row">${d.stop ? '<button class="btn primary" id="resume">Resume agents</button>' : '<button class="btn danger" id="stop">Stop agents</button>'}</div></div>
+      <div class="card"><h2>Mode</h2>
+        <p><code>SM_DISPATCH_MODE</code> = <b>${esc(d.mode)}</b>. Anything but <code>live</code> is a dry run that only writes its decisions to the job summary.</p>
+        <div class="row"><button class="btn" id="modeLive" ${d.mode === "live" ? "disabled" : ""}>Set live</button><button class="btn" id="modeDry" ${d.mode === "dry" ? "disabled" : ""}>Set dry run</button></div></div>
+      <div class="card"><h2>Run</h2>
+        <p>Run the GitHub workflow now (it acts if the mode is live), or a local dry run of <code>dispatch.py</code> with your login, which only prints what it would do.</p>
+        <div class="row"><button class="btn" id="runNow">Run dispatcher now</button><button class="btn" id="dryRun">Local dry run</button></div></div>
+    </div>
+    <div id="dryOut"></div>
+    <h3 style="font-size:14px;margin-top:18px">Recent runs</h3>
+    <div class="tablewrap"><table><tr><th>started</th><th>event</th><th>result</th></tr>${rows}</table></div>`;
+  },
+  log(l) {
+    const items = l.comments.map(c => `<div class="logitem ${/^NEEDS YOU/m.test(c.body.split("\n").slice(0, 2).join("\n")) ? "needs" : ""}">
+      <div class="small"><span class="chip ${c.who === "owner" ? "info" : ""}">${esc(c.who)}</span> <a href="${c.url}" target="_blank">${when(c.at)}</a></div>
+      <div class="body">${linkify(c.body)}</div></div>`).join("");
+    return `<div class="card" style="margin-bottom:14px"><h2>Reply on ${ref(l.n)} as the Owner</h2>
+      <textarea id="logReply" placeholder="e.g. A — or a decision for the Coordinator to record"></textarea>
+      <div class="row"><button class="btn primary" id="logPost">Post on #${l.n}</button></div></div>${items}`;
+  },
+};
+
+const BIND = {
+  overview(o) { bindItemButtons(n => o.needs_you.find(x => x.n === n)); },
+  work(w) {
+    $("#showDone").onchange = e => { showDone = e.target.checked; $("#view").innerHTML = RENDER.work(w); BIND.work(w); };
+    bindItemButtons(n => w.items.find(i => i.n === n));
+  },
+  prs(p) { bindItemButtons(n => { const x = p.prs.find(y => y.n === n); return {n, title: x.title, labels: x.labels}; }); },
+  issues(d) {
+    const f = $("#filter");
+    f.oninput = () => { issueFilter = f.value; const pos = f.selectionStart; $("#view").innerHTML = RENDER.issues(d); BIND.issues(d); const g = $("#filter"); g.focus(); g.setSelectionRange(pos, pos); };
+    bindItemButtons(n => d.issues.find(i => i.n === n));
+  },
+  dispatcher(d) {
+    const done = async (p) => { const r = await p; if (r) { toast(r); load(true); badges(true); } };
+    if ($("#stop")) $("#stop").onclick = () => done(act({kind: "stop", on: true}, "Stop the agents? This opens a STOP AGENTS issue; the Dispatcher stops starting runs and merging."));
+    if ($("#resume")) $("#resume").onclick = () => done(act({kind: "stop", on: false}, "Resume the agents? This closes the STOP AGENTS issue."));
+    $("#modeLive").onclick = () => done(act({kind: "mode", value: "live"}, "Set SM_DISPATCH_MODE=live? The Dispatcher will start runs, update branches and merge."));
+    $("#modeDry").onclick = () => done(act({kind: "mode", value: "dry"}, "Set SM_DISPATCH_MODE=dry? The Dispatcher will only report what it would do."));
+    $("#runNow").onclick = async () => { const r = await act({kind: "dispatch_now"}, "Start a dispatcher workflow run now?"); if (r) toast(r + ". It shows under Recent runs within a minute."); };
+    $("#dryRun").onclick = async () => {
+      $("#dryOut").innerHTML = '<p class="muted">Running dispatch.py (dry run)… this takes a minute.</p>';
+      const r = await act({kind: "dry_run"});
+      $("#dryOut").innerHTML = r != null ? `<h3 style="font-size:14px">Local dry run</h3><pre>${esc(r)}</pre>` : "";
+    };
+  },
+  log(l) {
+    $("#logPost").onclick = async () => {
+      const body = $("#logReply").value.trim(); if (!body) return toast("Write a reply first", true);
+      const r = await act({kind: "comment", n: l.n, body}, `Post this on #${l.n} as you?`);
+      if (r) { toast("Posted"); load(true); }
+    };
+  },
+};
+
+$("#refresh").onclick = () => { load(true); badges(true); };
+renderTabs();
+load();
+badges();
+setInterval(() => { if (document.visibilityState === "visible" && !$("#dlg").open && !document.activeElement.matches("textarea,input")) { load(); badges(); } }, 120000);
+</script>
+</body>
+</html>
