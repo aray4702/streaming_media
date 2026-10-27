@@ -294,6 +294,1032 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   net.padding_size_p90_b                  303          303
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
+Y453 high_jitter.s1 rx tick_ms=69 at_us=68127 sim_us=69000 ssrc=deadbeef seq=6667 size=173
+Y453 high_jitter.s1 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=116 at_us=115687 sim_us=116000 ssrc=deadbeef seq=6666 size=89
+Y453 high_jitter.s1 fb t_us=130000 fb_us=130000 tseq=2 send_us=30000 recv_us=100000134000 size=201 probe=-1
+Y453 high_jitter.s1 rx tick_ms=133 at_us=132613 sim_us=133000 ssrc=deadbeef seq=6668 size=171
+Y453 high_jitter.s1 rx tick_ms=138 at_us=137998 sim_us=138000 ssrc=deadbeef seq=6670 size=147
+Y453 high_jitter.s1 rtcp_out t_us=150000 size=28 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=172 at_us=171090 sim_us=172000 ssrc=badcafd seq=887 size=275
+Y453 high_jitter.s1 rx tick_ms=173 at_us=172130 sim_us=173000 ssrc=deadbeef seq=6671 size=136
+Y453 high_jitter.s1 rx tick_ms=175 at_us=174385 sim_us=175000 ssrc=c0ffed seq=6667 size=1127
+Y453 high_jitter.s1 rtcp_out t_us=175000 size=64 blocks= 201/1 206/1 207/0
+Y453 high_jitter.s1 rx tick_ms=177 at_us=176854 sim_us=177000 ssrc=deadbeef seq=6669 size=151
+Y453 high_jitter.s1 fb t_us=180000 fb_us=180000 tseq=1 send_us=10000 recv_us=100000181000 size=117 probe=-1
+Y453 high_jitter.s1 fb t_us=180000 fb_us=180000 tseq=3 send_us=50000 recv_us=100000198000 size=199 probe=-1
+Y453 high_jitter.s1 fb t_us=180000 fb_us=180000 tseq=4 send_us=70000 recv_us=-1 size=179 probe=-1
+Y453 high_jitter.s1 fb t_us=180000 fb_us=180000 tseq=5 send_us=90000 recv_us=100000204000 size=175 probe=-1
+Y453 high_jitter.s1 rx tick_ms=187 at_us=186717 sim_us=187000 ssrc=deadbeef seq=6672 size=132
+Y453 high_jitter.s1 rx tick_ms=195 at_us=194314 sim_us=195000 ssrc=deadbeef seq=6673 size=133
+Y453 high_jitter.s1 rx tick_ms=199 at_us=198712 sim_us=199000 ssrc=c0ffed seq=6669 size=1127
+Y453 high_jitter.s1 rtcp_out t_us=199000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s1 rtcp_out t_us=200000 size=36 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=200 at_us=199261 sim_us=200000 ssrc=c0ffed seq=6668 size=1127
+Y453 high_jitter.s1 rx tick_ms=209 at_us=208522 sim_us=209000 ssrc=c0ffed seq=6666 size=49
+Y453 high_jitter.s1 rx tick_ms=209 at_us=208921 sim_us=209000 ssrc=deadbeef seq=6674 size=131
+Y453 high_jitter.s1 rx tick_ms=230 at_us=229411 sim_us=230000 ssrc=badcafd seq=890 size=1129
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=4 send_us=70000 recv_us=100000242000 size=179 probe=-1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=6 send_us=110000 recv_us=100000238000 size=164 probe=-1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=7 send_us=130000 recv_us=100000252000 size=160 probe=-1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=8 send_us=133000 recv_us=100000237000 size=303 probe=1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=9 send_us=135000 recv_us=-1 size=77 probe=1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=10 send_us=135000 recv_us=100000240000 size=1155 probe=1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=11 send_us=146000 recv_us=-1 size=1155 probe=1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=12 send_us=156000 recv_us=100000260000 size=161 probe=1
+Y453 high_jitter.s1 fb t_us=230000 fb_us=230000 tseq=13 send_us=156000 recv_us=100000264000 size=1155 probe=1
+Y453 high_jitter.s1 rx tick_ms=237 at_us=236512 sim_us=237000 ssrc=c0ffed seq=6670 size=927
+Y453 high_jitter.s1 rtcp_out t_us=237000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s1 rx tick_ms=242 at_us=241289 sim_us=242000 ssrc=badcafd seq=888 size=275
+Y453 high_jitter.s1 rx tick_ms=244 at_us=243058 sim_us=244000 ssrc=badcafd seq=892 size=275
+Y453 high_jitter.s1 rtcp_out t_us=250000 size=40 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=270 at_us=269216 sim_us=270000 ssrc=badcafd seq=891 size=1129
+Y453 high_jitter.s1 rx tick_ms=274 at_us=273663 sim_us=274000 ssrc=deadbeef seq=6677 size=157
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=9 send_us=135000 recv_us=100000274000 size=77 probe=1
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=11 send_us=146000 recv_us=100000265000 size=1155 probe=1
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=14 send_us=168000 recv_us=100000302000 size=955 probe=1
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=15 send_us=177000 recv_us=100000307000 size=303 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=16 send_us=177000 recv_us=100000275000 size=159 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=17 send_us=179000 recv_us=-1 size=1157 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=18 send_us=184000 recv_us=100000295000 size=1157 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=19 send_us=189000 recv_us=-1 size=1157 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=20 send_us=194000 recv_us=-1 size=170 probe=2
+Y453 high_jitter.s1 fb t_us=280000 fb_us=280000 tseq=21 send_us=194000 recv_us=100000309000 size=303 probe=2
+Y453 high_jitter.s1 rx tick_ms=289 at_us=288362 sim_us=289000 ssrc=deadbeef seq=6675 size=142
+Y453 high_jitter.s1 rx tick_ms=295 at_us=294119 sim_us=295000 ssrc=deadbeef seq=6676 size=148
+Y453 high_jitter.s1 rtcp_out t_us=300000 size=32 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=322 at_us=321989 sim_us=322000 ssrc=deadbeef seq=6678 size=159
+Y453 high_jitter.s1 rx tick_ms=329 at_us=328286 sim_us=329000 ssrc=deadbeef seq=6679 size=154
+Y453 high_jitter.s1 fb t_us=330000 fb_us=330000 tseq=19 send_us=189000 recv_us=100000335000 size=1157 probe=2
+Y453 high_jitter.s1 fb t_us=330000 fb_us=330000 tseq=20 send_us=194000 recv_us=100000354000 size=170 probe=2
+Y453 high_jitter.s1 fb t_us=330000 fb_us=330000 tseq=22 send_us=210000 recv_us=100000360000 size=176 probe=-1
+Y453 high_jitter.s1 fb t_us=330000 fb_us=330000 tseq=23 send_us=230000 recv_us=100000339000 size=185 probe=-1
+Y453 high_jitter.s1 rx tick_ms=334 at_us=333604 sim_us=334000 ssrc=c0ffed seq=6671 size=49
+Y453 high_jitter.s1 rx tick_ms=341 at_us=340289 sim_us=341000 ssrc=deadbeef seq=6680 size=155
+Y453 high_jitter.s1 rx tick_ms=341 at_us=340624 sim_us=341000 ssrc=badcafd seq=889 size=1129
+Y453 high_jitter.s1 rtcp_out t_us=350000 size=40 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=351 at_us=350881 sim_us=351000 ssrc=c0ffed seq=6674 size=1456
+Y453 high_jitter.s1 rtcp_out t_us=351000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s1 rx tick_ms=354 at_us=353685 sim_us=354000 ssrc=c0ffed seq=6673 size=1456
+Y453 high_jitter.s1 rx tick_ms=362 at_us=361811 sim_us=362000 ssrc=c0ffed seq=6672 size=1456
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=17 send_us=179000 recv_us=100000406000 size=1157 probe=2
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=24 send_us=250000 recv_us=100000388000 size=187 probe=-1
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=25 send_us=250000 recv_us=100000399000 size=77 probe=-1
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=26 send_us=250000 recv_us=-1 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=27 send_us=270000 recv_us=100000394000 size=182 probe=-1
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=28 send_us=270000 recv_us=-1 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=380000 fb_us=380000 tseq=29 send_us=290000 recv_us=100000406000 size=183 probe=-1
+Y453 high_jitter.s1 rx tick_ms=385 at_us=384195 sim_us=385000 ssrc=deadbeef seq=6683 size=131
+Y453 high_jitter.s1 rx tick_ms=385 at_us=384997 sim_us=385000 ssrc=deadbeef seq=6682 size=127
+Y453 high_jitter.s1 rtcp_out t_us=400000 size=36 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=26 send_us=250000 recv_us=100000427000 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=28 send_us=270000 recv_us=100000419000 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=30 send_us=290000 recv_us=100000417000 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=31 send_us=310000 recv_us=-1 size=165 probe=-1
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=32 send_us=330000 recv_us=100000451000 size=155 probe=-1
+Y453 high_jitter.s1 fb t_us=430000 fb_us=430000 tseq=33 send_us=350000 recv_us=100000450000 size=159 probe=-1
+Y453 high_jitter.s1 rx tick_ms=433 at_us=432799 sim_us=433000 ssrc=deadbeef seq=6681 size=137
+Y453 high_jitter.s1 rx tick_ms=444 at_us=443977 sim_us=444000 ssrc=deadbeef seq=6685 size=134
+Y453 high_jitter.s1 rtcp_out t_us=450000 size=28 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=478 at_us=477081 sim_us=478000 ssrc=c0ffed seq=6675 size=1456
+Y453 high_jitter.s1 fb t_us=480000 fb_us=480000 tseq=31 send_us=310000 recv_us=100000498000 size=165 probe=-1
+Y453 high_jitter.s1 fb t_us=480000 fb_us=480000 tseq=34 send_us=370000 recv_us=-1 size=161 probe=-1
+Y453 high_jitter.s1 fb t_us=480000 fb_us=480000 tseq=35 send_us=370000 recv_us=-1 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=480000 fb_us=480000 tseq=36 send_us=390000 recv_us=100000510000 size=162 probe=-1
+Y453 high_jitter.s1 rx tick_ms=484 at_us=483326 sim_us=484000 ssrc=deadbeef seq=6687 size=152
+Y453 high_jitter.s1 rx tick_ms=485 at_us=484563 sim_us=485000 ssrc=deadbeef seq=6688 size=159
+Y453 high_jitter.s1 rx tick_ms=492 at_us=491732 sim_us=492000 ssrc=deadbeef seq=6684 size=133
+Y453 high_jitter.s1 rx tick_ms=498 at_us=497954 sim_us=498000 ssrc=deadbeef seq=6686 size=140
+Y453 high_jitter.s1 rtcp_out t_us=500000 size=32 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=528 at_us=527651 sim_us=528000 ssrc=badcafd seq=894 size=1458
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=34 send_us=370000 recv_us=100000557000 size=161 probe=-1
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=35 send_us=370000 recv_us=100000543000 size=1484 probe=-1
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=37 send_us=410000 recv_us=100000564000 size=168 probe=-1
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=38 send_us=410000 recv_us=-1 size=1486 probe=-1
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=39 send_us=430000 recv_us=100000549000 size=180 probe=-1
+Y453 high_jitter.s1 fb t_us=530000 fb_us=530000 tseq=40 send_us=450000 recv_us=100000550000 size=187 probe=-1
+Y453 high_jitter.s1 rx tick_ms=537 at_us=536243 sim_us=537000 ssrc=deadbeef seq=6690 size=166
+Y453 high_jitter.s1 rtcp_out t_us=550000 size=24 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=550 at_us=549614 sim_us=550000 ssrc=deadbeef seq=6689 size=164
+Y453 high_jitter.s1 rx tick_ms=566 at_us=565624 sim_us=566000 ssrc=deadbeef seq=6692 size=150
+Y453 high_jitter.s1 rx tick_ms=566 at_us=565768 sim_us=566000 ssrc=deadbeef seq=6691 size=169
+Y453 high_jitter.s1 fb t_us=580000 fb_us=580000 tseq=41 send_us=470000 recv_us=-1 size=192 probe=-1
+Y453 high_jitter.s1 fb t_us=580000 fb_us=580000 tseq=42 send_us=470000 recv_us=100000593000 size=1486 probe=-1
+Y453 high_jitter.s1 fb t_us=580000 fb_us=580000 tseq=43 send_us=490000 recv_us=100000602000 size=194 probe=-1
+Y453 high_jitter.s1 rx tick_ms=585 at_us=584966 sim_us=585000 ssrc=badcafd seq=895 size=1458
+Y453 high_jitter.s1 rx tick_ms=586 at_us=585235 sim_us=586000 ssrc=badcafd seq=893 size=1458
+Y453 high_jitter.s1 rtcp_out t_us=600000 size=40 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=625 at_us=624589 sim_us=625000 ssrc=deadbeef seq=6695 size=128
+Y453 high_jitter.s1 fb t_us=630000 fb_us=630000 tseq=38 send_us=410000 recv_us=100000651000 size=1486 probe=-1
+Y453 high_jitter.s1 fb t_us=630000 fb_us=630000 tseq=41 send_us=470000 recv_us=100000616000 size=192 probe=-1
+Y453 high_jitter.s1 fb t_us=630000 fb_us=630000 tseq=44 send_us=510000 recv_us=100000632000 size=197 probe=-1
+Y453 high_jitter.s1 fb t_us=630000 fb_us=630000 tseq=45 send_us=510000 recv_us=100000651000 size=1486 probe=-1
+Y453 high_jitter.s1 fb t_us=630000 fb_us=630000 tseq=46 send_us=530000 recv_us=100000632000 size=178 probe=-1
+Y453 high_jitter.s1 rx tick_ms=638 at_us=637313 sim_us=638000 ssrc=deadbeef seq=6693 size=136
+Y453 high_jitter.s1 rx tick_ms=639 at_us=638744 sim_us=639000 ssrc=deadbeef seq=6694 size=134
+Y453 high_jitter.s1 rtcp_out t_us=650000 size=28 blocks= 205/15
+Y453 high_jitter.s1 rx tick_ms=651 at_us=650600 sim_us=651000 ssrc=c0ffed seq=6677 size=1457
+Y453 high_jitter.s1 rtcp_out t_us=651000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s1 rx tick_ms=657 at_us=656651 sim_us=657000 ssrc=deadbeef seq=6696 size=123
+Y453 high_jitter.s1 rx tick_ms=665 at_us=664883 sim_us=665000 ssrc=c0ffed seq=6676 size=1457
+Y453 high_jitter.s1 fb t_us=680000 fb_us=680000 tseq=47 send_us=550000 recv_us=100000703000 size=164 probe=-1
+Y453 high_jitter.s1 fb t_us=680000 fb_us=680000 tseq=48 send_us=570000 recv_us=100000704000 size=162 probe=-1
+Y453 high_jitter.s1 fb t_us=680000 fb_us=680000 tseq=49 send_us=570000 recv_us=-1 size=1485 probe=-1
+Y453 high_jitter.s1 fb t_us=680000 fb_us=680000 tseq=50 send_us=590000 recv_us=100000690000 size=156 probe=-1
+Y453 high_jitter.s1 rx tick_ms=690 at_us=689738 sim_us=690000 ssrc=deadbeef seq=6698 size=134
+Y453 high_jitter.s1 rx tick_ms=694 at_us=693040 sim_us=694000 ssrc=deadbeef seq=6697 size=118
+Y453 high_jitter.s1 rtcp_out t_us=700000 size=32 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=730000 fb_us=730000 tseq=49 send_us=570000 recv_us=100000731000 size=1485 probe=-1
+Y453 high_jitter.s1 fb t_us=730000 fb_us=730000 tseq=51 send_us=610000 recv_us=100000722000 size=151 probe=-1
+Y453 high_jitter.s1 fb t_us=730000 fb_us=730000 tseq=52 send_us=610000 recv_us=100000716000 size=1485 probe=-1
+Y453 high_jitter.s1 fb t_us=730000 fb_us=730000 tseq=53 send_us=630000 recv_us=100000759000 size=146 probe=-1
+Y453 high_jitter.s1 fb t_us=730000 fb_us=730000 tseq=54 send_us=650000 recv_us=100000755000 size=162 probe=-1
+Y453 high_jitter.s1 rtcp_out t_us=750000 size=24 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=780000 fb_us=780000 tseq=55 send_us=670000 recv_us=-1 size=180 probe=-1
+Y453 high_jitter.s1 fb t_us=780000 fb_us=780000 tseq=56 send_us=670000 recv_us=100000771000 size=1311 probe=-1
+Y453 high_jitter.s1 rtcp_out t_us=800000 size=36 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=55 send_us=670000 recv_us=100000815000 size=180 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=57 send_us=690000 recv_us=100000820000 size=179 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=58 send_us=710000 recv_us=100000849000 size=177 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=59 send_us=710000 recv_us=100000826000 size=1487 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=60 send_us=730000 recv_us=100000847000 size=193 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=61 send_us=750000 recv_us=-1 size=202 probe=-1
+Y453 high_jitter.s1 fb t_us=830000 fb_us=830000 tseq=62 send_us=750000 recv_us=100000864000 size=1311 probe=-1
+Y453 high_jitter.s1 rtcp_out t_us=850000 size=28 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=880000 fb_us=880000 tseq=61 send_us=750000 recv_us=100000907000 size=202 probe=-1
+Y453 high_jitter.s1 fb t_us=880000 fb_us=880000 tseq=63 send_us=770000 recv_us=100000913000 size=183 probe=-1
+Y453 high_jitter.s1 fb t_us=880000 fb_us=880000 tseq=64 send_us=790000 recv_us=100000899000 size=163 probe=-1
+Y453 high_jitter.s1 rtcp_out t_us=900000 size=28 blocks= 205/15
+Y453 high_jitter.s1 rtcp_out t_us=905000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s1 fb t_us=930000 fb_us=930000 tseq=65 send_us=810000 recv_us=100000956000 size=155 probe=-1
+Y453 high_jitter.s1 fb t_us=930000 fb_us=930000 tseq=66 send_us=810000 recv_us=-1 size=1020 probe=-1
+Y453 high_jitter.s1 fb t_us=930000 fb_us=930000 tseq=67 send_us=830000 recv_us=100000927000 size=152 probe=-1
+Y453 high_jitter.s1 fb t_us=930000 fb_us=930000 tseq=68 send_us=830000 recv_us=-1 size=1020 probe=-1
+Y453 high_jitter.s1 fb t_us=930000 fb_us=930000 tseq=69 send_us=850000 recv_us=100000949000 size=151 probe=-1
+Y453 high_jitter.s1 rtcp_out t_us=950000 size=32 blocks= 205/15
+Y453 high_jitter.s1 fb t_us=980000 fb_us=980000 tseq=66 send_us=810000 recv_us=100000989000 size=1020 probe=-1
+Y453 high_jitter.s1 fb t_us=980000 fb_us=980000 tseq=68 send_us=830000 recv_us=100001005000 size=1020 probe=-1
+Y453 high_jitter.s1 fb t_us=980000 fb_us=980000 tseq=70 send_us=870000 recv_us=-1 size=149 probe=-1
+Y453 high_jitter.s1 fb t_us=980000 fb_us=980000 tseq=71 send_us=870000 recv_us=100000970000 size=799 probe=-1
+Y453 high_jitter.s1 fb t_us=980000 fb_us=980000 tseq=72 send_us=890000 recv_us=100001004000 size=166 probe=-1
+Y453 high_jitter.s2 rx tick_ms=62 at_us=61116 sim_us=62000 ssrc=deadbeef seq=2898 size=93
+Y453 high_jitter.s2 rx tick_ms=73 at_us=72356 sim_us=73000 ssrc=deadbeef seq=2899 size=185
+Y453 high_jitter.s2 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=111 at_us=110031 sim_us=111000 ssrc=deadbeef seq=2900 size=185
+Y453 high_jitter.s2 rx tick_ms=124 at_us=123578 sim_us=124000 ssrc=deadbeef seq=2901 size=149
+Y453 high_jitter.s2 rtcp_out t_us=150000 size=24 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=151 at_us=150881 sim_us=151000 ssrc=deadbeef seq=2902 size=127
+Y453 high_jitter.s2 rx tick_ms=184 at_us=183615 sim_us=184000 ssrc=deadbeef seq=2903 size=123
+Y453 high_jitter.s2 rx tick_ms=186 at_us=185433 sim_us=186000 ssrc=deadbeef seq=2904 size=119
+Y453 high_jitter.s2 rx tick_ms=191 at_us=190223 sim_us=191000 ssrc=c0ffed seq=2898 size=49
+Y453 high_jitter.s2 rx tick_ms=193 at_us=192457 sim_us=193000 ssrc=c0ffed seq=2901 size=1127
+Y453 high_jitter.s2 rtcp_out t_us=193000 size=68 blocks= 201/1 205/1 207/0
+Y453 high_jitter.s2 rtcp_out t_us=200000 size=28 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=209 at_us=208089 sim_us=209000 ssrc=c0ffed seq=2902 size=913
+Y453 high_jitter.s2 rx tick_ms=212 at_us=211626 sim_us=212000 ssrc=badcafd seq=21415 size=275
+Y453 high_jitter.s2 rx tick_ms=217 at_us=216831 sim_us=217000 ssrc=deadbeef seq=2905 size=125
+Y453 high_jitter.s2 rx tick_ms=224 at_us=223855 sim_us=224000 ssrc=deadbeef seq=2907 size=123
+Y453 high_jitter.s2 rx tick_ms=226 at_us=225495 sim_us=226000 ssrc=c0ffed seq=2899 size=1127
+Y453 high_jitter.s2 rx tick_ms=231 at_us=230773 sim_us=231000 ssrc=c0ffed seq=2900 size=1127
+Y453 high_jitter.s2 rx tick_ms=239 at_us=238369 sim_us=239000 ssrc=badcafd seq=21419 size=1129
+Y453 high_jitter.s2 rx tick_ms=244 at_us=243230 sim_us=244000 ssrc=badcafd seq=21416 size=275
+Y453 high_jitter.s2 rtcp_out t_us=250000 size=40 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=256 at_us=255797 sim_us=256000 ssrc=deadbeef seq=2906 size=126
+Y453 high_jitter.s2 rx tick_ms=263 at_us=262102 sim_us=263000 ssrc=deadbeef seq=2908 size=140
+Y453 high_jitter.s2 rx tick_ms=266 at_us=265997 sim_us=266000 ssrc=badcafd seq=21420 size=275
+Y453 high_jitter.s2 rx tick_ms=272 at_us=271489 sim_us=272000 ssrc=badcafd seq=21417 size=1129
+Y453 high_jitter.s2 rx tick_ms=280 at_us=279378 sim_us=280000 ssrc=badcafd seq=21418 size=1129
+Y453 high_jitter.s2 rtcp_out t_us=300000 size=32 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=307 at_us=306322 sim_us=307000 ssrc=deadbeef seq=2910 size=157
+Y453 high_jitter.s2 rx tick_ms=322 at_us=321348 sim_us=322000 ssrc=deadbeef seq=2911 size=166
+Y453 high_jitter.s2 rx tick_ms=334 at_us=333915 sim_us=334000 ssrc=badcafd seq=21421 size=1129
+Y453 high_jitter.s2 rx tick_ms=349 at_us=348529 sim_us=349000 ssrc=deadbeef seq=2912 size=162
+Y453 high_jitter.s2 rtcp_out t_us=350000 size=28 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=351 at_us=350734 sim_us=351000 ssrc=deadbeef seq=2909 size=151
+Y453 high_jitter.s2 rx tick_ms=358 at_us=357911 sim_us=358000 ssrc=c0ffed seq=2905 size=731
+Y453 high_jitter.s2 rtcp_out t_us=358000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rx tick_ms=360 at_us=359153 sim_us=360000 ssrc=c0ffed seq=2903 size=824
+Y453 high_jitter.s2 rx tick_ms=369 at_us=368859 sim_us=369000 ssrc=deadbeef seq=2914 size=151
+Y453 high_jitter.s2 rx tick_ms=369 at_us=368953 sim_us=369000 ssrc=c0ffed seq=2904 size=793
+Y453 high_jitter.s2 rx tick_ms=371 at_us=370813 sim_us=371000 ssrc=c0ffed seq=2906 size=1019
+Y453 high_jitter.s2 rx tick_ms=382 at_us=381890 sim_us=382000 ssrc=badcafd seq=21422 size=1129
+Y453 high_jitter.s2 rx tick_ms=388 at_us=387270 sim_us=388000 ssrc=c0ffed seq=2907 size=1019
+Y453 high_jitter.s2 rx tick_ms=395 at_us=394278 sim_us=395000 ssrc=deadbeef seq=2915 size=155
+Y453 high_jitter.s2 rtcp_out t_us=400000 size=44 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=416 at_us=415282 sim_us=416000 ssrc=deadbeef seq=2913 size=149
+Y453 high_jitter.s2 rx tick_ms=421 at_us=420483 sim_us=421000 ssrc=deadbeef seq=2916 size=142
+Y453 high_jitter.s2 rx tick_ms=438 at_us=437527 sim_us=438000 ssrc=badcafd seq=21423 size=826
+Y453 high_jitter.s2 rtcp_out t_us=450000 size=40 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=452 at_us=451325 sim_us=452000 ssrc=c0ffed seq=2908 size=1019
+Y453 high_jitter.s2 rx tick_ms=469 at_us=468805 sim_us=469000 ssrc=deadbeef seq=2917 size=128
+Y453 high_jitter.s2 rx tick_ms=470 at_us=469626 sim_us=470000 ssrc=c0ffed seq=2910 size=1045
+Y453 high_jitter.s2 rtcp_out t_us=470000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rx tick_ms=478 at_us=477260 sim_us=478000 ssrc=deadbeef seq=2918 size=125
+Y453 high_jitter.s2 rx tick_ms=480 at_us=479527 sim_us=480000 ssrc=badcafd seq=21424 size=795
+Y453 high_jitter.s2 rx tick_ms=483 at_us=482685 sim_us=483000 ssrc=c0ffed seq=2909 size=787
+Y453 high_jitter.s2 rx tick_ms=496 at_us=495671 sim_us=496000 ssrc=c0ffed seq=2911 size=1029
+Y453 high_jitter.s2 rx tick_ms=499 at_us=498127 sim_us=499000 ssrc=deadbeef seq=2920 size=126
+Y453 high_jitter.s2 rtcp_out t_us=500000 size=36 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=508 at_us=507388 sim_us=508000 ssrc=c0ffed seq=2912 size=1085
+Y453 high_jitter.s2 rx tick_ms=515 at_us=514277 sim_us=515000 ssrc=c0ffed seq=2913 size=1240
+Y453 high_jitter.s2 rx tick_ms=533 at_us=532014 sim_us=533000 ssrc=badcafd seq=21425 size=1021
+Y453 high_jitter.s2 rx tick_ms=537 at_us=536026 sim_us=537000 ssrc=deadbeef seq=2921 size=126
+Y453 high_jitter.s2 rx tick_ms=537 at_us=536285 sim_us=537000 ssrc=deadbeef seq=2919 size=123
+Y453 high_jitter.s2 rx tick_ms=546 at_us=545067 sim_us=546000 ssrc=badcafd seq=21426 size=275
+Y453 high_jitter.s2 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=561 at_us=560029 sim_us=561000 ssrc=deadbeef seq=2922 size=136
+Y453 high_jitter.s2 rx tick_ms=570 at_us=569967 sim_us=570000 ssrc=badcafd seq=21427 size=789
+Y453 high_jitter.s2 rx tick_ms=581 at_us=580997 sim_us=581000 ssrc=c0ffed seq=2914 size=1305
+Y453 high_jitter.s2 rtcp_out t_us=600000 size=32 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=603 at_us=602818 sim_us=603000 ssrc=deadbeef seq=2924 size=146
+Y453 high_jitter.s2 rx tick_ms=606 at_us=605677 sim_us=606000 ssrc=deadbeef seq=2923 size=151
+Y453 high_jitter.s2 rx tick_ms=607 at_us=606390 sim_us=607000 ssrc=deadbeef seq=2926 size=160
+Y453 high_jitter.s2 rx tick_ms=614 at_us=613349 sim_us=614000 ssrc=c0ffed seq=2915 size=1151
+Y453 high_jitter.s2 rx tick_ms=635 at_us=634692 sim_us=635000 ssrc=deadbeef seq=2927 size=178
+Y453 high_jitter.s2 rx tick_ms=648 at_us=647018 sim_us=648000 ssrc=deadbeef seq=2928 size=179
+Y453 high_jitter.s2 rx tick_ms=648 at_us=647693 sim_us=648000 ssrc=c0ffed seq=2917 size=1165
+Y453 high_jitter.s2 rtcp_out t_us=648000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rtcp_out t_us=650000 size=36 blocks= 205/15
+Y453 high_jitter.s2 rx tick_ms=656 at_us=655407 sim_us=656000 ssrc=deadbeef seq=2925 size=153
+Y453 high_jitter.s2 rx tick_ms=672 at_us=671229 sim_us=672000 ssrc=c0ffed seq=2916 size=1185
+Y453 high_jitter.s2 rx tick_ms=691 at_us=690887 sim_us=691000 ssrc=c0ffed seq=2919 size=764
+Y453 high_jitter.s2 rtcp_out t_us=691000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rtcp_out t_us=700000 size=36 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=741000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rtcp_out t_us=750000 size=32 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=800000 size=36 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=850000 size=40 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=900000 size=40 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=917000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s2 rtcp_out t_us=950000 size=32 blocks= 205/15
+Y453 high_jitter.s2 rtcp_out t_us=968000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rx tick_ms=96 at_us=95868 sim_us=96000 ssrc=deadbeef seq=17561 size=53
+Y453 high_jitter.s3 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=102 at_us=101356 sim_us=102000 ssrc=deadbeef seq=17562 size=91
+Y453 high_jitter.s3 rx tick_ms=108 at_us=107533 sim_us=108000 ssrc=deadbeef seq=17564 size=95
+Y453 high_jitter.s3 rx tick_ms=141 at_us=140100 sim_us=141000 ssrc=deadbeef seq=17563 size=94
+Y453 high_jitter.s3 rtcp_out t_us=150000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=177 at_us=176757 sim_us=177000 ssrc=deadbeef seq=17565 size=95
+Y453 high_jitter.s3 rx tick_ms=178 at_us=177319 sim_us=178000 ssrc=c0ffed seq=17562 size=1127
+Y453 high_jitter.s3 rtcp_out t_us=178000 size=40 blocks= 201/0 206/1 207/0
+Y453 high_jitter.s3 rx tick_ms=187 at_us=186469 sim_us=187000 ssrc=c0ffed seq=17561 size=49
+Y453 high_jitter.s3 rx tick_ms=192 at_us=191032 sim_us=192000 ssrc=badcafd seq=7759 size=275
+Y453 high_jitter.s3 rx tick_ms=197 at_us=196930 sim_us=197000 ssrc=deadbeef seq=17567 size=95
+Y453 high_jitter.s3 rtcp_out t_us=200000 size=32 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=203 at_us=202601 sim_us=203000 ssrc=c0ffed seq=17564 size=1127
+Y453 high_jitter.s3 rtcp_out t_us=203000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rx tick_ms=209 at_us=208027 sim_us=209000 ssrc=c0ffed seq=17563 size=1127
+Y453 high_jitter.s3 rx tick_ms=216 at_us=215531 sim_us=216000 ssrc=deadbeef seq=17566 size=95
+Y453 high_jitter.s3 rx tick_ms=220 at_us=219241 sim_us=220000 ssrc=badcafd seq=7763 size=1129
+Y453 high_jitter.s3 rx tick_ms=221 at_us=220348 sim_us=221000 ssrc=deadbeef seq=17569 size=95
+Y453 high_jitter.s3 rx tick_ms=225 at_us=224449 sim_us=225000 ssrc=badcafd seq=7762 size=1129
+Y453 high_jitter.s3 rx tick_ms=229 at_us=228430 sim_us=229000 ssrc=c0ffed seq=17565 size=992
+Y453 high_jitter.s3 rx tick_ms=232 at_us=231087 sim_us=232000 ssrc=badcafd seq=7760 size=275
+Y453 high_jitter.s3 rx tick_ms=233 at_us=232969 sim_us=233000 ssrc=deadbeef seq=17570 size=95
+Y453 high_jitter.s3 rx tick_ms=238 at_us=237174 sim_us=238000 ssrc=deadbeef seq=17568 size=95
+Y453 high_jitter.s3 rx tick_ms=246 at_us=245106 sim_us=246000 ssrc=deadbeef seq=17571 size=95
+Y453 high_jitter.s3 rtcp_out t_us=250000 size=48 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=251 at_us=250274 sim_us=251000 ssrc=badcafd seq=7764 size=1129
+Y453 high_jitter.s3 rx tick_ms=260 at_us=259239 sim_us=260000 ssrc=badcafd seq=7765 size=275
+Y453 high_jitter.s3 rx tick_ms=280 at_us=279452 sim_us=280000 ssrc=badcafd seq=7766 size=275
+Y453 high_jitter.s3 rx tick_ms=289 at_us=288052 sim_us=289000 ssrc=deadbeef seq=17572 size=95
+Y453 high_jitter.s3 rtcp_out t_us=300000 size=32 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=310 at_us=309501 sim_us=310000 ssrc=badcafd seq=7761 size=275
+Y453 high_jitter.s3 rx tick_ms=315 at_us=314634 sim_us=315000 ssrc=deadbeef seq=17573 size=95
+Y453 high_jitter.s3 rx tick_ms=334 at_us=333263 sim_us=334000 ssrc=deadbeef seq=17574 size=95
+Y453 high_jitter.s3 rtcp_out t_us=350000 size=40 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=371 at_us=370538 sim_us=371000 ssrc=c0ffed seq=17566 size=49
+Y453 high_jitter.s3 rx tick_ms=377 at_us=376019 sim_us=377000 ssrc=badcafd seq=7767 size=1129
+Y453 high_jitter.s3 rx tick_ms=392 at_us=391262 sim_us=392000 ssrc=deadbeef seq=17576 size=95
+Y453 high_jitter.s3 rtcp_out t_us=400000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=415 at_us=414891 sim_us=415000 ssrc=c0ffed seq=17567 size=1136
+Y453 high_jitter.s3 rx tick_ms=422 at_us=421706 sim_us=422000 ssrc=deadbeef seq=17575 size=95
+Y453 high_jitter.s3 rx tick_ms=436 at_us=435408 sim_us=436000 ssrc=deadbeef seq=17577 size=95
+Y453 high_jitter.s3 rx tick_ms=448 at_us=447178 sim_us=448000 ssrc=deadbeef seq=17580 size=95
+Y453 high_jitter.s3 rtcp_out t_us=450000 size=36 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=453 at_us=452949 sim_us=453000 ssrc=c0ffed seq=17569 size=1137
+Y453 high_jitter.s3 rtcp_out t_us=453000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rx tick_ms=457 at_us=456706 sim_us=457000 ssrc=deadbeef seq=17579 size=95
+Y453 high_jitter.s3 rx tick_ms=469 at_us=468830 sim_us=469000 ssrc=c0ffed seq=17568 size=1136
+Y453 high_jitter.s3 rx tick_ms=470 at_us=469338 sim_us=470000 ssrc=deadbeef seq=17578 size=95
+Y453 high_jitter.s3 rx tick_ms=474 at_us=473550 sim_us=474000 ssrc=c0ffed seq=17570 size=1002
+Y453 high_jitter.s3 rx tick_ms=484 at_us=483119 sim_us=484000 ssrc=deadbeef seq=17583 size=95
+Y453 high_jitter.s3 rtcp_out t_us=500000 size=36 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=500 at_us=499501 sim_us=500000 ssrc=deadbeef seq=17581 size=95
+Y453 high_jitter.s3 rx tick_ms=513 at_us=512484 sim_us=513000 ssrc=deadbeef seq=17582 size=95
+Y453 high_jitter.s3 rx tick_ms=526 at_us=525595 sim_us=526000 ssrc=deadbeef seq=17584 size=95
+Y453 high_jitter.s3 rx tick_ms=538 at_us=537209 sim_us=538000 ssrc=badcafd seq=7768 size=1138
+Y453 high_jitter.s3 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=559 at_us=558599 sim_us=559000 ssrc=deadbeef seq=17585 size=95
+Y453 high_jitter.s3 rx tick_ms=569 at_us=568077 sim_us=569000 ssrc=c0ffed seq=17571 size=1209
+Y453 high_jitter.s3 rx tick_ms=585 at_us=584625 sim_us=585000 ssrc=deadbeef seq=17587 size=95
+Y453 high_jitter.s3 rx tick_ms=586 at_us=585566 sim_us=586000 ssrc=c0ffed seq=17573 size=749
+Y453 high_jitter.s3 rtcp_out t_us=586000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rtcp_out t_us=600000 size=32 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=601 at_us=600064 sim_us=601000 ssrc=deadbeef seq=17588 size=95
+Y453 high_jitter.s3 rx tick_ms=605 at_us=604162 sim_us=605000 ssrc=deadbeef seq=17586 size=95
+Y453 high_jitter.s3 rx tick_ms=625 at_us=624327 sim_us=625000 ssrc=deadbeef seq=17589 size=95
+Y453 high_jitter.s3 rx tick_ms=626 at_us=625706 sim_us=626000 ssrc=c0ffed seq=17572 size=749
+Y453 high_jitter.s3 rx tick_ms=645 at_us=644355 sim_us=645000 ssrc=c0ffed seq=17574 size=1422
+Y453 high_jitter.s3 rtcp_out t_us=650000 size=32 blocks= 205/15
+Y453 high_jitter.s3 rx tick_ms=650 at_us=649307 sim_us=650000 ssrc=deadbeef seq=17591 size=95
+Y453 high_jitter.s3 rx tick_ms=661 at_us=660899 sim_us=661000 ssrc=deadbeef seq=17590 size=95
+Y453 high_jitter.s3 rx tick_ms=676 at_us=675864 sim_us=676000 ssrc=badcafd seq=7769 size=1211
+Y453 high_jitter.s3 rx tick_ms=692 at_us=691153 sim_us=692000 ssrc=badcafd seq=7770 size=751
+Y453 high_jitter.s3 rx tick_ms=696 at_us=695459 sim_us=696000 ssrc=deadbeef seq=17593 size=95
+Y453 high_jitter.s3 rtcp_out t_us=700000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rtcp_out t_us=750000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rtcp_out t_us=800000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rtcp_out t_us=813000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rtcp_out t_us=850000 size=28 blocks= 205/15
+Y453 high_jitter.s3 rtcp_out t_us=857000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rtcp_out t_us=900000 size=40 blocks= 205/15
+Y453 high_jitter.s3 rtcp_out t_us=935000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s3 rtcp_out t_us=950000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=50 at_us=49410 sim_us=50000 ssrc=deadbeef seq=8688 size=93
+Y453 high_jitter.s4 rx tick_ms=77 at_us=76343 sim_us=77000 ssrc=deadbeef seq=8689 size=172
+Y453 high_jitter.s4 rx tick_ms=83 at_us=82371 sim_us=83000 ssrc=deadbeef seq=8690 size=164
+Y453 high_jitter.s4 rtcp_out t_us=100000 size=28 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=117 at_us=116147 sim_us=117000 ssrc=deadbeef seq=8691 size=148
+Y453 high_jitter.s4 rtcp_out t_us=150000 size=24 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=163 at_us=162324 sim_us=163000 ssrc=deadbeef seq=8693 size=141
+Y453 high_jitter.s4 rx tick_ms=166 at_us=165503 sim_us=166000 ssrc=deadbeef seq=8694 size=129
+Y453 high_jitter.s4 rx tick_ms=172 at_us=171604 sim_us=172000 ssrc=c0ffed seq=8689 size=1127
+Y453 high_jitter.s4 rtcp_out t_us=172000 size=40 blocks= 201/0 206/1 207/0
+Y453 high_jitter.s4 rx tick_ms=175 at_us=174065 sim_us=175000 ssrc=deadbeef seq=8692 size=143
+Y453 high_jitter.s4 rx tick_ms=175 at_us=174686 sim_us=175000 ssrc=c0ffed seq=8688 size=49
+Y453 high_jitter.s4 rx tick_ms=186 at_us=185918 sim_us=186000 ssrc=c0ffed seq=8690 size=1127
+Y453 high_jitter.s4 rtcp_out t_us=200000 size=32 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=217 at_us=216260 sim_us=217000 ssrc=badcafd seq=20176 size=275
+Y453 high_jitter.s4 rx tick_ms=228 at_us=227680 sim_us=228000 ssrc=c0ffed seq=8692 size=905
+Y453 high_jitter.s4 rtcp_out t_us=228000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s4 rx tick_ms=236 at_us=235177 sim_us=236000 ssrc=badcafd seq=20175 size=275
+Y453 high_jitter.s4 rx tick_ms=246 at_us=245928 sim_us=246000 ssrc=c0ffed seq=8691 size=1127
+Y453 high_jitter.s4 rtcp_out t_us=250000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=255 at_us=254577 sim_us=255000 ssrc=deadbeef seq=8696 size=146
+Y453 high_jitter.s4 rx tick_ms=255 at_us=254899 sim_us=255000 ssrc=badcafd seq=20178 size=1129
+Y453 high_jitter.s4 rx tick_ms=268 at_us=267182 sim_us=268000 ssrc=deadbeef seq=8699 size=156
+Y453 high_jitter.s4 rx tick_ms=272 at_us=271387 sim_us=272000 ssrc=deadbeef seq=8698 size=174
+Y453 high_jitter.s4 rx tick_ms=275 at_us=274609 sim_us=275000 ssrc=badcafd seq=20180 size=275
+Y453 high_jitter.s4 rx tick_ms=281 at_us=280063 sim_us=281000 ssrc=badcafd seq=20179 size=1129
+Y453 high_jitter.s4 rx tick_ms=283 at_us=282415 sim_us=283000 ssrc=deadbeef seq=8695 size=132
+Y453 high_jitter.s4 rtcp_out t_us=300000 size=40 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=304 at_us=303020 sim_us=304000 ssrc=deadbeef seq=8700 size=154
+Y453 high_jitter.s4 rx tick_ms=306 at_us=305863 sim_us=306000 ssrc=badcafd seq=20177 size=1129
+Y453 high_jitter.s4 rtcp_out t_us=350000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=354 at_us=353329 sim_us=354000 ssrc=deadbeef seq=8697 size=166
+Y453 high_jitter.s4 rx tick_ms=356 at_us=355929 sim_us=356000 ssrc=deadbeef seq=8701 size=164
+Y453 high_jitter.s4 rx tick_ms=365 at_us=364672 sim_us=365000 ssrc=deadbeef seq=8702 size=161
+Y453 high_jitter.s4 rx tick_ms=373 at_us=372065 sim_us=373000 ssrc=deadbeef seq=8703 size=146
+Y453 high_jitter.s4 rx tick_ms=375 at_us=374744 sim_us=375000 ssrc=deadbeef seq=8704 size=136
+Y453 high_jitter.s4 rtcp_out t_us=400000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=400 at_us=399518 sim_us=400000 ssrc=deadbeef seq=8705 size=133
+Y453 high_jitter.s4 rx tick_ms=423 at_us=422432 sim_us=423000 ssrc=badcafd seq=20181 size=1129
+Y453 high_jitter.s4 rx tick_ms=427 at_us=426401 sim_us=427000 ssrc=deadbeef seq=8707 size=139
+Y453 high_jitter.s4 rx tick_ms=440 at_us=439619 sim_us=440000 ssrc=deadbeef seq=8706 size=130
+Y453 high_jitter.s4 rx tick_ms=449 at_us=448986 sim_us=449000 ssrc=c0ffed seq=8695 size=1132
+Y453 high_jitter.s4 rtcp_out t_us=449000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s4 rtcp_out t_us=450000 size=32 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=450 at_us=449753 sim_us=450000 ssrc=deadbeef seq=8708 size=150
+Y453 high_jitter.s4 rx tick_ms=463 at_us=462711 sim_us=463000 ssrc=deadbeef seq=8709 size=158
+Y453 high_jitter.s4 rx tick_ms=476 at_us=475319 sim_us=476000 ssrc=c0ffed seq=8694 size=1131
+Y453 high_jitter.s4 rx tick_ms=485 at_us=484459 sim_us=485000 ssrc=deadbeef seq=8710 size=162
+Y453 high_jitter.s4 rtcp_out t_us=500000 size=32 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=507 at_us=506869 sim_us=507000 ssrc=c0ffed seq=8693 size=49
+Y453 high_jitter.s4 rx tick_ms=524 at_us=523846 sim_us=524000 ssrc=badcafd seq=20183 size=1133
+Y453 high_jitter.s4 rx tick_ms=542 at_us=541707 sim_us=542000 ssrc=badcafd seq=20182 size=51
+Y453 high_jitter.s4 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=555 at_us=554997 sim_us=555000 ssrc=deadbeef seq=8712 size=155
+Y453 high_jitter.s4 rx tick_ms=571 at_us=570988 sim_us=571000 ssrc=deadbeef seq=8713 size=145
+Y453 high_jitter.s4 rx tick_ms=572 at_us=571044 sim_us=572000 ssrc=deadbeef seq=8711 size=155
+Y453 high_jitter.s4 rx tick_ms=582 at_us=581204 sim_us=582000 ssrc=deadbeef seq=8715 size=124
+Y453 high_jitter.s4 rtcp_out t_us=600000 size=36 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=603 at_us=602445 sim_us=603000 ssrc=c0ffed seq=8696 size=1132
+Y453 high_jitter.s4 rx tick_ms=608 at_us=607909 sim_us=608000 ssrc=c0ffed seq=8697 size=1003
+Y453 high_jitter.s4 rx tick_ms=613 at_us=612945 sim_us=613000 ssrc=deadbeef seq=8716 size=122
+Y453 high_jitter.s4 rx tick_ms=631 at_us=630820 sim_us=631000 ssrc=deadbeef seq=8717 size=123
+Y453 high_jitter.s4 rx tick_ms=641 at_us=640529 sim_us=641000 ssrc=deadbeef seq=8714 size=130
+Y453 high_jitter.s4 rtcp_out t_us=650000 size=32 blocks= 205/15
+Y453 high_jitter.s4 rx tick_ms=665 at_us=664938 sim_us=665000 ssrc=c0ffed seq=8698 size=1273
+Y453 high_jitter.s4 rx tick_ms=668 at_us=667290 sim_us=668000 ssrc=deadbeef seq=8719 size=155
+Y453 high_jitter.s4 rx tick_ms=674 at_us=673645 sim_us=674000 ssrc=deadbeef seq=8718 size=140
+Y453 high_jitter.s4 rtcp_out t_us=700000 size=28 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=750000 size=28 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=800000 size=40 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=850000 size=24 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=900000 size=28 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=950000 size=28 blocks= 205/15
+Y453 high_jitter.s4 rtcp_out t_us=987000 size=76 blocks= 201/2 207/0
+Y453 high_jitter.s5 rx tick_ms=91 at_us=90755 sim_us=91000 ssrc=deadbeef seq=13863 size=176
+Y453 high_jitter.s5 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=101 at_us=100325 sim_us=101000 ssrc=deadbeef seq=13864 size=179
+Y453 high_jitter.s5 rx tick_ms=103 at_us=102934 sim_us=103000 ssrc=deadbeef seq=13862 size=90
+Y453 high_jitter.s5 rx tick_ms=124 at_us=123975 sim_us=124000 ssrc=deadbeef seq=13866 size=144
+Y453 high_jitter.s5 rx tick_ms=144 at_us=143021 sim_us=144000 ssrc=deadbeef seq=13865 size=161
+Y453 high_jitter.s5 rtcp_out t_us=150000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=162 at_us=161198 sim_us=162000 ssrc=deadbeef seq=13868 size=159
+Y453 high_jitter.s5 rx tick_ms=197 at_us=196756 sim_us=197000 ssrc=c0ffed seq=13865 size=1127
+Y453 high_jitter.s5 rtcp_out t_us=200000 size=24 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=201 at_us=200342 sim_us=201000 ssrc=deadbeef seq=13867 size=148
+Y453 high_jitter.s5 rx tick_ms=211 at_us=210604 sim_us=211000 ssrc=c0ffed seq=13864 size=1127
+Y453 high_jitter.s5 rx tick_ms=219 at_us=218372 sim_us=219000 ssrc=badcafd seq=1348 size=1129
+Y453 high_jitter.s5 rx tick_ms=220 at_us=219360 sim_us=220000 ssrc=badcafd seq=1346 size=275
+Y453 high_jitter.s5 rx tick_ms=221 at_us=220957 sim_us=221000 ssrc=c0ffed seq=13863 size=1127
+Y453 high_jitter.s5 rtcp_out t_us=221000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s5 rx tick_ms=227 at_us=226020 sim_us=227000 ssrc=c0ffed seq=13862 size=49
+Y453 high_jitter.s5 rx tick_ms=230 at_us=229028 sim_us=230000 ssrc=badcafd seq=1347 size=275
+Y453 high_jitter.s5 rx tick_ms=238 at_us=237580 sim_us=238000 ssrc=badcafd seq=1351 size=275
+Y453 high_jitter.s5 rx tick_ms=239 at_us=238349 sim_us=239000 ssrc=deadbeef seq=13869 size=157
+Y453 high_jitter.s5 rx tick_ms=243 at_us=242337 sim_us=243000 ssrc=c0ffed seq=13866 size=909
+Y453 high_jitter.s5 rtcp_out t_us=243000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s5 rx tick_ms=247 at_us=246401 sim_us=247000 ssrc=deadbeef seq=13870 size=157
+Y453 high_jitter.s5 rtcp_out t_us=250000 size=48 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=251 at_us=250535 sim_us=251000 ssrc=deadbeef seq=13871 size=146
+Y453 high_jitter.s5 rx tick_ms=264 at_us=263822 sim_us=264000 ssrc=deadbeef seq=13873 size=119
+Y453 high_jitter.s5 rx tick_ms=280 at_us=279873 sim_us=280000 ssrc=deadbeef seq=13872 size=127
+Y453 high_jitter.s5 rx tick_ms=285 at_us=284417 sim_us=285000 ssrc=deadbeef seq=13874 size=124
+Y453 high_jitter.s5 rx tick_ms=290 at_us=289134 sim_us=290000 ssrc=badcafd seq=1349 size=1129
+Y453 high_jitter.s5 rtcp_out t_us=300000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=300 at_us=299875 sim_us=300000 ssrc=badcafd seq=1350 size=1129
+Y453 high_jitter.s5 rx tick_ms=308 at_us=307878 sim_us=308000 ssrc=deadbeef seq=13875 size=149
+Y453 high_jitter.s5 rtcp_out t_us=350000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=367 at_us=366604 sim_us=367000 ssrc=c0ffed seq=13869 size=1136
+Y453 high_jitter.s5 rtcp_out t_us=367000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s5 rx tick_ms=369 at_us=368544 sim_us=369000 ssrc=c0ffed seq=13868 size=1136
+Y453 high_jitter.s5 rx tick_ms=374 at_us=373533 sim_us=374000 ssrc=deadbeef seq=13876 size=169
+Y453 high_jitter.s5 rx tick_ms=374 at_us=373981 sim_us=374000 ssrc=c0ffed seq=13867 size=49
+Y453 high_jitter.s5 rx tick_ms=396 at_us=395599 sim_us=396000 ssrc=deadbeef seq=13877 size=162
+Y453 high_jitter.s5 rtcp_out t_us=400000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=414 at_us=413502 sim_us=414000 ssrc=deadbeef seq=13878 size=154
+Y453 high_jitter.s5 rtcp_out t_us=450000 size=24 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=456 at_us=455350 sim_us=456000 ssrc=deadbeef seq=13880 size=153
+Y453 high_jitter.s5 rx tick_ms=462 at_us=461297 sim_us=462000 ssrc=deadbeef seq=13879 size=155
+Y453 high_jitter.s5 rx tick_ms=466 at_us=465028 sim_us=466000 ssrc=deadbeef seq=13882 size=151
+Y453 high_jitter.s5 rx tick_ms=471 at_us=470833 sim_us=471000 ssrc=badcafd seq=1353 size=1138
+Y453 high_jitter.s5 rx tick_ms=480 at_us=479766 sim_us=480000 ssrc=deadbeef seq=13881 size=149
+Y453 high_jitter.s5 rx tick_ms=489 at_us=488658 sim_us=489000 ssrc=c0ffed seq=13870 size=1137
+Y453 high_jitter.s5 rx tick_ms=496 at_us=495935 sim_us=496000 ssrc=badcafd seq=1352 size=51
+Y453 high_jitter.s5 rtcp_out t_us=500000 size=36 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=511 at_us=510469 sim_us=511000 ssrc=c0ffed seq=13871 size=1179
+Y453 high_jitter.s5 rx tick_ms=524 at_us=523273 sim_us=524000 ssrc=deadbeef seq=13886 size=163
+Y453 high_jitter.s5 rx tick_ms=526 at_us=525394 sim_us=526000 ssrc=deadbeef seq=13884 size=156
+Y453 high_jitter.s5 rx tick_ms=526 at_us=525979 sim_us=526000 ssrc=deadbeef seq=13885 size=154
+Y453 high_jitter.s5 rx tick_ms=528 at_us=527769 sim_us=528000 ssrc=deadbeef seq=13883 size=158
+Y453 high_jitter.s5 rx tick_ms=545 at_us=544190 sim_us=545000 ssrc=c0ffed seq=13872 size=1180
+Y453 high_jitter.s5 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=552 at_us=551830 sim_us=552000 ssrc=deadbeef seq=13887 size=170
+Y453 high_jitter.s5 rx tick_ms=596 at_us=595453 sim_us=596000 ssrc=c0ffed seq=13873 size=758
+Y453 high_jitter.s5 rx tick_ms=597 at_us=596140 sim_us=597000 ssrc=deadbeef seq=13888 size=173
+Y453 high_jitter.s5 rtcp_out t_us=600000 size=28 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=624 at_us=623572 sim_us=624000 ssrc=c0ffed seq=13874 size=773
+Y453 high_jitter.s5 rx tick_ms=645 at_us=644582 sim_us=645000 ssrc=deadbeef seq=13891 size=140
+Y453 high_jitter.s5 rtcp_out t_us=650000 size=24 blocks= 205/15
+Y453 high_jitter.s5 rx tick_ms=654 at_us=653430 sim_us=654000 ssrc=deadbeef seq=13889 size=182
+Y453 high_jitter.s5 rx tick_ms=665 at_us=664417 sim_us=665000 ssrc=deadbeef seq=13890 size=173
+Y453 high_jitter.s5 rx tick_ms=666 at_us=665269 sim_us=666000 ssrc=deadbeef seq=13893 size=121
+Y453 high_jitter.s5 rx tick_ms=673 at_us=672789 sim_us=673000 ssrc=c0ffed seq=13876 size=947
+Y453 high_jitter.s5 rtcp_out t_us=673000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s5 rx tick_ms=690 at_us=689730 sim_us=690000 ssrc=c0ffed seq=13875 size=1015
+Y453 high_jitter.s5 rtcp_out t_us=700000 size=36 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=750000 size=36 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=798000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s5 rtcp_out t_us=800000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=850000 size=28 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=900000 size=32 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=950000 size=36 blocks= 205/15
+Y453 high_jitter.s5 rtcp_out t_us=950000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rx tick_ms=79 at_us=78045 sim_us=79000 ssrc=deadbeef seq=19270 size=53
+Y453 high_jitter.s6 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=100 at_us=99907 sim_us=100000 ssrc=deadbeef seq=19271 size=91
+Y453 high_jitter.s6 rx tick_ms=119 at_us=118913 sim_us=119000 ssrc=deadbeef seq=19272 size=94
+Y453 high_jitter.s6 rx tick_ms=129 at_us=128497 sim_us=129000 ssrc=deadbeef seq=19273 size=95
+Y453 high_jitter.s6 rx tick_ms=132 at_us=131034 sim_us=132000 ssrc=deadbeef seq=19274 size=95
+Y453 high_jitter.s6 rtcp_out t_us=150000 size=28 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=180 at_us=179128 sim_us=180000 ssrc=deadbeef seq=19275 size=95
+Y453 high_jitter.s6 rx tick_ms=182 at_us=181433 sim_us=182000 ssrc=badcafd seq=27857 size=275
+Y453 high_jitter.s6 rx tick_ms=183 at_us=182465 sim_us=183000 ssrc=c0ffed seq=19272 size=1127
+Y453 high_jitter.s6 rtcp_out t_us=200000 size=28 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=202 at_us=201499 sim_us=202000 ssrc=c0ffed seq=19271 size=1127
+Y453 high_jitter.s6 rtcp_out t_us=202000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s6 rx tick_ms=211 at_us=210255 sim_us=211000 ssrc=badcafd seq=27859 size=275
+Y453 high_jitter.s6 rx tick_ms=213 at_us=212696 sim_us=213000 ssrc=c0ffed seq=19273 size=1127
+Y453 high_jitter.s6 rx tick_ms=216 at_us=215152 sim_us=216000 ssrc=deadbeef seq=19276 size=95
+Y453 high_jitter.s6 rx tick_ms=220 at_us=219360 sim_us=220000 ssrc=badcafd seq=27860 size=1129
+Y453 high_jitter.s6 rx tick_ms=237 at_us=236251 sim_us=237000 ssrc=c0ffed seq=19270 size=49
+Y453 high_jitter.s6 rx tick_ms=240 at_us=239423 sim_us=240000 ssrc=badcafd seq=27862 size=1129
+Y453 high_jitter.s6 rx tick_ms=242 at_us=241267 sim_us=242000 ssrc=c0ffed seq=19274 size=945
+Y453 high_jitter.s6 rtcp_out t_us=242000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s6 rx tick_ms=246 at_us=245154 sim_us=246000 ssrc=deadbeef seq=19278 size=95
+Y453 high_jitter.s6 rtcp_out t_us=250000 size=40 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=250 at_us=249144 sim_us=250000 ssrc=deadbeef seq=19277 size=95
+Y453 high_jitter.s6 rx tick_ms=261 at_us=260218 sim_us=261000 ssrc=deadbeef seq=19279 size=95
+Y453 high_jitter.s6 rx tick_ms=262 at_us=261174 sim_us=262000 ssrc=deadbeef seq=19280 size=95
+Y453 high_jitter.s6 rx tick_ms=262 at_us=261949 sim_us=262000 ssrc=badcafd seq=27863 size=275
+Y453 high_jitter.s6 rx tick_ms=269 at_us=268577 sim_us=269000 ssrc=deadbeef seq=19281 size=95
+Y453 high_jitter.s6 rx tick_ms=273 at_us=272853 sim_us=273000 ssrc=badcafd seq=27861 size=1129
+Y453 high_jitter.s6 rx tick_ms=275 at_us=274733 sim_us=275000 ssrc=badcafd seq=27864 size=275
+Y453 high_jitter.s6 rx tick_ms=281 at_us=280044 sim_us=281000 ssrc=badcafd seq=27858 size=275
+Y453 high_jitter.s6 rtcp_out t_us=300000 size=44 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=301 at_us=300076 sim_us=301000 ssrc=deadbeef seq=19282 size=95
+Y453 high_jitter.s6 rx tick_ms=325 at_us=324605 sim_us=325000 ssrc=deadbeef seq=19284 size=95
+Y453 high_jitter.s6 rx tick_ms=334 at_us=333255 sim_us=334000 ssrc=deadbeef seq=19283 size=95
+Y453 high_jitter.s6 rx tick_ms=348 at_us=347842 sim_us=348000 ssrc=c0ffed seq=19275 size=49
+Y453 high_jitter.s6 rtcp_out t_us=350000 size=28 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=371 at_us=370778 sim_us=371000 ssrc=deadbeef seq=19286 size=95
+Y453 high_jitter.s6 rx tick_ms=387 at_us=386942 sim_us=387000 ssrc=deadbeef seq=19287 size=95
+Y453 high_jitter.s6 rtcp_out t_us=400000 size=24 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=406 at_us=405575 sim_us=406000 ssrc=c0ffed seq=19280 size=773
+Y453 high_jitter.s6 rtcp_out t_us=406000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rx tick_ms=408 at_us=407563 sim_us=408000 ssrc=c0ffed seq=19276 size=1136
+Y453 high_jitter.s6 rx tick_ms=410 at_us=409680 sim_us=410000 ssrc=c0ffed seq=19277 size=1136
+Y453 high_jitter.s6 rx tick_ms=429 at_us=428768 sim_us=429000 ssrc=deadbeef seq=19288 size=95
+Y453 high_jitter.s6 rx tick_ms=430 at_us=429480 sim_us=430000 ssrc=c0ffed seq=19278 size=1137
+Y453 high_jitter.s6 rtcp_out t_us=450000 size=36 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=452 at_us=451728 sim_us=452000 ssrc=deadbeef seq=19285 size=95
+Y453 high_jitter.s6 rx tick_ms=470 at_us=469086 sim_us=470000 ssrc=c0ffed seq=19279 size=737
+Y453 high_jitter.s6 rx tick_ms=470 at_us=469295 sim_us=470000 ssrc=c0ffed seq=19282 size=855
+Y453 high_jitter.s6 rtcp_out t_us=470000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rx tick_ms=472 at_us=471477 sim_us=472000 ssrc=c0ffed seq=19283 size=855
+Y453 high_jitter.s6 rx tick_ms=477 at_us=476765 sim_us=477000 ssrc=c0ffed seq=19281 size=774
+Y453 high_jitter.s6 rx tick_ms=485 at_us=484259 sim_us=485000 ssrc=deadbeef seq=19289 size=95
+Y453 high_jitter.s6 rx tick_ms=485 at_us=484982 sim_us=485000 ssrc=deadbeef seq=19292 size=95
+Y453 high_jitter.s6 rx tick_ms=490 at_us=489039 sim_us=490000 ssrc=badcafd seq=27866 size=1138
+Y453 high_jitter.s6 rx tick_ms=497 at_us=496168 sim_us=497000 ssrc=deadbeef seq=19291 size=95
+Y453 high_jitter.s6 rtcp_out t_us=500000 size=52 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=509 at_us=508701 sim_us=509000 ssrc=deadbeef seq=19290 size=95
+Y453 high_jitter.s6 rx tick_ms=536 at_us=535985 sim_us=536000 ssrc=deadbeef seq=19293 size=99
+Y453 high_jitter.s6 rx tick_ms=545 at_us=544531 sim_us=545000 ssrc=badcafd seq=27867 size=1138
+Y453 high_jitter.s6 rx tick_ms=548 at_us=547686 sim_us=548000 ssrc=badcafd seq=27868 size=1139
+Y453 high_jitter.s6 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=556 at_us=555430 sim_us=556000 ssrc=deadbeef seq=19295 size=186
+Y453 high_jitter.s6 rx tick_ms=557 at_us=556286 sim_us=557000 ssrc=deadbeef seq=19294 size=150
+Y453 high_jitter.s6 rx tick_ms=560 at_us=559227 sim_us=560000 ssrc=badcafd seq=27865 size=1138
+Y453 high_jitter.s6 rx tick_ms=566 at_us=565882 sim_us=566000 ssrc=badcafd seq=27869 size=739
+Y453 high_jitter.s6 rx tick_ms=581 at_us=580193 sim_us=581000 ssrc=badcafd seq=27870 size=776
+Y453 high_jitter.s6 rtcp_out t_us=600000 size=36 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=615 at_us=614316 sim_us=615000 ssrc=deadbeef seq=19297 size=161
+Y453 high_jitter.s6 rx tick_ms=626 at_us=625031 sim_us=626000 ssrc=c0ffed seq=19285 size=813
+Y453 high_jitter.s6 rx tick_ms=626 at_us=625900 sim_us=626000 ssrc=c0ffed seq=19284 size=812
+Y453 high_jitter.s6 rtcp_out t_us=626000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rx tick_ms=629 at_us=628221 sim_us=629000 ssrc=c0ffed seq=19286 size=741
+Y453 high_jitter.s6 rx tick_ms=638 at_us=637288 sim_us=638000 ssrc=c0ffed seq=19287 size=742
+Y453 high_jitter.s6 rx tick_ms=648 at_us=647162 sim_us=648000 ssrc=c0ffed seq=19289 size=860
+Y453 high_jitter.s6 rtcp_out t_us=648000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rtcp_out t_us=650000 size=32 blocks= 205/15
+Y453 high_jitter.s6 rx tick_ms=653 at_us=652176 sim_us=653000 ssrc=deadbeef seq=19296 size=170
+Y453 high_jitter.s6 rx tick_ms=665 at_us=664112 sim_us=665000 ssrc=c0ffed seq=19288 size=860
+Y453 high_jitter.s6 rx tick_ms=668 at_us=667539 sim_us=668000 ssrc=deadbeef seq=19299 size=148
+Y453 high_jitter.s6 rx tick_ms=671 at_us=670021 sim_us=671000 ssrc=c0ffed seq=19292 size=692
+Y453 high_jitter.s6 rtcp_out t_us=671000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rx tick_ms=684 at_us=683402 sim_us=684000 ssrc=c0ffed seq=19293 size=803
+Y453 high_jitter.s6 rx tick_ms=685 at_us=684502 sim_us=685000 ssrc=c0ffed seq=19290 size=743
+Y453 high_jitter.s6 rx tick_ms=685 at_us=684976 sim_us=685000 ssrc=deadbeef seq=19300 size=137
+Y453 high_jitter.s6 rx tick_ms=688 at_us=687248 sim_us=688000 ssrc=deadbeef seq=19298 size=156
+Y453 high_jitter.s6 rtcp_out t_us=700000 size=48 blocks= 205/15
+Y453 high_jitter.s6 rtcp_out t_us=750000 size=36 blocks= 205/15
+Y453 high_jitter.s6 rtcp_out t_us=790000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rtcp_out t_us=800000 size=40 blocks= 205/15
+Y453 high_jitter.s6 rtcp_out t_us=841000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s6 rtcp_out t_us=850000 size=40 blocks= 205/15
+Y453 high_jitter.s6 rtcp_out t_us=900000 size=28 blocks= 205/15
+Y453 high_jitter.s6 rtcp_out t_us=950000 size=36 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=79 at_us=78883 sim_us=79000 ssrc=deadbeef seq=28474 size=88
+Y453 high_jitter.s7 rx tick_ms=93 at_us=92687 sim_us=93000 ssrc=deadbeef seq=28476 size=171
+Y453 high_jitter.s7 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=104 at_us=103080 sim_us=104000 ssrc=deadbeef seq=28475 size=171
+Y453 high_jitter.s7 rx tick_ms=133 at_us=132657 sim_us=133000 ssrc=deadbeef seq=28478 size=147
+Y453 high_jitter.s7 rx tick_ms=145 at_us=144440 sim_us=145000 ssrc=deadbeef seq=28477 size=153
+Y453 high_jitter.s7 rtcp_out t_us=150000 size=28 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=178 at_us=177549 sim_us=178000 ssrc=c0ffed seq=28475 size=1127
+Y453 high_jitter.s7 rtcp_out t_us=178000 size=40 blocks= 201/0 206/1 207/0
+Y453 high_jitter.s7 rtcp_out t_us=200000 size=24 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=206 at_us=205459 sim_us=206000 ssrc=deadbeef seq=28481 size=129
+Y453 high_jitter.s7 rx tick_ms=209 at_us=208774 sim_us=209000 ssrc=deadbeef seq=28479 size=138
+Y453 high_jitter.s7 rx tick_ms=221 at_us=220416 sim_us=221000 ssrc=c0ffed seq=28476 size=1127
+Y453 high_jitter.s7 rx tick_ms=222 at_us=221068 sim_us=222000 ssrc=badcafd seq=6891 size=1129
+Y453 high_jitter.s7 rx tick_ms=223 at_us=222697 sim_us=223000 ssrc=badcafd seq=6889 size=275
+Y453 high_jitter.s7 rx tick_ms=228 at_us=227007 sim_us=228000 ssrc=c0ffed seq=28477 size=1127
+Y453 high_jitter.s7 rx tick_ms=228 at_us=227734 sim_us=228000 ssrc=deadbeef seq=28483 size=146
+Y453 high_jitter.s7 rx tick_ms=229 at_us=228445 sim_us=229000 ssrc=deadbeef seq=28480 size=124
+Y453 high_jitter.s7 rx tick_ms=231 at_us=230382 sim_us=231000 ssrc=deadbeef seq=28482 size=133
+Y453 high_jitter.s7 rx tick_ms=233 at_us=232011 sim_us=233000 ssrc=c0ffed seq=28474 size=49
+Y453 high_jitter.s7 rx tick_ms=233 at_us=232299 sim_us=233000 ssrc=badcafd seq=6890 size=1129
+Y453 high_jitter.s7 rx tick_ms=247 at_us=246222 sim_us=247000 ssrc=deadbeef seq=28484 size=171
+Y453 high_jitter.s7 rtcp_out t_us=250000 size=44 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=250 at_us=249074 sim_us=250000 ssrc=badcafd seq=6888 size=275
+Y453 high_jitter.s7 rx tick_ms=250 at_us=249587 sim_us=250000 ssrc=c0ffed seq=28478 size=928
+Y453 high_jitter.s7 rtcp_out t_us=250000 size=88 blocks= 201/2 206/1 207/0
+Y453 high_jitter.s7 rx tick_ms=257 at_us=256963 sim_us=257000 ssrc=badcafd seq=6893 size=275
+Y453 high_jitter.s7 rx tick_ms=275 at_us=274466 sim_us=275000 ssrc=badcafd seq=6892 size=1129
+Y453 high_jitter.s7 rtcp_out t_us=300000 size=48 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=303 at_us=302718 sim_us=303000 ssrc=deadbeef seq=28485 size=165
+Y453 high_jitter.s7 rx tick_ms=314 at_us=313440 sim_us=314000 ssrc=deadbeef seq=28487 size=151
+Y453 high_jitter.s7 rx tick_ms=321 at_us=320330 sim_us=321000 ssrc=badcafd seq=6894 size=275
+Y453 high_jitter.s7 rx tick_ms=323 at_us=322137 sim_us=323000 ssrc=c0ffed seq=28480 size=1136
+Y453 high_jitter.s7 rx tick_ms=323 at_us=322703 sim_us=323000 ssrc=badcafd seq=6895 size=930
+Y453 high_jitter.s7 rtcp_out t_us=323000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=335 at_us=334995 sim_us=335000 ssrc=deadbeef seq=28486 size=152
+Y453 high_jitter.s7 rx tick_ms=336 at_us=335008 sim_us=336000 ssrc=c0ffed seq=28481 size=1136
+Y453 high_jitter.s7 rx tick_ms=344 at_us=343940 sim_us=344000 ssrc=deadbeef seq=28488 size=137
+Y453 high_jitter.s7 rtcp_out t_us=350000 size=36 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=353 at_us=352821 sim_us=353000 ssrc=c0ffed seq=28485 size=1341
+Y453 high_jitter.s7 rtcp_out t_us=353000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=355 at_us=354105 sim_us=355000 ssrc=c0ffed seq=28482 size=1137
+Y453 high_jitter.s7 rx tick_ms=361 at_us=360555 sim_us=361000 ssrc=c0ffed seq=28486 size=1341
+Y453 high_jitter.s7 rx tick_ms=363 at_us=362589 sim_us=363000 ssrc=c0ffed seq=28484 size=1341
+Y453 high_jitter.s7 rx tick_ms=365 at_us=364561 sim_us=365000 ssrc=c0ffed seq=28479 size=49
+Y453 high_jitter.s7 rx tick_ms=371 at_us=370210 sim_us=371000 ssrc=c0ffed seq=28483 size=867
+Y453 high_jitter.s7 rx tick_ms=384 at_us=383148 sim_us=384000 ssrc=deadbeef seq=28489 size=133
+Y453 high_jitter.s7 rtcp_out t_us=400000 size=40 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=402 at_us=401740 sim_us=402000 ssrc=deadbeef seq=28492 size=144
+Y453 high_jitter.s7 rx tick_ms=407 at_us=406846 sim_us=407000 ssrc=deadbeef seq=28490 size=144
+Y453 high_jitter.s7 rx tick_ms=419 at_us=418380 sim_us=419000 ssrc=deadbeef seq=28491 size=134
+Y453 high_jitter.s7 rx tick_ms=446 at_us=445282 sim_us=446000 ssrc=badcafd seq=6896 size=51
+Y453 high_jitter.s7 rx tick_ms=448 at_us=447733 sim_us=448000 ssrc=deadbeef seq=28494 size=162
+Y453 high_jitter.s7 rtcp_out t_us=450000 size=32 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=456 at_us=455864 sim_us=456000 ssrc=deadbeef seq=28493 size=163
+Y453 high_jitter.s7 rx tick_ms=459 at_us=458749 sim_us=459000 ssrc=badcafd seq=6897 size=1139
+Y453 high_jitter.s7 rx tick_ms=481 at_us=480414 sim_us=481000 ssrc=deadbeef seq=28495 size=165
+Y453 high_jitter.s7 rx tick_ms=482 at_us=481067 sim_us=482000 ssrc=c0ffed seq=28487 size=1252
+Y453 high_jitter.s7 rx tick_ms=499 at_us=498649 sim_us=499000 ssrc=badcafd seq=6898 size=869
+Y453 high_jitter.s7 rtcp_out t_us=500000 size=36 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=504 at_us=503430 sim_us=504000 ssrc=c0ffed seq=28489 size=855
+Y453 high_jitter.s7 rtcp_out t_us=504000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=513 at_us=512457 sim_us=513000 ssrc=deadbeef seq=28496 size=162
+Y453 high_jitter.s7 rx tick_ms=527 at_us=526562 sim_us=527000 ssrc=c0ffed seq=28488 size=1166
+Y453 high_jitter.s7 rx tick_ms=527 at_us=526793 sim_us=527000 ssrc=c0ffed seq=28491 size=1042
+Y453 high_jitter.s7 rtcp_out t_us=527000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=530 at_us=529407 sim_us=530000 ssrc=badcafd seq=6899 size=1343
+Y453 high_jitter.s7 rx tick_ms=541 at_us=540420 sim_us=541000 ssrc=c0ffed seq=28492 size=1042
+Y453 high_jitter.s7 rx tick_ms=542 at_us=541277 sim_us=542000 ssrc=deadbeef seq=28499 size=137
+Y453 high_jitter.s7 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=559 at_us=558132 sim_us=559000 ssrc=deadbeef seq=28497 size=158
+Y453 high_jitter.s7 rx tick_ms=560 at_us=559735 sim_us=560000 ssrc=c0ffed seq=28495 size=1028
+Y453 high_jitter.s7 rtcp_out t_us=560000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=563 at_us=562714 sim_us=563000 ssrc=deadbeef seq=28498 size=148
+Y453 high_jitter.s7 rx tick_ms=566 at_us=565314 sim_us=566000 ssrc=c0ffed seq=28490 size=856
+Y453 high_jitter.s7 rx tick_ms=576 at_us=575360 sim_us=576000 ssrc=deadbeef seq=28500 size=132
+Y453 high_jitter.s7 rx tick_ms=581 at_us=580040 sim_us=581000 ssrc=c0ffed seq=28496 size=1029
+Y453 high_jitter.s7 rx tick_ms=582 at_us=581834 sim_us=582000 ssrc=c0ffed seq=28493 size=842
+Y453 high_jitter.s7 rx tick_ms=583 at_us=582687 sim_us=583000 ssrc=c0ffed seq=28498 size=1045
+Y453 high_jitter.s7 rtcp_out t_us=583000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rx tick_ms=589 at_us=588070 sim_us=589000 ssrc=badcafd seq=6900 size=1168
+Y453 high_jitter.s7 rx tick_ms=591 at_us=590969 sim_us=591000 ssrc=c0ffed seq=28497 size=1044
+Y453 high_jitter.s7 rtcp_out t_us=600000 size=44 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=602 at_us=601284 sim_us=602000 ssrc=badcafd seq=6901 size=858
+Y453 high_jitter.s7 rx tick_ms=605 at_us=604341 sim_us=605000 ssrc=c0ffed seq=28499 size=1100
+Y453 high_jitter.s7 rx tick_ms=621 at_us=620516 sim_us=621000 ssrc=c0ffed seq=28494 size=842
+Y453 high_jitter.s7 rx tick_ms=623 at_us=622517 sim_us=623000 ssrc=badcafd seq=6903 size=844
+Y453 high_jitter.s7 rx tick_ms=629 at_us=628350 sim_us=629000 ssrc=c0ffed seq=28500 size=1100
+Y453 high_jitter.s7 rx tick_ms=629 at_us=628797 sim_us=629000 ssrc=deadbeef seq=28501 size=125
+Y453 high_jitter.s7 rx tick_ms=633 at_us=632984 sim_us=633000 ssrc=badcafd seq=6902 size=844
+Y453 high_jitter.s7 rx tick_ms=637 at_us=636751 sim_us=637000 ssrc=deadbeef seq=28503 size=123
+Y453 high_jitter.s7 rx tick_ms=640 at_us=639952 sim_us=640000 ssrc=badcafd seq=6904 size=1030
+Y453 high_jitter.s7 rx tick_ms=648 at_us=647405 sim_us=648000 ssrc=badcafd seq=6905 size=844
+Y453 high_jitter.s7 rtcp_out t_us=650000 size=52 blocks= 205/15
+Y453 high_jitter.s7 rx tick_ms=659 at_us=658848 sim_us=659000 ssrc=deadbeef seq=28502 size=121
+Y453 high_jitter.s7 rx tick_ms=666 at_us=665642 sim_us=666000 ssrc=badcafd seq=6906 size=844
+Y453 high_jitter.s7 rx tick_ms=670 at_us=669759 sim_us=670000 ssrc=deadbeef seq=28505 size=139
+Y453 high_jitter.s7 rx tick_ms=675 at_us=674672 sim_us=675000 ssrc=c0ffed seq=28501 size=1092
+Y453 high_jitter.s7 rx tick_ms=687 at_us=686314 sim_us=687000 ssrc=badcafd seq=6907 size=1046
+Y453 high_jitter.s7 rx tick_ms=690 at_us=689147 sim_us=690000 ssrc=deadbeef seq=28504 size=133
+Y453 high_jitter.s7 rtcp_out t_us=700000 size=40 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=715000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rtcp_out t_us=750000 size=28 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=754000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rtcp_out t_us=773000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rtcp_out t_us=800000 size=48 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=850000 size=56 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=872000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s7 rtcp_out t_us=900000 size=44 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=950000 size=36 blocks= 205/15
+Y453 high_jitter.s7 rtcp_out t_us=960000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rx tick_ms=76 at_us=75859 sim_us=76000 ssrc=deadbeef seq=28244 size=91
+Y453 high_jitter.s8 rx tick_ms=86 at_us=85692 sim_us=86000 ssrc=deadbeef seq=28245 size=94
+Y453 high_jitter.s8 rx tick_ms=88 at_us=87865 sim_us=88000 ssrc=deadbeef seq=28243 size=53
+Y453 high_jitter.s8 rtcp_out t_us=100000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=125 at_us=124518 sim_us=125000 ssrc=deadbeef seq=28246 size=95
+Y453 high_jitter.s8 rx tick_ms=141 at_us=140542 sim_us=141000 ssrc=deadbeef seq=28247 size=95
+Y453 high_jitter.s8 rtcp_out t_us=150000 size=24 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=170 at_us=169449 sim_us=170000 ssrc=c0ffed seq=28244 size=1127
+Y453 high_jitter.s8 rtcp_out t_us=170000 size=40 blocks= 201/0 206/1 207/0
+Y453 high_jitter.s8 rx tick_ms=191 at_us=190759 sim_us=191000 ssrc=deadbeef seq=28249 size=95
+Y453 high_jitter.s8 rx tick_ms=195 at_us=194372 sim_us=195000 ssrc=deadbeef seq=28248 size=95
+Y453 high_jitter.s8 rtcp_out t_us=200000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=206 at_us=205895 sim_us=206000 ssrc=c0ffed seq=28243 size=49
+Y453 high_jitter.s8 rx tick_ms=210 at_us=209899 sim_us=210000 ssrc=c0ffed seq=28245 size=1127
+Y453 high_jitter.s8 rx tick_ms=211 at_us=210221 sim_us=211000 ssrc=deadbeef seq=28250 size=95
+Y453 high_jitter.s8 rx tick_ms=216 at_us=215004 sim_us=216000 ssrc=deadbeef seq=28251 size=95
+Y453 high_jitter.s8 rx tick_ms=221 at_us=220589 sim_us=221000 ssrc=badcafd seq=32434 size=275
+Y453 high_jitter.s8 rx tick_ms=235 at_us=234690 sim_us=235000 ssrc=badcafd seq=32435 size=1129
+Y453 high_jitter.s8 rx tick_ms=239 at_us=238400 sim_us=239000 ssrc=badcafd seq=32436 size=1129
+Y453 high_jitter.s8 rx tick_ms=247 at_us=246800 sim_us=247000 ssrc=badcafd seq=32438 size=275
+Y453 high_jitter.s8 rx tick_ms=248 at_us=247771 sim_us=248000 ssrc=c0ffed seq=28247 size=695
+Y453 high_jitter.s8 rtcp_out t_us=250000 size=36 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=257 at_us=256442 sim_us=257000 ssrc=badcafd seq=32432 size=275
+Y453 high_jitter.s8 rx tick_ms=259 at_us=258757 sim_us=259000 ssrc=c0ffed seq=28246 size=1127
+Y453 high_jitter.s8 rx tick_ms=262 at_us=261232 sim_us=262000 ssrc=badcafd seq=32437 size=1129
+Y453 high_jitter.s8 rx tick_ms=262 at_us=261560 sim_us=262000 ssrc=badcafd seq=32433 size=275
+Y453 high_jitter.s8 rx tick_ms=276 at_us=275496 sim_us=276000 ssrc=badcafd seq=32439 size=275
+Y453 high_jitter.s8 rx tick_ms=280 at_us=279668 sim_us=280000 ssrc=deadbeef seq=28254 size=95
+Y453 high_jitter.s8 rx tick_ms=283 at_us=282459 sim_us=283000 ssrc=deadbeef seq=28255 size=95
+Y453 high_jitter.s8 rx tick_ms=288 at_us=287762 sim_us=288000 ssrc=deadbeef seq=28252 size=95
+Y453 high_jitter.s8 rx tick_ms=292 at_us=291872 sim_us=292000 ssrc=deadbeef seq=28253 size=95
+Y453 high_jitter.s8 rtcp_out t_us=300000 size=52 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=304 at_us=303174 sim_us=304000 ssrc=deadbeef seq=28256 size=95
+Y453 high_jitter.s8 rtcp_out t_us=350000 size=24 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=368 at_us=367623 sim_us=368000 ssrc=c0ffed seq=28249 size=1136
+Y453 high_jitter.s8 rtcp_out t_us=368000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rx tick_ms=376 at_us=375792 sim_us=376000 ssrc=deadbeef seq=28259 size=95
+Y453 high_jitter.s8 rx tick_ms=388 at_us=387301 sim_us=388000 ssrc=deadbeef seq=28257 size=95
+Y453 high_jitter.s8 rx tick_ms=388 at_us=387311 sim_us=388000 ssrc=deadbeef seq=28260 size=95
+Y453 high_jitter.s8 rx tick_ms=394 at_us=393762 sim_us=394000 ssrc=deadbeef seq=28258 size=95
+Y453 high_jitter.s8 rtcp_out t_us=400000 size=32 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=400 at_us=399599 sim_us=400000 ssrc=c0ffed seq=28250 size=1136
+Y453 high_jitter.s8 rx tick_ms=418 at_us=417338 sim_us=418000 ssrc=deadbeef seq=28261 size=95
+Y453 high_jitter.s8 rx tick_ms=441 at_us=440898 sim_us=441000 ssrc=c0ffed seq=28248 size=49
+Y453 high_jitter.s8 rx tick_ms=444 at_us=443342 sim_us=444000 ssrc=c0ffed seq=28254 size=864
+Y453 high_jitter.s8 rtcp_out t_us=444000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rx tick_ms=445 at_us=444124 sim_us=445000 ssrc=c0ffed seq=28252 size=921
+Y453 high_jitter.s8 rx tick_ms=448 at_us=447825 sim_us=448000 ssrc=deadbeef seq=28262 size=95
+Y453 high_jitter.s8 rtcp_out t_us=450000 size=36 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=450 at_us=449749 sim_us=450000 ssrc=badcafd seq=32440 size=51
+Y453 high_jitter.s8 rx tick_ms=463 at_us=462883 sim_us=463000 ssrc=c0ffed seq=28251 size=1137
+Y453 high_jitter.s8 rx tick_ms=463 at_us=462931 sim_us=463000 ssrc=c0ffed seq=28253 size=644
+Y453 high_jitter.s8 rx tick_ms=464 at_us=463565 sim_us=464000 ssrc=deadbeef seq=28263 size=95
+Y453 high_jitter.s8 rx tick_ms=466 at_us=465369 sim_us=466000 ssrc=deadbeef seq=28264 size=95
+Y453 high_jitter.s8 rx tick_ms=481 at_us=480501 sim_us=481000 ssrc=c0ffed seq=28255 size=864
+Y453 high_jitter.s8 rx tick_ms=484 at_us=483450 sim_us=484000 ssrc=c0ffed seq=28257 size=921
+Y453 high_jitter.s8 rtcp_out t_us=484000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rx tick_ms=491 at_us=490654 sim_us=491000 ssrc=c0ffed seq=28256 size=1251
+Y453 high_jitter.s8 rtcp_out t_us=500000 size=40 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=527 at_us=526338 sim_us=527000 ssrc=deadbeef seq=28265 size=99
+Y453 high_jitter.s8 rx tick_ms=532 at_us=531787 sim_us=532000 ssrc=deadbeef seq=28266 size=137
+Y453 high_jitter.s8 rx tick_ms=539 at_us=538187 sim_us=539000 ssrc=deadbeef seq=28267 size=163
+Y453 high_jitter.s8 rx tick_ms=546 at_us=545200 sim_us=546000 ssrc=badcafd seq=32441 size=1139
+Y453 high_jitter.s8 rtcp_out t_us=550000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=570 at_us=569609 sim_us=570000 ssrc=c0ffed seq=28258 size=922
+Y453 high_jitter.s8 rx tick_ms=573 at_us=572042 sim_us=573000 ssrc=badcafd seq=32443 size=646
+Y453 high_jitter.s8 rx tick_ms=589 at_us=588275 sim_us=589000 ssrc=badcafd seq=32442 size=923
+Y453 high_jitter.s8 rx tick_ms=593 at_us=592898 sim_us=593000 ssrc=c0ffed seq=28259 size=766
+Y453 high_jitter.s8 rx tick_ms=598 at_us=597147 sim_us=598000 ssrc=deadbeef seq=28269 size=137
+Y453 high_jitter.s8 rtcp_out t_us=600000 size=36 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=614 at_us=613540 sim_us=614000 ssrc=c0ffed seq=28260 size=766
+Y453 high_jitter.s8 rx tick_ms=615 at_us=614006 sim_us=615000 ssrc=deadbeef seq=28270 size=153
+Y453 high_jitter.s8 rx tick_ms=615 at_us=614737 sim_us=615000 ssrc=deadbeef seq=28268 size=147
+Y453 high_jitter.s8 rx tick_ms=623 at_us=622291 sim_us=623000 ssrc=badcafd seq=32444 size=1253
+Y453 high_jitter.s8 rx tick_ms=641 at_us=640363 sim_us=641000 ssrc=c0ffed seq=28261 size=927
+Y453 high_jitter.s8 rtcp_out t_us=650000 size=40 blocks= 205/15
+Y453 high_jitter.s8 rx tick_ms=655 at_us=654086 sim_us=655000 ssrc=deadbeef seq=28273 size=157
+Y453 high_jitter.s8 rx tick_ms=663 at_us=662889 sim_us=663000 ssrc=c0ffed seq=28262 size=927
+Y453 high_jitter.s8 rx tick_ms=666 at_us=665767 sim_us=666000 ssrc=deadbeef seq=28274 size=129
+Y453 high_jitter.s8 rx tick_ms=667 at_us=666371 sim_us=667000 ssrc=badcafd seq=32445 size=924
+Y453 high_jitter.s8 rx tick_ms=676 at_us=675793 sim_us=676000 ssrc=c0ffed seq=28263 size=1343
+Y453 high_jitter.s8 rx tick_ms=685 at_us=684089 sim_us=685000 ssrc=deadbeef seq=28272 size=172
+Y453 high_jitter.s8 rx tick_ms=687 at_us=686793 sim_us=687000 ssrc=deadbeef seq=28271 size=170
+Y453 high_jitter.s8 rx tick_ms=690 at_us=689216 sim_us=690000 ssrc=deadbeef seq=28275 size=126
+Y453 high_jitter.s8 rx tick_ms=692 at_us=691389 sim_us=692000 ssrc=c0ffed seq=28264 size=986
+Y453 high_jitter.s8 rtcp_out t_us=700000 size=40 blocks= 205/15
+Y453 high_jitter.s8 rtcp_out t_us=733000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rtcp_out t_us=750000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rtcp_out t_us=800000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rtcp_out t_us=807000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rtcp_out t_us=850000 size=36 blocks= 205/15
+Y453 high_jitter.s8 rtcp_out t_us=866000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s8 rtcp_out t_us=900000 size=28 blocks= 205/15
+Y453 high_jitter.s8 rtcp_out t_us=950000 size=40 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=66 at_us=65438 sim_us=66000 ssrc=deadbeef seq=4944 size=53
+Y453 high_jitter.s9 rx tick_ms=77 at_us=76285 sim_us=77000 ssrc=deadbeef seq=4945 size=91
+Y453 high_jitter.s9 rx tick_ms=92 at_us=91792 sim_us=92000 ssrc=deadbeef seq=4946 size=94
+Y453 high_jitter.s9 rtcp_out t_us=100000 size=28 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=107 at_us=106992 sim_us=107000 ssrc=deadbeef seq=4947 size=95
+Y453 high_jitter.s9 rx tick_ms=143 at_us=142079 sim_us=143000 ssrc=deadbeef seq=4949 size=95
+Y453 high_jitter.s9 rtcp_out t_us=150000 size=24 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=170 at_us=169958 sim_us=170000 ssrc=badcafd seq=19223 size=275
+Y453 high_jitter.s9 rx tick_ms=190 at_us=189155 sim_us=190000 ssrc=c0ffed seq=4945 size=1127
+Y453 high_jitter.s9 rtcp_out t_us=190000 size=64 blocks= 201/1 206/1 207/0
+Y453 high_jitter.s9 rx tick_ms=191 at_us=190257 sim_us=191000 ssrc=deadbeef seq=4951 size=95
+Y453 high_jitter.s9 rx tick_ms=192 at_us=191518 sim_us=192000 ssrc=c0ffed seq=4944 size=49
+Y453 high_jitter.s9 rtcp_out t_us=200000 size=28 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=201 at_us=200531 sim_us=201000 ssrc=deadbeef seq=4948 size=95
+Y453 high_jitter.s9 rx tick_ms=204 at_us=203494 sim_us=204000 ssrc=c0ffed seq=4946 size=1127
+Y453 high_jitter.s9 rx tick_ms=208 at_us=207014 sim_us=208000 ssrc=deadbeef seq=4950 size=95
+Y453 high_jitter.s9 rx tick_ms=208 at_us=207124 sim_us=208000 ssrc=c0ffed seq=4948 size=1017
+Y453 high_jitter.s9 rtcp_out t_us=208000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=222 at_us=221830 sim_us=222000 ssrc=badcafd seq=19225 size=275
+Y453 high_jitter.s9 rx tick_ms=228 at_us=227100 sim_us=228000 ssrc=badcafd seq=19230 size=275
+Y453 high_jitter.s9 rx tick_ms=231 at_us=230478 sim_us=231000 ssrc=deadbeef seq=4952 size=95
+Y453 high_jitter.s9 rx tick_ms=232 at_us=231122 sim_us=232000 ssrc=badcafd seq=19226 size=1129
+Y453 high_jitter.s9 rx tick_ms=233 at_us=232262 sim_us=233000 ssrc=badcafd seq=19227 size=1129
+Y453 high_jitter.s9 rx tick_ms=245 at_us=244091 sim_us=245000 ssrc=badcafd seq=19228 size=1129
+Y453 high_jitter.s9 rx tick_ms=246 at_us=245054 sim_us=246000 ssrc=badcafd seq=19229 size=275
+Y453 high_jitter.s9 rx tick_ms=248 at_us=247344 sim_us=248000 ssrc=badcafd seq=19224 size=275
+Y453 high_jitter.s9 rtcp_out t_us=250000 size=52 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=257 at_us=256274 sim_us=257000 ssrc=deadbeef seq=4953 size=95
+Y453 high_jitter.s9 rx tick_ms=260 at_us=259258 sim_us=260000 ssrc=deadbeef seq=4954 size=95
+Y453 high_jitter.s9 rx tick_ms=261 at_us=260159 sim_us=261000 ssrc=c0ffed seq=4947 size=1127
+Y453 high_jitter.s9 rx tick_ms=263 at_us=262389 sim_us=263000 ssrc=deadbeef seq=4955 size=95
+Y453 high_jitter.s9 rtcp_out t_us=300000 size=44 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=324 at_us=323229 sim_us=324000 ssrc=deadbeef seq=4957 size=95
+Y453 high_jitter.s9 rx tick_ms=331 at_us=330068 sim_us=331000 ssrc=c0ffed seq=4949 size=49
+Y453 high_jitter.s9 rx tick_ms=331 at_us=330121 sim_us=331000 ssrc=c0ffed seq=4951 size=1260
+Y453 high_jitter.s9 rtcp_out t_us=331000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=338 at_us=337475 sim_us=338000 ssrc=c0ffed seq=4953 size=1260
+Y453 high_jitter.s9 rtcp_out t_us=338000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=343 at_us=342049 sim_us=343000 ssrc=deadbeef seq=4958 size=95
+Y453 high_jitter.s9 rx tick_ms=346 at_us=345235 sim_us=346000 ssrc=deadbeef seq=4956 size=95
+Y453 high_jitter.s9 rtcp_out t_us=350000 size=32 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=363 at_us=362353 sim_us=363000 ssrc=c0ffed seq=4958 size=1220
+Y453 high_jitter.s9 rx tick_ms=363 at_us=362918 sim_us=363000 ssrc=deadbeef seq=4959 size=95
+Y453 high_jitter.s9 rtcp_out t_us=363000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=365 at_us=364572 sim_us=365000 ssrc=c0ffed seq=4956 size=1219
+Y453 high_jitter.s9 rx tick_ms=367 at_us=366432 sim_us=367000 ssrc=badcafd seq=19234 size=1222
+Y453 high_jitter.s9 rx tick_ms=367 at_us=366831 sim_us=367000 ssrc=c0ffed seq=4952 size=1260
+Y453 high_jitter.s9 rx tick_ms=367 at_us=366866 sim_us=367000 ssrc=badcafd seq=19232 size=275
+Y453 high_jitter.s9 rx tick_ms=370 at_us=369762 sim_us=370000 ssrc=c0ffed seq=4957 size=1219
+Y453 high_jitter.s9 rx tick_ms=372 at_us=371581 sim_us=372000 ssrc=badcafd seq=19233 size=1222
+Y453 high_jitter.s9 rx tick_ms=373 at_us=372823 sim_us=373000 ssrc=badcafd seq=19231 size=1129
+Y453 high_jitter.s9 rx tick_ms=374 at_us=373965 sim_us=374000 ssrc=c0ffed seq=4954 size=1260
+Y453 high_jitter.s9 rx tick_ms=382 at_us=381098 sim_us=382000 ssrc=c0ffed seq=4950 size=1260
+Y453 high_jitter.s9 rx tick_ms=382 at_us=381967 sim_us=382000 ssrc=deadbeef seq=4961 size=95
+Y453 high_jitter.s9 rx tick_ms=384 at_us=383588 sim_us=384000 ssrc=c0ffed seq=4955 size=1310
+Y453 high_jitter.s9 rtcp_out t_us=400000 size=52 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=413 at_us=412414 sim_us=413000 ssrc=deadbeef seq=4962 size=95
+Y453 high_jitter.s9 rtcp_out t_us=450000 size=24 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=452 at_us=451332 sim_us=452000 ssrc=deadbeef seq=4963 size=95
+Y453 high_jitter.s9 rx tick_ms=455 at_us=454074 sim_us=455000 ssrc=deadbeef seq=4964 size=95
+Y453 high_jitter.s9 rx tick_ms=461 at_us=460835 sim_us=461000 ssrc=deadbeef seq=4960 size=95
+Y453 high_jitter.s9 rx tick_ms=482 at_us=481313 sim_us=482000 ssrc=badcafd seq=19235 size=1262
+Y453 high_jitter.s9 rx tick_ms=485 at_us=484275 sim_us=485000 ssrc=badcafd seq=19240 size=1221
+Y453 high_jitter.s9 rx tick_ms=498 at_us=497309 sim_us=498000 ssrc=badcafd seq=19237 size=1262
+Y453 high_jitter.s9 rx tick_ms=499 at_us=498167 sim_us=499000 ssrc=c0ffed seq=4963 size=1276
+Y453 high_jitter.s9 rx tick_ms=499 at_us=498619 sim_us=499000 ssrc=c0ffed seq=4959 size=944
+Y453 high_jitter.s9 rtcp_out t_us=499000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rtcp_out t_us=500000 size=40 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=501 at_us=500510 sim_us=501000 ssrc=badcafd seq=19236 size=1262
+Y453 high_jitter.s9 rx tick_ms=501 at_us=500826 sim_us=501000 ssrc=badcafd seq=19238 size=1312
+Y453 high_jitter.s9 rx tick_ms=502 at_us=501556 sim_us=502000 ssrc=c0ffed seq=4962 size=1275
+Y453 high_jitter.s9 rx tick_ms=503 at_us=502621 sim_us=503000 ssrc=deadbeef seq=4965 size=95
+Y453 high_jitter.s9 rx tick_ms=508 at_us=507061 sim_us=508000 ssrc=c0ffed seq=4961 size=1000
+Y453 high_jitter.s9 rx tick_ms=510 at_us=509881 sim_us=510000 ssrc=c0ffed seq=4960 size=1097
+Y453 high_jitter.s9 rx tick_ms=519 at_us=518390 sim_us=519000 ssrc=c0ffed seq=4965 size=1276
+Y453 high_jitter.s9 rtcp_out t_us=519000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=521 at_us=520127 sim_us=521000 ssrc=deadbeef seq=4966 size=95
+Y453 high_jitter.s9 rx tick_ms=521 at_us=520352 sim_us=521000 ssrc=c0ffed seq=4969 size=1300
+Y453 high_jitter.s9 rtcp_out t_us=521000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=524 at_us=523344 sim_us=524000 ssrc=c0ffed seq=4968 size=1276
+Y453 high_jitter.s9 rx tick_ms=531 at_us=530768 sim_us=531000 ssrc=c0ffed seq=4967 size=1276
+Y453 high_jitter.s9 rx tick_ms=533 at_us=532426 sim_us=533000 ssrc=c0ffed seq=4966 size=1276
+Y453 high_jitter.s9 rx tick_ms=535 at_us=534629 sim_us=535000 ssrc=c0ffed seq=4964 size=1276
+Y453 high_jitter.s9 rx tick_ms=546 at_us=545150 sim_us=546000 ssrc=deadbeef seq=4967 size=95
+Y453 high_jitter.s9 rx tick_ms=547 at_us=546485 sim_us=547000 ssrc=badcafd seq=19239 size=1221
+Y453 high_jitter.s9 rtcp_out t_us=550000 size=56 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=552 at_us=551853 sim_us=552000 ssrc=c0ffed seq=4973 size=1301
+Y453 high_jitter.s9 rtcp_out t_us=552000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=562 at_us=561565 sim_us=562000 ssrc=c0ffed seq=4978 size=1425
+Y453 high_jitter.s9 rtcp_out t_us=562000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=563 at_us=562481 sim_us=563000 ssrc=deadbeef seq=4968 size=95
+Y453 high_jitter.s9 rx tick_ms=564 at_us=563803 sim_us=564000 ssrc=c0ffed seq=4977 size=1425
+Y453 high_jitter.s9 rx tick_ms=566 at_us=565325 sim_us=566000 ssrc=c0ffed seq=4975 size=1301
+Y453 high_jitter.s9 rx tick_ms=571 at_us=570057 sim_us=571000 ssrc=badcafd seq=19241 size=275
+Y453 high_jitter.s9 rx tick_ms=571 at_us=570238 sim_us=571000 ssrc=c0ffed seq=4972 size=1301
+Y453 high_jitter.s9 rx tick_ms=572 at_us=571337 sim_us=572000 ssrc=c0ffed seq=4974 size=1301
+Y453 high_jitter.s9 rx tick_ms=573 at_us=572133 sim_us=573000 ssrc=c0ffed seq=4971 size=1301
+Y453 high_jitter.s9 rx tick_ms=576 at_us=575732 sim_us=576000 ssrc=c0ffed seq=4976 size=1425
+Y453 high_jitter.s9 rx tick_ms=577 at_us=576295 sim_us=577000 ssrc=c0ffed seq=4970 size=1301
+Y453 high_jitter.s9 rx tick_ms=577 at_us=576926 sim_us=577000 ssrc=badcafd seq=19244 size=1002
+Y453 high_jitter.s9 rx tick_ms=581 at_us=580286 sim_us=581000 ssrc=badcafd seq=19243 size=1099
+Y453 high_jitter.s9 rx tick_ms=587 at_us=586039 sim_us=587000 ssrc=deadbeef seq=4970 size=129
+Y453 high_jitter.s9 rx tick_ms=588 at_us=587973 sim_us=588000 ssrc=c0ffed seq=4981 size=1426
+Y453 high_jitter.s9 rtcp_out t_us=588000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=590 at_us=589716 sim_us=590000 ssrc=c0ffed seq=4979 size=1425
+Y453 high_jitter.s9 rtcp_out t_us=600000 size=72 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=602 at_us=601282 sim_us=602000 ssrc=c0ffed seq=4983 size=1383
+Y453 high_jitter.s9 rx tick_ms=602 at_us=601979 sim_us=602000 ssrc=c0ffed seq=4980 size=1426
+Y453 high_jitter.s9 rtcp_out t_us=602000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=614 at_us=613937 sim_us=614000 ssrc=deadbeef seq=4971 size=169
+Y453 high_jitter.s9 rx tick_ms=619 at_us=618199 sim_us=619000 ssrc=badcafd seq=19242 size=946
+Y453 high_jitter.s9 rx tick_ms=619 at_us=618287 sim_us=619000 ssrc=c0ffed seq=4984 size=1384
+Y453 high_jitter.s9 rx tick_ms=619 at_us=618541 sim_us=619000 ssrc=deadbeef seq=4969 size=95
+Y453 high_jitter.s9 rx tick_ms=621 at_us=620535 sim_us=621000 ssrc=c0ffed seq=4982 size=1383
+Y453 high_jitter.s9 rx tick_ms=622 at_us=621872 sim_us=622000 ssrc=badcafd seq=19248 size=1278
+Y453 high_jitter.s9 rx tick_ms=624 at_us=623863 sim_us=624000 ssrc=badcafd seq=19245 size=1277
+Y453 high_jitter.s9 rx tick_ms=626 at_us=625429 sim_us=626000 ssrc=c0ffed seq=4987 size=1216
+Y453 high_jitter.s9 rtcp_out t_us=626000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=630 at_us=629292 sim_us=630000 ssrc=c0ffed seq=4985 size=1384
+Y453 high_jitter.s9 rx tick_ms=630 at_us=629583 sim_us=630000 ssrc=c0ffed seq=4990 size=1216
+Y453 high_jitter.s9 rtcp_out t_us=630000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rx tick_ms=636 at_us=635975 sim_us=636000 ssrc=badcafd seq=19250 size=1303
+Y453 high_jitter.s9 rx tick_ms=639 at_us=638077 sim_us=639000 ssrc=badcafd seq=19251 size=1303
+Y453 high_jitter.s9 rx tick_ms=640 at_us=639565 sim_us=640000 ssrc=c0ffed seq=4991 size=1217
+Y453 high_jitter.s9 rx tick_ms=641 at_us=640433 sim_us=641000 ssrc=badcafd seq=19249 size=1278
+Y453 high_jitter.s9 rx tick_ms=644 at_us=643609 sim_us=644000 ssrc=c0ffed seq=4986 size=1384
+Y453 high_jitter.s9 rx tick_ms=644 at_us=643927 sim_us=644000 ssrc=c0ffed seq=4989 size=1216
+Y453 high_jitter.s9 rx tick_ms=649 at_us=648817 sim_us=649000 ssrc=badcafd seq=19254 size=1303
+Y453 high_jitter.s9 rtcp_out t_us=650000 size=64 blocks= 205/15
+Y453 high_jitter.s9 rx tick_ms=650 at_us=649656 sim_us=650000 ssrc=badcafd seq=19246 size=1278
+Y453 high_jitter.s9 rx tick_ms=665 at_us=664129 sim_us=665000 ssrc=deadbeef seq=4972 size=184
+Y453 high_jitter.s9 rx tick_ms=670 at_us=669306 sim_us=670000 ssrc=badcafd seq=19247 size=1278
+Y453 high_jitter.s9 rx tick_ms=671 at_us=670604 sim_us=671000 ssrc=badcafd seq=19256 size=1427
+Y453 high_jitter.s9 rx tick_ms=682 at_us=681462 sim_us=682000 ssrc=badcafd seq=19253 size=1303
+Y453 high_jitter.s9 rx tick_ms=687 at_us=686781 sim_us=687000 ssrc=deadbeef seq=4975 size=141
+Y453 high_jitter.s9 rx tick_ms=694 at_us=693482 sim_us=694000 ssrc=badcafd seq=19252 size=1303
+Y453 high_jitter.s9 rtcp_out t_us=700000 size=52 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=750000 size=60 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=800000 size=32 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=831000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rtcp_out t_us=850000 size=40 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=890000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rtcp_out t_us=900000 size=36 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=923000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s9 rtcp_out t_us=950000 size=40 blocks= 205/15
+Y453 high_jitter.s9 rtcp_out t_us=987000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s10 rx tick_ms=63 at_us=62036 sim_us=63000 ssrc=deadbeef seq=6994 size=88
+Y453 high_jitter.s10 rx tick_ms=65 at_us=64721 sim_us=65000 ssrc=deadbeef seq=6995 size=172
+Y453 high_jitter.s10 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=100 at_us=99730 sim_us=100000 ssrc=deadbeef seq=6996 size=173
+Y453 high_jitter.s10 rx tick_ms=133 at_us=132811 sim_us=133000 ssrc=deadbeef seq=6998 size=158
+Y453 high_jitter.s10 rtcp_out t_us=150000 size=24 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=153 at_us=152588 sim_us=153000 ssrc=deadbeef seq=6999 size=137
+Y453 high_jitter.s10 rx tick_ms=162 at_us=161531 sim_us=162000 ssrc=deadbeef seq=6997 size=168
+Y453 high_jitter.s10 rx tick_ms=182 at_us=181155 sim_us=182000 ssrc=c0ffed seq=6994 size=49
+Y453 high_jitter.s10 rx tick_ms=189 at_us=188646 sim_us=189000 ssrc=badcafd seq=19348 size=275
+Y453 high_jitter.s10 rx tick_ms=194 at_us=193189 sim_us=194000 ssrc=c0ffed seq=6995 size=1127
+Y453 high_jitter.s10 rtcp_out t_us=200000 size=32 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=201 at_us=200028 sim_us=201000 ssrc=deadbeef seq=7001 size=133
+Y453 high_jitter.s10 rx tick_ms=202 at_us=201967 sim_us=202000 ssrc=c0ffed seq=6998 size=828
+Y453 high_jitter.s10 rtcp_out t_us=202000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s10 rx tick_ms=206 at_us=205036 sim_us=206000 ssrc=deadbeef seq=7000 size=129
+Y453 high_jitter.s10 rx tick_ms=227 at_us=226434 sim_us=227000 ssrc=deadbeef seq=7002 size=134
+Y453 high_jitter.s10 rx tick_ms=235 at_us=234957 sim_us=235000 ssrc=c0ffed seq=6997 size=1127
+Y453 high_jitter.s10 rx tick_ms=244 at_us=243932 sim_us=244000 ssrc=c0ffed seq=6996 size=1127
+Y453 high_jitter.s10 rtcp_out t_us=250000 size=40 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=250 at_us=249409 sim_us=250000 ssrc=badcafd seq=19349 size=275
+Y453 high_jitter.s10 rx tick_ms=255 at_us=254265 sim_us=255000 ssrc=badcafd seq=19351 size=1129
+Y453 high_jitter.s10 rx tick_ms=257 at_us=256071 sim_us=257000 ssrc=badcafd seq=19353 size=275
+Y453 high_jitter.s10 rx tick_ms=267 at_us=266167 sim_us=267000 ssrc=badcafd seq=19350 size=1129
+Y453 high_jitter.s10 rx tick_ms=279 at_us=278870 sim_us=279000 ssrc=badcafd seq=19352 size=1129
+Y453 high_jitter.s10 rx tick_ms=285 at_us=284009 sim_us=285000 ssrc=deadbeef seq=7003 size=127
+Y453 high_jitter.s10 rx tick_ms=293 at_us=292519 sim_us=293000 ssrc=deadbeef seq=7004 size=139
+Y453 high_jitter.s10 rtcp_out t_us=300000 size=36 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=304 at_us=303859 sim_us=304000 ssrc=deadbeef seq=7007 size=171
+Y453 high_jitter.s10 rx tick_ms=316 at_us=315423 sim_us=316000 ssrc=deadbeef seq=7006 size=167
+Y453 high_jitter.s10 rx tick_ms=323 at_us=322345 sim_us=323000 ssrc=deadbeef seq=7005 size=157
+Y453 high_jitter.s10 rx tick_ms=338 at_us=337653 sim_us=338000 ssrc=badcafd seq=19354 size=1129
+Y453 high_jitter.s10 rtcp_out t_us=350000 size=28 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=360 at_us=359698 sim_us=360000 ssrc=deadbeef seq=7008 size=164
+Y453 high_jitter.s10 rx tick_ms=371 at_us=370990 sim_us=371000 ssrc=deadbeef seq=7010 size=130
+Y453 high_jitter.s10 rx tick_ms=382 at_us=381516 sim_us=382000 ssrc=badcafd seq=19355 size=1129
+Y453 high_jitter.s10 rx tick_ms=386 at_us=385814 sim_us=386000 ssrc=deadbeef seq=7009 size=142
+Y453 high_jitter.s10 rx tick_ms=392 at_us=391177 sim_us=392000 ssrc=c0ffed seq=7001 size=763
+Y453 high_jitter.s10 rtcp_out t_us=392000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s10 rtcp_out t_us=400000 size=36 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=400 at_us=399983 sim_us=400000 ssrc=c0ffed seq=6999 size=822
+Y453 high_jitter.s10 rx tick_ms=406 at_us=405640 sim_us=406000 ssrc=c0ffed seq=7002 size=752
+Y453 high_jitter.s10 rx tick_ms=422 at_us=421327 sim_us=422000 ssrc=deadbeef seq=7012 size=144
+Y453 high_jitter.s10 rx tick_ms=424 at_us=423645 sim_us=424000 ssrc=c0ffed seq=7003 size=752
+Y453 high_jitter.s10 rx tick_ms=431 at_us=430783 sim_us=431000 ssrc=c0ffed seq=7004 size=993
+Y453 high_jitter.s10 rtcp_out t_us=450000 size=32 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=451 at_us=450174 sim_us=451000 ssrc=deadbeef seq=7014 size=166
+Y453 high_jitter.s10 rx tick_ms=451 at_us=450724 sim_us=451000 ssrc=deadbeef seq=7011 size=128
+Y453 high_jitter.s10 rx tick_ms=456 at_us=455790 sim_us=456000 ssrc=c0ffed seq=7000 size=769
+Y453 high_jitter.s10 rx tick_ms=462 at_us=461259 sim_us=462000 ssrc=deadbeef seq=7015 size=178
+Y453 high_jitter.s10 rx tick_ms=469 at_us=468270 sim_us=469000 ssrc=badcafd seq=19357 size=771
+Y453 high_jitter.s10 rx tick_ms=470 at_us=469002 sim_us=470000 ssrc=badcafd seq=19356 size=824
+Y453 high_jitter.s10 rx tick_ms=470 at_us=469914 sim_us=470000 ssrc=c0ffed seq=7005 size=976
+Y453 high_jitter.s10 rtcp_out t_us=500000 size=40 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=523 at_us=522540 sim_us=523000 ssrc=c0ffed seq=7007 size=984
+Y453 high_jitter.s10 rtcp_out t_us=523000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s10 rx tick_ms=532 at_us=531411 sim_us=532000 ssrc=c0ffed seq=7008 size=1003
+Y453 high_jitter.s10 rx tick_ms=532 at_us=531552 sim_us=532000 ssrc=deadbeef seq=7018 size=159
+Y453 high_jitter.s10 rx tick_ms=533 at_us=532780 sim_us=533000 ssrc=c0ffed seq=7006 size=917
+Y453 high_jitter.s10 rx tick_ms=546 at_us=545289 sim_us=546000 ssrc=deadbeef seq=7016 size=183
+Y453 high_jitter.s10 rtcp_out t_us=550000 size=32 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=553 at_us=552401 sim_us=553000 ssrc=deadbeef seq=7013 size=163
+Y453 high_jitter.s10 rx tick_ms=560 at_us=559901 sim_us=560000 ssrc=deadbeef seq=7017 size=170
+Y453 high_jitter.s10 rx tick_ms=564 at_us=563555 sim_us=564000 ssrc=deadbeef seq=7019 size=154
+Y453 high_jitter.s10 rx tick_ms=591 at_us=590761 sim_us=591000 ssrc=c0ffed seq=7010 size=1049
+Y453 high_jitter.s10 rtcp_out t_us=591000 size=92 blocks= 201/2 205/1 207/0
+Y453 high_jitter.s10 rtcp_out t_us=600000 size=48 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=612 at_us=611141 sim_us=612000 ssrc=c0ffed seq=7011 size=1321
+Y453 high_jitter.s10 rx tick_ms=615 at_us=614353 sim_us=615000 ssrc=deadbeef seq=7021 size=138
+Y453 high_jitter.s10 rx tick_ms=618 at_us=617553 sim_us=618000 ssrc=deadbeef seq=7020 size=148
+Y453 high_jitter.s10 rx tick_ms=620 at_us=619258 sim_us=620000 ssrc=deadbeef seq=7022 size=125
+Y453 high_jitter.s10 rx tick_ms=638 at_us=637852 sim_us=638000 ssrc=badcafd seq=19358 size=275
+Y453 high_jitter.s10 rx tick_ms=642 at_us=641696 sim_us=642000 ssrc=deadbeef seq=7023 size=139
+Y453 high_jitter.s10 rtcp_out t_us=650000 size=36 blocks= 205/15
+Y453 high_jitter.s10 rx tick_ms=656 at_us=655661 sim_us=656000 ssrc=badcafd seq=19359 size=919
+Y453 high_jitter.s10 rx tick_ms=661 at_us=660091 sim_us=661000 ssrc=c0ffed seq=7009 size=982
+Y453 high_jitter.s10 rx tick_ms=661 at_us=660150 sim_us=661000 ssrc=deadbeef seq=7024 size=156
+Y453 high_jitter.s10 rx tick_ms=671 at_us=670659 sim_us=671000 ssrc=c0ffed seq=7012 size=1406
+Y453 high_jitter.s10 rx tick_ms=676 at_us=675295 sim_us=676000 ssrc=deadbeef seq=7025 size=151
+Y453 high_jitter.s10 rx tick_ms=682 at_us=681438 sim_us=682000 ssrc=deadbeef seq=7026 size=143
+Y453 high_jitter.s10 rtcp_out t_us=700000 size=44 blocks= 205/15
+Y453 high_jitter.s10 rtcp_out t_us=750000 size=36 blocks= 205/15
+Y453 high_jitter.s10 rtcp_out t_us=800000 size=28 blocks= 205/15
+Y453 high_jitter.s10 rtcp_out t_us=850000 size=36 blocks= 205/15
+Y453 high_jitter.s10 rtcp_out t_us=900000 size=32 blocks= 205/15
+Y453 high_jitter.s10 rtcp_out t_us=950000 size=44 blocks= 205/15
 
 high_jitter - Congested Wi-Fi: 40 ms jitter with reordering
   metric                                   sm       webrtc  better
@@ -3947,6 +4973,57 @@ issue_430_video_only_outage_4s - video-only call, 4 s outage at 15 s on both pat
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_437_render_smoothing_very_low_capacity - very_low_capacity with libwebrtc's pre-render queue (render_smoothing on): fewer, steadier frames rendered, as libwebrtc
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.8          0.8  =
+  audio.interruptions                       1            1  =
+  audio.longest_interruption_ms           223          225  =
+  audio.mouth_to_ear_p95_ms              2185         2173  =
+  audio.jb_delay_p95_ms                  1852         1840  =
+  video.freeze_count                     24.6         21.3  webrtc
+  video.freeze_total_ms                 28652        27856  =
+  video.longest_freeze_ms                3999         4066  =
+  video.pause_count                       0.2          0.6  =
+  video.pause_total_ms                   1219         3791  sm
+  video.render_fps                       10.5          9.2  sm
+  video.e2e_delay_p95_ms                 8551         9754  sm
+  video.time_to_first_frame_ms           1073         1108  =
+  video.avg_kbps                         33.5         33.0  =
+  video.keyframe_requests                 5.6          5.7  =
+  sync.av_offset_p95_ms                  7172         8028  sm
+  cc.utilization_pct                     98.2         98.2  =
+  cc.queue_p95_ms                         286          286  =
+  cc.max_settle_ms                      40000        40000  =
+  cc.rtt_p50_ms                           336          336  =
+  net.loss_pct                           18.9         19.1  =
+  repair.overhead_pct                    35.3         55.6  sm
+  forward link per kind (information only)
+  net.audio_kbps                         67.4         69.7
+  net.video_kbps                         32.9         31.0
+  net.rtx_kbps                           33.6         33.6
+  net.padding_kbps                        0.3          0.2
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                      0.3          0.4
+  net.video_loss_pct                     41.9         43.1
+  net.rtx_loss_pct                       58.6         60.7
+  net.padding_loss_pct                   45.8           42
+  net.audio_size_p50_b                    183          189
+  net.audio_size_p90_b                    215          216
+  net.audio_size_max_b                    303          305
+  net.audio_queue_drops                   5.3          8.8
+  net.video_size_p50_b                    252          252
+  net.video_size_p90_b                    286          286
+  net.video_size_max_b                   1156         1155
+  net.video_queue_drops                   254          244
+  net.rtx_size_p50_b                      263          264
+  net.rtx_size_p90_b                      292          291
+  net.rtx_size_max_b                     1158         1157
+  net.rtx_queue_drops                     356          361
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   2          1.7
+
 issue_441_infinite_rtt - The host hands both sessions an infinite RTT mid-call; the call carries on, with no signed overflow (UBSan)
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.3          0.3  =
@@ -4088,6 +5165,322 @@ issue_453_h264_missing_packets_high_jitter - high_jitter with the SPS/PPS tracke
   net.rtx_size_p50_b                     1122         1111
   net.rtx_size_p90_b                     1395         1370
   net.rtx_size_max_b                     1486         1484
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=79 at_us=78883 sim_us=79000 ssrc=deadbeef seq=28474 size=88
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=93 at_us=92687 sim_us=93000 ssrc=deadbeef seq=28476 size=171
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=100000 size=24 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=104 at_us=103080 sim_us=104000 ssrc=deadbeef seq=28475 size=171
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=130000 fb_us=130000 tseq=1 send_us=10000 recv_us=147514161000 size=116 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=130000 fb_us=130000 tseq=2 send_us=30000 recv_us=-1 size=199 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=130000 fb_us=130000 tseq=3 send_us=50000 recv_us=147514174000 size=199 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=133 at_us=132657 sim_us=133000 ssrc=deadbeef seq=28478 size=147
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=145 at_us=144440 sim_us=145000 ssrc=deadbeef seq=28477 size=153
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=150000 size=28 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=178 at_us=177549 sim_us=178000 ssrc=c0ffed seq=28475 size=1127
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=178000 size=40 blocks= 201/0 206/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=180000 fb_us=180000 tseq=2 send_us=30000 recv_us=147514185000 size=199 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=180000 fb_us=180000 tseq=4 send_us=70000 recv_us=147514226000 size=181 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=180000 fb_us=180000 tseq=5 send_us=90000 recv_us=147514214000 size=175 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=200000 size=24 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=206 at_us=205459 sim_us=206000 ssrc=deadbeef seq=28481 size=129
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=209 at_us=208774 sim_us=209000 ssrc=deadbeef seq=28479 size=138
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=221 at_us=220416 sim_us=221000 ssrc=c0ffed seq=28476 size=1127
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=222 at_us=221068 sim_us=222000 ssrc=badcafd seq=6891 size=1129
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=223 at_us=222697 sim_us=223000 ssrc=badcafd seq=6889 size=275
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=228 at_us=227007 sim_us=228000 ssrc=c0ffed seq=28477 size=1127
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=228 at_us=227734 sim_us=228000 ssrc=deadbeef seq=28483 size=146
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=229 at_us=228445 sim_us=229000 ssrc=deadbeef seq=28480 size=124
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=230000 fb_us=230000 tseq=6 send_us=110000 recv_us=-1 size=166 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=230000 fb_us=230000 tseq=7 send_us=130000 recv_us=-1 size=152 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=230000 fb_us=230000 tseq=8 send_us=133000 recv_us=-1 size=303 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=230000 fb_us=230000 tseq=9 send_us=135000 recv_us=-1 size=77 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=230000 fb_us=230000 tseq=10 send_us=135000 recv_us=147514259000 size=1155 probe=1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=231 at_us=230382 sim_us=231000 ssrc=deadbeef seq=28482 size=133
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=233 at_us=232011 sim_us=233000 ssrc=c0ffed seq=28474 size=49
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=233 at_us=232299 sim_us=233000 ssrc=badcafd seq=6890 size=1129
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=247 at_us=246222 sim_us=247000 ssrc=deadbeef seq=28484 size=171
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=250000 size=44 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=250 at_us=249074 sim_us=250000 ssrc=badcafd seq=6888 size=275
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=250 at_us=249587 sim_us=250000 ssrc=c0ffed seq=28478 size=928
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=250000 size=88 blocks= 201/2 206/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=257 at_us=256963 sim_us=257000 ssrc=badcafd seq=6893 size=275
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=275 at_us=274466 sim_us=275000 ssrc=badcafd seq=6892 size=1129
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=6 send_us=110000 recv_us=147514290000 size=166 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=7 send_us=130000 recv_us=147514310000 size=152 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=8 send_us=133000 recv_us=-1 size=303 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=9 send_us=135000 recv_us=147514314000 size=77 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=11 send_us=146000 recv_us=147514302000 size=1155 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=12 send_us=156000 recv_us=147514287000 size=157 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=13 send_us=156000 recv_us=147514309000 size=1155 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=14 send_us=168000 recv_us=-1 size=956 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=15 send_us=177000 recv_us=147514304000 size=303 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=16 send_us=177000 recv_us=147514312000 size=161 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=17 send_us=179000 recv_us=147514314000 size=1157 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=18 send_us=184000 recv_us=147514303000 size=1157 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=19 send_us=189000 recv_us=-1 size=1157 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=20 send_us=194000 recv_us=147514309000 size=174 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=21 send_us=194000 recv_us=-1 size=303 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=280000 fb_us=280000 tseq=22 send_us=210000 recv_us=147514328000 size=199 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=300000 size=48 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=303 at_us=302718 sim_us=303000 ssrc=deadbeef seq=28485 size=165
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=314 at_us=313440 sim_us=314000 ssrc=deadbeef seq=28487 size=151
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=321 at_us=320330 sim_us=321000 ssrc=badcafd seq=6894 size=275
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=323 at_us=322137 sim_us=323000 ssrc=c0ffed seq=28480 size=1136
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=323 at_us=322703 sim_us=323000 ssrc=badcafd seq=6895 size=930
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=323000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=330000 fb_us=330000 tseq=8 send_us=133000 recv_us=147514331000 size=303 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=330000 fb_us=330000 tseq=14 send_us=168000 recv_us=147514331000 size=956 probe=1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=330000 fb_us=330000 tseq=19 send_us=189000 recv_us=147514356000 size=1157 probe=2
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=330000 fb_us=330000 tseq=21 send_us=194000 recv_us=147514339000 size=303 probe=2
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=335 at_us=334995 sim_us=335000 ssrc=deadbeef seq=28486 size=152
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=336 at_us=335008 sim_us=336000 ssrc=c0ffed seq=28481 size=1136
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=344 at_us=343940 sim_us=344000 ssrc=deadbeef seq=28488 size=137
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=350000 size=36 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=353 at_us=352821 sim_us=353000 ssrc=c0ffed seq=28485 size=1341
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=353000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=355 at_us=354105 sim_us=355000 ssrc=c0ffed seq=28482 size=1137
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=361 at_us=360555 sim_us=361000 ssrc=c0ffed seq=28486 size=1341
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=363 at_us=362589 sim_us=363000 ssrc=c0ffed seq=28484 size=1341
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=365 at_us=364561 sim_us=365000 ssrc=c0ffed seq=28479 size=49
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=371 at_us=370210 sim_us=371000 ssrc=c0ffed seq=28483 size=867
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=23 send_us=230000 recv_us=147514384000 size=193 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=24 send_us=250000 recv_us=147514417000 size=180 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=25 send_us=270000 recv_us=147514395000 size=179 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=26 send_us=280000 recv_us=147514402000 size=303 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=27 send_us=280000 recv_us=147514404000 size=958 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=28 send_us=283000 recv_us=-1 size=77 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=29 send_us=283000 recv_us=147514404000 size=1164 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=30 send_us=287000 recv_us=147514417000 size=1164 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=380000 fb_us=380000 tseq=31 send_us=291000 recv_us=147514426000 size=165 probe=3
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=384 at_us=383148 sim_us=384000 ssrc=deadbeef seq=28489 size=133
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=400000 size=40 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=402 at_us=401740 sim_us=402000 ssrc=deadbeef seq=28492 size=144
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=407 at_us=406846 sim_us=407000 ssrc=deadbeef seq=28490 size=144
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=419 at_us=418380 sim_us=419000 ssrc=deadbeef seq=28491 size=134
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=28 send_us=283000 recv_us=147514446000 size=77 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=32 send_us=291000 recv_us=147514436000 size=1165 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=33 send_us=295000 recv_us=147514452000 size=895 probe=3
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=34 send_us=300000 recv_us=147514444000 size=1369 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=35 send_us=300000 recv_us=147514434000 size=1369 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=36 send_us=310000 recv_us=147514465000 size=161 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=430000 fb_us=430000 tseq=37 send_us=310000 recv_us=147514442000 size=1369 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=446 at_us=445282 sim_us=446000 ssrc=badcafd seq=6896 size=51
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=448 at_us=447733 sim_us=448000 ssrc=deadbeef seq=28494 size=162
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=450000 size=32 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=456 at_us=455864 sim_us=456000 ssrc=deadbeef seq=28493 size=163
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=459 at_us=458749 sim_us=459000 ssrc=badcafd seq=6897 size=1139
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=38 send_us=330000 recv_us=147514488000 size=172 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=39 send_us=350000 recv_us=147514500000 size=162 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=40 send_us=370000 recv_us=147514483000 size=172 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=41 send_us=390000 recv_us=-1 size=191 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=42 send_us=410000 recv_us=147514529000 size=190 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=480000 fb_us=480000 tseq=43 send_us=410000 recv_us=147514527000 size=79 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=481 at_us=480414 sim_us=481000 ssrc=deadbeef seq=28495 size=165
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=482 at_us=481067 sim_us=482000 ssrc=c0ffed seq=28487 size=1252
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=499 at_us=498649 sim_us=499000 ssrc=badcafd seq=6898 size=869
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=500000 size=36 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=504 at_us=503430 sim_us=504000 ssrc=c0ffed seq=28489 size=855
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=504000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=513 at_us=512457 sim_us=513000 ssrc=deadbeef seq=28496 size=162
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=527 at_us=526562 sim_us=527000 ssrc=c0ffed seq=28488 size=1166
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=527 at_us=526793 sim_us=527000 ssrc=c0ffed seq=28491 size=1042
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=527000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=530 at_us=529407 sim_us=530000 ssrc=badcafd seq=6899 size=1343
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=41 send_us=390000 recv_us=147514537000 size=191 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=44 send_us=410000 recv_us=147514540000 size=1167 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=45 send_us=430000 recv_us=147514580000 size=897 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=46 send_us=430000 recv_us=-1 size=1371 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=47 send_us=430000 recv_us=147514562000 size=193 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=530000 fb_us=530000 tseq=48 send_us=430000 recv_us=147514563000 size=1280 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=541 at_us=540420 sim_us=541000 ssrc=c0ffed seq=28492 size=1042
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=542 at_us=541277 sim_us=542000 ssrc=deadbeef seq=28499 size=137
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=550000 size=36 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=559 at_us=558132 sim_us=559000 ssrc=deadbeef seq=28497 size=158
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=560 at_us=559735 sim_us=560000 ssrc=c0ffed seq=28495 size=1028
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=560000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=563 at_us=562714 sim_us=563000 ssrc=deadbeef seq=28498 size=148
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=566 at_us=565314 sim_us=566000 ssrc=c0ffed seq=28490 size=856
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=576 at_us=575360 sim_us=576000 ssrc=deadbeef seq=28500 size=132
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=46 send_us=430000 recv_us=147514611000 size=1371 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=49 send_us=430000 recv_us=147514608000 size=1194 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=50 send_us=450000 recv_us=147514594000 size=190 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=51 send_us=450000 recv_us=147514585000 size=883 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=52 send_us=450000 recv_us=-1 size=884 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=53 send_us=470000 recv_us=-1 size=186 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=54 send_us=470000 recv_us=147514608000 size=1070 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=55 send_us=470000 recv_us=147514622000 size=1070 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=56 send_us=490000 recv_us=-1 size=176 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=57 send_us=490000 recv_us=-1 size=870 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=58 send_us=490000 recv_us=-1 size=870 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=59 send_us=500000 recv_us=-1 size=1056 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=580000 fb_us=580000 tseq=60 send_us=510000 recv_us=147514623000 size=165 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=581 at_us=580040 sim_us=581000 ssrc=c0ffed seq=28496 size=1029
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=582 at_us=581834 sim_us=582000 ssrc=c0ffed seq=28493 size=842
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=583 at_us=582687 sim_us=583000 ssrc=c0ffed seq=28498 size=1045
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=583000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=589 at_us=588070 sim_us=589000 ssrc=badcafd seq=6900 size=1168
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=591 at_us=590969 sim_us=591000 ssrc=c0ffed seq=28497 size=1044
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=600000 size=44 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=602 at_us=601284 sim_us=602000 ssrc=badcafd seq=6901 size=858
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=605 at_us=604341 sim_us=605000 ssrc=c0ffed seq=28499 size=1100
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=621 at_us=620516 sim_us=621000 ssrc=c0ffed seq=28494 size=842
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=623 at_us=622517 sim_us=623000 ssrc=badcafd seq=6903 size=844
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=629 at_us=628350 sim_us=629000 ssrc=c0ffed seq=28500 size=1100
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=629 at_us=628797 sim_us=629000 ssrc=deadbeef seq=28501 size=125
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=52 send_us=450000 recv_us=147514647000 size=884 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=53 send_us=470000 recv_us=147514641000 size=186 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=56 send_us=490000 recv_us=147514644000 size=176 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=57 send_us=490000 recv_us=147514663000 size=870 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=58 send_us=490000 recv_us=-1 size=870 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=59 send_us=500000 recv_us=147514642000 size=1056 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=61 send_us=510000 recv_us=147514662000 size=1057 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=62 send_us=530000 recv_us=147514657000 size=160 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=63 send_us=533000 recv_us=147514673000 size=1072 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=64 send_us=533000 recv_us=147514664000 size=1073 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=630000 fb_us=630000 tseq=65 send_us=534000 recv_us=147514670000 size=1196 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=633 at_us=632984 sim_us=633000 ssrc=badcafd seq=6902 size=844
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=637 at_us=636751 sim_us=637000 ssrc=deadbeef seq=28503 size=123
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=640 at_us=639952 sim_us=640000 ssrc=badcafd seq=6904 size=1030
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=648 at_us=647405 sim_us=648000 ssrc=badcafd seq=6905 size=844
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=650000 size=52 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=659 at_us=658848 sim_us=659000 ssrc=deadbeef seq=28502 size=121
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=666 at_us=665642 sim_us=666000 ssrc=badcafd seq=6906 size=844
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=670 at_us=669759 sim_us=670000 ssrc=deadbeef seq=28505 size=139
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=675 at_us=674672 sim_us=675000 ssrc=c0ffed seq=28501 size=1092
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=58 send_us=490000 recv_us=147514702000 size=870 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=66 send_us=550000 recv_us=147514710000 size=153 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=67 send_us=557000 recv_us=147514683000 size=886 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=68 send_us=566000 recv_us=147514686000 size=1128 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=69 send_us=566000 recv_us=147514710000 size=1128 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=70 send_us=570000 recv_us=-1 size=149 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=71 send_us=580000 recv_us=147514715000 size=872 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=72 send_us=580000 recv_us=147514704000 size=872 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=73 send_us=590000 recv_us=147514718000 size=151 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=74 send_us=590000 recv_us=147514722000 size=1058 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=75 send_us=610000 recv_us=-1 size=161 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=680000 fb_us=680000 tseq=76 send_us=610000 recv_us=147514729000 size=872 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=687 at_us=686314 sim_us=687000 ssrc=badcafd seq=6907 size=1046
+Y453 issue_453_high_jitter_seed7.s7 rx tick_ms=690 at_us=689147 sim_us=690000 ssrc=deadbeef seq=28504 size=133
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=700000 size=40 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=715000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=70 send_us=570000 recv_us=147514740000 size=149 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=75 send_us=610000 recv_us=147514771000 size=161 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=77 send_us=610000 recv_us=147514747000 size=872 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=78 send_us=630000 recv_us=147514751000 size=167 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=79 send_us=630000 recv_us=147514768000 size=1074 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=730000 fb_us=730000 tseq=80 send_us=630000 recv_us=147514756000 size=1120 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=750000 size=28 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=754000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=773000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=81 send_us=650000 recv_us=147514792000 size=181 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=82 send_us=650000 recv_us=-1 size=1121 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=83 send_us=650000 recv_us=-1 size=1106 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=84 send_us=670000 recv_us=-1 size=188 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=85 send_us=670000 recv_us=-1 size=1107 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=86 send_us=670000 recv_us=147514796000 size=1025 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=780000 fb_us=780000 tseq=87 send_us=690000 recv_us=147514825000 size=181 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=800000 size=48 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=82 send_us=650000 recv_us=147514846000 size=1121 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=83 send_us=650000 recv_us=-1 size=1106 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=84 send_us=670000 recv_us=147514844000 size=188 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=85 send_us=670000 recv_us=147514859000 size=1107 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=88 send_us=690000 recv_us=147514840000 size=1025 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=89 send_us=700000 recv_us=-1 size=1016 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=90 send_us=700000 recv_us=147514835000 size=1017 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=91 send_us=710000 recv_us=147514863000 size=195 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=92 send_us=730000 recv_us=-1 size=203 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=93 send_us=733000 recv_us=147514862000 size=988 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=94 send_us=733000 recv_us=147514854000 size=989 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=95 send_us=745000 recv_us=147514877000 size=1123 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=96 send_us=745000 recv_us=147514879000 size=1108 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=97 send_us=745000 recv_us=-1 size=1109 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=830000 fb_us=830000 tseq=98 send_us=750000 recv_us=147514869000 size=193 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=850000 size=56 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=872000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=83 send_us=650000 recv_us=147514893000 size=1106 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=89 send_us=700000 recv_us=147514886000 size=1016 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=92 send_us=730000 recv_us=147514904000 size=203 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=97 send_us=745000 recv_us=-1 size=1109 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=99 send_us=766000 recv_us=147514887000 size=1094 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=100 send_us=766000 recv_us=147514916000 size=1095 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=101 send_us=770000 recv_us=147514907000 size=190 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=102 send_us=784000 recv_us=147514918000 size=1027 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=103 send_us=784000 recv_us=-1 size=1018 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=880000 fb_us=880000 tseq=104 send_us=790000 recv_us=147514913000 size=188 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=900000 size=44 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=97 send_us=745000 recv_us=147514935000 size=1109 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=103 send_us=784000 recv_us=147514969000 size=1018 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=105 send_us=800000 recv_us=147514933000 size=941 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=106 send_us=800000 recv_us=147514961000 size=942 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=107 send_us=810000 recv_us=147514936000 size=179 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=108 send_us=810000 recv_us=147514972000 size=990 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=109 send_us=830000 recv_us=-1 size=164 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=110 send_us=833000 recv_us=-1 size=1030 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=930000 fb_us=930000 tseq=111 send_us=833000 recv_us=147514953000 size=1031 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=950000 size=36 blocks= 205/15
+Y453 issue_453_high_jitter_seed7.s7 rtcp_out t_us=960000 size=92 blocks= 201/2 205/1 207/0
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=109 send_us=830000 recv_us=147515023000 size=164 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=110 send_us=833000 recv_us=147514983000 size=1030 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=112 send_us=850000 recv_us=147515003000 size=158 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=113 send_us=866000 recv_us=-1 size=886 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=114 send_us=866000 recv_us=-1 size=887 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=115 send_us=870000 recv_us=147514997000 size=159 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=116 send_us=890000 recv_us=147515022000 size=170 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=117 send_us=900000 recv_us=-1 size=1003 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=118 send_us=900000 recv_us=-1 size=1004 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=119 send_us=902000 recv_us=147515026000 size=944 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=120 send_us=902000 recv_us=-1 size=1032 probe=-1
+Y453 issue_453_high_jitter_seed7.s7 fb t_us=980000 fb_us=980000 tseq=121 send_us=910000 recv_us=147515028000 size=183 probe=-1
+
+issue_453_high_jitter_seed7 - high_jitter on seed 7 with the SPS/PPS tracker and the H.264 missing-packets hold on (yardstick for
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.1          0.2  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms            28           28  =
+  audio.mouth_to_ear_p95_ms               267          230  webrtc
+  audio.jb_delay_p95_ms                   150          110  webrtc
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                  20           28  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.6         29.6  =
+  video.e2e_delay_p95_ms                  153          133  webrtc
+  video.time_to_first_frame_ms            467          355  webrtc
+  video.avg_kbps                          442          516  webrtc
+  video.keyframe_requests                   2            2  =
+  sync.av_offset_p95_ms                    49         22.4  webrtc
+  cc.utilization_pct                     20.4         23.5  webrtc
+  cc.queue_p95_ms                         2.0          2.9  =
+  cc.max_settle_ms                      30000          300  webrtc
+  cc.rtt_p50_ms                            87           88  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                    35.4         46.6  sm
+  forward link per kind (information only)
+  net.audio_kbps                         67.3         68.4
+  net.video_kbps                          461          539
+  net.rtx_kbps                            184          263
+  net.padding_kbps                        3.7          1.6
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    184          184
+  net.audio_size_p90_b                    215          215
+  net.audio_size_max_b                    314          295
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1086         1123
+  net.video_size_p90_b                   1384         1333
+  net.video_size_max_b                   1485         1484
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1070         1150
+  net.rtx_size_p90_b                     1376         1362
+  net.rtx_size_max_b                     1482         1486
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
   net.padding_size_p90_b                  303          303
@@ -6090,7 +7483,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 219, webrtc 87, tie 2246 (of the metrics shown)
+better: sm 225, webrtc 96, tie 2275 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

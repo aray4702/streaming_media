@@ -1,12 +1,26 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-122 scenarios, mean of 10 seeds. **63 gaps**: 18 behind libwebrtc, 45 ahead of it; 1 without an owner.
+124 scenarios, mean of 10 seeds. **74 gaps**: 27 behind libwebrtc, 47 ahead of it; 2 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-63 gaps on `main`, 63 here: **0 closed, 0 opened**, 0 changed direction.
+65 gaps on `main`, 74 here: **0 closed, 9 opened**, 0 changed direction.
+
+Opened:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_453_high_jitter_seed7 | `audio.mouth_to_ear_p95_ms` | 267 | 230 | ±13.4 | behind | 1/1 | #63 |
+| issue_453_high_jitter_seed7 | `audio.jb_delay_p95_ms` | 150 | 110 | ±10 | behind | 1/1 | #63 |
+| issue_453_high_jitter_seed7 | `video.e2e_delay_p95_ms` | 153 | 133 | ±10 | behind | 1/1 | #24, #37 |
+| issue_453_high_jitter_seed7 | `video.time_to_first_frame_ms` | 467 | 355 | ±50 | behind | 1/1 | #24, #61 |
+| issue_453_high_jitter_seed7 | `video.avg_kbps` | 442 | 516 | ±25.8 | behind | 1/1 | #37, #61 |
+| issue_453_high_jitter_seed7 | `sync.av_offset_p95_ms` | 49 | 22.4 | ±10 | behind | 1/1 | **none** |
+| issue_453_high_jitter_seed7 | `cc.utilization_pct` | 20.4 | 23.5 | ±2 | behind | 1/1 | #19, #15, #48, #12, #61 |
+| issue_453_high_jitter_seed7 | `cc.max_settle_ms` | 30000 | 300 | ±1500 | behind | 1/1 | #15, #48, #61, #20 |
+| issue_453_high_jitter_seed7 | `repair.overhead_pct` | 35.4 | 46.6 | ±2.3 | ahead | 1/1 | #21, #7, #29 |
 
 ### Gaps
 
@@ -57,6 +71,17 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_430_av_outage_6s | `audio.mouth_to_ear_p95_ms` | 237 | 202 | ±27.8 | behind | 5/10 | #63 |
 | issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 97.8 | 68.8 | ±16.7 | behind | 5/10 | #446 |
 | issue_430_av_outage_6s | `video.e2e_delay_p95_ms` | 132 | 113 | ±10 | behind | 3/10 | #24, #37 |
+| issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 35.3 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29 |
+| issue_437_render_smoothing_very_low_capacity | `video.freeze_count` | 24.6 | 21.3 | ±2.2 | behind | 6/10 | #5, #37, #24 |
+| issue_453_high_jitter_seed7 | `audio.jb_delay_p95_ms` | 150 | 110 | ±10 | behind | 1/1 | #63 |
+| issue_453_high_jitter_seed7 | `audio.mouth_to_ear_p95_ms` | 267 | 230 | ±13.4 | behind | 1/1 | #63 |
+| issue_453_high_jitter_seed7 | `cc.max_settle_ms` | 30000 | 300 | ±1500 | behind | 1/1 | #15, #48, #61, #20 |
+| issue_453_high_jitter_seed7 | `cc.utilization_pct` | 20.4 | 23.5 | ±2 | behind | 1/1 | #19, #15, #48, #12, #61 |
+| issue_453_high_jitter_seed7 | `repair.overhead_pct` | 35.4 | 46.6 | ±2.3 | ahead | 1/1 | #21, #7, #29 |
+| issue_453_high_jitter_seed7 | `sync.av_offset_p95_ms` | 49 | 22.4 | ±10 | behind | 1/1 | **none** |
+| issue_453_high_jitter_seed7 | `video.avg_kbps` | 442 | 516 | ±25.8 | behind | 1/1 | #37, #61 |
+| issue_453_high_jitter_seed7 | `video.e2e_delay_p95_ms` | 153 | 133 | ±10 | behind | 1/1 | #24, #37 |
+| issue_453_high_jitter_seed7 | `video.time_to_first_frame_ms` | 467 | 355 | ±50 | behind | 1/1 | #24, #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1329 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
 | issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
@@ -81,4 +106,5 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
 | issue_127_all_v2_no_stall | `sync.av_offset_p95_ms` | 183 | 168 | ±12.4 | behind | 5/10 | **none** |
+| issue_453_high_jitter_seed7 | `sync.av_offset_p95_ms` | 49 | 22.4 | ±10 | behind | 1/1 | **none** |
 
