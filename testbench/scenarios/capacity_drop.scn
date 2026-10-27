@@ -2,6 +2,8 @@ name capacity_drop
 describe Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at 25 s
 # sm_compare runs 80 seeds here (#409): on 10 seeds the freeze-count cell (2.2 vs 1.7, behind on 5/10 by sign)
 # turns on seed spread, as the #420 cells did; 80 seeds place it, as #424 did for satellite.
+# Seeds 1-80 (#428, CI compare-webrtc at 9fa6389), ours / libwebrtc: freeze_count 1.93 / 2.09 (sd 0.7 / 0.8, ours higher
+# on 23, lower on 29 seeds), freeze_total_ms 2988 / 3019 (sd 226 / 296), so both freeze cells are in band.
 compare_seeds 80
 duration 40s
 at 0s  capacity=2500kbps delay=30ms queue=400ms
