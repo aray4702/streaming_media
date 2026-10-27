@@ -1,5 +1,10 @@
 name issue_53_cwnd_pushback
 describe Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shallow 100 ms buffer; the encoder must back off before the bottleneck drops its video (issue #53)
+# sm_compare runs 80 seeds here (#409): on 10 seeds the freeze cells (count 3.1 vs 2.3, total 1820 vs 1616 ms,
+# behind on 6/10 by sign) turn on seed spread, as the #420 cells did; 80 seeds place them, as #424 did for satellite.
+# Seeds 1-80 (#428, CI compare-webrtc at 9fa6389), ours / libwebrtc: freeze_count 2.75 / 2.74 (sd 0.9 / 0.7),
+# freeze_total_ms 1733 / 1693 (sd 279 / 225, ours higher on 44, lower on 36 seeds), so both freeze cells are in band.
+compare_seeds 80
 duration 25s
 at 0s  capacity=2500kbps delay=30ms queue=100ms
 at 8s  capacity=500kbps
