@@ -153,6 +153,31 @@ SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   SM_EXPECT_TRUE(r.TakeFeedback().keyframe.empty());
 }
 
+// RtpVideoStreamReceiver2::OnReceivedPayloadData: the NACK for a gap leaves with the packet that revealed it
+// (NackRequester::OnReceivedPacket, then SendBufferedRtcpFeedback), before the packet buffer or the next
+// process call. A packet reordered within the same millisecond is then NACKed too, as in libwebrtc (#411).
+SM_TEST(RtpReceiver, AGapIsNackedWhenItIsSeenEvenIfThePacketArrivesInTheSameTick) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  auto f0 = SendFrame(s, 0, true, 3000, Timestamp::Millis(0));
+  SM_ASSERT_GE(f0.size(), 3u);
+  auto late = RtpPacket::Parse(f0[1]);
+  SM_ASSERT_TRUE(late.has_value());
+  r.OnPacket(f0[0], Timestamp::Micros(20100));
+  r.OnPacket(f0[2], Timestamp::Micros(20300));  // Reveals the gap.
+  r.OnPacket(f0[1], Timestamp::Micros(20600));  // Reordered by 0.3 ms.
+  for (size_t i = 3; i < f0.size(); ++i) r.OnPacket(f0[i], Timestamp::Micros(20800));
+  r.Process(Timestamp::Millis(21));
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 1u);
+  SM_EXPECT_EQ(fb.nacks[0], late->seq);
+  SM_EXPECT_EQ(r.nack().pending(), 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 1u);
+  r.Process(Timestamp::Millis(200));
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+}
+
 SM_TEST(RtpReceiver, MissingFrameReferenceIsLeftToNack) {
   // libwebrtc keeps NACKing and asks for no keyframe until the decode time-out.
   RtpSender s(SenderCfg());
@@ -366,7 +391,9 @@ SM_TEST(RtpReceiver, TransportSequenceNumbersOfEveryPacketReachTheFeedbackBuilde
 }
 
 // RED + ULPFEC on the media SSRC (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader):
-// the lost media packet is recovered from FEC, and neither it nor the FEC packets are NACKed.
+// the lost media packet is recovered from FEC, and the FEC packets are not NACKed. The lost packet is
+// NACKed once, by the media packet after it, before its frame's FEC arrives (NackRequester::OnReceivedPacket
+// sends the request at once, #411); FEC recovers it, so it is not requested again.
 SM_TEST(RtpReceiver, UlpfecRecoversALostMediaPacket) {
   RtpSenderConfig sc = SenderCfg();
   sc.fec = true;
@@ -379,12 +406,16 @@ SM_TEST(RtpReceiver, UlpfecRecoversALostMediaPacket) {
   auto chunks = test::MakeTestFrameChunks(true, 4000, s.config().max_payload_size);
   s.SendVideoFrame(chunks, 0, Timestamp::Millis(0));
   size_t media = 0, fec = 0;
+  uint16_t lost_seq = 0;
   for (auto& p : Release(s, Timestamp::Millis(0))) {
     if (p.kind == PacketKind::kFec) {
       SM_EXPECT_TRUE(r.OnPacket(p.packet.Serialize(), Timestamp::Millis(30)) == ReceivedKind::kFec);
       ++fec;
     } else {
-      if (media++ == 1) continue;  // The second media packet is lost.
+      if (media++ == 1) {  // The second media packet is lost.
+        lost_seq = p.packet.seq;
+        continue;
+      }
       SM_EXPECT_TRUE(r.OnPacket(p.packet.Serialize(), Timestamp::Millis(20)) == ReceivedKind::kMedia);
     }
   }
@@ -397,9 +428,13 @@ SM_TEST(RtpReceiver, UlpfecRecoversALostMediaPacket) {
   SM_EXPECT_EQ(r.ulpfec()->GetPacketCounter().num_recovered_packets, 1u);
   SM_EXPECT_EQ(r.stats().fec, fec + 1);  // The second frame's FEC too.
   SM_EXPECT_EQ(r.stats().frames_received, 2u);  // The first complete with the recovered packet.
-  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  auto nacks = r.TakeFeedback().nacks;
+  SM_ASSERT_EQ(nacks.size(), 1u);
+  SM_EXPECT_EQ(nacks[0], lost_seq);
+  SM_EXPECT_EQ(r.nack().pending(), 0u);
   auto frames = Run(r, 61, 600);
   SM_EXPECT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
 }
 
 // A RED packet lost with no FEC to recover it is NACKed and resent on RTX with the RTX payload type

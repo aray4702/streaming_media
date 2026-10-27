@@ -47,7 +47,9 @@ ALGORITHMS = [
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. The NackTracker is libwebrtc's NackRequester (issue #23; the v1 policy was deleted in #167): "
                "it retries on libwebrtc's 20 ms process tick, gives up after kMaxNackRetries (100) without a keyframe request, and a list that would pass 1000 "
-               "entries is cleared and asks for a keyframe.",
+               "entries is cleared and asks for a keyframe. The first request for a gap leaves with the packet that revealed it "
+               "(`NackRequester::OnReceivedPacket`'s `GetNackBatch(kSeqNumOnly)`, sent before the packet buffer runs), so a packet "
+               "reordered within the same millisecond is NACKed too, as in libwebrtc (issue #411, `issue_411_nack_on_reorder`).",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),

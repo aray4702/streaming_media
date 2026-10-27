@@ -93,16 +93,30 @@ std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
       it = missing_.erase(it);  // libwebrtc gives up without a keyframe request.
       continue;
     }
-    if (due) {
-      out.push_back(static_cast<uint16_t>(it->first));
-      info.last_sent = now;
-      ++info.retries;
-      ++stats_.nack_requests;
-    }
+    if (due) Send(it->first, info, now, out);
     ++it;
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
+}
+
+// nack_requester.cc GetNackBatch(kSeqNumOnly): every request not sent yet whose `send_at_seq_num` the newest
+// packet has reached. That is the gap's own sequence number, because the reordering histogram stays empty
+// (OnReceivedPacket treats every packet as retransmitted, so WaitNumberOfPackets is 0).
+std::vector<uint16_t> NackTracker::GetSeqNumNackBatch(Timestamp now) {
+  std::vector<uint16_t> out;
+  for (auto& [seq, info] : missing_) {
+    if (info.retries == 0 && now - info.detected >= cfg_.reorder_wait) Send(seq, info, now, out);
+  }
+  if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
+  return out;
+}
+
+void NackTracker::Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out) {
+  out.push_back(static_cast<uint16_t>(seq));
+  info.last_sent = now;
+  ++info.retries;
+  ++stats_.nack_requests;
 }
 
 bool NackTracker::TakeKeyframeRequest() {

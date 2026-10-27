@@ -256,3 +256,23 @@ SM_TEST(NackTracker, RetriesOnTheTwentyMillisecondProcessTick) {
   for (int t = 2; t < 61; ++t) SM_EXPECT_TRUE(n.GetNackBatch(Ms(t)).empty());  // RTT passed at 51, tick at 21, 41, 61.
   SM_EXPECT_EQ(n.GetNackBatch(Ms(61)).size(), 1u);
 }
+
+// NackRequester::OnReceivedPacket sends GetNackBatch(kSeqNumOnly) with the packet that reveals the gap
+// (issue #411): a packet that is only reordered and arrives right after has been NACKed already, and the
+// next process call does not request it again.
+SM_TEST(NackTracker, SeqNumBatchRequestsTheGapAtOnceAndOnlyOnce) {
+  NackTracker n;
+  n.UpdateRtt(TimeDelta::Millis(50));
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(4, false, Ms(1));
+  auto batch = n.GetSeqNumNackBatch(Ms(1));
+  SM_ASSERT_EQ(batch.size(), 2u);
+  SM_EXPECT_EQ(batch[0], 2);
+  SM_EXPECT_EQ(batch[1], 3);
+  SM_EXPECT_TRUE(n.GetSeqNumNackBatch(Ms(1)).empty());  // Sent: only a retry, after the RTT, sends it again.
+  SM_EXPECT_EQ(n.OnReceivedPacket(2, false, Ms(1)), 1);  // Reordered, and NACKed once already.
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(1)).empty());
+  SM_EXPECT_EQ(n.stats().reordered, 0u);
+  SM_EXPECT_EQ(n.stats().nack_requests, 2u);
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(61)).size(), 1u);  // 3 is still missing: the 20 ms tick after the RTT retries it.
+}
