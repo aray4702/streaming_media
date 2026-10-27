@@ -18,22 +18,6 @@
    ]
   },
   {
-   "scenario": "capacity_drop",
-   "metric": "video.freeze_count",
-   "sm": 2.2,
-   "webrtc": 1.7,
-   "band": 0.5,
-   "direction": "behind",
-   "seeds_agree": 5,
-   "seeds": 10,
-   "owners": [
-    5,
-    37,
-    24,
-    409
-   ]
-  },
-  {
    "scenario": "high_jitter",
    "metric": "video.time_to_first_frame_ms",
    "sm": 228.1,
@@ -490,8 +474,8 @@
    "scenario": "issue_23_low_bandwidth",
    "metric": "sync.av_offset_p95_ms",
    "sm": 1311.06,
-   "webrtc": 1582.37,
-   "band": 228.81759781780576,
+   "webrtc": 1582.38,
+   "band": 228.8204623717031,
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
@@ -595,7 +579,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 1276.3,
    "webrtc": 1646.81,
-   "band": 212.23993913859746,
+   "band": 212.24133524782061,
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
@@ -685,6 +669,19 @@
    ]
   },
   {
+   "scenario": "issue_410_queue_sample_phase",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 220,
+   "webrtc": 130,
+   "band": 88.31760866327846,
+   "direction": "behind",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    63
+   ]
+  },
+  {
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "video.render_fps",
    "sm": 27.9325,
@@ -703,29 +700,13 @@
    "scenario": "issue_48_prober_low_bandwidth",
    "metric": "sync.av_offset_p95_ms",
    "sm": 1311.06,
-   "webrtc": 1582.37,
-   "band": 228.81759781780576,
+   "webrtc": 1582.38,
+   "band": 228.8204623717031,
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
     411
-   ]
-  },
-  {
-   "scenario": "issue_53_cwnd_pushback",
-   "metric": "video.freeze_count",
-   "sm": 3.1,
-   "webrtc": 2.3,
-   "band": 0.6749485577105528,
-   "direction": "behind",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    5,
-    37,
-    24,
-    409
    ]
   },
   {
@@ -776,8 +757,8 @@
    "scenario": "issue_76_rtx_v2_keyframe_flush",
    "metric": "sync.av_offset_p95_ms",
    "sm": 848.726,
-   "webrtc": 1035.71,
-   "band": 143.82690691089604,
+   "webrtc": 1035.7,
+   "band": 143.80641685342914,
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
@@ -833,8 +814,8 @@
    "scenario": "low_bandwidth",
    "metric": "sync.av_offset_p95_ms",
    "sm": 1311.06,
-   "webrtc": 1582.37,
-   "band": 228.81759781780576,
+   "webrtc": 1582.38,
+   "band": 228.8204623717031,
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
