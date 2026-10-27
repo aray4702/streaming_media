@@ -1,5 +1,7 @@
 name issue_124_burst_loss_v2
 describe 3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's burst_loss cell next to libwebrtc (issue #124)
+# sm_compare runs 80 seeds here, as `burst_loss` (the same run; #410).
+compare_seeds 80
 # `burst_loss` with the configuration PR #116 makes the default. Measured on main 74266b3, seeds 1-10 (ours / libwebrtc, parity-data of main):
 #   cc.queue_p95_ms 45-108 (mean 73.5) / 46.8 ; video.e2e_delay_p95_ms 188-241 (mean 210.7) / 213.0
 #   cc.utilization_pct 81.1-87.0 (mean 84.0) / 80.4 ; cc.target_avg_kbps 1787 / 1757 ; video.freeze_total_ms 640 / 1433

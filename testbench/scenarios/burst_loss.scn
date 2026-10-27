@@ -1,5 +1,9 @@
 name burst_loss
 describe 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
+# sm_compare runs 80 seeds here (#410). On seeds 1-10 audio.jb_delay_p95_ms is 194 vs 174, behind on 8/10 by sign;
+# GoogCC targets match within 0.5 % on seed 1 until the overuse times diverge, and NetEq's target follows the
+# arrival delay. Ours on seeds 1-80 (main f2d580c): 189.9 ms, sd 33.7 (libwebrtc's 10-seed sd is 16.5).
+compare_seeds 80
 duration 30s
 at 0s capacity=2000kbps delay=50ms loss=3% burst=6 queue=300ms
 expect audio.concealed_pct < 5
