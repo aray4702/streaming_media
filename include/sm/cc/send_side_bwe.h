@@ -75,6 +75,12 @@ struct NetworkControlUpdate {
   bool changed = false;
 };
 
+// libwebrtc's BitrateConstraints carry int bps (call/rtp_transport_controller_send.cc:68-83,
+// ConvertConstraints), so a host can't configure a finite min, start or max rate above INT_MAX bps
+// (about 2.1 Gbps). This saturates finite rates there; an infinite max stays infinite (issue #464:
+// a start rate of 1 Tbps or more built padding for a probe at that rate and ran out of memory).
+GccConfig ConvertConstraints(GccConfig cfg);
+
 class GccController : public MetricsSource {
  public:
   explicit GccController(GccConfig cfg = {});

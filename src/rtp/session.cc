@@ -19,6 +19,11 @@ RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   if (!r.events) r.events = c.events;
   return r;
 }
+// The rates as libwebrtc's int-bps BitrateConstraints can hold them (cc::ConvertConstraints, #464).
+SessionConfig WithIntConstraints(SessionConfig c) {
+  c.send_side.gcc = cc::ConvertConstraints(c.send_side.gcc);
+  return c;
+}
 SendSideConfig MakeSendConfig(const SessionConfig& c) {
   SendSideConfig s = c.send_side;
   if (!s.events) s.events = c.events;
@@ -44,7 +49,7 @@ OutgoingKind ToOutgoing(PacketKind k) {
 }  // namespace
 
 Session::Session(SessionConfig cfg)
-    : cfg_(std::move(cfg)),
+    : cfg_(WithIntConstraints(std::move(cfg))),
       rtcp_(MakeRtcpConfig(cfg_)),
       send_(MakeSendConfig(cfg_), &cfg_.extensions),
       tcc_(cfg_.local_ssrc, 0),
