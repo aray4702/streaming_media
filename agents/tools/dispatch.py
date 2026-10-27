@@ -39,7 +39,8 @@ import re
 import subprocess
 import sys
 
-BOT = "streaming-media-reviewer[bot]"
+BOT = "aray4702-reviewer-app[bot]"  # the Reviewer App (App ID 5320656); renamed from streaming-media-reviewer on 2026-10-26
+BOT_ID = 342667563  # its bot user id, which survives a rename; match on this
 ROADMAP = 64
 LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
@@ -96,6 +97,11 @@ def minutes_ago(s):
     return (NOW - ts(s)).total_seconds() / 60
 
 
+def is_bot(user):
+    """True for the Reviewer App's bot user."""
+    return (user or {}).get("id") == BOT_ID or (user or {}).get("login") == BOT
+
+
 def labels(item):
     return {l["name"] for l in item.get("labels", [])}
 
@@ -125,7 +131,7 @@ class Dispatcher:
 
     def bot_review(self, number):
         revs = [x for x in gh(f"repos/{self.r}/pulls/{number}/reviews?per_page=100") or []
-                if x["user"]["login"] == BOT]
+                if is_bot(x["user"])]
         return revs[-1] if revs else None
 
     def needs_human_cleared_after(self, number, when):

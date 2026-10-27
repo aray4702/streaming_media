@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Posts the Reviewer agent's output as streaming-media-reviewer[bot] by
+# Posts the Reviewer agent's output as aray4702-reviewer-app[bot] by
 # dispatching the reviewer-relay workflow, then waits for it and prints the
 # result. Usage: agents/tools/reviewer_post.sh payload.json
 # See agents/tools/reviewer_relay.py for the payload format.
