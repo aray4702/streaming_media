@@ -144,11 +144,13 @@ def render(tab, d, width=100, show_all=False):
     elif tab == "agents":
         for a in d["roles"]:
             lp = a["last_post"]
-            add(f"{a['role'].upper()}  cron '{a['cron']}' UTC · next {when(a['next'])} · routine {a['routine']}")
+            add(f"{a['role'].upper()}  cron '{a['cron']}' UTC · next {when(a['next'])} · routine {', '.join(a['routines'])}")
             add(f"  last post  {when(lp['at']) + ' on #' + str(lp['n']) if lp else 'none in 48 h'} · {a['posts_48h']} posts in 48 h")
             if lp:
                 add(f"             {cut(lp['first'], w - 14)}")
             add(f"  last started by the Dispatcher  {when(a['last_dispatch']) if a['last_dispatch'] else '-'}")
+            if a["role"] == "fixer":
+                add(f"  Fixer B (on demand) last started  {when(a['last_dispatch_b']) if a.get('last_dispatch_b') else 'not yet'}")
             add("")
         add(f"Your last own post: {when(d['owner_last']['at']) if d['owner_last'] else 'none in 48 h'}"
             f" · last Discord forward: {when(d['notify_last'])}")

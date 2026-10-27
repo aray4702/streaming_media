@@ -14,7 +14,8 @@ jobs:
   claude-review:
     # Skip pushes by the reviewer bot: they only merge main into the branch
     # (the Dispatcher's update-branch), and the action fails for bot actors.
-    if: github.actor != 'streaming-media-reviewer[bot]'
+    # Matched by the bot's user id (aray4702-reviewer-app[bot]), which survives a rename of the App.
+    if: github.event.sender.id != 342667563
     # Optional: Filter by PR author
     # if: |
     #   github.event.pull_request.user.login == 'external-contributor' ||
