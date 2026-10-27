@@ -6,6 +6,9 @@ describe video-only call, 4 s outage at 15 s on both paths: video returns about 
 #   video.pause_total_ms  6218 (6181-6279)          6189 (6131-6236)
 #   video.render_fps      25.26 (25.25-25.28)       25.24 (25.23-25.25)
 # Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
+# sm_compare runs 80 seeds here (#446): the 10-seed queue p95 cell (67.1 vs 52.7 ms, band +-13.8, behind on 7/10)
+# may be seed spread, as the #437 and #410 cells were; 80 seeds place it.
+compare_seeds 80
 seed 1
 duration 40s
 audio off
