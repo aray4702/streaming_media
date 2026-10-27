@@ -2,6 +2,8 @@ name very_low_capacity
 describe 100 kbps link (audio 32 kbps + video): the stage-1 checkpoint for very low capacity
 # sm_compare runs 80 seeds here (#437): after #435's NACK port the 10-seed freeze-count cell
 # (24.9 vs 21.3, behind on 8/10) may be seed spread, as the #420 and #409 cells were; 80 seeds place it.
+# Seeds 1-80 (#442, CI compare-webrtc at ac612be), ours / libwebrtc: freeze_count 25.3 / 20.3 (band +-4.2, behind on 61/80),
+# so it is a gap, and it predates #435 (ours 24.7 on seeds 1-80 before it). render_fps 12.3 / 8.5, overhead 32.5 / 50.5 %.
 compare_seeds 80
 duration 40s
 at 0s capacity=100kbps delay=30ms queue=300ms
