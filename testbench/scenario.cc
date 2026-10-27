@@ -338,6 +338,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "sps_pps_tracker") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: sps_pps_tracker on|off");
       s.sps_pps_tracker = tok[1] == "on";
+    } else if (key == "h264_missing_packets") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: h264_missing_packets on|off");
+      s.h264_missing_packets = tok[1] == "on";
     } else if (key == "encode_delay") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: encode_delay on|off");
       s.encode_delay = tok[1] == "on";
@@ -433,6 +436,8 @@ std::string FormatScenario(const Scenario& s) {
   if (s.rate_utilization_tracker != d.rate_utilization_tracker)
     o += std::string("rate_utilization_tracker ") + (s.rate_utilization_tracker ? "on" : "off") + "\n";
   if (s.sps_pps_tracker != d.sps_pps_tracker) o += std::string("sps_pps_tracker ") + (s.sps_pps_tracker ? "on" : "off") + "\n";
+  if (s.h264_missing_packets != d.h264_missing_packets)
+    o += std::string("h264_missing_packets ") + (s.h264_missing_packets ? "on" : "off") + "\n";
   if (s.encode_delay != d.encode_delay) o += std::string("encode_delay ") + (s.encode_delay ? "on" : "off") + "\n";
   if (s.control_handler != d.control_handler) o += std::string("control_handler ") + (s.control_handler ? "on" : "off") + "\n";
   if (s.send_rate_stats != d.send_rate_stats) o += std::string("send_rate_stats ") + (s.send_rate_stats ? "on" : "off") + "\n";

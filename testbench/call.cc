@@ -548,6 +548,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.max_payload_size = s.video_max_payload;
   video_cfg.parser = &parser;
   video_cfg.sps_pps_tracker = s.sps_pps_tracker;
+  video_cfg.packet_buffer.missing_packets = s.h264_missing_packets;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
   // A loss notification needs frame ids and dependencies from a generic

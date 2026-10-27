@@ -228,8 +228,14 @@ ALGORITHMS = [
                "doubling to 2048 when another unassembled packet maps to a slot, a clear plus a keyframe request when it is "
                "full at 2048, and a restart when a packet is 1024 behind the lowest sequence number. Packets leave at "
                "frame assembly, and the receiver also calls ClearTo(last sequence number) when a frame leaves the scheduler (issue #101): "
-               "it drops the packets up to it and ignores older ones; padding is kept only within a quarter of the buffer behind an insert.",
-         verification="No defects found."),
+               "it drops the packets up to it and ignores older ones; padding is kept only within a quarter of the buffer behind an insert. "
+               "`missing_packets` (off by default, issue #453): libwebrtc's H.264 rule in FindFrames and UpdateMissingPackets "
+               "(packet_buffer.cc): the sequence numbers not yet received below the newest one (at most 1000 behind it) are kept, "
+               "a complete frame without an IDR slice is held while one of them is at or before its first packet, a released "
+               "frame forgets the holes up to its last packet, padding fills a hole, ClearTo forgets the holes below it, and a "
+               "packet that arrives later releases the held frames it makes contiguous (FindFrames' walk forward).",
+         verification="No defects found. Issue #453: with `sps_pps_tracker on` and `h264_missing_packets on`, `high_jitter` "
+                      "seeds 1-10 keyframe requests 1.8 -> 1.2, the same as libwebrtc on 10 of 10 seeds."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
@@ -1484,14 +1490,16 @@ ALGORITHMS = [
                "libwebrtc (follow-up #47). `sps_pps_tracker` (off by default, issue #453): libwebrtc's "
                "H264SpsPpsTracker rule that drops the first packet of an IDR slice received before an SPS and a "
                "PPS and requests a keyframe (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe). "
-               "The tracker keeps no parameter-set ids, because the bench sends one SPS and one PPS. Remaining "
-               "difference (#453): libwebrtc's PacketBuffer holds an H.264 delta frame while an earlier packet is "
-               "missing (packet_buffer.cc, missing_packets_), so it sends no first-frame-delta keyframe request "
-               "where ours does.",
+               "The tracker keeps no parameter-set ids, because the bench sends one SPS and one PPS. With it, the "
+               "packet buffer's `missing_packets` hold (4.1, `VideoStreamConfig::packet_buffer`) keeps the delta "
+               "frames after a dropped IDR start from reaching the first-frame-delta keyframe request, as "
+               "libwebrtc's PacketBuffer does. Both are off by default; the flip is the Owner's call (#453).",
          verification="Introduced by #32 plan PRs 4 and 6. Per-suite results are recorded by ctest and CI; "
                       "tools/run_all.sh does not run these suites yet. Issue #453: with `sps_pps_tracker on`, "
                       "`high_jitter` seeds 1-10 time to first frame 228 -> 449 ms (libwebrtc 433) and keyframe "
-                      "requests 0.4 -> 1.7 (libwebrtc 1.2); the same value as libwebrtc on 5 of 10 seeds."),
+                      "requests 0.4 -> 1.8 (libwebrtc 1.2); the same value as libwebrtc on 5 of 10 seeds. With "
+                      "`h264_missing_packets on` as well, keyframe requests 1.2, the same as libwebrtc on 10 of 10 "
+                      "seeds (and on every seed of the other high_jitter copies)."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
          headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],

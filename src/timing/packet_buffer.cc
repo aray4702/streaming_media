@@ -27,6 +27,8 @@ void PacketBuffer::Clear() {
   packets_.clear();
   done_.clear();
   padding_.clear();
+  missing_.clear();
+  newest_inserted_ = INT64_MIN;
   cleared_to_first_seq_ = false;
   highest_ = INT64_MIN;
   first_inserted_ = INT64_MIN;
@@ -34,7 +36,8 @@ void PacketBuffer::Clear() {
   size_ = cfg_.start_size;
 }
 
-InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame) {
+InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame,
+                                  bool idr) {
   int64_t s = unwrapper_.Unwrap(p.seq);
   if (first_seq_ == INT64_MIN) {
     first_seq_ = s;
@@ -76,11 +79,13 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
   if (first_inserted_ == INT64_MIN) first_inserted_ = s;
   highest_ = std::max(highest_, s);
   ++stats_.inserted;
-  packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, now});
+  packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, idr, now});
+  if (cfg_.missing_packets) UpdateMissingPackets(s);
   // received_padding_.erase(begin, lower_bound(seq - buffer_.size() / 4)): padding only matters
   // near the packets being inserted.
   padding_.erase(padding_.begin(), padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
   TryAssemble(s);
+  if (cfg_.missing_packets) ReleaseHeldFrames(s + 1);
   Trim();
   return InsertResult::kInserted;
 }
@@ -90,17 +95,21 @@ void PacketBuffer::ClearTo(int64_t seq) {
   ++seq;
   packets_.erase(packets_.begin(), packets_.lower_bound(seq));
   padding_.erase(padding_.begin(), padding_.lower_bound(seq));
+  missing_.erase(missing_.begin(), missing_.lower_bound(seq));
   first_seq_ = seq;
   cleared_to_first_seq_ = true;
 }
 
 void PacketBuffer::NotePadding(uint16_t seq) {
   int64_t s = unwrapper_.Unwrap(seq);
+  // InsertPadding: the padding fills its hole, and FindFrames(seq + 1) runs.
+  if (cfg_.missing_packets) UpdateMissingPackets(s);
   if (highest_ != INT64_MIN && s + static_cast<int64_t>(cfg_.window) <= highest_) return;
   highest_ = std::max(highest_, s);
   done_.insert(s);
   padding_.insert(s);
   ++stats_.padding;
+  if (cfg_.missing_packets) ReleaseHeldFrames(s + 1);
   Trim();
 }
 
@@ -141,6 +150,21 @@ void PacketBuffer::TryAssemble(int64_t seq) {
     if (next == packets_.end()) return;
     last = last + 1;
   }
+  // FindFrames: an H.264 frame without an IDR slice is handed out only when
+  // no sequence number at or before its first packet is missing, so a delta
+  // frame never leaves ahead of a hole (packet_buffer.cc, "make sure there are
+  // no gaps in the packet sequence numbers up until this point").
+  if (cfg_.missing_packets) {
+    bool idr = false;
+    for (int64_t i = first; i <= last; ++i) idr = idr || packets_.at(i).idr;
+    if (!idr && missing_.upper_bound(first) != missing_.begin()) {
+      ++stats_.frames_held;
+      SM_EVENT(cfg_.events, packets_.at(seq).arrival, "packet_buffer", "frame_held", static_cast<double>(*missing_.begin()),
+               first);
+      return;
+    }
+    missing_.erase(missing_.begin(), missing_.upper_bound(last));
+  }
   AssembledFrame f;
   f.first_seq = first;
   f.last_seq = last;
@@ -158,6 +182,40 @@ void PacketBuffer::TryAssemble(int64_t seq) {
   ++stats_.frames_assembled;
   SM_EVENT(cfg_.events, f.last_arrival, "packet_buffer", "frame", static_cast<double>(last - first + 1), first);
   ready_.push_back(std::move(f));
+}
+
+// FindFrames walks forward from the packet just inserted for as long as the
+// packets are contiguous, so a packet that fills a hole also releases the
+// complete frames held behind it.
+void PacketBuffer::ReleaseHeldFrames(int64_t seq) {
+  for (int64_t n = seq; n <= highest_; ++n) {
+    auto it = packets_.find(n);
+    if (it != packets_.end()) {
+      if (it->second.packet.marker) TryAssemble(n);
+      continue;
+    }
+    if (!done_.count(n)) break;
+  }
+}
+
+// PacketBuffer::UpdateMissingPackets, with its kMaxPaddingAge of 1000.
+void PacketBuffer::UpdateMissingPackets(int64_t seq) {
+  constexpr int64_t kMaxPaddingAge = 1000;
+  if (newest_inserted_ == INT64_MIN) newest_inserted_ = seq;
+  if (seq > newest_inserted_) {
+    const int64_t old_seq_number = seq - kMaxPaddingAge;
+    missing_.erase(missing_.begin(), missing_.lower_bound(old_seq_number));
+    // Guard against inserting a large amount of missing packets if there is a
+    // jump in the sequence number.
+    if (old_seq_number > newest_inserted_) newest_inserted_ = old_seq_number;
+    ++newest_inserted_;
+    while (seq > newest_inserted_) {
+      missing_.insert(newest_inserted_);
+      ++newest_inserted_;
+    }
+  } else {
+    missing_.erase(seq);
+  }
 }
 
 void PacketBuffer::Trim() {
@@ -187,6 +245,7 @@ void PacketBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("cleared", stats_.cleared);
   w.Counter("reordered", stats_.reordered);
   w.Counter("frames_assembled", stats_.frames_assembled);
+  w.Counter("frames_held", stats_.frames_held);
   w.Gauge("buffered_packets", static_cast<double>(packets_.size()));
   w.Hist("reorder_distance", stats_.reorder_distance);
 }

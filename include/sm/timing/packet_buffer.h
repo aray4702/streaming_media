@@ -45,6 +45,16 @@ struct PacketBufferConfig {
   // restarts the buffer.
   size_t start_size = 512;
   size_t max_size = 2048;
+  // libwebrtc's `missing_packets_` rule for H.264 without a generic
+  // descriptor (packet_buffer.cc FindFrames, UpdateMissingPackets): the buffer
+  // keeps the sequence numbers not yet received below the newest one (at most
+  // 1000 behind it), and a complete frame without an IDR slice is held while
+  // one of them is at or before its first packet. A keyframe is released, and
+  // a released frame forgets the holes up to its last packet. A packet that
+  // arrives later releases the held frames it makes contiguous, as FindFrames'
+  // walk forward does. Off (today's behaviour) by default until it is judged
+  // against libwebrtc (issue #453).
+  bool missing_packets = false;
   EventSink* events = nullptr;
 };
 
@@ -56,6 +66,7 @@ struct PacketBufferStats {
   uint64_t padding = 0;          // Padding-only packets that held a sequence number.
   uint64_t reordered = 0;        // Arrived after a higher sequence number.
   uint64_t frames_assembled = 0;
+  uint64_t frames_held = 0;      // missing_packets: complete delta frames held behind a hole (each time).
   Histogram reorder_distance;    // Packets the late packet was behind.
 };
 
@@ -70,7 +81,11 @@ class PacketBuffer : public MetricsSource {
   // PPS). It then opens the frame only if the packet before it is known to
   // belong to the previous frame; if that one is missing, the buffer waits
   // for it (NACK recovers it) rather than hand over a frame without it.
-  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame = false);
+  //
+  // `idr`: the packet carries an IDR slice (or its first FU-A fragment), so a
+  // frame with it is an H.264 keyframe for the `missing_packets` rule.
+  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame = false,
+                      bool idr = false);
   // A padding-only packet occupied `seq`: it is received, there is nothing
   // to assemble, and it must not look like a hole (or a duplicate later).
   void NotePadding(uint16_t seq);
@@ -93,9 +108,12 @@ class PacketBuffer : public MetricsSource {
     RtpPacket packet;
     bool frame_start;
     bool may_continue_frame;
+    bool idr;
     Timestamp arrival;
   };
   void TryAssemble(int64_t seq);
+  void UpdateMissingPackets(int64_t seq);
+  void ReleaseHeldFrames(int64_t seq);
   void Trim();
   bool SlotTaken(int64_t seq) const;
   void Clear();
@@ -105,6 +123,8 @@ class PacketBuffer : public MetricsSource {
   std::map<int64_t, Entry> packets_;
   std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
   std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
+  std::set<int64_t> missing_;  // missing_packets: not received, below newest_inserted_.
+  int64_t newest_inserted_ = INT64_MIN;
   int64_t highest_ = INT64_MIN;
   size_t size_ = 0;                      // Current slot count.
   bool cleared_to_first_seq_ = false;    // ClearTo moved first_seq_; older packets are ignored.
