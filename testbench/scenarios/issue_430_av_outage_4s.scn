@@ -1,0 +1,18 @@
+name issue_430_av_outage_4s
+describe audio+video call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity, #430)
+# Tester repro from #430 (commit 9ad10c6): video returns 2.3 s after link-up, about 6.2 s after the last frame. libwebrtc does the same
+# (#433's compare-webrtc, seeds 1-10, @ 0d86dcc):
+#   metric                ours mean (min-max)       libwebrtc mean (min-max)
+#   video.pause_total_ms  6225 (6152-6727)          6183 (6157-6211)
+#   video.render_fps      25.26 (25.18-25.28)       25.24 (25.20-25.28)
+# Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
+seed 1
+duration 40s
+at 0s capacity=1500kbps delay=30ms queue=300ms
+at 15s down
+at 19s up
+reverse at 0s delay=30ms
+reverse at 15s down
+reverse at 19s up
+expect video.pause_total_ms < 6850
+expect video.render_fps > 22.7
