@@ -230,8 +230,8 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
   }
   // An IDR slice that starts a packet (no parameter sets in it) may follow
   // the parameter-set packet of the same access unit.
-  if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps) ==
-      timing::InsertResult::kBufferCleared) {
+  if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps,
+                            info.idr) == timing::InsertResult::kBufferCleared) {
     keyframes_.OnExternalRequest(now, "trigger_packet_buffer_cleared");
   }
 }

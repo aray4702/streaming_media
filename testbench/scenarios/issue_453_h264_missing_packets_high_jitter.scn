@@ -1,0 +1,18 @@
+name issue_453_h264_missing_packets_high_jitter
+describe high_jitter with the SPS/PPS tracker and the packet buffer's H.264 missing-packets hold on: the delta frames after a dropped IDR start wait for the next keyframe instead of drawing a second keyframe request, as libwebrtc (issue #453)
+# libwebrtc's PacketBuffer::FindFrames (modules/video_coding/packet_buffer.cc) hands out an H.264 frame without an
+# IDR only when no earlier sequence number is missing (missing_packets_, UpdateMissingPackets). The IDR start that
+# H264SpsPpsTracker dropped stays missing, so the deltas after it never reach RtpVideoStreamReceiver2::OnAssembledFrame
+# and its first-frame-delta keyframe request is not sent. Seed 3, libwebrtc (parity-data compare-webrtc.json):
+# time to first frame 469 ms, 1 keyframe request. Ours: tracker alone 453 ms / 2 requests; with the hold 453 ms / 1.
+# 10 seeds (1-10), ours tracker alone / both / libwebrtc: keyframe requests 1.8 / 1.2 / 1.2 (equal to libwebrtc on
+# 10 of 10 seeds with both); time to first frame 449 / 449 / 433 ms.
+duration 30s
+seed 3
+sps_pps_tracker on
+h264_missing_packets on
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect video.time_to_first_frame_ms > 400
+expect video.keyframe_requests == 1
+expect audio.interruptions == 0
+expect audio.concealed_pct < 2

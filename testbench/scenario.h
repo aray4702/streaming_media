@@ -97,6 +97,10 @@ struct Scenario {
   // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
   // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
   bool render_smoothing = false;
+  // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
+  // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
+  // (timing::PacketBufferConfig::missing_packets; issue #453). Off by default until it is judged.
+  bool h264_missing_packets = false;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; on by default since #84's flip, on both stacks of
