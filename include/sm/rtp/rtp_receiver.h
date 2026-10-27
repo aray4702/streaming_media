@@ -47,6 +47,7 @@
 #include "sm/timing/vcm_timing.h"
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/frame_scheduler.h"
+#include "sm/video/render_frames.h"
 
 namespace sm::rtp {
 
@@ -127,6 +128,14 @@ struct RtpReceiverConfig {
   // it as received, so it is not retransmitted. Off (today's behaviour) by
   // default until it is judged against libwebrtc (issue #453).
   bool sps_pps_tracker = false;
+  // libwebrtc's pre-render smoothing (IncomingVideoStream + VideoRenderFrames,
+  // video::RenderFrames), which VideoReceiveStream2 runs between the decoder and
+  // the renderer when `enable_prerenderer_smoothing` is on, its default: a decoded
+  // frame waits until `timing.render_delay` before its render time, and of several
+  // due at once only the newest is shown. Frames it drops come out with
+  // `render` false. Off (today's behaviour) by default until it is judged against
+  // libwebrtc (issue #437).
+  bool render_smoothing = false;
   bool deliver_bitstream = true;  // Rebuild each frame's bitstream (ReceivedFrame::bitstream).
   // Video RED + ULPFEC on the media SSRC, with `ulpfec`'s payload types.
   bool fec = false;
@@ -254,6 +263,7 @@ class RtpReceiver : public MetricsSource {
   const timing::PacketBuffer& packet_buffer() const { return packet_buffer_; }
   const loss::KeyframeRequester& keyframes() const { return keyframes_; }
   const video::FrameScheduler& scheduler() const { return scheduler_; }
+  const video::RenderFrames& render_frames() const { return render_frames_; }
   const timing::VideoJitterEstimator& video_jitter() const { return video_jitter_; }
   const timing::VideoTiming& video_timing() const { return video_timing_; }
   const timing::VcmTiming& vcm_timing() const { return vcm_timing_; }
@@ -288,6 +298,8 @@ class RtpReceiver : public MetricsSource {
   video::FrameScheduler scheduler_;
   timing::VcmTiming vcm_timing_;            // timing v2.
   timing::FrameReleaseController release_;  // timing v2.
+  video::RenderFrames render_frames_;       // render_smoothing.
+  std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
   SeqNumUnwrapper<uint16_t> unwrap_;

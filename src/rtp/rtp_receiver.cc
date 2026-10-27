@@ -65,6 +65,7 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       scheduler_(SchedulerCfg(cfg_)),
       vcm_timing_(VcmTimingCfg(cfg_)),
       release_(&vcm_timing_, ReleaseCfg(cfg_)),
+      render_frames_({cfg_.timing.render_delay, cfg_.events}),
       jitter_buffer_(JitterCfg(cfg_)),
       stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {
   if (cfg_.video && cfg_.fec) {
@@ -349,6 +350,8 @@ void RtpReceiver::Process(Timestamp now) {
     keyframes_.OnExternalRequest(now, "trigger_nack_list_full");
   }
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
+  // IncomingVideoStream's delayed Dequeue task, if due, before this step's decoded frames.
+  if (cfg_.render_smoothing) render_frames_.Process(now);
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
     auto it = frames_.find(id);
     // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before its
@@ -382,7 +385,12 @@ void RtpReceiver::Process(Timestamp now) {
     r.lateness = lateness;
     r.size_bytes = it->second.size_bytes;
     r.bitstream = std::move(it->second.bitstream);
-    out_frames_.push_back(r);
+    if (cfg_.render_smoothing && render) {
+      render_pending_[id] = std::move(r);
+      render_frames_.OnFrame(id, render_time, now);
+    } else {
+      out_frames_.push_back(std::move(r));
+    }
     frames_.erase(it);
     // RtpVideoStreamReceiver2::FrameDecoded: the packet buffer drops what the decoded frame used.
     packet_buffer_.ClearTo(id);
@@ -395,6 +403,13 @@ void RtpReceiver::Process(Timestamp now) {
     for (const auto& a : release_.Process(now, cfg_.decode_time)) emit(a.id, a.decode, a.render_time, a.lateness);
   } else {
     for (const auto& a : scheduler_.Process(now)) emit(a.id, a.render, a.render_time, a.lateness);
+  }
+  for (const auto& d : render_frames_.TakeDecisions()) {
+    auto it = render_pending_.find(d.id);
+    if (it == render_pending_.end()) continue;
+    it->second.render = d.render;
+    out_frames_.push_back(std::move(it->second));
+    render_pending_.erase(it);
   }
   if (cfg_.nack) {
     auto batch = nack_.GetNackBatch(now);
