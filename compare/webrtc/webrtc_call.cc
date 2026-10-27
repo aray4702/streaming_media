@@ -212,10 +212,23 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
     return inner_->OnNetworkStateEstimate(m);
   }
   bool SupportsEcnAdaptation() const override { return inner_->SupportsEcnAdaptation(); }
+  std::string dump_tag;  // Yardstick for #453.
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
     if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
     const size_t first_row = rows_->size();
+    // Yardstick for #453 (draft PR, not for merge): every packet result GoogCC is given in the first 2 s.
+    if (!dump_tag.empty() && now_us_() < 2000000) {
+      for (const w::PacketResult& p : m.packet_feedbacks) {
+        std::fprintf(stderr, "Y453 %s fb t_us=%lld fb_us=%lld tseq=%lld send_us=%lld recv_us=%lld size=%lld probe=%d\n",
+                     dump_tag.c_str(), static_cast<long long>(now_us_()),
+                     static_cast<long long>((m.feedback_time - t0_).us()),
+                     static_cast<long long>(p.sent_packet.sequence_number),
+                     static_cast<long long>((p.sent_packet.send_time - t0_).us()),
+                     static_cast<long long>(p.receive_time.IsFinite() ? p.receive_time.us() : -1),
+                     static_cast<long long>(p.sent_packet.size.bytes()), p.sent_packet.pacing_info.probe_cluster_id);
+      }
+    }
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
     using P = w::GoogCcStatePrinter;
@@ -282,8 +295,11 @@ class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
       : now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
   std::unique_ptr<w::NetworkControllerInterface> Create(w::NetworkControllerConfig config) override {
     const w::Environment env = config.env;
-    return std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_);
+    auto c = std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_);
+    c->dump_tag = dump_tag;
+    return c;
   }
+  std::string dump_tag;  // Yardstick for #453.
   w::TimeDelta GetProcessInterval() const override { return inner_.GetProcessInterval(); }
 
  private:
@@ -663,6 +679,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
   }
   DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
+  // Yardstick for #453: the first 2 s of high_jitter, every seed.
+  const bool dump453 = s.name == "high_jitter";
+  const std::string tag453 = s.name + ".s" + std::to_string(s.seed);
+  if (dump453) detector_trace.dump_tag = tag453;
   const w::Environment sender_env = sender_env_factory.Create();
   QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
   if (opt.video_trace && s.video && s.quality_scaling) qs_log.Start();
@@ -813,6 +833,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
+    if (dump453 && (sim.Now() - t0).ms() < 2000) {
+      // Yardstick for #453: each RTCP block the receiver sends (PT/FMT), e.g. 205/15 transport-cc, 206/1 PLI.
+      std::string blocks;
+      for (size_t off = 0; off + 4 <= data.size();) {
+        blocks += " " + std::to_string(data[off + 1]) + "/" + std::to_string(data[off] & 0x1f);
+        off += 4 * (static_cast<size_t>((data[off + 2] << 8) | data[off + 3]) + 1);
+      }
+      std::fprintf(stderr, "Y453 %s rtcp_out t_us=%lld size=%zu blocks=%s\n", tag453.c_str(),
+                   static_cast<long long>((sim.Now() - t0).us()), data.size(), blocks.c_str());
+    }
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
   });
@@ -1034,6 +1064,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       RtpInfo r = ParseRtp(p.data);
       if (!r.ok) return;
       const int64_t wire = static_cast<int64_t>(p.data.size()) + kUdpIpOverhead;
+      if (dump453 && t < 2000) {
+        // Yardstick for #453: when each RTP packet arrives (link time) and the tick that delivers it.
+        std::fprintf(stderr, "Y453 %s rx tick_ms=%lld at_us=%lld sim_us=%lld ssrc=%x seq=%u size=%zu\n", tag453.c_str(),
+                     static_cast<long long>(t), static_cast<long long>(at.us()),
+                     static_cast<long long>((sim.Now() - t0).us()), r.ssrc, static_cast<unsigned>(r.seq), p.data.size());
+      }
       if (r.payload_len > 0) {
         // Each media sequence number counts once, as the test bench counts it (#329).
         bool first = true;
