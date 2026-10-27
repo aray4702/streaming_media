@@ -12,6 +12,7 @@
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
 #include "sm/video/quality_scaler.h"
+#include "sm/video/render_frames.h"
 #include "sm/video/video_stream_adapter.h"
 #include "sm_test.h"
 
@@ -333,6 +334,86 @@ SM_TEST(FrameScheduler, FastForwardOnHugeBacklog) {
   SM_EXPECT_EQ(a.size(), 19u);
   SM_EXPECT_EQ(s.queued(), 1u);
   SM_EXPECT_EQ(s.stats().fast_forwards, 1u);
+}
+
+// RenderFrames ports libwebrtc M157's IncomingVideoStream + VideoRenderFrames
+// (video/render/incoming_video_stream.cc, video/render/video_render_frames.cc; issue #437).
+SM_TEST(RenderFrames, FrameIntoEmptyQueueRendersAtOnceWhenDue) {
+  RenderFrames r;
+  r.OnFrame(1, Ms(100), Ms(90));  // Released render_delay (10 ms) before its render time.
+  auto d = r.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 1u);
+  SM_EXPECT_EQ(d[0].id, 1);
+  SM_EXPECT_TRUE(d[0].render);
+  SM_EXPECT_EQ(r.queued(), 0u);
+  SM_EXPECT_FALSE(r.NextWakeup().IsFinite());
+}
+
+SM_TEST(RenderFrames, WaitsUntilRenderTimeMinusRenderDelay) {
+  RenderFrames r;
+  r.OnFrame(1, Ms(100), Ms(50));
+  SM_EXPECT_TRUE(r.TakeDecisions().empty());
+  SM_EXPECT_EQ(r.NextWakeup().ms(), 90);  // Dequeue's PostDelayedHighPrecisionTask.
+  r.Process(Ms(89));
+  SM_EXPECT_TRUE(r.TakeDecisions().empty());
+  r.Process(Ms(90));
+  auto d = r.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 1u);
+  SM_EXPECT_TRUE(d[0].render);
+}
+
+SM_TEST(RenderFrames, OnlyNewestOfSeveralDueFramesRenders) {
+  RenderFrames r;
+  r.OnFrame(1, Ms(100), Ms(0));
+  r.OnFrame(2, Ms(110), Ms(0));
+  r.OnFrame(3, Ms(120), Ms(0));
+  SM_EXPECT_EQ(r.queued(), 3u);
+  r.Process(Ms(200));  // The dequeue ran late: all three are due (FrameToRender).
+  auto d = r.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 3u);
+  SM_EXPECT_FALSE(d[0].render);
+  SM_EXPECT_FALSE(d[1].render);
+  SM_EXPECT_TRUE(d[2].render);
+  SM_EXPECT_EQ(d[2].id, 3);
+  SM_EXPECT_EQ(r.stats().dropped_skipped, 2u);
+  SM_EXPECT_EQ(r.stats().rendered, 1u);
+}
+
+SM_TEST(RenderFrames, OldFrameDroppedOnlyWhenOthersWait) {
+  RenderFrames alone;
+  alone.OnFrame(1, Ms(100), Ms(700));  // 600 ms old, but the queue is empty: rendered.
+  auto d = alone.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 1u);
+  SM_EXPECT_TRUE(d[0].render);
+
+  RenderFrames r;
+  r.OnFrame(1, Ms(100), Ms(0));    // Waits until 90.
+  r.OnFrame(2, Ms(105), Ms(606));  // 501 ms old (kOldRenderTimestampMS) with frame 1 waiting.
+  d = r.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 1u);
+  SM_EXPECT_EQ(d[0].id, 2);
+  SM_EXPECT_FALSE(d[0].render);
+  SM_EXPECT_EQ(r.stats().dropped_old, 1u);
+}
+
+SM_TEST(RenderFrames, OutOfOrderAndFarFutureFramesDropped) {
+  RenderFrames r;
+  r.OnFrame(1, Ms(500), Ms(0));
+  r.OnFrame(2, Ms(400), Ms(0));    // Earlier render time than the last queued frame.
+  r.OnFrame(3, Ms(10001), Ms(0));  // More than 10 s ahead (kFutureRenderTimestampMS).
+  auto d = r.TakeDecisions();
+  SM_ASSERT_EQ(d.size(), 2u);
+  SM_EXPECT_EQ(d[0].id, 2);
+  SM_EXPECT_EQ(d[1].id, 3);
+  SM_EXPECT_EQ(r.stats().dropped_out_of_order, 1u);
+  SM_EXPECT_EQ(r.stats().dropped_future, 1u);
+  SM_EXPECT_EQ(r.queued(), 1u);
+}
+
+SM_TEST(RenderFrames, InvalidRenderDelayBecomesTenMs) {
+  SM_EXPECT_EQ(RenderFrames({TimeDelta::Millis(600)}).render_delay().ms(), 10);  // EnsureValidRenderDelay.
+  SM_EXPECT_EQ(RenderFrames({TimeDelta::Millis(5)}).render_delay().ms(), 10);
+  SM_EXPECT_EQ(RenderFrames({TimeDelta::Millis(40)}).render_delay().ms(), 40);
 }
 
 SM_TEST(QualityScaler, ThresholdsAndSignals) {

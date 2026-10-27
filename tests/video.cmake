@@ -10,6 +10,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     FreezeDetector
     Orientation
     QualityScaler
+    RenderFrames
     VideoAdapter
     VideoStreamAdapter
 )
