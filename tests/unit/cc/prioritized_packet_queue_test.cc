@@ -265,7 +265,8 @@ SM_TEST(PrioritizedPacketQueue, ClearPacketsAffectsOnlySpecifiedSsrc) {
   // A video packet and a retransmission of the stream being removed, first in line.
   queue.Push(now, CreatePacket(PacketPriority::kVideo, 1));
   queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 2));
-  // An audio packet and a padding packet, which are other streams.
+  // An audio packet and a padding packet. Audio is another stream; padding stays only with the default
+  // include_padding = false (libwebrtc sends it on the RTX SSRC and clears it: ClearPacketsIncludesPaddingOnRequest).
   queue.Push(now, CreatePacket(PacketPriority::kAudio, 3));
   queue.Push(now, CreatePacket(PacketPriority::kPadding, 4));
   SM_EXPECT_EQ(queue.SizeInPackets(), 4u);
