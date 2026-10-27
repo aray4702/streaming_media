@@ -1,19 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-123 scenarios, mean of 10 seeds. **74 gaps**: 27 behind libwebrtc, 47 ahead of it; 1 without an owner.
+124 scenarios, mean of 10 seeds. **76 gaps**: 28 behind libwebrtc, 48 ahead of it; 1 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-65 gaps on `main`, 74 here: **2 closed, 11 opened**, 0 changed direction.
-
-Closed:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_437_render_smoothing_very_low_capacity | `video.freeze_count` | 24.6 | 21.3 | ±2.2 | behind | 6/10 | #5, #37, #24 |
-| issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 35.3 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29 |
+65 gaps on `main`, 76 here: **0 closed, 11 opened**, 0 changed direction.
 
 Opened:
 
@@ -80,6 +73,8 @@ Opened:
 | issue_430_av_outage_6s | `audio.mouth_to_ear_p95_ms` | 237 | 202 | ±27.8 | behind | 5/10 | #63 |
 | issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 97.8 | 68.8 | ±16.7 | behind | 5/10 | #446 |
 | issue_430_av_outage_6s | `video.e2e_delay_p95_ms` | 132 | 113 | ±10 | behind | 3/10 | #24, #37 |
+| issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 35.3 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29 |
+| issue_437_render_smoothing_very_low_capacity | `video.freeze_count` | 24.6 | 21.3 | ±2.2 | behind | 6/10 | #5, #37, #24 |
 | issue_451_host_rtt_near_limit | `audio.mouth_to_ear_p95_ms` | 583 | 744 | ±75.9 | ahead | 10/10 | #63 |
 | issue_451_host_rtt_near_limit | `cc.max_settle_ms` | 12000 | 9140 | ±1024 | behind | 10/10 | #15, #48, #61, #20 |
 | issue_451_host_rtt_near_limit | `cc.queue_p95_ms` | 136 | 267 | ±49.0 | ahead | 10/10 | #19, #15, #48, #12, #61 |

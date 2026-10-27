@@ -678,6 +678,36 @@
    ]
   },
   {
+   "scenario": "issue_437_render_smoothing_very_low_capacity",
+   "metric": "video.freeze_count",
+   "sm": 24.6,
+   "webrtc": 21.3,
+   "band": 2.2135943621178655,
+   "direction": "behind",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    5,
+    37,
+    24
+   ]
+  },
+  {
+   "scenario": "issue_437_render_smoothing_very_low_capacity",
+   "metric": "repair.overhead_pct",
+   "sm": 35.2894,
+   "webrtc": 55.6336,
+   "band": 12.024832300650921,
+   "direction": "ahead",
+   "seeds_agree": 10,
+   "seeds": 10,
+   "owners": [
+    21,
+    7,
+    29
+   ]
+  },
+  {
    "scenario": "issue_451_host_rtt_near_limit",
    "metric": "audio.mouth_to_ear_p95_ms",
    "sm": 582.59,
