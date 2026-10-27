@@ -20,8 +20,14 @@ python3 tools/testbench_compare.py testbench/baseline.json r.json         # regr
 
 It exits with 1 if any `expect` line fails and 2 on a usage or parse error.
 The same seed gives the same result on a given platform and compiler.
-Simulated time runs about 250x faster than real time, so a 30 s call takes
-around 0.1 s.
+Simulated time runs about 30-50x faster than real time with audio, so a
+30 s call takes around 1 s; libopus's encoder is most of it.
+
+The bench encodes its audio with libopus 55513e81, the revision libwebrtc
+M157 builds (issue #457). CMake fetches it with `git` from GitHub's
+`xiph/opus` at configure time (`cmake/SmOpus.cmake`); pass
+`-DSM_OPUS_SOURCE_DIR=<checkout>` to use a local copy. The library itself
+has no dependencies.
 
 ## The call
 
@@ -117,13 +123,14 @@ One directive per line, and `#` starts a comment.
 | `seed <n>` | `1` | Seed for every random process |
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
-| `audio_rate <rate>` | `32kbps` | Audio codec bitrate |
+| `audio_rate <rate>` | `32kbps` | Audio codec bitrate (libopus 55513e81, as libwebrtc sets it up: `testbench/opus_encoder.h`, #457) |
 | `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | The capture rate. The codec, RTP clock and NetEq run at it at 8, 16, 32 and 48 kHz; at 12, 24 and 44.1 kHz at Opus's 48 kHz clock, as libwebrtc resamples the capture to the encoder (#298) |
 | `video_fps <n>` | 30 | |
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
 | `encoder_speed <x>` | 1 | CPU speed for the encoder model's encode time: 10 ms per 720p frame at 1, reported in the video trace (#84) |
 | `sps_pps_tracker on\|off` | off | `on`: the receiver drops the first packet of an IDR slice that arrives before an SPS and a PPS and requests a keyframe, as libwebrtc's `H264SpsPpsTracker` (#453) |
+| `render_smoothing on\|off` | off | `on`: decoded frames pass libwebrtc's pre-render queue (`IncomingVideoStream` / `VideoRenderFrames`): a frame waits until 10 ms before its render time, of several due at once only the newest renders, and late or out-of-order frames are dropped, as `sm_compare`'s libwebrtc side does by default (#437) |
 | `h264_missing_packets on\|off` | off | `on`: the receiver's packet buffer holds a complete H.264 delta frame while a sequence number before it is missing, as libwebrtc's `PacketBuffer` `missing_packets_` (#453) |
 | `encode_delay on\|off` | off | `on` makes the encode time real on both stacks: a frame reaches the library (`OnEncoded`) and the sender that long after its capture, which libwebrtc's CPU overuse detector measures (#84) |
 | `video_max_payload <bytes>` | 1446 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). `sm_compare`'s libwebrtc side keeps its default |

@@ -93,6 +93,10 @@ struct Scenario {
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). Off by default until it is judged.
   bool sps_pps_tracker = false;
+  // `render_smoothing on|off`: decoded frames pass libwebrtc's pre-render queue (IncomingVideoStream,
+  // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
+  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
+  bool render_smoothing = false;
   // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
   // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
   // (timing::PacketBufferConfig::missing_packets; issue #453). Off by default until it is judged.

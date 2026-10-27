@@ -14,7 +14,7 @@
 #include <unordered_map>
 
 #include "encoder_model.h"
-#include "opus_model.h"
+#include "opus_encoder.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/random.h"
@@ -96,10 +96,10 @@ uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
 
-// The modelled audio codec: a frame is identified by its RTP timestamp, and
-// decodes to the matching 20 ms of the speech signal. A frame flagged with
-// LBRR (testbench/opus_model.h) also decodes the frame before it, as
-// AudioDecoderOpusImpl does; its lower quality is not modelled.
+// The modelled audio decoder: a frame is identified by its RTP timestamp, and
+// decodes to the matching 20 ms of the speech signal. A libopus packet with an
+// LBRR copy (WebRtcOpus_PacketHasFec, testbench/opus_encoder.h) also decodes the
+// frame before it, as AudioDecoderOpusImpl does; its lower quality is not modelled.
 class SpeechDecoder : public rtp::AudioDecoder {
  public:
   SpeechDecoder(const std::vector<float>& speech, size_t frame_samples) : speech_(speech), frame_samples_(frame_samples) {}
@@ -110,7 +110,7 @@ class SpeechDecoder : public rtp::AudioDecoder {
                               speech_.begin() + static_cast<std::ptrdiff_t>(off + frame_samples_));
   }
   uint32_t FecDuration(std::span<const uint8_t> frame) const override {
-    return !frame.empty() && (frame[0] & kLbrrFlag) ? static_cast<uint32_t>(frame_samples_) : 0;
+    return OpusSendEncoder::PacketHasFec(frame) ? static_cast<uint32_t>(frame_samples_) : 0;
   }
   std::optional<std::vector<float>> DecodeFec(std::span<const uint8_t> frame, uint32_t rtp_timestamp) override {
     return Decode(frame, rtp_timestamp);
@@ -474,11 +474,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
               : DataRate::Zero();
   Random enc_rng(s.seed + 13);
-  // Opus's encoded size follows the signal (testbench/opus_model.h).
-  OpusSizeModel opus_model(s.seed + 17, OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0));
+  // libopus encodes what sm_compare gives libwebrtc: the 48 kHz signal as 16-bit PCM (testbench/opus_encoder.h).
+  std::vector<int16_t> opus_pcm;
+  if (s.audio) {
+    for (float v : sim::SpeechLike(OpusDefaults::kSampleRateHz, s.duration.seconds() + 1, s.seed + 7, true)) {
+      opus_pcm.push_back(OpusSendEncoder::ToPcm(v));
+    }
+  }
+  OpusSendEncoder opus_encoder(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), /*fec_enabled=*/true);
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
-  OpusFecDecision opus_fec;  // libopus's decide_fec (testbench/opus_model.h).
-  bool lbrr_pending = false;  // The last frame was coded LBRR: the next packet carries the copy.
   SpeechDecoder decoder(speech, frame_samples);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
@@ -548,6 +552,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.max_payload_size = s.video_max_payload;
   video_cfg.parser = &parser;
   video_cfg.sps_pps_tracker = s.sps_pps_tracker;
+  video_cfg.render_smoothing = s.render_smoothing;
   video_cfg.packet_buffer.missing_packets = s.h264_missing_packets;
   video_cfg.media_observer = &received_seqs;
   video_cfg.nack = s.nack;
@@ -751,14 +756,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // packets share a 5 ms send group in the delay-based detector (issue #124).
     if (s.audio && t % 20 == 10) {
       const int64_t k = t / 20;
-      const size_t off = static_cast<size_t>(k) * frame_samples;
-      const size_t n = off < speech.size() ? std::min(frame_samples, speech.size() - off) : 0;
-      const bool lbrr = lbrr_pending;
-      const bool lbrr_coded = opus_fec.Update(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), opus_loss.percent());
-      const size_t frame_bytes = opus_model.NextFrameBytes(std::span<const float>(speech.data() + off, n));
-      lbrr_pending = lbrr_coded && opus_model.LastFrameActive();
-      std::vector<uint8_t> frame(frame_bytes, static_cast<uint8_t>(k));
-      frame[0] = lbrr ? kLbrrFlag : 0;
+      opus_encoder.SetPacketLossPercent(opus_loss.percent());
+      const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
+      const std::vector<uint8_t> frame = opus_encoder.Encode(
+          std::span<const int16_t>(opus_pcm).subspan(std::min(opus_off, opus_pcm.size())));
       sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 

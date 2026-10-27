@@ -115,14 +115,11 @@ ALGORITHMS = [
                "payload. Redundant blocks are bounded to the 10-bit length and 14-bit timestamp offset of the "
                "RFC 2198 header.",
          verification="No defects found; results match the analytical p^2 and p^3. The test bench's Opus send path (issue #126) "
-                      "feeds it frames the size of libwebrtc's Opus output (`testbench/opus_model.h`): speech of 71 B on "
-                      "average, digital silence of 3-35 B. Deviation: the sizes are a model fitted to libwebrtc's forward-link "
-                      "traces, not libopus; the encoder defaults (20 ms, 32 kbps, VBR, DTX off, 6-510 kbps) follow "
-                      "`audio_encoder_opus_config.h`. Issue #375 calibrated the model on the distribution, not only the mean "
-                      "(7 seeds of parity-data traces): free frames (67.5 B, 61 B in the first 1.4 s), runs held at the nominal "
-                      "81 B (18 % of frames), and 95-158 B bursts, none in the first 1.4 s. The 200 B RTP packets that start "
-                      "the start probe are 3.7 % of audio packets, the first at a median 3.4 s over 100 seeds (libwebrtc "
-                      "3.6 % and 3.8 s); before, 9 % of packets and within the first second on almost every scenario."),
+                      "feeds it libopus's frames: since #457 the bench encodes its speech with libopus 55513e81, the "
+                      "revision libwebrtc M157 builds, set up as `AudioEncoderOpusImpl` sets it up (`testbench/opus_encoder.h`: "
+                      "48 kHz mono VOIP, 20 ms, 32 kbps VBR, complexity 9, DTX off, in-band FEC on, max bandwidth fullband). "
+                      "It replaced the frame-size model fitted to libwebrtc's traces (#126, #375), which was an approved deviation "
+                      "(Owner's decision C on #452)."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
          headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
@@ -383,15 +380,11 @@ ALGORITHMS = [
                "and inserts the decoded copy at the previous frame's timestamp with codec level 1; the buffer "
                "keeps one packet per timestamp, the higher Packet::Priority (codec level, then RED level), as "
                "PacketBuffer::InsertPacket, and a late FEC frame is not a late discard. Which frames carry LBRR "
-               "is the test bench's model (`testbench/opus_model.h`): the encoder's loss input is ported "
-               "(ChannelSend::OnReportBlockDataUpdated, PacketLossFractionSmoother, SetProjectedPacketLossRate), "
-               "and so is libopus's per-packet decision (`OpusFecDecision`: compute_equiv_rate, the "
-               "rate-dependent bandwidth and decide_fec in src/opus_encoder.c, LBRR_SPEECH_ACTIVITY_THRES in "
-               "silk/fixed/encode_frame_FIX.c, libopus 55513e81, #62 step 8). Model parts: voice_est 115 "
-               "without the tonality analysis, SILK's bandwidth-switch gating left out, and not-digital-silence "
-               "for SILK's VAD activity above 0.3 (silk/VAD.c is not in `reference/`). "
+               "is libopus's own decision in the test bench (libopus 55513e81, #457; `testbench/opus_encoder.h`), "
+               "and the bench's decoder finds it with WebRtcOpus_PacketHasFec's parse: the encoder's loss input is ported "
+               "(ChannelSend::OnReportBlockDataUpdated, PacketLossFractionSmoother, SetProjectedPacketLossRate). "
                "Verified by `issue_62_opus_fec_low_rate` (no LBRR at 12 kbps, 10% loss) and the "
-               "OpusModel unit tests.",
+               "OpusEncoder unit tests.",
          verification="Issue #256 (fix record docs/fixes/256-neteq-unsupported-rate.md): at a rate other than "
                       "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
                       "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
@@ -625,7 +618,7 @@ ALGORITHMS = [
                "the nine switches (`cc`, `pacer`, `tcc`, `rtcp`, `rtx`, `keyframe`, `packetization`, `allocator`, `audio`), "
                "so GoogCC, the PacingController, transport-cc feedback, RTCP report timing, the RTX history, the "
                "receiver's keyframe requests, NACK list and packet buffer, `RtpSenderVideo`'s payload sizing, "
-               "`BitrateAllocator` and (in the test bench) the Opus frame-size model are libwebrtc's only. `GccConfig` and "
+               "`BitrateAllocator` and (in the test bench) libopus are libwebrtc's only. `GccConfig` and "
                "`PacerConfig` have no version any more. The outage monitor only follows the link: its pause/resume, "
                "keyframe and reset decisions were acted on under `cc v1` only (libwebrtc has none, #151). "
                "Guard rails changed with the `cc v1` deletion (program.md 0.2, #167, Owner sign-off pending): the "
@@ -635,8 +628,8 @@ ALGORITHMS = [
                "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
                "on `clean_link` queue p95 74 ms. "
                "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 with #62. "
-               "Approved deviation: the test bench's Opus frame-size model (3.1, a model fitted to libwebrtc's "
-               "trace, not libopus). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
+               "The test bench's Opus frame-size model, an approved deviation until #457, is replaced by libopus "
+               "55513e81 (3.1). Explained differences: `outage_3s` `cc.queue_p95_ms` under all v2 (5.11, #151) "
                "and `issue_53_cwnd_pushback` render fps, from the receive-side `FrameScheduler` drop rule (#24; "
                "resolved when timing v2 became the default: 28.8-29.2 fps, libwebrtc 27.1-27.6). "
                "Provisional locks (PR #180): `issue_151_outage_3s_v2` (3.1, tracked to #151) and "
@@ -1318,7 +1311,8 @@ ALGORITHMS = [
          verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
-         headers=["video/frame_scheduler.h", "timing/frame_release.h"], unit=["FrameScheduler", "VcmTiming"],
+         headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
+         unit=["FrameScheduler", "VcmTiming", "RenderFrames"],
          e2e=["E2E_FrameScheduler"],
          bench=["video/FrameScheduler_frame"],
          scenario="30 fps over 15 ms jitter: VideoJitterEstimator + VideoTiming give render times and the "
@@ -1331,7 +1325,13 @@ ALGORITHMS = [
                                 "when a later temporal unit (here a keyframe) is decodable, so the 10 ms late-drop "
                                 "rule is gone: with every v2 switch on, `issue_53_cwnd_pushback`'s link renders "
                                 "28.8-29.2 fps on seeds 1-10 (timing v1 16.0-20.8, libwebrtc 27-28); "
-                                "`issue_24_timing_v2_render_fps` locks it in."),
+                                "`issue_24_timing_v2_render_fps` locks it in. "
+                                "Issue #437 (partial): `video::RenderFrames` ports libwebrtc's pre-render queue "
+                                "(video/render/incoming_video_stream.cc, video_render_frames.cc), behind "
+                                "`render_smoothing` (off by default). With it on, `very_low_capacity` seeds 1-10 render "
+                                "466 -> 421 frames and freeze 25.3 -> 24.6 times (libwebrtc 369 and 21.3); "
+                                "`issue_437_render_smoothing_very_low_capacity` locks it in "
+                                "([fix record](../../fixes/437-render-smoothing.md))."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
          headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],
