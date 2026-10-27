@@ -3947,6 +3947,57 @@ issue_430_video_only_outage_4s - video-only call, 4 s outage at 15 s on both pat
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
+issue_441_infinite_rtt - The host hands both sessions an infinite RTT mid-call; the call carries on, with no signed overflow (UBSan)
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.3          0.3  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms          21.3         17.5  =
+  audio.mouth_to_ear_p95_ms               205          205  =
+  audio.jb_delay_p95_ms                   118          120  =
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                11.4          3.7  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.7         29.7  =
+  video.e2e_delay_p95_ms                  124          123  =
+  video.time_to_first_frame_ms            191          191  =
+  video.avg_kbps                         2003         1996  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                  56.7         56.2  =
+  cc.utilization_pct                     85.6         85.4  =
+  cc.queue_p95_ms                        44.9         42.7  =
+  cc.max_settle_ms                        300          300  =
+  cc.rtt_p50_ms                          72.2         71.9  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                     0.1          0.1  =
+  forward link per kind (information only)
+  net.audio_kbps                         67.7         69.8
+  net.video_kbps                         2077         2070
+  net.rtx_kbps                            1.8          1.7
+  net.padding_kbps                        0.6          0.7
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    183          187
+  net.audio_size_p90_b                    215          214
+  net.audio_size_max_b                    298          299
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1373         1372
+  net.video_size_p90_b                   1458         1459
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1158         1157
+  net.rtx_size_p90_b                     1313         1291
+  net.rtx_size_max_b                     1313         1291
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+
 issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start-up probes paced by the cluster rate as libwebrtc's BitrateProber does (
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.2          1.2  =
@@ -5892,7 +5943,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-better: sm 225, webrtc 85, tie 2160 (of the metrics shown)
+better: sm 225, webrtc 85, tie 2182 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
