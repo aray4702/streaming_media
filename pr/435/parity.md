@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-115 scenarios, mean of 10 seeds. **65 gaps**: 20 behind libwebrtc, 45 ahead of it; 1 without an owner.
+115 scenarios, mean of 10 seeds. **64 gaps**: 19 behind libwebrtc, 45 ahead of it; 1 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-66 gaps on `main`, 65 here: **6 closed, 5 opened**, 0 changed direction.
+65 gaps on `main`, 64 here: **6 closed, 5 opened**, 0 changed direction.
 
 Closed:
 
@@ -89,7 +89,6 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_346_reconfigure_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | issue_356_capacity_drop_xr_rtt | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | issue_372_outage_interruption_count | `net.loss_pct` | 5.6 | 7.4 | ±1.7 | ahead | 6/10 | #21, #61, #12, #411 |
-| issue_410_queue_sample_phase | `audio.jb_delay_p95_ms` | 220 | 130 | ±88.3 | behind | 10/10 | #63 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
 | issue_53_cwnd_pushback | `video.freeze_count` | 3.1 | 2.3 | ±0.7 | behind | 6/10 | #5, #37, #24, #409 |
