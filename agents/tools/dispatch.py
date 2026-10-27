@@ -6,6 +6,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
 
   AUTOMERGE      turn on squash auto-merge for an approved, green PR (parity
                  closed > opened, or the Owner approved it: owner-approved)
+  HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
+                 a merge freeze or an Owner question can't be merged past
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
@@ -242,6 +244,14 @@ class Dispatcher:
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
             n, sha = pr["number"], pr["head"]["sha"]
             held = labels(pr) & {"needs-human", "blocked"}  # blocked: a merge freeze (agents/coordinator.md)
+            if held and pr["auto_merge"] is not None:
+                # Auto-merge turned on before the hold would still merge the PR once
+                # ci-ok passes (#448 during #450's freeze). The AUTOMERGE rule below
+                # turns it back on once the hold lifts.
+                self.say("HOLD", f"PR #{n}", f"{', '.join(sorted(held))}: auto-merge off")
+                if self.live:
+                    subprocess.run(["gh", "pr", "merge", str(n), "-R", self.r, "--disable-auto"], check=True)
+                continue
             if pr["draft"] or held:
                 self.note(f"PR #{n}", "draft" if pr["draft"] else ", ".join(sorted(held)))
                 continue
