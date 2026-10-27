@@ -230,3 +230,93 @@ SM_TEST(PacketBuffer, PaddingOnlyMattersNearTheInsertedPackets) {
   pb.Insert(Pkt(1200, 9, false), false, T0());     // 198 ahead: 1001 is outside size / 4.
   SM_EXPECT_EQ(pb.PrecedingMediaSeq(1002), 1001);
 }
+
+namespace {
+PacketBufferConfig MissingPacketsCfg() {
+  PacketBufferConfig cfg;
+  cfg.missing_packets = true;
+  return cfg;
+}
+}  // namespace
+
+SM_TEST(PacketBuffer, MissingPacketsHoldsADeltaFrameBehindAHoleUntilItIsFilled) {
+  // libwebrtc's FindFrames: a complete H.264 delta frame is not handed out while an
+  // earlier sequence number is missing; the packet that fills the hole releases both.
+  PacketBuffer pb(MissingPacketsCfg());
+  pb.Insert(Pkt(10, 100, true), true, T0(), false, true);  // Keyframe.
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.Insert(Pkt(12, 200, true), true, T0());  // Frame 200 (seq 11) is missing.
+  pb.Insert(Pkt(13, 300, true), true, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  SM_EXPECT_EQ(pb.stats().frames_held, 2u);
+  pb.Insert(Pkt(11, 150, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 3u);
+  SM_EXPECT_EQ(f[0].timestamp, 150u);
+  SM_EXPECT_EQ(f[1].timestamp, 200u);
+  SM_EXPECT_EQ(f[2].timestamp, 300u);
+}
+
+SM_TEST(PacketBuffer, MissingPacketsOffHandsOutTheDeltaFrameAtOnce) {
+  PacketBuffer pb;  // Today's default.
+  pb.Insert(Pkt(10, 100, true), true, T0(), false, true);
+  pb.Insert(Pkt(12, 200, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 2u);
+  SM_EXPECT_EQ(pb.stats().frames_held, 0u);
+}
+
+SM_TEST(PacketBuffer, MissingPacketsReleasesAKeyframeAndForgetsTheHolesBeforeIt) {
+  // The first packet of an IDR slice was dropped (or lost): the deltas after it wait, and the
+  // next keyframe leaves at once and clears the holes up to its last packet.
+  PacketBuffer pb(MissingPacketsCfg());
+  pb.Insert(Pkt(1, 100, false), true, T0(), false, false);  // SPS+PPS; seq 2 (IDR start) never arrives.
+  pb.Insert(Pkt(3, 100, true), false, T0());
+  pb.Insert(Pkt(4, 200, true), true, T0());  // Delta.
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  pb.Insert(Pkt(5, 300, true), true, T0(), false, true);  // Keyframe.
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 300u);
+  pb.Insert(Pkt(6, 400, true), true, T0());  // The delta after the keyframe is not held.
+  f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 400u);
+}
+
+SM_TEST(PacketBuffer, MissingPacketsPaddingFillsAHole) {
+  PacketBuffer pb(MissingPacketsCfg());
+  pb.Insert(Pkt(10, 100, true), true, T0(), false, true);
+  pb.Insert(Pkt(12, 200, true), true, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.NotePadding(11);  // InsertPadding: UpdateMissingPackets, then FindFrames(seq + 1).
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 200u);
+}
+
+SM_TEST(PacketBuffer, MissingPacketsForgetsHolesOlderThan1000) {
+  // UpdateMissingPackets' kMaxPaddingAge: a hole 1000 or more behind the newest packet no longer
+  // holds frames. FindFrames only walks forward from the packet inserted, so the frames held
+  // before that stay held (they leave with ClearTo after the next keyframe).
+  PacketBuffer pb(MissingPacketsCfg());
+  pb.Insert(Pkt(10, 100, true), true, T0(), false, true);
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  for (uint16_t seq = 12; seq < 1012; ++seq) pb.Insert(Pkt(seq, seq * 10u, true), true, T0());  // Seq 11 is lost.
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  pb.Insert(Pkt(1012, 10120, true), true, T0());  // 11 is now 1001 behind.
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 10120u);
+}
+
+SM_TEST(PacketBuffer, MissingPacketsClearToForgetsHolesBelowIt) {
+  PacketBuffer pb(MissingPacketsCfg());
+  pb.Insert(Pkt(10, 100, true), true, T0(), false, true);
+  pb.Insert(Pkt(14, 300, true), true, T0());  // Holes 11-13: held.
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.ClearTo(13);
+  pb.Insert(Pkt(15, 400, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 400u);
+}
