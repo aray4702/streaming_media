@@ -233,6 +233,21 @@ class Session : public MetricsSource {
 
 Choices and why:
 
+- **`now` comes from a monotonic clock** (issue #440). Every `now` passed to
+  a session, on every method, must come from one clock that never
+  decreases: the host's steady clock, not wall-clock time, which NTP or
+  DST can step back. This is libwebrtc's contract too. Its
+  `PacingController::CurrentTime`
+  (`compare/webrtc/reference/modules/pacing/pacing_controller.cc:154-165`)
+  logs "Non-monotonic clock behavior observed", DCHECKs and holds the
+  previous time. Our pacer clamps the same way (`src/cc/pacing_controller.cc`,
+  `PacingController::Cur`). So after a backward step the session sends
+  nothing, media or RTCP, until `now` passes its old high-water mark. On
+  #440's audio-only driver, a step back of 1, 5, 20, 60 or 120 s silenced
+  the sender for 0.98, 4.98, 19.98, 59.98 and 119.98 s. The same step on a
+  receiver's clock stops video rendering. A forward step of any size, even
+  one day, is absorbed. Detecting or re-baselining a backward step goes
+  beyond libwebrtc and is `stage:later`.
 - **Pull, not callbacks.** Every existing module returns vectors and takes
   `now`; callbacks would force `std::function` (allocation, hidden re-entrancy)
   and make the order of effects depend on the call stack. Pull keeps the whole
