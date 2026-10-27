@@ -17,4 +17,6 @@ expect video.freeze_total_ms < 3327
 # libwebrtc 2258 on seed 2 (mean of seeds 2-11 2090) on main's compare-webrtc after #340, which also misses < 1700.
 # PR #401 (#399, program.md 0.2, Owner sign-off): was < 2240. Ours 2663 on seed 2; libwebrtc seeds 2-11 1368-3217 under per-seed
 # clocks. Seed-2 outlier; mean in band (ours 2772 / libwebrtc 2439, band ±680); 10 % above ours, under libwebrtc's worst seed. Owner sign-off on #401.
-expect video.longest_freeze_ms < 2930
+# PR for #411 D4 (the bench's Opus sends libopus's audio rate; program.md 0.2, needs Owner sign-off): was < 2930. Ours 3078 on
+# seed 2; libwebrtc seeds 2-11 1368-3217 under per-seed clocks (#401). Capped at libwebrtc's worst seed.
+expect video.longest_freeze_ms < 3217

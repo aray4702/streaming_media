@@ -1,0 +1,14 @@
+name issue_411_d4_audio_rate
+describe low_bandwidth with seed 4: the test bench's Opus sends libopus's audio rate, so the 150 kbps bottleneck fills as libwebrtc's does (issue #411, D4)
+# libopus codes a tail of 1-4 frames after speech before its silence frames, and its silence is 3, 32 or 35 B at
+# 32 kbps (testbench/opus_model.h). Without them the model sent 2.8 B per frame less than libopus, and the audio
+# 2.3 kbps less than libwebrtc's on 109 of 110 scenarios. At 150 kbps that kept our queue short of libwebrtc's
+# (seeds 4-13, ours / libwebrtc: RTT p50 154 / 244 ms, queue p95 290 / 414 ms; with the tail 238 and 405 ms).
+# Seed 4 on main: audio 67.5 kbps (libwebrtc seeds 4-13 70.1), RTT p50 146 ms (libwebrtc 368).
+seed 4
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+expect net.audio_kbps > 69
+expect net.audio_kbps < 71.5
+expect cc.rtt_p50_ms > 180
+expect audio.concealed_pct < 5

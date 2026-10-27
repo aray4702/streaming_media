@@ -109,8 +109,21 @@ inline int OpusBitrateBps(int allocation_bps, size_t overhead_bytes_per_packet, 
 // min(RecommendedMinProbeSize, 200 B)), so the share of those packets
 // (1.4-4.9 % per seed, 3.6 % over all) and the time of the first one
 // (1.39-10.2 s) are what the calibration is judged by.
-// Digital silence is a constant 3, 17, 21, 32 or 35 B for the whole silent run;
+// Digital silence is a constant 3, 32 or 35 B for the whole silent run;
 // the first frame after it is 73 B on average (sd 25 B, 22-131 B).
+// Speech does not stop at the first frame of digital zero (issue #411, D4:
+// the same 7 traces, 64 silent runs, aligned frame by frame with ours, since
+// both stacks code the same signal). libopus codes a tail first, and the
+// tail decides the silence size:
+//   after a held frame   1 (8 runs) or 2 (15 runs) more frames of the
+//                        nominal size, then 3 B of silence
+//   after a free frame   2 (8), 3 (22) or 4 (8) frames of 54, 51, 40 and 37 B
+//                        (sd 11 and 12.5 B for the first two, 1.5 B after), then
+//                        35 B of silence (32 B in 2 of 38 runs)
+// Without the tail and with #126's silence sizes (3, 17, 21, 32 and 35 B, one
+// trace) the model sent 2.8 B per frame less than libopus on these traces,
+// and the suite's audio 2.3 kbps less than libwebrtc's (67.4 against 69.7 kbps
+// on low_bandwidth; 109 of 110 scenarios lower).
 class OpusSizeModel {
  public:
   // Shares of the nominal frame (the CBR size at the bitrate: 80 B at 32 kbps).
@@ -138,13 +151,22 @@ class OpusSizeModel {
   static constexpr double kSilenceRms = 1e-5;
   static constexpr size_t kMinSpeechShare = 36;          // Observed floor at 32 kbps.
   static constexpr size_t kMaxFrame = 158;
+  // The tail and the silence sizes above are libopus's at 32 kbps, the bench's rate. The one lower
+  // rate traced, 12 kbps (issue_62_opus_fec_low_rate, seed 1), has 8 B in all 14 silent runs; there
+  // the model codes silence at once, without a tail.
+  static constexpr int kTailMinBitrateBps = 32'000;
+  static constexpr size_t kLowRateSilenceBytes = 8;
+  // The tail after speech (issue #411): its frames' sizes by position.
+  static constexpr double kTailMeanShare[4] = {54.0 / 80.0, 51.0 / 80.0, 40.5 / 80.0, 37.0 / 80.0};
+  static constexpr double kTailSdShare[4] = {11.0 / 80.0, 12.5 / 80.0, 1.5 / 80.0, 1.5 / 80.0};
 
   OpusSizeModel(uint64_t seed, int bitrate_bps) : rng_(seed), bitrate_bps_(bitrate_bps) {}
 
   void SetBitrate(int bitrate_bps) { bitrate_bps_ = bitrate_bps; }
   // Whether the last frame was speech rather than digital silence (false
   // before the first frame): the in-band FEC model's input.
-  bool LastFrameActive() const { return frames_ > 0 && !silent_; }
+  // The tail after speech codes digital zero, so it is not active either.
+  bool LastFrameActive() const { return frames_ > 0 && !silent_ && tail_pos_ < 0; }
 
   size_t NextFrameBytes(std::span<const float> frame) {
     double e = 0;
@@ -154,19 +176,48 @@ class OpusSizeModel {
     const double scale = nominal / 80.0;
     ++frames_;
     if (rms < kSilenceRms) {
+      prev_rms_ = 0;
+      const bool calibrated = bitrate_bps_ >= kTailMinBitrateBps;
+      if (calibrated && !silent_ && tail_pos_ < 0 && frames_ > 1) {
+        // Speech ended: the tail's length (from the 64 runs: 8 and 15 after a held frame,
+        // 8, 22 and 8 after a free one).
+        tail_held_ = last_held_;  // Whether the last speech frame was a held one.
+        tail_pos_ = 0;
+        tail_len_ = tail_held_ ? (rng_.UniformInt(0, 22) < 8 ? 1 : 2) : [&] {
+          const int64_t k = rng_.UniformInt(0, 37);
+          return k < 8 ? 2 : k < 30 ? 3 : 4;
+        }();
+        burst_left_ = 0;
+        held_ = false;
+      }
+      if (tail_pos_ >= 0 && tail_pos_ < tail_len_) {
+        const int k = tail_pos_++;
+        if (tail_held_) return static_cast<size_t>(std::lround(nominal)) + 1;
+        const double bytes = nominal * (kTailMeanShare[k] + kTailSdShare[k] * rng_.Gaussian());
+        return static_cast<size_t>(std::lround(std::clamp(bytes, kMinSpeechShare * scale, kMaxFrame * scale)));
+      }
       if (!silent_) {
         silent_ = true;
         burst_left_ = 0;
         held_ = false;
-        // Weights of the 18 silent runs in the trace: 3 x6, 17 x5, 21 x2, 32 x1, 35 x4.
-        const int64_t k = rng_.UniformInt(0, 17);
-        silence_bytes_ = k < 6 ? 3 : k < 11 ? 17 : k < 13 ? 21 : k < 14 ? 32 : 35;
+        if (!calibrated) {
+          silence_bytes_ = kLowRateSilenceBytes;
+        } else if (tail_pos_ >= 0) {
+          // After the tail: 3 B after a held frame, otherwise 35 B (32 B in 2 of 38 runs).
+          silence_bytes_ = tail_held_ ? 3 : rng_.UniformInt(0, 18) < 1 ? 32 : 35;
+        } else {
+          // A call that starts silent: the weights of the 67 runs, 3 x27, 32 x6, 35 x34.
+          const int64_t k = rng_.UniformInt(0, 66);
+          silence_bytes_ = k < 27 ? 3 : k < 33 ? 32 : 35;
+        }
+        tail_pos_ = -1;
       }
-      prev_rms_ = 0;
       return silence_bytes_;
     }
     const bool onset = silent_;
     silent_ = false;
+    last_held_ = false;
+    tail_pos_ = -1;  // Speech again, within the tail or after silence.
     const double rise = prev_rms_ > 0 ? std::clamp(std::log(rms / prev_rms_), -1.5, 1.5) : 0.0;
     prev_rms_ = rms;
     state_ = kAutocorrelation * state_ + std::sqrt(1 - kAutocorrelation * kAutocorrelation) * rng_.Gaussian();
@@ -187,6 +238,7 @@ class OpusSizeModel {
         if (--burst_left_ == 0) held_ = rng_.Bernoulli(kHeldAfterBurst);
       } else if (held_) {
         bytes = nominal + 1;  // The nominal size and the TOC byte.
+        last_held_ = true;
         held_ = !rng_.Bernoulli(kHeldEnd);
       } else {
         const double mean = kFreeStartShare + free_ramp * (kFreeShare - kFreeStartShare);
@@ -209,6 +261,10 @@ class OpusSizeModel {
   bool held_ = false;
   int64_t burst_left_ = 0;
   size_t silence_bytes_ = 3;
+  int tail_pos_ = -1;  // The frame of the tail after speech, -1 outside it.
+  int tail_len_ = 0;
+  bool tail_held_ = false;
+  bool last_held_ = false;
   int64_t frames_ = 0;
 };
 

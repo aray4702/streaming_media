@@ -122,7 +122,13 @@ ALGORITHMS = [
                       "(7 seeds of parity-data traces): free frames (67.5 B, 61 B in the first 1.4 s), runs held at the nominal "
                       "81 B (18 % of frames), and 95-158 B bursts, none in the first 1.4 s. The 200 B RTP packets that start "
                       "the start probe are 3.7 % of audio packets, the first at a median 3.4 s over 100 seeds (libwebrtc "
-                      "3.6 % and 3.8 s); before, 9 % of packets and within the first second on almost every scenario."),
+                      "3.6 % and 3.8 s); before, 9 % of packets and within the first second on almost every scenario. "
+                      "Issue #411 (D4) added libopus's tail after speech (1-2 held frames, then 3 B of silence; or 2-4 frames "
+                      "of 54-37 B, then 35 B) and its 32 kbps silence sizes (3, 32 and 35 B; 8 B at 12 kbps), from the same "
+                      "7 traces aligned frame by frame: the model had sent 2.8 B per frame less than libopus, and the suite's "
+                      "audio 2.3 kbps less than libwebrtc's (now within 0.6 kbps on 118 of 119 scenarios). At 150 kbps that "
+                      "deficit kept our bottleneck queue short of libwebrtc's (`low_bandwidth` RTT p50 143 against 221 ms; "
+                      "235 with the tail)."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
          headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],

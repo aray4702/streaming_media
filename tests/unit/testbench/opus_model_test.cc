@@ -33,8 +33,42 @@ SM_TEST(OpusModel, SilenceIsSmallAndConstantPerRun) {
   OpusSizeModel m(1, 32000);
   const std::vector<float> zeros(320, 0.f);
   const size_t first = m.NextFrameBytes(zeros);
-  SM_EXPECT_TRUE(first == 3 || first == 17 || first == 21 || first == 32 || first == 35);
+  SM_EXPECT_TRUE(first == 3 || first == 32 || first == 35);
   for (int i = 0; i < 20; ++i) SM_EXPECT_EQ(m.NextFrameBytes(zeros), first);
+}
+
+// libopus does not stop at the first frame of digital zero (issue #411, D4): after a held frame it codes
+// 1-2 more of the nominal size and then 3 B of silence, after a free frame 2-4 frames of 54-37 B and then
+// 35 B (or 32 B). At 12 kbps the silence is 8 B (issue_62_opus_fec_low_rate's trace).
+SM_TEST(OpusModel, SpeechEndsWithLibopussTail) {
+  const std::vector<float> zeros(320, 0.f);
+  size_t held_tails = 0, free_tails = 0;
+  for (uint64_t seed = 1; seed <= 40; ++seed) {
+    const auto speech = sim::SpeechLike(16000, 4.0, seed, false);
+    OpusSizeModel m(seed, 32000);
+    size_t last = 0;
+    for (size_t off = 0; off + 320 <= speech.size(); off += 320) last = m.NextFrameBytes(std::span<const float>(speech.data() + off, 320));
+    std::vector<size_t> tail;
+    size_t b = 0;
+    while ((b = m.NextFrameBytes(zeros)) > 35) tail.push_back(b);
+    SM_EXPECT_FALSE(m.LastFrameActive());
+    for (int i = 0; i < 10; ++i) SM_EXPECT_EQ(m.NextFrameBytes(zeros), b);  // The silence is constant.
+    if (last == 81) {
+      ++held_tails;
+      SM_EXPECT_TRUE(tail.size() >= 1 && tail.size() <= 2);
+      for (size_t t : tail) SM_EXPECT_EQ(t, 81u);
+      SM_EXPECT_EQ(b, 3u);
+    } else {
+      ++free_tails;
+      SM_EXPECT_TRUE(tail.size() >= 2 && tail.size() <= 4);
+      SM_EXPECT_TRUE(b == 32 || b == 35);
+    }
+  }
+  SM_EXPECT_TRUE(held_tails > 0 && free_tails > 0);
+  OpusSizeModel low(1, 12000);
+  const auto speech = sim::SpeechLike(16000, 2.0, 1, false);
+  for (size_t off = 0; off + 320 <= speech.size(); off += 320) low.NextFrameBytes(std::span<const float>(speech.data() + off, 320));
+  SM_EXPECT_EQ(low.NextFrameBytes(zeros), 8u);  // No tail below 32 kbps.
 }
 
 SM_TEST(OpusModel, SpeechMatchesLibwebrtcs32kbpsFrames) {
