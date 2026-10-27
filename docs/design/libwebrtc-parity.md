@@ -361,9 +361,10 @@ both. The call still sends no abs-capture-time (8.3).
 
 #77 ported `RtpToNtpEstimator`, `StreamSynchronization` and `RtpStreamsSynchronizer`
 (with `Syncable`) from M157 as library modules. Integer milliseconds come from our
-`TimeDelta::ms()` and `Timestamp::ms()`, which truncate. Whether libwebrtc's `ms()`
-rounds instead could not be checked, because `api/units/unit_base.h` is not in
-`reference/`.
+`TimeDelta::ms()` and `Timestamp::ms()`, which truncate. libwebrtc's `ms()` rounds to
+the nearest (`UnitBase::ToFraction`, `DivideRoundToNearest` in
+`rtc_base/units/unit_base.h`, in `reference/` since #456); that rounding, with
+`operator*(double)`'s `llround`, is remaining work in #461.
 
 ### 8.1 RTP timestamp to NTP (`RtpToNtpEstimator`, `src/sync/rtp_to_ntp.cc`)
 

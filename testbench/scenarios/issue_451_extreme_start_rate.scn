@@ -1,0 +1,19 @@
+name issue_451_extreme_start_rate
+describe The host configures a start and max rate of 9 Ebps; the call settles on the link without freezes, with no signed overflow (UBSan)
+# Issue #451: DataRate * TimeDelta overflowed (include/sm/core/units.h, operator*) when
+# CongestionWindowPushback::UpdateWindow (src/cc/congestion_window_pushback.cc:16) multiplied
+# a target above ~19 Tbps by its 480 ms window, and the other RelativeUnit operators
+# (* double, / -1, the integer constructors) overflowed on infinite or out-of-range
+# operands where libwebrtc's rtc_base/units/unit_base.h RTC_DCHECKs. They now keep infinity
+# and saturate. UpdateWindow's average of the old and new window (line 17) then overflowed
+# on bytes(); it now adds the DataSizes, as goog_cc_network_control.cc:399-404. The
+# wrapped window had throttled video to ~640 kbps. The base commit is built with ASan+UBSan, which abort on the overflow; the
+# other cases are covered by the unit test Units.RelativeUnitOperatorsSaturate.
+# fix-record-base-cmake: -DSM_SANITIZE=ON
+duration 20s
+max_rate 9000000000000mbps
+start_rate 9000000000000mbps
+at 0s capacity=2500kbps delay=30ms queue=400ms
+expect video.freeze_count == 0
+expect audio.interruptions == 0
+expect cc.unsettled == 0
