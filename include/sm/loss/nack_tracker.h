@@ -51,8 +51,14 @@ class NackTracker : public MetricsSource {
   int OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now);
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
   TimeDelta rtt() const { return rtt_; }
-  // Sequence numbers to put in a NACK now. Each call counts as one attempt.
+  // Sequence numbers to put in a NACK now (NackRequester::ProcessNacks, kTimeOnly): first requests and retries.
+  // Each call counts as one attempt.
   std::vector<uint16_t> GetNackBatch(Timestamp now);
+  // NackRequester::OnReceivedPacket's GetNackBatch(kSeqNumOnly): the first requests only, which the receiver
+  // sends right after the packet that revealed the gap rather than at the next process call. A packet that is
+  // only reordered, and arrives a moment after the one that revealed the gap, has then been NACKed already, as in
+  // libwebrtc (issue #411).
+  std::vector<uint16_t> GetSeqNumNackBatch(Timestamp now);
   // NackRequester::ClearUpTo: forgets the requests for every sequence number before `seq`. The
   // receiver calls it for each continuous frame (RtpVideoStreamReceiver2::FrameContinuous), so a keyframe
   // that follows an outage ends the repair of the packets lost during it.
@@ -72,6 +78,7 @@ class NackTracker : public MetricsSource {
     int retries = 0;
   };
   void AddMissing(int64_t from, int64_t to, Timestamp now);
+  void Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out);
 
   NackConfig cfg_;
   TimeDelta rtt_;

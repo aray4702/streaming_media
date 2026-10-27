@@ -156,8 +156,19 @@ ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now, bool rec
 
 void RtpReceiver::OnEmptyPacket(uint16_t seq, Timestamp now) {
   TrackSequence(seq);
-  if (cfg_.nack) nack_.OnReceivedPacket(seq, false, now);
+  if (cfg_.nack) {
+    nack_.OnReceivedPacket(seq, false, now);
+    SendSeqNumNacks(now);
+  }
   packet_buffer_.NotePadding(seq);
+}
+
+// NackRequester::OnReceivedPacket sends the requests for a gap with the packet that revealed it
+// (RtpVideoStreamReceiver2's RtcpFeedbackBuffer sends them once the packet is handled), not at the next
+// 20 ms process tick.
+void RtpReceiver::SendSeqNumNacks(Timestamp now) {
+  auto batch = nack_.GetSeqNumNackBatch(now);
+  feedback_.nacks.insert(feedback_.nacks.end(), batch.begin(), batch.end());
 }
 
 void RtpReceiver::TrackSequence(uint16_t seq) {
@@ -195,6 +206,7 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
   // opens a keyframe access unit carries the parameter sets or the IDR slice.
   if (cfg_.nack) {
     const int times_nacked = nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
+    SendSeqNumNacks(now);
     // RtpFrameObject::delayed_by_retransmission: a packet of the frame had been NACKed.
     if (times_nacked > 0 && cfg_.timing.version >= 2) {
       if (nacked_seqs_.size() >= kMaxNackedSeqs) nacked_seqs_.clear();

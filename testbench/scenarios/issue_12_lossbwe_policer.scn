@@ -20,5 +20,10 @@ expect net.loss_pct < 14.5
 # 4053 9715 7672 14988 9231 13792, mean 9675; main 5617, libwebrtc mean 10722, worst on parity-data 15478). Moved by
 # the same rule: just above our seed-1 value, below libwebrtc's worst seed.
 # PR #324 (#84's flip, quality scaling on): was < 14000. Provisional lock, tracked to #376: ours 14208 on seed 1, libwebrtc worst seed 1-10 13682 (mean 7955).
-expect video.freeze_total_ms < 15600
+# Issue #411 (NACK with the packet that reveals the gap, as NackRequester::OnReceivedPacket; program.md 0.2, needs the
+# sign-off): was < 15600. Seed-1 outlier; mean in band (ours 9679 / libwebrtc 10097, seeds 1-10). Only seed 1 changes
+# (10061 -> 15770; seeds 2-10 are identical), where a keyframe's ClearUpTo no longer takes back the NACK the packet
+# before it sent; libwebrtc seeds 1-10 on main: 11265 11305 7510 10889 8431 15228 8709 12385 6021 9223 (worst 15228).
+# Outlier clause: 10 % above our seed 1.
+expect video.freeze_total_ms < 17400
 expect audio.interruptions <= 3

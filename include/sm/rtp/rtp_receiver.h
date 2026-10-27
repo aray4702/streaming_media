@@ -263,6 +263,7 @@ class RtpReceiver : public MetricsSource {
   // A packet that holds a media sequence number but no media (padding, FEC):
   // RtpVideoStreamReceiver2::NotifyReceiverOfEmptyPacket.
   void OnEmptyPacket(uint16_t seq, Timestamp now);
+  void SendSeqNumNacks(Timestamp now);  // NackRequester::OnReceivedPacket's kSeqNumOnly batch.
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   void AssembleFrames(Timestamp now);

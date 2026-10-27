@@ -1,0 +1,14 @@
+name issue_411_nack_on_reorder
+describe 8 Mbps link, 5 ms jitter with reordering, no loss: a gap is NACKed with the packet that reveals it, as libwebrtc's NackRequester, so reordering costs as much RTX as in libwebrtc (issue #411, cluster D5)
+# The link of issue_329_utilization_reordering. libwebrtc's NackRequester::OnReceivedPacket sends
+# GetNackBatch(kSeqNumOnly) as soon as a newer packet shows a gap (its reordering histogram stays empty, so
+# send_at_seq_num is the gap itself), and RtpVideoStreamReceiver2 flushes it before the packet buffer runs.
+# Ours waited for the receiver's next process call, so a packet reordered within the same millisecond took
+# its NACK back: 549 of 4877 gaps on seed 1 (11 %), 32.0 % repair overhead against libwebrtc's 37.1 %.
+# Seeds 1-5 before: 32.0 32.3 32.2 31.5 31.9; after: 35.6 35.8 37.6 36.4 35.8.
+# libwebrtc seeds 1-10 (main's compare-webrtc): 37.1 36.4 36.9 36.7 36.8 37.7 37.5 37.9 36.3 37.3.
+duration 60s
+at 0s capacity=8000kbps delay=30ms jitter=5ms
+expect repair.overhead_pct > 34
+expect repair.overhead_pct < 40
+expect cc.utilization_pct <= 100
