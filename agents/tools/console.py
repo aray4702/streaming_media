@@ -431,6 +431,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self._ok_host():
             return self._send(403, "bad host", "text/plain")
         url = urllib.parse.urlparse(self.path)
+        if url.path == "/favicon.ico":  # the page sets its own icon; answer browsers that ask anyway
+            self.send_response(204)
+            self.end_headers()
+            return
         if url.path == "/":
             with open(os.path.join(HERE, "console.html"), encoding="utf-8") as f:
                 page = f.read().replace("__TOKEN__", self.server.token).replace("__REPO__", self.server.gh.r)
