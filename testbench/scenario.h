@@ -21,6 +21,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "sm/core/units.h"
@@ -111,6 +112,10 @@ struct Scenario {
   // `host_rtt_inf <time>`: at that time the host hands both sessions an infinite RTT
   // (Session::SetRtt(TimeDelta::PlusInfinity())), a host bug the library must absorb (issue #441).
   std::optional<TimeDelta> host_rtt_inf;
+  // `host_rtt <time> <rtt>`: from that time on the host hands both sessions a finite RTT it
+  // measured itself (Session::SetRtt at every step), for RTTs the call cannot produce, such as one
+  // near the int64 limit (issue #451).
+  std::optional<std::pair<TimeDelta, TimeDelta>> host_rtt;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

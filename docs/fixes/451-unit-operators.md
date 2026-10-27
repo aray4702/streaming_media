@@ -4,7 +4,7 @@ title: Units operators overflow (UB) on infinite and out-of-range operands
 severity: sev:3
 status: fixed
 area: area:cc
-regression_tests: testbench/scenarios/issue_451_extreme_start_rate.scn, tests/unit/core/core_test.cc
+regression_tests: testbench/scenarios/issue_451_host_rtt_near_limit.scn, tests/unit/core/core_test.cc
 ---
 
 # #451: Units operators overflow (UB) on infinite and out-of-range operands
@@ -20,10 +20,13 @@ and `DataRate * double` on an infinity (double to int64 out of range),
 (https://github.com/aray4702/streaming_media/pull/445#issuecomment-6438582458),
 split out by the Coordinator as
 https://github.com/aray4702/streaming_media/issues/451. The issue judged them
-unreachable from `Session`. One path is reachable through public
-configuration: a start rate of about 19 Tbps or more makes
-`CongestionWindowPushback::UpdateWindow` multiply the target by its 480 ms
-window, and that overflows.
+unreachable from `Session`. Two paths are reachable through the public API,
+both only with absurd inputs:
+- an RTT from the host (`Session::SetRtt`) within 100 ms of the int64 limit
+  overflows `rtt + 100 ms` in `AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond`;
+- a start rate of about 19 Tbps or more makes
+  `CongestionWindowPushback::UpdateWindow` multiply the target by its 480 ms
+  window, and that overflows.
 
 ## Root cause
 
@@ -91,14 +94,16 @@ this item as metric-neutral hardening, so the rounding is remaining work in
 `UpdateCongestionWindowSize` does (`goog_cc_network_control.cc:399-404`).
 For finite windows the result is the same.
 
-Test bench: no change. The regression scenario uses the existing `start_rate`
-and `max_rate` keys.
+Test bench: `host_rtt <time> <rtt>`. From that time on, the host hands both
+sessions a finite RTT at every step (`Session::SetRtt`), over what the call
+measures. It is the finite counterpart of #441's `host_rtt_inf`, for RTTs the
+emulated link cannot produce.
 
 ## Regression tests
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_451_extreme_start_rate.scn` (base built with `-DSM_SANITIZE=ON`) | aborts: `units.h:157:81: runtime error: signed integer overflow: 9000000000000000000 * 480000` in `CongestionWindowPushback::UpdateWindow` | passes on seeds 1-5, Release and ASan+UBSan: 0 freezes, 0 audio interruptions, settles in 2.7-3.3 s (`cc.unsettled` 0), video 2138-2270 kbps |
+| `testbench/scenarios/issue_451_host_rtt_near_limit.scn` (base built with `-DSM_SANITIZE=ON`) | aborts: `units.h:42:12: runtime error: signed integer overflow: 9223372036854700000 + 100000` (main's library with this PR's `host_rtt` directive; main's own test bench does not know the key) | passes on seeds 1-5 (Release x86-64, ASan+UBSan, and aarch64 under QEMU, which gives x86-64's numbers): 0 audio interruptions, 2-3 freezes (the 12 s capacity drop gives 2-4 without `host_rtt`), 25.6-26.1 fps |
 | `tests/unit/core/core_test.cc` `Units.RelativeUnitOperatorsSaturate` | the issue's four cases are UB (UBSan reports), infinities come out finite, and it does not compile (no integer or scalar-first overloads, no `DataSize` infinity) | passes, native and ASan+UBSan |
 
 ## Results
@@ -114,11 +119,13 @@ On seeds 1, 2 and 3, every existing scenario's metrics with this PR's
 against `testbench/baseline.json` reports 0 regressions and 0 improvements.
 The baseline is unchanged, apart from the new scenario's entry.
 
-A first version without the `UpdateWindow` change passed the scenario too,
-but it held video at about 640 kbps (the wrapped window, Release only) and
-the target never left the start rate. With it, the target comes down to the
-link within about 3 s.
-
-Start rates from 1 to about 1000 Tbps exhaust memory (`std::bad_alloc`) or
-run for minutes, on main and with this fix alike. That is a different
-defect, reported on #451 for placement.
+The first version of this PR used the start-rate path, `start_rate
+9000000000000mbps` (9 Ebps). It passed on x86-64 but aborted on linux-arm64
+and wasm. Every start rate from 1 Tbps up asks `RtpSender::GeneratePadding`
+for rate × 5 ms of padding, gigabytes, and throws `std::bad_alloc` or runs for
+minutes. That happens on main too, and is reported on #451 for placement. At
+9 Ebps x86-64 only escaped it because an out-of-range `llround` returns
+INT64_MIN there. The RTT path has no out-of-range conversion: aarch64 gives
+x86-64's numbers. The start-rate path also exposed the `UpdateWindow` average fixed
+above. Without that fix, a Release build wrapped the window and held video at
+about 640 kbps.

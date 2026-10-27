@@ -351,6 +351,10 @@ ParseResult ParseScenario(const std::string& text) {
       TimeDelta t;
       if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
       s.host_rtt_inf = t;
+    } else if (key == "host_rtt") {
+      TimeDelta t, rtt;
+      if (!need(3) || !ParseTime(tok[1], &t) || !ParseTime(tok[2], &rtt)) return fail("usage: host_rtt <time> <rtt>");
+      s.host_rtt = std::make_pair(t, rtt);
     } else if (key == "keyframe_interval") {
       if (!need(2) || !ParseTime(tok[1], &s.keyframe_interval)) return fail("usage: keyframe_interval <time>");
     } else if (key == "at") {

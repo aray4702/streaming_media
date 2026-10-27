@@ -1,0 +1,20 @@
+name issue_451_host_rtt_near_limit
+describe From 8 s the host reports an RTT 75.8 ms short of the int64 limit, then the link drops and recovers; the call carries on, with no signed overflow (UBSan)
+# Issue #451: the unit operators overflowed on out-of-range results and infinite operands
+# where libwebrtc's rtc_base/units/unit_base.h RTC_DCHECKs. Here AimdRateControl's
+# GetNearMaxIncreaseRateBpsPerSecond (src/cc/aimd_rate_control.cc:182) computes
+# (rtt + 100 ms) * 2.0 once the 12 s drop has put it in near-max increase; rtt + 100 ms
+# overflowed (include/sm/core/units.h TimeDelta::operator+) and now saturates to +inf,
+# as do the other operators. The base commit is built with ASan+UBSan, which abort on the
+# overflow (main's library with this PR's `host_rtt` directive); the issue's own four
+# cases are the unit test Units.RelativeUnitOperatorsSaturate. The capacity drop alone
+# gives 2-4 freezes on seeds 1-5 with or without host_rtt.
+# fix-record-base-cmake: -DSM_SANITIZE=ON
+duration 30s
+at 0s capacity=2500kbps delay=30ms queue=400ms
+host_rtt 8s 9223372036854700000us
+at 12s capacity=1000kbps
+at 18s capacity=2500kbps
+expect audio.interruptions == 0
+expect video.freeze_count <= 4
+expect video.render_fps >= 24
