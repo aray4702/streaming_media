@@ -141,6 +141,7 @@ class Owners(unittest.TestCase):
     def test_stage1_exit_cells_have_an_open_owner(self):
         # #406 (Owner 2026-10-25): every gap on main after #378 is re-owned from closed issues to the
         # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
+        # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -165,7 +166,8 @@ class Owners(unittest.TestCase):
 
     def test_gaps_opened_by_416_have_an_open_owner(self):
         # #409 (Owner 2026-10-26): #416 moved only libwebrtc's side; the gaps it opened go to #420 (behind
-        # on 7/10+ seeds), #410 (behind by sign) and #409 (capacity-drop freeze count, seed spread).
+        # on 7/10+ seeds), #410 (behind by sign) and #409 (capacity-drop freeze count, seed spread:
+        # explained by #428 on 80 seeds; #409 stays the owner once it closes).
         cells = {("satellite", "video.freeze_count"): 420,
                  ("satellite", "video.freeze_total_ms"): 420,
                  ("issue_76_session_layer_v2", "audio.mouth_to_ear_p95_ms"): 420,
