@@ -1481,9 +1481,17 @@ ALGORITHMS = [
                   "packet buffer releases decodable frames, and audio is unwrapped from RED into the jitter buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
                "sent only when negotiated and frame information is present, so it is off for H.264, as in "
-               "libwebrtc (follow-up #47).",
+               "libwebrtc (follow-up #47). `sps_pps_tracker` (off by default, issue #453): libwebrtc's "
+               "H264SpsPpsTracker rule that drops the first packet of an IDR slice received before an SPS and a "
+               "PPS and requests a keyframe (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe). "
+               "The tracker keeps no parameter-set ids, because the bench sends one SPS and one PPS. Remaining "
+               "difference (#453): libwebrtc's PacketBuffer holds an H.264 delta frame while an earlier packet is "
+               "missing (packet_buffer.cc, missing_packets_), so it sends no first-frame-delta keyframe request "
+               "where ours does.",
          verification="Introduced by #32 plan PRs 4 and 6. Per-suite results are recorded by ctest and CI; "
-                      "tools/run_all.sh does not run these suites yet."),
+                      "tools/run_all.sh does not run these suites yet. Issue #453: with `sps_pps_tracker on`, "
+                      "`high_jitter` seeds 1-10 time to first frame 228 -> 449 ms (libwebrtc 433) and keyframe "
+                      "requests 0.4 -> 1.7 (libwebrtc 1.2); the same value as libwebrtc on 5 of 10 seeds."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
          headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],

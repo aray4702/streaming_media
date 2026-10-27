@@ -213,6 +213,20 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
       nacked_seqs_.insert(p.seq);
     }
   }
+  // H264SpsPpsTracker::CopyAndFixBitstream: an SPS or PPS in the packet is
+  // recorded first (a STAP-A [SPS, PPS, IDR] passes); the first packet of an
+  // IDR slice without both is dropped with a keyframe request
+  // (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe).
+  if (cfg_.sps_pps_tracker) {
+    have_sps_ = have_sps_ || info.sps;
+    have_pps_ = have_pps_ || info.pps;
+    if (info.idr && info.frame_start && !(have_sps_ && have_pps_)) {
+      ++stats_.idr_without_parameter_sets;
+      SM_EVENT(cfg_.events, now, "rtp_receiver", "idr_without_parameter_sets", p.seq, 0);
+      keyframes_.OnExternalRequest(now, "trigger_idr_without_parameter_sets");
+      return;
+    }
+  }
   // An IDR slice that starts a packet (no parameter sets in it) may follow
   // the parameter-set packet of the same access unit.
   if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps) ==
@@ -414,6 +428,7 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frames_scheduled", stats_.frames_scheduled);
   w.Counter("frame_meta_evicted", stats_.frame_meta_evicted);
   w.Counter("reassembly_failures", stats_.reassembly_failures);
+  w.Counter("idr_without_parameter_sets", stats_.idr_without_parameter_sets);
   w.Counter("gaps", stats_.gaps);
   w.Counter("missing", stats_.missing);
   w.Counter("audio_frames", stats_.audio_frames);

@@ -1,0 +1,16 @@
+name issue_453_sps_pps_tracker_high_jitter
+describe high_jitter with the receiver's H.264 SPS/PPS tracker on: an IDR start that arrives before its SPS and PPS is dropped and a keyframe requested, as libwebrtc (issue #453)
+# libwebrtc's RtpVideoStreamReceiver2::OnReceivedPayloadData runs H264SpsPpsTracker::CopyAndFixBitstream on every
+# H.264 packet (video/rtp_video_stream_receiver2.cc, kRequestKeyframe -> RequestKeyFrame + kIgnore). With 40 ms jitter
+# and reordering, the first keyframe's IDR start overtakes its SPS+PPS STAP-A on seed 1, so libwebrtc decodes the
+# second keyframe instead: time to first frame 665 ms, 2 keyframe requests (parity-data, compare-webrtc.json).
+# Seed 1: tracker off 200 ms / 0 requests; on 740 ms / 2 requests.
+# 10 seeds (1-10), ours off / on / libwebrtc: time to first frame 228 / 449 / 433 ms; keyframe requests 0.4 / 1.7 / 1.2.
+duration 30s
+seed 1
+sps_pps_tracker on
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect video.time_to_first_frame_ms > 600
+expect video.keyframe_requests >= 2
+expect audio.interruptions == 0
+expect audio.concealed_pct < 2

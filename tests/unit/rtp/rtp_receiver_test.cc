@@ -721,3 +721,57 @@ SM_TEST(RtpReceiver, SyncInfoIgnoresPacketsRestoredFromRtx) {
   SM_EXPECT_EQ(r.SyncInfo()->latest_received_capture_rtp_timestamp, 6000u);
   SM_EXPECT_EQ(r.SyncInfo()->latest_receive_time.ms(), 186);
 }
+
+namespace {
+// A keyframe whose SPS+PPS packet (the first) arrives after the packet that starts the IDR slice, as
+// reordering can do at the start of a call. Returns the frames and counts the PLIs sent.
+std::vector<ReceivedFrame> DeliverReordered(const RtpReceiverConfig& cfg, int* plis, uint64_t* dropped) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(cfg);
+  r.Start(Timestamp::Millis(0));
+  s.SendVideoFrame(H264Packetizer::Packetize(MakeFakeH264Frame(true, 3000), s.config().max_payload_size), 0,
+                   Timestamp::Millis(0));
+  auto pkts = Release(s, Timestamp::Millis(0));
+  SM_EXPECT_TRUE(pkts.size() >= 3u);
+  std::vector<Bytes> order;
+  for (size_t i = 1; i < pkts.size(); ++i) order.push_back(pkts[i].packet.Serialize());
+  order.push_back(pkts[0].packet.Serialize());
+  *plis = 0;
+  std::vector<ReceivedFrame> out;
+  for (int64_t t = 0; t < 400; ++t) {
+    if (t >= 10 && t - 10 < static_cast<int64_t>(order.size())) r.OnPacket(order[t - 10], Timestamp::Millis(t));
+    r.Process(Timestamp::Millis(t));
+    for (const auto& m : r.TakeFeedback().keyframe) *plis += m.type == loss::FeedbackType::kPli;
+    for (auto& f : r.TakeFrames()) out.push_back(f);
+  }
+  *dropped = r.stats().idr_without_parameter_sets;
+  return out;
+}
+}  // namespace
+
+SM_TEST(RtpReceiver, SpsPpsTrackerDropsAnIdrStartBeforeItsParameterSetsAndAsksForAKeyframe) {
+  // H264SpsPpsTracker::CopyAndFixBitstream returns kRequestKeyframe for the first packet of an IDR
+  // slice whose PPS and SPS have not been seen; RtpVideoStreamReceiver2 drops it and sends a PLI.
+  RtpReceiverConfig on = ReceiverCfg();
+  on.sps_pps_tracker = true;
+  int plis_on = 0, plis_off = 0;
+  uint64_t dropped_on = 0, dropped_off = 0;
+  auto frames_on = DeliverReordered(on, &plis_on, &dropped_on);
+  SM_EXPECT_TRUE(frames_on.empty());  // The frame misses its IDR start: no keyframe until a new one.
+  SM_EXPECT_EQ(dropped_on, 1u);
+  RtpReceiverConfig off = on;
+  off.sps_pps_tracker = false;  // Today's default: the reordered keyframe is assembled.
+  auto frames_off = DeliverReordered(off, &plis_off, &dropped_off);
+  SM_ASSERT_EQ(frames_off.size(), 1u);
+  SM_EXPECT_TRUE(frames_off[0].keyframe);
+  SM_EXPECT_EQ(dropped_off, 0u);
+  SM_EXPECT_TRUE(plis_on > plis_off);
+}
+
+SM_TEST(RtpReceiver, SpsPpsTrackerPassesAKeyframeInOrder) {
+  RtpReceiverConfig on = ReceiverCfg();
+  on.sps_pps_tracker = true;
+  auto frames = DeliverFrame(on, MakeFakeH264Frame(true, 3000));
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].keyframe);
+}

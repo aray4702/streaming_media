@@ -123,6 +123,7 @@ One directive per line, and `#` starts a comment.
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
 | `encoder_speed <x>` | 1 | CPU speed for the encoder model's encode time: 10 ms per 720p frame at 1, reported in the video trace (#84) |
+| `sps_pps_tracker on\|off` | off | `on`: the receiver drops the first packet of an IDR slice that arrives before an SPS and a PPS and requests a keyframe, as libwebrtc's `H264SpsPpsTracker` (#453) |
 | `encode_delay on\|off` | off | `on` makes the encode time real on both stacks: a frame reaches the library (`OnEncoded`) and the sender that long after its capture, which libwebrtc's CPU overuse detector measures (#84) |
 | `video_max_payload <bytes>` | 1446 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). `sm_compare`'s libwebrtc side keeps its default |
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |

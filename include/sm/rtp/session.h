@@ -134,6 +134,7 @@ struct VideoStreamConfig {
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
   bool keyframe_needs_parameter_sets = false;  // See RtpReceiverConfig.
+  bool sps_pps_tracker = false;                // See RtpReceiverConfig (issue #453).
   bool deliver_bitstream = true;               // See RtpReceiverConfig.
   VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;

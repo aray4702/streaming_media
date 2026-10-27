@@ -186,6 +186,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.feedback = &tcc_;
   c.parser = v.parser;
   c.keyframe_needs_parameter_sets = v.keyframe_needs_parameter_sets;
+  c.sps_pps_tracker = v.sps_pps_tracker;
   c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;
   c.rtx_ssrc = v.rtx_ssrc;
