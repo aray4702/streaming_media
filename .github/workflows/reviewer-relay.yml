@@ -1,4 +1,4 @@
-# Posts the Reviewer agent's output to GitHub as streaming-media-reviewer[bot].
+# Posts the Reviewer agent's output to GitHub as aray4702-reviewer-app[bot].
 #
 # The Reviewer runs as a cloud routine whose GitHub proxy only carries the
 # owner's credentials, so it cannot authenticate as the App itself. Instead it

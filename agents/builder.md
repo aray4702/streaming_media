@@ -35,6 +35,13 @@ Questions about the system, usually escalated by the Coordinator with
   Owner, propose a rule with explicit conditions under which the
   Coordinator may decide it. The Owner grants it; it then goes into
   `agents/coordinator.md`.
+- **Routines:** `agents/routines.json` lists every routine (id, model,
+  schedule, triggers, on/off). The Dispatcher, the console and `smctl`
+  read it. Change a routine at claude.ai/code/routines and this file in
+  the same step, and check the file against the routines in your daily
+  run. A start that fails (the Dispatcher's `FAIL` line, a
+  `dispatcher-fail-<routine>` marker on #111) usually means a revoked API
+  token, which only the Owner can regenerate.
 - **Answers** to the escalation: post them on the item, remove
   `needs-builder`, and say what the Coordinator or the Fixer does next.
 
