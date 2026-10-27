@@ -103,7 +103,7 @@ emulated link cannot produce.
 
 | Test | Fails before the fix | Passes after |
 |---|---|---|
-| `testbench/scenarios/issue_451_host_rtt_near_limit.scn` (base built with `-DSM_SANITIZE=ON`) | aborts: `units.h:42:12: runtime error: signed integer overflow: 9223372036854700000 + 100000` (main's library with this PR's `host_rtt` directive; main's own test bench does not know the key) | passes on seeds 1-5 (Release x86-64, ASan+UBSan, and aarch64 under QEMU, which gives x86-64's numbers): 0 audio interruptions, 2-3 freezes (the 12 s capacity drop gives 2-4 without `host_rtt`), 25.6-26.1 fps |
+| `testbench/scenarios/issue_451_host_rtt_near_limit.scn` (base built with `-DSM_SANITIZE=ON`) | aborts: `units.h:42:12: runtime error: signed integer overflow: 9223372036854700000 + 100000` (main's library with this PR's `host_rtt` directive; main's own test bench does not know the key) | passes on seeds 1-5 (Release x86-64, ASan+UBSan, and aarch64 under QEMU, which gives x86-64's numbers): 2-3 freezes (the 12 s capacity drop gives 2-4 without `host_rtt`), 25.6-26.1 fps, and 0 audio interruptions, except one on seed 3 since libopus (#460). The drop gives that one without `host_rtt` too (170 ms there, 200 ms with it) |
 | `tests/unit/core/core_test.cc` `Units.RelativeUnitOperatorsSaturate` | the issue's four cases are UB (UBSan reports), infinities come out finite, and it does not compile (no integer or scalar-first overloads, no `DataSize` infinity) | passes, native and ASan+UBSan |
 
 ## Results

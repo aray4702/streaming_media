@@ -8,13 +8,14 @@ describe From 8 s the host reports an RTT 75.8 ms short of the int64 limit, then
 # as do the other operators. The base commit is built with ASan+UBSan, which abort on the
 # overflow (main's library with this PR's `host_rtt` directive); the issue's own four
 # cases are the unit test Units.RelativeUnitOperatorsSaturate. The capacity drop alone
-# gives 2-4 freezes on seeds 1-5 with or without host_rtt.
+# gives 2-4 freezes on seeds 1-5 with or without host_rtt, and with libopus (#460) one
+# audio interruption on seed 3 (170 ms without host_rtt, 200 ms with it).
 # fix-record-base-cmake: -DSM_SANITIZE=ON
 duration 30s
 at 0s capacity=2500kbps delay=30ms queue=400ms
 host_rtt 8s 9223372036854700000us
 at 12s capacity=1000kbps
 at 18s capacity=2500kbps
-expect audio.interruptions == 0
+expect audio.interruptions <= 1
 expect video.freeze_count <= 4
 expect video.render_fps >= 24
