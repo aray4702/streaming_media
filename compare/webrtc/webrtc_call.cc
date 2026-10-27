@@ -834,6 +834,18 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     last_render = now;
     auto it = model.rtp_ts_offset ? model.capture_us_by_rtp.find(f.rtp_timestamp() - *model.rtp_ts_offset)
                                   : model.capture_us_by_rtp.end();
+    if (opt.video_trace && now.us() >= 0) {
+      // Issue #411 D3: the frame's path through the receiver, as testbench/call.cc records it.
+      testbench::FrameTraceRow fr;
+      fr.rtp_timestamp = model.rtp_ts_offset ? f.rtp_timestamp() - *model.rtp_ts_offset : f.rtp_timestamp();
+      if (it != model.capture_us_by_rtp.end()) fr.capture_us = it->second - t0.us();
+      for (const w::RtpPacketInfo& p : f.packet_infos()) {
+        fr.complete_us = std::max(fr.complete_us, rel(p.receive_time()).us());
+      }
+      fr.target_us = rel(w::Timestamp::Millis(f.render_time_ms())).us();
+      fr.rendered_us = now.us();
+      rep.frame_trace.push_back(fr);
+    }
     if (it != model.capture_us_by_rtp.end()) {
       av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;

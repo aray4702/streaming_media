@@ -83,6 +83,16 @@ struct AudioTraceRow {
   double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
 };
 
+// One rendered video frame (issue #411 D3), the same record for this library
+// and for libwebrtc, in call time (us from the start of the call). See FrameTraceCsv.
+struct FrameTraceRow {
+  uint32_t rtp_timestamp = 0;
+  int64_t capture_us = -1;   // -1 when unknown.
+  int64_t complete_us = -1;  // Arrival of the frame's last media or RTX packet; -1 when unknown.
+  int64_t target_us = -1;    // The render time the receiver's timing gave the frame.
+  int64_t rendered_us = 0;   // When the renderer got it.
+};
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -99,6 +109,8 @@ struct Report {
   std::vector<cc::BweTraceRow> bwe_trace;
   // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
   std::vector<AudioTraceRow> audio_trace;
+  // One row per rendered video frame, when RunOptions::video_trace is set (issue #411 D3).
+  std::vector<FrameTraceRow> frame_trace;
 };
 
 struct RunOptions {
@@ -168,6 +180,7 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

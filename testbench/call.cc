@@ -278,6 +278,15 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
   return out;
 }
 
+std::string FrameTraceCsv(const std::vector<FrameTraceRow>& trace) {
+  std::string out = "rtp_timestamp,capture_us,complete_us,target_us,rendered_us\n";
+  for (const auto& r : trace) {
+    out += std::to_string(r.rtp_timestamp) + "," + std::to_string(r.capture_us) + "," + std::to_string(r.complete_us) +
+           "," + std::to_string(r.target_us) + "," + std::to_string(r.rendered_us) + "\n";
+  }
+  return out;
+}
+
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
@@ -910,6 +919,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         last_render = now;
         if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
         auto cap = frame_capture.find(f.rtp_timestamp);
+        if (opt.video_trace) {
+          FrameTraceRow fr;
+          fr.rtp_timestamp = f.rtp_timestamp;
+          if (cap != frame_capture.end()) fr.capture_us = cap->second.us();
+          if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end() && ft->second.complete.IsFinite())
+            fr.complete_us = ft->second.complete.us();
+          if (f.render_time.IsFinite()) fr.target_us = f.render_time.us();
+          fr.rendered_us = now.us();
+          rep.frame_trace.push_back(fr);
+        }
         if (cap != frame_capture.end()) {
           av_sync.OnVideoRendered(now, cap->second);
           last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
