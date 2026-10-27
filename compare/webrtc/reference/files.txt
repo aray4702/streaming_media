@@ -212,3 +212,16 @@ video/frame_encode_metadata_writer.h
 video/frame_encode_metadata_writer.cc
 common_video/h264/sps_vui_rewriter.h
 common_video/h264/sps_vui_rewriter.cc
+# Render stage, used when enable_prerenderer_smoothing is on (#437).
+video/render/video_render_frames.h
+video/render/video_render_frames.cc
+video/render/incoming_video_stream.h
+video/render/incoming_video_stream.cc
+# Retransmission rate limiter (#443). Only tests set retransmission_rate_limiter in M157.
+rtc_base/rate_limiter.h
+rtc_base/rate_limiter.cc
+rtc_base/units/unit_base.h
+modules/rtp_rtcp/source/rtp_rtcp_interface.h
+# H.264 SPS/PPS tracker (#453).
+modules/video_coding/h264_sps_pps_tracker.h
+modules/video_coding/h264_sps_pps_tracker.cc

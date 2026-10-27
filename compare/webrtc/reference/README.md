@@ -40,5 +40,8 @@ webrtc.googlesource.com.
 | Call glue, sync groups, demuxing | `call/call.cc`, `modules/congestion_controller/receive_side_congestion_controller.*` (the receive-side feedback task), `call/syncable.h`, `call/rtp_demuxer.*` | `src/sync/stream_sync.cc`, `src/rtp/session.cc` |
 | Capture time, RTP packet and extensions, transport feedback adapter | `modules/rtp_rtcp/source/absolute_capture_time_{sender,interpolator}.*`, `capture_clock_offset_updater.*`, `rtp_packet.*`, `rtp_header_extension_map.cc`, `modules/congestion_controller/rtp/transport_feedback_adapter.*` | `src/sync/capture_time.cc`, `src/core/rtp_packet.cc`, `src/cc/transport_feedback.cc` |
 | Glue | `call/rtp_transport_controller_send.*`, `call/rtp_video_sender.*`, `video/rtp_video_stream_receiver2.*`, `api/transport/`, `api/video/video_bitrate_allocation.h` | `src/rtp/session.cc` |
+| Video render stage (used when `enable_prerenderer_smoothing` is on) | `video/render/video_render_frames.*`, `video/render/incoming_video_stream.*` | none yet (#437) |
+| Retransmission rate limiter | `rtc_base/rate_limiter.*`, `modules/rtp_rtcp/source/rtp_rtcp_interface.h` (`Configuration::retransmission_rate_limiter`), `rtc_base/units/unit_base.h`. In M157 only tests set `retransmission_rate_limiter`; the default call leaves it null, so `RTPSender::ReSendPacket` never calls `TryUseRate`. | none (#443) |
+| H.264 SPS/PPS tracker | `modules/video_coding/h264_sps_pps_tracker.*` | `src/rtp/rtp_receiver.cc` (#453, PR #454) |
 
 Not here, on purpose: `modules/audio_coding/audio_network_adaptor/`. libwebrtc only turns it on when the application passes an ANA config, so the default call never uses it.
