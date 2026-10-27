@@ -104,7 +104,7 @@ const std::vector<const char*>& InfoMetrics() {
 // (issue #125), for both stacks, when --trace is not given. The traces go into
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
-    "very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
+    "very_low_capacity,very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic";
 
 std::string JsonString(const std::string& s) {

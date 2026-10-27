@@ -9,7 +9,8 @@ video send path, in the same CSV for this library and for libwebrtc:
   dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
   dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
   encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
-  height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal
+  height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,
+  rx_complete,rx_decoded,rx_dropped
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -29,7 +30,11 @@ scaler's checks that observed enough frames, as libwebrtc's QualityScaler::
 CheckQp logs them: how many fell in the second, and the last one's smoothed
 QP (high and low filter, as int), frame-drop percent when that reported high
 QP, and signal (-1 adapt down, +1 adapt up); -1 where there was none, and
-older traces read them so. CI publishes the traces
+older traces read them so. rx_complete, rx_decoded and rx_dropped (issue
+#437) follow the receive side: frames inserted into the frame buffer
+(libwebrtc's received_frame_counts, counted on insertion), frames decoded, and frames
+the buffer dropped (fast-forwards and frames cleared for a keyframe);
+older traces read them as 0. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
 --trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
 
@@ -46,6 +51,7 @@ import sys
 DROPS = ["dropped_capturer", "dropped_encoder_queue", "dropped_rate_limiter",
          "dropped_congestion_window", "dropped_encoder"]
 LATER_INTS = ["encode_width", "encode_height", "keyframes", "keyframe_bytes", "rendered"]  # Issue #333.
+RX_INTS = ["rx_complete", "rx_decoded", "rx_dropped"]  # Issue #437.
 QS_INTS = ["qs_qp_high", "qs_qp_low", "qs_drop_pct"]  # Issue #347; -1 when absent.
 INTS = ["t_s", "encoder_target_bps", "alloc_target_bps", "captured", "encoded", *DROPS, "paused", "encoded_bytes"]
 
@@ -58,7 +64,7 @@ def parse(text):
         row["pacer_queue_ms"] = float(r["pacer_queue_ms"])
         for k in ("qp_mean", "encode_ms_mean", "max_render_gap_ms", "height_mean"):
             row[k] = float(r.get(k) or 0)
-        for k in LATER_INTS:
+        for k in LATER_INTS + RX_INTS:
             row[k] = int(r.get(k) or 0)
         row["qs_checks"] = int(r.get("qs_checks") or 0)
         row["qs_signal"] = int(r.get("qs_signal") or 0)
@@ -72,7 +78,7 @@ def summarize(rows):
     """Totals over the call, drops by reason, and rates per second."""
     secs = max(len(rows), 1)
     total = {k: sum(r[k] for r in rows) for k in ["captured", "encoded", "encoded_bytes", "keyframes", "keyframe_bytes",
-                                                   "rendered", *DROPS]}
+                                                   "rendered", *RX_INTS, *DROPS]}
     heights = [r["encode_height"] for r in rows if r["encode_height"] > 0]
     dropped = sum(total[k] for k in DROPS)
     return {
@@ -96,6 +102,9 @@ def summarize(rows):
         # Seconds whose last encoded height differs from the previous encoded second's.
         "resolution_switches": sum(1 for a, b in zip(heights, heights[1:]) if a != b),
         "rendered": total["rendered"],
+        "rx_complete": total["rx_complete"],
+        "rx_decoded": total["rx_decoded"],
+        "rx_dropped": total["rx_dropped"],
         "max_render_gap_ms": max((r["max_render_gap_ms"] for r in rows), default=0.0),
         # Quality scaler (issue #347): its checks, and the seconds whose last check signalled each way.
         "qs_checks": sum(r["qs_checks"] for r in rows),
@@ -118,6 +127,8 @@ def render(named):
             ("paused/suspended seconds", "paused_seconds"), ("pacer queue max ms", "pacer_queue_ms_max"),
             ("QP (mean)", "qp_mean"), ("encode ms (mean)", "encode_ms_mean"), ("keyframes", "keyframes"),
             ("keyframe bytes", "keyframe_bytes"), ("resolution switches", "resolution_switches"),
+            ("frames complete (receiver)", "rx_complete"), ("frames decoded", "rx_decoded"),
+            ("frames dropped (receiver)", "rx_dropped"),
             ("frames rendered", "rendered"), ("longest render gap ms", "max_render_gap_ms"),
             ("encoded height (mean)", "height_mean"),
             ("quality scaler checks", "qs_checks"), ("scaler adapt-up seconds", "qs_up_seconds"),
