@@ -1,0 +1,14 @@
+name issue_430_av_outage_6s
+describe audio+video call, 6 s outage at 15 s on both paths: how long video takes to come back after link-up (#430)
+# Tester repro from #430 (commit 9ad10c6). Yardstick for #430: libwebrtc's side comes from this PR's compare-webrtc.
+seed 1
+duration 40s
+at 0s capacity=1500kbps delay=30ms queue=300ms
+at 15s down
+at 21s up
+reverse at 0s delay=30ms
+reverse at 15s down
+reverse at 21s up
+# Ours, seeds 1-10 @ 6684b0b: pause_total_ms 6156-6198 on 6 seeds, 9163-9240 on 4; frames_rendered 915-1011
+expect video.pause_total_ms < 9450
+expect video.frames_rendered > 900
