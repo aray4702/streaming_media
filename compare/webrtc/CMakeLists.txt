@@ -56,7 +56,9 @@ target_include_directories(sm_compare PRIVATE ${WEBRTC_DIR}/include ${WEBRTC_DIR
 target_compile_definitions(sm_compare PRIVATE WEBRTC_POSIX)
 file(WRITE ${CMAKE_BINARY_DIR}/gen/webrtc_version.h "#define SM_WEBRTC_VERSION \"${WEBRTC_VERSION}\"\n")
 target_include_directories(sm_compare PRIVATE ${CMAKE_BINARY_DIR}/gen)
-target_link_libraries(sm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
+# sm_compare runs this library's call on a second thread (sm_compare_main.cc).
+find_package(Threads REQUIRED)
+target_link_libraries(sm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a Threads::Threads)
 # libwebrtc.a contains the libc++ runtime.
 target_link_options(sm_compare PRIVATE -nostdlib++)
 # RTCP interop check (NACK, PLI, FIR, loss notification, compound): this

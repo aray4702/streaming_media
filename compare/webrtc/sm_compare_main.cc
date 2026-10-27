@@ -36,6 +36,7 @@
 #include <map>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "call.h"
@@ -254,8 +255,14 @@ int main(int argc, char** argv) {
       opt.video_trace = opt.link_trace;
       opt.bwe_trace = opt.link_trace;
       opt.audio_trace = opt.link_trace;
-      ours.push_back(sm::testbench::RunCall(s, opt));
+      // This library's call runs on its own thread while libwebrtc's runs here: it
+      // keeps no global state, reads no clock and starts no threads, and with libopus
+      // (#457) it takes about as long as libwebrtc's, which kept the CI job under its limit.
+      sm::testbench::Report sm_report;
+      std::thread sm_thread([&sm_report, s, opt] { sm_report = sm::testbench::RunCall(s, opt); });
       theirs.push_back(sm::compare::RunWebrtcCall(s, opt));
+      sm_thread.join();
+      ours.push_back(std::move(sm_report));
       if (opt.link_trace) {
         const std::string sm_csv = sm::testbench::LinkTraceCsv(ours.back().link_trace);
         const std::string rtc_csv = sm::testbench::LinkTraceCsv(theirs.back().link_trace);
