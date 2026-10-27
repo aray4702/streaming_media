@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-115 scenarios, mean of 10 seeds. **59 gaps**: 14 behind libwebrtc, 45 ahead of it; 1 without an owner.
+118 scenarios, mean of 10 seeds. **64 gaps**: 19 behind libwebrtc, 45 ahead of it; 2 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-63 gaps on `main`, 59 here: **4 closed, 0 opened**, 0 changed direction.
+68 gaps on `main`, 64 here: **4 closed, 0 opened**, 0 changed direction.
 
 Closed:
 
@@ -62,6 +62,11 @@ Closed:
 | issue_356_capacity_drop_xr_rtt | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | issue_372_outage_interruption_count | `net.loss_pct` | 5.6 | 7.4 | ±1.7 | ahead | 6/10 | #21, #61, #12, #411 |
 | issue_410_queue_sample_phase | `audio.jb_delay_p95_ms` | 220 | 130 | ±88.3 | behind | 10/10 | #63 |
+| issue_430_av_outage_6s | `audio.jb_delay_p95_ms` | 145 | 116 | ±25.9 | behind | 5/10 | #63 |
+| issue_430_av_outage_6s | `audio.mouth_to_ear_p95_ms` | 239 | 202 | ±27.8 | behind | 5/10 | #63 |
+| issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 98.4 | 68.8 | ±16.7 | behind | 5/10 | **none** |
+| issue_430_av_outage_6s | `video.e2e_delay_p95_ms` | 132 | 113 | ±10 | behind | 3/10 | #24, #37 |
+| issue_430_video_only_outage_4s | `cc.queue_p95_ms` | 67.1 | 52.7 | ±13.8 | behind | 7/10 | #19, #15, #48, #12, #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
 | issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
@@ -86,4 +91,5 @@ Closed:
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
 | issue_127_all_v2_no_stall | `sync.av_offset_p95_ms` | 183 | 168 | ±12.4 | behind | 5/10 | **none** |
+| issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 98.4 | 68.8 | ±16.7 | behind | 5/10 | **none** |
 
