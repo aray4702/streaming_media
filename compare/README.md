@@ -73,6 +73,11 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   packets on both stacks: `sm_compare`'s tick sends it before libwebrtc's
   pacer runs, and `sm_testbench` sends it before its sender's packets. At a
   full drop-tail queue the second arrival is dropped (issue #390).
+  Each packet reaches libwebrtc at its own arrival time (microseconds):
+  the tick posts every packet that arrives before the next tick as a task
+  due at its arrival, so a receiver timer due at the next millisecond, such
+  as the transport feedback, sees it, as a real receiver and
+  `sm_testbench`'s do (issue #453).
 - **Simulated time.** Release builds of libwebrtc leave out its
   simulated-time test harness, so [sim_time.cc](webrtc/sim_time.cc)
   provides one: a clock plus task queues that jump from one due task to
