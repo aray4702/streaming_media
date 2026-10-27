@@ -653,6 +653,16 @@ area it covered in each issue's notes:
 - **Stop switch:** the Owner pauses any routine at
   https://claude.ai/code/routines. Opening an issue titled `STOP AGENTS`
   makes every agent exit at the start of its run.
+- **Owner's console:** `python3 agents/tools/console.py --open` serves a
+  local page (127.0.0.1:8642) with the system's status in tabs (overview,
+  #64 work order, PRs, issues, agents, Dispatcher, #111 log) and the
+  Owner's controls: comment, label, close, merge, the stop switch, the
+  Dispatcher's mode, a Dispatcher run and a local dry run. It acts with
+  the Owner's own `gh` login; agents don't use it. The same tabs and
+  controls are on the command line: `python3 agents/tools/smctl.py` (tabs
+  in the terminal; `smctl <tab>` prints one, `smctl --help` lists the
+  controls), and `smctl dashboard start|stop|status` runs the page in
+  the background.
 
 ## 9. Infrastructure
 
