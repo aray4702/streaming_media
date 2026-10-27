@@ -1,5 +1,8 @@
 name very_low_capacity
 describe 100 kbps link (audio 32 kbps + video): the stage-1 checkpoint for very low capacity
+# sm_compare runs 80 seeds here (#437): after #435's NACK port the 10-seed freeze-count cell
+# (24.9 vs 21.3, behind on 8/10) may be seed spread, as the #420 and #409 cells were; 80 seeds place it.
+compare_seeds 80
 duration 40s
 at 0s capacity=100kbps delay=30ms queue=300ms
 # Checkpoint for issue #74 (roadmap #64). The expect lines lock in what main does
