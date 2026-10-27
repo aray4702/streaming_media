@@ -227,7 +227,7 @@ def dash_state():
 def dash_up(port):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as r:
-            return r.status == 200 and b"Agent Console" in r.read(4096)
+            return r.status == 200 and b"<title>streaming media</title>" in r.read(4096)
     except OSError:
         return False
 
