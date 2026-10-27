@@ -1,0 +1,9 @@
+name issue_410_queue_sample_phase
+describe Audio-only call on an idle 200 kbps link: the bottleneck queue is sampled before the call's packets of the same millisecond, as sm_compare samples libwebrtc's link (issue #410)
+duration 20s
+video off
+# Opus packets leave at 10, 30, 50 ms, on the 10 ms sample points. Sampled after them, as before #410, every
+# second sample held one packet's serialization time (8 ms here) and the p95 was that time, not the idle link
+# libwebrtc's harness measures on the same phase.
+at 0s capacity=200kbps delay=30ms queue=300ms
+expect cc.queue_p95_ms < 2
