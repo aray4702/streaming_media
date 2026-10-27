@@ -5,7 +5,7 @@
 #   bash agents/tools/coord_status.sh
 R=${SM_REPO:-aray4702/streaming_media}
 ROADMAP=${SM_ROADMAP:-64}
-BOT='streaming-media-reviewer[bot]'
+BOT_ID=342667563  # the Reviewer App's bot user (aray4702-reviewer-app[bot]); the id survives a rename
 
 minutes_since() {  # ISO-8601 UTC time -> whole minutes until now
   python3 -c 'import sys,datetime as d; t=d.datetime.strptime(sys.argv[1],"%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=d.timezone.utc); print(int((d.datetime.now(d.timezone.utc)-t).total_seconds()//60))' "$1"
@@ -48,7 +48,7 @@ echo "== open PRs =="
 gh api "repos/$R/pulls?state=open&per_page=100" --jq '.[]|"\(.number) \(.head.sha) \(.head.ref) draft=\(.draft) labels=\([.labels[].name]|join(",")) automerge=\(.auto_merge != null) updated=\(.updated_at)"' |
 while read -r num sha ref rest; do
   ci=$(gh api repos/$R/commits/$sha/check-runs --jq '[.check_runs[]|select(.name=="ci-ok")|.conclusion // .status][0] // "none"')
-  rv=$(gh api repos/$R/pulls/$num/reviews --jq "[.[]|select(.user.login==\"$BOT\")]|last|if .==null then \"none\" else \"\\(.state)@\\(.commit_id[0:7])\" end")
+  rv=$(gh api repos/$R/pulls/$num/reviews --jq "[.[]|select(.user.id==$BOT_ID)]|last|if .==null then \"none\" else \"\\(.state)@\\(.commit_id[0:7])\" end")
   ms=$(gh api repos/$R/pulls/$num --jq .mergeable_state)
   echo "PR #$num $ref head=${sha:0:7} ci-ok=$ci review=$rv merge=$ms $rest"
 done

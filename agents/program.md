@@ -270,7 +270,7 @@ conversation:
 | | Tester | Fixer | Reviewer | Owner (human) |
 |---|---|---|---|---|
 | Runs as | Scheduled cloud routine | Scheduled cloud routine | Scheduled cloud routine | Person |
-| GitHub identity | @aray4702 (via the cloud session proxy) | @aray4702 (via the cloud session proxy) | GitHub App `streaming-media-reviewer[bot]` | @aray4702 |
+| GitHub identity | @aray4702 (via the cloud session proxy) | @aray4702 (via the cloud session proxy) | GitHub App `aray4702-reviewer-app[bot]` | @aray4702 |
 | Schedule (UTC) | Every 6 h at :00 (`0 */6 * * *`) | Hourly at :15 (`15 * * * *`); Fixer B on demand (the Dispatcher starts it when a second item is free) | Hourly at :45 (`45 * * * *`) | Whenever `needs-human` appears |
 | Reads | `main`, test bench, existing issues | Issues labelled `agent-found` or `bug`, comments on its PRs | Open PRs, their diffs, CI results, comments | Everything |
 | Writes | Issues (and comments on its own issues) | Branches `fix/<issue>-<slug>`, PRs, replies to comments | PR reviews (comment, request changes, approve) and replies | Anything |
@@ -671,7 +671,7 @@ area it covered in each issue's notes:
 | Routines | Cloud environment `Default`. Fixer and Coordinator on `claude-opus-5-5`, Reviewer and Tester on `claude-sonnet-5-5`. Each routine's prompt says "Read agents/program.md, agents/common.md and agents/<role>.md, then do one run." |
 | Cloud tooling | Linux x86_64, 4 cores, g++ 13, clang, cmake, ninja, node 22, `gh`, jq, openssl. No Emscripten (the wasm checks run in CI). |
 | GitHub access from routines | `git push` and REST (`gh api`) work as @aray4702 through the session proxy. GraphQL is blocked, so use REST. Auto-merge uses `PUT /repos/{o}/{r}/pulls/{n}/ccr/auto_merge`, and review threads use `/pulls/{n}/ccr/review_threads`. |
-| Reviewer identity | GitHub App `streaming-media-reviewer`, installed on this repo only, with Pull requests: write, Contents: write (needed for its approval to count), Issues: write, Checks: read, Metadata: read. The cloud proxy replaces credentials and blocks the App token endpoint, so the Reviewer routine cannot authenticate as the App itself. It dispatches `.github/workflows/reviewer-relay.yml` (`agents/tools/reviewer_post.sh`), which holds the App key as Actions secrets (`SM_APP_ID`, `SM_APP_PRIVATE_KEY`) and posts the review as `streaming-media-reviewer[bot]`. Only the Owner's account can dispatch it. |
+| Reviewer identity | GitHub App `aray4702-reviewer-app` (App ID 5320656), installed on this repo only, with Pull requests: write, Contents: write (needed for its approval to count), Issues: write, Checks: read, Metadata: read. The cloud proxy replaces credentials and blocks the App token endpoint, so the Reviewer routine cannot authenticate as the App itself. It dispatches `.github/workflows/reviewer-relay.yml` (`agents/tools/reviewer_post.sh`), which holds the App key as Actions secrets (`SM_APP_ID`, `SM_APP_PRIVATE_KEY`) and posts the review as `aray4702-reviewer-app[bot]`. Only the Owner's account can dispatch it. |
 | Repo settings | Auto-merge allowed, squash merges only, head branches deleted on merge. Branch protection on `main`: PR required, 1 approval, `ci-ok` required, stale approvals dismissed on new commits. |
 | Browser demo | GitHub Pages serves `web/` built with Emscripten in CI. |
 

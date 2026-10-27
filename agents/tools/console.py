@@ -205,7 +205,7 @@ class Views:
             ci = self.gh.get(f"repos/{self.r}/commits/{sha}/check-runs?check_name=ci-ok", fresh=fresh)["check_runs"]
             checks = self.gh.get(f"repos/{self.r}/commits/{sha}/check-runs?per_page=100", fresh=fresh)["check_runs"]
             revs = [x for x in self.gh.get(f"repos/{self.r}/pulls/{n}/reviews?per_page=100", fresh=fresh) or []
-                    if x["user"]["login"] == d.BOT]
+                    if d.is_bot(x["user"])]
             full = self.gh.get(f"repos/{self.r}/pulls/{n}", fresh=fresh)
             files = self.gh.get(f"repos/{self.r}/pulls/{n}/files?per_page=100", True, fresh) or []
             failed = sorted({c["name"] for c in checks if c.get("conclusion") == "failure"})
@@ -248,7 +248,7 @@ class Views:
         for c in comments:
             body = c["body"] or ""
             role = next((r for r, mark in AGENTS.items() if body.startswith(mark) or mark in body[:200]), None)
-            if role is None and c["user"]["login"] == d.BOT:
+            if role is None and d.is_bot(c["user"]):
                 role = "reviewer"
             if role is None and c["user"]["login"] == "aray4702" and "sm-agent:" not in body:
                 role = "owner"
@@ -266,7 +266,7 @@ class Views:
             for pr, revs in reviews:
                 for rv in revs:
                     at = rv.get("submitted_at") or ""
-                    if rv["user"]["login"] != d.BOT or at < since:
+                    if not d.is_bot(rv["user"]) or at < since:
                         continue
                     counts["reviewer"] = counts.get("reviewer", 0) + 1
                     if "reviewer" not in last or at > last["reviewer"]["at"]:
@@ -314,7 +314,7 @@ class Views:
         for c in comments:
             body = c["body"] or ""
             m = re.search(r"sm-agent: ([a-z]+)", body[:200])
-            who = m[1] if m else ("reviewer" if c["user"]["login"] == d.BOT else "owner")
+            who = m[1] if m else ("reviewer" if d.is_bot(c["user"]) else "owner")
             out.append({"at": c["created_at"], "who": who, "url": c["html_url"],
                         "body": re.sub(r"<!--.*?-->\n?", "", body, flags=re.S).strip()})
         return {"comments": out[::-1], "url": issue["html_url"], "n": d.LOG_ISSUE}
