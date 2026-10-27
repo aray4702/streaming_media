@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-114 scenarios, mean of 10 seeds. **62 gaps**: 14 behind libwebrtc, 48 ahead of it; 0 without an owner.
+114 scenarios, mean of 10 seeds. **59 gaps**: 11 behind libwebrtc, 48 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-66 gaps on `main`, 62 here: **4 closed, 0 opened**, 0 changed direction.
+62 gaps on `main`, 59 here: **4 closed, 1 opened**, 0 changed direction.
 
 Closed:
 
@@ -17,11 +17,16 @@ Closed:
 | issue_12_lossbwe_burst_loss | `audio.jb_delay_p95_ms` | 194 | 174 | ±16.5 | behind | 6/10 | #63, #410 |
 | issue_29_ulpfec_over_red | `video.e2e_delay_p95_ms` | 241 | 213 | ±18.9 | behind | 6/10 | #24, #37, #410 |
 
+Opened:
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_410_queue_sample_phase | `audio.jb_delay_p95_ms` | 220 | 130 | ±88.3 | behind | 10/10 | #63 |
+
 ### Gaps
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #19, #24, #411 |
 | high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61, #19, #411 |
 | issue_120_rtx_payload_padding_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
@@ -65,8 +70,6 @@ Closed:
 | issue_410_queue_sample_phase | `audio.jb_delay_p95_ms` | 220 | 130 | ±88.3 | behind | 10/10 | #63 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
-| issue_53_cwnd_pushback | `video.freeze_count` | 3.1 | 2.3 | ±0.7 | behind | 6/10 | #5, #37, #24, #409 |
-| issue_53_cwnd_pushback | `video.freeze_total_ms` | 1820 | 1616 | ±190 | behind | 6/10 | #5, #37, #24, #409 |
 | issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
 | issue_62_neteq_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61, #411 |
 | issue_76_packetization_v2 | `repair.overhead_pct` | 29.6 | 31.9 | ±2 | ahead | 5/10 | #21, #7, #29, #411 |
