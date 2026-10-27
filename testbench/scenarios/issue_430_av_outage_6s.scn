@@ -8,6 +8,8 @@ describe audio+video call, 6 s outage at 15 s on both paths: video returns at li
 # Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
 # sm_compare runs 80 seeds here (#446): the 10-seed A/V offset p95 cell (98.4 vs 68.8 ms, band +-16.7, behind on 5/10)
 # may be seed spread, as the #437 and #410 cells were; 80 seeds place it.
+# Seeds 1-80 (#447, CI compare-webrtc at 42c1446), ours / libwebrtc: A/V offset p95 96.6 / 76.8 ms (libwebrtc sd 29.2),
+# ours higher on 48/80: in band, so seed spread.
 compare_seeds 80
 seed 1
 duration 40s

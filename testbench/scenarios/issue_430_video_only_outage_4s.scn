@@ -8,6 +8,8 @@ describe video-only call, 4 s outage at 15 s on both paths: video returns about 
 # Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
 # sm_compare runs 80 seeds here (#446): the 10-seed queue p95 cell (67.1 vs 52.7 ms, band +-13.8, behind on 7/10)
 # may be seed spread, as the #437 and #410 cells were; 80 seeds place it.
+# Seeds 1-80 (#447, CI compare-webrtc at 42c1446), ours on main / libwebrtc: queue p95 63.6 / 54.3 ms (libwebrtc sd 16.2),
+# ours higher on 55/80: in band. #450 ports GoogCC's pushback order after a feedback (10 seeds 67.1 -> 53.1).
 compare_seeds 80
 seed 1
 duration 40s
