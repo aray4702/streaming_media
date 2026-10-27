@@ -32,7 +32,7 @@ QP (high and low filter, as int), frame-drop percent when that reported high
 QP, and signal (-1 adapt down, +1 adapt up); -1 where there was none, and
 older traces read them so. rx_complete, rx_decoded and rx_dropped (issue
 #437) follow the receive side: frames inserted into the frame buffer
-(libwebrtc's frame_counts from OnCompleteFrame), frames decoded, and frames
+(libwebrtc's received_frame_counts, counted on insertion), frames decoded, and frames
 the buffer dropped (fast-forwards and frames cleared for a keyframe);
 older traces read them as 0. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with

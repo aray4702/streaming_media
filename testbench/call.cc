@@ -987,7 +987,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_qs_checks = qs.checks();
       }
       if (s.video) {
-        // Assembled frames (decodable or not) as libwebrtc's frame_counts; dropped are the frames that waited for a
+        // Assembled frames (decodable or not) as libwebrtc's received_frame_counts; dropped are the frames that waited for a
         // missing reference until a keyframe cleared them, plus the frame release's fast-forwards and clears.
         const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
         const timing::FrameReleaseStats& rs = vr.frame_release().stats();

@@ -1085,12 +1085,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     });
 
     // Receive-side frame counters once per second (issue #437), read on the receiver's queue: frames inserted into
-    // the frame buffer (frame_counts, from VideoStreamBufferController's OnCompleteFrame), decoded and dropped.
+    // the frame buffer (received_frame_counts, from OnCompleteFrame), decoded and dropped.
     if (opt.video_trace && video_recv && t % 1000 == 999) {
       receiver_q->PostTask([&, t_ms = t + 1] {
         w::VideoReceiveStreamInterface::Stats st = video_recv->GetStats();
-        rx_by_second.push_back({t_ms, static_cast<int64_t>(st.frame_counts.key_frames + st.frame_counts.delta_frames),
-                                static_cast<int64_t>(st.frames_decoded), static_cast<int64_t>(st.frames_dropped)});
+        const int64_t complete = st.received_frame_counts.key_frames + st.received_frame_counts.delta_frames;
+        rx_by_second.push_back(
+            {t_ms, complete, static_cast<int64_t>(st.frames_decoded), static_cast<int64_t>(st.frames_dropped)});
       });
     }
 
