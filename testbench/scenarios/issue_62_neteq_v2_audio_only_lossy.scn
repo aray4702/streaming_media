@@ -11,7 +11,11 @@ expect audio.interruptions == 0
 expect audio.concealed_pct < 3
 expect audio.jb_delay_p95_ms >= 66
 expect audio.mouth_to_ear_p95_ms >= 139
-expect audio.mouth_to_ear_p95_ms <= 170
+# PR for #457 (libopus 55513e81 replaces the Opus size model; program.md 0.2, needs-human): was <= 170. Ours 175.3 on seed 1
+# (seeds 1-10 133-175, mean 153); libwebrtc seeds 1-10 143-171 (mean 161), and sm_compare's own side of this library already 177
+# on seed 10 on main's compare-webrtc. Seed-1 outlier; mean in band (ours 153.1 / libwebrtc 160.6, seeds 1-10, band 8.0):
+# 10 % above seed 1 (175.3 x 1.10), the outlier clause (Coordinator on the PR for #457).
+expect audio.mouth_to_ear_p95_ms <= 193
 # Opus in-band FEC on the receive side (#62 step 7): libwebrtc M157 conceals 0.27-0.67 % on seeds 1-10
 # (mean 0.46). Ours with LBRR: 0.33-0.50 % on seeds 1-8 and 10, 1.24 on seed 9; without it 0.77-2.10 (seed 1 0.94).
 expect audio.concealed_pct < 0.7

@@ -10,4 +10,6 @@ expect audio.concealed_pct < 0.5
 expect audio.jb_delay_p95_ms >= 95
 # PR for #375 (Opus size model calibrated to libopus; the start probe moves; program.md 0.2, needs-human): was <= 140. Ours 150 on seed 1;
 # libwebrtc 100 on seed 1, worst of seeds 1-10 150 (mean 122; ours 136, in band), on #324's compare-webrtc.
-expect audio.jb_delay_p95_ms <= 150
+# PR for #457 (libopus 55513e81 replaces the Opus size model; program.md 0.2, needs-human): was <= 150. Ours 170 on seed 1
+# (seeds 1-10 100-170, mean 133); libwebrtc seeds 1-10 100-170 (mean 130) on main's compare-webrtc. Capped at libwebrtc's worst seed.
+expect audio.jb_delay_p95_ms <= 170

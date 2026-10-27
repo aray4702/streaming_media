@@ -1,0 +1,12 @@
+name issue_457_libopus_audio_rate
+describe low_bandwidth with libopus 55513e81 (issue #457): libwebrtc's audio rate, and the queue it builds at 150 kbps
+duration 40s
+at 0s capacity=150kbps delay=40ms queue=500ms
+# The bench encodes with libopus 55513e81, as libwebrtc M157 does. On this seed every audio
+# packet is the size of libwebrtc's (2000 of 2000 on parity-data's low_bandwidth.1 trace):
+# 69.07 kbps on both stacks. The frame-size model it replaced (#126, #375) sent 68.08 kbps here
+# (10-seed means: 67.4, libwebrtc 69.7, libopus 69.7), and the shorter queue kept the RTT short
+# (#411 cluster D4, #452): RTT p50 190 ms on this seed, libwebrtc 204 ms (seeds 1-10 129-368).
+expect net.audio_kbps > 68.8
+expect net.audio_kbps < 69.4
+expect cc.rtt_p50_ms > 200

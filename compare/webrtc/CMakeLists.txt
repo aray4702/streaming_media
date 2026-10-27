@@ -44,13 +44,21 @@ add_compile_definitions(
 file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
 add_library(sm_all STATIC ${SM_SOURCES} ${SM_ROOT}/testbench/scenario.cc ${SM_ROOT}/testbench/call.cc)
 target_include_directories(sm_all PUBLIC ${SM_ROOT}/include ${SM_ROOT}/testbench)
+# The test bench encodes its audio with libopus (issue #457). libwebrtc.a
+# carries the same revision (55513e81, compare/webrtc/reference/fetch.sh), so
+# this library's side links libwebrtc's copy and needs only the headers.
+include(${SM_ROOT}/cmake/SmOpus.cmake)
+sm_opus_source_dir(SM_OPUS_DIR)
+target_include_directories(sm_all SYSTEM PUBLIC ${SM_OPUS_DIR}/include)
 
 add_executable(sm_compare sm_compare_main.cc sim_time.cc webrtc_call.cc)
 target_include_directories(sm_compare PRIVATE ${WEBRTC_DIR}/include ${WEBRTC_DIR}/include/third_party/abseil-cpp)
 target_compile_definitions(sm_compare PRIVATE WEBRTC_POSIX)
 file(WRITE ${CMAKE_BINARY_DIR}/gen/webrtc_version.h "#define SM_WEBRTC_VERSION \"${WEBRTC_VERSION}\"\n")
 target_include_directories(sm_compare PRIVATE ${CMAKE_BINARY_DIR}/gen)
-target_link_libraries(sm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
+# sm_compare runs this library's call on a second thread (sm_compare_main.cc).
+find_package(Threads REQUIRED)
+target_link_libraries(sm_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a Threads::Threads)
 # libwebrtc.a contains the libc++ runtime.
 target_link_options(sm_compare PRIVATE -nostdlib++)
 # RTCP interop check (NACK, PLI, FIR, loss notification, compound): this
