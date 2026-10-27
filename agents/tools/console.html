@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Console</title>
+<title>streaming media</title>
 <link rel="icon" id="favicon" type="image/svg+xml" href="data:,">
 <style>
 :root {
@@ -77,7 +77,7 @@ dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-to
 </head>
 <body>
 <header>
-  <h1><span id="logo"></span>Agent Console</h1>
+  <h1><span id="logo"></span>streaming media</h1>
   <span class="repo">__REPO__</span>
   <span id="stopBadge"></span>
   <span id="modeBadge"></span>
@@ -201,7 +201,7 @@ function setAlert(k, v) {
   alertState[k] = v;
   const on = alertState.needs > 0 || alertState.stop;
   $("#favicon").href = "data:image/svg+xml," + encodeURIComponent(icon(on));
-  document.title = (alertState.needs ? `(${alertState.needs}) ` : "") + (alertState.stop ? "STOPPED · " : "") + "Agent Console";
+  document.title = (alertState.needs ? `(${alertState.needs}) ` : "") + (alertState.stop ? "STOPPED · " : "") + "streaming media";
 }
 $("#logo").innerHTML = icon(false);
 setAlert("needs", 0);
