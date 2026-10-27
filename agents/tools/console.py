@@ -46,12 +46,12 @@ AGENTS = {  # role -> how its posts are recognised
     "coordinator": "<!-- sm-agent: coordinator -->",
     "builder": "<!-- sm-agent: builder -->",
 }
-SCHEDULES = {  # role -> (cron in UTC, routine id); keep in step with the routines and dispatch.py
-    "fixer": (f"{d.SCHEDULED_FIXER_MINUTE} * * * *", d.ROUTINES["FIXER"]),
-    "reviewer": ("45 * * * *", d.ROUTINES["REVIEWER"]),
-    "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", d.ROUTINES["COORDINATOR"]),
-    "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", d.ROUTINES["TESTER"]),
-    "builder": ("30 16 * * *", d.ROUTINES["BUILDER"]),
+SCHEDULES = {  # role -> (cron in UTC, routine ids); keep in step with the routines and dispatch.py
+    "fixer": (f"{','.join(map(str, d.SCHEDULED_FIXER_MINUTES))} * * * *", (d.ROUTINES["FIXER"], d.ROUTINES["FIXER_B"])),  # B: on demand
+    "reviewer": ("45 * * * *", (d.ROUTINES["REVIEWER"],)),
+    "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", (d.ROUTINES["COORDINATOR"],)),
+    "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", (d.ROUTINES["TESTER"],)),
+    "builder": ("30 16 * * *", (d.ROUTINES["BUILDER"],)),
 }
 
 
@@ -73,12 +73,13 @@ def first_line(body):
 
 
 def next_cron(cron, after):
-    """Next time a simple 'M H * * *' cron (H may be '*' or a list) fires after `after`."""
-    minute, hours = cron.split()[:2]
+    """Next time a simple 'M H * * *' cron (M a list, H '*' or a list) fires after `after`."""
+    minutes, hours = cron.split()[:2]
+    minutes = [int(m) for m in minutes.split(",")]
     hours = range(24) if hours == "*" else [int(h) for h in hours.split(",")]
     t = after.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
     for _ in range(2 * 24 * 60):
-        if t.minute == int(minute) and t.hour in hours:
+        if t.minute in minutes and t.hour in hours:
             return t
         t += dt.timedelta(minutes=1)
     return None
@@ -273,15 +274,16 @@ class Views:
                                             "first": f"{rv['state'].lower()} on PR #{pr['number']}: "
                                                      + first_line(rv.get("body"))[:160]}
         log_body = self.gh.issue(d.LOG_ISSUE, fresh)["body"] or ""
-        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z]+): ([0-9TZ:-]+) -->", log_body))
+        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z_]+): ([0-9TZ:-]+) -->", log_body))
         t = now()
         roles = []
         for role in ("coordinator", "fixer", "reviewer", "tester", "builder"):
-            cron, rid = SCHEDULES[role]
+            cron, rids = SCHEDULES[role]
             nxt = next_cron(cron, t)
-            roles.append({"role": role, "cron": cron, "routine": rid, "next": iso(nxt) if nxt else None,
+            roles.append({"role": role, "cron": cron, "routines": list(rids), "next": iso(nxt) if nxt else None,
                           "last_post": last.get(role), "posts_48h": counts.get(role, 0),
-                          "last_dispatch": dispatched.get(role)})
+                          "last_dispatch": dispatched.get(role),
+                          "last_dispatch_b": dispatched.get("fixer_b") if role == "fixer" else None})
         return {"roles": roles, "owner_last": last.get("owner"), "notify_last": dispatched.get("notify")}
 
     # ---- dispatcher -------------------------------------------------------------

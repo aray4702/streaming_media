@@ -271,7 +271,7 @@ conversation:
 |---|---|---|---|---|
 | Runs as | Scheduled cloud routine | Scheduled cloud routine | Scheduled cloud routine | Person |
 | GitHub identity | @aray4702 (via the cloud session proxy) | @aray4702 (via the cloud session proxy) | GitHub App `streaming-media-reviewer[bot]` | @aray4702 |
-| Schedule (UTC) | Every 6 h at :00 (`0 */6 * * *`) | Hourly at :15 (`15 * * * *`) | Hourly at :45 (`45 * * * *`) | Whenever `needs-human` appears |
+| Schedule (UTC) | Every 6 h at :00 (`0 */6 * * *`) | Hourly at :15 (`15 * * * *`); Fixer B on demand (the Dispatcher starts it when a second item is free) | Hourly at :45 (`45 * * * *`) | Whenever `needs-human` appears |
 | Reads | `main`, test bench, existing issues | Issues labelled `agent-found` or `bug`, comments on its PRs | Open PRs, their diffs, CI results, comments | Everything |
 | Writes | Issues (and comments on its own issues) | Branches `fix/<issue>-<slug>`, PRs, replies to comments | PR reviews (comment, request changes, approve) and replies | Anything |
 | Must not | Push code or open PRs | Push to `main`, approve PRs, edit protected paths | Push code or merge by hand | |
