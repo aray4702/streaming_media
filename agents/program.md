@@ -402,7 +402,7 @@ a comment addressed to it, or no review yet:
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
 | `stage:baseline` / `stage:ai` | The stage a `roadmap` issue belongs to (section 0.1) | Owner |
 | `stage:later` | An improvement beyond libwebrtc; waits until stage 1 is done | Owner |
-| `blocked` | Waits on a named item (its comment says `Blocked by #N`) | Coordinator |
+| `blocked` | An issue or PR that waits on a named item (its comment says `Blocked by #N`); a `blocked` PR is held from merging, as in a merge freeze | Coordinator |
 | `needs-builder` | A system question for the Builder (`agents/builder.md`) | Coordinator, any agent |
 | `needs-coordinator` | A question the Coordinator decides (closing, order, placement); holds the item from Fixers until it answers | Fixer, any agent |
 | `needs-probe` | A risky PR the Tester probes before the Reviewer reviews it | Fixer, Coordinator |
