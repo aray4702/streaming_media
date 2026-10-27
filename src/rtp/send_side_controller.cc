@@ -83,7 +83,7 @@ void SendSideController::UpdateControlState(Timestamp now) {
   const std::optional<cc::TargetTransferRate> update = control_handler_.GetUpdate();
   if (!update) return;
   reported_reduce_ratio_ = update->cwnd_reduce_ratio;
-  if (allocation_configured_) allocator_.OnTargetChanged(update->target_rate, now);
+  if (allocation_configured_) allocator_.OnTargetChanged(update->target_rate, now, update->cwnd_reduce_ratio);
 }
 
 void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_seq, Timestamp now) const {

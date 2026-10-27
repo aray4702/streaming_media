@@ -1,0 +1,17 @@
+name issue_411_reconfigure_clears_cwnd_drop
+describe The 3 s outage of issue_372 on seed 3: an encoder reconfiguration during the outage ends the congestion-window frame drops until feedback returns, as in libwebrtc, so video keeps going into the dead link (issue #411, cluster D8)
+# libwebrtc's BitrateAllocator passes cwnd_reduce_ratio only on OnNetworkEstimateChanged; AddObserver (which
+# VideoSendStreamImpl::OnEncoderConfigurationChanged calls when the encoder goes to 480x270, about 2 s into the
+# outage) reallocates with std::nullopt, which the streams take as 0, and VideoStreamEncoder::UpdateTargetBitrate
+# resets cwnd_frame_drop_interval_. GoogCC re-sends the ratio only when the pushback target changes, which it no
+# longer does once pinned at its floor, so whether the drops resume depends on the seed. Ours kept the handler's
+# ratio through the reconfiguration and dropped frames for the whole outage on every seed.
+# net.loss_pct seeds 1-10 before: 5.56 5.54 5.64 5.69 5.47 5.54 5.58 5.74 5.48 5.60 (mean 5.6);
+# after: 5.75 5.75 8.59 8.67 5.63 8.49 5.70 8.69 5.66 8.56 (mean 7.1).
+# libwebrtc seeds 1-10 (main's compare-webrtc): 5.57 8.80 8.84 6.17 8.92 5.75 5.60 9.03 6.01 9.21 (mean 7.4).
+duration 30s
+seed 3
+at 0s capacity=2Mbps delay=40ms
+at 5s down
+at 8s up
+expect net.loss_pct > 7.5

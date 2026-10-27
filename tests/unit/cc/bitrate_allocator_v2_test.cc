@@ -138,3 +138,22 @@ SM_TEST(BitrateAllocatorV2, LimitsAddUpMinimumsMaximumsAndPadding) {
   a.RemoveObserver("video");
   SM_EXPECT_EQ(a.limits().max_allocatable.kbps(), 50.0);
 }
+
+// BitrateAllocationUpdate::cwnd_reduce_ratio (issue #411, D8): OnNetworkEstimateChanged passes the
+// network update's ratio to every stream, and AddObserver's ReallocateAndNotifyObservers(std::nullopt)
+// passes value_or(0), which ends the video encoder's congestion-window frame drops.
+SM_TEST(BitrateAllocatorV2, ReduceRatioRidesOnNetworkUpdatesAndAddObserverClearsIt) {
+  BitrateAllocatorV2 a;
+  a.AddObserver("audio", Stream(50, 50, true));
+  a.AddObserver("video", Stream(100, 1000));
+  a.OnTargetChanged(Kbps(800), kNow, 0.5);
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("audio"), 0.5);
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("video"), 0.5);
+  a.AddObserver("video", Stream(150, 1500));  // OnEncoderConfigurationChanged: new limits.
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("audio"), 0.0);
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("video"), 0.0);
+  SM_EXPECT_EQ(a.allocation("video").kbps(), 750.0);
+  a.OnTargetChanged(Kbps(800), kNow, 0.25);
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("video"), 0.25);
+  SM_EXPECT_EQ(a.cwnd_reduce_ratio("none"), 0.0);
+}
