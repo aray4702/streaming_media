@@ -171,6 +171,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.keyframes", "Keyframes encoded"},
       {"video.keyframe_requests", "PLI/FIR received by the sender"},
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
+      {"video.encoder_target_avg_kbps", "Mean rate the encoder is configured with (after the bitrate adjuster), sampled at each captured frame (issue #466)"},
       {"video.undecodable_frames", "Frames received but discarded because a reference was missing"},
       {"video.residual_loss_pct", "Video media packets never recovered (after NACK/RTX and FEC)"},
       {"sync.av_offset_p50_ms", "Median A/V offset at each rendered frame: capture time of the audio playing minus the frame's (positive: video later than audio)"},
@@ -642,6 +643,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // --- State ----------------------------------------------------------------
   int64_t frames_encoded = 0, frames_skipped = 0, keyframes_sent = 0, keyframe_requests = 0;
+  int64_t encoder_target_bps_sum = 0;  // The encoder's configured rate at each captured frame (issue #466).
+  const EncoderModel::Behaviour enc_behaviour{s.encoder_overshoot, s.scene_change_interval.ms(), s.scene_change_frames,
+                                              s.scene_change_factor};
   int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
@@ -795,6 +799,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const bool key = dec.keyframe;
       ++vt_row.captured;
       vt_row.encoder_target_bps = vr.bps();
+      encoder_target_bps_sum += vr.bps();
       if (!dec.encode) {
         ++frames_skipped;
         switch (dec.reason) {
@@ -806,7 +811,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         ++vt_row.encoded;
         ++frames_encoded;
         double per_frame = static_cast<double>(vr.bps()) / 8 / s.video_fps;
-        int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2));
+        int64_t bytes = static_cast<int64_t>(
+            key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2) * EncoderModel::DeltaSizeFactor(enc_behaviour, t, s.video_fps));
         bytes = std::max<int64_t>(bytes, 200);
         vt_row.encoded_bytes += bytes;
         const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
@@ -1106,6 +1112,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["video.keyframes"] = static_cast<double>(keyframes_sent);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(frames_skipped);
+    m["video.encoder_target_avg_kbps"] =
+        frames_encoded + frames_skipped
+            ? static_cast<double>(encoder_target_bps_sum) / static_cast<double>(frames_encoded + frames_skipped) / 1000
+            : 0;
     m["video.undecodable_frames"] = static_cast<double>(vrx.keyframes().stats().frames_dropped);
     {
       // Packets sent in the last second may still be in flight or under repair.

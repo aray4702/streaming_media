@@ -128,6 +128,8 @@ One directive per line, and `#` starts a comment.
 | `video_fps <n>` | 30 | |
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
+| `encoder_overshoot <x>` | 1 | Delta frames are x times the size model's on both stacks: 1.3 is a hot encoder, 0.7 one that undershoots; keyframes keep 4x (`testbench/encoder_model.h`, #466) |
+| `scene_change <interval> <frames> <factor>` | off | A scene cut every `interval` after the first: the delta frames of its first `frames` frame intervals are `factor` x, on both stacks (`testbench/encoder_model.h`, #466) |
 | `encoder_speed <x>` | 1 | CPU speed for the encoder model's encode time: 10 ms per 720p frame at 1, reported in the video trace (#84) |
 | `sps_pps_tracker on\|off` | off | `on`: the receiver drops the first packet of an IDR slice that arrives before an SPS and a PPS and requests a keyframe, as libwebrtc's `H264SpsPpsTracker` (#453) |
 | `render_smoothing on\|off` | off | `on`: decoded frames pass libwebrtc's pre-render queue (`IncomingVideoStream` / `VideoRenderFrames`): a frame waits until 10 ms before its render time, of several due at once only the newest renders, and late or out-of-order frames are dropped, as `sm_compare`'s libwebrtc side does by default (#437) |
@@ -186,7 +188,9 @@ Link keys (any subset; unset keys keep their previous value):
   to render), `time_to_first_frame_ms`, `avg_kbps`, `qp_mean` (mean QP of encoded
   frames from the encoder model both stacks share,
   `testbench/encoder_model.h`), `keyframes`,
-  `keyframe_requests`, `encoder_dropped`, `undecodable_frames`,
+  `keyframe_requests`, `encoder_dropped`, `encoder_target_avg_kbps` (the
+  rate the encoder is configured with, after the bitrate adjuster, at each
+  captured frame; #466), `undecodable_frames`,
   `residual_loss_pct`.
   - Delay breakdown of each rendered frame: `delay_encode_ms` (mean
     capture to handed to the sender; the bench's encoder is
