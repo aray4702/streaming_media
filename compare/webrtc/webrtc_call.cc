@@ -1030,13 +1030,26 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       }
     }
 
-    // Deliver what arrived.
-    forward.ReceiveEach(now, [&](Pkt p, sm::Timestamp at) {
+    // Deliver what arrives by the next tick, each packet at its own arrival time (issue #453). SimTime runs its
+    // queues in creation order, so a packet that arrived during the last millisecond and was posted at this tick
+    // reached the receiver after its timers due at this millisecond had run: libwebrtc's transport feedback at
+    // 200 ms left out a packet that arrived at 199.3 ms, which a real receiver (and this library's, which takes the
+    // tick's packets before its Process) reports. The packet is still counted here, at the tick before it arrives.
+    auto post_at = [&](w::TaskQueueBase* q, w::Timestamp at_w, absl::AnyInvocable<void() &&> task) {
+      const w::TimeDelta delay = at_w - sim.Now();
+      if (delay > w::TimeDelta::Zero()) {
+        q->PostDelayedHighPrecisionTask(std::move(task), delay);
+      } else {
+        q->PostTask(std::move(task));
+      }
+    };
+    const sm::Timestamp horizon = now + sm::TimeDelta::Millis(1);
+    forward.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
       if (p.cross) return;
       const w::Timestamp at_w = t0 + w::TimeDelta::Micros(at.us());
       if (p.rtcp) {
-        receiver_q->PostTask(
-            [&, buf = w::CopyOnWriteBuffer(p.data)] { recv_call->Receiver()->DeliverRtcpPacket(buf); });
+        post_at(receiver_q.get(), at_w,
+                [&, buf = w::CopyOnWriteBuffer(p.data)] { recv_call->Receiver()->DeliverRtcpPacket(buf); });
         return;
       }
       RtpInfo r = ParseRtp(p.data);
@@ -1076,7 +1089,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (video_received.insert(u).second) ++nack_recovered;
       }
       w::MediaType media = r.ssrc == kAudioSsrc ? w::MediaType::AUDIO : w::MediaType::VIDEO;
-      receiver_q->PostTask([&, media, at_w, buf = w::CopyOnWriteBuffer(p.data)] {
+      post_at(receiver_q.get(), at_w, [&, media, at_w, buf = w::CopyOnWriteBuffer(p.data)] {
         w::RtpPacketReceived packet(&extension_map, at_w);
         if (!packet.Parse(buf)) return;
         // As WebRtcVideoReceiveChannel::OnPacketReceived (webrtc_video_engine.cc:3425); the voice channel sets none.
@@ -1087,9 +1100,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
                                                 [](const w::RtpPacketReceived&) { return false; });
       });
     });
-    reverse.ReceiveEach(now, [&](Pkt p, sm::Timestamp) {
+    reverse.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
       if (p.cross || !p.rtcp) return;
-      sender_q->PostTask([&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
+      post_at(sender_q.get(), t0 + w::TimeDelta::Micros(at.us()),
+              [&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
     });
 
     // Receive-side frame counters once per second (issue #437), read on the receiver's queue: frames inserted into
