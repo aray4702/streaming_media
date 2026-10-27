@@ -241,8 +241,9 @@ class Dispatcher:
         update_done = False
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
             n, sha = pr["number"], pr["head"]["sha"]
-            if pr["draft"] or "needs-human" in labels(pr):
-                self.note(f"PR #{n}", "draft" if pr["draft"] else "needs-human")
+            held = labels(pr) & {"needs-human", "blocked"}  # blocked: a merge freeze (agents/coordinator.md)
+            if pr["draft"] or held:
+                self.note(f"PR #{n}", "draft" if pr["draft"] else ", ".join(sorted(held)))
                 continue
             ci, _ = self.ci_ok(sha)
             rev = self.bot_review(n)

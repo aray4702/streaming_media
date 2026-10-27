@@ -76,7 +76,10 @@ these carry authority:
   `.github/` or `agents/`, and parity closed > opened on its head (or the
   `owner-approved` label). It updates one such PR at a time when it is
   behind `main`. A PR that regenerates the baseline gets a merge freeze on
-  the others while it lands: hold them with `needs-human` and say why.
+  the others while it lands: hold them with `blocked` and a comment
+  `Blocked by #N (merge freeze)`, and remove the label when #N merges.
+  The Dispatcher neither updates nor auto-merges a `blocked` PR. Don't use
+  `needs-human` for a freeze: it means a question for the Owner.
 - **Tight bound rule (2026-10-20).** A held guard-rail bound sits just
   above **our seed-1 value** with a 10-30 % margin, and **never beyond
   libwebrtc's worst seed in 1-10**. If they conflict, the cap wins. If our
