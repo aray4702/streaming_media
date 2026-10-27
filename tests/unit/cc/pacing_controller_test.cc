@@ -346,6 +346,26 @@ SM_TEST(PacingController, KeyframeFlushesTheQueuedVideoPackets) {
   SM_EXPECT_TRUE(pacer.TakeFlushed().empty());
 }
 
+// With keyframe_flush_padding the flush also discards queued padding, which libwebrtc sends on the
+// video stream's RTX SSRC and clears with RemovePacketsForSsrc(rtx_ssrc) (pacing_controller.cc:227-231).
+// Without it a padding packet left behind a probe waits behind media for as long as the queue is busy.
+SM_TEST(PacingController, KeyframeFlushesQueuedPaddingWhenConfigured) {
+  for (bool flush_padding : {false, true}) {
+    PacingControllerConfig cfg;
+    cfg.keyframe_flush_padding = flush_padding;
+    PacingController pacer(cfg);
+    pacer.SetPacingRates(DataRate::KilobitsPerSec(100), DataRate::Zero());
+    const Timestamp t0 = Timestamp::Millis(1000);
+    pacer.Enqueue(Pkt(1, PacketPriority::kPadding, 300, t0));
+    pacer.Enqueue(Pkt(2, PacketPriority::kVideo, 1000, t0));
+    pacer.Enqueue(KeyPkt(3, true, t0 + TimeDelta::Millis(10)));
+    auto flushed = pacer.TakeFlushed();
+    SM_ASSERT_EQ(flushed.size(), flush_padding ? 2u : 1u);
+    SM_EXPECT_EQ(pacer.QueuePackets(), flush_padding ? 1u : 2u);  // The keyframe packet (and the padding).
+    SM_EXPECT_EQ(pacer.OldestQueueTime(t0 + TimeDelta::Millis(20)).ms(), flush_padding ? 10 : 20);
+  }
+}
+
 // Only the first packet of a keyframe flushes, and not while the queue already
 // holds keyframe packets (HasKeyframePackets), so one keyframe is not cut by
 // its own later packets.
