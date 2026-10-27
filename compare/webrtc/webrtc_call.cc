@@ -747,6 +747,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     double max_gap_ms = 0;
   };
   std::vector<RenderSecond> render_by_second;
+  // Cumulative receive-side frame counters at the end of each second (issue #437).
+  struct RxSecond {
+    int64_t t_ms = 0, complete = 0, decoded = 0, dropped = 0;
+  };
+  std::vector<RxSecond> rx_by_second;
   video::FreezeDetector freezes;
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
@@ -1079,6 +1084,16 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       sender_q->PostTask([&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
     });
 
+    // Receive-side frame counters once per second (issue #437), read on the receiver's queue: frames inserted into
+    // the frame buffer (frame_counts, from VideoStreamBufferController's OnCompleteFrame), decoded and dropped.
+    if (opt.video_trace && video_recv && t % 1000 == 999) {
+      receiver_q->PostTask([&, t_ms = t + 1] {
+        w::VideoReceiveStreamInterface::Stats st = video_recv->GetStats();
+        rx_by_second.push_back({t_ms, static_cast<int64_t>(st.frame_counts.key_frames + st.frame_counts.delta_frames),
+                                static_cast<int64_t>(st.frames_decoded), static_cast<int64_t>(st.frames_dropped)});
+      });
+    }
+
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0) {
       receiver_q->PostTask([&, t_ms = t] {
@@ -1271,6 +1286,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (sec < render_by_second.size()) {
         r.rendered = render_by_second[sec].rendered;
         r.max_render_gap_ms = render_by_second[sec].max_gap_ms;
+      }
+      // Receive-side frame counters as deltas over the second (issue #437).
+      for (size_t i = 0; i < rx_by_second.size(); ++i) {
+        if (rx_by_second[i].t_ms != r.t_ms) continue;
+        const RxSecond prev = i > 0 ? rx_by_second[i - 1] : RxSecond{};
+        r.rx_complete = static_cast<int>(rx_by_second[i].complete - prev.complete);
+        r.rx_decoded = static_cast<int>(rx_by_second[i].decoded - prev.decoded);
+        r.rx_dropped = static_cast<int>(rx_by_second[i].dropped - prev.dropped);
       }
       // The scaler checks in [t_ms - 1000, t_ms), as the test bench counts them (issue #347).
       for (const QualityScalerLog::Check& c : qs_log.checks) {
