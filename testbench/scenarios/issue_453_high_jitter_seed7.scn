@@ -1,0 +1,9 @@
+name issue_453_high_jitter_seed7
+describe high_jitter on seed 7 with the SPS/PPS tracker and the H.264 missing-packets hold on (yardstick for #453, not for merge)
+duration 30s
+seed 7
+compare_seeds 1
+sps_pps_tracker on
+h264_missing_packets on
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect audio.interruptions == 0
