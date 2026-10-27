@@ -3749,7 +3749,7 @@ issue_415_cross_80pct_standing_queue - An 800 kbps constant-rate competing flow 
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                 0.1          0.1
 
-issue_430_av_outage_4s - audio+video call, 4 s outage at 15 s on both paths: how long video takes to come back after link-up (
+issue_430_av_outage_4s - audio+video call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity,
   metric                                   sm       webrtc  better
   audio.concealed_pct                    10.2         10.1  =
   audio.interruptions                       1            1  =
@@ -3800,7 +3800,7 @@ issue_430_av_outage_4s - audio+video call, 4 s outage at 15 s on both paths: how
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-issue_430_av_outage_6s - audio+video call, 6 s outage at 15 s on both paths: how long video takes to come back after link-up (
+issue_430_av_outage_6s - audio+video call, 6 s outage at 15 s on both paths: video returns at link-up or one 3 s decode timeout later, as libwebrtc (parity,
   metric                                   sm       webrtc  better
   audio.concealed_pct                    15.2         15.1  =
   audio.interruptions                       1            1  =
@@ -3851,7 +3851,7 @@ issue_430_av_outage_6s - audio+video call, 6 s outage at 15 s on both paths: how
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
 
-issue_430_video_only_outage_4s - video-only call, 4 s outage at 15 s on both paths: how long video takes to come back after link-up (
+issue_430_video_only_outage_4s - video-only call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity,
   metric                                   sm       webrtc  better
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
