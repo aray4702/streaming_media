@@ -1,6 +1,11 @@
 name issue_430_video_only_outage_4s
-describe video-only call, 4 s outage at 15 s on both paths: how long video takes to come back after link-up (#430, the #134 case)
-# Tester repro from #430 (commit 9ad10c6). Yardstick for #430: libwebrtc's side comes from this PR's compare-webrtc.
+describe video-only call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity, #430, the #134 case)
+# #430's video-only case (#134, merged into #430). libwebrtc does the same
+# (#433's compare-webrtc, seeds 1-10, @ 0d86dcc):
+#   metric                ours mean (min-max)       libwebrtc mean (min-max)
+#   video.pause_total_ms  6218 (6181-6279)          6189 (6131-6236)
+#   video.render_fps      25.26 (25.25-25.28)       25.24 (25.23-25.25)
+# Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
 seed 1
 duration 40s
 audio off
@@ -10,6 +15,5 @@ at 19s up
 reverse at 0s delay=30ms
 reverse at 15s down
 reverse at 19s up
-# Ours, seeds 1-10 @ 6684b0b: pause_total_ms 6181-6279, frames_rendered 1010-1011
-expect video.pause_total_ms < 6450
-expect video.frames_rendered > 990
+expect video.pause_total_ms < 6900
+expect video.render_fps > 22.7
