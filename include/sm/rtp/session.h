@@ -19,6 +19,15 @@
 // starts no thread, and never allocates after setup beyond the packets it
 // returns.
 //
+// Clock contract: every `now` passed to a Session must come from one
+// monotonic clock (never decreasing; the host's steady clock, not wall-clock
+// time, which NTP and DST can step back). libwebrtc requires the same: its
+// PacingController::CurrentTime (pacing_controller.cc) logs "Non-monotonic
+// clock behavior observed", DCHECKs and holds the previous time, and this
+// pacer clamps the same way. So after a backward step the session sends
+// nothing, media or RTCP, until `now` passes its old high-water mark: a 60 s
+// step is a 60 s silent call (issue #440). A forward step is absorbed.
+//
 // Video payloads are opaque in this layer, as in the test bench today: the
 // app supplies a VideoPayloadParser that tells the receiver where a frame
 // starts and whether it is a keyframe, and SendVideo() splits the frame into
@@ -278,6 +287,8 @@ class Session : public MetricsSource {
 
   // --- Drive ------------------------------------------------------------------
   // Cheap to call every tick. The first call starts the congestion controller.
+  // `now` must never decrease across calls to any method (the clock contract
+  // above); a backward step stalls sending until `now` catches up.
   void Process(Timestamp now);
   // When Process must run next. With a video receiver this is at most 1 ms
   // away, because frame scheduling is evaluated on every call.
