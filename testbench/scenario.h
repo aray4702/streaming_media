@@ -93,6 +93,10 @@ struct Scenario {
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). Off by default until it is judged.
   bool sps_pps_tracker = false;
+  // `render_smoothing on|off`: decoded frames pass libwebrtc's pre-render queue (IncomingVideoStream,
+  // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
+  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
+  bool render_smoothing = false;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; on by default since #84's flip, on both stacks of

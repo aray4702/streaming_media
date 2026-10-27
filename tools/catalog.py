@@ -1307,7 +1307,8 @@ ALGORITHMS = [
          verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
-         headers=["video/frame_scheduler.h", "timing/frame_release.h"], unit=["FrameScheduler", "VcmTiming"],
+         headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
+         unit=["FrameScheduler", "VcmTiming", "RenderFrames"],
          e2e=["E2E_FrameScheduler"],
          bench=["video/FrameScheduler_frame"],
          scenario="30 fps over 15 ms jitter: VideoJitterEstimator + VideoTiming give render times and the "
@@ -1320,7 +1321,13 @@ ALGORITHMS = [
                                 "when a later temporal unit (here a keyframe) is decodable, so the 10 ms late-drop "
                                 "rule is gone: with every v2 switch on, `issue_53_cwnd_pushback`'s link renders "
                                 "28.8-29.2 fps on seeds 1-10 (timing v1 16.0-20.8, libwebrtc 27-28); "
-                                "`issue_24_timing_v2_render_fps` locks it in."),
+                                "`issue_24_timing_v2_render_fps` locks it in. "
+                                "Issue #437 (partial): `video::RenderFrames` ports libwebrtc's pre-render queue "
+                                "(video/render/incoming_video_stream.cc, video_render_frames.cc), behind "
+                                "`render_smoothing` (off by default). With it on, `very_low_capacity` seeds 1-10 render "
+                                "466 -> 421 frames and freeze 25.3 -> 24.6 times (libwebrtc 369 and 21.3); "
+                                "`issue_437_render_smoothing_very_low_capacity` locks it in "
+                                "([fix record](../../fixes/437-render-smoothing.md))."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
          headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],
