@@ -133,6 +133,10 @@ class GccController : public MetricsSource {
   // Largest (feedback time - send time) among the packets the last feedback
   // reported as received; nullopt if it reported none.
   std::optional<TimeDelta> last_feedback_max_rtt() const { return last_feedback_max_rtt_; }
+  // Whether the last feedback updated the delay-based estimate (DelayBasedBwe::Result::updated):
+  // GoogCC runs MaybeTriggerOnNetworkChanged after a feedback only then. False for a feedback
+  // that reported no packet this sender knows (GoogCC returns early).
+  bool last_feedback_delay_updated() const { return last_feedback_delay_updated_; }
   const DelayBasedBwe& delay_bwe() const { return delay_; }
   const AlrDetector& alr_detector() const { return alr_; }
   const ProbeControllerV2& probe_controller_v2() const { return probe2_; }
@@ -175,6 +179,7 @@ class GccController : public MetricsSource {
   DataRate target_;
   DataRate last_reported_;
   std::optional<TimeDelta> last_feedback_max_rtt_;
+  bool last_feedback_delay_updated_ = false;
   TimeDelta last_rtt_ = TimeDelta::Zero();
   Histogram target_kbps_;
   // BWE trace state (bwe_trace): the last values logged, as libwebrtc keeps them.
