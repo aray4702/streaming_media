@@ -94,4 +94,9 @@ function(sm_add_opus)
     target_compile_options(sm_opus PRIVATE -O2 -ffp-contract=off -w)
   endif()
   set_target_properties(sm_opus PROPERTIES C_STANDARD 99 POSITION_INDEPENDENT_CODE ON)
+  if(EMSCRIPTEN)
+    # libopus keeps its scratch arrays on the stack (VAR_ARRAYS); Emscripten's
+    # 64 KB default stack overflows into the heap without a trap.
+    target_link_options(sm_opus INTERFACE -sSTACK_SIZE=4194304)
+  endif()
 endfunction()
