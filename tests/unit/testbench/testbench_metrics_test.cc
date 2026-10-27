@@ -299,6 +299,9 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[0].qs_qp_high = 25;
   trace[0].qs_qp_low = 24;
   trace[0].qs_signal = 1;
+  trace[0].rx_complete = 25;  // Issue #437.
+  trace[0].rx_decoded = 23;
+  trace[0].rx_dropped = 2;
   trace[1].t_ms = 2000;
   trace[1].dropped_congestion_window = 2;
   trace[1].dropped_encoder_queue = 1;
@@ -307,9 +310,9 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
                "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
                "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,"
-               "qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,360.0,1,25,24,-1,1\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0.0,0,-1,-1,-1,0\n");  // No frame encoded: 0.
+               "qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,360.0,1,25,24,-1,1,25,23,2\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0.0,0,-1,-1,-1,0,0,0,0\n");  // No frame encoded: 0.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {

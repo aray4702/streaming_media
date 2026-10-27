@@ -6,6 +6,8 @@ describe audio+video call, 6 s outage at 15 s on both paths: video returns at li
 #   video.pause_total_ms  7384 (6156-9240)          7076 (6156-9203)
 #   video.render_fps      24.34 (22.88-25.28)       24.57 (22.98-25.25)
 # Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
+# Seeds 1-80 (#447, CI compare-webrtc at 42c1446), ours / libwebrtc: A/V offset p95 96.6 / 76.8 ms (libwebrtc sd 29.2),
+# ours higher on 48/80: in band, so seed spread.
 seed 1
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=300ms

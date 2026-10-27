@@ -39,7 +39,8 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       rtx_rate_(cfg.repair_window.ms(), 8000.0f),
       fec_rate_(cfg.repair_window.ms(), 8000.0f),
       target_(cfg.gcc.start_rate),
-      pushback_target_(cfg.gcc.start_rate) {
+      pushback_target_(cfg.gcc.start_rate),
+      window_target_(cfg.gcc.start_rate) {
   pacer_.SetTransportOverhead(DataSize::Bytes(cfg_.transport_overhead_bytes));
 }
 
@@ -55,12 +56,15 @@ void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now)
 
 // libwebrtc runs UpdateTargetBitrate() whenever the network state may have
 // changed: after feedback, on the process interval and for every sent packet.
+// UpdateCongestionWindowSize sizes the window from last_loss_based_target_rate_, the target the
+// last MaybeTriggerOnNetworkChanged saw, before this update's trigger runs (OnProcessInterval).
 void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   cwnd_.UpdatePacingQueue(pacer_.QueueSize());
-  if (window) cwnd_.UpdateWindow(target_);
+  if (window) cwnd_.UpdateWindow(window_target_);
   // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+  window_target_ = target_;
 }
 
 // GoogCC's MaybeTriggerOnNetworkChanged hands its TargetTransferRate to the transport's
@@ -384,8 +388,16 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }
   Apply(gcc_.OnTransportFeedback(fb, now), now);
-  if (auto rtt = gcc_.last_feedback_max_rtt()) cwnd_.OnFeedbackRtt(*rtt);
-  UpdatePushback(now, true);
+  // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
+  // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
+  // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
+  // before this feedback. After an outage the first feedback clears the lost packets from flight;
+  // against the grown window that fill would fall under 0.1 and end the pushback at once (#446).
+  if (gcc_.last_feedback_delay_updated()) UpdatePushback(now, false);
+  if (auto rtt = gcc_.last_feedback_max_rtt()) {
+    cwnd_.OnFeedbackRtt(*rtt);
+    cwnd_.UpdateWindow(window_target_);
+  }
   PostTargetRate(now);
   outage_.OnFeedback(now);
 }

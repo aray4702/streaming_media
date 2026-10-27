@@ -184,6 +184,7 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   last_now_ = now;
   std::vector<PacketResult> results = history_.OnFeedback(fb, now);
   last_feedback_max_rtt_.reset();
+  last_feedback_delay_updated_ = false;
   for (const auto& r : results) {
     if (r.received()) last_feedback_max_rtt_ = std::max(last_feedback_max_rtt_.value_or(TimeDelta::Zero()), now - r.send_time);
   }
@@ -228,6 +229,7 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   const DelayBasedBwe::Result result = delay_.last_result();
   TraceDetector(now);
   TraceDelayBased(now, delay_est, result.updated);
+  last_feedback_delay_updated_ = result.updated;
   if (result.updated) {
     if (result.probe) ssbe_.SetSendBitrate(delay_est, now);
     // SetSendBitrate resets the delay-based limit, so this comes after it.

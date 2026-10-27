@@ -652,7 +652,13 @@ ALGORITHMS = [
                       "transport feedback as in flight for 60 s, which would hold the window shut; they are now "
                       "settled once a later feedback is reported. The library default is on (libwebrtc enables it "
                       "through the WebRTC-CongestionWindow field trial; rate_control_settings.cc, which holds the "
-                      "default, is not in compare/webrtc/reference)."),
+                      "default, is not in compare/webrtc/reference). Issue #446 "
+                      "([fix record](../../fixes/446-cwnd-feedback-order.md)): after a transport feedback the pushback runs "
+                      "only when the delay-based estimate updated, and before the window is resized from the target of the "
+                      "last pushback update (`GoogCcNetworkController::OnTransportPacketsFeedback` and `OnProcessInterval`, "
+                      "goog_cc_network_control.cc:215-241 and 421-541). The pushback used to resize the window first, so "
+                      "the first feedback after an outage, which clears the lost packets from flight, ended the pushback "
+                      "while the retransmissions still filled the bottleneck."),
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],

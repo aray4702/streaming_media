@@ -69,6 +69,11 @@ struct VideoTraceRow {
   int qs_checks = 0;
   int qs_qp_high = -1, qs_qp_low = -1, qs_drop_pct = -1;
   int qs_signal = 0;
+  // Receive-side frame path in the second (issue #437): frames assembled and
+  // handed to the frame buffer (libwebrtc's received_frame_counts, counted on insertion),
+  // frames decoded (frames_decoded) and frames dropped (frames_dropped:
+  // fast-forwards and frames cleared for a keyframe).
+  int rx_complete = 0, rx_decoded = 0, rx_dropped = 0;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for

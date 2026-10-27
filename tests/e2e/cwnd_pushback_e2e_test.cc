@@ -152,3 +152,82 @@ SM_TEST(E2E_CongestionWindowPushback, EncoderBacksOffWhenTheBottleneckFills) {
   SM_EXPECT_LT(with.sent_kbps_after_drop, without.sent_kbps_after_drop);
   SM_EXPECT_LE(with.in_flight_end, with.window_end);
 }
+
+// A 4 s outage on both paths at 1500 kbps (issue #446, the issue_430 video-only
+// case). Without feedback the data in flight passes 1.5 windows and the
+// encoding-rate ratio falls toward zero. At link-up the first feedback reports
+// the packets lost in the outage and clears them from flight. libwebrtc's
+// GoogCcNetworkController::OnTransportPacketsFeedback weighs the remaining data
+// in flight against the window from before that feedback, and sizes the new
+// window after it (goog_cc_network_control.cc:421-541). The fill does not fall
+// under 0.1, so the ratio keeps climbing from near zero and the encoder keeps
+// dropping every other frame while the retransmissions drain. If the window
+// were updated first, the fill would fall under 0.1, the ratio would reset to
+// 1, and the encoder would go back to the full target into a queue that the
+// retransmissions still hold.
+SM_TEST(E2E_CongestionWindowPushback, PushbackHoldsAcrossTheFirstFeedbackAfterAnOutage) {
+  const test::TestVideoParser parser;
+  Session a(MakeConfig(10, "alice", true)), b(MakeConfig(20, "bob", true));
+  VideoStreamConfig v;
+  v.ssrc = kVideoSsrc;
+  v.rtx_ssrc = kRtxSsrc;
+  v.parser = &parser;
+  auto send = a.AddVideoSend(v);
+  auto recv = b.AddVideoReceive(v);
+  (void)b.AddVideoSend(v);
+
+  sim::LinkConfig lc;
+  lc.base_delay = TimeDelta::Millis(30);
+  lc.capacity = DataRate::KilobitsPerSec(1500);
+  lc.queue_limit = DataSize::Bytes(56250);  // 300 ms at 1500 kbps.
+  sim::NetworkLink<std::vector<uint8_t>> ab(lc, 1);
+  sim::NetworkLink<std::vector<uint8_t>> ba(lc, 2);
+
+  const int64_t down_ms = 15000, up_ms = 19000, end_ms = 21000;
+  bool key_needed = true;
+  double ratio_before_up = 1.0, max_ratio_after = 0.0;
+  int64_t first_feedback_ms = -1;
+  for (int64_t t = 0; t < end_ms; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t == down_ms || t == up_ms) {
+      lc.down = t == down_ms;
+      ab.SetConfig(lc);
+      ba.SetConfig(lc);
+    }
+    if (t % 33 == 0) {
+      if (!a.send_side().DropCapturedFrame()) {
+        const bool key = key_needed;
+        key_needed = false;
+        const double per_frame = static_cast<double>(a.rates().video_target.bps()) / 8 / 30;
+        auto chunks = test::MakeTestFrameChunks(key, static_cast<size_t>(key ? per_frame * 4 : per_frame), 1188);
+        a.SendVideoChunks(send, chunks, static_cast<uint32_t>(t * 90), now);
+      }
+    }
+    a.Process(now);
+    b.Process(now);
+    for (auto& p : a.TakeOutgoing()) ab.Send(now, std::move(p.bytes), p.wire_size);
+    for (auto& p : b.TakeOutgoing()) ba.Send(now, std::move(p.bytes), p.wire_size);
+    ab.ReceiveEach(now, [&](std::vector<uint8_t> bytes, Timestamp at) { b.OnPacket(bytes, at); });
+    const int64_t in_flight_before = a.send_side().gcc().history().InFlight().bytes();
+    ba.ReceiveEach(now, [&](std::vector<uint8_t> bytes, Timestamp at) { a.OnPacket(bytes, at); });
+    b.TakeVideoFrames(recv);
+    for (const auto& e : a.TakeEvents()) {
+      if (e.type == SessionEventType::kKeyframeRequested) key_needed = true;
+    }
+    b.TakeEvents();
+    const double ratio = a.send_side().congestion_window().encoding_rate_ratio();
+    if (t == up_ms - 1) ratio_before_up = ratio;
+    if (t >= up_ms && first_feedback_ms < 0 && a.send_side().gcc().history().InFlight().bytes() < in_flight_before / 2) {
+      first_feedback_ms = t;
+    }
+    if (first_feedback_ms >= 0 && t < first_feedback_ms + 500) max_ratio_after = std::max(max_ratio_after, ratio);
+  }
+  SM_RECORD("ratio_before_up", ratio_before_up);
+  SM_RECORD("first_feedback_ms", static_cast<double>(first_feedback_ms));
+  SM_RECORD("max_ratio_after", max_ratio_after);
+  SM_EXPECT_LT(ratio_before_up, 0.01);
+  SM_EXPECT_GE(first_feedback_ms, up_ms);
+  // libwebrtc (issue_430_video_only_outage_4s, seed 1): 15 congestion-window frame drops in 19-20 s and an
+  // encoder target of half the allocation at 20 s; this library without the feedback-path order: 2 drops.
+  SM_EXPECT_LT(max_ratio_after, 0.5);
+}
