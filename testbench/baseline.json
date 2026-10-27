@@ -6278,7 +6278,7 @@
   "scenario": "issue_415_cross_80pct_standing_queue"
  },
  {
-  "description": "audio+video call, 4 s outage at 15 s on both paths: how long video takes to come back after link-up (",
+  "description": "audio+video call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity,",
   "metrics": {
    "audio.concealed_pct": 10.09,
    "audio.interruption_ms": 3972,
@@ -6363,7 +6363,7 @@
   "scenario": "issue_430_av_outage_4s"
  },
  {
-  "description": "audio+video call, 6 s outage at 15 s on both paths: how long video takes to come back after link-up (",
+  "description": "audio+video call, 6 s outage at 15 s on both paths: video returns at link-up or one 3 s decode timeout later, as libwebrtc (parity,",
   "metrics": {
    "audio.concealed_pct": 15.08,
    "audio.interruption_ms": 5972,
@@ -6448,7 +6448,7 @@
   "scenario": "issue_430_av_outage_6s"
  },
  {
-  "description": "video-only call, 4 s outage at 15 s on both paths: how long video takes to come back after link-up (",
+  "description": "video-only call, 4 s outage at 15 s on both paths: video returns about 6.2 s after the last frame, as libwebrtc (parity,",
   "metrics": {
    "cc.goodput_kbps": 1181,
    "cc.max_settle_ms": 300,
