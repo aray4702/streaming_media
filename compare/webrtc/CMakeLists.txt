@@ -44,6 +44,12 @@ add_compile_definitions(
 file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
 add_library(sm_all STATIC ${SM_SOURCES} ${SM_ROOT}/testbench/scenario.cc ${SM_ROOT}/testbench/call.cc)
 target_include_directories(sm_all PUBLIC ${SM_ROOT}/include ${SM_ROOT}/testbench)
+# The test bench encodes its audio with libopus (issue #457). libwebrtc.a
+# carries the same revision (55513e81, compare/webrtc/reference/fetch.sh), so
+# this library's side links libwebrtc's copy and needs only the headers.
+include(${SM_ROOT}/cmake/SmOpus.cmake)
+sm_opus_source_dir(SM_OPUS_DIR)
+target_include_directories(sm_all SYSTEM PUBLIC ${SM_OPUS_DIR}/include)
 
 add_executable(sm_compare sm_compare_main.cc sim_time.cc webrtc_call.cc)
 target_include_directories(sm_compare PRIVATE ${WEBRTC_DIR}/include ${WEBRTC_DIR}/include/third_party/abseil-cpp)
