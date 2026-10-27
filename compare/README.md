@@ -104,10 +104,12 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
 
 ### Differences to keep in mind
 
-- **Audio codecs differ.** libwebrtc runs real Opus with in-band FEC.
-  The test bench sends payload stand-ins and plays the original samples.
-  Audio concealment therefore also reflects Opus FEC, which this library
-  does not have.
+- **Audio decoders differ.** Both stacks encode with libopus 55513e81
+  and in-band FEC (the test bench since #457; here this library's side
+  links libwebrtc's copy of libopus). The test bench's decoder is a model
+  that plays the original samples, also for an LBRR copy, so audio
+  concealment on libwebrtc's side also reflects Opus's lower-quality FEC
+  and PLC.
 - **Some metrics are approximations for libwebrtc**, because it does not
   expose the per-packet value. `sm_compare` prints the list at the end of
   every run (`WebrtcMetricNotes()` in

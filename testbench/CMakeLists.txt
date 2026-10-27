@@ -1,8 +1,13 @@
 # Call-level test bench: the whole library in one simulated call over
 # scripted link impairments, measured as user-experience metrics.
+# Audio is encoded with libopus (cmake/SmOpus.cmake, issue #457); the library
+# itself has no dependencies.
+enable_language(C)
+include(${PROJECT_SOURCE_DIR}/cmake/SmOpus.cmake)
+sm_add_opus()
 add_library(sm_testbench_lib STATIC scenario.cc call.cc)
 target_include_directories(sm_testbench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::video sm::rtp)
+target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::video sm::rtp sm_opus)
 sm_configure_target(sm_testbench_lib)
 
 add_executable(sm_testbench sm_testbench_main.cc)
@@ -17,10 +22,10 @@ if(SM_BUILD_TESTS)
   # Unit tests of the bench's own metric computations.
   sm_add_test_exe(sm_unit_testbench LABEL unit DEPS sm_testbench_lib
     SOURCES ${PROJECT_SOURCE_DIR}/tests/unit/testbench/testbench_metrics_test.cc
-            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/opus_model_test.cc
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/opus_encoder_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/encoder_model_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/rtcp_seed_test.cc
-    SUITES TestbenchMetrics OpusModel EncoderModel TestbenchRtcpSeed)
+    SUITES TestbenchMetrics OpusEncoder EncoderModel TestbenchRtcpSeed)
   # One CTest entry per scenario; a failed expectation fails the test.
   file(GLOB SM_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scn)
   foreach(scn ${SM_SCENARIOS})
