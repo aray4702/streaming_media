@@ -67,6 +67,15 @@ class Summary(unittest.TestCase):
         self.assertEqual((old[0]["qs_checks"], old[0]["qs_qp_low"]), (0, -1))
         self.assertEqual(vt.summarize(old)["qs_checks"], 0)
 
+    def test_receive_frame_counters(self):
+        head = HEAD.rstrip("\n") + ",rx_complete,rx_decoded,rx_dropped\n"
+        rows = vt.parse(head + "1,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,30,28,1\n"
+                               "2,50000,60000,30,30,0,0,0,0,0,0,9000,1.0,20,12,4\n")
+        s = vt.summarize(rows)
+        self.assertEqual((s["rx_complete"], s["rx_decoded"], s["rx_dropped"]), (50, 40, 5))
+        # A trace from before issue #437 reads them as 0.
+        self.assertEqual(vt.summarize(vt.parse(SM))["rx_decoded"], 0)
+
     def test_paused_and_other_reasons(self):
         s = vt.summarize(vt.parse(RTC))
         self.assertEqual(s["paused_seconds"], 1)

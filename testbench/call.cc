@@ -3,6 +3,7 @@
 #include "call_common.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <deque>
@@ -219,7 +220,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
       "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,"
-      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal\n";
+      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped\n";
   char ms[96], gap[64];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
@@ -234,7 +235,8 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
            "," + ms + "," + std::to_string(r.encode_width) + "," + std::to_string(r.encode_height) + "," +
            std::to_string(r.keyframes) + "," + std::to_string(r.keyframe_bytes) + "," + std::to_string(r.rendered) + "," +
            gap + "," + std::to_string(r.qs_checks) + "," + std::to_string(r.qs_qp_high) + "," +
-           std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "\n";
+           std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "," +
+           std::to_string(r.rx_complete) + "," + std::to_string(r.rx_decoded) + "," + std::to_string(r.rx_dropped) + "\n";
   }
   return out;
 }
@@ -636,6 +638,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  std::array<uint64_t, 3> vt_rx_prev{};  // Frame release counters at the last row (issue #437).
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
@@ -987,6 +990,18 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_row.qs_drop_pct = c.drop_pct;
         vt_row.qs_signal = c.signal == Signal::kAdaptDown ? -1 : c.signal == Signal::kAdaptUp ? 1 : 0;
         vt_qs_checks = qs.checks();
+      }
+      if (s.video) {
+        // Assembled frames (decodable or not) as libwebrtc's received_frame_counts; dropped are the frames that waited for a
+        // missing reference until a keyframe cleared them, plus the frame release's fast-forwards and clears.
+        const rtp::RtpReceiver& vr = receiver.video_receiver(video_recv);
+        const timing::FrameReleaseStats& rs = vr.frame_release().stats();
+        const uint64_t complete = vr.keyframes().stats().frames_received;
+        const uint64_t dropped = vr.keyframes().stats().frames_dropped + rs.fast_forwarded + rs.dropped_for_keyframe;
+        vt_row.rx_complete = static_cast<int>(complete - vt_rx_prev[0]);
+        vt_row.rx_decoded = static_cast<int>(rs.released - vt_rx_prev[1]);
+        vt_row.rx_dropped = static_cast<int>(dropped - vt_rx_prev[2]);
+        vt_rx_prev = {complete, rs.released, dropped};
       }
       rep.video_trace.push_back(vt_row);
       vt_row = VideoTraceRow{};
