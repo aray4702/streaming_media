@@ -1,0 +1,11 @@
+name issue_372_outage_interruption_count_seed2
+describe Seed-2 copy for #411 D8 (libwebrtc loses about 9 % here against 5.6 % on seed 1). A 3 s outage that starts on a round time (5 s): the audio is silent for 3 s and the bench must count one interruption of about 3 s (issue #372). Seed 1 used to report none (longest 40 ms, concealed 8.0 %) because the bench counted concealment by the pull's operation, and NetEq plays leftover expanded samples on Normal pulls. Counted from concealedSamples and concealmentEvents as libwebrtc's StatisticsCalculator does, seeds 1-5 read 1 interruption of 2976-2980 ms and 10.0-10.2 % concealed.
+duration 30s
+seed 2
+at 0s capacity=2Mbps delay=40ms
+at 5s down
+at 8s up
+expect audio.interruptions == 1
+expect audio.longest_interruption_ms > 2900
+expect audio.interruption_ms < 3100
+expect audio.concealed_pct > 9.5
