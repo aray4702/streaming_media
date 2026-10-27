@@ -1,20 +1,20 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-115 scenarios, mean of 10 seeds. **60 gaps**: 16 behind libwebrtc, 44 ahead of it; 0 without an owner.
+118 scenarios, mean of 10 seeds. **65 gaps**: 21 behind libwebrtc, 44 ahead of it; 1 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.
 
 ### Against `main`
 
-63 gaps on `main`, 60 here: **3 closed, 0 opened**, 0 changed direction.
+68 gaps on `main`, 65 here: **3 closed, 0 opened**, 0 changed direction.
 
 Closed:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
 | issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 226 | 245 | ±12.2 | ahead | 6/10 | #63, #411 |
-| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 3071 | 2135 | ±793 | behind | 7/10 | #5, #37, #24 |
-| issue_127_all_v2_no_stall | `sync.av_offset_p95_ms` | 183 | 168 | ±12.4 | behind | 5/10 | **none** |
+| issue_127_all_v2_no_stall | `video.freeze_total_ms` | 3071 | 2135 | ±793 | behind | 7/10 | #5, #37, #24, #437 |
+| issue_127_all_v2_no_stall | `sync.av_offset_p95_ms` | 183 | 168 | ±12.4 | behind | 5/10 | #437 |
 
 Still gaps, distance to libwebrtc changed by more than 10%:
 
@@ -32,7 +32,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | high_jitter | `video.time_to_first_frame_ms` | 228 | 433 | ±139 | ahead | 8/10 | #24, #61, #19, #411 |
 | issue_120_rtx_payload_padding_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | issue_123_v2_allocation_min | `repair.overhead_pct` | 35.8 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29, #411 |
-| issue_123_v2_allocation_min | `video.freeze_count` | 24.9 | 21.3 | ±2.2 | behind | 8/10 | #5, #37, #24 |
+| issue_123_v2_allocation_min | `video.freeze_count` | 24.9 | 21.3 | ±2.2 | behind | 8/10 | #5, #37, #24, #437 |
 | issue_123_v2_allocation_min | `video.render_fps` | 11.9 | 9.2 | ±1.5 | ahead | 8/10 | #37, #24, #411 |
 | issue_124_burst_loss_v2 | `audio.jb_delay_p95_ms` | 194 | 174 | ±16.5 | behind | 6/10 | #63, #410 |
 | issue_12_lossbwe_burst_loss | `audio.jb_delay_p95_ms` | 194 | 174 | ±16.5 | behind | 6/10 | #63, #410 |
@@ -69,6 +69,11 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_356_capacity_drop_xr_rtt | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | issue_372_outage_interruption_count | `net.loss_pct` | 5.6 | 7.4 | ±1.7 | ahead | 6/10 | #21, #61, #12, #411 |
 | issue_410_queue_sample_phase | `audio.jb_delay_p95_ms` | 220 | 130 | ±88.3 | behind | 10/10 | #63 |
+| issue_430_av_outage_6s | `audio.jb_delay_p95_ms` | 145 | 116 | ±25.9 | behind | 5/10 | #63 |
+| issue_430_av_outage_6s | `audio.mouth_to_ear_p95_ms` | 239 | 202 | ±27.8 | behind | 5/10 | #63 |
+| issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 98.4 | 68.8 | ±16.7 | behind | 5/10 | **none** |
+| issue_430_av_outage_6s | `video.e2e_delay_p95_ms` | 132 | 113 | ±10 | behind | 3/10 | #24, #37 |
+| issue_430_video_only_outage_4s | `cc.queue_p95_ms` | 67.1 | 52.7 | ±13.8 | behind | 7/10 | #19, #15, #48, #12, #61 |
 | issue_48_prober_low_bandwidth | `sync.av_offset_p95_ms` | 1311 | 1582 | ±229 | ahead | 6/10 | #411 |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.9 | 25.8 | ±1.4 | ahead | 9/10 | #37, #24, #411 |
 | issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #23, #411 |
@@ -82,9 +87,15 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | pacer_v2_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | probe_v2_capacity_drop | `video.freeze_count` | 2.2 | 1.7 | ±0.5 | behind | 5/10 | #5, #37, #24, #409 |
 | very_low_capacity | `repair.overhead_pct` | 32.5 | 50.5 | ±9.8 | ahead | 75/80 | #21, #7, #29, #411 |
-| very_low_capacity | `video.freeze_count` | 25.3 | 20.3 | ±4.2 | behind | 61/80 | #5, #37, #24 |
+| very_low_capacity | `video.freeze_count` | 25.3 | 20.3 | ±4.2 | behind | 61/80 | #5, #37, #24, #437 |
 | very_low_capacity | `video.render_fps` | 12.3 | 8.5 | ±1.8 | ahead | 78/80 | #37, #24, #411 |
 | very_low_capacity_allocator_v2 | `repair.overhead_pct` | 35.8 | 55.6 | ±12.0 | ahead | 10/10 | #21, #7, #29, #411 |
-| very_low_capacity_allocator_v2 | `video.freeze_count` | 24.9 | 21.3 | ±2.2 | behind | 8/10 | #5, #37, #24 |
+| very_low_capacity_allocator_v2 | `video.freeze_count` | 24.9 | 21.3 | ±2.2 | behind | 8/10 | #5, #37, #24, #437 |
 | very_low_capacity_allocator_v2 | `video.render_fps` | 11.9 | 9.2 | ±1.5 | ahead | 8/10 | #37, #24, #411 |
+
+### Gaps without an owner
+
+| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
+|---|---|---|---|---|---|---|---|
+| issue_430_av_outage_6s | `sync.av_offset_p95_ms` | 98.4 | 68.8 | ±16.7 | behind | 5/10 | **none** |
 
