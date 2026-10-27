@@ -29,30 +29,26 @@ import threading
 import time
 import urllib.parse
 import webbrowser
+from zoneinfo import ZoneInfo
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import dispatch as d  # noqa: E402  (constants and the gh helper; importing it acts on nothing)
 
 CACHE_TTL_S = 60
+PT = ZoneInfo("America/Los_Angeles")
 WORKFLOW = "dispatcher.yml"
 MODE_VAR = "SM_DISPATCH_MODE"
 STOP_TITLE = "STOP AGENTS"
 BUSY = {"in-progress", "needs-human", d.NEEDS_BUILDER, d.NEEDS_COORDINATOR, "blocked", "wontfix", "cannot-reproduce"}
 NEEDS_YOU = {"needs-human"}
-AGENTS = {  # role -> how its posts are recognised
+AGENTS = {  # role -> how its posts are recognised (Fixer B: the routine's post_marker in agents/routines.json)
     "tester": "<!-- sm-agent: tester -->",
     "fixer": "<!-- sm-agent: fixer -->",
     "coordinator": "<!-- sm-agent: coordinator -->",
     "builder": "<!-- sm-agent: builder -->",
 }
-SCHEDULES = {  # role -> (cron in UTC, routine ids); keep in step with the routines and dispatch.py
-    "fixer": (f"{','.join(map(str, d.SCHEDULED_FIXER_MINUTES))} * * * *", (d.ROUTINES["FIXER"], d.ROUTINES["FIXER_B"])),  # B: on demand
-    "reviewer": ("45 * * * *", (d.ROUTINES["REVIEWER"],)),
-    "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", (d.ROUTINES["COORDINATOR"],)),
-    "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", (d.ROUTINES["TESTER"],)),
-    "builder": ("30 16 * * *", (d.ROUTINES["BUILDER"],)),
-}
+LABELS = {"fixer_b": "Fixer B"}
 
 
 def now():
@@ -61,6 +57,20 @@ def now():
 
 def iso(t):
     return t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def describe_cron(cron):
+    """'hourly at :05', 'every 6 h at :34', 'daily at 9:30 AM PT', or 'no schedule'."""
+    if not cron:
+        return "no schedule"
+    minutes, hours = d.cron_fields(cron)
+    at = ", ".join(f":{m:02d}" for m in minutes)
+    if len(hours) == 24:
+        return f"hourly at {at}"
+    if len(hours) > 1 and len({b - a for a, b in zip(hours, hours[1:])}) == 1:
+        return f"every {hours[1] - hours[0]} h at {at}"
+    t = now().replace(hour=hours[0], minute=minutes[0], second=0, microsecond=0)
+    return "daily at " + t.astimezone(PT).strftime("%-I:%M %p") + " PT" if len(hours) == 1 else f"at {at} on hours {hours} UTC"
 
 
 def lab(item):
@@ -73,10 +83,10 @@ def first_line(body):
 
 
 def next_cron(cron, after):
-    """Next time a simple 'M H * * *' cron (M a list, H '*' or a list) fires after `after`."""
-    minutes, hours = cron.split()[:2]
-    minutes = [int(m) for m in minutes.split(",")]
-    hours = range(24) if hours == "*" else [int(h) for h in hours.split(",")]
+    """Next time a simple 'M H * * *' cron fires after `after` (fields as dispatch.cron_fields reads them)."""
+    if not cron:
+        return None
+    minutes, hours = d.cron_fields(cron)
     t = after.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
     for _ in range(2 * 24 * 60):
         if t.minute in minutes and t.hour in hours:
@@ -244,10 +254,13 @@ class Views:
     def agents(self, fresh=False):
         since = iso(now() - dt.timedelta(hours=48))
         comments = self.gh.get(f"repos/{self.r}/issues/comments?since={since}&per_page=100", True, fresh) or []
+        routines = d.load_routines()  # read each time, so edits to agents/routines.json show without a restart
+        extra = {r: cfg["post_marker"] for r, cfg in routines.items() if cfg.get("post_marker")}
         last, counts = {}, {}
         for c in comments:
             body = c["body"] or ""
-            role = next((r for r, mark in AGENTS.items() if body.startswith(mark) or mark in body[:200]), None)
+            role = next((r for r, mark in extra.items() if mark in body[:300]), None) \
+                or next((r for r, mark in AGENTS.items() if body.startswith(mark) or mark in body[:200]), None)
             if role is None and d.is_bot(c["user"]):
                 role = "reviewer"
             if role is None and c["user"]["login"] == "aray4702" and "sm-agent:" not in body:
@@ -275,15 +288,18 @@ class Views:
                                                      + first_line(rv.get("body"))[:160]}
         log_body = self.gh.issue(d.LOG_ISSUE, fresh)["body"] or ""
         dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z_]+): ([0-9TZ:-]+) -->", log_body))
+        failing = {r: {"since": at, "error": err}
+                   for r, at, err in re.findall(r"<!-- dispatcher-fail-([a-z_]+): ([0-9TZ:-]+) (.*?) -->", log_body)}
         t = now()
         roles = []
-        for role in ("coordinator", "fixer", "reviewer", "tester", "builder"):
-            cron, rids = SCHEDULES[role]
-            nxt = next_cron(cron, t)
-            roles.append({"role": role, "cron": cron, "routines": list(rids), "next": iso(nxt) if nxt else None,
+        for role, cfg in routines.items():
+            nxt = next_cron(cfg["cron"], t) if cfg["enabled"] else None
+            roles.append({"role": role, "label": LABELS.get(role, role.capitalize()), "name": cfg["name"],
+                          "routine": cfg["id"], "model": cfg["model"], "enabled": cfg["enabled"],
+                          "cron": cfg["cron"], "schedule": describe_cron(cfg["cron"]) if cfg["enabled"] else "off",
+                          "triggers": cfg["triggers"], "next": iso(nxt) if nxt else None,
                           "last_post": last.get(role), "posts_48h": counts.get(role, 0),
-                          "last_dispatch": dispatched.get(role),
-                          "last_dispatch_b": dispatched.get("fixer_b") if role == "fixer" else None})
+                          "last_dispatch": dispatched.get(role), "start_failing": failing.get(role)})
         return {"roles": roles, "owner_last": last.get("owner"), "notify_last": dispatched.get("notify")}
 
     # ---- dispatcher -------------------------------------------------------------
@@ -330,6 +346,10 @@ class Views:
                      for i in issues["issues"] if NEEDS_YOU & set(i["labels"])]
         needs_you += [{"kind": "PR", "n": p["number"], "title": p["title"], "url": p["html_url"]}
                       for p in pulls if NEEDS_YOU & set(d.labels(p))]
+        needs_you += [{"kind": "routine", "n": None, "url": f"https://claude.ai/code/routines/{a['routine']}",
+                       "title": f"The Dispatcher can't start {a['label']} ({a['start_failing']['error']}): "
+                                f"regenerate its API token and update SM_ROUTINE_{a['role'].upper()}_TOKEN"}
+                      for a in agents["roles"] if a.get("start_failing")]
         since = iso(now() - dt.timedelta(hours=24))
         log_comments = self.gh.get(f"repos/{self.r}/issues/{d.LOG_ISSUE}/comments?since={since}&per_page=100",
                                    True, fresh) or []

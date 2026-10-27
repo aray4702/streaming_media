@@ -278,13 +278,13 @@ const RENDER = {
     renderTabs(navCounts);
     const w = o.work;
     const needs = o.needs_you.length ? `<ul class="plain">${o.needs_you.map(x =>
-      `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">#${x.n}</a> ${esc(x.title)} ${actBtn(x.n, x.kind === "PR")}</li>`).join("")}</ul>`
+      (x.n == null ? `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">${esc(x.title)}</a></li>` : `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">#${x.n}</a> ${esc(x.title)} ${actBtn(x.n, x.kind === "PR")}</li>`)).join("")}</ul>`
       : '<p class="muted">Nothing labelled <code>needs-human</code>.</p>';
     const asks = o.asks_24h.length ? `<div class="small" style="margin-top:8px"><b>NEEDS YOU posts on #111, last 24 h</b> (a later post may withdraw one)<ul class="plain">${o.asks_24h.map(a =>
       `<li><a href="${a.url}" target="_blank">${when(a.at)}</a>: ${md(esc(a.first))}</li>`).join("")}</ul></div>` : "";
     const heads = o.next_items.map(i => `<tr><td>${ref(i.n)}</td><td><span class="chip ${i.role === "next" ? "ok" : i.role === "busy" ? "info" : "warn"}">${i.role}</span></td><td>${esc(i.title)}<div>${chips(i.labels)}</div></td></tr>`).join("");
     const held = Object.entries(o.held).map(([k, ns]) => `<div class="row"><span class="chip ${LABEL_CLASS[k] || ""}">${k}</span> ${ns.length ? ns.map(ref).join(", ") : '<span class="muted">none</span>'}</div>`).join("");
-    const agents = o.agents.map(a => `<tr><td>${a.role}</td><td>${a.last_post ? `<a href="${a.last_post.url}" target="_blank">${when(a.last_post.at)}</a>` : '<span class="muted">none in 48 h</span>'}</td><td>${when(a.next)}</td></tr>`).join("");
+    const agents = o.agents.map(a => `<tr><td>${esc(a.label)}${a.start_failing ? ' <span class="chip bad">start failing</span>' : ""}</td><td>${a.last_post ? `<a href="${a.last_post.url}" target="_blank">${when(a.last_post.at)}</a>` : '<span class="muted">none in 48 h</span>'}</td><td>${a.next ? when(a.next) : `<span class="muted">${a.enabled ? "on demand" : "off"}</span>`}</td></tr>`).join("");
     const run = o.last_run;
     return `<div class="grid">
       <div class="card"><h2>Needs you</h2>${needs}${asks}</div>
@@ -340,13 +340,17 @@ const RENDER = {
       <div class="tablewrap"><table><tr><th>#</th><th>issue</th><th>placed</th><th>PRs</th><th>updated</th><th></th></tr>${rows}</table></div>`;
   },
   agents(a) {
-    const rows = a.roles.map(r => `<tr><td><b>${r.role}</b></td>
+    const modelName = m => esc((m || "").replace("claude-", "").replace(/-(\d+)-(\d+)$/, " $1.$2"));
+    const rows = a.roles.map(r => `<tr${r.enabled ? "" : ' class="done"'}>
+      <td><b>${esc(r.label)}</b><div class="small"><a href="https://claude.ai/code/routines/${r.routine}" target="_blank">${esc(r.name)}</a></div><div class="muted small">${modelName(r.model)}</div></td>
+      <td>${r.enabled ? "" : '<span class="chip warn">off</span> '}${esc(r.schedule)}${r.cron ? ` <span class="muted small"><code>${esc(r.cron)}</code> UTC</span>` : ""}
+        <div class="small">next ${r.next ? when(r.next) : '<span class="muted">only when triggered</span>'}</div>
+        <ul class="plain small muted" style="margin-top:4px">${r.triggers.map(x => `<li>+ ${esc(x)}</li>`).join("")}</ul></td>
       <td>${r.last_post ? `<a href="${r.last_post.url}" target="_blank">${when(r.last_post.at)}</a> on ${ref(r.last_post.n)}<div class="muted small">${md(esc(r.last_post.first))}</div>` : '<span class="muted">none in 48 h</span>'}</td>
-      <td>${r.posts_48h}</td><td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">—</span>'}${r.role === "fixer" ? `<div class="small">Fixer B (on demand): ${r.last_dispatch_b ? when(r.last_dispatch_b) : "not yet"}</div>` : ""}</td>
-      <td><code>${esc(r.cron)}</code> UTC<div class="small">next ${when(r.next)}</div></td>
-      <td>${r.routines.map(id => `<a href="https://claude.ai/code/routines/${id}" target="_blank" class="small">${esc(id)}</a>`).join("<br>")}</td></tr>`).join("");
-    return `<div class="tablewrap"><table><tr><th>role</th><th>last post</th><th>posts (48 h)</th><th>last started by the Dispatcher</th><th>schedule</th><th>routine</th></tr>${rows}</table></div>
-      <p class="muted small">The reviewer posts as <code>aray4702-reviewer-app[bot]</code>; the other roles post as aray4702 with an <code>sm-agent</code> marker. Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
+      <td>${r.posts_48h}</td>
+      <td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">not yet</span>'}${r.start_failing ? `<div><span class="chip bad">start failing</span></div><div class="small err">since ${when(r.start_failing.since)}: ${esc(r.start_failing.error)}</div>` : ""}</td></tr>`).join("");
+    return `<div class="tablewrap"><table><tr><th>agent</th><th>schedule and triggers</th><th>last post</th><th>posts (48 h)</th><th>last started by the Dispatcher</th></tr>${rows}</table></div>
+      <p class="muted small">Schedules and triggers come from <code>agents/routines.json</code>, which the Builder keeps in step with claude.ai/code/routines. The Reviewer posts as <code>aray4702-reviewer-app[bot]</code>; the others post as aray4702 with an <code>sm-agent</code> marker, and Fixer B also adds <code>sm-routine: fixer-b</code> (from 2026-10-26 8 PM PT; earlier Fixer B posts count as Fixer). Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
   },
   dispatcher(d) {
     const rows = d.runs.map(r => `<tr><td><a href="${r.url}" target="_blank">${when(r.at)}</a></td><td>${esc(r.event)}</td>

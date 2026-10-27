@@ -58,5 +58,6 @@ jobs:
           SM_DISCORD_WEBHOOK: ${{ secrets.SM_DISCORD_WEBHOOK }}
           MODE: ${{ vars.SM_DISPATCH_MODE }}
         run: |
+          set -o pipefail  # a crash in dispatch.py fails the run instead of hiding behind tee
           flag=""; [ "$MODE" = live ] && flag="--live"
           { echo '```'; python3 agents/tools/dispatch.py $flag --verbose; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"

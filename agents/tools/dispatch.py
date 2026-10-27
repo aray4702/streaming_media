@@ -55,21 +55,41 @@ REVIEW_WAIT_MIN = 30       # green PR without a review on its head
 STALE_MIN = 90             # in-progress item without Fixer activity
 CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is active
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
-SCHEDULED_FIXER_MINUTES = (15,)  # the Fixer routine's own cron minutes (Fixer B has none: the Dispatcher starts it)
 FIXER_B_WAIT_MIN = 10      # a free item waits this long before Fixer B takes it (lets a claim settle)
 FIXER_B_GAP_MIN = 45       # at most one Fixer B start in this window (a run takes about that long)
-SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
 COORDINATOR_POSTS = ("<!-- sm-agent: coordinator -->",
                      "Owner (coordinator)", "Owner (local coordinator)")  # the last two: before 2026-10-26
 TESTER_GAP_MIN = 180       # a Tester run takes up to an hour; keep runs apart
 TESTER_MERGES = 3          # merges to main since its last run that call for a new one
-TESTER_SCHEDULE = (34, (0, 6, 12, 18))  # its own cron: minute, UTC hours
 TESTER_RUN_MIN = 90        # a run that started this recently may not have posted its log yet
 MERGE_FIXER_MIN = 20       # a closed PR starts a Fixer run by itself (GitHub event trigger)
 PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merges that change the product or its measurement
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
+FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 
 NOW = dt.datetime.now(dt.timezone.utc)
+
+
+def load_routines():
+    """agents/routines.json: the cloud routines' ids, schedules and triggers (one source for this
+    script, the console and smctl; the Builder keeps it in step with claude.ai/code/routines)."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "routines.json")) as f:
+        return json.load(f)["routines"]
+
+
+def cron_fields(cron):
+    """Minutes and UTC hours of a 'M H * * *' cron: M a number or list, H '*', '*/N', a number or a list."""
+    m, h = cron.split()[:2]
+    minutes = tuple(int(x) for x in m.split(","))
+    hours = tuple(range(24)) if h == "*" else tuple(range(0, 24, int(h[2:]))) if h.startswith("*/") \
+        else tuple(int(x) for x in h.split(","))
+    return minutes, hours
+
+
+ROUTINE_CONFIG = load_routines()
+SCHEDULED_FIXER_MINUTES = cron_fields(ROUTINE_CONFIG["fixer"]["cron"])[0]  # Fixer B has no cron: the Dispatcher starts it
+SCHEDULED_COORDINATOR_MINUTE = cron_fields(ROUTINE_CONFIG["coordinator"]["cron"])[0][0]
+TESTER_SCHEDULE = (cron_fields(ROUTINE_CONFIG["tester"]["cron"])[0][0], cron_fields(ROUTINE_CONFIG["tester"]["cron"])[1])
 
 
 def gh(path, method="GET", fields=None, paginate=False):
@@ -110,6 +130,7 @@ class Dispatcher:
     def __init__(self, repo, live, verbose=False):
         self.r, self.live, self.verbose = repo, live, verbose
         self.actions = []
+        self.failures = []
         self.pulls = gh(f"repos/{repo}/pulls?state=open&per_page=100") or []
         self.log_body = gh(f"repos/{repo}/issues/{LOG_ISSUE}")["body"] or ""
 
@@ -171,6 +192,45 @@ class Dispatcher:
             else self.log_body.rstrip("\n") + "\n" + line
         gh(f"repos/{self.r}/issues/{LOG_ISSUE}", "PATCH", {"body": body})
         self.log_body = body
+
+    def start(self, routine):
+        """Start a routine run. A failed start (a revoked token, an API error) is reported and
+        recorded, and the other rules still run: one bad token mustn't stop the Dispatcher."""
+        try:
+            start_routine(routine.upper())
+        except Exception as e:  # urllib's HTTPError, a missing token, a timeout
+            err = re.sub(r"\s+", " ", str(e))[:120]
+            self.say("FAIL", routine, f"start failed: {err}")
+            print(f"::error::starting the {routine} routine failed: {err}")
+            self.failures.append(routine)
+            self.record_failure(routine, err)
+            return False
+        self.record_dispatch(routine)
+        self.clear_failure(routine)
+        return True
+
+    def record_failure(self, routine, err):
+        """Mark #111 with the failure (kept from its first occurrence) and alert the Owner once."""
+        pat = rf"<!-- {FAIL_MARKER.format(routine)}: [^>]* -->"
+        if re.search(pat, self.log_body):
+            return  # already reported; the console shows it until a start succeeds
+        stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+        body = self.log_body.rstrip("\n") + f"\n<!-- {FAIL_MARKER.format(routine)}: {stamp} {err.replace('--', '-')} -->"
+        gh(f"repos/{self.r}/issues/{LOG_ISSUE}", "PATCH", {"body": body})
+        self.log_body = body
+        try:
+            post_discord(f"**streaming_media: the Dispatcher can't start the {routine} routine** ({err}). "
+                         f"If it's a 401, regenerate the routine's API token at claude.ai/code/routines and "
+                         f"update the secret SM_ROUTINE_{routine.upper()}_TOKEN.")
+        except Exception as e:
+            print(f"::warning::Discord alert failed: {e}")
+
+    def clear_failure(self, routine):
+        pat = rf"\n?<!-- {FAIL_MARKER.format(routine)}: [^>]* -->"
+        if re.search(pat, self.log_body):
+            body = re.sub(pat, "", self.log_body)
+            gh(f"repos/{self.r}/issues/{LOG_ISSUE}", "PATCH", {"body": body})
+            self.log_body = body
 
     # ---- rules ----------------------------------------------------------
     def stop_switch(self):
@@ -277,8 +337,7 @@ class Dispatcher:
             return self.say("HOLD", "fixer", "the scheduled Fixer run is due within 10 min")
         self.say("RUN", "fixer", f"#{n} free for {waited:.0f} min")
         if self.live:
-            start_routine("FIXER")
-            self.record_dispatch("fixer")
+            self.start("fixer")
 
     def fixer_b(self):
         # The second Fixer (Owner, 2026-10-26: on demand only). fixer() covers an
@@ -307,8 +366,7 @@ class Dispatcher:
             return self.say("HOLD", "fixer_b", "SM_ROUTINE_FIXER_B_TOKEN not set")
         self.say("RUN", "fixer_b", f"#{n} free for {waited:.0f} min while a Fixer works")
         if self.live:
-            start_routine("FIXER_B")
-            self.record_dispatch("fixer_b")
+            self.start("fixer_b")
 
     def reviewer(self):
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
@@ -336,8 +394,7 @@ class Dispatcher:
             self.say("RUN", "reviewer", f"PR #{n}: needs-human cleared after its {rev['state']} review on {sha[:7]}"
                      if cleared else f"PR #{n} green for {waited:.0f} min with no review on {sha[:7]}")
             if self.live:
-                start_routine("REVIEWER")
-                self.record_dispatch("reviewer")
+                self.start("reviewer")
             return
 
     def coordinator(self):
@@ -377,8 +434,7 @@ class Dispatcher:
             return self.say("HOLD", "coordinator", "the scheduled Coordinator run is due within 10 min")
         self.say("RUN", "coordinator", "; ".join(reasons[:4]) + (" ..." if len(reasons) > 4 else ""))
         if self.live:
-            start_routine("COORDINATOR")
-            self.record_dispatch("coordinator")
+            self.start("coordinator")
 
     def probe_waiting(self):
         """The oldest green, non-draft needs-probe PR without a probe report on its head."""
@@ -402,8 +458,7 @@ class Dispatcher:
                 return self.say("HOLD", "tester", f"PR #{probe} waits for its probe, but a Tester run started {minutes_ago(last):.0f} min ago")
             self.say("RUN", "tester", f"PR #{probe} waits for its probe ({NEEDS_PROBE})")
             if self.live:
-                start_routine("TESTER")
-                self.record_dispatch("tester")
+                self.start("tester")
             return
         logs = [i for i in gh(f"repos/{self.r}/issues?state=open&labels=agent-log&per_page=100") or []
                 if i["title"].strip().lower() == "tester run log"]
@@ -447,8 +502,7 @@ class Dispatcher:
             return self.note("tester", f"nothing new since {last} ({len(merged)} product merges)")
         self.say("RUN", "tester", "; ".join(why))
         if self.live:
-            start_routine("TESTER")
-            self.record_dispatch("tester")
+            self.start("tester")
 
     def builder(self):
         waiting = [i["number"] for i in gh(f"repos/{self.r}/issues?state=open&labels={NEEDS_BUILDER}&per_page=100",
@@ -462,8 +516,7 @@ class Dispatcher:
             return self.say("HOLD", "builder", "SM_ROUTINE_BUILDER_TOKEN not set")
         self.say("RUN", "builder", f"{NEEDS_BUILDER} on " + ", ".join(f"#{n}" for n in waiting[:5]))
         if self.live:
-            start_routine("BUILDER")
-            self.record_dispatch("builder")
+            self.start("builder")
 
     def notify(self):
         last = self.last_dispatch("notify")
@@ -508,10 +561,7 @@ class Dispatcher:
             print("nothing to do")
 
 
-ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
-            "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB",
-            "BUILDER": "trig_011EsE9gCQAkUHobh2WwjQcn",
-            "FIXER_B": "trig_01PGLJ5jKeMbzQ87Vy6QELt5"}  # no schedule: the second Fixer, started on demand
+ROUTINES = {name.upper(): r["id"] for name, r in ROUTINE_CONFIG.items()}  # FIXER, FIXER_B, ...
 
 
 def start_routine(name):
