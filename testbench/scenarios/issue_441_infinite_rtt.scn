@@ -1,0 +1,14 @@
+name issue_441_infinite_rtt
+describe The host hands both sessions an infinite RTT mid-call; the call carries on, with no signed overflow (UBSan)
+# Issue #441: Session::SetRtt(TimeDelta::PlusInfinity()) overflowed in
+# GccController::OnRttUpdate's 1 ms rounding (src/cc/send_side_bwe.cc:160), and
+# Timestamp/TimeDelta arithmetic overflowed on infinite operands where libwebrtc's
+# api/units saturate. The base commit is built with ASan+UBSan, which abort on the
+# overflow; Session::Process(PlusInfinity) is covered by the e2e test
+# E2E_RtpSession.InfiniteTimeAndRttDoNotOverflow.
+# fix-record-base-cmake: -DSM_SANITIZE=ON
+duration 20s
+at 0s capacity=2500kbps delay=30ms queue=400ms
+host_rtt_inf 8s
+expect video.freeze_count == 0
+expect audio.interruptions == 0

@@ -894,6 +894,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // measures over XR instead (issue #356); without, this one at the next 1 s
     // update.
     if (new_rtt) receiver.SetRtt(*new_rtt);
+    // A host bug: an infinite RTT handed to both sessions (issue #441).
+    if (s.host_rtt_inf && t == s.host_rtt_inf->ms()) {
+      sender.SetRtt(TimeDelta::PlusInfinity());
+      receiver.SetRtt(TimeDelta::PlusInfinity());
+    }
     receiver.Process(now);
 
     // Render video.

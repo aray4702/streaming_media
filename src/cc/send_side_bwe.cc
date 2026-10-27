@@ -157,7 +157,9 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
 
 void GccController::OnRttUpdate(TimeDelta rtt) {
   // RtpTransportControllerSend::OnRttUpdate: `rtt.RoundTo(1 ms)`, and a zero RTT is not passed on.
-  rtt = TimeDelta::Millis((rtt.us() + 500) / 1000);
+  // libwebrtc's RoundTo requires a finite RTT (RTC_DCHECK); an infinite one is dropped here like a zero.
+  if (!rtt.IsFinite()) return;
+  rtt = rtt.RoundTo(TimeDelta::Millis(1));
   if (rtt.IsZero()) return;
   last_rtt_ = rtt;
   delay_.SetRtt(rtt);

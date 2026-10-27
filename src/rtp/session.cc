@@ -545,6 +545,9 @@ void Session::PeriodicRttUpdate(Timestamp now) {
 }
 
 void Session::Process(Timestamp now) {
+  // An infinite `now` is not a clock reading (libwebrtc's Clock never returns one). With the units
+  // saturating (#441), RtcpEngine's catch-up loop would chase it forever, so it is ignored.
+  if (!now.IsFinite()) return;
   Start(now);
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
