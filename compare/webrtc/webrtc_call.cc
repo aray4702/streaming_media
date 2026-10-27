@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <map>
 #include <memory>
 #include <optional>
@@ -712,9 +713,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   std::unique_ptr<w::Call> send_call, recv_call;
   auto make_call = [&](const w::Environment& call_env, w::scoped_refptr<w::AudioState> audio_state) {
     w::CallConfig c = w::CallConfig::CreateSingleThreaded(call_env);
-    c.bitrate_config.min_bitrate_bps = static_cast<int>(s.min_rate.bps());
-    c.bitrate_config.start_bitrate_bps = static_cast<int>(s.start_rate.bps());
-    c.bitrate_config.max_bitrate_bps = static_cast<int>(s.max_rate.bps());
+    // BitrateConstraints hold int bps: a larger finite rate saturates at INT_MAX, as this library's
+    // cc::ConvertConstraints does (#464), instead of wrapping; an infinite rate stays -1 ("none").
+    const auto int_bps = [](auto r) {
+      return r.IsFinite() ? static_cast<int>(std::min<int64_t>(r.bps(), std::numeric_limits<int>::max())) : -1;
+    };
+    c.bitrate_config.min_bitrate_bps = int_bps(s.min_rate);
+    c.bitrate_config.start_bitrate_bps = int_bps(s.start_rate);
+    c.bitrate_config.max_bitrate_bps = int_bps(s.max_rate);
     c.audio_state = audio_state;
     // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
     if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
