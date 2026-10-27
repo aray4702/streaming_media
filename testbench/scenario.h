@@ -100,6 +100,10 @@ struct Scenario {
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
   bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
 
+  // `host_rtt_inf <time>`: at that time the host hands both sessions an infinite RTT
+  // (Session::SetRtt(TimeDelta::PlusInfinity())), a host bug the library must absorb (issue #441).
+  std::optional<TimeDelta> host_rtt_inf;
+
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);
   DataRate min_rate = DataRate::KilobitsPerSec(30);
