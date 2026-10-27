@@ -89,6 +89,10 @@ struct Scenario {
   // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). On by default, as libwebrtc
   // (since #355's flip, after #362 turned periodic ALR probing off for video).
   bool rate_utilization_tracker = true;
+  // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
+  // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
+  // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). Off by default until it is judged.
+  bool sps_pps_tracker = false;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; on by default since #84's flip, on both stacks of

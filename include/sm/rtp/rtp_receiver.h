@@ -119,6 +119,14 @@ struct RtpReceiverConfig {
   // sps-pps-idr-in-keyframe mode). Off: an IDR alone is a keyframe, which is
   // libwebrtc's default.
   bool keyframe_needs_parameter_sets = false;
+  // libwebrtc's H264SpsPpsTracker::CopyAndFixBitstream, as
+  // RtpVideoStreamReceiver2::OnReceivedPayloadData runs it on every H.264
+  // packet (video/rtp_video_stream_receiver2.cc, kRequestKeyframe): a packet
+  // that starts an IDR slice before an SPS and a PPS have been received is
+  // dropped and a keyframe is requested. The NACK tracker has already counted
+  // it as received, so it is not retransmitted. Off (today's behaviour) by
+  // default until it is judged against libwebrtc (issue #453).
+  bool sps_pps_tracker = false;
   bool deliver_bitstream = true;  // Rebuild each frame's bitstream (ReceivedFrame::bitstream).
   // Video RED + ULPFEC on the media SSRC, with `ulpfec`'s payload types.
   bool fec = false;
@@ -175,6 +183,7 @@ struct RtpReceiverStats {
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
   uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
+  uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before an SPS and PPS.
   // Gaps in the media sequence numbers as they arrive (recovered packets
   // included), for the protection controller (a real receiver reports this in
   // RTCP XR): runs of missing packets, and the packets in them.
@@ -283,6 +292,8 @@ class RtpReceiver : public MetricsSource {
   timing::ReceiveStatistics stats_rtp_;
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
+  bool have_sps_ = false;  // sps_pps_tracker: an SPS / a PPS has been received.
+  bool have_pps_ = false;
   TimeDelta rtt_ = TimeDelta::Millis(100);
   bool have_rtt_ = false;
   Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.
