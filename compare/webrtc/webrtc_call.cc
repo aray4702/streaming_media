@@ -808,8 +808,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
       }
     }
+    // The frame trace's RTP fields (issue #437), as the test bench writes them.
+    int64_t trace_ts = -1;
+    int32_t trace_marker = -1, trace_osn = -1;
+    if (opt.link_trace && trace_seq >= 0) {
+      const RtpInfo r = ParseRtp(data);
+      trace_ts = r.ts;
+      trace_marker = (data[1] & 0x80) ? 1 : 0;
+      if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
+        trace_osn = (data[r.payload_off] << 8) | data[r.payload_off + 1];
+      }
+    }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(wire), link_kind, trace_seq);
+    forward.AnnotateLastTrace(trace_ts, trace_marker, trace_osn);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
