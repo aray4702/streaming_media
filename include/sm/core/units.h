@@ -31,14 +31,37 @@ class TimeDelta {
   }
   constexpr bool IsZero() const { return us_ == 0; }
 
-  constexpr TimeDelta operator+(TimeDelta o) const { return TimeDelta(us_ + o.us_); }
-  constexpr TimeDelta operator-(TimeDelta o) const { return TimeDelta(us_ - o.us_); }
-  constexpr TimeDelta operator-() const { return TimeDelta(-us_); }
+  constexpr bool IsPlusInfinity() const { return us_ == std::numeric_limits<int64_t>::max(); }
+  constexpr bool IsMinusInfinity() const { return us_ == std::numeric_limits<int64_t>::min(); }
+
+  // Infinite operands saturate, as libwebrtc's RelativeUnit (rtc_base/units/unit_base.h):
+  // +inf wins over a finite value, and +inf combined with -inf is a caller bug there (RTC_DCHECK).
+  constexpr TimeDelta operator+(TimeDelta o) const {
+    if (IsPlusInfinity() || o.IsPlusInfinity()) return PlusInfinity();
+    if (IsMinusInfinity() || o.IsMinusInfinity()) return MinusInfinity();
+    return TimeDelta(us_ + o.us_);
+  }
+  constexpr TimeDelta operator-(TimeDelta o) const {
+    if (IsPlusInfinity() || o.IsMinusInfinity()) return PlusInfinity();
+    if (IsMinusInfinity() || o.IsPlusInfinity()) return MinusInfinity();
+    return TimeDelta(us_ - o.us_);
+  }
+  constexpr TimeDelta operator-() const {
+    if (IsPlusInfinity()) return MinusInfinity();
+    if (IsMinusInfinity()) return PlusInfinity();
+    return TimeDelta(-us_);
+  }
   constexpr TimeDelta operator*(double f) const { return TimeDelta(static_cast<int64_t>(us_ * f)); }
   constexpr TimeDelta operator/(int64_t d) const { return TimeDelta(us_ / d); }
   constexpr double operator/(TimeDelta o) const { return static_cast<double>(us_) / o.us_; }
-  constexpr TimeDelta& operator+=(TimeDelta o) { us_ += o.us_; return *this; }
-  constexpr TimeDelta& operator-=(TimeDelta o) { us_ -= o.us_; return *this; }
+  constexpr TimeDelta& operator+=(TimeDelta o) { return *this = *this + o; }
+  constexpr TimeDelta& operator-=(TimeDelta o) { return *this = *this - o; }
+  // UnitBase::RoundTo: (value + resolution / 2) / resolution * resolution, for a resolution > 0.
+  // libwebrtc requires a finite value (RTC_DCHECK); an infinite one is returned unchanged here.
+  constexpr TimeDelta RoundTo(TimeDelta resolution) const {
+    if (!IsFinite()) return *this;
+    return TimeDelta((us_ + resolution.us_ / 2) / resolution.us_ * resolution.us_);
+  }
   constexpr auto operator<=>(const TimeDelta&) const = default;
 
  private:
@@ -62,10 +85,27 @@ class Timestamp {
     return us_ != std::numeric_limits<int64_t>::max() && us_ != std::numeric_limits<int64_t>::min();
   }
 
-  constexpr Timestamp operator+(TimeDelta d) const { return Timestamp(us_ + d.us()); }
-  constexpr Timestamp operator-(TimeDelta d) const { return Timestamp(us_ - d.us()); }
-  constexpr TimeDelta operator-(Timestamp o) const { return TimeDelta::Micros(us_ - o.us_); }
-  constexpr Timestamp& operator+=(TimeDelta d) { us_ += d.us(); return *this; }
+  constexpr bool IsPlusInfinity() const { return us_ == std::numeric_limits<int64_t>::max(); }
+  constexpr bool IsMinusInfinity() const { return us_ == std::numeric_limits<int64_t>::min(); }
+
+  // Infinite operands saturate, as libwebrtc's Timestamp (api/units/timestamp.h:78-114).
+  constexpr Timestamp operator+(TimeDelta d) const {
+    if (IsPlusInfinity() || d.IsPlusInfinity()) return PlusInfinity();
+    if (IsMinusInfinity() || d.IsMinusInfinity()) return MinusInfinity();
+    return Timestamp(us_ + d.us());
+  }
+  constexpr Timestamp operator-(TimeDelta d) const {
+    if (IsPlusInfinity() || d.IsMinusInfinity()) return PlusInfinity();
+    if (IsMinusInfinity() || d.IsPlusInfinity()) return MinusInfinity();
+    return Timestamp(us_ - d.us());
+  }
+  constexpr TimeDelta operator-(Timestamp o) const {
+    if (IsPlusInfinity() || o.IsMinusInfinity()) return TimeDelta::PlusInfinity();
+    if (IsMinusInfinity() || o.IsPlusInfinity()) return TimeDelta::MinusInfinity();
+    return TimeDelta::Micros(us_ - o.us_);
+  }
+  constexpr Timestamp& operator+=(TimeDelta d) { return *this = *this + d; }
+  constexpr Timestamp& operator-=(TimeDelta d) { return *this = *this - d; }
   constexpr auto operator<=>(const Timestamp&) const = default;
 
  private:

@@ -321,3 +321,22 @@ SM_TEST(E2E_RtpSession, AudioAtAClockRateNetEqDoesNotRunAtIsDiscarded) {
     SM_EXPECT_EQ(jb.packets_received, rate == 48000 ? 50u : 0u);
   }
 }
+
+// Issue #441: an infinite `now` or RTT from the host is absorbed without signed overflow
+// (UBSan aborts the ASan build on one). The units saturate as libwebrtc's api/units do, and
+// GccController::OnRttUpdate drops an infinite RTT as it drops a zero one.
+SM_TEST(E2E_RtpSession, InfiniteTimeAndRttDoNotOverflow) {
+  {
+    Session s{SessionConfig{}};
+    s.SetRtt(TimeDelta::PlusInfinity());
+    s.Process(Timestamp::Millis(1000));
+    s.SetRtt(TimeDelta::Millis(40));
+    s.Process(Timestamp::Millis(1100));
+  }
+  {
+    Session s{SessionConfig{}};
+    s.Process(Timestamp::PlusInfinity());
+    s.Process(Timestamp::Millis(1000));
+  }
+  SM_EXPECT_TRUE(true);
+}

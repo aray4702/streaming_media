@@ -27,6 +27,62 @@ SM_TEST(Units, Arithmetic) {
   SM_EXPECT_FALSE(TimeDelta::PlusInfinity().IsFinite());
 }
 
+// Issue #441: infinite operands saturate instead of overflowing, as libwebrtc's api/units
+// (timestamp_unittest.cc InfinityOperations, time_delta_unittest.cc InfinityOperations).
+SM_TEST(Units, InfinitySaturates) {
+  const Timestamp t = Timestamp::Millis(1000);
+  const TimeDelta d = TimeDelta::Millis(250);
+  SM_EXPECT_TRUE((Timestamp::PlusInfinity() + d).IsPlusInfinity());
+  SM_EXPECT_TRUE((Timestamp::PlusInfinity() - d).IsPlusInfinity());
+  SM_EXPECT_TRUE((Timestamp::MinusInfinity() + d).IsMinusInfinity());
+  SM_EXPECT_TRUE((Timestamp::MinusInfinity() - d).IsMinusInfinity());
+  SM_EXPECT_TRUE((t + TimeDelta::PlusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((t - TimeDelta::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((t + TimeDelta::MinusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((t - TimeDelta::MinusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((Timestamp::PlusInfinity() - t).IsPlusInfinity());
+  SM_EXPECT_TRUE((t - Timestamp::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((Timestamp::MinusInfinity() - t).IsMinusInfinity());
+  SM_EXPECT_TRUE((t - Timestamp::MinusInfinity()).IsPlusInfinity());
+  Timestamp a = Timestamp::PlusInfinity();
+  a += d;
+  SM_EXPECT_TRUE(a.IsPlusInfinity());
+  a -= d;
+  SM_EXPECT_TRUE(a.IsPlusInfinity());
+  Timestamp b = t;
+  b -= d;
+  SM_EXPECT_EQ(b.ms(), 750);
+
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() + d).IsPlusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() - d).IsPlusInfinity());
+  SM_EXPECT_TRUE((d + TimeDelta::PlusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((d - TimeDelta::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::MinusInfinity() + d).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::MinusInfinity() - d).IsMinusInfinity());
+  SM_EXPECT_TRUE((d - TimeDelta::MinusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((-TimeDelta::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((-TimeDelta::MinusInfinity()).IsPlusInfinity());
+  TimeDelta c = TimeDelta::MinusInfinity();
+  c -= d;
+  SM_EXPECT_TRUE(c.IsMinusInfinity());
+  c += d;
+  SM_EXPECT_TRUE(c.IsMinusInfinity());
+  // Finite arithmetic is unchanged.
+  SM_EXPECT_EQ((d + d).us(), 500000);
+  SM_EXPECT_EQ((d - TimeDelta::Millis(300)).us(), -50000);
+  SM_EXPECT_EQ((-d).us(), -250000);
+}
+
+// UnitBase::RoundTo, as libwebrtc's time_delta_unittest.cc.
+SM_TEST(Units, RoundTo) {
+  const TimeDelta ms = TimeDelta::Millis(1);
+  SM_EXPECT_EQ(TimeDelta::Micros(1499).RoundTo(ms).us(), 1000);
+  SM_EXPECT_EQ(TimeDelta::Micros(1500).RoundTo(ms).us(), 2000);
+  SM_EXPECT_EQ(TimeDelta::Micros(499).RoundTo(ms).us(), 0);
+  SM_EXPECT_EQ(TimeDelta::Seconds(3).RoundTo(ms).us(), 3000000);
+  SM_EXPECT_TRUE(TimeDelta::PlusInfinity().RoundTo(ms).IsPlusInfinity());
+}
+
 SM_TEST(SeqNum, AheadOfWraps) {
   SM_EXPECT_TRUE(AheadOf<uint16_t>(1, 0));
   SM_EXPECT_TRUE(AheadOf<uint16_t>(0, 65535));

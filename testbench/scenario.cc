@@ -341,6 +341,10 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "quality_scaling") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: quality_scaling on|off");
       s.quality_scaling = tok[1] == "on";
+    } else if (key == "host_rtt_inf") {
+      TimeDelta t;
+      if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
+      s.host_rtt_inf = t;
     } else if (key == "keyframe_interval") {
       if (!need(2) || !ParseTime(tok[1], &s.keyframe_interval)) return fail("usage: keyframe_interval <time>");
     } else if (key == "at") {

@@ -289,6 +289,7 @@ class Session : public MetricsSource {
   // Cheap to call every tick. The first call starts the congestion controller.
   // `now` must never decrease across calls to any method (the clock contract
   // above); a backward step stalls sending until `now` catches up.
+  // A non-finite `now` (PlusInfinity, MinusInfinity) is ignored.
   void Process(Timestamp now);
   // When Process must run next. With a video receiver this is at most 1 ms
   // away, because frame scheduling is evaluated on every call.
