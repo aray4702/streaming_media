@@ -78,7 +78,8 @@ these carry authority:
   behind `main`. A PR that regenerates the baseline gets a merge freeze on
   the others while it lands: hold them with `blocked` and a comment
   `Blocked by #N (merge freeze)`, and remove the label when #N merges.
-  The Dispatcher neither updates nor auto-merges a `blocked` PR. Don't use
+  The Dispatcher neither updates nor auto-merges a `blocked` PR, and turns
+  off auto-merge that was already on when the hold went on. Don't use
   `needs-human` for a freeze: it means a question for the Owner.
 - **Tight bound rule (2026-10-20).** A held guard-rail bound sits just
   above **our seed-1 value** with a 10-30 % margin, and **never beyond
