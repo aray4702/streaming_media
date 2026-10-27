@@ -1,0 +1,35 @@
+{
+  "_doc": "The cloud routines as configured at claude.ai/code/routines: one source for dispatch.py, the console and smctl. The Builder updates this file in the same PR as any routine change (schedule, model, trigger, on/off). cron is UTC; null means no schedule.",
+  "routines": {
+    "coordinator": {
+      "id": "trig_01QaBh8maaHLypPUE9y9sD6f", "name": "streaming_media Coordinator", "model": "claude-opus-5-5",
+      "enabled": true, "cron": "5 * * * *",
+      "triggers": ["Dispatcher: a new unplaced issue, needs-human or needs-coordinator, a Fixer comment on a #64 item"]
+    },
+    "fixer": {
+      "id": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "name": "streaming_media Fixer", "model": "claude-opus-5-5",
+      "enabled": true, "cron": "15 * * * *",
+      "triggers": ["GitHub: a PR closes", "Dispatcher: an eligible #64 item has waited 60 min with no Fixer working"]
+    },
+    "fixer_b": {
+      "id": "trig_01PGLJ5jKeMbzQ87Vy6QELt5", "name": "streaming_media Fixer B", "model": "claude-opus-5-5",
+      "enabled": true, "cron": null, "post_marker": "<!-- sm-routine: fixer-b -->",
+      "triggers": ["Dispatcher: a Fixer is working and another eligible #64 item is free (on demand only)"]
+    },
+    "reviewer": {
+      "id": "trig_01QtG1eghRppxXD1p9tYcW5p", "name": "streaming_media Reviewer", "model": "claude-sonnet-5-5",
+      "enabled": true, "cron": "45 * * * *",
+      "triggers": ["GitHub: a label is added to a PR (ci-passed when ci-ok succeeds)", "Dispatcher: a green PR waits 30 min for review, or needs-human was removed after its review"]
+    },
+    "tester": {
+      "id": "trig_01NrjibmvNHPiNfYp4YC8YFB", "name": "streaming_media Tester", "model": "claude-sonnet-5-5",
+      "enabled": true, "cron": "34 */6 * * *",
+      "triggers": ["Dispatcher: fixes to verify, 3+ product merges since its last run, or a PR waits for its probe (needs-probe)"]
+    },
+    "builder": {
+      "id": "trig_011EsE9gCQAkUHobh2WwjQcn", "name": "streaming_media Builder", "model": "claude-opus-5-5",
+      "enabled": true, "cron": "30 16 * * *",
+      "triggers": ["Dispatcher: an issue or PR carries needs-builder"]
+    }
+  }
+}

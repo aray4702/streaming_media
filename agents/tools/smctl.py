@@ -75,7 +75,7 @@ def render(tab, d, width=100, show_all=False):
         wk = d["work"]
         add("NEEDS YOU")
         for x in d["needs_you"] or []:
-            add(f"  {x['kind']} #{x['n']}  {cut(x['title'], w - 14)}")
+            add(f"  {x['kind']} {'#' + str(x['n']) if x['n'] else ''}  {cut(x['title'], w - 14)}")
         if not d["needs_you"]:
             add("  nothing labelled needs-human")
         if d["asks_24h"]:
@@ -101,7 +101,8 @@ def render(tab, d, width=100, show_all=False):
         add("")
         add("AGENTS        last post                    next run")
         for a in d["agents"]:
-            add(f"  {a['role']:<12}{when(a['last_post']['at']) if a['last_post'] else 'none in 48 h':<29}{when(a['next'])}")
+            nxt = when(a["next"]) if a["next"] else ("on demand" if a["enabled"] else "off")
+            add(f"  {a['label']:<12}{when(a['last_post']['at']) if a['last_post'] else 'none in 48 h':<29}{nxt}")
     elif tab == "work":
         add(f"{d['open']} open, {d['done']} done · in-progress {d['in_progress']}/{d['max_in_progress']}"
             f" · next free {('#' + str(d['next_free'])) if d['next_free'] else 'none'}")
@@ -144,13 +145,17 @@ def render(tab, d, width=100, show_all=False):
     elif tab == "agents":
         for a in d["roles"]:
             lp = a["last_post"]
-            add(f"{a['role'].upper()}  cron '{a['cron']}' UTC · next {when(a['next'])} · routine {', '.join(a['routines'])}")
+            add(f"{a['label'].upper()}  {a['schedule']}{' (' + a['cron'] + ' UTC)' if a['cron'] else ''}"
+                f" · next {when(a['next']) if a['next'] else 'only when triggered'} · {a['model']}")
+            for x in a["triggers"]:
+                add(f"  + {cut(x, w - 6)}")
             add(f"  last post  {when(lp['at']) + ' on #' + str(lp['n']) if lp else 'none in 48 h'} · {a['posts_48h']} posts in 48 h")
             if lp:
                 add(f"             {cut(lp['first'], w - 14)}")
-            add(f"  last started by the Dispatcher  {when(a['last_dispatch']) if a['last_dispatch'] else '-'}")
-            if a["role"] == "fixer":
-                add(f"  Fixer B (on demand) last started  {when(a['last_dispatch_b']) if a.get('last_dispatch_b') else 'not yet'}")
+            add(f"  last started by the Dispatcher  {when(a['last_dispatch']) if a['last_dispatch'] else 'not yet'}")
+            if a.get("start_failing"):
+                add(f"  START FAILING since {when(a['start_failing']['since'])}: {a['start_failing']['error']}")
+            add(f"  routine {a['name']} ({a['routine']})")
             add("")
         add(f"Your last own post: {when(d['owner_last']['at']) if d['owner_last'] else 'none in 48 h'}"
             f" · last Discord forward: {when(d['notify_last'])}")
