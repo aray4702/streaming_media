@@ -344,7 +344,7 @@ const RENDER = {
       <td>${r.last_post ? `<a href="${r.last_post.url}" target="_blank">${when(r.last_post.at)}</a> on ${ref(r.last_post.n)}<div class="muted small">${md(esc(r.last_post.first))}</div>` : '<span class="muted">none in 48 h</span>'}</td>
       <td>${r.posts_48h}</td><td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">—</span>'}</td>
       <td><code>${esc(r.cron)}</code> UTC<div class="small">next ${when(r.next)}</div></td>
-      <td><a href="https://claude.ai/code/routines/${r.routine}" target="_blank" class="small">${esc(r.routine)}</a></td></tr>`).join("");
+      <td>${r.routines.map(id => `<a href="https://claude.ai/code/routines/${id}" target="_blank" class="small">${esc(id)}</a>`).join("<br>")}</td></tr>`).join("");
     return `<div class="tablewrap"><table><tr><th>role</th><th>last post</th><th>posts (48 h)</th><th>last started by the Dispatcher</th><th>schedule</th><th>routine</th></tr>${rows}</table></div>
       <p class="muted small">The reviewer posts as <code>streaming-media-reviewer[bot]</code>; the other roles post as aray4702 with an <code>sm-agent</code> marker. Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
   },

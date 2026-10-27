@@ -144,7 +144,7 @@ def render(tab, d, width=100, show_all=False):
     elif tab == "agents":
         for a in d["roles"]:
             lp = a["last_post"]
-            add(f"{a['role'].upper()}  cron '{a['cron']}' UTC · next {when(a['next'])} · routine {a['routine']}")
+            add(f"{a['role'].upper()}  cron '{a['cron']}' UTC · next {when(a['next'])} · routine {', '.join(a['routines'])}")
             add(f"  last post  {when(lp['at']) + ' on #' + str(lp['n']) if lp else 'none in 48 h'} · {a['posts_48h']} posts in 48 h")
             if lp:
                 add(f"             {cut(lp['first'], w - 14)}")

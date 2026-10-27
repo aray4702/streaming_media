@@ -52,7 +52,7 @@ REVIEW_WAIT_MIN = 30       # green PR without a review on its head
 STALE_MIN = 90             # in-progress item without Fixer activity
 CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is active
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
-SCHEDULED_FIXER_MINUTE = 15  # the Fixer routine's own cron minute
+SCHEDULED_FIXER_MINUTES = (15, 45)  # the Fixer routines' own cron minutes (Fixer at :15, Fixer B at :45)
 SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
 COORDINATOR_POSTS = ("<!-- sm-agent: coordinator -->",
                      "Owner (coordinator)", "Owner (local coordinator)")  # the last two: before 2026-10-26
@@ -263,7 +263,7 @@ class Dispatcher:
             return self.say("HOLD", "fixer", "a Fixer claimed work in the last 30 min")
         if last and minutes_ago(last) < DISPATCH_GAP_MIN:
             return self.say("HOLD", "fixer", f"dispatched {minutes_ago(last):.0f} min ago")
-        if 0 <= (SCHEDULED_FIXER_MINUTE - NOW.minute) % 60 <= 10:
+        if any(0 <= (m - NOW.minute) % 60 <= 10 for m in SCHEDULED_FIXER_MINUTES):
             return self.say("HOLD", "fixer", "the scheduled Fixer run is due within 10 min")
         self.say("RUN", "fixer", f"#{n} free for {waited:.0f} min")
         if self.live:
@@ -469,7 +469,8 @@ class Dispatcher:
 
 ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
             "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB",
-            "BUILDER": "trig_011EsE9gCQAkUHobh2WwjQcn"}
+            "BUILDER": "trig_011EsE9gCQAkUHobh2WwjQcn",
+            "FIXER_B": "trig_01PGLJ5jKeMbzQ87Vy6QELt5"}  # scheduled only; extra runs start FIXER
 
 
 def start_routine(name):
