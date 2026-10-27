@@ -46,12 +46,12 @@ AGENTS = {  # role -> how its posts are recognised
     "coordinator": "<!-- sm-agent: coordinator -->",
     "builder": "<!-- sm-agent: builder -->",
 }
-SCHEDULES = {  # role -> (cron in UTC, routine id); keep in step with the routines and dispatch.py
-    "fixer": (f"{d.SCHEDULED_FIXER_MINUTE} * * * *", d.ROUTINES["FIXER"]),
-    "reviewer": ("45 * * * *", d.ROUTINES["REVIEWER"]),
-    "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", d.ROUTINES["COORDINATOR"]),
-    "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", d.ROUTINES["TESTER"]),
-    "builder": ("30 16 * * *", d.ROUTINES["BUILDER"]),
+SCHEDULES = {  # role -> (cron in UTC, routine ids); keep in step with the routines and dispatch.py
+    "fixer": (f"{','.join(map(str, d.SCHEDULED_FIXER_MINUTES))} * * * *", (d.ROUTINES["FIXER"], d.ROUTINES["FIXER_B"])),  # B: on demand
+    "reviewer": ("45 * * * *", (d.ROUTINES["REVIEWER"],)),
+    "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", (d.ROUTINES["COORDINATOR"],)),
+    "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", (d.ROUTINES["TESTER"],)),
+    "builder": ("30 16 * * *", (d.ROUTINES["BUILDER"],)),
 }
 
 
@@ -73,12 +73,13 @@ def first_line(body):
 
 
 def next_cron(cron, after):
-    """Next time a simple 'M H * * *' cron (H may be '*' or a list) fires after `after`."""
-    minute, hours = cron.split()[:2]
+    """Next time a simple 'M H * * *' cron (M a list, H '*' or a list) fires after `after`."""
+    minutes, hours = cron.split()[:2]
+    minutes = [int(m) for m in minutes.split(",")]
     hours = range(24) if hours == "*" else [int(h) for h in hours.split(",")]
     t = after.replace(second=0, microsecond=0) + dt.timedelta(minutes=1)
     for _ in range(2 * 24 * 60):
-        if t.minute == int(minute) and t.hour in hours:
+        if t.minute in minutes and t.hour in hours:
             return t
         t += dt.timedelta(minutes=1)
     return None
@@ -204,7 +205,7 @@ class Views:
             ci = self.gh.get(f"repos/{self.r}/commits/{sha}/check-runs?check_name=ci-ok", fresh=fresh)["check_runs"]
             checks = self.gh.get(f"repos/{self.r}/commits/{sha}/check-runs?per_page=100", fresh=fresh)["check_runs"]
             revs = [x for x in self.gh.get(f"repos/{self.r}/pulls/{n}/reviews?per_page=100", fresh=fresh) or []
-                    if x["user"]["login"] == d.BOT]
+                    if d.is_bot(x["user"])]
             full = self.gh.get(f"repos/{self.r}/pulls/{n}", fresh=fresh)
             files = self.gh.get(f"repos/{self.r}/pulls/{n}/files?per_page=100", True, fresh) or []
             failed = sorted({c["name"] for c in checks if c.get("conclusion") == "failure"})
@@ -247,7 +248,7 @@ class Views:
         for c in comments:
             body = c["body"] or ""
             role = next((r for r, mark in AGENTS.items() if body.startswith(mark) or mark in body[:200]), None)
-            if role is None and c["user"]["login"] == d.BOT:
+            if role is None and d.is_bot(c["user"]):
                 role = "reviewer"
             if role is None and c["user"]["login"] == "aray4702" and "sm-agent:" not in body:
                 role = "owner"
@@ -265,7 +266,7 @@ class Views:
             for pr, revs in reviews:
                 for rv in revs:
                     at = rv.get("submitted_at") or ""
-                    if rv["user"]["login"] != d.BOT or at < since:
+                    if not d.is_bot(rv["user"]) or at < since:
                         continue
                     counts["reviewer"] = counts.get("reviewer", 0) + 1
                     if "reviewer" not in last or at > last["reviewer"]["at"]:
@@ -273,15 +274,16 @@ class Views:
                                             "first": f"{rv['state'].lower()} on PR #{pr['number']}: "
                                                      + first_line(rv.get("body"))[:160]}
         log_body = self.gh.issue(d.LOG_ISSUE, fresh)["body"] or ""
-        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z]+): ([0-9TZ:-]+) -->", log_body))
+        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z_]+): ([0-9TZ:-]+) -->", log_body))
         t = now()
         roles = []
         for role in ("coordinator", "fixer", "reviewer", "tester", "builder"):
-            cron, rid = SCHEDULES[role]
+            cron, rids = SCHEDULES[role]
             nxt = next_cron(cron, t)
-            roles.append({"role": role, "cron": cron, "routine": rid, "next": iso(nxt) if nxt else None,
+            roles.append({"role": role, "cron": cron, "routines": list(rids), "next": iso(nxt) if nxt else None,
                           "last_post": last.get(role), "posts_48h": counts.get(role, 0),
-                          "last_dispatch": dispatched.get(role)})
+                          "last_dispatch": dispatched.get(role),
+                          "last_dispatch_b": dispatched.get("fixer_b") if role == "fixer" else None})
         return {"roles": roles, "owner_last": last.get("owner"), "notify_last": dispatched.get("notify")}
 
     # ---- dispatcher -------------------------------------------------------------
@@ -312,7 +314,7 @@ class Views:
         for c in comments:
             body = c["body"] or ""
             m = re.search(r"sm-agent: ([a-z]+)", body[:200])
-            who = m[1] if m else ("reviewer" if c["user"]["login"] == d.BOT else "owner")
+            who = m[1] if m else ("reviewer" if d.is_bot(c["user"]) else "owner")
             out.append({"at": c["created_at"], "who": who, "url": c["html_url"],
                         "body": re.sub(r"<!--.*?-->\n?", "", body, flags=re.S).strip()})
         return {"comments": out[::-1], "url": issue["html_url"], "n": d.LOG_ISSUE}
@@ -431,6 +433,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not self._ok_host():
             return self._send(403, "bad host", "text/plain")
         url = urllib.parse.urlparse(self.path)
+        if url.path == "/favicon.ico":  # the page sets its own icon; answer browsers that ask anyway
+            self.send_response(204)
+            self.end_headers()
+            return
         if url.path == "/":
             with open(os.path.join(HERE, "console.html"), encoding="utf-8") as f:
                 page = f.read().replace("__TOKEN__", self.server.token).replace("__REPO__", self.server.gh.r)

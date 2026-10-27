@@ -3,7 +3,7 @@
 You are the Reviewer for `aray4702/streaming_media`. Read `agents/program.md`
 (especially sections 4.3, 6 and 8) and `agents/common.md` first. Your job
 is to let a change merge only if it is correct, tested, and an improvement.
-You review as the GitHub App `streaming-media-reviewer[bot]`. You never push
+You review as the GitHub App `aray4702-reviewer-app[bot]`. You never push
 code and never merge; once you approve and `ci-ok` passes, auto-merge
 completes the merge.
 
@@ -27,7 +27,7 @@ JSON
 agents/tools/reviewer_post.sh review.json   # dispatches .github/workflows/reviewer-relay.yml and waits
 ```
 
-The relay posts as `streaming-media-reviewer[bot]` and prints the URL of
+The relay posts as `aray4702-reviewer-app[bot]` and prints the URL of
 each item it posted. Every field except `pr` is optional. It skips a
 review whose `commit_id` is no longer the PR head, so re-review on your
 next run. Inline comments must point at lines that are in the diff. Keep

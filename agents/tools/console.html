@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Console</title>
+<title>streaming media</title>
+<link rel="icon" id="favicon" type="image/svg+xml" href="data:,">
 <style>
 :root {
   --bg: #f7f7f5; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6b66; --line: #e3e2dd;
@@ -22,7 +23,8 @@ body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -ap
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
-header h1 { font-size: 16px; margin: 0; }
+header h1 { font-size: 16px; margin: 0; display: flex; align-items: center; gap: 8px; }
+header h1 svg { width: 22px; height: 22px; flex: none; }
 header .repo { color: var(--muted); }
 header .spacer { flex: 1; }
 nav { display: flex; gap: 2px; padding: 0 20px; background: var(--panel); border-bottom: 1px solid var(--line); overflow-x: auto; }
@@ -75,7 +77,7 @@ dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-to
 </head>
 <body>
 <header>
-  <h1>Agent Console</h1>
+  <h1><span id="logo"></span>streaming media</h1>
   <span class="repo">__REPO__</span>
   <span id="stopBadge"></span>
   <span id="modeBadge"></span>
@@ -186,9 +188,28 @@ async function load(fresh) {
     $("#stamp").textContent = "Updated " + new Date().toLocaleTimeString("en-US", {...PT, hour: "numeric", minute: "2-digit"}) + " PT";
   } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
 }
+// The mark: three agents on a loop. The favicon adds a red dot when something needs the Owner.
+function icon(alert) {
+  const node = (x, y) => `<circle cx="${x}" cy="${y}" r="3.2" fill="#fff"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="7" fill="#2f5bd3"/>`
+    + `<circle cx="16" cy="16" r="8.5" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="2"/>`
+    + node(16, 7.5) + node(23.4, 20.25) + node(8.6, 20.25)
+    + (alert ? `<circle cx="26" cy="6" r="5.5" fill="#e5484d" stroke="#fff" stroke-width="1.5"/>` : "") + `</svg>`;
+}
+const alertState = {needs: 0, stop: false};
+function setAlert(k, v) {
+  alertState[k] = v;
+  const on = alertState.needs > 0 || alertState.stop;
+  $("#favicon").href = "data:image/svg+xml," + encodeURIComponent(icon(on));
+  document.title = (alertState.needs ? `(${alertState.needs}) ` : "") + (alertState.stop ? "STOPPED · " : "") + "streaming media";
+}
+$("#logo").innerHTML = icon(false);
+setAlert("needs", 0);
+
 async function badges(fresh) {
   try {
     const d = await api("dispatcher", fresh);
+    setAlert("stop", !!d.stop);
     $("#stopBadge").innerHTML = d.stop ? `<a class="pill" style="background:var(--bad-bg);color:var(--bad)" href="${d.stop.url}" target="_blank">AGENTS STOPPED</a>`
       : `<span class="pill" style="background:var(--ok-bg);color:var(--ok)">agents running</span>`;
     const live = d.mode === "live";
@@ -253,6 +274,7 @@ const actBtn = (n, pr) => `<button class="btn small" data-item="${n}" data-pr="$
 const RENDER = {
   overview(o) {
     navCounts = {overview: o.needs_you.length};
+    setAlert("needs", o.needs_you.length);
     renderTabs(navCounts);
     const w = o.work;
     const needs = o.needs_you.length ? `<ul class="plain">${o.needs_you.map(x =>
@@ -320,11 +342,11 @@ const RENDER = {
   agents(a) {
     const rows = a.roles.map(r => `<tr><td><b>${r.role}</b></td>
       <td>${r.last_post ? `<a href="${r.last_post.url}" target="_blank">${when(r.last_post.at)}</a> on ${ref(r.last_post.n)}<div class="muted small">${md(esc(r.last_post.first))}</div>` : '<span class="muted">none in 48 h</span>'}</td>
-      <td>${r.posts_48h}</td><td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">—</span>'}</td>
+      <td>${r.posts_48h}</td><td>${r.last_dispatch ? when(r.last_dispatch) : '<span class="muted">—</span>'}${r.role === "fixer" ? `<div class="small">Fixer B (on demand): ${r.last_dispatch_b ? when(r.last_dispatch_b) : "not yet"}</div>` : ""}</td>
       <td><code>${esc(r.cron)}</code> UTC<div class="small">next ${when(r.next)}</div></td>
-      <td><a href="https://claude.ai/code/routines/${r.routine}" target="_blank" class="small">${esc(r.routine)}</a></td></tr>`).join("");
+      <td>${r.routines.map(id => `<a href="https://claude.ai/code/routines/${id}" target="_blank" class="small">${esc(id)}</a>`).join("<br>")}</td></tr>`).join("");
     return `<div class="tablewrap"><table><tr><th>role</th><th>last post</th><th>posts (48 h)</th><th>last started by the Dispatcher</th><th>schedule</th><th>routine</th></tr>${rows}</table></div>
-      <p class="muted small">The reviewer posts as <code>streaming-media-reviewer[bot]</code>; the other roles post as aray4702 with an <code>sm-agent</code> marker. Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
+      <p class="muted small">The reviewer posts as <code>aray4702-reviewer-app[bot]</code>; the other roles post as aray4702 with an <code>sm-agent</code> marker. Your last own post: ${a.owner_last ? `<a href="${a.owner_last.url}" target="_blank">${when(a.owner_last.at)}</a>` : "none in 48 h"}. Last Discord forward: ${a.notify_last ? when(a.notify_last) : "—"}.</p>`;
   },
   dispatcher(d) {
     const rows = d.runs.map(r => `<tr><td><a href="${r.url}" target="_blank">${when(r.at)}</a></td><td>${esc(r.event)}</td>
