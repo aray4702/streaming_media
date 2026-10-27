@@ -8,6 +8,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
   RUN fixer      start a Fixer run when an eligible #64 item has waited
+  RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
+                 already working and another eligible #64 item is free
   RUN reviewer   start a Reviewer run when a green PR has waited for review, or
                  when needs-human was removed after its last review on the head
   RUN coordinator  start the cloud Coordinator when something needs judgment
@@ -52,7 +54,9 @@ REVIEW_WAIT_MIN = 30       # green PR without a review on its head
 STALE_MIN = 90             # in-progress item without Fixer activity
 CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is active
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
-SCHEDULED_FIXER_MINUTES = (15, 45)  # the Fixer routines' own cron minutes (Fixer at :15, Fixer B at :45)
+SCHEDULED_FIXER_MINUTES = (15,)  # the Fixer routine's own cron minutes (Fixer B has none: the Dispatcher starts it)
+FIXER_B_WAIT_MIN = 10      # a free item waits this long before Fixer B takes it (lets a claim settle)
+FIXER_B_GAP_MIN = 45       # at most one Fixer B start in this window (a run takes about that long)
 SCHEDULED_COORDINATOR_MINUTE = 5  # the Coordinator routine's own cron minute
 COORDINATOR_POSTS = ("<!-- sm-agent: coordinator -->",
                      "Owner (coordinator)", "Owner (local coordinator)")  # the last two: before 2026-10-26
@@ -240,7 +244,7 @@ class Dispatcher:
                    re.search(r"Work (started|resumed)", c["body"] or "") for c in comments)
 
     def fixer(self):
-        cand, in_progress = self.roadmap_candidate()
+        cand, in_progress = self._candidate = self.roadmap_candidate()
         if not cand:
             return self.note("fixer", f"no free eligible #{ROADMAP} item ({in_progress} in progress)")
         n = cand["number"]
@@ -269,6 +273,36 @@ class Dispatcher:
         if self.live:
             start_routine("FIXER")
             self.record_dispatch("fixer")
+
+    def fixer_b(self):
+        # The second Fixer (Owner, 2026-10-26: on demand only). fixer() covers an
+        # idle loop; Fixer B covers the case it holds: one Fixer is working and
+        # another eligible item is free.
+        cand, in_progress = getattr(self, "_candidate", None) or self.roadmap_candidate()
+        if not cand:
+            return self.note("fixer_b", "no free eligible item")
+        n = cand["number"]
+        if not self.recent_fixer_claim():
+            return self.note("fixer_b", f"#{n} free, but no Fixer is working; the main Fixer takes it")
+        if in_progress >= MAX_IN_PROGRESS:
+            return self.say("HOLD", "fixer_b", f"#{n} free but {in_progress} items in progress")
+        waited = minutes_ago(cand["updated_at"])
+        if waited < FIXER_B_WAIT_MIN:
+            return self.say("HOLD", "fixer_b", f"#{n} free for {waited:.0f} min (< {FIXER_B_WAIT_MIN})")
+        closed = [p for p in self.closed_pulls() if p.get("closed_at") and minutes_ago(p["closed_at"]) < MERGE_FIXER_MIN]
+        if closed:
+            return self.say("HOLD", "fixer_b", f"PR #{closed[0]['number']} closed {minutes_ago(closed[0]['closed_at']):.0f} min ago; its event starts a Fixer run")
+        if any(0 <= (m - NOW.minute) % 60 <= 10 for m in SCHEDULED_FIXER_MINUTES):
+            return self.say("HOLD", "fixer_b", "the scheduled Fixer run is due within 10 min")
+        last = self.last_dispatch("fixer_b")
+        if last and minutes_ago(last) < FIXER_B_GAP_MIN:
+            return self.say("HOLD", "fixer_b", f"started {minutes_ago(last):.0f} min ago")
+        if self.live and not os.environ.get("SM_ROUTINE_FIXER_B_TOKEN"):
+            return self.say("HOLD", "fixer_b", "SM_ROUTINE_FIXER_B_TOKEN not set")
+        self.say("RUN", "fixer_b", f"#{n} free for {waited:.0f} min while a Fixer works")
+        if self.live:
+            start_routine("FIXER_B")
+            self.record_dispatch("fixer_b")
 
     def reviewer(self):
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
@@ -457,6 +491,7 @@ class Dispatcher:
             return
         self.merges()
         self.fixer()
+        self.fixer_b()
         self.reviewer()
         self.coordinator()
         self.tester()
@@ -470,7 +505,7 @@ class Dispatcher:
 ROUTINES = {"FIXER": "trig_01J3mfRuNYRkTJjDyPPmDMXT", "REVIEWER": "trig_01QtG1eghRppxXD1p9tYcW5p",
             "COORDINATOR": "trig_01QaBh8maaHLypPUE9y9sD6f", "TESTER": "trig_01NrjibmvNHPiNfYp4YC8YFB",
             "BUILDER": "trig_011EsE9gCQAkUHobh2WwjQcn",
-            "FIXER_B": "trig_01PGLJ5jKeMbzQ87Vy6QELt5"}  # scheduled only; extra runs start FIXER
+            "FIXER_B": "trig_01PGLJ5jKeMbzQ87Vy6QELt5"}  # no schedule: the second Fixer, started on demand
 
 
 def start_routine(name):

@@ -149,6 +149,8 @@ def render(tab, d, width=100, show_all=False):
             if lp:
                 add(f"             {cut(lp['first'], w - 14)}")
             add(f"  last started by the Dispatcher  {when(a['last_dispatch']) if a['last_dispatch'] else '-'}")
+            if a["role"] == "fixer":
+                add(f"  Fixer B (on demand) last started  {when(a['last_dispatch_b']) if a.get('last_dispatch_b') else 'not yet'}")
             add("")
         add(f"Your last own post: {when(d['owner_last']['at']) if d['owner_last'] else 'none in 48 h'}"
             f" · last Discord forward: {when(d['notify_last'])}")

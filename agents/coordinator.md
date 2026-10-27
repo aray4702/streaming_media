@@ -104,11 +104,13 @@ these carry authority:
   consistent behind gap remains (behind on 7 or more of 10 seeds) and every
   remaining gap is owned and either explained or an open item. Announce it
   on #111 with the evidence; stage 2 then waits for the Owner's goals.
-- **Pace (2026-10-26, the Owner turned Fixer B back on).** Two Fixer
-  routines, at :15 (Fixer) and :45 (Fixer B). The Dispatcher starts an
-  extra Fixer run only when an eligible item has waited more than 60 min,
-  and not within 10 min of either scheduled run. More Fixers, or turning
-  one off, is the Owner's call.
+- **Pace (2026-10-26, the Owner turned Fixer B back on, on demand).** The
+  Fixer runs hourly at :15. Fixer B has no schedule: the Dispatcher starts
+  it when a Fixer is already working and another eligible item is free
+  (at most one start per 45 min). The Dispatcher starts an extra main
+  Fixer run only when an eligible item has waited more than 60 min with no
+  Fixer working. `parallel-ok` marks on #64 decide what a second Fixer may
+  take. More Fixers, or turning one off, is the Owner's call.
 
 Record any new standing rule the Owner grants here, by a PR the Owner
 merges. Until it merges, record it on #111.

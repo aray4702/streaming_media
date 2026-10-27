@@ -47,7 +47,7 @@ AGENTS = {  # role -> how its posts are recognised
     "builder": "<!-- sm-agent: builder -->",
 }
 SCHEDULES = {  # role -> (cron in UTC, routine ids); keep in step with the routines and dispatch.py
-    "fixer": (f"{','.join(map(str, d.SCHEDULED_FIXER_MINUTES))} * * * *", (d.ROUTINES["FIXER"], d.ROUTINES["FIXER_B"])),
+    "fixer": (f"{','.join(map(str, d.SCHEDULED_FIXER_MINUTES))} * * * *", (d.ROUTINES["FIXER"], d.ROUTINES["FIXER_B"])),  # B: on demand
     "reviewer": ("45 * * * *", (d.ROUTINES["REVIEWER"],)),
     "coordinator": (f"{d.SCHEDULED_COORDINATOR_MINUTE} * * * *", (d.ROUTINES["COORDINATOR"],)),
     "tester": (f"{d.TESTER_SCHEDULE[0]} {','.join(map(str, d.TESTER_SCHEDULE[1]))} * * *", (d.ROUTINES["TESTER"],)),
@@ -274,7 +274,7 @@ class Views:
                                             "first": f"{rv['state'].lower()} on PR #{pr['number']}: "
                                                      + first_line(rv.get("body"))[:160]}
         log_body = self.gh.issue(d.LOG_ISSUE, fresh)["body"] or ""
-        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z]+): ([0-9TZ:-]+) -->", log_body))
+        dispatched = dict(re.findall(r"<!-- dispatcher-last-([a-z_]+): ([0-9TZ:-]+) -->", log_body))
         t = now()
         roles = []
         for role in ("coordinator", "fixer", "reviewer", "tester", "builder"):
@@ -282,7 +282,8 @@ class Views:
             nxt = next_cron(cron, t)
             roles.append({"role": role, "cron": cron, "routines": list(rids), "next": iso(nxt) if nxt else None,
                           "last_post": last.get(role), "posts_48h": counts.get(role, 0),
-                          "last_dispatch": dispatched.get(role)})
+                          "last_dispatch": dispatched.get(role),
+                          "last_dispatch_b": dispatched.get("fixer_b") if role == "fixer" else None})
         return {"roles": roles, "owner_last": last.get("owner"), "notify_last": dispatched.get("notify")}
 
     # ---- dispatcher -------------------------------------------------------------
