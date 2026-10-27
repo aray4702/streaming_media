@@ -289,6 +289,7 @@ class SendSideController : public MetricsSource {
   cc::AllocationLimits notified_limits_;
   uint64_t video_timeouts_ = 0;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
+  DataRate window_target_;    // GoogCC last_loss_based_target_rate_: the target at the last pushback update.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
   RtpSender* padding_sender_ = nullptr;

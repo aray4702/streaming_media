@@ -1,0 +1,23 @@
+name issue_446_cwnd_after_outage
+describe video-only call, 4 s outage at 15 s on both paths, seed 3: congestion-window pushback holds through the retransmissions after link-up, as libwebrtc (#446)
+# issue_430_video_only_outage_4s on seed 3. After link-up the sender retransmits what the receiver NACKs
+# (about 150 RTX packets in 0.8 s, the same on both stacks). libwebrtc keeps pushing back the encoder
+# (every other frame dropped, encoder target half the allocation) until the data in flight falls under
+# 10 % of the congestion window: GoogCcNetworkController::OnTransportPacketsFeedback runs the pushback
+# before UpdateCongestionWindowSize (goog_cc_network_control.cc:421-541). Before #446 this library resized the
+# window first, so the first feedback after link-up ended the pushback and the encoder sent the full target
+# into the queue the retransmissions held.
+#   cc.queue_p95_ms, seed 3: main before the fix 92.1, after 51.6, libwebrtc 65 (compare-webrtc @ a78522c).
+#   10 seeds: before 67.1, after 53.1, libwebrtc 52.7 (worst seed 71).
+seed 3
+duration 40s
+audio off
+at 0s capacity=1500kbps delay=30ms queue=300ms
+at 15s down
+at 19s up
+reverse at 0s delay=30ms
+reverse at 15s down
+reverse at 19s up
+expect cc.queue_p95_ms < 70
+expect video.pause_total_ms < 6900
+expect video.render_fps > 22.7
