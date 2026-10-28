@@ -8,7 +8,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
                  a merge freeze or an Owner question can't be merged past
-  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
+  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first),
+                 unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN fixer (conflict)  start a Fixer run when an approved agent PR has
                  merge conflicts with main (usually testbench/baseline.json),
@@ -295,10 +296,33 @@ class Dispatcher:
             elif not update_done:
                 state = gh(f"repos/{self.r}/pulls/{n}")["mergeable_state"]
                 if state == "behind":
+                    # One update in flight at a time: while another approved PR's run is
+                    # still going, it merges first and would leave this one behind again,
+                    # so updating now only spends a CI run (#463/#465 churn, Flow watch).
+                    flying = self.update_in_flight(n)
+                    if flying:
+                        self.say("HOLD", f"PR #{n}", f"behind main, but PR #{flying}'s run is in flight and merges first")
+                        update_done = True
+                        continue
                     self.say("UPDATE-BRANCH", f"PR #{n}", "approved, green, auto-merge on, behind main")
                     if self.live:
                         gh(f"repos/{self.r}/pulls/{n}/update-branch", "PUT")
                     update_done = True
+
+    def update_in_flight(self, number):
+        """Another PR that will auto-merge once its unfinished ci-ok run passes: auto-merge on,
+        not held, the Reviewer's approval still standing. None if there is none."""
+        for pr in self.pulls:
+            if pr["number"] == number or pr["draft"] or pr["auto_merge"] is None \
+                    or labels(pr) & {"needs-human", "blocked"}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED":
+                continue
+            ci, _ = self.ci_ok(pr["head"]["sha"])
+            if ci in (None, "queued", "in_progress", "waiting", "requested", "pending"):
+                return pr["number"]
+        return None
 
     def roadmap_candidate(self):
         body = gh(f"repos/{self.r}/issues/{ROADMAP}")["body"]
