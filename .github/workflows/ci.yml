@@ -118,8 +118,11 @@ jobs:
   linux-aarch64:
     needs: scope
     if: needs.scope.outputs.full == 'true'
-    # Cross toolchain + functional tests under QEMU. Speed gates are skipped
-    # here (they would time the emulator); linux-arm64 runs them natively.
+    # Cross toolchain + unit and e2e tests under QEMU. Speed gates are skipped
+    # here (they would time the emulator). The test-bench scenarios are too:
+    # under emulation they took 100 of 123 test-minutes (31-46 min a run),
+    # while linux-arm64 runs every scenario, and the speed gates, natively on
+    # Arm64 hardware in about 3 minutes.
     runs-on: ubuntu-24.04
     timeout-minutes: 75
     steps:
@@ -138,7 +141,7 @@ jobs:
             g++-aarch64-linux-gnu qemu-user
           sudo chown -R "$USER" ~/apt-cache
       - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
-      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE bench
+      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE 'bench|scenario'
   linux-arm64:
     needs: scope
     if: needs.scope.outputs.full == 'true'
