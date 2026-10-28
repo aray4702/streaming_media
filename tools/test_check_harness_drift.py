@@ -20,6 +20,50 @@ def data(sm, rtc, name="clean"):
     return {"traces": [{"scenario": name, "seed": 1, "sm": sm, "webrtc": rtc}]}
 
 
+def audiosend(ts, hashes=None):
+    rows = ["kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost"]
+    for i, t in enumerate(ts):
+        rows.append("frame,%d,%d,%d,111,100,%s,-1" % (10000 + 20000 * i, i, t, (hashes or {}).get(i, "h%d" % i)))
+    return "\n".join(rows) + "\n"
+
+
+def video(captured):
+    return "t_s,captured,encoded\n" + "".join("%d,%d,%d\n" % (i + 1, c, c) for i, c in enumerate(captured))
+
+
+def captured_data(sm_ts=(0, 960, 1920), rtc_ts=(0, 960, 1920), sm_v=(30, 30), rtc_v=(30, 30), rtc_hashes=None):
+    t = {"scenario": "lossy", "seed": 1, "sm": trace([1]), "webrtc": trace([1]),
+         "sm_audiosend": audiosend(sm_ts), "webrtc_audiosend": audiosend(rtc_ts, rtc_hashes),
+         "sm_video": video(sm_v), "webrtc_video": video(rtc_v)}
+    return {"traces": [t]}
+
+
+class Capture(unittest.TestCase):
+    """Row 1: captured media must match on every traced scenario, required or not."""
+
+    def test_same_capture_passes(self):
+        _, failed = hd.check(captured_data(), [])
+        self.assertEqual(failed, [])
+
+    def test_a_different_audio_rtp_timestamp_fails(self):
+        _, failed = hd.check(captured_data(rtc_ts=(0, 960, 2400)), [])
+        self.assertEqual(len(failed), 1)
+        self.assertIn("captured audio", failed[0])
+
+    def test_a_different_audio_payload_fails(self):
+        _, failed = hd.check(captured_data(rtc_hashes={1: "other"}), [])
+        self.assertEqual(len(failed), 1)
+
+    def test_a_different_video_capture_count_fails(self):
+        _, failed = hd.check(captured_data(rtc_v=(30, 29)), [])
+        self.assertEqual(len(failed), 1)
+        self.assertIn("captured video", failed[0])
+
+    def test_audio_only_without_video_rows_passes(self):
+        _, failed = hd.check(captured_data(sm_v=(0, 0), rtc_v=()), [])
+        self.assertEqual(failed, [])
+
+
 class Drift(unittest.TestCase):
     def test_same_sizes_pass_even_with_other_sequence_numbers(self):
         rows, failed = hd.check(data(trace([117, 201, 199]), trace([117, 201, 199], seq0=4000)), ["clean"])
