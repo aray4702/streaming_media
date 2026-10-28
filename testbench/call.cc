@@ -7,9 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
-#include <map>
 #include <optional>
-#include <set>
 #include <string_view>
 #include <unordered_map>
 
@@ -97,16 +95,15 @@ uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
 
-// Records which video media sequence numbers the receiver ended up with
-// (originals, retransmissions and FEC recoveries).
-class ReceivedSeqs : public rtp::VideoMediaObserver {
+// The video media packets the receiver hands on: those that arrived from the link (the RepairMeter has them
+// already, since each arrival is recorded before the receiver takes it) and those its ULPFEC receiver recovered.
+class FecRecoveredSeqs : public rtp::VideoMediaObserver {
  public:
-  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { seqs_.insert(unwrap_.Unwrap(seq)); }
-  bool Has(int64_t useq) const { return seqs_.count(useq) > 0; }
+  explicit FecRecoveredSeqs(RepairMeter& meter) : meter_(meter) {}
+  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { meter_.OnFecRecovered(seq); }
 
  private:
-  SeqNumUnwrapper<uint16_t> unwrap_;
-  std::set<int64_t> seqs_;
+  RepairMeter& meter_;
 };
 
 }  // namespace
@@ -149,7 +146,8 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
       {"video.encoder_target_avg_kbps", "Mean rate the encoder is configured with (after the bitrate adjuster), sampled at each captured frame (issue #466)"},
       {"video.undecodable_frames", "Frames received but never decoded: discarded for a missing reference, fast-forwarded or cleared (libwebrtc frames_dropped)"},
-      {"video.residual_loss_pct", "Video media packets never recovered (after NACK/RTX and FEC)"},
+      {"video.residual_loss_pct", "Video media packets sent that never arrived, as media or RTX, and were not "
+                                  "recovered by FEC (RepairMeter, as sm_compare)"},
       {"sync.av_offset_p50_ms", "Median A/V offset at each rendered frame: capture time of the audio playing minus the frame's (positive: video later than audio)"},
       {"sync.av_offset_p95_ms", "95th percentile of the absolute A/V offset at each rendered frame (lip sync; audio and video calls only)"},
       {"sync.av_offset_max_ms", "Largest absolute A/V offset at a rendered frame"},
@@ -181,9 +179,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
       {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
       {"net.fec_kbps", "FEC packets sent on the forward link, wire rate averaged over the call"},
-      {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), headers included"},
-      {"repair.nack_recovered", "Packets recovered by retransmission"},
-      {"repair.fec_recovered", "Packets recovered by FEC"},
+      {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), whole RTP packets"},
+      {"repair.nack_recovered", "RTX packets that arrived before their original (from the link, as sm_compare)"},
+      {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
   };
   return k;
 }
@@ -513,7 +511,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
   OpusAudioDecoder decoder(sr);
   rtp::H264PayloadParser parser;
-  ReceivedSeqs received_seqs;
+  RepairMeter repair;  // Issue #509: the repair metrics by the rule sm_compare's libwebrtc side uses.
+  FecRecoveredSeqs fec_recovered_seqs(repair);
 
   // --- The two ends of the call ---------------------------------------------
   auto session_config = [&](uint32_t rtcp_ssrc, const char* cname) {
@@ -586,7 +585,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.sps_pps_tracker = s.sps_pps_tracker;
   video_cfg.render_smoothing = s.render_smoothing;
   video_cfg.packet_buffer.missing_packets = s.h264_missing_packets;
-  video_cfg.media_observer = &received_seqs;
+  video_cfg.media_observer = &fec_recovered_seqs;
   video_cfg.nack = s.nack;
   // A loss notification needs frame ids and dependencies from a generic
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
@@ -684,11 +683,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
-  int64_t media_bytes = 0, repair_bytes = 0;
-  // Send time of each video media packet by unwrapped sequence number (ULPFEC packets share the
-  // sequence numbers and are not counted).
-  std::map<int64_t, int64_t> video_send_ms;
-  SeqNumUnwrapper<uint16_t> video_sent_unwrap;
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
@@ -739,15 +733,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (auto q = RtpPacket::Parse(p.bytes); q && q->ssrc == kRtxSsrc && q->payload.size() > 2) kind = Kind::kRtx;
       }
       if (is_forward) {
-        if (kind == Kind::kAudio || kind == Kind::kVideo) media_bytes += static_cast<int64_t>(p.bytes.size());
-        if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
+        repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kAudio) {
           if (!audio_ts_first) audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
           audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
         }
         if (kind == Kind::kVideo) {
-          video_send_ms.emplace(video_sent_unwrap.Unwrap(RtpSeq(p.bytes)), now.ms());
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
           if (ft != frame_times.end()) ft->second.last_sent = now;
         }
@@ -936,9 +928,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case Kind::kFec: {
           if (w.kind != Kind::kRtx) {
             if (first_delivery.Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) w_good += wire;
+            if (w.kind == Kind::kVideo) repair.OnVideoArrived(RtpSeq(w.bytes));
           } else if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
-            if (first_delivery.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1])))
-              w_good += wire;
+            const auto osn = static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1]);
+            if (first_delivery.Deliver(FirstDelivery::kVideo, osn)) w_good += wire;
+            repair.OnRtxArrived(osn);
           }
           // The last media or RTX packet of a frame (RFC 4588 keeps the
           // original RTP timestamp) before it renders marks it complete.
@@ -1187,17 +1181,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     const timing::FrameReleaseStats& vrs = vrx.frame_release().stats();
     m["video.undecodable_frames"] =
         static_cast<double>(vrx.keyframes().stats().frames_dropped + vrs.fast_forwarded + vrs.dropped_for_keyframe);
-    {
-      // Packets sent in the last second may still be in flight or under repair.
-      int64_t counted = 0, lost = 0;
-      for (const auto& [useq, sent_ms] : video_send_ms) {
-        if (sent_ms > end_ms - 1000) break;
-        ++counted;
-        lost += !received_seqs.Has(useq);
-      }
-      m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
-    }
-    m["repair.nack_recovered"] = static_cast<double>(vrx.nack().stats().recovered);
     m["repair.fec_recovered"] =
         vrx.ulpfec() ? static_cast<double>(vrx.ulpfec()->GetPacketCounter().num_recovered_packets) : 0;
   }
@@ -1222,7 +1205,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
   }
   if (opt.link_trace) rep.link_trace = forward.trace();
-  m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
+  repair.AddMetrics(m, s.video, end_ms);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

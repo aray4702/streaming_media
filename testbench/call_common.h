@@ -7,6 +7,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <map>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -40,6 +42,60 @@ class FirstDelivery {
     std::vector<int64_t> slots = std::vector<int64_t>(65536, std::numeric_limits<int64_t>::min());
   };
   State streams_[2];
+};
+
+// The repair metrics, computed by one rule from the same forward-link events for both stacks (#509):
+// repair.overhead_pct, repair.nack_recovered and video.residual_loss_pct. Each call implementation feeds it the
+// packets it puts on the forward link, classified as for net.<kind>_kbps (sim::LinkKind), the packets that arrive
+// from it, and the media packets its stack's ULPFEC receiver recovered.
+//   - Overhead: whole RTP packets (header, extensions, payload, padding) as they go on the wire, RTX and FEC
+//     against audio and video media. An audio RED packet counts with its redundant block.
+//   - NACK recovered: RTX arrivals with a payload whose original sequence number had not arrived yet, as
+//     original or RTX. A late original after a NACK is not a recovery.
+//   - Residual loss: video media packets sent up to a second before the end of the call that never arrived
+//     (as media or as RTX) and were not recovered by FEC.
+class RepairMeter {
+ public:
+  // A packet put on the forward link: its kind and the whole RTP packet's size. `seq` is a video media
+  // packet's sequence number, sent at `send_ms`.
+  void OnSent(sim::LinkKind kind, size_t rtp_bytes, uint16_t seq, int64_t send_ms) {
+    const auto bytes = static_cast<int64_t>(rtp_bytes);
+    if (kind == sim::LinkKind::kAudio || kind == sim::LinkKind::kVideo) media_bytes_ += bytes;
+    if (kind == sim::LinkKind::kRtx || kind == sim::LinkKind::kFec) repair_bytes_ += bytes;
+    if (kind == sim::LinkKind::kVideo) video_send_ms_.emplace(send_unwrap_.Unwrap(seq), send_ms);
+  }
+  // A video media packet (not FEC) that arrived from the forward link.
+  void OnVideoArrived(uint16_t seq) { received_.insert(recv_unwrap_.Unwrap(seq)); }
+  // An RTX packet with a payload that arrived from the forward link: `osn` is its original sequence number.
+  void OnRtxArrived(uint16_t osn) {
+    if (received_.insert(recv_unwrap_.Unwrap(osn)).second) ++nack_recovered_;
+  }
+  // A video media packet the stack's ULPFEC receiver recovered.
+  void OnFecRecovered(uint16_t seq) { received_.insert(recv_unwrap_.Unwrap(seq)); }
+
+  // repair.overhead_pct, and with video repair.nack_recovered and video.residual_loss_pct for a call of
+  // `end_ms`.
+  template <class Metrics>
+  void AddMetrics(Metrics& m, bool video, int64_t end_ms) const {
+    m["repair.overhead_pct"] =
+        media_bytes_ ? 100.0 * static_cast<double>(repair_bytes_) / static_cast<double>(media_bytes_) : 0;
+    if (!video) return;
+    // Packets sent in the last second may still be in flight or under repair.
+    int64_t counted = 0, lost = 0;
+    for (const auto& [useq, sent_ms] : video_send_ms_) {
+      if (sent_ms > end_ms - 1000) continue;
+      ++counted;
+      lost += !received_.count(useq);
+    }
+    m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
+    m["repair.nack_recovered"] = static_cast<double>(nack_recovered_);
+  }
+
+ private:
+  int64_t media_bytes_ = 0, repair_bytes_ = 0, nack_recovered_ = 0;
+  SeqNumUnwrapper<uint16_t> send_unwrap_, recv_unwrap_;
+  std::map<int64_t, int64_t> video_send_ms_;  // Unwrapped video media sequence number -> send time.
+  std::set<int64_t> received_;
 };
 
 // Audio concealment from the jitter buffer's lifetime counters, read after
