@@ -55,7 +55,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | scenario | metric | distance on main | distance here |
 |---|---|---|---|
 | issue_12_lossbwe_congestive | `video.e2e_delay_p95_ms` | 107 | 86.2 (closer) |
-| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 113 | 90.1 (closer) |
+| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 114 | 90.1 (closer) |
 | issue_204_cross_traffic_join | `video.freeze_count` | 1.9 | 1.5 (closer) |
 | issue_204_cross_traffic_join | `video.freeze_total_ms` | 717 | 636 (closer) |
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 107 | 86.2 (closer) |

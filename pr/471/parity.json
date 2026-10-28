@@ -434,9 +434,9 @@
   {
    "scenario": "issue_204_cross_traffic_join",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 264.161,
-   "webrtc": 222.618,
-   "band": 39.75255610803188,
+   "sm": 264.186,
+   "webrtc": 222.616,
+   "band": 39.75691790312167,
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,

@@ -202,7 +202,7 @@ clean_link - 2.5 Mbps link, 25 ms one-way, no impairments: the call must be flaw
   audio.jb_delay_p95_ms                   128          132  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                21.9         14.2  =
+  video.longest_freeze_ms                  22         14.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.7         29.8  =
