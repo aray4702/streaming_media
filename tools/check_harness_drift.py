@@ -20,7 +20,8 @@ Each side's delta frames are run back through libwebrtc's H.264 split
 compare/webrtc/reference/modules/rtp_rtcp/source/rtp_format{,_h264}.cc, with
 RTPSenderVideo's per-position limits), on each packet's payload (`size` minus
 the trace's `header` column), to find the interval of limits that explains
-every split, and the two sides' intervals must meet (#518).
+every split, and the two sides' intervals must meet (#518). A row in KNOWN_LIMIT reports its limit test
+as KNOWN (#item) instead of failing, while its largest delta-frame packets must still be equal.
 
 Scenarios with loss are reported but not required: their audio still parts
 at the first loss report, because our receiver sends report blocks more often
@@ -53,6 +54,11 @@ REQUIRED = ["issue_124_clean_link_v2", "issue_124_bufferbloat_v2", "issue_61_goo
 # `issue_257_zero_max_payload` (100-byte packets) are the cases the default limit hides.
 VIDEO_REQUIRED = REQUIRED + ["issue_124_burst_loss_v2", "low_bandwidth", "very_low_capacity",
                              "issue_29_ulpfec_over_red", "issue_257_zero_max_payload"]
+# Rows whose packet-limit test is reported but not required, each until its open sev:2 item fixes the
+# difference (Builder, 2026-10-28, on #553). Only the limit test is exempt: the row's largest
+# delta-frame packets must still be equal, as before #518, with the shared-frame splits and the padding.
+# The item's fix PR removes its entry.
+KNOWN_LIMIT = {"issue_257_zero_max_payload": 555}  # libwebrtc reserves more RTX room early in the call
 
 
 def audio_sizes(trace_csv):
@@ -218,10 +224,12 @@ def compare_video(trace):
     pad_ok = not pa or not pb or pa[-1] == pb[-1]
     la, lb = packet_limits(trace["sm"]), packet_limits(trace["webrtc"])
     ma, mb = max_video_packet(trace["sm"]), max_video_packet(trace["webrtc"])
+    limit_ok = limits_meet(la, lb, ma, mb)
+    known = KNOWN_LIMIT.get(trace["scenario"]) if not limit_ok else None
     return {"scenario": trace["scenario"], "shared": len(shared), "differ": len(differ),
             "example": differ[0] if differ else None, "padding_ours": pa, "padding_webrtc": pb,
-            "limit_ours": la, "limit_webrtc": lb, "max_ours": ma, "max_webrtc": mb,
-            "ok": bool(shared) and not differ and pad_ok and limits_meet(la, lb, ma, mb)}
+            "limit_ours": la, "limit_webrtc": lb, "max_ours": ma, "max_webrtc": mb, "known": known,
+            "ok": bool(shared) and not differ and pad_ok and (limit_ok or (known is not None and ma == mb))}
 
 
 def compare(trace):
@@ -296,12 +304,16 @@ def markdown_video(rows, failed):
              "| full padding packet ours / libwebrtc |",
              "|---|---|---|---|---|"]
     for r in rows:
-        lines.append("| %s | %d | %d | %s / %s | %s / %s |" % (
+        lines.append("| %s | %d | %d | %s / %s%s | %s / %s |" % (
             r["scenario"], r["shared"], r["differ"], limits_text(r["limit_ours"]), limits_text(r["limit_webrtc"]),
+            " (KNOWN (#%d); largest delta packet %d / %d B)" % (r["known"], r["max_ours"], r["max_webrtc"])
+            if r.get("known") else "",
             (r["padding_ours"] or ["-"])[-1], (r["padding_webrtc"] or ["-"])[-1]))
+    known = ["%s (#%d)" % (r["scenario"], r["known"]) for r in rows if r.get("known")]
     lines += ["", "**FAILED:** " + "; ".join(failed) if failed else
               "Every required scenario splits each shared frame size the same way, and both sides' splits fit the same "
-              "packet limit.", ""]
+              "packet limit" + (", except the known differences reported, not required: %s (their largest "
+                                "delta-frame packets match)" % ", ".join(known) if known else "") + ".", ""]
     return "\n".join(lines)
 
 

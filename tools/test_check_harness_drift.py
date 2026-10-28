@@ -240,6 +240,34 @@ class PacketLimit(unittest.TestCase):
         self.assertEqual((multi, unexplained), (1, 0))
         self.assertTrue(lo <= 1462 <= hi)
 
+    def known_case(self, name, theirs_max=1462):
+        # Limits 1 B apart that both sides reach, as in test_limits_one_byte_apart_fail_when_both_sides_reach_them,
+        # with an extra frame on libwebrtc's side so its largest delta packet is `theirs_max`.
+        ours = self.side(1462, [self.PIN])
+        theirs = self.side(1461, [self.PIN - 3, self.PIN]) + "99000,%d,video,99,0,delivered,99001,99000,0,-1,0,49\n" % theirs_max
+        return hd.check_video(vdata(ours, theirs, name), [name])
+
+    def test_a_known_limit_difference_is_reported_not_required(self):
+        # Builder, 2026-10-28, on #553: issue_257_zero_max_payload's limit test is KNOWN (#555).
+        name = next(iter(hd.KNOWN_LIMIT))
+        rows, failed = self.known_case(name)
+        self.assertEqual(failed, [])
+        self.assertEqual(rows[0]["known"], hd.KNOWN_LIMIT[name])
+        self.assertIn("KNOWN (#%d)" % hd.KNOWN_LIMIT[name], hd.markdown_video(rows, failed))
+
+    def test_a_known_row_still_requires_equal_largest_packets(self):
+        name = next(iter(hd.KNOWN_LIMIT))
+        _, failed = self.known_case(name, theirs_max=1461)
+        self.assertEqual(len(failed), 1)
+
+    def test_the_same_limit_difference_on_any_other_row_fails(self):
+        self.assertEqual(list(hd.KNOWN_LIMIT), ["issue_257_zero_max_payload"])
+        for name in hd.VIDEO_REQUIRED:
+            if name not in hd.KNOWN_LIMIT:
+                rows, failed = self.known_case(name)
+                self.assertEqual(len(failed), 1, name)
+                self.assertIsNone(rows[0]["known"], name)
+
 
 if __name__ == "__main__":
     unittest.main()
