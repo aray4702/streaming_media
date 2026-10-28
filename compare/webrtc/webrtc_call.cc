@@ -786,6 +786,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (r.ok && r.payload_len > 0) {
         const uint8_t* payload = data.data() + r.payload_off;
         if (r.ssrc == kAudioSsrc) {
+          if (opt.link_trace) testbench::TraceAudioRtp(data, rel(now).us(), kAudioSsrc, rep.audio_send_trace);
           media_bytes += static_cast<int64_t>(r.pt == kAudioRedPt ? RedPrimaryBytes(payload, r.payload_len) : r.payload_len);
           if (!audio_ts0) audio_ts0 = r.ts;
           link_kind = sm::sim::LinkKind::kAudio;
@@ -1094,6 +1095,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     });
     reverse.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
       if (p.cross || !p.rtcp) return;
+      if (opt.link_trace) testbench::TraceAudioRtcp(p.data, at.us(), kAudioSsrc, rep.audio_send_trace);
       post_at(sender_q.get(), t0 + w::TimeDelta::Micros(at.us()),
               [&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
     });

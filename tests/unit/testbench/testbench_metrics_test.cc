@@ -520,13 +520,14 @@ SM_TEST(TestbenchMetrics, AvSyncOffset) {
   SM_EXPECT_NEAR(m["sync.av_offset_max_ms"], 45, 1e-9);
 }
 
-// Issue #298: a capture rate NetEq doesn't decode at is encoded at Opus's
-// 48 kHz clock, as libwebrtc resamples the capture to the encoder, so the
-// audio plays and the jitter buffer is measured instead of discarded.
-SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRun) {
-  SM_EXPECT_EQ(AudioCodecRate(8000), 8000);
-  SM_EXPECT_EQ(AudioCodecRate(16000), 16000);
-  SM_EXPECT_EQ(AudioCodecRate(32000), 32000);
+// Issues #298 and #477: every capture rate is encoded at Opus's 48 kHz clock,
+// as libwebrtc resamples the capture to the encoder and stamps a 48 kHz RTP
+// clock (audio_encoder_opus.cc kRtpTimestampRateHz), so NetEq decodes at
+// 48 kHz on both stacks. Before #477 the bench kept 8, 16 and 32 kHz.
+SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForEveryCaptureRate) {
+  SM_EXPECT_EQ(AudioCodecRate(8000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(16000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(32000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(48000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(12000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(24000), 48000);
@@ -538,6 +539,77 @@ SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRu
   const Report rep = RunCall(*parsed.scenario, opt);
   SM_EXPECT_LT(rep.metrics.at("audio.time_to_first_ms"), 1000);
   SM_EXPECT_GT(rep.metrics.at("audio.jb_delay_p95_ms"), 0);
+}
+
+// Issue #477: the audio send trace reads an RTP packet's timestamp and
+// payload past its CSRCs, header extensions and padding, and an RTCP compound
+// packet's report blocks about the audio SSRC in SRs and RRs.
+SM_TEST(TestbenchMetrics, AudioSendTraceParsesRtpAndReportBlocks) {
+  std::vector<AudioSendRow> rows;
+  // V=2, P, X, CC=1; PT 111; seq 0x0102; ts 0x00000960; SSRC 0xAABBCCDD; CSRC; a one-word extension; payload 3 bytes;
+  // 2 bytes of padding.
+  const std::vector<uint8_t> rtp = {0xB1, 111, 0x01, 0x02, 0x00, 0x00, 0x09, 0x60, 0xAA, 0xBB, 0xCC, 0xDD,
+                                    1,    2,   3,    4,    0xBE, 0xDE, 0x00, 0x01, 0x10, 0x00, 0x00, 0x00,
+                                    7,    8,   9,    0,    2};
+  TraceAudioRtp(rtp, 1234, 0xAABBCCDD, rows);
+  TraceAudioRtp(rtp, 1234, 0x11111111, rows);  // Another SSRC.
+  SM_ASSERT_EQ(rows.size(), 1u);
+  SM_EXPECT_EQ(rows[0].seq, 0x0102);
+  SM_EXPECT_EQ(rows[0].rtp_ts, 0x960u);
+  SM_EXPECT_EQ(rows[0].pt, 111);
+  SM_EXPECT_EQ(rows[0].payload_bytes, 3);
+  uint32_t h = 2166136261u;
+  for (uint8_t b : {7, 8, 9}) h = (h ^ b) * 16777619u;
+  SM_EXPECT_EQ(rows[0].payload_hash, h);
+
+  // An RR with two blocks (video, then audio with fraction 51) and an SR with one audio block (fraction 3).
+  std::vector<uint8_t> rtcp = {0x82, 201, 0, 13, 0, 0, 0, 1};
+  auto block = [&](uint32_t ssrc, uint8_t fraction) {
+    rtcp.insert(rtcp.end(), {static_cast<uint8_t>(ssrc >> 24), static_cast<uint8_t>(ssrc >> 16),
+                             static_cast<uint8_t>(ssrc >> 8), static_cast<uint8_t>(ssrc), fraction});
+    rtcp.insert(rtcp.end(), 19, 0);
+  };
+  block(0x12345678, 200);
+  block(0xAABBCCDD, 51);
+  rtcp.insert(rtcp.end(), {0x81, 200, 0, 12});
+  rtcp.insert(rtcp.end(), 24, 0);
+  block(0xAABBCCDD, 3);
+  TraceAudioRtcp(rtcp, 5000, 0xAABBCCDD, rows);
+  SM_ASSERT_EQ(rows.size(), 3u);
+  SM_EXPECT_TRUE(rows[1].kind == AudioSendRow::Kind::kReport);
+  SM_EXPECT_EQ(rows[1].time_us, 5000);
+  SM_EXPECT_EQ(rows[1].fraction_lost, 51);
+  SM_EXPECT_EQ(rows[2].fraction_lost, 3);
+  const std::string csv = AudioSendCsv(rows);
+  SM_EXPECT_TRUE(csv.find("frame,1234,258,0,111,3,") != std::string::npos);
+  SM_EXPECT_TRUE(csv.find("report,5000,-1,-1,-1,-1,-1,51") != std::string::npos);
+}
+
+// Issue #477: at the default 16 kHz capture the bench's Opus packets advance
+// 960 ticks per 20 ms frame, the 48 kHz clock libwebrtc stamps, and the trace
+// sees the audio report blocks reaching the sender.
+SM_TEST(TestbenchMetrics, AudioPacketsCarryOpusRtpClock) {
+  auto parsed = ParseScenario("name clock\nduration 6s\nvideo off\nat 0s capacity=500kbps delay=40ms loss=5%\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  SM_EXPECT_EQ(parsed.scenario->audio_sample_rate, 16000);
+  RunOptions opt;
+  opt.library_metrics = false;
+  opt.link_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_EXPECT_EQ(rep.metrics.at("net.audio_rtp_clock_hz"), 48000);
+  int frames = 0, reports = 0;
+  const AudioSendRow* prev = nullptr;
+  for (const auto& r : rep.audio_send_trace) {
+    if (r.kind == AudioSendRow::Kind::kReport) {
+      ++reports;
+      continue;
+    }
+    if (prev) SM_EXPECT_EQ(r.rtp_ts - prev->rtp_ts, 960u);
+    prev = &r;
+    ++frames;
+  }
+  SM_EXPECT_EQ(frames, 300);
+  SM_EXPECT_GE(reports, 1);
 }
 
 // Goodput counts each media sequence number once (#329): an RTX copy of a

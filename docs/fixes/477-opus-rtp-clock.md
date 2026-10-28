@@ -1,0 +1,91 @@
+---
+issue: 477
+title: "Harness: audio capture path differs; per-frame check found the Opus RTP clock and NetEq at 16 kHz on our side"
+severity: sev:2
+status: fixed
+area: area:audio, area:testbench
+regression_tests: testbench/scenarios/issue_477_opus_rtp_clock.scn, tests/unit/testbench/testbench_metrics_test.cc
+---
+
+# #477: Harness: audio capture path differs (libwebrtc: ADM 10 ms blocks through ACM; ours: direct 20 ms encode)
+
+## Issue
+
+The two stacks send audio through different capture paths (libwebrtc: fake ADM 10 ms blocks -> ACM -> Opus on the
+encoder queue; ours: a direct 20 ms libopus encode at a modelled phase), and nothing checked per frame that both
+encoders get the same samples, stamp the same RTP timestamp, send at the same time and use the same settings.
+Filed by the Owner from the harness fidelity audit (#478): https://github.com/aray4702/streaming_media/issues/477.
+
+## Root cause
+
+A per-frame audio send trace on both stacks (below) found one mismatch: **the RTP timestamp**. Our side stamped the
+Opus packets with the scenario's capture rate (default 16 kHz, 320 ticks per 20 ms frame), because
+`AudioCodecRate` (`testbench/call.cc`) kept 8, 16 and 32 kHz as the codec rate, and ran the receiver's NetEq and the
+playout at that rate too. Since #460 our side encodes the 48 kHz signal with libopus, as libwebrtc does, so only the
+clock was left behind. libwebrtc stamps Opus with a 48 kHz RTP clock whatever the capture rate
+(`compare/webrtc/reference/modules/audio_coding/codecs/opus/audio_encoder_opus.cc` `kRtpTimestampRateHz = 48000`,
+`RtpTimestampRateHz()`; RFC 7587), and its NetEq decodes at 48 kHz (`AudioDecoderOpusImpl`, `sm_compare` plays out
+48 kHz). So the RR interarrival jitter, NetEq's sample arithmetic and the playout ran at another rate on our side.
+
+Everything else the trace checks matched on the published `main` traces (`parity-data` `traces/`, seed 1):
+- `low_bandwidth`: all 2000 audio packets leave at the same time with the same size on both stacks.
+- `audio_only_lossy`: all frames leave at the same time (one 2 ms pacer difference behind a probe at 4.011 s), with
+  the same sizes through 7.0 s, including the first loss report (2.5 s, the unrandomized first RTCP interval)
+  reaching both encoders at the same frame. From 7.0 s the sizes differ because the second audio receiver report
+  reaches the sender at a different time: each stack draws its own RTCP interval (`RTCPSender` seeds `Random` from the
+  clock, `rtcp_sender.cc:130`; ours from the scenario seed, #399), and the link's random loss draws differ with the
+  stacks' different padding, so the loss fraction fed to the encoder differs. That is the stack under test, not the
+  capture path.
+
+## Fix
+
+- `AudioCodecRate` returns Opus's 48 kHz for every capture rate: our RTP clock, NetEq and playout run at 48 kHz, as
+  libwebrtc's. The capture rate key stays (libwebrtc resamples the capture to the encoder).
+- The audio send trace, written the same way by both stacks from the packet bytes (`testbench/call.h`
+  `AudioSendRow`, `TraceAudioRtp` / `TraceAudioRtcp`): per audio packet on the forward link its send time, RTP
+  timestamp, payload type, size and payload hash; per audio report block delivered to the sender its fraction lost.
+  `sm_testbench --link-trace=DIR` and `sm_compare` write `<scenario>.<seed>.{sm,webrtc}.audiosend.csv`; the JSON
+  carries `sm_audiosend` / `webrtc_audiosend` for the `--trace` scenarios, which now include `low_bandwidth` and
+  `audio_only_lossy`. `tools/audio_send.py` compares them frame by frame and replays each side's report blocks
+  through libwebrtc's packet loss smoother, so a frame that differs because its loss input differed is told apart
+  from one that differs for another reason.
+- A metric, `net.audio_rtp_clock_hz`: the audio stream's RTP clock measured on the forward link.
+
+## Regression tests
+
+| Test | Fails before the fix | Passes after |
+|---|---|---|
+| `testbench/scenarios/issue_477_opus_rtp_clock.scn` | `net.audio_rtp_clock_hz` unknown on the base commit (16000 with the metric added and the old rate) | 48000 |
+| `tests/unit/testbench/testbench_metrics_test.cc` `TestbenchMetrics.AudioCodecRateIsOpusClockForEveryCaptureRate` | `AudioCodecRate(16000)` was 16000 | 48000 |
+| `TestbenchMetrics.AudioPacketsCarryOpusRtpClock` | RTP timestamp steps of 320 per frame | 960 |
+| `TestbenchMetrics.AudioSendTraceParsesRtpAndReportBlocks` | (new trace) | passes |
+
+## Results
+
+The reproduction scenario across seeds (before -> after):
+
+| seed | net.audio_rtp_clock_hz | audio.interruptions | audio.concealed_pct (after) |
+|---|---|---|---|
+| 1 | 16000 -> 48000 | 0 -> 0 | 0.58 |
+| 2 | 16000 -> 48000 | 0 -> 0 | 0.29 |
+| 3 | 16000 -> 48000 | 0 -> 0 | 0.59 |
+| 4 | 16000 -> 48000 | 0 -> 0 | 0.55 |
+| 5 | 16000 -> 48000 | 0 -> 0 | 0.18 |
+
+The guard-rail line `issue_62_neteq_v2_high_jitter` `audio.jb_delay_p95_ms <= 170` moves to `<= 180`
+(program.md 0.2): ours 180 on seed 1 (seeds 1-10 mean 134, was 133), libwebrtc seeds 1-10 100-180 (mean 129) on
+`main`'s compare-webrtc, capped at libwebrtc's worst seed.
+
+110 of 124 scenarios change (NetEq's decisions at 48 kHz, and the calls that follow from them). The metrics the
+baseline comparison flags, with libwebrtc's 10-seed mean on `main`:
+
+| scenario | metric | baseline | result | libwebrtc |
+|---|---|---|---|---|
+| issue_150_gcc_v2_high_jitter_seed10 | audio.late_discards | 0 | 2 | 1496.5 |
+| issue_152_alr_request_probe_v2 | video.longest_freeze_ms | 2 | 30 | 13.9 (seeds 3-28 on 1-5) |
+| issue_29_ulpfec_over_red | cc.target_max_drop_pct | 20.16 | 21.23 | 27.08 |
+| issue_29_ulpfec_over_red | video.frames_rendered | 114 | 101 | 81.1 |
+| issue_29_ulpfec_over_red | video.render_ratio_pct | 12.72 | 11.27 | 9.05 |
+
+Each moves toward libwebrtc's value, or stays within its seed spread. Every scenario adds `net.audio_rtp_clock_hz`
+48000.
