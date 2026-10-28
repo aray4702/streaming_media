@@ -2,6 +2,33 @@
  "webrtc_version": "M157.8103@{#0}",
  "seeds": 10,
  "sigma": 1.0,
+ "issue_states": {
+  "5": "closed",
+  "7": "closed",
+  "12": "closed",
+  "15": "closed",
+  "19": "closed",
+  "20": "closed",
+  "21": "closed",
+  "23": "closed",
+  "24": "closed",
+  "29": "closed",
+  "37": "closed",
+  "48": "closed",
+  "61": "closed",
+  "63": "closed",
+  "204": "closed",
+  "217": "closed",
+  "218": "closed",
+  "224": "closed",
+  "360": "closed",
+  "408": "closed",
+  "409": "closed",
+  "410": "closed",
+  "411": "open",
+  "420": "closed",
+  "446": "closed"
+ },
  "gaps": [
   {
    "scenario": "audio_only_lossy",
@@ -12,7 +39,8 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -25,7 +53,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -40,10 +69,12 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
+    411
+   ],
+   "stale_owners": [
     24,
     61,
-    19,
-    411
+    19
    ]
   },
   {
@@ -56,10 +87,12 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
+    411
+   ],
+   "stale_owners": [
     23,
     19,
-    24,
-    411
+    24
    ]
   },
   {
@@ -72,9 +105,11 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -87,10 +122,12 @@
    "seeds_agree": 10,
    "seeds": 10,
    "owners": [
+    411
+   ],
+   "stale_owners": [
     21,
     7,
-    29,
-    411
+    29
    ]
   },
   {
@@ -103,8 +140,10 @@
    "seeds_agree": 4,
    "seeds": 10,
    "owners": [
-    63,
     411
+   ],
+   "stale_owners": [
+    63
    ]
   },
   {
@@ -116,7 +155,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -130,7 +170,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": []
+   "owners": [],
+   "stale_owners": []
   },
   {
    "scenario": "issue_12_lossbwe_high_jitter_no_loss",
@@ -142,9 +183,11 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -157,8 +200,10 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    23,
     411
+   ],
+   "stale_owners": [
+    23
    ]
   },
   {
@@ -171,8 +216,10 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    63,
     217
+   ],
+   "stale_owners": [
+    63
    ]
   },
   {
@@ -185,8 +232,10 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    63,
     217
+   ],
+   "stale_owners": [
+    63
    ]
   },
   {
@@ -198,7 +247,8 @@
    "direction": "behind",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     5,
     37,
     24
@@ -213,7 +263,8 @@
    "direction": "ahead",
    "seeds_agree": 9,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -227,7 +278,8 @@
    "direction": "behind",
    "seeds_agree": 7,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     23
    ]
   },
@@ -240,7 +292,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": []
+   "owners": [],
+   "stale_owners": []
   },
   {
    "scenario": "issue_12_lossbwe_policer",
@@ -251,7 +304,8 @@
    "direction": "ahead",
    "seeds_agree": 9,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     21,
     61,
     12
@@ -266,7 +320,8 @@
    "direction": "ahead",
    "seeds_agree": 9,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     21,
     7,
     29
@@ -281,7 +336,8 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -294,7 +350,8 @@
    "direction": "ahead",
    "seeds_agree": 3,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -307,7 +364,8 @@
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -321,9 +379,11 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -335,7 +395,8 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     21,
     7,
     29
@@ -350,7 +411,8 @@
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -364,7 +426,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -377,7 +440,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -390,7 +454,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -405,9 +470,11 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -420,8 +487,10 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    23,
     411
+   ],
+   "stale_owners": [
+    23
    ]
   },
   {
@@ -433,7 +502,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -446,7 +516,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -459,7 +530,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -473,7 +545,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": []
+   "owners": [],
+   "stale_owners": []
   },
   {
    "scenario": "issue_23_low_bandwidth",
@@ -485,9 +558,11 @@
    "seeds_agree": 7,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -500,9 +575,11 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -515,8 +592,10 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    23,
     411
+   ],
+   "stale_owners": [
+    23
    ]
   },
   {
@@ -528,7 +607,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -541,7 +621,8 @@
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -554,7 +635,8 @@
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
-   "owners": []
+   "owners": [],
+   "stale_owners": []
   },
   {
    "scenario": "issue_257_zero_max_payload",
@@ -565,7 +647,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     19,
     15,
     48,
@@ -583,9 +666,11 @@
    "seeds_agree": 7,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -597,7 +682,8 @@
    "direction": "behind",
    "seeds_agree": 1,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     5,
     37,
     24
@@ -612,7 +698,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -626,7 +713,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -640,7 +728,8 @@
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     15,
     48,
     61,
@@ -656,7 +745,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     15,
     48,
     61,
@@ -672,7 +762,8 @@
    "direction": "behind",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     5,
     37,
     24
@@ -687,7 +778,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     21,
     61,
     12
@@ -702,7 +794,8 @@
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     37,
     24
    ]
@@ -716,7 +809,8 @@
    "direction": "ahead",
    "seeds_agree": 10,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     21,
     7,
     29
@@ -731,7 +825,8 @@
    "direction": "ahead",
    "seeds_agree": 7,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     37,
     24
    ]
@@ -746,9 +841,11 @@
    "seeds_agree": 7,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -760,7 +857,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -774,7 +872,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -788,7 +887,8 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": []
+   "owners": [],
+   "stale_owners": []
   },
   {
    "scenario": "issue_62_neteq_default",
@@ -799,7 +899,8 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -812,7 +913,8 @@
    "direction": "ahead",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     63
    ]
   },
@@ -825,7 +927,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -840,9 +943,11 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -855,8 +960,10 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    23,
     411
+   ],
+   "stale_owners": [
+    23
    ]
   },
   {
@@ -869,9 +976,11 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    24,
-    61,
     411
+   ],
+   "stale_owners": [
+    24,
+    61
    ]
   },
   {
@@ -884,8 +993,10 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    23,
     411
+   ],
+   "stale_owners": [
+    23
    ]
   },
   {
@@ -897,7 +1008,8 @@
    "direction": "ahead",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     15,
     48,
     61,
@@ -914,9 +1026,11 @@
    "seeds_agree": 7,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -928,7 +1042,8 @@
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,
-   "owners": [
+   "owners": [],
+   "stale_owners": [
     24,
     37
    ]
@@ -943,9 +1058,11 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -958,10 +1075,12 @@
    "seeds_agree": 10,
    "seeds": 10,
    "owners": [
+    411
+   ],
+   "stale_owners": [
     21,
     7,
-    29,
-    411
+    29
    ]
   },
   {
@@ -974,9 +1093,11 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    37,
-    24,
     411
+   ],
+   "stale_owners": [
+    37,
+    24
    ]
   },
   {
@@ -989,10 +1110,12 @@
    "seeds_agree": 10,
    "seeds": 10,
    "owners": [
+    411
+   ],
+   "stale_owners": [
     21,
     7,
-    29,
-    411
+    29
    ]
   }
  ]
