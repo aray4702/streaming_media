@@ -1,0 +1,13 @@
+name issue_466_overshoot_1mbps
+describe 1 Mbps link, an encoder whose delta frames are 1.3x its target (a hot hardware encoder)
+duration 40s
+encoder_overshoot 1.3
+at 0s capacity=1mbps delay=30ms queue=300ms
+# Issue #466: the encoder model's modes exercise the EncoderOvershootDetector /
+# EncoderBitrateAdjuster / FrameDropper ports (tools/catalog.py 5.8) against
+# libwebrtc on compare-webrtc. The expect lines check the model, not parity:
+# with overshoot 1 (seeds 1-3) the encoder target is 788-800 kbps and the
+# encoded rate 795-805 kbps; at 1.3 the adjuster lowers the target to
+# 625-637 kbps while the encoded rate stays 818-830 kbps (seeds 1-3).
+expect video.encoder_target_avg_kbps < 700
+expect video.avg_kbps > 750

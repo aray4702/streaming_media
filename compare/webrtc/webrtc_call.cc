@@ -364,6 +364,8 @@ struct VideoModel {
   int64_t height_sum = 0;                  // Encoded frame heights (quality scaling, issue #84).
   int64_t last_key_us = INT64_MIN / 2;
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
+  int64_t encoder_rate_bps_sum = 0;  // encoder_rate_bps at each captured frame (issue #466).
+  int64_t start_us = 0;              // The call's start on the simulated clock: capture times for the size model.
   int64_t keyframe_bytes = 0;    // Total size of the keyframes (issue #333 trace).
   int last_width = 0, last_height = 0;  // Size of the last frame encoded (issue #333 trace).
   // Capture time by the encoder's RTP timestamp, filled by the encoder (issue #339). On the wire the
@@ -402,7 +404,11 @@ class ModelEncoder final : public w::VideoEncoder {
     bool key = types && !types->empty() && (*types)[0] == w::VideoFrameType::kVideoFrameKey;
     if (m_->s->keyframe_interval.us() > 0 && capture_us - m_->last_key_us >= m_->s->keyframe_interval.us()) key = true;
     double per_frame = static_cast<double>(rate_bps_) / 8 / m_->s->video_fps;
-    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2));
+    const testbench::EncoderModel::Behaviour behaviour{m_->s->encoder_overshoot, m_->s->scene_change_interval.ms(),
+                                                       m_->s->scene_change_frames, m_->s->scene_change_factor};
+    const double factor =
+        testbench::EncoderModel::DeltaSizeFactor(behaviour, (capture_us - m_->start_us) / 1000, m_->s->video_fps);
+    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2) * factor);
     bytes = std::max<int64_t>(bytes, 200);
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
@@ -732,6 +738,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   VideoModel model;
   model.s = &s;
   model.rng = Random(s.seed + 13);
+  model.start_us = t0.us();
   int64_t media_bytes = 0, repair_bytes = 0, w_send = 0, w_good = 0;
   testbench::FirstDelivery first_delivery;
   SeqNumUnwrapper<uint16_t> video_send_unwrap, video_recv_unwrap;
@@ -1032,6 +1039,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     if (s.video && t >= next_frame_ms) {
       ++model.frames_captured;
+      model.encoder_rate_bps_sum += model.encoder_rate_bps;
       next_frame_ms = (model.frames_captured) * 1000 / s.video_fps;
       source.Capture(sim.Now().us());
     }
@@ -1388,6 +1396,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(model.frames_captured - model.frames_encoded);
+    m["video.encoder_target_avg_kbps"] =
+        model.frames_captured
+            ? static_cast<double>(model.encoder_rate_bps_sum) / static_cast<double>(model.frames_captured) / 1000
+            : 0;
     m["video.undecodable_frames"] = static_cast<double>(undecodable);
     {
       // Packets sent in the last second may still be in flight or under repair.

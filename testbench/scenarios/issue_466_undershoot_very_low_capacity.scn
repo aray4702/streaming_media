@@ -1,0 +1,11 @@
+name issue_466_undershoot_very_low_capacity
+describe 100 kbps link (as very_low_capacity), an encoder whose delta frames are 0.7x its target
+duration 40s
+encoder_overshoot 0.7
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Issue #466 (see issue_466_overshoot_1mbps.scn). At the encoder's minimum
+# (52 kbps) the encoded rate is 34-36 kbps with overshoot 1 and 32-34 kbps at
+# 0.7, with 391-440 frames dropped instead of 422-466 (seeds 1-3). The lines
+# lock in the model's operating point; parity is judged on compare-webrtc.
+expect video.encoder_target_avg_kbps > 45
+expect video.avg_kbps < 40

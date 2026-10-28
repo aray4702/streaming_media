@@ -88,8 +88,8 @@ const std::vector<Shown>& ShownMetrics() {
 }
 
 // Information only (issue #117): what the forward link carried and lost per
-// kind. Shown after the table, never counted as better or worse and not part
-// of the parity gaps.
+// kind, and the encoder's drops and configured rate (issue #466). Shown after
+// the table, never counted as better or worse and not part of the parity gaps.
 const std::vector<const char*>& InfoMetrics() {
   static const std::vector<const char*> k = {
       "net.audio_kbps",  "net.video_kbps",  "net.rtx_kbps",       "net.padding_kbps",    "net.fec_kbps",
@@ -99,6 +99,8 @@ const std::vector<const char*>& InfoMetrics() {
       "net.video_size_p50_b", "net.video_size_p90_b", "net.video_size_max_b", "net.video_queue_drops",
       "net.rtx_size_p50_b", "net.rtx_size_p90_b", "net.rtx_size_max_b", "net.rtx_queue_drops",
       "net.padding_size_p50_b", "net.padding_size_p90_b", "net.padding_size_max_b", "net.padding_queue_drops",
+      // Issue #466: what the frame dropper and the encoder bitrate adjuster did with the encoder model's modes.
+      "video.encoder_dropped", "video.encoder_target_avg_kbps",
   };
   return k;
 }
@@ -321,7 +323,7 @@ int main(int argc, char** argv) {
       ++wins[w];
       std::printf("  %-30s %12s %12s  %s\n", sh.metric, Num(ia->second).c_str(), Num(ib->second).c_str(), w);
     }
-    std::printf("  forward link per kind (information only)\n");
+    std::printf("  forward link per kind and encoder (information only)\n");
     for (const char* name : InfoMetrics()) {
       auto ia = a.find(name), ib = b.find(name);
       if (ia == a.end() || ib == b.end()) continue;

@@ -864,7 +864,12 @@ ALGORITHMS = [
                       "the 2.5 Mbps cap within a second, because the media factor came from the overshoot detector (sized "
                       "against the adjusted rate, never below 1.0) instead of RateUtilizationTracker (against the unadjusted "
                       "target). With `rate_utilization_tracker on` the encoded rate over issue_346_reconfigure_cross_join's "
-                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp."),
+                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp. "
+                      "Issue #466: the shared encoder model has persistent overshoot/undershoot (`encoder_overshoot`) "
+                      "and scene-cut (`scene_change`) modes, off by default, so these ports meet a real rate miss on "
+                      "both stacks of `sm_compare` (scenarios issue_466_*; `video.encoder_target_avg_kbps` and "
+                      "`video.encoder_dropped` are shown next to libwebrtc's). At 1.3x on a 1 Mbps link the adjuster "
+                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3)."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
