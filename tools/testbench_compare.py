@@ -1,18 +1,32 @@
 #!/usr/bin/env python3
 """Compares test bench results against the baseline and flags regressions.
 
-    testbench_compare.py BASELINE.json RESULTS.json [--markdown] [--update]
+    testbench_compare.py BASELINE RESULTS.json [--markdown] [--update]
+    testbench_compare.py --split BASELINE.json DIR
 
-Both files are `sm_testbench --json` output (an array of scenario reports).
+RESULTS is `sm_testbench --json` output (an array of scenario reports).
+BASELINE is either such a file (`testbench/baseline.json`) or a directory
+with one report per scenario, `<scenario>.json` (`testbench/baseline/`,
+issue #498: a PR that adds a scenario or regenerates the baseline then
+touches only its own scenarios' files, instead of putting every other open
+PR in conflict on one shared file). Both forms load to the same reports.
 A metric regresses when it moves in its "worse" direction by more than
 max(relative tolerance x baseline, absolute floor). Exit status: 0 = no
 regressions, 1 = regressions, 2 = usage error. `--update` rewrites BASELINE
-with RESULTS (metrics only) after printing the comparison.
+with RESULTS (metrics only) after printing the comparison; in a directory it
+rewrites each scenario's file and removes the files of scenarios not in
+RESULTS, so files whose numbers did not change stay byte-identical.
+
+While both `testbench/baseline.json` and `testbench/baseline/` exist (until
+CI reads the directory), `--update` on either one writes both, and loading
+one warns if the other holds different reports. `--split` writes the file's
+reports to DIR as per-scenario files, the same as `--update` would.
 
 The canonical baseline is produced on Linux x86_64 with GCC 13 (CI job
 `testbench` and the cloud agents); other platforms may differ slightly.
 """
 import json
+import os
 import sys
 
 # Direction: +1 = higher is better, -1 = lower is better, 0 = informational.
@@ -53,12 +67,68 @@ def floor(metric):
     return 1.0  # Counts.
 
 
-def load(path):
+def load_file(path):
     with open(path) as f:
         data = json.load(f)
     if isinstance(data, dict):
         data = data.get("scenarios", [data])
     return {r["scenario"]: r for r in data}
+
+
+def load(path):
+    """Reports by scenario, from a results/baseline file or a per-scenario directory."""
+    if not os.path.isdir(path):
+        return load_file(path)
+    reports = {}
+    for name in sorted(os.listdir(path)):
+        if name.endswith(".json"):
+            reports.update(load_file(os.path.join(path, name)))
+    return reports
+
+
+def sibling(path):
+    """The other form of a baseline: `x/baseline.json` <-> `x/baseline/`, if it exists."""
+    path = path.rstrip("/")
+    other = path + ".json" if os.path.isdir(path) else (path[:-5] if path.endswith(".json") else None)
+    return other if other and os.path.exists(other) and os.path.isdir(other) != os.path.isdir(path) else None
+
+
+def baseline_entry(name, report):
+    return {"scenario": name, "description": report.get("description", ""),
+            "passed": report.get("passed", True), "metrics": report["metrics"]}
+
+
+def dump(obj):
+    return json.dumps(obj, indent=1, sort_keys=True) + "\n"
+
+
+def write_baseline(path, reports):
+    """Writes reports as a baseline file or, if `path` is a directory, one file per scenario."""
+    if not os.path.isdir(path):
+        with open(path, "w") as f:
+            f.write(dump([baseline_entry(k, v) for k, v in sorted(reports.items())]))
+        return
+    keep = set()
+    for name, report in sorted(reports.items()):
+        if os.sep in name or name.startswith("."):
+            raise ValueError(f"scenario name '{name}' is not a file name")
+        file = name + ".json"
+        keep.add(file)
+        text = dump(baseline_entry(name, report))
+        target = os.path.join(path, file)
+        if os.path.exists(target):
+            with open(target) as f:
+                if f.read() == text:
+                    continue
+        with open(target, "w") as f:
+            f.write(text)
+    for file in os.listdir(path):
+        if file.endswith(".json") and file not in keep:
+            os.remove(os.path.join(path, file))
+
+
+def entries(reports):
+    return {k: baseline_entry(k, v) for k, v in reports.items()}
 
 
 def compare(base, new):
@@ -105,8 +175,24 @@ def main(argv):
     if len(args) != 2:
         print(__doc__, file=sys.stderr)
         return 2
+    if "--split" in argv:
+        if os.path.isdir(args[0]):
+            print("--split: BASELINE.json must be a file", file=sys.stderr)
+            return 2
+        os.makedirs(args[1], exist_ok=True)
+        write_baseline(args[1], load(args[0]))
+        print(f"baseline split: {args[0]} -> {args[1]}", file=sys.stderr)
+        return 0
     markdown = "--markdown" in argv
     base, new = load(args[0]), load(args[1])
+    other = sibling(args[0])
+    if other:
+        a, b = entries(base), entries(load(other))
+        differ = sorted(k for k in set(a) | set(b) if a.get(k) != b.get(k))
+        if differ:
+            print(f"warning: {args[0]} and {other} differ in {len(differ)} scenario(s) "
+                  f"({', '.join(differ[:5])}{', ...' if len(differ) > 5 else ''}); "
+                  f"`--update` writes both", file=sys.stderr)
     rows, regressions, missing = compare(base, new)
     if markdown:
         print("| scenario | metric | baseline | result | status |")
@@ -123,12 +209,9 @@ def main(argv):
     print(f"\n{len(regressions)} regression(s), {sum(1 for r in rows if r[4] == 'improved')} improvement(s)",
           file=sys.stderr)
     if "--update" in argv:
-        out = [{"scenario": k, "description": v.get("description", ""), "passed": v.get("passed", True),
-                "metrics": v["metrics"]} for k, v in sorted(new.items())]
-        with open(args[0], "w") as f:
-            json.dump(out, f, indent=1, sort_keys=True)
-            f.write("\n")
-        print(f"baseline updated: {args[0]}", file=sys.stderr)
+        for path in [args[0]] + ([other] if other else []):
+            write_baseline(path, new)
+            print(f"baseline updated: {path}", file=sys.stderr)
     return 1 if regressions else 0
 
 

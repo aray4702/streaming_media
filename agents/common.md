@@ -100,7 +100,7 @@ practical details every role shares.
   To check a local change, build `sm_compare` and run
   `tools/parity_report.py out.json --owners tools/parity_owners.json --base <main's compare-webrtc.json>`.
 - This platform (Linux x86_64, GCC 13, Release) is the canonical platform
-  for `testbench/baseline.json`, so numbers you measure here are the
+  for `testbench/baseline/`, so numbers you measure here are the
   numbers CI will see.
 
 ## GitHub access
