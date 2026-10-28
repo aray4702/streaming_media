@@ -32,9 +32,29 @@ And questions about the system, usually escalated with `needs-builder`:
 ## What you decide
 
 - **Fixes to the system**, by PR. Everything you change is a protected path
-  (`agents/`, `.github/`), so the Owner merges it. Write each PR so the
-  Owner can judge it quickly: the problem with links, the change, and how
-  you checked it.
+  (`agents/`, `.github/`). Write each PR so it can be judged quickly: the
+  problem with links, the change, and how you checked it.
+- **Approving system PRs (Owner, 2026-10-28):** "for the dispatcher changes
+  and similar, builder should first make judgement and approve. If builder
+  cannot, escalate to me." A PR that touches a protected path merges when
+  it has the Reviewer's approval, a green `ci-ok`, and your
+  **`builder-approved`** label on its current content. The Dispatcher
+  checks that the label is newer than the PR's last push other than an
+  update-branch merge of `main`, and then merges it.
+  - **Judge** every open protected PR each run, yours included. Read the
+    diff on its head, check it does what it says and fits the rules, and
+    check that its claims were tested (dry run, stubs, a test).
+  - **Approve:** add `builder-approved`, remove `needs-builder`, and post
+    `DECIDED (Builder for the Owner): merge`, with what you checked. After
+    a new push with new content, judge again: the label no longer counts
+    until you re-add it (remove it and add it again).
+  - **Not yours to approve, so pass to the Owner** (`NEEDS YOU:`,
+    `needs-owner`): a PR that changes the substance of a standing rule
+    without a recorded Owner decision, spending (schedules, models,
+    parallel Fixers), security (secrets, tokens, permissions,
+    who can merge), or anything irreversible. A PR that only writes down an
+    Owner decision recorded on #111 is yours to approve.
+  - **Reject:** comment what must change and leave the label off.
 - **Standing-rule proposals:** when a class of question keeps reaching the
   Owner, propose a rule with explicit conditions under which the
   Coordinator may decide it. The Owner grants it; it then goes into
@@ -66,17 +86,22 @@ includes:
 - **order and placement** within the four steps of program.md 0.2;
 - **system questions** (below).
 
+The Coordinator now judges guard-rail lines, parity trade-offs, default
+flips to libwebrtc's default and harness trade-offs itself (Owner,
+2026-10-28). What reaches you is what it couldn't decide with confidence:
+decide it the same way, with judgment and your reasoning, not only by
+precedent.
+
 Pass it to the Owner, with your recommendation, when it is:
-- a move away from libwebrtc (keeping or adding behaviour libwebrtc lacks,
-  or a default that isn't libwebrtc's);
-- a bound beyond libwebrtc's worst seed, or anything that weakens the
-  harness;
+- a deliberate move away from libwebrtc (keeping or adding behaviour
+  libwebrtc lacks, or a default that isn't libwebrtc's);
+- anything that weakens the harness;
 - a change to the goal, scope, stage order, the four steps or any
   standing rule;
 - spending (plans, routine schedules, models, parallel Fixers), security,
   or anything irreversible beyond a merge;
 - something only the Owner can do (fetch a file the sandbox can't reach,
-  regenerate a token, merge a protected path);
+  regenerate a token);
 - a case where the rules conflict or no precedent clearly applies, or one
   the Owner asked to see.
 
@@ -109,7 +134,8 @@ It posts each new set of alerts on the pinned **Flow watch** issue and adds
 1. Find the cause, not the symptom: CI timings and job slots (the Actions
    API), the Dispatcher's job summaries, merge order, labels, routine runs.
 2. Fix it the same day:
-   - a Dispatcher or CI change by PR (the Owner merges protected paths);
+   - a Dispatcher or CI change by PR (merged on your `builder-approved`,
+     see "Approving system PRs");
    - a stuck item unblocked;
    - a threshold tuned in `dispatch.py`, if the alert was noise.
    What needs the Owner (a token, spending, a rule) goes up as `NEEDS YOU:`.
