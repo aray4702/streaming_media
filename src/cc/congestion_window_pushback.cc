@@ -14,7 +14,8 @@ void CongestionWindowPushback::UpdateWindow(DataRate target) {
   const TimeDelta min_rtt = TimeDelta::Millis(*std::min_element(rtts_ms_.begin(), rtts_ms_.end()));
   const DataSize kMinWindow = DataSize::Bytes(2 * 1500);
   DataSize w = target * (min_rtt + cfg_.queue_time);
-  w = window_ ? std::max(kMinWindow, DataSize::Bytes((w.bytes() + window_->bytes()) / 2)) : std::max(kMinWindow, w);
+  // goog_cc_network_control.cc:399-404, with the units' saturating operators (#451).
+  w = window_ ? std::max(kMinWindow, (w + *window_) / 2) : std::max(kMinWindow, w);
   window_ = w;
 }
 

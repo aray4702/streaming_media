@@ -597,6 +597,10 @@ ALGORITHMS = [
                "its drop-frame-only mode): when the data in flight exceeds target x (min feedback RTT + 350 ms) "
                "the encoder drops every N-th captured frame (SendRates::frame_drop_interval, "
                "SendSideController::DropCapturedFrame()). The pacing rate is not reduced. "
+               "As in libwebrtc (#411, D8), the drop is decided for a frame before the encoder sees its size "
+               "(VideoStreamEncoder::OnFrame before MaybeEncodeVideoFrame), and an encoder reconfiguration's "
+               "reallocation (OnEncoderConfigurationChanged -> BitrateAllocator::AddObserver, posted, so from the frame "
+               "after the reconfiguring one) carries no reduce ratio, which ends the drops until the next network update. "
                "`SendSideConfig::control_handler` (scenario `control_handler on|off`, default on since #224/#204) adds libwebrtc's "
                "`CongestionControlHandler` (cc/control_handler.h, control_handler.cc) between GoogCC and the allocator: "
                "the allocation, and with it the encoder target and its protection share, changes only when the target, the "
@@ -652,7 +656,12 @@ ALGORITHMS = [
                       "last pushback update (`GoogCcNetworkController::OnTransportPacketsFeedback` and `OnProcessInterval`, "
                       "goog_cc_network_control.cc:215-241 and 421-541). The pushback used to resize the window first, so "
                       "the first feedback after an outage, which clears the lost packets from flight, ended the pushback "
-                      "while the retransmissions still filled the bottleneck."),
+                      "while the retransmissions still filled the bottleneck. Issue #464 "
+                      "([fix record](../../fixes/464-int-bitrate-constraints.md)): libwebrtc's `BitrateConstraints` carry "
+                      "int bps (`ConvertConstraints`, rtp_transport_controller_send.cc:68-83), so `cc::ConvertConstraints` "
+                      "saturates a finite min, start or max rate at INT_MAX bps (about 2.1 Gbps) in `GccController`, "
+                      "`rtp::SendSideController` and `rtp::Session`; an infinite max stays infinite. A start rate of 1 Tbps "
+                      "or more had made the pacer build padding for probes at 3x and 6x that rate until it ran out of memory."),
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],
@@ -864,7 +873,12 @@ ALGORITHMS = [
                       "the 2.5 Mbps cap within a second, because the media factor came from the overshoot detector (sized "
                       "against the adjusted rate, never below 1.0) instead of RateUtilizationTracker (against the unadjusted "
                       "target). With `rate_utilization_tracker on` the encoded rate over issue_346_reconfigure_cross_join's "
-                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp."),
+                      "first 10 s is 2328 kbps against libwebrtc's 2321 (2221 without), scenario issue_355_rate_tracker_ramp. "
+                      "Issue #466: the shared encoder model has persistent overshoot/undershoot (`encoder_overshoot`) "
+                      "and scene-cut (`scene_change`) modes, off by default, so these ports meet a real rate miss on "
+                      "both stacks of `sm_compare` (scenarios issue_466_*; `video.encoder_target_avg_kbps` and "
+                      "`video.encoder_dropped` are shown next to libwebrtc's). At 1.3x on a 1 Mbps link the adjuster "
+                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3)."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],

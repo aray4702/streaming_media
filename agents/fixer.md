@@ -196,8 +196,9 @@ one complete and tested, and say in the issue what remains. Then:
      and, when it passes, the Reviewer. After that, push only to answer a
      review, a CI failure or a conflict: every push to a ready PR re-runs
      the full CI.
-   - Add the label `agent-pr`, plus `needs-human` if it touches a protected
-     path (section 8).
+   - Add the label `agent-pr`, plus `needs-builder` if it touches a
+     protected path (section 8): the Builder judges it and adds
+     `builder-approved`.
    - Add `needs-probe` if the PR is risky (before `gh pr ready`, so its run
      includes the sanitizers and `wasm`): it changes a default (including
      a switch's default), touches congestion control, pacing, the jitter

@@ -143,6 +143,15 @@ class RtpSender : public MetricsSource {
   // (rtp_sender_video.cc:263-280), the ULPFEC header, the RED header and the header
   // extensions an FEC packet can carry (kFecOrPaddingExtensionSizes). 0 without FEC.
   size_t FecPacketOverhead() const;
+  // RTPSender's max_padding_fec_packet_header_ (rtp_sender.cc:736-742): the fixed header plus
+  // the registered extensions of kFecOrPaddingExtensionSizes (transport-cc, abs-send-time, MID
+  // at its largest). A padding packet's padding is at most the whole-packet limit less this.
+  size_t PaddingFecPacketHeaderSize() const;
+  // RTPSender::RtxPacketOverhead (rtp_sender.cc:566-595): the room a media packet leaves for its
+  // RTX resend, kRtxHeaderSize (2, the original sequence number), 0 without an RTX SSRC.
+  // libwebrtc also reserves MID/RID room while only the media SSRC is acked; this sender writes
+  // no MID on RTX packets, so that term is 0 here.
+  size_t RtxPacketOverhead() const { return cfg_.rtx_ssrc ? 2 : 0; }
   // A measured RTT (history retention).
   void SetRtt(TimeDelta rtt, Timestamp now) { rtx_.SetRtt(rtt, now); }
   // Packets the peer acknowledged by transport-wide feedback leave the history.

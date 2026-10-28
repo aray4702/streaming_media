@@ -1,5 +1,6 @@
 #include <cmath>
 #include <cstdlib>
+#include <limits>
 #include <numbers>
 
 #include "sm/core/dsp.h"
@@ -81,6 +82,65 @@ SM_TEST(Units, RoundTo) {
   SM_EXPECT_EQ(TimeDelta::Micros(499).RoundTo(ms).us(), 0);
   SM_EXPECT_EQ(TimeDelta::Seconds(3).RoundTo(ms).us(), 3000000);
   SM_EXPECT_TRUE(TimeDelta::PlusInfinity().RoundTo(ms).IsPlusInfinity());
+}
+
+// Issue #451: the remaining operators and constructors keep infinity and saturate out-of-range
+// results instead of overflowing (UB), as libwebrtc's RelativeUnit (rtc_base/units/unit_base.h).
+// The four cases of the issue first, then libwebrtc's time_delta_unittest.cc / data_rate_unittest.cc.
+SM_TEST(Units, RelativeUnitOperatorsSaturate) {
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() * 2.0).IsPlusInfinity());
+  SM_EXPECT_TRUE((DataRate::PlusInfinity() * 2.0).IsPlusInfinity());
+  SM_EXPECT_TRUE((DataRate::PlusInfinity() * TimeDelta::Seconds(1)).IsPlusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::MinusInfinity() / -1).IsPlusInfinity());
+  SM_EXPECT_TRUE(TimeDelta::Seconds(std::numeric_limits<int64_t>::max() / 1000000 + 1).IsPlusInfinity());
+
+  // Infinite operands: a negative scalar flips the sign, zero gives zero.
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() * -0.5).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::MinusInfinity() * 3).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() * int64_t{-2}).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() * 0.0).IsZero());
+  SM_EXPECT_TRUE((TimeDelta::PlusInfinity() / 4).IsPlusInfinity());
+  SM_EXPECT_TRUE((DataRate::PlusInfinity() / int64_t{-4}).IsMinusInfinity());
+  SM_EXPECT_TRUE((DataRate::PlusInfinity() - DataRate::KilobitsPerSec(100)).IsPlusInfinity());
+  SM_EXPECT_TRUE((DataRate::KilobitsPerSec(100) + DataRate::PlusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((DataRate::KilobitsPerSec(100) - DataRate::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::Seconds(1) * DataRate::PlusInfinity()).IsPlusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::Seconds(-1) * DataRate::PlusInfinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE((DataSize::PlusInfinity() + DataSize::Bytes(10)).IsPlusInfinity());
+  SM_EXPECT_EQ(TimeDelta::PlusInfinity() / TimeDelta::Seconds(1), std::numeric_limits<double>::infinity());
+  SM_EXPECT_EQ(TimeDelta::Seconds(1) / TimeDelta::PlusInfinity(), 0.0);
+
+  // Finite results out of range saturate to the infinity they run into.
+  const int64_t max = std::numeric_limits<int64_t>::max();
+  SM_EXPECT_TRUE((TimeDelta::Micros(max - 1) + TimeDelta::Micros(5)).IsPlusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::Micros(-max + 1) - TimeDelta::Micros(5)).IsMinusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::Micros(max / 2) * 3).IsPlusInfinity());
+  SM_EXPECT_TRUE((TimeDelta::Micros(max / 2) * -3.0).IsMinusInfinity());
+  SM_EXPECT_TRUE((DataRate::BitsPerSec(max / 1000) * TimeDelta::Seconds(1)).IsPlusInfinity());
+  SM_EXPECT_TRUE((Timestamp::Micros(max - 10) + TimeDelta::Millis(1)).IsPlusInfinity());
+  SM_EXPECT_TRUE(TimeDelta::Millis(-(max / 1000) - 1).IsMinusInfinity());
+  SM_EXPECT_TRUE(Timestamp::Seconds(max / 1000000 + 1).IsPlusInfinity());
+  SM_EXPECT_TRUE(DataRate::KilobitsPerSec(max / 1000 + 1).IsPlusInfinity());
+  SM_EXPECT_TRUE(TimeDelta::SecondsF(1e300).IsPlusInfinity());
+  SM_EXPECT_TRUE(TimeDelta::MillisF(-std::numeric_limits<double>::infinity()).IsMinusInfinity());
+  SM_EXPECT_TRUE(TimeDelta::SecondsF(std::numeric_limits<double>::quiet_NaN()).IsZero());
+
+  // Finite values: integer scalars are exact and division truncates, as libwebrtc. operator*(double)
+  // and rate * time still truncate where libwebrtc rounds to the nearest (#461).
+  SM_EXPECT_EQ((TimeDelta::Micros(10) * 0.25).us(), 2);
+  SM_EXPECT_EQ((TimeDelta::Micros(-10) * 0.25).us(), -2);
+  SM_EXPECT_EQ((TimeDelta::Micros(9) * 0.3).us(), 2);
+  SM_EXPECT_EQ((TimeDelta::Millis(30) * 3).us(), 90000);
+  SM_EXPECT_EQ((int32_t{3} * TimeDelta::Millis(30)).us(), 90000);
+  SM_EXPECT_EQ((0.5 * DataRate::KilobitsPerSec(300)).bps(), 150000);
+  SM_EXPECT_EQ((TimeDelta::Millis(100) * size_t{2}).ms(), 200);
+  SM_EXPECT_EQ((TimeDelta::Micros(-7) / 2).us(), -3);
+  SM_EXPECT_EQ((DataRate::KilobitsPerSec(300) / 3).bps(), 100000);
+  SM_EXPECT_EQ((DataRate::BitsPerSec(15) * TimeDelta::Seconds(1)).bytes(), 1);  // 1.875 bytes
+  SM_EXPECT_EQ((DataRate::KilobitsPerSec(800) * TimeDelta::Millis(10)).bytes(), 1000);
+  SM_EXPECT_EQ((DataRate::BitsPerSec(max / 1000000) * TimeDelta::Seconds(1)).bytes(), (max / 1000000) / 8);
+  SM_EXPECT_EQ((DataSize::Bytes(100) * 2.5).bytes(), 250);
+  SM_EXPECT_EQ(DataSize::Bytes(30) / DataSize::Bytes(60), 0.5);
 }
 
 SM_TEST(SeqNum, AheadOfWraps) {

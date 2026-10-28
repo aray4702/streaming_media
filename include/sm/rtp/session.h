@@ -336,6 +336,7 @@ class Session : public MetricsSource {
     std::unique_ptr<loss::FecControllerDefault> fec;
     std::deque<Timestamp> frame_times;
     Timestamp first_frame = Timestamp::MinusInfinity();
+    bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;

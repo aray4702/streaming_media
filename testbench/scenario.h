@@ -21,6 +21,7 @@
 
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "sm/core/units.h"
@@ -74,11 +75,21 @@ struct Scenario {
   int video_width = 1280, video_height = 720;  // `video_size <W>x<H>`: the captured resolution (issue #84).
   double video_complexity = 1;  // `video_complexity <x>`: content for the encoder's QP model (testbench/encoder_model.h).
   double encoder_speed = 1;     // `encoder_speed <x>`: CPU speed for the encode-time model (testbench/encoder_model.h).
+  // `encoder_overshoot <x>`: delta frames are x times the size model's (issue #466; testbench/encoder_model.h).
+  double encoder_overshoot = 1;
+  // `scene_change <interval> <frames> <factor>`: every interval (after the first), the delta frames of the first
+  // `frames` frame intervals are `factor` times larger (issue #466; testbench/encoder_model.h). Zero interval = off.
+  TimeDelta scene_change_interval = TimeDelta::Zero();
+  int scene_change_frames = 0;
+  double scene_change_factor = 1;
   // `encode_delay on|off`: the encoder takes the encode-time model's time, so a frame reaches the
   // library and the sender that much after its capture, on both stacks (issue #84 step 5: what
   // libwebrtc's CPU overuse detector measures). Off: encoding is instant, as before.
   bool encode_delay = false;
-  size_t video_max_payload = 1458 - 12;  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257).
+  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257). The default is
+  // libwebrtc's whole packet, kDefaultMaxPacketSize 1460, less the 12-byte fixed header: both stacks get
+  // the same limit and reserve RTX and FEC room from it themselves (issue #513).
+  size_t video_max_payload = 1460 - 12;
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.
@@ -111,7 +122,7 @@ struct Scenario {
   // sm_compare, as libwebrtc runs a camera whose encoder reports QP).
   bool quality_scaling = true;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
-  bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3).
+  bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3). Off only empties the receiver's sync group; the sender's audio RTCP stays on, as libwebrtc's (issue #524).
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
   bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
@@ -119,6 +130,10 @@ struct Scenario {
   // `host_rtt_inf <time>`: at that time the host hands both sessions an infinite RTT
   // (Session::SetRtt(TimeDelta::PlusInfinity())), a host bug the library must absorb (issue #441).
   std::optional<TimeDelta> host_rtt_inf;
+  // `host_rtt <time> <rtt>`: from that time on the host hands both sessions a finite RTT it
+  // measured itself (Session::SetRtt at every step), for RTTs the call cannot produce, such as one
+  // near the int64 limit (issue #451).
+  std::optional<std::pair<TimeDelta, TimeDelta>> host_rtt;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

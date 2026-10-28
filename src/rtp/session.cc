@@ -19,6 +19,11 @@ RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   if (!r.events) r.events = c.events;
   return r;
 }
+// The rates as libwebrtc's int-bps BitrateConstraints can hold them (cc::ConvertConstraints, #464).
+SessionConfig WithIntConstraints(SessionConfig c) {
+  c.send_side.gcc = cc::ConvertConstraints(c.send_side.gcc);
+  return c;
+}
 SendSideConfig MakeSendConfig(const SessionConfig& c) {
   SendSideConfig s = c.send_side;
   if (!s.events) s.events = c.events;
@@ -44,7 +49,7 @@ OutgoingKind ToOutgoing(PacketKind k) {
 }  // namespace
 
 Session::Session(SessionConfig cfg)
-    : cfg_(std::move(cfg)),
+    : cfg_(WithIntConstraints(std::move(cfg))),
       rtcp_(MakeRtcpConfig(cfg_)),
       send_(MakeSendConfig(cfg_), &cfg_.extensions),
       tcc_(cfg_.local_ssrc, 0),
@@ -126,6 +131,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   vs.sender = std::make_unique<RtpSender>(c);
   vs.fec = std::make_unique<loss::FecControllerDefault>(cfg_.events);
   vs.fec->SetProtectionMethod(c.fec, v.nack);
+  vs.nack = v.nack;
   vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
   video_send_.push_back(std::move(vs));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
@@ -277,11 +283,17 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
     // A frame without start codes (one bare NAL unit, which the packetizer takes) is sent as is.
     if (!rewritten.empty()) data = rewritten;
   }
-  // rtp_sender_video.cc: packet_capacity, less FecPacketOverhead with FEC, less the header of a
-  // middle packet. The first, last and single packets carry no extension the middle one
+  // rtp_sender_video.cc:676-687: packet_capacity, less FecPacketOverhead with FEC, less
+  // RtxPacketOverhead when the frame may be retransmitted (allow_retransmission: an H.264 frame with
+  // a finite expected retransmission time, which RtpVideoSender gives every frame; the reservation
+  // is 0 without RTX, and with NACK off libwebrtc's stream has no RTX; issue #513), less the header
+  // of a middle packet. The first, last and single packets carry no extension the middle one
   // lacks here (transport-cc, abs-send-time and MID go on every packet), so
   // their reductions are zero.
-  const size_t capacity = s.config().max_payload_size + RtpPacket::kFixedHeaderSize - s.FecPacketOverhead();
+  const size_t reserved =
+      s.FecPacketOverhead() + (video_send_[static_cast<size_t>(id.index)].nack ? s.RtxPacketOverhead() : 0);
+  const size_t whole = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
+  const size_t capacity = whole > reserved ? whole - reserved : 0;
   const size_t header = s.MediaHeaderSize();
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);

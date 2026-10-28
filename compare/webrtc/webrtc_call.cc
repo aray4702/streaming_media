@@ -4,10 +4,9 @@
 #include <cstdio>
 #include <cstring>
 #include <functional>
-#include <map>
+#include <limits>
 #include <memory>
 #include <optional>
-#include <set>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -61,7 +60,9 @@
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
+#include "modules/rtp_rtcp/source/ulpfec_receiver.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/include/video_error_codes.h"
 #include "rtc_base/copy_on_write_buffer.h"
@@ -342,17 +343,18 @@ RtpInfo ParseRtp(std::span<const uint8_t> d) {
   return r;
 }
 
-// Bytes of the primary (newest) block of an RFC 2198 RED payload.
-size_t RedPrimaryBytes(const uint8_t* p, size_t len) {
-  size_t off = 0, redundant = 0;
-  while (off < len && (p[off] & 0x80)) {
-    if (off + 4 > len) return 0;
-    redundant += (static_cast<size_t>(p[off + 2] & 0x03) << 8) | p[off + 3];
-    off += 4;
+// Records the media packets libwebrtc's UlpfecReceiver recovers (issue #509). It also hands on the media packet out
+// of each RED packet, which is not recovered().
+class FecRecoveredSeqs final : public w::RecoveredPacketReceiver {
+ public:
+  explicit FecRecoveredSeqs(testbench::RepairMeter& meter) : meter_(meter) {}
+  void OnRecoveredPacket(const w::RtpPacketReceived& packet) override {
+    if (packet.recovered()) meter_.OnFecRecovered(packet.SequenceNumber());
   }
-  off += 1;
-  return len >= off + redundant ? len - off - redundant : 0;
-}
+
+ private:
+  testbench::RepairMeter& meter_;
+};
 
 // --- Video: the test bench's encoder model as a libwebrtc encoder -----------
 
@@ -364,6 +366,8 @@ struct VideoModel {
   int64_t height_sum = 0;                  // Encoded frame heights (quality scaling, issue #84).
   int64_t last_key_us = INT64_MIN / 2;
   int64_t encoder_rate_bps = 0;  // Last SetRates (issue #131 trace).
+  int64_t encoder_rate_bps_sum = 0;  // encoder_rate_bps at each captured frame (issue #466).
+  int64_t start_us = 0;              // The call's start on the simulated clock: capture times for the size model.
   int64_t keyframe_bytes = 0;    // Total size of the keyframes (issue #333 trace).
   int last_width = 0, last_height = 0;  // Size of the last frame encoded (issue #333 trace).
   // Capture time by the encoder's RTP timestamp, filled by the encoder (issue #339). On the wire the
@@ -372,6 +376,11 @@ struct VideoModel {
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;
   std::optional<uint32_t> first_rtp_ts;  // Encoder RTP timestamp of the first frame encoded.
   std::optional<uint32_t> rtp_ts_offset;  // Wire RTP timestamp minus the encoder's.
+  // Each frame's path by the encoder's RTP timestamp, as the test bench's (issue #510): the encoder sets the capture
+  // time and the time it hands the frame on, the send transport the last media packet's send time, the forward link
+  // the arrival of its last media or RTX packet, and the renderer the render time.
+  std::unordered_map<uint32_t, testbench::VideoFrameTimes> frame_times;
+  std::function<sm::Timestamp()> now;  // Time since the call started.
 };
 
 // Frame sizes follow the allocated rate with +-20% variation and keyframes
@@ -402,11 +411,16 @@ class ModelEncoder final : public w::VideoEncoder {
     bool key = types && !types->empty() && (*types)[0] == w::VideoFrameType::kVideoFrameKey;
     if (m_->s->keyframe_interval.us() > 0 && capture_us - m_->last_key_us >= m_->s->keyframe_interval.us()) key = true;
     double per_frame = static_cast<double>(rate_bps_) / 8 / m_->s->video_fps;
-    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2));
+    const testbench::EncoderModel::Behaviour behaviour{m_->s->encoder_overshoot, m_->s->scene_change_interval.ms(),
+                                                       m_->s->scene_change_frames, m_->s->scene_change_factor};
+    const double factor =
+        testbench::EncoderModel::DeltaSizeFactor(behaviour, (capture_us - m_->start_us) / 1000, m_->s->video_fps);
+    int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2) * factor);
     bytes = std::max<int64_t>(bytes, 200);
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
     m_->capture_us_by_rtp[frame.rtp_timestamp()] = capture_us;
+    m_->frame_times[frame.rtp_timestamp()].capture = sm::Timestamp::Micros(capture_us - m_->start_us);
     if (!m_->first_rtp_ts) m_->first_rtp_ts = frame.rtp_timestamp();
     w::EncodedImage img;
     img.SetEncodedData(buf);
@@ -447,11 +461,11 @@ class ModelEncoder final : public w::VideoEncoder {
       std::weak_ptr<bool> alive = alive_;
       w::TaskQueueBase::Current()->PostDelayedHighPrecisionTask(
           [this, alive, img, info]() mutable {
-            if (alive.lock() && cb_) cb_->OnEncodedImage(img, &info);
+            if (alive.lock() && cb_) Deliver(img, info);
           },
           w::TimeDelta::Micros(encode_us));
     } else {
-      cb_->OnEncodedImage(img, &info);
+      Deliver(img, info);
     }
     return WEBRTC_VIDEO_CODEC_OK;
   }
@@ -474,6 +488,12 @@ class ModelEncoder final : public w::VideoEncoder {
   }
 
  private:
+  // Hands the encoded frame to VideoStreamEncoder: the test bench's `submitted` time (issue #510).
+  void Deliver(const w::EncodedImage& img, const w::CodecSpecificInfo& info) {
+    if (m_->now) m_->frame_times[img.RtpTimestamp()].submitted = m_->now();
+    cb_->OnEncodedImage(img, &info);
+  }
+
   VideoModel* m_;
   w::EncodedImageCallback* cb_ = nullptr;
   uint32_t rate_bps_ = 0;
@@ -613,10 +633,17 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
       {"audio.net_delay_p95_ms", "Measured from the capture time of the packet's first sample, (ts - first ts) / 48 "
                                  "ms, as the test bench measures from its RTP timestamp; the first packet is the "
                                  "frame of the 10 ms blocks captured at 0 and 10 ms"},
-      {"video.residual_loss_pct", "Counts packets recovered by RTX but not by FEC (libwebrtc does not expose "
-                                  "FEC-recovered packets), so it overstates residual loss when FEC recovers packets"},
+      {"video.residual_loss_pct / repair.nack_recovered / repair.overhead_pct",
+       "testbench::RepairMeter, the rule and events the test bench uses (#509). FEC recoveries come from "
+       "libwebrtc's UlpfecReceiver run on the same RED arrivals as the receiver's (VideoReceiveStream does not "
+       "expose them)"},
       {"video.undecodable_frames", "VideoReceiveStream frames_dropped"},
-      {"repair.fec_recovered", "Not reported: libwebrtc does not expose it"},
+      {"video.delay_*", "Each frame's capture and encoded times from the encoder model, the send time of its last media "
+                        "packet at the send transport, the arrival of its last media or RTX packet on the forward "
+                        "link, and its render time, as the test bench measures them (#510)"},
+      {"audio.time_to_first_ms", "Arrival of the first audio packet after which NetEq holds audio (jitter_buffer_ms or "
+                                 "total_samples_received above 0), read right after the packet is delivered (#510)"},
+      {"repair.fec_recovered", "num_recovered_packets of that UlpfecReceiver (#509)"},
       {"net.<kind>_kbps / _loss_pct", "Counted at the forward link by SSRC: audio, video media, RTX with a payload, "
                                       "FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload "
                                       "after RTP padding is removed, including RTX with only its sequence number)"},
@@ -713,9 +740,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   std::unique_ptr<w::Call> send_call, recv_call;
   auto make_call = [&](const w::Environment& call_env, w::scoped_refptr<w::AudioState> audio_state) {
     w::CallConfig c = w::CallConfig::CreateSingleThreaded(call_env);
-    c.bitrate_config.min_bitrate_bps = static_cast<int>(s.min_rate.bps());
-    c.bitrate_config.start_bitrate_bps = static_cast<int>(s.start_rate.bps());
-    c.bitrate_config.max_bitrate_bps = static_cast<int>(s.max_rate.bps());
+    // BitrateConstraints hold int bps: a larger finite rate saturates at INT_MAX, as this library's
+    // cc::ConvertConstraints does (#464), instead of wrapping; an infinite rate stays -1 ("none").
+    const auto int_bps = [](auto r) {
+      return r.IsFinite() ? static_cast<int>(std::min<int64_t>(r.bps(), std::numeric_limits<int>::max())) : -1;
+    };
+    c.bitrate_config.min_bitrate_bps = int_bps(s.min_rate);
+    c.bitrate_config.start_bitrate_bps = int_bps(s.start_rate);
+    c.bitrate_config.max_bitrate_bps = int_bps(s.max_rate);
     c.audio_state = audio_state;
     // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
     if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
@@ -732,15 +764,30 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   VideoModel model;
   model.s = &s;
   model.rng = Random(s.seed + 13);
-  int64_t media_bytes = 0, repair_bytes = 0, w_send = 0, w_good = 0;
+  model.start_us = t0.us();
+  model.now = [&] { return rel(sim.Now()); };
+  // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
+  // complete, as in testbench/call.cc (issue #510).
+  auto frame_complete = [&](uint32_t wire_ts, sm::Timestamp at) {
+    if (!model.rtp_ts_offset) return;
+    auto ft = model.frame_times.find(wire_ts - *model.rtp_ts_offset);
+    if (ft != model.frame_times.end() && !ft->second.rendered.IsFinite()) ft->second.complete = at;
+  };
+  int64_t w_send = 0, w_good = 0;
   testbench::FirstDelivery first_delivery;
-  SeqNumUnwrapper<uint16_t> video_send_unwrap, video_recv_unwrap;
-  std::map<int64_t, int64_t> video_send_ms;  // Unwrapped media sequence number -> send time.
-  std::set<int64_t> video_received;
-  int64_t nack_recovered = 0;
+  testbench::RepairMeter repair;  // Issue #509: the repair metrics by the test bench's rule.
+  // VideoReceiveStream does not expose the packets its ULPFEC receiver recovers, so the harness runs libwebrtc's
+  // UlpfecReceiver on the same input: every RED packet that arrives on the video SSRC, in arrival order, as
+  // RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader feeds its own (rtp_video_stream_receiver2.cc).
+  // RTX-restored RED packets are left out: they are recovered() there, and UlpfecReceiver::ProcessReceivedFec
+  // never passes a recovered packet to DecodeFec (ulpfec_receiver.cc), so they recover nothing.
+  FecRecoveredSeqs fec_tap_sink(repair);
+  std::unique_ptr<w::UlpfecReceiver> fec_tap;
+  if (s.video && s.fec) fec_tap = std::make_unique<w::UlpfecReceiver>(kVideoSsrc, kUlpfecPt, &fec_tap_sink, sim.clock());
   std::optional<uint32_t> audio_ts0;
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
-  sm::Timestamp audio_first = sm::Timestamp::MinusInfinity(), video_first = sm::Timestamp::MinusInfinity();
+  testbench::FirstAudioMeter audio_first;  // Issue #510: as testbench/call.cc.
+  sm::Timestamp video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
   // Frames rendered and the largest render gap, per second of render time (issue #333 trace).
   struct RenderSecond {
@@ -757,7 +804,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
   double last_video_delay = 0;
-  int64_t played_ms = 0, stretch_ms = 0;
+  testbench::StretchMeter stretch;  // Issue #510: as testbench/call.cc.
   uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
   testbench::ConcealmentMeter concealment(kAudioRate);  // Issue #372: as testbench/call.cc.
   double audio_buffer_ms = 0;
@@ -788,23 +835,21 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         const uint8_t* payload = data.data() + r.payload_off;
         if (r.ssrc == kAudioSsrc) {
           if (opt.link_trace) testbench::TraceAudioRtp(data, rel(now).us(), kAudioSsrc, rep.audio_send_trace);
-          media_bytes += static_cast<int64_t>(r.pt == kAudioRedPt ? RedPrimaryBytes(payload, r.payload_len) : r.payload_len);
+          repair.OnSent(sm::sim::LinkKind::kAudio, data.size(), 0, 0);
           if (!audio_ts0) audio_ts0 = r.ts;
           link_kind = sm::sim::LinkKind::kAudio;
         } else if (r.ssrc == kVideoSsrc) {
           if (!model.rtp_ts_offset && model.first_rtp_ts) model.rtp_ts_offset = r.ts - *model.first_rtp_ts;
           bool fec = r.pt == kRedPt && (payload[0] & 0x7f) == kUlpfecPt;
-          int64_t bytes = static_cast<int64_t>(r.payload_len) - (r.pt == kRedPt ? 1 : 0);
           link_kind = fec ? sm::sim::LinkKind::kFec : sm::sim::LinkKind::kVideo;
-          if (fec) {
-            repair_bytes += bytes;
-          } else {
-            media_bytes += bytes;
-            video_send_ms.emplace(video_send_unwrap.Unwrap(r.seq), (now - t0).ms());
+          repair.OnSent(link_kind, data.size(), r.seq, (now - t0).ms());
+          if (!fec && model.rtp_ts_offset) {
+            auto ft = model.frame_times.find(r.ts - *model.rtp_ts_offset);
+            if (ft != model.frame_times.end()) ft->second.last_sent = rel(now);
           }
         } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
-          repair_bytes += static_cast<int64_t>(r.payload_len) - 2;
           link_kind = sm::sim::LinkKind::kRtx;
+          repair.OnSent(link_kind, data.size(), 0, 0);
         } else if (r.ssrc == kRtxSsrc) {
           link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }
@@ -860,6 +905,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     last_render = now;
     auto it = model.rtp_ts_offset ? model.capture_us_by_rtp.find(f.rtp_timestamp() - *model.rtp_ts_offset)
                                   : model.capture_us_by_rtp.end();
+    if (model.rtp_ts_offset) {
+      auto ft = model.frame_times.find(f.rtp_timestamp() - *model.rtp_ts_offset);
+      if (ft != model.frame_times.end()) ft->second.rendered = now;
+    }
     if (it != model.capture_us_by_rtp.end()) {
       av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
@@ -1032,6 +1081,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     if (s.video && t >= next_frame_ms) {
       ++model.frames_captured;
+      model.encoder_rate_bps_sum += model.encoder_rate_bps;
       next_frame_ms = (model.frames_captured) * 1000 / s.video_fps;
       source.Capture(sim.Now().us());
     }
@@ -1084,7 +1134,6 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (first) w_good += wire;
       }
       if (r.ssrc == kAudioSsrc) {
-        if (!audio_first.IsFinite()) audio_first = at;
         if (audio_ts0) {
           // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
           // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
@@ -1095,11 +1144,17 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
-        if (!fec) video_received.insert(video_recv_unwrap.Unwrap(r.seq));
-      } else if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
-        uint16_t osn = static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]);
-        int64_t u = video_recv_unwrap.Unwrap(osn);
-        if (video_received.insert(u).second) ++nack_recovered;
+        if (!fec) {
+          repair.OnVideoArrived(r.seq);
+          frame_complete(r.ts, at);
+        }
+        if (fec_tap && r.pt == kRedPt) {
+          w::RtpPacketReceived red(&extension_map, at_w);
+          if (red.Parse(p.data.data(), p.data.size()) && fec_tap->AddReceivedRedPacket(red)) fec_tap->ProcessReceivedFec();
+        }
+      } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
+        repair.OnRtxArrived(static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]));
+        frame_complete(r.ts, at);
       }
       w::MediaType media = r.ssrc == kAudioSsrc ? w::MediaType::AUDIO : w::MediaType::VIDEO;
       post_at(receiver_q.get(), at_w, [&, media, at_w, buf = w::CopyOnWriteBuffer(p.data)] {
@@ -1111,6 +1166,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (media == w::MediaType::VIDEO) packet.set_payload_type_frequency(90000);
         recv_call->Receiver()->DeliverRtpPacket(media, std::move(packet),
                                                 [](const w::RtpPacketReceived&) { return false; });
+        // The first packet NetEq took (issue #510), as the test bench reads its jitter buffer right after the packet.
+        if (media == w::MediaType::AUDIO && audio_recv && !audio_first.started()) {
+          const w::AudioReceiveStreamInterface::Stats st = audio_recv->GetStats(false);
+          audio_first.OnAudioPacket(rel(at_w), st.jitter_buffer_ms > 0 || st.total_samples_received > 0);
+        }
       });
     });
     reverse.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
@@ -1149,11 +1209,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           const int64_t samples = static_cast<int64_t>(static_cast<uint32_t>(pi->rtp_timestamp - *audio_ts0));
           av_sync.OnAudioPlayout(rel(pi->time), sm::Timestamp::Micros(samples * 1000 / 48));
         }
-        if (st.total_samples_received == 0) return;
+        // Playout statistics count from the first pull that output samples, as the test bench's (#510).
+        if (!stretch.OnPull(st.total_samples_received, st.inserted_samples_for_deceleration,
+                            st.removed_samples_for_acceleration)) {
+          return;
+        }
         uint64_t total = st.total_samples_received - prev_audio.total_samples_received;
         uint64_t concealed = st.concealed_samples - prev_audio.concealed_samples;
-        uint64_t stretched = (st.inserted_samples_for_deceleration - prev_audio.inserted_samples_for_deceleration) +
-                             (st.removed_samples_for_acceleration - prev_audio.removed_samples_for_acceleration);
         uint64_t emitted = st.jitter_buffer_emitted_count - prev_audio.jitter_buffer_emitted_count;
         if (emitted > 0) {
           jb_delay.push_back((st.jitter_buffer_delay_seconds - prev_audio.jitter_buffer_delay_seconds) * 1000.0 /
@@ -1179,8 +1241,6 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           rep.audio_trace.push_back(r);
         }
         prev_audio = st;
-        played_ms += 10;
-        if (stretched > 0) stretch_ms += 10;
         concealment.OnPull(st.total_samples_received, st.concealed_samples, st.concealment_events);
         w_played += concealment.pull_total();
         w_conceal += concealment.pull_concealed();
@@ -1312,9 +1372,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["audio.jb_delay_p95_ms"] = testbench::Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay, 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
-    m["audio.stretch_pct"] = played_ms ? 100.0 * static_cast<double>(stretch_ms) / static_cast<double>(played_ms) : 0;
+    m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(late_discards);
-    m["audio.time_to_first_ms"] = audio_first.IsFinite() ? static_cast<double>(audio_first.ms()) : static_cast<double>(end_ms);
+    m["audio.time_to_first_ms"] = audio_first.ms(end_ms);
   }
   if (s.video) {
     // The row ending at t_ms counts the frames rendered in [t_ms - 1000, t_ms), as the test bench does.
@@ -1379,6 +1439,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.e2e_delay_p50_ms"] = testbench::Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = testbench::Percentile(video_e2e, 95);
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
+    {
+      std::vector<testbench::VideoFrameTimes> all;
+      all.reserve(model.frame_times.size());
+      for (const auto& [ts, ft] : model.frame_times) all.push_back(ft);
+      testbench::AddVideoDelayMetrics(all, m);  // Issue #510: as testbench/call.cc.
+    }
     if (s.audio) av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] =
@@ -1388,18 +1454,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.keyframes"] = static_cast<double>(model.keyframes);
     m["video.keyframe_requests"] = static_cast<double>(keyframe_requests);
     m["video.encoder_dropped"] = static_cast<double>(model.frames_captured - model.frames_encoded);
+    m["video.encoder_target_avg_kbps"] =
+        model.frames_captured
+            ? static_cast<double>(model.encoder_rate_bps_sum) / static_cast<double>(model.frames_captured) / 1000
+            : 0;
     m["video.undecodable_frames"] = static_cast<double>(undecodable);
-    {
-      // Packets sent in the last second may still be in flight or under repair.
-      int64_t counted = 0, lost = 0;
-      for (const auto& [seq, ms] : video_send_ms) {
-        if (ms > end_ms - 1000) continue;
-        ++counted;
-        lost += !video_received.count(seq);
-      }
-      m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
-    }
-    m["repair.nack_recovered"] = static_cast<double>(nack_recovered);
+    m["repair.fec_recovered"] = fec_tap ? static_cast<double>(fec_tap->GetPacketCounter().num_recovered_packets) : 0;
   }
 
   const int64_t audio_frame_bytes = std::max<int64_t>(10, s.audio_bitrate.bps() / 8 / 50);
@@ -1420,7 +1480,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   testbench::AddLinkKindMetrics(ls, s, rep);
   if (opt.link_trace) rep.link_trace = forward.trace();
-  m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
+  repair.AddMetrics(m, s.video, end_ms);
 
   testbench::EvaluateExpectations(rep);
   if (!opt.timeseries) rep.timeseries.clear();

@@ -1,6 +1,7 @@
 #include "sm/cc/send_side_bwe.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace sm::cc {
 
@@ -47,14 +48,22 @@ constexpr double kDefaultPaceMultiplier = 2.5;
 constexpr double kDefaultPaceMultiplierWithSendSideBwe = 1.1;
 }  // namespace
 
+GccConfig ConvertConstraints(GccConfig cfg) {
+  const DataRate int_max = DataRate::BitsPerSec(std::numeric_limits<int32_t>::max());
+  for (DataRate* r : {&cfg.min_rate, &cfg.start_rate, &cfg.max_rate}) {
+    if (r->IsFinite()) *r = std::min(*r, int_max);
+  }
+  return cfg;
+}
+
 GccController::GccController(GccConfig cfg)
-    : cfg_(cfg),
-      configured_min_(cfg.min_rate),
-      delay_(DelayCfg(cfg)),
-      ssbe_(cfg.events),
-      probe2_(ProbeCfg2(cfg)),
-      target_(cfg.start_rate) {
-  probe2_.EnablePeriodicAlrProbing(cfg.periodic_alr_probing);
+    : cfg_(ConvertConstraints(cfg)),
+      configured_min_(cfg_.min_rate),
+      delay_(DelayCfg(cfg_)),
+      ssbe_(cfg_.events),
+      probe2_(ProbeCfg2(cfg_)),
+      target_(cfg_.start_rate) {
+  probe2_.EnablePeriodicAlrProbing(cfg_.periodic_alr_probing);
 }
 
 std::vector<ProbeCluster> GccController::RegisterProbes(std::vector<ProbeCluster> probes) {
