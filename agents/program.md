@@ -204,15 +204,15 @@ Rules:
 
 ### 0.3 Audits (Owner, 2026-10-28)
 
-Two audits run periodically and on demand. The Dispatcher files each as an
-issue labelled `audit` when it is due, or at once from the `dispatcher`
+Two audits run daily and on demand. The Dispatcher files each as an
+issue labelled `audit` every morning at 6:00 AM PT (Owner, 2026-10-28), or at once from the `dispatcher`
 workflow's `audit` input (Actions → dispatcher → Run workflow, or
 `gh workflow run dispatcher.yml -f audit=system|product`). One of each kind
 is open at a time.
 
 - **System audit, daily:** the agent system and the flow, run by the
   Builder (`agents/builder.md`, "Audits").
-- **Product audit, daily (Owner, 2026-10-28):** whether the measurement and the library still
+- **Product audit, daily:** whether the measurement and the library still
   match libwebrtc. The Coordinator places it first on #64, ahead of the
   steps, `parallel-ok`, and a Fixer runs it. It checks:
   1. **Harness fidelity:** re-verify each row of

@@ -33,8 +33,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  (needs-probe)
   STALE          report an in-progress item with no Fixer activity
   AUDIT          file the periodic audits (Owner, 2026-10-28): a system audit
-                 every day for the Builder (needs-builder), a product audit every
-                 day for a Fixer (needs-coordinator places it); --audit KIND
+                 for the Builder (needs-builder) and a product audit for a Fixer
+                 (needs-coordinator places it), every day at 6:00 AM PT; --audit KIND
                  files one at once (the dispatcher workflow's `audit` input)
   FLOW           watch the flow for bottlenecks (CI jobs queued too long, an
                  approved PR not merging, CI re-run churn, a free item nobody
@@ -93,7 +93,8 @@ PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merg
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
-AUDIT_EVERY_H = {"system": 24, "product": 24}  # periodic audits, both daily (Owner, 2026-10-28)
+AUDITS = ("system", "product")  # both daily (Owner, 2026-10-28)
+AUDIT_AT_PT = 6                  # filed each morning at 6:00 AM PT, so the results wait for the Owner
 AUDIT_LABEL = "audit"
 FLOW_ISSUE_TITLE = "Flow watch"
 FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
@@ -837,16 +838,22 @@ class Dispatcher:
     def audits(self):
         """File each audit when it is due (or asked for with --audit) and none of its kind is open."""
         open_issues = gh(f"repos/{self.r}/issues?state=open&labels={AUDIT_LABEL}&per_page=100") or []
-        for kind, every in AUDIT_EVERY_H.items():
+        from zoneinfo import ZoneInfo
+        now_pt = NOW.astimezone(ZoneInfo("America/Los_Angeles"))
+        slot = now_pt.replace(hour=AUDIT_AT_PT, minute=0, second=0, microsecond=0)
+        if now_pt < slot:
+            slot -= dt.timedelta(days=1)  # the most recent 6 AM PT
+        for kind in AUDITS:
             last = self.last_dispatch(f"audit-{kind}")
-            due = self.force_audit == kind or not last or minutes_ago(last) >= every * 60
+            due = self.force_audit == kind or not last or ts(last) < slot
             if not due:
-                self.note(f"audit-{kind}", f"next in {every - minutes_ago(last) / 60:.0f} h")
+                nxt = slot + dt.timedelta(days=1)
+                self.note(f"audit-{kind}", f"next at {nxt:%a %H:%M} PT")
                 continue
             if any(i["title"].startswith(f"Audit ({kind})") for i in open_issues):
                 self.note(f"audit-{kind}", "one is open")
                 continue
-            why = "asked for" if self.force_audit == kind else f"every {every} h"
+            why = "asked for" if self.force_audit == kind else f"daily at {AUDIT_AT_PT}:00 AM PT"
             self.say("AUDIT", kind, why)
             if not self.live:
                 continue

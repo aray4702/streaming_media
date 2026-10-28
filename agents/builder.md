@@ -156,7 +156,7 @@ It posts each new set of alerts on the pinned **Flow watch** issue and adds
 
 The Owner (2026-10-28): the product audit and the system audit run
 periodically and on demand (`agents/program.md` 0.3). The Dispatcher files
-an `Audit (system): <date>` issue every day, or when asked, with
+an `Audit (system): <date>` issue every day at 6:00 AM PT, or when asked, with
 `needs-builder`. Take it after escalations and the Flow watch:
 1. **Flow:** run `python3 agents/tools/flow_report.py --markdown flow.md`
    and post the table on the audit issue. It covers throughput, PR lead
