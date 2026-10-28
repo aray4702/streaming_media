@@ -1705,15 +1705,15 @@ issue_152_alr_request_probe_v2 - probe_v2_cross_traffic on seed 4: with libwebrt
   audio.concealed_pct                     0.5          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          48.9         44.8  =
-  audio.mouth_to_ear_p95_ms               511          489  =
-  audio.jb_delay_p95_ms                   302          292  =
+  audio.mouth_to_ear_p95_ms               511          490  =
+  audio.jb_delay_p95_ms                   302          293  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.2         13.9  =
+  video.longest_freeze_ms                18.2         16.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
-  video.e2e_delay_p95_ms                  239          225  webrtc
+  video.e2e_delay_p95_ms                  239          224  webrtc
   video.time_to_first_frame_ms            185          184  =
   video.avg_kbps                         1728         1713  =
   video.keyframe_requests                   0            0  =
@@ -3289,11 +3289,11 @@ issue_346_reconfigure_cross_traffic - cross_traffic with quality scaling on: eac
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          52.5         51.1  =
-  audio.mouth_to_ear_p95_ms               513          494  =
-  audio.jb_delay_p95_ms                   302          295  =
+  audio.mouth_to_ear_p95_ms               513          495  =
+  audio.jb_delay_p95_ms                   302          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                19.5         13.4  =
+  video.longest_freeze_ms                19.5         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -4842,11 +4842,11 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          52.5         51.1  =
-  audio.mouth_to_ear_p95_ms               513          494  =
-  audio.jb_delay_p95_ms                   302          295  =
+  audio.mouth_to_ear_p95_ms               513          495  =
+  audio.jb_delay_p95_ms                   302          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                19.5         13.4  =
+  video.longest_freeze_ms                19.5         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
