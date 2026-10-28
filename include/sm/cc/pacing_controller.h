@@ -13,7 +13,8 @@
 //   - a queue that cannot drain within `queue_time_limit` (2 s, judged on the
 //     average queue time, not the oldest packet) raises the rate;
 //   - the first packet of a keyframe flushes the queued packets of the video
-//     stream (video, FEC, retransmissions), as EnqueuePacket does;
+//     stream (video, FEC, retransmissions; padding with
+//     `keyframe_flush_padding`), as EnqueuePacket does;
 //   - padding fills a requested padding rate, 5 ms of it at a time.
 // Packets are queued per priority level, as PrioritizedPacketQueue does:
 //   0 audio, 1 retransmission, 3 video and FEC (one FIFO), 4 padding
@@ -58,6 +59,11 @@ struct PacingControllerConfig {
   // (GeneratePadding(1 byte): the RTP sender pads at least 50 bytes; plus the
   // 12-byte RTP header, the header extensions and the 28 bytes of UDP/IPv4).
   DataSize probe_start_padding = DataSize::Bytes(102);
+  // A keyframe's flush also removes queued padding, as libwebrtc's EnqueuePacket does with
+  // RemovePacketsForSsrc(rtx_ssrc): padding is generated on the video stream's RTX SSRC
+  // (RTPSender::GeneratePadding; on the media SSRC without RTX), which that call clears
+  // (pacing_controller.cc:227-231). Off by default until it is judged (issue #437).
+  bool keyframe_flush_padding = false;
   BitrateProberConfig prober;
   int circuit_breaker_iterations = 1 << 16;
   EventSink* events = nullptr;
@@ -98,8 +104,9 @@ class PrioritizedPacketQueue {
   void SetPauseState(bool paused, Timestamp now);
   // RemovePacketsForSsrc for the video stream and its RTX stream, as
   // PacingController::EnqueuePacket calls it on a keyframe: the
-  // retransmission, video and FEC levels.
-  std::vector<PacedPacket> RemoveVideoStreamPackets();
+  // retransmission, video and FEC levels, and with `include_padding` the
+  // padding level too (padding goes out on the video stream's RTX SSRC).
+  std::vector<PacedPacket> RemoveVideoStreamPackets(bool include_padding = false);
   bool HasKeyframePackets() const { return num_keyframe_packets_ > 0; }
 
   static int Level(PacketPriority p);
