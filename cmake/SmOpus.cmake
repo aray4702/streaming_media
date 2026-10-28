@@ -13,7 +13,7 @@
 # Built as libwebrtc builds it (float, not FIXED_POINT), but in plain C:
 # without the SIMD paths and without contracting float expressions into FMA,
 # so that every platform the bench runs on codes the same bits as the
-# canonical one (Linux x86_64) and testbench/baseline.json holds everywhere.
+# canonical one (Linux x86_64) and the testbench/baseline/ numbers hold everywhere.
 include_guard(GLOBAL)
 
 set(SM_OPUS_REV 55513e81d8f606bd75d0ff773d2144e5f2a732f5)

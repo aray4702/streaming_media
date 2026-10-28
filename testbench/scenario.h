@@ -92,8 +92,8 @@ struct Scenario {
   bool rate_utilization_tracker = true;
   // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
-  // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). Off by default until it is judged.
-  bool sps_pps_tracker = false;
+  // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). On by default, as libwebrtc.
+  bool sps_pps_tracker = true;
   // `render_smoothing on|off`: decoded frames pass libwebrtc's pre-render queue (IncomingVideoStream,
   // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
   // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
@@ -104,8 +104,8 @@ struct Scenario {
   bool keyframe_flush_padding = false;
   // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
   // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
-  // (timing::PacketBufferConfig::missing_packets; issue #453). Off by default until it is judged.
-  bool h264_missing_packets = false;
+  // (timing::PacketBufferConfig::missing_packets; issue #453). On by default, as libwebrtc.
+  bool h264_missing_packets = true;
   // `quality_scaling on|off`: libwebrtc's QualityScalerResource and EncodeUsageResource (CPU
   // overuse) with MAINTAIN_FRAMERATE and the initial frame drop, on the encoder model's QP and
   // encode time (issue #84 steps 4 and 5; on by default since #84's flip, on both stacks of
