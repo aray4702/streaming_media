@@ -4466,6 +4466,59 @@ issue_457_libopus_audio_rate - low_bandwidth with libopus 55513e81 (issue
   video.encoder_dropped                  22.4         18.9
   video.encoder_target_avg_kbps          69.8         69.4
 
+issue_464_start_rate_above_int_bps - The host configures a 20 Gbps start rate and a 9 Ebps max; the call settles on the 2.5 Mbps link as with libwebrtc's largest configurable rate (INT_MAX bps)
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.6          0.5  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms          29.9         29.6  =
+  audio.mouth_to_ear_p95_ms               817          817  =
+  audio.jb_delay_p95_ms                   397          400  =
+  video.freeze_count                      1.1          1.1  =
+  video.freeze_total_ms                   697          486  webrtc
+  video.longest_freeze_ms                 653          441  webrtc
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.3         29.1  =
+  video.e2e_delay_p95_ms                  866          762  webrtc
+  video.time_to_first_frame_ms            147          146  =
+  video.avg_kbps                         1953         1934  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                   414          306  webrtc
+  cc.utilization_pct                     83.6         82.8  =
+  cc.queue_p95_ms                         378          375  =
+  cc.max_settle_ms                       1330         1330  =
+  cc.rtt_p50_ms                           147          148  =
+  net.loss_pct                           71.2         69.0  =
+  repair.overhead_pct                     311          342  sm
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         70.6         70.6
+  net.video_kbps                         2025         2006
+  net.rtx_kbps                           6471         6941
+  net.padding_kbps                        477          1.0
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                      0.1          0.1
+  net.video_loss_pct                      1.1          0.8
+  net.rtx_loss_pct                       98.7         97.8
+  net.padding_loss_pct                   84.9           14
+  net.audio_size_p50_b                    187          187
+  net.audio_size_p90_b                    215          216
+  net.audio_size_max_b                    285          286
+  net.audio_queue_drops                   0.4          0.5
+  net.video_size_p50_b                   1369         1366
+  net.video_size_p90_b                   1458         1459
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                  19.7         14.5
+  net.rtx_size_p50_b                     1440         1440
+  net.rtx_size_p90_b                     1440         1440
+  net.rtx_size_max_b                     1481         1482
+  net.rtx_queue_drops                    5548         5897
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                1670          0.6
+  video.encoder_dropped                   0.1            0
+  video.encoder_target_avg_kbps          1931         1905
+
 issue_466_overshoot_1mbps - 1 Mbps link, an encoder whose delta frames are 1.3x its target (a hot hardware encoder)
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
@@ -6879,7 +6932,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                    54         47.9
   video.encoder_target_avg_kbps          1172         1205
 
-better: sm 155, webrtc 155, tie 2462 (of the metrics shown)
+better: sm 156, webrtc 159, tie 2479 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
