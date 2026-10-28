@@ -152,7 +152,7 @@ jobs:
       matrix: {shard: [0, 1, 2, 3, 4, 5]}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions: {contents: read}
+    permissions: {contents: read, pull-requests: read}  # pull-requests: the PR's files
     env: {COMPARE_SEEDS: "10", COMPARE_SHARDS: "6"}
     steps:
       - uses: actions/checkout@v4
@@ -180,7 +180,10 @@ jobs:
           sudo chown -R "$USER" ~/apt-cache
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare (one shard)
-        env: {SHARD: "${{ matrix.shard }}"}
+        env:
+          SHARD: "${{ matrix.shard }}"
+          GH_TOKEN: "${{ github.token }}"
+          PR: "${{ github.event.pull_request.number }}"
         run: |
           # On main, also trace every scenario's first seed (published as traces/
           # by the compare-webrtc job). PR runs don't, since parity-data-pr keeps
@@ -191,6 +194,22 @@ jobs:
           fi
           mapfile -t FILES < <(LC_ALL=C ls testbench/scenarios/*.scn | awk -v k="$SHARD" -v n="$COMPARE_SHARDS" '(NR - 1) % n == k')
           echo "shard $SHARD of $COMPARE_SHARDS: ${#FILES[@]} scenarios"
+          # On a PR, a scenario with `compare_seeds` (40 or 80) runs $COMPARE_SEEDS
+          # seeds, unless the PR changes that file; main runs them all, and the
+          # parity report compares a PR with main's same first seeds (Owner,
+          # 2026-10-27: about half the comparison's work was these scenarios).
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            changed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" --jq '.[].filename')
+            mkdir -p pr-scenarios
+            for i in "${!FILES[@]}"; do
+              f=${FILES[$i]}
+              if grep -q '^compare_seeds' "$f" && ! printf '%s\n' "$changed" | grep -qxF "$f"; then
+                grep -v '^compare_seeds' "$f" > "pr-scenarios/${f##*/}"
+                FILES[$i]="pr-scenarios/${f##*/}"
+                echo "  $f: $COMPARE_SEEDS seeds on this PR (main runs $(grep -m1 '^compare_seeds' "$f" | cut -d' ' -f2))"
+              fi
+            done
+          fi
           mkdir -p shard
           set -o pipefail
           out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=shard/compare-webrtc.json $TRACE_ALL "${FILES[@]}" | tee shard/compare-webrtc.txt

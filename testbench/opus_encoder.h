@@ -38,7 +38,7 @@
 // 48 kHz with the call's seed + 7, as 16-bit PCM (compare/webrtc/webrtc_call.cc).
 // libwebrtc resamples a capture at another rate to the encoder's 48 kHz; the
 // bench encodes the 48 kHz signal whatever its capture rate, and plays out the
-// capture-rate signal (the decoder stays a model: SpeechDecoder in call.cc).
+// capture-rate signal (decoded with libopus too: testbench/opus_decoder.h, issue #476).
 #pragma once
 
 #include <opus.h>

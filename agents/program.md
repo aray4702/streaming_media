@@ -561,6 +561,11 @@ run needs:
 - A **ready** PR runs the quick jobs and `compare-webrtc`. The sanitizers
   and `wasm` run only on `main` (its queued runs batch several merges), the
   merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+- On a PR, a scenario with `compare_seeds` (40 or 80) runs 10 seeds in
+  `compare-webrtc`, unless the PR changes that scenario file; `main` runs
+  all its seeds, and the parity report compares the PR with `main`'s same
+  first seeds (Owner, 2026-10-27, an exception the Owner made to "never
+  weaken the harness": these scenarios were about half the comparison).
   A failure there on `main` is `main` broken (`sev:1`): the Coordinator
   files it, and the fix or a revert of the culprit comes first. Marking a
   draft ready starts the PR's run, and only a ready PR gets `ci-passed`.
