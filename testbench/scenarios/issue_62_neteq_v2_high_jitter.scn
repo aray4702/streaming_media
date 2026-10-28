@@ -15,4 +15,6 @@ expect audio.jb_delay_p95_ms >= 95
 # PR for #476 (our side decodes with libopus as libwebrtc does; harness change, needs-human): was <= 170. Ours 180 on
 # seed 1 (seeds 1-10 100-180, mean 132, was 133); libwebrtc seeds 1-10 100-180 (mean 129) on main's compare-webrtc
 # (9e436cb). Capped at libwebrtc's worst seed, as for #457.
+# PR for #477 (Opus RTP clock and NetEq at 48 kHz, as libwebrtc): stays <= 180 (set for #476). With #476 merged, ours 170
+# on seed 1 (seeds 1-10 100-170, mean 133); libwebrtc seeds 1-10 100-180 (mean 129) on main's compare-webrtc.
 expect audio.jb_delay_p95_ms <= 180
