@@ -29,7 +29,7 @@
   "420": "closed",
   "446": "closed",
   "476": "closed",
-  "477": "open"
+  "504": "open"
  },
  "gaps": [
   {
@@ -42,7 +42,7 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -248,7 +248,7 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    477,
+    504,
     217
    ],
    "stale_owners": [
@@ -266,7 +266,7 @@
    "seeds_agree": 9,
    "seeds": 10,
    "owners": [
-    477,
+    504,
     217
    ],
    "stale_owners": [
@@ -324,7 +324,7 @@
    "metric": "sync.av_offset_p95_ms",
    "sm": 2626.51,
    "webrtc": 3383.26,
-   "band": 381.0190163539523,
+   "band": 381.0184145287469,
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
@@ -405,7 +405,7 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -488,7 +488,7 @@
    "seeds_agree": 8,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -629,7 +629,7 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -646,7 +646,7 @@
    "seeds_agree": 4,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -986,7 +986,7 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -1094,7 +1094,7 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -1111,7 +1111,7 @@
    "seeds_agree": 6,
    "seeds": 10,
    "owners": [
-    477
+    504
    ],
    "stale_owners": [
     63,
@@ -1122,7 +1122,7 @@
    "scenario": "issue_62_neteq_v2_cross_traffic",
    "metric": "video.e2e_delay_p95_ms",
    "sm": 249.46,
-   "webrtc": 225.95,
+   "webrtc": 225.65,
    "band": 12.473,
    "direction": "behind",
    "seeds_agree": 5,
