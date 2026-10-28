@@ -84,7 +84,7 @@ With #476 (libopus decode) on `main`, `issue_62_neteq_v2_high_jitter` `audio.jb_
 (seeds 1-10 mean 133; libwebrtc 129), inside the `<= 180` line #476 set; no guard-rail line changes here.
 
 Most scenarios change (NetEq's decisions at 48 kHz, and the calls that follow from them). The metrics the baseline
-comparison flags against `main` with #476, with libwebrtc's 10-seed mean:
+comparison flags against `main` with #476 and #483, with libwebrtc's 10-seed mean:
 
 | scenario | metric | baseline | result | libwebrtc |
 |---|---|---|---|---|
@@ -93,7 +93,7 @@ comparison flags against `main` with #476, with libwebrtc's 10-seed mean:
 
 Improved: `sync.av_offset_p50_ms` on three congestive scenarios (-10.25 -> -31), `issue_5_keyframe_flush`
 `sync.av_offset_p95_ms` 284.1 -> 263.1, `issue_29_ulpfec_over_red` `video.frames_rendered` 101 -> 109,
-`low_fps_clean_link` `video.longest_freeze_ms` 67 -> 1.
+`low_fps_clean_link` `video.longest_freeze_ms` 67 -> 1, `issue_150_gcc_v2_high_jitter_seed10` `video.longest_freeze_ms` 31 -> 10.
 
 Each moves toward libwebrtc's value, or stays within its seed spread. Every scenario adds `net.audio_rtp_clock_hz`
 48000.
