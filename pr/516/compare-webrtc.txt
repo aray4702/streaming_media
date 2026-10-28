@@ -116,7 +116,7 @@ burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           111          110  =
   net.loss_pct                            2.8          2.9  =
-  repair.overhead_pct                     5.1          5.1  =
+  repair.overhead_pct                     5.1          5.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.4
   net.video_kbps                         1472         1510
@@ -169,7 +169,7 @@ capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and recovers at
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -328,7 +328,7 @@ high_jitter - Congested Wi-Fi: 40 ms jitter with reordering
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -381,7 +381,7 @@ issue_120_rtx_payload_padding - Wi-Fi to LTE handover with `cc v2`, `pacer v2` a
   cc.max_settle_ms                       1070         1050  =
   cc.rtt_p50_ms                           135          134  =
   net.loss_pct                            5.0          4.7  =
-  repair.overhead_pct                    30.1         31.5  =
+  repair.overhead_pct                    30.1         30.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         69.8
   net.video_kbps                         1202         1245
@@ -434,7 +434,7 @@ issue_120_rtx_payload_padding_capacity_drop - Capacity drops from 2.5 Mbps to 50
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -487,7 +487,7 @@ issue_123_v2_allocation_min - 100 kbps link with every v2 switch plus audio v2: 
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           338          335  =
   net.loss_pct                           18.8         17.4  webrtc
-  repair.overhead_pct                    34.1         49.8  sm
+  repair.overhead_pct                    34.1         31.4  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.6         69.7
   net.video_kbps                         31.2         31.0
@@ -593,7 +593,7 @@ issue_124_burst_loss_v2 - 3% loss in bursts of ~6 packets, 2 Mbps, every v2 swit
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           111          110  =
   net.loss_pct                            2.8          2.9  =
-  repair.overhead_pct                     5.1          5.1  =
+  repair.overhead_pct                     5.1          5.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.4
   net.video_kbps                         1472         1510
@@ -752,7 +752,7 @@ issue_127_all_v2_no_stall - every v2 switch on, 1200 kbps, 120 ms delay, 30 ms j
   cc.max_settle_ms                       3860         3600  =
   cc.rtt_p50_ms                           272          271  =
   net.loss_pct                            2.0          2.0  =
-  repair.overhead_pct                    35.0         37.1  sm
+  repair.overhead_pct                    35.0         35.3  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.6         70.6
   net.video_kbps                          635          627
@@ -805,7 +805,7 @@ issue_127_pacer_v2_jitter_reorder_loss - pacer v2 with rtx v2 on a 4 Mbps link w
   cc.max_settle_ms                      22590        19630  webrtc
   cc.rtt_p50_ms                           102          100  =
   net.loss_pct                            2.0          2.0  =
-  repair.overhead_pct                    43.5         48.4  sm
+  repair.overhead_pct                    43.5         46.6  sm
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.8         69.8
   net.video_kbps                          793          886
@@ -858,7 +858,7 @@ issue_12_lossbwe_burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           111          110  =
   net.loss_pct                            2.8          2.9  =
-  repair.overhead_pct                     5.1          5.1  =
+  repair.overhead_pct                     5.1          5.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.4
   net.video_kbps                         1472         1510
@@ -911,7 +911,7 @@ issue_12_lossbwe_congestive - Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 
   cc.max_settle_ms                       2100         2220  =
   cc.rtt_p50_ms                          80.2         76.3  =
   net.loss_pct                            4.0          3.4  webrtc
-  repair.overhead_pct                     8.3          7.1  =
+  repair.overhead_pct                     8.3          6.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         1158         1148
@@ -964,7 +964,7 @@ issue_12_lossbwe_high_jitter_no_loss - 40 ms jitter with reordering and no loss:
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -1017,7 +1017,7 @@ issue_12_lossbwe_policer - Policer: 1.5 Mbps enforced by dropping, no queueing (
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                            60         60.7  =
   net.loss_pct                           12.0         12.7  sm
-  repair.overhead_pct                    60.7         79.5  sm
+  repair.overhead_pct                    60.7         63.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.8
   net.video_kbps                          134          132
@@ -1070,7 +1070,7 @@ issue_12_lossbwe_random_loss - 5% random loss on a 2 Mbps link with 40 ms one-wa
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.1         90.6  =
   net.loss_pct                            4.9          4.9  =
-  repair.overhead_pct                     8.6          9.1  =
+  repair.overhead_pct                     8.6          8.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.3
   net.video_kbps                         1376         1380
@@ -1123,7 +1123,7 @@ issue_12_lossbwe_shallow - Shallow buffer: 1.5 Mbps with a 20 ms drop-tail queue
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                            63         62.2  =
   net.loss_pct                            6.5          6.2  =
-  repair.overhead_pct                    13.5         13.5  =
+  repair.overhead_pct                    13.5         12.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          770          765
@@ -1176,7 +1176,7 @@ issue_12_lossbwe_shallow_step - Shallow buffer with a capacity step 2 Mbps -> 1.
   cc.max_settle_ms                        510          420  =
   cc.rtt_p50_ms                          62.5         62.5  =
   net.loss_pct                            7.1          7.2  =
-  repair.overhead_pct                    14.7         16.2  =
+  repair.overhead_pct                    14.7         15.5  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          756          757
@@ -1511,7 +1511,7 @@ issue_150_gcc_v2_high_jitter - 3 Mbps link, 40 ms jitter with reordering, every 
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -1564,7 +1564,7 @@ issue_150_gcc_v2_high_jitter_seed10 - issue_150_gcc_v2_high_jitter with seed 10:
   cc.max_settle_ms                      24240        23150  =
   cc.rtt_p50_ms                          86.7         88.3  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    39.8         45.0  sm
+  repair.overhead_pct                    39.8         42.5  sm
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.9         69.8
   net.video_kbps                          534          566
@@ -1617,7 +1617,7 @@ issue_150_gcc_v2_high_jitter_seed5 - issue_150_gcc_v2_high_jitter with seed 5: t
   cc.max_settle_ms                      23600        23950  =
   cc.rtt_p50_ms                          89.1         88.6  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    41.3         45.2  sm
+  repair.overhead_pct                    41.3         42.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.4         70.2
   net.video_kbps                          571          569
@@ -1705,15 +1705,15 @@ issue_152_alr_request_probe_v2 - probe_v2_cross_traffic on seed 4: with libwebrt
   audio.concealed_pct                     0.4          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          45.8         44.8  =
-  audio.mouth_to_ear_p95_ms               509          490  =
-  audio.jb_delay_p95_ms                   299          293  =
+  audio.mouth_to_ear_p95_ms               509          489  =
+  audio.jb_delay_p95_ms                   299          292  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                22.8         16.2  =
+  video.longest_freeze_ms                22.8         13.9  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
-  video.e2e_delay_p95_ms                  240          224  webrtc
+  video.e2e_delay_p95_ms                  240          225  webrtc
   video.time_to_first_frame_ms            185          184  =
   video.avg_kbps                         1727         1713  =
   video.keyframe_requests                   0            0  =
@@ -1776,7 +1776,7 @@ issue_154_shallow_drop_repair_v2 - Shallow bottleneck (20 ms) with a 3x capacity
   cc.max_settle_ms                       6270         5720  webrtc
   cc.rtt_p50_ms                          61.3         62.1  =
   net.loss_pct                            8.8          8.4  =
-  repair.overhead_pct                    22.8         23.6  =
+  repair.overhead_pct                    22.8         22.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.6
   net.video_kbps                          451          460
@@ -1935,7 +1935,7 @@ issue_15_aimd_v2_random_loss - 5% random loss on a 2 Mbps link, `cc v2`: the del
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.1         90.6  =
   net.loss_pct                            4.9          4.9  =
-  repair.overhead_pct                     8.6          9.1  =
+  repair.overhead_pct                     8.6          8.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.3
   net.video_kbps                         1376         1380
@@ -1988,7 +1988,7 @@ issue_18_random_loss_keyframes - 5% random loss: NACK repairs it, so the receive
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.1         90.6  =
   net.loss_pct                            4.9          4.9  =
-  repair.overhead_pct                     8.6          9.1  =
+  repair.overhead_pct                     8.6          8.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.3
   net.video_kbps                         1376         1380
@@ -2041,7 +2041,7 @@ issue_19_cc_v2_high_jitter - 40 ms jitter with reordering, no queue: GoogCC's de
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -2147,7 +2147,7 @@ issue_21_shallow_drop_repair - Shallow bottleneck buffer (20 ms) with a 3x capac
   cc.max_settle_ms                       6270         5720  webrtc
   cc.rtt_p50_ms                          61.3         62.1  =
   net.loss_pct                            8.8          8.4  =
-  repair.overhead_pct                    22.8         23.6  =
+  repair.overhead_pct                    22.8         22.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.6
   net.video_kbps                          451          460
@@ -2200,7 +2200,7 @@ issue_224_congestive_e2e_flip - Congestive loss (2.5 Mbps, 60 ms queue, drop to 
   cc.max_settle_ms                       2100         2220  =
   cc.rtt_p50_ms                          80.2         76.3  =
   net.loss_pct                            4.0          3.4  webrtc
-  repair.overhead_pct                     8.3          7.1  =
+  repair.overhead_pct                     8.3          6.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         1158         1148
@@ -2253,7 +2253,7 @@ issue_23_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -2306,7 +2306,7 @@ issue_23_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossier,
   cc.max_settle_ms                       1070         1050  =
   cc.rtt_p50_ms                           135          134  =
   net.loss_pct                            5.0          4.7  =
-  repair.overhead_pct                    30.1         31.5  =
+  repair.overhead_pct                    30.1         30.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         69.8
   net.video_kbps                         1202         1245
@@ -2341,8 +2341,8 @@ issue_23_low_bandwidth - 150 kbps link: audio must stay clean, video degrades gr
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2076         2151  =
-  audio.jb_delay_p95_ms                  1656         1734  =
+  audio.mouth_to_ear_p95_ms              2075         2151  =
+  audio.jb_delay_p95_ms                  1655         1734  =
   video.freeze_count                      1.8          2.2  =
   video.freeze_total_ms                  1207         1441  sm
   video.longest_freeze_ms                 409          597  sm
@@ -2353,13 +2353,13 @@ issue_23_low_bandwidth - 150 kbps link: audio must stay clean, video degrades gr
   video.time_to_first_frame_ms            390          390  =
   video.avg_kbps                         68.9         68.8  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  1604         1583  =
+  sync.av_offset_p95_ms                  1603         1583  =
   cc.utilization_pct                     96.5         96.3  =
   cc.queue_p95_ms                         367          363  =
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           235          222  webrtc
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                     1.9          2.9  =
+  repair.overhead_pct                     1.9          2.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         75.8         75.6
@@ -2465,7 +2465,7 @@ issue_23_outage_500ms - 0.5 s outage on a 2 Mbps link: one keyframe is enough (T
   cc.max_settle_ms                       1150         1150  =
   cc.rtt_p50_ms                          53.8         51.5  =
   net.loss_pct                            1.6          1.6  =
-  repair.overhead_pct                     2.7          2.5  =
+  repair.overhead_pct                     2.7          2.4  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.2         69.3
   net.video_kbps                         1544         1545
@@ -2571,7 +2571,7 @@ issue_24_timing_v2_default - issue_53_cwnd_pushback's link with the default vide
   cc.max_settle_ms                       1140         1340  =
   cc.rtt_p50_ms                          79.1         80.1  =
   net.loss_pct                            3.4          3.3  =
-  repair.overhead_pct                     6.9          7.1  =
+  repair.overhead_pct                     6.9          6.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         70.0
   net.video_kbps                          896          894
@@ -2624,7 +2624,7 @@ issue_24_timing_v2_high_jitter - 40 ms jitter with reordering, every v2 switch a
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -2677,7 +2677,7 @@ issue_24_timing_v2_render_fps - issue_53_cwnd_pushback with every v2 switch and 
   cc.max_settle_ms                       1140         1340  =
   cc.rtt_p50_ms                          79.1         80.1  =
   net.loss_pct                            3.4          3.3  =
-  repair.overhead_pct                     6.9          7.1  =
+  repair.overhead_pct                     6.9          6.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         70.0
   net.video_kbps                          896          894
@@ -2730,7 +2730,7 @@ issue_256_audio_24khz - Audio + video call with 24 kHz audio and 3% loss: NetEq 
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.9         88.7  =
   net.loss_pct                            2.9          2.9  =
-  repair.overhead_pct                     5.3          5.1  =
+  repair.overhead_pct                     5.3          5.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         1507         1498
@@ -2762,31 +2762,31 @@ issue_256_audio_24khz - Audio + video call with 24 kHz audio and 3% loss: NetEq 
 
 issue_257_zero_max_payload - A video stream configured with max_payload_size 0 must not hang: the sender clamps it to libwebrtc's 100-byte minimum packet and the call goes on
   metric                                   sm       webrtc  better
-  audio.concealed_pct                     0.9          0.7  =
+  audio.concealed_pct                     0.8          0.7  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          43.5         30.4  =
-  audio.mouth_to_ear_p95_ms               410          337  webrtc
-  audio.jb_delay_p95_ms                   247          207  webrtc
+  audio.longest_interruption_ms          40.1         30.4  =
+  audio.mouth_to_ear_p95_ms               365          337  webrtc
+  audio.jb_delay_p95_ms                   225          207  webrtc
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                21.2         14.6  =
+  video.longest_freeze_ms                15.7         14.6  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.6         29.6  =
-  video.e2e_delay_p95_ms                  204          181  webrtc
+  video.e2e_delay_p95_ms                  181          181  =
   video.time_to_first_frame_ms            218          218  =
-  video.avg_kbps                          885          889  =
+  video.avg_kbps                          889          889  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                   160          119  webrtc
-  cc.utilization_pct                     60.9         61.8  =
-  cc.queue_p95_ms                         127         93.9  webrtc
+  sync.av_offset_p95_ms                   139          119  webrtc
+  cc.utilization_pct                     61.7         61.8  =
+  cc.queue_p95_ms                         104         93.9  webrtc
   cc.max_settle_ms                       5400         5400  =
-  cc.rtt_p50_ms                          56.4         57.1  =
+  cc.rtt_p50_ms                          57.6         57.1  =
   net.loss_pct                              0            0  =
   repair.overhead_pct                     0.1          0.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.8         69.8
-  net.video_kbps                         1456         1479
+  net.video_kbps                         1478         1479
   net.rtx_kbps                            1.2          1.1
   net.padding_kbps                        0.5          0.5
   net.fec_kbps                              0            0
@@ -2798,20 +2798,20 @@ issue_257_zero_max_payload - A video stream configured with max_payload_size 0 m
   net.audio_size_p90_b                    214          214
   net.audio_size_max_b                    299          299
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                    127          125
-  net.video_size_p90_b                    128          126
-  net.video_size_max_b                    128          126
+  net.video_size_p50_b                    125          125
+  net.video_size_p90_b                    126          126
+  net.video_size_max_b                    126          126
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                      127          122
-  net.rtx_size_p90_b                      128          123
-  net.rtx_size_max_b                      128          123
+  net.rtx_size_p50_b                      125          122
+  net.rtx_size_p90_b                      126          123
+  net.rtx_size_max_b                      126          123
   net.rtx_queue_drops                       0            0
-  net.padding_size_p50_b                  136          128
-  net.padding_size_p90_b                  136          128
-  net.padding_size_max_b                  136          128
+  net.padding_size_p50_b                  128          128
+  net.padding_size_p90_b                  128          128
+  net.padding_size_max_b                  128          128
   net.padding_queue_drops                   0            0
   video.encoder_dropped                     4            4
-  video.encoder_target_avg_kbps           878          880
+  video.encoder_target_avg_kbps           880          880
 
 issue_268_freeze_rule_outage - Video-only call, 3 s outage at 10 s: freezes counted as libwebrtc's VideoQualityObserver counts them (issue
   metric                                   sm       webrtc  better
@@ -2883,7 +2883,7 @@ issue_283_longest_freeze_no_metrics - A 2 s outage freezes video for at least 2 
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          71.8         70.4  =
   net.loss_pct                            5.9          5.8  =
-  repair.overhead_pct                     5.6          6.2  =
+  repair.overhead_pct                     5.6          6.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.8
   net.video_kbps                         1820         1818
@@ -2936,7 +2936,7 @@ issue_298_audio_24khz_plays - Audio + video call captured at 24 kHz with 3% loss
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.9         88.7  =
   net.loss_pct                            2.9          2.9  =
-  repair.overhead_pct                     5.3          5.1  =
+  repair.overhead_pct                     5.3          5.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         1507         1498
@@ -2970,54 +2970,54 @@ issue_29_ulpfec_over_red - 5% random loss with NACK off, so video FEC runs (Shou
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          29.7         30.1  =
-  audio.mouth_to_ear_p95_ms               190          207  sm
-  audio.jb_delay_p95_ms                   104          124  sm
-  video.freeze_count                        9          6.7  webrtc
-  video.freeze_total_ms                 25085        19722  webrtc
-  video.longest_freeze_ms                3307         3308  =
-  video.pause_count                       0.1          0.3  =
-  video.pause_total_ms                    628         1752  sm
-  video.render_fps                        2.7          2.7  =
-  video.e2e_delay_p95_ms                  242          251  =
+  audio.longest_interruption_ms          26.7         30.1  =
+  audio.mouth_to_ear_p95_ms               191          207  sm
+  audio.jb_delay_p95_ms                   106          124  sm
+  video.freeze_count                      8.3          6.7  webrtc
+  video.freeze_total_ms                 23378        19722  webrtc
+  video.longest_freeze_ms                3310         3308  =
+  video.pause_count                       0.2          0.3  =
+  video.pause_total_ms                   1255         1752  sm
+  video.render_fps                        3.2          2.7  sm
+  video.e2e_delay_p95_ms                  234          251  sm
   video.time_to_first_frame_ms            206          243  =
-  video.avg_kbps                         1047          967  sm
-  video.keyframe_requests                 6.8            7  =
-  sync.av_offset_p95_ms                   114          127  sm
-  cc.utilization_pct                     76.1         74.9  =
-  cc.queue_p95_ms                        35.7         32.9  =
+  video.avg_kbps                         1037          967  sm
+  video.keyframe_requests                 6.7            7  =
+  sync.av_offset_p95_ms                   103          127  sm
+  cc.utilization_pct                     76.2         74.9  =
+  cc.queue_p95_ms                        34.2         32.9  =
   cc.max_settle_ms                        300          300  =
-  cc.rtt_p50_ms                          91.4         88.8  =
+  cc.rtt_p50_ms                          91.5         88.8  =
   net.loss_pct                            4.8          4.8  =
-  repair.overhead_pct                    41.8         48.8  sm
+  repair.overhead_pct                    42.7         47.1  sm
   forward link per kind and encoder (information only)
-  net.audio_kbps                         69.3         69.4
-  net.video_kbps                         1088         1007
-  net.rtx_kbps                           32.8            0
-  net.padding_kbps                        0.4         23.4
-  net.fec_kbps                            442          500
-  net.audio_loss_pct                      4.8          4.6
+  net.audio_kbps                         69.5         69.4
+  net.video_kbps                         1079         1007
+  net.rtx_kbps                           27.1            0
+  net.padding_kbps                        0.5         23.4
+  net.fec_kbps                            452          500
+  net.audio_loss_pct                      5.0          4.6
   net.video_loss_pct                      4.7          5.0
   net.rtx_loss_pct                        6.4            0
-  net.padding_loss_pct                    5.7          5.4
-  net.audio_size_p50_b                    192          192
-  net.audio_size_p90_b                    217          217
-  net.audio_size_max_b                    303          306
+  net.padding_loss_pct                    8.6          5.4
+  net.audio_size_p50_b                    193          192
+  net.audio_size_p90_b                    218          217
+  net.audio_size_max_b                    297          306
   net.audio_queue_drops                     0            0
-  net.video_size_p50_b                   1264         1242
-  net.video_size_p90_b                   1416         1414
-  net.video_size_max_b                   1460         1462
+  net.video_size_p50_b                   1258         1242
+  net.video_size_p90_b                   1415         1414
+  net.video_size_max_b                   1462         1462
   net.video_queue_drops                     0            0
-  net.rtx_size_p50_b                     1390            0
-  net.rtx_size_p90_b                     1449            0
-  net.rtx_size_max_b                     1460            0
+  net.rtx_size_p50_b                     1388            0
+  net.rtx_size_p90_b                     1448            0
+  net.rtx_size_max_b                     1461            0
   net.rtx_queue_drops                       0            0
   net.padding_size_p50_b                  303          303
   net.padding_size_p90_b                  303          303
   net.padding_size_max_b                  303          303
   net.padding_queue_drops                   0            0
   video.encoder_dropped                     4            4
-  video.encoder_target_avg_kbps          1013          936
+  video.encoder_target_avg_kbps          1005          936
 
 issue_329_utilization_reordering - 8 Mbps link, 5 ms jitter with reordering, no loss: cc.utilization_pct must not count retransmissions of packets that already arrived (issue
   metric                                   sm       webrtc  better
@@ -3042,7 +3042,7 @@ issue_329_utilization_reordering - 8 Mbps link, 5 ms jitter with reordering, no 
   cc.max_settle_ms                        750          690  =
   cc.rtt_p50_ms                          63.8         64.4  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    36.7         37.0  =
+  repair.overhead_pct                    36.7         36.5  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.3         70.3
   net.video_kbps                         2417         2414
@@ -3095,7 +3095,7 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           253          237  webrtc
   net.loss_pct                            1.1          1.1  =
-  repair.overhead_pct                     2.3          3.4  =
+  repair.overhead_pct                     2.3          2.5  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.1         70.1
   net.video_kbps                         75.8         75.6
@@ -3201,7 +3201,7 @@ issue_346_reconfigure_capacity_drop - capacity_drop with quality scaling on: the
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -3289,11 +3289,11 @@ issue_346_reconfigure_cross_traffic - cross_traffic with quality scaling on: eac
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          49.4         51.1  =
-  audio.mouth_to_ear_p95_ms               511          495  =
-  audio.jb_delay_p95_ms                   299          296  =
+  audio.mouth_to_ear_p95_ms               511          494  =
+  audio.jb_delay_p95_ms                   299          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.9         15.7  =
+  video.longest_freeze_ms                18.9         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -3407,7 +3407,7 @@ issue_348_scaling_outage_500ms - issue_23_outage_500ms with quality scaling on: 
   cc.max_settle_ms                       1150         1150  =
   cc.rtt_p50_ms                          53.8         51.5  =
   net.loss_pct                            1.6          1.6  =
-  repair.overhead_pct                     2.7          2.5  =
+  repair.overhead_pct                     2.7          2.4  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.2         69.3
   net.video_kbps                         1544         1545
@@ -3619,7 +3619,7 @@ issue_356_capacity_drop_xr_rtt - capacity_drop with quality scaling on, seed 1: 
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -3772,7 +3772,7 @@ issue_390_cross_join_seed15 - issue_204_cross_traffic_join on seed 15: when the 
   cc.max_settle_ms                       6690         9410  sm
   cc.rtt_p50_ms                          91.6         95.7  =
   net.loss_pct                            0.4          0.7  =
-  repair.overhead_pct                     0.8          1.2  =
+  repair.overhead_pct                     0.8          1.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.6         69.6
   net.video_kbps                         1472         1432
@@ -3865,7 +3865,7 @@ issue_411_nack_on_reorder - 8 Mbps link, 5 ms jitter with reordering, no loss: a
   cc.max_settle_ms                        750          690  =
   cc.rtt_p50_ms                          63.8         64.4  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    36.7         37.0  =
+  repair.overhead_pct                    36.7         36.5  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.3         70.3
   net.video_kbps                         2417         2414
@@ -3971,7 +3971,7 @@ issue_415_cross_80pct_standing_queue - An 800 kbps constant-rate competing flow 
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           325          324  =
   net.loss_pct                            7.3          7.2  =
-  repair.overhead_pct                     8.3          8.6  =
+  repair.overhead_pct                     8.3          8.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.3         70.3
   net.video_kbps                          430          428
@@ -4024,7 +4024,7 @@ issue_430_av_outage_4s - audio+video call, 4 s outage at 15 s on both paths: vid
   cc.max_settle_ms                        780          810  =
   cc.rtt_p50_ms                          71.9         71.2  =
   net.loss_pct                            5.6          5.6  =
-  repair.overhead_pct                     2.2          2.3  =
+  repair.overhead_pct                     2.2          2.2  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.3         69.7
   net.video_kbps                         1117         1116
@@ -4177,7 +4177,7 @@ issue_437_render_smoothing_very_low_capacity - very_low_capacity with libwebrtc'
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           338          335  =
   net.loss_pct                           18.8         17.4  webrtc
-  repair.overhead_pct                    34.1         49.8  sm
+  repair.overhead_pct                    34.1         31.4  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.6         69.7
   net.video_kbps                         31.2         31.0
@@ -4383,7 +4383,7 @@ issue_453_h264_missing_packets_high_jitter - high_jitter with the SPS/PPS tracke
   cc.max_settle_ms                      24320        24810  =
   cc.rtt_p50_ms                          89.3           90  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    39.7         42.6  sm
+  repair.overhead_pct                    39.7         40.2  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.9         69.9
   net.video_kbps                          542          532
@@ -4436,7 +4436,7 @@ issue_453_sps_pps_tracker_high_jitter - high_jitter with the receiver's H.264 SP
   cc.max_settle_ms                      25350        24980  =
   cc.rtt_p50_ms                          89.2         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    39.2         42.3  sm
+  repair.overhead_pct                    39.2         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          525          523
@@ -4489,7 +4489,7 @@ issue_457_libopus_audio_rate - low_bandwidth with libopus 55513e81 (issue
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           235          222  webrtc
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                     1.9          2.9  =
+  repair.overhead_pct                     1.9          2.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         75.8         75.6
@@ -4542,7 +4542,7 @@ issue_464_start_rate_above_int_bps - The host configures a 20 Gbps start rate an
   cc.max_settle_ms                       1330         1330  =
   cc.rtt_p50_ms                           147          148  =
   net.loss_pct                           71.2         69.0  =
-  repair.overhead_pct                     311          342  sm
+  repair.overhead_pct                     311          336  sm
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.6         70.6
   net.video_kbps                         2025         2006
@@ -4648,7 +4648,7 @@ issue_466_overshoot_very_low_capacity - 100 kbps link (as very_low_capacity), an
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           334          332  =
   net.loss_pct                           15.4         14.7  =
-  repair.overhead_pct                    32.4         50.3  sm
+  repair.overhead_pct                    32.4         31.4  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.6
   net.video_kbps                         30.8         30.4
@@ -4754,7 +4754,7 @@ issue_466_scene_change_very_low_capacity - 100 kbps link (as very_low_capacity),
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           329          331  =
   net.loss_pct                           13.5         11.8  webrtc
-  repair.overhead_pct                    28.0         39.8  sm
+  repair.overhead_pct                    28.0         24.6  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         30.7         30.4
@@ -4860,7 +4860,7 @@ issue_466_undershoot_very_low_capacity - 100 kbps link (as very_low_capacity), a
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           338          341  =
   net.loss_pct                           22.2         21.0  webrtc
-  repair.overhead_pct                    39.7         57.2  sm
+  repair.overhead_pct                    39.7         36.3  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.6
   net.video_kbps                         31.0         31.2
@@ -4993,7 +4993,7 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           235          222  webrtc
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                     1.9          2.9  =
+  repair.overhead_pct                     1.9          2.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         75.8         75.6
@@ -5023,6 +5023,59 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   video.encoder_dropped                  22.4         18.9
   video.encoder_target_avg_kbps          69.8         69.4
 
+issue_524_av_sync_off - clean_link with lip sync off (issue
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.2          0.3  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms          27.1         27.5  =
+  audio.mouth_to_ear_p95_ms               234          245  =
+  audio.jb_delay_p95_ms                   129          132  =
+  video.freeze_count                        0            0  =
+  video.freeze_total_ms                     0            0  =
+  video.longest_freeze_ms                  15         11.6  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.8         29.8  =
+  video.e2e_delay_p95_ms                  121          126  =
+  video.time_to_first_frame_ms            186          185  =
+  video.avg_kbps                         2066         2072  =
+  video.keyframe_requests                   0            0  =
+  sync.av_offset_p95_ms                  60.9         63.8  =
+  cc.utilization_pct                     88.4         88.6  =
+  cc.queue_p95_ms                        68.3         75.8  =
+  cc.max_settle_ms                        300          300  =
+  cc.rtt_p50_ms                          64.5         63.1  =
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                     0.1          0.1  =
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         69.5         69.5
+  net.video_kbps                         2143         2149
+  net.rtx_kbps                            1.1          1.1
+  net.padding_kbps                        0.4          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    186          186
+  net.audio_size_p90_b                    215          215
+  net.audio_size_max_b                    302          302
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                   1378         1378
+  net.video_size_p90_b                   1462         1462
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                     1158         1157
+  net.rtx_size_p90_b                     1252         1256
+  net.rtx_size_max_b                     1252         1256
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+  video.encoder_dropped                     4            4
+  video.encoder_target_avg_kbps          2043         2049
+
 issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shallow 100 ms buffer; the encoder must back off before the bottleneck drops its video (issue
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
@@ -5046,7 +5099,7 @@ issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shall
   cc.max_settle_ms                       1140         1340  =
   cc.rtt_p50_ms                          79.1         80.1  =
   net.loss_pct                            3.4          3.3  =
-  repair.overhead_pct                     6.9          7.1  =
+  repair.overhead_pct                     6.9          6.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         70.0
   net.video_kbps                          896          894
@@ -5205,7 +5258,7 @@ issue_5_burst15_freeze - 2% loss in 15-packet bursts: libwebrtc's frame dropper 
   cc.max_settle_ms                        410          410  =
   cc.rtt_p50_ms                           113          113  =
   net.loss_pct                            2.1          2.1  =
-  repair.overhead_pct                     5.3          5.4  =
+  repair.overhead_pct                     5.3          5.3  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.1         70.3
   net.video_kbps                         1515         1530
@@ -5258,7 +5311,7 @@ issue_5_keyframe_flush - libwebrtc's pacer keyframe flush (issue
   cc.max_settle_ms                      14970        14990  =
   cc.rtt_p50_ms                          77.3         74.5  =
   net.loss_pct                            1.8          1.9  =
-  repair.overhead_pct                     3.5          3.8  =
+  repair.overhead_pct                     3.5          3.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.8         69.8
   net.video_kbps                          879          878
@@ -5311,7 +5364,7 @@ issue_61_googcc_glue_congestive - Congestive loss with every v2 switch on: GoogC
   cc.max_settle_ms                       2100         2220  =
   cc.rtt_p50_ms                          80.2         76.3  =
   net.loss_pct                            4.0          3.4  webrtc
-  repair.overhead_pct                     8.3          7.1  =
+  repair.overhead_pct                     8.3          6.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         1158         1148
@@ -5425,7 +5478,7 @@ issue_62_neteq_v2_audio_only_lossy - audio_only_lossy with NetEq's operations (n
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          34.1         31.9  =
+  audio.longest_interruption_ms          34.3         31.9  =
   audio.mouth_to_ear_p95_ms               159          164  =
   audio.jb_delay_p95_ms                    86         78.0  =
   cc.utilization_pct                     77.2         77.1  =
@@ -5537,7 +5590,7 @@ issue_62_neteq_v2_high_jitter - high_jitter with NetEq's target delay (neteq v2,
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -5630,7 +5683,7 @@ issue_76_packetization_v2 - Video payloads sized from the real header as libwebr
   cc.max_settle_ms                       1810         1670  =
   cc.rtt_p50_ms                          92.2         90.8  =
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                    32.1         31.7  =
+  repair.overhead_pct                    32.1         31.0  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.8         69.8
   net.video_kbps                         1466         1468
@@ -5683,7 +5736,7 @@ issue_76_rtx_v2_handover - Wi-Fi to LTE handover, RTX history as libwebrtc's Rtp
   cc.max_settle_ms                       1070         1050  =
   cc.rtt_p50_ms                           135          134  =
   net.loss_pct                            5.0          4.7  =
-  repair.overhead_pct                    30.1         31.5  =
+  repair.overhead_pct                    30.1         30.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         69.8
   net.video_kbps                         1202         1245
@@ -5736,7 +5789,7 @@ issue_76_rtx_v2_keyframe_flush - pacer v2 + rtx v2 + keyframe v2 together under 
   cc.max_settle_ms                      14490        14720  =
   cc.rtt_p50_ms                          72.5         72.1  =
   net.loss_pct                            3.6          3.6  =
-  repair.overhead_pct                     6.9          7.1  =
+  repair.overhead_pct                     6.9          6.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.8
   net.video_kbps                          841          828
@@ -5789,7 +5842,7 @@ issue_76_session_layer_v2 - Jittery lossy link with the RTP session layer as lib
   cc.max_settle_ms                       4070         4360  =
   cc.rtt_p50_ms                          95.7         93.6  =
   net.loss_pct                            1.0          0.9  =
-  repair.overhead_pct                    39.0         40.6  =
+  repair.overhead_pct                    39.0         39.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                         1371         1355
@@ -5842,7 +5895,7 @@ issue_76_tcc_v2_high_jitter - 40 ms jitter with reordering, transport-cc feedbac
   cc.max_settle_ms                      26010        24980  =
   cc.rtt_p50_ms                          89.3         91.7  =
   net.loss_pct                              0            0  =
-  repair.overhead_pct                    38.6         42.3  sm
+  repair.overhead_pct                    38.6         39.8  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.3         69.5
   net.video_kbps                          520          523
@@ -5948,7 +6001,7 @@ issue_7_no_fec_beside_nack - 5% random loss, H.264 with NACK: libwebrtc (ShouldD
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.1         90.6  =
   net.loss_pct                            4.9          4.9  =
-  repair.overhead_pct                     8.6          9.1  =
+  repair.overhead_pct                     8.6          8.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.3
   net.video_kbps                         1376         1380
@@ -6354,8 +6407,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2076         2151  =
-  audio.jb_delay_p95_ms                  1656         1734  =
+  audio.mouth_to_ear_p95_ms              2075         2151  =
+  audio.jb_delay_p95_ms                  1655         1734  =
   video.freeze_count                      1.8          2.2  =
   video.freeze_total_ms                  1207         1441  sm
   video.longest_freeze_ms                 409          597  sm
@@ -6366,13 +6419,13 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   video.time_to_first_frame_ms            390          390  =
   video.avg_kbps                         68.9         68.8  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  1604         1583  =
+  sync.av_offset_p95_ms                  1603         1583  =
   cc.utilization_pct                     96.5         96.3  =
   cc.queue_p95_ms                         367          363  =
   cc.max_settle_ms                        400          400  =
   cc.rtt_p50_ms                           235          222  webrtc
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                     1.9          2.9  =
+  repair.overhead_pct                     1.9          2.1  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                         75.8         75.6
@@ -6531,7 +6584,7 @@ pacer_v2_capacity_drop - capacity_drop with the libwebrtc PacingController (pace
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -6584,7 +6637,7 @@ probe_v2_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   cc.max_settle_ms                      14860        14870  =
   cc.rtt_p50_ms                          77.2         74.3  =
   net.loss_pct                            1.8          1.8  =
-  repair.overhead_pct                     3.5          3.7  =
+  repair.overhead_pct                     3.5          3.6  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.7         69.7
   net.video_kbps                          883          884
@@ -6672,11 +6725,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          49.4         51.1  =
-  audio.mouth_to_ear_p95_ms               511          495  =
-  audio.jb_delay_p95_ms                   299          296  =
+  audio.mouth_to_ear_p95_ms               511          494  =
+  audio.jb_delay_p95_ms                   299          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.9         15.7  =
+  video.longest_freeze_ms                18.9         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -6743,7 +6796,7 @@ random_loss_5pct - 5% random loss on a 2 Mbps link with 40 ms one-way delay
   cc.max_settle_ms                        300          300  =
   cc.rtt_p50_ms                          90.1         90.6  =
   net.loss_pct                            4.9          4.9  =
-  repair.overhead_pct                     8.6          9.1  =
+  repair.overhead_pct                     8.6          8.9  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.4         69.3
   net.video_kbps                         1376         1380
@@ -6796,7 +6849,7 @@ satellite - GEO satellite: 300 ms one-way, 1% loss, 1.5 Mbps
   cc.max_settle_ms                        900          900  =
   cc.rtt_p50_ms                           618          616  =
   net.loss_pct                            0.9          0.9  =
-  repair.overhead_pct                    17.6         18.1  =
+  repair.overhead_pct                    17.6         17.5  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.8         69.7
   net.video_kbps                          989          975
@@ -6849,7 +6902,7 @@ very_low_capacity - 100 kbps link (audio 32 kbps + video): the stage-1 checkpoin
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           338          335  =
   net.loss_pct                           18.8         17.4  webrtc
-  repair.overhead_pct                    34.1         49.8  sm
+  repair.overhead_pct                    34.1         31.4  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.6         69.7
   net.video_kbps                         31.2         31.0
@@ -6902,7 +6955,7 @@ very_low_capacity_allocator_v2 - 100 kbps link with libwebrtc's BitrateAllocator
   cc.max_settle_ms                      40000        40000  =
   cc.rtt_p50_ms                           338          335  =
   net.loss_pct                           18.8         17.4  webrtc
-  repair.overhead_pct                    34.1         49.8  sm
+  repair.overhead_pct                    34.1         31.4  webrtc
   forward link per kind and encoder (information only)
   net.audio_kbps                         69.6         69.7
   net.video_kbps                         31.2         31.0
@@ -6955,7 +7008,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   cc.max_settle_ms                       1070         1050  =
   cc.rtt_p50_ms                           135          134  =
   net.loss_pct                            5.0          4.7  =
-  repair.overhead_pct                    30.1         31.5  =
+  repair.overhead_pct                    30.1         30.7  =
   forward link per kind and encoder (information only)
   net.audio_kbps                         70.0         69.8
   net.video_kbps                         1202         1245
@@ -6985,16 +7038,16 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                  58.7         47.9
   video.encoder_target_avg_kbps          1168         1205
 
-better: sm 163, webrtc 175, tie 2478 (of the metrics shown)
+better: sm 146, webrtc 180, tie 2512 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
   audio.net_delay_p95_ms: Measured from the capture time of the packet's first sample, (ts - first ts) / 48 ms, as the test bench measures from its RTP timestamp; the first packet is the frame of the 10 ms blocks captured at 0 and 10 ms
-  video.residual_loss_pct: Counts packets recovered by RTX but not by FEC (libwebrtc does not expose FEC-recovered packets), so it overstates residual loss when FEC recovers packets
+  video.residual_loss_pct / repair.nack_recovered / repair.overhead_pct: testbench::RepairMeter, the rule and events the test bench uses (#509). FEC recoveries come from libwebrtc's UlpfecReceiver run on the same RED arrivals as the receiver's (VideoReceiveStream does not expose them)
   video.undecodable_frames: VideoReceiveStream frames_dropped
   video.delay_*: Each frame's capture and encoded times from the encoder model, the send time of its last media packet at the send transport, the arrival of its last media or RTX packet on the forward link, and its render time, as the test bench measures them (#510)
   audio.time_to_first_ms: Arrival of the first audio packet after which NetEq holds audio (jitter_buffer_ms or total_samples_received above 0), read right after the packet is delivered (#510)
-  repair.fec_recovered: Not reported: libwebrtc does not expose it
+  repair.fec_recovered: num_recovered_packets of that UlpfecReceiver (#509)
   net.<kind>_kbps / _loss_pct: Counted at the forward link by SSRC: audio, video media, RTX with a payload, FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload after RTP padding is removed, including RTX with only its sequence number)
   cc.goodput_kbps: Each media sequence number counts once, as original or RTX (#329): excludes padding-only packets, RTX payload padding and RTX copies of packets that had already arrived
   sync.av_offset_*: The audio playout point is AudioReceiveStream's Syncable::GetPlayoutRtpTimestamp, the input libwebrtc's A/V sync uses, read after each 10 ms pull (the test bench reads its jitter buffer's playout timestamp right after the pull)
