@@ -24,7 +24,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
 | 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **different**, on the 1 ms tick on ours, at their due microsecond on libwebrtc's `SimTime` (render gaps off the grid in 0 of 4065 seconds on ours, 1245 of 3865 on libwebrtc) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (with #507) |
 | 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
-| 8 | Scenario mapping | not audited | | |
+| 8 | Scenario mapping | One parser (`testbench::ParseScenario`) and one `Scenario` for both sides. Link keys (`at`, `reverse at`): **shared code** (`testbench::LinkTimeline`). Call and media keys (`duration`, `seed`, `audio`, `video`, `red`, `nack`, `fec`, `audio_rate`, `video_fps`, `video_size`, `video_complexity`, `encoder_speed`, `encode_delay`, `keyframe_interval`, `video_max`, `video_min`, `start_rate`, `min_rate`, `max_rate`, `quality_scaling`): **identical by construction**, each mapped to the matching libwebrtc setting. `audio_sample_rate`: **the same on both**, ignored (both run Opus at 48 kHz since #489), so its two scenarios run the default call. `video_max_payload`: **different**, #513. `av_sync off`: **different**: ours also stops the sender's audio RTCP, libwebrtc only empties the sync group (no suite scenario sets it). `host_rtt`, `host_rtt_inf`: **ours only**, a host API libwebrtc has no counterpart for. The stack switches (`timing`, `neteq`, `bitrate_adjuster`, `render_smoothing`, ...): **ours only by design**, they pick the stack under test; libwebrtc runs M157's fixed configuration | [Row 8](#row-8-scenario-mapping) | #524; #513 (row 4); #480 (switches not at libwebrtc's value) |
 
 ## Row 2: encoders
 
@@ -462,3 +462,87 @@ event time: that is #507 and row 6, not a measurement rule.
 
 The fixes bring the narrower side up and make each rule shared code fed by
 the same events. Never drop a metric to make the sides equal.
+
+## Row 8: scenario mapping
+
+Audited on `main` at becd6f4 (2026-10-28): every key `testbench/scenario.cc`
+accepts, followed into `testbench/call.cc` (ours) and
+`compare/webrtc/webrtc_call.cc` (libwebrtc), with the keys' use in the 128
+suite scenarios.
+
+`sm_compare` parses each `.scn` once with `testbench::ParseScenario` and hands
+the same `Scenario`, with the same seed, to `testbench::RunCall` and
+`RunWebrtcCall` (`compare/webrtc/sm_compare_main.cc:241-262`). So the
+question is only what each side does with each field.
+
+### Shared code
+
+| keys | both sides |
+|---|---|
+| `at ...`, `reverse at ...` (every link key: `capacity`, `delay`, `jitter`, `loss`, `burst`, `dup`, `reorder`, `queue`, `cross`, `down`, `up`) | `testbench::LinkTimeline` builds and advances both links (`call.cc:505-509`, `webrtc_call.cc:686-700`); row 5 |
+| `duration`, `seed` | the call length and every seed derived from it (link `seed` and `seed + 1000003`, encoder model, speech signal `seed + 7`); row 5. libwebrtc's side also derives its clock start from `seed` (or `compare_clock_start`, which no scenario sets), the input row 6's #517 is about |
+| `video_complexity`, `encoder_speed`, `encode_delay` | the shared `testbench::EncoderModel` (`EncoderModel::Qp`, `EncodeTimeUs`) on both (`call.cc:885-901`, `webrtc_call.cc:419-442`) |
+
+### Identical by construction
+
+| key | ours (`testbench/call.cc`) | libwebrtc (`compare/webrtc/webrtc_call.cc`) |
+|---|---|---|
+| `audio on\|off`, `video on\|off` | no stream configured, no media generated | no send or receive stream created (`:883`, `:898`, `:942`, `:953`), no media generated (`:1028`, `:1039`) |
+| `red` | `audio_cfg.red_payload_type` | `send_codec_spec->red_payload_type`, and the RED decoder on the receiver (`:892`, `:948`) |
+| `nack`, `fec` | `video_cfg.nack`, `video_cfg.fec` | NACK history and RTX payload types; ULPFEC and RED payload types (`:912-920`, `:962-970`). What each stack then does with FEC and NACK together (#7) is the stack |
+| `audio_rate` | Opus at `audio_bitrate` for the whole call | `target_bitrate_bps` = `min` = `max` = `audio_bitrate` (`:891-894`); row 2 |
+| `video_fps` | capture every `1000 / fps` ms, `vsc_cfg.fps` | the same capture schedule, `simulcast_layers[0].max_framerate` (`:930`, `:1041`) |
+| `video_size` | `OnCapturedFrame({w, h})` | `ModelSource(w, h)` (`:851`) |
+| `video_max`, `video_min` | the allocation's maximum and minimum and the adjuster's minimum (`call.cc:547-548`, `:642-644`) | `max_bitrate_bps`, `simulcast_layers[0].min_bitrate_bps` (`:931-932`) |
+| `start_rate`, `min_rate`, `max_rate` | GoogCC's constraints (`call.cc:543-545`) | `BitrateConstraints` (`:722-724`) through `int_bps`; ours keeps the `DataRate` (#464 brings ours to libwebrtc's `int` bound) |
+| `keyframe_interval` | the library's periodic keyframe: a frame `>= interval` after the last keyframe (`src/rtp/video_send_controller.cc:222-224`) | the model encoder forces a keyframe `>= interval` after the last keyframe it produced (`:404`, `:440`), as an encoder's own key-frame interval does. The rule is written twice; one scenario uses it (`issue_5_bitrate_adjuster`) |
+| `quality_scaling on\|off` | `vsc_cfg.quality_scaling` | the QualityScaling field trial, the encoder's `scaling_settings` and `MAINTAIN_FRAMERATE` vs `DISABLED` (`:663-666`, `:469-473`, `:937`) |
+
+### The same on both, and ignored: `audio_sample_rate`
+
+Both sides run Opus at 48 kHz whatever the scenario says: ours since #489
+(`AudioCodecRate` returns 48000, `call.cc:494`), libwebrtc's always (the ADM
+is fed 48 kHz PCM). So `issue_256_audio_24khz` and
+`issue_298_audio_24khz_plays` run the default call on both sides: on our
+side, `issue_256_audio_24khz` with and without its `audio_sample_rate 24000`
+line gives the same 79 metrics on seed 1. Not a harness difference; the two
+scenarios no longer test what their names say (`call.cc:512-516`'s comment
+still describes the pre-#489 behaviour).
+
+### Different: `video_max_payload` (#513)
+
+Row 4. The default (1446, from 1458) reaches ours as given and libwebrtc as
+its own default; a non-default value is passed to both as `+ 12` clamped to
+100-1500 (`call.cc:559-560`, `webrtc_call.cc:909-910`), but ours makes no
+RTX reservation.
+
+### Different: `av_sync off` (#524)
+
+| | ours | libwebrtc |
+|---|---|---|
+| `av_sync on` (default) | one sync group; the sender's own audio RTCP engine sends the audio SR (`call.cc:571`, `:577`; `src/rtp/session.cc:238-245`) | `sync_group = "sm"` on both receive streams (`:950`, `:975`) |
+| `av_sync off` | no sync group **and no audio RTCP from the sender** | no sync group; the audio channel still runs compound RTCP (`reference/audio/channel_send.cc:551`) and sends its SR |
+
+No suite scenario sets `av_sync off`, so no compared cell moves today.
+
+### Ours only
+
+- **`host_rtt`, `host_rtt_inf`** (`issue_451_host_rtt_near_limit`,
+  `issue_441_infinite_rtt`): the host hands our sessions an RTT through
+  `Session::SetRtt` (`call.cc:977-985`). libwebrtc has no such host input and
+  its side ignores the keys, so those two scenarios compare our call with the
+  RTT forced against libwebrtc's normal call. They test our API's robustness
+  (no overflow), not parity; on the published comparison `issue_441` has no
+  gap.
+- **Stack switches** (`timing`, `neteq`, `bitrate_adjuster`, `rate_utilization_tracker`, `control_handler`,
+  `send_rate_stats`, `link_headroom`, `sps_pps_tracker`,
+  `h264_missing_packets`, `render_smoothing`, `keyframe_flush_padding`):
+  they choose the stack under test, so they are ours only by design, and
+  libwebrtc's side runs M157's fixed configuration. A cell compares like
+  with like only when the switch is at libwebrtc's value. Two are not, by
+  default, in every scenario: `render_smoothing` and
+  `keyframe_flush_padding` are off on ours while libwebrtc always runs the
+  pre-render queue and flushes padding with a keyframe (#437, #480). One
+  scenario sets a switch away from libwebrtc's value on purpose:
+  `issue_453_sps_pps_tracker_high_jitter` (`h264_missing_packets off`).
+  These are stack configuration, owned by #480 (step 3), not the harness.
