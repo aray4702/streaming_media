@@ -91,7 +91,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 108 | 64.3 (closer) |
 | issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 105 | 49.4 (closer) |
 | issue_29_ulpfec_over_red | `video.avg_kbps` | 69.7 | 89.1 (further) |
-| issue_346_reconfigure_cross_traffic | `video.e2e_delay_p95_ms` | 23.0 | 26.2 (further) |
+| issue_346_reconfigure_cross_traffic | `video.e2e_delay_p95_ms` | 23.3 | 26.2 (further) |
 | issue_355_cross_traffic_no_alr_probe | `video.e2e_delay_p95_ms` | 23.0 | 26.2 (further) |
 | issue_411_reconfigure_clears_cwnd_drop | `cc.max_settle_ms` | 1710 | 2640 (further) |
 | issue_464_start_rate_above_int_bps | `video.longest_freeze_ms` | 212 | 102 (closer) |
@@ -100,7 +100,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_466_overshoot_very_low_capacity | `video.render_fps` | 1.7 | 1.3 (closer) |
 | issue_466_scene_change_very_low_capacity | `video.render_fps` | 2.9 | 2.5 (closer) |
 | issue_466_undershoot_very_low_capacity | `video.freeze_count` | 5.2 | 4.6 (closer) |
-| issue_5_adjuster_default | `video.e2e_delay_p95_ms` | 23.0 | 26.4 (further) |
+| issue_5_adjuster_default | `video.e2e_delay_p95_ms` | 23.0 | 26.2 (further) |
 | issue_61_googcc_glue_congestive | `video.e2e_delay_p95_ms` | 108 | 64.3 (closer) |
 | issue_61_googcc_glue_congestive | `sync.av_offset_p95_ms` | 105 | 49.4 (closer) |
 | issue_62_neteq_v2_cross_traffic | `video.e2e_delay_p95_ms` | 23.0 | 26.2 (further) |
