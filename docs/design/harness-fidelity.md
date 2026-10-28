@@ -21,7 +21,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 2 | Encoders | Opus: **identical by construction**, packet for packet on 60 of 104 traced scenarios, checked on the lossless ones by `tools/check_harness_drift.py`; where the sides part, the input that differs is the stack's own RTCP, not the harness. Video: **identical by construction** (the same size formula, seed and QP/encode-time model), the formula is still written twice | [Row 2](#row-2-encoders) | #484 (stack, not harness) |
 | 3 | Decoders | **different**: our `SpeechDecoder` returns the source signal, libwebrtc decodes with libopus | #476 | #476 |
 | 4 | Packetization and wire | not audited | | |
-| 5 | The link | not audited | | |
+| 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
 | 6 | Clock and tasks | not audited | | |
 | 7 | Measurement | not audited | | |
 | 8 | Scenario mapping | not audited | | |
@@ -124,3 +124,58 @@ The size formula is written twice, once on each side. No test fails if one
 copy changes; moving it into `EncoderModel` (as #470 does for its new
 overshoot and scene-change factor) makes it shared code. That waits for #470,
 which edits the same lines.
+
+## Row 5: the link
+
+Audited on `main` at 445302f (2026-10-28), with the seed-1 traces that
+`parity-data/traces/` holds (115 scenarios with both sides).
+
+### Shared
+
+| | ours (`testbench/call.cc`) | libwebrtc (`compare/webrtc/webrtc_call.cc`) |
+|---|---|---|
+| Link model | `sim::NetworkLink<Fwd>` / `<Rev>` (`include/sm/sim/network_link.h`) | the same template, `sim::NetworkLink<Pkt>` |
+| Seeds | forward `s.seed`, reverse `s.seed + 1000003` (`:436-438`) | the same (`:687-689`) |
+| Scenario changes | `testbench::LinkTimeline` (`call_common.h:156`), applied at the start of each tick (`:709-712`) | the same timeline, applied at the start of each tick and again before every send (`advance_links`, `:691-700`), because a libwebrtc task can run before the tick at the same millisecond (#151); our sends all follow the tick's `Advance`, so both see a change at the same moment |
+| Wire size | RTP/RTCP bytes + `kUdpIpOverhead` (the session's `wire_size`) | `data.size() + kUdpIpOverhead` |
+| Cross traffic | 1200-byte packets from a byte debt of `cross / 8 / 1000` per ms, sent at the start of the tick before the call's packets (`:832-838`, #390) | the same, before libwebrtc's tasks of that millisecond (`:1037-1043`) |
+| Delivery | each packet is handed over with its own arrival time (`ReceiveEach(now, ...)`, `:718`, `:848`) | each packet is posted to the receiver's or sender's queue at its arrival time (`post_at`, `:1050-1118`, #467 / #453) |
+| Loss, jitter, duplication | per packet, from the link's one random stream, in send order | the same |
+
+So given the same packets at the same times, both sides lose, delay, reorder
+and duplicate them identically. On the traces, every packet in the common
+prefix of the two sides' send sequences (the same send time, size and kind:
+2575 packets across the 115 scenarios) has the same queue, outcome and
+arrival time on both.
+
+The draws are per packet, so a stack that sends a different packet sequence
+gets a different realization of the same loss and jitter, as on any
+per-packet link model (libwebrtc's `SimulatedNetwork` too). That is the
+stack's own traffic, not the harness: for example `audio_only_lossy` loses
+different audio packets on the two sides because ours sends 2118 padding
+packets and libwebrtc 851 (row 2).
+
+### Different: when the stack is handed a packet and sends its response (#507)
+
+libwebrtc runs on an event clock: a packet is delivered at its arrival time,
+and what the stack sends in response (an RTX packet for a NACK, a NACK for a
+gap, an encoded frame after `encode_delay`) goes on the link at that same
+time (`LinkTransport`, `:767`, `:834`, `rel(sim.Now())`). Ours steps every
+1 ms: a packet that arrived in (t-1, t] is handed to the session at tick t,
+and the session's response goes on the link at t (`put_on_link(..., now,
+...)`, `:845`, `:972`).
+
+| seed 1, 115 scenarios | ours | libwebrtc |
+|---|---|---|
+| forward-link packets sent off the 1 ms grid | 0 | 37 397, on 70 scenarios |
+| of them RTX | 0 | 23 318 of 39 088 RTX packets (60 %): `random_loss_5pct` 230 / 406, `high_jitter` 470 / 747, `burst_loss` 54 / 169 |
+| of them video (`encode_delay on`) | 0 | 13 686, on `issue_84_cpu_overuse_slow_encoder` |
+| other (RTCP, padding, audio) | 0 | 377, 10 and 6 |
+
+The reverse link has no trace on either side; by the same code our
+receiver's NACKs go out at the tick after the packet that revealed the gap,
+libwebrtc's at its arrival. So our NACK -> RTX loop is up to 2 ms longer,
+and our retransmissions meet the bottleneck at other times than
+libwebrtc's. The fix (#507) brings our side up: drive the session at each
+packet's arrival time, and add a reverse-link trace on both sides so the
+reverse half is checked too. Clock and task timing beyond this is row 6.
