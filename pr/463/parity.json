@@ -54,7 +54,7 @@
    "scenario": "cross_traffic",
    "metric": "video.e2e_delay_p95_ms",
    "sm": 249.46,
-   "webrtc": 225.95,
+   "webrtc": 225.65,
    "band": 12.473,
    "direction": "behind",
    "seeds_agree": 5,
@@ -482,9 +482,26 @@
   {
    "scenario": "issue_21_shallow_drop_repair",
    "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 498.549,
+   "sm": 497.549,
    "webrtc": 724.193,
    "band": 225.1914804866689,
+   "direction": "ahead",
+   "seeds_agree": 8,
+   "seeds": 10,
+   "owners": [
+    504
+   ],
+   "stale_owners": [
+    63,
+    476
+   ]
+  },
+  {
+   "scenario": "issue_21_shallow_drop_repair",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 444.5,
+   "webrtc": 671,
+   "band": 225.804733736425,
    "direction": "ahead",
    "seeds_agree": 8,
    "seeds": 10,
@@ -657,9 +674,9 @@
   {
    "scenario": "issue_257_zero_max_payload",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 160.134,
-   "webrtc": 119.02,
-   "band": 37.23589696113147,
+   "sm": 160.136,
+   "webrtc": 119.018,
+   "band": 37.24121603292663,
    "direction": "behind",
    "seeds_agree": 4,
    "seeds": 10,

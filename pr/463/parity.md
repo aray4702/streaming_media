@@ -1,17 +1,18 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-127 scenarios, mean of 10 seeds. **96 gaps**: 60 behind libwebrtc, 36 ahead of it; 57 without an owner.
+127 scenarios, mean of 10 seeds. **97 gaps**: 60 behind libwebrtc, 37 ahead of it; 57 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. An owner is an open issue, or a closed one whose rule carries a note (an explained difference); closed issues without a note are listed but own nothing.
 
 ### Against `main`
 
-84 gaps on `main`, 96 here: **0 closed, 12 opened**, 0 changed direction.
+84 gaps on `main`, 97 here: **0 closed, 13 opened**, 0 changed direction.
 
 Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
+| issue_21_shallow_drop_repair | `audio.jb_delay_p95_ms` | 444 | 671 | ±226 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `audio.longest_interruption_ms` | 125 | 74.6 | ±34.8 | behind | 5/10 | #504, #451 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `audio.mouth_to_ear_p95_ms` | 619 | 726 | ±62.6 | ahead | 9/10 | #504, #451 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `video.freeze_total_ms` | 3355 | 1216 | ±192 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
@@ -57,7 +58,8 @@ Opened:
 | issue_204_cross_traffic_join | `video.e2e_delay_p95_ms` | 526 | 422 | ±73.2 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_204_cross_traffic_join | `video.freeze_count` | 4.6 | 2.7 | ±1.1 | behind | 5/10 | #408 (closed, no note: #5, #37, #24) |
 | issue_204_cross_traffic_join | `video.freeze_total_ms` | 2231 | 1514 | ±402 | behind | 4/10 | #408 (closed, no note: #5, #37, #24) |
-| issue_21_shallow_drop_repair | `audio.mouth_to_ear_p95_ms` | 499 | 724 | ±225 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
+| issue_21_shallow_drop_repair | `audio.jb_delay_p95_ms` | 444 | 671 | ±226 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
+| issue_21_shallow_drop_repair | `audio.mouth_to_ear_p95_ms` | 498 | 724 | ±225 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
 | issue_224_congestive_e2e_flip | `net.loss_pct` | 4.2 | 3.4 | ±0.7 | behind | 5/10 | **none** (closed, no note: #21, #61, #12) |
 | issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 295 | 181 | ±42.6 | behind | 9/10 | **none** |
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 465 | 358 | ±53.9 | behind | 8/10 | **none** (closed, no note: #24, #37) |
