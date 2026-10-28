@@ -47,8 +47,8 @@ For each of your open PRs:
 
 - Remove `in-progress` from any issue that has had no activity for 24
   hours and has no open PR from you, with a comment saying so.
-- Count your open non-draft PRs (yardstick drafts don't count). If there
-  are 8 or more, stop after step 1.
+- Count your open fix PRs, draft or ready (yardstick drafts don't count). If
+  there are 8 or more, stop after step 1.
 
 ### 3. Fix one new issue
 
@@ -163,19 +163,31 @@ one complete and tested, and say in the issue what remains. Then:
    - If behaviour or design changed, also update the header comments and
      `tools/catalog.py` (the algorithm docs are generated from them), with
      a verification note that links the fix record.
-8. **Open the PR.**
-   - Push `fix/<N>-<slug>` and open the PR with the format in `agents/program.md`
-     section 5.3 (`Fixes #N`, root cause, fix, tests, metrics table, risk);
-     the body can summarize the fix record and link to it.
+8. **Open the PR as a draft, then mark it ready when it is complete.**
+   CI has 20 job slots for every open PR together, so a draft runs only the
+   quick jobs (host builds, test bench; `agents/program.md` 6.1), and the
+   full run (all platforms, sanitizers, `compare-webrtc`, about 20 min)
+   starts when the PR is marked ready.
+   - Push `fix/<N>-<slug>` and open the PR **as a draft** (`gh pr create
+     --draft`) with the format in `agents/program.md` section 5.3 (`Fixes #N`,
+     root cause, fix, tests, metrics table, risk); the body can summarize
+     the fix record and link to it. Push your follow-up commits while it is
+     a draft.
+   - When it is complete (local gate passed, metrics measured, fix record
+     written), mark it ready: `gh pr ready <N>`. That starts the full CI
+     and, when it passes, the Reviewer. After that, push only to answer a
+     review, a CI failure or a conflict: every push to a ready PR re-runs
+     the full CI.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
      path (section 8).
-   - Add `needs-probe` if the PR is risky: it changes a default (including
+   - Add `needs-probe` if the PR is risky (before `gh pr ready`, so its run
+     includes the sanitizers and `wasm`): it changes a default (including
      a switch's default), touches congestion control, pacing, the jitter
      buffers, or threading and object lifetimes, or changes more than about
      300 lines of product code (`src/`, `include/`). The Tester probes it
      before the Reviewer reviews it.
-   - Enable auto-merge with `PUT .../pulls/N/ccr/auto_merge` and
-     `merge_method=squash`.
+   - After `gh pr ready`, enable auto-merge with `PUT .../pulls/N/ccr/auto_merge`
+     and `merge_method=squash` (a draft can't take auto-merge).
    - Comment on the issue with the PR link.
 
 If the issue needs a decision you should not make, comment on the issue
