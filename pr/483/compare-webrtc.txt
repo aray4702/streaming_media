@@ -610,7 +610,7 @@ issue_124_clean_link_v2 - 2.5 Mbps link, 25 ms one-way, no impairments, every v2
   audio.jb_delay_p95_ms                   128          132  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  22         14.2  =
+  video.longest_freeze_ms                21.9         14.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.7         29.8  =
@@ -1641,15 +1641,15 @@ issue_152_alr_request_probe_v2 - probe_v2_cross_traffic on seed 4: with libwebrt
   audio.concealed_pct                     0.4          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.3         44.8  =
-  audio.mouth_to_ear_p95_ms               510          490  =
-  audio.jb_delay_p95_ms                   300          293  =
+  audio.mouth_to_ear_p95_ms               510          489  =
+  audio.jb_delay_p95_ms                   300          292  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                22.1         16.2  =
+  video.longest_freeze_ms                22.2         13.9  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
-  video.e2e_delay_p95_ms                  239          224  webrtc
+  video.e2e_delay_p95_ms                  239          225  webrtc
   video.time_to_first_frame_ms            185          184  =
   video.avg_kbps                         1728         1713  =
   video.keyframe_requests                   0            0  =
@@ -1794,11 +1794,11 @@ issue_15_aimd_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottle
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          494  =
-  audio.jb_delay_p95_ms                   301          295  =
+  audio.mouth_to_ear_p95_ms               512          495  =
+  audio.jb_delay_p95_ms                   301          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.5         13.4  =
+  video.longest_freeze_ms                18.4         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -2100,8 +2100,8 @@ issue_224_congestive_e2e_flip - Congestive loss (2.5 Mbps, 60 ms queue, drop to 
   audio.concealed_pct                     0.0          0.0  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms           8.6          6.1  =
-  audio.mouth_to_ear_p95_ms               313          284  webrtc
-  audio.jb_delay_p95_ms                   227          200  webrtc
+  audio.mouth_to_ear_p95_ms               312          284  webrtc
+  audio.jb_delay_p95_ms                   226          200  webrtc
   video.freeze_count                      4.6          3.4  webrtc
   video.freeze_total_ms                  1554         1125  webrtc
   video.longest_freeze_ms                 587          493  =
@@ -2112,7 +2112,7 @@ issue_224_congestive_e2e_flip - Congestive loss (2.5 Mbps, 60 ms queue, drop to 
   video.time_to_first_frame_ms            191          190  =
   video.avg_kbps                         1123         1105  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                   293          181  webrtc
+  sync.av_offset_p95_ms                   294          181  webrtc
   cc.utilization_pct                     85.9         84.6  =
   cc.queue_p95_ms                        46.1         44.4  =
   cc.max_settle_ms                       1910         2220  =
@@ -2410,7 +2410,7 @@ issue_24_timing_v2_clean_link - 2.5 Mbps link, 25 ms one-way, no impairments, ev
   audio.jb_delay_p95_ms                   128          132  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  22         14.2  =
+  video.longest_freeze_ms                21.9         14.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.7         29.8  =
@@ -3165,11 +3165,11 @@ issue_346_reconfigure_cross_traffic - cross_traffic with quality scaling on: eac
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          495  =
-  audio.jb_delay_p95_ms                   301          296  =
+  audio.mouth_to_ear_p95_ms               512          494  =
+  audio.jb_delay_p95_ms                   301          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.4         15.7  =
+  video.longest_freeze_ms                18.5         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -3312,11 +3312,11 @@ issue_355_cross_traffic_no_alr_probe - issue_346_reconfigure_cross_traffic with 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          494  =
-  audio.jb_delay_p95_ms                   301          295  =
+  audio.mouth_to_ear_p95_ms               512          495  =
+  audio.jb_delay_p95_ms                   301          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.5         13.4  =
+  video.longest_freeze_ms                18.4         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -4495,7 +4495,7 @@ issue_5_burst15_freeze - 2% loss in 15-packet bursts: libwebrtc's frame dropper 
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.7          1.5  =
   audio.interruptions                     0.7          0.5  =
-  audio.longest_interruption_ms           174          144  webrtc
+  audio.longest_interruption_ms           173          144  webrtc
   audio.mouth_to_ear_p95_ms               262          275  =
   audio.jb_delay_p95_ms                   163          170  =
   video.freeze_count                      1.2          1.5  =
@@ -4508,7 +4508,7 @@ issue_5_burst15_freeze - 2% loss in 15-packet bursts: libwebrtc's frame dropper 
   video.time_to_first_frame_ms            230          228  =
   video.avg_kbps                         1450         1474  =
   video.keyframe_requests                 0.1          0.1  =
-  sync.av_offset_p95_ms                   104          107  =
+  sync.av_offset_p95_ms                   105          107  =
   cc.utilization_pct                     78.3         79.6  =
   cc.queue_p95_ms                        37.1         41.1  =
   cc.max_settle_ms                        410          410  =
@@ -4769,11 +4769,11 @@ issue_62_neteq_v2_cross_traffic - cross_traffic with NetEq's Expand (neteq v2, i
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          494  =
-  audio.jb_delay_p95_ms                   301          295  =
+  audio.mouth_to_ear_p95_ms               512          495  =
+  audio.jb_delay_p95_ms                   301          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.5         13.4  =
+  video.longest_freeze_ms                18.4         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =

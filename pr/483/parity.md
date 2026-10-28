@@ -6,27 +6,25 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-82 gaps on `main`, 79 here: **19 closed, 16 opened**, 0 changed direction.
+80 gaps on `main`, 79 here: **17 closed, 16 opened**, 0 changed direction.
 
 Closed:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 153 | 164 | ±10.5 | ahead | 6/10 | #477 (closed, no note: #63, #476) |
 | high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61, #19) |
 | high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23, #19, #24) |
 | issue_12_lossbwe_high_jitter_no_loss | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
 | issue_12_lossbwe_high_jitter_no_loss | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
 | issue_150_gcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
 | issue_150_gcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
+| issue_150_gcc_v2_high_jitter_seed5 | `audio.jb_delay_p95_ms` | 123 | 112 | ±10 | behind | 5/10 | #477 (closed, no note: #63, #476) |
 | issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 227 | 349 | ±113 | ahead | 6/10 | **none** (closed, no note: #24, #61) |
 | issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 39.3 | 45.2 | ±5.3 | ahead | 7/10 | **none** (closed, no note: #21, #7, #29) |
 | issue_19_cc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
 | issue_19_cc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
 | issue_24_timing_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
 | issue_24_timing_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 153 | 164 | ±10.5 | ahead | 6/10 | #477 (closed, no note: #63, #476) |
-| issue_62_neteq_v2_audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 153 | 164 | ±10.5 | ahead | 6/10 | #477 (closed, no note: #63, #476) |
 | issue_62_neteq_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
 | issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
 | issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
@@ -57,18 +55,19 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 
 | scenario | metric | distance on main | distance here |
 |---|---|---|---|
-| issue_120_rtx_payload_padding | `video.freeze_total_ms` | 1075 | 950 (closer) |
+| issue_120_rtx_payload_padding | `video.freeze_total_ms` | 1076 | 950 (closer) |
 | issue_123_v2_allocation_min | `video.render_fps` | 3.4 | 2.9 (closer) |
 | issue_123_v2_allocation_min | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| issue_23_handover | `video.freeze_total_ms` | 1075 | 950 (closer) |
+| issue_23_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
+| issue_29_ulpfec_over_red | `video.freeze_count` | 1.8 | 2.0 (further) |
 | issue_437_render_smoothing_very_low_capacity | `video.render_fps` | 2.4 | 1.5 (closer) |
 | issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| issue_76_rtx_v2_handover | `video.freeze_total_ms` | 1075 | 950 (closer) |
+| issue_76_rtx_v2_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
 | very_low_capacity | `video.render_fps` | 3.4 | 2.9 (closer) |
 | very_low_capacity | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
 | very_low_capacity_allocator_v2 | `video.render_fps` | 3.4 | 2.9 (closer) |
 | very_low_capacity_allocator_v2 | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| wifi_to_lte_handover | `video.freeze_total_ms` | 1075 | 950 (closer) |
+| wifi_to_lte_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
 
 ### Gaps
 
@@ -96,13 +95,13 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_12_lossbwe_policer | `video.keyframe_requests` | 4 | 2.3 | ±1.6 | behind | 7/10 | **none** (closed, no note: #23) |
 | issue_12_lossbwe_policer | `video.longest_freeze_ms` | 4373 | 2925 | ±1123 | behind | 8/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_shallow | `video.e2e_delay_p95_ms` | 199 | 219 | ±19.5 | ahead | 8/10 | #411 (closed, no note: #24, #37) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 224 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 225 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 249 | 226 | ±12.5 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_204_cross_traffic_join | `video.e2e_delay_p95_ms` | 526 | 422 | ±73.2 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_204_cross_traffic_join | `video.freeze_count` | 4.6 | 2.7 | ±1.1 | behind | 5/10 | #408 (closed, no note: #5, #37, #24) |
 | issue_204_cross_traffic_join | `video.freeze_total_ms` | 2231 | 1514 | ±402 | behind | 4/10 | #408 (closed, no note: #5, #37, #24) |
 | issue_224_congestive_e2e_flip | `net.loss_pct` | 4.2 | 3.4 | ±0.7 | behind | 5/10 | **none** (closed, no note: #21, #61, #12) |
-| issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 293 | 181 | ±42.6 | behind | 8/10 | **none** |
+| issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 294 | 181 | ±42.6 | behind | 9/10 | **none** |
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 465 | 358 | ±53.9 | behind | 8/10 | **none** (closed, no note: #24, #37) |
 | issue_224_congestive_e2e_flip | `video.freeze_total_ms` | 1554 | 1125 | ±364 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_23_handover | `net.loss_pct` | 5.2 | 4.7 | ±0.5 | behind | 4/10 | **none** (closed, no note: #21, #61, #12) |
@@ -174,12 +173,12 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_12_lossbwe_policer | `sync.av_offset_p95_ms` | 2627 | 3383 | ±381 | ahead | 8/10 | **none** |
 | issue_12_lossbwe_policer | `net.loss_pct` | 10.6 | 12.7 | ±2.0 | ahead | 9/10 | **none** (closed, no note: #21, #61, #12) |
 | issue_12_lossbwe_policer | `repair.overhead_pct` | 55.6 | 79.5 | ±17.5 | ahead | 9/10 | **none** (closed, no note: #21, #7, #29) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 224 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 225 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 249 | 226 | ±12.5 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_204_cross_traffic_join | `video.e2e_delay_p95_ms` | 526 | 422 | ±73.2 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_224_congestive_e2e_flip | `video.freeze_total_ms` | 1554 | 1125 | ±364 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 465 | 358 | ±53.9 | behind | 8/10 | **none** (closed, no note: #24, #37) |
-| issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 293 | 181 | ±42.6 | behind | 8/10 | **none** |
+| issue_224_congestive_e2e_flip | `sync.av_offset_p95_ms` | 294 | 181 | ±42.6 | behind | 9/10 | **none** |
 | issue_224_congestive_e2e_flip | `net.loss_pct` | 4.2 | 3.4 | ±0.7 | behind | 5/10 | **none** (closed, no note: #21, #61, #12) |
 | issue_23_handover | `video.freeze_count` | 4.1 | 3.1 | ±1.0 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_23_handover | `video.freeze_total_ms` | 4547 | 3597 | ±849 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
