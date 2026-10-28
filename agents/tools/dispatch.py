@@ -743,10 +743,12 @@ class Dispatcher:
             return self.note("flow", "no bottleneck past its threshold")
         keys = " ".join(sorted(k for k, _ in sig))
         m = re.search(rf"<!-- {FLOW_MARKER}: ([0-9TZ:-]+) ([^>]*) -->", self.log_body)
-        if m and m[2].strip() == keys and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
+        # Post only when a bottleneck is new: a set that shrank since the last alert (one cleared,
+        # the rest already answered) is not news (Flow watch, #499: #489 re-posted 35 s after its answer).
+        if m and set(keys.split()) <= set(m[2].split()) and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
             for k, text in sig:
                 self.note("flow", text)
-            return self.note("flow", f"same alert posted {minutes_ago(m[1]):.0f} min ago")
+            return self.note("flow", f"no new bottleneck since the alert {minutes_ago(m[1]):.0f} min ago")
         for k, text in sig:
             self.say("FLOW", k, text)
         if not self.live:
