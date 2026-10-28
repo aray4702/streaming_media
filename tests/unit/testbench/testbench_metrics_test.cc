@@ -155,15 +155,17 @@ SM_TEST(TestbenchMetrics, TheReceiverDecodesInNoTimeAsSmComparesModelDecoder) {
 // The forward-link trace (issue #125): one record per packet offered to the link.
 SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
-  trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered});
-  trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop});
+  trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered, 30500, 960, 1, -1});
+  trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop, -1, 9000, 0, 12});
+  trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome\n"
-               "0,213,audio,7,0,delivered\n"
-               "20000,1200,rtx,65535,450,queue_drop\n"
-               "20500,60,other,-1,0,lost\n");
-  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n"
+               "0,213,audio,7,0,delivered,30500,960,1,-1,-1\n"
+               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1\n"
+               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1\n"
+               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {
@@ -175,7 +177,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
   opt.link_trace = true;
   const Report rep = RunCall(*parsed.scenario, opt);
   SM_ASSERT_TRUE(!rep.link_trace.empty());
-  uint64_t audio = 0, audio_drops = 0, video_bytes = 0;
+  uint64_t audio = 0, audio_drops = 0, video_bytes = 0, key_packets = 0;
   int64_t prev = 0;
   for (const auto& r : rep.link_trace) {
     SM_EXPECT_GE(r.time_us, prev);  // In the order the link was offered the packets.
@@ -185,9 +187,25 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCou
       audio_drops += r.outcome == sim::LinkOutcome::kQueueDrop;
       SM_EXPECT_GE(r.seq, 0);
     }
-    if (r.kind == sim::LinkKind::kVideo) video_bytes += static_cast<uint64_t>(r.size);
+    if (r.kind == sim::LinkKind::kVideo) {
+      video_bytes += static_cast<uint64_t>(r.size);
+      SM_EXPECT_GE(r.rtp_ts, 0);  // Issue #437: the frame trace's RTP fields.
+      SM_EXPECT_TRUE(r.marker == 0 || r.marker == 1);
+      SM_EXPECT_EQ(r.osn, -1);
+      SM_EXPECT_TRUE(r.key == 0 || r.key == 1);
+      key_packets += r.key == 1;
+    } else {
+      SM_EXPECT_EQ(r.key, -1);
+    }
+    // Arrival is known exactly for a delivered packet, after the time it was offered.
+    if (r.outcome == sim::LinkOutcome::kDelivered) {
+      SM_EXPECT_GE(r.arrival_us, r.time_us + 30000);
+    } else {
+      SM_EXPECT_EQ(r.arrival_us, -1);
+    }
   }
   SM_EXPECT_TRUE(audio > 0);
+  SM_EXPECT_TRUE(key_packets > 0);  // The call starts with a keyframe.
   // The trace and the per-kind metrics describe the same packets.
   SM_EXPECT_EQ(static_cast<double>(audio_drops), rep.metrics.at("net.audio_queue_drops"));
   const double video_kbps = rep.metrics.at("net.video_kbps");
