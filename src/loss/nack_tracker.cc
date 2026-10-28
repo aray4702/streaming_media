@@ -81,8 +81,14 @@ std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
   // A retry is decided by NackPeriodicProcessor, every kUpdateInterval (20 ms), not at every call
   // (nack_requester.h). A retry therefore leaves up to 20 ms after the RTT has passed, which is what
   // keeps it from arriving just short of the sender's one-RTT repeat guard.
+  // The ticks keep the grid of the first one, as RepeatingTask adds the delay to its last due time
+  // (rtc_base/task_utils/repeating_task.cc:87), so a call between ticks does not move them (issue #518).
   const bool tick = !last_process_.IsFinite() || now - last_process_ >= kProcessInterval;
-  if (tick) last_process_ = now;
+  if (tick) {
+    last_process_ = !last_process_.IsFinite()
+                        ? now
+                        : last_process_ + kProcessInterval * ((now - last_process_).us() / kProcessInterval.us());
+  }
   for (auto it = missing_.begin(); it != missing_.end();) {
     Info& info = it->second;
     bool due = info.retries == 0 ? (now - info.detected >= cfg_.reorder_wait)
@@ -110,6 +116,15 @@ std::vector<uint16_t> NackTracker::GetSeqNumNackBatch(Timestamp now) {
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
+}
+
+Timestamp NackTracker::NextProcessTime() const {
+  if (missing_.empty()) return Timestamp::PlusInfinity();
+  Timestamp next = last_process_.IsFinite() ? last_process_ + kProcessInterval : Timestamp::MinusInfinity();
+  for (const auto& [seq, info] : missing_) {
+    if (info.retries == 0) next = std::min(next, info.detected + cfg_.reorder_wait);
+  }
+  return next;
 }
 
 void NackTracker::Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out) {

@@ -23,7 +23,7 @@ items closed. Every row now has a status.
 | 3 | Decoders | Audio: **identical by construction** since #487 (#476): ours decodes with the same libopus as `AudioDecoderOpusImpl` calls it (primary, LBRR, duration estimate), pinned sample for sample by `unit.OpusDecoder`. Video: **identical by construction**: neither side decodes pixels; libwebrtc's `ModelDecoder` returns every frame it is given at once, and ours reports a decode time of 0 for every frame its frame buffer releases, so both stacks' timing sees 0 ms decode time | [Row 3](#row-3-decoders) | #476 (closed) |
 | 4 | Packetization and wire | H.264 access units: **shared code** (`rtp::MakeFakeH264Frame`); RTP header extensions (transport-cc, id 1, only), CNAME, RED and RTX formats: **identical by construction**, and on the seed-1 traces every frame of the same size is split into the same packets on both sides (28 647 frame sizes on 115 scenarios), audio packets match packet for packet (row 2) and RTX is the original + 2 bytes on both. The video packet-size limit: **different**: ours is given 1458 bytes, the capacity libwebrtc is left with *after* reserving its RTX header, and libwebrtc 1460, from which it takes the reservation itself; our session makes no reservation. They agree only with NACK on and the default `video_max_payload` (`issue_29_ulpfec_over_red`, NACK off: ours up to 3 bytes smaller; `issue_257_zero_max_payload`: ours up to 3 bytes larger, and our padding 8 bytes over the limit)  No check fails yet if the splits drift apart; #513 adds the video split to `tools/check_harness_drift.py` | [Row 4](#row-4-packetization-and-wire) | #513, #514 (stack, not harness) |
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
-| 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **different**, on the 1 ms tick on ours, at their due microsecond on libwebrtc's `SimTime` (render gaps off the grid in 0 of 4065 seconds on ours, 1245 of 3865 on libwebrtc) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (with #507) |
+| 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **the same** since #518: each session runs at its `NextProcessTime`, at the due microsecond as on libwebrtc's `SimTime`, ties in `SimTime`'s order (seed 1: render gaps off the grid in 5/26/17 of 30 seconds on `clean_link`/`high_jitter`/`random_loss_5pct`, libwebrtc 4/23/15; before, 0) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (fixed) |
 | 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
 | 8 | Scenario mapping | One parser (`testbench::ParseScenario`) and one `Scenario` for both sides. Link keys (`at`, `reverse at`): **shared code** (`testbench::LinkTimeline`). Call and media keys (`duration`, `seed`, `audio`, `video`, `red`, `nack`, `fec`, `audio_rate`, `video_fps`, `video_size`, `video_complexity`, `encoder_speed`, `encode_delay`, `keyframe_interval`, `video_max`, `video_min`, `start_rate`, `min_rate`, `max_rate`, `quality_scaling`): **identical by construction**, each mapped to the matching libwebrtc setting. `audio_sample_rate`: **the same on both**, ignored (both run Opus at 48 kHz since #489), so its two scenarios run the default call. `video_max_payload`: **different**, #513. `av_sync off`: **identical** since #524: both sides only empty the receiver's sync group, and both senders keep their audio RTCP (`issue_524_av_sync_off`). `host_rtt`, `host_rtt_inf`: **ours only**, a host API libwebrtc has no counterpart for. The stack switches (`timing`, `neteq`, `bitrate_adjuster`, `render_smoothing`, ...): **ours only by design**, they pick the stack under test; libwebrtc runs M157's fixed configuration | [Row 8](#row-8-scenario-mapping) | #524; #513 (row 4); #480 (switches not at libwebrtc's value) |
 
@@ -437,7 +437,21 @@ draws and seeds every RTCP engine of ours as libwebrtc's are seeded, with
 the same per-seed clock value from the harness. `rtc_base/random.{h,cc}` is
 not in `compare/webrtc/reference/` yet.
 
-### Different: our stack's timers run on the 1 ms tick (#518)
+### Fixed: our stack's timers ran on the 1 ms tick (#518)
+
+Fixed by #518's PR: the test bench runs each session at its own due time
+inside the tick, on #507's per-event loop (`testbench/call.cc`), and
+`Session::NextProcessTime` reports every timer (the video receivers'
+frame release, render dequeue, decode time-out and NACK tick in place of
+"1 ms away"; at once after a packet). At one instant the order is
+`SimTime`'s: the sender's timers, its arriving feedback and finished
+frames, then the receiver's timers, then its arriving packets. The NACK
+retry ticks keep their 20 ms grid as `RepeatingTask` does
+(`repeating_task.cc:87`). Frames render at their release time. On seed 1
+the per-second longest render gap is off the grid in 5, 26 and 17 of 30
+seconds on `clean_link`, `high_jitter` and `random_loss_5pct` (libwebrtc 4,
+23 and 15; before the fix 0), and `issue_12`'s first gaps are 86.6 and
+106.9 ms on both stacks. What the audit found before the fix:
 
 `Session::Process` runs once per tick, so each of our timers fires at the
 next whole millisecond after it is due; libwebrtc's fire at their due
@@ -521,8 +535,7 @@ Moving them into `call_common.h` makes them shared code. That belongs with
 | `video.avg_kbps`, `video.qp_mean`, `video.encode_height_mean`, `video.keyframes` | the shared encoder model's output (row 2) | the same |
 | `video.encoder_dropped` | captured frames the library chose not to encode | captured minus encoded, which also counts the frames still in the encoder queue when the call ends (at most a frame or two) |
 
-Render times on our side fall on the 1 ms tick, and on libwebrtc's at the
-event time: that is #507 and row 6, not a measurement rule.
+Render times on both sides fall at the event time since #518 (row 6).
 
 ### Different: repair metrics (#509)
 

@@ -33,12 +33,35 @@ SM_TEST(NackTracker, RetriesAfterRttThenRecovers) {
   n.OnReceivedPacket(3, false, Ms(0));
   SM_EXPECT_EQ(n.GetNackBatch(Ms(0)).size(), 1u);
   SM_EXPECT_TRUE(n.GetNackBatch(Ms(49)).empty());       // A process tick, but the RTT has not passed.
-  SM_EXPECT_TRUE(n.GetNackBatch(Ms(50)).empty());       // The RTT has passed, but the next tick is 20 ms after 49.
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(50)).empty());       // The RTT has passed, but the next tick is at 60 ms.
   SM_EXPECT_EQ(n.GetNackBatch(Ms(69)).size(), 1u);
   n.OnReceivedPacket(2, false, Ms(80));
   SM_EXPECT_EQ(n.pending(), 0u);
   SM_EXPECT_EQ(n.stats().recovered, 1u);
   SM_EXPECT_NEAR(n.stats().recovery_time_ms.mean(), 80, 1);
+}
+
+// NackPeriodicProcessor's RepeatingTask adds its 20 ms to the last due time
+// (rtc_base/task_utils/repeating_task.cc:87), so the retry ticks keep the grid of the
+// first one whenever GetNackBatch is called between them (issue #518).
+SM_TEST(NackTracker, RetryTicksKeepTheGridOfTheFirstAndReportTheNext) {
+  NackConfig cfg;
+  cfg.min_retry_interval = TimeDelta::Millis(10);
+  NackTracker n(cfg);
+  n.UpdateRtt(TimeDelta::Millis(10));
+  SM_EXPECT_FALSE(n.NextProcessTime().IsFinite());  // Nothing missing.
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(0));
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(0)).size(), 1u);
+  SM_EXPECT_EQ(n.NextProcessTime(), Ms(20));
+  // A call between ticks (at a packet's arrival) moves nothing.
+  SM_EXPECT_TRUE(n.GetNackBatch(Timestamp::Micros(7300)).empty());
+  SM_EXPECT_EQ(n.NextProcessTime(), Ms(20));
+  // A late call is the 40 ms tick, and the next one is at 60 ms.
+  SM_EXPECT_EQ(n.GetNackBatch(Timestamp::Micros(45300)).size(), 1u);
+  SM_EXPECT_EQ(n.NextProcessTime(), Ms(60));
+  n.OnReceivedPacket(2, false, Ms(50));
+  SM_EXPECT_FALSE(n.NextProcessTime().IsFinite());
 }
 
 SM_TEST(NackTracker, ReorderWaitSuppressesSpuriousNacks) {

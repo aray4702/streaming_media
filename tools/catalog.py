@@ -52,7 +52,10 @@ ALGORITHMS = [
                "reordered within the same millisecond is NACKed too, as in libwebrtc (issue #411, `issue_411_nack_on_reorder`).",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
-                      "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`."),
+                      "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`. "
+                      "Issue #518: the 20 ms retry ticks keep the grid of the first, as `NackPeriodicProcessor`'s "
+                      "RepeatingTask (`repeating_task.cc:87`), when the receiver runs between them, and `NextProcessTime` "
+                      "reports the next tick (unit `NackTracker.RetryTicksKeepTheGridOfTheFirstAndReportTheNext`)."),
     dict(id="3.2", slug="fec", title="Forward error correction (ULPFEC over RED, as libwebrtc)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/ulpfec.h"], unit=["Ulpfec"], e2e=["E2E_Fec"],
