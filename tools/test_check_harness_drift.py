@@ -94,18 +94,36 @@ class Drift(unittest.TestCase):
         self.assertFalse(rows[0]["ok"])
 
 
-def vtrace(frames, padding=(), seq0=0):
-    """frames: [(rtp_ts, key, [sizes])] in send order."""
-    rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key"]
+HEADER = 49  # issue_29_ulpfec_over_red: 28 B UDP/IP, 12 B RTP, 8 B extensions, 1 B RED.
+
+
+def vtrace(frames, padding=(), seq0=0, header=HEADER):
+    """frames: [(rtp_ts, key, [wire sizes])] in send order; `header` None leaves the column out."""
+    cols = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key"
+    rows = [cols + (",header" if header is not None else "")]
     seq, t = seq0, 0
     for ts, key, sizes in frames:
         for sz in sizes:
-            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0))
+            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0) +
+                        ("" if header is None else ",%d" % header))
             seq, t = seq + 1, t + 1000
     for sz in padding:
-        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1" % (t, sz, seq, t + 1))
+        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1" % (t, sz, seq, t + 1) +
+                    ("" if header is None else ",-1"))
         seq, t = seq + 1, t + 1000
     return "\n".join(rows) + "\n"
+
+
+def fua(nal, limit, header=HEADER):
+    """Wire sizes of one NAL unit of `nal` bytes as libwebrtc's H.264 packetizer sends it with payload
+    limit `limit`: whole if it fits, else FU-A fragments of nal - 1 bytes split about equally
+    (SplitAboutEqually, no first/last reduction), each with the 2-byte FU indicator and header."""
+    if nal <= limit:
+        return [nal + header]
+    frag = nal - 1
+    m = -(-frag // (limit - 2))
+    small, larger = frag // m, frag % m
+    return [small + (1 if i >= m - larger else 0) + 2 + header for i in range(m)]
 
 
 def vdata(sm, rtc, name="clean"):
@@ -133,11 +151,55 @@ class VideoSplit(unittest.TestCase):
         _, failed = hd.check_video(vdata(vtrace(ours), vtrace(theirs)), ["clean"])
         self.assertEqual(failed, [])
 
-    def test_a_larger_packet_limit_fails(self):
-        # issue_29_ulpfec_over_red before #513: 1460 on ours, 1462 on libwebrtc.
-        _, failed = hd.check_video(vdata(vtrace(self.FRAMES + [(9000, False, [1460])]),
-                                         vtrace(self.FRAMES + [(9000, False, [1462])])), ["clean"])
+    # Issue #518: the packet limit is inferred from each side's FU-A runs (payload = size - header).
+    SHARED = [(0, True, [77, 1155, 1155, 1155]), (3000, False, fua(3000, 1413)), (6000, False, [29 + HEADER])]
+
+    def test_limits_one_byte_apart_fail_although_both_send_a_limit_hitting_frame(self):
+        # The same 2823 B NAL unit: two packets of exactly the 1413 B limit on one side, three on the side
+        # whose limit is 1412 (that side's limit-hitting frame is another NAL unit). The old largest-packet
+        # test caught this; the interval test must too.
+        ours = self.SHARED + [(9000, False, fua(2823, 1413))]
+        theirs = self.SHARED + [(9000, False, fua(2823, 1412)), (12000, False, fua(2821, 1412))]
+        self.assertEqual(max(ours[-1][2]) - HEADER, 1413)
+        self.assertEqual(max(theirs[-1][2]) - HEADER, 1412)
+        rows, failed = hd.check_video(vdata(vtrace(ours), vtrace(theirs)), ["clean"])
         self.assertEqual(len(failed), 1)
+        self.assertIn("not one limit", failed[0])
+        self.assertTrue(rows[0]["limit_ours"].startswith("1413-"))
+        self.assertEqual(rows[0]["limit_webrtc"], "1412-1412 B")
+
+    def test_equal_limits_pass_when_only_one_side_sends_a_limit_hitting_frame(self):
+        # PR #549's issue_29 case: libwebrtc sends a frame that fills two packets to the limit, ours never
+        # sends that size, so the largest packets differ (1462 / 1461 B on the wire) though the limit is one.
+        ours = self.SHARED + [(9000, False, fua(4000, 1413))]
+        theirs = self.SHARED + [(9000, False, fua(2823, 1413))]
+        self.assertNotEqual(max(ours[-1][2]), max(theirs[-1][2]))
+        rows, failed = hd.check_video(vdata(vtrace(ours), vtrace(theirs)), ["clean"])
+        self.assertEqual(failed, [])
+        self.assertTrue(rows[0]["limit_ok"])
+
+    def test_a_small_nal_unit_ahead_of_the_fragments_is_not_part_of_the_run(self):
+        # issue_29's delta frames: a 29 B NAL unit sent whole, then the slice in FU-A fragments.
+        frames = self.SHARED + [(9000, False, [29 + HEADER] + fua(3200, 1413))]
+        _, failed = hd.check_video(vdata(vtrace(frames), vtrace(frames)), ["clean"])
+        self.assertEqual(failed, [])
+        lim = hd.limit_interval(vtrace(frames))
+        self.assertLessEqual(lim["lo"], 1413)
+        self.assertGreaterEqual(lim["hi"], 1413)
+
+    def test_without_fragmented_delta_frames_the_largest_packets_are_compared(self):
+        # very_low_capacity and low_bandwidth: no delta frame is fragmented, so no limit is observable.
+        ours = [(0, True, [77, 1155]), (3000, False, [983 + HEADER]), (6000, False, [500 + HEADER])]
+        same = hd.check_video(vdata(vtrace(ours), vtrace(ours)), ["clean"])
+        other = ours[:2] + [(6000, False, [984 + HEADER])]
+        larger = hd.check_video(vdata(vtrace(ours), vtrace(other)), ["clean"])
+        self.assertEqual(same[1], [])
+        self.assertEqual(len(larger[1]), 1)
+
+    def test_a_trace_without_the_header_column_fails(self):
+        _, failed = hd.check_video(vdata(vtrace(self.SHARED), vtrace(self.SHARED, header=None)), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertIn("no header column", failed[0])
 
     def test_full_padding_packets_of_other_sizes_fail(self):
         # issue_257_zero_max_payload before #513: 136 on ours, 128 on libwebrtc.

@@ -11,8 +11,15 @@ any REQUIRED scenario's audio differs, so a harness change that breaks the
 match is caught on the PR that makes it.
 
 It also checks the video packetization (issue #513) on VIDEO_REQUIRED: every
-frame size both stacks send is split into the same packets, and the largest
-video packet and a full padding packet have the same size on both.
+frame size both stacks send is split into the same packets, a full padding
+packet has the same size on both, and both stacks split with the same packet
+limit. The limit is inferred from each side's own splits (issue #518): the
+forward trace's `header` column gives each video packet's bytes before its
+codec payload, and every FU-A run (a NAL unit's fragments, split about equally)
+bounds the payload limit L from both sides, so the two sides' intervals must
+intersect. Where neither side fragments a delta frame the limit is not
+observable, and the largest delta-frame packets are compared instead, as
+before #518.
 
 Scenarios with loss are reported but not required: their audio still parts
 at the first loss report, because our receiver sends report blocks more often
@@ -38,8 +45,9 @@ import audio_send
 REQUIRED = ["issue_124_clean_link_v2", "issue_124_bufferbloat_v2", "issue_61_googcc_glue_congestive",
             "probe_v2_cross_traffic"]
 # Video packetization (issue #513): both stacks get the same whole-packet limit and reserve the same
-# RTX and FEC room from it, so every frame size both send is split into the same packets, the largest
-# video packet is the same size, and so is a full padding packet. Holds with loss too, so the lossy
+# RTX and FEC room from it, so every frame size both send is split into the same packets, the payload
+# limit each side's splits allow is the same (issue #518; the largest packet where neither side
+# fragments a delta frame), and so is a full padding packet. Holds with loss too, so the lossy
 # traces are required here; `issue_29_ulpfec_over_red` (NACK off, FEC on) and
 # `issue_257_zero_max_payload` (100-byte packets) are the cases the default limit hides.
 VIDEO_REQUIRED = REQUIRED + ["issue_124_burst_loss_v2", "low_bandwidth", "very_low_capacity",
@@ -78,6 +86,67 @@ def max_video_packet(trace_csv):
                 if r["kind"] == "video" and r.get("key") != "1"), default=0)
 
 
+def fua_runs(payloads):
+    """The FU-A runs in one frame's packet payloads (in sequence order): maximal runs of two or more
+    packets whose sizes differ by at most one byte, as SplitAboutEqually (rtp_packetizer.cc) splits a NAL
+    unit with no first- or last-packet reduction. A small NAL unit sent whole (in a packet of its own)
+    is not part of a run."""
+    out, i = [], 0
+    while i < len(payloads):
+        j = i + 1
+        while j < len(payloads) and max(payloads[i:j + 1]) - min(payloads[i:j + 1]) <= 1:
+            j += 1
+        if j - i >= 2:
+            out.append(payloads[i:j])
+        i = j
+    return out
+
+
+def limit_interval(trace_csv):
+    """The payload limits L a side's delta-frame splits allow (issue #518), from the `header` column
+    (wire bytes before the codec payload), as {"lo", "hi", "runs"}; None without the column.
+    Every packet's payload fits: L >= payload. An FU-A run of m packets carries F = sum(payload - 2)
+    fragment bytes (the FU indicator and header are 2 bytes) in m = ceil(F / (L - 2)) packets
+    (h264_packetizer PacketizeFuA), so F > (m - 1) * (L - 2): L <= (F - 1) // (m - 1) + 2."""
+    seen, frames = set(), {}
+    for r in csv.DictReader(io.StringIO(trace_csv)):
+        if r["kind"] != "video" or r["seq"] in seen or r.get("key") == "1":
+            continue
+        if r.get("header") in (None, "", "-1"):
+            return None
+        seen.add(r["seq"])
+        frames.setdefault(r["rtp_ts"], []).append((int(r["seq"]), int(r["size"]) - int(r["header"])))
+    lo, hi, runs = 0, None, 0
+    for pkts in frames.values():
+        payloads = [p for _, p in sorted(pkts)]
+        lo = max(lo, max(payloads))
+        for run in fua_runs(payloads):
+            runs += 1
+            bound = (sum(p - 2 for p in run) - 1) // (len(run) - 1) + 2
+            hi = bound if hi is None else min(hi, bound)
+    return {"lo": lo, "hi": hi, "runs": runs}
+
+
+def limits_ok(la, lb, ma, mb):
+    """Whether both sides split with one limit: their intervals intersect (and each is consistent);
+    where neither side fragments a delta frame, the largest delta-frame packets match."""
+    if la is None or lb is None:
+        return False
+    if not la["runs"] and not lb["runs"]:
+        return ma == mb
+    inf = float("inf")
+    lo, hi = max(la["lo"], lb["lo"]), min(la["hi"] or inf, lb["hi"] or inf)
+    return la["lo"] <= (la["hi"] or inf) and lb["lo"] <= (lb["hi"] or inf) and lo <= hi
+
+
+def interval_text(lim, largest):
+    if lim is None:
+        return "no header column"
+    if not lim["runs"]:
+        return "not fragmented (largest %d B)" % largest
+    return "%d-%d B" % (lim["lo"], lim["hi"])
+
+
 def padding_sizes(trace_csv):
     return sorted({int(r["size"]) for r in csv.DictReader(io.StringIO(trace_csv)) if r["kind"] == "padding"})
 
@@ -94,9 +163,13 @@ def compare_video(trace):
     # padding, which #514 owns.
     pad_ok = not pa or not pb or pa[-1] == pb[-1]
     ma, mb = max_video_packet(trace["sm"]), max_video_packet(trace["webrtc"])
+    la, lb = limit_interval(trace["sm"]), limit_interval(trace["webrtc"])
+    limit_ok = limits_ok(la, lb, ma, mb)
     return {"scenario": trace["scenario"], "shared": len(shared), "differ": len(differ),
             "example": differ[0] if differ else None, "padding_ours": pa, "padding_webrtc": pb,
-            "max_ours": ma, "max_webrtc": mb, "ok": bool(shared) and not differ and pad_ok and ma == mb}
+            "max_ours": ma, "max_webrtc": mb, "limit_ours": interval_text(la, ma),
+            "limit_webrtc": interval_text(lb, mb), "limit_ok": limit_ok,
+            "ok": bool(shared) and not differ and pad_ok and limit_ok}
 
 
 def compare(trace):
@@ -138,10 +211,11 @@ def check_video(traces, required):
         r = compare_video(traces[name])
         rows.append(r)
         if not r["ok"]:
-            failed.append("%s: video split differs (%d of %d shared frame sizes, e.g. %s; largest video packet "
-                          "%d vs %d B; full padding packet %s vs %s B)" % (
-                              name, r["differ"], r["shared"], r["example"], r["max_ours"], r["max_webrtc"],
-                              r["padding_ours"][-1:], r["padding_webrtc"][-1:]))
+            failed.append("%s: video split differs (%d of %d shared frame sizes, e.g. %s; payload limit "
+                          "%s vs %s%s; full padding packet %s vs %s B)" % (
+                              name, r["differ"], r["shared"], r["example"], r["limit_ours"], r["limit_webrtc"],
+                              "" if r["limit_ok"] else " (not one limit)", r["padding_ours"][-1:],
+                              r["padding_webrtc"][-1:]))
     return rows, failed
 
 
@@ -167,12 +241,12 @@ def check(data, required=REQUIRED):
 
 def markdown_video(rows, failed):
     lines = ["## Harness drift check (video packetization, seed 1)", "",
-             "| scenario | shared frame sizes | split differently | largest video packet ours / libwebrtc "
+             "| scenario | shared frame sizes | split differently | payload limit ours / libwebrtc "
              "| full padding packet ours / libwebrtc |",
              "|---|---|---|---|---|"]
     for r in rows:
-        lines.append("| %s | %d | %d | %d / %d | %s / %s |" % (
-            r["scenario"], r["shared"], r["differ"], r["max_ours"], r["max_webrtc"],
+        lines.append("| %s | %d | %d | %s / %s | %s / %s |" % (
+            r["scenario"], r["shared"], r["differ"], r["limit_ours"], r["limit_webrtc"],
             (r["padding_ours"] or ["-"])[-1], (r["padding_webrtc"] or ["-"])[-1]))
     lines += ["", "**FAILED:** " + "; ".join(failed) if failed else
               "Every required scenario splits each shared frame size the same way, with the same packet limit.", ""]

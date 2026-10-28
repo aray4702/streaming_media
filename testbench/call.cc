@@ -332,13 +332,13 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
            kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
            std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
-           std::to_string(r.key) + "\n";
+           std::to_string(r.key) + "," + std::to_string(r.header) + "\n";
   }
   return out;
 }
@@ -750,7 +750,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
       // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
-      int32_t marker = -1, osn = -1, key = -1;
+      int32_t marker = -1, osn = -1, key = -1, header = -1;
       if (opt.link_trace && seq >= 0) {
         if (auto q = RtpPacket::Parse(p.bytes)) {
           rtp_ts = q->timestamp;
@@ -758,9 +758,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           if (q->ssrc == kRtxSsrc && q->payload.size() >= 2) osn = (q->payload[0] << 8) | q->payload[1];
           if (kind == Kind::kVideo) key = rtp::H264Depacketizer::Parse(q->payload).keyframe ? 1 : 0;
         }
+        if (kind == Kind::kVideo) header = TraceHeaderBytes(p.bytes, p.wire_size.bytes(), video_cfg.ulpfec.red_payload_type);
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
-      link.AnnotateLastTrace(rtp_ts, marker, osn, key);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header);
     }
   };
 

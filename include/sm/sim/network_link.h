@@ -90,6 +90,11 @@ struct LinkTraceRecord {
   int32_t marker = -1;
   int32_t osn = -1;
   int32_t key = -1;
+  // For a video packet, the wire bytes before its codec payload (issue #518:
+  // transport overhead, RTP header with CSRCs and extensions, RED header,
+  // and padding), so `size - header` is the payload the packetizer limited;
+  // -1 for other packets.
+  int32_t header = -1;
 };
 
 struct LinkStats {
@@ -122,12 +127,13 @@ class NetworkLink {
   void EnableTrace() { trace_on_ = true; }
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
   // Adds the RTP fields to the record of the packet just sent (issue #437).
-  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1) {
+  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1, int32_t header = -1) {
     if (!trace_on_ || trace_.empty()) return;
     trace_.back().rtp_ts = rtp_ts;
     trace_.back().marker = marker;
     trace_.back().osn = osn;
     trace_.back().key = key;
+    trace_.back().header = header;
   }
 
   // `seq` is the packet's RTP sequence number (-1 when it has none); it is

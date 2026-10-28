@@ -9,6 +9,7 @@
 #include <limits>
 #include <map>
 #include <set>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -17,6 +18,24 @@
 #include "sm/sim/network_link.h"
 
 namespace sm::testbench {
+
+// The forward trace's `header` column (issue #518): the wire bytes of a video packet before its codec
+// payload, that is `wire` less the payload after the RTP header (CSRCs, extensions), the RED header when
+// the payload type is `red_pt`, and any padding. Both harnesses compute it from the packet bytes with
+// this function, so `size - header` is the payload each packetizer limited. -1 if the packet doesn't parse.
+inline int32_t TraceHeaderBytes(std::span<const uint8_t> d, int64_t wire, int red_pt) {
+  if (d.size() < 12 || (d[0] >> 6) != 2) return -1;
+  size_t off = 12 + 4 * static_cast<size_t>(d[0] & 0x0f);
+  if (d[0] & 0x10) {
+    if (off + 4 > d.size()) return -1;
+    off += 4 + 4 * ((static_cast<size_t>(d[off + 2]) << 8) | d[off + 3]);
+  }
+  size_t end = d.size();
+  if (d[0] & 0x20) end -= std::min<size_t>(end, d[d.size() - 1]);
+  if ((d[1] & 0x7f) == red_pt) ++off;
+  if (off > end) return -1;
+  return static_cast<int32_t>(wire - static_cast<int64_t>(end - off));
+}
 
 // Goodput counts each media packet once (#329): the first delivery of an RTP
 // sequence number on a stream, as the original or as an RTX copy (RFC 4588

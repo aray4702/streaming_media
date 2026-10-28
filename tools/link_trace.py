@@ -4,8 +4,9 @@
 `sm_compare` records every packet either stack offers to the forward link,
 for the first seed of the scenarios named by --trace (default
 very_low_capacity_allocator_v2), in the same CSV for this library and for
-libwebrtc: time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key
-(the last five from issue #437; tools/link_frames.py rebuilds frames from them). CI publishes them in
+libwebrtc: time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header
+(arrival_us to key from issue #437; tools/link_frames.py rebuilds frames from them; header, a video
+packet's wire bytes before its codec payload, from issue #518). CI publishes them in
 compare-webrtc.json under "traces"; with --trace-dir they are also written as
 <scenario>.<seed>.{sm,webrtc}.trace.csv.
 
