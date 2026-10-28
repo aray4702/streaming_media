@@ -24,6 +24,14 @@ For each of your open PRs:
   and with no push to the PR since, that run owns it: delete your comment
   and go to your next PR. Don't re-check its work after it pushes; the
   Reviewer and CI do that.
+- **Claim new work a ruling asks for the same way.** When a ruling or a
+  review on your PR asks for a new PR (a `yardstick:` trace, a split-off
+  part), comment `Working on <what> (Fixer, <time>)` on the PR or issue
+  that carries the ruling, wait 60 seconds and re-read it before you
+  start. Also check that no open PR already says `For #N` or `Refs #N`
+  for the same work. Another run's earlier claim, from the last 60 minutes,
+  owns it. #552 and #553 both built one ruling four minutes apart because
+  only one run claimed it.
 - Collect unaddressed feedback:
   - review comments (`/pulls/N/comments`) and unresolved review threads
     (`/pulls/N/ccr/review_threads`);
