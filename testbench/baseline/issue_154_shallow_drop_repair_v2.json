@@ -52,7 +52,7 @@
   "net.video_size_p50_b": 1155,
   "net.video_size_p90_b": 1388,
   "repair.fec_recovered": 0,
-  "repair.nack_recovered": 155,
+  "repair.nack_recovered": 158,
   "repair.overhead_pct": 18.23,
   "sync.av_offset_max_ms": 732.1,
   "sync.av_offset_p50_ms": -33.48,
@@ -80,7 +80,7 @@
   "video.render_ratio_pct": 90.83,
   "video.residual_loss_pct": 0.1427,
   "video.time_to_first_frame_ms": 194,
-  "video.undecodable_frames": 7
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_154_shallow_drop_repair_v2"
