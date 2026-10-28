@@ -410,14 +410,42 @@ SM_TEST(RtpSender, GeneratePaddingWithAZeroMaxPayloadSizeReachesTheTarget) {
     // Checked first, so that on the old code the test fails here instead of hanging below.
     SM_ASSERT_EQ(s.config().max_payload_size, 88u);
     auto out = s.GeneratePadding(600, 777, Timestamp::Millis(5));
-    // Video: full 88-byte packets, 7 x 88 >= 600. Audio: the bytes left, at most 88 each.
-    SM_ASSERT_EQ(out.size(), 7u);
+    // A padding packet's padding is the 100-byte limit less its header with the transport-cc
+    // extension, 12 + 8 (max_packet_size_ - max_padding_fec_packet_header_, rtp_sender.cc:434-435;
+    // #513). Video: full 80-byte packets, 8 x 80 >= 600. Audio: the bytes left, 50 to 80 each.
+    SM_ASSERT_EQ(out.size(), 8u);
     for (const auto& p : out) {
       SM_EXPECT_GT(p.packet.padding_size, 0);
-      SM_EXPECT_LE(p.packet.padding_size, 88);
+      SM_EXPECT_LE(p.packet.padding_size, 80);
     }
     SM_EXPECT_GE(PaddingTotal(out), 600u);
   }
+}
+
+// RTPSender::GeneratePadding (rtp_sender.cc:434-435, 150-165) sizes empty padding by
+// max_packet_size_ - max_padding_fec_packet_header_: the header with the extensions a padding packet
+// can carry (kFecOrPaddingExtensionSizes) fits in the whole-packet limit. Our padding packets were
+// 8 bytes over a 100-byte limit with transport-cc (issue #513).
+SM_TEST(RtpSender, EmptyPaddingWithItsHeaderExtensionsFitsThePacketLimit) {
+  const auto ext = TccExtensions();
+  for (size_t limit : {size_t{100}, size_t{280}, size_t{1460}}) {
+    RtpSenderConfig c = PaddingCfg(&ext);
+    c.max_payload_size = limit - 12;
+    RtpSender s(c);
+    SM_EXPECT_EQ(s.PaddingFecPacketHeaderSize(), 12u + 8u);
+    auto out = s.GeneratePadding(2000, 777, Timestamp::Millis(5));
+    SM_ASSERT_GT(out.size(), 0u);
+    SM_EXPECT_EQ(static_cast<size_t>(out[0].packet.padding_size), std::min<size_t>(limit - 20, 255));
+  }
+}
+
+// RTPSender::RtxPacketOverhead (rtp_sender.cc:566-595): kRtxHeaderSize with RTX, 0 without.
+SM_TEST(RtpSender, RtxPacketOverheadIsTheRtxHeaderWithRtx) {
+  RtpSenderConfig c = VideoCfg();
+  c.rtx_ssrc = 0x300;
+  SM_EXPECT_EQ(RtpSender(c).RtxPacketOverhead(), 2u);
+  c.rtx_ssrc.reset();
+  SM_EXPECT_EQ(RtpSender(c).RtxPacketOverhead(), 0u);
 }
 
 // AppendPayloadPadding: the newest large packet of the history goes out again on the RTX SSRC, with the OSN

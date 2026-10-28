@@ -7,9 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
-#include <map>
 #include <optional>
-#include <set>
 #include <string_view>
 #include <unordered_map>
 
@@ -97,16 +95,15 @@ uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
 
-// Records which video media sequence numbers the receiver ended up with
-// (originals, retransmissions and FEC recoveries).
-class ReceivedSeqs : public rtp::VideoMediaObserver {
+// The video media packets the receiver hands on: those that arrived from the link (the RepairMeter has them
+// already, since each arrival is recorded before the receiver takes it) and those its ULPFEC receiver recovered.
+class FecRecoveredSeqs : public rtp::VideoMediaObserver {
  public:
-  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { seqs_.insert(unwrap_.Unwrap(seq)); }
-  bool Has(int64_t useq) const { return seqs_.count(useq) > 0; }
+  explicit FecRecoveredSeqs(RepairMeter& meter) : meter_(meter) {}
+  void OnVideoMediaPacket(uint16_t seq, Timestamp) override { meter_.OnFecRecovered(seq); }
 
  private:
-  SeqNumUnwrapper<uint16_t> unwrap_;
-  std::set<int64_t> seqs_;
+  RepairMeter& meter_;
 };
 
 }  // namespace
@@ -148,8 +145,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"video.keyframe_requests", "PLI/FIR received by the sender"},
       {"video.encoder_dropped", "Frames skipped by the frame dropper or a paused encoder"},
       {"video.encoder_target_avg_kbps", "Mean rate the encoder is configured with (after the bitrate adjuster), sampled at each captured frame (issue #466)"},
-      {"video.undecodable_frames", "Frames received but discarded because a reference was missing"},
-      {"video.residual_loss_pct", "Video media packets never recovered (after NACK/RTX and FEC)"},
+      {"video.undecodable_frames", "Frames received but never decoded: discarded for a missing reference, fast-forwarded or cleared (libwebrtc frames_dropped)"},
+      {"video.residual_loss_pct", "Video media packets sent that never arrived, as media or RTX, and were not "
+                                  "recovered by FEC (RepairMeter, as sm_compare)"},
       {"sync.av_offset_p50_ms", "Median A/V offset at each rendered frame: capture time of the audio playing minus the frame's (positive: video later than audio)"},
       {"sync.av_offset_p95_ms", "95th percentile of the absolute A/V offset at each rendered frame (lip sync; audio and video calls only)"},
       {"sync.av_offset_max_ms", "Largest absolute A/V offset at a rendered frame"},
@@ -181,9 +179,9 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
       {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
       {"net.fec_kbps", "FEC packets sent on the forward link, wire rate averaged over the call"},
-      {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), headers included"},
-      {"repair.nack_recovered", "Packets recovered by retransmission"},
-      {"repair.fec_recovered", "Packets recovered by FEC"},
+      {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), whole RTP packets"},
+      {"repair.nack_recovered", "RTX packets that arrived before their original (from the link, as sm_compare)"},
+      {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
   };
   return k;
 }
@@ -457,26 +455,7 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
 }
 
 void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Report& rep) {
-  std::vector<double> encode, pacer, network, jitter;
-  auto ms = [](TimeDelta d) { return static_cast<double>(d.us()) / 1000.0; };
-  for (const auto& f : frames) {
-    if (!f.rendered.IsFinite() || !f.capture.IsFinite() || !f.submitted.IsFinite() || !f.last_sent.IsFinite() ||
-        !f.complete.IsFinite()) {
-      continue;
-    }
-    encode.push_back(ms(f.submitted - f.capture));
-    pacer.push_back(ms(f.last_sent - f.submitted));
-    // A frame completed by a retransmission arrives after its last original
-    // packet was sent; a frame completed by FEC can look complete before it.
-    network.push_back(std::max(0.0, ms(f.complete - f.last_sent)));
-    jitter.push_back(ms(f.rendered - f.complete));
-  }
-  if (encode.empty()) return;
-  auto& m = rep.metrics;
-  m["video.delay_encode_ms"] = Mean(encode);
-  m["video.delay_pacer_p95_ms"] = Percentile(pacer, 95);
-  m["video.delay_network_p95_ms"] = Percentile(network, 95);
-  m["video.delay_jitter_buffer_p95_ms"] = Percentile(jitter, 95);
+  AddVideoDelayMetrics(frames, rep.metrics);
 }
 
 void EvaluateExpectations(Report& rep) {
@@ -532,7 +511,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
   OpusAudioDecoder decoder(sr);
   rtp::H264PayloadParser parser;
-  ReceivedSeqs received_seqs;
+  RepairMeter repair;  // Issue #509: the repair metrics by the rule sm_compare's libwebrtc side uses.
+  FecRecoveredSeqs fec_recovered_seqs(repair);
 
   // --- The two ends of the call ---------------------------------------------
   auto session_config = [&](uint32_t rtcp_ssrc, const char* cname) {
@@ -553,13 +533,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
-    // the bench's packets are that size, so the overhead is too (issue #151). A scenario that sets
-    // `video_max_payload` gets the packetizer's whole-packet limit, payload plus the 12-byte fixed
-    // header clamped to 100-1500 as rtp::RtpSender does, as in sm_compare's libwebrtc call (#379).
-    c.send_side.max_packet_size =
-        s.video_max_payload != Scenario{}.video_max_payload
-            ? static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500))
-            : 1460;
+    // the bench's packets are that size, so the overhead is too (issue #151): the packetizer's
+    // whole-packet limit, `video_max_payload` plus the 12-byte fixed header clamped to 100-1500 as
+    // rtp::RtpSender does, as in sm_compare's libwebrtc call (#379); 1460 by default (#513).
+    c.send_side.max_packet_size = static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500));
     // libwebrtc's RTCPSender seeds its report-interval draws from the clock (rtcp_sender.cc:130), and sm_compare
     // starts that clock per seed, so every scenario seed draws its own RTCP schedule (issue #399). Seed 1 keeps
     // the schedule every seed drew before. Both ends get the seed, as both of libwebrtc's are built at the same time.
@@ -569,7 +546,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   };
   rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
-  sender_cfg.audio_rtcp = s.av_sync;  // The audio SR lip sync needs (issue #77).
+  // The audio send stream always sends its own RTCP, as libwebrtc's audio channel runs RtcpMode::kCompound whatever
+  // the sync group (compare/webrtc/reference/audio/channel_send.cc:551); `av_sync off` only leaves the receiver's
+  // sync group empty, as sm_compare does (issue #524; it used to turn the audio SR off too).
+  sender_cfg.audio_rtcp = true;
   rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
   // The receiver's first report goes out at half its nominal interval, as the
   // sender's does: libwebrtc's receive streams have their own RTCPSender, whose
@@ -596,13 +576,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.rtx_ssrc = kRtxSsrc;
   video_cfg.rtx_payload_type = kRtxPt;
   video_cfg.fec = s.fec;
-  // libwebrtc's default packet capacity (kVideoMtu 1200); the session subtracts the real header.
+  // libwebrtc's whole-packet limit less the fixed header; the session subtracts the real header and
+  // the FEC and RTX reservations (issue #513).
   video_cfg.max_payload_size = s.video_max_payload;
   video_cfg.parser = &parser;
   video_cfg.sps_pps_tracker = s.sps_pps_tracker;
   video_cfg.render_smoothing = s.render_smoothing;
   video_cfg.packet_buffer.missing_packets = s.h264_missing_packets;
-  video_cfg.media_observer = &received_seqs;
+  video_cfg.media_observer = &fec_recovered_seqs;
   video_cfg.nack = s.nack;
   // A loss notification needs frame ids and dependencies from a generic
   // descriptor, which H.264 has none of (design 6.4): libwebrtc sends PLI and
@@ -700,19 +681,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
-  int64_t media_bytes = 0, repair_bytes = 0;
-  // Send time of each video media packet by unwrapped sequence number (ULPFEC packets share the
-  // sequence numbers and are not counted).
-  std::map<int64_t, int64_t> video_send_ms;
-  SeqNumUnwrapper<uint16_t> video_sent_unwrap;
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
   bool audio_started = false;
-  Timestamp audio_first = Timestamp::MinusInfinity(), video_first = Timestamp::MinusInfinity();
+  FirstAudioMeter audio_first;  // Issue #510: as sm_compare's libwebrtc side.
+  Timestamp video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
   AvSyncMeter av_sync;  // Issue #63.
-  int64_t played_ms = 0, stretch_ms = 0;
+  StretchMeter stretch;  // Issue #510: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   ConcealmentMeter concealment(sr);  // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
   // (jitterBufferDelay / jitterBufferEmittedCount over each pull).
@@ -754,15 +731,13 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (auto q = RtpPacket::Parse(p.bytes); q && q->ssrc == kRtxSsrc && q->payload.size() > 2) kind = Kind::kRtx;
       }
       if (is_forward) {
-        if (kind == Kind::kAudio || kind == Kind::kVideo) media_bytes += static_cast<int64_t>(p.bytes.size());
-        if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
+        repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kAudio) {
           if (!audio_ts_first) audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
           audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
         }
         if (kind == Kind::kVideo) {
-          video_send_ms.emplace(video_sent_unwrap.Unwrap(RtpSeq(p.bytes)), now.ms());
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
           if (ft != frame_times.end()) ft->second.last_sent = now;
         }
@@ -951,9 +926,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         case Kind::kFec: {
           if (w.kind != Kind::kRtx) {
             if (first_delivery.Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) w_good += wire;
+            if (w.kind == Kind::kVideo) repair.OnVideoArrived(RtpSeq(w.bytes));
           } else if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
-            if (first_delivery.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1])))
-              w_good += wire;
+            const auto osn = static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1]);
+            if (first_delivery.Deliver(FirstDelivery::kVideo, osn)) w_good += wire;
+            repair.OnRtxArrived(osn);
           }
           // The last media or RTX packet of a frame (RFC 4588 keeps the
           // original RTP timestamp) before it renders marks it complete.
@@ -968,9 +945,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       }
       receiver.OnPacket(w.bytes, at);
       // The first packet the jitter buffer takes: none when it refuses the stream (#256).
-      if (w.kind == Kind::kAudio && !audio_first.IsFinite() &&
-          receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0) {
-        audio_first = at;
+      if (w.kind == Kind::kAudio) {
+        audio_first.OnAudioPacket(at, receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0);
       }
     });
     // The receiver learns each RTT sample the sender measures, for its
@@ -1018,44 +994,46 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
-      auto op = receiver.GetAudio(audio_recv, audio_out, now);
+      receiver.GetAudio(audio_recv, audio_out, now);
       // Audio RTP timestamps count samples from the call start (capture at t = 0).
       if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
         av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
       }
       const auto& jb = receiver.audio_receiver(audio_recv).jitter_buffer();
       const auto& jst = jb.stats();
-      if (const uint64_t emitted = jst.jitter_buffer_emitted_count - prev_jb_emitted; emitted > 0) {
-        jb_delay.push_back(static_cast<double>(jst.jitter_buffer_delay_ms_samples - prev_jb_delay) /
-                           static_cast<double>(emitted));
+      // Playout statistics count from the first pull that output samples, as sm_compare's libwebrtc side (#510).
+      if (stretch.OnPull(jst.total_samples_received, jst.inserted_samples_for_deceleration,
+                         jst.removed_samples_for_acceleration)) {
+        if (const uint64_t emitted = jst.jitter_buffer_emitted_count - prev_jb_emitted; emitted > 0) {
+          jb_delay.push_back(static_cast<double>(jst.jitter_buffer_delay_ms_samples - prev_jb_delay) /
+                             static_cast<double>(emitted));
+        }
+        if (opt.audio_trace) {
+          // Issue #62: the jitter buffer after each pull, as sm_compare reads libwebrtc's GetStats.
+          const double ms_per_sample = 1000.0 / sr;
+          AudioTraceRow r;
+          r.t_ms = t;
+          r.buffer_ms = static_cast<int>(jb.CurrentLevelMs());
+          r.target_ms = jb.TargetDelayMs();
+          if (jst.jitter_buffer_emitted_count > prev_jb_emitted) r.jb_delay_ms = jb_delay.back();
+          r.received_ms = static_cast<double>(jst.total_samples_received - prev_jb_trace.total_samples_received) * ms_per_sample;
+          r.concealed_ms = static_cast<double>(jst.concealed_samples - prev_jb_trace.concealed_samples) * ms_per_sample;
+          r.accelerate_ms = static_cast<double>(jst.removed_samples_for_acceleration -
+                                                prev_jb_trace.removed_samples_for_acceleration) * ms_per_sample;
+          r.decelerate_ms = static_cast<double>(jst.inserted_samples_for_deceleration -
+                                                prev_jb_trace.inserted_samples_for_deceleration) * ms_per_sample;
+          rep.audio_trace.push_back(r);
+          prev_jb_trace.total_samples_received = jst.total_samples_received;
+          prev_jb_trace.concealed_samples = jst.concealed_samples;
+          prev_jb_trace.removed_samples_for_acceleration = jst.removed_samples_for_acceleration;
+          prev_jb_trace.inserted_samples_for_deceleration = jst.inserted_samples_for_deceleration;
+        }
+        prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
+        prev_jb_emitted = jst.jitter_buffer_emitted_count;
+        concealment.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+        w_played += concealment.pull_total();
+        w_conceal += concealment.pull_concealed();
       }
-      if (opt.audio_trace) {
-        // Issue #62: the jitter buffer after each pull, as sm_compare reads libwebrtc's GetStats.
-        const double ms_per_sample = 1000.0 / sr;
-        AudioTraceRow r;
-        r.t_ms = t;
-        r.buffer_ms = static_cast<int>(jb.CurrentLevelMs());
-        r.target_ms = jb.TargetDelayMs();
-        if (jst.jitter_buffer_emitted_count > prev_jb_emitted) r.jb_delay_ms = jb_delay.back();
-        r.received_ms = static_cast<double>(jst.total_samples_received - prev_jb_trace.total_samples_received) * ms_per_sample;
-        r.concealed_ms = static_cast<double>(jst.concealed_samples - prev_jb_trace.concealed_samples) * ms_per_sample;
-        r.accelerate_ms = static_cast<double>(jst.removed_samples_for_acceleration -
-                                              prev_jb_trace.removed_samples_for_acceleration) * ms_per_sample;
-        r.decelerate_ms = static_cast<double>(jst.inserted_samples_for_deceleration -
-                                              prev_jb_trace.inserted_samples_for_deceleration) * ms_per_sample;
-        rep.audio_trace.push_back(r);
-        prev_jb_trace.total_samples_received = jst.total_samples_received;
-        prev_jb_trace.concealed_samples = jst.concealed_samples;
-        prev_jb_trace.removed_samples_for_acceleration = jst.removed_samples_for_acceleration;
-        prev_jb_trace.inserted_samples_for_deceleration = jst.inserted_samples_for_deceleration;
-      }
-      prev_jb_delay = jst.jitter_buffer_delay_ms_samples;
-      prev_jb_emitted = jst.jitter_buffer_emitted_count;
-      played_ms += 10;
-      if (op == timing::AudioOperation::kAccelerate || op == timing::AudioOperation::kPreemptiveExpand) stretch_ms += 10;
-      concealment.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
-      w_played += concealment.pull_total();
-      w_conceal += concealment.pull_concealed();
     }
 
     // Receiver feedback (NACK, keyframe requests, transport-cc, reports).
@@ -1134,9 +1112,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
-    m["audio.stretch_pct"] = played_ms ? 100.0 * static_cast<double>(stretch_ms) / static_cast<double>(played_ms) : 0;
+    m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(jbs.packets_discarded_late);
-    m["audio.time_to_first_ms"] = audio_first.IsFinite() ? static_cast<double>(audio_first.ms()) : static_cast<double>(end_ms);
+    m["audio.time_to_first_ms"] = audio_first.ms(end_ms);
   }
   if (s.video) {
     const rtp::RtpReceiver& vrx = receiver.video_receiver(video_recv);
@@ -1195,18 +1173,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         frames_encoded + frames_skipped
             ? static_cast<double>(encoder_target_bps_sum) / static_cast<double>(frames_encoded + frames_skipped) / 1000
             : 0;
-    m["video.undecodable_frames"] = static_cast<double>(vrx.keyframes().stats().frames_dropped);
-    {
-      // Packets sent in the last second may still be in flight or under repair.
-      int64_t counted = 0, lost = 0;
-      for (const auto& [useq, sent_ms] : video_send_ms) {
-        if (sent_ms > end_ms - 1000) break;
-        ++counted;
-        lost += !received_seqs.Has(useq);
-      }
-      m["video.residual_loss_pct"] = counted ? 100.0 * static_cast<double>(lost) / static_cast<double>(counted) : 0;
-    }
-    m["repair.nack_recovered"] = static_cast<double>(vrx.nack().stats().recovered);
+    // As libwebrtc's VideoReceiveStream frames_dropped (VideoStreamBufferController::UpdateDroppedFrames and Clear):
+    // the frames that waited for a missing reference until a keyframe cleared them, plus the frame release's
+    // fast-forwards and clears, the sum the video trace counts (issue #510).
+    const timing::FrameReleaseStats& vrs = vrx.frame_release().stats();
+    m["video.undecodable_frames"] =
+        static_cast<double>(vrx.keyframes().stats().frames_dropped + vrs.fast_forwarded + vrs.dropped_for_keyframe);
     m["repair.fec_recovered"] =
         vrx.ulpfec() ? static_cast<double>(vrx.ulpfec()->GetPacketCounter().num_recovered_packets) : 0;
   }
@@ -1231,7 +1203,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
   }
   if (opt.link_trace) rep.link_trace = forward.trace();
-  m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
+  repair.AddMetrics(m, s.video, end_ms);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {
