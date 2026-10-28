@@ -77,7 +77,7 @@ def render(tab, d, width=100, show_all=False):
         for x in d["needs_you"] or []:
             add(f"  {x['kind']} {'#' + str(x['n']) if x['n'] else ''}  {cut(x['title'], w - 14)}")
         if not d["needs_you"]:
-            add("  nothing labelled needs-human")
+            add("  nothing labelled needs-owner")
         if d["asks_24h"]:
             add("  NEEDS YOU posts on #111, last 24 h (a later post may withdraw one):")
             for a in d["asks_24h"]:
@@ -338,7 +338,7 @@ def tui(system, parser, start_tab="overview"):
                     attr = 0
                     if line.isupper() or line.startswith(("NEEDS YOU", "WORK ORDER", "HELD", "DISPATCHER", "AGENTS")):
                         attr = curses.color_pair(1) | curses.A_BOLD
-                    if "needs-human" in line or "STOPPED" in line or "failed:" in line or "NOT ON #64" in line:
+                    if "needs-owner" in line or "STOPPED" in line or "failed:" in line or "NOT ON #64" in line:
                         attr = curses.color_pair(2)
                     scr.addnstr(2 + row, 1, line, w - 2, attr)
             stamp = f"updated {dt.datetime.fromtimestamp(data[name][0], PT):%-I:%M %p} PT" if name in data else ""

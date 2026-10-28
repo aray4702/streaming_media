@@ -89,6 +89,36 @@ class Owners(unittest.TestCase):
         self.assertEqual(g[("outage_3s", "video.render_fps")], [20])
         self.assertEqual(g[("clean_link", "video.freeze_total_ms")], [])
 
+    def test_closed_issue_owns_only_with_a_note(self):
+        # A rule without a note whose issues are closed owns nothing (finished work, nobody on it);
+        # a rule with a note records an explained difference and still owns.
+        d = data(scn("handover", {"video.freeze_total_ms": ([5000] * 5, [0] * 5),
+                                  "video.render_fps": ([30] * 5, [20] * 5),
+                                  "video.keyframe_requests": ([9] * 5, [1] * 5)}))
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+            json.dump({"rules": [{"metric": "video.freeze_*", "issues": [5, 37]},
+                                 {"metric": "video.render_fps", "issues": [37, 411]},
+                                 {"metric": "video.keyframe_requests", "issues": [23], "note": "explained (#23)"}]}, f)
+        try:
+            states = {5: "closed", 37: "closed", 411: "open", 23: "closed"}
+            g = {x["metric"]: x for x in pr.report(d, f.name, states=states)}
+            unknown = {x["metric"]: x["owners"] for x in pr.report(d, f.name)}
+        finally:
+            os.unlink(f.name)
+        self.assertEqual(g["video.freeze_total_ms"]["owners"], [])
+        self.assertEqual(g["video.freeze_total_ms"]["stale_owners"], [5, 37])
+        self.assertEqual((g["video.render_fps"]["owners"], g["video.render_fps"]["stale_owners"]), ([411], [37]))
+        self.assertEqual(g["video.keyframe_requests"]["owners"], [23])
+        self.assertIn("closed, no note: #5, #37", pr.owner_text(g["video.freeze_total_ms"]))
+        # Without states every listed issue counts, as before.
+        self.assertEqual(unknown["video.freeze_total_ms"], [5, 37])
+
+    def test_unknown_states_are_reported(self):
+        d = data(scn("a", {"video.render_fps": ([30] * 5, [20] * 5)}))
+        g = pr.report(d)
+        self.assertIn("Issue states were unknown", pr.markdown(d, g, states_known=False))
+        self.assertNotIn("Issue states were unknown", pr.markdown(d, g))
+
     def test_session_layer_repair_cell_belongs_to_the_reordering_cluster(self):
         # #420: on 80 seeds (#424) issue_76_session_layer_v2's repair overhead is ahead (38.2 vs 40.3 %),
         # the jittery reordering link of #411's D5/D6 cluster, not the closed repair items.
