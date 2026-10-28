@@ -748,11 +748,20 @@ class Dispatcher:
         # 3. CI re-run churn on one PR.
         try:
             since = (NOW - dt.timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
-            recent = (self.gh_actions(f"repos/{self.r}/actions/runs?event=pull_request&created=>={since}&per_page=100")
-                      or {}).get("workflow_runs", [])
+            # Only the ci workflow's runs, every page: a day holds more than 100 (#553).
+            recent, page = [], 1
+            while True:
+                got = (self.gh_actions(f"repos/{self.r}/actions/workflows/ci.yml/runs?event=pull_request"
+                                       f"&created=>={since}&per_page=100&page={page}") or {}).get("workflow_runs", [])
+                recent += got
+                if len(got) < 100 or page >= 10:
+                    break
+                page += 1
             per = {}
             for run in recent:
-                if run.get("name") == "ci":
+                # A run cancelled by a newer push or ready_for_review is superseded,
+                # not churn: the newer run is counted (#553, Flow watch).
+                if run.get("name") == "ci" and run.get("conclusion") != "cancelled":
                     per[run["head_branch"]] = per.get(run["head_branch"], 0) + 1
             open_branches = {p["head"]["ref"]: p["number"] for p in self.pulls}
             for br, n in per.items():
