@@ -1,0 +1,27 @@
+name issue_411_reconfigure_clears_cwnd_drop
+describe The 3 s outage of issue_372 on seed 3: an encoder reconfiguration during the outage ends the congestion-window frame drops until feedback returns, as in libwebrtc, so video keeps going into the dead link, and the call is back to its delay at once after link-up (issue #411, cluster D8)
+# libwebrtc's BitrateAllocator passes cwnd_reduce_ratio only on OnNetworkEstimateChanged; AddObserver (which
+# VideoSendStreamImpl::OnEncoderConfigurationChanged calls when the encoder goes to 480x270, about 1 s into the
+# outage) reallocates with std::nullopt, which the streams take as 0, and VideoStreamEncoder::UpdateTargetBitrate
+# resets cwnd_frame_drop_interval_. GoogCC re-sends the ratio only when the pushback target changes, which it no
+# longer does once pinned at its floor, so whether the drops resume depends on the seed. Ours kept the handler's
+# ratio through the reconfiguration and dropped frames for the whole outage on every seed.
+# VideoStreamEncoder::OnFrame decides the congestion-window drop before MaybeEncodeVideoFrame reconfigures the
+# encoder, and the reallocation is posted, so the first frame at the new size is still subject to the old drop
+# interval. Ours cleared the ratio before that frame's drop check; the one frame more made the quality scaler's
+# check at link-up see 60 frames (libwebrtc 59, kInsufficientSamples), so ours adapted up to 640x360 with a
+# keyframe before the receiver's NACK of the outage arrived, and that NACK's retransmissions then queued ahead of
+# the keyframe for 2 s (video.e2e_delay_p95_ms about 2300 ms on the high seeds). The reallocation is also applied
+# after the reconfiguring frame's own rates (ReconfigureEncoder encodes it with last_encoder_rate_settings_), so
+# that frame's keyframe keeps the pushback-reduced target.
+# Seeds 1-10, ours on main -> this fix, libwebrtc (#467's compare-webrtc):
+#   net.loss_pct            5.6 -> 8.6, libwebrtc 7.3
+#   video.e2e_delay_p95_ms  140 -> 142, libwebrtc 141
+#   cc.queue_p95_ms         62.5 -> 46.0, libwebrtc 46.3
+duration 30s
+seed 3
+at 0s capacity=2Mbps delay=40ms
+at 5s down
+at 8s up
+expect net.loss_pct > 7.5
+expect video.e2e_delay_p95_ms < 300
