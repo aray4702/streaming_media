@@ -530,7 +530,17 @@ python3 tools/testbench_compare.py testbench/baseline.json <new results>
 cmake --preset native-asan && cmake --build --preset native-asan -j && ctest --preset native-asan
 ```
 
-CI runs the same, plus the other platforms.
+CI runs the same, plus the other platforms. To save its 20 concurrent job
+slots (Owner, 2026-10-27), the `scope` job in `ci.yml` decides what a PR
+run needs:
+- A PR that changes no code (only `agents/`, `docs/`, Markdown, or
+  `.github/` other than `ci.yml`) runs no build or test job.
+- A **draft** runs only the quick jobs (host builds, test bench), plus
+  `compare-webrtc` when its title starts with `yardstick:`.
+- A **ready** PR, `main` and the merge queue run everything. Marking a draft
+  ready starts the full run, and only a ready PR gets `ci-passed`.
+- A PR's unfinished runs are cancelled when it is merged or closed
+  (`cancel-closed-pr.yml`).
 
 ### 6.2 Review checklist (Reviewer)
 
