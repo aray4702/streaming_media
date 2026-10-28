@@ -63,4 +63,34 @@ class Random {
   bool has_spare_ = false;
 };
 
+// libwebrtc's webrtc::Random (rtc_base/random.{h,cc}): xorshift64* with the
+// same output multiplier and the same integer draws, for the places where a
+// port must draw the very numbers libwebrtc draws from the same seed (the
+// RTCP report intervals, rtcp_sender.cc:130 and :693; issue #517).
+class XorshiftRandom {
+ public:
+  // libwebrtc DCHECKs a nonzero seed: zero would stay zero forever.
+  explicit XorshiftRandom(uint64_t seed) : state_(seed != 0 ? seed : 1) {}
+  // Uniform in [0, t]: the low 32 bits of the output scaled by t + 1.
+  uint32_t Rand(uint32_t t) {
+    const uint32_t x = static_cast<uint32_t>(NextOutput());
+    return static_cast<uint32_t>((x * (static_cast<uint64_t>(t) + 1)) >> 32);
+  }
+  // Uniform in [low, high].
+  uint32_t Rand(uint32_t low, uint32_t high) { return Rand(high - low) + low; }
+  int32_t Rand(int32_t low, int32_t high) {
+    const int64_t low_i64 = low;
+    return static_cast<int32_t>(Rand(static_cast<uint32_t>(high - low_i64)) + low_i64);
+  }
+
+ private:
+  uint64_t NextOutput() {
+    state_ ^= state_ >> 12;
+    state_ ^= state_ << 25;
+    state_ ^= state_ >> 27;
+    return state_ * 2685821657736338717ull;
+  }
+  uint64_t state_;
+};
+
 }  // namespace sm

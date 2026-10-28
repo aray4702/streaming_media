@@ -261,11 +261,11 @@ ParseResult ParseScenario(const std::string& text) {
       s.seed = std::strtoull(tok[1].c_str(), nullptr, 10);
     } else if (key == "compare_seeds") {
       int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
-      if (v < 1 || v > 200) return fail("usage: compare_seeds <1..200> (read only by sm_compare)");
+      if (v < 1 || v > 200) return fail("usage: compare_seeds <1..200> (the RTCP interval seed)");
       s.compare_seeds = v;
     } else if (key == "compare_clock_start") {
       const long long v = need(2) ? std::atoll(tok[1].c_str()) : 0;
-      if (v < 1 || v > 1000000) return fail("usage: compare_clock_start <1..1000000 seconds> (read only by sm_compare)");
+      if (v < 1 || v > 1000000) return fail("usage: compare_clock_start <1..1000000 seconds> (the RTCP interval seed)");
       s.compare_clock_start_s = v;
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
       bool b;
