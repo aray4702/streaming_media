@@ -1,0 +1,15 @@
+name issue_476_libopus_decode
+describe audio_only_lossy with our side decoding libopus as libwebrtc does (issue #476): NetEq conceals and stretches real decoded audio
+duration 30s
+video off
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+# The harness decoded nothing on our side: each packet "decoded" to the original 20 ms of the
+# signal, LBRR copies too, so NetEq's expand, merge and time-stretch worked on the clean source
+# while libwebrtc's worked on libopus output. Concealed on this seed: 0.423 % with the model,
+# 0.518 % with libopus decoding (seeds 1-5: 0.42/0.32/0.50/0.49/0.35 -> 0.52/0.34/0.54/0.52/0.48);
+# libwebrtc M157 seeds 1-10 0.28-0.96 %, mean 0.509 (ours with the model 0.459), on main's
+# compare-webrtc (9e436cb). The decoder itself matches libwebrtc's calls sample for sample
+# (unit.OpusDecoder).
+expect audio.concealed_pct > 0.47
+expect audio.concealed_pct < 3
+expect audio.interruptions == 0
