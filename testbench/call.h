@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "call_common.h"
 #include "scenario.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/sim/network_link.h"
@@ -209,19 +210,7 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
-// Times of one video frame on its way from capture to render (issue #60).
-// An unset time is infinite or minus infinity and the frame is not counted.
-struct VideoFrameTimes {
-  Timestamp capture = Timestamp::MinusInfinity();
-  Timestamp submitted = Timestamp::MinusInfinity();   // Handed to the sender (after encoding).
-  Timestamp last_sent = Timestamp::MinusInfinity();   // Last media packet left the pacer.
-  Timestamp complete = Timestamp::MinusInfinity();    // Last media or RTX packet of the frame arrived.
-  Timestamp rendered = Timestamp::MinusInfinity();
-};
-
-// Adds video.delay_encode_ms (mean), video.delay_pacer_p95_ms,
-// video.delay_network_p95_ms and video.delay_jitter_buffer_p95_ms from the
-// frames that were rendered. Adds nothing when no frame was.
+// The video delay breakdown (call_common.h) into rep.metrics.
 void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Report& rep);
 
 std::string ToJson(const Report& r, bool include_timeseries = true, bool include_library = false);

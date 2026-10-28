@@ -375,6 +375,11 @@ struct VideoModel {
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;
   std::optional<uint32_t> first_rtp_ts;  // Encoder RTP timestamp of the first frame encoded.
   std::optional<uint32_t> rtp_ts_offset;  // Wire RTP timestamp minus the encoder's.
+  // Each frame's path by the encoder's RTP timestamp, as the test bench's (issue #510): the encoder sets the capture
+  // time and the time it hands the frame on, the send transport the last media packet's send time, the forward link
+  // the arrival of its last media or RTX packet, and the renderer the render time.
+  std::unordered_map<uint32_t, testbench::VideoFrameTimes> frame_times;
+  std::function<sm::Timestamp()> now;  // Time since the call started.
 };
 
 // Frame sizes follow the allocated rate with +-20% variation and keyframes
@@ -414,6 +419,7 @@ class ModelEncoder final : public w::VideoEncoder {
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
     m_->capture_us_by_rtp[frame.rtp_timestamp()] = capture_us;
+    m_->frame_times[frame.rtp_timestamp()].capture = sm::Timestamp::Micros(capture_us - m_->start_us);
     if (!m_->first_rtp_ts) m_->first_rtp_ts = frame.rtp_timestamp();
     w::EncodedImage img;
     img.SetEncodedData(buf);
@@ -454,11 +460,11 @@ class ModelEncoder final : public w::VideoEncoder {
       std::weak_ptr<bool> alive = alive_;
       w::TaskQueueBase::Current()->PostDelayedHighPrecisionTask(
           [this, alive, img, info]() mutable {
-            if (alive.lock() && cb_) cb_->OnEncodedImage(img, &info);
+            if (alive.lock() && cb_) Deliver(img, info);
           },
           w::TimeDelta::Micros(encode_us));
     } else {
-      cb_->OnEncodedImage(img, &info);
+      Deliver(img, info);
     }
     return WEBRTC_VIDEO_CODEC_OK;
   }
@@ -481,6 +487,12 @@ class ModelEncoder final : public w::VideoEncoder {
   }
 
  private:
+  // Hands the encoded frame to VideoStreamEncoder: the test bench's `submitted` time (issue #510).
+  void Deliver(const w::EncodedImage& img, const w::CodecSpecificInfo& info) {
+    if (m_->now) m_->frame_times[img.RtpTimestamp()].submitted = m_->now();
+    cb_->OnEncodedImage(img, &info);
+  }
+
   VideoModel* m_;
   w::EncodedImageCallback* cb_ = nullptr;
   uint32_t rate_bps_ = 0;
@@ -623,6 +635,11 @@ const std::vector<std::pair<std::string, std::string>>& WebrtcMetricNotes() {
       {"video.residual_loss_pct", "Counts packets recovered by RTX but not by FEC (libwebrtc does not expose "
                                   "FEC-recovered packets), so it overstates residual loss when FEC recovers packets"},
       {"video.undecodable_frames", "VideoReceiveStream frames_dropped"},
+      {"video.delay_*", "Each frame's capture and encoded times from the encoder model, the send time of its last media "
+                        "packet at the send transport, the arrival of its last media or RTX packet on the forward "
+                        "link, and its render time, as the test bench measures them (#510)"},
+      {"audio.time_to_first_ms", "Arrival of the first audio packet after which NetEq holds audio (jitter_buffer_ms or "
+                                 "total_samples_received above 0), read right after the packet is delivered (#510)"},
       {"repair.fec_recovered", "Not reported: libwebrtc does not expose it"},
       {"net.<kind>_kbps / _loss_pct", "Counted at the forward link by SSRC: audio, video media, RTX with a payload, "
                                       "FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload "
@@ -745,6 +762,14 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.s = &s;
   model.rng = Random(s.seed + 13);
   model.start_us = t0.us();
+  model.now = [&] { return rel(sim.Now()); };
+  // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
+  // complete, as in testbench/call.cc (issue #510).
+  auto frame_complete = [&](uint32_t wire_ts, sm::Timestamp at) {
+    if (!model.rtp_ts_offset) return;
+    auto ft = model.frame_times.find(wire_ts - *model.rtp_ts_offset);
+    if (ft != model.frame_times.end() && !ft->second.rendered.IsFinite()) ft->second.complete = at;
+  };
   int64_t media_bytes = 0, repair_bytes = 0, w_send = 0, w_good = 0;
   testbench::FirstDelivery first_delivery;
   SeqNumUnwrapper<uint16_t> video_send_unwrap, video_recv_unwrap;
@@ -753,7 +778,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   int64_t nack_recovered = 0;
   std::optional<uint32_t> audio_ts0;
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
-  sm::Timestamp audio_first = sm::Timestamp::MinusInfinity(), video_first = sm::Timestamp::MinusInfinity();
+  testbench::FirstAudioMeter audio_first;  // Issue #510: as testbench/call.cc.
+  sm::Timestamp video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
   // Frames rendered and the largest render gap, per second of render time (issue #333 trace).
   struct RenderSecond {
@@ -770,7 +796,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   testbench::AvSyncMeter av_sync;  // Issue #63.
   int64_t frames_rendered = 0, w_frames = 0;
   double last_video_delay = 0;
-  int64_t played_ms = 0, stretch_ms = 0;
+  testbench::StretchMeter stretch;  // Issue #510: as testbench/call.cc.
   uint64_t w_conceal = 0, w_played = 0;  // Audio samples.
   testbench::ConcealmentMeter concealment(kAudioRate);  // Issue #372: as testbench/call.cc.
   double audio_buffer_ms = 0;
@@ -814,6 +840,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           } else {
             media_bytes += bytes;
             video_send_ms.emplace(video_send_unwrap.Unwrap(r.seq), (now - t0).ms());
+            if (model.rtp_ts_offset) {
+              auto ft = model.frame_times.find(r.ts - *model.rtp_ts_offset);
+              if (ft != model.frame_times.end()) ft->second.last_sent = rel(now);
+            }
           }
         } else if (r.ssrc == kRtxSsrc && r.payload_len > 2) {
           repair_bytes += static_cast<int64_t>(r.payload_len) - 2;
@@ -873,6 +903,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     last_render = now;
     auto it = model.rtp_ts_offset ? model.capture_us_by_rtp.find(f.rtp_timestamp() - *model.rtp_ts_offset)
                                   : model.capture_us_by_rtp.end();
+    if (model.rtp_ts_offset) {
+      auto ft = model.frame_times.find(f.rtp_timestamp() - *model.rtp_ts_offset);
+      if (ft != model.frame_times.end()) ft->second.rendered = now;
+    }
     if (it != model.capture_us_by_rtp.end()) {
       av_sync.OnVideoRendered(now, sm::Timestamp::Micros(it->second - t0.us()));
       last_video_delay = static_cast<double>(sim.Now().us() - it->second) / 1000.0;
@@ -1098,7 +1132,6 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (first) w_good += wire;
       }
       if (r.ssrc == kAudioSsrc) {
-        if (!audio_first.IsFinite()) audio_first = at;
         if (audio_ts0) {
           // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
           // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
@@ -1109,11 +1142,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
-        if (!fec) video_received.insert(video_recv_unwrap.Unwrap(r.seq));
+        if (!fec) {
+          video_received.insert(video_recv_unwrap.Unwrap(r.seq));
+          frame_complete(r.ts, at);
+        }
       } else if (r.ssrc == kRtxSsrc && r.payload_len >= 2) {
         uint16_t osn = static_cast<uint16_t>((p.data[r.payload_off] << 8) | p.data[r.payload_off + 1]);
         int64_t u = video_recv_unwrap.Unwrap(osn);
         if (video_received.insert(u).second) ++nack_recovered;
+        if (r.payload_len > 2) frame_complete(r.ts, at);
       }
       w::MediaType media = r.ssrc == kAudioSsrc ? w::MediaType::AUDIO : w::MediaType::VIDEO;
       post_at(receiver_q.get(), at_w, [&, media, at_w, buf = w::CopyOnWriteBuffer(p.data)] {
@@ -1125,6 +1162,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (media == w::MediaType::VIDEO) packet.set_payload_type_frequency(90000);
         recv_call->Receiver()->DeliverRtpPacket(media, std::move(packet),
                                                 [](const w::RtpPacketReceived&) { return false; });
+        // The first packet NetEq took (issue #510), as the test bench reads its jitter buffer right after the packet.
+        if (media == w::MediaType::AUDIO && audio_recv && !audio_first.started()) {
+          const w::AudioReceiveStreamInterface::Stats st = audio_recv->GetStats(false);
+          audio_first.OnAudioPacket(rel(at_w), st.jitter_buffer_ms > 0 || st.total_samples_received > 0);
+        }
       });
     });
     reverse.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
@@ -1163,11 +1205,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           const int64_t samples = static_cast<int64_t>(static_cast<uint32_t>(pi->rtp_timestamp - *audio_ts0));
           av_sync.OnAudioPlayout(rel(pi->time), sm::Timestamp::Micros(samples * 1000 / 48));
         }
-        if (st.total_samples_received == 0) return;
+        // Playout statistics count from the first pull that output samples, as the test bench's (#510).
+        if (!stretch.OnPull(st.total_samples_received, st.inserted_samples_for_deceleration,
+                            st.removed_samples_for_acceleration)) {
+          return;
+        }
         uint64_t total = st.total_samples_received - prev_audio.total_samples_received;
         uint64_t concealed = st.concealed_samples - prev_audio.concealed_samples;
-        uint64_t stretched = (st.inserted_samples_for_deceleration - prev_audio.inserted_samples_for_deceleration) +
-                             (st.removed_samples_for_acceleration - prev_audio.removed_samples_for_acceleration);
         uint64_t emitted = st.jitter_buffer_emitted_count - prev_audio.jitter_buffer_emitted_count;
         if (emitted > 0) {
           jb_delay.push_back((st.jitter_buffer_delay_seconds - prev_audio.jitter_buffer_delay_seconds) * 1000.0 /
@@ -1193,8 +1237,6 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           rep.audio_trace.push_back(r);
         }
         prev_audio = st;
-        played_ms += 10;
-        if (stretched > 0) stretch_ms += 10;
         concealment.OnPull(st.total_samples_received, st.concealed_samples, st.concealment_events);
         w_played += concealment.pull_total();
         w_conceal += concealment.pull_concealed();
@@ -1326,9 +1368,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["audio.jb_delay_p95_ms"] = testbench::Percentile(jb_delay, 95);
     m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay, 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
-    m["audio.stretch_pct"] = played_ms ? 100.0 * static_cast<double>(stretch_ms) / static_cast<double>(played_ms) : 0;
+    m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(late_discards);
-    m["audio.time_to_first_ms"] = audio_first.IsFinite() ? static_cast<double>(audio_first.ms()) : static_cast<double>(end_ms);
+    m["audio.time_to_first_ms"] = audio_first.ms(end_ms);
   }
   if (s.video) {
     // The row ending at t_ms counts the frames rendered in [t_ms - 1000, t_ms), as the test bench does.
@@ -1393,6 +1435,12 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["video.e2e_delay_p50_ms"] = testbench::Percentile(video_e2e, 50);
     m["video.e2e_delay_p95_ms"] = testbench::Percentile(video_e2e, 95);
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
+    {
+      std::vector<testbench::VideoFrameTimes> all;
+      all.reserve(model.frame_times.size());
+      for (const auto& [ts, ft] : model.frame_times) all.push_back(ft);
+      testbench::AddVideoDelayMetrics(all, m);  // Issue #510: as testbench/call.cc.
+    }
     if (s.audio) av_sync.AddMetrics(m);
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] =
