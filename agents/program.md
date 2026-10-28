@@ -105,6 +105,26 @@ prerequisites:
 4. receive timing and audio;
 5. measuring sections 6-8 against libwebrtc.
 
+**The rest of stage 1, in four steps (Owner, 2026-10-27).** These come
+before the phase order above and decide which items come first on #64:
+
+1. **Make the test harness the same** for both stacks (the rule "One test
+   environment for both stacks" below): the harness fidelity audit and
+   every harness difference it finds.
+2. **Measure the gaps** on that harness: the full parity report on the
+   harness-faithful `main`, with every gap given an open owner or an
+   explained note (`tools/parity_owners.json`).
+3. **Check the feature and configuration gaps:** list each libwebrtc
+   feature and default that a call uses (field trials, defaults,
+   switches), compare it with ours, and close the differences. That
+   includes ported switches that are still off by default.
+4. **Align the library with libwebrtc on every metric:** close the
+   remaining gaps, in both directions.
+
+A step starts when the step before it is done. Bugs (`sev:1`, and `sev:2`
+crashes or undefined behaviour) still come first, and PRs already open
+may finish.
+
 Stage 2 (`stage:ai`) follows on the same list once the Owner declares
 stage 1 done.
 
