@@ -615,11 +615,22 @@ SM_TEST(TestbenchMetrics, AudioPacketsCarryOpusRtpClock) {
   opt.link_trace = true;
   const Report rep = RunCall(*parsed.scenario, opt);
   SM_EXPECT_EQ(rep.metrics.at("net.audio_rtp_clock_hz"), 48000);
-  int frames = 0, reports = 0;
+  int frames = 0, reports = 0, encodes = 0;
+  int32_t last_report_fraction = -1;
   const AudioSendRow* prev = nullptr;
   for (const auto& r : rep.audio_send_trace) {
     if (r.kind == AudioSendRow::Kind::kReport) {
       ++reports;
+      last_report_fraction = r.fraction_lost;
+      continue;
+    }
+    if (r.kind == AudioSendRow::Kind::kEncode) {
+      // Issue #547: one row per packet the encoder coded, in order, with the bitrate it was built with.
+      SM_EXPECT_EQ(r.seq, encodes);
+      SM_EXPECT_EQ(r.bitrate_bps, 32000);
+      SM_EXPECT_EQ(r.allocation_bps, -1);
+      SM_EXPECT_EQ(r.overhead_bytes, -1);
+      ++encodes;
       continue;
     }
     if (prev) SM_EXPECT_EQ(r.rtp_ts - prev->rtp_ts, 960u);
@@ -627,7 +638,33 @@ SM_TEST(TestbenchMetrics, AudioPacketsCarryOpusRtpClock) {
     ++frames;
   }
   SM_EXPECT_EQ(frames, 300);
+  SM_EXPECT_EQ(encodes, 300);
   SM_EXPECT_GE(reports, 1);
+  // The last encode row carries the fraction of the last report block the sender took.
+  const AudioSendRow* last_encode = nullptr;
+  for (const auto& r : rep.audio_send_trace) {
+    if (r.kind == AudioSendRow::Kind::kEncode) last_encode = &r;
+  }
+  SM_ASSERT_TRUE(last_encode != nullptr);
+  SM_EXPECT_EQ(last_encode->fraction_lost, last_report_fraction);
+}
+
+// Issue #547: the encode rows' PCM hash is FNV-1a 32 over the samples' bytes, low byte first.
+SM_TEST(TestbenchMetrics, PcmHashIsFnv1aOverLittleEndianSamples) {
+  const int16_t pcm[] = {0x0102, -1};
+  uint32_t h = 2166136261u;
+  for (uint8_t b : {0x02, 0x01, 0xff, 0xff}) h = (h ^ b) * 16777619u;
+  SM_EXPECT_EQ(PcmHash(pcm), h);
+  SM_EXPECT_EQ(PcmHash(std::span<const int16_t>(pcm).subspan(1), PcmHash(std::span<const int16_t>(pcm).first(1))), h);
+  AudioSendRow e;
+  e.kind = AudioSendRow::Kind::kEncode;
+  e.seq = 7;
+  e.payload_hash = 0xabcdef01u;
+  e.fraction_lost = 51;
+  e.bitrate_bps = 32000;
+  e.allocation_bps = 51200;
+  e.overhead_bytes = 48;
+  SM_EXPECT_TRUE(AudioSendCsv({e}).find("encode,-1,7,-1,-1,-1,abcdef01,51,32000,51200,48\n") != std::string::npos);
 }
 
 // Goodput counts each media sequence number once (#329): an RTX copy of a

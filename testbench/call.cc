@@ -312,11 +312,20 @@ void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_
 }
 
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
-  std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost\n";
+  std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost,bitrate_bps,allocation_bps,"
+                    "overhead_bytes\n";
   std::optional<uint32_t> ts0;
   for (const auto& r : rows) {
     if (r.kind == AudioSendRow::Kind::kReport) {
-      out += "report," + std::to_string(r.time_us) + ",-1,-1,-1,-1,-1," + std::to_string(r.fraction_lost) + "\n";
+      out += "report," + std::to_string(r.time_us) + ",-1,-1,-1,-1,-1," + std::to_string(r.fraction_lost) + ",-1,-1,-1\n";
+      continue;
+    }
+    if (r.kind == AudioSendRow::Kind::kEncode) {
+      char hash[16];
+      std::snprintf(hash, sizeof(hash), "%08x", r.payload_hash);
+      out += "encode,-1," + std::to_string(r.seq) + ",-1,-1,-1," + hash + "," + std::to_string(r.fraction_lost) + "," +
+             std::to_string(r.bitrate_bps) + "," + std::to_string(r.allocation_bps) + "," +
+             std::to_string(r.overhead_bytes) + "\n";
       continue;
     }
     if (!ts0) ts0 = r.rtp_ts;
@@ -324,7 +333,7 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
     std::snprintf(hash, sizeof(hash), "%08x", r.payload_hash);
     out += "frame," + std::to_string(r.time_us) + "," + std::to_string(r.seq) + "," +
            std::to_string(static_cast<uint32_t>(r.rtp_ts - *ts0)) + "," + std::to_string(r.pt) + "," +
-           std::to_string(r.payload_bytes) + "," + hash + ",-1\n";
+           std::to_string(r.payload_bytes) + "," + hash + ",-1,-1,-1,-1\n";
   }
   return out;
 }
@@ -510,6 +519,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
   OpusSendEncoder opus_encoder(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), /*fec_enabled=*/true);
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
+  int32_t opus_loss_given = -1;                        // The last fraction it was given, times 256 (issue #547).
+  std::vector<AudioSendRow> opus_encode_rows;          // The encoder's inputs per packet (issue #547).
   OpusAudioDecoder decoder(sr);
   rtp::H264PayloadParser parser;
   RepairMeter repair;  // Issue #509: the repair metrics by the rule sm_compare's libwebrtc side uses.
@@ -798,7 +809,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
             break;
           case rtp::SessionEventType::kReportBlock:
             // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
-            if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
+            if (e.ssrc == kAudioSsrc) {
+              opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
+              opus_loss_given = static_cast<int32_t>(std::lround(static_cast<float>(e.loss_fraction) * 256));
+            }
             break;
           case rtp::SessionEventType::kTargetRateChanged: break;
         }
@@ -898,8 +912,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const int64_t k = t / 20;
       opus_encoder.SetPacketLossPercent(opus_loss.percent());
       const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
-      const std::vector<uint8_t> frame = opus_encoder.Encode(
-          std::span<const int16_t>(opus_pcm).subspan(std::min(opus_off, opus_pcm.size())));
+      const std::span<const int16_t> opus_in = std::span<const int16_t>(opus_pcm).subspan(std::min(opus_off, opus_pcm.size()));
+      if (opt.link_trace) {
+        // What libopus encodes: the frame, zero-padded past the end of the signal (OpusSendEncoder::Encode).
+        std::vector<int16_t> in(OpusSendEncoder::kFrameSamples, 0);
+        std::copy_n(opus_in.begin(), std::min(opus_in.size(), in.size()), in.begin());
+        AudioSendRow r;
+        r.kind = AudioSendRow::Kind::kEncode;
+        r.seq = static_cast<int32_t>(k);
+        r.payload_hash = PcmHash(in);
+        r.fraction_lost = opus_loss_given;
+        r.bitrate_bps = opus_encoder.bitrate_bps();  // Built once from the configured rate: no allocation, no overhead.
+        opus_encode_rows.push_back(r);
+      }
+      const std::vector<uint8_t> frame = opus_encoder.Encode(opus_in);
       sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 
@@ -1239,6 +1265,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
   if (opt.link_trace) rep.link_trace = forward.trace();
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
+  rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());
   repair.AddMetrics(m, s.video, end_ms);
 
   EvaluateExpectations(rep);

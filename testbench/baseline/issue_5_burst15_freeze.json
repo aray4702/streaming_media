@@ -24,7 +24,7 @@
   "cc.target_max_drop_pct": 29.57,
   "cc.unsettled": 0,
   "cc.utilization_pct": 78.21,
-  "net.audio_kbps": 68.73,
+  "net.audio_kbps": 68.72,
   "net.audio_loss_pct": 2.2,
   "net.audio_queue_drops": 0,
   "net.audio_rtp_clock_hz": 48000,

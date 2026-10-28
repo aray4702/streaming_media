@@ -155,3 +155,28 @@ SM_TEST(OpusEncoder, PacketLossRateIsSmoothedClampedAndRounded) {
   low.OnReceivedUplinkPacketLossFraction(0.006f, Timestamp::Millis(1001));
   SM_EXPECT_EQ(low.percent(), 0);  // 0.0040002 after one ms.
 }
+
+// AudioEncoderOpusImpl::SufficientOutputBufferSize (audio_encoder_opus.cc):
+// twice the bytes the configured bitrate gives 20 ms, rounded up per ms.
+SM_TEST(OpusEncoder, OutputBufferIsLibwebrtcsSufficientSize) {
+  SM_EXPECT_EQ(OpusSendEncoder(32000, true).SufficientOutputBufferSize(), 200u);
+  SM_EXPECT_EQ(OpusSendEncoder(6000, true).SufficientOutputBufferSize(), 40u);
+  SM_EXPECT_EQ(OpusSendEncoder(510000, true).SufficientOutputBufferSize(), 2560u);
+}
+
+// Issue #547: libopus's rate control codes to the buffer it is given, so the
+// buffer is part of the encoder's input. On issue_533_opus_decoder_frame_older_than_window
+// (seed 1: the signal's seed 8, 20 % loss from the first report block, frame 126)
+// a 1500-byte buffer coded frame 240 one byte larger than libwebrtc did. These
+// are libwebrtc's primary sizes there, read from its RED payloads in the
+// sm_compare trace (parity-data-pr/pr/550: RED size = primary + previous primary + 5).
+SM_TEST(OpusEncoder, CodesLibwebrtcsFramesOnIssue533) {
+  const auto pcm = Pcm48k(6.0, 8);
+  OpusSendEncoder enc(32000, true);
+  const int libwebrtc[] = {87, 62, 63, 62, 54, 67, 81, 78, 67};  // Frames 236-244.
+  for (size_t k = 0; k <= 244; ++k) {
+    if (k == 126) enc.SetPacketLossPercent(20);
+    const size_t bytes = enc.Encode(Frame(pcm, k)).size();
+    if (k >= 236) SM_EXPECT_EQ(static_cast<int>(bytes), libwebrtc[k - 236]);
+  }
+}
