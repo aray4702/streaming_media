@@ -134,13 +134,14 @@ struct VideoStreamConfig {
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
   bool keyframe_needs_parameter_sets = false;  // See RtpReceiverConfig.
-  bool sps_pps_tracker = false;                // See RtpReceiverConfig (issue #453).
+  bool sps_pps_tracker = true;                 // See RtpReceiverConfig (issue #453). On, as libwebrtc; H.264 only.
   bool render_smoothing = false;               // See RtpReceiverConfig (issue #437).
   bool deliver_bitstream = true;               // See RtpReceiverConfig.
   VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;
   loss::NackConfig nack_config;
-  timing::PacketBufferConfig packet_buffer;
+  // libwebrtc's H.264 `missing_packets_` hold is on (issue #453); the session applies it to H.264 only.
+  timing::PacketBufferConfig packet_buffer = [] { timing::PacketBufferConfig c; c.missing_packets = true; return c; }();
   loss::KeyframeRequestConfig keyframe;
   video::FrameSchedulerConfig scheduler;
   // libwebrtc's video receive timing (VCMTiming and frame release, version 2) is the session default (#24).
