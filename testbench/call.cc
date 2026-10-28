@@ -283,12 +283,13 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
            kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
-           std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "\n";
+           std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
+           std::to_string(r.key) + "\n";
   }
   return out;
 }
@@ -711,18 +712,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
-      // The frame trace's RTP fields (issue #437): timestamp, marker and an RTX packet's original sequence number.
+      // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
+      // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
-      int32_t marker = -1, osn = -1;
+      int32_t marker = -1, osn = -1, key = -1;
       if (opt.link_trace && seq >= 0) {
         if (auto q = RtpPacket::Parse(p.bytes)) {
           rtp_ts = q->timestamp;
           marker = q->marker ? 1 : 0;
           if (q->ssrc == kRtxSsrc && q->payload.size() >= 2) osn = (q->payload[0] << 8) | q->payload[1];
+          if (kind == Kind::kVideo) key = rtp::H264Depacketizer::Parse(q->payload).keyframe ? 1 : 0;
         }
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
-      link.AnnotateLastTrace(rtp_ts, marker, osn);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key);
     }
   };
 

@@ -13,8 +13,10 @@ on the link:
   delta frame while an earlier sequence number is missing
   (`packet_buffer.cc` FindFrames, `missing_packets_`): the later of its
   completion and the moment every earlier sequence number had arrived. A
-  frame counts as a keyframe when `--keyframe-bytes` is given and its
-  payload is at least that large; a keyframe resets the chain;
+  frame counts as a keyframe when one of its packets has `key` 1 (its H.264
+  payload holds an SPS or an IDR slice, read on both stacks with the same
+  depacketizer); for a trace without that column, when `--keyframe-bytes` is
+  given and its payload is at least that large. A keyframe resets the chain;
 - `max_repair_ms`: the longest time one of its packets took from its first
   send to its first arrival.
 
@@ -50,7 +52,8 @@ def rebuild(rows, keyframe_bytes=0):
         if kind == "video":
             ts = int(r["rtp_ts"])
             if ts not in frames:
-                frames[ts] = {"ts": ts, "seqs": set(), "bytes": 0, "marker_seq": None, "first_send_us": int(r["time_us"])}
+                frames[ts] = {"ts": ts, "seqs": set(), "bytes": 0, "marker_seq": None, "first_send_us": int(r["time_us"]),
+                              "key": False}
                 order.append(ts)
             f = frames[ts]
             if seq not in f["seqs"]:
@@ -58,6 +61,8 @@ def rebuild(rows, keyframe_bytes=0):
                 f["bytes"] += int(r["size"])
             if int(r["marker"]) == 1:
                 f["marker_seq"] = seq
+            if int(r.get("key") or -1) == 1:
+                f["key"] = True
             first_send.setdefault(seq, int(r["time_us"]))
             if arr >= 0 and (seq not in first_arrival or arr < first_arrival[seq]):
                 first_arrival[seq] = arr
@@ -98,7 +103,7 @@ def rebuild(rows, keyframe_bytes=0):
         rep = [(first_arrival[s] - first_send[s]) / 1000.0 for s in f["seqs"] if s in first_arrival]
         out.append({
             "ts": ts, "first_u": seqs[0], "last_u": seqs[-1], "packets": len(seqs), "bytes": f["bytes"],
-            "key": keyframe_bytes > 0 and f["bytes"] >= keyframe_bytes,
+            "key": f["key"] or (keyframe_bytes > 0 and f["bytes"] >= keyframe_bytes),
             "send_ms": f["first_send_us"] / 1000.0, "complete_us": complete,
             "max_repair_ms": max(rep) if len(rep) == len(seqs) else math.inf,
         })
@@ -148,7 +153,7 @@ def per_second(frames, duration):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("traces", nargs="+", help="one or two *.trace.csv files (ours, then libwebrtc's)")
-    ap.add_argument("--keyframe-bytes", type=int, default=0, help="a frame this large or larger is a keyframe")
+    ap.add_argument("--keyframe-bytes", type=int, default=0, help="for a trace without the key column: a frame this large or larger is a keyframe")
     ap.add_argument("--frames", action="store_true", help="also list every frame")
     a = ap.parse_args(argv)
     results = []
