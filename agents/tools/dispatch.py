@@ -54,6 +54,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 
 BOT = "aray4702-reviewer-app[bot]"  # the Reviewer App (App ID 5320656); renamed from streaming-media-reviewer on 2026-10-26
 BOT_ID = 342667563  # its bot user id, which survives a rename; match on this
@@ -89,8 +90,8 @@ MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's b
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
 FLOW_ISSUE_TITLE = "Flow watch"
-FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO keys --> the last alert posted
-FLOW_REPEAT_MIN = 360            # repeat an unchanged alert after this long
+FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
+FLOW_REPEAT_MIN = 360            # repeat an alert key after this long
 FLOW_CI_QUEUE_MIN = 30           # a CI job queued longer than this: the job slots are saturated
 FLOW_APPROVED_MIN = 180          # approved and green, but not merged after this long
 FLOW_CHURN_RUNS = 5              # CI runs on one PR in 24 h
@@ -401,6 +402,14 @@ class Dispatcher:
             self._closed = gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
         return self._closed
 
+    def free_since(self, cand):
+        """When a work-list item became free: the issue's last update, or the moment a PR on it
+        closed (merging a PR doesn't touch the issue, but it frees the item)."""
+        n = cand["number"]
+        return max([cand["updated_at"]] + [
+            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
+            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
+
     def recent_fixer_claim(self):
         since = (NOW - dt.timedelta(minutes=CLAIM_WINDOW_MIN)).strftime("%Y-%m-%dT%H:%M:%SZ")
         comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
@@ -412,12 +421,7 @@ class Dispatcher:
         if not cand:
             return self.note("fixer", f"no free eligible #{ROADMAP} item ({in_progress} in progress)")
         n = cand["number"]
-        # Free since: the issue's last update, or the moment a PR on it closed
-        # (merging a PR doesn't touch the issue, but it frees the item).
-        free_since = max([cand["updated_at"]] + [
-            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
-            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
-        waited = minutes_ago(free_since)
+        waited = minutes_ago(self.free_since(cand))
         recent_close = [p for p in self.closed_pulls()
                         if p.get("closed_at") and minutes_ago(p["closed_at"]) < MERGE_FIXER_MIN]
         last = self.last_dispatch("fixer")
@@ -756,7 +760,10 @@ class Dispatcher:
             comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
             claimed = any("sm-agent: fixer" in (c["body"] or "") and re.search(r"Work (started|resumed)", c["body"] or "")
                           for c in comments)
-            if not claimed and minutes_ago(cand["updated_at"]) > FLOW_IDLE_MIN:
+            # Free since, as the Fixer rule reads it: a PR on the item that just merged
+            # leaves it free from that moment, not from the issue's last update (#478 at
+            # 05:39 UTC 2026-10-28, alerted 36 s after #485 merged; Flow watch #499).
+            if not claimed and minutes_ago(self.free_since(cand)) > FLOW_IDLE_MIN:
                 sig.append(("idle", f"#{cand['number']} is free and no Fixer has claimed work for "
                                     f"{FLOW_IDLE_MIN // 60} h ({in_progress} in progress)"))
         # 5. An escalation the Builder hasn't answered.
@@ -780,12 +787,22 @@ class Dispatcher:
         sig = self.flow_signals()
         if not sig:
             return self.note("flow", "no bottleneck past its threshold")
-        keys = " ".join(sorted(k for k, _ in sig))
+        # Each key is posted at most once per FLOW_REPEAT_MIN, even when the set
+        # around it changes or it drops out and comes back: comparing whole sets
+        # re-posted an answered key whenever another one came or went (#499,
+        # churn-471 three times in 45 min). Old markers carry bare keys.
         m = re.search(rf"<!-- {FLOW_MARKER}: ([0-9TZ:-]+) ([^>]*) -->", self.log_body)
-        if m and m[2].strip() == keys and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
+        posted = {}
+        for tok in (m[2].split() if m else []):
+            k, _, when = tok.partition("@")
+            posted[k] = when or m[1]
+        posted = {k: w for k, w in posted.items() if minutes_ago(w) < FLOW_REPEAT_MIN}
+        fresh = [k for k, _ in sig if k not in posted]
+        if not fresh:
             for k, text in sig:
                 self.note("flow", text)
-            return self.note("flow", f"same alert posted {minutes_ago(m[1]):.0f} min ago")
+            return self.note("flow", "every alert was posted in the last "
+                                     f"{FLOW_REPEAT_MIN // 60} h ({', '.join(sorted(posted))})")
         for k, text in sig:
             self.say("FLOW", k, text)
         if not self.live:
@@ -800,9 +817,11 @@ class Dispatcher:
             gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": "record"})
         stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
         body = "<!-- sm-agent: dispatcher -->\n**FLOW:** bottlenecks past their thresholds\n\n" + \
-               "\n".join(f"- {text}" for _, text in sig)
+               "\n".join(f"- {text}" + ("" if k in fresh else " (posted before)") for k, text in sig)
         gh(f"repos/{self.r}/issues/{watch['number']}/comments", "POST", {"body": body})
         gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": NEEDS_BUILDER})
+        posted.update({k: stamp for k in fresh})
+        keys = " ".join(f"{k}@{w}" for k, w in sorted(posted.items()))
         line = f"<!-- {FLOW_MARKER}: {stamp} {keys} -->"
         pat = rf"<!-- {FLOW_MARKER}: [^>]* -->"
         new = re.sub(pat, line, self.log_body) if re.search(pat, self.log_body) else self.log_body.rstrip("\n") + "\n" + line
@@ -870,7 +889,16 @@ def main():
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "aray4702/streaming_media"))
     args = ap.parse_args()
     print(f"dispatcher {'LIVE' if args.live else 'dry run'} at {NOW:%Y-%m-%d %H:%M}Z on {args.repo}")
-    Dispatcher(args.repo, args.live, args.verbose).run()
+    try:
+        Dispatcher(args.repo, args.live, args.verbose).run()
+    except Exception as e:
+        # The Builder's sandbox can't fetch Actions logs, but it can read a run's
+        # check-run annotations over REST, so a crash names its cause there.
+        where = traceback.extract_tb(e.__traceback__)[-1]
+        msg = f"{type(e).__name__} at dispatch.py:{where.lineno} ({where.name}): {e}"
+        msg = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=dispatch.py crashed::{msg}", flush=True)
+        raise
 
 
 if __name__ == "__main__":

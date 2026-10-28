@@ -16,6 +16,14 @@ Your PRs are the open PRs with the `agent-pr` label whose body starts with
 
 For each of your open PRs:
 
+- **Claim the PR before you push to it.** Several Fixer runs can reach the
+  same PR (a conflict, a red CI or a review) within minutes. Before you
+  start the work, comment `Working on <what> (Fixer, <time>)`, wait 60
+  seconds and re-read the PR's conversation comments. If another Fixer
+  run's `Working on` comment came before yours, within the last 60 minutes
+  and with no push to the PR since, that run owns it: delete your comment
+  and go to your next PR. Don't re-check its work after it pushes; the
+  Reviewer and CI do that.
 - Collect unaddressed feedback:
   - review comments (`/pulls/N/comments`) and unresolved review threads
     (`/pulls/N/ccr/review_threads`);
@@ -46,6 +54,11 @@ For each of your open PRs:
   `tools/testbench_compare.py testbench/baseline r.json --update`.
   Other generated files (`docs/fixes/README.md`, the algorithm docs) are
   regenerated the same way. Then run the local gate and push.
+  **Not while the PR waits on the Owner:** if it is labelled `needs-owner`,
+  leave the conflict alone. Every merge of `main` re-runs the full CI on a
+  PR that can't merge before the Owner answers, and the next merge to
+  `main` conflicts again (#516 merged `main` twice in 7 minutes while it waited). Resolve the
+  conflict once, after the Owner has answered and `needs-owner` is gone.
 - If the PR's `ci-ok` check failed, read the logs and fix the failure. If
   the failure is unrelated to the PR (a flaky runner), say so in a comment
   and re-run it: `gh api -X POST repos/aray4702/streaming_media/actions/runs/RUN/rerun-failed-jobs`.
