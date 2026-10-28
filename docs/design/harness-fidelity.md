@@ -24,7 +24,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
 | 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **different**, on the 1 ms tick on ours, at their due microsecond on libwebrtc's `SimTime` (render gaps off the grid in 0 of 4065 seconds on ours, 1245 of 3865 on libwebrtc) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (with #507) |
 | 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
-| 8 | Scenario mapping | One parser (`testbench::ParseScenario`) and one `Scenario` for both sides. Link keys (`at`, `reverse at`): **shared code** (`testbench::LinkTimeline`). Call and media keys (`duration`, `seed`, `audio`, `video`, `red`, `nack`, `fec`, `audio_rate`, `video_fps`, `video_size`, `video_complexity`, `encoder_speed`, `encode_delay`, `keyframe_interval`, `video_max`, `video_min`, `start_rate`, `min_rate`, `max_rate`, `quality_scaling`): **identical by construction**, each mapped to the matching libwebrtc setting. `audio_sample_rate`: **the same on both**, ignored (both run Opus at 48 kHz since #489), so its two scenarios run the default call. `video_max_payload`: **different**, #513. `av_sync off`: **different**: ours also stops the sender's audio RTCP, libwebrtc only empties the sync group (no suite scenario sets it). `host_rtt`, `host_rtt_inf`: **ours only**, a host API libwebrtc has no counterpart for. The stack switches (`timing`, `neteq`, `bitrate_adjuster`, `render_smoothing`, ...): **ours only by design**, they pick the stack under test; libwebrtc runs M157's fixed configuration | [Row 8](#row-8-scenario-mapping) | #524; #513 (row 4); #480 (switches not at libwebrtc's value) |
+| 8 | Scenario mapping | One parser (`testbench::ParseScenario`) and one `Scenario` for both sides. Link keys (`at`, `reverse at`): **shared code** (`testbench::LinkTimeline`). Call and media keys (`duration`, `seed`, `audio`, `video`, `red`, `nack`, `fec`, `audio_rate`, `video_fps`, `video_size`, `video_complexity`, `encoder_speed`, `encode_delay`, `keyframe_interval`, `video_max`, `video_min`, `start_rate`, `min_rate`, `max_rate`, `quality_scaling`): **identical by construction**, each mapped to the matching libwebrtc setting. `audio_sample_rate`: **the same on both**, ignored (both run Opus at 48 kHz since #489), so its two scenarios run the default call. `video_max_payload`: **different**, #513. `av_sync off`: **identical** since #524: both sides only empty the receiver's sync group, and both senders keep their audio RTCP (`issue_524_av_sync_off`). `host_rtt`, `host_rtt_inf`: **ours only**, a host API libwebrtc has no counterpart for. The stack switches (`timing`, `neteq`, `bitrate_adjuster`, `render_smoothing`, ...): **ours only by design**, they pick the stack under test; libwebrtc runs M157's fixed configuration | [Row 8](#row-8-scenario-mapping) | #524; #513 (row 4); #480 (switches not at libwebrtc's value) |
 
 ## Row 2: encoders
 
@@ -516,14 +516,20 @@ its own default; a non-default value is passed to both as `+ 12` clamped to
 100-1500 (`call.cc:559-560`, `webrtc_call.cc:909-910`), but ours makes no
 RTX reservation.
 
-### Different: `av_sync off` (#524)
+### Fixed: `av_sync off` (#524)
 
 | | ours | libwebrtc |
 |---|---|---|
-| `av_sync on` (default) | one sync group; the sender's own audio RTCP engine sends the audio SR (`call.cc:571`, `:577`; `src/rtp/session.cc:238-245`) | `sync_group = "sm"` on both receive streams (`:950`, `:975`) |
-| `av_sync off` | no sync group **and no audio RTCP from the sender** | no sync group; the audio channel still runs compound RTCP (`reference/audio/channel_send.cc:551`) and sends its SR |
+| `av_sync on` (default) | one sync group; the sender's own audio RTCP engine sends the audio SR (`call.cc`, `sender_cfg.audio_rtcp`; `src/rtp/session.cc:238-245`) | `sync_group = "sm"` on both receive streams (`webrtc_call.cc:957`, `:982`) |
+| `av_sync off` | no sync group; the sender's audio RTCP stays on | no sync group; the audio channel still runs compound RTCP (`reference/audio/channel_send.cc:551`) and sends its SR |
 
-No suite scenario sets `av_sync off`, so no compared cell moves today.
+Before #524 ours also turned the sender's audio RTCP off with `av_sync off`
+(`sender_cfg.audio_rtcp = s.av_sync`), so the key meant two things. Now it
+only takes the streams out of the receiver's sync group on both sides, and
+`issue_524_av_sync_off` (a `clean_link` copy with `av_sync off`) runs it in
+the suite and the comparison. `tests/unit/testbench/av_sync_rtcp_test.cc`
+checks that the sender's RTCP on the forward link is the same with sync on
+and off.
 
 ### Ours only
 

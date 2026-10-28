@@ -569,7 +569,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   };
   rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
-  sender_cfg.audio_rtcp = s.av_sync;  // The audio SR lip sync needs (issue #77).
+  // The audio send stream always sends its own RTCP, as libwebrtc's audio channel runs RtcpMode::kCompound whatever
+  // the sync group (compare/webrtc/reference/audio/channel_send.cc:551); `av_sync off` only leaves the receiver's
+  // sync group empty, as sm_compare does (issue #524; it used to turn the audio SR off too).
+  sender_cfg.audio_rtcp = true;
   rtp::SessionConfig receiver_cfg = session_config(kReceiverRtcpSsrc, "receiver@testbench");
   // The receiver's first report goes out at half its nominal interval, as the
   // sender's does: libwebrtc's receive streams have their own RTCPSender, whose
