@@ -23,20 +23,34 @@ import json
 import statistics
 import subprocess
 import sys
+from urllib.parse import parse_qs, urlsplit
 
 WAIT_LABELS = ("needs-owner", "needs-builder", "needs-coordinator", "needs-human", "blocked")
 NOW = dt.datetime.now(dt.timezone.utc)
 
 
 def gh(path, paginate=False):
-    cmd = ["gh", "api", path] + (["--paginate"] if paginate else [])
-    out = subprocess.run(cmd, capture_output=True, text=True)
+    if paginate:
+        return gh_pages(path)
+    out = subprocess.run(["gh", "api", path], capture_output=True, text=True)
     if out.returncode != 0:
         raise RuntimeError(f"gh api {path}: {out.stderr.strip()}")
     text = out.stdout.strip()
-    if paginate and text.startswith("[") and "][" in text:
-        text = text.replace("][", ",")
     return json.loads(text) if text else None
+
+
+def gh_pages(path):
+    """Every page of a list, joined. Pages are requested by number, not with
+    `gh api --paginate`: GitHub's next-page links use repositories/{id}/
+    paths, which the cloud sandbox's proxy refuses (HTTP 403)."""
+    per_page = int(parse_qs(urlsplit(path).query).get("per_page", ["30"])[0])
+    items, page = [], 1
+    while True:
+        batch = gh(f"{path}{'&' if '?' in path else '?'}page={page}") or []
+        items += batch
+        if len(batch) < per_page:
+            return items
+        page += 1
 
 
 def t(s):
