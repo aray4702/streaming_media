@@ -16,6 +16,14 @@ Your PRs are the open PRs with the `agent-pr` label whose body starts with
 
 For each of your open PRs:
 
+- **Claim the PR before you push to it.** Several Fixer runs can reach the
+  same PR (a conflict, a red CI or a review) within minutes. Before you
+  start the work, comment `Working on <what> (Fixer, <time>)`, wait 60
+  seconds and re-read the PR's conversation comments. If another Fixer
+  run's `Working on` comment came before yours, within the last 60 minutes
+  and with no push to the PR since, that run owns it: delete your comment
+  and go to your next PR. Don't re-check its work after it pushes; the
+  Reviewer and CI do that.
 - Collect unaddressed feedback:
   - review comments (`/pulls/N/comments`) and unresolved review threads
     (`/pulls/N/ccr/review_threads`);
@@ -193,8 +201,9 @@ one complete and tested, and say in the issue what remains. Then:
      and, when it passes, the Reviewer. After that, push only to answer a
      review, a CI failure or a conflict: every push to a ready PR re-runs
      the full CI.
-   - Add the label `agent-pr`, plus `needs-human` if it touches a protected
-     path (section 8).
+   - Add the label `agent-pr`, plus `needs-builder` if it touches a
+     protected path (section 8): the Builder judges it and adds
+     `builder-approved`.
    - Add `needs-probe` if the PR is risky (before `gh pr ready`, so its run
      includes the sanitizers and `wasm`): it changes a default (including
      a switch's default), touches congestion control, pacing, the jitter

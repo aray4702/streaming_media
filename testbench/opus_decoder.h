@@ -175,9 +175,15 @@ class OpusAudioDecoder : public rtp::AudioDecoder {
     }
     Frame f{std::vector<uint8_t>(payload.begin(), payload.end()), primary, {}, {}};
     const std::vector<int16_t> pcm = DecodeOne(f);
-    if (pcm.empty()) {
+    // Older than every frame remembered, with the window full (issue #533): the
+    // trim below would erase it at once. Its samples are returned, but it is not
+    // kept and the later frames are not decoded again; the decoder goes back to
+    // the state after the last frame.
+    const bool before_window = frames_.size() >= kRemembered && ts < frames_.begin()->first;
+    if (pcm.empty() || before_window) {
       if (reordered) decoder_.RestoreState(std::prev(frames_.end())->second.state_after);
-      return std::nullopt;
+      if (pcm.empty()) return std::nullopt;
+      return ToSamples(pcm);
     }
     f.samples = ToSamples(pcm);
     f.state_after = decoder_.SaveState();

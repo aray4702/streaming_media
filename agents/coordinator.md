@@ -126,15 +126,29 @@ A question goes to the level that can decide it:
   that misfires, an agent that misbehaves, the same question coming back):
   add `needs-builder` to the item and describe the problem there with your
   recommendation. The Dispatcher starts the Builder.
+- **Judge first (Owner, 2026-10-28):** "Let the Coordinator make a
+  judgement and approve first. If it cannot, escalate to the Builder. If
+  the Builder cannot, escalate to me." Decide these yourself, with your
+  reasoning and numbers on the item and on #111 (`DECIDED (Coordinator):`):
+  - guard-rail lines, including ones the tight rule or the outlier clause
+    doesn't cover, and past libwebrtc's worst seed when the 10-seed means
+    are in band;
+  - parity trade-offs (closed ≤ opened), for a faithful port or a harness
+    fix that makes the sides more alike; add `owner-approved` yourself;
+  - default flips to libwebrtc's default;
+  - harness trade-offs, without weakening the harness.
+  Lean towards what libwebrtc does, and toward the stage-1 goal. Escalate
+  only when you can't decide with confidence: when the rules conflict,
+  the evidence is thin, or the cost of being wrong is high.
 - **Matters above you** (they reach the Owner only through the Builder,
   below):
-  - any move away from libwebrtc, including keeping behaviour libwebrtc lacks;
-  - a bound neither the tight rule nor the outlier clause allows;
-  - default flips (turning a switch on);
-  - changes to the stage-1 goal, scope, stage order or the product decisions in `agents/program.md` 0.1;
-  - a measurement fix that makes parity worse;
+  - any deliberate move away from libwebrtc, including keeping behaviour
+    libwebrtc lacks;
+  - changes to the stage-1 goal, scope, stage order, the four steps, the
+    product decisions in `agents/program.md` 0.1, or any standing rule;
   - spending: schedules, parallel Fixers, models;
-  - changes to protected paths;
+  - changes to protected paths (the Builder approves those PRs with
+    `builder-approved`; `agents/builder.md`);
   - anything irreversible beyond a merge.
 
 To escalate a matter above you (Owner, 2026-10-27: **the Builder answers

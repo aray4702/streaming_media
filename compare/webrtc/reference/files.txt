@@ -229,3 +229,6 @@ modules/video_coding/h264_sps_pps_tracker.cc
 api/audio_codecs/opus/audio_decoder_opus.h
 api/audio_codecs/opus/audio_decoder_opus.cc
 api/audio_codecs/opus/audio_decoder_opus_config.h
+# webrtc::Random (RTCPSender report intervals), for #517.
+rtc_base/random.h
+rtc_base/random.cc
