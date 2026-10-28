@@ -643,6 +643,28 @@ SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
   SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
 }
 
+// #453: libwebrtc runs H264SpsPpsTracker (rtp_video_stream_receiver2.cc OnReceivedPayloadData) and
+// PacketBuffer's missing_packets_ hold (packet_buffer.cc FindFrames) on every H.264 stream, and on
+// no other codec. A session's video stream does the same; the building blocks keep both off.
+SM_TEST(Session, H264StreamsRunTheSpsPpsTrackerAndTheMissingPacketsHold) {
+  SM_EXPECT_TRUE(VideoStreamConfig{}.sps_pps_tracker);
+  SM_EXPECT_TRUE(VideoStreamConfig{}.packet_buffer.missing_packets);
+  SM_EXPECT_TRUE(!RtpReceiverConfig{}.sps_pps_tracker);
+  SM_EXPECT_TRUE(!timing::PacketBufferConfig{}.missing_packets);
+  Session s(Cfg(2));
+  VideoStreamConfig h264 = Video();
+  VideoStreamConfig vp8 = Video();
+  vp8.codec = VideoCodecType::kVP8;
+  vp8.ssrc = 0x400;
+  vp8.rtx_ssrc = 0x500;
+  const RtpReceiverConfig& a = s.video_receiver(s.AddVideoReceive(h264)).config();
+  SM_EXPECT_TRUE(a.sps_pps_tracker);
+  SM_EXPECT_TRUE(a.packet_buffer.missing_packets);
+  const RtpReceiverConfig& b = s.video_receiver(s.AddVideoReceive(vp8)).config();
+  SM_EXPECT_TRUE(!b.sps_pps_tracker);
+  SM_EXPECT_TRUE(!b.packet_buffer.missing_packets);
+}
+
 // #62: AudioSendStream::ConfigureStream asks for periodic ALR probing when the audio stream
 // has transport-cc (audio_send_stream.cc:297-308). Without transport-cc it does not.
 // #355: VideoSendStreamImpl's constructor then sets it to RateControlSettings::UseAlrProbing(),
