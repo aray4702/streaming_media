@@ -126,6 +126,18 @@ Rules:
   gaps wait until the Owner places them by editing the list.
 - **`needs-human` means a decision is needed.** It is not used to hold
   work back for ordering; the list does that.
+- **One test environment for both stacks (Owner, 2026-10-27).** The
+  comparison is only valid if this library and libwebrtc run in an
+  identical environment: the same captured audio and video, the same
+  encoders (real ones, as libopus since #460, or one shared model), the
+  same link emulation with packets delivered at the same times, the same
+  clock and task timing, and the same measurement code reading the same
+  events. Only the stack under test may differ. Any difference in the
+  harness (`testbench/call.cc` against `compare/webrtc/webrtc_call.cc`, or
+  anything they use) is a `sev:2` bug in the yardstick. It is fixed before
+  parity work on the cells it affects, because it makes their gaps
+  unreliable. A harness PR states which side changed and shows that both
+  sides now get the same input.
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
   component it names as a whole, citing the files in
   `compare/webrtc/reference/`. If a needed file is missing, say so on #57
