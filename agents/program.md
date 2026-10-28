@@ -347,7 +347,9 @@ routine. Its rules are in [coordinator.md](coordinator.md).
 
 The **Dispatcher** (`agents/tools/dispatch.py`, a workflow, not an LLM)
 does the mechanical work: it starts agent runs, turns on auto-merge and
-keeps one approved PR up to date. The **Builder** maintains the agent system
+keeps one approved PR up to date. It also watches the flow for bottlenecks
+(FLOW) and hands them to the Builder on the **Flow watch** issue, to fix
+promptly (Owner, 2026-10-27). The **Builder** maintains the agent system
 itself and answers system escalations; its rules are in
 [builder.md](builder.md). The Owner's local Claude session is the Builder's
 interactive window.
