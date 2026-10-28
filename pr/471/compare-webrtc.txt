@@ -840,8 +840,8 @@ issue_12_lossbwe_burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          88.9         98.7  =
-  audio.mouth_to_ear_p95_ms               292          298  =
-  audio.jb_delay_p95_ms                   186          188  =
+  audio.mouth_to_ear_p95_ms               293          298  =
+  audio.jb_delay_p95_ms                   187          188  =
   video.freeze_count                      1.5          1.6  =
   video.freeze_total_ms                   403          404  =
   video.longest_freeze_ms                 235          267  =

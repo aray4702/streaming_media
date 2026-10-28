@@ -6,7 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-96 gaps on `main`, 100 here: **19 closed, 23 opened**, 0 changed direction.
+111 gaps on `main`, 100 here: **19 closed, 8 opened**, 0 changed direction.
 
 Closed:
 
@@ -44,21 +44,6 @@ Opened:
 | issue_29_ulpfec_over_red | `repair.overhead_pct` | 41.1 | 48.8 | ±6.7 | ahead | 7/10 | **none** (closed, no note: #21, #7, #29) |
 | issue_372_outage_interruption_count | `cc.max_settle_ms` | 2440 | 780 | ±1448 | behind | 5/10 | **none** (closed, no note: #15, #48, #61, #20) |
 | issue_411_reconfigure_clears_cwnd_drop | `cc.max_settle_ms` | 2840 | 790 | ±1445 | behind | 6/10 | **none** (closed, no note: #15, #48, #61, #20) |
-| issue_466_overshoot_very_low_capacity | `audio.mouth_to_ear_p95_ms` | 1950 | 2311 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |
-| issue_466_overshoot_very_low_capacity | `audio.jb_delay_p95_ms` | 1618 | 1979 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |
-| issue_466_overshoot_very_low_capacity | `video.freeze_count` | 23.8 | 21 | ±2.1 | behind | 5/10 | #466 (closed, no note: #5, #37, #24) |
-| issue_466_overshoot_very_low_capacity | `video.pause_total_ms` | 2397 | 561 | ±1774 | behind | 3/10 | #466 (closed, no note: #5, #37, #24) |
-| issue_466_overshoot_very_low_capacity | `video.render_fps` | 9.1 | 8.0 | ±1.1 | ahead | 6/10 | #466 (closed, no note: #37, #24) |
-| issue_466_overshoot_very_low_capacity | `repair.overhead_pct` | 34.4 | 50.3 | ±8.9 | ahead | 9/10 | #466 (closed, no note: #21, #7, #29) |
-| issue_466_scene_change_very_low_capacity | `video.render_fps` | 10.2 | 7.2 | ±1.5 | ahead | 9/10 | #466 (closed, no note: #37, #24) |
-| issue_466_scene_change_very_low_capacity | `sync.av_offset_p95_ms` | 5953 | 4941 | ±962 | behind | 4/10 | #466 |
-| issue_466_scene_change_very_low_capacity | `repair.overhead_pct` | 28.4 | 39.8 | ±7.6 | ahead | 9/10 | #466 (closed, no note: #21, #7, #29) |
-| issue_466_undershoot_very_low_capacity | `video.freeze_count` | 25.9 | 20.7 | ±2.9 | behind | 7/10 | #466 (closed, no note: #5, #37, #24) |
-| issue_466_undershoot_very_low_capacity | `video.render_fps` | 12.2 | 9.4 | ±1.7 | ahead | 10/10 | #466 (closed, no note: #37, #24) |
-| issue_466_undershoot_very_low_capacity | `video.keyframe_requests` | 5.5 | 4.4 | ±0.8 | behind | 5/10 | #466 (closed, no note: #23) |
-| issue_466_undershoot_very_low_capacity | `sync.av_offset_p95_ms` | 6787 | 7576 | ±787 | ahead | 7/10 | #466 |
-| issue_466_undershoot_very_low_capacity | `net.loss_pct` | 18.0 | 21.0 | ±2.9 | ahead | 7/10 | #466 (closed, no note: #21, #61, #12) |
-| issue_466_undershoot_very_low_capacity | `repair.overhead_pct` | 31.2 | 57.2 | ±9.7 | ahead | 10/10 | #466 (closed, no note: #21, #7, #29) |
 
 Still gaps, distance to libwebrtc changed by more than 10%:
 
