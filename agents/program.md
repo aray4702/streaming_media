@@ -146,6 +146,13 @@ Rules:
   gaps wait until the Owner places them by editing the list.
 - **`needs-human` means a decision is needed.** It is not used to hold
   work back for ordering; the list does that.
+- **Escalations go to the Builder before the Owner (Owner, 2026-10-27).**
+  Fixer → Coordinator → Builder → Owner. The Coordinator decides what its
+  mandate covers and sends the rest up as `ESCALATION:` with
+  `needs-builder`. The Builder decides what the Owner's rules and
+  decisions clearly cover (`DECIDED (Builder for the Owner):`) and passes
+  only the rest to the Owner (`NEEDS YOU:`, `needs-owner`;
+  `agents/builder.md`). The Owner can overturn any Builder decision.
 - **One test environment for both stacks (Owner, 2026-10-27).** The
   comparison is only valid if this library and libwebrtc run in an
   identical environment: the same captured audio and video, the same
@@ -165,7 +172,14 @@ Rules:
   scenarios, metrics, traces or checks, and never loosen bands, guard-rail
   lines or test tolerances to absorb a harness change. A real component
   may replace a shared model on both sides together. If equal is only
-  possible by weakening, the item goes to the Owner (`needs-human`).
+  possible by weakening, the item goes up (`needs-human`) and the Builder
+  passes it to the Owner.
+  One exception (Owner, 2026-10-27): when a harness change makes the two
+  sides *more* alike, a guard-rail line may move as far as libwebrtc's
+  worst seed on that scenario, never beyond it, without coming to the
+  Owner. The PR shows libwebrtc's per-seed values. The `compare-webrtc`
+  job's drift check (`tools/check_harness_drift.py`) fails if the sides'
+  audio stops matching packet for packet where it matches today.
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
   component it names as a whole, citing the files in
   `compare/webrtc/reference/`. If a needed file is missing, say so on #57
@@ -191,7 +205,12 @@ Make real-time audio and video built on this library hold up for the people
 using it when the network misbehaves: fewer audio gaps and video freezes,
 lower delay, faster recovery after the link changes, higher quality for the
 same bandwidth, and no crashes or undefined behaviour, on every supported
-platform. Progress is measured, not asserted. Each change must improve the
+platform. **Supported platforms (Owner, 2026-10-27): the browser
+(WebAssembly) and macOS.** CI checks only these; Linux, Android, iOS and
+embedded targets are not checked, and their presets in the tree are not
+maintained. Linux x86_64 remains the measurement platform (test bench
+baseline, `compare-webrtc`) and runs the ASan/UBSan job, as correctness
+checks, not as a supported target. Progress is measured, not asserted. Each change must improve the
 measurements or leave them unchanged, and each problem found becomes a test
 that keeps it fixed.
 
@@ -261,7 +280,7 @@ The loop is:
 | Baseline results | `testbench/baseline.json` | Metrics of every scenario on `main`. CI compares each PR against it. |
 | Browser port | `web/` | WebAssembly build with a JS API (`runScenario`, plus bindings for library components) and a demo page that runs scenarios and plots them in the browser. |
 | Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](../compare/README.md) and [the latest results](../docs/results/compare-webrtc.md). |
-| CI | `.github/workflows/ci.yml` | Linux GCC/Clang, macOS, ASan+UBSan, no-exceptions/RTTI, WebAssembly (Node), Linux aarch64 under QEMU, Android and iOS cross-builds, test bench + baseline comparison. The aggregate job `ci-ok` is the required status check. |
+| CI | `.github/workflows/ci.yml` | The supported platforms, macOS and WebAssembly (Node), with the full suites; ASan+UBSan, the test bench + baseline comparison and `compare-webrtc` on Linux x86_64. The aggregate job `ci-ok` is the required status check. |
 
 ### 3.1 Test bench link impairments
 
@@ -436,7 +455,8 @@ a comment addressed to it, or no review yet:
 | `in-progress` | The Fixer is working on it | Fixer |
 | `cannot-reproduce` | The Fixer could not reproduce it | Fixer |
 | `agent-pr` | PR opened by the Fixer | Fixer |
-| `needs-human` | A decision is needed from the Owner (not used to hold work for ordering; section 0.2) | Any |
+| `needs-human` | A decision is needed above the Coordinator: the Builder answers it first, and passes on only what it can't decide (`agents/builder.md`). Not used to hold work for ordering (section 0.2) | Any |
+| `needs-owner` | The Builder has passed the question to the Owner (`NEEDS YOU:` on #111) | Builder (Coordinator only as the fallback in `agents/coordinator.md`) |
 | `wontfix` | Owner decision | Owner |
 | `agent-log` | The Tester's run log issue (its memory between runs and the weekly summary) | Tester |
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
@@ -530,7 +550,22 @@ python3 tools/testbench_compare.py testbench/baseline.json <new results>
 cmake --preset native-asan && cmake --build --preset native-asan -j && ctest --preset native-asan
 ```
 
-CI runs the same, plus the other platforms.
+CI runs the same, plus the other platforms. To save its 20 concurrent job
+slots (Owner, 2026-10-27), the `scope` job in `ci.yml` decides what a PR
+run needs:
+- A PR that changes no code (only `agents/`, `docs/`,
+  `compare/webrtc/reference/`, Markdown, or
+  `.github/` other than `ci.yml`) runs no build or test job.
+- A **draft** runs only the quick jobs (host builds, test bench), plus
+  `compare-webrtc` when its title starts with `yardstick:`.
+- A **ready** PR runs the quick jobs and `compare-webrtc`. The sanitizers
+  and `wasm` run only on `main` (its queued runs batch several merges), the
+  merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+  A failure there on `main` is `main` broken (`sev:1`): the Coordinator
+  files it, and the fix or a revert of the culprit comes first. Marking a
+  draft ready starts the PR's run, and only a ready PR gets `ci-passed`.
+- A PR's unfinished runs are cancelled when it is merged or closed
+  (`cancel-closed-pr.yml`).
 
 ### 6.2 Review checklist (Reviewer)
 
@@ -647,7 +682,7 @@ area it covered in each issue's notes:
    off, extreme fps or bitrate limits, sample rates, malformed or
    extreme inputs to public APIs (fuzz-style).
 7. **Platforms and performance:** benchmark regressions, wasm/browser
-   behaviour (`web/`), the no-exceptions build, binary size.
+   behaviour (`web/`), macOS, binary size.
 8. **Conversation with an AI** (once the test bench supports it; see
    the `roadmap` issues): response delay, barge-in, the user's speech
    reaching the AI intact, and AI media sent in faster-than-real-time
@@ -726,7 +761,7 @@ area it covered in each issue's notes:
 3. **Agents.** Write `agents/*.md`. Do one supervised run of each role in
    order (Tester, Fixer, Reviewer) and check the issue, PR, review and
    merge chain end to end.
-4. **Autonomy.** Enable the schedules. The Owner watches `needs-human` and
+4. **Autonomy.** Enable the schedules. The Owner watches `needs-owner` and
    reviews a weekly summary that the Tester posts as an issue comment.
 
 ### Verification items for the first supervised runs
