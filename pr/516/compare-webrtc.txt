@@ -5076,6 +5076,46 @@ issue_524_av_sync_off - clean_link with lip sync off (issue
   video.encoder_dropped                     4            4
   video.encoder_target_avg_kbps          2043         2049
 
+issue_533_opus_decoder_frame_older_than_window - Audio call over a link whose jitter is a 2 s standard deviation: some packets arrive more than 5 s late
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                    33.6         28.9  webrtc
+  audio.interruptions                     7.8          6.6  webrtc
+  audio.longest_interruption_ms           404          389  =
+  audio.mouth_to_ear_p95_ms              4683         4796  =
+  audio.jb_delay_p95_ms                   885          996  sm
+  cc.utilization_pct                        0            0  =
+  cc.queue_p95_ms                           0            0  =
+  cc.max_settle_ms                          0            0  =
+  cc.rtt_p50_ms                          1162         1445  sm
+  net.loss_pct                              0            0  =
+  repair.overhead_pct                       0            0  =
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         71.3         71.3
+  net.video_kbps                            0            0
+  net.rtx_kbps                              0            0
+  net.padding_kbps                        2.2          2.0
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0            0
+  net.video_loss_pct                        0            0
+  net.rtx_loss_pct                          0            0
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    196          196
+  net.audio_size_p90_b                    223          223
+  net.audio_size_max_b                    254          254
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                      0            0
+  net.video_size_p90_b                      0            0
+  net.video_size_max_b                      0            0
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                        0            0
+  net.rtx_size_p90_b                        0            0
+  net.rtx_size_max_b                        0            0
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  224          301
+  net.padding_size_p90_b                  224          303
+  net.padding_size_max_b                  224          303
+  net.padding_queue_drops                   0            0
+
 issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shallow 100 ms buffer; the encoder must back off before the bottleneck drops its video (issue
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
@@ -7038,7 +7078,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                  58.7         47.9
   video.encoder_target_avg_kbps          1168         1205
 
-better: sm 146, webrtc 180, tie 2512 (of the metrics shown)
+better: sm 148, webrtc 182, tie 2519 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

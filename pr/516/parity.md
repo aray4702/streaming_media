@@ -1,12 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-136 scenarios, mean of 10 seeds. **76 gaps**: 48 behind libwebrtc, 28 ahead of it; 33 without an owner.
+137 scenarios, mean of 10 seeds. **78 gaps**: 49 behind libwebrtc, 29 ahead of it; 33 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. An owner is an open issue, or a closed one whose rule carries a note (an explained difference); closed issues without a note are listed but own nothing.
 
 ### Against `main`
 
-91 gaps on `main`, 76 here: **33 closed, 18 opened**, 0 changed direction.
+93 gaps on `main`, 78 here: **33 closed, 18 opened**, 0 changed direction.
 
 Closed:
 
@@ -164,6 +164,8 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_466_undershoot_very_low_capacity | `video.render_fps` | 11.8 | 9.4 | ±1.7 | ahead | 9/10 | #466 (closed, no note: #37, #24) |
 | issue_477_opus_rtp_clock | `audio.jb_delay_p95_ms` | 85 | 74 | ±10 | behind | 5/10 | #504 (closed, no note: #63, #476) |
 | issue_48_prober_low_bandwidth | `video.render_fps` | 27.8 | 25.9 | ±1.4 | ahead | 7/10 | #411 (closed, no note: #37, #24) |
+| issue_533_opus_decoder_frame_older_than_window | `audio.concealed_pct` | 33.6 | 28.9 | ±2.4 | behind | 9/10 | #504 (closed, no note: #63, #476) |
+| issue_533_opus_decoder_frame_older_than_window | `audio.jb_delay_p95_ms` | 885 | 996 | ±107 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
 | issue_5_adjuster_default | `video.e2e_delay_p95_ms` | 249 | 226 | ±12.4 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_61_googcc_glue_congestive | `audio.mouth_to_ear_p95_ms` | 314 | 284 | ±29.6 | behind | 5/10 | #504, #224 (closed, no note: #63, #476) |
 | issue_61_googcc_glue_congestive | `sync.av_offset_p95_ms` | 285 | 181 | ±42.6 | behind | 8/10 | **none** |

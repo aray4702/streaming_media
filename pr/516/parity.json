@@ -1092,6 +1092,40 @@
    ]
   },
   {
+   "scenario": "issue_533_opus_decoder_frame_older_than_window",
+   "metric": "audio.concealed_pct",
+   "sm": 33.552,
+   "webrtc": 28.9381,
+   "band": 2.4075508839436353,
+   "direction": "behind",
+   "seeds_agree": 9,
+   "seeds": 10,
+   "owners": [
+    504
+   ],
+   "stale_owners": [
+    63,
+    476
+   ]
+  },
+  {
+   "scenario": "issue_533_opus_decoder_frame_older_than_window",
+   "metric": "audio.jb_delay_p95_ms",
+   "sm": 884.6,
+   "webrtc": 995.9,
+   "band": 107.43080460360417,
+   "direction": "ahead",
+   "seeds_agree": 6,
+   "seeds": 10,
+   "owners": [
+    504
+   ],
+   "stale_owners": [
+    63,
+    476
+   ]
+  },
+  {
    "scenario": "issue_5_adjuster_default",
    "metric": "video.e2e_delay_p95_ms",
    "sm": 248.96,
