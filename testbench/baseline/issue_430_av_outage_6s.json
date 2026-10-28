@@ -78,7 +78,7 @@
   "video.render_ratio_pct": 82.88,
   "video.residual_loss_pct": 2.984,
   "video.time_to_first_frame_ms": 194,
-  "video.undecodable_frames": 135
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_430_av_outage_6s"

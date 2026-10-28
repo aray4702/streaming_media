@@ -78,7 +78,7 @@
   "video.render_ratio_pct": 97.15,
   "video.residual_loss_pct": 0.03457,
   "video.time_to_first_frame_ms": 187,
-  "video.undecodable_frames": 6
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_415_cross_80pct_standing_queue"

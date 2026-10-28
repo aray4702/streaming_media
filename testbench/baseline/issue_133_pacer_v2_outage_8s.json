@@ -64,7 +64,7 @@
   "video.render_ratio_pct": 84.26,
   "video.residual_loss_pct": 6.756,
   "video.time_to_first_frame_ms": 204,
-  "video.undecodable_frames": 73
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_133_pacer_v2_outage_8s"
