@@ -175,6 +175,8 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
                                                   "of the packets of a kind offered to the forward link: median, 90th percentile "
                                                   "(nearest rank) and maximum"},
       {"net.audio_kbps", "Audio sent on the forward link, wire rate averaged over the call"},
+      {"net.audio_rtp_clock_hz", "RTP clock of the audio packets on the forward link: timestamp advance per second "
+                                 "sent, to the nearest kHz (Opus: 48000, RFC 7587)"},
       {"net.video_kbps", "Video media sent on the forward link, wire rate averaged over the call"},
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
       {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
@@ -253,6 +255,78 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
     out += std::to_string(r.t_ms) + "," + std::to_string(r.buffer_ms) + "," + std::to_string(r.target_ms) + "," +
            (r.jb_delay_ms < 0 ? std::string() : real(r.jb_delay_ms)) + "," + real(r.received_ms) + "," +
            real(r.concealed_ms) + "," + real(r.accelerate_ms) + "," + real(r.decelerate_ms) + "\n";
+  }
+  return out;
+}
+
+void TraceAudioRtp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_ssrc, std::vector<AudioSendRow>& rows) {
+  if (p.size() < 12 || (p[0] >> 6) != 2) return;
+  auto u32 = [&](size_t i) {
+    return static_cast<uint32_t>(p[i]) << 24 | static_cast<uint32_t>(p[i + 1]) << 16 |
+           static_cast<uint32_t>(p[i + 2]) << 8 | p[i + 3];
+  };
+  if (u32(8) != audio_ssrc) return;
+  size_t off = 12 + 4 * static_cast<size_t>(p[0] & 0x0f);
+  if (p[0] & 0x10) {  // Header extensions.
+    if (off + 4 > p.size()) return;
+    off += 4 + 4 * (static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]);
+  }
+  size_t end = p.size();
+  if (p[0] & 0x20) end -= std::min<size_t>(end, p.back());  // RTP padding.
+  if (off >= end) return;  // Padding only.
+  AudioSendRow r;
+  r.time_us = time_us;
+  r.seq = static_cast<int32_t>(p[2]) << 8 | p[3];
+  r.rtp_ts = u32(4);
+  r.pt = p[1] & 0x7f;
+  r.payload_bytes = static_cast<int32_t>(end - off);
+  uint32_t h = 2166136261u;
+  for (size_t i = off; i < end; ++i) h = (h ^ p[i]) * 16777619u;
+  r.payload_hash = h;
+  rows.push_back(r);
+}
+
+void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_ssrc, std::vector<AudioSendRow>& rows) {
+  auto u32 = [&](size_t i) {
+    return static_cast<uint32_t>(p[i]) << 24 | static_cast<uint32_t>(p[i + 1]) << 16 |
+           static_cast<uint32_t>(p[i + 2]) << 8 | p[i + 3];
+  };
+  for (size_t off = 0; off + 4 <= p.size();) {
+    if ((p[off] >> 6) != 2) return;
+    const size_t len = 4 * ((static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]) + 1);
+    if (off + len > p.size()) return;
+    const int type = p[off + 1];
+    if (type == 200 || type == 201) {  // SR, RR: the report blocks follow the sender info.
+      const size_t first = off + (type == 200 ? 28 : 8);
+      for (size_t b = 0; b < static_cast<size_t>(p[off] & 0x1f); ++b) {
+        const size_t at = first + 24 * b;
+        if (at + 24 > off + len) break;
+        if (u32(at) != audio_ssrc) continue;
+        AudioSendRow r;
+        r.kind = AudioSendRow::Kind::kReport;
+        r.time_us = time_us;
+        r.fraction_lost = p[at + 4];
+        rows.push_back(r);
+      }
+    }
+    off += len;
+  }
+}
+
+std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
+  std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost\n";
+  std::optional<uint32_t> ts0;
+  for (const auto& r : rows) {
+    if (r.kind == AudioSendRow::Kind::kReport) {
+      out += "report," + std::to_string(r.time_us) + ",-1,-1,-1,-1,-1," + std::to_string(r.fraction_lost) + "\n";
+      continue;
+    }
+    if (!ts0) ts0 = r.rtp_ts;
+    char hash[16];
+    std::snprintf(hash, sizeof(hash), "%08x", r.payload_hash);
+    out += "frame," + std::to_string(r.time_us) + "," + std::to_string(r.seq) + "," +
+           std::to_string(static_cast<uint32_t>(r.rtp_ts - *ts0)) + "," + std::to_string(r.pt) + "," +
+           std::to_string(r.payload_bytes) + "," + hash + ",-1\n";
   }
   return out;
 }
@@ -418,10 +492,7 @@ void EvaluateExpectations(Report& rep) {
   }
 }
 
-int AudioCodecRate(int capture_rate) {
-  return capture_rate == 8000 || capture_rate == 16000 || capture_rate == 32000 || capture_rate == 48000 ? capture_rate
-                                                                                                           : 48000;
-}
+int AudioCodecRate(int /*capture_rate*/) { return OpusDefaults::kSampleRateHz; }
 
 Report RunCall(const Scenario& s, const RunOptions& opt) {
   Report rep;
@@ -669,6 +740,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   };
   std::deque<PendingFrame> encoding;
 
+  // The first and last audio packet on the forward link: RTP timestamp and send time (net.audio_rtp_clock_hz).
+  std::optional<std::pair<uint32_t, Timestamp>> audio_ts_first, audio_ts_last;
+
   // Sends what a session has ready onto its link; returns nothing to count
   // beyond the pacer-released bytes the caller tallies.
   auto put_on_link = [&](rtp::Session& from, auto& link, auto make, Timestamp now, bool is_forward) {
@@ -683,6 +757,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (kind == Kind::kAudio || kind == Kind::kVideo) media_bytes += static_cast<int64_t>(p.bytes.size());
         if (kind == Kind::kRtx || kind == Kind::kFec) repair_bytes += static_cast<int64_t>(p.bytes.size());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
+        if (kind == Kind::kAudio) {
+          if (!audio_ts_first) audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
+          audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
+        }
         if (kind == Kind::kVideo) {
           video_send_ms.emplace(video_sent_unwrap.Unwrap(RtpSeq(p.bytes)), now.ms());
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
@@ -690,6 +768,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      if (opt.link_trace && is_forward && kind == Kind::kAudio) {
+        TraceAudioRtp(p.bytes, now.us(), kAudioSsrc, rep.audio_send_trace);
+      }
       // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
       // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
@@ -719,7 +800,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Before the capture: feedback that arrived during the last millisecond happened before this tick's frame,
     // as on libwebrtc's event clock. After the outage in issue #151 a NACK and the recovery keyframe meet in the
     // same tick; libwebrtc queues the NACK's resends first and the keyframe flushes them.
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { sender.OnPacket(r.bytes, at); });
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) {
+      if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
+      sender.OnPacket(r.bytes, at);
+    });
     std::optional<TimeDelta> new_rtt;  // The sender's RTT sample this tick, for the receiver.
     for (const auto& e : sender.TakeEvents()) {
       video_ctl.OnSessionEvent(e);
@@ -1135,6 +1219,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   AddLinkKindMetrics(ls, s, rep);
+  if (audio_ts_first && audio_ts_last->second - audio_ts_first->second >= TimeDelta::Seconds(1)) {
+    const double hz = static_cast<double>(static_cast<uint32_t>(audio_ts_last->first - audio_ts_first->first)) /
+                      (static_cast<double>((audio_ts_last->second - audio_ts_first->second).us()) / 1e6);
+    rep.metrics["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
+  }
   if (opt.link_trace) rep.link_trace = forward.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
