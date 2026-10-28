@@ -4405,11 +4405,11 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          52.5         51.1  =
-  audio.mouth_to_ear_p95_ms               513          494  =
-  audio.jb_delay_p95_ms                   302          295  =
+  audio.mouth_to_ear_p95_ms               513          495  =
+  audio.jb_delay_p95_ms                   302          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                19.5         13.4  =
+  video.longest_freeze_ms                19.5         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
