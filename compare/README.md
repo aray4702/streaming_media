@@ -165,6 +165,13 @@ only the CSV files to DIR (the JSON keeps the `--trace` ones). CI runs it on
 readable without a PR that adds it to `--trace`. PR runs don't, because
 `parity-data-pr` keeps every PR's files in its history.
 
+The same runs write the reverse (feedback) link as
+`<scenario>.<seed>.{sm,webrtc}.reverse.csv`, in the same columns (issue #507):
+every RTCP packet the receiver offered it, with its send and arrival times.
+Both harnesses hand each arriving packet to the stack at its arrival time and
+put the response on the link then, so a NACK leaves at the arrival time of the
+packet that revealed the loss, and its RTX packet at the NACK's arrival time.
+
 ```sh
 python3 tools/link_trace.py compare-webrtc.json         # per kind, ours and libwebrtc's side by side
 python3 tools/link_trace.py sm.trace.csv webrtc.trace.csv --duration 40

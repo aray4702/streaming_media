@@ -7,6 +7,7 @@
 //   sm_testbench --library a.scn                      include every module's own metrics
 //   sm_testbench --check a.scn                        parse only
 //   sm_testbench --link-trace=DIR a.scn               write DIR/<scenario>.<seed>.sm.trace.csv: every packet offered to the forward link
+//                                                     (and .sm.reverse.csv: the reverse link)
 //   sm_testbench --metrics                            list metric names
 //   echo "at 0s loss=5%" | sm_testbench -             scenario from stdin
 #include <chrono>
@@ -103,6 +104,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.trace.csv",
                     std::ios::binary)
           << sm::testbench::LinkTraceCsv(report.link_trace);
+      // Every packet offered to the reverse (feedback) link, same columns (issue #507).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.reverse.csv",
+                    std::ios::binary)
+          << sm::testbench::LinkTraceCsv(report.reverse_trace);
       // The per-second video send decisions (issue #131).
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.video.csv",
                     std::ios::binary)

@@ -7,5 +7,6 @@ duration 40s
 at 0s  capacity=2500kbps delay=30ms queue=400ms loss=2%
 at 10s capacity=500kbps
 at 25s capacity=2500kbps
-expect video.freeze_total_ms < 4000
+# seed-1 outlier; mean in band (ours 3163 / libwebrtc 2928). Harness change #516 (#507); Coordinator decision A, 2026-10-28.
+expect video.freeze_total_ms < 5000
 expect video.residual_loss_pct < 1

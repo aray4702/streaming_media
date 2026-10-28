@@ -297,6 +297,9 @@ int main(int argc, char** argv) {
           const std::string stem = dir + "/" + base.name + "." + std::to_string(s.seed);
           std::ofstream(stem + ".sm.trace.csv") << sm_csv;
           std::ofstream(stem + ".webrtc.trace.csv") << rtc_csv;
+          // The reverse (feedback) link, same columns (issue #507).
+          std::ofstream(stem + ".sm.reverse.csv") << sm::testbench::LinkTraceCsv(ours.back().reverse_trace);
+          std::ofstream(stem + ".webrtc.reverse.csv") << sm::testbench::LinkTraceCsv(theirs.back().reverse_trace);
           std::ofstream(stem + ".sm.video.csv") << sm_video;
           std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
           std::ofstream(stem + ".sm.bwe.csv") << sm_bwe;

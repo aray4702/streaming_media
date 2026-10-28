@@ -127,6 +127,8 @@ struct Report {
   std::map<std::string, int> events;      // Event counts by module/name.
   // Every packet offered to the forward link, when RunOptions::link_trace is set (issue #125).
   std::vector<sim::LinkTraceRecord> link_trace;
+  // Every packet offered to the reverse (feedback) link, when RunOptions::link_trace is set (issue #507).
+  std::vector<sim::LinkTraceRecord> reverse_trace;
   // One row per simulated second of video send decisions, when RunOptions::video_trace is set (issue #131).
   std::vector<VideoTraceRow> video_trace;
   // The sender's GoogCC updates, when RunOptions::bwe_trace is set (issue #149).
@@ -141,7 +143,7 @@ struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
   bool video_trace = false;  // Fill Report::video_trace.
-  bool link_trace = false;  // Fill Report::link_trace and Report::audio_send_trace (memory grows with the call).
+  bool link_trace = false;  // Fill Report::link_trace, Report::reverse_trace and Report::audio_send_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
   bool audio_trace = false;  // Fill Report::audio_trace.
 };

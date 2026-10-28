@@ -27,7 +27,8 @@ if(SM_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/opus_decoder_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/encoder_model_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/rtcp_seed_test.cc
-    SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp)
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/event_timing_test.cc
+    SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp TestbenchEventTiming)
   # One CTest entry per scenario; a failed expectation fails the test.
   file(GLOB SM_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scn)
   foreach(scn ${SM_SCENARIOS})
