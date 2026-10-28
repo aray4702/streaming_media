@@ -18,7 +18,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | # | area | status | evidence | item |
 |---|---|---|---|---|
 | 1 | Captured media | audio: **different** (ADM 10 ms blocks through the ACM vs our direct 20 ms encode); video: not audited | #477 | #477 |
-| 2 | Encoders | Opus: **identical by construction**, packet for packet on 60 of 104 traced scenarios; where the sides part, the input that differs is the stack's own RTCP, not the harness. Video: **identical by construction** (the same size formula, seed and QP/encode-time model), the formula is still written twice | [Row 2](#row-2-encoders) | #484 (stack, not harness) |
+| 2 | Encoders | Opus: **identical by construction**, packet for packet on 60 of 104 traced scenarios, checked on the lossless ones by `tools/check_harness_drift.py`; where the sides part, the input that differs is the stack's own RTCP, not the harness. Video: **identical by construction** (the same size formula, seed and QP/encode-time model), the formula is still written twice | [Row 2](#row-2-encoders) | #484 (stack, not harness) |
 | 3 | Decoders | **different**: our `SpeechDecoder` returns the source signal, libwebrtc decodes with libopus | #476 | #476 |
 | 4 | Packetization and wire | not audited | | |
 | 5 | The link | not audited | | |
@@ -89,11 +89,14 @@ packets: our side sent 2118 padding packets in that call, libwebrtc 851, so
 the loss draws fell on different audio packets (row 5 audits the link).
 
 **What keeps it identical.** `tests/unit/testbench/opus_encoder_test.cc`
-pins our side's settings against libwebrtc's constants. No check yet compares
-the two sides' audio packets; the published traces above are the evidence.
-A check that fails when they drift (every audio packet the same size on
-`clean_link`, seed 1, with both stacks) belongs in the `compare-webrtc` job,
-which is under `.github/`; it is proposed on #478.
+pins our side's settings against libwebrtc's constants, and
+`tools/check_harness_drift.py` (#490), run last in the `compare-webrtc` job,
+compares the two sides' audio packets on the seed-1 traces: on the lossless
+traced scenarios (`issue_124_clean_link_v2`, `issue_124_bufferbloat_v2`,
+`issue_61_googcc_glue_congestive`, `probe_v2_cross_traffic`) every audio
+packet must have the same size on both stacks, and the job fails if one
+differs. It covers only those lossless scenarios: the 44 where the sides part
+are reported but not required until #484 is fixed.
 
 ### Video
 
