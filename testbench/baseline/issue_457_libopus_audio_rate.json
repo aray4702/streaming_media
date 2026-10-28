@@ -52,7 +52,7 @@
   "net.video_size_p50_b": 331,
   "net.video_size_p90_b": 393,
   "repair.fec_recovered": 0,
-  "repair.nack_recovered": 0,
+  "repair.nack_recovered": 21,
   "repair.overhead_pct": 1.569,
   "sync.av_offset_max_ms": 1186,
   "sync.av_offset_p50_ms": 594.1,

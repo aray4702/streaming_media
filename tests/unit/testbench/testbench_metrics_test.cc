@@ -744,3 +744,46 @@ SM_TEST(TestbenchMetrics, FirstAudioIsTheFirstPacketTheJitterBufferTook) {
   SM_EXPECT_TRUE(m.started());
   SM_EXPECT_NEAR(m.ms(30000), 50.0, 1e-9);
 }
+
+// The repair metrics by one rule for both stacks (#509). Sent: video 100-109 at 0-9 ms (100 bytes each), 110 in
+// the last second, an audio RED packet (60 bytes, its redundant block included), two RTX packets (110 bytes) and
+// a FEC packet (50 bytes). Arrived: 100-102; 103 by RTX (a recovery); 104 late after its NACK, and then its RTX copy
+// (no recovery); 105 by FEC; 106 by RTX and then by FEC (one recovery). 107-109 never arrive.
+SM_TEST(TestbenchMetrics, RepairMeterCountsFromTheLinkAndTheFecReceiver) {
+  RepairMeter r;
+  for (uint16_t seq = 100; seq < 110; ++seq) r.OnSent(sim::LinkKind::kVideo, 100, seq, seq - 100);
+  r.OnSent(sim::LinkKind::kVideo, 100, 110, 9500);
+  r.OnSent(sim::LinkKind::kAudio, 60, 0, 0);
+  r.OnSent(sim::LinkKind::kRtx, 110, 0, 0);
+  r.OnSent(sim::LinkKind::kRtx, 110, 0, 0);
+  r.OnSent(sim::LinkKind::kFec, 50, 0, 0);
+  r.OnSent(sim::LinkKind::kPadding, 200, 0, 0);
+  for (uint16_t seq = 100; seq < 103; ++seq) r.OnVideoArrived(seq);
+  r.OnRtxArrived(103);
+  r.OnVideoArrived(104);
+  r.OnRtxArrived(104);
+  r.OnFecRecovered(105);
+  r.OnRtxArrived(106);
+  r.OnFecRecovered(106);
+  std::map<std::string, double> m;
+  r.AddMetrics(m, /*video=*/true, /*end_ms=*/10000);
+  SM_EXPECT_NEAR(m["repair.overhead_pct"], 100.0 * 270 / 1160, 1e-9);
+  SM_EXPECT_NEAR(m["repair.nack_recovered"], 2, 1e-9);
+  SM_EXPECT_NEAR(m["video.residual_loss_pct"], 30.0, 1e-9);  // 107-109 of 100-109; 110 is in the last second.
+}
+
+SM_TEST(TestbenchMetrics, RepairMeterUnwrapsSequenceNumbersAndSkipsVideoMetricsWithoutVideo) {
+  RepairMeter r;
+  r.OnSent(sim::LinkKind::kVideo, 100, 65535, 0);
+  r.OnSent(sim::LinkKind::kVideo, 100, 0, 1);
+  r.OnVideoArrived(65535);
+  r.OnRtxArrived(0);
+  std::map<std::string, double> m;
+  r.AddMetrics(m, /*video=*/true, 5000);
+  SM_EXPECT_NEAR(m["video.residual_loss_pct"], 0.0, 1e-9);
+  SM_EXPECT_NEAR(m["repair.nack_recovered"], 1, 1e-9);
+  std::map<std::string, double> audio_only;
+  RepairMeter().AddMetrics(audio_only, /*video=*/false, 5000);
+  SM_EXPECT_EQ(audio_only.count("video.residual_loss_pct"), 0u);
+  SM_EXPECT_EQ(audio_only.count("repair.overhead_pct"), 1u);
+}

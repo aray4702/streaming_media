@@ -120,8 +120,11 @@ The whole suite (13 scenarios, 3 seeds, both libraries) runs in about
   every run (`WebrtcMetricNotes()` in
   [webrtc_call.cc](webrtc/webrtc_call.cc)). The main ones:
   - the audio jitter-buffer delay percentiles come from 10 ms averages;
-  - `video.residual_loss_pct` ignores FEC recoveries;
-  - `repair.fec_recovered` is not reported.
+  - `repair.fec_recovered` and the FEC recoveries in
+    `video.residual_loss_pct` come from libwebrtc's `UlpfecReceiver` run
+    by the harness on the same RED arrivals as the receiver's, because
+    `VideoReceiveStream` does not expose them (#509). The repair metrics
+    themselves are computed by `testbench::RepairMeter` on both sides.
   - `sync.av_offset_*` reads libwebrtc's audio playout point from
     `Syncable::GetPlayoutRtpTimestamp`, the input its own A/V sync uses.
     Neither stack synchronizes in the comparison: libwebrtc's receive

@@ -149,7 +149,7 @@ One directive per line, and `#` starts a comment.
 | `quality_scaling on\|off` | on | `on` runs libwebrtc's quality scaling (#84): `QualityScalerResource` on the encoder model's QP and `EncodeUsageResource` (CPU overuse) on its encode time, with `MAINTAIN_FRAMERATE` and the initial frame drop; the library picks the encoded resolution (`video.encode_height_mean`) |
 | `timing v1\|v2` | v2 (since #24) | v1 is the library's video receive timing (`VideoJitterEstimator`, `VideoTiming`, `FrameScheduler` with its 10 ms late-drop rule); v2 is libwebrtc's (`JitterEstimator`, `TimestampExtrapolator`, `VCMTiming`, and frame release as `VideoStreamBufferController`/`FrameDecodeTiming`: a late frame is skipped only when a later keyframe is decodable; #24) |
 | `neteq v1\|v2` | v2 | v1 is the library's audio target delay (`DelayManager`: 95th percentile of each packet's relative delay, 10 ms buckets) and its own operations; v2 is libwebrtc M157's NetEq (`DelayManager` with `UnderrunOptimizer` over 500 ms maxima in 20 ms buckets and `ReorderOptimizer`, `PacketArrivalHistory` over 2 s, 80 ms until the first estimate; `DecisionLogic`, `Expand`, `Merge`, `Accelerate`/`PreemptiveExpand`, Opus in-band FEC; #62), the default since #62 |
-| `av_sync on\|off` | on (since #77 step 3) | `on` puts audio and video in one sync group on both stacks (#77): the audio stream sends its own RTCP SR (as libwebrtc's audio RtpRtcp module) and the receiver runs `RtpStreamsSynchronizer` every second, setting both streams' minimum playout delays; `sm_compare` sets libwebrtc's `sync_group` on both receive streams. `off` plays each stream out on its own delay, as before |
+| `av_sync on\|off` | on (since #77 step 3) | `on` puts audio and video in one sync group on both stacks (#77): the audio stream sends its own RTCP SR (as libwebrtc's audio RtpRtcp module) and the receiver runs `RtpStreamsSynchronizer` every second, setting both streams' minimum playout delays; `sm_compare` sets libwebrtc's `sync_group` on both receive streams. `off` plays each stream out on its own delay and changes nothing else: the audio stream still sends its own SR, as libwebrtc's audio channel always runs compound RTCP (#524) |
 | `at <time> <key=value...> [down\|up]` | | Change the forward link from `<time>` on |
 | `reverse at <time> ...` | mirrors forward delay | Change the feedback link |
 | `expect <metric> <op> <number>` | | Pass criterion; `op` is one of `< <= > >= ==` |
@@ -239,7 +239,13 @@ Link keys (any subset; unset keys keep their previous value):
     RTCP RTT reports), which is what `sm_compare`'s libwebrtc side samples
     (`Call::GetStats().rtt_ms`), not the last raw RTT (issue #370).
 - **Network and repair:** `net.loss_pct`, `repair.overhead_pct`,
-  `repair.nack_recovered`, `repair.fec_recovered`. Per kind on the forward
+  `repair.nack_recovered`, `repair.fec_recovered`. The first three
+  repair metrics come from `RepairMeter` (`call_common.h`), which
+  `sm_compare` uses for libwebrtc too (#509): overhead is RTX and FEC
+  against audio and video media in whole RTP packets, a NACK recovery is
+  an RTX packet whose original had not arrived, and residual loss counts
+  video media packets that arrived from the link neither as media nor as
+  RTX and were not recovered by FEC. Per kind on the forward
   link (information only, issue #117): `net.audio_kbps`, `net.video_kbps`,
   `net.rtx_kbps`, `net.padding_kbps`, `net.fec_kbps` (wire rate sent,
   averaged over the call) and `net.audio_loss_pct`, `net.video_loss_pct`,
