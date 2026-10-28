@@ -265,7 +265,8 @@ SM_TEST(PrioritizedPacketQueue, ClearPacketsAffectsOnlySpecifiedSsrc) {
   // A video packet and a retransmission of the stream being removed, first in line.
   queue.Push(now, CreatePacket(PacketPriority::kVideo, 1));
   queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 2));
-  // An audio packet and a padding packet, which are other streams.
+  // An audio packet and a padding packet. Audio is another stream; padding stays only with the default
+  // include_padding = false (libwebrtc sends it on the RTX SSRC and clears it: ClearPacketsIncludesPaddingOnRequest).
   queue.Push(now, CreatePacket(PacketPriority::kAudio, 3));
   queue.Push(now, CreatePacket(PacketPriority::kPadding, 4));
   SM_EXPECT_EQ(queue.SizeInPackets(), 4u);
@@ -280,6 +281,25 @@ SM_TEST(PrioritizedPacketQueue, ClearPacketsAffectsOnlySpecifiedSsrc) {
   // The audio packet first, then the padding.
   SM_EXPECT_EQ(PopId(queue), 3u);
   SM_EXPECT_EQ(PopId(queue), 4u);
+  SM_EXPECT_TRUE(queue.Empty());
+}
+
+// With include_padding the flush also takes the padding level: libwebrtc's padding goes out on the
+// video stream's RTX SSRC, which EnqueuePacket clears with RemovePacketsForSsrc(rtx_ssrc) (#437).
+SM_TEST(PrioritizedPacketQueue, ClearPacketsIncludesPaddingOnRequest) {
+  const Timestamp now = Timestamp::Millis(0);
+  PrioritizedPacketQueue queue;
+  queue.Push(now, CreatePacket(PacketPriority::kPadding, 1));
+  queue.Push(now, CreatePacket(PacketPriority::kVideo, 2));
+  queue.Push(now, CreatePacket(PacketPriority::kAudio, 3));
+  queue.Push(now, CreatePacket(PacketPriority::kRetransmission, 4));
+
+  std::vector<PacedPacket> removed = queue.RemoveVideoStreamPackets(/*include_padding=*/true);
+  SM_ASSERT_EQ(removed.size(), 3u);
+  SM_EXPECT_EQ(removed[0].id, 4u);  // Level by level: retransmission, video, padding.
+  SM_EXPECT_EQ(removed[1].id, 2u);
+  SM_EXPECT_EQ(removed[2].id, 1u);
+  SM_EXPECT_EQ(PopId(queue), 3u);  // Audio stays.
   SM_EXPECT_TRUE(queue.Empty());
 }
 

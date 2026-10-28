@@ -130,6 +130,7 @@ One directive per line, and `#` starts a comment.
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
 | `encoder_speed <x>` | 1 | CPU speed for the encoder model's encode time: 10 ms per 720p frame at 1, reported in the video trace (#84) |
 | `sps_pps_tracker on\|off` | off | `on`: the receiver drops the first packet of an IDR slice that arrives before an SPS and a PPS and requests a keyframe, as libwebrtc's `H264SpsPpsTracker` (#453) |
+| `keyframe_flush_padding on\|off` | off | `on`: the first packet of a keyframe also flushes the padding queued in the pacer, as libwebrtc's `PacingController::EnqueuePacket` does: its padding is on the video stream's RTX SSRC, which `RemovePacketsForSsrc(rtx_ssrc)` clears (#437) |
 | `render_smoothing on\|off` | off | `on`: decoded frames pass libwebrtc's pre-render queue (`IncomingVideoStream` / `VideoRenderFrames`): a frame waits until 10 ms before its render time, of several due at once only the newest renders, and late or out-of-order frames are dropped, as `sm_compare`'s libwebrtc side does by default (#437) |
 | `h264_missing_packets on\|off` | off | `on`: the receiver's packet buffer holds a complete H.264 delta frame while a sequence number before it is missing, as libwebrtc's `PacketBuffer` `missing_packets_` (#453) |
 | `encode_delay on\|off` | off | `on` makes the encode time real on both stacks: a frame reaches the library (`OnEncoded`) and the sender that long after its capture, which libwebrtc's CPU overuse detector measures (#84) |
