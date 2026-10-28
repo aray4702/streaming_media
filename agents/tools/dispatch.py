@@ -54,6 +54,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 
 BOT = "aray4702-reviewer-app[bot]"  # the Reviewer App (App ID 5320656); renamed from streaming-media-reviewer on 2026-10-26
 BOT_ID = 342667563  # its bot user id, which survives a rename; match on this
@@ -888,7 +889,16 @@ def main():
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "aray4702/streaming_media"))
     args = ap.parse_args()
     print(f"dispatcher {'LIVE' if args.live else 'dry run'} at {NOW:%Y-%m-%d %H:%M}Z on {args.repo}")
-    Dispatcher(args.repo, args.live, args.verbose).run()
+    try:
+        Dispatcher(args.repo, args.live, args.verbose).run()
+    except Exception as e:
+        # The Builder's sandbox can't fetch Actions logs, but it can read a run's
+        # check-run annotations over REST, so a crash names its cause there.
+        where = traceback.extract_tb(e.__traceback__)[-1]
+        msg = f"{type(e).__name__} at dispatch.py:{where.lineno} ({where.name}): {e}"
+        msg = msg.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
+        print(f"::error title=dispatch.py crashed::{msg}", flush=True)
+        raise
 
 
 if __name__ == "__main__":
