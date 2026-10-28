@@ -22,9 +22,11 @@ be told apart from a frame whose loss input differed.
   tools/audio_send.py sm.audiosend.csv webrtc.audiosend.csv
   tools/audio_send.py compare-webrtc.json --scenario audio_only_lossy
 
-Exit status 0 when every frame matches in RTP timestamp and send time, and
-every frame encoded with the same loss percentage on both sides has the same
-payload; 1 otherwise.
+Exit status 0 when every frame has the same RTP timestamp on both sides and
+every frame up to the first one whose loss percentage differs has the same
+payload (libopus keeps state, so later frames may differ once the inputs
+did); 1 otherwise. Send time differences are listed: they are times offered
+to the link, after each stack's pacer.
 """
 import argparse
 import csv
@@ -76,13 +78,15 @@ def compare(a_text, b_text, names=("sm", "webrtc"), out=sys.stdout):
     print(f"                                  {names[1]} {[r[0] // 1000 for r in rb]}", file=out)
     ts_diff = [k for k in range(n) if fa[k]["ts"] != fb[k]["ts"]]
     t_diff = [k for k in range(n) if fa[k]["t"] != fb[k]["t"]]
-    same_loss = [k for k in range(n) if la[k] == lb[k]]
-    hash_diff = [k for k in same_loss if fa[k]["hash"] != fb[k]["hash"]]
     loss_diff = [k for k in range(n) if la[k] != lb[k]]
+    # libopus carries state from frame to frame, so once the two encoders had different loss inputs their
+    # payloads may differ for good: payloads are compared up to the first frame whose loss % differs.
+    same_input = range(loss_diff[0] if loss_diff else n)
+    hash_diff = [k for k in same_input if fa[k]["hash"] != fb[k]["hash"]]
     print(f"RTP timestamp differs: {len(ts_diff)} frames", file=out)
-    print(f"send time differs: {len(t_diff)} frames", file=out)
+    print(f"send time differs: {len(t_diff)} frames (offered to the link: includes each stack's pacer)", file=out)
     print(f"loss % differs (different report blocks): {len(loss_diff)} frames", file=out)
-    print(f"payload differs with the same loss %: {len(hash_diff)} of {len(same_loss)} frames", file=out)
+    print(f"payload differs before the loss inputs diverge: {len(hash_diff)} of {len(same_input)} frames", file=out)
     for label, ks in (("RTP timestamp", ts_diff), ("send time", t_diff), ("payload", hash_diff), ("loss %", loss_diff)):
         if not ks:
             continue
@@ -92,7 +96,7 @@ def compare(a_text, b_text, names=("sm", "webrtc"), out=sys.stdout):
             print(f"  frame {j}: " + "  |  ".join(
                 f"{nm} t={f[j]['t']} ts={f[j]['ts']} pt={f[j]['pt']} bytes={f[j]['bytes']} hash={f[j]['hash']} loss={l[j]}%"
                 for nm, f, l in ((names[0], fa, la), (names[1], fb, lb))), file=out)
-    ok = len(fa) == len(fb) and not ts_diff and not t_diff and not hash_diff
+    ok = len(fa) == len(fb) and not ts_diff and not hash_diff
     print("MATCH" if ok else "DIFFERENT", file=out)
     return ok
 
