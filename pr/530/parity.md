@@ -31,7 +31,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_12_lossbwe_policer | `video.longest_freeze_ms` | 4373 | 2925 | ±1123 | behind | 8/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_shallow | `audio.jb_delay_p95_ms` | 81 | 94 | ±10 | ahead | 5/10 | #504 (closed, no note: #63, #476) |
 | issue_12_lossbwe_shallow | `audio.mouth_to_ear_p95_ms` | 136 | 149 | ±10 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 240 | 225 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 240 | 224 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
 | issue_154_shallow_drop_repair_v2 | `audio.jb_delay_p95_ms` | 432 | 671 | ±226 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
 | issue_154_shallow_drop_repair_v2 | `audio.mouth_to_ear_p95_ms` | 485 | 724 | ±225 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 249 | 226 | ±12.5 | behind | 5/10 | **none** (closed, no note: #24, #37) |
@@ -133,7 +133,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_12_lossbwe_policer | `sync.av_offset_p95_ms` | 2627 | 3383 | ±381 | ahead | 8/10 | **none** |
 | issue_12_lossbwe_policer | `net.loss_pct` | 10.6 | 12.7 | ±2.0 | ahead | 9/10 | **none** (closed, no note: #21, #61, #12) |
 | issue_12_lossbwe_policer | `repair.overhead_pct` | 55.6 | 79.5 | ±17.5 | ahead | 9/10 | **none** (closed, no note: #21, #7, #29) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 240 | 225 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 240 | 224 | ±12.0 | behind | 6/10 | **none** (closed, no note: #24, #37) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 249 | 226 | ±12.5 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_204_cross_traffic_join | `video.e2e_delay_p95_ms` | 533 | 422 | ±73.2 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_224_congestive_e2e_flip | `video.e2e_delay_p95_ms` | 444 | 358 | ±53.9 | behind | 6/10 | **none** (closed, no note: #24, #37) |
