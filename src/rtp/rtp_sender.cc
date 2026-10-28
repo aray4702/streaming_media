@@ -240,9 +240,13 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32
   // Without abs-send-time or transport-cc a media packet must go first, so the timestamps
   // used for estimation are right.
   if (!bwe_extension && stats_.media_packets == 0) return out;
+  // PaddingBytesInPacket with max_packet_size_ - max_padding_fec_packet_header_ (rtp_sender.cc:150-165,
+  // 434-435): the padding packet's header and extensions fit in the whole-packet limit (issue #513).
+  const size_t max_packet_size = cfg_.max_payload_size + RtpPacket::kFixedHeaderSize;
+  const size_t header = PaddingFecPacketHeaderSize();
+  const size_t max_padding = std::min(max_packet_size > header ? max_packet_size - header : 1, kMaxPaddingLength);
   const size_t padding_bytes_in_packet =
-      cfg_.video ? std::min(cfg_.max_payload_size, kMaxPaddingLength)
-                 : std::clamp(bytes_left, kMinAudioPaddingLength, std::min(cfg_.max_payload_size, kMaxPaddingLength));
+      cfg_.video ? max_padding : std::clamp(bytes_left, std::min(kMinAudioPaddingLength, max_padding), max_padding);
   while (bytes_left > 0) {
     // BuildPaddingPacket on the RTX SSRC.
     RtpPacket p;
@@ -273,10 +277,9 @@ std::vector<SenderPacket> RtpSender::TakeFecPackets() {
   return out;
 }
 
-size_t RtpSender::FecPacketOverhead() const {
-  if (!ulpfec_) return 0;
-  // RTPSender's max_padding_fec_packet_header_: the extensions of kFecOrPaddingExtensionSizes
-  // that are registered, MID at its largest (RtpMid::kMaxValueSizeBytes, 16).
+size_t RtpSender::PaddingFecPacketHeaderSize() const {
+  // The extensions of kFecOrPaddingExtensionSizes that are registered, MID at its largest
+  // (RtpMid::kMaxValueSizeBytes, 16).
   RtpPacket p;
   if (cfg_.extensions) {
     const sync::ExtensionAccessor access(*cfg_.extensions);
@@ -284,8 +287,13 @@ size_t RtpSender::FecPacketOverhead() const {
     if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
     if (cfg_.extensions->IdOf(sync::uri::kMid)) access.SetString(p, sync::uri::kMid, std::string(16, 'm'));
   }
+  return p.HeaderSize();
+}
+
+size_t RtpSender::FecPacketOverhead() const {
+  if (!ulpfec_) return 0;
   return loss::ulpfec::ForwardErrorCorrection::MaxPacketOverhead() + loss::ulpfec::kRedForFecHeaderLength +
-         (p.HeaderSize() - RtpPacket::kFixedHeaderSize);
+         (PaddingFecPacketHeaderSize() - RtpPacket::kFixedHeaderSize);
 }
 
 std::vector<SenderPacket> RtpSender::TakePackets() {
