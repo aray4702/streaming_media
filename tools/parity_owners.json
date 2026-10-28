@@ -15,7 +15,7 @@
     {"metric": "cc.rtt_p50_ms", "issues": [61]},
     {"metric": "net.loss_pct", "issues": [21, 61, 12]},
     {"metric": "repair.overhead_pct", "issues": [21, 7, 29]},
-    {"metric": "audio.*", "issues": [63, 476, 477]},
+    {"metric": "audio.*", "issues": [63, 476, 504]},
     {"scenario": "*cross_traffic", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "*cross_traffic", "metric": "audio.mouth_to_ear_p95_ms", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "issue_152_alr_request_probe_v2", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},

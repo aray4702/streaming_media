@@ -1,7 +1,7 @@
 {
  "description": "issue_62_neteq_v2_audio_only_lossy at a 12 kbps Opus rate: libopus's decide_fec has no rate for LBRR there (issue",
  "metrics": {
-  "audio.concealed_pct": 1.214,
+  "audio.concealed_pct": 1.199,
   "audio.interruption_ms": 0,
   "audio.interruptions": 0,
   "audio.jb_delay_p50_ms": 60,
@@ -27,6 +27,7 @@
   "net.audio_kbps": 38.32,
   "net.audio_loss_pct": 9.467,
   "net.audio_queue_drops": 0,
+  "net.audio_rtp_clock_hz": 48000,
   "net.audio_size_max_b": 145,
   "net.audio_size_p50_b": 100,
   "net.audio_size_p90_b": 116,

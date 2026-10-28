@@ -125,7 +125,7 @@ One directive per line, and `#` starts a comment.
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate (libopus 55513e81, as libwebrtc sets it up: `testbench/opus_encoder.h`, #457) |
-| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | The capture rate. The codec, RTP clock and NetEq run at it at 8, 16, 32 and 48 kHz; at 12, 24 and 44.1 kHz at Opus's 48 kHz clock, as libwebrtc resamples the capture to the encoder (#298) |
+| `audio_sample_rate 8000\|12000\|16000\|24000\|32000\|44100\|48000` | 16000 | The capture rate. The codec, RTP clock and NetEq run at Opus's 48 kHz clock at every capture rate, as libwebrtc resamples the capture to the encoder and stamps Opus with a 48 kHz RTP clock (#298, #477) |
 | `video_fps <n>` | 30 | |
 | `video_size <W>x<H>` | 1280x720 | The captured resolution, on both stacks of `sm_compare`. It feeds the encoder model's QP and encode time (`testbench/encoder_model.h`, #84); frame sizes don't depend on it |
 | `video_complexity <x>` | 1 | Content for the encoder model's QP: 2 needs twice the bits for the same QP (#84) |
@@ -240,7 +240,8 @@ Link keys (any subset; unset keys keep their previous value):
   `net.rtx_kbps`, `net.padding_kbps`, `net.fec_kbps` (wire rate sent,
   averaged over the call) and `net.audio_loss_pct`, `net.video_loss_pct`,
   `net.rtx_loss_pct`, `net.padding_loss_pct` (random, burst, outage and
-  queue drops). `sm_compare` counts libwebrtc's the same way, by SSRC;
+  queue drops), and `net.audio_rtp_clock_hz` (the audio packets' RTP clock,
+  48000 for Opus; this library only, issue #477). `sm_compare` counts libwebrtc's the same way, by SSRC;
   padding is a packet with no payload. Also per kind (audio, video, rtx,
   padding; issue #119, information only): `net.<kind>_size_p50_b`,
   `_size_p90_b`, `_size_max_b` (wire size of the packets offered to the
