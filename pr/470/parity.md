@@ -1,17 +1,29 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-132 scenarios, mean of 10 seeds. **99 gaps**: 55 behind libwebrtc, 44 ahead of it; 57 without an owner.
+133 scenarios, mean of 10 seeds. **111 gaps**: 65 behind libwebrtc, 46 ahead of it; 57 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. An owner is an open issue, or a closed one whose rule carries a note (an explained difference); closed issues without a note are listed but own nothing.
 
 ### Against `main`
 
-84 gaps on `main`, 99 here: **0 closed, 15 opened**, 0 changed direction.
+84 gaps on `main`, 111 here: **0 closed, 27 opened**, 0 changed direction.
 
 Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
+| issue_451_host_rtt_near_limit | `audio.longest_interruption_ms` | 125 | 74.6 | ±34.8 | behind | 5/10 | #504, #451 (closed, no note: #63, #476) |
+| issue_451_host_rtt_near_limit | `audio.mouth_to_ear_p95_ms` | 619 | 726 | ±62.6 | ahead | 9/10 | #504, #451 (closed, no note: #63, #476) |
+| issue_451_host_rtt_near_limit | `video.freeze_total_ms` | 3355 | 1216 | ±192 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
+| issue_451_host_rtt_near_limit | `video.longest_freeze_ms` | 2968 | 683 | ±212 | behind | 10/10 | #451 (closed, no note: #5, #37, #24) |
+| issue_451_host_rtt_near_limit | `video.render_fps` | 26.2 | 28.9 | ±1.4 | behind | 9/10 | #451 (closed, no note: #37, #24) |
+| issue_451_host_rtt_near_limit | `video.e2e_delay_p95_ms` | 349 | 297 | ±17.4 | behind | 9/10 | #451 (closed, no note: #24, #37) |
+| issue_451_host_rtt_near_limit | `video.avg_kbps` | 1222 | 1308 | ±65.4 | behind | 10/10 | #451 (closed, no note: #37, #61) |
+| issue_451_host_rtt_near_limit | `video.keyframe_requests` | 0.9 | 0 | ±0.5 | behind | 9/10 | #451 (closed, no note: #23) |
+| issue_451_host_rtt_near_limit | `cc.utilization_pct` | 60.7 | 64.8 | ±3.2 | behind | 10/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
+| issue_451_host_rtt_near_limit | `cc.queue_p95_ms` | 145 | 272 | ±51.8 | ahead | 10/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
+| issue_451_host_rtt_near_limit | `cc.max_settle_ms` | 12000 | 9090 | ±943 | behind | 10/10 | #451 (closed, no note: #15, #48, #61, #20) |
+| issue_451_host_rtt_near_limit | `cc.rtt_p50_ms` | 9034580000000000 | 70.5 | ±451729000000000 | behind | 10/10 | #451 (closed, no note: #61) |
 | issue_466_overshoot_very_low_capacity | `audio.mouth_to_ear_p95_ms` | 1950 | 2311 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |
 | issue_466_overshoot_very_low_capacity | `audio.jb_delay_p95_ms` | 1618 | 1979 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |
 | issue_466_overshoot_very_low_capacity | `video.freeze_count` | 23.8 | 21 | ±2.1 | behind | 5/10 | #466 (closed, no note: #5, #37, #24) |
@@ -90,6 +102,18 @@ Opened:
 | issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 34.3 | 49.8 | ±9.4 | ahead | 9/10 | **none** (closed, no note: #21, #7, #29) |
 | issue_437_render_smoothing_very_low_capacity | `video.longest_freeze_ms` | 3731 | 4431 | ±465 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_437_render_smoothing_very_low_capacity | `video.render_fps` | 9.8 | 8.3 | ±1.3 | ahead | 8/10 | **none** (closed, no note: #37, #24) |
+| issue_451_host_rtt_near_limit | `audio.longest_interruption_ms` | 125 | 74.6 | ±34.8 | behind | 5/10 | #504, #451 (closed, no note: #63, #476) |
+| issue_451_host_rtt_near_limit | `audio.mouth_to_ear_p95_ms` | 619 | 726 | ±62.6 | ahead | 9/10 | #504, #451 (closed, no note: #63, #476) |
+| issue_451_host_rtt_near_limit | `cc.max_settle_ms` | 12000 | 9090 | ±943 | behind | 10/10 | #451 (closed, no note: #15, #48, #61, #20) |
+| issue_451_host_rtt_near_limit | `cc.queue_p95_ms` | 145 | 272 | ±51.8 | ahead | 10/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
+| issue_451_host_rtt_near_limit | `cc.rtt_p50_ms` | 9034580000000000 | 70.5 | ±451729000000000 | behind | 10/10 | #451 (closed, no note: #61) |
+| issue_451_host_rtt_near_limit | `cc.utilization_pct` | 60.7 | 64.8 | ±3.2 | behind | 10/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
+| issue_451_host_rtt_near_limit | `video.avg_kbps` | 1222 | 1308 | ±65.4 | behind | 10/10 | #451 (closed, no note: #37, #61) |
+| issue_451_host_rtt_near_limit | `video.e2e_delay_p95_ms` | 349 | 297 | ±17.4 | behind | 9/10 | #451 (closed, no note: #24, #37) |
+| issue_451_host_rtt_near_limit | `video.freeze_total_ms` | 3355 | 1216 | ±192 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
+| issue_451_host_rtt_near_limit | `video.keyframe_requests` | 0.9 | 0 | ±0.5 | behind | 9/10 | #451 (closed, no note: #23) |
+| issue_451_host_rtt_near_limit | `video.longest_freeze_ms` | 2968 | 683 | ±212 | behind | 10/10 | #451 (closed, no note: #5, #37, #24) |
+| issue_451_host_rtt_near_limit | `video.render_fps` | 26.2 | 28.9 | ±1.4 | behind | 9/10 | #451 (closed, no note: #37, #24) |
 | issue_457_libopus_audio_rate | `video.render_fps` | 27.8 | 25.9 | ±1.4 | ahead | 7/10 | **none** (closed, no note: #37, #24) |
 | issue_466_overshoot_very_low_capacity | `audio.jb_delay_p95_ms` | 1618 | 1979 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |
 | issue_466_overshoot_very_low_capacity | `audio.mouth_to_ear_p95_ms` | 1950 | 2311 | ±250 | ahead | 7/10 | #466, #504 (closed, no note: #63, #476) |

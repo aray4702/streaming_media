@@ -4254,6 +4254,59 @@ issue_446_cwnd_after_outage - video-only call, 4 s outage at 15 s on both paths,
   video.encoder_dropped                  70.2         72.3
   video.encoder_target_avg_kbps          1162         1157
 
+issue_451_host_rtt_near_limit - From 8 s the host reports an RTT 75.8 ms short of the int64 limit, then the link drops and recovers; the call carries on, with no signed overflow (UBSan)
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     1.3          1.2  =
+  audio.interruptions                     0.3          0.1  =
+  audio.longest_interruption_ms           125         74.6  webrtc
+  audio.mouth_to_ear_p95_ms               619          726  sm
+  audio.jb_delay_p95_ms                   437          419  =
+  video.freeze_count                      2.3          2.7  =
+  video.freeze_total_ms                  3355         1216  webrtc
+  video.longest_freeze_ms                2968          683  webrtc
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       26.2         28.9  webrtc
+  video.e2e_delay_p95_ms                  349          297  webrtc
+  video.time_to_first_frame_ms            191          190  =
+  video.avg_kbps                         1222         1308  webrtc
+  video.keyframe_requests                 0.9            0  webrtc
+  sync.av_offset_p95_ms                   268          221  webrtc
+  cc.utilization_pct                     60.7         64.8  webrtc
+  cc.queue_p95_ms                         145          272  sm
+  cc.max_settle_ms                      12000         9090  webrtc
+  cc.rtt_p50_ms                  9034576315809792         70.5  webrtc
+  net.loss_pct                            1.0          1.0  =
+  repair.overhead_pct                     1.4          2.0  =
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         69.5         69.5
+  net.video_kbps                         1269         1358
+  net.rtx_kbps                           18.6         28.0
+  net.padding_kbps                        0.4          0.4
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                        0          0.0
+  net.video_loss_pct                      1.3          1.3
+  net.rtx_loss_pct                       12.5         11.5
+  net.padding_loss_pct                      0            0
+  net.audio_size_p50_b                    186          186
+  net.audio_size_p90_b                    215          215
+  net.audio_size_max_b                    302          302
+  net.audio_queue_drops                     0          0.1
+  net.video_size_p50_b                   1335         1339
+  net.video_size_p90_b                   1451         1452
+  net.video_size_max_b                   1486         1486
+  net.video_queue_drops                  47.1         48.7
+  net.rtx_size_p50_b                     1354         1348
+  net.rtx_size_p90_b                     1456         1451
+  net.rtx_size_max_b                     1474         1472
+  net.rtx_queue_drops                     6.5          9.1
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+  video.encoder_dropped                  19.1         23.9
+  video.encoder_target_avg_kbps          1200         1289
+
 issue_453_h264_missing_packets_high_jitter - high_jitter with the SPS/PPS tracker and the packet buffer's H.264 missing-packets hold on: the delta frames after a dropped IDR start wait for the next keyframe instead of drawing a second keyframe request, as libwebrtc (issue
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.2          0.2  =
@@ -6826,7 +6879,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                  62.4         47.9
   video.encoder_target_avg_kbps          1161         1205
 
-better: sm 174, webrtc 153, tie 2423 (of the metrics shown)
+better: sm 176, webrtc 164, tie 2432 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
