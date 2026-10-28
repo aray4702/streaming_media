@@ -80,20 +80,20 @@ Send times differ on at most 7 frames per call, by 2 ms or less, from pacer queu
 Parity against `main`: 73 -> 75 gaps, 0 closed, 2 opened (`issue_12_lossbwe_shallow` `audio.mouth_to_ear_p95_ms`
 138 vs 149 and `audio.jb_delay_p95_ms` 83 vs 94, ours ahead).
 
-The guard-rail line `issue_62_neteq_v2_high_jitter` `audio.jb_delay_p95_ms <= 170` moves to `<= 180`
-(program.md 0.2): ours 180 on seed 1 (seeds 1-10 mean 134, was 133), libwebrtc seeds 1-10 100-180 (mean 129) on
-`main`'s compare-webrtc, capped at libwebrtc's worst seed.
+With #476 (libopus decode) on `main`, `issue_62_neteq_v2_high_jitter` `audio.jb_delay_p95_ms` is 170 on seed 1
+(seeds 1-10 mean 133; libwebrtc 129), inside the `<= 180` line #476 set; no guard-rail line changes here.
 
-110 of 124 scenarios change (NetEq's decisions at 48 kHz, and the calls that follow from them). The metrics the
-baseline comparison flags, with libwebrtc's 10-seed mean on `main`:
+Most scenarios change (NetEq's decisions at 48 kHz, and the calls that follow from them). The metrics the baseline
+comparison flags against `main` with #476, with libwebrtc's 10-seed mean:
 
 | scenario | metric | baseline | result | libwebrtc |
 |---|---|---|---|---|
-| issue_150_gcc_v2_high_jitter_seed10 | audio.late_discards | 0 | 2 | 1496.5 |
-| issue_152_alr_request_probe_v2 | video.longest_freeze_ms | 2 | 30 | 13.9 (seeds 3-28 on 1-5) |
-| issue_29_ulpfec_over_red | cc.target_max_drop_pct | 20.16 | 21.23 | 27.08 |
-| issue_29_ulpfec_over_red | video.frames_rendered | 114 | 101 | 81.1 |
-| issue_29_ulpfec_over_red | video.render_ratio_pct | 12.72 | 11.27 | 9.05 |
+| issue_152_alr_request_probe_v2 | video.longest_freeze_ms | 4 | 30 | 13.9 (seeds 3-28 on 1-5) |
+| issue_29_ulpfec_over_red | cc.target_max_drop_pct | 21.23 | 25.78 | 27.08 |
+
+Improved: `sync.av_offset_p50_ms` on three congestive scenarios (-10.25 -> -31), `issue_5_keyframe_flush`
+`sync.av_offset_p95_ms` 284.1 -> 263.1, `issue_29_ulpfec_over_red` `video.frames_rendered` 101 -> 109,
+`low_fps_clean_link` `video.longest_freeze_ms` 67 -> 1.
 
 Each moves toward libwebrtc's value, or stays within its seed spread. Every scenario adds `net.audio_rtp_clock_hz`
 48000.
