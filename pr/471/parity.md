@@ -82,7 +82,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_150_gcc_v2_high_jitter_seed5 | `audio.jb_delay_p95_ms` | 125 | 112 | ±10 | behind | 5/10 | **none** (closed, no note: #63) |
 | issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 39.8 | 45.2 | ±5.3 | ahead | 6/10 | **none** (closed, no note: #21, #7, #29) |
 | issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 227 | 349 | ±113 | ahead | 6/10 | #411 (closed, no note: #24, #61) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 225 | ±11.9 | behind | 5/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 224 | ±11.9 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_154_shallow_drop_repair_v2 | `audio.jb_delay_p95_ms` | 434 | 671 | ±226 | ahead | 8/10 | **none** (closed, no note: #63) |
 | issue_154_shallow_drop_repair_v2 | `audio.mouth_to_ear_p95_ms` | 487 | 724 | ±225 | ahead | 8/10 | **none** (closed, no note: #63) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 250 | 226 | ±12.5 | behind | 4/10 | **none** (closed, no note: #24, #37) |
@@ -147,7 +147,7 @@ Still gaps, distance to libwebrtc changed by more than 10%:
 | issue_12_lossbwe_shallow | `audio.jb_delay_p95_ms` | 83 | 94 | ±10 | ahead | 3/10 | **none** (closed, no note: #63) |
 | issue_150_gcc_v2_high_jitter_seed5 | `audio.jb_delay_p95_ms` | 125 | 112 | ±10 | behind | 5/10 | **none** (closed, no note: #63) |
 | issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 39.8 | 45.2 | ±5.3 | ahead | 6/10 | **none** (closed, no note: #21, #7, #29) |
-| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 225 | ±11.9 | behind | 5/10 | **none** (closed, no note: #24, #37) |
+| issue_152_alr_request_probe_v2 | `video.e2e_delay_p95_ms` | 239 | 224 | ±11.9 | behind | 5/10 | **none** (closed, no note: #24, #37) |
 | issue_154_shallow_drop_repair_v2 | `audio.mouth_to_ear_p95_ms` | 487 | 724 | ±225 | ahead | 8/10 | **none** (closed, no note: #63) |
 | issue_154_shallow_drop_repair_v2 | `audio.jb_delay_p95_ms` | 434 | 671 | ±226 | ahead | 8/10 | **none** (closed, no note: #63) |
 | issue_15_aimd_v2_cross_traffic | `video.e2e_delay_p95_ms` | 250 | 226 | ±12.5 | behind | 4/10 | **none** (closed, no note: #24, #37) |
