@@ -141,6 +141,7 @@ One directive per line, and `#` starts a comment.
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `host_rtt_inf <time>` | off | The host hands both sessions an infinite RTT at that time (a host bug the library absorbs; issue #441) |
+| `host_rtt <time> <rtt>` | off | From that time on the host hands both sessions that finite RTT at every step (`Session::SetRtt`), over what the call measures, for RTTs the emulated link cannot produce, such as one near the int64 limit (issue #451) |
 | `keyframe_interval <time>` | 0 (on request only) | Periodic keyframes |
 | `link_headroom on\|off` | on | `on` gives the encoder bitrate adjuster libwebrtc's `link_allocation` (`VideoSendStreamImpl::OnBitrateUpdated`): the video allocation less overhead and protection, taken before the encoder target is capped at the maximum, so an allocation above the maximum is headroom the adjuster can let the encoder use. `off` passes the capped target, with no headroom (#326) |
 | `send_rate_stats on\|off` | off | `on` takes the RTX/FEC share off the video encoder rate from per-type send rates as libwebrtc's `RtpSenderEgress::GetSendRates` keeps them (`RateStatistics`, 1 s): a repair stream that starts after 1.5 s without one counts at its rate since it started, not averaged over the second (#224). `off` averages every type over the last second |
