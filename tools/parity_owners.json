@@ -1,5 +1,5 @@
 {
-  "comment": "Which issue owns a gap with libwebrtc (tools/parity_report.py). Rules match the scenario and metric with fnmatch patterns; every matching rule adds its issues. Keep it in step with the work list in roadmap issue #64 and the deviation inventory (docs/design/libwebrtc-parity.md). A gap with no owner needs an issue or an approved deviation.",
+  "comment": "Which issue owns a gap with libwebrtc (tools/parity_report.py). Rules match the scenario and metric with fnmatch patterns; every matching rule adds its issues. Keep it in step with the work list in roadmap issue #64 and the deviation inventory (docs/design/libwebrtc-parity.md). A gap with no owner needs an issue or an approved deviation. An owner counts only while its issue is open, or when its rule carries a note (the explanation of a closed, explained difference); closed issues in a rule without a note own nothing.",
   "rules": [
     {"metric": "video.keyframe_requests", "issues": [23]},
     {"metric": "video.e2e_delay_p95_ms", "issues": [24, 37]},
@@ -15,7 +15,7 @@
     {"metric": "cc.rtt_p50_ms", "issues": [61]},
     {"metric": "net.loss_pct", "issues": [21, 61, 12]},
     {"metric": "repair.overhead_pct", "issues": [21, 7, 29]},
-    {"metric": "audio.*", "issues": [63]},
+    {"metric": "audio.*", "issues": [63, 476, 477]},
     {"scenario": "*cross_traffic", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "*cross_traffic", "metric": "audio.mouth_to_ear_p95_ms", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "issue_152_alr_request_probe_v2", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},

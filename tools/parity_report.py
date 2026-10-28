@@ -25,11 +25,23 @@ Usage:
 comparison of `main`, for a PR). --check-owned exits 1 if a gap has no owner
 (an issue on the roadmap or an approved deviation); this is the stage 1 exit
 test in program.md.
+
+An owner counts only while someone works on the gap or it is explained: a
+matching rule owns a gap through an issue that is open, or through any of its
+issues when the rule carries a `note` (the recorded explanation of a closed,
+explained difference or deviation). A rule without a note whose issues are all
+closed owns nothing; the report lists those issues as stale owners, so a gap
+"owned" only by finished work shows as unowned. Issue states come from `gh`
+(GH_TOKEN or a logged-in gh; the repository from GITHUB_REPOSITORY or the
+current checkout). Without them every listed issue counts, as before, and the
+report says the states were unknown.
 """
 import argparse
 import fnmatch
 import json
 import math
+import os
+import subprocess
 import sys
 
 REL_TOL = 0.05
@@ -88,16 +100,36 @@ def gaps(data, sigma=1.0):
     return out
 
 
-def attach_owners(gap_list, owners_path):
+def issue_states(numbers):
+    """{issue: "open" | "closed"} from gh, or None when gh can't tell."""
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    states = {}
+    for n in sorted(numbers):
+        cmd = ["gh", "issue", "view", str(n), "--json", "state", "--jq", ".state"] + (["-R", repo] if repo else [])
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
+        if r.returncode != 0:
+            return None
+        states[n] = r.stdout.strip().lower()
+    return states
+
+
+def attach_owners(gap_list, owners_path, states=None):
+    """states: {issue: "open" | "closed"}; None counts every listed issue."""
     rules = load(owners_path)["rules"] if owners_path else []
     for g in gap_list:
-        issues = []
+        issues, stale = [], []
         for r in rules:
             if fnmatch.fnmatch(g["scenario"], r.get("scenario", "*")) and fnmatch.fnmatch(g["metric"], r["metric"]):
                 for i in r.get("issues", []):
-                    if i not in issues:
-                        issues.append(i)
+                    counts = states is None or "note" in r or states.get(i) == "open"
+                    dest = issues if counts else stale
+                    if i not in dest:
+                        dest.append(i)
         g["owners"] = issues
+        g["stale_owners"] = [i for i in stale if i not in issues]
     return gap_list
 
 
@@ -110,7 +142,10 @@ def fmt(v):
 
 
 def owner_text(g):
-    return ", ".join("#%d" % i for i in g["owners"]) if g["owners"] else "**none**"
+    text = ", ".join("#%d" % i for i in g["owners"]) if g["owners"] else "**none**"
+    if g.get("stale_owners"):
+        text += " (closed, no note: %s)" % ", ".join("#%d" % i for i in g["stale_owners"])
+    return text
 
 
 def table(rows):
@@ -122,7 +157,7 @@ def table(rows):
     return lines
 
 
-def markdown(data, gap_list, base_gaps=None):
+def markdown(data, gap_list, base_gaps=None, states_known=True):
     n_scn = len(data["scenarios"])
     behind = [g for g in gap_list if g["direction"] == "behind"]
     ahead = [g for g in gap_list if g["direction"] == "ahead"]
@@ -133,7 +168,11 @@ def markdown(data, gap_list, base_gaps=None):
              "",
              "A gap is a metric whose means differ by more than the band, in either direction: the larger of the "
              "`sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. "
-             "`seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction.", ""]
+             "`seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. "
+             "An owner is an open issue, or a closed one whose rule carries a note (an explained difference); "
+             "closed issues without a note are listed but own nothing.", ""]
+    if not states_known:
+        lines += ["Issue states were unknown (no `gh`), so every listed issue counts as an owner.", ""]
     if base_gaps is not None:
         bk = {key(g): g for g in base_gaps}
         hk = {key(g): g for g in gap_list}
@@ -176,8 +215,44 @@ def markdown(data, gap_list, base_gaps=None):
     return "\n".join(lines)
 
 
-def report(data, owners_path=None, sigma=1.0):
-    return attach_owners(gaps(data, sigma), owners_path)
+def owner_issues(owners_path):
+    rules = load(owners_path)["rules"] if owners_path else []
+    return {i for r in rules for i in r.get("issues", [])}
+
+
+def align_base(base, head):
+    """Restrict main's report to the seeds the PR ran, scenario by scenario.
+
+    On a PR, scenarios with `compare_seeds` run fewer seeds than on main
+    (.github/workflows/ci.yml, compare-webrtc-shard). Comparing their 10-seed
+    means with main's 80-seed means would open and close gaps from the seed
+    count alone, so the base keeps only the seeds the head has, and its means
+    are recomputed from them.
+    """
+    head_seeds = {s["scenario"]: {p["seed"] for p in s.get("per_seed", [])} for s in head["scenarios"]}
+    out = dict(base, scenarios=[])
+    for s in base["scenarios"]:
+        want = head_seeds.get(s["scenario"])
+        per = s.get("per_seed", [])
+        if not want or not per or {p["seed"] for p in per} <= want:
+            out["scenarios"].append(s)
+            continue
+        kept = [p for p in per if p["seed"] in want]
+        if not kept:
+            out["scenarios"].append(s)
+            continue
+        s = dict(s, per_seed=kept, sm=dict(s["sm"]), webrtc=dict(s["webrtc"]))
+        for side in ("sm", "webrtc"):
+            for m in s[side]:
+                vals = [p[side][m] for p in kept if p[side].get(m) is not None]
+                if vals:
+                    s[side][m] = sum(vals) / len(vals)
+        out["scenarios"].append(s)
+    return out
+
+
+def report(data, owners_path=None, sigma=1.0, states=None):
+    return attach_owners(gaps(data, sigma), owners_path, states)
 
 
 def main(argv=None):
@@ -191,14 +266,15 @@ def main(argv=None):
     ap.add_argument("--check-owned", action="store_true")
     a = ap.parse_args(argv)
     data = load(a.compare_json)
-    g = report(data, a.owners, a.sigma)
+    states = issue_states(owner_issues(a.owners)) if a.owners else None
+    g = report(data, a.owners, a.sigma, states)
     base = None
     if a.base:
         try:
-            base = report(load(a.base), a.owners, a.sigma)
+            base = report(align_base(load(a.base), data), a.owners, a.sigma, states)
         except (OSError, ValueError, SystemExit, KeyError) as e:
             print("base report unusable (%s); skipping the comparison with main" % e, file=sys.stderr)
-    md = markdown(data, g, base)
+    md = markdown(data, g, base, states_known=states is not None or not a.owners)
     if a.markdown:
         with open(a.markdown, "w") as f:
             f.write(md + "\n")
@@ -207,7 +283,7 @@ def main(argv=None):
     if a.json:
         with open(a.json, "w") as f:
             json.dump({"webrtc_version": data.get("webrtc_version"), "seeds": data.get("seeds"),
-                       "sigma": a.sigma, "gaps": g}, f, indent=1)
+                       "sigma": a.sigma, "issue_states": states, "gaps": g}, f, indent=1)
             f.write("\n")
     if a.check_owned and any(not x["owners"] for x in g):
         return 1

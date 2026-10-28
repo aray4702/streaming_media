@@ -52,7 +52,10 @@ practical details every role shares.
   ```
   A gap is a metric whose means differ by more than the parity band
   (`tools/parity_report.py` documents it); `tools/parity_owners.json` says
-  which issue owns it.
+  which issue owns it. An owner counts only if the issue is open, or its rule
+  carries a `note` explaining the gap. A closed issue without a note is shown
+  as "closed, no note" and owns nothing. When you close an item, either give
+  its remaining cells a `note` (explained) or move them to an open item.
   `traces/` there holds the per-packet forward-link trace and the per-second
   video send trace of **every** scenario's first seed, for both stacks
   (`<scenario>.<seed>.{sm,webrtc}.{trace,video}.csv`; `traces/index.txt`
@@ -77,7 +80,10 @@ practical details every role shares.
   or a new trace column such as detector state or the NACK list), build the
   yardstick yourself in a draft PR. Don't release the item for lack of data.
   The PR's `compare-webrtc` job builds `sm_compare` from your branch and
-  publishes to `parity-data-pr/pr/<N>/`:
+  publishes to `parity-data-pr/pr/<N>/`. On a PR, scenarios with
+  `compare_seeds` run 10 seeds unless the PR changes that scenario file, so
+  to get all of a scenario's seeds on your PR, change its file (for example
+  its `compare_seeds` line); `main` always runs them all:
   - Add the instrumentation in `compare/webrtc/` (libwebrtc side) and in
     `testbench/` (ours).
   - Put the scenarios to trace in `kDefaultTraced`. A scenario copy with
@@ -86,7 +92,9 @@ practical details every role shares.
     auto-merge off. Write `For #N` in its body, not `Refs #N`: a `Refs` PR
     marks the item busy, and then no Fixer picks the item up when the data
     is ready.
-  - Poll `ci-ok` (about 25 min) in the same run, read the traces and continue.
+  - Poll `ci-ok` (about 15 min) in the same run, read the traces and continue.
+    The `yardstick:` title prefix is what makes a draft run `compare-webrtc`
+    (other drafts run only the quick jobs, `agents/program.md` 6.1).
   - Merge it only if the instrumentation is generally useful (as #156 was);
     otherwise close it when done.
   To check a local change, build `sm_compare` and run

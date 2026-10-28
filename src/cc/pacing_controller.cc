@@ -158,11 +158,13 @@ std::optional<PacedPacket> PrioritizedPacketQueue::Pop() {
   return std::nullopt;
 }
 
-std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets() {
+std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets(bool include_padding) {
   // The levels that hold the video stream's packets: retransmission (1) and
-  // video and FEC (3). Audio and padding are other streams.
+  // video and FEC (3), and padding (4), which libwebrtc sends on the video
+  // stream's RTX SSRC. Audio is another stream.
   std::vector<PacedPacket> removed;
-  for (PacketPriority prio : {PacketPriority::kRetransmission, PacketPriority::kVideo}) {
+  for (PacketPriority prio : {PacketPriority::kRetransmission, PacketPriority::kVideo, PacketPriority::kPadding}) {
+    if (prio == PacketPriority::kPadding && !include_padding) continue;
     auto& level = levels_[static_cast<size_t>(Level(prio))];
     for (Queued& q : level) {
       DequeueInternal(q);
@@ -296,7 +298,7 @@ void PacingController::Enqueue(PacedPacket p) {
       !queue_.Empty()) {
     const size_t before = flushed_.size();
     queue_.UpdateAverageQueueTime(now);
-    for (PacedPacket& f : queue_.RemoveVideoStreamPackets()) flushed_.push_back(f);
+    for (PacedPacket& f : queue_.RemoveVideoStreamPackets(cfg_.keyframe_flush_padding)) flushed_.push_back(f);
     ++stats_.keyframe_flushes;
     stats_.flushed_packets += flushed_.size() - before;
     SM_EVENT(cfg_.events, now, "pacer", "keyframe_flush", static_cast<double>(flushed_.size() - before), 0);
