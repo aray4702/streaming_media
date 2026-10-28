@@ -98,8 +98,8 @@ burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          88.9         98.7  =
-  audio.mouth_to_ear_p95_ms               293          298  =
-  audio.jb_delay_p95_ms                   187          188  =
+  audio.mouth_to_ear_p95_ms               292          298  =
+  audio.jb_delay_p95_ms                   186          188  =
   video.freeze_count                      1.5          1.6  =
   video.freeze_total_ms                   403          404  =
   video.longest_freeze_ms                 235          267  =
@@ -733,7 +733,7 @@ issue_127_all_v2_no_stall - every v2 switch on, 1200 kbps, 120 ms delay, 30 ms j
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.1          0.1  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          22.8         22.4  =
+  audio.longest_interruption_ms          22.9         22.4  =
   audio.mouth_to_ear_p95_ms               442          450  =
   audio.jb_delay_p95_ms                   235          244  =
   video.freeze_count                      8.1          8.8  sm
@@ -4171,7 +4171,7 @@ issue_437_render_smoothing_very_low_capacity - very_low_capacity with libwebrtc'
   video.time_to_first_frame_ms           1113         1107  =
   video.avg_kbps                         33.0         33.4  =
   video.keyframe_requests                 5.7          5.6  =
-  sync.av_offset_p95_ms                  7092         6610  webrtc
+  sync.av_offset_p95_ms                  7091         6610  webrtc
   cc.utilization_pct                     98.4         98.2  =
   cc.queue_p95_ms                         286          285  =
   cc.max_settle_ms                      40000        40000  =
@@ -4471,8 +4471,8 @@ issue_457_libopus_audio_rate - low_bandwidth with libopus 55513e81 (issue
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2092         2151  =
-  audio.jb_delay_p95_ms                  1662         1734  =
+  audio.mouth_to_ear_p95_ms              2090         2151  =
+  audio.jb_delay_p95_ms                  1660         1734  =
   video.freeze_count                      1.8          2.2  =
   video.freeze_total_ms                  1072         1441  sm
   video.longest_freeze_ms                 354          597  sm
@@ -6949,7 +6949,7 @@ very_low_capacity_allocator_v2 - 100 kbps link with libwebrtc's BitrateAllocator
   video.time_to_first_frame_ms           1113         1107  =
   video.avg_kbps                         33.0         33.4  =
   video.keyframe_requests                 5.7          5.6  =
-  sync.av_offset_p95_ms                  7309         6610  webrtc
+  sync.av_offset_p95_ms                  7308         6610  webrtc
   cc.utilization_pct                     98.4         98.2  =
   cc.queue_p95_ms                         286          285  =
   cc.max_settle_ms                      40000        40000  =
@@ -7045,6 +7045,8 @@ Metrics measured differently for libwebrtc:
   audio.net_delay_p95_ms: Measured from the capture time of the packet's first sample, (ts - first ts) / 48 ms, as the test bench measures from its RTP timestamp; the first packet is the frame of the 10 ms blocks captured at 0 and 10 ms
   video.residual_loss_pct: Counts packets recovered by RTX but not by FEC (libwebrtc does not expose FEC-recovered packets), so it overstates residual loss when FEC recovers packets
   video.undecodable_frames: VideoReceiveStream frames_dropped
+  video.delay_*: Each frame's capture and encoded times from the encoder model, the send time of its last media packet at the send transport, the arrival of its last media or RTX packet on the forward link, and its render time, as the test bench measures them (#510)
+  audio.time_to_first_ms: Arrival of the first audio packet after which NetEq holds audio (jitter_buffer_ms or total_samples_received above 0), read right after the packet is delivered (#510)
   repair.fec_recovered: Not reported: libwebrtc does not expose it
   net.<kind>_kbps / _loss_pct: Counted at the forward link by SSRC: audio, video media, RTX with a payload, FEC (ULPFEC in RED on the video SSRC), and padding (a packet with no payload after RTP padding is removed, including RTX with only its sequence number)
   cc.goodput_kbps: Each media sequence number counts once, as original or RTX (#329): excludes padding-only packets, RTX payload padding and RTX copies of packets that had already arrived
