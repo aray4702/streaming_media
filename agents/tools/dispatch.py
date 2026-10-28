@@ -10,6 +10,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  a merge freeze or an Owner question can't be merged past
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
   RUN fixer      start a Fixer run when an eligible #64 item has waited
+  RUN fixer (conflict)  start a Fixer run when an approved agent PR has
+                 merge conflicts with main (usually testbench/baseline.json),
+                 which the Dispatcher can't update and nothing else resolves
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
                  already working and another eligible #64 item is free
   RUN reviewer   start a Reviewer run when a green PR has waited for review, or
@@ -365,6 +368,31 @@ class Dispatcher:
         if self.live:
             self.start("fixer")
 
+    def conflicts(self):
+        """An approved agent PR in conflict with main waits until a Fixer resolves it (fixer.md step 1)."""
+        dirty = []
+        for pr in self.pulls:
+            if pr["draft"] or "agent-pr" not in labels(pr) or labels(pr) & {"needs-human", "needs-owner", "blocked"}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED":
+                continue
+            if gh(f"repos/{self.r}/pulls/{pr['number']}")["mergeable_state"] == "dirty":
+                dirty.append(pr["number"])
+        if not dirty:
+            return self.note("fixer", "no approved agent PR in conflict")
+        what = "conflicts with main on " + ", ".join(f"PR #{n}" for n in dirty)
+        last = self.last_dispatch("fixer")
+        if self.recent_fixer_claim():
+            return self.say("HOLD", "fixer", f"{what}, but a Fixer claimed work in the last 30 min")
+        if last and minutes_ago(last) < DISPATCH_GAP_MIN:
+            return self.say("HOLD", "fixer", f"{what}, but dispatched {minutes_ago(last):.0f} min ago")
+        if any(0 <= (m - NOW.minute) % 60 <= 10 for m in SCHEDULED_FIXER_MINUTES):
+            return self.say("HOLD", "fixer", f"{what}; the scheduled Fixer run is due within 10 min")
+        self.say("RUN", "fixer", what)
+        if self.live:
+            self.start("fixer")
+
     def fixer_b(self):
         # The second Fixer (Owner, 2026-10-26: on demand only). fixer() covers an
         # idle loop; Fixer B covers the case it holds: one Fixer is working and
@@ -688,6 +716,7 @@ class Dispatcher:
             print("STOP AGENTS issue is open; doing nothing.")
             return
         self.merges()
+        self.conflicts()
         self.fixer()
         self.fixer_b()
         self.reviewer()
