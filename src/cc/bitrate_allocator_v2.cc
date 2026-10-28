@@ -195,11 +195,13 @@ void BitrateAllocatorV2::AddObserver(const std::string& id, StreamAllocationConf
     tracks_.push_back(std::move(t));
   }
   if (last_target_bps_ > 0) {
-    OnTargetChanged(DataRate::BitsPerSec(last_target_bps_), Timestamp::MinusInfinity());
+    Reallocate(Timestamp::MinusInfinity(), /*cwnd_reduce_ratio=*/0);
   } else {
     // An encoder may not produce frames yet; the observer is told a zero allocation.
     for (Track& t : tracks_) {
-      if (t.id == id && t.observer) t.observer(DataRate::Zero());
+      if (t.id != id) continue;
+      t.cwnd_reduce_ratio = 0;
+      if (t.observer) t.observer(DataRate::Zero());
     }
     UpdateAllocationLimits();
   }
@@ -210,13 +212,18 @@ void BitrateAllocatorV2::RemoveObserver(const std::string& id) {
   UpdateAllocationLimits();
 }
 
-void BitrateAllocatorV2::OnTargetChanged(DataRate target, Timestamp now) {
+void BitrateAllocatorV2::OnTargetChanged(DataRate target, Timestamp now, double cwnd_reduce_ratio) {
   last_target_bps_ = target.bps();
+  Reallocate(now, cwnd_reduce_ratio);
+}
+
+void BitrateAllocatorV2::Reallocate(Timestamp now, double cwnd_reduce_ratio) {
   if (tracks_.empty()) return;
   const std::vector<int64_t> alloc = Allocate(last_target_bps_);
   for (size_t i = 0; i < tracks_.size(); ++i) {
     Track& t = tracks_[i];
     const int64_t allocated = alloc[i];
+    t.cwnd_reduce_ratio = cwnd_reduce_ratio;
     const int64_t protection = t.observer ? t.observer(DataRate::BitsPerSec(allocated)).bps() : 0;
     if (allocated == 0 && t.allocated_bps > 0) {
       if (last_target_bps_ > 0) ++pause_events_;
@@ -252,6 +259,13 @@ DataRate BitrateAllocatorV2::allocation(const std::string& id) const {
     if (t.id == id) return DataRate::BitsPerSec(std::max<int64_t>(0, t.allocated_bps));
   }
   return DataRate::Zero();
+}
+
+double BitrateAllocatorV2::cwnd_reduce_ratio(const std::string& id) const {
+  for (const Track& t : tracks_) {
+    if (t.id == id) return t.cwnd_reduce_ratio;
+  }
+  return 0;
 }
 
 bool BitrateAllocatorV2::paused(const std::string& id) const {

@@ -122,6 +122,8 @@
     {"scenario": "issue_29_ulpfec_over_red", "metric": "video.e2e_delay_p95_ms", "issues": [410], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind by sign (9/10 seeds), 6/10 over the band: 241 vs 213 ms."},
     {"scenario": "satellite", "metric": "video.freeze_*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind on 7-8/10 seeds (stage-1 exit blocker), needs data: freeze total 13271 vs 12350 ms."},
     {"scenario": "issue_76_session_layer_v2", "metric": "audio.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind on 7/10 seeds (mouth-to-ear p95 191 vs 170 ms; stage-1 exit blocker), needs data; libwebrtc's seed-7 outlier went away."},
-    {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Follows the audio jb p95 (99 vs 80 ms), behind 6/10."}
+    {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Follows the audio jb p95 (99 vs 80 ms), behind 6/10."},
+    {"scenario": "*", "metric": "video.delay_*", "issues": [479]},
+    {"scenario": "*", "metric": "video.undecodable_frames", "issues": [479]}
   ]
 }

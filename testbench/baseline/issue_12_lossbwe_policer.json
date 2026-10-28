@@ -80,7 +80,7 @@
   "video.render_ratio_pct": 52.2,
   "video.residual_loss_pct": 0.9756,
   "video.time_to_first_frame_ms": 194,
-  "video.undecodable_frames": 0
+  "video.undecodable_frames": 18
  },
  "passed": true,
  "scenario": "issue_12_lossbwe_policer"

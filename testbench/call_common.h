@@ -110,6 +110,69 @@ class ConcealmentMeter {
   int64_t interruptions_ = 0, interruption_ms_ = 0, longest_event_ms_ = 0;
 };
 
+// audio.stretch_pct from the jitter buffer's lifetime counters after every
+// 10 ms pull, the same way for both stacks (#510): a pull is stretched when
+// insertedSamplesForDeceleration or removedSamplesForAcceleration grew, as
+// sm_compare reads NetEq's GetStats (NetEqLifetimeStatistics). The pull's
+// operation would also count an Accelerate or PreemptiveExpand that moved no
+// samples. Playout counts from the first pull after which the jitter buffer
+// has output samples (totalSamplesReceived > 0); OnPull returns false for the
+// pulls before it, which no playout statistic counts.
+class StretchMeter {
+ public:
+  bool OnPull(uint64_t total_samples, uint64_t inserted_for_deceleration, uint64_t removed_for_acceleration) {
+    if (total_samples == 0) return false;
+    const uint64_t stretched = inserted_for_deceleration + removed_for_acceleration;
+    ++pulls_;
+    if (stretched != prev_stretched_) ++stretched_pulls_;
+    prev_stretched_ = stretched;
+    return true;
+  }
+  int64_t played_ms() const { return 10 * pulls_; }
+  // Stretched pulls in percent of the pulls played (0 if none were).
+  double stretch_pct() const {
+    return pulls_ ? 100.0 * static_cast<double>(stretched_pulls_) / static_cast<double>(pulls_) : 0;
+  }
+
+ private:
+  uint64_t prev_stretched_ = 0;
+  int64_t pulls_ = 0, stretched_pulls_ = 0;
+};
+
+// audio.time_to_first_ms, the same way for both stacks (#510): the arrival
+// time of the first audio packet the stack's jitter buffer took, read right
+// after the packet was handed to the stack. A stream the jitter buffer
+// refuses (#256) never starts.
+class FirstAudioMeter {
+ public:
+  void OnAudioPacket(Timestamp at, bool jitter_buffer_has_audio) {
+    if (!first_.IsFinite() && jitter_buffer_has_audio) first_ = at;
+  }
+  bool started() const { return first_.IsFinite(); }
+  // In ms since the call started; the call's length if no packet was taken.
+  double ms(int64_t end_ms) const { return first_.IsFinite() ? static_cast<double>(first_.ms()) : static_cast<double>(end_ms); }
+
+ private:
+  Timestamp first_ = Timestamp::MinusInfinity();
+};
+
+// Times of one video frame on its way from capture to render (issue #60).
+// An unset time is infinite or minus infinity and the frame is not counted.
+struct VideoFrameTimes {
+  Timestamp capture = Timestamp::MinusInfinity();
+  Timestamp submitted = Timestamp::MinusInfinity();   // Handed to the sender (after encoding).
+  Timestamp last_sent = Timestamp::MinusInfinity();   // Last media packet left the pacer.
+  Timestamp complete = Timestamp::MinusInfinity();    // Last media or RTX packet of the frame arrived.
+  Timestamp rendered = Timestamp::MinusInfinity();
+};
+
+// Adds video.delay_encode_ms (mean), video.delay_pacer_p95_ms,
+// video.delay_network_p95_ms and video.delay_jitter_buffer_p95_ms from the
+// frames that were rendered, for both stacks (#510). Adds nothing when no
+// frame was.
+template <class Metrics>
+void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Metrics& m);
+
 // Applies scenario link changes to an emulated link.
 struct LinkState {
   sim::LinkConfig cfg;
@@ -206,6 +269,29 @@ inline double Mean(const std::vector<double>& v) {
   double s = 0;
   for (double x : v) s += x;
   return s / static_cast<double>(v.size());
+}
+
+template <class Metrics>
+void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Metrics& m) {
+  std::vector<double> encode, pacer, network, jitter;
+  auto ms = [](TimeDelta d) { return static_cast<double>(d.us()) / 1000.0; };
+  for (const auto& f : frames) {
+    if (!f.rendered.IsFinite() || !f.capture.IsFinite() || !f.submitted.IsFinite() || !f.last_sent.IsFinite() ||
+        !f.complete.IsFinite()) {
+      continue;
+    }
+    encode.push_back(ms(f.submitted - f.capture));
+    pacer.push_back(ms(f.last_sent - f.submitted));
+    // A frame completed by a retransmission arrives after its last original
+    // packet was sent; a frame completed by FEC can look complete before it.
+    network.push_back(std::max(0.0, ms(f.complete - f.last_sent)));
+    jitter.push_back(ms(f.rendered - f.complete));
+  }
+  if (encode.empty()) return;
+  m["video.delay_encode_ms"] = Mean(encode);
+  m["video.delay_pacer_p95_ms"] = Percentile(pacer, 95);
+  m["video.delay_network_p95_ms"] = Percentile(network, 95);
+  m["video.delay_jitter_buffer_p95_ms"] = Percentile(jitter, 95);
 }
 
 // Audio/video synchronization as the user sees it (issue #63), measured the
