@@ -125,6 +125,31 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   }
 }
 
+// rtp_sender_video.cc:676-687 (issue #513): a frame that may be retransmitted leaves
+// RtxPacketOverhead (2 bytes, the RTX header) of the whole-packet limit for the RTX resend, so a
+// stream with NACK and RTX sends packets of at most 1458 bytes of a 1460-byte limit, as libwebrtc's
+// packets in sm_compare; with NACK off libwebrtc's stream has no RTX and reserves nothing.
+SM_TEST(Session, VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted) {
+  for (bool nack : {true, false}) {
+    Session a(Cfg(1));
+    VideoStreamConfig v = Video();
+    v.nack = nack;
+    v.max_payload_size = 1460 - 12;
+    const VideoSendId id = a.AddVideoSend(v);
+    SM_EXPECT_EQ(a.video_sender(id).RtxPacketOverhead(), 2u);
+    // Frames around the limit: the largest that still goes as one packet fills the capacity.
+    size_t largest = 0;
+    for (int i = 0; i < 100; ++i) {
+      a.SendVideo(id, {static_cast<uint32_t>(3000 * i), MakeFakeH264Frame(false, 1380 + static_cast<size_t>(i))},
+                  Timestamp::Millis(100 * i));
+      for (auto& o : Pump(a, 100 * i, 100)) {
+        if (o.kind == OutgoingKind::kVideo) largest = std::max(largest, o.bytes.size());
+      }
+    }
+    SM_EXPECT_EQ(largest, nack ? 1458u : 1460u);
+  }
+}
+
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
 // libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
 // STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta

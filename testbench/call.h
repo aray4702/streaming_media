@@ -3,10 +3,13 @@
 // experiences it (audio gaps, video freezes, delay, quality, recovery time).
 #pragma once
 
+#include <cstdint>
 #include <map>
+#include <span>
 #include <string>
 #include <vector>
 
+#include "call_common.h"
 #include "scenario.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/sim/network_link.h"
@@ -88,6 +91,32 @@ struct AudioTraceRow {
   double accelerate_ms = 0, decelerate_ms = 0;  // removedSamplesForAcceleration, insertedSamplesForDeceleration.
 };
 
+// The audio send path (issue #477), the same record for this library and for
+// libwebrtc, read from the packet bytes on the forward and reverse links: one
+// row per audio packet offered to the forward link (its RTP timestamp and a hash
+// of its payload, so equal rows mean both encoders took the same samples with the
+// same settings) and one per audio report block delivered to the sender (the
+// fraction lost the encoder's packet loss smoother takes). tools/audio_send.py
+// compares the two stacks frame by frame.
+struct AudioSendRow {
+  enum class Kind { kFrame, kReport };
+  Kind kind = Kind::kFrame;
+  int64_t time_us = 0;        // Frame: offered to the forward link. Report: delivered to the sender.
+  int32_t seq = -1;           // Frame: RTP sequence number.
+  uint32_t rtp_ts = 0;        // Frame: RTP timestamp (the CSV makes it relative to the first frame's).
+  int32_t pt = -1;            // Frame: RTP payload type (Opus or RED).
+  int32_t payload_bytes = 0;  // Frame: RTP payload, RED header included.
+  uint32_t payload_hash = 0;  // Frame: FNV-1a 32 over the same bytes.
+  int32_t fraction_lost = -1; // Report: the block's 8-bit fraction lost (RFC 3550 6.4.1).
+};
+
+// Appends the row of an RTP packet from `audio_ssrc` with a payload.
+void TraceAudioRtp(std::span<const uint8_t> packet, int64_t time_us, uint32_t audio_ssrc,
+                   std::vector<AudioSendRow>& rows);
+// Appends a row per report block about `audio_ssrc` in an RTCP compound packet's SRs and RRs.
+void TraceAudioRtcp(std::span<const uint8_t> packet, int64_t time_us, uint32_t audio_ssrc,
+                    std::vector<AudioSendRow>& rows);
+
 struct Report {
   Scenario scenario;
   std::map<std::string, double> metrics;  // User-experience metrics (see README).
@@ -104,13 +133,15 @@ struct Report {
   std::vector<cc::BweTraceRow> bwe_trace;
   // One row per 10 ms audio pull, when RunOptions::audio_trace is set (issue #62).
   std::vector<AudioTraceRow> audio_trace;
+  // The audio send path, when RunOptions::link_trace is set (issue #477).
+  std::vector<AudioSendRow> audio_send_trace;
 };
 
 struct RunOptions {
   bool timeseries = true;
   bool library_metrics = true;
   bool video_trace = false;  // Fill Report::video_trace.
-  bool link_trace = false;  // Fill Report::link_trace (memory grows with the call).
+  bool link_trace = false;  // Fill Report::link_trace and Report::audio_send_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
   bool audio_trace = false;  // Fill Report::audio_trace.
 };
@@ -118,8 +149,10 @@ struct RunOptions {
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
 
 // The rate the bench's audio codec, RTP clock, NetEq and playout run at for a
-// capture rate: the capture rate at 8, 16, 32 and 48 kHz, else Opus's 48 kHz
-// RTP clock, as libwebrtc resamples the capture to the encoder (issue #298).
+// capture rate: Opus's 48 kHz at every capture rate, as libwebrtc resamples the
+// capture to the encoder and stamps Opus packets with a 48 kHz RTP clock
+// (audio_encoder_opus.cc kRtpTimestampRateHz; RFC 7587), so its NetEq decodes
+// at 48 kHz (issues #298, #477).
 int AudioCodecRate(int capture_rate);
 
 // Steps shared with other call implementations (compare/), so every
@@ -173,22 +206,11 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
+std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 
-// Times of one video frame on its way from capture to render (issue #60).
-// An unset time is infinite or minus infinity and the frame is not counted.
-struct VideoFrameTimes {
-  Timestamp capture = Timestamp::MinusInfinity();
-  Timestamp submitted = Timestamp::MinusInfinity();   // Handed to the sender (after encoding).
-  Timestamp last_sent = Timestamp::MinusInfinity();   // Last media packet left the pacer.
-  Timestamp complete = Timestamp::MinusInfinity();    // Last media or RTX packet of the frame arrived.
-  Timestamp rendered = Timestamp::MinusInfinity();
-};
-
-// Adds video.delay_encode_ms (mean), video.delay_pacer_p95_ms,
-// video.delay_network_p95_ms and video.delay_jitter_buffer_p95_ms from the
-// frames that were rendered. Adds nothing when no frame was.
+// The video delay breakdown (call_common.h) into rep.metrics.
 void AddVideoDelayMetrics(const std::vector<VideoFrameTimes>& frames, Report& rep);
 
 std::string ToJson(const Report& r, bool include_timeseries = true, bool include_library = false);

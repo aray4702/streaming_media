@@ -21,11 +21,13 @@
 // into the JSON's "traces" and, with --trace-dir=DIR, to DIR. Summarise or
 // diff them with tools/link_trace.py. The same runs also write the sender's
 // per-second video decisions (issue #131; "sm_video", "webrtc_video") and the
-// GoogCC estimates per update (issue #149; "sm_bwe", "webrtc_bwe").
+// GoogCC estimates per update (issue #149; "sm_bwe", "webrtc_bwe") and the
+// audio send path per frame and report block (issue #477; "sm_audiosend",
+// "webrtc_audiosend"; tools/audio_send.py).
 // tools/bwe_trace.py lays the two side by side.
 //
 // --trace-all-dir=DIR traces the first seed of every scenario the same way and
-// writes only the CSV files, <scenario>.<seed>.{sm,webrtc}.{trace,video,bwe}.csv,
+// writes only the CSV files, <scenario>.<seed>.{sm,webrtc}.{trace,video,bwe,audio,audiosend}.csv,
 // to DIR; the JSON keeps only the --trace scenarios. CI runs it on main and
 // publishes DIR as traces/ on the parity-data branch, so libwebrtc's trace of
 // any scenario is there without a PR that adds it to --trace.
@@ -86,8 +88,8 @@ const std::vector<Shown>& ShownMetrics() {
 }
 
 // Information only (issue #117): what the forward link carried and lost per
-// kind. Shown after the table, never counted as better or worse and not part
-// of the parity gaps.
+// kind, and the encoder's drops and configured rate (issue #466). Shown after
+// the table, never counted as better or worse and not part of the parity gaps.
 const std::vector<const char*>& InfoMetrics() {
   static const std::vector<const char*> k = {
       "net.audio_kbps",  "net.video_kbps",  "net.rtx_kbps",       "net.padding_kbps",    "net.fec_kbps",
@@ -97,6 +99,8 @@ const std::vector<const char*>& InfoMetrics() {
       "net.video_size_p50_b", "net.video_size_p90_b", "net.video_size_max_b", "net.video_queue_drops",
       "net.rtx_size_p50_b", "net.rtx_size_p90_b", "net.rtx_size_max_b", "net.rtx_queue_drops",
       "net.padding_size_p50_b", "net.padding_size_p90_b", "net.padding_size_max_b", "net.padding_queue_drops",
+      // Issue #466: what the frame dropper and the encoder bitrate adjuster did with the encoder model's modes.
+      "video.encoder_dropped", "video.encoder_target_avg_kbps",
   };
   return k;
 }
@@ -106,7 +110,8 @@ const std::vector<const char*>& InfoMetrics() {
 // the JSON ("traces"), which CI publishes; tools/link_trace.py reads them.
 const char* const kDefaultTraced =
     "very_low_capacity,very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
-    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic";
+    "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
+    "issue_29_ulpfec_over_red,issue_257_zero_max_payload";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -275,13 +280,17 @@ int main(int argc, char** argv) {
         // The jitter buffer per 10 ms audio pull (issue #62), same scenario and seed.
         const std::string sm_audio = sm::testbench::AudioTraceCsv(ours.back().audio_trace);
         const std::string rtc_audio = sm::testbench::AudioTraceCsv(theirs.back().audio_trace);
+        // The audio send path per frame and report block (issue #477), same scenario and seed.
+        const std::string sm_audio_send = sm::testbench::AudioSendCsv(ours.back().audio_send_trace);
+        const std::string rtc_audio_send = sm::testbench::AudioSendCsv(theirs.back().audio_send_trace);
         if (named) {
           traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
                          ", \"webrtc\": " + JsonString(rtc_csv) + ", \"sm_video\": " + JsonString(sm_video) +
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
-                         ", \"webrtc_audio\": " + JsonString(rtc_audio) + "}";
+                         ", \"webrtc_audio\": " + JsonString(rtc_audio) + ", \"sm_audiosend\": " +
+                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -294,6 +303,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
           std::ofstream(stem + ".sm.audio.csv") << sm_audio;
           std::ofstream(stem + ".webrtc.audio.csv") << rtc_audio;
+          std::ofstream(stem + ".sm.audiosend.csv") << sm_audio_send;
+          std::ofstream(stem + ".webrtc.audiosend.csv") << rtc_audio_send;
         }
       }
       if (!dump_dir.empty()) {
@@ -313,7 +324,7 @@ int main(int argc, char** argv) {
       ++wins[w];
       std::printf("  %-30s %12s %12s  %s\n", sh.metric, Num(ia->second).c_str(), Num(ib->second).c_str(), w);
     }
-    std::printf("  forward link per kind (information only)\n");
+    std::printf("  forward link per kind and encoder (information only)\n");
     for (const char* name : InfoMetrics()) {
       auto ia = a.find(name), ib = b.find(name);
       if (ia == a.end() || ib == b.end()) continue;

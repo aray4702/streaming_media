@@ -231,6 +231,7 @@ the differences found in the files above. Each belongs to #62.
 |---|---|---|
 | `cc/outage_monitor.cc` ICE-restart request | ICE belongs to the host stack (`program.md` 0.1). Request signalling only. | n/a |
 | Metrics / `SM_EVENT` hooks in every module | Library convention. | n/a |
+| `cc::ConvertConstraints`: a finite min, start or max rate above INT_MAX bps saturates there | libwebrtc's `BitrateConstraints` carry int bps (`call/rtp_transport_controller_send.cc:68-83`), so such a rate can't be configured there at all; our API takes a `DataRate`, and saturating is the nearest libwebrtc can express (#464). | matches libwebrtc in range |
 
 ## 6. Audio quality
 
@@ -362,9 +363,10 @@ both. The call still sends no abs-capture-time (8.3).
 
 #77 ported `RtpToNtpEstimator`, `StreamSynchronization` and `RtpStreamsSynchronizer`
 (with `Syncable`) from M157 as library modules. Integer milliseconds come from our
-`TimeDelta::ms()` and `Timestamp::ms()`, which truncate. Whether libwebrtc's `ms()`
-rounds instead could not be checked, because `api/units/unit_base.h` is not in
-`reference/`.
+`TimeDelta::ms()` and `Timestamp::ms()`, which truncate. libwebrtc's `ms()` rounds to
+the nearest (`UnitBase::ToFraction`, `DivideRoundToNearest` in
+`rtc_base/units/unit_base.h`, in `reference/` since #456); that rounding, with
+`operator*(double)`'s `llround`, is remaining work in #461.
 
 ### 8.1 RTP timestamp to NTP (`RtpToNtpEstimator`, `src/sync/rtp_to_ntp.cc`)
 

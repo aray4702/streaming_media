@@ -538,13 +538,14 @@ SM_TEST(TestbenchMetrics, AvSyncOffset) {
   SM_EXPECT_NEAR(m["sync.av_offset_max_ms"], 45, 1e-9);
 }
 
-// Issue #298: a capture rate NetEq doesn't decode at is encoded at Opus's
-// 48 kHz clock, as libwebrtc resamples the capture to the encoder, so the
-// audio plays and the jitter buffer is measured instead of discarded.
-SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRun) {
-  SM_EXPECT_EQ(AudioCodecRate(8000), 8000);
-  SM_EXPECT_EQ(AudioCodecRate(16000), 16000);
-  SM_EXPECT_EQ(AudioCodecRate(32000), 32000);
+// Issues #298 and #477: every capture rate is encoded at Opus's 48 kHz clock,
+// as libwebrtc resamples the capture to the encoder and stamps a 48 kHz RTP
+// clock (audio_encoder_opus.cc kRtpTimestampRateHz), so NetEq decodes at
+// 48 kHz on both stacks. Before #477 the bench kept 8, 16 and 32 kHz.
+SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForEveryCaptureRate) {
+  SM_EXPECT_EQ(AudioCodecRate(8000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(16000), 48000);
+  SM_EXPECT_EQ(AudioCodecRate(32000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(48000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(12000), 48000);
   SM_EXPECT_EQ(AudioCodecRate(24000), 48000);
@@ -556,6 +557,77 @@ SM_TEST(TestbenchMetrics, AudioCodecRateIsOpusClockForCaptureRatesNetEqDoesNotRu
   const Report rep = RunCall(*parsed.scenario, opt);
   SM_EXPECT_LT(rep.metrics.at("audio.time_to_first_ms"), 1000);
   SM_EXPECT_GT(rep.metrics.at("audio.jb_delay_p95_ms"), 0);
+}
+
+// Issue #477: the audio send trace reads an RTP packet's timestamp and
+// payload past its CSRCs, header extensions and padding, and an RTCP compound
+// packet's report blocks about the audio SSRC in SRs and RRs.
+SM_TEST(TestbenchMetrics, AudioSendTraceParsesRtpAndReportBlocks) {
+  std::vector<AudioSendRow> rows;
+  // V=2, P, X, CC=1; PT 111; seq 0x0102; ts 0x00000960; SSRC 0xAABBCCDD; CSRC; a one-word extension; payload 3 bytes;
+  // 2 bytes of padding.
+  const std::vector<uint8_t> rtp = {0xB1, 111, 0x01, 0x02, 0x00, 0x00, 0x09, 0x60, 0xAA, 0xBB, 0xCC, 0xDD,
+                                    1,    2,   3,    4,    0xBE, 0xDE, 0x00, 0x01, 0x10, 0x00, 0x00, 0x00,
+                                    7,    8,   9,    0,    2};
+  TraceAudioRtp(rtp, 1234, 0xAABBCCDD, rows);
+  TraceAudioRtp(rtp, 1234, 0x11111111, rows);  // Another SSRC.
+  SM_ASSERT_EQ(rows.size(), 1u);
+  SM_EXPECT_EQ(rows[0].seq, 0x0102);
+  SM_EXPECT_EQ(rows[0].rtp_ts, 0x960u);
+  SM_EXPECT_EQ(rows[0].pt, 111);
+  SM_EXPECT_EQ(rows[0].payload_bytes, 3);
+  uint32_t h = 2166136261u;
+  for (uint8_t b : {7, 8, 9}) h = (h ^ b) * 16777619u;
+  SM_EXPECT_EQ(rows[0].payload_hash, h);
+
+  // An RR with two blocks (video, then audio with fraction 51) and an SR with one audio block (fraction 3).
+  std::vector<uint8_t> rtcp = {0x82, 201, 0, 13, 0, 0, 0, 1};
+  auto block = [&](uint32_t ssrc, uint8_t fraction) {
+    rtcp.insert(rtcp.end(), {static_cast<uint8_t>(ssrc >> 24), static_cast<uint8_t>(ssrc >> 16),
+                             static_cast<uint8_t>(ssrc >> 8), static_cast<uint8_t>(ssrc), fraction});
+    rtcp.insert(rtcp.end(), 19, 0);
+  };
+  block(0x12345678, 200);
+  block(0xAABBCCDD, 51);
+  rtcp.insert(rtcp.end(), {0x81, 200, 0, 12});
+  rtcp.insert(rtcp.end(), 24, 0);
+  block(0xAABBCCDD, 3);
+  TraceAudioRtcp(rtcp, 5000, 0xAABBCCDD, rows);
+  SM_ASSERT_EQ(rows.size(), 3u);
+  SM_EXPECT_TRUE(rows[1].kind == AudioSendRow::Kind::kReport);
+  SM_EXPECT_EQ(rows[1].time_us, 5000);
+  SM_EXPECT_EQ(rows[1].fraction_lost, 51);
+  SM_EXPECT_EQ(rows[2].fraction_lost, 3);
+  const std::string csv = AudioSendCsv(rows);
+  SM_EXPECT_TRUE(csv.find("frame,1234,258,0,111,3,") != std::string::npos);
+  SM_EXPECT_TRUE(csv.find("report,5000,-1,-1,-1,-1,-1,51") != std::string::npos);
+}
+
+// Issue #477: at the default 16 kHz capture the bench's Opus packets advance
+// 960 ticks per 20 ms frame, the 48 kHz clock libwebrtc stamps, and the trace
+// sees the audio report blocks reaching the sender.
+SM_TEST(TestbenchMetrics, AudioPacketsCarryOpusRtpClock) {
+  auto parsed = ParseScenario("name clock\nduration 6s\nvideo off\nat 0s capacity=500kbps delay=40ms loss=5%\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  SM_EXPECT_EQ(parsed.scenario->audio_sample_rate, 16000);
+  RunOptions opt;
+  opt.library_metrics = false;
+  opt.link_trace = true;
+  const Report rep = RunCall(*parsed.scenario, opt);
+  SM_EXPECT_EQ(rep.metrics.at("net.audio_rtp_clock_hz"), 48000);
+  int frames = 0, reports = 0;
+  const AudioSendRow* prev = nullptr;
+  for (const auto& r : rep.audio_send_trace) {
+    if (r.kind == AudioSendRow::Kind::kReport) {
+      ++reports;
+      continue;
+    }
+    if (prev) SM_EXPECT_EQ(r.rtp_ts - prev->rtp_ts, 960u);
+    prev = &r;
+    ++frames;
+  }
+  SM_EXPECT_EQ(frames, 300);
+  SM_EXPECT_GE(reports, 1);
 }
 
 // Goodput counts each media sequence number once (#329): an RTX copy of a
@@ -631,4 +703,87 @@ SM_TEST(TestbenchMetrics, ShortConcealmentEventsAreNotInterruptions) {
 SM_TEST(TestbenchMetrics, NoAudioPlayedIsAllConcealed) {
   ConcealmentMeter m(16000);
   SM_EXPECT_NEAR(m.concealed_pct(), 100.0, 1e-9);
+}
+
+// Issue #510: a pull is stretched when the jitter buffer's sample counters
+// moved, as sm_compare reads libwebrtc's NetEq stats: an Accelerate or
+// PreemptiveExpand that removed or inserted no samples is not. Pulls before
+// the first output sample (totalSamplesReceived 0) are not playout.
+SM_TEST(TestbenchMetrics, StretchCountsSamplesNotOperationsFromTheFirstOutput) {
+  StretchMeter m;
+  for (int i = 0; i < 3; ++i) SM_EXPECT_FALSE(m.OnPull(0, 0, 0));  // waiting for the first decode
+  SM_EXPECT_EQ(m.played_ms(), 0);
+  SM_EXPECT_NEAR(m.stretch_pct(), 0.0, 1e-9);
+  uint64_t total = 0, inserted = 0, removed = 0;
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed));       // normal
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed));       // an Accelerate that removed nothing
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed += 120));  // accelerate
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted += 240, removed));  // preemptive expand
+  SM_EXPECT_EQ(m.played_ms(), 40);
+  SM_EXPECT_NEAR(m.stretch_pct(), 50.0, 1e-9);
+}
+
+// The first counted pull's samples count from zero, as libwebrtc's side
+// starts from an empty previous Stats.
+SM_TEST(TestbenchMetrics, StretchOnTheFirstPlayedPull) {
+  StretchMeter m;
+  SM_EXPECT_FALSE(m.OnPull(0, 0, 0));
+  SM_EXPECT_TRUE(m.OnPull(480, 160, 0));
+  SM_EXPECT_NEAR(m.stretch_pct(), 100.0, 1e-9);
+}
+
+// Issue #510: the first packet the jitter buffer took sets the time to first
+// audio; packets it refused before (#256) do not, and later ones change nothing.
+SM_TEST(TestbenchMetrics, FirstAudioIsTheFirstPacketTheJitterBufferTook) {
+  FirstAudioMeter m;
+  SM_EXPECT_NEAR(m.ms(30000), 30000.0, 1e-9);  // none: the call's length
+  m.OnAudioPacket(Timestamp::Millis(30), false);
+  SM_EXPECT_FALSE(m.started());
+  m.OnAudioPacket(Timestamp::Millis(50), true);
+  m.OnAudioPacket(Timestamp::Millis(70), true);
+  SM_EXPECT_TRUE(m.started());
+  SM_EXPECT_NEAR(m.ms(30000), 50.0, 1e-9);
+}
+
+// The repair metrics by one rule for both stacks (#509). Sent: video 100-109 at 0-9 ms (100 bytes each), 110 in
+// the last second, an audio RED packet (60 bytes, its redundant block included), two RTX packets (110 bytes) and
+// a FEC packet (50 bytes). Arrived: 100-102; 103 by RTX (a recovery); 104 late after its NACK, and then its RTX copy
+// (no recovery); 105 by FEC; 106 by RTX and then by FEC (one recovery). 107-109 never arrive.
+SM_TEST(TestbenchMetrics, RepairMeterCountsFromTheLinkAndTheFecReceiver) {
+  RepairMeter r;
+  for (uint16_t seq = 100; seq < 110; ++seq) r.OnSent(sim::LinkKind::kVideo, 100, seq, seq - 100);
+  r.OnSent(sim::LinkKind::kVideo, 100, 110, 9500);
+  r.OnSent(sim::LinkKind::kAudio, 60, 0, 0);
+  r.OnSent(sim::LinkKind::kRtx, 110, 0, 0);
+  r.OnSent(sim::LinkKind::kRtx, 110, 0, 0);
+  r.OnSent(sim::LinkKind::kFec, 50, 0, 0);
+  r.OnSent(sim::LinkKind::kPadding, 200, 0, 0);
+  for (uint16_t seq = 100; seq < 103; ++seq) r.OnVideoArrived(seq);
+  r.OnRtxArrived(103);
+  r.OnVideoArrived(104);
+  r.OnRtxArrived(104);
+  r.OnFecRecovered(105);
+  r.OnRtxArrived(106);
+  r.OnFecRecovered(106);
+  std::map<std::string, double> m;
+  r.AddMetrics(m, /*video=*/true, /*end_ms=*/10000);
+  SM_EXPECT_NEAR(m["repair.overhead_pct"], 100.0 * 270 / 1160, 1e-9);
+  SM_EXPECT_NEAR(m["repair.nack_recovered"], 2, 1e-9);
+  SM_EXPECT_NEAR(m["video.residual_loss_pct"], 30.0, 1e-9);  // 107-109 of 100-109; 110 is in the last second.
+}
+
+SM_TEST(TestbenchMetrics, RepairMeterUnwrapsSequenceNumbersAndSkipsVideoMetricsWithoutVideo) {
+  RepairMeter r;
+  r.OnSent(sim::LinkKind::kVideo, 100, 65535, 0);
+  r.OnSent(sim::LinkKind::kVideo, 100, 0, 1);
+  r.OnVideoArrived(65535);
+  r.OnRtxArrived(0);
+  std::map<std::string, double> m;
+  r.AddMetrics(m, /*video=*/true, 5000);
+  SM_EXPECT_NEAR(m["video.residual_loss_pct"], 0.0, 1e-9);
+  SM_EXPECT_NEAR(m["repair.nack_recovered"], 1, 1e-9);
+  std::map<std::string, double> audio_only;
+  RepairMeter().AddMetrics(audio_only, /*video=*/false, 5000);
+  SM_EXPECT_EQ(audio_only.count("video.residual_loss_pct"), 0u);
+  SM_EXPECT_EQ(audio_only.count("repair.overhead_pct"), 1u);
 }

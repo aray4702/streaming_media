@@ -1,0 +1,11 @@
+name issue_466_scene_change_1mbps
+describe 1 Mbps link, a scene cut every 5 s: 5 delta frames at 3x
+duration 40s
+scene_change 5s 5 3
+at 0s capacity=1mbps delay=30ms queue=300ms
+# Issue #466 (see issue_466_overshoot_1mbps.scn). Without cuts the queue p95 is
+# 34-46 ms and the video e2e p95 103-129 ms (seeds 1-3); with them 77-104 ms
+# and 338-363 ms, and the adjuster's target is 740-750 kbps instead of 788-800.
+expect cc.queue_p95_ms > 60
+expect video.e2e_delay_p95_ms > 250
+expect video.encoder_target_avg_kbps < 780

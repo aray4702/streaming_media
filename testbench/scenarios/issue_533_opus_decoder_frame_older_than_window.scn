@@ -1,0 +1,13 @@
+name issue_533_opus_decoder_frame_older_than_window
+describe Audio call over a link whose jitter is a 2 s standard deviation: some packets arrive more than 5 s late
+# Issue #533: OpusAudioDecoder::Insert (testbench/opus_decoder.h) stored a frame
+# older than all 250 remembered ones at the front of its map, trimmed the map
+# back to 250 (erasing that frame) and then returned the erased frame's samples:
+# a heap-use-after-free. The native build reads the freed block silently, so the
+# base commit is built with ASan+UBSan, which abort on it. The unit test
+# OpusDecoder.FrameOlderThanTheWindowIsDecodedNotKept pins the decoder itself.
+# fix-record-base-cmake: -DSM_SANITIZE=ON
+duration 20s
+video off
+at 0s jitter=2s
+expect audio.concealed_pct < 100

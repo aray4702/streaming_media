@@ -1,6 +1,7 @@
 {
   "comment": "Which issue owns a gap with libwebrtc (tools/parity_report.py). Rules match the scenario and metric with fnmatch patterns; every matching rule adds its issues. Keep it in step with the work list in roadmap issue #64 and the deviation inventory (docs/design/libwebrtc-parity.md). A gap with no owner needs an issue or an approved deviation. An owner counts only while its issue is open, or when its rule carries a note (the explanation of a closed, explained difference); closed issues in a rule without a note own nothing.",
   "rules": [
+    {"scenario": "issue_466_*", "metric": "*", "issues": [466], "note": "Encoder model modes (overshoot, undershoot, scene cuts), newly measured; each real gap becomes a step of #466."},
     {"metric": "video.keyframe_requests", "issues": [23]},
     {"metric": "video.e2e_delay_p95_ms", "issues": [24, 37]},
     {"metric": "video.time_to_first_frame_ms", "issues": [24, 61]},
@@ -15,7 +16,7 @@
     {"metric": "cc.rtt_p50_ms", "issues": [61]},
     {"metric": "net.loss_pct", "issues": [21, 61, 12]},
     {"metric": "repair.overhead_pct", "issues": [21, 7, 29]},
-    {"metric": "audio.*", "issues": [63, 476, 477]},
+    {"metric": "audio.*", "issues": [63, 476, 504]},
     {"scenario": "*cross_traffic", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "*cross_traffic", "metric": "audio.mouth_to_ear_p95_ms", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
     {"scenario": "issue_152_alr_request_probe_v2", "metric": "audio.jb_delay_*", "issues": [204], "note": "#62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266); the delay comes from arrivals. Cross traffic: libwebrtc's bottleneck queue p95 251 vs ours 230 ms."},
@@ -47,6 +48,7 @@
     {"scenario": "issue_152_alr_request_probe_v2", "metric": "sync.*", "issues": [360], "note": "#379 / PR #400: opened (ours ahead, 6/10) when the test bench's decode time went to 0 ms as sm_compare's ModelDecoder; placed on #360 by the Owner (2026-10-25)."},
     {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [63], "note": "#379 (yardstick #396): explained per-seed spread, no lip-sync difference. Seeds 2, 4 and 8 carry it with a higher audio jb p95 on ours (a concealment event or start-up level), seeds 6 and 9 go the other way; the jb p95 mean is in band (93 vs 84, +-18). #63 owns the audio jitter buffer."},
     {"scenario": "wifi_to_lte_handover", "metric": "*", "issues": [20]},
+    {"scenario": "issue_451_host_rtt_near_limit", "metric": "*", "issues": [451], "note": "Not comparable: `host_rtt` (a host RTT 75.8 ms short of the int64 limit from 8 s) is ours only; sm_compare's libwebrtc side ignores it, as it does #441's host_rtt_inf, so libwebrtc runs this link with its measured RTT. The scenario exists for the UBSan overflow on the base (#451)."},
     {"scenario": "outage_*", "metric": "*", "issues": [20]},
     {"scenario": "high_jitter", "metric": "*", "issues": [19, 24]},
     {"scenario": "issue_204_cross_traffic_join", "metric": "video.freeze_*", "issues": [408], "note": "#406 (stage-1 exit, 2026-10-26): re-owned from closed issues on main after #378; needs data: one more freeze on 7/10 seeds, seed 5 sticks (#390's RTCP phase); new with #378"},
@@ -120,6 +122,8 @@
     {"scenario": "issue_29_ulpfec_over_red", "metric": "video.e2e_delay_p95_ms", "issues": [410], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind by sign (9/10 seeds), 6/10 over the band: 241 vs 213 ms."},
     {"scenario": "satellite", "metric": "video.freeze_*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind on 7-8/10 seeds (stage-1 exit blocker), needs data: freeze total 13271 vs 12350 ms."},
     {"scenario": "issue_76_session_layer_v2", "metric": "audio.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Behind on 7/10 seeds (mouth-to-ear p95 191 vs 170 ms; stage-1 exit blocker), needs data; libwebrtc's seed-7 outlier went away."},
-    {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Follows the audio jb p95 (99 vs 80 ms), behind 6/10."}
+    {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [420], "note": "#409 (Owner 2026-10-26): re-owned after #416 (libwebrtc's CNAME); our values unchanged, libwebrtc's mean and seed spread moved. Follows the audio jb p95 (99 vs 80 ms), behind 6/10."},
+    {"scenario": "*", "metric": "video.delay_*", "issues": [479]},
+    {"scenario": "*", "metric": "video.undecodable_frames", "issues": [479]}
   ]
 }

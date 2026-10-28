@@ -172,6 +172,32 @@ SM_TEST(OpusDecoder, ReorderedFrameIsDecodedInTimestampOrder) {
   SM_EXPECT_EQ(mismatched, 0u);
 }
 
+// A frame older than every frame remembered, once the window is full (issue
+// #533): its samples are returned, it is not kept, and the frames after it
+// decode as in order (no use of the frame the window trim erases).
+SM_TEST(OpusDecoder, FrameOlderThanTheWindowIsDecodedNotKept) {
+  const size_t window = OpusAudioDecoder::kRemembered;
+  const auto packets = Packets(window + 3, 0);
+  std::vector<std::vector<float>> in_order;  // Frames 1.. in order, as libwebrtc decodes them.
+  {
+    LibwebrtcOpusCalls ref;
+    for (size_t k = 1; k < packets.size(); ++k) in_order.push_back(ref.Decode(packets[k]));
+  }
+  OpusAudioDecoder bench(48000);
+  // Frames 1..window+1: the window holds 2..window+1.
+  for (size_t k = 1; k <= window + 1; ++k) bench.Decode(packets[k], static_cast<uint32_t>(k) * kFrame);
+  // Frame 0 arrives more than 5 s late, then its LBRR path for the same frame.
+  auto old = bench.Decode(packets[0], 0);
+  SM_EXPECT_TRUE(old.has_value());
+  if (old) SM_EXPECT_EQ(old->size(), static_cast<size_t>(kFrame));
+  SM_EXPECT_TRUE(bench.DecodeFec(packets[1], 0).has_value());
+  // The next frame starts from the state after frame window+1, as in order.
+  const size_t k = window + 2;
+  auto next = bench.Decode(packets[k], static_cast<uint32_t>(k) * kFrame);
+  SM_EXPECT_TRUE(next.has_value());
+  if (next) SM_EXPECT_TRUE(*next == in_order[k - 1]);
+}
+
 // A primary that arrives after its frame was decoded from the LBRR copy
 // replaces the copy, and the decoder goes on as if the copy had not been used.
 SM_TEST(OpusDecoder, LatePrimaryReplacesTheLbrrCopy) {
