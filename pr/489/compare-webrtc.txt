@@ -1794,11 +1794,11 @@ issue_15_aimd_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottle
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          49.4         51.1  =
-  audio.mouth_to_ear_p95_ms               511          495  =
-  audio.jb_delay_p95_ms                   299          296  =
+  audio.mouth_to_ear_p95_ms               511          494  =
+  audio.jb_delay_p95_ms                   299          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.8         15.7  =
+  video.longest_freeze_ms                18.8         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -3312,11 +3312,11 @@ issue_355_cross_traffic_no_alr_probe - issue_346_reconfigure_cross_traffic with 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          49.4         51.1  =
-  audio.mouth_to_ear_p95_ms               511          495  =
-  audio.jb_delay_p95_ms                   299          296  =
+  audio.mouth_to_ear_p95_ms               511          494  =
+  audio.jb_delay_p95_ms                   299          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.8         15.7  =
+  video.longest_freeze_ms                18.8         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -4201,8 +4201,8 @@ issue_457_libopus_audio_rate - low_bandwidth with libopus 55513e81 (issue
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2092         2151  =
-  audio.jb_delay_p95_ms                  1662         1734  =
+  audio.mouth_to_ear_p95_ms              2090         2151  =
+  audio.jb_delay_p95_ms                  1660         1734  =
   video.freeze_count                      1.8          2.2  =
   video.freeze_total_ms                  1072         1441  sm
   video.longest_freeze_ms                 354          597  sm
@@ -5665,8 +5665,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2092         2151  =
-  audio.jb_delay_p95_ms                  1662         1734  =
+  audio.mouth_to_ear_p95_ms              2090         2151  =
+  audio.jb_delay_p95_ms                  1660         1734  =
   video.freeze_count                      1.8          2.2  =
   video.freeze_total_ms                  1072         1441  sm
   video.longest_freeze_ms                 354          597  sm
@@ -5971,11 +5971,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          49.4         51.1  =
-  audio.mouth_to_ear_p95_ms               511          495  =
-  audio.jb_delay_p95_ms                   299          296  =
+  audio.mouth_to_ear_p95_ms               511          494  =
+  audio.jb_delay_p95_ms                   299          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.8         15.7  =
+  video.longest_freeze_ms                18.8         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
