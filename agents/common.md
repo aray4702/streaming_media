@@ -52,7 +52,10 @@ practical details every role shares.
   ```
   A gap is a metric whose means differ by more than the parity band
   (`tools/parity_report.py` documents it); `tools/parity_owners.json` says
-  which issue owns it.
+  which issue owns it. An owner counts only if the issue is open, or its rule
+  carries a `note` explaining the gap. A closed issue without a note is shown
+  as "closed, no note" and owns nothing. When you close an item, either give
+  its remaining cells a `note` (explained) or move them to an open item.
   `traces/` there holds the per-packet forward-link trace and the per-second
   video send trace of **every** scenario's first seed, for both stacks
   (`<scenario>.<seed>.{sm,webrtc}.{trace,video}.csv`; `traces/index.txt`
