@@ -258,9 +258,7 @@ Link keys (any subset; unset keys keep their previous value):
   5% (with a per-unit floor). A PR that changes metrics updates the
   baseline with `--update` and explains why; only the files of scenarios
   whose numbers changed are rewritten, so a PR that adds a scenario or
-  moves a few metrics doesn't conflict with other PRs. Until CI reads the
-  directory, the single file `baseline.json` stays next to it with the
-  same reports, and `--update` on either one writes both.
+  moves a few metrics doesn't conflict with other PRs.
 - To add a scenario that reproduces an issue, name it after the issue
   (`issue_123_<slug>.scn`) and give it the `expect` lines that fail before
   the fix.

@@ -24,7 +24,7 @@ On the first run after Monday 00:00 UTC, add a **weekly summary**:
 
 - issues opened, fixed and still open, by severity;
 - PRs merged;
-- how the baseline metrics moved (diff `testbench/baseline.json` against
+- how the baseline metrics moved (diff `testbench/baseline/` against
   last week's version with `git log -p`).
 
 ## Probe mode (first)

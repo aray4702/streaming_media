@@ -5,7 +5,7 @@
 # the yardstick (testbench baseline, compare-webrtc: the agents' sandbox and the
 # prebuilt libwebrtc are Linux) and the ASan/UBSan job, a correctness check
 # rather than a platform one.
-# The test bench job compares every scenario against testbench/baseline.json;
+# The test bench job compares every scenario against testbench/baseline/;
 # `ci-ok` aggregates every job and is the required check for merging.
 # `merge_group` runs the same jobs on the merge queue's commit (the PR on top
 # of the PRs ahead of it), so main is tested as it will be after the merge.
@@ -117,7 +117,7 @@ jobs:
   testbench:
     needs: scope
     if: needs.scope.outputs.build == 'true'
-    # Canonical platform for testbench/baseline.json (same as the cloud agents).
+    # Canonical platform for testbench/baseline/ (same as the cloud agents).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env: {CC: gcc-13, CXX: g++-13}
@@ -130,9 +130,9 @@ jobs:
         run: |
           {
             echo "## Test bench vs baseline"
-            python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json --markdown
+            python3 tools/testbench_compare.py testbench/baseline testbench-results.json --markdown
           } >> "$GITHUB_STEP_SUMMARY"
-          python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json
+          python3 tools/testbench_compare.py testbench/baseline testbench-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
