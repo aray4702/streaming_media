@@ -401,6 +401,14 @@ class Dispatcher:
             self._closed = gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
         return self._closed
 
+    def free_since(self, cand):
+        """When a work-list item became free: the issue's last update, or the moment a PR on it
+        closed (merging a PR doesn't touch the issue, but it frees the item)."""
+        n = cand["number"]
+        return max([cand["updated_at"]] + [
+            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
+            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
+
     def recent_fixer_claim(self):
         since = (NOW - dt.timedelta(minutes=CLAIM_WINDOW_MIN)).strftime("%Y-%m-%dT%H:%M:%SZ")
         comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
@@ -412,12 +420,7 @@ class Dispatcher:
         if not cand:
             return self.note("fixer", f"no free eligible #{ROADMAP} item ({in_progress} in progress)")
         n = cand["number"]
-        # Free since: the issue's last update, or the moment a PR on it closed
-        # (merging a PR doesn't touch the issue, but it frees the item).
-        free_since = max([cand["updated_at"]] + [
-            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
-            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
-        waited = minutes_ago(free_since)
+        waited = minutes_ago(self.free_since(cand))
         recent_close = [p for p in self.closed_pulls()
                         if p.get("closed_at") and minutes_ago(p["closed_at"]) < MERGE_FIXER_MIN]
         last = self.last_dispatch("fixer")
@@ -756,7 +759,10 @@ class Dispatcher:
             comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
             claimed = any("sm-agent: fixer" in (c["body"] or "") and re.search(r"Work (started|resumed)", c["body"] or "")
                           for c in comments)
-            if not claimed and minutes_ago(cand["updated_at"]) > FLOW_IDLE_MIN:
+            # Free since, as the Fixer rule reads it: a PR on the item that just merged
+            # leaves it free from that moment, not from the issue's last update (#478 at
+            # 05:39 UTC 2026-10-28, alerted 36 s after #485 merged; Flow watch #499).
+            if not claimed and minutes_ago(self.free_since(cand)) > FLOW_IDLE_MIN:
                 sig.append(("idle", f"#{cand['number']} is free and no Fixer has claimed work for "
                                     f"{FLOW_IDLE_MIN // 60} h ({in_progress} in progress)"))
         # 5. An escalation the Builder hasn't answered.
