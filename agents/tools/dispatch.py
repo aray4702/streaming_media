@@ -12,7 +12,7 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN fixer (conflict)  start a Fixer run when an approved agent PR has
-                 merge conflicts with main (usually testbench/baseline.json),
+                 merge conflicts with main (usually a testbench/baseline/ file),
                  which the Dispatcher can't update and nothing else resolves
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
                  already working and another eligible #64 item is free
