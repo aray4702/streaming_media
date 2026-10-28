@@ -8,6 +8,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
                  a merge freeze or an Owner question can't be merged past
+  (protected)    a PR touching agents/ or .github/ also needs the Builder's
+                 builder-approved label, added after its last content push
+                 (Owner, 2026-10-28); without it auto-merge stays off
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first),
                  unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
@@ -60,6 +63,7 @@ PROTECTED = (".github/", "agents/")
 # Paths whose changes alone need no build: the `scope` job in ci.yml then runs no
 # compare-webrtc, so such a PR never gets a parity report (#529, as #491 and #456).
 NO_CODE = re.compile(r"^(agents/|docs/|compare/webrtc/reference/|\.github/)|\.md$")
+BUILDER_APPROVED = "builder-approved"  # the Builder's go-ahead for a protected-path PR (Owner, 2026-10-28)
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
 NEEDS_COORDINATOR = "needs-coordinator"  # a question the Coordinator decides; holds the item meanwhile
@@ -290,8 +294,16 @@ class Dispatcher:
                 self.note(f"PR #{n}", f"ci-ok {ci}, " + (f"review {rev['state']} on {rev['commit_id'][:7]}" if rev else "no review"))
                 continue
             files = [f["filename"] for f in gh(f"repos/{self.r}/pulls/{n}/files?per_page=100") or []]
-            if any(f.startswith(PROTECTED) for f in files):
-                continue  # the Owner merges protected paths
+            if any(f.startswith(PROTECTED) for f in files) and not self.builder_approved(pr):
+                # Protected paths merge on the Builder's judgment (Owner, 2026-10-28): the
+                # Reviewer's approval, ci-ok and builder-approved on this head.
+                if pr["auto_merge"] is not None:
+                    self.say("HOLD", f"PR #{n}", f"protected path without a current {BUILDER_APPROVED}: auto-merge off")
+                    if self.live:
+                        subprocess.run(["gh", "pr", "merge", str(n), "-R", self.r, "--disable-auto"], check=True)
+                else:
+                    self.note(f"PR #{n}", f"protected path: waits for the Builder's {BUILDER_APPROVED}")
+                continue
             if pr["auto_merge"] is None:
                 if files and all(NO_CODE.search(f) and f != ".github/workflows/ci.yml" for f in files):
                     ok, why = True, "no code changed, so no parity report"
@@ -320,6 +332,27 @@ class Dispatcher:
                     if self.live:
                         gh(f"repos/{self.r}/pulls/{n}/update-branch", "PUT")
                     update_done = True
+
+    def builder_approved(self, pr):
+        """builder-approved was added after the last commit that isn't a verified update-branch
+        merge of main: a push with new content needs the Builder's judgment again."""
+        if BUILDER_APPROVED not in labels(pr):
+            return False
+        n = pr["number"]
+        events = gh(f"repos/{self.r}/issues/{n}/events?per_page=100", paginate=True) or []
+        added = [e["created_at"] for e in events if e.get("event") == "labeled"
+                 and (e.get("label") or {}).get("name") == BUILDER_APPROVED]
+        if not added:
+            return False
+        commits = gh(f"repos/{self.r}/pulls/{n}/commits?per_page=100", paginate=True) or []
+        content = [c for c in commits if not (
+            len(c.get("parents", [])) == 2 and is_bot(c.get("author"))
+            and (c.get("committer") or {}).get("login") == "web-flow"
+            and (c["commit"].get("verification") or {}).get("verified") is True
+            and c["commit"]["message"].startswith("Merge branch 'main' into "))]
+        if not content:
+            return True
+        return added[-1] > content[-1]["commit"]["committer"]["date"]
 
     def update_in_flight(self, number):
         """Another PR that will auto-merge once its unfinished ci-ok run passes: auto-merge on,

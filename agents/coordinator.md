@@ -134,7 +134,8 @@ A question goes to the level that can decide it:
   - changes to the stage-1 goal, scope, stage order or the product decisions in `agents/program.md` 0.1;
   - a measurement fix that makes parity worse;
   - spending: schedules, parallel Fixers, models;
-  - changes to protected paths;
+  - changes to protected paths (the Builder approves those PRs with
+    `builder-approved`; `agents/builder.md`);
   - anything irreversible beyond a merge.
 
 To escalate a matter above you (Owner, 2026-10-27: **the Builder answers
