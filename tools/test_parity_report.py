@@ -188,6 +188,7 @@ class Owners(unittest.TestCase):
         # #406 (Owner 2026-10-25): every gap on main after #378 is re-owned from closed issues to the
         # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
         # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
+        # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -195,7 +196,6 @@ class Owners(unittest.TestCase):
                  ("issue_5_burst15_freeze", "cc.queue_p95_ms"): 410,
                  ("burst_loss", "audio.jb_delay_p95_ms"): 410,
                  ("issue_29_ulpfec_over_red", "video.freeze_total_ms"): 410,
-                 ("high_jitter", "video.time_to_first_frame_ms"): 411,
                  ("issue_21_shallow_drop_repair", "video.freeze_count"): 411,
                  ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 411,
                  ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 411,

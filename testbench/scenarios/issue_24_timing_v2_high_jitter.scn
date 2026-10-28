@@ -13,7 +13,11 @@ timing v2
 # estimator adds 0.9 x RTT once 3 frames were NACKed; the bench's receiver
 # knows the sender's RTT, while libwebrtc's receive-only Call in sm_compare
 # has none (without the RTT term ours is p50 83-98, p95 130-199).
-expect video.e2e_delay_p95_ms < 250
+# PR for #453 (sps_pps_tracker and h264_missing_packets on by default, as libwebrtc; program.md 0.2, needs-human): was < 250.
+# Seed-1 outlier; mean in band (ours 186.1 / libwebrtc 181.1, seeds 1-10). Seed 1's first IDR start overtakes its
+# SPS+PPS, so both stacks drop it and show the second keyframe (libwebrtc 361 on seed 1, its worst; ours 473.5).
+# Outlier clause: 12 % above ours.
+expect video.e2e_delay_p95_ms < 530
 # PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was < 170. Seed-1 outlier; mean in band
 # (ours 141.7 / libwebrtc 125.2, seeds 1-10; ours 176 on seed 1, main 175 on seed 8). Outlier clause: 10 % above ours.
 expect video.e2e_delay_p50_ms < 194
