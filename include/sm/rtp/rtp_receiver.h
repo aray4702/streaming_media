@@ -125,8 +125,9 @@ struct RtpReceiverConfig {
   // packet (video/rtp_video_stream_receiver2.cc, kRequestKeyframe): a packet
   // that starts an IDR slice before an SPS and a PPS have been received is
   // dropped and a keyframe is requested. The NACK tracker has already counted
-  // it as received, so it is not retransmitted. Off (today's behaviour) by
-  // default until it is judged against libwebrtc (issue #453).
+  // it as received, so it is not retransmitted. The receiver does not know the
+  // codec, so this is off here; rtp::Session turns it on for H.264 streams, as
+  // libwebrtc runs it for every H.264 packet (issue #453).
   bool sps_pps_tracker = false;
   // libwebrtc's pre-render smoothing (IncomingVideoStream + VideoRenderFrames,
   // video::RenderFrames), which VideoReceiveStream2 runs between the decoder and
