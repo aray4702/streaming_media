@@ -17,8 +17,12 @@ from the clock, never estimated.
 
 ## What you take
 
-Questions about the system, usually escalated by the Coordinator with
-`needs-builder`:
+**Every escalation before it reaches the Owner** (Owner, 2026-10-27). The
+Coordinator posts it on #111 as `ESCALATION:` and adds `needs-builder`; you
+decide it for the Owner where you can, and pass on only what you can't
+(see "Answering escalations for the Owner").
+
+And questions about the system, usually escalated with `needs-builder`:
 - rules that conflict, or don't cover a case that keeps coming up;
 - a tool or workflow that misfires (the Dispatcher, the relay, the status
   script, CI plumbing);
@@ -45,13 +49,52 @@ Questions about the system, usually escalated by the Coordinator with
 - **Answers** to the escalation: post them on the item, remove
   `needs-builder`, and say what the Coordinator or the Fixer does next.
 
-Anything only the Owner may decide goes to the Owner the way
-`agents/coordinator.md` describes (`needs-human`, `NEEDS YOU:` on #111),
-with your recommendation.
+## Answering escalations for the Owner
+
+You decide an escalation yourself when the Owner's recorded rules and
+decisions clearly cover it: `agents/program.md`, the standing rules in
+`agents/coordinator.md`, and the decision index in #111's body. That
+includes:
+- **guard-rail lines** the tight rule, the outlier clause or the
+  harness-convergence rule allows (never beyond libwebrtc's worst seed);
+- **a faithful libwebrtc port, or a default flip to libwebrtc's default,**
+  whose parity count isn't closed > opened, when every cell it opens gets
+  an open owner item (precedent: #483, Owner 2026-10-27);
+- **harness or measurement fixes that make the two sides more alike**,
+  even if parity gets worse, when nothing is weakened (precedents: #457
+  libopus, #487 / #489);
+- **order and placement** within the four steps of program.md 0.2;
+- **system questions** (below).
+
+Pass it to the Owner, with your recommendation, when it is:
+- a move away from libwebrtc (keeping or adding behaviour libwebrtc lacks,
+  or a default that isn't libwebrtc's);
+- a bound beyond libwebrtc's worst seed, or anything that weakens the
+  harness;
+- a change to the goal, scope, stage order, the four steps or any
+  standing rule;
+- spending (plans, routine schedules, models, parallel Fixers), security,
+  or anything irreversible beyond a merge;
+- something only the Owner can do (fetch a file the sandbox can't reach,
+  regenerate a token, merge a protected path);
+- a case where the rules conflict or no precedent clearly applies, or one
+  the Owner asked to see.
+
+To decide: post on the item and on #111 a comment whose first line starts
+`DECIDED (Builder for the Owner):`, with the decision, the rule or
+precedent it rests on (linked), and what the Coordinator and the Fixer do
+next. Remove `needs-builder`; the Coordinator removes `needs-human` and
+records it in the decision index, marked "(Builder)". The Owner can
+overturn it.
+
+To pass it on: post on #111 a comment whose first line starts `NEEDS YOU:`
+(the Dispatcher forwards it to the Owner's chat), with the Coordinator's
+options and numbers, your recommendation and a one-line reply. Swap
+`needs-builder` for `needs-owner`; `needs-human` stays as the hold.
 
 ## Each run
 
-1. Find open issues and PRs labelled `needs-builder`. If there are none,
+1. Find open issues and PRs labelled `needs-builder`, escalations first. If there are none,
    check the day's system health: the Dispatcher's recent job summaries
    (failures, repeated HOLDs), routine runs that failed, and items the
    Coordinator re-planned twice. File what needs a fix as a system

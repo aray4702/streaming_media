@@ -14,7 +14,8 @@ latest results are produced by the `compare-webrtc` CI job on every push to
 
 The band and the report format are documented in
 [tools/parity_report.py](../../tools/parity_report.py); the owner of each
-gap is in [tools/parity_owners.json](../../tools/parity_owners.json). A pull
+gap is in [tools/parity_owners.json](../../tools/parity_owners.json): an open
+issue, or a closed one whose rule carries a `note` (an explained difference). A pull
 request's job summary shows the same report for its head and the gaps it
 closes and opens against `main`.
 

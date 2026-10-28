@@ -1,16 +1,29 @@
-# Builds and verifies the library on every platform family it targets.
-# Desktop/server and WebAssembly jobs run the full unit + e2e + benchmark
-# suites; mobile and embedded jobs cross-compile (and run the tests under
-# QEMU for Linux ARM). Benchmark speed budgets are scaled for slow runners.
+# Builds and verifies the library on the platforms it supports: the browser
+# (WebAssembly) and macOS (Owner, 2026-10-27: no checks for Linux, Android,
+# iOS or embedded targets). Both run the full unit + e2e + benchmark suites;
+# benchmark speed budgets are scaled for slow runners. Linux x86_64 still runs
+# the yardstick (testbench baseline, compare-webrtc: the agents' sandbox and the
+# prebuilt libwebrtc are Linux) and the ASan/UBSan job, a correctness check
+# rather than a platform one.
 # The test bench job compares every scenario against testbench/baseline.json;
 # `ci-ok` aggregates every job and is the required check for merging.
 # `merge_group` runs the same jobs on the merge queue's commit (the PR on top
 # of the PRs ahead of it), so main is tested as it will be after the merge.
+# `scope` decides which jobs a PR run needs, to save the 20 concurrent job
+# slots (Owner, 2026-10-27): a PR that changes no code (only agents/, docs/,
+# compare/webrtc/reference/ (never built), Markdown, or .github/ other than
+# this file) runs no build or test job; a
+# draft runs only the quick jobs (host, testbench), plus compare-webrtc when it
+# is a `yardstick:` draft; a ready PR runs those and compare-webrtc. The
+# sanitizers and wasm run on main (whose queued runs batch several merges),
+# the merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+# Marking a draft ready (ready_for_review) starts the PR's full run.
 name: ci
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
   workflow_dispatch:
 concurrency:
@@ -19,6 +32,39 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  scope:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {pull-requests: read}
+    outputs:
+      build: ${{ steps.s.outputs.build }}
+      full: ${{ steps.s.outputs.full }}
+      compare: ${{ steps.s.outputs.compare }}
+    steps:
+      - id: s
+        env:
+          GH_TOKEN: "${{ github.token }}"
+          EVENT: "${{ github.event_name }}"
+          PR: "${{ github.event.pull_request.number }}"
+          DRAFT: "${{ github.event.pull_request.draft }}"
+          TITLE: "${{ github.event.pull_request.title }}"
+        run: |
+          build=true full=true compare=true
+          if [ "$EVENT" = pull_request ]; then
+            files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" --jq '.[].filename')
+            code=$(printf '%s\n' "$files" | grep -v -E '^agents/|^docs/|^compare/webrtc/reference/|\.md$|^\.github/' ; printf '%s\n' "$files" | grep -x '.github/workflows/ci.yml' || true)
+            if [ -z "$(printf '%s' "$code" | tr -d '[:space:]')" ]; then
+              build=false full=false compare=false; why="no code changed"
+            elif [ "$DRAFT" = true ]; then
+              full=false; why="draft: quick jobs only; mark it ready for the full run"
+              case "$TITLE" in yardstick:*) why="$why (yardstick: compare-webrtc runs too)";; *) compare=false;; esac
+            elif ! printf '%s\n' "$files" | grep -qx '.github/workflows/ci.yml' &&
+                 ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' | grep -qx needs-probe; then
+              full=false; why="sanitizers and wasm run on main, and on PRs labelled needs-probe"
+            fi
+          fi
+          echo "build=$build full=$full compare=$compare ${why:+($why)}" | tee -a "$GITHUB_STEP_SUMMARY"
+          printf 'build=%s\nfull=%s\ncompare=%s\n' "$build" "$full" "$compare" >> "$GITHUB_OUTPUT"
   ci-label-clear:
     # A new commit is not yet verified: drop `ci-passed` (added by ci-ok below)
     # at the start of every PR run. The label starts the Reviewer routine.
@@ -30,12 +76,12 @@ jobs:
       - run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/issues/$PR/labels/ci-passed" >/dev/null 2>&1 || true
         env: {GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.number }}"}
   host:
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-24.04, cc: gcc-13, cxx: g++-13}
-          - {os: ubuntu-24.04, cc: clang-18, cxx: clang++-18}
           - {os: macos-14, cc: clang, cxx: clang++}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -45,19 +91,17 @@ jobs:
       - run: cmake --preset native && cmake --build --preset native -j 4
       - run: ctest --preset native -j 4
   sanitizers:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - run: cmake --preset native-asan && cmake --build --preset native-asan -j 4
       - run: ctest --preset native-asan -j 4
-  embedded-config:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset embedded && cmake --build --preset embedded -j 4
   wasm:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env: {SM_BENCH_BUDGET_SCALE: "4"}
@@ -70,52 +114,9 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           path: out/wasm/web
-  linux-aarch64:
-    # Cross toolchain + functional tests under QEMU. Speed gates are skipped
-    # here (they would time the emulator); linux-arm64 runs them natively.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    steps:
-      - uses: actions/checkout@v4
-      # The Azure Ubuntu mirror sometimes serves these ~70 MB at ~30 kB/s (26
-      # minutes on 2026-10-22), so the .deb files are kept between runs.
-      - uses: actions/cache@v4
-        with:
-          path: ~/apt-cache
-          key: apt-aarch64-ubuntu-24.04-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: apt-aarch64-ubuntu-24.04-
-      - run: |
-          mkdir -p ~/apt-cache/partial
-          sudo apt-get update
-          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-cache" -o APT::Sandbox::User=root \
-            g++-aarch64-linux-gnu qemu-user
-          sudo chown -R "$USER" ~/apt-cache
-      - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
-      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE bench
-  linux-arm64:
-    # Native Arm64 Linux (robots, Jetson, Graviton): full suite incl. speed gates.
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
-    env: {CC: gcc-13, CXX: g++-13, SM_BENCH_BUDGET_SCALE: "4"}
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset native && cmake --build --preset native -j 4
-      - run: ctest --preset native -j 4
-  android:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy: {matrix: {preset: [android-arm64, android-armv7]}}
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset ${{ matrix.preset }} -DSM_BUILD_TESTS=OFF -DSM_BUILD_BENCH=OFF -DSM_BUILD_EXAMPLES=OFF
-      - run: cmake --build out/${{ matrix.preset }} -j 4
-  ios:
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset ios && cmake --build out/ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO
   testbench:
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
     # Canonical platform for testbench/baseline.json (same as the cloud agents).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -137,22 +138,24 @@ jobs:
         with:
           name: testbench-results
           path: testbench-results.json
-  compare-webrtc:
-    # sm_compare against a prebuilt libwebrtc (compare/README.md). Keeps the
-    # comparison building on the agents' platform and puts the table and the
-    # parity report (tools/parity_report.py) in the job summary. libc++ for the
-    # prebuilt binary needs clang >= 21. On main the results are also published
-    # to the `parity-data` branch, and on a PR to `parity-data-pr` under
-    # pr/<number>/; the agents read both through
-    # raw.githubusercontent.com (the Actions artifact host and github.io are
-    # not reachable from their sandbox).
+  compare-webrtc-shard:
+    needs: scope
+    if: needs.scope.outputs.compare == 'true'
+    # sm_compare against a prebuilt libwebrtc (compare/README.md), split into
+    # shards so the comparison takes minutes instead of most of an hour: shard
+    # k of N runs scenario files k, k + N, ... of the sorted list, with every
+    # seed, and the compare-webrtc job below merges them
+    # (tools/merge_compare.py) into what one run writes. Every scenario, seed
+    # and trace still runs. libc++ for the prebuilt binary needs clang >= 21.
+    strategy:
+      fail-fast: false
+      matrix: {shard: [0, 1, 2, 3, 4, 5]}
     runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    permissions: {contents: write}
-    env: {COMPARE_SEEDS: "10"}
+    timeout-minutes: 45
+    permissions: {contents: read}
+    env: {COMPARE_SEEDS: "10", COMPARE_SHARDS: "6"}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tools/test_parity_report.py
       - uses: actions/cache@v4
         with:
           path: out/webrtc-deps
@@ -176,17 +179,56 @@ jobs:
           command -v clang++-21 >/dev/null || { echo "::error::clang++-21 is not installed after llvm.sh (apt.llvm.org)"; exit 1; }
           sudo chown -R "$USER" ~/apt-cache
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
-      - name: Compare
+      - name: Compare (one shard)
+        env: {SHARD: "${{ matrix.shard }}"}
         run: |
           # On main, also trace every scenario's first seed (published as traces/
-          # below). PR runs don't, since parity-data-pr keeps every PR's files.
+          # by the compare-webrtc job). PR runs don't, since parity-data-pr keeps
+          # every PR's files.
           TRACE_ALL=""
           if [ "${{ github.event_name }}" = push ] && [ "${{ github.ref }}" = refs/heads/main ]; then
             mkdir -p traces && TRACE_ALL="--trace-all-dir=traces"
           fi
-          out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=compare-webrtc.json $TRACE_ALL testbench/scenarios/*.scn | tee compare-webrtc.txt
+          mapfile -t FILES < <(LC_ALL=C ls testbench/scenarios/*.scn | awk -v k="$SHARD" -v n="$COMPARE_SHARDS" '(NR - 1) % n == k')
+          echo "shard $SHARD of $COMPARE_SHARDS: ${#FILES[@]} scenarios"
+          mkdir -p shard
+          set -o pipefail
+          out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=shard/compare-webrtc.json $TRACE_ALL "${FILES[@]}" | tee shard/compare-webrtc.txt
+          if [ -d traces ]; then mv traces shard/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compare-shard-${{ matrix.shard }}
+          path: shard/
+  compare-webrtc:
+    # Merges the shards into the full comparison and puts the table and the
+    # parity report (tools/parity_report.py) in the job summary. On main the
+    # results are also published to the `parity-data` branch, and on a PR to
+    # `parity-data-pr` under pr/<number>/; the agents read both through
+    # raw.githubusercontent.com (the Actions artifact host and github.io are
+    # not reachable from their sandbox).
+    needs: [scope, compare-webrtc-shard]
+    if: needs.scope.outputs.compare == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions: {contents: write, issues: read}  # issues: owner states for the parity report
+    env: {COMPARE_SHARDS: "6"}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/test_parity_report.py && python3 tools/test_merge_compare.py && python3 tools/test_check_harness_drift.py
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: compare-shard-*
+          path: shards
+      - name: Merge the shards
+        run: |
+          python3 tools/merge_compare.py --shards "$COMPARE_SHARDS" --out-json compare-webrtc.json --out-txt compare-webrtc.txt \
+            $(for k in $(seq 0 $((COMPARE_SHARDS - 1))); do echo shards/compare-shard-$k; done)
+          if ls shards/compare-shard-*/traces >/dev/null 2>&1; then
+            mkdir -p traces && cp shards/compare-shard-*/traces/* traces/
+          fi
           { echo '## streaming_media vs libwebrtc'; echo '```'; cat compare-webrtc.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
       - name: Parity report
+        env: {GH_TOKEN: "${{ github.token }}"}  # owner issue states (tools/parity_report.py)
         run: |
           # On a PR, compare with the report published for main; without it the
           # report still lists the gaps, only the closed/opened part is left out.
@@ -251,6 +293,15 @@ jobs:
             sleep $((attempt * 5))
           done
           echo "could not publish to parity-data-pr after 5 attempts"; exit 1
+      - name: Harness drift check
+        # Both stacks must still send the same audio, packet for packet, on the
+        # traced lossless scenarios (agents/program.md 0.2; Owner, 2026-10-27).
+        # Last, so the results above are published even when it fails.
+        run: |
+          rc=0
+          python3 tools/check_harness_drift.py compare-webrtc.json --markdown drift.md || rc=$?
+          cat drift.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
   fix-record:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).
@@ -274,9 +325,10 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
   ci-ok:
-    # Single required status check: succeeds only if every job above did.
+    # Single required status check: succeeds only if every job that `scope`
+    # called for succeeded (a job it left out is skipped, not failed).
     if: always()
-    needs: [host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, compare-webrtc, fix-record]
+    needs: [scope, host, sanitizers, wasm, testbench, compare-webrtc, fix-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {pull-requests: write}
@@ -284,13 +336,26 @@ jobs:
       - run: |
           echo '${{ toJSON(needs) }}' | python3 -c "
           import json, sys
-          bad = {k: v['result'] for k, v in json.load(sys.stdin).items() if v['result'] != 'success'}
-          print('failed jobs:', bad) if bad else print('all jobs passed')
+          needs = json.load(sys.stdin)
+          if needs['scope']['result'] != 'success':
+              print('scope failed'); sys.exit(1)
+          o = needs['scope']['outputs']
+          want = {'host': 'build', 'testbench': 'build', 'compare-webrtc': 'compare', 'fix-record': None}
+          bad = {}
+          for k, v in needs.items():
+              if k == 'scope':
+                  continue
+              flag = want.get(k, 'full')
+              expected = flag is None or o.get(flag) == 'true'
+              if v['result'] in ('failure', 'cancelled') or (expected and v['result'] != 'success'):
+                  bad[k] = v['result']
+          print('failed jobs:', bad) if bad else print('all jobs that ran passed (scope: %s)' % o)
           sys.exit(1 if bad else 0)"
       - name: Label the PR ci-passed
         # The label event starts the Reviewer routine right away instead of at
-        # its next hourly run. Runs only when every job passed.
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        # its next hourly run. Runs only when every job passed, and not on a
+        # draft (its run leaves the heavy jobs out).
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft
         continue-on-error: true  # the hourly Reviewer run still covers the PR
         env: {GH_TOKEN: "${{ github.token }}", PR: "${{ github.event.pull_request.number }}"}
         run: gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR/labels" -f "labels[]=ci-passed" >/dev/null
