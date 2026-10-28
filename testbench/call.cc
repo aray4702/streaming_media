@@ -14,6 +14,7 @@
 #include <unordered_map>
 
 #include "encoder_model.h"
+#include "opus_decoder.h"
 #include "opus_encoder.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
@@ -95,31 +96,6 @@ uint16_t RtpSeq(const std::vector<uint8_t>& b) { return static_cast<uint16_t>((b
 uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
-
-// The modelled audio decoder: a frame is identified by its RTP timestamp, and
-// decodes to the matching 20 ms of the speech signal. A libopus packet with an
-// LBRR copy (WebRtcOpus_PacketHasFec, testbench/opus_encoder.h) also decodes the
-// frame before it, as AudioDecoderOpusImpl does; its lower quality is not modelled.
-class SpeechDecoder : public rtp::AudioDecoder {
- public:
-  SpeechDecoder(const std::vector<float>& speech, size_t frame_samples) : speech_(speech), frame_samples_(frame_samples) {}
-  std::optional<std::vector<float>> Decode(std::span<const uint8_t>, uint32_t rtp_timestamp) override {
-    size_t off = rtp_timestamp;
-    if (off + frame_samples_ > speech_.size()) return std::nullopt;
-    return std::vector<float>(speech_.begin() + static_cast<std::ptrdiff_t>(off),
-                              speech_.begin() + static_cast<std::ptrdiff_t>(off + frame_samples_));
-  }
-  uint32_t FecDuration(std::span<const uint8_t> frame) const override {
-    return OpusSendEncoder::PacketHasFec(frame) ? static_cast<uint32_t>(frame_samples_) : 0;
-  }
-  std::optional<std::vector<float>> DecodeFec(std::span<const uint8_t> frame, uint32_t rtp_timestamp) override {
-    return Decode(frame, rtp_timestamp);
-  }
-
- private:
-  const std::vector<float>& speech_;
-  size_t frame_samples_;
-};
 
 // Records which video media sequence numbers the receiver ended up with
 // (originals, retransmissions and FEC recoveries).
@@ -284,11 +260,13 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
-           kOutcomes[static_cast<size_t>(r.outcome)] + "\n";
+           kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
+           std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
+           std::to_string(r.key) + "\n";
   }
   return out;
 }
@@ -467,9 +445,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // capture rate NetEq doesn't decode at (12, 24, 44.1 kHz) still plays: the bench runs those at 48 kHz
   // (issue #298). It keeps the capture rate at 8, 16, 32 and 48 kHz.
   const int sr = AudioCodecRate(s.audio_sample_rate);
-  const size_t frame_samples = static_cast<size_t>(sr / 50);  // 20 ms.
-  std::vector<float> speech;
-  if (s.audio) speech = sim::SpeechLike(sr, s.duration.seconds() + 1, s.seed + 7, true);
   const size_t audio_frame_bytes = static_cast<size_t>(std::max<int64_t>(10, s.audio_bitrate.bps() / 8 / 50));
   const DataRate audio_wire_rate =
       s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
@@ -484,7 +459,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
   OpusSendEncoder opus_encoder(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), /*fec_enabled=*/true);
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
-  SpeechDecoder decoder(speech, frame_samples);
+  OpusAudioDecoder decoder(sr);
   rtp::H264PayloadParser parser;
   ReceivedSeqs received_seqs;
 
@@ -715,7 +690,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
+      // and whether a video packet belongs to a keyframe.
+      int64_t rtp_ts = -1;
+      int32_t marker = -1, osn = -1, key = -1;
+      if (opt.link_trace && seq >= 0) {
+        if (auto q = RtpPacket::Parse(p.bytes)) {
+          rtp_ts = q->timestamp;
+          marker = q->marker ? 1 : 0;
+          if (q->ssrc == kRtxSsrc && q->payload.size() >= 2) osn = (q->payload[0] << 8) | q->payload[1];
+          if (kind == Kind::kVideo) key = rtp::H264Depacketizer::Parse(q->payload).keyframe ? 1 : 0;
+        }
+      }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key);
     }
   };
 

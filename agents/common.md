@@ -80,7 +80,10 @@ practical details every role shares.
   or a new trace column such as detector state or the NACK list), build the
   yardstick yourself in a draft PR. Don't release the item for lack of data.
   The PR's `compare-webrtc` job builds `sm_compare` from your branch and
-  publishes to `parity-data-pr/pr/<N>/`:
+  publishes to `parity-data-pr/pr/<N>/`. On a PR, scenarios with
+  `compare_seeds` run 10 seeds unless the PR changes that scenario file, so
+  to get all of a scenario's seeds on your PR, change its file (for example
+  its `compare_seeds` line); `main` always runs them all:
   - Add the instrumentation in `compare/webrtc/` (libwebrtc side) and in
     `testbench/` (ours).
   - Put the scenarios to trace in `kDefaultTraced`. A scenario copy with

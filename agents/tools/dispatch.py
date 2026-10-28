@@ -8,8 +8,12 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
                  a merge freeze or an Owner question can't be merged past
-  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
+  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first),
+                 unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
+  RUN fixer (conflict)  start a Fixer run when an approved agent PR has
+                 merge conflicts with main (usually testbench/baseline.json),
+                 which the Dispatcher can't update and nothing else resolves
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
                  already working and another eligible #64 item is free
   RUN reviewer   start a Reviewer run when a green PR has waited for review, or
@@ -23,6 +27,11 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  since its last run, or when a green PR waits for its probe
                  (needs-probe)
   STALE          report an in-progress item with no Fixer activity
+  FLOW           watch the flow for bottlenecks (CI jobs queued too long, an
+                 approved PR not merging, CI re-run churn, a free item nobody
+                 claims, an escalation the Builder hasn't answered, a routine
+                 that can't start); post new ones on the Flow watch issue with
+                 needs-builder, which starts the Builder to fix them
   NOTIFY         forward each new "NEEDS YOU:" comment on the log issue to the
                  Owner's Discord channel (GitHub doesn't notify the Owner about
                  posts from their own account, which the agents post as)
@@ -68,6 +77,16 @@ MERGE_FIXER_MIN = 20       # a closed PR starts a Fixer run by itself (GitHub ev
 PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merges that change the product or its measurement
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
+# Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
+FLOW_ISSUE_TITLE = "Flow watch"
+FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO keys --> the last alert posted
+FLOW_REPEAT_MIN = 360            # repeat an unchanged alert after this long
+FLOW_CI_QUEUE_MIN = 30           # a CI job queued longer than this: the job slots are saturated
+FLOW_APPROVED_MIN = 180          # approved and green, but not merged after this long
+FLOW_CHURN_RUNS = 5              # CI runs on one PR in 24 h
+FLOW_IDLE_MIN = 120              # a free work-list item with no Fixer claim for this long
+FLOW_ESCALATION_MIN = 180        # needs-builder unanswered this long
+FLOW_FAIL_MIN = 120              # a routine that has failed to start for this long
 
 NOW = dt.datetime.now(dt.timezone.utc)
 
@@ -277,10 +296,33 @@ class Dispatcher:
             elif not update_done:
                 state = gh(f"repos/{self.r}/pulls/{n}")["mergeable_state"]
                 if state == "behind":
+                    # One update in flight at a time: while another approved PR's run is
+                    # still going, it merges first and would leave this one behind again,
+                    # so updating now only spends a CI run (#463/#465 churn, Flow watch).
+                    flying = self.update_in_flight(n)
+                    if flying:
+                        self.say("HOLD", f"PR #{n}", f"behind main, but PR #{flying}'s run is in flight and merges first")
+                        update_done = True
+                        continue
                     self.say("UPDATE-BRANCH", f"PR #{n}", "approved, green, auto-merge on, behind main")
                     if self.live:
                         gh(f"repos/{self.r}/pulls/{n}/update-branch", "PUT")
                     update_done = True
+
+    def update_in_flight(self, number):
+        """Another PR that will auto-merge once its unfinished ci-ok run passes: auto-merge on,
+        not held, the Reviewer's approval still standing. None if there is none."""
+        for pr in self.pulls:
+            if pr["number"] == number or pr["draft"] or pr["auto_merge"] is None \
+                    or labels(pr) & {"needs-human", "blocked"}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED":
+                continue
+            ci, _ = self.ci_ok(pr["head"]["sha"])
+            if ci in (None, "queued", "in_progress", "waiting", "requested", "pending"):
+                return pr["number"]
+        return None
 
     def roadmap_candidate(self):
         body = gh(f"repos/{self.r}/issues/{ROADMAP}")["body"]
@@ -347,6 +389,31 @@ class Dispatcher:
         if any(0 <= (m - NOW.minute) % 60 <= 10 for m in SCHEDULED_FIXER_MINUTES):
             return self.say("HOLD", "fixer", "the scheduled Fixer run is due within 10 min")
         self.say("RUN", "fixer", f"#{n} free for {waited:.0f} min")
+        if self.live:
+            self.start("fixer")
+
+    def conflicts(self):
+        """An approved agent PR in conflict with main waits until a Fixer resolves it (fixer.md step 1)."""
+        dirty = []
+        for pr in self.pulls:
+            if pr["draft"] or "agent-pr" not in labels(pr) or labels(pr) & {"needs-human", "needs-owner", "blocked"}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED":
+                continue
+            if gh(f"repos/{self.r}/pulls/{pr['number']}")["mergeable_state"] == "dirty":
+                dirty.append(pr["number"])
+        if not dirty:
+            return self.note("fixer", "no approved agent PR in conflict")
+        what = "conflicts with main on " + ", ".join(f"PR #{n}" for n in dirty)
+        last = self.last_dispatch("fixer")
+        if self.recent_fixer_claim():
+            return self.say("HOLD", "fixer", f"{what}, but a Fixer claimed work in the last 30 min")
+        if last and minutes_ago(last) < DISPATCH_GAP_MIN:
+            return self.say("HOLD", "fixer", f"{what}, but dispatched {minutes_ago(last):.0f} min ago")
+        if any(0 <= (m - NOW.minute) % 60 <= 10 for m in SCHEDULED_FIXER_MINUTES):
+            return self.say("HOLD", "fixer", f"{what}; the scheduled Fixer run is due within 10 min")
+        self.say("RUN", "fixer", what)
         if self.live:
             self.start("fixer")
 
@@ -555,11 +622,125 @@ class Dispatcher:
             if age is None or age > STALE_MIN:
                 self.say("STALE", f"#{n}", "no Fixer activity" + (f" for {age:.0f} min" if age else ""))
 
+    def gh_actions(self, path):
+        """Actions API reads with the workflow's GITHUB_TOKEN (actions: read), which the App token may lack."""
+        token = os.environ.get("SM_ACTIONS_TOKEN")
+        env = dict(os.environ, GH_TOKEN=token) if token else None
+        out = subprocess.run(["gh", "api", path], capture_output=True, text=True, env=env)
+        if out.returncode != 0:
+            raise RuntimeError(out.stderr.strip())
+        return json.loads(out.stdout or "null")
+
+    def flow_signals(self):
+        """[(key, text)] for each bottleneck past its threshold."""
+        sig = []
+        # 1. CI job slots: the oldest queued job of the ci workflow.
+        try:
+            runs = []
+            for st in ("queued", "in_progress"):
+                runs += (self.gh_actions(f"repos/{self.r}/actions/runs?status={st}&per_page=50") or {}).get("workflow_runs", [])
+            queued = []
+            for run in runs:
+                if run.get("name") != "ci":
+                    continue
+                jobs = (self.gh_actions(f"repos/{self.r}/actions/runs/{run['id']}/jobs?per_page=60") or {}).get("jobs", [])
+                queued += [minutes_ago(j["created_at"]) for j in jobs if j["status"] in ("queued", "waiting")]
+            if queued and max(queued) > FLOW_CI_QUEUE_MIN:
+                sig.append(("ci-queue", f"CI: {len(queued)} jobs queued, the oldest for {max(queued):.0f} min "
+                                        f"(job slots saturated)"))
+        except (RuntimeError, ValueError) as e:
+            self.note("flow", f"CI queue not readable: {e}")
+        # 2. Approved and green, but not merged.
+        for pr in self.pulls:
+            if pr["draft"] or labels(pr) & {"needs-human", "needs-owner", "blocked", NEEDS_BUILDER}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED" or rev["commit_id"] != pr["head"]["sha"]:
+                continue
+            if minutes_ago(rev["submitted_at"]) > FLOW_APPROVED_MIN:
+                sig.append((f"approved-{pr['number']}", f"PR #{pr['number']}: approved "
+                            f"{minutes_ago(rev['submitted_at']) / 60:.1f} h ago and not merged"))
+        # 3. CI re-run churn on one PR.
+        try:
+            since = (NOW - dt.timedelta(hours=24)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            recent = (self.gh_actions(f"repos/{self.r}/actions/runs?event=pull_request&created=>={since}&per_page=100")
+                      or {}).get("workflow_runs", [])
+            per = {}
+            for run in recent:
+                if run.get("name") == "ci":
+                    per[run["head_branch"]] = per.get(run["head_branch"], 0) + 1
+            open_branches = {p["head"]["ref"]: p["number"] for p in self.pulls}
+            for br, n in per.items():
+                if n >= FLOW_CHURN_RUNS and br in open_branches:
+                    sig.append((f"churn-{open_branches[br]}", f"PR #{open_branches[br]}: {n} CI runs in 24 h"))
+        except (RuntimeError, ValueError) as e:
+            self.note("flow", f"CI runs not readable: {e}")
+        # 4. A free work-list item nobody claims.
+        cand, in_progress = self.roadmap_candidate()
+        if cand and in_progress < MAX_IN_PROGRESS:
+            since = (NOW - dt.timedelta(minutes=FLOW_IDLE_MIN)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
+            claimed = any("sm-agent: fixer" in (c["body"] or "") and re.search(r"Work (started|resumed)", c["body"] or "")
+                          for c in comments)
+            if not claimed and minutes_ago(cand["updated_at"]) > FLOW_IDLE_MIN:
+                sig.append(("idle", f"#{cand['number']} is free and no Fixer has claimed work for "
+                                    f"{FLOW_IDLE_MIN // 60} h ({in_progress} in progress)"))
+        # 5. An escalation the Builder hasn't answered.
+        for issue in gh(f"repos/{self.r}/issues?state=open&labels={NEEDS_BUILDER}&per_page=100") or []:
+            if issue["title"].strip() == FLOW_ISSUE_TITLE:
+                continue
+            events = gh(f"repos/{self.r}/issues/{issue['number']}/events?per_page=100") or []
+            added = [e["created_at"] for e in events if e.get("event") == "labeled"
+                     and (e.get("label") or {}).get("name") == NEEDS_BUILDER]
+            if added and minutes_ago(added[-1]) > FLOW_ESCALATION_MIN:
+                sig.append((f"builder-{issue['number']}", f"#{issue['number']}: needs-builder for "
+                            f"{minutes_ago(added[-1]) / 60:.1f} h"))
+        # 6. A routine that can't start.
+        for routine, when in re.findall(rf"<!-- {FAIL_MARKER.format('([a-z_-]+)')}: ([0-9TZ:-]+)", self.log_body):
+            if minutes_ago(when) > FLOW_FAIL_MIN:
+                sig.append((f"fail-{routine}", f"the {routine} routine has failed to start since {when} "
+                            f"(usually a revoked token: the Owner regenerates it)"))
+        return sig
+
+    def flow(self):
+        sig = self.flow_signals()
+        if not sig:
+            return self.note("flow", "no bottleneck past its threshold")
+        keys = " ".join(sorted(k for k, _ in sig))
+        m = re.search(rf"<!-- {FLOW_MARKER}: ([0-9TZ:-]+) ([^>]*) -->", self.log_body)
+        if m and m[2].strip() == keys and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
+            for k, text in sig:
+                self.note("flow", text)
+            return self.note("flow", f"same alert posted {minutes_ago(m[1]):.0f} min ago")
+        for k, text in sig:
+            self.say("FLOW", k, text)
+        if not self.live:
+            return
+        issues = gh(f"repos/{self.r}/issues?state=open&per_page=100") or []
+        watch = next((i for i in issues if i["title"].strip() == FLOW_ISSUE_TITLE), None)
+        if not watch:
+            watch = gh(f"repos/{self.r}/issues", "POST", {
+                "title": FLOW_ISSUE_TITLE,
+                "body": "The Dispatcher posts flow bottlenecks here (agents/tools/dispatch.py, FLOW) and adds "
+                        "`needs-builder`; the Builder fixes them (agents/builder.md). Owner, 2026-10-27."})
+            gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": "record"})
+        stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
+        body = "<!-- sm-agent: dispatcher -->\n**FLOW:** bottlenecks past their thresholds\n\n" + \
+               "\n".join(f"- {text}" for _, text in sig)
+        gh(f"repos/{self.r}/issues/{watch['number']}/comments", "POST", {"body": body})
+        gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": NEEDS_BUILDER})
+        line = f"<!-- {FLOW_MARKER}: {stamp} {keys} -->"
+        pat = rf"<!-- {FLOW_MARKER}: [^>]* -->"
+        new = re.sub(pat, line, self.log_body) if re.search(pat, self.log_body) else self.log_body.rstrip("\n") + "\n" + line
+        gh(f"repos/{self.r}/issues/{LOG_ISSUE}", "PATCH", {"body": new})
+        self.log_body = new
+
     def run(self):
         if self.stop_switch():
             print("STOP AGENTS issue is open; doing nothing.")
             return
         self.merges()
+        self.conflicts()
         self.fixer()
         self.fixer_b()
         self.reviewer()
@@ -568,6 +749,7 @@ class Dispatcher:
         self.builder()
         self.notify()
         self.stale()
+        self.flow()
         if not self.actions:
             print("nothing to do")
 
