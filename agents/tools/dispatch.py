@@ -82,8 +82,8 @@ MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's b
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
 FLOW_ISSUE_TITLE = "Flow watch"
-FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO keys --> the last alert posted
-FLOW_REPEAT_MIN = 360            # repeat an unchanged alert after this long
+FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
+FLOW_REPEAT_MIN = 360            # repeat an alert key after this long
 FLOW_CI_QUEUE_MIN = 30           # a CI job queued longer than this: the job slots are saturated
 FLOW_APPROVED_MIN = 180          # approved and green, but not merged after this long
 FLOW_CHURN_RUNS = 5              # CI runs on one PR in 24 h
@@ -741,12 +741,22 @@ class Dispatcher:
         sig = self.flow_signals()
         if not sig:
             return self.note("flow", "no bottleneck past its threshold")
-        keys = " ".join(sorted(k for k, _ in sig))
+        # Each key is posted at most once per FLOW_REPEAT_MIN, even when the set
+        # around it changes or it drops out and comes back: comparing whole sets
+        # re-posted an answered key whenever another one came or went (#499,
+        # churn-471 three times in 45 min). Old markers carry bare keys.
         m = re.search(rf"<!-- {FLOW_MARKER}: ([0-9TZ:-]+) ([^>]*) -->", self.log_body)
-        if m and m[2].strip() == keys and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
+        posted = {}
+        for tok in (m[2].split() if m else []):
+            k, _, when = tok.partition("@")
+            posted[k] = when or m[1]
+        posted = {k: w for k, w in posted.items() if minutes_ago(w) < FLOW_REPEAT_MIN}
+        fresh = [k for k, _ in sig if k not in posted]
+        if not fresh:
             for k, text in sig:
                 self.note("flow", text)
-            return self.note("flow", f"same alert posted {minutes_ago(m[1]):.0f} min ago")
+            return self.note("flow", "every alert was posted in the last "
+                                     f"{FLOW_REPEAT_MIN // 60} h ({', '.join(sorted(posted))})")
         for k, text in sig:
             self.say("FLOW", k, text)
         if not self.live:
@@ -761,9 +771,11 @@ class Dispatcher:
             gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": "record"})
         stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
         body = "<!-- sm-agent: dispatcher -->\n**FLOW:** bottlenecks past their thresholds\n\n" + \
-               "\n".join(f"- {text}" for _, text in sig)
+               "\n".join(f"- {text}" + ("" if k in fresh else " (posted before)") for k, text in sig)
         gh(f"repos/{self.r}/issues/{watch['number']}/comments", "POST", {"body": body})
         gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": NEEDS_BUILDER})
+        posted.update({k: stamp for k in fresh})
+        keys = " ".join(f"{k}@{w}" for k, w in sorted(posted.items()))
         line = f"<!-- {FLOW_MARKER}: {stamp} {keys} -->"
         pat = rf"<!-- {FLOW_MARKER}: [^>]* -->"
         new = re.sub(pat, line, self.log_body) if re.search(pat, self.log_body) else self.log_body.rstrip("\n") + "\n" + line
