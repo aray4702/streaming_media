@@ -20,10 +20,10 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 1 | Captured media | audio: **different** (ADM 10 ms blocks through the ACM vs our direct 20 ms encode); video: not audited | #477 | #477 |
 | 2 | Encoders | Opus: **identical by construction**, packet for packet on 60 of 104 traced scenarios, checked on the lossless ones by `tools/check_harness_drift.py`; where the sides part, the input that differs is the stack's own RTCP, not the harness. Video: **identical by construction** (the same size formula, seed and QP/encode-time model), the formula is still written twice | [Row 2](#row-2-encoders) | #484 (stack, not harness) |
 | 3 | Decoders | **different**: our `SpeechDecoder` returns the source signal, libwebrtc decodes with libopus | #476 | #476 |
-| 4 | Packetization and wire | not audited | | |
+| 4 | Packetization and wire | H.264 access units: **shared code** (`rtp::MakeFakeH264Frame`); RTP header extensions (transport-cc, id 1, only), CNAME, RED and RTX formats: **identical by construction**, and on the seed-1 traces every frame of the same size is split into the same packets on both sides (28 647 frame sizes on 115 scenarios), audio packets match packet for packet (row 2) and RTX is the original + 2 bytes on both. The video packet-size limit: **different**: ours is given 1458 bytes, the capacity libwebrtc is left with *after* reserving its RTX header, and libwebrtc 1460, from which it takes the reservation itself; our session makes no reservation. They agree only with NACK on and the default `video_max_payload` (`issue_29_ulpfec_over_red`, NACK off: ours up to 3 bytes smaller; `issue_257_zero_max_payload`: ours up to 3 bytes larger, and our padding 8 bytes over the limit)  No check fails yet if the splits drift apart; #513 adds the video split to `tools/check_harness_drift.py` | [Row 4](#row-4-packetization-and-wire) | #513, #514 (stack, not harness) |
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
-| 6 | Clock and tasks | not audited | | |
-| 7 | Measurement | not audited | | |
+| 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **different**, on the 1 ms tick on ours, at their due microsecond on libwebrtc's `SimTime` (render gaps off the grid in 0 of 4065 seconds on ours, 1245 of 3865 on libwebrtc) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (with #507) |
+| 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
 | 8 | Scenario mapping | not audited | | |
 
 ## Row 2: encoders
@@ -125,6 +125,109 @@ copy changes; moving it into `EncoderModel` (as #470 does for its new
 overshoot and scene-change factor) makes it shared code. That waits for #470,
 which edits the same lines.
 
+## Row 4: packetization and wire
+
+Audited on `main` at b5a82f2 (2026-10-28), with the seed-1 forward-link
+traces that `parity-data/traces/` holds for 3025aeb (115 scenarios with both
+sides). The reverse link has no trace yet (#507 adds one), so RTCP is checked
+on the forward link only.
+
+### Shared or identical
+
+| | ours (`testbench/call.cc`) | libwebrtc (`compare/webrtc/webrtc_call.cc`) |
+|---|---|---|
+| H.264 access unit for a frame of N bytes | `rtp::MakeFakeH264Frame(key, N)` (`:847`) | the same function, through `ModelAccessUnit` (`model_h264.h`) |
+| Packetization mode | mode 1 (`sm/rtp/h264.h`: single NAL, STAP-A, FU-A) | `packetization-mode=1` (`ModelH264Format`, `:510-513`) |
+| SPS VUI rewrite of a keyframe | `ParseOutgoingBitstreamAndRewrite` (`src/rtp/session.cc`, #342) | `FrameEncodeMetadataWriter::UpdateBitstream` |
+| RTP header extensions | transport-cc, id 1, nothing else (`:541`) | `kTransportSequenceNumberUri`, id 1, nothing else (`:727-728`) |
+| SDES CNAME | `sender@testbench` / `receiver@testbench` (`:569`, `:572`) | `sender@testbench` (`kSenderCname`, #409) |
+| Audio RED, RTX, ULPFEC over RED | RFC 2198 / 4588 / 5109 from the session | the same, from `AudioSendStream` / `RtpVideoSender` |
+| Wire size | RTP or RTCP bytes + 28 (UDP/IP) | the same |
+| SSRCs and payload types | 1 / 2 / 3, PT 111 / 63 / 96 / 97 | Chrome's values (`:297`, `:304`) |
+
+SSRCs and payload types differ in value only; both sides write them in the
+same fields at the same size, so the packets are the same length.
+
+On the traces:
+
+- **Video.** Grouping each side's video packets by frame (RTP timestamp,
+  first transmissions, complete frames), **every frame size that occurs on
+  both sides of a scenario is split into the same packets** on both: 28 647
+  frame sizes on 115 scenarios (sizes on the wire), for example a
+  `clean_link` frame of 6532 bytes goes as 3 x 1306 + 2 x 1307 on both. The exceptions are `issue_257_zero_max_payload` (below) and 18
+  frames that are a keyframe on one side and a delta frame of the same total
+  on the other. The largest video packet is 1486 bytes on the wire (1458 of
+  RTP) on both sides of `clean_link`.
+- **Audio.** Packet for packet on 60 of 104 scenarios, RED included (`red`
+  is on by default); row 2 explains the other 44.
+- **RTX.** Every RTX packet is its original's size + 2 on both sides
+  (38 545 and 39 088 packets).
+- **RTCP on the forward link.** The same two sizes on both sides, 84 and 108
+  bytes (8091 / 6593 packets on ours, 7860 / 7685 on libwebrtc): the same
+  compound packets, sent on each stack's own schedule.
+
+### Different: the video packet-size limit (#513)
+
+libwebrtc's `RTPSenderVideo::SendVideo` takes the packet capacity as the
+sender's `MaxRtpPacketSize`, less `FecPacketOverhead()` when the frame is
+FEC-protected, **less `RtxPacketOverhead()` (2 bytes here) when the frame
+may be retransmitted**
+(`modules/rtp_rtcp/source/rtp_sender_video.cc:676-687`, `:612-622`;
+`rtp_sender.cc:566-595`). Its padding packets are at most
+`max_packet_size_ - max_padding_fec_packet_header_`, the header with the
+extensions a padding packet carries (`rtp_sender.cc:434-452`).
+
+Our session takes the capacity as `max_payload_size + 12 - FecPacketOverhead()`
+(`src/rtp/session.cc:280-287`) with no RTX reservation, and our padding as
+`min(max_payload_size, 255)` with no room for the header extension
+(`src/rtp/rtp_sender.cc:243-245`).
+
+The harness covers the first of these with its inputs. The scenario default
+`video_max_payload 1446` (`testbench/scenario.h:81`) gives our session a
+1458-byte packet, the capacity libwebrtc is left with after its RTX
+reservation, while libwebrtc keeps its own 1460-byte default and makes the
+reservation itself (`webrtc_call.cc:899-905`). So the two sides are handed
+different packet-size limits, and they agree only when both of these hold:
+
+- **NACK on**, so libwebrtc reserves the 2 bytes. With NACK off it does not,
+  and our packets are the smaller ones: `issue_29_ulpfec_over_red` sends
+  video packets up to 1459 bytes on the wire on ours and 1462 on libwebrtc,
+  and FEC packets up to 1481 against 1484.
+- **The default `video_max_payload`.** A scenario that sets it gives both
+  sides `N + 12`, and only libwebrtc takes the 2 bytes off:
+  `issue_257_zero_max_payload` (100-byte packets) splits 28 of its 46 shared
+  frame sizes differently, with packets of 127-128 bytes on ours against
+  124-126 on libwebrtc. There our padding packets are 136 bytes on the wire,
+  8 bytes over the limit (the transport-cc extension), against 128 on
+  libwebrtc.
+
+The fix (#513) brings our session up to libwebrtc's rule (the RTX
+reservation when the frame may be retransmitted, and the padding header), so
+that both sides can be given the same packet-size limit, libwebrtc's 1460
+bytes by default and `N + 12` for `video_max_payload N`. Done when the
+seed-1 traces of `clean_link`, `issue_29_ulpfec_over_red` and
+`issue_257_zero_max_payload` split every shared frame size the same and
+have the same padding sizes on both sides.
+
+### In the stack, not the harness
+
+These differ in what the stack under test puts on the wire, from the same
+input; they are filed as #514 for the Coordinator to place:
+
+- **Padding without RTX.** With NACK off there is no RTX stream, and
+  libwebrtc pads on the media SSRC (`rtp_sender.cc:437-449`,
+  `can_send_padding_on_media_ssrc`): 383 padding packets on
+  `issue_29_ulpfec_over_red` against 4 on ours.
+- **Padding in an audio-only call.** `audio_only_lossy` and its copies: ours
+  2118 padding packets, 2115 of them 224 bytes; libwebrtc 851, of 38 sizes
+  (238, 303 and 104 bytes the most common), so the loss draws fall on other
+  audio packets (row 2, row 5).
+- **Start values and the first marker bit.** libwebrtc starts each stream's
+  sequence number and RTP timestamp at a random value (6666 and 873682028
+  for audio on all 105 seed-1 traces with audio) and sets the marker bit on the first audio
+  packet (`rtp_sender_audio.cc:88-128`); ours starts both at 0 (video at the
+  capture time x 90) and sends no audio marker. No metric reads these.
+
 ## Row 5: the link
 
 Audited on `main` at 445302f (2026-10-28), with the seed-1 traces that
@@ -179,3 +282,183 @@ and our retransmissions meet the bottleneck at other times than
 libwebrtc's. The fix (#507) brings our side up: drive the session at each
 packet's arrival time, and add a reverse-link trace on both sides so the
 reverse half is checked too. Clock and task timing beyond this is row 6.
+
+## Row 6: clock and tasks
+
+Audited on `main` at f281dfb (2026-10-28), with the seed-1 forward-link and
+GoogCC traces (`<scenario>.1.{sm,webrtc}.{trace,bwe}.csv`) that
+`parity-data/traces/` holds for 3025aeb (115 scenarios with both sides).
+
+libwebrtc runs on `SimTime` (`compare/webrtc/sim_time.{h,cc}`): one thread,
+a simulated clock, and task queues whose tasks run at the microsecond they
+are due, in (due time, posting order), queue by queue in creation order
+(`sender`, `receiver`, `network`, then the queues libwebrtc creates itself:
+pacer, encoders). `sm_compare`'s 1 ms tick is a task on `network`
+(`webrtc_call.cc:1015-1257`). Our test bench steps a 1 ms loop and calls
+each session directly (`testbench/call.cc:787-1135`).
+
+### Identical by construction
+
+| | ours (`testbench/call.cc`, the library) | libwebrtc (`compare/webrtc/webrtc_call.cc`, `reference/`) |
+|---|---|---|
+| Order within a millisecond | link change; RTCP that arrived by `now` to the sender; audio encode; video capture and encode; cross traffic; queue sample; pacer; media that arrived by `now` to the receiver; render; playout pull; the receiver's RTCP | RTCP to the sender at its arrival (sender queue, before the tick); link change (also before every send, `advance_links`); audio block and video capture; cross traffic; queue sample (the tick); then the encoder and pacer queues, created after `network`; the playout pull is posted by the tick, so it runs after the packets that arrived by then |
+| GoogCC process interval | `OnProcessInterval` at the first `Process` (t = 0) and every 25 ms after, with the pacer-queue update in the same step (`src/rtp/send_side_controller.cc:341-349`) | `UpdateControllerWithTimeInterval` when the controller is created at call setup, then `controller_task_` and `pacer_queue_update_task_` every 25 ms (`call/rtp_transport_controller_send.cc:772-773`, `:796-815`) |
+| Pacer release times | `Process` every 1 ms | the next process at `next_send_time - now` rounded up to 1 ms (`modules/pacing/task_queue_paced_sender.cc:304-312`), so on the grid while the event that scheduled it was |
+| Transport feedback timer | the receiver's feedback interval, from t = 0 | `TransportSequenceNumberFeedbackGenerator`'s, from call setup |
+| First RTCP report | half the nominal interval, no draw (`src/rtp/rtcp_engine.cc`) | `report_interval_ / 2` in the constructor (`rtcp_sender.cc:171`) |
+| NACK processing | every 20 ms from the first `Process` (`src/loss/nack_tracker.cc:7`, `:84`) | `NackPeriodicProcessor`, every 20 ms from registration at setup (`modules/video_coding/nack_requester.cc:55`); not checked on a trace until #507 adds the reverse link |
+
+On the traces:
+
+- **Feedback timing.** The sender's first four transport-feedback arrivals
+  (`delay_based` rows of the bwe trace) are at the same times on both sides
+  on **all 115** scenarios (`clean_link`: 125, 175, 225, 275 ms), and the
+  two sides stay identical for a median of 60 feedback packets, until the
+  send rates (and so the feedback interval) part. Both GoogCCs make their
+  first update at t = 0.
+- **Pacer grid.** libwebrtc's pacer releases video on the 1 ms grid as ours
+  does: of its 485 805 video packets, the only ones off the grid are the
+  13 686 `encode_delay` frames of `issue_84_cpu_overuse_slow_encoder`
+  (#507); audio 6 of 183 250, padding 10 of 5691.
+
+The clock start differs in value only (ours 0, libwebrtc
+`100000 + 7919 * ((seed - 1) % 1000)` s, `webrtc_call.cc:639-642`). Both
+sides measure relative to it; the one place libwebrtc reads its absolute
+value is the RTCP seed below.
+
+### Different: the random stream behind each RTCP report interval (#517)
+
+Both pick an interval uniformly in [m/2, 3m/2] ms by the same rule
+(`rtcp_sender.cc:680-693`; `src/rtp/rtcp_engine.cc:25-35`), but from
+different random streams:
+
+- libwebrtc: `webrtc::Random` (xorshift64\*) seeded with
+  `clock().TimeInMicroseconds()` when each `RTCPSender` is built
+  (`rtcp_sender.cc:130`), which in `sm_compare` is the clock start, the same
+  for all four of them;
+- ours: `sm::Random` (xoshiro256\*\*) seeded with the scenario seed
+  (`call.cc:565`), `seed + 1` for the sender's audio RTCP
+  (`src/rtp/session.cc:239`).
+
+| seed 1 | sender's 1st RTCP on the forward link | 2nd |
+|---|---|---|
+| scenarios at the same time on both | 114 of 115 (500 ms, no draw) | **0 of 115** |
+| `clean_link` | 500 / 500 ms | 774 / 684 ms |
+| `random_loss_5pct` | 500 / 500 ms | 989 / 818 ms |
+| `high_jitter` | 500 / 500 ms | 1410 / 1033 ms |
+
+So the report blocks that feed the loss-based estimate, the RTT and the
+Opus loss input reach the sender at different times for a reason outside
+the stack under test. The fix (#517) ports `webrtc::Random` for the RTCP
+draws and seeds every RTCP engine of ours as libwebrtc's are seeded, with
+the same per-seed clock value from the harness. `rtc_base/random.{h,cc}` is
+not in `compare/webrtc/reference/` yet.
+
+### Different: our stack's timers run on the 1 ms tick (#518)
+
+`Session::Process` runs once per tick, so each of our timers fires at the
+next whole millisecond after it is due; libwebrtc's fire at their due
+microsecond. #507 covers the timers that a packet's arrival or an
+`encode_delay` frame starts. The rest:
+
+- **Video render.** libwebrtc decodes and renders each frame when its
+  decode task is due; ours renders after `receiver.Process(now)` on the
+  tick, and `Session::NextProcessTime` is "at most 1 ms away" with a video
+  receiver (`include/sm/rtp/session.h:297-299`). The per-second longest
+  render gap (video trace) is a whole number of milliseconds in 4065 of
+  4065 seconds on ours, and off the grid in **1245 of 3865** on libwebrtc's.
+- **Timers after an off-grid event.** libwebrtc schedules from `now`, so
+  after one off-grid event the timers that follow are off the grid too:
+  2418 of libwebrtc's 18 538 loss-based updates are off the grid (report
+  blocks arriving off it, `random_loss_5pct` from 1058.249 ms,
+  `high_jitter` from 6232.769 ms); 0 of our 20 104.
+- **Ties.** `SimTime` runs a receiver timer posted earlier (transport
+  feedback, NACK, RTCP) before a packet that arrives at exactly its due
+  time; our tick hands that packet to the receiver before
+  `receiver.Process(now)`, so it is in the report on ours and in the next
+  one on libwebrtc's.
+
+The fix (#518) drives each session at its due times as `SimTime` does,
+with the receiver's frame scheduling reporting its due time to
+`NextProcessTime`, on the same loop as #507.
+
+## Row 7: measurement
+
+Audited on `main` at 3025aeb (2026-10-28), against the metric means of
+`parity-data/compare-webrtc.json` for that `main` (10 seeds).
+
+Every metric in `rep.metrics` falls into one of four kinds:
+
+1. **Shared code.** One function computes it on both sides.
+2. **The same formula, written twice.** Both sides apply it to the same kind
+   of input.
+3. **Each stack's own statistic.** The metric reads the stack under test,
+   which is the point. Both sides read the equivalent statistic by the same
+   rule.
+4. **Different.** The two sides use different rules, different statistics or
+   different starting points, or only one side computes the metric.
+
+### Shared code
+
+| metrics | function | fed by |
+|---|---|---|
+| `cc.target_avg_kbps`, `cc.send_over_target_ms`, `cc.send_over_target_p95_pct`, `cc.target_max_drop_pct`, `cc.goodput_kbps`, `cc.utilization_pct`, `cc.max_settle_ms`, `cc.unsettled` | `AddCcMetrics` (`testbench/call.cc:300`) | the 100 ms samples; the demand is the same formula on both (`video_max` + the audio wire rate) |
+| `net.<kind>_kbps`, `net.<kind>_loss_pct`, `_queue_drops`, `_size_*` | `AddLinkKindMetrics` | the shared forward link's per-kind counters, with packets tagged by the same rules (row 5) |
+| goodput in the samples | `FirstDelivery` (`call_common.h`) | link arrivals: each media sequence number once, RTX by its original sequence number |
+| `audio.concealed_pct`, `audio.interruptions`, `audio.interruption_ms`, `audio.longest_interruption_ms` | `ConcealmentMeter` | each jitter buffer's `totalSamplesReceived`, `concealedSamples` and `concealmentEvents` after every 10 ms pull |
+| `sync.av_offset_p50_ms`, `_p95_ms`, `_max_ms` | `AvSyncMeter` | each stack's audio playout timestamp, and the capture time of each rendered frame |
+| `video.freeze_count`, `video.freeze_total_ms`, `video.longest_freeze_ms`, `video.pause_*` | `video::FreezeDetector`, the same class on both sides | the render times of each side's frames |
+| `cc.queue_p95_ms`, `cc.queue_max_ms`, `cc.queue_over_200ms_pct` | `QueueDelayMs` and `Percentile` | the shared forward link, sampled every 10 ms before the stack's sends of that millisecond (#410) |
+
+### The same formula, written twice
+
+These formulas are the same text on both sides
+(`call.cc:1029-1135`, `webrtc_call.cc:1300-1421`), but no test fails if
+one copy changes:
+- the freeze still in progress at the end of the call, and the pause test;
+- `video.render_fps` and `video.render_ratio_pct`;
+- `audio.mouth_to_ear_p95_ms`;
+- `net.loss_pct` and `cc.rtt_p50_ms`;
+- the residual-loss loop, apart from its input (below).
+
+Moving them into `call_common.h` makes them shared code. That belongs with
+#509 and #510, which touch the same lines.
+
+### Each stack's own statistic, read by the same rule
+
+| metric | ours | libwebrtc |
+|---|---|---|
+| target in the samples | the session's `rates().target` | `Call::GetStats().send_bandwidth_bps` |
+| `cc.rtt_p50_ms` | the sender's `CallStats` RTT, every 100 ms (#370) | `Call::GetStats().rtt_ms`, every 100 ms |
+| `audio.jb_delay_p50_ms`, `_p95_ms` | `jitterBufferDelay / jitterBufferEmittedCount` over each pull | the same, from `AudioReceiveStream::GetStats` |
+| `audio.net_delay_p95_ms` | link arrival minus the packet's capture time (RTP time from 0) | link arrival minus `(ts - first ts) / 48` ms |
+| `audio.late_discards` | the jitter buffer's `packets_discarded_late` (its `DiscardOldPackets` port) | NetEq's `packetsDiscarded` |
+| `video.keyframe_requests` | one per PLI or FIR the sender's RTCP names a media SSRC in | `pli_packets + fir_packets` for the video SSRC |
+| `video.e2e_delay_*`, `video.time_to_first_frame_ms`, `video.frames_rendered` | render time of each frame, minus its capture time | the same, from the renderer callback |
+| `video.avg_kbps`, `video.qp_mean`, `video.encode_height_mean`, `video.keyframes` | the shared encoder model's output (row 2) | the same |
+| `video.encoder_dropped` | captured frames the library chose not to encode | captured minus encoded, which also counts the frames still in the encoder queue when the call ends (at most a frame or two) |
+
+Render times on our side fall on the 1 ms tick, and on libwebrtc's at the
+event time: that is #507 and row 6, not a measurement rule.
+
+### Different: repair metrics (#509)
+
+| metric | ours | libwebrtc | example (10-seed means, ours / libwebrtc) |
+|---|---|---|---|
+| `repair.overhead_pct` | whole RTP packets (header, extensions, payload, the RED redundant block, the RTX sequence number), `call.cc:679-680` | payload only: the RED primary block, video minus the RED byte, RTX minus 2, FEC minus 1, `webrtc_call.cc:790-805` | `high_jitter` 39.9 / 42.3 % at RTX 244 / 241 kbps |
+| `repair.nack_recovered` | the library's `NackTracker` counter: any NACKed gap later filled, by a late original too (`src/loss/nack_tracker.cc:32-35`) | RTX packets on the link that fill a sequence number not yet delivered, `webrtc_call.cc:1098-1101` | `high_jitter` 672.5 / 12.1; `issue_127_all_v2_no_stall` 1285 / 83 |
+| `video.residual_loss_pct` | received = handed to the depacketizer by our `RtpReceiver`, which includes ULPFEC recoveries (`call.cc:102-110`) | received = link arrivals of media and RTX original sequence numbers, never FEC (`webrtc_call.cc:1097-1101`) | `issue_29_ulpfec_over_red` 0.73 / 4.90 % |
+| `repair.fec_recovered` | the ULPFEC receiver's `num_recovered_packets` | not computed, so the parity report skips it | |
+
+### Different: receive statistics and one-sided metrics (#510)
+
+| metric | ours | libwebrtc | example |
+|---|---|---|---|
+| `audio.stretch_pct` | pulls whose operation was Accelerate or PreemptiveExpand (`call.cc:959`), also when no sample was removed or inserted | pulls in which `removed_samples_for_acceleration` or `inserted_samples_for_deceleration` grew (`webrtc_call.cc:1153-1181`) | `audio_only_lossy` 0.29 / 0.43 %; `clean_link` 0.53 / 0.60 % |
+| start of the playout counters (stretch denominator, `ConcealmentMeter`, `jb_delay`) | the first pull after the first audio packet arrives | the first pull with `total_samples_received > 0` | |
+| `audio.time_to_first_ms` | arrival of the first packet the jitter buffer accepted (#256) | arrival of the first audio-SSRC packet | equal on the published scenarios, not by construction |
+| `video.undecodable_frames` | the keyframe requester's `frames_dropped` only (`call.cc:1098`) | `VideoReceiveStream::Stats::frames_dropped`, which also counts the frame buffer's fast-forwards and the frames cleared for a keyframe; our video trace already uses that sum (`call.cc:992`) | `high_jitter` 0.5 / 0; `issue_127_all_v2_no_stall` 0.6 / 0 |
+| `video.delay_encode_ms`, `video.delay_pacer_p95_ms`, `video.delay_network_p95_ms`, `video.delay_jitter_buffer_p95_ms` | `AddVideoDelayMetrics` (`call.cc:384-404`) | not computed, so the parity report skips them | |
+
+The fixes bring the narrower side up and make each rule shared code fed by
+the same events. Never drop a metric to make the sides equal.
