@@ -104,6 +104,13 @@ class OpusSendEncoder {
   bool ok() const { return ok_; }
   OpusEncoder* opus() { return enc_; }
 
+  // The bitrate libopus has (OPUS_GET_BITRATE), -1 if it can't say.
+  int bitrate_bps() const {
+    opus_int32 bps = -1;
+    if (enc_ == nullptr || opus_encoder_ctl(enc_, OPUS_GET_BITRATE(&bps)) != OPUS_OK) return -1;
+    return bps;
+  }
+
   // SetProjectedPacketLossRate, given the whole percent it hands libopus.
   void SetPacketLossPercent(int percent) {
     if (percent == loss_percent_) return;

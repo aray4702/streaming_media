@@ -11,6 +11,12 @@ send trace for this library and for libwebrtc, read from the packet bytes
               FNV-1a hash of the payload (RED header included)
   report,...  every report block about the audio SSRC delivered to the sender,
               with its 8-bit fraction lost
+  encode,...  every packet the Opus encoder completed (issue #547; traces
+              written before it have none): its index (seq), an FNV-1a hash
+              of the PCM it took (payload_hash), the last fraction lost it was
+              given (times 256), and bitrate_bps, allocation_bps and
+              overhead_bytes: the bitrate it had and the last allocation and
+              per-packet overhead it was given (-1: never given one)
 
 libopus is deterministic, so two frames with the same payload hash were
 encoded from the same samples with the same settings. For each side the tool
@@ -38,15 +44,40 @@ ALPHA = 0.9999           # kAlphaForPacketLossFractionSmoother, per ms
 MAX_LOSS_FRACTION = 0.2  # kMaxPacketLossFraction
 
 
-def parse(text):
+ENCODE_INPUTS = ("pcm", "loss_given", "bitrate_bps", "allocation_bps", "overhead_bytes")
+
+
+def parse(text, encodes=None):
     frames, reports = [], []
     for r in csv.DictReader(io.StringIO(text)):
         if r["kind"] == "frame":
             frames.append({"t": int(r["time_us"]), "ts": int(r["rtp_ts"]), "pt": int(r["pt"]),
                            "bytes": int(r["payload_bytes"]), "hash": r["payload_hash"]})
-        else:
+        elif r["kind"] == "report":
             reports.append((int(r["time_us"]), int(r["fraction_lost"]) / 256.0))
+        elif r["kind"] == "encode" and encodes is not None:
+            encodes.append({"k": int(r["seq"]), "pcm": r["payload_hash"], "loss_given": int(r["fraction_lost"]),
+                            "bitrate_bps": int(r["bitrate_bps"]), "allocation_bps": int(r["allocation_bps"]),
+                            "overhead_bytes": int(r["overhead_bytes"])})
     return frames, reports
+
+
+def compare_encoder_inputs(ea, eb, names, out):
+    """The first packet whose encoder inputs differ, input by input (issue #547)."""
+    if not ea or not eb:
+        print("encoder inputs: not traced", file=out)
+        return
+    ea, eb = sorted(ea, key=lambda e: e["k"]), sorted(eb, key=lambda e: e["k"])
+    n = min(len(ea), len(eb))
+    print(f"encoder inputs: {names[0]} {len(ea)} packets, {names[1]} {len(eb)}", file=out)
+    for key in ENCODE_INPUTS:
+        ks = [k for k in range(n) if ea[k][key] != eb[k][key]]
+        if not ks:
+            print(f"  {key}: same on all {n}", file=out)
+            continue
+        k = ks[0]
+        print(f"  {key}: differs on {len(ks)}, first at packet {k}: {names[0]} {ea[k][key]}  |  {names[1]} {eb[k][key]}",
+              file=out)
 
 
 def loss_percent(frames, reports):
@@ -69,8 +100,9 @@ def loss_percent(frames, reports):
 
 
 def compare(a_text, b_text, names=("sm", "webrtc"), out=sys.stdout):
-    fa, ra = parse(a_text)
-    fb, rb = parse(b_text)
+    ea, eb = [], []
+    fa, ra = parse(a_text, ea)
+    fb, rb = parse(b_text, eb)
     la, lb = loss_percent(fa, ra), loss_percent(fb, rb)
     n = min(len(fa), len(fb))
     print(f"frames: {names[0]} {len(fa)}, {names[1]} {len(fb)}", file=out)
@@ -96,6 +128,7 @@ def compare(a_text, b_text, names=("sm", "webrtc"), out=sys.stdout):
             print(f"  frame {j}: " + "  |  ".join(
                 f"{nm} t={f[j]['t']} ts={f[j]['ts']} pt={f[j]['pt']} bytes={f[j]['bytes']} hash={f[j]['hash']} loss={l[j]}%"
                 for nm, f, l in ((names[0], fa, la), (names[1], fb, lb))), file=out)
+    compare_encoder_inputs(ea, eb, names, out)
     ok = len(fa) == len(fb) and not ts_diff and not hash_diff
     print("MATCH" if ok else "DIFFERENT", file=out)
     return ok

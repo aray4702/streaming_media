@@ -97,9 +97,13 @@ struct AudioTraceRow {
 // of its payload, so equal rows mean both encoders took the same samples with the
 // same settings) and one per audio report block delivered to the sender (the
 // fraction lost the encoder's packet loss smoother takes). tools/audio_send.py
-// compares the two stacks frame by frame.
+// compares the two stacks frame by frame. One more row per packet the Opus encoder
+// completes records the encoder's own inputs (issue #547): a hash of the PCM it took,
+// the bitrate it had, the last allocation and overhead it was given and the last
+// fraction lost it was given, so a payload that differs can be traced to the input
+// that did.
 struct AudioSendRow {
-  enum class Kind { kFrame, kReport };
+  enum class Kind { kFrame, kReport, kEncode };
   Kind kind = Kind::kFrame;
   int64_t time_us = 0;        // Frame: offered to the forward link. Report: delivered to the sender.
   int32_t seq = -1;           // Frame: RTP sequence number.
@@ -107,8 +111,23 @@ struct AudioSendRow {
   int32_t pt = -1;            // Frame: RTP payload type (Opus or RED).
   int32_t payload_bytes = 0;  // Frame: RTP payload, RED header included.
   uint32_t payload_hash = 0;  // Frame: FNV-1a 32 over the same bytes.
-  int32_t fraction_lost = -1; // Report: the block's 8-bit fraction lost (RFC 3550 6.4.1).
+  int32_t fraction_lost = -1; // Report: the block's 8-bit fraction lost (RFC 3550 6.4.1). Encode: the last one the
+                              // encoder was given (OnReceivedUplinkPacketLossFraction, times 256), -1 before any.
+  // Encode rows (seq is the packet's index, payload_hash the FNV-1a 32 of its PCM, PcmHash):
+  int32_t bitrate_bps = -1;     // The bitrate the encoder had (AudioEncoder::GetTargetBitrate).
+  int32_t allocation_bps = -1;  // The last OnReceivedUplinkAllocation target, -1 if it never had one.
+  int32_t overhead_bytes = -1;  // The last OnReceivedOverhead, -1 if it never had one.
 };
+
+// FNV-1a 32 over the bytes of 16-bit PCM, continuing from `h`.
+inline uint32_t PcmHash(std::span<const int16_t> pcm, uint32_t h = 2166136261u) {
+  for (int16_t v : pcm) {
+    const auto u = static_cast<uint16_t>(v);
+    h = (h ^ (u & 0xff)) * 16777619u;
+    h = (h ^ (u >> 8)) * 16777619u;
+  }
+  return h;
+}
 
 // Appends the row of an RTP packet from `audio_ssrc` with a payload.
 void TraceAudioRtp(std::span<const uint8_t> packet, int64_t time_us, uint32_t audio_ssrc,
