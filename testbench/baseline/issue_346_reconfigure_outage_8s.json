@@ -40,7 +40,7 @@
   "net.video_size_p50_b": 1386,
   "net.video_size_p90_b": 1463,
   "repair.fec_recovered": 0,
-  "repair.nack_recovered": 226,
+  "repair.nack_recovered": 233,
   "repair.overhead_pct": 8.573,
   "video.avg_kbps": 1883,
   "video.delay_encode_ms": 0,
