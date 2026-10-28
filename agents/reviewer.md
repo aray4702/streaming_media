@@ -110,9 +110,11 @@ For each PR:
    {"commit_id": "<head sha>", "event": "APPROVE|REQUEST_CHANGES|COMMENT",
     "body": "<!-- sm-agent: reviewer -->\n...", "comments": [{"path": "src/...", "line": 42, "side": "RIGHT", "body": "..."}]}
    ```
-   - **APPROVE** only if the checklist passes, `ci-ok` succeeded on this
-     head commit, and the PR does not touch a protected path. The body
-     summarizes what you verified.
+   - **APPROVE** only if the checklist passes and `ci-ok` succeeded on this
+     head commit. The body summarizes what you verified. A PR that touches
+     a protected path also needs the Builder's `builder-approved` before it
+     merges (Owner, 2026-10-28): review it as usual and add `needs-builder`
+     if it lacks that label.
    - **REQUEST_CHANGES** for anything that must change. Make each problem
      an inline comment on the exact line, saying what is wrong, why it
      matters (a concrete failing input or scenario where possible) and what

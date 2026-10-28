@@ -8,6 +8,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
                  a merge freeze or an Owner question can't be merged past
+  (protected)    a PR touching agents/ or .github/ also needs the Builder's
+                 builder-approved label, added after its last content push
+                 (Owner, 2026-10-28); without it auto-merge stays off
   UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first),
                  unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
@@ -58,6 +61,10 @@ BOT_ID = 342667563  # its bot user id, which survives a rename; match on this
 ROADMAP = 64
 LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
+# Paths whose changes alone need no build: the `scope` job in ci.yml then runs no
+# compare-webrtc, so such a PR never gets a parity report (#529, as #491 and #456).
+NO_CODE = re.compile(r"^(agents/|docs/|compare/webrtc/reference/|\.github/)|\.md$")
+BUILDER_APPROVED = "builder-approved"  # the Builder's go-ahead for a protected-path PR (Owner, 2026-10-28)
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
 NEEDS_COORDINATOR = "needs-coordinator"  # a question the Coordinator decides; holds the item meanwhile
@@ -83,8 +90,8 @@ MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's b
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
 FLOW_ISSUE_TITLE = "Flow watch"
-FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO keys --> the last alert posted
-FLOW_REPEAT_MIN = 360            # repeat an unchanged alert after this long
+FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
+FLOW_REPEAT_MIN = 360            # repeat an alert key after this long
 FLOW_CI_QUEUE_MIN = 30           # a CI job queued longer than this: the job slots are saturated
 FLOW_APPROVED_MIN = 180          # approved and green, but not merged after this long
 FLOW_CHURN_RUNS = 5              # CI runs on one PR in 24 h
@@ -288,10 +295,21 @@ class Dispatcher:
                 self.note(f"PR #{n}", f"ci-ok {ci}, " + (f"review {rev['state']} on {rev['commit_id'][:7]}" if rev else "no review"))
                 continue
             files = [f["filename"] for f in gh(f"repos/{self.r}/pulls/{n}/files?per_page=100") or []]
-            if any(f.startswith(PROTECTED) for f in files):
-                continue  # the Owner merges protected paths
+            if any(f.startswith(PROTECTED) for f in files) and not self.builder_approved(pr):
+                # Protected paths merge on the Builder's judgment (Owner, 2026-10-28): the
+                # Reviewer's approval, ci-ok and builder-approved on this head.
+                if pr["auto_merge"] is not None:
+                    self.say("HOLD", f"PR #{n}", f"protected path without a current {BUILDER_APPROVED}: auto-merge off")
+                    if self.live:
+                        subprocess.run(["gh", "pr", "merge", str(n), "-R", self.r, "--disable-auto"], check=True)
+                else:
+                    self.note(f"PR #{n}", f"protected path: waits for the Builder's {BUILDER_APPROVED}")
+                continue
             if pr["auto_merge"] is None:
-                ok, why = self.parity_ok(pr)
+                if files and all(NO_CODE.search(f) and f != ".github/workflows/ci.yml" for f in files):
+                    ok, why = True, "no code changed, so no parity report"
+                else:
+                    ok, why = self.parity_ok(pr)
                 if not ok and OWNER_APPROVED in labels(pr):
                     ok, why = True, f"{why}; Owner-approved ({OWNER_APPROVED})"
                 if not ok:
@@ -315,6 +333,27 @@ class Dispatcher:
                     if self.live:
                         gh(f"repos/{self.r}/pulls/{n}/update-branch", "PUT")
                     update_done = True
+
+    def builder_approved(self, pr):
+        """builder-approved was added after the last commit that isn't a verified update-branch
+        merge of main: a push with new content needs the Builder's judgment again."""
+        if BUILDER_APPROVED not in labels(pr):
+            return False
+        n = pr["number"]
+        events = gh(f"repos/{self.r}/issues/{n}/events?per_page=100", paginate=True) or []
+        added = [e["created_at"] for e in events if e.get("event") == "labeled"
+                 and (e.get("label") or {}).get("name") == BUILDER_APPROVED]
+        if not added:
+            return False
+        commits = gh(f"repos/{self.r}/pulls/{n}/commits?per_page=100", paginate=True) or []
+        content = [c for c in commits if not (
+            len(c.get("parents", [])) == 2 and is_bot(c.get("author"))
+            and (c.get("committer") or {}).get("login") == "web-flow"
+            and (c["commit"].get("verification") or {}).get("verified") is True
+            and c["commit"]["message"].startswith("Merge branch 'main' into "))]
+        if not content:
+            return True
+        return added[-1] > content[-1]["commit"]["committer"]["date"]
 
     def update_in_flight(self, number):
         """Another PR that will auto-merge once its unfinished ci-ok run passes: auto-merge on,
@@ -363,6 +402,14 @@ class Dispatcher:
             self._closed = gh(f"repos/{self.r}/pulls?state=closed&sort=updated&direction=desc&per_page=50") or []
         return self._closed
 
+    def free_since(self, cand):
+        """When a work-list item became free: the issue's last update, or the moment a PR on it
+        closed (merging a PR doesn't touch the issue, but it frees the item)."""
+        n = cand["number"]
+        return max([cand["updated_at"]] + [
+            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
+            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
+
     def recent_fixer_claim(self):
         since = (NOW - dt.timedelta(minutes=CLAIM_WINDOW_MIN)).strftime("%Y-%m-%dT%H:%M:%SZ")
         comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
@@ -374,12 +421,7 @@ class Dispatcher:
         if not cand:
             return self.note("fixer", f"no free eligible #{ROADMAP} item ({in_progress} in progress)")
         n = cand["number"]
-        # Free since: the issue's last update, or the moment a PR on it closed
-        # (merging a PR doesn't touch the issue, but it frees the item).
-        free_since = max([cand["updated_at"]] + [
-            p["closed_at"] for p in self.closed_pulls() if p.get("closed_at") and
-            re.search(rf"(?:Fixes|Refs|Closes|For) #{n}\b", p.get("body") or "")])
-        waited = minutes_ago(free_since)
+        waited = minutes_ago(self.free_since(cand))
         recent_close = [p for p in self.closed_pulls()
                         if p.get("closed_at") and minutes_ago(p["closed_at"]) < MERGE_FIXER_MIN]
         last = self.last_dispatch("fixer")
@@ -718,7 +760,10 @@ class Dispatcher:
             comments = gh(f"repos/{self.r}/issues/comments?since={since}&per_page=100") or []
             claimed = any("sm-agent: fixer" in (c["body"] or "") and re.search(r"Work (started|resumed)", c["body"] or "")
                           for c in comments)
-            if not claimed and minutes_ago(cand["updated_at"]) > FLOW_IDLE_MIN:
+            # Free since, as the Fixer rule reads it: a PR on the item that just merged
+            # leaves it free from that moment, not from the issue's last update (#478 at
+            # 05:39 UTC 2026-10-28, alerted 36 s after #485 merged; Flow watch #499).
+            if not claimed and minutes_ago(self.free_since(cand)) > FLOW_IDLE_MIN:
                 sig.append(("idle", f"#{cand['number']} is free and no Fixer has claimed work for "
                                     f"{FLOW_IDLE_MIN // 60} h ({in_progress} in progress)"))
         # 5. An escalation the Builder hasn't answered.
@@ -742,12 +787,22 @@ class Dispatcher:
         sig = self.flow_signals()
         if not sig:
             return self.note("flow", "no bottleneck past its threshold")
-        keys = " ".join(sorted(k for k, _ in sig))
+        # Each key is posted at most once per FLOW_REPEAT_MIN, even when the set
+        # around it changes or it drops out and comes back: comparing whole sets
+        # re-posted an answered key whenever another one came or went (#499,
+        # churn-471 three times in 45 min). Old markers carry bare keys.
         m = re.search(rf"<!-- {FLOW_MARKER}: ([0-9TZ:-]+) ([^>]*) -->", self.log_body)
-        if m and m[2].strip() == keys and minutes_ago(m[1]) < FLOW_REPEAT_MIN:
+        posted = {}
+        for tok in (m[2].split() if m else []):
+            k, _, when = tok.partition("@")
+            posted[k] = when or m[1]
+        posted = {k: w for k, w in posted.items() if minutes_ago(w) < FLOW_REPEAT_MIN}
+        fresh = [k for k, _ in sig if k not in posted]
+        if not fresh:
             for k, text in sig:
                 self.note("flow", text)
-            return self.note("flow", f"same alert posted {minutes_ago(m[1]):.0f} min ago")
+            return self.note("flow", "every alert was posted in the last "
+                                     f"{FLOW_REPEAT_MIN // 60} h ({', '.join(sorted(posted))})")
         for k, text in sig:
             self.say("FLOW", k, text)
         if not self.live:
@@ -762,9 +817,11 @@ class Dispatcher:
             gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": "record"})
         stamp = NOW.strftime("%Y-%m-%dT%H:%M:%SZ")
         body = "<!-- sm-agent: dispatcher -->\n**FLOW:** bottlenecks past their thresholds\n\n" + \
-               "\n".join(f"- {text}" for _, text in sig)
+               "\n".join(f"- {text}" + ("" if k in fresh else " (posted before)") for k, text in sig)
         gh(f"repos/{self.r}/issues/{watch['number']}/comments", "POST", {"body": body})
         gh(f"repos/{self.r}/issues/{watch['number']}/labels", "POST", {"labels[]": NEEDS_BUILDER})
+        posted.update({k: stamp for k in fresh})
+        keys = " ".join(f"{k}@{w}" for k, w in sorted(posted.items()))
         line = f"<!-- {FLOW_MARKER}: {stamp} {keys} -->"
         pat = rf"<!-- {FLOW_MARKER}: [^>]* -->"
         new = re.sub(pat, line, self.log_body) if re.search(pat, self.log_body) else self.log_body.rstrip("\n") + "\n" + line
