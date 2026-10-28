@@ -90,6 +90,10 @@ struct LinkTraceRecord {
   int32_t marker = -1;
   int32_t osn = -1;
   int32_t key = -1;
+  // #518: the packet's wire bytes that are not codec payload (UDP/IP, RTP
+  // header, extensions, padding, RED header; testbench::TraceHeaderBytes), so
+  // the drift check reads each packet's payload; -1 when not known.
+  int32_t header = -1;
 };
 
 struct LinkStats {
@@ -122,8 +126,9 @@ class NetworkLink {
   void EnableTrace() { trace_on_ = true; }
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
   // Adds the RTP fields to the record of the packet just sent (issue #437).
-  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1) {
+  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1, int32_t header = -1) {
     if (!trace_on_ || trace_.empty()) return;
+    trace_.back().header = header;
     trace_.back().rtp_ts = rtp_ts;
     trace_.back().marker = marker;
     trace_.back().osn = osn;
