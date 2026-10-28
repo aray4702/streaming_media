@@ -82,6 +82,6 @@
   "video.time_to_first_frame_ms": 277,
   "video.undecodable_frames": 0
  },
- "passed": false,
+ "passed": true,
  "scenario": "issue_120_rtx_payload_padding"
 }
