@@ -3,6 +3,8 @@
 // GoogCcNetworkControllerTest cases, which drive the controller directly, are
 // ported; the GoogCcScenario cases need libwebrtc's network emulation. The cases
 // left out, and why, are listed in tools/catalog.py (5.4).
+#include <cstdint>
+#include <limits>
 #include <optional>
 
 #include "sm/cc/send_side_bwe.h"
@@ -260,4 +262,35 @@ SM_TEST(GccController, EnablePeriodicAlrProbingReachesTheProbeController) {
   SM_EXPECT_FALSE(g.probe_controller_v2().periodic_alr_probing());
   g.EnablePeriodicAlrProbing(true);
   SM_EXPECT_TRUE(g.probe_controller_v2().periodic_alr_probing());
+}
+
+// Issue #464: libwebrtc's BitrateConstraints carry int bps (rtp_transport_controller_send.cc:68-83,
+// ConvertConstraints), so a finite rate above INT_MAX bps can't reach GoogCC. A start rate of 1 Tbps
+// or more used to start probes at 3x and 6x that rate, and the pacer built padding for them until it
+// ran out of memory.
+SM_TEST(GccController, RatesAboveIntBpsSaturateAsLibwebrtcConstraints) {
+  const DataRate int_max = DataRate::BitsPerSec(std::numeric_limits<int32_t>::max());
+  GccConfig cfg;
+  cfg.min_rate = DataRate::KilobitsPerSec(9000000000);
+  cfg.start_rate = DataRate::KilobitsPerSec(1000000000);  // 1 Tbps
+  cfg.max_rate = DataRate::KilobitsPerSec(9000000000000000);  // 9 Ebps
+  const GccConfig converted = ConvertConstraints(cfg);
+  SM_EXPECT_EQ(converted.min_rate, int_max);
+  SM_EXPECT_EQ(converted.start_rate, int_max);
+  SM_EXPECT_EQ(converted.max_rate, int_max);
+  // Rates in range are unchanged, and an unbounded max stays unbounded.
+  GccConfig in_range;
+  in_range.max_rate = DataRate::PlusInfinity();
+  const GccConfig kept = ConvertConstraints(in_range);
+  SM_EXPECT_EQ(kept.min_rate, in_range.min_rate);
+  SM_EXPECT_EQ(kept.start_rate, in_range.start_rate);
+  SM_EXPECT_EQ(kept.max_rate, DataRate::PlusInfinity());
+
+  cfg.min_rate = DataRate::KilobitsPerSec(30);
+  GccController g(cfg);
+  SM_EXPECT_EQ(g.target(), int_max);
+  NetworkControlUpdate update = g.Start(Timestamp::Millis(0));
+  SM_EXPECT_EQ(update.target_rate, int_max);
+  SM_ASSERT_EQ(update.probes.size(), 2u);
+  for (const ProbeCluster& p : update.probes) SM_EXPECT_EQ(p.rate, int_max);  // 3x and 6x, capped at max.
 }

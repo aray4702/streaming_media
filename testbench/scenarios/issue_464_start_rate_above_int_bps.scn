@@ -1,0 +1,18 @@
+name issue_464_start_rate_above_int_bps
+describe The host configures a 20 Gbps start rate and a 9 Ebps max; the call settles on the 2.5 Mbps link as with libwebrtc's largest configurable rate (INT_MAX bps)
+# Issue #464: libwebrtc's BitrateConstraints carry int bps (call/rtp_transport_controller_send.cc:68-83,
+# ConvertConstraints), so a host can't configure a finite rate above INT_MAX bps (about 2.1 Gbps).
+# GccController took any DataRate: at a start rate of 1 Tbps or more the 3x and 6x start probes made
+# the pacer build padding for petabit bursts (RtpSender::GeneratePadding) until std::bad_alloc, and at
+# 20 Gbps the call never settled (9-14 freezes, cc.unsettled 1 on seeds 1-5). cc::ConvertConstraints
+# now saturates the min, start and max rate at INT_MAX bps (src/cc/send_side_bwe.cc). 20 Gbps keeps
+# the base commit's run short; any start rate above INT_MAX bps now gives these same results.
+duration 10s
+max_rate 9000000000000mbps
+start_rate 20000mbps
+at 0s capacity=2500kbps delay=30ms queue=400ms
+expect cc.unsettled == 0
+expect cc.max_settle_ms <= 2000
+expect audio.interruptions == 0
+expect video.freeze_count <= 1
+expect video.longest_freeze_ms <= 1000
