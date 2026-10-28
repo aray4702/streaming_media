@@ -442,8 +442,8 @@ a comment addressed to it, or no review yet:
    - **Comment** (not blocking) for suggestions only.
 4. Reply to direct questions in the threads, and resolve threads whose
    comment has been addressed.
-5. Never approve a PR that touches a protected path (section 8). Label it
-   `needs-human` instead.
+5. A PR that touches a protected path (section 8) also needs the Builder's
+   `builder-approved`; add `needs-builder` if it lacks it.
 
 ## 5. GitHub conventions
 
@@ -714,10 +714,15 @@ area it covered in each issue's notes:
 
 ## 8. Guardrails
 
-- **Protected paths** (only the Owner changes them; agents label
-  `needs-human`): `agents/` (including this file and the agent scripts in
-  `agents/tools/`), `.github/`,
-  `CMakePresets.json` toolchain entries, and `LICENSE`.
+- **Protected paths:** `agents/` (including this file and the agent scripts
+  in `agents/tools/`), `.github/`, `CMakePresets.json` toolchain entries,
+  and `LICENSE`. They change only by PR, and a PR touching them merges on
+  the Reviewer's approval, a green `ci-ok` and the Builder's
+  `builder-approved` label on its current content (Owner, 2026-10-28: the
+  Builder judges and approves first, and escalates to the Owner what it
+  can't). Agents label such a PR `needs-builder`. The Builder passes to the
+  Owner a change to a standing rule's substance without a recorded Owner
+  decision, spending, security, or anything irreversible.
 - **No direct pushes to `main`.** Branch protection requires a PR, the
   `ci-ok` check and one approval. The Owner keeps admin bypass for
   emergencies.
