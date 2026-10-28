@@ -489,6 +489,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
   if (opt.link_trace) forward.EnableTrace();
   sim::NetworkLink<Rev> reverse(links.reverse().cfg, s.seed + 1000003);
+  if (opt.link_trace) reverse.EnableTrace();
 
   // --- Media sources --------------------------------------------------------
   // The codec's rate, which the RTP clock, NetEq and the playout run at. libwebrtc resamples the capture to
@@ -770,42 +771,127 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
   };
 
+  // Applies the scenario's link changes due by `at`, before a packet goes on a link then (as sm_compare's).
+  auto advance_links = [&](Timestamp at) {
+    auto [fwd_changed, rev_changed] = links.Advance(at - Timestamp::Micros(0));
+    if (fwd_changed) forward.SetConfig(fwd_state.cfg);
+    if (rev_changed) reverse.SetConfig(links.reverse().cfg);
+  };
+
   for (int64_t t = 0; t < end_ms; ++t) {
     const Timestamp now = Timestamp::Millis(t);
 
-    // --- Link timeline ------------------------------------------------------
-    auto [fwd_changed, rev_changed] = links.Advance(now - Timestamp::Micros(0));
-    if (fwd_changed) forward.SetConfig(fwd_state.cfg);
-    if (rev_changed) reverse.SetConfig(links.reverse().cfg);
-
-    // --- Sender: feedback -----------------------------------------------------
-    // Before the capture: feedback that arrived during the last millisecond happened before this tick's frame,
-    // as on libwebrtc's event clock. After the outage in issue #151 a NACK and the recovery keyframe meet in the
-    // same tick; libwebrtc queues the NACK's resends first and the keyframe flushes them.
-    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) {
-      if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
-      sender.OnPacket(r.bytes, at);
-    });
+    // --- The last millisecond's events, each at its own time (issue #507) ----
+    // libwebrtc's harness hands each packet that arrives on either link to its stack at the arrival time, and an
+    // `encode_delay` frame to the sender when its encode is done; whatever the stack sends in response (a NACK, an
+    // RTX packet, the frame's packets) goes on the link at that time (compare/webrtc/webrtc_call.cc post_at and
+    // LinkTransport). So here each packet that arrived in (t - 1 ms, t] and each frame finished then goes to its
+    // session at that time, in time order, followed by the session's Process and its packets on the link, also at
+    // that time. Feedback that arrived during the last millisecond still comes before this tick's capture: after
+    // the outage in issue #151 a NACK and the recovery keyframe meet in the same tick.
     std::optional<TimeDelta> new_rtt;  // The sender's RTT sample this tick, for the receiver.
-    for (const auto& e : sender.TakeEvents()) {
-      video_ctl.OnSessionEvent(e);
-      switch (e.type) {
-        case rtp::SessionEventType::kKeyframeRequested:
-          // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
-          if (e.ssrc != 0) ++keyframe_requests;
-          break;
-        case rtp::SessionEventType::kEncoderPause:
-        case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
-        case rtp::SessionEventType::kRttUpdated:
-          new_rtt = e.rtt;
-          break;
-        case rtp::SessionEventType::kReportBlock:
-          // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
-          if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), now);
-          break;
-        case rtp::SessionEventType::kTargetRateChanged: break;
+    auto sender_events = [&](Timestamp at) {
+      for (const auto& e : sender.TakeEvents()) {
+        video_ctl.OnSessionEvent(e);
+        switch (e.type) {
+          case rtp::SessionEventType::kKeyframeRequested:
+            // A PLI or FIR names the media SSRC; the outage monitor's own request does not.
+            if (e.ssrc != 0) ++keyframe_requests;
+            break;
+          case rtp::SessionEventType::kEncoderPause:
+          case rtp::SessionEventType::kEncoderResume: break;  // Handled by the video controller.
+          case rtp::SessionEventType::kRttUpdated:
+            new_rtt = e.rtt;
+            break;
+          case rtp::SessionEventType::kReportBlock:
+            // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
+            if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
+            break;
+          case rtp::SessionEventType::kTargetRateChanged: break;
+        }
       }
+    };
+    // The encoder hands a frame to the library and the sender when it is done:
+    // at once, or after the encode-time model with `encode_delay on`.
+    auto frame_encoded = [&](const PendingFrame& f) {
+      video_ctl.OnEncoded(f.report, f.done);
+      frame_capture[f.rtp_ts] = f.capture;
+      frame_times[f.rtp_ts].capture = f.capture;
+      frame_times[f.rtp_ts].submitted = f.done;
+      const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
+      sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
+    };
+    // A packet that arrived on the forward link, before the receiver takes it.
+    auto on_forward = [&](const Fwd& w, Timestamp at) {
+      int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
+      switch (w.kind) {
+        case Kind::kAudio: {
+          if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
+          int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
+          audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
+          audio_started = true;
+          break;
+        }
+        case Kind::kVideo:
+        case Kind::kRtx:
+        case Kind::kFec: {
+          if (w.kind != Kind::kRtx) {
+            if (first_delivery.Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) w_good += wire;
+          } else if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
+            if (first_delivery.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1])))
+              w_good += wire;
+          }
+          // The last media or RTX packet of a frame (RFC 4588 keeps the
+          // original RTP timestamp) before it renders marks it complete.
+          if (w.kind != Kind::kFec) {
+            auto ft = frame_times.find(RtpTimestamp(w.bytes));
+            if (ft != frame_times.end() && !ft->second.rendered.IsFinite()) ft->second.complete = at;
+          }
+          break;
+        }
+        default:
+          break;
+      }
+      receiver.OnPacket(w.bytes, at);
+      // The first packet the jitter buffer takes: none when it refuses the stream (#256).
+      if (w.kind == Kind::kAudio) {
+        audio_first.OnAudioPacket(at, receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0);
+      }
+    };
+    std::vector<std::pair<Timestamp, Rev>> rev_in;
+    reverse.ReceiveEach(now, [&](Rev r, Timestamp at) { rev_in.emplace_back(at, std::move(r)); });
+    std::vector<std::pair<Timestamp, Fwd>> fwd_in;
+    forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
+      if (w.kind != Kind::kCross) fwd_in.emplace_back(at, std::move(w));
+    });
+    for (size_t ri = 0, fi = 0;;) {
+      const Timestamp tr = ri < rev_in.size() ? rev_in[ri].first : Timestamp::PlusInfinity();
+      const Timestamp te = !encoding.empty() && encoding.front().done <= now ? encoding.front().done : Timestamp::PlusInfinity();
+      const Timestamp tf = fi < fwd_in.size() ? fwd_in[fi].first : Timestamp::PlusInfinity();
+      const Timestamp at = std::min({tr, te, tf});
+      if (!at.IsFinite()) break;
+      advance_links(at);
+      if (tr == at) {
+        const Rev& r = rev_in[ri++].second;
+        if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
+        sender.OnPacket(r.bytes, at);
+      } else if (te == at) {
+        frame_encoded(encoding.front());
+        encoding.pop_front();
+      } else {
+        on_forward(fwd_in[fi++].second, at);
+        receiver.Process(at);
+        put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, at, false);
+        continue;
+      }
+      sender.Process(at);
+      put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, at, true);
+      sender_events(at);
     }
+
+    // --- Link timeline ------------------------------------------------------
+    advance_links(now);
+    sender_events(now);
 
     // --- Sender: audio --------------------------------------------------------
     // Frame k (20 ms from 20k ms) leaves the encoder at 20k + 10 ms. That is the
@@ -823,20 +909,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
 
     // --- Sender: video --------------------------------------------------------
-    // The encoder hands a frame to the library and the sender when it is done:
-    // at once, or after the encode-time model with `encode_delay on`.
-    auto frame_encoded = [&](const PendingFrame& f) {
-      video_ctl.OnEncoded(f.report, f.done);
-      frame_capture[f.rtp_ts] = f.capture;
-      frame_times[f.rtp_ts].capture = f.capture;
-      frame_times[f.rtp_ts].submitted = now;
-      const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
-      sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, now);
-    };
-    while (!encoding.empty() && encoding.front().done <= now) {
-      frame_encoded(encoding.front());
-      encoding.pop_front();
-    }
     if (s.video && t >= next_frame_ms) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
@@ -917,43 +989,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
 
     // --- Receiver -----------------------------------------------------------
-    forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
-      if (w.kind == Kind::kCross) return;
-      int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
-      switch (w.kind) {
-        case Kind::kAudio: {
-          if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
-          int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
-          audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
-          audio_started = true;
-          break;
-        }
-        case Kind::kVideo:
-        case Kind::kRtx:
-        case Kind::kFec: {
-          if (w.kind != Kind::kRtx) {
-            if (first_delivery.Deliver(FirstDelivery::kVideo, RtpSeq(w.bytes))) w_good += wire;
-          } else if (auto q = RtpPacket::Parse(w.bytes); q && q->payload.size() > 2) {
-            if (first_delivery.Deliver(FirstDelivery::kVideo, static_cast<uint16_t>((q->payload[0] << 8) | q->payload[1])))
-              w_good += wire;
-          }
-          // The last media or RTX packet of a frame (RFC 4588 keeps the
-          // original RTP timestamp) before it renders marks it complete.
-          if (w.kind != Kind::kFec) {
-            auto ft = frame_times.find(RtpTimestamp(w.bytes));
-            if (ft != frame_times.end() && !ft->second.rendered.IsFinite()) ft->second.complete = at;
-          }
-          break;
-        }
-        default:
-          break;
-      }
-      receiver.OnPacket(w.bytes, at);
-      // The first packet the jitter buffer takes: none when it refuses the stream (#256).
-      if (w.kind == Kind::kAudio) {
-        audio_first.OnAudioPacket(at, receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0);
-      }
-    });
     // The receiver learns each RTT sample the sender measures, for its
     // congestion controller and audio receivers (a one-way receiver has no
     // report blocks of its own). With video its CallStats takes the RTT it
@@ -1219,6 +1254,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
   }
   if (opt.link_trace) rep.link_trace = forward.trace();
+  if (opt.link_trace) rep.reverse_trace = reverse.trace();
   m["repair.overhead_pct"] = media_bytes ? 100.0 * static_cast<double>(repair_bytes) / static_cast<double>(media_bytes) : 0;
 
   EvaluateExpectations(rep);
