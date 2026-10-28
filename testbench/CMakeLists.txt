@@ -34,6 +34,13 @@ if(SM_BUILD_TESTS)
     add_test(NAME scenario.${scn_name} COMMAND sm_testbench --quiet ${scn})
     set_tests_properties(scenario.${scn_name} PROPERTIES LABELS scenario)
   endforeach()
+  # The baseline comparison tool's file and per-scenario forms (issue #498).
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND AND NOT EMSCRIPTEN)
+    add_test(NAME unit.tools.testbench_compare
+      COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/tools/testbench_compare_test.py)
+    set_tests_properties(unit.tools.testbench_compare PROPERTIES LABELS unit)
+  endif()
 endif()
 
 if(EMSCRIPTEN)

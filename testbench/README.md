@@ -15,7 +15,8 @@ out/native/testbench/sm_testbench --library a.scn --json=-               # plus 
 out/native/testbench/sm_testbench --metrics                               # metric names and meanings
 out/native/testbench/sm_testbench --link-trace=DIR a.scn                  # every packet offered to the forward link, as CSV (tools/link_trace.py); also the video send trace and the GoogCC estimate trace (tools/bwe_trace.py)
 ctest --preset native -L scenario                                         # the suite as CTest entries
-python3 tools/testbench_compare.py testbench/baseline.json r.json         # regressions against main
+python3 tools/testbench_compare.py testbench/baseline r.json             # regressions against main
+python3 tools/testbench_compare.py testbench/baseline r.json --update    # regenerate the baseline
 ```
 
 It exits with 1 if any `expect` line fails and 2 on a usage or parse error.
@@ -254,11 +255,14 @@ Link keys (any subset; unset keys keep their previous value):
   (`ctest -L scenario`). Their `expect` lines are guard rails that hold on
   `main` across seeds. They are not targets: lines marked `# Known gap`
   describe problems that are not fixed yet.
-- `baseline.json` holds every metric of every scenario on `main`, produced
-  by the canonical platform (Linux x86_64, GCC 13, Release; CI job
-  `testbench`). `tools/testbench_compare.py` flags any metric that got worse
-  by more than 5% (with a per-unit floor). A PR that changes metrics updates
-  the baseline and explains why.
+- `baseline/<scenario>.json` holds every metric of each scenario on
+  `main`, one file per scenario (issue #498), produced by the canonical
+  platform (Linux x86_64, GCC 13, Release; CI job `testbench`).
+  `tools/testbench_compare.py` flags any metric that got worse by more than
+  5% (with a per-unit floor). A PR that changes metrics updates the
+  baseline with `--update` and explains why; only the files of scenarios
+  whose numbers changed are rewritten, so a PR that adds a scenario or
+  moves a few metrics doesn't conflict with other PRs.
 - To add a scenario that reproduces an issue, name it after the issue
   (`issue_123_<slug>.scn`) and give it the `expect` lines that fail before
   the fix.

@@ -98,7 +98,7 @@ The Owner (2026-10-27): "watch for flow performance bottlenecks and fix
 them promptly." Every 15 minutes the Dispatcher's FLOW rule checks for:
 - CI jobs queued longer than 30 min (the 20 job slots are saturated);
 - an approved, green PR not merged after 3 h (often a conflict on
-  `testbench/baseline.json`: the Dispatcher starts a Fixer for those);
+  a `testbench/baseline/` file: the Dispatcher starts a Fixer for those);
 - 5 or more CI runs on one PR in 24 h;
 - a free work-list item with no Fixer claim for 2 h;
 - `needs-builder` unanswered for 3 h;

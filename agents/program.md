@@ -277,7 +277,7 @@ The loop is:
 | Metrics and events | `include/sm/core/metrics.h`, `event_log.h` | Every module exports metrics (`MetricsSource`) and records its decisions (`SM_EVENT`). |
 | Test bench | `testbench/` | A complete one-way audio + video call through the library over emulated links. Scenarios script link failures over time and state the user-experience expectations the call must meet. See [testbench/README.md](../testbench/README.md). |
 | Scenario suite | `testbench/scenarios/*.scn` | The regression suite. Every scenario runs in CI; any failed expectation fails CI. |
-| Baseline results | `testbench/baseline.json` | Metrics of every scenario on `main`. CI compares each PR against it. |
+| Baseline results | `testbench/baseline/` | Metrics of every scenario on `main`, one `<scenario>.json` each (#498). CI compares each PR against it. |
 | Browser port | `web/` | WebAssembly build with a JS API (`runScenario`, plus bindings for library components) and a demo page that runs scenarios and plots them in the browser. |
 | Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](../compare/README.md) and [the latest results](../docs/results/compare-webrtc.md). |
 | CI | `.github/workflows/ci.yml` | The supported platforms, macOS and WebAssembly (Node), with the full suites; ASan+UBSan, the test bench + baseline comparison and `compare-webrtc` on Linux x86_64. The aggregate job `ci-ok` is the required status check. |
@@ -413,7 +413,7 @@ Each run:
       expectation or threshold to make a test pass unless the issue shows
       the threshold itself was wrong; if so, say so in the PR and label it
       `needs-human`.
-   5. Run the full local gate (section 6.1). Update `testbench/baseline.json`
+   5. Run the full local gate (section 6.1). Update `testbench/baseline/`
       if metrics changed, and explain every change in the PR.
    6. Write the fix record `docs/fixes/<N>-<slug>.md` (section 6.5).
    7. Push `fix/<issue>-<slug>` and open a PR in the format of section 5.3.
@@ -548,7 +548,7 @@ docs/fixes/<N>-<slug>.md
 cmake --preset native && cmake --build --preset native -j
 ctest --preset native                                   # unit + e2e + bench gates
 out/native/testbench/sm_testbench --quiet testbench/scenarios/*.scn
-python3 tools/testbench_compare.py testbench/baseline.json <new results>
+python3 tools/testbench_compare.py testbench/baseline <new results>
 cmake --preset native-asan && cmake --build --preset native-asan -j && ctest --preset native-asan
 ```
 
@@ -620,7 +620,7 @@ run needs:
 ### 6.4 Baseline regressions
 
 `tools/testbench_compare.py` flags a metric that got worse than
-`testbench/baseline.json` by more than its tolerance (default 5% relative,
+`testbench/baseline/` by more than its tolerance (default 5% relative,
 plus a small absolute floor per unit). CI fails on any flagged metric unless
 the PR updates the baseline and says why in its body.
 
