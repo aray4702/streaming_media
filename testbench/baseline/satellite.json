@@ -78,7 +78,7 @@
   "video.render_ratio_pct": 97.41,
   "video.residual_loss_pct": 0,
   "video.time_to_first_frame_ms": 473,
-  "video.undecodable_frames": 3
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "satellite"

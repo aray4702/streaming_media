@@ -64,7 +64,7 @@
   "video.render_ratio_pct": 90.18,
   "video.residual_loss_pct": 1.969,
   "video.time_to_first_frame_ms": 198,
-  "video.undecodable_frames": 85
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_446_cwnd_after_outage"

@@ -78,7 +78,7 @@
   "video.render_ratio_pct": 98.44,
   "video.residual_loss_pct": 0.07353,
   "video.time_to_first_frame_ms": 213,
-  "video.undecodable_frames": 3
+  "video.undecodable_frames": 0
  },
  "passed": true,
  "scenario": "issue_5_burst15_freeze"
