@@ -14,6 +14,13 @@ Scenarios with loss are reported but not required: their audio still parts
 at the first loss report, because our receiver sends report blocks more often
 than libwebrtc's (#484). Move them to REQUIRED once that is fixed.
 
+It also checks the captured media (harness-fidelity row 1) on EVERY traced
+scenario, lossy or not, because capture does not depend on the stack: each
+audio frame must have the same RTP timestamp on both sides and the same payload
+until the encoders' loss inputs part (tools/audio_send.py, the per-frame send
+trace), and each second of video must have the same number of captured frames
+(the video trace's `captured` column).
+
   tools/check_harness_drift.py compare-webrtc.json [--markdown out.md]
 """
 import argparse
@@ -21,6 +28,8 @@ import csv
 import io
 import json
 import sys
+
+import audio_send
 
 REQUIRED = ["issue_124_clean_link_v2", "issue_124_bufferbloat_v2", "issue_61_googcc_glue_congestive",
             "probe_v2_cross_traffic"]
@@ -46,6 +55,26 @@ def compare(trace):
             "same": same, "first_diff": first, "ok": ok}
 
 
+def captured_per_second(video_csv):
+    return [int(r["captured"]) for r in csv.DictReader(io.StringIO(video_csv))]
+
+
+def check_capture(trace):
+    """Row 1: the same captured audio and video on both sides. Returns a list of failures."""
+    name, failed = trace["scenario"], []
+    if trace.get("sm_audiosend") or trace.get("webrtc_audiosend"):
+        if not audio_send.compare(trace.get("sm_audiosend", ""), trace.get("webrtc_audiosend", ""), out=io.StringIO()):
+            failed.append("%s: captured audio differs (an audio frame's RTP timestamp, or its payload before the "
+                          "loss inputs part; tools/audio_send.py shows where)" % name)
+    a, b = captured_per_second(trace.get("sm_video", "")), captured_per_second(trace.get("webrtc_video", ""))
+    if any(a) or any(b):
+        first = next((i for i in range(min(len(a), len(b))) if a[i] != b[i]), None)
+        if len(a) != len(b) or first is not None:
+            failed.append("%s: captured video differs (%d vs %d frames, first different second %s)" % (
+                name, sum(a), sum(b), first if first is not None else min(len(a), len(b)) + 1))
+    return failed
+
+
 def check(data, required=REQUIRED):
     traces = {t["scenario"]: t for t in data.get("traces", [])}
     rows, failed = [], []
@@ -61,6 +90,8 @@ def check(data, required=REQUIRED):
     for name, t in sorted(traces.items()):
         if name not in required:
             rows.append(dict(compare(t), required=False))
+    for name, t in sorted(traces.items()):
+        failed += check_capture(t)
     return rows, failed
 
 
@@ -72,7 +103,9 @@ def markdown(rows, failed):
         lines.append("| %s | %s | %d / %d | %d | %s |" % (r["scenario"], "yes" if r["required"] else "no (#484)",
                                                      r["ours"], r["webrtc"], r["same"],
                                                      "none" if r["first_diff"] is None else "packet %d" % r["first_diff"]))
-    lines += ["", "**FAILED:** " + "; ".join(failed) if failed else "All required scenarios match packet for packet.", ""]
+    lines += ["", "**FAILED:** " + "; ".join(failed) if failed else
+              "All required scenarios match packet for packet, and every traced scenario has the same captured "
+              "audio and video on both sides.", ""]
     return "\n".join(lines)
 
 
