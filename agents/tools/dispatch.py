@@ -57,6 +57,9 @@ BOT_ID = 342667563  # its bot user id, which survives a rename; match on this
 ROADMAP = 64
 LOG_ISSUE = 111
 PROTECTED = (".github/", "agents/")
+# Paths whose changes alone need no build: the `scope` job in ci.yml then runs no
+# compare-webrtc, so such a PR never gets a parity report (#529, as #491 and #456).
+NO_CODE = re.compile(r"^(agents/|docs/|compare/webrtc/reference/|\.github/)|\.md$")
 OWNER_APPROVED = "owner-approved"  # the Owner approved a measurement fix whose parity got worse
 NEEDS_BUILDER = "needs-builder"
 NEEDS_COORDINATOR = "needs-coordinator"  # a question the Coordinator decides; holds the item meanwhile
@@ -290,7 +293,10 @@ class Dispatcher:
             if any(f.startswith(PROTECTED) for f in files):
                 continue  # the Owner merges protected paths
             if pr["auto_merge"] is None:
-                ok, why = self.parity_ok(pr)
+                if files and all(NO_CODE.search(f) and f != ".github/workflows/ci.yml" for f in files):
+                    ok, why = True, "no code changed, so no parity report"
+                else:
+                    ok, why = self.parity_ok(pr)
                 if not ok and OWNER_APPROVED in labels(pr):
                     ok, why = True, f"{why}; Owner-approved ({OWNER_APPROVED})"
                 if not ok:
