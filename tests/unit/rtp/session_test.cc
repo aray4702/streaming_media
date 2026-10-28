@@ -388,10 +388,28 @@ SM_TEST(Session, ReportBlocksFromThePeerBecomeEventsWithTheLossFraction) {
   for (const auto& e : events) {
     if (e.type != SessionEventType::kReportBlock) continue;
     ++blocks;
-    SM_EXPECT_TRUE(e.ssrc == 0x100 || e.ssrc == 0x200);
+    // The RTX SSRC (0x300) is reported once it has received a packet (RtxReceiveStream counts it
+    // in the receive statistics, video_receive_stream2.cc:313-316; issue #555).
+    SM_EXPECT_TRUE(e.ssrc == 0x100 || e.ssrc == 0x200 || e.ssrc == 0x300);
     SM_EXPECT_EQ(e.loss_fraction, 0.0);
   }
   SM_EXPECT_GE(blocks, 2u);  // One receiver report: an audio and a video block.
+}
+
+// ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks (rtp_rtcp_impl2.cc:694-713, issue #555): a report
+// block for the media SSRC acks it, one for the RTX SSRC acks that, and RtxPacketOverhead keeps
+// 3 more bytes only in between.
+SM_TEST(Session, ReportBlocksAckTheMediaAndRtxSsrcs) {
+  Pair p;
+  const RtpSender& s = p.a.video_sender(p.a_video);
+  SM_EXPECT_FALSE(s.ssrc_has_acked());
+  SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u);
+  auto events = Exchange(p, 1600);
+  bool rtx_block = false;
+  for (const auto& e : events) rtx_block |= e.type == SessionEventType::kReportBlock && e.ssrc == 0x300;
+  SM_EXPECT_TRUE(s.ssrc_has_acked());
+  SM_EXPECT_EQ(s.rtx_ssrc_has_acked(), rtx_block);
+  SM_EXPECT_EQ(s.RtxPacketOverhead(), rtx_block ? 2u : 5u);
 }
 
 SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {

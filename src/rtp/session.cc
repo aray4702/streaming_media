@@ -213,6 +213,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
   rtcp_.AddReceiveStatistics(r->receive_statistics());
+  rtcp_.AddReceiveStatistics(r->rtx_receive_statistics());
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
@@ -497,6 +498,21 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       it->second.cumulative_lost = rb.cumulative_lost;
     }
     if (packets_delta > 0) send_.OnLossReport(lost_delta, packets_delta, now);
+  }
+  // ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks (rtp_rtcp_impl2.cc:694-713): a report block
+  // for a sender's media or RTX SSRC acknowledges that SSRC (RtxPacketOverhead reads it).
+  for (const auto& rb : in.report_blocks) {
+    for (auto& v : video_send_) {
+      const RtpSenderConfig& c = v.sender->config();
+      if (rb.ssrc == c.ssrc) {
+        v.sender->OnReceivedAckOnSsrc();
+      } else if (c.rtx_ssrc && rb.ssrc == *c.rtx_ssrc) {
+        v.sender->OnReceivedAckOnRtxSsrc();
+      }
+    }
+    for (auto& a : audio_send_) {
+      if (rb.ssrc == a.sender->config().ssrc) a.sender->OnReceivedAckOnSsrc();
+    }
   }
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;

@@ -68,6 +68,7 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       render_frames_({cfg_.timing.render_delay, cfg_.events}),
       jitter_buffer_(JitterCfg(cfg_)),
       stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {
+  if (cfg_.video && cfg_.rtx_ssrc) stats_rtx_.emplace(*cfg_.rtx_ssrc, cfg_.clock_rate);
   if (cfg_.video && cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecReceiver>(cfg_.ssrc, cfg_.ulpfec.ulpfec_payload_type);
   }
@@ -93,6 +94,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
 
   if (cfg_.video) {
     if (cfg_.rtx_ssrc && p.ssrc == *cfg_.rtx_ssrc) {
+      stats_rtx_->OnPacket(p.seq, p.timestamp, now);
       if (PaddingOnly(p)) {
         ++stats_.padding;
         return ReceivedKind::kPadding;
