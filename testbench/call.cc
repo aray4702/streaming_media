@@ -534,13 +534,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
-    // the bench's packets are that size, so the overhead is too (issue #151). A scenario that sets
-    // `video_max_payload` gets the packetizer's whole-packet limit, payload plus the 12-byte fixed
-    // header clamped to 100-1500 as rtp::RtpSender does, as in sm_compare's libwebrtc call (#379).
-    c.send_side.max_packet_size =
-        s.video_max_payload != Scenario{}.video_max_payload
-            ? static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500))
-            : 1460;
+    // the bench's packets are that size, so the overhead is too (issue #151): the packetizer's
+    // whole-packet limit, `video_max_payload` plus the 12-byte fixed header clamped to 100-1500 as
+    // rtp::RtpSender does, as in sm_compare's libwebrtc call (#379); 1460 by default (#513).
+    c.send_side.max_packet_size = static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500));
     // libwebrtc's RTCPSender seeds its report-interval draws from the clock (rtcp_sender.cc:130), and sm_compare
     // starts that clock per seed, so every scenario seed draws its own RTCP schedule (issue #399). Seed 1 keeps
     // the schedule every seed drew before. Both ends get the seed, as both of libwebrtc's are built at the same time.
@@ -577,7 +574,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   video_cfg.rtx_ssrc = kRtxSsrc;
   video_cfg.rtx_payload_type = kRtxPt;
   video_cfg.fec = s.fec;
-  // libwebrtc's default packet capacity (kVideoMtu 1200); the session subtracts the real header.
+  // libwebrtc's whole-packet limit less the fixed header; the session subtracts the real header and
+  // the FEC and RTX reservations (issue #513).
   video_cfg.max_payload_size = s.video_max_payload;
   video_cfg.parser = &parser;
   video_cfg.sps_pps_tracker = s.sps_pps_tracker;

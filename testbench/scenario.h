@@ -86,7 +86,10 @@ struct Scenario {
   // library and the sender that much after its capture, on both stacks (issue #84 step 5: what
   // libwebrtc's CPU overuse detector measures). Off: encoding is instant, as before.
   bool encode_delay = false;
-  size_t video_max_payload = 1458 - 12;  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257).
+  // `video_max_payload <bytes>`: rtp::VideoStreamConfig::max_payload_size (issue #257). The default is
+  // libwebrtc's whole packet, kDefaultMaxPacketSize 1460, less the 12-byte fixed header: both stacks get
+  // the same limit and reserve RTX and FEC room from it themselves (issue #513).
+  size_t video_max_payload = 1460 - 12;
   DataRate video_max = DataRate::KilobitsPerSec(2500);
   DataRate video_min = DataRate::KilobitsPerSec(50);
   TimeDelta keyframe_interval = TimeDelta::Zero();  // Zero = only on request.

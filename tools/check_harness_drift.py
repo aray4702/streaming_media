@@ -10,6 +10,10 @@ that compare-webrtc.json carries (sm_compare's kDefaultTraced) and fails if
 any REQUIRED scenario's audio differs, so a harness change that breaks the
 match is caught on the PR that makes it.
 
+It also checks the video packetization (issue #513) on VIDEO_REQUIRED: every
+frame size both stacks send is split into the same packets, and the largest
+video packet and a full padding packet have the same size on both.
+
 Scenarios with loss are reported but not required: their audio still parts
 at the first loss report, because our receiver sends report blocks more often
 than libwebrtc's (#484). Move them to REQUIRED once that is fixed.
@@ -33,6 +37,13 @@ import audio_send
 
 REQUIRED = ["issue_124_clean_link_v2", "issue_124_bufferbloat_v2", "issue_61_googcc_glue_congestive",
             "probe_v2_cross_traffic"]
+# Video packetization (issue #513): both stacks get the same whole-packet limit and reserve the same
+# RTX and FEC room from it, so every frame size both send is split into the same packets, the largest
+# video packet is the same size, and so is a full padding packet. Holds with loss too, so the lossy
+# traces are required here; `issue_29_ulpfec_over_red` (NACK off, FEC on) and
+# `issue_257_zero_max_payload` (100-byte packets) are the cases the default limit hides.
+VIDEO_REQUIRED = REQUIRED + ["issue_124_burst_loss_v2", "low_bandwidth", "very_low_capacity",
+                             "issue_29_ulpfec_over_red", "issue_257_zero_max_payload"]
 
 
 def audio_sizes(trace_csv):
@@ -43,6 +54,49 @@ def audio_sizes(trace_csv):
             seen.add(r["seq"])
             out.append(int(r["size"]))
     return out
+
+
+def video_splits(trace_csv):
+    """{(frame size, keyframe): set of splits}: the wire sizes of each frame's video packets (first
+    sends, by RTP timestamp, in sequence order), keyed by their sum and the frame type."""
+    seen, frames = set(), {}
+    for r in csv.DictReader(io.StringIO(trace_csv)):
+        if r["kind"] == "video" and r["seq"] not in seen:
+            seen.add(r["seq"])
+            frames.setdefault((r["rtp_ts"], r["key"] == "1"), []).append((int(r["seq"]), int(r["size"])))
+    out = {}
+    for (_, key), pkts in frames.items():
+        sizes = tuple(sz for _, sz in sorted(pkts))
+        out.setdefault((sum(sizes), key), set()).add(sizes)
+    return out
+
+
+def max_video_packet(trace_csv):
+    """The largest video packet of a delta frame: the packet limit both stacks reserve from. Keyframes
+    are left out, as our SPS rewrite can make a keyframe a byte longer than libwebrtc's."""
+    return max((int(r["size"]) for r in csv.DictReader(io.StringIO(trace_csv))
+                if r["kind"] == "video" and r.get("key") != "1"), default=0)
+
+
+def padding_sizes(trace_csv):
+    return sorted({int(r["size"]) for r in csv.DictReader(io.StringIO(trace_csv)) if r["kind"] == "padding"})
+
+
+def compare_video(trace):
+    """Every frame size both stacks send is split into the same packets, and padding packets have the
+    same sizes (issue #513: the same whole-packet limit and the same RTX/FEC reservations)."""
+    a, b = video_splits(trace["sm"]), video_splits(trace["webrtc"])
+    shared = sorted(set(a) & set(b))
+    differ = [n for n in shared if a[n] != b[n]]
+    pa, pb = padding_sizes(trace["sm"]), padding_sizes(trace["webrtc"])
+    # Padding sizes are compared only where both stacks pad (#514 owns the padding count).
+    # Only the full-size padding packet is compared; smaller ones are libwebrtc's media-SSRC and audio
+    # padding, which #514 owns.
+    pad_ok = not pa or not pb or pa[-1] == pb[-1]
+    ma, mb = max_video_packet(trace["sm"]), max_video_packet(trace["webrtc"])
+    return {"scenario": trace["scenario"], "shared": len(shared), "differ": len(differ),
+            "example": differ[0] if differ else None, "padding_ours": pa, "padding_webrtc": pb,
+            "max_ours": ma, "max_webrtc": mb, "ok": bool(shared) and not differ and pad_ok and ma == mb}
 
 
 def compare(trace):
@@ -75,6 +129,22 @@ def check_capture(trace):
     return failed
 
 
+def check_video(traces, required):
+    rows, failed = [], []
+    for name in required:
+        if name not in traces:
+            failed.append("%s: no trace in the JSON (is it still in sm_compare's kDefaultTraced?)" % name)
+            continue
+        r = compare_video(traces[name])
+        rows.append(r)
+        if not r["ok"]:
+            failed.append("%s: video split differs (%d of %d shared frame sizes, e.g. %s; largest video packet "
+                          "%d vs %d B; full padding packet %s vs %s B)" % (
+                              name, r["differ"], r["shared"], r["example"], r["max_ours"], r["max_webrtc"],
+                              r["padding_ours"][-1:], r["padding_webrtc"][-1:]))
+    return rows, failed
+
+
 def check(data, required=REQUIRED):
     traces = {t["scenario"]: t for t in data.get("traces", [])}
     rows, failed = [], []
@@ -93,6 +163,20 @@ def check(data, required=REQUIRED):
     for name, t in sorted(traces.items()):
         failed += check_capture(t)
     return rows, failed
+
+
+def markdown_video(rows, failed):
+    lines = ["## Harness drift check (video packetization, seed 1)", "",
+             "| scenario | shared frame sizes | split differently | largest video packet ours / libwebrtc "
+             "| full padding packet ours / libwebrtc |",
+             "|---|---|---|---|---|"]
+    for r in rows:
+        lines.append("| %s | %d | %d | %d / %d | %s / %s |" % (
+            r["scenario"], r["shared"], r["differ"], r["max_ours"], r["max_webrtc"],
+            (r["padding_ours"] or ["-"])[-1], (r["padding_webrtc"] or ["-"])[-1]))
+    lines += ["", "**FAILED:** " + "; ".join(failed) if failed else
+              "Every required scenario splits each shared frame size the same way, with the same packet limit.", ""]
+    return "\n".join(lines)
 
 
 def markdown(rows, failed):
@@ -115,8 +199,11 @@ def main(argv=None):
     ap.add_argument("--markdown")
     a = ap.parse_args(argv)
     with open(a.compare_json) as f:
-        rows, failed = check(json.load(f))
-    md = markdown(rows, failed)
+        data = json.load(f)
+    rows, failed = check(data)
+    vrows, vfailed = check_video({t["scenario"]: t for t in data.get("traces", [])}, VIDEO_REQUIRED)
+    failed += vfailed
+    md = markdown(rows, [f for f in failed if f not in vfailed]) + "\n" + markdown_video(vrows, vfailed)
     if a.markdown:
         with open(a.markdown, "w") as f:
             f.write(md + "\n")

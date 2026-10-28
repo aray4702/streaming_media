@@ -137,7 +137,7 @@ One directive per line, and `#` starts a comment.
 | `render_smoothing on\|off` | off | `on`: decoded frames pass libwebrtc's pre-render queue (`IncomingVideoStream` / `VideoRenderFrames`): a frame waits until 10 ms before its render time, of several due at once only the newest renders, and late or out-of-order frames are dropped, as `sm_compare`'s libwebrtc side does by default (#437) |
 | `h264_missing_packets on\|off` | off | `on`: the receiver's packet buffer holds a complete H.264 delta frame while a sequence number before it is missing, as libwebrtc's `PacketBuffer` `missing_packets_` (#453) |
 | `encode_delay on\|off` | off | `on` makes the encode time real on both stacks: a frame reaches the library (`OnEncoded`) and the sender that long after its capture, which libwebrtc's CPU overuse detector measures (#84) |
-| `video_max_payload <bytes>` | 1446 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). `sm_compare`'s libwebrtc side keeps its default |
+| `video_max_payload <bytes>` | 1448 | `rtp::VideoStreamConfig::max_payload_size`, passed as is; the sender clamps it to a 100-1500 byte packet (#257). Both sides get this plus the 12-byte header as their whole-packet limit (libwebrtc's default 1460) and reserve RTX and FEC room from it themselves (#513) |
 | `video_max <rate>`, `video_min <rate>` | 2500/50 kbps | Encoder bitrate range |
 | `start_rate`, `min_rate`, `max_rate <rate>` | 300/30/5000 kbps | GCC limits |
 | `host_rtt_inf <time>` | off | The host hands both sessions an infinite RTT at that time (a host bug the library absorbs; issue #441) |
