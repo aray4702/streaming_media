@@ -121,7 +121,9 @@ It posts each new set of alerts on the pinned **Flow watch** issue and adds
 1. Find open issues and PRs labelled `needs-builder`: escalations first,
    then the Flow watch. If there are none,
    check the day's system health: the Dispatcher's recent job summaries
-   (failures, repeated HOLDs), routine runs that failed, and items the
+   (failures, repeated HOLDs; a crashed run names its cause in its job's
+   annotations, `gh api repos/aray4702/streaming_media/check-runs/JOB/annotations`,
+   since the sandbox can't fetch Actions logs), routine runs that failed, and items the
    Coordinator re-planned twice. File what needs a fix as a system
    improvement, or stop with a one-line summary.
 2. For each item: reproduce or read the evidence, decide, and answer or
