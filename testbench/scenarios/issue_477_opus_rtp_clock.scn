@@ -1,0 +1,13 @@
+name issue_477_opus_rtp_clock
+describe Audio call at the default 16 kHz capture with 10% loss: Opus packets carry the 48 kHz RTP clock and NetEq decodes at 48 kHz, as libwebrtc (issue #477)
+# libwebrtc stamps Opus packets with a 48 kHz RTP clock whatever the capture rate (audio_encoder_opus.cc
+# kRtpTimestampRateHz; RFC 7587), and its NetEq decodes them at 48 kHz. Before the fix the bench encoded the
+# 48 kHz signal with libopus but stamped it with the 16 kHz capture clock (320 ticks per 20 ms frame, not 960)
+# and ran NetEq and the playout at 16 kHz: net.audio_rtp_clock_hz 16000. The per-frame audio send trace
+# (tools/audio_send.py) found it.
+seed 1
+duration 20s
+video off
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+expect net.audio_rtp_clock_hz == 48000
+expect audio.interruptions == 0

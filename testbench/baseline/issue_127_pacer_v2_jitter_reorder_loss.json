@@ -1,7 +1,7 @@
 {
  "description": "pacer v2 with rtx v2 on a 4 Mbps link with 30 ms jitter (reordering) and 2% loss: no repeated 2.5 s freezes (issue",
  "metrics": {
-  "audio.concealed_pct": 0.04431,
+  "audio.concealed_pct": 0.04441,
   "audio.interruption_ms": 0,
   "audio.interruptions": 0,
   "audio.jb_delay_p50_ms": 110,
@@ -27,6 +27,7 @@
   "net.audio_kbps": 68.86,
   "net.audio_loss_pct": 1.95,
   "net.audio_queue_drops": 0,
+  "net.audio_rtp_clock_hz": 48000,
   "net.audio_size_max_b": 327,
   "net.audio_size_p50_b": 189,
   "net.audio_size_p90_b": 218,
@@ -54,7 +55,7 @@
   "repair.nack_recovered": 778,
   "repair.overhead_pct": 35.16,
   "sync.av_offset_max_ms": 271.7,
-  "sync.av_offset_p50_ms": 13.22,
+  "sync.av_offset_p50_ms": 13.18,
   "sync.av_offset_p95_ms": 100.1,
   "video.avg_kbps": 529.1,
   "video.delay_encode_ms": 0,
