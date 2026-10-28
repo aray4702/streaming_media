@@ -1,0 +1,20 @@
+name issue_547_opus_output_buffer
+describe Audio call over a 2 s jitter link, cut before either stack's loss input changes again: libopus codes the same frames as libwebrtc's
+# Issue #547: the bench handed libopus a 1500-byte output buffer, libwebrtc's
+# AudioEncoderOpusImpl::EncodeImpl hands it SufficientOutputBufferSize (200 bytes
+# at 32 kbps), and libopus's rate control codes to that size: with the same PCM,
+# bitrate and loss input, frames 240-299 of this call came out 8 bytes larger
+# than libwebrtc's (19 of the first 300 payloads differed; parity-data-pr/pr/550,
+# issue_533_opus_decoder_frame_older_than_window's encode rows). Both stacks get
+# one report block (20 % loss, 2.52 s) in these 6 s, so the whole call has the
+# same encoder inputs. libwebrtc sent 34283 payload bytes; the base commit sends
+# 34291 (64.92 kbps on the wire, rounded), the fix sends libwebrtc's 34283 (64.91).
+# The expectation sits between the two. It holds for seed 1, the seed libwebrtc was
+# traced on: other seeds code other speech, with no libwebrtc trace to compare.
+# The unit test OpusEncoder.CodesLibwebrtcsFramesOnIssue533 pins the frames.
+seed 1
+duration 6s
+video off
+at 0s jitter=2s
+expect net.audio_kbps < 64.915
+expect audio.concealed_pct < 100

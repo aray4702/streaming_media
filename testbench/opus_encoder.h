@@ -81,7 +81,7 @@ class OpusSendEncoder {
 
   // RecreateEncoderInstance with `fec_enabled` (useinbandfec) and a projected
   // packet loss of 0.
-  OpusSendEncoder(int bitrate_bps, bool fec_enabled) {
+  OpusSendEncoder(int bitrate_bps, bool fec_enabled) : bitrate_bps_(bitrate_bps) {
     int error = OPUS_OK;
     enc_ = opus_encoder_create(OpusDefaults::kSampleRateHz, 1, OPUS_APPLICATION_VOIP, &error);
     ok_ = error == OPUS_OK && enc_ != nullptr;
@@ -118,13 +118,25 @@ class OpusSendEncoder {
     Ctl(opus_encoder_ctl(enc_, OPUS_SET_PACKET_LOSS_PERC(percent)));
   }
 
+  // AudioEncoderOpusImpl::SufficientOutputBufferSize: twice the bytes the
+  // configured bitrate gives a packet, rounded up per millisecond (200 bytes
+  // for 20 ms at 32 kbps). EncodeImpl hands libopus this many bytes, and
+  // libopus's rate control codes to it (opus_encode's max_data_bytes), so
+  // another size codes other bits on some frames (issue #547).
+  size_t SufficientOutputBufferSize() const {
+    const size_t bytes_per_millisecond = static_cast<size_t>(bitrate_bps_ / (1000 * 8) + 1);
+    const size_t approx_encoded_bytes = static_cast<size_t>(OpusDefaults::kFrameSizeMs / 10) * 10 * bytes_per_millisecond;
+    return 2 * approx_encoded_bytes;
+  }
+
   // One 20 ms frame of 48 kHz PCM (zeros past the end of `pcm`): the payload
-  // WebRtcOpus_Encode returns. With DTX, a second and later header-only
-  // packet in a row comes back empty, as libwebrtc's.
+  // WebRtcOpus_Encode returns, coded into SufficientOutputBufferSize bytes as
+  // AudioEncoderOpusImpl::EncodeImpl codes it. With DTX, a second and later
+  // header-only packet in a row comes back empty, as libwebrtc's.
   std::vector<uint8_t> Encode(std::span<const int16_t> pcm) {
     int16_t in[kFrameSamples] = {};
     std::copy_n(pcm.begin(), std::min(pcm.size(), kFrameSamples), in);
-    std::vector<uint8_t> out(kMaxPacketBytes);
+    std::vector<uint8_t> out(SufficientOutputBufferSize());
     const int res = ok_ ? opus_encode(enc_, in, static_cast<int>(kFrameSamples), out.data(), static_cast<opus_int32>(out.size())) : -1;
     if (res <= 0) {
       ok_ = false;
@@ -165,11 +177,9 @@ class OpusSendEncoder {
   static int16_t ToPcm(float v) { return static_cast<int16_t>(std::clamp(v, -1.f, 1.f) * 32767); }
 
  private:
-  // SufficientOutputBufferSize at 510 kbps, with room to spare.
-  static constexpr size_t kMaxPacketBytes = 1500;
-
   void Ctl(int rc) { ok_ = ok_ && rc == OPUS_OK; }
 
+  int bitrate_bps_;  // The configured bitrate (AudioEncoderOpusConfig::bitrate_bps).
   OpusEncoder* enc_ = nullptr;
   bool ok_ = false;
   bool in_dtx_mode_ = false;
