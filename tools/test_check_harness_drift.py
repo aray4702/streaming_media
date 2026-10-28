@@ -94,5 +94,64 @@ class Drift(unittest.TestCase):
         self.assertFalse(rows[0]["ok"])
 
 
+def vtrace(frames, padding=(), seq0=0):
+    """frames: [(rtp_ts, key, [sizes])] in send order."""
+    rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key"]
+    seq, t = seq0, 0
+    for ts, key, sizes in frames:
+        for sz in sizes:
+            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0))
+            seq, t = seq + 1, t + 1000
+    for sz in padding:
+        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1" % (t, sz, seq, t + 1))
+        seq, t = seq + 1, t + 1000
+    return "\n".join(rows) + "\n"
+
+
+def vdata(sm, rtc, name="clean"):
+    return {"clean" if name == "clean" else name: {"scenario": name, "seed": 1, "sm": sm, "webrtc": rtc}}
+
+
+class VideoSplit(unittest.TestCase):
+    FRAMES = [(0, True, [77, 1155, 1155, 1155]), (3000, False, [955]), (6000, False, [1200, 1200])]
+
+    def test_same_splits_pass_with_other_sequence_numbers_and_timestamps(self):
+        other = [(ts + 90000, k, s) for ts, k, s in self.FRAMES]
+        rows, failed = hd.check_video(vdata(vtrace(self.FRAMES, [303]), vtrace(other, [303], seq0=6666)), ["clean"])
+        self.assertEqual(failed, [])
+        self.assertEqual((rows[0]["shared"], rows[0]["differ"]), (3, 0))
+
+    def test_a_frame_split_differently_fails(self):
+        theirs = self.FRAMES[:2] + [(6000, False, [1199, 1201])]
+        rows, failed = hd.check_video(vdata(vtrace(self.FRAMES), vtrace(theirs)), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(rows[0]["differ"], 1)
+
+    def test_a_keyframe_and_a_delta_frame_of_one_size_are_not_compared(self):
+        ours = self.FRAMES + [(9000, True, [1000, 1000])]
+        theirs = self.FRAMES + [(9000, False, [1100, 900])]
+        _, failed = hd.check_video(vdata(vtrace(ours), vtrace(theirs)), ["clean"])
+        self.assertEqual(failed, [])
+
+    def test_a_larger_packet_limit_fails(self):
+        # issue_29_ulpfec_over_red before #513: 1460 on ours, 1462 on libwebrtc.
+        _, failed = hd.check_video(vdata(vtrace(self.FRAMES + [(9000, False, [1460])]),
+                                         vtrace(self.FRAMES + [(9000, False, [1462])])), ["clean"])
+        self.assertEqual(len(failed), 1)
+
+    def test_full_padding_packets_of_other_sizes_fail(self):
+        # issue_257_zero_max_payload before #513: 136 on ours, 128 on libwebrtc.
+        _, failed = hd.check_video(vdata(vtrace(self.FRAMES, [136]), vtrace(self.FRAMES, [128])), ["clean"])
+        self.assertEqual(len(failed), 1)
+
+    def test_smaller_padding_on_one_side_only_is_left_to_514(self):
+        _, failed = hd.check_video(vdata(vtrace(self.FRAMES, [303]), vtrace(self.FRAMES, [98, 303])), ["clean"])
+        self.assertEqual(failed, [])
+
+    def test_missing_required_trace_fails(self):
+        _, failed = hd.check_video({}, ["clean"])
+        self.assertEqual(len(failed), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
