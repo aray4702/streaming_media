@@ -54,6 +54,29 @@ SM_TEST(RtcpEngine, RandomizedIntervalsStayInRangeAndAreDeterministic) {
   }
 }
 
+// libwebrtc's RTCPSender draws each interval with webrtc::Random seeded from the clock in microseconds
+// (rtcp_sender.cc:130, :693); sm_compare's clock starts at 100000 s on seed 1, so its draws are these (#517).
+SM_TEST(RtcpEngine, IntervalsAreLibwebrtcsDrawsFromTheSameSeed) {
+  RtcpConfig c;
+  c.seed = 100000ull * 1000000;
+  RtcpEngine e(c);
+  const std::vector<int64_t> times = ReportTimes(e, 5000);
+  // 500 ms with no draw, then Rand(500, 1500): 703, 527, 1276, 1330.
+  SM_EXPECT_TRUE(times == (std::vector<int64_t>{500, 1203, 1730, 3006, 4336}));
+}
+
+SM_TEST(RtcpEngine, XorshiftRandomMatchesWebrtcRandom) {
+  // rtc_base/random.cc: xorshift64*, Rand(t) = (low 32 bits * (t + 1)) >> 32.
+  XorshiftRandom r(100000ull * 1000000);
+  SM_EXPECT_EQ(r.Rand(500, 1500), 703);
+  SM_EXPECT_EQ(r.Rand(500, 1500), 527);
+  SM_EXPECT_EQ(r.Rand(500, 1500), 1276);
+  XorshiftRandom a(100000ull * 1000000);
+  SM_EXPECT_EQ(a.Rand(2500u, 7500u), 3517u);
+  SM_EXPECT_EQ(a.Rand(-10, 10), -10);
+  SM_EXPECT_EQ(a.Rand(0u, 0u), 0u);
+}
+
 // RTCPSender's constructor schedules the first report at report_interval_ / 2
 // with no random draw (rtcp_sender.cc:171): 0.5 s with video and 2.5 s for an
 // audio-only sender, on every seed (#331).

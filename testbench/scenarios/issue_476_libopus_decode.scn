@@ -10,6 +10,8 @@ at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
 # libwebrtc M157 seeds 1-10 0.28-0.96 %, mean 0.509 (ours with the model 0.459), on main's
 # compare-webrtc (9e436cb). The decoder itself matches libwebrtc's calls sample for sample
 # (unit.OpusDecoder).
-expect audio.concealed_pct > 0.47
+# #517 (RTCP interval draws seeded as libwebrtc's): seed 1 reads 0.442 (main 0.705; seeds 1-10 mean 0.53 -> 0.54).
+# Moved within libwebrtc's worst seed (program.md 0.2): libwebrtc seeds 1-10 0.28-0.96.
+expect audio.concealed_pct > 0.44
 expect audio.concealed_pct < 3
 expect audio.interruptions == 0
