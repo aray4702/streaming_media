@@ -47,6 +47,7 @@
     {"scenario": "issue_152_alr_request_probe_v2", "metric": "sync.*", "issues": [360], "note": "#379 / PR #400: opened (ours ahead, 6/10) when the test bench's decode time went to 0 ms as sm_compare's ModelDecoder; placed on #360 by the Owner (2026-10-25)."},
     {"scenario": "issue_76_session_layer_v2", "metric": "sync.*", "issues": [63], "note": "#379 (yardstick #396): explained per-seed spread, no lip-sync difference. Seeds 2, 4 and 8 carry it with a higher audio jb p95 on ours (a concealment event or start-up level), seeds 6 and 9 go the other way; the jb p95 mean is in band (93 vs 84, +-18). #63 owns the audio jitter buffer."},
     {"scenario": "wifi_to_lte_handover", "metric": "*", "issues": [20]},
+    {"scenario": "issue_451_host_rtt_near_limit", "metric": "*", "issues": [451], "note": "Not comparable: `host_rtt` (a host RTT 75.8 ms short of the int64 limit from 8 s) is ours only; sm_compare's libwebrtc side ignores it, as it does #441's host_rtt_inf, so libwebrtc runs this link with its measured RTT. The scenario exists for the UBSan overflow on the base (#451)."},
     {"scenario": "outage_*", "metric": "*", "issues": [20]},
     {"scenario": "high_jitter", "metric": "*", "issues": [19, 24]},
     {"scenario": "issue_204_cross_traffic_join", "metric": "video.freeze_*", "issues": [408], "note": "#406 (stage-1 exit, 2026-10-26): re-owned from closed issues on main after #378; needs data: one more freeze on 7/10 seeds, seed 5 sticks (#390's RTCP phase); new with #378"},
