@@ -22,7 +22,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 3 | Decoders | **different**: our `SpeechDecoder` returns the source signal, libwebrtc decodes with libopus | #476 | #476 |
 | 4 | Packetization and wire | H.264 access units: **shared code** (`rtp::MakeFakeH264Frame`); RTP header extensions (transport-cc, id 1, only), CNAME, RED and RTX formats: **identical by construction**, and on the seed-1 traces every frame of the same size is split into the same packets on both sides (28 647 frame sizes on 115 scenarios), audio packets match packet for packet (row 2) and RTX is the original + 2 bytes on both. The video packet-size limit: **different**: ours is given 1458 bytes, the capacity libwebrtc is left with *after* reserving its RTX header, and libwebrtc 1460, from which it takes the reservation itself; our session makes no reservation. They agree only with NACK on and the default `video_max_payload` (`issue_29_ulpfec_over_red`, NACK off: ours up to 3 bytes smaller; `issue_257_zero_max_payload`: ours up to 3 bytes larger, and our padding 8 bytes over the limit)  No check fails yet if the splits drift apart; #513 adds the video split to `tools/check_harness_drift.py` | [Row 4](#row-4-packetization-and-wire) | #513, #514 (stack, not harness) |
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
-| 6 | Clock and tasks | not audited | | |
+| 6 | Clock and tasks | Periodic schedules (GoogCC's 25 ms process interval, the receiver's transport-feedback timer, the first RTCP report at half the interval), the order of the capture, feedback, pacer and playout work within a millisecond, and the pacer's 1 ms release grid: **identical by construction**; the transport-feedback arrivals match on all 115 traced scenarios until the traffic differs. The random stream behind each RTCP report interval: **different** (libwebrtc's `webrtc::Random` seeded with the clock start, ours `sm::Random` seeded with the scenario seed): the sender's second RTCP packet goes out at a different time on 115 of 115 traces. Our stack's own timers (video render, timers that follow an off-grid event, ties at the same instant): **different**, on the 1 ms tick on ours, at their due microsecond on libwebrtc's `SimTime` (render gaps off the grid in 0 of 4065 seconds on ours, 1245 of 3865 on libwebrtc) | [Row 6](#row-6-clock-and-tasks) | #517, #518 (with #507) |
 | 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
 | 8 | Scenario mapping | not audited | | |
 
@@ -282,6 +282,105 @@ and our retransmissions meet the bottleneck at other times than
 libwebrtc's. The fix (#507) brings our side up: drive the session at each
 packet's arrival time, and add a reverse-link trace on both sides so the
 reverse half is checked too. Clock and task timing beyond this is row 6.
+
+## Row 6: clock and tasks
+
+Audited on `main` at f281dfb (2026-10-28), with the seed-1 forward-link and
+GoogCC traces (`<scenario>.1.{sm,webrtc}.{trace,bwe}.csv`) that
+`parity-data/traces/` holds for 3025aeb (115 scenarios with both sides).
+
+libwebrtc runs on `SimTime` (`compare/webrtc/sim_time.{h,cc}`): one thread,
+a simulated clock, and task queues whose tasks run at the microsecond they
+are due, in (due time, posting order), queue by queue in creation order
+(`sender`, `receiver`, `network`, then the queues libwebrtc creates itself:
+pacer, encoders). `sm_compare`'s 1 ms tick is a task on `network`
+(`webrtc_call.cc:1015-1257`). Our test bench steps a 1 ms loop and calls
+each session directly (`testbench/call.cc:787-1135`).
+
+### Identical by construction
+
+| | ours (`testbench/call.cc`, the library) | libwebrtc (`compare/webrtc/webrtc_call.cc`, `reference/`) |
+|---|---|---|
+| Order within a millisecond | link change; RTCP that arrived by `now` to the sender; audio encode; video capture and encode; cross traffic; queue sample; pacer; media that arrived by `now` to the receiver; render; playout pull; the receiver's RTCP | RTCP to the sender at its arrival (sender queue, before the tick); link change (also before every send, `advance_links`); audio block and video capture; cross traffic; queue sample (the tick); then the encoder and pacer queues, created after `network`; the playout pull is posted by the tick, so it runs after the packets that arrived by then |
+| GoogCC process interval | `OnProcessInterval` at the first `Process` (t = 0) and every 25 ms after, with the pacer-queue update in the same step (`src/rtp/send_side_controller.cc:341-349`) | `UpdateControllerWithTimeInterval` when the controller is created at call setup, then `controller_task_` and `pacer_queue_update_task_` every 25 ms (`call/rtp_transport_controller_send.cc:772-773`, `:796-815`) |
+| Pacer release times | `Process` every 1 ms | the next process at `next_send_time - now` rounded up to 1 ms (`modules/pacing/task_queue_paced_sender.cc:304-312`), so on the grid while the event that scheduled it was |
+| Transport feedback timer | the receiver's feedback interval, from t = 0 | `TransportSequenceNumberFeedbackGenerator`'s, from call setup |
+| First RTCP report | half the nominal interval, no draw (`src/rtp/rtcp_engine.cc`) | `report_interval_ / 2` in the constructor (`rtcp_sender.cc:171`) |
+| NACK processing | every 20 ms from the first `Process` (`src/loss/nack_tracker.cc:7`, `:84`) | `NackPeriodicProcessor`, every 20 ms from registration at setup (`modules/video_coding/nack_requester.cc:55`); not checked on a trace until #507 adds the reverse link |
+
+On the traces:
+
+- **Feedback timing.** The sender's first four transport-feedback arrivals
+  (`delay_based` rows of the bwe trace) are at the same times on both sides
+  on **all 115** scenarios (`clean_link`: 125, 175, 225, 275 ms), and the
+  two sides stay identical for a median of 60 feedback packets, until the
+  send rates (and so the feedback interval) part. Both GoogCCs make their
+  first update at t = 0.
+- **Pacer grid.** libwebrtc's pacer releases video on the 1 ms grid as ours
+  does: of its 485 805 video packets, the only ones off the grid are the
+  13 686 `encode_delay` frames of `issue_84_cpu_overuse_slow_encoder`
+  (#507); audio 6 of 183 250, padding 10 of 5691.
+
+The clock start differs in value only (ours 0, libwebrtc
+`100000 + 7919 * ((seed - 1) % 1000)` s, `webrtc_call.cc:639-642`). Both
+sides measure relative to it; the one place libwebrtc reads its absolute
+value is the RTCP seed below.
+
+### Different: the random stream behind each RTCP report interval (#517)
+
+Both pick an interval uniformly in [m/2, 3m/2] ms by the same rule
+(`rtcp_sender.cc:680-693`; `src/rtp/rtcp_engine.cc:25-35`), but from
+different random streams:
+
+- libwebrtc: `webrtc::Random` (xorshift64\*) seeded with
+  `clock().TimeInMicroseconds()` when each `RTCPSender` is built
+  (`rtcp_sender.cc:130`), which in `sm_compare` is the clock start, the same
+  for all four of them;
+- ours: `sm::Random` (xoshiro256\*\*) seeded with the scenario seed
+  (`call.cc:565`), `seed + 1` for the sender's audio RTCP
+  (`src/rtp/session.cc:239`).
+
+| seed 1 | sender's 1st RTCP on the forward link | 2nd |
+|---|---|---|
+| scenarios at the same time on both | 114 of 115 (500 ms, no draw) | **0 of 115** |
+| `clean_link` | 500 / 500 ms | 774 / 684 ms |
+| `random_loss_5pct` | 500 / 500 ms | 989 / 818 ms |
+| `high_jitter` | 500 / 500 ms | 1410 / 1033 ms |
+
+So the report blocks that feed the loss-based estimate, the RTT and the
+Opus loss input reach the sender at different times for a reason outside
+the stack under test. The fix (#517) ports `webrtc::Random` for the RTCP
+draws and seeds every RTCP engine of ours as libwebrtc's are seeded, with
+the same per-seed clock value from the harness. `rtc_base/random.{h,cc}` is
+not in `compare/webrtc/reference/` yet.
+
+### Different: our stack's timers run on the 1 ms tick (#518)
+
+`Session::Process` runs once per tick, so each of our timers fires at the
+next whole millisecond after it is due; libwebrtc's fire at their due
+microsecond. #507 covers the timers that a packet's arrival or an
+`encode_delay` frame starts. The rest:
+
+- **Video render.** libwebrtc decodes and renders each frame when its
+  decode task is due; ours renders after `receiver.Process(now)` on the
+  tick, and `Session::NextProcessTime` is "at most 1 ms away" with a video
+  receiver (`include/sm/rtp/session.h:297-299`). The per-second longest
+  render gap (video trace) is a whole number of milliseconds in 4065 of
+  4065 seconds on ours, and off the grid in **1245 of 3865** on libwebrtc's.
+- **Timers after an off-grid event.** libwebrtc schedules from `now`, so
+  after one off-grid event the timers that follow are off the grid too:
+  2418 of libwebrtc's 18 538 loss-based updates are off the grid (report
+  blocks arriving off it, `random_loss_5pct` from 1058.249 ms,
+  `high_jitter` from 6232.769 ms); 0 of our 20 104.
+- **Ties.** `SimTime` runs a receiver timer posted earlier (transport
+  feedback, NACK, RTCP) before a packet that arrives at exactly its due
+  time; our tick hands that packet to the receiver before
+  `receiver.Process(now)`, so it is in the report on ours and in the next
+  one on libwebrtc's.
+
+The fix (#518) drives each session at its due times as `SimTime` does,
+with the receiver's frame scheduling reporting its due time to
+`NextProcessTime`, on the same loop as #507.
 
 ## Row 7: measurement
 
