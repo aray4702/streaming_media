@@ -38,9 +38,9 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       video_rate_(cfg.repair_window.ms(), 8000.0f),
       rtx_rate_(cfg.repair_window.ms(), 8000.0f),
       fec_rate_(cfg.repair_window.ms(), 8000.0f),
-      target_(cfg.gcc.start_rate),
-      pushback_target_(cfg.gcc.start_rate),
-      window_target_(cfg.gcc.start_rate) {
+      target_(gcc_.target()),
+      pushback_target_(gcc_.target()),
+      window_target_(gcc_.target()) {
   pacer_.SetTransportOverhead(DataSize::Bytes(cfg_.transport_overhead_bytes));
 }
 
