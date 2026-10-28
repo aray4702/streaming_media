@@ -180,7 +180,8 @@ one complete and tested, and say in the issue what remains. Then:
      the full CI.
    - Add the label `agent-pr`, plus `needs-human` if it touches a protected
      path (section 8).
-   - Add `needs-probe` if the PR is risky: it changes a default (including
+   - Add `needs-probe` if the PR is risky (before `gh pr ready`, so its run
+     includes the sanitizers and `wasm`): it changes a default (including
      a switch's default), touches congestion control, pacing, the jitter
      buffers, or threading and object lifetimes, or changes more than about
      300 lines of product code (`src/`, `include/`). The Tester probes it

@@ -14,8 +14,10 @@
 # compare/webrtc/reference/ (never built), Markdown, or .github/ other than
 # this file) runs no build or test job; a
 # draft runs only the quick jobs (host, testbench), plus compare-webrtc when it
-# is a `yardstick:` draft; a ready PR, main and the merge queue run everything.
-# Marking a draft ready (ready_for_review) starts the full run.
+# is a `yardstick:` draft; a ready PR runs those and compare-webrtc. The
+# sanitizers and wasm run on main (whose queued runs batch several merges),
+# the merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+# Marking a draft ready (ready_for_review) starts the PR's full run.
 name: ci
 on:
   push:
@@ -56,6 +58,9 @@ jobs:
             elif [ "$DRAFT" = true ]; then
               full=false; why="draft: quick jobs only; mark it ready for the full run"
               case "$TITLE" in yardstick:*) why="$why (yardstick: compare-webrtc runs too)";; *) compare=false;; esac
+            elif ! printf '%s\n' "$files" | grep -qx '.github/workflows/ci.yml' &&
+                 ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' | grep -qx needs-probe; then
+              full=false; why="sanitizers and wasm run on main, and on PRs labelled needs-probe"
             fi
           fi
           echo "build=$build full=$full compare=$compare ${why:+($why)}" | tee -a "$GITHUB_STEP_SUMMARY"

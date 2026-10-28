@@ -558,8 +558,12 @@ run needs:
   `.github/` other than `ci.yml`) runs no build or test job.
 - A **draft** runs only the quick jobs (host builds, test bench), plus
   `compare-webrtc` when its title starts with `yardstick:`.
-- A **ready** PR, `main` and the merge queue run everything. Marking a draft
-  ready starts the full run, and only a ready PR gets `ci-passed`.
+- A **ready** PR runs the quick jobs and `compare-webrtc`. The sanitizers
+  and `wasm` run only on `main` (its queued runs batch several merges), the
+  merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+  A failure there on `main` is `main` broken (`sev:1`): the Coordinator
+  files it, and the fix or a revert of the culprit comes first. Marking a
+  draft ready starts the PR's run, and only a ready PR gets `ci-passed`.
 - A PR's unfinished runs are cancelled when it is merged or closed
   (`cancel-closed-pr.yml`).
 
