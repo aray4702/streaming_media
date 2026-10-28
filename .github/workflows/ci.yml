@@ -1,8 +1,11 @@
-# Builds and verifies the library on every platform family it targets.
-# Desktop/server and WebAssembly jobs run the full unit + e2e + benchmark
-# suites; mobile and embedded jobs cross-compile (and run the tests under
-# QEMU for Linux ARM). Benchmark speed budgets are scaled for slow runners.
-# The test bench job compares every scenario against testbench/baseline.json;
+# Builds and verifies the library on the platforms it supports: the browser
+# (WebAssembly) and macOS (Owner, 2026-10-27: no checks for Linux, Android,
+# iOS or embedded targets). Both run the full unit + e2e + benchmark suites;
+# benchmark speed budgets are scaled for slow runners. Linux x86_64 still runs
+# the yardstick (testbench baseline, compare-webrtc: the agents' sandbox and the
+# prebuilt libwebrtc are Linux) and the ASan/UBSan job, a correctness check
+# rather than a platform one.
+# The test bench job compares every scenario against testbench/baseline/;
 # `ci-ok` aggregates every job and is the required check for merging.
 # `merge_group` runs the same jobs on the merge queue's commit (the PR on top
 # of the PRs ahead of it), so main is tested as it will be after the merge.
@@ -11,8 +14,10 @@
 # compare/webrtc/reference/ (never built), Markdown, or .github/ other than
 # this file) runs no build or test job; a
 # draft runs only the quick jobs (host, testbench), plus compare-webrtc when it
-# is a `yardstick:` draft; a ready PR, main and the merge queue run everything.
-# Marking a draft ready (ready_for_review) starts the full run.
+# is a `yardstick:` draft; a ready PR runs those and compare-webrtc. The
+# sanitizers and wasm run on main (whose queued runs batch several merges),
+# the merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+# Marking a draft ready (ready_for_review) starts the PR's full run.
 name: ci
 on:
   push:
@@ -53,6 +58,9 @@ jobs:
             elif [ "$DRAFT" = true ]; then
               full=false; why="draft: quick jobs only; mark it ready for the full run"
               case "$TITLE" in yardstick:*) why="$why (yardstick: compare-webrtc runs too)";; *) compare=false;; esac
+            elif ! printf '%s\n' "$files" | grep -qx '.github/workflows/ci.yml' &&
+                 ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR/labels" --jq '.[].name' | grep -qx needs-probe; then
+              full=false; why="sanitizers and wasm run on main, and on PRs labelled needs-probe"
             fi
           fi
           echo "build=$build full=$full compare=$compare ${why:+($why)}" | tee -a "$GITHUB_STEP_SUMMARY"
@@ -74,8 +82,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: ubuntu-24.04, cc: gcc-13, cxx: g++-13}
-          - {os: ubuntu-24.04, cc: clang-18, cxx: clang++-18}
           - {os: macos-14, cc: clang, cxx: clang++}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -93,14 +99,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: cmake --preset native-asan && cmake --build --preset native-asan -j 4
       - run: ctest --preset native-asan -j 4
-  embedded-config:
-    needs: scope
-    if: needs.scope.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset embedded && cmake --build --preset embedded -j 4
   wasm:
     needs: scope
     if: needs.scope.outputs.full == 'true'
@@ -116,66 +114,10 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           path: out/wasm/web
-  linux-aarch64:
-    needs: scope
-    if: needs.scope.outputs.full == 'true'
-    # Cross toolchain + unit and e2e tests under QEMU. Speed gates are skipped
-    # here (they would time the emulator). The test-bench scenarios are too:
-    # under emulation they took 100 of 123 test-minutes (31-46 min a run),
-    # while linux-arm64 runs every scenario, and the speed gates, natively on
-    # Arm64 hardware in about 3 minutes.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 75
-    steps:
-      - uses: actions/checkout@v4
-      # The Azure Ubuntu mirror sometimes serves these ~70 MB at ~30 kB/s (26
-      # minutes on 2026-10-22), so the .deb files are kept between runs.
-      - uses: actions/cache@v4
-        with:
-          path: ~/apt-cache
-          key: apt-aarch64-ubuntu-24.04-${{ hashFiles('.github/workflows/ci.yml') }}
-          restore-keys: apt-aarch64-ubuntu-24.04-
-      - run: |
-          mkdir -p ~/apt-cache/partial
-          sudo apt-get update
-          sudo apt-get install -y -o Dir::Cache::Archives="$HOME/apt-cache" -o APT::Sandbox::User=root \
-            g++-aarch64-linux-gnu qemu-user
-          sudo chown -R "$USER" ~/apt-cache
-      - run: cmake --preset linux-aarch64 && cmake --build --preset linux-aarch64 -j 4
-      - run: cd out/linux-aarch64 && ctest -j 4 --output-on-failure -LE 'bench|scenario'
-  linux-arm64:
-    needs: scope
-    if: needs.scope.outputs.full == 'true'
-    # Native Arm64 Linux (robots, Jetson, Graviton): full suite incl. speed gates.
-    runs-on: ubuntu-24.04-arm
-    timeout-minutes: 30
-    env: {CC: gcc-13, CXX: g++-13, SM_BENCH_BUDGET_SCALE: "4"}
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset native && cmake --build --preset native -j 4
-      - run: ctest --preset native -j 4
-  android:
-    needs: scope
-    if: needs.scope.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    strategy: {matrix: {preset: [android-arm64, android-armv7]}}
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset ${{ matrix.preset }} -DSM_BUILD_TESTS=OFF -DSM_BUILD_BENCH=OFF -DSM_BUILD_EXAMPLES=OFF
-      - run: cmake --build out/${{ matrix.preset }} -j 4
-  ios:
-    needs: scope
-    if: needs.scope.outputs.full == 'true'
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-      - run: cmake --preset ios && cmake --build out/ios --config Release -- -sdk iphoneos CODE_SIGNING_ALLOWED=NO
   testbench:
     needs: scope
     if: needs.scope.outputs.build == 'true'
-    # Canonical platform for testbench/baseline.json (same as the cloud agents).
+    # Canonical platform for testbench/baseline/ (same as the cloud agents).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env: {CC: gcc-13, CXX: g++-13}
@@ -188,9 +130,9 @@ jobs:
         run: |
           {
             echo "## Test bench vs baseline"
-            python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json --markdown
+            python3 tools/testbench_compare.py testbench/baseline testbench-results.json --markdown
           } >> "$GITHUB_STEP_SUMMARY"
-          python3 tools/testbench_compare.py testbench/baseline.json testbench-results.json
+          python3 tools/testbench_compare.py testbench/baseline testbench-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -210,7 +152,7 @@ jobs:
       matrix: {shard: [0, 1, 2, 3, 4, 5]}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    permissions: {contents: read}
+    permissions: {contents: read, pull-requests: read}  # pull-requests: the PR's files
     env: {COMPARE_SEEDS: "10", COMPARE_SHARDS: "6"}
     steps:
       - uses: actions/checkout@v4
@@ -238,7 +180,10 @@ jobs:
           sudo chown -R "$USER" ~/apt-cache
       - run: CXX=clang++-21 cmake -S compare/webrtc -B out/compare -DCMAKE_BUILD_TYPE=Release && cmake --build out/compare -j 4
       - name: Compare (one shard)
-        env: {SHARD: "${{ matrix.shard }}"}
+        env:
+          SHARD: "${{ matrix.shard }}"
+          GH_TOKEN: "${{ github.token }}"
+          PR: "${{ github.event.pull_request.number }}"
         run: |
           # On main, also trace every scenario's first seed (published as traces/
           # by the compare-webrtc job). PR runs don't, since parity-data-pr keeps
@@ -249,6 +194,22 @@ jobs:
           fi
           mapfile -t FILES < <(LC_ALL=C ls testbench/scenarios/*.scn | awk -v k="$SHARD" -v n="$COMPARE_SHARDS" '(NR - 1) % n == k')
           echo "shard $SHARD of $COMPARE_SHARDS: ${#FILES[@]} scenarios"
+          # On a PR, a scenario with `compare_seeds` (40 or 80) runs $COMPARE_SEEDS
+          # seeds, unless the PR changes that file; main runs them all, and the
+          # parity report compares a PR with main's same first seeds (Owner,
+          # 2026-10-27: about half the comparison's work was these scenarios).
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            changed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" --jq '.[].filename')
+            mkdir -p pr-scenarios
+            for i in "${!FILES[@]}"; do
+              f=${FILES[$i]}
+              if grep -q '^compare_seeds' "$f" && ! printf '%s\n' "$changed" | grep -qxF "$f"; then
+                grep -v '^compare_seeds' "$f" > "pr-scenarios/${f##*/}"
+                FILES[$i]="pr-scenarios/${f##*/}"
+                echo "  $f: $COMPARE_SEEDS seeds on this PR (main runs $(grep -m1 '^compare_seeds' "$f" | cut -d' ' -f2))"
+              fi
+            done
+          fi
           mkdir -p shard
           set -o pipefail
           out/compare/sm_compare --seeds=$COMPARE_SEEDS --json=shard/compare-webrtc.json $TRACE_ALL "${FILES[@]}" | tee shard/compare-webrtc.txt
@@ -386,7 +347,7 @@ jobs:
     # Single required status check: succeeds only if every job that `scope`
     # called for succeeded (a job it left out is skipped, not failed).
     if: always()
-    needs: [scope, host, sanitizers, embedded-config, wasm, linux-aarch64, linux-arm64, android, ios, testbench, compare-webrtc, fix-record]
+    needs: [scope, host, sanitizers, wasm, testbench, compare-webrtc, fix-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {pull-requests: write}

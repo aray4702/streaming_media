@@ -31,7 +31,7 @@ run by three AI agents with GitHub as the shared record:
   opens a PR. It also builds the `roadmap` features the Owner files.
 - **Reviewer**, a separate GitHub App identity, checks every PR for
   correctness, tests, regressions against the
-  [baseline](testbench/baseline.json) and "gaming" (loosened thresholds).
+  [baseline](testbench/baseline/) and "gaming" (loosened thresholds).
   A PR merges automatically once it has the Reviewer's approval and every
   platform in CI is green.
 - **Owner** (a person) sets direction through `agents/program.md` and `roadmap`

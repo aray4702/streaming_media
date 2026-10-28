@@ -220,6 +220,37 @@ def owner_issues(owners_path):
     return {i for r in rules for i in r.get("issues", [])}
 
 
+def align_base(base, head):
+    """Restrict main's report to the seeds the PR ran, scenario by scenario.
+
+    On a PR, scenarios with `compare_seeds` run fewer seeds than on main
+    (.github/workflows/ci.yml, compare-webrtc-shard). Comparing their 10-seed
+    means with main's 80-seed means would open and close gaps from the seed
+    count alone, so the base keeps only the seeds the head has, and its means
+    are recomputed from them.
+    """
+    head_seeds = {s["scenario"]: {p["seed"] for p in s.get("per_seed", [])} for s in head["scenarios"]}
+    out = dict(base, scenarios=[])
+    for s in base["scenarios"]:
+        want = head_seeds.get(s["scenario"])
+        per = s.get("per_seed", [])
+        if not want or not per or {p["seed"] for p in per} <= want:
+            out["scenarios"].append(s)
+            continue
+        kept = [p for p in per if p["seed"] in want]
+        if not kept:
+            out["scenarios"].append(s)
+            continue
+        s = dict(s, per_seed=kept, sm=dict(s["sm"]), webrtc=dict(s["webrtc"]))
+        for side in ("sm", "webrtc"):
+            for m in s[side]:
+                vals = [p[side][m] for p in kept if p[side].get(m) is not None]
+                if vals:
+                    s[side][m] = sum(vals) / len(vals)
+        out["scenarios"].append(s)
+    return out
+
+
 def report(data, owners_path=None, sigma=1.0, states=None):
     return attach_owners(gaps(data, sigma), owners_path, states)
 
@@ -240,7 +271,7 @@ def main(argv=None):
     base = None
     if a.base:
         try:
-            base = report(load(a.base), a.owners, a.sigma, states)
+            base = report(align_base(load(a.base), data), a.owners, a.sigma, states)
         except (OSError, ValueError, SystemExit, KeyError) as e:
             print("base report unusable (%s); skipping the comparison with main" % e, file=sys.stderr)
     md = markdown(data, g, base, states_known=states is not None or not a.owners)

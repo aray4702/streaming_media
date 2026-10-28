@@ -73,6 +73,22 @@ class Gaps(unittest.TestCase):
         self.assertEqual(g["seeds"], 0)
 
 
+class AlignBase(unittest.TestCase):
+    def test_base_keeps_only_the_seeds_the_head_ran(self):
+        # main ran 20 seeds (compare_seeds); the PR ran the first 5. Seeds 6-20 on main differ a lot.
+        base = data(scn("a", {"video.freeze_total_ms": ([1000] * 5 + [9000] * 15, [1000] * 20)}))
+        head = data(scn("a", {"video.freeze_total_ms": ([1000] * 5, [1000] * 5)}))
+        self.assertEqual(len(pr.gaps(base)), 1)          # main's 20-seed mean is a gap
+        aligned = pr.align_base(base, head)
+        self.assertEqual(len(aligned["scenarios"][0]["per_seed"]), 5)
+        self.assertEqual(aligned["scenarios"][0]["sm"]["video.freeze_total_ms"], 1000)
+        self.assertEqual(pr.gaps(aligned), [])           # on the PR's seeds it isn't
+
+    def test_scenarios_with_the_same_seeds_are_unchanged(self):
+        base = data(scn("a", {"video.render_fps": ([30] * 5, [20] * 5)}))
+        self.assertEqual(pr.align_base(base, base), base)
+
+
 class Owners(unittest.TestCase):
     def test_rules_match_by_pattern_and_unowned_is_reported(self):
         d = data(scn("outage_3s", {"video.render_fps": ([30] * 5, [20] * 5),
@@ -172,6 +188,7 @@ class Owners(unittest.TestCase):
         # #406 (Owner 2026-10-25): every gap on main after #378 is re-owned from closed issues to the
         # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
         # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
+        # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -179,7 +196,6 @@ class Owners(unittest.TestCase):
                  ("issue_5_burst15_freeze", "cc.queue_p95_ms"): 410,
                  ("burst_loss", "audio.jb_delay_p95_ms"): 410,
                  ("issue_29_ulpfec_over_red", "video.freeze_total_ms"): 410,
-                 ("high_jitter", "video.time_to_first_frame_ms"): 411,
                  ("issue_21_shallow_drop_repair", "video.freeze_count"): 411,
                  ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 411,
                  ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 411,
