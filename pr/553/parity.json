@@ -444,7 +444,7 @@
   {
    "scenario": "issue_451_host_rtt_near_limit",
    "metric": "video.e2e_delay_p95_ms",
-   "sm": 342.6,
+   "sm": 342.5,
    "webrtc": 297.164,
    "band": 17.242075806004337,
    "direction": "behind",
