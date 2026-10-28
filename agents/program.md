@@ -720,7 +720,10 @@ area it covered in each issue's notes:
   the Reviewer's approval, a green `ci-ok` and the Builder's
   `builder-approved` label on its current content (Owner, 2026-10-28: the
   Builder judges and approves first, and escalates to the Owner what it
-  can't). Agents label such a PR `needs-builder`. The Builder passes to the
+  can't). The Builder never approves its own PR: the cloud Builder's PRs
+  are judged by its interactive window (the Owner's local session), then
+  by the Owner; PRs from the window are judged by the cloud Builder, then
+  by the Owner (`agents/builder.md`). Agents label such a PR `needs-builder`. The Builder passes to the
   Owner a change to a standing rule's substance without a recorded Owner
   decision, spending, security, or anything irreversible.
 - **No direct pushes to `main`.** Branch protection requires a PR, the
