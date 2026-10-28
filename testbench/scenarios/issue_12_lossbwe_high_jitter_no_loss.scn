@@ -14,6 +14,7 @@ at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 # Seed 1's freeze is at 29.5 s, where the render time catches up with frames that ran 300+ ms late since 20 s (frames
 # delayed by retransmission skip UpdateCurrentDelay, on both stacks: libwebrtc's longest gaps on seed 1 are 168 and 162 ms,
 # its e2e p95 361 ms against ~150 on the other seeds); seed 9's is at start-up, after the pacer released frame 600 100 ms later.
+# Coordinator decision 2026-10-28 (PR #549): harness trade-off; freeze on seeds 1 and 9 of 10 (retransmitted frames skip UpdateCurrentDelay; libwebrtc shows the same mechanism, smaller); libwebrtc 0 on all seeds.
 expect video.freeze_total_ms < 300
 expect audio.interruptions == 0
 expect audio.concealed_pct < 2

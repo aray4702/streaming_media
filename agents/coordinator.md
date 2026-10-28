@@ -200,7 +200,7 @@ roadmap #64, this log #111, the Tester run log, and the **watch list**
    - NEEDS-HUMAN, SEV1 and UNPLACED issues.
 
    Then read every comment since your last post on #111: on #64 items, on
-   open PRs, and on #111 itself. Read every page (`--paginate`). **Read the
+   open PRs, and on #111 itself. Read every page (`agents/tools/gh_pages.sh`, `agents/common.md`). **Read the
    latest Fixer comment on every FREE item**: it may recommend closing it.
 2. **Bookkeeping:**
    - tick closed items (`- [ ] #N` → `- [x] #N`);
