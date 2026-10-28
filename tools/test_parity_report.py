@@ -73,6 +73,22 @@ class Gaps(unittest.TestCase):
         self.assertEqual(g["seeds"], 0)
 
 
+class AlignBase(unittest.TestCase):
+    def test_base_keeps_only_the_seeds_the_head_ran(self):
+        # main ran 20 seeds (compare_seeds); the PR ran the first 5. Seeds 6-20 on main differ a lot.
+        base = data(scn("a", {"video.freeze_total_ms": ([1000] * 5 + [9000] * 15, [1000] * 20)}))
+        head = data(scn("a", {"video.freeze_total_ms": ([1000] * 5, [1000] * 5)}))
+        self.assertEqual(len(pr.gaps(base)), 1)          # main's 20-seed mean is a gap
+        aligned = pr.align_base(base, head)
+        self.assertEqual(len(aligned["scenarios"][0]["per_seed"]), 5)
+        self.assertEqual(aligned["scenarios"][0]["sm"]["video.freeze_total_ms"], 1000)
+        self.assertEqual(pr.gaps(aligned), [])           # on the PR's seeds it isn't
+
+    def test_scenarios_with_the_same_seeds_are_unchanged(self):
+        base = data(scn("a", {"video.render_fps": ([30] * 5, [20] * 5)}))
+        self.assertEqual(pr.align_base(base, base), base)
+
+
 class Owners(unittest.TestCase):
     def test_rules_match_by_pattern_and_unowned_is_reported(self):
         d = data(scn("outage_3s", {"video.render_fps": ([30] * 5, [20] * 5),
