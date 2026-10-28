@@ -359,6 +359,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "render_smoothing") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: render_smoothing on|off");
       s.render_smoothing = tok[1] == "on";
+    } else if (key == "keyframe_flush_padding") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: keyframe_flush_padding on|off");
+      s.keyframe_flush_padding = tok[1] == "on";
     } else if (key == "h264_missing_packets") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: h264_missing_packets on|off");
       s.h264_missing_packets = tok[1] == "on";
@@ -462,6 +465,8 @@ std::string FormatScenario(const Scenario& s) {
     o += std::string("rate_utilization_tracker ") + (s.rate_utilization_tracker ? "on" : "off") + "\n";
   if (s.sps_pps_tracker != d.sps_pps_tracker) o += std::string("sps_pps_tracker ") + (s.sps_pps_tracker ? "on" : "off") + "\n";
   if (s.render_smoothing != d.render_smoothing) o += std::string("render_smoothing ") + (s.render_smoothing ? "on" : "off") + "\n";
+  if (s.keyframe_flush_padding != d.keyframe_flush_padding)
+    o += std::string("keyframe_flush_padding ") + (s.keyframe_flush_padding ? "on" : "off") + "\n";
   if (s.h264_missing_packets != d.h264_missing_packets)
     o += std::string("h264_missing_packets ") + (s.h264_missing_packets ? "on" : "off") + "\n";
   if (s.encode_delay != d.encode_delay) o += std::string("encode_delay ") + (s.encode_delay ? "on" : "off") + "\n";
