@@ -503,6 +503,9 @@ a comment addressed to it, or no review yet:
 | `owner-approved` | The Owner approved a measurement fix whose parity got worse; the Dispatcher may auto-merge it | Coordinator, recording the Owner's decision |
 | `record` | An issue that is a record, not a work item (the roadmap #64, the log #111, the Tester run log, the watch list); work handling skips it | Coordinator, Builder |
 | `parallel-ok` | May run while items above it are busy (section 0.2) | Coordinator |
+| `ci-passed` | `ci-ok` passed on the PR's current head; dropped on a new commit (section 6.1) | CI |
+| `builder-approved` | The Builder approved a protected-path PR on its current content (section 8) | Builder |
+| `audit` | A product or system audit issue (section 0.3) | Dispatcher |
 
 Milestones `Stage 1 · Phase N` group the roadmap issue's work list (section
 0.2). The list, not the milestone, sets the order.
