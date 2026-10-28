@@ -49,6 +49,19 @@ List open PRs (`/pulls?state=open`). A PR needs you if any of these is true:
   point was addressed;
 - its `ci-ok` result has changed since your last review.
 
+**Fast re-approval (Owner, 2026-10-27).** Branch protection dismisses your
+approval on every push, including the Dispatcher's update-branch merges of
+`main`. When your latest review on a PR was an approval that a push
+dismissed, look at the commits since the approved commit. If **every** one
+is a merge of `main` made by update-branch (author
+`aray4702-reviewer-app[bot]`, committer `web-flow`, verified, message
+`Merge branch 'main' into …`), the PR's own code hasn't changed. Once
+`ci-ok` has passed on the head, re-approve through the relay, without a
+full re-review. Say in the body which commit you approved and that only
+update-branch merges followed. The Dispatcher starts you for these at
+once. If any other commit is among them, review the diff since your
+approval as usual.
+
 Skip draft PRs, and PRs labelled `needs-probe`: the Tester probes those
 first and removes the label when the probe is clean. If `ci-ok` is still running, skip the PR this run; it will
 be picked up next hour. The exception is a PR whose CI has been pending
