@@ -186,7 +186,10 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.feedback = &tcc_;
   c.parser = v.parser;
   c.keyframe_needs_parameter_sets = v.keyframe_needs_parameter_sets;
-  c.sps_pps_tracker = v.sps_pps_tracker;
+  // Both H.264 rules apply only to H.264 packets, as libwebrtc: OnReceivedPayloadData runs the
+  // tracker for kVideoCodecH264, and FindFrames keeps missing_packets_ for an H.264 descriptor.
+  const bool h264 = v.codec == VideoCodecType::kH264;
+  c.sps_pps_tracker = v.sps_pps_tracker && h264;
   c.render_smoothing = v.render_smoothing;
   c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;
@@ -196,6 +199,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.ulpfec = v.ulpfec;
   c.nack_config = v.nack_config;
   c.packet_buffer = v.packet_buffer;
+  c.packet_buffer.missing_packets = v.packet_buffer.missing_packets && h264;
   c.keyframe = v.keyframe;
   c.scheduler = v.scheduler;
   c.timing = v.timing;

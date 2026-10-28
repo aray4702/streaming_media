@@ -8,7 +8,8 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  closed > opened, or the Owner approved it: owner-approved)
   HOLD           turn auto-merge off on a held PR (blocked or needs-human), so
                  a merge freeze or an Owner question can't be merged past
-  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first)
+  UPDATE-BRANCH  bring one approved, green, behind PR up to date (oldest first),
+                 unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN fixer (conflict)  start a Fixer run when an approved agent PR has
                  merge conflicts with main (usually testbench/baseline.json),
@@ -16,7 +17,9 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
                  already working and another eligible #64 item is free
   RUN reviewer   start a Reviewer run when a green PR has waited for review, or
-                 when needs-human was removed after its last review on the head
+                 when needs-human was removed after its last review on the head;
+                 at once (no wait) when an approval was dismissed only by
+                 update-branch merges of main, for a fast re-approval
   RUN coordinator  start the cloud Coordinator when something needs judgment
                  (a new unplaced issue, a needs-human or needs-coordinator
                  label, a Fixer comment on a work-list item)
@@ -62,6 +65,7 @@ RECORD_LABELS = {"record", "goal", "agent-log"}  # records, not work items
 MAX_IN_PROGRESS = 5
 FIXER_WAIT_MIN = 60        # pace rule: extra Fixer run only after an item waited this long
 REVIEW_WAIT_MIN = 30       # green PR without a review on its head
+FAST_REVIEW_GAP_MIN = 10   # Reviewer starts for a fast re-approval at most this often
 STALE_MIN = 90             # in-progress item without Fixer activity
 CLAIM_WINDOW_MIN = 30      # a Fixer "Work started" this recent means a run is active
 DISPATCH_GAP_MIN = 30      # at most one dispatch per routine in this window
@@ -295,10 +299,33 @@ class Dispatcher:
             elif not update_done:
                 state = gh(f"repos/{self.r}/pulls/{n}")["mergeable_state"]
                 if state == "behind":
+                    # One update in flight at a time: while another approved PR's run is
+                    # still going, it merges first and would leave this one behind again,
+                    # so updating now only spends a CI run (#463/#465 churn, Flow watch).
+                    flying = self.update_in_flight(n)
+                    if flying:
+                        self.say("HOLD", f"PR #{n}", f"behind main, but PR #{flying}'s run is in flight and merges first")
+                        update_done = True
+                        continue
                     self.say("UPDATE-BRANCH", f"PR #{n}", "approved, green, auto-merge on, behind main")
                     if self.live:
                         gh(f"repos/{self.r}/pulls/{n}/update-branch", "PUT")
                     update_done = True
+
+    def update_in_flight(self, number):
+        """Another PR that will auto-merge once its unfinished ci-ok run passes: auto-merge on,
+        not held, the Reviewer's approval still standing. None if there is none."""
+        for pr in self.pulls:
+            if pr["number"] == number or pr["draft"] or pr["auto_merge"] is None \
+                    or labels(pr) & {"needs-human", "blocked"}:
+                continue
+            rev = self.bot_review(pr["number"])
+            if not rev or rev["state"] != "APPROVED":
+                continue
+            ci, _ = self.ci_ok(pr["head"]["sha"])
+            if ci in (None, "queued", "in_progress", "waiting", "requested", "pending"):
+                return pr["number"]
+        return None
 
     def roadmap_candidate(self):
         body = gh(f"repos/{self.r}/issues/{ROADMAP}")["body"]
@@ -422,6 +449,32 @@ class Dispatcher:
         if self.live:
             self.start("fixer_b")
 
+    def update_only_since_approval(self, n, revs=None):
+        """The approved commit, if the Reviewer's latest review was an approval that a push dismissed
+        and every commit since is a verified update-branch merge of main (no PR code changed).
+        Branch protection dismisses approvals on every push, the Dispatcher's own updates
+        included, so each update cost a 30 min wait for a full review (Flow watch, #499)."""
+        revs = revs if revs is not None else [x for x in gh(f"repos/{self.r}/pulls/{n}/reviews?per_page=100") or []
+                                              if is_bot(x["user"])]
+        if not revs or revs[-1]["state"] != "DISMISSED":
+            return None
+        last = revs[-1]
+        events = gh(f"repos/{self.r}/issues/{n}/events?per_page=100", paginate=True) or []
+        if not any(e.get("event") == "review_dismissed" and (e.get("dismissed_review") or {}).get("review_id") == last["id"]
+                   and (e.get("dismissed_review") or {}).get("state") == "approved" for e in events):
+            return None
+        commits = gh(f"repos/{self.r}/pulls/{n}/commits?per_page=100", paginate=True) or []
+        shas = [c["sha"] for c in commits]
+        if last["commit_id"] not in shas or shas[-1] == last["commit_id"]:
+            return None
+        for c in commits[shas.index(last["commit_id"]) + 1:]:
+            if not (len(c.get("parents", [])) == 2 and is_bot(c.get("author"))
+                    and (c.get("committer") or {}).get("login") == "web-flow"
+                    and (c["commit"].get("verification") or {}).get("verified") is True
+                    and c["commit"]["message"].startswith("Merge branch 'main' into ")):
+                return None
+        return last["commit_id"]
+
     def reviewer(self):
         for pr in sorted(self.pulls, key=lambda p: p["created_at"]):
             n, sha = pr["number"], pr["head"]["sha"]
@@ -440,13 +493,16 @@ class Dispatcher:
                     continue
                 cleared = True
             waited = minutes_ago(done)
-            if waited < REVIEW_WAIT_MIN and not cleared:
+            fast = None if cleared else self.update_only_since_approval(n)
+            if waited < REVIEW_WAIT_MIN and not cleared and not fast:
                 continue
             last = self.last_dispatch("reviewer")
-            if last and minutes_ago(last) < DISPATCH_GAP_MIN:
+            gap = FAST_REVIEW_GAP_MIN if fast else DISPATCH_GAP_MIN
+            if last and minutes_ago(last) < gap:
                 return self.say("HOLD", "reviewer", f"PR #{n} waiting, but dispatched {minutes_ago(last):.0f} min ago")
             self.say("RUN", "reviewer", f"PR #{n}: needs-human cleared after its {rev['state']} review on {sha[:7]}"
-                     if cleared else f"PR #{n} green for {waited:.0f} min with no review on {sha[:7]}")
+                     if cleared else f"PR #{n}: fast re-approval, only update-branch merges since the approval on {fast[:7]}"
+                     if fast else f"PR #{n} green for {waited:.0f} min with no review on {sha[:7]}")
             if self.live:
                 self.start("reviewer")
             return
