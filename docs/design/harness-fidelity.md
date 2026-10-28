@@ -20,7 +20,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 1 | Captured media | audio: **different** (ADM 10 ms blocks through the ACM vs our direct 20 ms encode); video: not audited | #477 | #477 |
 | 2 | Encoders | Opus: **identical by construction**, packet for packet on 60 of 104 traced scenarios, checked on the lossless ones by `tools/check_harness_drift.py`; where the sides part, the input that differs is the stack's own RTCP, not the harness. Video: **identical by construction** (the same size formula, seed and QP/encode-time model), the formula is still written twice | [Row 2](#row-2-encoders) | #484 (stack, not harness) |
 | 3 | Decoders | **different**: our `SpeechDecoder` returns the source signal, libwebrtc decodes with libopus | #476 | #476 |
-| 4 | Packetization and wire | not audited | | |
+| 4 | Packetization and wire | H.264 access units: **shared code** (`rtp::MakeFakeH264Frame`); RTP header extensions (transport-cc, id 1, only), CNAME, RED and RTX formats: **identical by construction**, and on the seed-1 traces every frame of the same size is split into the same packets on both sides (28 647 frame sizes on 115 scenarios), audio packets match packet for packet (row 2) and RTX is the original + 2 bytes on both. The video packet-size limit: **different**: ours is given 1458 bytes, the capacity libwebrtc is left with *after* reserving its RTX header, and libwebrtc 1460, from which it takes the reservation itself; our session makes no reservation. They agree only with NACK on and the default `video_max_payload` (`issue_29_ulpfec_over_red`, NACK off: ours up to 3 bytes smaller; `issue_257_zero_max_payload`: ours up to 3 bytes larger, and our padding 8 bytes over the limit)  No check fails yet if the splits drift apart; #513 adds the video split to `tools/check_harness_drift.py` | [Row 4](#row-4-packetization-and-wire) | #513, #514 (stack, not harness) |
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
 | 6 | Clock and tasks | not audited | | |
 | 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
@@ -124,6 +124,109 @@ The size formula is written twice, once on each side. No test fails if one
 copy changes; moving it into `EncoderModel` (as #470 does for its new
 overshoot and scene-change factor) makes it shared code. That waits for #470,
 which edits the same lines.
+
+## Row 4: packetization and wire
+
+Audited on `main` at b5a82f2 (2026-10-28), with the seed-1 forward-link
+traces that `parity-data/traces/` holds for 3025aeb (115 scenarios with both
+sides). The reverse link has no trace yet (#507 adds one), so RTCP is checked
+on the forward link only.
+
+### Shared or identical
+
+| | ours (`testbench/call.cc`) | libwebrtc (`compare/webrtc/webrtc_call.cc`) |
+|---|---|---|
+| H.264 access unit for a frame of N bytes | `rtp::MakeFakeH264Frame(key, N)` (`:847`) | the same function, through `ModelAccessUnit` (`model_h264.h`) |
+| Packetization mode | mode 1 (`sm/rtp/h264.h`: single NAL, STAP-A, FU-A) | `packetization-mode=1` (`ModelH264Format`, `:510-513`) |
+| SPS VUI rewrite of a keyframe | `ParseOutgoingBitstreamAndRewrite` (`src/rtp/session.cc`, #342) | `FrameEncodeMetadataWriter::UpdateBitstream` |
+| RTP header extensions | transport-cc, id 1, nothing else (`:541`) | `kTransportSequenceNumberUri`, id 1, nothing else (`:727-728`) |
+| SDES CNAME | `sender@testbench` / `receiver@testbench` (`:569`, `:572`) | `sender@testbench` (`kSenderCname`, #409) |
+| Audio RED, RTX, ULPFEC over RED | RFC 2198 / 4588 / 5109 from the session | the same, from `AudioSendStream` / `RtpVideoSender` |
+| Wire size | RTP or RTCP bytes + 28 (UDP/IP) | the same |
+| SSRCs and payload types | 1 / 2 / 3, PT 111 / 63 / 96 / 97 | Chrome's values (`:297`, `:304`) |
+
+SSRCs and payload types differ in value only; both sides write them in the
+same fields at the same size, so the packets are the same length.
+
+On the traces:
+
+- **Video.** Grouping each side's video packets by frame (RTP timestamp,
+  first transmissions, complete frames), **every frame size that occurs on
+  both sides of a scenario is split into the same packets** on both: 28 647
+  frame sizes on 115 scenarios (sizes on the wire), for example a
+  `clean_link` frame of 6532 bytes goes as 3 x 1306 + 2 x 1307 on both. The exceptions are `issue_257_zero_max_payload` (below) and 18
+  frames that are a keyframe on one side and a delta frame of the same total
+  on the other. The largest video packet is 1486 bytes on the wire (1458 of
+  RTP) on both sides of `clean_link`.
+- **Audio.** Packet for packet on 60 of 104 scenarios, RED included (`red`
+  is on by default); row 2 explains the other 44.
+- **RTX.** Every RTX packet is its original's size + 2 on both sides
+  (38 545 and 39 088 packets).
+- **RTCP on the forward link.** The same two sizes on both sides, 84 and 108
+  bytes (8091 / 6593 packets on ours, 7860 / 7685 on libwebrtc): the same
+  compound packets, sent on each stack's own schedule.
+
+### Different: the video packet-size limit (#513)
+
+libwebrtc's `RTPSenderVideo::SendVideo` takes the packet capacity as the
+sender's `MaxRtpPacketSize`, less `FecPacketOverhead()` when the frame is
+FEC-protected, **less `RtxPacketOverhead()` (2 bytes here) when the frame
+may be retransmitted**
+(`modules/rtp_rtcp/source/rtp_sender_video.cc:676-687`, `:612-622`;
+`rtp_sender.cc:566-595`). Its padding packets are at most
+`max_packet_size_ - max_padding_fec_packet_header_`, the header with the
+extensions a padding packet carries (`rtp_sender.cc:434-452`).
+
+Our session takes the capacity as `max_payload_size + 12 - FecPacketOverhead()`
+(`src/rtp/session.cc:280-287`) with no RTX reservation, and our padding as
+`min(max_payload_size, 255)` with no room for the header extension
+(`src/rtp/rtp_sender.cc:243-245`).
+
+The harness covers the first of these with its inputs. The scenario default
+`video_max_payload 1446` (`testbench/scenario.h:81`) gives our session a
+1458-byte packet, the capacity libwebrtc is left with after its RTX
+reservation, while libwebrtc keeps its own 1460-byte default and makes the
+reservation itself (`webrtc_call.cc:899-905`). So the two sides are handed
+different packet-size limits, and they agree only when both of these hold:
+
+- **NACK on**, so libwebrtc reserves the 2 bytes. With NACK off it does not,
+  and our packets are the smaller ones: `issue_29_ulpfec_over_red` sends
+  video packets up to 1459 bytes on the wire on ours and 1462 on libwebrtc,
+  and FEC packets up to 1481 against 1484.
+- **The default `video_max_payload`.** A scenario that sets it gives both
+  sides `N + 12`, and only libwebrtc takes the 2 bytes off:
+  `issue_257_zero_max_payload` (100-byte packets) splits 28 of its 46 shared
+  frame sizes differently, with packets of 127-128 bytes on ours against
+  124-126 on libwebrtc. There our padding packets are 136 bytes on the wire,
+  8 bytes over the limit (the transport-cc extension), against 128 on
+  libwebrtc.
+
+The fix (#513) brings our session up to libwebrtc's rule (the RTX
+reservation when the frame may be retransmitted, and the padding header), so
+that both sides can be given the same packet-size limit, libwebrtc's 1460
+bytes by default and `N + 12` for `video_max_payload N`. Done when the
+seed-1 traces of `clean_link`, `issue_29_ulpfec_over_red` and
+`issue_257_zero_max_payload` split every shared frame size the same and
+have the same padding sizes on both sides.
+
+### In the stack, not the harness
+
+These differ in what the stack under test puts on the wire, from the same
+input; they are filed as #514 for the Coordinator to place:
+
+- **Padding without RTX.** With NACK off there is no RTX stream, and
+  libwebrtc pads on the media SSRC (`rtp_sender.cc:437-449`,
+  `can_send_padding_on_media_ssrc`): 383 padding packets on
+  `issue_29_ulpfec_over_red` against 4 on ours.
+- **Padding in an audio-only call.** `audio_only_lossy` and its copies: ours
+  2118 padding packets, 2115 of them 224 bytes; libwebrtc 851, of 38 sizes
+  (238, 303 and 104 bytes the most common), so the loss draws fall on other
+  audio packets (row 2, row 5).
+- **Start values and the first marker bit.** libwebrtc starts each stream's
+  sequence number and RTP timestamp at a random value (6666 and 873682028
+  for audio on all 105 seed-1 traces with audio) and sets the marker bit on the first audio
+  packet (`rtp_sender_audio.cc:88-128`); ours starts both at 0 (video at the
+  capture time x 90) and sends no audio marker. No metric reads these.
 
 ## Row 5: the link
 
