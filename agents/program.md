@@ -212,7 +212,7 @@ is open at a time.
 
 - **System audit, daily:** the agent system and the flow, run by the
   Builder (`agents/builder.md`, "Audits").
-- **Product audit, weekly:** whether the measurement and the library still
+- **Product audit, daily (Owner, 2026-10-28):** whether the measurement and the library still
   match libwebrtc. The Coordinator places it first on #64, ahead of the
   steps, `parallel-ok`, and a Fixer runs it. It checks:
   1. **Harness fidelity:** re-verify each row of

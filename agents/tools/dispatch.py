@@ -34,7 +34,7 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
   STALE          report an in-progress item with no Fixer activity
   AUDIT          file the periodic audits (Owner, 2026-10-28): a system audit
                  every day for the Builder (needs-builder), a product audit every
-                 week for a Fixer (needs-coordinator places it); --audit KIND
+                 day for a Fixer (needs-coordinator places it); --audit KIND
                  files one at once (the dispatcher workflow's `audit` input)
   FLOW           watch the flow for bottlenecks (CI jobs queued too long, an
                  approved PR not merging, CI re-run churn, a free item nobody
@@ -93,7 +93,7 @@ PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merg
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
-AUDIT_EVERY_H = {"system": 24, "product": 168}  # periodic audits (Owner, 2026-10-28)
+AUDIT_EVERY_H = {"system": 24, "product": 24}  # periodic audits, both daily (Owner, 2026-10-28)
 AUDIT_LABEL = "audit"
 FLOW_ISSUE_TITLE = "Flow watch"
 FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
