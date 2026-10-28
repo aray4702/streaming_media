@@ -3,9 +3,10 @@
 // carry them and the early feedback (NACK, PLI, FIR, loss notification,
 // transport-cc, REMB), and splits incoming compounds into typed results for
 // the caller to dispatch. Follows libwebrtc's RTCPSender and RTCPReceiver:
-// reports every 1 s with video and 5 s without (optionally randomized 0.5 to
-// 1.5x), a first report at about half the interval, SR/RR first and SDES CNAME
-// after it, and early feedback sent at once.
+// reports every 1 s with video and 5 s without (randomized 0.5 to 1.5x with
+// libwebrtc's webrtc::Random draws, #517), a first report at about half the
+// interval, SR/RR first and SDES CNAME after it, and early feedback sent at
+// once.
 //
 // The engine owns no media state. Report blocks come from the registered
 // timing::ReceiveStatistics, sender counters are pushed in with
@@ -59,7 +60,10 @@ struct RtcpConfig {
   // Datagrams are split before they pass this size (libwebrtc's
   // kMaxRtcpPacketSize is the RTP MTU).
   size_t max_datagram_bytes = 1200;
-  uint64_t seed = 1;  // Seeds the interval randomization.
+  // Seeds the interval draws. libwebrtc seeds each RTCPSender with its
+  // clock's TimeInMicroseconds() when it is built (rtcp_sender.cc:130); the
+  // caller passes that time, as the library reads no clock (#517).
+  uint64_t seed = 1;
   EventSink* events = nullptr;
 };
 
@@ -199,7 +203,7 @@ class RtcpEngine : public MetricsSource {
   void Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind kind, std::vector<RtcpOutgoing>& out);
 
   RtcpConfig cfg_;
-  Random rng_;
+  XorshiftRandom rng_;
   std::optional<RtcpSenderState> sender_;
   std::vector<timing::ReceiveStatistics*> receive_stats_;
   std::vector<uint32_t> local_ssrcs_;
