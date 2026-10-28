@@ -78,6 +78,18 @@ struct LinkTraceRecord {
   int32_t seq = -1;         // RTP sequence number, or -1 when the packet has none.
   int32_t queue_bytes = 0;  // Bytes in the bottleneck queue at this arrival, before the packet.
   LinkOutcome outcome = LinkOutcome::kDelivered;
+  // Issue #437 frame trace: when the packet reached the far end (-1 unless
+  // delivered), and, for RTP, its timestamp, marker bit and, for an RTX
+  // packet, the original sequence number it carries (-1 when not known).
+  // For a video packet, `key` is 1 when its H.264 payload is part of a
+  // keyframe (an SPS or IDR slice, as libwebrtc's depacketizer marks
+  // kVideoFrameKey) and 0 otherwise; -1 for other packets. Together they let
+  // a frame's completion be rebuilt from either stack's trace.
+  int64_t arrival_us = -1;
+  int64_t rtp_ts = -1;
+  int32_t marker = -1;
+  int32_t osn = -1;
+  int32_t key = -1;
 };
 
 struct LinkStats {
@@ -109,6 +121,14 @@ class NetworkLink {
   // Records every packet offered to Send (opt-in; memory grows with the call).
   void EnableTrace() { trace_on_ = true; }
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
+  // Adds the RTP fields to the record of the packet just sent (issue #437).
+  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1) {
+    if (!trace_on_ || trace_.empty()) return;
+    trace_.back().rtp_ts = rtp_ts;
+    trace_.back().marker = marker;
+    trace_.back().osn = osn;
+    trace_.back().key = key;
+  }
 
   // `seq` is the packet's RTP sequence number (-1 when it has none); it is
   // only written to the trace.
@@ -222,6 +242,7 @@ class NetworkLink {
     Timestamp arrival = depart + cfg_.base_delay + jitter;
     if (!cfg_.allow_reordering) arrival = std::max(arrival, last_arrival_);
     last_arrival_ = arrival;
+    if (trace_on_ && !trace_.empty() && trace_.back().arrival_us < 0) trace_.back().arrival_us = arrival.us();
     in_flight_.push(Item{arrival, order_++, size.bytes(), std::move(packet)});
   }
 
