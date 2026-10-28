@@ -6,21 +6,12 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-79 gaps on `main`, 96 here: **1 closed, 18 opened**, 0 changed direction.
-
-Closed:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 231 | 244 | ±12.6 | ahead | 4/10 | #504, #411 (closed, no note: #63, #476) |
+84 gaps on `main`, 96 here: **0 closed, 12 opened**, 0 changed direction.
 
 Opened:
 
 | scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
 |---|---|---|---|---|---|---|---|
-| audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 152 | 164 | ±10.5 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
-| issue_154_shallow_drop_repair_v2 | `audio.mouth_to_ear_p95_ms` | 499 | 724 | ±225 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
-| issue_21_shallow_drop_repair | `audio.mouth_to_ear_p95_ms` | 499 | 724 | ±225 | ahead | 8/10 | #504 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `audio.longest_interruption_ms` | 125 | 74.6 | ±34.8 | behind | 5/10 | #504, #451 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `audio.mouth_to_ear_p95_ms` | 619 | 726 | ±62.6 | ahead | 9/10 | #504, #451 (closed, no note: #63, #476) |
 | issue_451_host_rtt_near_limit | `video.freeze_total_ms` | 3355 | 1216 | ±192 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
@@ -33,9 +24,6 @@ Opened:
 | issue_451_host_rtt_near_limit | `cc.queue_p95_ms` | 145 | 272 | ±51.8 | ahead | 10/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
 | issue_451_host_rtt_near_limit | `cc.max_settle_ms` | 12000 | 9090 | ±943 | behind | 10/10 | #451 (closed, no note: #15, #48, #61, #20) |
 | issue_451_host_rtt_near_limit | `cc.rtt_p50_ms` | 9034580000000000 | 70.5 | ±451729000000000 | behind | 10/10 | #451 (closed, no note: #61) |
-| issue_476_libopus_decode | `audio.mouth_to_ear_p95_ms` | 152 | 164 | ±10.5 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
-| issue_62_neteq_default | `audio.mouth_to_ear_p95_ms` | 152 | 164 | ±10.5 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
-| issue_62_neteq_v2_audio_only_lossy | `audio.mouth_to_ear_p95_ms` | 152 | 164 | ±10.5 | ahead | 6/10 | #504 (closed, no note: #63, #476) |
 
 ### Gaps
 
