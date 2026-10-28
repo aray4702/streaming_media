@@ -205,7 +205,12 @@ Make real-time audio and video built on this library hold up for the people
 using it when the network misbehaves: fewer audio gaps and video freezes,
 lower delay, faster recovery after the link changes, higher quality for the
 same bandwidth, and no crashes or undefined behaviour, on every supported
-platform. Progress is measured, not asserted. Each change must improve the
+platform. **Supported platforms (Owner, 2026-10-27): the browser
+(WebAssembly) and macOS.** CI checks only these; Linux, Android, iOS and
+embedded targets are not checked, and their presets in the tree are not
+maintained. Linux x86_64 remains the measurement platform (test bench
+baseline, `compare-webrtc`) and runs the ASan/UBSan job, as correctness
+checks, not as a supported target. Progress is measured, not asserted. Each change must improve the
 measurements or leave them unchanged, and each problem found becomes a test
 that keeps it fixed.
 
@@ -275,7 +280,7 @@ The loop is:
 | Baseline results | `testbench/baseline.json` | Metrics of every scenario on `main`. CI compares each PR against it. |
 | Browser port | `web/` | WebAssembly build with a JS API (`runScenario`, plus bindings for library components) and a demo page that runs scenarios and plots them in the browser. |
 | Comparison | `compare/` | `sm_compare` runs any scenario through this library and a prebuilt libwebrtc over the same links and prints both sets of metrics. It measures the stage 1 bar (section 0.1). See [compare/README.md](../compare/README.md) and [the latest results](../docs/results/compare-webrtc.md). |
-| CI | `.github/workflows/ci.yml` | Linux GCC/Clang, macOS, ASan+UBSan, no-exceptions/RTTI, WebAssembly (Node), Linux aarch64 under QEMU, Android and iOS cross-builds, test bench + baseline comparison. The aggregate job `ci-ok` is the required status check. |
+| CI | `.github/workflows/ci.yml` | The supported platforms, macOS and WebAssembly (Node), with the full suites; ASan+UBSan, the test bench + baseline comparison and `compare-webrtc` on Linux x86_64. The aggregate job `ci-ok` is the required status check. |
 
 ### 3.1 Test bench link impairments
 
@@ -673,7 +678,7 @@ area it covered in each issue's notes:
    off, extreme fps or bitrate limits, sample rates, malformed or
    extreme inputs to public APIs (fuzz-style).
 7. **Platforms and performance:** benchmark regressions, wasm/browser
-   behaviour (`web/`), the no-exceptions build, binary size.
+   behaviour (`web/`), macOS, binary size.
 8. **Conversation with an AI** (once the test bench supports it; see
    the `roadmap` issues): response delay, barge-in, the user's speech
    reaching the AI intact, and AI media sent in faster-than-real-time
