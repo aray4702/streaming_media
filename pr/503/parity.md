@@ -6,68 +6,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 
 ### Against `main`
 
-80 gaps on `main`, 79 here: **17 closed, 16 opened**, 0 changed direction.
-
-Closed:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61, #19) |
-| high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23, #19, #24) |
-| issue_12_lossbwe_high_jitter_no_loss | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_12_lossbwe_high_jitter_no_loss | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_150_gcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_150_gcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_150_gcc_v2_high_jitter_seed5 | `audio.jb_delay_p95_ms` | 123 | 112 | ±10 | behind | 5/10 | #477 (closed, no note: #63, #476) |
-| issue_150_gcc_v2_high_jitter_seed5 | `video.time_to_first_frame_ms` | 227 | 349 | ±113 | ahead | 6/10 | **none** (closed, no note: #24, #61) |
-| issue_150_gcc_v2_high_jitter_seed5 | `repair.overhead_pct` | 39.3 | 45.2 | ±5.3 | ahead | 7/10 | **none** (closed, no note: #21, #7, #29) |
-| issue_19_cc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_19_cc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_24_timing_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_24_timing_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_62_neteq_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_62_neteq_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-| issue_76_tcc_v2_high_jitter | `video.time_to_first_frame_ms` | 228 | 453 | ±166 | ahead | 8/10 | **none** (closed, no note: #24, #61) |
-| issue_76_tcc_v2_high_jitter | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | **none** (closed, no note: #23) |
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_120_rtx_payload_padding | `video.freeze_count` | 4.1 | 3.1 | ±1.0 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_120_rtx_payload_padding | `net.loss_pct` | 5.2 | 4.7 | ±0.5 | behind | 4/10 | **none** (closed, no note: #21, #61, #12) |
-| issue_123_v2_allocation_min | `video.longest_freeze_ms` | 3722 | 4431 | ±465 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_127_all_v2_no_stall | `audio.jb_delay_p95_ms` | 231 | 244 | ±12.6 | ahead | 4/10 | #477, #411 (closed, no note: #63, #476) |
-| issue_127_all_v2_no_stall | `repair.overhead_pct` | 35.0 | 37.1 | ±2 | ahead | 5/10 | **none** (closed, no note: #21, #7, #29) |
-| issue_23_handover | `video.freeze_count` | 4.1 | 3.1 | ±1.0 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_23_handover | `net.loss_pct` | 5.2 | 4.7 | ±0.5 | behind | 4/10 | **none** (closed, no note: #21, #61, #12) |
-| issue_29_ulpfec_over_red | `video.freeze_total_ms` | 24547 | 19722 | ±4494 | behind | 7/10 | #410 (closed, no note: #5, #37, #24) |
-| issue_29_ulpfec_over_red | `video.avg_kbps` | 1029 | 967 | ±52.5 | ahead | 5/10 | **none** (closed, no note: #37, #61) |
-| issue_437_render_smoothing_very_low_capacity | `video.longest_freeze_ms` | 3731 | 4431 | ±465 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_76_rtx_v2_handover | `video.freeze_count` | 4.1 | 3.1 | ±1.0 | behind | 6/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_76_rtx_v2_handover | `net.loss_pct` | 5.2 | 4.7 | ±0.5 | behind | 4/10 | **none** (closed, no note: #21, #61, #12) |
-| very_low_capacity | `video.longest_freeze_ms` | 3722 | 4431 | ±465 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| very_low_capacity_allocator_v2 | `video.longest_freeze_ms` | 3722 | 4431 | ±465 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| wifi_to_lte_handover | `video.freeze_count` | 4.1 | 3.1 | ±1.0 | behind | 6/10 | **none** (closed, no note: #5, #37, #24, #20) |
-| wifi_to_lte_handover | `net.loss_pct` | 5.2 | 4.7 | ±0.5 | behind | 4/10 | **none** (closed, no note: #21, #61, #12, #20) |
-
-Still gaps, distance to libwebrtc changed by more than 10%:
-
-| scenario | metric | distance on main | distance here |
-|---|---|---|---|
-| issue_120_rtx_payload_padding | `video.freeze_total_ms` | 1076 | 950 (closer) |
-| issue_123_v2_allocation_min | `video.render_fps` | 3.4 | 2.9 (closer) |
-| issue_123_v2_allocation_min | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| issue_23_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
-| issue_29_ulpfec_over_red | `video.freeze_count` | 1.8 | 2.0 (further) |
-| issue_437_render_smoothing_very_low_capacity | `video.render_fps` | 2.4 | 1.5 (closer) |
-| issue_437_render_smoothing_very_low_capacity | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| issue_76_rtx_v2_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
-| very_low_capacity | `video.render_fps` | 3.4 | 2.9 (closer) |
-| very_low_capacity | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| very_low_capacity_allocator_v2 | `video.render_fps` | 3.4 | 2.9 (closer) |
-| very_low_capacity_allocator_v2 | `repair.overhead_pct` | 20.1 | 15.5 (closer) |
-| wifi_to_lte_handover | `video.freeze_total_ms` | 1076 | 950 (closer) |
+79 gaps on `main`, 79 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 
