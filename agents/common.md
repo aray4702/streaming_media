@@ -128,9 +128,11 @@ practical details every role shares.
 - **List reads return one page** (30 items unless `per_page` says more), so
   a long thread's newest comments are not in the first response. Read every
   page and join them before you filter or take the last items:
-  `gh api --paginate 'repos/aray4702/streaming_media/issues/N/comments?per_page=100' | jq -s 'add | .[-5:]'`.
-  `--jq` runs on each page separately, so don't use it for `.[-N:]` or counts
-  with `--paginate`.
+  `agents/tools/gh_pages.sh 'repos/aray4702/streaming_media/issues/N/comments?per_page=100' | jq '.[-5:]'`.
+  Don't use `gh api --paginate` here: GitHub's next-page links use
+  `repositories/{id}/` paths, which the sandbox proxy refuses (HTTP 403),
+  so it returns only the first page (the oldest items) and an error.
+  `gh_pages.sh` asks for each page by number and fails loudly instead.
 - Write bodies to a file and pass them with `--rawfile` or `--input`, so
   that Markdown, backticks and newlines survive.
 - Commits: `git -c user.name="streaming-media-agent" -c user.email="aray4702@users.noreply.github.com" commit ...`,

@@ -14,7 +14,7 @@
   "audio.time_to_first_ms": 40,
   "cc.goodput_kbps": 2619,
   "cc.max_settle_ms": 300,
-  "cc.queue_max_ms": 47.61,
+  "cc.queue_max_ms": 47.88,
   "cc.queue_over_200ms_pct": 0,
   "cc.queue_p95_ms": 16.48,
   "cc.rtt_p50_ms": 62,

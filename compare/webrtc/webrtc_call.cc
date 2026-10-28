@@ -6,7 +6,9 @@
 #include <functional>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <utility>
 #include <span>
 #include <unordered_map>
 #include <vector>
@@ -23,11 +25,14 @@
 #include "sm/video/freeze_detector.h"
 
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
+#include "api/audio_codecs/audio_encoder.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/call/transport.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials.h"
+#include "api/make_ref_counted.h"
 #include "api/rtp_header_extension_id.h"
 #include "api/rtp_parameters.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
@@ -99,6 +104,112 @@ using testbench::Report;
 using testbench::Sample;
 using testbench::Scenario;
 using testbench::VideoTraceRow;
+
+// The Opus encoder libwebrtc builds, with its inputs recorded per packet (issue #547): the same encode rows
+// testbench/call.cc writes for this library's (testbench/call.h AudioSendRow). Every call goes to the encoder
+// CreateBuiltinAudioEncoderFactory makes; AudioSendStream wraps this one in AudioEncoderCopyRed as it would wrap
+// that one. The rows are written on the encoder queue, so they are kept apart under a mutex and appended to the
+// report after the call.
+struct OpusEncodeRows {
+  std::mutex mu;
+  std::vector<testbench::AudioSendRow> rows;
+};
+
+class TracedAudioEncoder : public w::AudioEncoder {
+ public:
+  TracedAudioEncoder(std::unique_ptr<w::AudioEncoder> inner, OpusEncodeRows* out) : inner_(std::move(inner)), out_(out) {}
+
+  int SampleRateHz() const override { return inner_->SampleRateHz(); }
+  size_t NumChannels() const override { return inner_->NumChannels(); }
+  int RtpTimestampRateHz() const override { return inner_->RtpTimestampRateHz(); }
+  size_t Num10MsFramesInNextPacket() const override { return inner_->Num10MsFramesInNextPacket(); }
+  size_t Max10MsFramesInAPacket() const override { return inner_->Max10MsFramesInAPacket(); }
+  int GetTargetBitrate() const override { return inner_->GetTargetBitrate(); }
+  void Reset() override {
+    hash_ = kHashStart;
+    inner_->Reset();
+  }
+  bool SetFec(bool enable) override { return inner_->SetFec(enable); }
+  bool SetDtx(bool enable) override { return inner_->SetDtx(enable); }
+  bool GetDtx() const override { return inner_->GetDtx(); }
+  bool SetApplication(Application application) override { return inner_->SetApplication(application); }
+  void SetMaxPlaybackRate(int frequency_hz) override { inner_->SetMaxPlaybackRate(frequency_hz); }
+  bool EnableAudioNetworkAdaptor(absl::string_view config) override { return inner_->EnableAudioNetworkAdaptor(config); }
+  void DisableAudioNetworkAdaptor() override { inner_->DisableAudioNetworkAdaptor(); }
+  void OnReceivedUplinkPacketLossFraction(float fraction) override {
+    loss_given_ = static_cast<int32_t>(std::lround(fraction * 256));
+    inner_->OnReceivedUplinkPacketLossFraction(fraction);
+  }
+  void OnReceivedTargetAudioBitrate(int target_bps) override { inner_->OnReceivedTargetAudioBitrate(target_bps); }
+  void OnReceivedUplinkAllocation(w::BitrateAllocationUpdate update) override {
+    allocation_bps_ = static_cast<int32_t>(update.target_bitrate.bps());
+    inner_->OnReceivedUplinkAllocation(update);
+  }
+  void OnReceivedRtt(int rtt_ms) override { inner_->OnReceivedRtt(rtt_ms); }
+  void OnReceivedOverhead(size_t overhead_bytes_per_packet) override {
+    overhead_bytes_ = static_cast<int32_t>(overhead_bytes_per_packet);
+    inner_->OnReceivedOverhead(overhead_bytes_per_packet);
+  }
+  void SetReceiverFrameLengthRange(int min_frame_length_ms, int max_frame_length_ms) override {
+    inner_->SetReceiverFrameLengthRange(min_frame_length_ms, max_frame_length_ms);
+  }
+  w::ANAStats GetANAStats() const override { return inner_->GetANAStats(); }
+  std::optional<std::pair<w::TimeDelta, w::TimeDelta>> GetFrameLengthRange() const override {
+    return inner_->GetFrameLengthRange();
+  }
+  std::optional<std::pair<w::DataRate, w::DataRate>> GetBitrateRange() const override {
+    return inner_->GetBitrateRange();
+  }
+
+ protected:
+  EncodedInfo EncodeImpl(uint32_t rtp_timestamp, std::span<const int16_t> audio, w::Buffer* encoded) override {
+    hash_ = testbench::PcmHash(audio, hash_);
+    // The bitrate the packet is coded with: read before Encode, which codes it once the packet's last block is in.
+    const int bitrate_bps = inner_->GetTargetBitrate();
+    EncodedInfo info = inner_->Encode(rtp_timestamp, audio, encoded);
+    if (info.encoded_bytes > 0 || info.send_even_if_empty) {
+      testbench::AudioSendRow r;
+      r.kind = testbench::AudioSendRow::Kind::kEncode;
+      r.seq = packets_++;
+      r.payload_hash = hash_;
+      r.fraction_lost = loss_given_;
+      r.bitrate_bps = bitrate_bps;
+      r.allocation_bps = allocation_bps_;
+      r.overhead_bytes = overhead_bytes_;
+      std::lock_guard<std::mutex> lock(out_->mu);
+      out_->rows.push_back(r);
+      hash_ = kHashStart;
+    }
+    return info;
+  }
+
+ private:
+  static constexpr uint32_t kHashStart = 2166136261u;
+  std::unique_ptr<w::AudioEncoder> inner_;
+  OpusEncodeRows* out_;
+  uint32_t hash_ = kHashStart;
+  int32_t packets_ = 0;
+  int32_t loss_given_ = -1, allocation_bps_ = -1, overhead_bytes_ = -1;
+};
+
+class TracedAudioEncoderFactory : public w::AudioEncoderFactory {
+ public:
+  explicit TracedAudioEncoderFactory(OpusEncodeRows* out) : inner_(w::CreateBuiltinAudioEncoderFactory()), out_(out) {}
+  std::vector<w::AudioCodecSpec> GetSupportedEncoders() override { return inner_->GetSupportedEncoders(); }
+  std::optional<w::AudioCodecInfo> QueryAudioEncoder(const w::SdpAudioFormat& format) override {
+    return inner_->QueryAudioEncoder(format);
+  }
+  std::unique_ptr<w::AudioEncoder> Create(const w::Environment& env, const w::SdpAudioFormat& format,
+                                          Options options) override {
+    std::unique_ptr<w::AudioEncoder> e = inner_->Create(env, format, options);
+    if (!e) return nullptr;
+    return std::make_unique<TracedAudioEncoder>(std::move(e), out_);
+  }
+
+ private:
+  w::scoped_refptr<w::AudioEncoderFactory> inner_;
+  OpusEncodeRows* out_;
+};
 
 // Records the sender's GoogCC events (issue #149) in this library's BweTraceRow layout:
 // RtcEventBweUpdateDelayBased (delay_based_bwe.cc) and RtcEventBweUpdateLossBased
@@ -916,6 +1027,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
   });
 
+  OpusEncodeRows opus_encode_rows;  // Issue #547; outlives the send stream, which owns the encoder.
   w::AudioSendStream* audio_send = nullptr;
   w::VideoSendStream* video_send = nullptr;
   w::AudioReceiveStreamInterface* audio_recv = nullptr;
@@ -932,7 +1044,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           kOpusPt, {"opus", 48000, 2, {{"minptime", "10"}, {"useinbandfec", "1"}}});
       c.send_codec_spec->target_bitrate_bps = static_cast<int>(s.audio_bitrate.bps());
       if (s.red) c.send_codec_spec->red_payload_type = kAudioRedPt;
-      c.encoder_factory = w::CreateBuiltinAudioEncoderFactory();
+      c.encoder_factory = opt.link_trace ? w::scoped_refptr<w::AudioEncoderFactory>(
+                                               w::make_ref_counted<TracedAudioEncoderFactory>(&opus_encode_rows))
+                                         : w::CreateBuiltinAudioEncoderFactory();
       c.min_bitrate_bps = c.max_bitrate_bps = static_cast<int>(s.audio_bitrate.bps());
       c.include_in_congestion_control_allocation = true;
       audio_send = send_call->CreateAudioSendStream(c);
@@ -1356,6 +1470,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   });
   send_audio_state = nullptr;
   recv_audio_state = nullptr;
+  rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.rows.begin(), opus_encode_rows.rows.end());
   sim.RunReady();
 
   // --- Summary (same definitions as testbench/call.cc) ------------------------

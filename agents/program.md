@@ -202,6 +202,35 @@ Rules:
   matching libwebrtc unit test), and is labelled `needs-human` for the
   Owner's sign-off. Section 6.2 item 4 allows this case and no other.
 
+### 0.3 Audits (Owner, 2026-10-28)
+
+Two audits run daily and on demand. The Dispatcher files each as an
+issue labelled `audit` every morning at 6:00 AM PT (Owner, 2026-10-28), or at once from the `dispatcher`
+workflow's `audit` input (Actions → dispatcher → Run workflow, or
+`gh workflow run dispatcher.yml -f audit=system|product`). One of each kind
+is open at a time.
+
+- **System audit, daily:** the agent system and the flow, run by the
+  Builder (`agents/builder.md`, "Audits").
+- **Product audit, daily:** whether the measurement and the library still
+  match libwebrtc. The Coordinator places it first on #64, ahead of the
+  steps, `parallel-ok`, and a Fixer runs it. It checks:
+  1. **Harness fidelity:** re-verify each row of
+     `docs/design/harness-fidelity.md` on the current `main`. Is shared
+     code still shared, and do the "identical by construction" claims
+     still hold (the drift check, the per-frame checks)? Update the doc.
+     Each new difference is a `sev:2` harness item (0.2).
+  2. **Configuration and features:** our defaults and switches against
+     libwebrtc M157's (the step 3 inventory). Flag a switch that is off
+     where libwebrtc's is on, and a default that drifted.
+  3. **Parity:** the gap count and its trend since the last audit, gaps
+     without an open owner, and owners that closed without a note.
+  4. **Guard rails:** any `expect` line beyond libwebrtc's worst seed
+     without a recorded decision.
+
+  Post the findings on the audit issue, file an item for each, and close
+  the issue.
+
 ## 1. Goal
 
 Make real-time audio and video built on this library hold up for the people
@@ -474,6 +503,9 @@ a comment addressed to it, or no review yet:
 | `owner-approved` | The Owner approved a measurement fix whose parity got worse; the Dispatcher may auto-merge it | Coordinator, recording the Owner's decision |
 | `record` | An issue that is a record, not a work item (the roadmap #64, the log #111, the Tester run log, the watch list); work handling skips it | Coordinator, Builder |
 | `parallel-ok` | May run while items above it are busy (section 0.2) | Coordinator |
+| `ci-passed` | `ci-ok` passed on the PR's current head; dropped on a new commit (section 6.1) | CI |
+| `builder-approved` | The Builder approved a protected-path PR on its current content (section 8) | Builder |
+| `audit` | A product or system audit issue (section 0.3) | Dispatcher |
 
 Milestones `Stage 1 · Phase N` group the roadmap issue's work list (section
 0.2). The list, not the milestone, sets the order.
@@ -720,7 +752,10 @@ area it covered in each issue's notes:
   the Reviewer's approval, a green `ci-ok` and the Builder's
   `builder-approved` label on its current content (Owner, 2026-10-28: the
   Builder judges and approves first, and escalates to the Owner what it
-  can't). Agents label such a PR `needs-builder`. The Builder passes to the
+  can't). The Builder never approves its own PR: the cloud Builder's PRs
+  are judged by its interactive window (the Owner's local session), then
+  by the Owner; PRs from the window are judged by the cloud Builder, then
+  by the Owner (`agents/builder.md`). Agents label such a PR `needs-builder`. The Builder passes to the
   Owner a change to a standing rule's substance without a recorded Owner
   decision, spending, security, or anything irreversible.
 - **No direct pushes to `main`.** Branch protection requires a PR, the
