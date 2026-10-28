@@ -147,9 +147,11 @@ Rules:
 - **`needs-human` means a decision is needed.** It is not used to hold
   work back for ordering; the list does that.
 - **Escalations go to the Builder before the Owner (Owner, 2026-10-27).**
-  Fixer → Coordinator → Builder → Owner. The Coordinator decides what its
-  mandate covers and sends the rest up as `ESCALATION:` with
-  `needs-builder`. The Builder decides what the Owner's rules and
+  Fixer → Coordinator → Builder → Owner. The Coordinator judges first
+  (Owner, 2026-10-28): guard-rail lines, parity trade-offs, default flips
+  to libwebrtc's default and harness trade-offs are its call, with its
+  reasoning recorded. It sends up only what it can't decide with
+  confidence, as `ESCALATION:` with `needs-builder`. The Builder decides what the Owner's rules and
   decisions clearly cover (`DECIDED (Builder for the Owner):`) and passes
   only the rest to the Owner (`NEEDS YOU:`, `needs-owner`;
   `agents/builder.md`). The Owner can overturn any Builder decision.
@@ -176,8 +178,9 @@ Rules:
   passes it to the Owner.
   One exception (Owner, 2026-10-27): when a harness change makes the two
   sides *more* alike, a guard-rail line may move as far as libwebrtc's
-  worst seed on that scenario, never beyond it, without coming to the
-  Owner. The PR shows libwebrtc's per-seed values. The `compare-webrtc`
+  worst seed on that scenario, without coming to the Owner. Beyond that,
+  the Coordinator judges (Owner, 2026-10-28), not the Owner. The PR shows
+  libwebrtc's per-seed values. The `compare-webrtc`
   job's drift check (`tools/check_harness_drift.py`) fails if the sides'
   audio stops matching packet for packet where it matches today.
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc

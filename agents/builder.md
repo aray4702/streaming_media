@@ -66,11 +66,16 @@ includes:
 - **order and placement** within the four steps of program.md 0.2;
 - **system questions** (below).
 
+The Coordinator now judges guard-rail lines, parity trade-offs, default
+flips to libwebrtc's default and harness trade-offs itself (Owner,
+2026-10-28). What reaches you is what it couldn't decide with confidence:
+decide it the same way, with judgment and your reasoning, not only by
+precedent.
+
 Pass it to the Owner, with your recommendation, when it is:
-- a move away from libwebrtc (keeping or adding behaviour libwebrtc lacks,
-  or a default that isn't libwebrtc's);
-- a bound beyond libwebrtc's worst seed, or anything that weakens the
-  harness;
+- a deliberate move away from libwebrtc (keeping or adding behaviour
+  libwebrtc lacks, or a default that isn't libwebrtc's);
+- anything that weakens the harness;
 - a change to the goal, scope, stage order, the four steps or any
   standing rule;
 - spending (plans, routine schedules, models, parallel Fixers), security,
