@@ -12,7 +12,7 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  unless another approved PR's run is in flight: it merges first
   RUN fixer      start a Fixer run when an eligible #64 item has waited
   RUN fixer (conflict)  start a Fixer run when an approved agent PR has
-                 merge conflicts with main (usually testbench/baseline.json),
+                 merge conflicts with main (usually a testbench/baseline/ file),
                  which the Dispatcher can't update and nothing else resolves
   RUN fixer_b    start Fixer B, the on-demand second Fixer, when a Fixer is
                  already working and another eligible #64 item is free
@@ -174,9 +174,12 @@ class Dispatcher:
         run = runs[0]
         return (run.get("conclusion") or run.get("status")), run.get("completed_at")
 
-    def bot_review(self, number):
+    def bot_review(self, number, verdict=False):
+        """The Reviewer's latest review. With verdict=True, the latest one that decides
+        (APPROVED, CHANGES_REQUESTED, DISMISSED): a later COMMENTED review doesn't change
+        an approval on GitHub, so it mustn't here either (#485 sat approved for hours)."""
         revs = [x for x in gh(f"repos/{self.r}/pulls/{number}/reviews?per_page=100") or []
-                if is_bot(x["user"])]
+                if is_bot(x["user"]) and not (verdict and x["state"] == "COMMENTED")]
         return revs[-1] if revs else None
 
     def needs_human_cleared_after(self, number, when):
@@ -278,7 +281,7 @@ class Dispatcher:
                 self.note(f"PR #{n}", "draft" if pr["draft"] else ", ".join(sorted(held)))
                 continue
             ci, _ = self.ci_ok(sha)
-            rev = self.bot_review(n)
+            rev = self.bot_review(n, verdict=True)
             approved = rev and rev["state"] == "APPROVED" and rev["commit_id"] == sha
             if ci != "success" or not approved:
                 self.note(f"PR #{n}", f"ci-ok {ci}, " + (f"review {rev['state']} on {rev['commit_id'][:7]}" if rev else "no review"))
@@ -319,7 +322,7 @@ class Dispatcher:
             if pr["number"] == number or pr["draft"] or pr["auto_merge"] is None \
                     or labels(pr) & {"needs-human", "blocked"}:
                 continue
-            rev = self.bot_review(pr["number"])
+            rev = self.bot_review(pr["number"], verdict=True)
             if not rev or rev["state"] != "APPROVED":
                 continue
             ci, _ = self.ci_ok(pr["head"]["sha"])
@@ -401,7 +404,7 @@ class Dispatcher:
         for pr in self.pulls:
             if pr["draft"] or "agent-pr" not in labels(pr) or labels(pr) & {"needs-human", "needs-owner", "blocked"}:
                 continue
-            rev = self.bot_review(pr["number"])
+            rev = self.bot_review(pr["number"], verdict=True)
             if not rev or rev["state"] != "APPROVED":
                 continue
             if gh(f"repos/{self.r}/pulls/{pr['number']}")["mergeable_state"] == "dirty":
@@ -686,7 +689,7 @@ class Dispatcher:
         for pr in self.pulls:
             if pr["draft"] or labels(pr) & {"needs-human", "needs-owner", "blocked", NEEDS_BUILDER}:
                 continue
-            rev = self.bot_review(pr["number"])
+            rev = self.bot_review(pr["number"], verdict=True)
             if not rev or rev["state"] != "APPROVED" or rev["commit_id"] != pr["head"]["sha"]:
                 continue
             if minutes_ago(rev["submitted_at"]) > FLOW_APPROVED_MIN:
