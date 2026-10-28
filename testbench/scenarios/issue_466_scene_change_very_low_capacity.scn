@@ -1,0 +1,11 @@
+name issue_466_scene_change_very_low_capacity
+describe 100 kbps link (as very_low_capacity), a scene cut every 5 s: 5 delta frames at 3x
+duration 40s
+scene_change 5s 5 3
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Issue #466 (see issue_466_overshoot_1mbps.scn). At the encoder's minimum
+# (52 kbps) the cuts change little on seeds 1-3 (446-489 frames dropped, 422-466
+# without); the lines lock in the model's operating point, and parity is
+# judged on compare-webrtc.
+expect video.encoder_target_avg_kbps > 45
+expect video.avg_kbps < 40
