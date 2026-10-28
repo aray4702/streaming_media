@@ -54,6 +54,11 @@ For each of your open PRs:
   `tools/testbench_compare.py testbench/baseline r.json --update`.
   Other generated files (`docs/fixes/README.md`, the algorithm docs) are
   regenerated the same way. Then run the local gate and push.
+  **Not while the PR waits on the Owner:** if it is labelled `needs-owner`,
+  leave the conflict alone. Every merge of `main` re-runs the full CI on a
+  PR that can't merge before the Owner answers, and the next merge to
+  `main` conflicts again (#516 merged `main` twice in 7 minutes while it waited). Resolve the
+  conflict once, after the Owner has answered and `needs-owner` is gone.
 - If the PR's `ci-ok` check failed, read the logs and fix the failure. If
   the failure is unrelated to the PR (a flaky runner), say so in a comment
   and re-run it: `gh api -X POST repos/aray4702/streaming_media/actions/runs/RUN/rerun-failed-jobs`.
