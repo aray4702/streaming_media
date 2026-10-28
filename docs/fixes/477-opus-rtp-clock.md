@@ -72,6 +72,14 @@ The reproduction scenario across seeds (before -> after):
 | 4 | 16000 -> 48000 | 0 -> 0 | 0.55 |
 | 5 | 16000 -> 48000 | 0 -> 0 | 0.18 |
 
+The per-frame check on this PR's `compare-webrtc` run (`tools/audio_send.py`, seed 1, the 9 `--trace` scenarios,
+`low_bandwidth` and `audio_only_lossy` among them): every frame has the same RTP timestamp on both stacks, and every
+Opus payload is byte-identical until the encoders get different loss reports (`low_bandwidth` 2000 of 2000,
+`audio_only_lossy` 303 of 303, then the report blocks reach the senders at different times as described above).
+Send times differ on at most 7 frames per call, by 2 ms or less, from pacer queueing behind probes and padding.
+Parity against `main`: 73 -> 75 gaps, 0 closed, 2 opened (`issue_12_lossbwe_shallow` `audio.mouth_to_ear_p95_ms`
+138 vs 149 and `audio.jb_delay_p95_ms` 83 vs 94, ours ahead).
+
 The guard-rail line `issue_62_neteq_v2_high_jitter` `audio.jb_delay_p95_ms <= 170` moves to `<= 180`
 (program.md 0.2): ours 180 on seed 1 (seeds 1-10 mean 134, was 133), libwebrtc seeds 1-10 100-180 (mean 129) on
 `main`'s compare-webrtc, capped at libwebrtc's worst seed.
