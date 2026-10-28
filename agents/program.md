@@ -202,6 +202,35 @@ Rules:
   matching libwebrtc unit test), and is labelled `needs-human` for the
   Owner's sign-off. Section 6.2 item 4 allows this case and no other.
 
+### 0.3 Audits (Owner, 2026-10-28)
+
+Two audits run periodically and on demand. The Dispatcher files each as an
+issue labelled `audit` when it is due, or at once from the `dispatcher`
+workflow's `audit` input (Actions → dispatcher → Run workflow, or
+`gh workflow run dispatcher.yml -f audit=system|product`). One of each kind
+is open at a time.
+
+- **System audit, daily:** the agent system and the flow, run by the
+  Builder (`agents/builder.md`, "Audits").
+- **Product audit, weekly:** whether the measurement and the library still
+  match libwebrtc. The Coordinator places it first on #64, ahead of the
+  steps, `parallel-ok`, and a Fixer runs it. It checks:
+  1. **Harness fidelity:** re-verify each row of
+     `docs/design/harness-fidelity.md` on the current `main`. Is shared
+     code still shared, and do the "identical by construction" claims
+     still hold (the drift check, the per-frame checks)? Update the doc.
+     Each new difference is a `sev:2` harness item (0.2).
+  2. **Configuration and features:** our defaults and switches against
+     libwebrtc M157's (the step 3 inventory). Flag a switch that is off
+     where libwebrtc's is on, and a default that drifted.
+  3. **Parity:** the gap count and its trend since the last audit, gaps
+     without an open owner, and owners that closed without a note.
+  4. **Guard rails:** any `expect` line beyond libwebrtc's worst seed
+     without a recorded decision.
+
+  Post the findings on the audit issue, file an item for each, and close
+  the issue.
+
 ## 1. Goal
 
 Make real-time audio and video built on this library hold up for the people
