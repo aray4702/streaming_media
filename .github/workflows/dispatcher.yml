@@ -25,6 +25,12 @@ on:
   issues:
     types: [closed, labeled, unlabeled]
   workflow_dispatch:
+    inputs:
+      audit:
+        description: "File an audit now (on demand): system or product"
+        type: choice
+        options: [none, system, product]
+        default: none
 permissions:
   contents: read
   actions: read  # the FLOW rule reads CI runs and jobs (SM_ACTIONS_TOKEN)
@@ -59,7 +65,9 @@ jobs:
           SM_DISCORD_WEBHOOK: ${{ secrets.SM_DISCORD_WEBHOOK }}
           SM_ACTIONS_TOKEN: ${{ github.token }}  # Actions API reads for the FLOW rule
           MODE: ${{ vars.SM_DISPATCH_MODE }}
+          AUDIT: ${{ inputs.audit }}
         run: |
           set -o pipefail  # a crash in dispatch.py fails the run instead of hiding behind tee
           flag=""; [ "$MODE" = live ] && flag="--live"
+          case "$AUDIT" in system|product) flag="$flag --audit $AUDIT";; esac
           { echo '```'; python3 agents/tools/dispatch.py $flag --verbose; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"

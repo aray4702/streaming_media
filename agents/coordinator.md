@@ -39,6 +39,9 @@ these carry authority:
   and the mark on its #64 line, for items that depend on nothing unfinished
   above them. A free item without `parallel-ok` stops every Fixer that
   reaches it, so keep dependent items below the parallel block.
+- **Audits (Owner, 2026-10-28):** place each `Audit (product)` issue first
+  on #64, ahead of the steps, `parallel-ok`, and remove
+  `needs-coordinator`. Place the items it files like any finding.
 - **Placement of findings:** every open issue not on #64 gets a place, a
   merge into an existing item, or `stage:later` / `wontfix` with a reason.
   Never use `wontfix` on an Owner-filed wish.

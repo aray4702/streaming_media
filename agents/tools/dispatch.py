@@ -32,6 +32,10 @@ every GitHub event and every 15 minutes instead of on a coordinator tick:
                  since its last run, or when a green PR waits for its probe
                  (needs-probe)
   STALE          report an in-progress item with no Fixer activity
+  AUDIT          file the periodic audits (Owner, 2026-10-28): a system audit
+                 every day for the Builder (needs-builder), a product audit every
+                 week for a Fixer (needs-coordinator places it); --audit KIND
+                 files one at once (the dispatcher workflow's `audit` input)
   FLOW           watch the flow for bottlenecks (CI jobs queued too long, an
                  approved PR not merging, CI re-run churn, a free item nobody
                  claims, an escalation the Builder hasn't answered, a routine
@@ -89,6 +93,8 @@ PRODUCT_PATHS = ("src/", "include/", "testbench/", "tests/", "compare/")  # merg
 MARKER = "dispatcher-last-{}"  # <!-- dispatcher-last-fixer: ISO --> in #111's body
 FAIL_MARKER = "dispatcher-fail-{}"  # <!-- dispatcher-fail-tester: ISO error --> while starts fail
 # Flow watch (Owner, 2026-10-27: "watch for flow performance bottlenecks and fix them promptly").
+AUDIT_EVERY_H = {"system": 24, "product": 168}  # periodic audits (Owner, 2026-10-28)
+AUDIT_LABEL = "audit"
 FLOW_ISSUE_TITLE = "Flow watch"
 FLOW_MARKER = "dispatcher-flow"  # <!-- dispatcher-flow: ISO key@ISO ... --> when each key was last posted
 FLOW_REPEAT_MIN = 360            # repeat an alert key after this long
@@ -159,8 +165,8 @@ def labels(item):
 
 
 class Dispatcher:
-    def __init__(self, repo, live, verbose=False):
-        self.r, self.live, self.verbose = repo, live, verbose
+    def __init__(self, repo, live, verbose=False, audit=None):
+        self.r, self.live, self.verbose, self.force_audit = repo, live, verbose, audit
         self.actions = []
         self.failures = []
         self.pulls = gh(f"repos/{repo}/pulls?state=open&per_page=100") or []
@@ -828,6 +834,33 @@ class Dispatcher:
         gh(f"repos/{self.r}/issues/{LOG_ISSUE}", "PATCH", {"body": new})
         self.log_body = new
 
+    def audits(self):
+        """File each audit when it is due (or asked for with --audit) and none of its kind is open."""
+        open_issues = gh(f"repos/{self.r}/issues?state=open&labels={AUDIT_LABEL}&per_page=100") or []
+        for kind, every in AUDIT_EVERY_H.items():
+            last = self.last_dispatch(f"audit-{kind}")
+            due = self.force_audit == kind or not last or minutes_ago(last) >= every * 60
+            if not due:
+                self.note(f"audit-{kind}", f"next in {every - minutes_ago(last) / 60:.0f} h")
+                continue
+            if any(i["title"].startswith(f"Audit ({kind})") for i in open_issues):
+                self.note(f"audit-{kind}", "one is open")
+                continue
+            why = "asked for" if self.force_audit == kind else f"every {every} h"
+            self.say("AUDIT", kind, why)
+            if not self.live:
+                continue
+            title = f"Audit ({kind}): {NOW:%Y-%m-%d}"
+            body = ("<!-- sm-agent: dispatcher -->\n"
+                    f"**{kind.capitalize()} audit** ({why}; Owner, 2026-10-28: audits run periodically and on demand). "
+                    + ("The Builder runs it: `agents/builder.md`, \"Audits\"." if kind == "system" else
+                       "The Coordinator places it first on #64; a Fixer runs it: `agents/program.md` 0.3."))
+            issue = gh(f"repos/{self.r}/issues", "POST", {"title": title, "body": body})
+            for label in [AUDIT_LABEL, NEEDS_BUILDER if kind == "system" else NEEDS_COORDINATOR] + \
+                    ([] if kind == "system" else ["stage:baseline"]):
+                gh(f"repos/{self.r}/issues/{issue['number']}/labels", "POST", {"labels[]": label})
+            self.record_dispatch(f"audit-{kind}")
+
     def run(self):
         if self.stop_switch():
             print("STOP AGENTS issue is open; doing nothing.")
@@ -842,6 +875,7 @@ class Dispatcher:
         self.builder()
         self.notify()
         self.stale()
+        self.audits()
         self.flow()
         if not self.actions:
             print("nothing to do")
@@ -887,10 +921,11 @@ def main():
     ap.add_argument("--live", action="store_true", help="act (default: dry run)")
     ap.add_argument("--verbose", action="store_true", help="say why each PR and item is skipped")
     ap.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "aray4702/streaming_media"))
+    ap.add_argument("--audit", choices=["system", "product"], help="file that audit now (on demand)")
     args = ap.parse_args()
     print(f"dispatcher {'LIVE' if args.live else 'dry run'} at {NOW:%Y-%m-%d %H:%M}Z on {args.repo}")
     try:
-        Dispatcher(args.repo, args.live, args.verbose).run()
+        Dispatcher(args.repo, args.live, args.verbose, args.audit).run()
     except Exception as e:
         # The Builder's sandbox can't fetch Actions logs, but it can read a run's
         # check-run annotations over REST, so a crash names its cause there.
