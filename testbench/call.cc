@@ -978,6 +978,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       sender.SetRtt(TimeDelta::PlusInfinity());
       receiver.SetRtt(TimeDelta::PlusInfinity());
     }
+    // A host that measures the RTT itself hands it to both sessions at every step from then on,
+    // over what the call measures (issue #451).
+    if (s.host_rtt && t >= s.host_rtt->first.ms()) {
+      sender.SetRtt(s.host_rtt->second);
+      receiver.SetRtt(s.host_rtt->second);
+    }
     receiver.Process(now);
 
     // Render video.
