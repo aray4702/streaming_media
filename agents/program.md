@@ -174,6 +174,12 @@ Rules:
   may replace a shared model on both sides together. If equal is only
   possible by weakening, the item goes up (`needs-human`) and the Builder
   passes it to the Owner.
+  One exception (Owner, 2026-10-27): when a harness change makes the two
+  sides *more* alike, a guard-rail line may move as far as libwebrtc's
+  worst seed on that scenario, never beyond it, without coming to the
+  Owner. The PR shows libwebrtc's per-seed values. The `compare-webrtc`
+  job's drift check (`tools/check_harness_drift.py`) fails if the sides'
+  audio stops matching packet for packet where it matches today.
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
   component it names as a whole, citing the files in
   `compare/webrtc/reference/`. If a needed file is missing, say so on #57
@@ -542,7 +548,8 @@ cmake --preset native-asan && cmake --build --preset native-asan -j && ctest --p
 CI runs the same, plus the other platforms. To save its 20 concurrent job
 slots (Owner, 2026-10-27), the `scope` job in `ci.yml` decides what a PR
 run needs:
-- A PR that changes no code (only `agents/`, `docs/`, Markdown, or
+- A PR that changes no code (only `agents/`, `docs/`,
+  `compare/webrtc/reference/`, Markdown, or
   `.github/` other than `ci.yml`) runs no build or test job.
 - A **draft** runs only the quick jobs (host builds, test bench), plus
   `compare-webrtc` when its title starts with `yardstick:`.

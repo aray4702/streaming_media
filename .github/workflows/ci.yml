@@ -8,7 +8,8 @@
 # of the PRs ahead of it), so main is tested as it will be after the merge.
 # `scope` decides which jobs a PR run needs, to save the 20 concurrent job
 # slots (Owner, 2026-10-27): a PR that changes no code (only agents/, docs/,
-# Markdown, or .github/ other than this file) runs no build or test job; a
+# compare/webrtc/reference/ (never built), Markdown, or .github/ other than
+# this file) runs no build or test job; a
 # draft runs only the quick jobs (host, testbench), plus compare-webrtc when it
 # is a `yardstick:` draft; a ready PR, main and the merge queue run everything.
 # Marking a draft ready (ready_for_review) starts the full run.
@@ -46,7 +47,7 @@ jobs:
           build=true full=true compare=true
           if [ "$EVENT" = pull_request ]; then
             files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files?per_page=100" --jq '.[].filename')
-            code=$(printf '%s\n' "$files" | grep -v -E '^agents/|^docs/|\.md$|^\.github/' ; printf '%s\n' "$files" | grep -x '.github/workflows/ci.yml' || true)
+            code=$(printf '%s\n' "$files" | grep -v -E '^agents/|^docs/|^compare/webrtc/reference/|\.md$|^\.github/' ; printf '%s\n' "$files" | grep -x '.github/workflows/ci.yml' || true)
             if [ -z "$(printf '%s' "$code" | tr -d '[:space:]')" ]; then
               build=false full=false compare=false; why="no code changed"
             elif [ "$DRAFT" = true ]; then
@@ -268,7 +269,7 @@ jobs:
     env: {COMPARE_SHARDS: "6"}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 tools/test_parity_report.py && python3 tools/test_merge_compare.py
+      - run: python3 tools/test_parity_report.py && python3 tools/test_merge_compare.py && python3 tools/test_check_harness_drift.py
       - uses: actions/download-artifact@v4
         with:
           pattern: compare-shard-*
@@ -347,6 +348,15 @@ jobs:
             sleep $((attempt * 5))
           done
           echo "could not publish to parity-data-pr after 5 attempts"; exit 1
+      - name: Harness drift check
+        # Both stacks must still send the same audio, packet for packet, on the
+        # traced lossless scenarios (agents/program.md 0.2; Owner, 2026-10-27).
+        # Last, so the results above are published even when it fails.
+        run: |
+          rc=0
+          python3 tools/check_harness_drift.py compare-webrtc.json --markdown drift.md || rc=$?
+          cat drift.md >> "$GITHUB_STEP_SUMMARY"
+          exit $rc
   fix-record:
     # PRs that fix a found problem must add a regression scenario that fails
     # on the base commit, and a fix record (program.md section 6.5).
