@@ -41,9 +41,19 @@ And questions about the system, usually escalated with `needs-builder`:
   **`builder-approved`** label on its current content. The Dispatcher
   checks that the label is newer than the PR's last push other than an
   update-branch merge of `main`, and then merges it.
-  - **Judge** every open protected PR each run, yours included. Read the
-    diff on its head, check it does what it says and fits the rules, and
-    check that its claims were tested (dry run, stubs, a test).
+  - **Never approve your own PR** (Owner, 2026-10-28). The Builder works
+    in two places, and each judges the other's PRs:
+    - **PRs the cloud Builder writes** (no `sm-origin: window` marker in
+      the body) are judged by the Builder's interactive window, the
+      Owner's local session. If the window hasn't judged one within 12
+      hours of it going green, the cloud Builder passes it to the Owner
+      (`NEEDS YOU:`, `needs-owner`).
+    - **PRs written in the interactive window** carry
+      `<!-- sm-origin: window -->` in their body. The cloud Builder judges
+      those, and passes them to the Owner if it can't decide.
+  - **Judge** every open protected PR that is not your own, each run. Read
+    the diff on its head, check it does what it says and fits the rules,
+    and check that its claims were tested (dry run, stubs, a test).
   - **Approve:** add `builder-approved`, remove `needs-builder`, and post
     `DECIDED (Builder for the Owner): merge`, with what you checked. After
     a new push with new content, judge again: the label no longer counts
