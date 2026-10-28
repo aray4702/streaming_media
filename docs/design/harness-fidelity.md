@@ -23,7 +23,7 @@ Rows are audited one per Fixer run, in the order 2, 5, 7, 4, 6, 8 (rows 1 and
 | 4 | Packetization and wire | not audited | | |
 | 5 | The link | Link model, seeds, timeline, cross traffic and delivery times: **shared code** (`sim::NetworkLink`, `testbench::LinkTimeline`), each packet arrives at the same simulated time on both since #467 / #453. When the stack is handed a packet and sends its response: **different**: ours on the 1 ms tick, libwebrtc at the packet's arrival time (60 % of libwebrtc's RTX off the grid, none of ours) | [Row 5](#row-5-the-link) | #507 |
 | 6 | Clock and tasks | not audited | | |
-| 7 | Measurement | not audited | | |
+| 7 | Measurement | Link, congestion-control, goodput, concealment, A/V sync and freeze metrics: **shared code** (`call_common.h`, `AddCcMetrics`, `AddLinkKindMetrics`, `video::FreezeDetector`); the end-of-call summary formulas are **identical by construction** but written twice. Repair metrics (`repair.overhead_pct`, `repair.nack_recovered`, `video.residual_loss_pct`): **different** rules per side (`high_jitter` NACK recovered 672 vs 12 at the same RTX rate). Audio stretch, playout start, first audio and undecodable frames: **different** statistics per side. `repair.fec_recovered` and the four `video.delay_*` metrics: **ours only**, so never compared | [Row 7](#row-7-measurement) | #509, #510 |
 | 8 | Scenario mapping | not audited | | |
 
 ## Row 2: encoders
@@ -179,3 +179,84 @@ and our retransmissions meet the bottleneck at other times than
 libwebrtc's. The fix (#507) brings our side up: drive the session at each
 packet's arrival time, and add a reverse-link trace on both sides so the
 reverse half is checked too. Clock and task timing beyond this is row 6.
+
+## Row 7: measurement
+
+Audited on `main` at 3025aeb (2026-10-28), against the metric means of
+`parity-data/compare-webrtc.json` for that `main` (10 seeds).
+
+Every metric in `rep.metrics` falls into one of four kinds:
+
+1. **Shared code.** One function computes it on both sides.
+2. **The same formula, written twice.** Both sides apply it to the same kind
+   of input.
+3. **Each stack's own statistic.** The metric reads the stack under test,
+   which is the point. Both sides read the equivalent statistic by the same
+   rule.
+4. **Different.** The two sides use different rules, different statistics or
+   different starting points, or only one side computes the metric.
+
+### Shared code
+
+| metrics | function | fed by |
+|---|---|---|
+| `cc.target_avg_kbps`, `cc.send_over_target_ms`, `cc.send_over_target_p95_pct`, `cc.target_max_drop_pct`, `cc.goodput_kbps`, `cc.utilization_pct`, `cc.max_settle_ms`, `cc.unsettled` | `AddCcMetrics` (`testbench/call.cc:300`) | the 100 ms samples; the demand is the same formula on both (`video_max` + the audio wire rate) |
+| `net.<kind>_kbps`, `net.<kind>_loss_pct`, `_queue_drops`, `_size_*` | `AddLinkKindMetrics` | the shared forward link's per-kind counters, with packets tagged by the same rules (row 5) |
+| goodput in the samples | `FirstDelivery` (`call_common.h`) | link arrivals: each media sequence number once, RTX by its original sequence number |
+| `audio.concealed_pct`, `audio.interruptions`, `audio.interruption_ms`, `audio.longest_interruption_ms` | `ConcealmentMeter` | each jitter buffer's `totalSamplesReceived`, `concealedSamples` and `concealmentEvents` after every 10 ms pull |
+| `sync.av_offset_p50_ms`, `_p95_ms`, `_max_ms` | `AvSyncMeter` | each stack's audio playout timestamp, and the capture time of each rendered frame |
+| `video.freeze_count`, `video.freeze_total_ms`, `video.longest_freeze_ms`, `video.pause_*` | `video::FreezeDetector`, the same class on both sides | the render times of each side's frames |
+| `cc.queue_p95_ms`, `cc.queue_max_ms`, `cc.queue_over_200ms_pct` | `QueueDelayMs` and `Percentile` | the shared forward link, sampled every 10 ms before the stack's sends of that millisecond (#410) |
+
+### The same formula, written twice
+
+These formulas are the same text on both sides
+(`call.cc:1029-1135`, `webrtc_call.cc:1300-1421`), but no test fails if
+one copy changes:
+- the freeze still in progress at the end of the call, and the pause test;
+- `video.render_fps` and `video.render_ratio_pct`;
+- `audio.mouth_to_ear_p95_ms`;
+- `net.loss_pct` and `cc.rtt_p50_ms`;
+- the residual-loss loop, apart from its input (below).
+
+Moving them into `call_common.h` makes them shared code. That belongs with
+#509 and #510, which touch the same lines.
+
+### Each stack's own statistic, read by the same rule
+
+| metric | ours | libwebrtc |
+|---|---|---|
+| target in the samples | the session's `rates().target` | `Call::GetStats().send_bandwidth_bps` |
+| `cc.rtt_p50_ms` | the sender's `CallStats` RTT, every 100 ms (#370) | `Call::GetStats().rtt_ms`, every 100 ms |
+| `audio.jb_delay_p50_ms`, `_p95_ms` | `jitterBufferDelay / jitterBufferEmittedCount` over each pull | the same, from `AudioReceiveStream::GetStats` |
+| `audio.net_delay_p95_ms` | link arrival minus the packet's capture time (RTP time from 0) | link arrival minus `(ts - first ts) / 48` ms |
+| `audio.late_discards` | the jitter buffer's `packets_discarded_late` (its `DiscardOldPackets` port) | NetEq's `packetsDiscarded` |
+| `video.keyframe_requests` | one per PLI or FIR the sender's RTCP names a media SSRC in | `pli_packets + fir_packets` for the video SSRC |
+| `video.e2e_delay_*`, `video.time_to_first_frame_ms`, `video.frames_rendered` | render time of each frame, minus its capture time | the same, from the renderer callback |
+| `video.avg_kbps`, `video.qp_mean`, `video.encode_height_mean`, `video.keyframes` | the shared encoder model's output (row 2) | the same |
+| `video.encoder_dropped` | captured frames the library chose not to encode | captured minus encoded, which also counts the frames still in the encoder queue when the call ends (at most a frame or two) |
+
+Render times on our side fall on the 1 ms tick, and on libwebrtc's at the
+event time: that is #507 and row 6, not a measurement rule.
+
+### Different: repair metrics (#509)
+
+| metric | ours | libwebrtc | example (10-seed means, ours / libwebrtc) |
+|---|---|---|---|
+| `repair.overhead_pct` | whole RTP packets (header, extensions, payload, the RED redundant block, the RTX sequence number), `call.cc:679-680` | payload only: the RED primary block, video minus the RED byte, RTX minus 2, FEC minus 1, `webrtc_call.cc:790-805` | `high_jitter` 39.9 / 42.3 % at RTX 244 / 241 kbps |
+| `repair.nack_recovered` | the library's `NackTracker` counter: any NACKed gap later filled, by a late original too (`src/loss/nack_tracker.cc:32-35`) | RTX packets on the link that fill a sequence number not yet delivered, `webrtc_call.cc:1098-1101` | `high_jitter` 672.5 / 12.1; `issue_127_all_v2_no_stall` 1285 / 83 |
+| `video.residual_loss_pct` | received = handed to the depacketizer by our `RtpReceiver`, which includes ULPFEC recoveries (`call.cc:102-110`) | received = link arrivals of media and RTX original sequence numbers, never FEC (`webrtc_call.cc:1097-1101`) | `issue_29_ulpfec_over_red` 0.73 / 4.90 % |
+| `repair.fec_recovered` | the ULPFEC receiver's `num_recovered_packets` | not computed, so the parity report skips it | |
+
+### Different: receive statistics and one-sided metrics (#510)
+
+| metric | ours | libwebrtc | example |
+|---|---|---|---|
+| `audio.stretch_pct` | pulls whose operation was Accelerate or PreemptiveExpand (`call.cc:959`), also when no sample was removed or inserted | pulls in which `removed_samples_for_acceleration` or `inserted_samples_for_deceleration` grew (`webrtc_call.cc:1153-1181`) | `audio_only_lossy` 0.29 / 0.43 %; `clean_link` 0.53 / 0.60 % |
+| start of the playout counters (stretch denominator, `ConcealmentMeter`, `jb_delay`) | the first pull after the first audio packet arrives | the first pull with `total_samples_received > 0` | |
+| `audio.time_to_first_ms` | arrival of the first packet the jitter buffer accepted (#256) | arrival of the first audio-SSRC packet | equal on the published scenarios, not by construction |
+| `video.undecodable_frames` | the keyframe requester's `frames_dropped` only (`call.cc:1098`) | `VideoReceiveStream::Stats::frames_dropped`, which also counts the frame buffer's fast-forwards and the frames cleared for a keyframe; our video trace already uses that sum (`call.cc:992`) | `high_jitter` 0.5 / 0; `issue_127_all_v2_no_stall` 0.6 / 0 |
+| `video.delay_encode_ms`, `video.delay_pacer_p95_ms`, `video.delay_network_p95_ms`, `video.delay_jitter_buffer_p95_ms` | `AddVideoDelayMetrics` (`call.cc:384-404`) | not computed, so the parity report skips them | |
+
+The fixes bring the narrower side up and make each rule shared code fed by
+the same events. Never drop a metric to make the sides equal.
