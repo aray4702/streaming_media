@@ -299,6 +299,24 @@ ParseResult ParseScenario(const std::string& text) {
       if (!need(2) || end == tok[1].c_str() || *end != '\0' || !(v >= 0.01 && v <= 100))
         return fail("usage: " + key + " <0.01..100>");
       (key == "video_complexity" ? s.video_complexity : s.encoder_speed) = v;
+    } else if (key == "encoder_overshoot") {
+      char* end = nullptr;
+      const double v = need(2) ? std::strtod(tok[1].c_str(), &end) : 0;
+      if (!need(2) || end == tok[1].c_str() || *end != '\0' || !(v >= 0.1 && v <= 10))
+        return fail("usage: encoder_overshoot <0.1..10>");
+      s.encoder_overshoot = v;
+    } else if (key == "scene_change") {
+      TimeDelta interval;
+      char* end1 = nullptr;
+      char* end2 = nullptr;
+      const long frames = need(4) ? std::strtol(tok[2].c_str(), &end1, 10) : 0;
+      const double f = need(4) ? std::strtod(tok[3].c_str(), &end2) : 0;
+      if (!need(4) || !ParseTime(tok[1], &interval) || interval <= TimeDelta::Zero() || end1 == tok[2].c_str() ||
+          *end1 != '\0' || frames < 1 || frames > 1000 || end2 == tok[3].c_str() || *end2 != '\0' || !(f >= 0.1 && f <= 100))
+        return fail("usage: scene_change <interval> <frames 1..1000> <factor 0.1..100>");
+      s.scene_change_interval = interval;
+      s.scene_change_frames = static_cast<int>(frames);
+      s.scene_change_factor = f;
     } else if (key == "video_max_payload") {
       // Any value reaches the library, which clamps it (issue #257): the bench tests that.
       char* end = nullptr;
@@ -436,6 +454,10 @@ std::string FormatScenario(const Scenario& s) {
     o += "video_size " + std::to_string(s.video_width) + "x" + std::to_string(s.video_height) + "\n";
   if (s.video_complexity != d.video_complexity) o += "video_complexity " + FormatNumber(s.video_complexity) + "\n";
   if (s.encoder_speed != d.encoder_speed) o += "encoder_speed " + FormatNumber(s.encoder_speed) + "\n";
+  if (s.encoder_overshoot != d.encoder_overshoot) o += "encoder_overshoot " + FormatNumber(s.encoder_overshoot) + "\n";
+  if (s.scene_change_interval != d.scene_change_interval)
+    o += "scene_change " + FormatTime(s.scene_change_interval) + " " + std::to_string(s.scene_change_frames) + " " +
+         FormatNumber(s.scene_change_factor) + "\n";
   rate("video_max", s.video_max, d.video_max);
   rate("video_min", s.video_min, d.video_min);
   rate("start_rate", s.start_rate, d.start_rate);

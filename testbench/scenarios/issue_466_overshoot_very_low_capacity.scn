@@ -1,0 +1,9 @@
+name issue_466_overshoot_very_low_capacity
+describe 100 kbps link (as very_low_capacity), an encoder whose delta frames are 1.3x its target
+duration 40s
+encoder_overshoot 1.3
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Issue #466 (see issue_466_overshoot_1mbps.scn). The encoder sits at its
+# minimum (52 kbps on seeds 1-3) either way, so the frame dropper does the
+# work: 422-466 frames dropped with overshoot 1, 561-611 at 1.3 (seeds 1-3).
+expect video.encoder_dropped > 520
