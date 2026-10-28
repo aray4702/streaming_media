@@ -704,3 +704,43 @@ SM_TEST(TestbenchMetrics, NoAudioPlayedIsAllConcealed) {
   ConcealmentMeter m(16000);
   SM_EXPECT_NEAR(m.concealed_pct(), 100.0, 1e-9);
 }
+
+// Issue #510: a pull is stretched when the jitter buffer's sample counters
+// moved, as sm_compare reads libwebrtc's NetEq stats: an Accelerate or
+// PreemptiveExpand that removed or inserted no samples is not. Pulls before
+// the first output sample (totalSamplesReceived 0) are not playout.
+SM_TEST(TestbenchMetrics, StretchCountsSamplesNotOperationsFromTheFirstOutput) {
+  StretchMeter m;
+  for (int i = 0; i < 3; ++i) SM_EXPECT_FALSE(m.OnPull(0, 0, 0));  // waiting for the first decode
+  SM_EXPECT_EQ(m.played_ms(), 0);
+  SM_EXPECT_NEAR(m.stretch_pct(), 0.0, 1e-9);
+  uint64_t total = 0, inserted = 0, removed = 0;
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed));       // normal
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed));       // an Accelerate that removed nothing
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted, removed += 120));  // accelerate
+  SM_EXPECT_TRUE(m.OnPull(total += 480, inserted += 240, removed));  // preemptive expand
+  SM_EXPECT_EQ(m.played_ms(), 40);
+  SM_EXPECT_NEAR(m.stretch_pct(), 50.0, 1e-9);
+}
+
+// The first counted pull's samples count from zero, as libwebrtc's side
+// starts from an empty previous Stats.
+SM_TEST(TestbenchMetrics, StretchOnTheFirstPlayedPull) {
+  StretchMeter m;
+  SM_EXPECT_FALSE(m.OnPull(0, 0, 0));
+  SM_EXPECT_TRUE(m.OnPull(480, 160, 0));
+  SM_EXPECT_NEAR(m.stretch_pct(), 100.0, 1e-9);
+}
+
+// Issue #510: the first packet the jitter buffer took sets the time to first
+// audio; packets it refused before (#256) do not, and later ones change nothing.
+SM_TEST(TestbenchMetrics, FirstAudioIsTheFirstPacketTheJitterBufferTook) {
+  FirstAudioMeter m;
+  SM_EXPECT_NEAR(m.ms(30000), 30000.0, 1e-9);  // none: the call's length
+  m.OnAudioPacket(Timestamp::Millis(30), false);
+  SM_EXPECT_FALSE(m.started());
+  m.OnAudioPacket(Timestamp::Millis(50), true);
+  m.OnAudioPacket(Timestamp::Millis(70), true);
+  SM_EXPECT_TRUE(m.started());
+  SM_EXPECT_NEAR(m.ms(30000), 50.0, 1e-9);
+}
