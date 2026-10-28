@@ -33,7 +33,7 @@ Opened:
 | issue_123_v2_allocation_min | `repair.overhead_pct` | 29.7 | 49.8 | ±9.4 | ahead | 10/10 | #411 (closed, no note: #21, #7, #29) |
 | issue_123_v2_allocation_min | `video.render_fps` | 11.7 | 8.3 | ±1.3 | ahead | 9/10 | #411 (closed, no note: #37, #24) |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 4.2 | 3.4 | ±0.7 | behind | 5/10 | **none** (closed, no note: #21, #61, #12) |
-| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 294 | 181 | ±42.6 | behind | 9/10 | **none** |
+| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 293 | 181 | ±42.6 | behind | 8/10 | **none** |
 | issue_12_lossbwe_congestive | `video.e2e_delay_p95_ms` | 465 | 358 | ±53.9 | behind | 8/10 | **none** (closed, no note: #24, #37) |
 | issue_12_lossbwe_congestive | `video.freeze_total_ms` | 1554 | 1125 | ±364 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_high_jitter_no_loss | `video.keyframe_requests` | 0.4 | 1.2 | ±0.8 | ahead | 6/10 | #411 (closed, no note: #23) |
@@ -106,7 +106,7 @@ Opened:
 | issue_120_rtx_payload_padding | `video.freeze_total_ms` | 4673 | 3597 | ±849 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_congestive | `video.freeze_total_ms` | 1554 | 1125 | ±364 | behind | 7/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_congestive | `video.e2e_delay_p95_ms` | 465 | 358 | ±53.9 | behind | 8/10 | **none** (closed, no note: #24, #37) |
-| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 294 | 181 | ±42.6 | behind | 9/10 | **none** |
+| issue_12_lossbwe_congestive | `sync.av_offset_p95_ms` | 293 | 181 | ±42.6 | behind | 8/10 | **none** |
 | issue_12_lossbwe_congestive | `net.loss_pct` | 4.2 | 3.4 | ±0.7 | behind | 5/10 | **none** (closed, no note: #21, #61, #12) |
 | issue_12_lossbwe_policer | `video.longest_freeze_ms` | 4373 | 2925 | ±1123 | behind | 8/10 | **none** (closed, no note: #5, #37, #24) |
 | issue_12_lossbwe_policer | `video.e2e_delay_p95_ms` | 2816 | 3904 | ±462 | ahead | 9/10 | **none** (closed, no note: #24, #37) |

@@ -249,11 +249,11 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          495  =
-  audio.jb_delay_p95_ms                   301          296  =
+  audio.mouth_to_ear_p95_ms               512          494  =
+  audio.jb_delay_p95_ms                   301          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.4         15.7  =
+  video.longest_freeze_ms                18.5         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -861,8 +861,8 @@ issue_12_lossbwe_congestive - Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 
   audio.concealed_pct                     0.0          0.0  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms           8.6          6.1  =
-  audio.mouth_to_ear_p95_ms               312          284  webrtc
-  audio.jb_delay_p95_ms                   226          200  webrtc
+  audio.mouth_to_ear_p95_ms               313          284  webrtc
+  audio.jb_delay_p95_ms                   227          200  webrtc
   video.freeze_count                      4.6          3.4  webrtc
   video.freeze_total_ms                  1554         1125  webrtc
   video.longest_freeze_ms                 587          493  =
@@ -873,7 +873,7 @@ issue_12_lossbwe_congestive - Congestive loss: capacity 2.5 Mbps -> 0.8 Mbps at 
   video.time_to_first_frame_ms            191          190  =
   video.avg_kbps                         1123         1105  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                   294          181  webrtc
+  sync.av_offset_p95_ms                   293          181  webrtc
   cc.utilization_pct                     85.9         84.6  =
   cc.queue_p95_ms                        46.1         44.4  =
   cc.max_settle_ms                       1910         2220  =
@@ -1449,7 +1449,7 @@ issue_150_gcc_v2_high_jitter - 3 Mbps link, 40 ms jitter with reordering, every 
   video.time_to_first_frame_ms            225          357  sm
   video.avg_kbps                          493          484  =
   video.keyframe_requests                 0.4          0.8  =
-  sync.av_offset_p95_ms                  57.4         65.3  =
+  sync.av_offset_p95_ms                  57.3         65.4  =
   cc.utilization_pct                     22.6         22.2  =
   cc.queue_p95_ms                         3.2          4.3  =
   cc.max_settle_ms                      25848        26818  =
@@ -1747,7 +1747,7 @@ issue_15_aimd_v2_clean_link - 2.5 Mbps link, 25 ms one-way, no impairments, `cc 
   audio.jb_delay_p95_ms                   128          132  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                21.9         14.2  =
+  video.longest_freeze_ms                  22         14.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.7         29.8  =
@@ -2049,8 +2049,8 @@ issue_21_shallow_drop_repair - Shallow bottleneck buffer (20 ms) with a 3x capac
   audio.concealed_pct                       0          0.0  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms             0            5  =
-  audio.mouth_to_ear_p95_ms               499          724  sm
-  audio.jb_delay_p95_ms                   446          671  sm
+  audio.mouth_to_ear_p95_ms               500          724  sm
+  audio.jb_delay_p95_ms                   447          671  sm
   video.freeze_count                      3.7          6.2  sm
   video.freeze_total_ms                  4208         6296  sm
   video.longest_freeze_ms                2555         2673  =
@@ -3663,8 +3663,8 @@ issue_410_queue_sample_phase - Audio-only call on an idle 200 kbps link: the bot
   audio.concealed_pct                     0.6          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          69.1         64.2  =
-  audio.mouth_to_ear_p95_ms               197          180  webrtc
-  audio.jb_delay_p95_ms                   148          130  webrtc
+  audio.mouth_to_ear_p95_ms               197          181  webrtc
+  audio.jb_delay_p95_ms                   148          131  webrtc
   cc.utilization_pct                     85.3         85.3  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                       4400         4400  =
@@ -5931,11 +5931,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          54.3         51.1  =
-  audio.mouth_to_ear_p95_ms               512          495  =
-  audio.jb_delay_p95_ms                   301          296  =
+  audio.mouth_to_ear_p95_ms               512          494  =
+  audio.jb_delay_p95_ms                   301          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                18.4         15.7  =
+  video.longest_freeze_ms                18.5         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
