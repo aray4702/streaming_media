@@ -26,12 +26,13 @@ TimeDelta RtcpEngine::Interval() {
   const TimeDelta nominal = NominalInterval();
   TimeDelta min_interval = nominal;
   if (cfg_.has_video && sender_ && send_rate_ > DataRate::BitsPerSec(72'000)) {
-    min_interval = std::min(TimeDelta::Millis(360'000 / ((send_rate_.bps() + 500) / 1000)), nominal);
+    // TimeDelta::Seconds(360) / send_bitrate.kbps(): microseconds, read below with TimeDelta::ms(), which rounds
+    // to the nearest millisecond (unit_base.h), as do the kbps.
+    min_interval = std::min(TimeDelta::Micros(360'000'000 / ((send_rate_.bps() + 500) / 1000)), nominal);
   }
-  const int64_t m = min_interval.ms();
-  const int64_t lo = m * 1 / 2, hi = m * 3 / 2;
-  const int64_t ms = lo + static_cast<int64_t>(rng_.Uniform(0.0, 1.0) * static_cast<double>(hi - lo + 1));
-  return TimeDelta::Millis(std::max<int64_t>(std::min(ms, hi), 1));
+  // random_.Rand(min_interval_int * 1 / 2, min_interval_int * 3 / 2), clamped to 1 ms (rtcp_sender.cc:690-696).
+  const int32_t m = static_cast<int32_t>((min_interval.us() + 500) / 1000);
+  return TimeDelta::Millis(std::max<int64_t>(rng_.Rand(m * 1 / 2, m * 3 / 2), 1));
 }
 
 // The sender's bitrate for the interval rule: the caller's `send_bitrate`

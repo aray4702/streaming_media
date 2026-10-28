@@ -662,11 +662,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   rep.scenario = s;
 
   // RTCPSender seeds random_ from this clock (rtcp_sender.cc:130), so the clock at the start picks the RTCP schedule.
-  // Each seed starts at its own time, so each draws its own schedule, as the test bench's RtcpEngine draws one per
-  // seed (#399); seed 1 keeps 100000 s. `compare_clock_start` fixes it for every seed (#390).
-  const int64_t t0_s = s.compare_clock_start_s > 0
-                           ? s.compare_clock_start_s
-                           : 100000 + 7919 * static_cast<int64_t>((s.seed - 1) % 1000);
+  // Each seed starts at its own time (#399); `compare_clock_start` fixes it for every seed (#390). The test bench
+  // seeds its RtcpEngines with the same time (RtcpRandomSeed), so both draw the same schedule (#517).
+  const int64_t t0_s = testbench::CallClockStartSeconds(s);
   const w::Timestamp t0 = w::Timestamp::Seconds(t0_s);
   SimTime sim(t0);
   w::ScopedYieldPolicy yield_policy(&sim);
