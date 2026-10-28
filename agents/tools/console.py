@@ -40,8 +40,8 @@ PT = ZoneInfo("America/Los_Angeles")
 WORKFLOW = "dispatcher.yml"
 MODE_VAR = "SM_DISPATCH_MODE"
 STOP_TITLE = "STOP AGENTS"
-BUSY = {"in-progress", "needs-human", d.NEEDS_BUILDER, d.NEEDS_COORDINATOR, "blocked", "wontfix", "cannot-reproduce"}
-NEEDS_YOU = {"needs-human"}
+BUSY = {"in-progress", "needs-human", "needs-owner", d.NEEDS_BUILDER, d.NEEDS_COORDINATOR, "blocked", "wontfix", "cannot-reproduce"}
+NEEDS_YOU = {"needs-owner"}  # the Builder passed it to the Owner (agents/builder.md)
 AGENTS = {  # role -> how its posts are recognised (Fixer B: the routine's post_marker in agents/routines.json)
     "tester": "<!-- sm-agent: tester -->",
     "fixer": "<!-- sm-agent: fixer -->",

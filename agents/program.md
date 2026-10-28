@@ -105,6 +105,26 @@ prerequisites:
 4. receive timing and audio;
 5. measuring sections 6-8 against libwebrtc.
 
+**The rest of stage 1, in four steps (Owner, 2026-10-27).** These come
+before the phase order above and decide which items come first on #64:
+
+1. **Make the test harness the same** for both stacks (the rule "One test
+   environment for both stacks" below): the harness fidelity audit and
+   every harness difference it finds.
+2. **Measure the gaps** on that harness: the full parity report on the
+   harness-faithful `main`, with every gap given an open owner or an
+   explained note (`tools/parity_owners.json`).
+3. **Check the feature and configuration gaps:** list each libwebrtc
+   feature and default that a call uses (field trials, defaults,
+   switches), compare it with ours, and close the differences. That
+   includes ported switches that are still off by default.
+4. **Align the library with libwebrtc on every metric:** close the
+   remaining gaps, in both directions.
+
+A step starts when the step before it is done. Bugs (`sev:1`, and `sev:2`
+crashes or undefined behaviour) still come first, and PRs already open
+may finish.
+
 Stage 2 (`stage:ai`) follows on the same list once the Owner declares
 stage 1 done.
 
@@ -126,6 +146,40 @@ Rules:
   gaps wait until the Owner places them by editing the list.
 - **`needs-human` means a decision is needed.** It is not used to hold
   work back for ordering; the list does that.
+- **Escalations go to the Builder before the Owner (Owner, 2026-10-27).**
+  Fixer → Coordinator → Builder → Owner. The Coordinator decides what its
+  mandate covers and sends the rest up as `ESCALATION:` with
+  `needs-builder`. The Builder decides what the Owner's rules and
+  decisions clearly cover (`DECIDED (Builder for the Owner):`) and passes
+  only the rest to the Owner (`NEEDS YOU:`, `needs-owner`;
+  `agents/builder.md`). The Owner can overturn any Builder decision.
+- **One test environment for both stacks (Owner, 2026-10-27).** The
+  comparison is only valid if this library and libwebrtc run in an
+  identical environment: the same captured audio and video, the same
+  encoders (real ones, as libopus since #460, or one shared model), the
+  same link emulation with packets delivered at the same times, the same
+  clock and task timing, and the same measurement code reading the same
+  events. Only the stack under test may differ. Any difference in the
+  harness (`testbench/call.cc` against `compare/webrtc/webrtc_call.cc`, or
+  anything they use) is a `sev:2` bug in the yardstick. It is fixed before
+  parity work on the cells it affects, because it makes their gaps
+  unreliable. A harness PR states which side changed and shows that both
+  sides now get the same input.
+  **Never weaken the harness to make the sides equal.** Always bring the
+  less faithful side up to the more faithful one, as #460 did (libopus on
+  our side, not a size model on libwebrtc's). Never replace a real
+  component on libwebrtc's side with a model. Never drop or simplify
+  scenarios, metrics, traces or checks, and never loosen bands, guard-rail
+  lines or test tolerances to absorb a harness change. A real component
+  may replace a shared model on both sides together. If equal is only
+  possible by weakening, the item goes up (`needs-human`) and the Builder
+  passes it to the Owner.
+  One exception (Owner, 2026-10-27): when a harness change makes the two
+  sides *more* alike, a guard-rail line may move as far as libwebrtc's
+  worst seed on that scenario, never beyond it, without coming to the
+  Owner. The PR shows libwebrtc's per-seed values. The `compare-webrtc`
+  job's drift check (`tools/check_harness_drift.py`) fails if the sides'
+  audio stops matching packet for packet where it matches today.
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
   component it names as a whole, citing the files in
   `compare/webrtc/reference/`. If a needed file is missing, say so on #57
@@ -396,7 +450,8 @@ a comment addressed to it, or no review yet:
 | `in-progress` | The Fixer is working on it | Fixer |
 | `cannot-reproduce` | The Fixer could not reproduce it | Fixer |
 | `agent-pr` | PR opened by the Fixer | Fixer |
-| `needs-human` | A decision is needed from the Owner (not used to hold work for ordering; section 0.2) | Any |
+| `needs-human` | A decision is needed above the Coordinator: the Builder answers it first, and passes on only what it can't decide (`agents/builder.md`). Not used to hold work for ordering (section 0.2) | Any |
+| `needs-owner` | The Builder has passed the question to the Owner (`NEEDS YOU:` on #111) | Builder (Coordinator only as the fallback in `agents/coordinator.md`) |
 | `wontfix` | Owner decision | Owner |
 | `agent-log` | The Tester's run log issue (its memory between runs and the weekly summary) | Tester |
 | `roadmap` | Owner-filed work toward the goals in section 1 (new test bench features, metrics, models) | Owner |
@@ -490,7 +545,18 @@ python3 tools/testbench_compare.py testbench/baseline.json <new results>
 cmake --preset native-asan && cmake --build --preset native-asan -j && ctest --preset native-asan
 ```
 
-CI runs the same, plus the other platforms.
+CI runs the same, plus the other platforms. To save its 20 concurrent job
+slots (Owner, 2026-10-27), the `scope` job in `ci.yml` decides what a PR
+run needs:
+- A PR that changes no code (only `agents/`, `docs/`,
+  `compare/webrtc/reference/`, Markdown, or
+  `.github/` other than `ci.yml`) runs no build or test job.
+- A **draft** runs only the quick jobs (host builds, test bench), plus
+  `compare-webrtc` when its title starts with `yardstick:`.
+- A **ready** PR, `main` and the merge queue run everything. Marking a draft
+  ready starts the full run, and only a ready PR gets `ci-passed`.
+- A PR's unfinished runs are cancelled when it is merged or closed
+  (`cancel-closed-pr.yml`).
 
 ### 6.2 Review checklist (Reviewer)
 
@@ -686,7 +752,7 @@ area it covered in each issue's notes:
 3. **Agents.** Write `agents/*.md`. Do one supervised run of each role in
    order (Tester, Fixer, Reviewer) and check the issue, PR, review and
    merge chain end to end.
-4. **Autonomy.** Enable the schedules. The Owner watches `needs-human` and
+4. **Autonomy.** Enable the schedules. The Owner watches `needs-owner` and
    reviews a weekly summary that the Tester posts as an issue comment.
 
 ### Verification items for the first supervised runs

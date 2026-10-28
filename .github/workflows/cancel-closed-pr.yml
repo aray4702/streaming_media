@@ -1,0 +1,27 @@
+# Cancels a pull request's unfinished ci runs as soon as the PR is merged or
+# closed, so they stop holding the repository's 20 concurrent job slots
+# (Owner, 2026-10-27). Runs with the base repository's token and checks out
+# nothing from the PR.
+name: cancel-closed-pr
+on:
+  pull_request_target:
+    types: [closed]
+permissions:
+  actions: write
+jobs:
+  cancel:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref != 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: "${{ github.token }}"
+          BRANCH: "${{ github.event.pull_request.head.ref }}"
+          PR: "${{ github.event.pull_request.number }}"
+        run: |
+          ids=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci --branch "$BRANCH" --event pull_request \
+                  --limit 50 --json databaseId,status --jq '.[] | select(.status != "completed") | .databaseId')
+          for id in $ids; do
+            gh run cancel -R "$GITHUB_REPOSITORY" "$id" && echo "PR #$PR closed: cancelled ci run $id"
+          done
+          [ -n "$ids" ] || echo "PR #$PR closed: no unfinished ci run"

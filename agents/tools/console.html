@@ -126,7 +126,7 @@ dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-to
 const TOKEN = "__TOKEN__", REPO = "__REPO__";
 const TABS = [["overview", "Overview"], ["work", "Work order"], ["prs", "PRs"], ["issues", "Issues"],
               ["agents", "Agents"], ["dispatcher", "Dispatcher"], ["log", "Log #111"]];
-const KNOWN_LABELS = ["needs-human", "needs-coordinator", "needs-builder", "needs-probe", "blocked", "in-progress",
+const KNOWN_LABELS = ["needs-owner", "needs-human", "needs-coordinator", "needs-builder", "needs-probe", "blocked", "in-progress",
   "parallel-ok", "owner-approved", "wontfix", "stage:later", "stage:baseline", "stage:ai", "roadmap", "record"];
 let tab = (() => {
   const h = location.hash.slice(1);
@@ -149,7 +149,7 @@ function when(iso) {
   const rel = Math.abs(mins) < 60 ? `${Math.abs(mins)} min` : Math.abs(mins) < 2880 ? `${Math.round(Math.abs(mins) / 60)} h` : `${Math.round(Math.abs(mins) / 1440)} d`;
   return `<span title="${esc(t.toLocaleString("en-US", PT))} PT">${abs} <span class="muted">(${mins >= 0 ? rel + " ago" : "in " + rel})</span></span>`;
 }
-const LABEL_CLASS = {"needs-human": "bad", "sev:1": "bad", "needs-coordinator": "warn", "needs-builder": "warn",
+const LABEL_CLASS = {"needs-owner": "bad", "needs-human": "warn", "sev:1": "bad", "needs-coordinator": "warn", "needs-builder": "warn",
   "needs-probe": "warn", "blocked": "warn", "in-progress": "info", "parallel-ok": "ok", "owner-approved": "ok", "ci-passed": "ok"};
 const chips = ls => (ls || []).map(l => `<span class="chip ${LABEL_CLASS[l] || ""}">${esc(l)}</span>`).join("");
 
@@ -279,7 +279,7 @@ const RENDER = {
     const w = o.work;
     const needs = o.needs_you.length ? `<ul class="plain">${o.needs_you.map(x =>
       (x.n == null ? `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">${esc(x.title)}</a></li>` : `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">#${x.n}</a> ${esc(x.title)} ${actBtn(x.n, x.kind === "PR")}</li>`)).join("")}</ul>`
-      : '<p class="muted">Nothing labelled <code>needs-human</code>.</p>';
+      : '<p class="muted">Nothing labelled <code>needs-owner</code>.</p>';
     const asks = o.asks_24h.length ? `<div class="small" style="margin-top:8px"><b>NEEDS YOU posts on #111, last 24 h</b> (a later post may withdraw one)<ul class="plain">${o.asks_24h.map(a =>
       `<li><a href="${a.url}" target="_blank">${when(a.at)}</a>: ${md(esc(a.first))}</li>`).join("")}</ul></div>` : "";
     const heads = o.next_items.map(i => `<tr><td>${ref(i.n)}</td><td><span class="chip ${i.role === "next" ? "ok" : i.role === "busy" ? "info" : "warn"}">${i.role}</span></td><td>${esc(i.title)}<div>${chips(i.labels)}</div></td></tr>`).join("");

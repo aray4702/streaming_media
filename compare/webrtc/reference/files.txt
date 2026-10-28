@@ -225,3 +225,7 @@ modules/rtp_rtcp/source/rtp_rtcp_interface.h
 # H.264 SPS/PPS tracker (#453).
 modules/video_coding/h264_sps_pps_tracker.h
 modules/video_coding/h264_sps_pps_tracker.cc
+# Opus decoder config from SDP (AudioDecoderOpus::SdpToConfig), for #476 / PR #487.
+api/audio_codecs/opus/audio_decoder_opus.h
+api/audio_codecs/opus/audio_decoder_opus.cc
+api/audio_codecs/opus/audio_decoder_opus_config.h
