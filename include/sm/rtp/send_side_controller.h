@@ -239,7 +239,13 @@ class SendSideController : public MetricsSource {
   void PostTargetRate(Timestamp now);
   void UpdateControlState(Timestamp now);
   // The congestion-window reduce ratio the encoder takes: the one last passed on with the handler.
-  double reduce_ratio() const { return cfg_.control_handler ? reported_reduce_ratio_ : cwnd_.reduce_ratio(); }
+  // With the allocator, the one on the last
+  // BitrateAllocationUpdate it got (VideoStreamEncoder::OnBitrateUpdated), which
+  // an AddObserver reallocation (an encoder reconfiguration) resets to 0.
+  double reduce_ratio() const {
+    if (!cfg_.control_handler) return cwnd_.reduce_ratio();
+    return allocation_configured_ ? allocator_.cwnd_reduce_ratio("video") : reported_reduce_ratio_;
+  }
   void ApplyPushback(SendRates& out) const;
   // `allocator v2`: the video allocation less the packet-overhead rate and the
   // protection share, at most the video maximum: the encoder target before the

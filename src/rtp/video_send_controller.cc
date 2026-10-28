@@ -154,6 +154,8 @@ void VideoSendController::OnResourceUnderuse(Resource r, Timestamp now) {
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
   UpdateFrameRate(now);
   int width = frame.width, height = frame.height;
+  bool cwnd_drop = false;
+  bool reconfigured = false;
   if (cfg_.quality_scaling) {
     // The quality scaler's CheckQpTask, then the source's VideoAdapter with the
     // sink wants, then the frame size the encoder sees (OnFrameSizeObserved).
@@ -171,6 +173,16 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // OveruseFrameDetector's CheckForOveruse task.
     OnCpuSignal(overuse_.Check(now), now);
     if (frame.width > 0 && frame.height > 0) video_adapter_.AdaptFrameResolution(frame.width, frame.height, &width, &height);
+    // VideoStreamEncoder::OnFrame drops for the congestion window before
+    // MaybeEncodeVideoFrame (video_stream_encoder.cc l.1635-1660), which
+    // observes the frame size and reconfigures the encoder for a new one. A
+    // dropped frame does neither, and the reallocation a reconfiguration starts
+    // (OnEncoderConfigurationChanged -> BitrateAllocator::AddObserver, which
+    // clears the reduce ratio) is posted, so it reaches the drop decision from
+    // the next frame on (issue #411, D8).
+    cwnd_drop = session_.send_side().DropCapturedFrame();
+  }
+  if (cfg_.quality_scaling && !cwnd_drop) {
     stream_adapter_.OnFrameSizeObserved(width * height);
     // ReconfigureEncoder for a new frame size: the encoder is reset and its
     // next frame is a keyframe (next_frame_types_). The frame dropper is
@@ -182,14 +194,24 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // new adjuster: its overshoot detector is created again on the next
     // AdjustRate, which restarts the frame count.
     if (width != configured_width_ || height != configured_height_) {
-      if (configured_width_ > 0) keyframe_needed_ = true;
+      const bool first_configuration = configured_width_ == 0;
+      if (!first_configuration) keyframe_needed_ = true;
       dropper_.Reset();
       adjuster_.Reset(now);
       configured_width_ = width;
       configured_height_ = height;
       // VideoSendStreamImpl::OnEncoderConfigurationChanged: the running stream
       // registers with the allocator again, also after an encoder time-out.
-      session_.send_side().OnVideoEncoderReconfigured(now);
+      // ReconfigureEncoder posts it to the worker queue and encodes this frame
+      // with the last rate settings (SetEncoderRates(last_encoder_rate_settings_)),
+      // so the reallocation, and the reduce ratio it clears, apply from the next
+      // frame (issue #411, D8). The first frame's configuration comes before
+      // VideoSendStream::Start below, as before.
+      if (first_configuration) {
+        session_.send_side().OnVideoEncoderReconfigured(now);
+      } else {
+        reconfigured = true;
+      }
     }
   }
   // VideoSendStream::Start registers the stream with the BitrateAllocator, and
@@ -237,7 +259,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   const bool paused = paused_ || rates.encoder_paused;
   if (paused && !cfg_.quality_scaling) {
     d.reason = DropReason::kPaused;
-  } else if (session_.send_side().DropCapturedFrame()) {
+  } else if (cwnd_drop || (!cfg_.quality_scaling && session_.send_side().DropCapturedFrame())) {
     d.reason = DropReason::kCongestionWindow;
   } else if (cfg_.quality_scaling && QualityScalingDropsForSize(width, height, target, now)) {
     d.reason = DropReason::kSize;
@@ -250,6 +272,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // EncodeVideoFrame: OnEncodeStarted with the encoded frame and the time
     // the frame was first seen.
     if (cfg_.quality_scaling) overuse_.OnFrameCaptured(width * height, encodes_started_++, now);
+    if (reconfigured) session_.send_side().OnVideoEncoderReconfigured(now);
     return d;
   }
   d.keyframe = false;
@@ -259,6 +282,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   if (d.reason == DropReason::kFrameDropper && cfg_.quality_scaling) scaler_.OnFrameDropped();
   ++dropped_[static_cast<int>(d.reason)];
   SM_EVENT(cfg_.events, now, "video_send", "frame_dropped", static_cast<double>(d.reason), 0);
+  if (reconfigured) session_.send_side().OnVideoEncoderReconfigured(now);
   return d;
 }
 

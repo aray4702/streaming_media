@@ -231,6 +231,7 @@ the differences found in the files above. Each belongs to #62.
 |---|---|---|
 | `cc/outage_monitor.cc` ICE-restart request | ICE belongs to the host stack (`program.md` 0.1). Request signalling only. | n/a |
 | Metrics / `SM_EVENT` hooks in every module | Library convention. | n/a |
+| `cc::ConvertConstraints`: a finite min, start or max rate above INT_MAX bps saturates there | libwebrtc's `BitrateConstraints` carry int bps (`call/rtp_transport_controller_send.cc:68-83`), so such a rate can't be configured there at all; our API takes a `DataRate`, and saturating is the nearest libwebrtc can express (#464). | matches libwebrtc in range |
 
 ## 6. Audio quality
 
