@@ -92,9 +92,33 @@ To pass it on: post on #111 a comment whose first line starts `NEEDS YOU:`
 options and numbers, your recommendation and a one-line reply. Swap
 `needs-builder` for `needs-owner`; `needs-human` stays as the hold.
 
+## Flow watch
+
+The Owner (2026-10-27): "watch for flow performance bottlenecks and fix
+them promptly." Every 15 minutes the Dispatcher's FLOW rule checks for:
+- CI jobs queued longer than 30 min (the 20 job slots are saturated);
+- an approved, green PR not merged after 3 h;
+- 5 or more CI runs on one PR in 24 h;
+- a free work-list item with no Fixer claim for 2 h;
+- `needs-builder` unanswered for 3 h;
+- a routine that has failed to start for 2 h.
+
+It posts each new set of alerts on the pinned **Flow watch** issue and adds
+`needs-builder`, which starts you. Take those first:
+1. Find the cause, not the symptom: CI timings and job slots (the Actions
+   API), the Dispatcher's job summaries, merge order, labels, routine runs.
+2. Fix it the same day:
+   - a Dispatcher or CI change by PR (the Owner merges protected paths);
+   - a stuck item unblocked;
+   - a threshold tuned in `dispatch.py`, if the alert was noise.
+   What needs the Owner (a token, spending, a rule) goes up as `NEEDS YOU:`.
+3. Answer on the Flow watch issue: the cause, what you changed or opened,
+   and what to expect. Then remove `needs-builder`.
+
 ## Each run
 
-1. Find open issues and PRs labelled `needs-builder`, escalations first. If there are none,
+1. Find open issues and PRs labelled `needs-builder`: escalations first,
+   then the Flow watch. If there are none,
    check the day's system health: the Dispatcher's recent job summaries
    (failures, repeated HOLDs), routine runs that failed, and items the
    Coordinator re-planned twice. File what needs a fix as a system
