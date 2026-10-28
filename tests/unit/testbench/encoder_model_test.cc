@@ -77,3 +77,64 @@ SM_TEST(EncoderModel, ScenarioKeysRoundTrip) {
   SM_EXPECT_FALSE(ParseScenario("encoder_speed 0\n").scenario.has_value());
   SM_EXPECT_FALSE(ParseScenario("video_complexity x\n").scenario.has_value());
 }
+
+// Encoder behaviours (issue #466): a factor on delta frame sizes, by capture time.
+SM_TEST(EncoderModel, DefaultBehaviourLeavesEveryFrameAsIs) {
+  const EncoderModel::Behaviour b;
+  for (int64_t t : {0, 33, 5000, 123456}) SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, t, 30), 1.0);
+}
+
+SM_TEST(EncoderModel, OvershootScalesEveryDeltaFrame) {
+  EncoderModel::Behaviour b;
+  b.overshoot = 1.3;
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 0, 30), 1.3);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 7777, 30), 1.3);
+  b.overshoot = 0.7;
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 1000, 30), 0.7);
+}
+
+SM_TEST(EncoderModel, SceneChangesCoverTheirFramesOfEveryIntervalAfterTheFirst) {
+  EncoderModel::Behaviour b;
+  b.scene_interval_ms = 5000;
+  b.scene_frames = 3;
+  b.scene_factor = 3;
+  // 30 fps frames are captured at k * 1000 / 30 ms: 5000, 5033 and 5066 are the cut's three frames.
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 0, 30), 1.0);  // No cut at the call's start.
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 4966, 30), 1.0);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 5000, 30), 3.0);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 5033, 30), 3.0);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 5066, 30), 3.0);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 5100, 30), 1.0);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 10033, 30), 3.0);
+  // It multiplies the overshoot.
+  b.overshoot = 0.7;
+  SM_EXPECT_NEAR(EncoderModel::DeltaSizeFactor(b, 15000, 30), 2.1, 1e-12);
+  SM_EXPECT_EQ(EncoderModel::DeltaSizeFactor(b, 15100, 30), 0.7);
+}
+
+SM_TEST(EncoderModel, BehaviourKeysRoundTrip) {
+  auto p = ParseScenario("encoder_overshoot 1.3\nscene_change 5s 3 3\n");
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_EXPECT_NEAR(p.scenario->encoder_overshoot, 1.3, 1e-9);
+  SM_EXPECT_EQ(p.scenario->scene_change_interval.ms(), 5000);
+  SM_EXPECT_EQ(p.scenario->scene_change_frames, 3);
+  SM_EXPECT_NEAR(p.scenario->scene_change_factor, 3.0, 1e-9);
+  auto again = ParseScenario(FormatScenario(*p.scenario));
+  SM_ASSERT_TRUE(again.scenario.has_value());
+  SM_EXPECT_NEAR(again.scenario->encoder_overshoot, 1.3, 1e-9);
+  SM_EXPECT_EQ(again.scenario->scene_change_interval.ms(), 5000);
+  SM_EXPECT_EQ(again.scenario->scene_change_frames, 3);
+  SM_EXPECT_NEAR(again.scenario->scene_change_factor, 3.0, 1e-9);
+  // Off by default, and not written then.
+  auto d = ParseScenario("duration 1s\n");
+  SM_ASSERT_TRUE(d.scenario.has_value());
+  SM_EXPECT_EQ(d.scenario->encoder_overshoot, 1.0);
+  SM_EXPECT_TRUE(d.scenario->scene_change_interval.IsZero());
+  const std::string text = FormatScenario(*d.scenario);
+  SM_EXPECT_TRUE(text.find("encoder_overshoot") == std::string::npos);
+  SM_EXPECT_TRUE(text.find("scene_change") == std::string::npos);
+  SM_EXPECT_FALSE(ParseScenario("encoder_overshoot 0\n").scenario.has_value());
+  SM_EXPECT_FALSE(ParseScenario("scene_change 5s 3\n").scenario.has_value());
+  SM_EXPECT_FALSE(ParseScenario("scene_change 0s 3 3\n").scenario.has_value());
+  SM_EXPECT_FALSE(ParseScenario("scene_change 5s 0 3\n").scenario.has_value());
+}

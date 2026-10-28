@@ -44,6 +44,24 @@
 // reported, not simulated: both implementations still hand the frame to the
 // sender at its capture time, as before (sm_compare sets it in timing_).
 //
+// Encoder behaviours (issue #466), off by default. A real encoder misses its
+// rate, which is what libwebrtc's EncoderOvershootDetector,
+// EncoderBitrateAdjuster, RateUtilizationTracker and FrameDropper react to
+// (compare/webrtc/reference/video/encoder_bitrate_adjuster.cc,
+// encoder_overshoot_detector.cc, rate_utilization_tracker.cc,
+// modules/video_coding/utility/frame_dropper.cc). DeltaSizeFactor scales a
+// delta frame's size; keyframes keep the size model's 4x:
+//   overshoot  (scenario `encoder_overshoot <x>`, default 1): every delta
+//              frame, for example 1.3 for a hot encoder or 0.7 for one that
+//              undershoots;
+//   scene changes (scenario `scene_change <interval> <frames> <factor>`):
+//              the first `frames` frame intervals of every `interval` after
+//              the first are scene cuts, their delta frames `factor` x.
+// The factor depends only on the frame's capture time since the call's start,
+// which both implementations share, and draws nothing from the size model's
+// random stream, so both stacks get the same frames for a seed and a factor of
+// 1 changes no frame.
+//
 // Listed as a deviation in tools/catalog.py (the model stands in for a codec).
 #pragma once
 
@@ -74,6 +92,22 @@ struct EncoderModel {
     if (keyframe) bits /= kKeyframeSizeFactor;
     const double qp = kReferenceQp + kQpPerDoubling * std::log2(ReferenceBits(pixels) * complexity / bits);
     return std::clamp(static_cast<int>(std::lround(qp)), kMinQp, kMaxQp);
+  }
+
+  struct Behaviour {
+    double overshoot = 1;            // `encoder_overshoot`.
+    int64_t scene_interval_ms = 0;   // `scene_change`: 0 = off.
+    int scene_frames = 0;
+    double scene_factor = 1;
+  };
+
+  // Factor on a delta frame's size captured `capture_ms` after the call's start.
+  static double DeltaSizeFactor(const Behaviour& b, int64_t capture_ms, int fps) {
+    double f = b.overshoot;
+    if (b.scene_interval_ms > 0 && capture_ms >= b.scene_interval_ms &&
+        (capture_ms % b.scene_interval_ms) * fps < static_cast<int64_t>(b.scene_frames) * 1000)
+      f *= b.scene_factor;
+    return f;
   }
 
   static int64_t EncodeTimeUs(int width, int height, double speed = 1) {

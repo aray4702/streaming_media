@@ -75,6 +75,13 @@ struct Scenario {
   int video_width = 1280, video_height = 720;  // `video_size <W>x<H>`: the captured resolution (issue #84).
   double video_complexity = 1;  // `video_complexity <x>`: content for the encoder's QP model (testbench/encoder_model.h).
   double encoder_speed = 1;     // `encoder_speed <x>`: CPU speed for the encode-time model (testbench/encoder_model.h).
+  // `encoder_overshoot <x>`: delta frames are x times the size model's (issue #466; testbench/encoder_model.h).
+  double encoder_overshoot = 1;
+  // `scene_change <interval> <frames> <factor>`: every interval (after the first), the delta frames of the first
+  // `frames` frame intervals are `factor` times larger (issue #466; testbench/encoder_model.h). Zero interval = off.
+  TimeDelta scene_change_interval = TimeDelta::Zero();
+  int scene_change_frames = 0;
+  double scene_change_factor = 1;
   // `encode_delay on|off`: the encoder takes the encode-time model's time, so a frame reaches the
   // library and the sender that much after its capture, on both stacks (issue #84 step 5: what
   // libwebrtc's CPU overuse detector measures). Off: encoding is instant, as before.

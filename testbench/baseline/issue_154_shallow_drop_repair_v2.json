@@ -66,6 +66,7 @@
   "video.e2e_delay_p95_ms": 211.2,
   "video.encode_height_mean": 188.6,
   "video.encoder_dropped": 11,
+  "video.encoder_target_avg_kbps": 477.1,
   "video.frames_rendered": 1080,
   "video.freeze_count": 3,
   "video.freeze_total_ms": 4308,
