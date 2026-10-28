@@ -347,7 +347,9 @@ routine. Its rules are in [coordinator.md](coordinator.md).
 
 The **Dispatcher** (`agents/tools/dispatch.py`, a workflow, not an LLM)
 does the mechanical work: it starts agent runs, turns on auto-merge and
-keeps one approved PR up to date. The **Builder** maintains the agent system
+keeps one approved PR up to date. It also watches the flow for bottlenecks
+(FLOW) and hands them to the Builder on the **Flow watch** issue, to fix
+promptly (Owner, 2026-10-27). The **Builder** maintains the agent system
 itself and answers system escalations; its rules are in
 [builder.md](builder.md). The Owner's local Claude session is the Builder's
 interactive window.
@@ -561,6 +563,11 @@ run needs:
 - A **ready** PR runs the quick jobs and `compare-webrtc`. The sanitizers
   and `wasm` run only on `main` (its queued runs batch several merges), the
   merge queue, and ready PRs labelled `needs-probe` (Owner, 2026-10-27).
+- On a PR, a scenario with `compare_seeds` (40 or 80) runs 10 seeds in
+  `compare-webrtc`, unless the PR changes that scenario file; `main` runs
+  all its seeds, and the parity report compares the PR with `main`'s same
+  first seeds (Owner, 2026-10-27, an exception the Owner made to "never
+  weaken the harness": these scenarios were about half the comparison).
   A failure there on `main` is `main` broken (`sev:1`): the Coordinator
   files it, and the fix or a revert of the culprit comes first. Marking a
   draft ready starts the PR's run, and only a ready PR gets `ci-passed`.

@@ -36,6 +36,14 @@ For each of your open PRs:
 
   Each reply says what you changed, with the commit SHA, or why you did not
   change it. Don't resolve threads yourself; the Reviewer resolves them.
+- **If the PR has conflicts with `main`** (`mergeable_state` is `dirty`;
+  the Dispatcher can't update it, so it waits on you), rebase it on
+  `origin/main` first. Never merge `testbench/baseline.json` by hand: take
+  `main`'s file (`git checkout origin/main -- testbench/baseline.json`),
+  rebuild, run the whole suite and regenerate it with
+  `tools/testbench_compare.py testbench/baseline.json r.json --update`.
+  Other generated files (`docs/fixes/README.md`, the algorithm docs) are
+  regenerated the same way. Then run the local gate and push.
 - If the PR's `ci-ok` check failed, read the logs and fix the failure. If
   the failure is unrelated to the PR (a flaky runner), say so in a comment
   and re-run it: `gh api -X POST repos/aray4702/streaming_media/actions/runs/RUN/rerun-failed-jobs`.

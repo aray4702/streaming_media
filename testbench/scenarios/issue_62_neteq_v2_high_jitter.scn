@@ -12,4 +12,7 @@ expect audio.jb_delay_p95_ms >= 95
 # libwebrtc 100 on seed 1, worst of seeds 1-10 150 (mean 122; ours 136, in band), on #324's compare-webrtc.
 # PR for #457 (libopus 55513e81 replaces the Opus size model; program.md 0.2, needs-human): was <= 150. Ours 170 on seed 1
 # (seeds 1-10 100-170, mean 133); libwebrtc seeds 1-10 100-170 (mean 130) on main's compare-webrtc. Capped at libwebrtc's worst seed.
-expect audio.jb_delay_p95_ms <= 170
+# PR for #476 (our side decodes with libopus as libwebrtc does; harness change, needs-human): was <= 170. Ours 180 on
+# seed 1 (seeds 1-10 100-180, mean 132, was 133); libwebrtc seeds 1-10 100-180 (mean 129) on main's compare-webrtc
+# (9e436cb). Capped at libwebrtc's worst seed, as for #457.
+expect audio.jb_delay_p95_ms <= 180
