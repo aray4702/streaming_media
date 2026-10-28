@@ -158,6 +158,14 @@ Rules:
   parity work on the cells it affects, because it makes their gaps
   unreliable. A harness PR states which side changed and shows that both
   sides now get the same input.
+  **Never weaken the harness to make the sides equal.** Always bring the
+  less faithful side up to the more faithful one, as #460 did (libopus on
+  our side, not a size model on libwebrtc's). Never replace a real
+  component on libwebrtc's side with a model. Never drop or simplify
+  scenarios, metrics, traces or checks, and never loosen bands, guard-rail
+  lines or test tolerances to absorb a harness change. A real component
+  may replace a shared model on both sides together. If equal is only
+  possible by weakening, the item goes to the Owner (`needs-human`).
 - **Port subsystems, not symptoms.** A stage-1 item ports the libwebrtc
   component it names as a whole, citing the files in
   `compare/webrtc/reference/`. If a needed file is missing, say so on #57
