@@ -89,7 +89,9 @@ practical details every role shares.
     auto-merge off. Write `For #N` in its body, not `Refs #N`: a `Refs` PR
     marks the item busy, and then no Fixer picks the item up when the data
     is ready.
-  - Poll `ci-ok` (about 25 min) in the same run, read the traces and continue.
+  - Poll `ci-ok` (about 15 min) in the same run, read the traces and continue.
+    The `yardstick:` title prefix is what makes a draft run `compare-webrtc`
+    (other drafts run only the quick jobs, `agents/program.md` 6.1).
   - Merge it only if the instrumentation is generally useful (as #156 was);
     otherwise close it when done.
   To check a local change, build `sm_compare` and run
