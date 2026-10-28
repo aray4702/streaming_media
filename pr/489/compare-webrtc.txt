@@ -249,11 +249,11 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          53.4         51.1  =
-  audio.mouth_to_ear_p95_ms               514          495  =
-  audio.jb_delay_p95_ms                   303          296  =
+  audio.mouth_to_ear_p95_ms               514          494  =
+  audio.jb_delay_p95_ms                   303          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  21         15.7  =
+  video.longest_freeze_ms                  21         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -1449,7 +1449,7 @@ issue_150_gcc_v2_high_jitter - 3 Mbps link, 40 ms jitter with reordering, every 
   video.time_to_first_frame_ms            225          357  sm
   video.avg_kbps                          493          484  =
   video.keyframe_requests                 0.4          0.8  =
-  sync.av_offset_p95_ms                  57.5         65.3  =
+  sync.av_offset_p95_ms                  57.5         65.4  =
   cc.utilization_pct                     22.6         22.2  =
   cc.queue_p95_ms                         3.2          4.3  =
   cc.max_settle_ms                      25848        26818  =
@@ -4394,11 +4394,11 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          53.4         51.1  =
-  audio.mouth_to_ear_p95_ms               514          495  =
-  audio.jb_delay_p95_ms                   303          296  =
+  audio.mouth_to_ear_p95_ms               514          494  =
+  audio.jb_delay_p95_ms                   303          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  21         15.7  =
+  video.longest_freeze_ms                  21         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -5931,11 +5931,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          53.4         51.1  =
-  audio.mouth_to_ear_p95_ms               514          495  =
-  audio.jb_delay_p95_ms                   303          296  =
+  audio.mouth_to_ear_p95_ms               514          494  =
+  audio.jb_delay_p95_ms                   303          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  21         15.7  =
+  video.longest_freeze_ms                  21         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
