@@ -52,6 +52,27 @@ SM_TEST(LibwebrtcDefaults, PacketsAreUpTo1460Bytes) {
   SM_EXPECT_EQ(RtpSenderConfig{}.max_payload_size + 12, 1460u);
 }
 
+// Issue #576: RTCP is split at 1460 bytes (rtp_rtcp_impl2.cc:146-150, 463); a
+// video sender at min(max_packet_size, kPathMTU - overhead) (rtp_video_sender.cc:272, 860-865).
+SM_TEST(LibwebrtcDefaults, RtcpIsSplitAtTheRtpPacketSize) {
+  SM_EXPECT_EQ(RtcpConfig{}.max_datagram_bytes, 1460u);
+  Session receive_only{SessionConfig{}};
+  SM_EXPECT_EQ(receive_only.rtcp().max_datagram_bytes(), 1460u);
+  Session video{SessionConfig{}};
+  video.AddVideoSend(VideoStreamConfig{});
+  SM_EXPECT_EQ(video.rtcp().max_datagram_bytes(), 1460u);
+  SessionConfig small;
+  small.send_side.max_packet_size = 1200;
+  Session v1200{small};
+  v1200.AddVideoSend(VideoStreamConfig{});
+  SM_EXPECT_EQ(v1200.rtcp().max_datagram_bytes(), 1200u);
+  SessionConfig overhead;
+  overhead.send_side.transport_overhead_bytes = 100;
+  Session v_overhead{overhead};
+  v_overhead.AddVideoSend(VideoStreamConfig{});
+  SM_EXPECT_EQ(v_overhead.rtcp().max_datagram_bytes(), 1400u);
+}
+
 // The codec maximum is the stream's max_bitrate_bps, which the app sets; no cap of the library's own.
 SM_TEST(LibwebrtcDefaults, TheEncoderAllocationHasNoMaximumOfItsOwn) {
   SM_EXPECT_TRUE(VideoSendControllerConfig{}.allocation_max_bitrate.IsPlusInfinity());

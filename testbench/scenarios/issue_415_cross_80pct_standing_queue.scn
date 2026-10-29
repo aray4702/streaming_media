@@ -18,7 +18,10 @@ at 0s capacity=1000kbps delay=20ms queue=300ms
 at 20s cross=800kbps
 expect video.freeze_total_ms < 31500
 expect video.freeze_count <= 49
-expect video.longest_freeze_ms < 3600
+# Moved to < 3750 with #655 part 2 (#669; window, 2026-10-29, program.md 0.2): the frame dropper's post-rewrite
+# keyframe size moves seed 1 to 3701. libwebrtc on 40 seeds (yardstick #689, run 40885055886): mean 1923, worst 3778;
+# ours on main mean 1900, worst 3612. The line stays below libwebrtc's worst seed.
+expect video.longest_freeze_ms < 3750
 expect video.e2e_delay_p95_ms < 2500
 expect cc.utilization_pct > 44
 expect net.loss_pct < 9

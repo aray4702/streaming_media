@@ -1518,8 +1518,18 @@ ALGORITHMS = [
                                 "`ntp_time_ms` from `RemoteNtpTimeEstimator::Estimate` (the trial off). After each RTCP packet "
                                 "the SR trains `RemoteNtpTimeEstimator` once there is an RTT, video only with an SR that arrived "
                                 "with that packet (DeliverRtcp, ReceivedRTCPPacket). unit.RtpReceiver and unit.Session "
-                                "(`ReceivedFramesCarryTheCaptureTimeOnTheLocalClock`) pin it. Remaining: the decoded audio "
-                                "frame's packet infos (`GetAudioFrameWithInfo`): ours keeps the last packet's."),
+                                "(`ReceivedFramesCarryTheCaptureTimeOnTheLocalClock`) pin it. #661: the estimator waits for the "
+                                "stream's own module RTT, `ModuleRtpRtcpImpl2::LastRtt` (rtp_rtcp_impl2.cc:482-491: the "
+                                "report-block RTT on the local SSRC, else the 1 s periodic update's XR DLRR RTT, video only, "
+                                "as the audio receive stream has no RRTR by default), not CallStats' or the session's RTT; "
+                                "decoded audio carries the packet infos of the primary packets each `GetAudio` decoded "
+                                "(NetEq's `last_decoded_packet_infos_`), with the local capture clock offset taken at playout "
+                                "(`GetAudioFrameWithInfo`, channel_receive.cc:472-507); unit.RtpReceiver "
+                                "(`LastRttIsTheReportBlockRttElseThePeriodicOne`, `DecodedAudioCarriesThePacketInfosOfItsPackets`) "
+                                "and unit.Session (`ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt`) pin it. "
+                                "Deviation (recorded on #661): `capture_to_render_ms` is a library metric that libwebrtc "
+                                "reports only with the non-default `WebRTC-UseAbsCapTimeForG2gMetric` trial; it changes no "
+                                "decision and no test bench or `sm_compare` metric reads it."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
