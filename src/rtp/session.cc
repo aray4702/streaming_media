@@ -313,6 +313,11 @@ void Session::EnqueueSenderPackets(RtpSender& s, Timestamp now) {
   for (SenderPacket& p : s.TakePackets()) send_.Enqueue(std::move(p), now);
 }
 
+void Session::AnalyzeAudioCapture(AudioSendId id, std::span<const int16_t> frame, bool muted) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
+  audio_send_[static_cast<size_t>(id.index)].sender->AnalyzeAudioCapture(frame, muted);
+}
+
 void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now) { SendAudio(id, f, std::nullopt, now); }
 
 void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optional<audio::AudioLevel> level, Timestamp now) {

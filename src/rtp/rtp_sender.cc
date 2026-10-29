@@ -133,6 +133,18 @@ size_t RtpSender::MediaHeaderSize() const {
   return p.HeaderSize();
 }
 
+void RtpSender::AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted) {
+  // channel_send.cc:909-924: only while the level indication is on (the extension is registered).
+  if (cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) {
+    if (muted && previous_frame_muted_) {
+      rms_level_.AnalyzeMuted(frame.size());
+    } else {
+      rms_level_.Analyze(frame);
+    }
+  }
+  previous_frame_muted_ = muted;
+}
+
 void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
                           std::optional<audio::AudioLevel> level, std::optional<Timestamp> capture_time) {
   ++stats_.frames;
@@ -151,7 +163,11 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
     p = NewPacket(cfg_.payload_type, rtp_timestamp, marker);
     p.payload.assign(frame.begin(), frame.end());
   }
-  if (level && cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) {
+  if (cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) {
+    // channel_send.cc:389-396: the average since the last packet, taken (and reset) on every packet,
+    // then the override. rtp_sender_audio.cc:248-250: voice = a speech frame, not DTX.
+    const int average = rms_level_.Average();
+    if (!level) level = audio::AudioLevel{static_cast<uint8_t>(average), frame.size() > 2};
     // RFC 6464, as audio::EncodeAudioLevelExtension (sm_rtp does not link sm_audio, which is optional).
     const uint8_t byte = static_cast<uint8_t>((level->voice ? 0x80 : 0) | std::min<int>(level->level, 127));
     sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAudioLevel, {byte});

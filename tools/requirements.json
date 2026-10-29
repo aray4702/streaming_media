@@ -424,10 +424,10 @@
    "area": "Audio quality (APM)",
    "catalog": "6.9",
    "title": "Audio level (RFC 6464)",
-   "status": "open",
-   "evidence": "`AudioLevelMeter` ports `voe::AudioLevel` (#101) for stats, but the RFC 6464 byte comes from our per-frame float RMS (`src/audio/audio_level.cc:17`), where `ChannelSend` writes `RmsLevel::Average()` over the packet's 10 ms frames with muted handling (`reference/audio/channel_send.cc:391-393, 915-921`; `rms_level.cc` not in reference/). Neither harness registers the extension. Filed #567.",
+   "status": "done",
+   "evidence": "The RFC 6464 level is libwebrtc's: `RmsLevel` ported from `rms_level.cc` (#588), computed in the send path as `ChannelSend` (#677: per 10 ms capture frame with muted handling, `Average()` per packet, 127 when nothing was analyzed, Opus DTX voice bit, the caller's level as the override); `AudioLevelMeter` ports `voe::AudioLevel` for stats (#101).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },

@@ -313,6 +313,34 @@ SM_TEST(Session, CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit) {
   SM_EXPECT_EQ(b.audio_sender(au).stats().abs_capture_time_packets, 1u);
 }
 
+// #567 F6.9: the session computes the RFC 6464 level from the capture frames it is given, as
+// ChannelSend (channel_send.cc:389-396, 909-924), and writes it on every audio packet.
+SM_TEST(Session, AudioPacketsCarryTheLevelOfTheCaptureFrames) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(4, sync::uri::kAudioLevel);
+  Session a(ca);
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  const AudioSendId au = a.AddAudioSend(acfg);
+  const std::vector<int16_t> pcm(480, 1000);
+  const Bytes opus(60, 1);
+  std::vector<int> levels;
+  for (int i = 0; i < 5; ++i) {
+    a.AnalyzeAudioCapture(au, pcm, /*muted=*/i >= 3);
+    a.AnalyzeAudioCapture(au, pcm, /*muted=*/i >= 3);
+    a.SendAudio(au, {static_cast<uint32_t>(960 * i), opus, false}, Timestamp::Millis(20 * i));
+    for (auto& o : Pump(a, 20 * i, 20)) {
+      if (o.kind != OutgoingKind::kAudio) continue;
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*RtpPacket::Parse(o.bytes), sync::uri::kAudioLevel);
+      levels.push_back(raw ? (*raw)[0] : -1);
+    }
+  }
+  // Packet 4: the first muted frame is analyzed as given (the caller's faded frame), the next one
+  // counts as zeros, so the mean square halves (30 -> 33). Packet 5: muted throughout, 127.
+  SM_EXPECT_TRUE(levels == (std::vector<int>{0x80 | 30, 0x80 | 30, 0x80 | 30, 0x80 | 33, 0x80 | 127}));
+  SM_EXPECT_EQ(a.audio_sender(au).stats().audio_level_packets, 5u);
+}
+
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
 // libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
 // STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta
