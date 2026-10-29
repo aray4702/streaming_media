@@ -870,6 +870,13 @@ SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
   SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 1);
 }
 
+// #574: ChannelReceive turns NetEq's muted state on (channel_receive.cc:107);
+// NetEq::Config, like AudioJitterBufferConfig on its own, leaves it off.
+SM_TEST(Session, AudioStreamTurnsOnNetEqsMutedState) {
+  SM_EXPECT_TRUE(AudioStreamConfig{}.jitter_buffer.enable_muted_state);
+  SM_EXPECT_FALSE(timing::AudioJitterBufferConfig{}.enable_muted_state);
+}
+
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
 // frame release); timing::VideoTimingConfig on its own keeps version 1.
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {

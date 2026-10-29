@@ -275,3 +275,145 @@ SM_TEST(AudioJitterBufferNetEqV2, SampleUnderrunMutesAndKeepsTheSyncBuffer) {
   SM_EXPECT_EQ(jb.stats().total_samples_received, 160u);
   SM_EXPECT_EQ(jb.stats().concealed_samples, 0u);
 }
+
+// NetEqImpl::GetAudioInternal's muted state (neteq_impl.cc:682-698, #574),
+// ported from libwebrtc's NetEqDecodingTestWithMutedState and
+// CompareMutedStateOnOff (neteq_unittest.cc): 10 ms packets at 16 kHz.
+// MutedStateOldPacket is left out: it inserts packets 10 s older than
+// playout, which NetEq's DiscardOldPackets horizon treats as wrapped (new)
+// and InsertPacket here discards as late, with or without muted state.
+// The CNG cases went with RFC 3389 comfort noise (#591).
+namespace {
+constexpr uint32_t kMutedTestSamples = 160;
+
+struct MutedStateCall {
+  explicit MutedStateCall(bool muted_state, bool silent_payload = false)
+      : jb([&] {
+          AudioJitterBufferConfig cfg;
+          cfg.version = 2;
+          cfg.packet_ms = 10;
+          cfg.enable_muted_state = muted_state;
+          return cfg;
+        }()),
+        silent(silent_payload),
+        x(sim::SpeechLike(16000, 10.0, 7, false)) {}
+  void Insert(uint32_t rtp_ts) {
+    std::vector<float> pcm(kMutedTestSamples, 0.0f);
+    if (!silent) pcm = Chunk(x, static_cast<int>(rtp_ts / kMutedTestSamples % 900), kMutedTestSamples);
+    jb.InsertPacket(rtp_ts, std::move(pcm), Timestamp::Millis(now_ms));
+  }
+  // GetAudio; true when the frame was muted.
+  bool Pull() {
+    const uint64_t muted_before = jb.stats().muted_frames;
+    op = jb.GetAudio(out, Timestamp::Millis(now_ms));
+    now_ms += 10;
+    return jb.stats().muted_frames > muted_before;
+  }
+  bool PullUntilMuted() {
+    while (!Pull()) {
+      if (++counter >= 1000) return false;
+    }
+    return true;
+  }
+  // NetEq's kNormalSpeech: any frame that is not concealment.
+  bool PullUntilNormal() {
+    do {
+      if (Pull() || ++counter >= 1000) return false;
+    } while (op == AudioOperation::kExpand || op == AudioOperation::kSilence);
+    return true;
+  }
+  AudioJitterBuffer jb;
+  bool silent;
+  std::vector<float> x;
+  std::vector<float> out = std::vector<float>(kMutedTestSamples);
+  AudioOperation op = AudioOperation::kSilence;
+  int64_t now_ms = 0;
+  int counter = 0;
+};
+}  // namespace
+
+// MutedState: in and out of muted state.
+SM_TEST(AudioJitterBufferNetEqV2, MutedState) {
+  MutedStateCall c(true);
+  c.Insert(0);
+  SM_EXPECT_FALSE(c.Pull());
+  SM_ASSERT_TRUE(c.PullUntilMuted());
+  SM_EXPECT_TRUE(c.op == AudioOperation::kExpand);
+  // A muted frame writes silence; the playout timestamp still moves on by the frame.
+  const uint32_t ts_before = *c.jb.PlayoutTimestamp();
+  std::fill(c.out.begin(), c.out.end(), 17.0f);
+  SM_EXPECT_TRUE(c.Pull());
+  for (float s : c.out) SM_EXPECT_EQ(s, 0.0f);
+  SM_EXPECT_EQ(*c.jb.PlayoutTimestamp(), ts_before + kMutedTestSamples);
+  SM_EXPECT_TRUE(c.op == AudioOperation::kExpand);
+  // Insert new data, its timestamp corrected for the time elapsed since the
+  // last packet: normal operation resumes.
+  c.Insert(kMutedTestSamples * static_cast<uint32_t>(c.counter));
+  SM_ASSERT_TRUE(c.PullUntilNormal());
+  SM_EXPECT_FALSE(c.Pull());
+  // Almost all the output was concealment (libwebrtc: expand_rate > 13000 in Q14).
+  const auto& st = c.jb.stats();
+  SM_EXPECT_GT(static_cast<double>(st.concealed_samples) * 16384.0 / static_cast<double>(st.total_samples_received),
+               13000.0);
+  auto m = CollectMetrics(c.jb);
+  SM_EXPECT_GT(m["muted_frames"], 0.0);
+}
+
+// MutedStateDelayedPacket: timestamp corrected for only half the elapsed time.
+SM_TEST(AudioJitterBufferNetEqV2, MutedStateDelayedPacket) {
+  MutedStateCall c(true);
+  c.Insert(0);
+  SM_EXPECT_FALSE(c.Pull());
+  SM_ASSERT_TRUE(c.PullUntilMuted());
+  c.Insert(kMutedTestSamples * static_cast<uint32_t>(c.counter) / 2);
+  SM_EXPECT_TRUE(c.PullUntilNormal());
+}
+
+// MutedStateFuturePacket: timestamp over-corrected, the packet is early.
+SM_TEST(AudioJitterBufferNetEqV2, MutedStateFuturePacket) {
+  MutedStateCall c(true);
+  c.Insert(0);
+  SM_EXPECT_FALSE(c.Pull());
+  SM_ASSERT_TRUE(c.PullUntilMuted());
+  c.Insert(kMutedTestSamples * static_cast<uint32_t>(c.counter) * 2);
+  SM_EXPECT_TRUE(c.PullUntilNormal());
+}
+
+// Without muted state NetEq expands for as long as no packet comes.
+SM_TEST(AudioJitterBufferNetEqV2, MutedStateIsOffByDefault) {
+  MutedStateCall c(false);
+  c.Insert(0);
+  SM_EXPECT_FALSE(c.PullUntilMuted());
+  SM_EXPECT_EQ(c.jb.stats().muted_frames, 0u);
+  SM_EXPECT_TRUE(c.op == AudioOperation::kExpand);
+}
+
+// CompareMutedStateOnOff: the same frames with and without muted state, but
+// for the muted frames' data, through 10 s without packets and back.
+SM_TEST(AudioJitterBufferNetEqV2, CompareMutedStateOnOff) {
+  MutedStateCall off(false, true), on(true, true);
+  off.Insert(0);
+  on.Insert(0);
+  bool muted = false;
+  int mismatches = 0;
+  auto same_frame = [&] {
+    SM_EXPECT_FALSE(off.Pull());
+    muted = on.Pull();
+    if (off.op != on.op || off.jb.PlayoutTimestamp() != on.jb.PlayoutTimestamp()) ++mismatches;
+    if (!muted && off.out != on.out) ++mismatches;
+  };
+  for (int i = 0; i < 1000; ++i) same_frame();
+  SM_EXPECT_TRUE(muted);
+  // New data, its timestamp corrected for the time elapsed since the last packet.
+  for (uint32_t i = 0; i < 5; ++i) {
+    off.Insert(kMutedTestSamples * 1000 + kMutedTestSamples * i);
+    on.Insert(kMutedTestSamples * 1000 + kMutedTestSamples * i);
+  }
+  int counter = 0;
+  do {
+    same_frame();
+  } while ((off.op == AudioOperation::kExpand || off.op == AudioOperation::kSilence) && ++counter < 1000);
+  SM_EXPECT_LT(counter, 1000);
+  SM_EXPECT_FALSE(muted);
+  SM_EXPECT_EQ(mismatches, 0);
+}
