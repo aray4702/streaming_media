@@ -5,6 +5,7 @@
 #include "sm/cc/transport_feedback.h"
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
+#include "sm/rtp/sps_vui_rewriter.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -106,9 +107,12 @@ SM_TEST(RtpReceiver, FramesInOrderAreAssembledScheduledAndRendered) {
   }
   // The keyframe is SPS + PPS + IDR in 3000 Annex-B bytes; the payloads carry
   // the NAL units without start codes (3 x 4 bytes) and the IDR split into
-  // FU-A fragments of 2 header bytes each.
+  // FU-A fragments of 2 header bytes each. The test sends the fake encoder's
+  // SPS without the outgoing VUI rewrite, so the receiver adds the VUI's
+  // bitstream_restriction as VideoRtpDepacketizerH264 does (+5 bytes).
   SM_EXPECT_TRUE(frames[0].keyframe);
-  SM_EXPECT_EQ(frames[0].bitstream.size(), 3000u);
+  SM_EXPECT_EQ(frames[0].bitstream.size(), 3005u);
+  SM_EXPECT_TRUE(frames[0].bitstream == rtp::ParseOutgoingBitstreamAndRewrite(MakeFakeH264Frame(true, 3000)));
   SM_EXPECT_TRUE(r.TakeFeedback().empty());
 }
 
@@ -232,7 +236,9 @@ SM_TEST(RtpReceiver, StrictModeNeedsParameterSetsForAKeyframe) {
 }
 
 SM_TEST(RtpReceiver, TheFrameBitstreamIsRebuiltFromThePackets) {
-  Bytes key = MakeFakeH264Frame(true, 4000);
+  // As sent by Session::SendVideo, with the SPS's VUI rewritten: the receive
+  // side then finds it already restricted (kVuiOk) and copies it.
+  Bytes key = rtp::ParseOutgoingBitstreamAndRewrite(MakeFakeH264Frame(true, 4000));
   auto frames = DeliverFrame(ReceiverCfg(), key);
   SM_ASSERT_EQ(frames.size(), 1u);
   SM_EXPECT_TRUE(frames[0].bitstream == key);
@@ -355,7 +361,7 @@ SM_TEST(RtpReceiver, UnknownSsrcAndInvalidPayloadAreCountedNotUsed) {
   RtpPacket shorty;
   shorty.ssrc = kSsrc;
   shorty.payload_type = 96;
-  shorty.payload = {0x19, 1, 2};  // STAP-B (type 25) is mode 2: not accepted.
+  shorty.payload = {0x1C};  // An FU-A without its FU header: ParseFuaNalu drops it.
   SM_EXPECT_TRUE(r.OnPacket(shorty.Serialize(), Timestamp::Millis(1)) == ReceivedKind::kMedia);
   SM_EXPECT_EQ(r.stats().unknown_ssrc, 1u);
   SM_EXPECT_EQ(r.stats().invalid_payload, 1u);

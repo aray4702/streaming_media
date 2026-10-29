@@ -1564,13 +1564,20 @@ ALGORITHMS = [
                "libwebrtc by default. Before packetizing a keyframe the session rewrites its SPS VUI as "
                "libwebrtc's FrameEncodeMetadataWriter::UpdateBitstream and SpsVuiRewriter do (#342): a VUI with "
                "bitstream_restriction (no frame reordering) is added or fixed, and AUDs are dropped. There is no "
-               "color space input (the encoders modelled set none, so the video signal type is copied).",
+               "color space input (the encoders modelled set none, so the video signal type is copied). The "
+               "depacketizer ports VideoRtpDepacketizerH264::Parse (#568): which payloads it drops (an SPS, PPS or "
+               "slice header that doesn't parse, a nested STAP-A or FU-A, an FU-A under 2 bytes), where frames start, "
+               "the SPS's resolution, and the incoming SPS VUI rewrite; reassembly follows "
+               "H264SpsPpsTracker::CopyAndFixBitstream. The SPS fields are read as libwebrtc's SpsParser.",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "
                       "suites yet. #342: the keyframe's STAP-A [SPS, PPS] is 77 B on both stacks (72 B before), "
                       "checked on `clean_link`'s per-packet trace against libwebrtc's, and the rewritten bytes are "
-                      "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units)."),
+                      "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units). #568: the "
+                      "depacketizer's accept and drop rules, frame starts and receive-side SPS rewrite are unit-tested "
+                      "against video_rtp_depacketizer_h264.cc case by case (`unit.H264`); the bench's frames are "
+                      "rewritten on send, so the receive side finds kVuiOk and no suite metric moves."),
 ]
 
 # Problem rows from sections 3-8 that are platform glue, codec internals or

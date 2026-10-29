@@ -991,8 +991,11 @@ void H264WebrtcToSm() {
       ok = ok && sm::rtp::H264Depacketizer::Parse(p.payload).valid;
       pkts.push_back(std::move(p));
     }
+    // Our depacketizer rewrites the SPS VUI on receive as libwebrtc's does
+    // (#568), which is the same rewrite as the outgoing one.
     Bytes rebuilt;
-    ok = ok && sm::rtp::H264Depacketizer::Reassemble(pkts, rebuilt) && rebuilt == frame;
+    ok = ok && sm::rtp::H264Depacketizer::Reassemble(pkts, rebuilt) &&
+         rebuilt == sm::rtp::ParseOutgoingBitstreamAndRewrite(frame);
     auto mine = sm::rtp::H264Packetizer::Packetize(frame, kH264Limit);
     bool eq = mine.size() == pkts.size();
     for (size_t i = 0; eq && i < mine.size(); ++i) eq = mine[i] == pkts[i].payload;
