@@ -12,6 +12,8 @@ namespace {
 constexpr size_t kMaxFrameMeta = 1024;
 // timing v2: the frame buffer's size, kMaxFramesBuffered (video/video_stream_buffer_controller.cc:46).
 constexpr size_t kMaxFramesBuffered = 800;
+// RtpVideoStreamReceiver2: "Assume frequency is the same one for all video frames."
+constexpr int kVideoPayloadTypeFrequency = 90000;
 
 loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
   loss::NackConfig n = c.nack_config;
@@ -79,12 +81,53 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
   if (cfg_.video && cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecReceiver>(cfg_.ssrc, cfg_.ulpfec.ulpfec_payload_type);
   }
+  if (cfg_.video) packet_capture_times_.resize(std::max<size_t>(cfg_.packet_buffer.max_size, 1));
 }
 
 void RtpReceiver::OnRtt(TimeDelta rtt) {
   rtt_ = rtt;
   have_rtt_ = true;
   nack_.UpdateRtt(rtt);
+}
+
+void RtpReceiver::OnRtcpPacket(Timestamp now) {
+  // ModuleRtpRtcpImpl2::LastRtt and GetSenderReportStats: wait for both.
+  if (!have_rtt_ || !last_sr_) return;
+  // RtpVideoStreamReceiver2::DeliverRtcp: "Don't use old SRs to estimate time."
+  if (cfg_.video && now - last_sr_arrival_ > TimeDelta::Millis(1)) return;
+  ntp_estimator_.UpdateRtcpTimestamp(rtt_, last_sr_->ntp, last_sr_->rtp_timestamp, now);
+  ++stats_.remote_ntp_updates;
+  if (auto offset = ntp_estimator_.EstimateRemoteToLocalClockOffset()) {
+    capture_clock_offset_updater_.SetRemoteToLocalClockOffset(*offset);
+  }
+}
+
+int64_t RtpReceiver::EstimateNtpTimeMs(uint32_t rtp_timestamp) const {
+  const timing::NtpTime ntp = ntp_estimator_.EstimateNtp(rtp_timestamp);
+  if (ntp.value == 0) return -1;
+  return sync::NtpToMs(ntp.value);
+}
+
+PacketCaptureTime RtpReceiver::OnPacketCaptureTime(const RtpPacket& p, int clock_rate, Timestamp now) {
+  std::optional<sync::AbsoluteCaptureTime> received;
+  if (cfg_.extensions) {
+    if (auto raw = sync::ExtensionAccessor(*cfg_.extensions).GetRaw(p, sync::uri::kAbsCaptureTime)) {
+      received = sync::ParseAbsoluteCaptureTime(*raw);
+    }
+  }
+  PacketCaptureTime c;
+  c.absolute_capture_time = abs_capture_interpolator_.OnPacket(
+      sync::AbsoluteCaptureTimeInterpolator::GetSource(p.ssrc, p.csrcs), p.timestamp, clock_rate, received, now);
+  if (received) {
+    ++stats_.abs_capture_time_received;
+  } else if (c.absolute_capture_time) {
+    ++stats_.abs_capture_time_interpolated;
+  }
+  if (c.absolute_capture_time) {
+    c.local_capture_clock_offset = sync::CaptureClockOffsetUpdater::ConvertToTimeDelta(
+        capture_clock_offset_updater_.AdjustEstimatedCaptureClockOffset(c.absolute_capture_time->clock_offset));
+  }
+  return c;
 }
 
 ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
@@ -233,6 +276,10 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
     return;
   }
   if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
+  // OnReceivedPayloadData: "Try to extrapolate absolute capture time if it is missing", at
+  // kVideoPayloadTypeFrequency for every video packet (rtp_video_stream_receiver2.cc:780-795).
+  packet_capture_times_[p.seq % packet_capture_times_.size()] =
+      std::pair(p.seq, OnPacketCaptureTime(p, kVideoPayloadTypeFrequency, now));
   // RtpVideoStreamReceiver2::OnReceivedPayloadData: what GetSyncInfo reports,
   // from packets received as they were sent only. A packet restored from RTX
   // or recovered by FEC is `recovered()` there and doesn't move it
@@ -288,6 +335,11 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
   // ChannelReceive::OnRtpPacket: what GetSyncInfo reports.
   last_received_rtp_timestamp_ = p.timestamp;
   last_received_rtp_time_ = now;
+  // ChannelReceive::OnRtpPacket interpolates at the payload type's frequency
+  // (channel_receive.cc:747-754); GetAudioFrameWithInfo adds the local offset.
+  if (PacketCaptureTime c = OnPacketCaptureTime(p, cfg_.clock_rate, now); c.absolute_capture_time) {
+    last_audio_capture_time_ = AudioCaptureTime{p.timestamp, *c.absolute_capture_time, c.local_capture_clock_offset};
+  }
   if (!cfg_.decoder) return;
   // NetEqImpl::InsertPacketInternal: each RED block (red level 0 for the
   // primary, 1 for the redundant one) goes through the decoder's ParsePayload.
@@ -350,6 +402,13 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
     }
     FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}, f.last_arrival, retransmitted};
+    // OnInsertedPacket: the frame's first packet's RtpPacketInfo, and RtpFrameObject's ntp_time_ms.
+    const uint16_t first_seq = f.packets.front().seq;
+    if (const auto& slot = packet_capture_times_[first_seq % packet_capture_times_.size()];
+        slot && slot->first == first_seq) {
+      meta.capture = slot->second;
+    }
+    meta.ntp_time_ms = EstimateNtpTimeMs(f.timestamp);
     if (cfg_.extensions && !f.packets.empty()) {
       // ConvertCVOByteToVideoRotation (rtp_cvo.h): the two rotation bits of a one-byte element.
       const auto cvo = sync::ExtensionAccessor(*cfg_.extensions).GetRaw(f.packets.back(), sync::uri::kVideoOrientation);
@@ -479,6 +538,9 @@ void RtpReceiver::Process(Timestamp now) {
     r.size_bytes = it->second.size_bytes;
     r.bitstream = std::move(it->second.bitstream);
     r.rotation = it->second.rotation;
+    r.absolute_capture_time = it->second.capture.absolute_capture_time;
+    r.local_capture_clock_offset = it->second.capture.local_capture_clock_offset;
+    r.ntp_time_ms = it->second.ntp_time_ms;
     if (cfg_.render_smoothing && render) {
       render_pending_[id] = std::move(r);
       render_frames_.OnFrame(id, render_time, now);
@@ -562,6 +624,9 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("audio_frames", stats_.audio_frames);
   w.Counter("audio_decode_failures", stats_.audio_decode_failures);
   w.Counter("audio_fec_frames", stats_.audio_fec_frames);
+  w.Counter("abs_capture_time_received", stats_.abs_capture_time_received);
+  w.Counter("abs_capture_time_interpolated", stats_.abs_capture_time_interpolated);
+  w.Counter("remote_ntp_updates", stats_.remote_ntp_updates);
 }
 
 }  // namespace sm::rtp

@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdlib>
+#include <map>
 #include <vector>
 
 #include "rtp_test_payload.h"
@@ -1127,4 +1129,51 @@ SM_TEST(Session, AudioReceiveRtcpIsTheDefault) {
   au.ssrc = 0x100;
   s.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
+}
+
+// #567 F8.3 part 6, receive half: back to back, with RRTR so that the receive-only side has an RTT
+// (ModuleRtpRtcpImpl2::LastRtt), the SRs train the video receiver's RemoteNtpTimeEstimator after each
+// RTCP packet (RtpVideoStreamReceiver2::DeliverRtcp). Frames then carry their capture time on the
+// local NTP clock and the capture clock offset against the local clock, 0 here (one clock, no delay).
+SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  for (SessionConfig* c : {&ca, &cb}) {
+    c->extensions.Register(7, sync::uri::kAbsCaptureTime);
+    c->rtcp.xr_rrtr = true;
+  }
+  Session a(ca), b(cb);
+  const VideoSendId vs = a.AddVideoSend(Video());
+  const VideoRecvId vr = b.AddVideoReceive(Video());
+  std::vector<std::pair<Timestamp, ReceivedVideoFrame>> frames;  // Capture time, frame.
+  std::map<uint32_t, Timestamp> captured;
+  for (int64_t t = 0; t < 12000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 33 == 0) {
+      EncodedVideoFrame f;
+      f.rtp_timestamp = static_cast<uint32_t>(t * 90);
+      const Bytes data = MakeFakeH264Frame(t == 0, 1500);
+      f.data = data;
+      f.keyframe = t == 0;
+      f.capture_time = now;
+      captured[f.rtp_timestamp] = now;
+      a.SendVideo(vs, f, now);
+    }
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+    for (auto& f : b.TakeVideoFrames(vr)) frames.emplace_back(captured[f.rtp_timestamp], std::move(f));
+  }
+  SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 3u);
+  SM_ASSERT_GT(frames.size(), 300u);
+  SM_EXPECT_TRUE(frames.front().second.absolute_capture_time.has_value());
+  SM_EXPECT_EQ(frames.front().second.ntp_time_ms, -1);  // Before any SR.
+  const auto& [capture, last] = frames.back();
+  SM_ASSERT_TRUE(last.absolute_capture_time.has_value());
+  SM_EXPECT_EQ(sync::UQ32x32ToInt64Ms(last.absolute_capture_time->capture_ntp),
+               sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value));
+  SM_ASSERT_TRUE(last.local_capture_clock_offset.has_value());
+  SM_EXPECT_LE(std::abs(last.local_capture_clock_offset->ms()), 1);
+  SM_EXPECT_NEAR(static_cast<double>(last.ntp_time_ms),
+                 static_cast<double>(sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value)), 1.0);
 }

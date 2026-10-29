@@ -971,3 +971,135 @@ SM_TEST(RtpReceiver, AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKe
   SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
   SM_EXPECT_EQ(frames[0].rtp_timestamp, 3001u * 3000u);
 }
+
+// Absolute capture time (#567 F8.3 part 6, receive half): RtpVideoStreamReceiver2::OnReceivedPayloadData
+// interpolates a packet without the extension from the last one at 90 kHz, and the frame takes its first
+// packet's (compare/webrtc/reference/video/rtp_video_stream_receiver2.cc:780-795, 1046-1076).
+SM_TEST(RtpReceiver, AFrameWithoutTheExtensionGetsTheInterpolatedCaptureTime) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig sc = SenderCfg();
+  sc.extensions = &map;
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  const uint64_t first_ntp = sync::Int64MsToUQ32x32(3'900'000'000'000);
+  for (int64_t i = 0; i < 4; ++i) {
+    const Timestamp at = Timestamp::Millis(i * 33);
+    auto chunks = test::MakeTestFrameChunks(i == 0, i == 0 ? 3000 : 800, s.config().max_payload_size);
+    std::optional<sync::AbsoluteCaptureTime> abs;
+    if (i == 0) abs = sync::AbsoluteCaptureTime{first_ntp, 0};
+    s.SendVideoFrame(chunks, static_cast<uint32_t>(i * 3000), at, i == 0, video::Rotation::k0, abs);
+    for (auto& p : Release(s, at)) r.OnPacket(p.packet.Serialize(), at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+  }
+  auto frames = Run(r, 200, 800);
+  SM_ASSERT_EQ(frames.size(), 4u);
+  for (size_t i = 0; i < frames.size(); ++i) {
+    SM_ASSERT_TRUE(frames[i].absolute_capture_time.has_value());
+    SM_EXPECT_EQ(frames[i].absolute_capture_time->capture_ntp,
+                 sync::AbsoluteCaptureTimeInterpolator::Interpolate(static_cast<uint32_t>(i * 3000), 90000, 0, first_ntp));
+    SM_EXPECT_TRUE(frames[i].absolute_capture_time->clock_offset == std::optional<int64_t>(0));
+    // No SR yet: neither the local capture clock offset nor the NTP estimate is known.
+    SM_EXPECT_FALSE(frames[i].local_capture_clock_offset.has_value());
+    SM_EXPECT_EQ(frames[i].ntp_time_ms, -1);
+  }
+  SM_EXPECT_EQ(r.stats().abs_capture_time_received, 1u);
+  SM_EXPECT_GE(r.stats().abs_capture_time_interpolated, 3u);
+}
+
+namespace {
+// A sender whose clock is 5 s ahead of ours sends an SR at our time `t`; it arrives 50 ms later (RTT 100 ms).
+timing::SenderReport RemoteSr(uint32_t ssrc, int64_t t_ms, int clock_rate) {
+  timing::SenderReport sr;
+  sr.ssrc = ssrc;
+  sr.ntp = timing::NtpTime::FromTimestamp(Timestamp::Millis(t_ms + 5000));
+  sr.rtp_timestamp = static_cast<uint32_t>(t_ms * (clock_rate / 1000));
+  return sr;
+}
+}  // namespace
+
+// RemoteNtpTimeEstimator from SRs (rtp_video_stream_receiver2.cc:1533-1569): once 3 SRs are in, the
+// remote-to-local clock offset (-5 s) goes to CaptureClockOffsetUpdater, and a frame's ntp_time_ms is its
+// capture time on our NTP clock. An SR older than 1 ms when the RTCP packet is handled is not used.
+SM_TEST(RtpReceiver, SenderReportsTrainTheRemoteNtpEstimateAndTheCaptureClockOffset) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig sc = SenderCfg();
+  sc.extensions = &map;
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  // Without an RTT nothing is used.
+  r.OnSenderReport(RemoteSr(kSsrc, 0, 90000), Timestamp::Millis(50));
+  r.OnRtcpPacket(Timestamp::Millis(50));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 0u);
+  r.OnRtt(TimeDelta::Millis(100));
+  for (int64_t t : {1000, 2000, 3000}) {
+    r.OnSenderReport(RemoteSr(kSsrc, t, 90000), Timestamp::Millis(t + 50));
+    r.OnRtcpPacket(Timestamp::Millis(t + 50));
+  }
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 3u);
+  // A stale SR: the RTCP packet that brought it was handled 2 ms later.
+  r.OnSenderReport(RemoteSr(kSsrc, 4000, 90000), Timestamp::Millis(4050));
+  r.OnRtcpPacket(Timestamp::Millis(4052));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 3u);
+
+  const int64_t t0 = 5000;
+  auto chunks = test::MakeTestFrameChunks(true, 3000, s.config().max_payload_size);
+  s.SendVideoFrame(chunks, static_cast<uint32_t>(t0 * 90), Timestamp::Millis(t0), true, video::Rotation::k0,
+                   sync::AbsoluteCaptureTime{sync::Int64MsToUQ32x32(123'000), 0});
+  for (auto& p : Release(s, Timestamp::Millis(t0))) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(t0 + 20));
+  auto frames = Run(r, t0 + 20, t0 + 600);
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_ASSERT_TRUE(frames[0].local_capture_clock_offset.has_value());
+  SM_EXPECT_EQ(frames[0].local_capture_clock_offset->ms(), -5000);
+  const int64_t expected = sync::NtpToMs(timing::NtpTime::FromTimestamp(Timestamp::Millis(t0)).value);
+  SM_EXPECT_NEAR(static_cast<double>(frames[0].ntp_time_ms), static_cast<double>(expected), 1.0);
+  SM_EXPECT_EQ(r.EstimateNtpTimeMs(static_cast<uint32_t>(t0 * 90)), frames[0].ntp_time_ms);
+}
+
+// Audio (channel_receive.cc:747-754, 818-847): every packet is interpolated at the stream's clock rate,
+// and an RTCP packet without a new SR gives the last SR again (no recency check).
+SM_TEST(RtpReceiver, AudioInterpolatesEachPacketAndReusesTheLastSenderReport) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpReceiverConfig rc;
+  rc.ssrc = kSsrc;
+  rc.payload_type = 111;
+  rc.clock_rate = 48000;
+  rc.video = false;
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.OnRtt(TimeDelta::Millis(100));
+  // An SR arrives 2 ms before the packet is handled: audio still uses it.
+  r.OnSenderReport(RemoteSr(kSsrc, 0, 48000), Timestamp::Millis(50));
+  r.OnRtcpPacket(Timestamp::Millis(52));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 1u);
+  const uint64_t first_ntp = sync::Int64MsToUQ32x32(77'000);
+  for (uint32_t i = 0; i < 3; ++i) {
+    RtpPacket p;
+    p.ssrc = kSsrc;
+    p.payload_type = 111;
+    p.seq = static_cast<uint16_t>(100 + i);
+    p.timestamp = 960 * i;
+    p.payload = {1, 2, 3};
+    if (i == 0) {
+      sync::ExtensionAccessor(map).SetRaw(p, sync::uri::kAbsCaptureTime,
+                                          sync::SerializeAbsoluteCaptureTime({first_ntp, std::nullopt}));
+    }
+    r.OnPacket(p.Serialize(), Timestamp::Millis(100 + 20 * i));
+  }
+  const auto& last = r.last_audio_capture_time();
+  SM_ASSERT_TRUE(last.has_value());
+  SM_EXPECT_EQ(last->rtp_timestamp, 1920u);
+  SM_EXPECT_EQ(last->absolute_capture_time.capture_ntp,
+               sync::AbsoluteCaptureTimeInterpolator::Interpolate(1920, 48000, 0, first_ntp));
+  SM_EXPECT_FALSE(last->local_capture_clock_offset.has_value());  // The extension has no offset.
+  SM_EXPECT_EQ(r.stats().abs_capture_time_received, 1u);
+  SM_EXPECT_EQ(r.stats().abs_capture_time_interpolated, 2u);
+}

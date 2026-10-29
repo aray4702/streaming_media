@@ -1486,8 +1486,16 @@ ALGORITHMS = [
                                 "does. #567 part 6 (send half): `RtpSender` writes the extension as libwebrtc's senders, "
                                 "once per video frame on its first packet (whole NTP milliseconds, offset 0, 90 kHz, with "
                                 "`first_packet_reduction_len`) and per audio packet (full precision), from the frame's "
-                                "`capture_time`; `sm_rtcp_interop` checks the bytes against libwebrtc both ways. The "
-                                "receivers don't use them yet (the receive half)."),
+                                "`capture_time`; `sm_rtcp_interop` checks the bytes against libwebrtc both ways. "
+                                "#567 part 6 (receive half): `RtpReceiver` interpolates every media packet "
+                                "(`AbsoluteCaptureTimeInterpolator`, video at 90 kHz, audio at the stream's clock rate; "
+                                "rtp_video_stream_receiver2.cc:780-795, channel_receive.cc:747-754) and adds the local capture "
+                                "clock offset (`CaptureClockOffsetUpdater`); a video frame takes its first packet's, with "
+                                "`ntp_time_ms` from `RemoteNtpTimeEstimator::Estimate` (the trial off). After each RTCP packet "
+                                "the SR trains `RemoteNtpTimeEstimator` once there is an RTT, video only with an SR that arrived "
+                                "with that packet (DeliverRtcp, ReceivedRTCPPacket). unit.RtpReceiver and unit.Session "
+                                "(`ReceivedFramesCarryTheCaptureTimeOnTheLocalClock`) pin it. Remaining: the decoded audio "
+                                "frame's packet infos (`GetAudioFrameWithInfo`): ours keeps the last packet's."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
