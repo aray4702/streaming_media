@@ -101,28 +101,47 @@ class TransportFeedbackBuilder : public MetricsSource {
 };
 
 // Sender side: remembers what was sent and turns feedback into results.
+// libwebrtc modules/congestion_controller/rtp/transport_feedback_adapter.* (#569
+// part 2), for draft-holmer transport feedback on one network route:
+// - the history keeps a packet for 60 s from when it was added
+//   (kSendTimeHistoryWindow), pruned as packets are added; there is no count cap;
+// - a packet reported received leaves the history, so a second report of it
+//   fails the lookup; a packet reported lost stays, and a later report may still
+//   say it arrived;
+// - data in flight is the size of the packets above the highest transport
+//   sequence number any feedback has named (last_ack_seq_num_), found or not:
+//   a packet below it that no feedback reported (its feedback was lost) is no
+//   longer in flight;
+// - receive times are on a local base: the first feedback's receive time, then
+//   moved by each feedback's base-time delta (rounded down to 1 ms); each
+//   packet's time since its feedback's base time is rounded down to 1 ms (#365).
 class SendHistory : public MetricsSource {
  public:
+  // AddPacket + ProcessSentPacket: the packet is added when the pacer sends it.
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
-  // Results sorted by sequence number; unknown sequence numbers are skipped.
+  // ProcessTransportFeedback: results in feedback order (transport sequence
+  // order); unknown sequence numbers are skipped. Empty if the feedback names no
+  // known packet, which libwebrtc does not pass on (it returns nullopt).
   std::vector<PacketResult> OnFeedback(const TransportFeedback& fb, Timestamp now);
+  // GetOutstandingData.
   DataSize InFlight() const { return in_flight_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
   struct Sent {
+    Timestamp creation_time;
     Timestamp time;
     DataSize size;
     int probe;
-    bool reported = false;
-    bool received = false;  // Reported received once; a second report is ignored.
   };
   SeqNumUnwrapper<uint16_t> unwrapper_;
-  std::map<int64_t, Sent> sent_;
+  std::map<int64_t, Sent> history_;
   DataSize in_flight_;
-  int64_t highest_reported_ = INT64_MIN;
-  int64_t forgotten_below_ = INT64_MIN;  // Packets below this are settled for in_flight_.
-  uint64_t lost_ = 0, acked_ = 0;
+  // Sequence numbers are never negative; -1 is below every real one.
+  int64_t last_ack_seq_num_ = -1;
+  Timestamp current_offset_ = Timestamp::MinusInfinity();
+  std::optional<uint32_t> last_base_ticks_;  // last_transport_feedback_base_time_, 24-bit 64 ms ticks.
+  uint64_t lost_ = 0, acked_ = 0, failed_lookups_ = 0;
 };
 
 }  // namespace sm::cc
