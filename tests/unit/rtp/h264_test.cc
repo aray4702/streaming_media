@@ -74,6 +74,48 @@ SM_TEST(H264, SingleNalUnitPacketWhenAloneAndFitting) {
   SM_EXPECT_TRUE(i.valid && !i.idr && i.first_packet_in_frame);
 }
 
+// Issue #655: RtpPacketizerH264 in packetization mode 0 (PacketizeSingleNalu,
+// rtp_format_h264.cc:204-226): each NAL unit is a packet of its own, never aggregated.
+SM_TEST(H264, SingleNalUnitModeSendsEachUnitAlone) {
+  const Bytes frame = MakeFakeH264Frame(true, 200);
+  PayloadSizeLimits l;
+  l.max_payload_len = 1188;
+  SM_EXPECT_EQ(H264Packetizer::Packetize(frame, l).size(), 1u);  // Mode 1: one STAP-A.
+  const auto chunks = H264Packetizer::Packetize(frame, l, H264PacketizationMode::kSingleNalUnit);
+  SM_ASSERT_EQ(chunks.size(), 3u);
+  SM_EXPECT_EQ(chunks[0][0], 0x67);
+  SM_EXPECT_EQ(chunks[0].size(), 1u + sizeof(kFakeH264Sps));
+  SM_EXPECT_EQ(chunks[1][0], 0x68);
+  SM_EXPECT_EQ(chunks[1].size(), 1u + sizeof(kFakeH264Pps));
+  SM_EXPECT_EQ(chunks[2][0], 0x65);
+  SM_EXPECT_EQ(chunks[0].size() + chunks[1].size() + chunks[2].size(), 200u - 3 * 4);
+  const auto packets = AsPackets(chunks);
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(chunks[0]).sps);
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(chunks[2]).idr);
+  SM_EXPECT_EQ(packets.size(), 3u);
+}
+
+// Mode 0 cannot fragment: a unit larger than the room of its packet (with the single, first or
+// last packet reduction) fails the whole frame, as GeneratePackets returns false.
+SM_TEST(H264, SingleNalUnitModeFailsAFrameWithAUnitTooLarge) {
+  const Bytes delta = MakeFakeH264Frame(false, 300);  // One 296-byte unit.
+  PayloadSizeLimits l;
+  l.max_payload_len = 296;
+  SM_EXPECT_EQ(H264Packetizer::Packetize(delta, l, H264PacketizationMode::kSingleNalUnit).size(), 1u);
+  l.single_packet_reduction_len = 1;
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(delta, l, H264PacketizationMode::kSingleNalUnit).empty());
+  l = {};
+  l.max_payload_len = 1188;
+  const Bytes key = MakeFakeH264Frame(true, 3000);
+  SM_EXPECT_GT(H264Packetizer::Packetize(key, l).size(), 1u);  // Mode 1 fragments the IDR.
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(key, l, H264PacketizationMode::kSingleNalUnit).empty());
+  const Bytes small = MakeFakeH264Frame(true, 200);
+  l.first_packet_reduction_len = 1188 - 7;  // Room for 7 bytes: the 8-byte SPS does not fit.
+  SM_EXPECT_TRUE(H264Packetizer::Packetize(small, l, H264PacketizationMode::kSingleNalUnit).empty());
+  l.first_packet_reduction_len = 1188 - 8;
+  SM_EXPECT_EQ(H264Packetizer::Packetize(small, l, H264PacketizationMode::kSingleNalUnit).size(), 3u);
+}
+
 SM_TEST(H264, LargeNalIsFragmentedWithFuA) {
   Bytes frame = SentFrame(true, 5000);
   std::vector<Bytes> payloads;
