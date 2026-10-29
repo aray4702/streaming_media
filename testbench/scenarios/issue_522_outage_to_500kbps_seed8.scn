@@ -1,0 +1,13 @@
+name issue_522_outage_to_500kbps_seed8
+describe #522's scenario on seed 8, the seed that drives our sync.av_offset_p95_ms / video.e2e_delay_p95_ms cell on main 1278248 (traced on both stacks)
+# Yardstick (#522): a copy of issue_522_outage_to_500kbps.scn that runs seed 8 first, so compare-webrtc traces it.
+seed 8
+duration 50s
+at 0s  capacity=3Mbps delay=40ms queue=300ms
+at 20s down
+at 21s up capacity=500kbps
+reverse at 0s delay=40ms
+reverse at 20s down
+reverse at 21s up
+expect video.longest_freeze_ms < 6000
+expect audio.longest_interruption_ms < 1500

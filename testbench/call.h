@@ -77,6 +77,11 @@ struct VideoTraceRow {
   // frames decoded (frames_decoded) and frames dropped (frames_dropped:
   // fast-forwards and frames cleared for a keyframe).
   int rx_complete = 0, rx_decoded = 0, rx_dropped = 0;
+  // A/V sync at the frames rendered in the second (issue #522), from the
+  // shared AvSyncMeter: the mean signed offset (positive: video later than
+  // audio), the largest absolute one, and the mean capture-to-render delay.
+  // 0 when no frame was measured.
+  double av_offset_ms = 0, av_offset_abs_max_ms = 0, video_delay_ms = 0;
 };
 
 // One 10 ms audio pull (issue #62), the same record for this library and for
@@ -230,7 +235,8 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,
 // dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
 // encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
-// height_mean. qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
+// height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,
+// rx_decoded,rx_dropped,av_offset_ms,av_offset_abs_max_ms,video_delay_ms. qp_mean, encode_ms_mean and height_mean are means over the second's encoded frames (0 when none), from
 // the encoder model both implementations share (testbench/encoder_model.h,
 // issue #84). The drop columns are
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop
@@ -242,6 +248,10 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // a resume encodes it. It has no counterpart for dropped_capturer or
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
+// Fills each row's av_offset_ms, av_offset_abs_max_ms and video_delay_ms from
+// the frames `av_sync` measured in the row's second, [t_ms - 1000, t_ms)
+// (issue #522). Both implementations call it, so the columns read the same.
+void AddAvSyncToVideoTrace(const AvSyncMeter& av_sync, std::vector<VideoTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
