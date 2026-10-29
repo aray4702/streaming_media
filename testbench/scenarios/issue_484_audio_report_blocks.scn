@@ -1,11 +1,11 @@
 name issue_484_audio_report_blocks
 describe Issue #484: the receiver's audio stream reports in its own RTCP every 5 s, as libwebrtc's ChannelReceive, so the Opus encoder's loss input is not reset by every video RR, NACK and PLI (40 ms jitter with reordering)
 duration 30s
-audio_receive_rtcp on
+# No `audio_receive_rtcp` line: libwebrtc's per-stream audio RTCP is the default since the flip (part 2).
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 # libwebrtc on seed 1 (parity-data traces/high_jitter.1.webrtc.audiosend.csv): 6 audio report blocks, at 2.53, 6.05,
 # 8.68, 15.06, 21.71 and 27.37 s. Each interval is drawn from [2.5, 7.5] s, so 30 s carries 4 to 8 (11 or more were
-# never seen without the switch: 317-408 on main, one per video RR, NACK and PLI).
+# never seen with the switch off: 317-408, one per video RR, NACK and PLI).
 expect rtcp.audio_report_blocks >= 4
 expect rtcp.audio_report_blocks <= 8
 expect audio.interruptions == 0
