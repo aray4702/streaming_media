@@ -55,14 +55,7 @@ deviation with its decision (none yet).
 | 15 | Adaptation | Camera degradation preference | MAINTAIN_FRAMERATE (`ref/media/engine/webrtc_video_engine.cc:2032-2064`) | `DegradationConfig` balanced (`include/sm/cc/video_adaptation.h:70`), `SettingsFor` camera -> balanced (`src/video/content_policy.cc:25`); the send path hard-codes MAINTAIN_FRAMERATE | bench-only, **flip** or deviation | #581 |
 | 16 | Adaptation | `BalancedDegradationSettings` | read only under BALANCED (`ref/rtc_base/experiments/balanced_degradation_settings.cc:29`) | not ported | missing (unused by the call) | #566 |
 | 17 | Library defaults | `VideoStreamConfig::decode_time` 5 ms (`session.h:149`) | measured by the decoder | the bench sets 0, as the harness's model decoder | bench-only (a model input for an app without a decoder clock) | #580 (note) |
-
-Not confirmed: libwebrtc caps its frame buffer at 800 frames (a keyframe
-clears a full buffer, a delta frame is refused;
-`ref/video/video_stream_buffer_controller.cc:46`,
-`ref/api/video/frame_buffer.cc:98-106`). No such cap was found in
-`src/timing/frame_release.cc`; `KeyframeRequester` tracks 512 frames. It
-matters only with a backlog of hundreds of frames; to be checked before an
-item is filed.
+| 18 | Video receive | Frame buffer cap | 800 frames; a keyframe clears a full buffer, a delta frame is refused; an older-id keyframe with a newer timestamp clears it (`ref/video/video_stream_buffer_controller.cc:46`, `ref/api/video/frame_buffer.cc:84-106`) | no cap on the release queue (`src/timing/frame_release.cc`, `Insert`); frame metadata capped at 1024, evicting the oldest (`src/rtp/rtp_receiver.cc:12`, `:309-312`) | different (only with a backlog of hundreds of frames) | #583 |
 
 ## 2. Same as libwebrtc
 
