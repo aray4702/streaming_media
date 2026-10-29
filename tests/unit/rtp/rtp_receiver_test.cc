@@ -643,7 +643,10 @@ SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  // Timing v1's 1024-entry bound; timing v2's is the 800-frame buffer (#583, tested below).
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.timing.version = 1;
+  RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
   for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
   auto rb = r.receive_statistics()->MakeReportBlock(Timestamp::Millis(1000));
@@ -880,7 +883,7 @@ SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
 // delta frame is refused and a keyframe clears it (api/video/frame_buffer.cc:98-106).
 namespace {
 RtpReceiverConfig V2ReceiverCfg() {
-  RtpReceiverConfig rc = ReceiverCfg();
+  RtpReceiverConfig rc = NoHoldCfg();  // Delta frames behind the lost one reach the frame buffer.
   rc.timing.version = 2;
   rc.nack = false;
   return rc;
