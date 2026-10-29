@@ -1,0 +1,519 @@
+{
+ "comment": "Stage 1 requirements: the Owner measures progress by requirements closed, not by issues or PRs (Owner, 2026-10-28; agents/program.md 0.4). Library features come from tools/catalog.py (one per algorithm); each is done when it behaves as libwebrtc M157: ported faithfully from compare/webrtc/reference/, its defaults equal libwebrtc's, and no open item labelled req:<id> remains (so no parity gap it owns is open). Status: unassessed | open | in-progress | done. The Coordinator keeps it current; tools/requirements_report.py reports it.",
+ "library_acceptance": "Behaves as libwebrtc M157: (a) ported as a unit from compare/webrtc/reference/ (or a recorded, approved deviation), (b) defaults equal libwebrtc's, (c) no open item labelled req:<id>, so every parity gap it owns is closed or explained.",
+ "requirements": [
+  {
+   "id": "F3.1",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.1",
+   "title": "NACK + RTX retransmission",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.2",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.2",
+   "title": "Forward error correction (ULPFEC over RED, as libwebrtc)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.3",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.3",
+   "title": "RED audio redundancy (RFC 2198)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.4",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.4",
+   "title": "Packet loss concealment (PCM domain)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.5",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.5",
+   "title": "Keyframe requests (PLI/FIR) and loss notification",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.6",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.6",
+   "title": "Temporal scalability (L1T2/L1T3)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F3.7",
+   "kind": "library",
+   "area": "Packet loss",
+   "catalog": "3.7",
+   "title": "NACK/FEC protection selection",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.1",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.1",
+   "title": "Packet buffer: reordering, de-duplication, frame assembly",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.2",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.2",
+   "title": "RTCP statistics: loss, jitter and RTT",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.3",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.3",
+   "title": "Audio target delay estimation (DelayManager)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.4",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.4",
+   "title": "Time stretching (WSOLA accelerate / preemptive expand)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.5",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.5",
+   "title": "Adaptive audio jitter buffer (NetEq-lite)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.6",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.6",
+   "title": "Video jitter estimation and render timing",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F4.7",
+   "kind": "library",
+   "area": "Jitter, reordering and timing",
+   "catalog": "4.7",
+   "title": "Clock drift estimation and compensation",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.1",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.1",
+   "title": "Transport-wide CC feedback (and REMB)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.2",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.2",
+   "title": "Delay-based bandwidth estimation (GCC)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.3",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.3",
+   "title": "Loss-based bandwidth estimation",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.4",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.4",
+   "title": "Send-side bandwidth estimation (GCC network controller)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.5",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.5",
+   "title": "Pacer with priority queues",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.6",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.6",
+   "title": "Bandwidth probing",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.7",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.7",
+   "title": "Bitrate allocation among streams",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.8",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.8",
+   "title": "Encoder overshoot control (frame dropper)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.9",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.9",
+   "title": "Resolution/frame-rate adaptation and CPU overuse detection",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F5.11",
+   "kind": "library",
+   "area": "Bandwidth, congestion and unstable links",
+   "catalog": "5.11",
+   "title": "Link outage detection and recovery",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.1",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.1",
+   "title": "Acoustic echo cancellation",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.2",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.2",
+   "title": "Echo-path delay estimation",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.3",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.3",
+   "title": "Noise suppression",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.4",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.4",
+   "title": "Automatic gain control and limiter",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.5",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.5",
+   "title": "High-pass filter",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.6",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.6",
+   "title": "Transient (keyboard click) suppression",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.7",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.7",
+   "title": "DTX and comfort noise (RFC 3389)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.8",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.8",
+   "title": "Voice activity detection",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.9",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.9",
+   "title": "Audio level (RFC 6464)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.11",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.11",
+   "title": "Sample-rate conversion",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F6.12",
+   "kind": "library",
+   "area": "Audio quality (APM)",
+   "catalog": "6.12",
+   "title": "Band splitting",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.1",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.1",
+   "title": "Freeze detection",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.2",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.2",
+   "title": "Hardware -> software codec fallback",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.3",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.3",
+   "title": "Video orientation (CVO)",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.4",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.4",
+   "title": "Content hints and screen-content variable frame rate",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.5",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.5",
+   "title": "Codec negotiation",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.6",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.6",
+   "title": "Resolution scaling and aspect handling",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.7",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.7",
+   "title": "Render timing and late-frame dropping",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F7.8",
+   "kind": "library",
+   "area": "Video quality and processing",
+   "catalog": "7.8",
+   "title": "QP-based quality scaler",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F8.1",
+   "kind": "library",
+   "area": "Synchronization",
+   "catalog": "8.1",
+   "title": "RTP -> NTP mapping",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F8.2",
+   "kind": "library",
+   "area": "Synchronization",
+   "catalog": "8.2",
+   "title": "Audio/video synchronization and CNAME sync groups",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F8.3",
+   "kind": "library",
+   "area": "Synchronization",
+   "catalog": "8.3",
+   "title": "Absolute capture time and glass-to-glass latency",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F8.4",
+   "kind": "library",
+   "area": "Synchronization",
+   "catalog": "8.4",
+   "title": "Header extensions (RFC 8285) and BUNDLE demuxing",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F9.1",
+   "kind": "library",
+   "area": "RTP/RTCP session layer",
+   "catalog": "9.1",
+   "title": "RTCP engine, SDES and BYE",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F9.2",
+   "kind": "library",
+   "area": "RTP/RTCP session layer",
+   "catalog": "9.2",
+   "title": "RTP sender and send-side controller",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F9.3",
+   "kind": "library",
+   "area": "RTP/RTCP session layer",
+   "catalog": "9.3",
+   "title": "RTP receiver",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F9.4",
+   "kind": "library",
+   "area": "RTP/RTCP session layer",
+   "catalog": "9.4",
+   "title": "RTP session facade",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "F9.5",
+   "kind": "library",
+   "area": "RTP/RTCP session layer",
+   "catalog": "9.5",
+   "title": "H.264 packetization (RFC 6184) and fake encoder",
+   "status": "unassessed",
+   "evidence": ""
+  },
+  {
+   "id": "H1",
+   "kind": "harness",
+   "area": "Test harness",
+   "title": "Test harness identical for both stacks (step 1)",
+   "acceptance": "Every row of docs/design/harness-fidelity.md is shared code or identical by construction; the drift check passes; no open sev:2 harness item.",
+   "status": "in-progress",
+   "evidence": "#478 audit done; #555 (PR #556) is the last open harness item"
+  },
+  {
+   "id": "H2",
+   "kind": "harness",
+   "area": "Test harness",
+   "title": "Every parity gap on the faithful harness has an open owner or an explained note (step 2)",
+   "acceptance": "tools/parity_report.py --check-owned passes on main's compare-webrtc.json (#479).",
+   "status": "open",
+   "evidence": ""
+  },
+  {
+   "id": "H3",
+   "kind": "harness",
+   "area": "Test harness",
+   "title": "Feature and configuration inventory matches libwebrtc M157 (step 3)",
+   "acceptance": "Every row of the step 3 inventory (#480) is the same as libwebrtc's, or an approved deviation with its decision linked.",
+   "status": "open",
+   "evidence": ""
+  },
+  {
+   "id": "P1",
+   "kind": "platform",
+   "area": "Platforms",
+   "title": "Supported platforms build and pass in CI: the browser (WebAssembly) and macOS",
+   "acceptance": "ci.yml's host (macos-14) and wasm jobs pass on main (Owner, 2026-10-27).",
+   "status": "done",
+   "evidence": "PR #494; main green"
+  },
+  {
+   "id": "S1",
+   "kind": "system",
+   "area": "Agent system",
+   "title": "The agent system audits itself: daily product and system audits, Flow watch alerts answered the same day",
+   "acceptance": "program.md 0.3; audits filed at 6:00 AM PT; no Flow watch alert open longer than 24 h.",
+   "status": "done",
+   "evidence": "PRs #497, #539, #545, #546"
+  }
+ ]
+}

@@ -202,6 +202,26 @@ Rules:
   matching libwebrtc unit test), and is labelled `needs-human` for the
   Owner's sign-off. Section 6.2 item 4 allows this case and no other.
 
+### 0.4 Progress is measured in requirements (Owner, 2026-10-28)
+
+The Owner measures progress by features and requirements closed, not by
+issues or PRs closed. The register is `tools/requirements.json`:
+- **one requirement per library feature** in `tools/catalog.py`. Each is
+  done when it **behaves as libwebrtc M157**: ported as a unit from
+  `compare/webrtc/reference/` (or a recorded, approved deviation), its
+  defaults equal libwebrtc's, and no open item labelled `req:F<id>`
+  remains, so every parity gap it owns is closed or explained;
+- **the harness, platform and system requirements** (H1-H3, P1, S1), each
+  with its own acceptance line.
+
+The Coordinator labels every work item and fix PR with the requirement it
+serves (`req:F5.4`, `req:H1`; create the label if it is missing), and
+moves a requirement's status (`unassessed`, `open`, `in-progress`,
+`done`) with its evidence linked. `tools/requirements_report.py` reports
+done / total per area, and flags a requirement marked done that still has
+open items. Status reports to the Owner, the Coordinator's daily summary,
+the daily system audit and the dashboard lead with it.
+
 ### 0.3 Audits (Owner, 2026-10-28)
 
 Two audits run daily and on demand. The Dispatcher files each as an
