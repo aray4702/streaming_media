@@ -56,7 +56,12 @@ struct BweTraceRow {
 struct GccConfig {
   DataRate min_rate = DataRate::KilobitsPerSec(30);
   DataRate start_rate = DataRate::KilobitsPerSec(300);
-  DataRate max_rate = DataRate::KilobitsPerSec(10000);
+  // Unbounded by default, as libwebrtc's ConvertConstraints when the call sets no
+  // max_bitrate_bps (call/rtp_transport_controller_send.cc:68-83): the
+  // estimator then caps at kDefaultMaxBitrate, 1 Gbps
+  // (send_side_bandwidth_estimation.cc:44), and the prober at its default
+  // (issue #580).
+  DataRate max_rate = DataRate::PlusInfinity();
   bool enable_probing = true;
   // StreamsConfig::requests_alr_probing, which a screen-share stream
   // sets; periodic ALR probes are off otherwise.
