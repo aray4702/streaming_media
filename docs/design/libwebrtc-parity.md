@@ -344,7 +344,7 @@ libwebrtc's rendered frames to this library's `FreezeDetector`.
 | Our module | Reason | Status |
 |---|---|---|
 | `NegotiateCodecs`, `ParseH264ProfileLevelId` (7.5) | SDP offer/answer stays with the host stack (`program.md` 0.1); `webrtc_video_engine.cc` holds libwebrtc's codec lists. | n/a; the Owner may remove the module |
-| `Scale`, `ScaleToFit`, `Crop` (7.6) | libwebrtc scales with libyuv (`I420Buffer::Scale`, not in `reference/`); frames are the app's. | n/a (file needed to compare filters) |
+| `Scale`, `ScaleToFit`, `Crop` (7.6) | **Removed in #593.** libwebrtc scales with libyuv (`I420Buffer::Scale`, not in `reference/`) and the frames are the app's; nothing in a call used ours. Decided by the Owner's A on #566 ([11:33 PM PT 2026-10-28](https://github.com/aray4702/streaming_media/issues/111#issuecomment-6489730426)). | removed |
 | `VideoOrientation`, CVO byte (7.3) | The wire format is 3GPP TS 26.114 in both. **Same** (#567): `RtpSender::SendVideoFrame` writes it as `RTPSenderVideo::AddRtpHeaderExtensions` (`rtp_sender_video.cc:388-408`), on the last packet of a keyframe, of a changed rotation and of any non-zero rotation, with `ConvertVideoRotationToCVOByte` (`rtp_cvo.h`); the receiver takes a frame's rotation from its last packet (`rtp_video_stream_receiver2.cc:797-802, 1108`); interop-checked against `VideoOrientation` both ways. Neither bench call maps it, so no parity cell moves. Rotation at render time is the host's. | same |
 
 ## 8. Synchronization

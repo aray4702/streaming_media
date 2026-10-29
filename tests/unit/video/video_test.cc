@@ -7,7 +7,6 @@
 #include "sm/video/codec_fallback.h"
 #include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
-#include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
@@ -435,30 +434,6 @@ SM_TEST(CodecNegotiation, AnswerKeepsSupportedInLocalOrder) {
   SM_EXPECT_EQ(ans[1].payload_type, 96);
   SM_EXPECT_EQ(ans[2].payload_type, 97);
   SM_EXPECT_EQ(ans[3].payload_type, 103);
-}
-
-SM_TEST(FrameScaler, DownUpRoundTripQuality) {
-  I420Frame f = MakeTestFrame(640, 360, 1);
-  for (auto [w, h] : {std::pair{480, 270}, {320, 180}, {160, 90}}) {
-    I420Frame back = Scale(Scale(f, w, h), 640, 360);
-    double psnr = PsnrY(f, back);
-    SM_EXPECT_GT(psnr, w >= 320 ? 26.0 : 20.0);
-  }
-  I420Frame same = Scale(f, 640, 360);
-  SM_EXPECT_TRUE(same == f);
-}
-
-SM_TEST(FrameScaler, BoxFilterPreservesMeanAndAspectModes) {
-  I420Frame f(64, 64);
-  for (size_t i = 0; i < f.y.size(); ++i) f.y[i] = (i % 2) ? 200 : 100;  // Fine detail.
-  I420Frame s = Scale(f, 16, 16);
-  for (uint8_t v : s.y) SM_EXPECT_NEAR(v, 150, 1);  // Averaged, no aliasing.
-  I420Frame wide = MakeTestFrame(640, 360, 0);
-  I420Frame crop = ScaleToFit(wide, 320, 320, AspectMode::kCrop);
-  SM_EXPECT_EQ(crop.width, 320);
-  I420Frame box = ScaleToFit(wide, 320, 320, AspectMode::kLetterbox);
-  SM_EXPECT_EQ(box.Y(160, 0), 16);    // Black bar on top.
-  SM_EXPECT_NE(box.Y(160, 160), 16);  // Picture in the middle.
 }
 
 SM_TEST(FrameScheduler, RendersOnTimeDropsLateWhenNewerWaiting) {
