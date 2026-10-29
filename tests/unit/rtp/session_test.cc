@@ -175,6 +175,46 @@ SM_TEST(Session, VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted)
   }
 }
 
+// CVO (#567): with the video-orientation extension mapped, the last packet of a rotated frame
+// carries it and still fits the whole-packet limit, because the packetizer leaves the room as
+// last_packet_reduction_len (rtp_sender_video.cc:741-758).
+SM_TEST(Session, RotatedFramesCarryCvoWithinThePacketLimit) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(5, sync::uri::kVideoOrientation);
+  Session a(ca);
+  VideoStreamConfig v = Video();
+  v.nack = false;
+  v.max_payload_size = 1460 - 12;
+  const VideoSendId id = a.AddVideoSend(v);
+  size_t largest = 0, cvo = 0;
+  auto check = [&](std::vector<OutgoingPacket> out) {
+    for (auto& o : out) {
+      if (o.kind != OutgoingKind::kVideo) continue;
+      largest = std::max(largest, o.bytes.size());
+      const auto pkt = RtpPacket::Parse(o.bytes);
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*pkt, sync::uri::kVideoOrientation);
+      if (!raw) continue;
+      ++cvo;
+      SM_EXPECT_TRUE(pkt->marker);
+      SM_EXPECT_TRUE(*raw == Bytes{1});
+    }
+  };
+  // Frames around the limit, as VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted.
+  for (int i = 0; i < 100; ++i) {
+    EncodedVideoFrame f;
+    const Bytes data = MakeFakeH264Frame(false, 1380 + static_cast<size_t>(i));
+    f.rtp_timestamp = static_cast<uint32_t>(3000 * i);
+    f.data = data;
+    f.rotation = video::Rotation::k90;
+    a.SendVideo(id, f, Timestamp::Millis(100 * i));
+    check(Pump(a, 100 * i, 100));
+  }
+  check(Pump(a, 10000, 5000));
+  SM_EXPECT_EQ(largest, 1460u);
+  SM_EXPECT_EQ(cvo, 100u);
+  SM_EXPECT_EQ(a.video_sender(id).stats().video_orientation_packets, 100u);
+}
+
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
 // libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
 // STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta

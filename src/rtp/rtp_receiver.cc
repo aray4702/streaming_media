@@ -302,6 +302,11 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
     }
     FrameMeta meta{f.timestamp, keyframe, f.size_bytes(), {}, f.last_arrival, retransmitted};
+    if (cfg_.extensions && !f.packets.empty()) {
+      // ConvertCVOByteToVideoRotation (rtp_cvo.h): the two rotation bits of a one-byte element.
+      const auto cvo = sync::ExtensionAccessor(*cfg_.extensions).GetRaw(f.packets.back(), sync::uri::kVideoOrientation);
+      if (cvo && cvo->size() == 1) meta.rotation = static_cast<video::Rotation>((*cvo)[0] & 0x3);
+    }
     if (cfg_.deliver_bitstream && cfg_.parser && !cfg_.parser->Reassemble(f.packets, meta.bitstream)) {
       meta.bitstream.clear();
       ++stats_.reassembly_failures;
@@ -387,6 +392,7 @@ void RtpReceiver::Process(Timestamp now) {
     r.lateness = lateness;
     r.size_bytes = it->second.size_bytes;
     r.bitstream = std::move(it->second.bitstream);
+    r.rotation = it->second.rotation;
     if (cfg_.render_smoothing && render) {
       render_pending_[id] = std::move(r);
       render_frames_.OnFrame(id, render_time, now);
