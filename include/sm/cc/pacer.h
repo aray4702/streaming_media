@@ -60,6 +60,8 @@ class Pacer : public MetricsSource {
   void SetCongested(bool congested);
 
   DataSize QueueSize() const;
+  // PacingController::QueueSizeData: the queue without its RTP headers.
+  DataSize QueueSizeData() const;
   // PacingController::ExpectedQueueTime: the queue at the adjusted media rate.
   TimeDelta ExpectedQueueTime() const;
   size_t QueuePackets() const;

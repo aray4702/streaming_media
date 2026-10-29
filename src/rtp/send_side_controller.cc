@@ -58,9 +58,12 @@ void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now)
 // changed: after feedback, on the process interval and for every sent packet.
 // UpdateCongestionWindowSize sizes the window from last_loss_based_target_rate_, the target the
 // last MaybeTriggerOnNetworkChanged saw, before this update's trigger runs (OnProcessInterval).
+// The pacer queue reaches the pushback only on the process interval (`window`): GoogCC's
+// OnProcessInterval takes ProcessInterval::pacer_queue, the pacer's QueueSizeData
+// (goog_cc_network_control.cc:215-217, rtp_transport_controller_send.cc:819-825).
 void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
-  cwnd_.UpdatePacingQueue(pacer_.QueueSize());
+  if (window) cwnd_.UpdatePacingQueue(pacer_.QueueSizeData());
   if (window) cwnd_.UpdateWindow(window_target_);
   // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
@@ -236,8 +239,10 @@ void SendSideController::SetPacingFactor(double factor) {
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
 }
 
+// RtpTransportControllerSend::OnReport posts GoogCC's update, which is empty for a loss report: the
+// pacer, the pushback and the allocator get the new target with the next feedback or process interval.
 void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
-  Apply(gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now), now);
+  gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now);
 }
 
 void SendSideController::SetPaddingSender(RtpSender* sender) {
@@ -263,7 +268,9 @@ void SendSideController::AddPaddingSender(RtpSender* sender) {
     for (SenderPacket& sp : GeneratePadding(static_cast<size_t>(target.bytes()), now)) {
       WriteSendExtensions(sp.packet, 0, now);  // Reserve the extensions written at release.
       const uint64_t id = next_id_++;
-      out.push_back({id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now});
+      cc::PacedPacket pp{id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now};
+      pp.header_size = DataSize::Bytes(static_cast<int64_t>(sp.packet.HeaderSize()));
+      out.push_back(pp);
       queued_[id] = std::move(sp);
       ++stats_.padding;
     }
@@ -299,6 +306,7 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   cc::PacketPriority prio = p.priority;
   uint64_t id = next_id_++;
   cc::PacedPacket pp{id, prio, DataSize::Bytes(size), now};
+  pp.header_size = DataSize::Bytes(static_cast<int64_t>(p.packet.HeaderSize()));
   pp.is_key_frame = p.is_key_frame;
   pp.first_packet_of_frame = p.first_packet_of_frame;
   queued_[id] = std::move(p);
@@ -381,7 +389,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     last_gcc_ = now;
     // The transport's pacer-queue task (kPacerQueueUpdateInterval, 25 ms, started with the controller's
     // and before it): the encoder pauses while the pacer's expected queue time is above 2 s.
-    if (cfg_.control_handler) control_handler_.SetPacerQueue(pacer_.QueueSize().bytes() == 0 ? TimeDelta::Zero() : pacer_.ExpectedQueueTime());
+    if (cfg_.control_handler) control_handler_.SetPacerQueue(pacer_.QueueSizeData() == DataSize::Zero() ? TimeDelta::Zero() : pacer_.ExpectedQueueTime());
     if (cfg_.control_handler) UpdateControlState(now);
     Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
     UpdatePushback(now, true);

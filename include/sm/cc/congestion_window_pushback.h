@@ -58,6 +58,7 @@ class CongestionWindowPushback : public MetricsSource {
   void SetDataWindow(DataSize w) { window_ = w; }
   void UpdateOutstandingData(DataSize in_flight) { outstanding_ = in_flight; }
   void UpdatePacingQueue(DataSize queued) { pacing_ = queued; }
+  DataSize pacing_queue() const { return pacing_; }
   // The encoder target after pushback. Moves the ratio, so call it where
   // libwebrtc does (after feedback, the process interval, every sent packet).
   DataRate UpdateTargetBitrate(DataRate target, Timestamp now);

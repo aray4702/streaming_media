@@ -180,13 +180,14 @@ void GccController::OnRemb(DataRate remb) {
   target_ = ssbe_.target_rate();
 }
 
-// GoogCcNetworkController::OnTransportLossReport.
-NetworkControlUpdate GccController::OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
+// GoogCcNetworkController::OnTransportLossReport (goog_cc_network_control.cc:380-387): the loss
+// reaches the estimator only. It returns an empty update, so the new target goes out, and
+// MaybeTriggerOnNetworkChanged runs, at the next feedback or process interval.
+void GccController::OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
   last_now_ = now;
   ssbe_.UpdatePacketsLost(packets_lost_delta, packets_delta, now);
   target_ = ssbe_.target_rate();
   TraceLossBased(now);
-  return MakeUpdate(now, {});
 }
 
 NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback& fb, Timestamp now) {

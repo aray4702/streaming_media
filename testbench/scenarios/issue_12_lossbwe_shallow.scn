@@ -4,6 +4,9 @@ duration 40s
 at 0s capacity=1500kbps delay=30ms queue=20ms
 # 5 seeds (cc v2): net.loss_pct 8.2-14.7, freeze_total_ms 413-964, utilization 59-70 %. `cc v1`: loss 10.2-17.6 %.
 expect net.loss_pct < 16
-expect video.freeze_total_ms < 1500
+# Guard rail moved with the loss-report port (#711, PR #716; program.md 0.2, as #669 did): the window (as
+# Coordinator) set it to libwebrtc's worst seed on main's 10 seeds, 2509 / 1004 / 3188 / 776 / 1753 / 0 / 2200 /
+# 0 / 1225 / 1132 ms (mean 1379; 5 of 10 above the old 1500).
+expect video.freeze_total_ms <= 3188
 expect cc.utilization_pct >= 55
 expect audio.interruptions <= 3

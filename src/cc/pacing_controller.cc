@@ -130,6 +130,7 @@ void PrioritizedPacketQueue::Push(Timestamp now, PacedPacket p) {
   // the pause total so far off its enqueue time (as PrioritizedPacketQueue does).
   q.enqueue_time = now - pause_time_sum_;
   size_bytes_ += p.size;
+  size_payload_ += p.size - p.header_size;
   ++size_packets_;
   ++size_per_priority_[static_cast<size_t>(p.priority)];
   if (p.is_key_frame) ++num_keyframe_packets_;
@@ -140,6 +141,7 @@ void PrioritizedPacketQueue::Push(Timestamp now, PacedPacket p) {
 
 void PrioritizedPacketQueue::DequeueInternal(Queued& q) {
   size_bytes_ -= q.p.size;
+  size_payload_ -= q.p.size - q.p.header_size;
   --size_packets_;
   --size_per_priority_[static_cast<size_t>(q.p.priority)];
   if (q.p.is_key_frame) --num_keyframe_packets_;
@@ -185,7 +187,7 @@ TimeDelta PacingController::OldestQueueTime(Timestamp now) const {
   return queue_.Empty() ? TimeDelta::Zero() : now - queue_.OldestEnqueueTime();
 }
 
-TimeDelta PacingController::ExpectedQueueTime() const { return Div(queue_.SizeInBytes(), adjusted_media_rate_); }
+TimeDelta PacingController::ExpectedQueueTime() const { return Div(QueueSizeData(), adjusted_media_rate_); }
 
 // --- PacingController -------------------------------------------------------
 
@@ -228,12 +230,13 @@ void PacingController::OnPacketSent(PacketPriority prio, DataSize size, Timestam
 void PacingController::MaybeUpdateMediaRateDueToLongQueue(Timestamp now) {
   adjusted_media_rate_ = pacing_rate_;
   bool boost = false;
-  if (cfg_.drain_large_queues && queue_.SizeInBytes() > DataSize::Zero()) {
+  const DataSize queue_size_data = QueueSizeData();
+  if (cfg_.drain_large_queues && queue_size_data > DataSize::Zero()) {
     // Assuming equal size packets and input/output rate, the average packet has
     // avg_time_left to get the queue out if the limit is to be met.
     queue_.UpdateAverageQueueTime(now);
     const TimeDelta avg_time_left = std::max(TimeDelta::Millis(1), queue_time_limit_ - queue_.AverageQueueTime());
-    const DataRate min_rate_needed = Div(queue_.SizeInBytes(), avg_time_left);
+    const DataRate min_rate_needed = Div(queue_size_data, avg_time_left);
     if (min_rate_needed > pacing_rate_) {
       adjusted_media_rate_ = min_rate_needed;
       boost = true;

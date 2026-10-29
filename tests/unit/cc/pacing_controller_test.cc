@@ -205,6 +205,34 @@ SM_TEST(PacingController, QueueTimeLimitRaisesTheRate) {
   SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
 }
 
+// PacingController::QueueSizeData (pacing_controller.cc:293-300): the long-queue drain and the
+// expected queue time count payload and padding plus the transport overhead, not the RTP headers.
+// 250 packets of 124 B with a 24 B header are 1 s of data at 200 kbps without the headers: at the
+// 1 s limit, so no boost, where their 31000 wire bytes would need 248 kbps.
+SM_TEST(PacingController, QueueSizeDataLeavesOutTheRtpHeaders) {
+  PacingControllerConfig cfg;
+  cfg.queue_time_limit = TimeDelta::Millis(1000);
+  PacingController p(cfg);
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  const Timestamp now = Timestamp::Millis(1000);
+  for (int i = 0; i < 250; ++i) {
+    PacedPacket pkt = Pkt(i, PacketPriority::kVideo, 124, now);
+    pkt.header_size = DataSize::Bytes(24);
+    p.Enqueue(pkt);
+  }
+  SM_EXPECT_EQ(p.QueueSize().bytes(), 31000);
+  SM_EXPECT_EQ(p.QueueSizeData().bytes(), 25000);
+  SM_EXPECT_EQ(p.stats().drain_boosts, 0u);
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  SM_EXPECT_EQ(p.ExpectedQueueTime().ms(), 1000);
+  // One more packet: 25100 bytes in 1 s needs 200.8 kbps.
+  PacedPacket pkt = Pkt(250, PacketPriority::kVideo, 124, now);
+  pkt.header_size = DataSize::Bytes(24);
+  p.Enqueue(pkt);
+  SM_EXPECT_EQ(p.stats().drain_boosts, 1u);
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200800);
+}
+
 // The limit is on the average packet, not the oldest (libwebrtc), so one old
 // packet in a short queue does not boost the rate.
 SM_TEST(PacingController, OneOldPacketDoesNotBoost) {

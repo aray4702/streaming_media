@@ -76,8 +76,9 @@ struct PacingControllerConfig {
 // prioritize_audio_retransmission, which is off by default, and the
 // time-to-live per level (PacketQueueTTL) is infinite by default, so neither
 // is ported. A one-to-one call has one stream of each kind, so the round robin
-// between the SSRCs of a level is not needed either. Sizes are the packets'
-// wire sizes (libwebrtc's SizeInPayloadBytes counts payload and padding only).
+// between the SSRCs of a level is not needed either. SizeInBytes is the packets'
+// wire sizes; SizeInPayloadBytes is libwebrtc's, the size less the RTP header
+// (PacedPacket::header_size), which here still holds the transport overhead.
 // Enqueue times are kept minus the time the queue has spent paused, so that
 // AverageQueueTime counts only the time spent unpaused.
 class PrioritizedPacketQueue {
@@ -89,6 +90,7 @@ class PrioritizedPacketQueue {
   std::optional<PacedPacket> Pop();
   size_t SizeInPackets() const { return size_packets_; }
   DataSize SizeInBytes() const { return size_bytes_; }
+  DataSize SizeInPayloadBytes() const { return size_payload_; }
   bool Empty() const { return size_packets_ == 0; }
   // Queued packets per PacketPriority (SizeInPacketsPerRtpPacketMediaType).
   const std::array<size_t, 5>& SizeInPacketsPerPriority() const { return size_per_priority_; }
@@ -118,7 +120,7 @@ class PrioritizedPacketQueue {
 
   std::array<std::deque<Queued>, kNumPriorityLevels> levels_;
   std::multiset<Timestamp> enqueue_times_;
-  DataSize size_bytes_;
+  DataSize size_bytes_, size_payload_;
   size_t size_packets_ = 0;
   std::array<size_t, 5> size_per_priority_{};
   int num_keyframe_packets_ = 0;
@@ -159,7 +161,13 @@ class PacingController : public MetricsSource {
   void SetCongested(bool congested);
   bool congested() const { return congested_; }
 
+  // The queued packets' wire sizes.
   DataSize QueueSize() const { return queue_.SizeInBytes(); }
+  // PacingController::QueueSizeData (pacing_controller.cc:293-300) with include_overhead_, as
+  // RtpVideoSender sets it with transport feedback: payload and padding, plus the transport
+  // overhead of each packet, without the RTP headers. It sets the long-queue drain rate and the
+  // expected queue time, and is the pacer queue GoogCC's process interval gets.
+  DataSize QueueSizeData() const { return queue_.SizeInPayloadBytes(); }
   size_t QueuePackets() const { return queue_.SizeInPackets(); }
   // Age of the oldest queued packet (zero when empty).
   TimeDelta OldestQueueTime(Timestamp now) const;
