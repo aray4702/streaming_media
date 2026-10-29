@@ -23,7 +23,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 4.4 | [Time stretching (WSOLA accelerate / preemptive expand)](4-timing/4.4-time-stretch.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 4.5 | [Adaptive audio jitter buffer (NetEq-lite)](4-timing/4.5-audio-jitter-buffer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 4.7 | [Clock drift estimation and compensation](4-timing/4.7-clock-drift.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 
 ## 5. Bandwidth, congestion and unstable links
 
@@ -95,6 +94,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 3 | Opus in-band FEC (LBRR), Opus DRED | Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback. |
 | 3 | Keyframe pacing, intra refresh, LTR frames | Encoder features (codec-specific bitstream tools). |
 | 3 | Temporal scalability (L1T2/L1T3) and temporal layer filtering | Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566). |
+| 4 | Clock drift estimation and compensation | Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566). |
 | 6 | Audio Device Module (platform I/O, mute, device switching) | Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11. |
 | 7 | Error resilience inside the decoder | Codec internal; 7.2 handles the fallback decision. |
 | 7 | Screen-content coding tools (palette, intra-BC) | Encoder features; 7.4 flags when to enable them. |
