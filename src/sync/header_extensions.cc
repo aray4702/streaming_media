@@ -244,7 +244,9 @@ bool RtpDemuxer::AddSink(int sink, const RtpDemuxerCriteria& c) {
     if (!inserted && !signaled_ssrcs_.contains(ssrc)) it->second = sink;
     signaled_ssrcs_.insert(ssrc);
   }
-  for (uint8_t pt : c.payload_types) sinks_by_pt_.emplace(pt, sink);
+  // libwebrtc's criteria hold the payload types as a flat_set, so a type
+  // listed twice is entered once (otherwise it would look like two sinks).
+  for (uint8_t pt : std::set<uint8_t>(c.payload_types.begin(), c.payload_types.end())) sinks_by_pt_.emplace(pt, sink);
   RefreshKnownMids();
   return true;
 }

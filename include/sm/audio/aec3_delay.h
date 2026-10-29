@@ -38,8 +38,9 @@
 //                       write after a reset, overrun/underrun and excess-render
 //                       detection (250 blocks, more than 8 blocks ahead).
 //
-// Differences that remain (tools/catalog.py 6.2): mono only (AlignmentMixer is
-// fixed to channel 0, as libwebrtc's for one channel); the portable C
+// Several capture channels are made mono by the capture AlignmentMixer
+// (adaptive selection by default), as echo_path_delay_estimator.cc does.
+// Differences that remain (tools/catalog.py 6.2): the portable C
 // MatchedFilterCore, where x86 libwebrtc runs the SSE2/AVX2 variants (same
 // arithmetic, different float summation order); no RenderDelayControllerMetrics
 // (UMA histograms only) or data dumps. The blocks, spectra and FFTs of
@@ -93,6 +94,78 @@ struct DelayConfig {
   // config.buffering
   size_t excess_render_detection_interval_blocks = 250;
   size_t max_allowed_excess_render_blocks = 8;
+  // EchoCanceller3Config::Delay::AlignmentMixing: how several render (or
+  // capture) channels become the one channel the delay estimator reads.
+  struct AlignmentMixing {
+    bool downmix;
+    bool adaptive_selection;
+    float activity_power_threshold;
+    bool prefer_first_two_channels;
+  };
+  AlignmentMixing render_alignment_mixing = {false, true, 10000.f, true};
+  AlignmentMixing capture_alignment_mixing = {false, true, 10000.f, false};
+};
+
+// block.h: bands x channels x 64 samples.
+class Block {
+ public:
+  Block(int num_bands, int num_channels, float default_value = 0.0f)
+      : num_bands_(num_bands),
+        num_channels_(num_channels),
+        data_(static_cast<size_t>(num_bands * num_channels) * kBlockSize, default_value) {}
+  int NumBands() const { return num_bands_; }
+  int NumChannels() const { return num_channels_; }
+  // Clears the block for `num_channels` channels.
+  void SetNumChannels(int num_channels) {
+    num_channels_ = num_channels;
+    data_.assign(static_cast<size_t>(num_bands_ * num_channels_) * kBlockSize, 0.f);
+  }
+  std::span<float, kBlockSize> View(int band, int channel) {
+    return std::span<float, kBlockSize>(&data_[GetIndex(band, channel)], kBlockSize);
+  }
+  std::span<const float, kBlockSize> View(int band, int channel) const {
+    return std::span<const float, kBlockSize>(&data_[GetIndex(band, channel)], kBlockSize);
+  }
+
+ private:
+  size_t GetIndex(int band, int channel) const {
+    return static_cast<size_t>(band * num_channels_ + channel) * kBlockSize;
+  }
+  int num_bands_;
+  int num_channels_;
+  std::vector<float> data_;
+};
+
+// alignment_mixer.{h,cc}: the mono input of the delay estimation from all the
+// channels of a block (band 0): their average (downmix), the strongest
+// channel (adaptive selection: block energies summed for the first 60 s,
+// then smoothed over 10 s; a channel is selected once it has twice the
+// selected one's energy, and with prefer_first_two_channels only channels 0
+// and 1 are analyzed once either has had more than 0.5 s of blocks above
+// activity_power_threshold per sample), or channel 0 (fixed, and always for
+// one channel).
+class AlignmentMixer {
+ public:
+  enum class MixingVariant { kDownmix, kAdaptive, kFixed };
+  AlignmentMixer(size_t num_channels, const DelayConfig::AlignmentMixing& config);
+  AlignmentMixer(size_t num_channels, bool downmix, bool adaptive_selection, float activity_power_threshold,
+                 bool prefer_first_two_channels);
+  void ProduceOutput(const Block& x, std::span<float, kBlockSize> y);
+  MixingVariant variant() const { return selection_variant_; }
+
+ private:
+  void Downmix(const Block& x, std::span<float, kBlockSize> y) const;
+  int SelectChannel(const Block& x);
+
+  const size_t num_channels_;
+  const float one_by_num_channels_;
+  const float excitation_energy_threshold_;
+  const bool prefer_first_two_channels_;
+  const MixingVariant selection_variant_;
+  std::array<size_t, 2> strong_block_counters_{};
+  std::vector<float> cumulative_energies_;
+  int selected_channel_ = 0;
+  size_t block_counter_ = 0;
 };
 
 struct DelayEstimate {
@@ -231,12 +304,16 @@ class ClockdriftDetector {
 
 class EchoPathDelayEstimator {
  public:
-  explicit EchoPathDelayEstimator(const DelayConfig& config);
+  explicit EchoPathDelayEstimator(const DelayConfig& config, size_t num_capture_channels = 1);
   // Resets the estimation. If the delay confidence is reset, the reset
   // behaviour is as if the call is restarted.
   void Reset(bool reset_delay_confidence) { Reset(true, reset_delay_confidence); }
-  // `capture` is one 64-sample block (band 0, 16 kHz). Returns the delay in
-  // samples at 16 kHz when the aggregator reports one.
+  // `capture` is one block of every capture channel (band 0 is read, 16 kHz);
+  // the capture AlignmentMixer makes it mono. Returns the delay in samples at
+  // 16 kHz when the aggregator reports one.
+  std::optional<DelayEstimate> EstimateDelay(const DownsampledRenderBuffer& render_buffer, const Block& capture);
+  // One capture channel: `capture` is its 64-sample block, which the mixer
+  // passes through as it is.
   std::optional<DelayEstimate> EstimateDelay(const DownsampledRenderBuffer& render_buffer,
                                              std::span<const float> capture);
   ClockdriftDetector::Level Clockdrift() const { return clockdrift_detector_.ClockdriftLevel(); }
@@ -245,6 +322,7 @@ class EchoPathDelayEstimator {
   void Reset(bool reset_lag_aggregator, bool reset_delay_confidence);
   const size_t down_sampling_factor_;
   const size_t sub_block_size_;
+  AlignmentMixer capture_mixer_;
   Decimator capture_decimator_;
   MatchedFilter matched_filter_;
   MatchedFilterLagAggregator matched_filter_lag_aggregator_;
@@ -255,9 +333,11 @@ class EchoPathDelayEstimator {
 
 class RenderDelayController : public MetricsSource {
  public:
-  explicit RenderDelayController(const DelayConfig& config = {});
+  explicit RenderDelayController(const DelayConfig& config = {}, size_t num_capture_channels = 1);
   void Reset(bool reset_delay_confidence);
   // Returns the render buffer delay in 64-sample blocks.
+  std::optional<DelayEstimate> GetDelay(const DownsampledRenderBuffer& render_buffer, const Block& capture);
+  // One capture channel (its band-0 block).
   std::optional<DelayEstimate> GetDelay(const DownsampledRenderBuffer& render_buffer, std::span<const float> capture);
   bool HasClockdrift() const { return delay_estimator_.Clockdrift() != ClockdriftDetector::Level::kNone; }
   // The latest estimate from the delay estimator, in samples at 16 kHz.

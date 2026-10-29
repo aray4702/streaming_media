@@ -2,7 +2,7 @@
 issue: 484
 title: RTCP: the audio report block rides on every video RTCP packet; libwebrtc sends it only in the audio stream's own RTCP (5 s), so Opus FEC sees other loss
 severity: sev:3
-status: partial
+status: fixed
 area: area:loss, area:audio
 regression_tests: testbench/scenarios/issue_484_audio_report_blocks.scn, tests/unit/rtp/session_test.cc
 ---
@@ -77,8 +77,31 @@ packets once the media differs), and the Opus packets differ from the next one o
 The scenario suite against the baseline: no metric changes with the switch off; the only addition is the new metric
 `rtcp.audio_report_blocks` in every scenario's results and the new scenario.
 
-## Remaining
+## Part 2: the default flip
 
-The default flip: turn `audio_receive_rtcp` on in the test bench and the library (libwebrtc's behaviour, already
-decided on #484), add `rtcp.audio_report_blocks` to `sm_compare`'s compared metrics, regenerate the baseline, and judge
-it on the 10-seed parity report. Then re-run PR #587's `per_stream_rtt` on seeds 1-10.
+`SessionConfig::audio_receive_rtcp` and the test bench's `audio_receive_rtcp` now default to on, libwebrtc's
+behaviour (the flip decided on the issue), and `rtcp.audio_report_blocks` is in `sm_compare`'s compared metrics
+(tie floor 1). `issue_484_audio_report_blocks` no longer sets the switch, so it runs the default: the base commit's
+`sm_testbench` gives 408 blocks (expect <= 8), this one 6-7 on seeds 1-5.
+
+Parity, seeds 1-10 of all 138 scenarios, our side run locally (switch off = `main`, switch on = this change)
+against libwebrtc's per-seed values on `parity-data` (`compare-webrtc.json` for e212cc5; libwebrtc's side of
+`webrtc_call.cc` is unchanged since, apart from counting the new metric): **70 gaps -> 57, 34 closed and 21
+opened**, none changed direction. The 5 opened A/V-offset cells without an owner are placed in
+`tools/parity_owners.json` (#474 for the three congestive copies, behind; #411 for `issue_12_lossbwe_policer` and
+`issue_150_gcc_v2_high_jitter_seed10`, ahead).
+
+**Guard rail:** `issue_224_congestive_e2e_flip` fails on seed 1 with the flip: `video.e2e_delay_p95_ms` 773.8
+(expect < 655) and `sync.av_offset_p95_ms` 498.3 (expect < 440). Seeds 1-10:
+
+| metric | off (`main`) | on | libwebrtc |
+|---|---|---|---|
+| e2e p95 (ms) | 396 425 302 336 356 323 377 350 302 318, mean 349 | 774 536 330 369 257 474 342 309 365 425, mean 418 | 383 374 388 317 331 365 425 332 244 419, mean 358 |
+| A/V offset p95 (ms) | 195 210 146 167 222 197 192 232 145 185, mean 189 | 498 303 117 172 141 277 175 202 170 229, mean 228 | 175 144 239 130 190 187 235 205 109 192, mean 180 |
+
+On seed 1 the sender's audio report blocks now match libwebrtc's in number and time, and the call parts from
+libwebrtc's at 3 s, before either change matters: libwebrtc's delay-based estimate detects overuse (2116 kbps)
+where ours stays at 3022 kbps, with the switch on or off (`parity-data` `traces/issue_224_congestive_e2e_flip.1.webrtc.bwe.csv`).
+The RR loss fraction GoogCC gets also differs on both settings (ours 24-170/256 at the loss-based updates,
+libwebrtc's 0-3). The line encodes behaviour libwebrtc has (its worst seed is 425 ms), so this change does not
+move it; the PR asks for the decision. `per_stream_rtt on` with the flip gives seed 1 the same 774 ms (mean 394).

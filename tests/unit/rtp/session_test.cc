@@ -1049,7 +1049,20 @@ SM_TEST(Session, AudioReceiveRtcpEngineExistsOnlyWithAnAudioReceiveStream) {
   au.ssrc = 0x100;
   s.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
-  Session off(Cfg(2));
+  SessionConfig co = Cfg(2);
+  co.audio_receive_rtcp = false;
+  Session off(co);
   off.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(off.audio_receive_rtcp() == nullptr);
+}
+
+// Issue #484: per-stream audio RTCP is the default, as libwebrtc's ChannelReceive.
+SM_TEST(Session, AudioReceiveRtcpIsTheDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.audio_receive_rtcp);
+  Session s(Cfg(2));
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioReceive(au, &dec);
+  SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
 }

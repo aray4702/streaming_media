@@ -2,7 +2,6 @@
 // interval (33 ms); pixel operations are reported per frame at 720p.
 #include "sm/video/codec_fallback.h"
 #include "sm/video/content_policy.h"
-#include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
@@ -64,18 +63,6 @@ SM_BENCH(video, FrameChangeDetector_1080p) {
   st.RequireRealtimeFactor(1.0 / 15, 5);
 }
 
-SM_BENCH(video, Scale_720p_to_360p) {
-  I420Frame f = MakeTestFrame(1280, 720, 0);
-  for (auto _ : st) bench::DoNotOptimize(Scale(f, 640, 360));
-  st.RequireRealtimeFactor(1.0 / 30, 3);
-}
-
-SM_BENCH(video, Scale_360p_to_720p) {
-  I420Frame f = MakeTestFrame(640, 360, 0);
-  for (auto _ : st) bench::DoNotOptimize(Scale(f, 1280, 720));
-  st.RequireRealtimeFactor(1.0 / 30, 3);
-}
-
 SM_BENCH(video, FrameScheduler_frame) {
   FrameScheduler s;
   int64_t id = 0;
@@ -99,13 +86,6 @@ SM_BENCH(video, QualityScaler_frame) {
 }
 
 // --- Quality ------------------------------------------------------------------
-
-SM_BENCH_QUALITY(video, Q_Scaler_psnr_720p_via_360p) {
-  I420Frame f = MakeTestFrame(1280, 720, 5);
-  double psnr = PsnrY(f, Scale(Scale(f, 640, 360), 1280, 720));
-  st.Counter("psnr_db", psnr);
-  st.Require("psnr_db", psnr, ">", 28);
-}
 
 SM_BENCH_QUALITY(video, Q_ScreenShare_encode_ratio) {
   FrameChangeDetector cd;

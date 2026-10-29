@@ -175,6 +175,7 @@ RenderDelayBuffer::RenderDelayBuffer(const Aec3Config& config, int sample_rate_h
       delay_(config_.delay.default_delay),
       echo_remover_buffer_(&blocks_, &spectra_, &ffts_),
       low_rate_(GetDownSampledBufferSize(down_sampling_factor_, config.delay.num_filters)),
+      render_mixer_(num_render_channels, config.delay.render_alignment_mixing),
       render_decimator_(down_sampling_factor_),
       render_ds_(static_cast<size_t>(sub_block_size_), 0.f),
       buffer_headroom_(static_cast<int>(config.filter.refined.length_blocks)) {
@@ -348,9 +349,9 @@ void RenderDelayBuffer::InsertBlock(const Block& block, int previous_write) {
       }
     }
   }
-  // AlignmentMixer::ProduceOutput: one channel passes through; with several,
-  // channel 0 stands in for the mixer (not ported).
-  render_decimator_.Decimate(b.buffer[b.write].View(/*band=*/0, /*channel=*/0), ds);
+  std::array<float, kBlockSize> downmixed_render;
+  render_mixer_.ProduceOutput(b.buffer[b.write], downmixed_render);
+  render_decimator_.Decimate(downmixed_render, ds);
   std::copy(ds.rbegin(), ds.rend(), lr.buffer.begin() + lr.write);
   for (int channel = 0; channel < num_render_channels; ++channel) {
     fft_.PaddedFft(b.buffer[b.write].View(/*band=*/0, channel), b.buffer[previous_write].View(/*band=*/0, channel),
