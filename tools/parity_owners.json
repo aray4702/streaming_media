@@ -231,6 +231,7 @@
     {"scenario": "issue_335_fps1_keyframe_packets", "metric": "video.pause_total_ms", "issues": [770]},
     {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.freeze_count", "issues": [736]},
     {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.longest_freeze_ms", "issues": [736]},
-    {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.render_fps", "issues": [736]}
+    {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.render_fps", "issues": [736]},
+    {"scenario": "issue_464_start_rate_above_int_bps", "metric": "video.longest_freeze_ms", "issues": [777]}
   ]
 }
