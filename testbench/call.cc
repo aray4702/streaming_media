@@ -804,6 +804,33 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     if (rev_changed) reverse.SetConfig(links.reverse().cfg);
   };
 
+  // Renders the frames the receiver released by `at`, at that time.
+  auto render = [&](Timestamp at) {
+    if (!s.video) return;
+    for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+      if (!f.render) continue;
+      freezes.OnFrameRendered(at);
+      ++vt_row.rendered;
+      if (last_render.IsFinite())
+        vt_row.max_render_gap_ms = std::max(vt_row.max_render_gap_ms, static_cast<double>((at - last_render).us()) / 1000.0);
+      ++frames_rendered;
+      ++w_frames;
+      if (!video_first.IsFinite()) video_first = at;
+      last_render = at;
+      if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = at;
+      auto cap = frame_capture.find(f.rtp_timestamp);
+      if (cap != frame_capture.end()) {
+        av_sync.OnVideoRendered(at, cap->second);
+        last_video_delay = static_cast<double>((at - cap->second).us()) / 1000.0;
+        video_e2e.push_back(last_video_delay);
+        frame_capture.erase(cap);
+      }
+    }
+  };
+
+  // The last time each session ran, so the event loop runs a timer once, at its due time.
+  Timestamp sender_ran = Timestamp::MinusInfinity(), receiver_ran = Timestamp::MinusInfinity();
+
   for (int64_t t = 0; t < end_ms; ++t) {
     const Timestamp now = Timestamp::Millis(t);
 
@@ -895,29 +922,56 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
       if (w.kind != Kind::kCross) fwd_in.emplace_back(at, std::move(w));
     });
+    // Each session's own timers (pacer, RTCP, transport feedback, frame release and render, decode time-out, NACK
+    // tick) run at their due time too, as libwebrtc's delayed tasks do on SimTime (issue #518), not on the next
+    // 1 ms tick. SimTime runs the due tasks of its queues in creation order (sender, then receiver, then the
+    // network's; compare/webrtc/sim_time.cc RunReady), and a timer posted before the tick that posts a packet
+    // arriving at its due time runs first (PostDelayedTask keeps posting order). So at one time: the sender's
+    // timers, its arriving feedback and finished frames, then the receiver's timers, then its arriving packets.
+    const Timestamp prev = now - TimeDelta::Millis(1);
+    auto timer_due = [&](const rtp::Session& session, Timestamp ran) {
+      const Timestamp from = std::max(ran, prev);
+      const Timestamp due = session.NextProcessTime(from);
+      return due > from && due <= now ? due : Timestamp::PlusInfinity();
+    };
+    auto run_sender = [&](Timestamp at) {
+      sender.Process(at);
+      sender_ran = at;
+      put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, at, true);
+      sender_events(at);
+    };
+    auto run_receiver = [&](Timestamp at) {
+      receiver.Process(at);
+      receiver_ran = at;
+      put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, at, false);
+      render(at);
+    };
     for (size_t ri = 0, fi = 0;;) {
+      const Timestamp ts = timer_due(sender, sender_ran);
       const Timestamp tr = ri < rev_in.size() ? rev_in[ri].first : Timestamp::PlusInfinity();
       const Timestamp te = !encoding.empty() && encoding.front().done <= now ? encoding.front().done : Timestamp::PlusInfinity();
+      const Timestamp tx = timer_due(receiver, receiver_ran);
       const Timestamp tf = fi < fwd_in.size() ? fwd_in[fi].first : Timestamp::PlusInfinity();
-      const Timestamp at = std::min({tr, te, tf});
+      const Timestamp at = std::min({ts, tr, te, tx, tf});
       if (!at.IsFinite()) break;
       advance_links(at);
-      if (tr == at) {
+      if (ts == at) {
+        run_sender(at);
+      } else if (tr == at) {
         const Rev& r = rev_in[ri++].second;
         if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
         sender.OnPacket(r.bytes, at);
+        run_sender(at);
       } else if (te == at) {
         frame_encoded(encoding.front());
         encoding.pop_front();
+        run_sender(at);
+      } else if (tx == at) {
+        run_receiver(at);
       } else {
         on_forward(fwd_in[fi++].second, at);
-        receiver.Process(at);
-        put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, at, false);
-        continue;
+        run_receiver(at);
       }
-      sender.Process(at);
-      put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, at, true);
-      sender_events(at);
     }
 
     // --- Link timeline ------------------------------------------------------
@@ -1029,6 +1083,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // multiple of 100 ms, so sampling after them counted their own bytes in up to a tenth of the samples.
     const double queue_ms = QueueDelayMs(forward, fwd_state, now);
     sender.Process(now);
+    sender_ran = now;
     put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
 
     // --- Receiver -----------------------------------------------------------
@@ -1050,29 +1105,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       receiver.SetRtt(s.host_rtt->second);
     }
     receiver.Process(now);
-
-    // Render video.
-    if (s.video) {
-      for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
-        if (!f.render) continue;
-        freezes.OnFrameRendered(now);
-        ++vt_row.rendered;
-        if (last_render.IsFinite())
-          vt_row.max_render_gap_ms = std::max(vt_row.max_render_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
-        ++frames_rendered;
-        ++w_frames;
-        if (!video_first.IsFinite()) video_first = now;
-        last_render = now;
-        if (auto ft = frame_times.find(f.rtp_timestamp); ft != frame_times.end()) ft->second.rendered = now;
-        auto cap = frame_capture.find(f.rtp_timestamp);
-        if (cap != frame_capture.end()) {
-          av_sync.OnVideoRendered(now, cap->second);
-          last_video_delay = static_cast<double>((now - cap->second).us()) / 1000.0;
-          video_e2e.push_back(last_video_delay);
-          frame_capture.erase(cap);
-        }
-      }
-    }
+    receiver_ran = now;
+    render(now);
     receiver.TakeEvents();
 
     // Audio playout: the device pulls 10 ms.

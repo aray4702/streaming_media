@@ -20,7 +20,10 @@ compare_seeds 40
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 expect audio.interruptions == 0
-expect video.freeze_count == 0
+# PR for #518 (harness: timers at their due microsecond; program.md 0.2, for the Coordinator): was == 0. Ours 1 on seed 1
+# (seeds 1-20: 1 on 1 and 9, 0 on the rest); libwebrtc 0 on all 40 seeds. The same freezes as issue_12_lossbwe_high_jitter_no_loss.
+# Coordinator decision 2026-10-28 (PR #549): harness trade-off; freeze on seeds 1 and 9 of 10 (retransmitted frames skip UpdateCurrentDelay; libwebrtc shows the same mechanism, smaller); libwebrtc 0 on all seeds.
+expect video.freeze_count <= 1
 # PR #336 (session started before the first frame, refs #331; program.md 0.2, needs-human): was >= 30. Ours 28.77 on seed 1;
 # libwebrtc 24.1 on seed 1, 25.4 mean of 40 seeds (lowest 16.7) on main's compare-webrtc after #340.
 # PR #324 (#84's flip, quality scaling on; program.md 0.2, needs-human): was >= 28. Ours 24.35 on seed 1;

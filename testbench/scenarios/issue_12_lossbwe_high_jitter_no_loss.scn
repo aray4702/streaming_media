@@ -9,7 +9,13 @@ describe 40 ms jitter with reordering and no loss: reordered packets must not re
 # the delay detector (#24), not the loss path.
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
-expect video.freeze_total_ms == 0
+# PR for #518 (harness: our session's timers at their due microsecond, as libwebrtc's on SimTime; program.md 0.2, for the
+# Coordinator): was == 0. Ours 227 on seed 1 (seeds 1-10: 227 on 1, 262 on 9, 0 on the rest); libwebrtc 0 on seeds 1-10.
+# Seed 1's freeze is at 29.5 s, where the render time catches up with frames that ran 300+ ms late since 20 s (frames
+# delayed by retransmission skip UpdateCurrentDelay, on both stacks: libwebrtc's longest gaps on seed 1 are 168 and 162 ms,
+# its e2e p95 361 ms against ~150 on the other seeds); seed 9's is at start-up, after the pacer released frame 600 100 ms later.
+# Coordinator decision 2026-10-28 (PR #549): harness trade-off; freeze on seeds 1 and 9 of 10 (retransmitted frames skip UpdateCurrentDelay; libwebrtc shows the same mechanism, smaller); libwebrtc 0 on all seeds.
+expect video.freeze_total_ms < 300
 expect audio.interruptions == 0
 expect audio.concealed_pct < 2
 expect cc.target_avg_kbps > 100

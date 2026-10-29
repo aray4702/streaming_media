@@ -417,6 +417,15 @@ void RtpReceiver::Process(Timestamp now) {
   }
 }
 
+Timestamp RtpReceiver::NextProcessTime(Timestamp now) const {
+  if (!cfg_.video) return Timestamp::PlusInfinity();
+  Timestamp next = keyframes_.NextProcessTime();
+  if (cfg_.nack) next = std::min(next, nack_.NextProcessTime());
+  if (cfg_.render_smoothing) next = std::min(next, render_frames_.NextWakeup());
+  next = std::min(next, cfg_.timing.version >= 2 ? release_.NextWakeup() : scheduler_.NextWakeup());
+  return std::max(next, now);
+}
+
 std::vector<ReceivedFrame> RtpReceiver::TakeFrames() {
   std::vector<ReceivedFrame> out;
   out.swap(out_frames_);
