@@ -339,3 +339,42 @@ SM_TEST(GainController2, ComposedQuietSpeechGetsGainAndNeverClips) {
   // the gain falls to 0 dB at 6 dB/s.
   SM_EXPECT_EQ(gc.gain_db(), 0.0f);
 }
+
+// #594: GainController2 runs at APM's processing rates. A rate below APM's
+// 8 kHz floor (`ValidateAudioFormat`, audio_processing_impl.cc) or above the
+// limiter's 480 samples per 10 ms (`kMaximalNumberOfSamplesPerChannel`,
+// limiter.cc) is rejected: valid() is false and Process leaves the audio
+// untouched, where 0 Hz used to assert in the VAD's resampler. A frame that
+// is not 10 ms at the configured rate is rejected the same way.
+SM_TEST(GainController2, RejectsUnsupportedRatesAndFrameLengths) {
+  for (int rate : {0, -16000, 4000, 96000}) {
+    GainController2Config c;
+    c.sample_rate = rate;
+    GainController2 gc(c);
+    SM_EXPECT_FALSE(gc.valid());
+    std::vector<float> f(160, 0.1f);
+    for (int i = 0; i < 10; ++i) {
+      gc.Process(f);
+      gc.Process(f, 1.0f);
+    }
+    SM_EXPECT_TRUE(std::all_of(f.begin(), f.end(), [](float x) { return x == 0.1f; }));
+    SM_EXPECT_EQ(gc.stats().frames, 0u);
+  }
+  GainController2 gc;
+  std::vector<float> f(320, 0.1f);  // 20 ms at 16 kHz.
+  gc.Process(f);
+  SM_EXPECT_TRUE(std::all_of(f.begin(), f.end(), [](float x) { return x == 0.1f; }));
+  SM_EXPECT_EQ(gc.stats().frames, 0u);
+}
+
+SM_TEST(GainController2, RunsAtApmRates) {
+  for (int rate : {8000, 11025, 16000, 32000, 44100, 48000}) {
+    GainController2Config c;
+    c.sample_rate = rate;
+    GainController2 gc(c);
+    SM_EXPECT_TRUE(gc.valid());
+    std::vector<float> f(static_cast<size_t>(rate / 100), 0.1f);
+    for (int i = 0; i < 10; ++i) gc.Process(f);
+    SM_EXPECT_EQ(gc.stats().frames, 10u);
+  }
+}

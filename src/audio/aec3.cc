@@ -535,8 +535,9 @@ Frame MakeFrame(size_t num_bands, size_t num_channels) {
 EchoCanceller3::EchoCanceller3(const Aec3Config& config, int sample_rate_hz, size_t num_render_channels,
                                size_t num_capture_channels)
     : config_(config),
-      sample_rate_hz_(sample_rate_hz),
-      num_bands_(NumBandsForRate(sample_rate_hz)),
+      valid_(ValidFullBandRate(sample_rate_hz)),
+      sample_rate_hz_(valid_ ? sample_rate_hz : 16000),
+      num_bands_(NumBandsForRate(sample_rate_hz_)),
       num_render_input_channels_(num_render_channels),
       num_capture_channels_(num_capture_channels),
       output_framer_(num_bands_, num_capture_channels_),
@@ -570,6 +571,7 @@ void EchoCanceller3::FillSubFrameView(Frame* frame, size_t sub_frame_index, size
 }
 
 void EchoCanceller3::AnalyzeRender(const Frame& render) {
+  if (!valid_) return;
   // SwapQueue::Insert fails (and the frame is lost) when the queue is full.
   if (render_transfer_queue_.size() >= kRenderTransferQueueSizeFrames) {
     ++render_frames_dropped_;
@@ -579,6 +581,7 @@ void EchoCanceller3::AnalyzeRender(const Frame& render) {
 }
 
 void EchoCanceller3::AnalyzeCapture(std::span<const std::span<const float>> capture_channels) {
+  if (!valid_) return;
   saturated_microphone_signal_ = false;
   for (const auto& channel : capture_channels) {
     saturated_microphone_signal_ |= DetectSaturation(channel);
@@ -588,6 +591,7 @@ void EchoCanceller3::AnalyzeCapture(std::span<const std::span<const float>> capt
 }
 
 void EchoCanceller3::ProcessCapture(Frame* capture, bool level_change) {
+  if (!valid_) return;
   if (block_delay_buffer_) block_delay_buffer_->DelaySignal(capture);
 
   EmptyRenderQueue();
@@ -627,11 +631,13 @@ void EchoCanceller3::EmptyRenderQueue() {
 }
 
 void EchoCanceller3::AnalyzeRender(std::span<const float> render) {
+  if (!valid_ || num_bands_ != 1 || render.size() != kFrameSize) return;
   std::copy(render.begin(), render.end(), mono_frame_[0][0].begin());
   AnalyzeRender(mono_frame_);
 }
 
 void EchoCanceller3::ProcessCapture(std::span<float> capture, bool level_change) {
+  if (!valid_ || num_bands_ != 1 || num_capture_channels_ != 1 || capture.size() != kFrameSize) return;
   const std::span<const float> channels[1] = {capture};
   AnalyzeCapture(channels);
   std::copy(capture.begin(), capture.end(), mono_frame_[0][0].begin());

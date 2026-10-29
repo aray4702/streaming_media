@@ -14,6 +14,9 @@
 #include "encoder_model.h"
 #include "opus_decoder.h"
 #include "opus_encoder.h"
+#include "sm/audio/aec3.h"
+#include "sm/audio/agc2.h"
+#include "sm/audio/ns.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/random.h"
@@ -512,6 +515,53 @@ void EvaluateExpectations(Report& rep) {
     rep.checks.push_back(c);
   }
 }
+
+namespace {
+
+// `apm_rate`: AEC3, NS and AGC2 built at one rate, each fed 50 frames of 10 ms
+// as a host would (issue #594). AEC3 takes split-band frames with room for every
+// band; NS and AGC2 take rate / 100 samples.
+void ProbeApm(int rate, std::map<std::string, double>& m) {
+  constexpr float kAec3Level = 50.f, kNsLevel = 0.03f, kAgc2Level = 0.1f;
+  const size_t samples = rate / 100 > 0 ? static_cast<size_t>(rate / 100) : 1;
+  bool untouched = true;
+  auto same = [](const std::vector<float>& v, float x) {
+    return std::all_of(v.begin(), v.end(), [x](float y) { return y == x; });
+  };
+
+  audio::aec3::EchoCanceller3 aec3(audio::aec3::Aec3Config{}, rate, 1, 1);
+  audio::aec3::Frame frame(audio::aec3::kMaxNumBands,
+                           std::vector<std::vector<float>>(1, std::vector<float>(audio::aec3::kFrameSize, kAec3Level)));
+  for (int i = 0; i < 50; ++i) {
+    aec3.AnalyzeRender(frame);
+    aec3.ProcessCapture(&frame, false);
+  }
+  if (!aec3.valid()) untouched = untouched && same(frame[0][0], kAec3Level);
+
+  audio::ns::NoiseSuppressorConfig nc;
+  nc.sample_rate = rate;
+  audio::ns::NoiseSuppressor ns(nc);
+  std::vector<float> nf(samples, kNsLevel);
+  for (int i = 0; i < 50; ++i) {
+    ns.Analyze(nf);
+    ns.Process(nf);
+  }
+  if (!ns.valid()) untouched = untouched && same(nf, kNsLevel);
+
+  audio::agc2::GainController2Config gc;
+  gc.sample_rate = rate;
+  audio::agc2::GainController2 agc2(gc);
+  std::vector<float> gf(samples, kAgc2Level);
+  for (int i = 0; i < 50; ++i) agc2.Process(gf);
+  if (!agc2.valid()) untouched = untouched && same(gf, kAgc2Level);
+
+  m["apm.aec3_valid"] = aec3.valid() ? 1 : 0;
+  m["apm.ns_valid"] = ns.valid() ? 1 : 0;
+  m["apm.agc2_valid"] = agc2.valid() ? 1 : 0;
+  m["apm.untouched"] = untouched ? 1 : 0;
+}
+
+}  // namespace
 
 int AudioCodecRate(int /*capture_rate*/) { return OpusDefaults::kSampleRateHz; }
 
@@ -1353,6 +1403,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());
   repair.AddMetrics(m, s.video, end_ms);
+  if (s.apm_rate) ProbeApm(*s.apm_rate, m);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

@@ -381,6 +381,11 @@ ParseResult ParseScenario(const std::string& text) {
       TimeDelta t;
       if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
       s.host_rtt_inf = t;
+    } else if (key == "apm_rate") {
+      char* end = nullptr;
+      const long v = need(2) ? std::strtol(tok[1].c_str(), &end, 10) : 0;
+      if (!need(2) || *end != '\0' || v < -384000 || v > 384000) return fail("usage: apm_rate <hz>");
+      s.apm_rate = static_cast<int>(v);
     } else if (key == "host_rtt") {
       TimeDelta t, rtt;
       if (!need(3) || !ParseTime(tok[1], &t) || !ParseTime(tok[2], &rtt)) return fail("usage: host_rtt <time> <rtt>");

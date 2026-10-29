@@ -647,7 +647,8 @@ float ComputeUpperBandsGain(float minimum_attenuating_gain, std::span<const floa
   return std::min(std::max(gain, minimum_attenuating_gain), 1.f);
 }
 
-size_t NumBandsForRate(int sample_rate) { return sample_rate >= 48000 ? 3 : sample_rate >= 32000 ? 2 : 1; }
+bool ValidRate(int sample_rate) { return sample_rate == 16000 || sample_rate == 32000 || sample_rate == 48000; }
+size_t NumBandsForRate(int sample_rate) { return ValidRate(sample_rate) ? static_cast<size_t>(sample_rate / 16000) : 1; }
 }  // namespace
 
 NoiseSuppressor::ChannelState::ChannelState(const SuppressionParams& params, size_t num_bands)
@@ -658,6 +659,7 @@ NoiseSuppressor::ChannelState::ChannelState(const SuppressionParams& params, siz
 
 NoiseSuppressor::NoiseSuppressor(NoiseSuppressorConfig cfg)
     : cfg_(cfg),
+      valid_(ValidRate(cfg.sample_rate)),
       num_bands_(NumBandsForRate(cfg.sample_rate)),
       params_(cfg.level),
       filter_bank_states_(std::max<size_t>(cfg.num_channels, 1)),
@@ -707,6 +709,7 @@ void NoiseSuppressor::Ifft(std::span<const float, kFftSize> real, std::span<cons
 }
 
 void NoiseSuppressor::Analyze(std::span<const float> bands) {
+  if (!accepts(bands)) return;
   const size_t num_channels = channels_.size();
   for (auto& ch : channels_) ch->noise_estimator.PrepareAnalysis();
 
@@ -760,6 +763,7 @@ void NoiseSuppressor::Analyze(std::span<const float> bands) {
 }
 
 void NoiseSuppressor::Process(std::span<float> bands) {
+  if (!accepts(bands)) return;
   const size_t num_channels = channels_.size();
 
   // The suppression filter of every channel.

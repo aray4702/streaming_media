@@ -561,3 +561,63 @@ SM_TEST(Aec3, EchoCanceller3CaptureSaturation) {
   aec3.ProcessCapture(capture);
   SM_EXPECT_TRUE(aec3.block_processor().echo_remover().aec_state().SaturatedCapture());
 }
+
+// #594: libwebrtc's EchoCanceller3 runs only at a full-band rate of 16, 32 or
+// 48 kHz (`RTC_DCHECK(ValidFullBandRate(...))`, echo_canceller3.cc, and APM
+// never hands it another rate). Any other rate is rejected: valid() is false
+// and every call leaves the audio untouched, where it used to corrupt memory.
+SM_TEST(Aec3, EchoCanceller3RejectsUnsupportedRates) {
+  for (int rate : {0, 8000, 11025, 12000, 24000, 44100, -16000}) {
+    EchoCanceller3 aec3(Aec3Config{}, rate, 1, 1);
+    SM_EXPECT_FALSE(aec3.valid());
+    std::vector<float> render(kFrameSize, 100.f);
+    std::vector<float> capture(kFrameSize, 50.f);
+    Frame frame(kMaxNumBands, std::vector<std::vector<float>>(1, std::vector<float>(kFrameSize, 50.f)));
+    for (int i = 0; i < 50; ++i) {
+      aec3.AnalyzeRender(render);
+      aec3.ProcessCapture(capture);
+      aec3.AnalyzeRender(frame);
+      aec3.ProcessCapture(&frame, false);
+    }
+    SM_EXPECT_TRUE(std::all_of(capture.begin(), capture.end(), [](float x) { return x == 50.f; }));
+    SM_EXPECT_TRUE(std::all_of(frame[0][0].begin(), frame[0][0].end(), [](float x) { return x == 50.f; }));
+  }
+}
+
+SM_TEST(Aec3, EchoCanceller3RunsAtFullBandRates) {
+  for (int rate : {16000, 32000, 48000}) {
+    EchoCanceller3 aec3(Aec3Config{}, rate, 1, 1);
+    SM_EXPECT_TRUE(aec3.valid());
+    const size_t bands = static_cast<size_t>(rate / 16000);
+    Random rng(rate);
+    Frame render(bands, std::vector<std::vector<float>>(1, std::vector<float>(kFrameSize)));
+    Frame capture = render;
+    for (int i = 0; i < 50; ++i) {
+      for (size_t b = 0; b < bands; ++b) {
+        RandomizeSampleVector(rng, render[b][0], 1000.f);
+        RandomizeSampleVector(rng, capture[b][0], 1000.f);
+      }
+      aec3.AnalyzeRender(render);
+      aec3.ProcessCapture(&capture, false);
+    }
+    SM_EXPECT_EQ(aec3.render_frames_dropped(), 0u);
+  }
+}
+
+// The mono convenience calls hold one 160-sample 16 kHz frame: at another
+// rate, or with another length, they leave the audio untouched.
+SM_TEST(Aec3, EchoCanceller3MonoCallsNeed16kHzFrames) {
+  EchoCanceller3 at32k(Aec3Config{}, 32000, 1, 1);
+  std::vector<float> capture(2 * kFrameSize, 50.f);
+  for (int i = 0; i < 10; ++i) {
+    at32k.AnalyzeRender(std::span<const float>(capture));
+    at32k.ProcessCapture(std::span<float>(capture));
+  }
+  SM_EXPECT_TRUE(std::all_of(capture.begin(), capture.end(), [](float x) { return x == 50.f; }));
+  EchoCanceller3 at16k(Aec3Config{}, 16000, 1, 1);
+  for (int i = 0; i < 10; ++i) {
+    at16k.AnalyzeRender(std::span<const float>(capture));
+    at16k.ProcessCapture(std::span<float>(capture));
+  }
+  SM_EXPECT_TRUE(std::all_of(capture.begin(), capture.end(), [](float x) { return x == 50.f; }));
+}

@@ -1,0 +1,18 @@
+name issue_594_apm_rate_44100
+describe The host builds the ported APM modules at 44100 Hz: AEC3 and NS reject the rate and leave the audio untouched, with no memory corruption (issue #594)
+# Before the fix EchoCanceller3 and NoiseSuppressor accepted any rate and corrupted memory at one
+# they don't support (ASan heap-buffer-overflow / UBSan null reference). libwebrtc runs them only at
+# 16, 32 or 48 kHz (RTC_DCHECK(ValidFullBandRate(...)) in echo_canceller3.cc; NumBandsForRate in
+# ns/noise_suppressor.cc), and APM never hands them another rate. AGC2 runs at APM's 8-48 kHz.
+# The base commit has no apm_rate key; the unit tests Aec3.EchoCanceller3RejectsUnsupportedRates,
+# Ns.RejectsUnsupportedRates and GainController2.RejectsUnsupportedRatesAndFrameLengths carry the
+# sanitizer proof (they run in the ASan preset). The bench call itself runs no APM.
+seed 1
+duration 5s
+apm_rate 44100
+at 0s capacity=2000kbps delay=40ms
+expect apm.aec3_valid == 0
+expect apm.ns_valid == 0
+expect apm.agc2_valid == 1
+expect apm.untouched == 1
+expect audio.interruptions == 0
