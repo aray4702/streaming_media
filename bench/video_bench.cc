@@ -1,7 +1,6 @@
 // Section 7 benchmarks. Per-frame budgets are relative to a 30 fps frame
 // interval (33 ms); pixel operations are reported per frame at 720p.
 #include "sm/video/codec_fallback.h"
-#include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
@@ -62,16 +61,6 @@ SM_BENCH(video, FrameChangeDetector_1080p) {
     t += 66;
   }
   st.RequireRealtimeFactor(1.0 / 15, 5);
-}
-
-SM_BENCH(video, CodecNegotiation_offer10) {
-  std::vector<CodecCapability> offer, local;
-  for (int i = 0; i < 10; ++i) {
-    offer.push_back({i % 2 ? "VP8" : "H264", 96 + i, {{"profile-level-id", "42e01f"}, {"packetization-mode", "1"}}, {"nack", "transport-cc"}});
-  }
-  local = {{"H264", 0, {{"profile-level-id", "42e028"}, {"packetization-mode", "1"}}, {"nack"}, true}, {"VP8", 0, {}, {"nack"}, false}};
-  for (auto _ : st) bench::DoNotOptimize(NegotiateCodecs(offer, local));
-  st.BudgetNsPerItem(50000);
 }
 
 SM_BENCH(video, FrameScheduler_frame) {

@@ -113,7 +113,6 @@ if(SM_WITH_VIDEO)
     video/codec_fallback.cc
     video/orientation.cc
     video/content_policy.cc
-    video/codec_negotiation.cc
     video/frame_scheduler.cc
     video/render_frames.cc
     video/quality_scaler.cc

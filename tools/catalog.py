@@ -1274,23 +1274,32 @@ ALGORITHMS = [
                       "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
                       "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
                       "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
-    dict(id="7.2", slug="codec-fallback", title="Hardware -> software encoder fallback",
-         problems=["Hardware encoder failure -> automatic fallback to a software encoder"],
-         headers=["video/codec_fallback.h"], unit=["CodecFallback"], e2e=["E2E_CodecFallback"],
+    dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
+         problems=["Hardware encoder failure -> automatic fallback to a software encoder",
+                   "Hardware decoder failure -> automatic fallback to a software decoder"],
+         headers=["video/codec_fallback.h"], unit=["CodecFallback", "DecoderFallback"], e2e=["E2E_CodecFallback"],
          bench=["video/CodecFallback_frame"],
          scenario="A hardware encoder that starts failing at 10 s and asks for the software fallback on its "
                   "10th error; checks that plain errors don't switch, that exactly one fallback happens, that "
                   "the fallback is primed with the last rate and starts with a keyframe, and that the frame "
                   "that asked is encoded by the fallback, so the longest gap between encoded frames stays small.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
-               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper; the header comment above lists what "
+               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper, and since #607 of its "
+               "VideoDecoderSoftwareFallbackWrapper (DecoderFallbackController); the header comment above lists what "
                "is not ported.",
          verification="#573 replaced the library's own CodecFallbackController (3 consecutive errors, 10% error "
                       "rate over 100 frames, hardware retry after 60 s with back-off, none of which libwebrtc has) "
                       "with the port. libwebrtc's unit test file is not in reference/; CodecFallback.* covers the "
                       "wrapper's cases from the source: init failure, both failing, simulcast parameters, "
                       "fallback request only from the main encoder, failed fallback init, release and re-init, "
-                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge."),
+                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge. "
+                      "#607 ported the decoder side (api/video_codecs/video_decoder_software_fallback_wrapper.cc): "
+                      "fallback when the hardware decoder fails to configure, on FALLBACK_SOFTWARE from Decode (the "
+                      "same frame decoded again by the fallback), or on the 4th consecutive keyframe error "
+                      "(kMaxConsequtiveHwErrors; delta-frame errors don't count), sticky until Release, the forced "
+                      "fallback trial WebRTC-Video-ForcedSwDecoderFallback (off), the 'A (fallback from: B)' name and "
+                      "the hardware-decoded-frames histogram sample. Its unit test file is not in reference/; "
+                      "DecoderFallback.* covers each path of the source."),
     dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
          problems=["Rotated camera -> video orientation header extension (CVO)"],
          headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
@@ -1316,13 +1325,6 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
          verification="No defects found."),
-    dict(id="7.5", slug="codec-negotiation", title="Codec negotiation",
-         problems=["Many codecs and devices -> codec negotiation (VP8, VP9, H.264, AV1, H.265 recently)"],
-         headers=["video/codec_negotiation.h"], unit=["CodecNegotiation"], e2e=["E2E_CodecNegotiation"],
-         bench=["video/CodecNegotiation_offer10"],
-         scenario="A browser-like offer (VP8, VP9, three H.264 profiles, AV1, RTX) against an embedded camera "
-                  "(hardware H.264 CB level 4.0, software VP8, no transport-cc), in both directions.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
@@ -1439,22 +1441,22 @@ ALGORITHMS = [
                   "latency for every frame.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="Portability finding: interpolation used long double, which is software-emulated "
                                 "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
-                                "It now uses exact integer arithmetic."),
+                                "It now uses exact integer arithmetic. #567 part 5 ports libwebrtc M157's "
+                                "`AbsoluteCaptureTimeSender`, `AbsoluteCaptureTimeInterpolator`, `CaptureClockOffsetUpdater` "
+                                "and `RemoteNtpTimeEstimator` as units (`modules/rtp_rtcp/source/`): the sender's rules "
+                                "(more than 1 s, an error that rounds to more than 1 ms, a rate of 0, `force`), the "
+                                "interpolator retiring its extension at the first packet it can't interpolate, and the "
+                                "clock offset as the median of the last 7 SRs once 3 are in, where it was a minimum with a "
+                                "5% leak. `LatencyEstimator` computes capture time as `WebRTC-UseAbsCapTimeForG2gMetric` "
+                                "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
-         headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
+         headers=["sync/header_extensions.h"], unit=["HeaderExtensions"], e2e=["E2E_HeaderExtensions"],
          bench=["sync/HeaderExtensions_WriteParse4", "sync/RtpDemuxer_by_ssrc"],
          scenario="One 5-tuple carrying audio, three simulcast video encodings and RTX (repaired RID) with "
                   "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
                   "mid-call. Routing accuracy.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. "
-               "The extension map and elements follow `RtpHeaderExtensionMap` and `RtpPacket` (#567, PR #598), and `RtpDemuxer` "
-               "follows `call/rtp_demuxer.cc` (#567): criteria with MID, RSID, SSRCs and payload types, libwebrtc's conflict rules, "
-               "and `ResolveSink`'s order (match-any, drop an unknown MID, MID/RSID from the packet or latched per SSRC, signalled "
-               "or bound SSRC, unique payload type), with at most 1000 SSRC bindings.",
-         verification="#567: unit.RtpDemuxer pins each rule of `ResolveSink` and `CriteriaWouldConflict`; "
-                      "`sm_rtcp_interop` (CI job compare-webrtc) runs this demuxer and libwebrtc's on the same random sinks "
-                      "and packets and checks that every packet goes to the same sink."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No defects found."),
     # ------------------------------------------------------------------ 9
     dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
@@ -1580,6 +1582,7 @@ NOT_IMPLEMENTED = [
     ("4", "Clock drift estimation and compensation", "Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566)."),
     ("6", "DTX and comfort noise (RFC 3389)", "Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
+    ("7", "Codec negotiation (SDP offer/answer, H.264 profile-level-id)", "Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566)."),
     ("7", "Resolution scaling and aspect handling (`Scale`, `ScaleToFit`, `Crop`)", "Removed in #593: libwebrtc M157's one-to-one call has no such component (it scales with libyuv's `I420Buffer::Scale`, and the frames are the app's), and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it; the Owner's A on #566."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),

@@ -9,7 +9,6 @@
 #include "sm/sim/network_link.h"
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/codec_fallback.h"
-#include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
@@ -196,51 +195,6 @@ SM_TEST(E2E_ContentPolicy, ScreenShareEncodesOnlyChanges) {
   SM_EXPECT_EQ(changes_encoded, changes);  // Every change goes out immediately.
   SM_EXPECT_LT(static_cast<double>(encoded) / frames, 0.25);
   SM_EXPECT_GE(encoded, 60);  // At least the 1/s keep-alive.
-}
-
-SM_TEST(E2E_CodecNegotiation, BrowserAndDeviceAgreeBothDirections) {
-  std::vector<CodecCapability> browser = {
-      {"VP8", 96, {}, {"goog-remb", "transport-cc", "ccm fir", "nack", "nack pli"}},
-      {"rtx", 97, {{"apt", "96"}}, {}},
-      {"VP9", 98, {{"profile-id", "0"}}, {"transport-cc", "nack", "nack pli"}},
-      {"rtx", 99, {{"apt", "98"}}, {}},
-      {"H264", 102, {{"profile-level-id", "42001f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack", "nack pli"}},
-      {"H264", 106, {{"profile-level-id", "42e01f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack", "nack pli"}},
-      {"rtx", 107, {{"apt", "106"}}, {}},
-      {"H264", 112, {{"profile-level-id", "64001f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack"}},
-      {"AV1", 45, {}, {"transport-cc", "nack"}},
-  };
-  // Embedded camera: hardware H.264 constrained baseline up to level 4.0,
-  // software VP8; no transport-cc (REMB only).
-  std::vector<CodecCapability> device = {
-      {"VP8", 120, {}, {"nack", "nack pli", "goog-remb"}, false},
-      {"H264", 121, {{"profile-level-id", "42e028"}, {"packetization-mode", "1"}}, {"nack", "nack pli", "goog-remb", "ccm fir"}, true},
-      {"rtx", 122, {{"apt", "121"}}, {}, false},
-  };
-  auto answer = NegotiateCodecs(browser, device);
-  SM_ASSERT_GE(answer.size(), 2u);
-  SM_EXPECT_EQ(answer[0].name, "H264");
-  SM_EXPECT_EQ(answer[0].payload_type, 106);                            // Browser's PT.
-  SM_EXPECT_EQ(answer[0].params["profile-level-id"], "42e01f");         // min(3.1, 4.0)
-  SM_EXPECT_EQ(answer[1].name, "VP8");
-  bool has_rtx_106 = false;
-  for (const auto& c : answer) has_rtx_106 |= c.name == "rtx" && c.params.count("apt") && c.params.at("apt") == "106";
-  SM_EXPECT_TRUE(has_rtx_106);
-  for (const auto& c : answer) {
-    if (c.name == "rtx") continue;
-    // Each answered codec matches an offered one with the same PT.
-    bool match = false;
-    for (const auto& o : browser) match |= o.payload_type == c.payload_type && IsSameCodec(o, c);
-    SM_EXPECT_TRUE(match);
-    for (const auto& fb : c.feedback) SM_EXPECT_NE(fb, std::string("transport-cc"));  // Device lacks it.
-  }
-  // Reverse direction: the device offers, the browser answers.
-  auto reverse = NegotiateCodecs(device, browser);
-  SM_ASSERT_GE(reverse.size(), 2u);
-  SM_EXPECT_EQ(reverse[0].payload_type, 120);  // Browser prefers VP8; device PTs.
-  bool h264 = false;
-  for (const auto& c : reverse) h264 |= c.name == "H264" && c.payload_type == 121;
-  SM_EXPECT_TRUE(h264);
 }
 
 SM_TEST(E2E_FrameScheduler, SmoothPlayoutOverJitteryNetwork) {
