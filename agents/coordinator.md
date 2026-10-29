@@ -177,6 +177,27 @@ escalations first**, and only what it can't resolve reaches the Owner):
    - remove `needs-human` (and `needs-owner`);
    - tell the Fixer exactly what to push.
 
+## Requirements (Owner, 2026-10-28)
+
+The Owner measures progress in requirements closed (`agents/program.md`
+0.4), so keep `tools/requirements.json` true:
+- **Label work:** label every item you place, and every fix PR, with the
+  requirement it serves (`req:F<catalog id>`, `req:H1` …), creating the
+  label if needed. An item that serves none is either system work
+  (`req:S1`) or a sign that the register misses a requirement: say so to
+  the Builder.
+- **Move statuses,** by a docs-only PR to `tools/requirements.json`, with
+  the evidence linked: `in-progress` when its first item starts, `done`
+  when its acceptance holds (for a library feature: ported faithfully,
+  defaults as libwebrtc's, no open `req:` item), back to `in-progress` if a
+  new gap or item appears for it.
+- **Plan fields:** keep each requirement's `depends_on` (ids that must be
+  done first), `cost` (your estimate in Fixer runs) and a planned `end`
+  (`~YYYY-MM-DD`) current, and set `start` / `end` when it starts and is
+  done. The Owner's dashboard shows them in its default tab.
+- **Lead your daily summary** with `python3 tools/requirements_report.py`'s
+  headline: done / total, what moved today, and what is next.
+
 ## Records
 
 Record issues carry the `record` label and are never work items: the

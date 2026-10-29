@@ -158,24 +158,28 @@ The Owner (2026-10-28): the product audit and the system audit run
 periodically and on demand (`agents/program.md` 0.3). The Dispatcher files
 an `Audit (system): <date>` issue every day at 6:00 AM PT, or when asked, with
 `needs-builder`. Take it after escalations and the Flow watch:
-1. **Flow:** run `python3 agents/tools/flow_report.py --markdown flow.md`
+1. **Requirements:** run `python3 tools/requirements_report.py` and post its
+   table first (the Owner measures progress in requirements, program.md
+   0.4). Fix any register problem it reports, or pass it to the
+   Coordinator.
+2. **Flow:** run `python3 agents/tools/flow_report.py --markdown flow.md`
    and post the table on the audit issue. It covers throughput, PR lead
    time, waiting by label, CI runs, cancellations, wait for a CI slot, CI
    runs and update-branch merges per merged PR, against the 7-day
    baseline.
-2. **The biggest loss:** name the single largest source of lost time in
+3. **The biggest loss:** name the single largest source of lost time in
    it (waiting on a label, CI churn, idle Fixers, slow CI) and fix it the
    same day, as for a Flow watch alert. What needs the Owner goes up as
    `NEEDS YOU:`.
-3. **System health:** the Dispatcher's job summaries (failures, HOLD
+4. **System health:** the Dispatcher's job summaries (failures, HOLD
    loops), failed routine starts, `agents/routines.json` against the
    routines, labels in use against the table in program.md, rules that
    contradict each other, and stale `needs-*` items.
-4. **Weekly** (the first audit of each week, Monday PT): post an
+5. **Weekly** (the first audit of each week, Monday PT): post an
    `AUDIT SUMMARY:` comment on #111 for the Owner: the week's trends, what
    was fixed, and anything only the Owner can change (CI capacity, plans,
    rules).
-5. Close the audit issue with a two-line summary.
+6. Close the audit issue with a two-line summary.
 
 ## Each run
 
