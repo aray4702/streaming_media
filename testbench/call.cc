@@ -389,13 +389,14 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room,enc_bps,enc_bw_bps\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
            kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
            std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
-           std::to_string(r.key) + "," + std::to_string(r.header) + "," + std::to_string(r.rtx_room) + "\n";
+           std::to_string(r.key) + "," + std::to_string(r.header) + "," + std::to_string(r.rtx_room) + "," +
+           std::to_string(r.enc_bps) + "," + std::to_string(r.enc_bw_bps) + "\n";
   }
   return out;
 }
@@ -799,6 +800,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
   std::vector<AudioSendRow> audio_reports;  // Each audio report block the sender received (issue #484).
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
+  // The trace's enc_bps and enc_bw_bps columns (#577): the encoder's rate and bandwidth allocation per frame.
+  std::unordered_map<uint32_t, std::pair<int64_t, int64_t>> frame_enc_rate;  // RTP timestamp -> (rate, allocation).
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
@@ -868,9 +871,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
       int32_t marker = -1, osn = -1, key = -1, header = -1, rtx_room = -1;
+      int64_t enc_bps = -1, enc_bw_bps = -1;
       if (opt.link_trace && seq >= 0) {
         if (kind == Kind::kVideo) {
           if (auto it = frame_rtx_room.find(RtpTimestamp(p.bytes)); it != frame_rtx_room.end()) rtx_room = it->second;
+          if (auto it = frame_enc_rate.find(RtpTimestamp(p.bytes)); it != frame_enc_rate.end()) {
+            enc_bps = it->second.first;
+            enc_bw_bps = it->second.second;
+          }
         }
         header = TraceHeaderBytes(p.bytes, p.wire_size.bytes(), video_cfg.ulpfec.red_payload_type);
         if (auto q = RtpPacket::Parse(p.bytes)) {
@@ -885,7 +893,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
-      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room, enc_bps, enc_bw_bps);
     }
   };
 
@@ -1008,6 +1016,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       }
       video_bytes_encoded += bytes;
       const uint32_t rtp_ts = static_cast<uint32_t>(capture.ms() * 90);
+      if (opt.link_trace) frame_enc_rate[rtp_ts] = {vr.bps(), sender.rates().video_link_allocation.bps()};
       const TimeDelta encode_time =
           s.encode_delay ? TimeDelta::Micros(EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed)) : TimeDelta::Zero();
       PendingFrame f{capture, at + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts};

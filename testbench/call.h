@@ -227,8 +227,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // rtx, padding, fec or other (RTCP, cross traffic); `seq` is the RTP sequence
 // number or -1; `queue_bytes` is the bottleneck queue before the packet;
 // `outcome` is delivered, queue_drop, lost or down. Then arrival_us, rtp_ts,
-// marker, osn, key (issue #437), header (TraceHeaderBytes, #518) and rtx_room
-// (RtxAckPhase, #555).
+// marker, osn, key (issue #437), header (TraceHeaderBytes, #518), rtx_room
+// (RtxAckPhase, #555), and enc_bps and enc_bw_bps (the rate and bandwidth
+// allocation the packet's frame was encoded with, #577).
 // The per-second video send trace as CSV (issue #131), identical for both
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,

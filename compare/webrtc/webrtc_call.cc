@@ -491,6 +491,9 @@ struct VideoModel {
   // VideoStreamEncoder (encoder RTP timestamp -> rtx_room), from the RTCP the send Call takes.
   testbench::RtxAckPhase* rtx_ack = nullptr;
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;
+  // The trace's enc_bps and enc_bw_bps columns (#577): the rate each frame was encoded at
+  // (RateControlParameters::bitrate) and the encoder's bandwidth_allocation then, by encoder RTP timestamp.
+  std::unordered_map<uint32_t, std::pair<int64_t, int64_t>> frame_enc_rate;
   // Each frame's path by the encoder's RTP timestamp, as the test bench's (issue #510): the encoder sets the capture
   // time and the time it hands the frame on, the send transport the last media packet's send time, the forward link
   // the arrival of its last media or RTX packet, and the renderer the render time.
@@ -518,6 +521,7 @@ class ModelEncoder final : public w::VideoEncoder {
   }
   void SetRates(const RateControlParameters& p) override {
     rate_bps_ = p.bitrate.get_sum_bps();
+    bandwidth_bps_ = p.bandwidth_allocation.bps();
     m_->encoder_rate_bps = rate_bps_;
   }
   int32_t Encode(const w::VideoFrame& frame, const std::vector<w::VideoFrameType>* types) override {
@@ -535,6 +539,7 @@ class ModelEncoder final : public w::VideoEncoder {
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
     m_->capture_us_by_rtp[frame.rtp_timestamp()] = capture_us;
+    m_->frame_enc_rate[frame.rtp_timestamp()] = {static_cast<int64_t>(rate_bps_), bandwidth_bps_};
     m_->frame_times[frame.rtp_timestamp()].capture = sm::Timestamp::Micros(capture_us - m_->start_us);
     if (!m_->first_rtp_ts) m_->first_rtp_ts = frame.rtp_timestamp();
     w::EncodedImage img;
@@ -613,6 +618,7 @@ class ModelEncoder final : public w::VideoEncoder {
   VideoModel* m_;
   w::EncodedImageCallback* cb_ = nullptr;
   uint32_t rate_bps_ = 0;
+  int64_t bandwidth_bps_ = -1;  // RateControlParameters::bandwidth_allocation (#577 trace).
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
 };
 
@@ -976,6 +982,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // The frame trace's RTP fields (issue #437), as the test bench writes them.
     int64_t trace_ts = -1;
     int32_t trace_marker = -1, trace_osn = -1, trace_key = -1, trace_header = -1, trace_rtx_room = -1;
+    int64_t trace_enc_bps = -1, trace_enc_bw_bps = -1;
     if (opt.link_trace && trace_seq >= 0) {
       trace_header = testbench::TraceHeaderBytes(data, wire, kRedPt);
       const RtpInfo r = ParseRtp(data);
@@ -993,12 +1000,18 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (model.rtp_ts_offset) {
           auto it = model.frame_rtx_room.find(r.ts - *model.rtp_ts_offset);
           if (it != model.frame_rtx_room.end()) trace_rtx_room = it->second;
+          auto er = model.frame_enc_rate.find(r.ts - *model.rtp_ts_offset);
+          if (er != model.frame_enc_rate.end()) {
+            trace_enc_bps = er->second.first;
+            trace_enc_bw_bps = er->second.second;
+          }
         }
       }
     }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(wire), link_kind, trace_seq);
-    forward.AnnotateLastTrace(trace_ts, trace_marker, trace_osn, trace_key, trace_header, trace_rtx_room);
+    forward.AnnotateLastTrace(trace_ts, trace_marker, trace_osn, trace_key, trace_header, trace_rtx_room, trace_enc_bps,
+                              trace_enc_bw_bps);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));

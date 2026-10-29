@@ -161,13 +161,13 @@ SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1, 69, 1});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n"
-               "0,213,audio,7,0,delivered,30500,960,1,-1,-1,-1,-1\n"
-               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1,-1,-1\n"
-               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1,69,1\n"
-               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1,-1,-1\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room,enc_bps,enc_bw_bps\n"
+               "0,213,audio,7,0,delivered,30500,960,1,-1,-1,-1,-1,-1,-1\n"
+               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1,-1,-1,-1,-1\n"
+               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1,69,1,-1,-1\n"
+               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1,-1,-1,-1,-1\n");
   SM_EXPECT_EQ(LinkTraceCsv({}),
-               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room,enc_bps,enc_bw_bps\n");
 }
 
 // The trace's header column (#518): every wire byte that is not codec payload.

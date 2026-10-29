@@ -99,6 +99,11 @@ struct LinkTraceRecord {
   // RtxPacketOverhead reserves extension room; testbench::RtxAckPhase), else 0; -1 for other
   // packets or when not known.
   int32_t rtx_room = -1;
+  // #577: for a video packet, the rate its frame was encoded at (the encoder model's rate, libwebrtc's
+  // RateControlParameters::bitrate) and the bandwidth allocation the encoder had then
+  // (RateControlParameters::bandwidth_allocation; ours SendRates::video_link_allocation); -1 otherwise.
+  int64_t enc_bps = -1;
+  int64_t enc_bw_bps = -1;
 };
 
 struct LinkStats {
@@ -132,10 +137,12 @@ class NetworkLink {
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
   // Adds the RTP fields to the record of the packet just sent (issue #437).
   void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1, int32_t header = -1,
-                         int32_t rtx_room = -1) {
+                         int32_t rtx_room = -1, int64_t enc_bps = -1, int64_t enc_bw_bps = -1) {
     if (!trace_on_ || trace_.empty()) return;
     trace_.back().header = header;
     trace_.back().rtx_room = rtx_room;
+    trace_.back().enc_bps = enc_bps;
+    trace_.back().enc_bw_bps = enc_bw_bps;
     trace_.back().rtp_ts = rtp_ts;
     trace_.back().marker = marker;
     trace_.back().osn = osn;
