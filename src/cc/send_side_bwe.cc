@@ -194,10 +194,17 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   std::vector<PacketResult> results = history_.OnFeedback(fb, now);
   last_feedback_max_rtt_.reset();
   last_feedback_delay_updated_ = false;
+  last_feedback_used_ = !results.empty();
+  if (results.empty()) {
+    // RtpTransportControllerSend::OnTransportFeedback: the adapter returned nullopt; GoogCC doesn't run.
+    NetworkControlUpdate u;
+    u.target_rate = target_;
+    u.pacing_rate = PacingRate();
+    return u;
+  }
   for (const auto& r : results) {
     if (r.received()) last_feedback_max_rtt_ = std::max(last_feedback_max_rtt_.value_or(TimeDelta::Zero()), now - r.send_time);
   }
-  if (results.empty()) return MakeUpdate(now, {});
   // GoogCcNetworkController::OnTransportPacketsFeedback.
   first_feedback_received_ = true;
   {

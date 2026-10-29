@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 
 namespace sm::cc {
 
@@ -309,70 +310,81 @@ void TransportFeedbackBuilder::ExportMetrics(MetricsWriter& w) const {
 }
 
 // --- SendHistory --------------------------------------------------------------------
+// libwebrtc modules/congestion_controller/rtp/transport_feedback_adapter.cc.
+
+namespace {
+constexpr TimeDelta kSendTimeHistoryWindow = TimeDelta::Seconds(60);
+constexpr int64_t kBaseTimeWrapTicks = int64_t{1} << 24;
+}  // namespace
 
 void SendHistory::OnPacketSent(uint16_t seq, Timestamp send_time, DataSize size, int probe_cluster) {
-  int64_t s = unwrapper_.Unwrap(seq);
-  sent_[s] = Sent{send_time, size, probe_cluster};
-  in_flight_ += size;
-  // Bounded history: forget packets that will never be reported.
-  while (sent_.size() > 8192) {
-    if (!sent_.begin()->second.reported) in_flight_ -= sent_.begin()->second.size;
-    sent_.erase(sent_.begin());
+  // AddPacket: the creation time is the clock when the paced packet is handed to the BWE, which in this
+  // library is its send time.
+  const int64_t s = unwrapper_.Unwrap(seq);
+  while (!history_.empty() && send_time - history_.begin()->second.creation_time > kSendTimeHistoryWindow) {
+    if (history_.begin()->first > last_ack_seq_num_) in_flight_ -= history_.begin()->second.size;
+    history_.erase(history_.begin());
   }
+  history_[s] = Sent{send_time, send_time, size, probe_cluster};
+  // ProcessSentPacket: a packet above the last acknowledged sequence number is in flight.
+  if (s > last_ack_seq_num_) in_flight_ += size;
 }
 
 std::vector<PacketResult> SendHistory::OnFeedback(const TransportFeedback& fb, Timestamp now) {
   std::vector<PacketResult> out;
-  auto arrivals = fb.ArrivalTimes();
-  // TransportFeedbackAdapter::ProcessTransportFeedback rounds each packet's time
-  // since the feedback's base time down to 1 ms (RoundDownTo, i.e. toward zero)
-  // before the estimators see it.
+  if (fb.packets.empty()) return out;  // "Empty transport feedback packet received."
+  // A local time base: the first feedback's receive time, then each feedback's base-time delta
+  // (GetBaseDelta, 24-bit 64 ms ticks with wrap-around), rounded down to 1 ms.
+  const uint32_t base_ticks = static_cast<uint32_t>(fb.reference_time) & 0xFFFFFF;
+  if (!last_base_ticks_) {
+    current_offset_ = now;
+  } else {
+    int64_t d = static_cast<int64_t>(base_ticks) - static_cast<int64_t>(*last_base_ticks_);
+    if (std::llabs(d - kBaseTimeWrapTicks) < std::llabs(d)) d -= kBaseTimeWrapTicks;
+    else if (std::llabs(d + kBaseTimeWrapTicks) < std::llabs(d)) d += kBaseTimeWrapTicks;
+    const TimeDelta delta = TimeDelta::Micros(d * kRefUnitUs / 1000 * 1000);
+    // Protect against a negative offset.
+    if (delta < Timestamp::Micros(0) - current_offset_) {
+      current_offset_ = now;
+    } else {
+      current_offset_ += delta;
+    }
+  }
+  last_base_ticks_ = base_ticks;
+
+  const auto arrivals = fb.ArrivalTimes();
   const int64_t base_us = static_cast<int64_t>(fb.reference_time) * kRefUnitUs;
   size_t ai = 0;
   for (const auto& p : fb.packets) {
-    int64_t s = unwrapper_.PeekUnwrap(p.seq);
-    auto it = sent_.find(s);
-    Timestamp arrival = Timestamp::PlusInfinity();
-    if (p.received) {
-      const int64_t since_base_us = arrivals[ai++].second.us() - base_us;
-      arrival = Timestamp::Micros(base_us + since_base_us / 1000 * 1000);
+    const int64_t s = unwrapper_.Unwrap(p.seq);
+    TimeDelta since_base = TimeDelta::PlusInfinity();
+    if (p.received) since_base = TimeDelta::Micros(arrivals[ai++].second.us() - base_us);
+    // RetrievePacketFeedback: every sequence number a feedback names, found or not, moves the
+    // acknowledged point up, and the packets below it leave flight.
+    if (s > last_ack_seq_num_) {
+      for (auto it = history_.upper_bound(last_ack_seq_num_); it != history_.end() && it->first <= s; ++it) {
+        in_flight_ -= it->second.size;
+      }
+      last_ack_seq_num_ = s;
     }
-    if (it == sent_.end()) continue;
-    // libwebrtc's TransportFeedbackAdapter erases a packet from its history
-    // once it is reported received, so "a packet reported received more than
-    // once" fails the lookup and is ignored. The receiver's generator re-reports
-    // packets that arrive behind a sent report; counting them again feeds the
-    // estimators receive times that go backwards.
-    if (it->second.received) continue;
-    if (p.received) it->second.received = true;
+    auto it = history_.find(s);
+    if (it == history_.end()) {
+      // "Send time history too small or packet was reported as received twice."
+      ++failed_lookups_;
+      continue;
+    }
     PacketResult r;
     r.seq = s;
     r.send_time = it->second.time;
     r.size = it->second.size;
     r.probe_cluster = it->second.probe;
-    r.receive_time = arrival;
-    if (!it->second.reported) {
-      in_flight_ -= it->second.size;
-      it->second.reported = true;
-    }
-    highest_reported_ = std::max(highest_reported_, s);
+    // RoundDownTo(1 ms): toward zero.
+    if (p.received) r.receive_time = current_offset_ + TimeDelta::Micros(since_base.us() / 1000 * 1000);
+    // A packet reported received leaves the history; one reported lost stays, because a later
+    // feedback may report it received.
+    if (p.received) history_.erase(it);
     (p.received ? acked_ : lost_)++;
     out.push_back(r);
-  }
-  // A feedback covers a contiguous range of sequence numbers, so a packet below
-  // the highest one reported but never reported itself was in a feedback that
-  // was lost: it will not be reported later, and is no longer in flight.
-  for (auto it = sent_.lower_bound(forgotten_below_); it != sent_.end() && it->first < highest_reported_; ++it) {
-    if (!it->second.reported) {
-      in_flight_ -= it->second.size;
-      it->second.reported = true;
-    }
-    forgotten_below_ = it->first + 1;
-  }
-  // Drop entries older than 60 s.
-  while (!sent_.empty() && now - sent_.begin()->second.time > TimeDelta::Seconds(60)) {
-    if (!sent_.begin()->second.reported) in_flight_ -= sent_.begin()->second.size;
-    sent_.erase(sent_.begin());
   }
   return out;
 }
@@ -381,6 +393,7 @@ void SendHistory::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("in_flight_bytes", static_cast<double>(in_flight_.bytes()));
   w.Counter("acked", acked_);
   w.Counter("lost", lost_);
+  w.Counter("failed_lookups", failed_lookups_);
 }
 
 }  // namespace sm::cc

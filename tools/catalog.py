@@ -498,7 +498,8 @@ ALGORITHMS = [
                   "real wire format, parsed and joined with the send history. Each packet must be reported received "
                   "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
                   "re-reports it), with arrival-time error within the 250 us quantization of the wire, and each time since the feedback's base "
-                  "time handed to the estimators rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter (#365).",
+                  "time handed to the estimators rounded down to 1 ms, on the adapter's local time base, as libwebrtc's "
+                  "TransportFeedbackAdapter (#365, #569).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. Each arrival delta is rounded to the nearest 250 us tick, half away from zero, as "
@@ -515,7 +516,11 @@ ALGORITHMS = [
          verification="No defects found; maximum arrival-time error 249 us. Issue #217: the first feedback went out "
                       "at 50 ms where libwebrtc's goes out at 100 ms, so the first probe estimate came from the first "
                       "cluster alone (`issue_120_rtx_payload_padding` seed 1: 913 kbps at 65 ms, libwebrtc 1608 at "
-                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`."),
+                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`. Issue #569 part 2: the send "
+                      "history ported as libwebrtc's TransportFeedbackAdapter (60 s window by creation time instead of "
+                      "an 8192-packet cap, in-flight data above the last acknowledged sequence number, the local "
+                      "receive-time base, no update for a feedback that finds no packet); unit tests "
+                      "`TransportFeedbackAdapter.*`; the scenario suite is unchanged, metric for metric."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
