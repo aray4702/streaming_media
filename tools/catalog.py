@@ -1477,6 +1477,11 @@ ALGORITHMS = [
                       "libwebrtc M157 (rtcp_sender.cc, video_send_stream.h, audio_send_stream.h), see the issue. "
                       "#517: unit.RtcpEngine checks that the interval draws are libwebrtc's from the same seed; on seed 1 "
                       "the sender's RTCP send times match libwebrtc's on audio_only_lossy (6 of 6) and the first 9 on high_jitter. "
+                      "#484: `SessionConfig::audio_receive_rtcp` (off by default until its flip) gives the audio receive streams "
+                      "their own engine, as libwebrtc's ChannelReceive (audio/channel_receive.cc:115-139, 608): an RR with the audio "
+                      "block alone every 5 s, no SDES, and the video compounds carry only the video and RTX blocks; on seed 1 the "
+                      "sender's audio report blocks match libwebrtc's in number and time on high_jitter, random_loss_5pct and "
+                      "clean_link (6 of 6; [fix record](../../fixes/484-audio-report-blocks.md)). "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

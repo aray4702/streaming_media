@@ -42,6 +42,7 @@
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 106,
   "repair.overhead_pct": 2.935,
+  "rtcp.audio_report_blocks": 0,
   "video.avg_kbps": 1141,
   "video.delay_encode_ms": 0,
   "video.delay_jitter_buffer_p95_ms": 50.6,

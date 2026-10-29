@@ -54,6 +54,7 @@
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 65,
   "repair.overhead_pct": 1.518,
+  "rtcp.audio_report_blocks": 70,
   "sync.av_offset_max_ms": 76.43,
   "sync.av_offset_p50_ms": -47,
   "sync.av_offset_p95_ms": 70.43,

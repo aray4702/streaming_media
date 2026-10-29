@@ -171,7 +171,21 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   c.jitter_buffer = a.jitter_buffer;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
-  rtcp_.AddReceiveStatistics(r->receive_statistics());
+  if (cfg_.audio_receive_rtcp) {
+    // ChannelReceive's own receiver-only RtpRtcp module (channel_receive.cc:115-139, 608).
+    if (!audio_recv_rtcp_) {
+      RtcpConfig rc = MakeRtcpConfig(cfg_);
+      rc.cname.clear();
+      rc.has_video = false;
+      rc.report_interval = TimeDelta::Zero();
+      rc.first_report_delay = TimeDelta::Zero();
+      rc.xr_rrtr = false;
+      audio_recv_rtcp_ = std::make_unique<RtcpEngine>(rc);
+    }
+    audio_recv_rtcp_->AddReceiveStatistics(r->receive_statistics());
+  } else {
+    rtcp_.AddReceiveStatistics(r->receive_statistics());
+  }
   audio_recv_.push_back({std::move(r), a.ssrc, 0});
   std::vector<uint8_t> pts = {a.payload_type};
   if (a.red_payload_type) pts.push_back(*a.red_payload_type);
@@ -711,6 +725,12 @@ void Session::Process(Timestamp now) {
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
     }
   }
+  if (audio_recv_rtcp_) {
+    for (RtcpOutgoing& o : audio_recv_rtcp_->Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
 }
 
 // libwebrtc: the generator's interval follows this endpoint's own
@@ -747,6 +767,7 @@ void Session::ProcessTransportFeedback(Timestamp now) {
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
+  if (audio_recv_rtcp_) next = std::min(next, audio_recv_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
   next = std::min(next, call_stats_.NextProcessTime());
