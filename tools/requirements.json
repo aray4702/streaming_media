@@ -554,10 +554,10 @@
    "area": "Video quality and processing",
    "catalog": "7.8",
    "title": "QP-based quality scaler",
-   "status": "in-progress",
-   "evidence": "`QualityScaler` v2 is M157's `quality_scaler.cc` with QualityScalingExperiment's smoothers (#84), wired with `VideoStreamAdapter`, `VideoAdapter`, the CPU resource and `ResourceAdaptationProcessor` into `VideoSendController`; `quality_scaling` on by default, as libwebrtc's MAINTAIN_FRAMERATE. Remaining: standalone `QualityScalerConfig::version` defaults to 1 (the send path sets 2); BALANCED/MAINTAIN_RESOLUTION steps and resource removal not ported (#646; its first PR ports the start-bitrate initial-drop reset and `pending_frame_`). #480's inventory names adaptation (quality scaler, CPU overuse, degradation preference).",
+   "status": "done",
+   "evidence": "`QualityScaler` v2 is M157's `quality_scaler.cc` with QualityScalingExperiment's smoothers (#84), the default in the send path and standalone (`QualityScalerConfig::version = 2`, #579). Around it, libwebrtc's adaptation is ported whole (#646): `VideoStreamAdapter`'s MAINTAIN_FRAMERATE, BALANCED and MAINTAIN_RESOLUTION steps (#690), `ResourceAdaptationProcessor` with resource removal (#702), and the encode-time `pending_frame_` hold and start-bitrate initial-drop reset (#675). Not ported, as no one-to-one call uses them: single-active-layer pixel limits (simulcast/SVC) and the field-trial string parser (a config list is passed instead).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
