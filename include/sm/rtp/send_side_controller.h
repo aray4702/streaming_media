@@ -88,6 +88,14 @@ struct SendSideConfig {
   // TCP/IPv4 header (rtp_rtcp_impl2.cc:146-150; issue #580).
   int64_t max_packet_size = 1460;
   int64_t rtp_overhead_bytes = 24;
+  // RtpVideoSender::OnBitrateUpdated's overhead_bytes_per_packet (rtp_video_sender.cc:869-882, issue
+  // #577). On: the session sets `rtp_overhead_bytes` from its video senders' RtpSender::
+  // ExpectedPerPacketOverhead (the header with the registered non-volatile extensions, plus 2 with
+  // RTX), averaged over the streams, whenever it changes, and an audio stream's allocation limits
+  // add its ExpectedPerPacketOverhead (AudioSendStream::UpdateOverheadPerPacket). Off: the fixed 24,
+  // and the audio header the next packet carries. Off by default until the flip is judged on the
+  // parity report.
+  bool expected_packet_overhead = false;
   EventSink* events = nullptr;
 };
 
@@ -199,6 +207,12 @@ class SendSideController : public MetricsSource {
   // defaults (cc::GccController::SetPacingFactor). The session sets 1.1 when it
   // adds a video stream with transport-cc, as VideoSendStreamImpl does (#187).
   void SetPacingFactor(double factor);
+
+  // The RTP bytes of one media packet in the video overhead rate (SendSideConfig::rtp_overhead_bytes),
+  // read at the next allocation, as RtpVideoSender reads ExpectedPerPacketOverhead in each
+  // OnBitrateUpdated. The session calls it with `expected_packet_overhead` (issue #577).
+  void SetRtpOverheadPerPacket(int64_t bytes) { cfg_.rtp_overhead_bytes = bytes; }
+  int64_t rtp_overhead_per_packet() const { return cfg_.rtp_overhead_bytes; }
 
   // RtpTransportControllerSend::EnablePeriodicAlrProbing (StreamsConfig::
   // requests_alr_probing): ALR probes every 5 s while application limited. The

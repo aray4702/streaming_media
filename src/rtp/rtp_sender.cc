@@ -408,6 +408,25 @@ size_t RtpSender::RtxPacketOverhead() const {
   return overhead + kRtxHeaderSize;
 }
 
+size_t RtpSender::ExpectedPerPacketOverhead() const {
+  // always_send_mid_and_rid is false (RtpRtcpInterface::Configuration's default), and this sender has no
+  // RID, so of the BUNDLE extensions only MID counts, while it is still sent on either SSRC.
+  const bool send_mid_rid_on_rtx = cfg_.rtx_ssrc.has_value() && !rtx_ssrc_has_acked_;
+  const bool send_mid_rid = !ssrc_has_acked_;
+  RtpPacket p;
+  if (cfg_.extensions) {
+    const sync::ExtensionAccessor access(*cfg_.extensions);
+    if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
+    if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
+    if (!cfg_.video && cfg_.extensions->IdOf(sync::uri::kAudioLevel)) access.SetRaw(p, sync::uri::kAudioLevel, {0});
+    if ((send_mid_rid || send_mid_rid_on_rtx) && !cfg_.mid.empty() && cfg_.extensions->IdOf(sync::uri::kMid)) {
+      access.SetString(p, sync::uri::kMid, std::string(16, 'm'));
+    }
+  }
+  constexpr size_t kRtxHeaderSize = 2;  // Reserved in case the packet is resent in an RTX packet.
+  return p.HeaderSize() + (cfg_.rtx_ssrc ? kRtxHeaderSize : 0);
+}
+
 size_t RtpSender::FecPacketOverhead() const {
   if (!ulpfec_) return 0;
   return loss::ulpfec::ForwardErrorCorrection::MaxPacketOverhead() + loss::ulpfec::kRedForFecHeaderLength +

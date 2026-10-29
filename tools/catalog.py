@@ -1602,7 +1602,11 @@ ALGORITHMS = [
                       "see docs/fixes/21-repair-within-target.md. Issue #224 added `send_rate_stats` (sm::RateStatistics, "
                       "unit tests RateStatistics.* and SendSideController.RateStatistics*), off until it is judged with "
                       "the allocation-time encoder target of #204's `control_handler`. Review notes from PR 3 (padding timestamp, padding size "
-                      "accounting, zero-byte frames) were fixed in PR 5. Per-suite results are recorded by ctest "
+                      "accounting, zero-byte frames) were fixed in PR 5. Issue #577 ported RTPSender::"
+                      "ExpectedPerPacketOverhead (RtpSender::ExpectedPerPacketOverhead; unit tests "
+                      "RtpSender.ExpectedPerPacketOverhead* and Session.ExpectedPacketOverheadIsTheVideoSendersHeader) "
+                      "behind `expected_packet_overhead`, off until the flip is judged on the parity report. "
+                      "Per-suite results are recorded by ctest "
                       "and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",
          problems=["Parsing, demultiplexing and repair on the receive path -> RtpReceiver",

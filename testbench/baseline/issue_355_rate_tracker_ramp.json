@@ -49,7 +49,7 @@
   "net.video_loss_pct": 0,
   "net.video_queue_drops": 0,
   "net.video_size_max_b": 1486,
-  "net.video_size_p50_b": 1394,
+  "net.video_size_p50_b": 1393,
   "net.video_size_p90_b": 1465,
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 0,

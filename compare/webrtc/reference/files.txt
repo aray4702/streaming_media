@@ -255,3 +255,5 @@ rtc_base/numerics/running_statistics.h
 rtc_base/rolling_accumulator.h
 modules/video_coding/frame_helpers.h
 modules/video_coding/frame_helpers.cc
+modules/rtp_rtcp/source/rtp_header_extension_size.h
+modules/rtp_rtcp/source/rtp_header_extension_size.cc

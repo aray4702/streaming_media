@@ -637,6 +637,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.send_rate_stats = s.send_rate_stats;
     c.send_side.link_headroom = s.link_headroom;
     c.send_side.control_handler = s.control_handler;
+    c.send_side.expected_packet_overhead = s.expected_packet_overhead;  // Issue #577.
     c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):

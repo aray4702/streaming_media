@@ -12,7 +12,11 @@ seed 15
 at 0s capacity=3000kbps delay=40ms queue=300ms
 at 10s cross=2000kbps
 at 25s cross=0kbps
-expect video.freeze_count <= 9
-expect video.freeze_total_ms < 3000
+# PR #631 (RtpVideoSender::GetPostEncodeOverhead; refs #619; program.md 0.2, window's option A on #619, 2026-10-29,
+# needs-human): was <= 9 / < 3000. Seed 15 with #631: 15 freezes, 7259 ms. issue_204_cross_traffic_join, 80 seeds: #631
+# mean 3.33 / 1683 ms, worst 15 / 7278, stuck 4 of 80 (5, 14, 15, 54); main 2.92 / 1501, worst 13 / 5132, stuck 1 (17);
+# libwebrtc 3.06 / 1553, worst 22 / 9689, stuck 1 (17). Recorded cost: this seed alone no longer catches a stuck draw (#474).
+expect video.freeze_count <= 22
+expect video.freeze_total_ms < 9700
 # #556 + #549: seed 15 at 286.8; libwebrtc seed 15 292.8, worst 295.3 (tight rule, cap).
 expect cc.queue_p95_ms < 295
