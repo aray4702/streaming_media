@@ -357,7 +357,104 @@ SM_TEST(HeaderExtensions, OneAndTwoByteForms) {
   // Survives full RTP serialization.
   auto rt = RtpPacket::Parse(q.Serialize());
   SM_EXPECT_EQ(ParseHeaderExtensions(rt->extension_profile, rt->extension)->size(), 2u);
-  SM_EXPECT_FALSE(ParseHeaderExtensions(0xBEDE, std::vector<uint8_t>{0x15, 1}).has_value());  // Truncated.
+  // Truncated: the packet still parses, without the oversized element (rtp_packet.cc:540-544).
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, std::vector<uint8_t>{0x15, 1})->size(), 0u);
+}
+
+// RtpPacket::ParseBuffer's element loop (rtp_packet.cc:512-571).
+SM_TEST(HeaderExtensions, ParseRulesAsLibwebrtc) {
+  using B = std::vector<uint8_t>;
+  // Elements before an oversized one are kept.
+  auto a = ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x23, 1, 2});
+  SM_ASSERT_EQ(a->size(), 1u);
+  SM_EXPECT_EQ((*a)[0].id, 1);
+  // The reserved id 15 stops parsing; so does a non-zero byte with id 0.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0xF0, 0x20, 0xBB, 0, 0, 0})->size(), 1u);
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x01, 0x20, 0xBB, 0, 0, 0})->size(), 1u);
+  // Padding bytes are skipped.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0, 0, 0x10, 0xAA, 0, 0x20, 0xBB, 0})->size(), 2u);
+  // A repeated id overwrites the earlier value, keeping one element.
+  auto d = ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x20, 0xBB, 0x10, 0xCC, 0, 0});
+  SM_ASSERT_EQ(d->size(), 2u);
+  SM_EXPECT_EQ((*d)[0].id, 1);
+  SM_EXPECT_EQ((*d)[0].data, B{0xCC});
+  // A header byte with no room for even one data byte is not read.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0, 0x30})->size(), 1u);
+  // Two-byte form: app bits are ignored and zero-length elements are allowed,
+  // but a header in the last two bytes is not read.
+  auto t = ParseHeaderExtensions(0x1001, B{5, 0, 6, 1, 0xAA, 0, 0, 0});
+  SM_ASSERT_EQ(t->size(), 2u);
+  SM_EXPECT_TRUE((*t)[0].data.empty());
+  SM_EXPECT_EQ(ParseHeaderExtensions(0x1000, B{6, 1, 0xAA, 0, 0, 0, 7, 0})->size(), 1u);
+  // Neither profile: no elements.
+  SM_EXPECT_FALSE(ParseHeaderExtensions(0xABCD, B{0x10, 0xAA, 0, 0}).has_value());
+}
+
+// RtpHeaderExtensionMap::RegisterByUri (rtp_header_extension_map.cc:100-170).
+SM_TEST(HeaderExtensions, MapRegistrationAsLibwebrtc) {
+  ExtensionMap m;
+  SM_EXPECT_FALSE(m.extmap_allow_mixed());
+  SM_EXPECT_FALSE(m.Register(1, "urn:example:not-a-webrtc-extension"));  // Unknown URI.
+  SM_EXPECT_FALSE(m.Register(0, uri::kMid));                              // Below kMinId.
+  SM_EXPECT_TRUE(m.Register(1, uri::kMid));
+  SM_EXPECT_TRUE(m.Register(1, uri::kMid));          // The same pair again.
+  SM_EXPECT_FALSE(m.Register(1, uri::kTransportCc));  // Id used by another URI: not overwritten.
+  SM_EXPECT_EQ(*m.UriOf(1), uri::kMid);
+  SM_EXPECT_FALSE(m.Register(2, uri::kMid));  // URI already at id 1.
+  SM_EXPECT_TRUE(m.Register(255, uri::kAbsCaptureTime));
+  SM_EXPECT_TRUE(m.Register(14, "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"));
+  m.Deregister(uri::kMid);
+  SM_EXPECT_FALSE(m.IdOf(uri::kMid).has_value());
+  SM_EXPECT_TRUE(m.Register(2, uri::kMid));
+}
+
+// RtpPacket::AllocateExtension and AllocateRawExtension (rtp_packet.cc:242-353, 620-639).
+SM_TEST(HeaderExtensions, AllocationAsLibwebrtc) {
+  using B = std::vector<uint8_t>;
+  ExtensionMap one;  // No extmap-allow-mixed: one-byte form only.
+  one.Register(1, uri::kTransportCc);
+  one.Register(2, uri::kMid);
+  one.Register(20, uri::kAbsCaptureTime);
+  ExtensionAccessor a(one);
+  RtpPacket p;
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kAbsCaptureTime, B(8, 1)));  // Id 20 needs the two-byte form.
+  SM_EXPECT_FALSE(a.SetString(p, uri::kMid, std::string(17, 'm')));  // 17 bytes too.
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kMid, {}));                    // Empty values are never written.
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kRid, B{1}));                  // Not registered.
+  SM_EXPECT_TRUE(p.extension.empty());
+  SM_EXPECT_TRUE(a.SetTransportSeq(p, 0x1234));
+  SM_EXPECT_TRUE(a.SetString(p, uri::kMid, "ab"));
+  SM_EXPECT_EQ(p.extension_profile, 0xBEDE);
+  SM_EXPECT_EQ(p.extension, (B{0x11, 0x12, 0x34, 0x21, 'a', 'b', 0, 0}));
+  // A rewrite keeps the element's place; another length is refused.
+  SM_EXPECT_TRUE(a.SetTransportSeq(p, 0x5678));
+  SM_EXPECT_EQ(p.extension, (B{0x11, 0x56, 0x78, 0x21, 'a', 'b', 0, 0}));
+  SM_EXPECT_FALSE(a.SetString(p, uri::kMid, "abc"));
+  SM_EXPECT_EQ(*a.GetString(p, uri::kMid), "ab");
+
+  // With extmap-allow-mixed, a two-byte element promotes the earlier ones.
+  ExtensionMap mixed(true);
+  mixed.Register(1, uri::kTransportCc);
+  mixed.Register(2, uri::kMid);
+  mixed.Register(20, uri::kVideoOrientation);
+  ExtensionAccessor m(mixed);
+  RtpPacket q;
+  SM_EXPECT_TRUE(m.SetTransportSeq(q, 0x1234));
+  SM_EXPECT_TRUE(m.SetString(q, uri::kMid, "ab"));
+  SM_EXPECT_EQ(q.extension_profile, 0xBEDE);
+  SM_EXPECT_TRUE(m.SetRaw(q, uri::kVideoOrientation, B{9}));
+  SM_EXPECT_EQ(q.extension_profile, 0x1000);
+  SM_EXPECT_EQ(q.extension, (B{1, 2, 0x12, 0x34, 2, 2, 'a', 'b', 20, 1, 9, 0}));
+  // A long value in a two-byte packet; a fresh packet starts two-byte.
+  SM_EXPECT_TRUE(m.SetString(q, uri::kMid, "ab"));
+  RtpPacket r;
+  SM_EXPECT_TRUE(m.SetString(r, uri::kMid, std::string(40, 'x')));
+  SM_EXPECT_EQ(r.extension_profile, 0x1000);
+  SM_EXPECT_EQ(*m.GetString(r, uri::kMid), std::string(40, 'x'));
+  auto rt = RtpPacket::Parse(q.Serialize());
+  SM_ASSERT_TRUE(rt.has_value());
+  SM_EXPECT_EQ(*m.GetTransportSeq(*rt), 0x1234);
+  SM_EXPECT_EQ(*m.GetRaw(*rt, uri::kVideoOrientation), B{9});
 }
 
 SM_TEST(HeaderExtensions, TypedAccessors) {

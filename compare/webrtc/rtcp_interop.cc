@@ -18,7 +18,9 @@
 // Exits non-zero on any mismatch.
 #include <algorithm>
 #include <optional>
+#include <span>
 #include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <vector>
@@ -635,6 +637,147 @@ void VideoOrientation() {
            sm::video::DecodeCvo((*raw)[0]).rotation == ours[i];
   }
   Check(back, "libwebrtc's CVO byte read here as the same rotation");
+}
+
+// RFC 8285 elements as libwebrtc's RtpHeaderExtensionMap and RtpPacket
+// (reference/modules/rtp_rtcp/source/rtp_header_extension_map.cc, rtp_packet.cc):
+// the same registrations succeed, the same allocations give the same bytes
+// (one-byte form, refusals without extmap-allow-mixed, promotion to the
+// two-byte form, rewrites in place), and both parsers read the same values
+// from malformed blocks.
+void HeaderExtensionElements() {
+  namespace uri = sm::sync::uri;
+  using webrtc::RtpHeaderExtensionId;
+  {
+    struct Reg {
+      int id;
+      std::string uri;
+    };
+    const Reg regs[] = {{1, uri::kMid},
+                        {1, uri::kMid},
+                        {1, uri::kTransportCc},
+                        {2, uri::kMid},
+                        {2, "urn:example:unknown"},
+                        {255, uri::kAbsCaptureTime},
+                        {14, "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"},
+                        {15, "urn:ietf:params:rtp-hdrext:toffset"},
+                        {3, "http://www.webrtc.org/experiments/rtp-hdrext/transport-wide-cc-02"},
+                        {4, "https://aomediacodec.github.io/av1-rtp-spec/#dependency-descriptor-rtp-header-extension"},
+                        {5, "http://www.webrtc.org/experiments/rtp-hdrext/inband-cn"},
+                        {6, "http://www.webrtc.org/experiments/rtp-hdrext/corruption-detection"},
+                        {7, "http://www.webrtc.org/experiments/rtp-hdrext/generic-frame-descriptor-00"},
+                        {8, "http://www.webrtc.org/experiments/rtp-hdrext/video-layers-allocation00"},
+                        {9, "http://www.webrtc.org/experiments/rtp-hdrext/video-frame-tracking-id"},
+                        {10, "urn:ietf:params:rtp-hdrext:csrc-audio-level"},
+                        {11, "http://www.webrtc.org/experiments/rtp-hdrext/color-space"},
+                        {12, "http://www.webrtc.org/experiments/rtp-hdrext/video-timing"},
+                        {13, "http://www.webrtc.org/experiments/rtp-hdrext/video-content-type"},
+                        {16, uri::kRid},
+                        {17, uri::kRepairedRid},
+                        {18, uri::kAudioLevel},
+                        {19, uri::kVideoOrientation},
+                        {20, uri::kAbsSendTime},
+                        {21, uri::kTransportCc}};
+    sm::sync::ExtensionMap map;
+    webrtc::RtpHeaderExtensionMap wmap;
+    bool same = true;
+    for (const auto& r : regs) {
+      const bool ours = map.Register(static_cast<uint8_t>(r.id), r.uri);
+      const bool theirs = wmap.RegisterByUri(RtpHeaderExtensionId(r.id), r.uri);
+      if (ours != theirs) std::printf("    register %d %s: ours %d, libwebrtc %d\n", r.id, r.uri.c_str(), ours, theirs);
+      same = same && ours == theirs;
+    }
+    Check(same, "ExtensionMap: the same registrations succeed as RtpHeaderExtensionMap::RegisterByUri");
+  }
+
+  for (bool mixed : {false, true}) {
+    sm::sync::ExtensionMap map(mixed);
+    map.Register(1, uri::kTransportCc);
+    map.Register(2, uri::kMid);
+    map.Register(20, uri::kVideoOrientation);
+    webrtc::RtpHeaderExtensionMap wmap(mixed);
+    wmap.Register<webrtc::TransportSequenceNumber>(RtpHeaderExtensionId(1));
+    wmap.Register<webrtc::RtpMid>(RtpHeaderExtensionId(2));
+    wmap.Register<webrtc::VideoOrientation>(RtpHeaderExtensionId(20));
+    const sm::sync::ExtensionAccessor a(map);
+    sm::RtpPacket p;
+    p.payload_type = 96;
+    p.seq = 7;
+    p.timestamp = 3000;
+    p.ssrc = 0x1111;
+    webrtc::RtpPacketToSend w(&wmap);
+    w.SetPayloadType(96);
+    w.SetSequenceNumber(7);
+    w.SetTimestamp(3000);
+    w.SetSsrc(0x1111);
+    bool ok = a.SetTransportSeq(p, 0x1234) == w.SetExtension<webrtc::TransportSequenceNumber>(0x1234);
+    ok = ok && a.SetString(p, uri::kMid, "ab") == w.SetExtension<webrtc::RtpMid>("ab");
+    ok = ok && a.SetTransportSeq(p, 0x5678) == w.SetExtension<webrtc::TransportSequenceNumber>(0x5678);
+    ok = ok && a.SetString(p, uri::kMid, "abc") == w.SetExtension<webrtc::RtpMid>("abc");  // Length mismatch.
+    const bool ours_cvo = a.SetRaw(p, uri::kVideoOrientation, {3});
+    ok = ok && ours_cvo == w.SetExtension<webrtc::VideoOrientation>(uint8_t{3}) && ours_cvo == mixed;
+    p.payload = {1, 2, 3};
+    std::memcpy(w.AllocatePayload(3), p.payload.data(), 3);
+    const Bytes bytes = p.Serialize();
+    ok = ok && bytes == Bytes(w.data(), w.data() + w.size());
+    Check(ok, mixed ? "RFC 8285 allocation with extmap-allow-mixed: promoted to the two-byte form, same bytes"
+                    : "RFC 8285 allocation, one-byte form only: same bytes and refusals");
+  }
+
+  {
+    sm::sync::ExtensionMap map(true);
+    map.Register(1, uri::kTransportCc);
+    map.Register(2, uri::kMid);
+    map.Register(3, uri::kAbsSendTime);
+    webrtc::RtpHeaderExtensionMap wmap(true);
+    wmap.Register<webrtc::TransportSequenceNumber>(RtpHeaderExtensionId(1));
+    wmap.Register<webrtc::RtpMid>(RtpHeaderExtensionId(2));
+    wmap.Register<webrtc::AbsoluteSendTime>(RtpHeaderExtensionId(3));
+    const sm::sync::ExtensionAccessor a(map);
+    struct Block {
+      uint16_t profile;
+      Bytes body;  // A multiple of 4 bytes.
+    };
+    const Block blocks[] = {
+        {0xBEDE, {0x11, 0x12, 0x34, 0x22, 'a', 'b', 'c', 0x32, 1, 2, 3, 0}},  // Well formed.
+        {0xBEDE, {0x11, 0x12, 0x34, 0x2F, 'a', 'b', 0, 0}},                 // Oversized MID.
+        {0xBEDE, {0x11, 0x12, 0x34, 0xF0, 0x20, 'a', 0, 0}},                // Reserved id 15.
+        {0xBEDE, {0x11, 0x12, 0x34, 0x05, 0x20, 'a', 0, 0}},                // Non-zero byte with id 0.
+        {0xBEDE, {0x11, 0x12, 0x34, 0x11, 0x56, 0x78, 0, 0}},               // Repeated id.
+        {0xBEDE, {0, 0, 0x11, 0x12, 0x34, 0, 0, 0x20}},                     // Padding, then a header with no data.
+        {0x1000, {1, 2, 0x12, 0x34, 2, 0, 3, 3, 1, 2, 3, 0}},               // Two-byte, zero-length MID.
+        {0x1003, {1, 2, 0x12, 0x34, 0, 0, 2, 0}},                           // App bits; header in the last two bytes.
+        {0x1000, {1, 2, 0x12, 0x34, 2, 9, 'a', 0}},                         // Two-byte oversized.
+        {0xABCD, {0x11, 0x12, 0x34, 0}},                                    // Unknown profile.
+    };
+    bool same = true;
+    int n = 0;
+    for (const auto& b : blocks) {
+      ++n;
+      sm::RtpPacket p;
+      p.payload_type = 96;
+      p.ssrc = 0x1111;
+      p.extension_profile = b.profile;
+      p.extension = b.body;
+      p.payload = {9, 9};
+      const Bytes bytes = p.Serialize();
+      webrtc::RtpPacketReceived w(&wmap);
+      auto q = sm::RtpPacket::Parse(bytes);
+      bool ok = w.Parse(bytes.data(), bytes.size()) && q && w.payload_size() == 2 && q->payload.size() == 2;
+      auto cmp = [&](const char* u, std::span<const uint8_t> theirs, bool has_theirs) {
+        const auto ours = a.GetRaw(*q, u);
+        return ours.has_value() == has_theirs && (!ours || Bytes(theirs.begin(), theirs.end()) == *ours);
+      };
+      ok = ok && cmp(uri::kTransportCc, w.GetRawExtension<webrtc::TransportSequenceNumber>(),
+                     w.HasExtension<webrtc::TransportSequenceNumber>());
+      ok = ok && cmp(uri::kMid, w.GetRawExtension<webrtc::RtpMid>(), w.HasExtension<webrtc::RtpMid>());
+      ok = ok && cmp(uri::kAbsSendTime, w.GetRawExtension<webrtc::AbsoluteSendTime>(),
+                     w.HasExtension<webrtc::AbsoluteSendTime>());
+      if (!ok) std::printf("    extension block %d read differently\n", n);
+      same = same && ok;
+    }
+    Check(same, "RFC 8285 parsing: the same elements as RtpPacket::Parse from 10 blocks, malformed ones included");
+  }
 }
 
 // H.264 access units of the shapes the test bench produces (keyframe with SPS
@@ -1309,6 +1452,7 @@ int main() {
   WebrtcToSender();
   AudioLevel();
   VideoOrientation();
+  HeaderExtensionElements();
   H264SmToWebrtc();
   H264WebrtcToSm();
   H264Model();
