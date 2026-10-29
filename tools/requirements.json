@@ -190,10 +190,10 @@
    "area": "Bandwidth, congestion and unstable links",
    "catalog": "5.1",
    "title": "Transport-wide CC feedback (and REMB)",
-   "status": "open",
-   "evidence": "The transport-cc wire format is interop-checked (`compare/webrtc/rtcp_interop.cc`), the receiver's generator is libwebrtc's `TransportSequenceNumberFeedbackGenerator` (500 ms back window, 5% interval, 100 ms first report; #76, #217), the adapter's 1 ms round-down is ported (#365), REMB feeds `SendSideBandwidthEstimation`'s upper limit (#61); no switch left (#167). Short: the parity row on `cc/transport_feedback.cc` says 'rest not compared' (feedback ordering, in-flight accounting, packets of a lost feedback against `TransportFeedbackAdapter`). No open item; filed #569.",
+   "status": "done",
+   "evidence": "The transport-cc wire format is interop-checked (`compare/webrtc/rtcp_interop.cc`), the receiver's generator is libwebrtc's `TransportSequenceNumberFeedbackGenerator` (500 ms back window, 5% interval, 100 ms first report; #76, #217), and the sender joins history and feedback as `TransportFeedbackAdapter` (#602, #569 part 2: 60 s history window, in-flight above the last acked sequence number, local receive-time base with `GetBaseDelta`'s 24-bit wrap checked against `rtcp_packet/transport_feedback.cc`, #608; feedback that finds no packet is not passed on). REMB feeds `SendSideBandwidthEstimation`'s upper limit (#61). Not ported, no effect on a one-to-one call: the per-`NetworkRoute` map (one route), RFC 8888 feedback (off by default in M157), `pending_untracked_size_` (the session numbers every packet), `ambiguous_receive_time` (unused by GoogCC M157).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
