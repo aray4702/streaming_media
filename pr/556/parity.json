@@ -32,7 +32,8 @@
   "466": "closed",
   "476": "closed",
   "479": "open",
-  "504": "open"
+  "504": "open",
+  "514": "open"
  },
  "gaps": [
   {
@@ -272,7 +273,7 @@
    "scenario": "issue_15_aimd_v2_random_loss",
    "metric": "sync.av_offset_p95_ms",
    "sm": 101.014,
-   "webrtc": 86.0737,
+   "webrtc": 86.075,
    "band": 10,
    "direction": "behind",
    "seeds_agree": 5,
@@ -439,7 +440,9 @@
    "direction": "behind",
    "seeds_agree": 6,
    "seeds": 10,
-   "owners": [],
+   "owners": [
+    514
+   ],
    "stale_owners": [
     21,
     7,
@@ -916,9 +919,9 @@
   {
    "scenario": "issue_466_scene_change_very_low_capacity",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 5957.5,
-   "webrtc": 4941.46,
-   "band": 961.94325862692,
+   "sm": 5957.51,
+   "webrtc": 4941.47,
+   "band": 961.9456984350923,
    "direction": "behind",
    "seeds_agree": 5,
    "seeds": 10,
@@ -1066,9 +1069,9 @@
   {
    "scenario": "issue_76_rtx_v2_keyframe_flush",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 927.31,
+   "sm": 927.308,
    "webrtc": 1029.24,
-   "band": 90.74176905856409,
+   "band": 90.7421981163609,
    "direction": "ahead",
    "seeds_agree": 3,
    "seeds": 10,
@@ -1081,7 +1084,7 @@
    "scenario": "issue_7_no_fec_beside_nack",
    "metric": "sync.av_offset_p95_ms",
    "sm": 101.014,
-   "webrtc": 86.075,
+   "webrtc": 86.0737,
    "band": 10,
    "direction": "behind",
    "seeds_agree": 5,
@@ -1110,7 +1113,7 @@
    "scenario": "random_loss_5pct",
    "metric": "sync.av_offset_p95_ms",
    "sm": 101.014,
-   "webrtc": 86.0737,
+   "webrtc": 86.075,
    "band": 10,
    "direction": "behind",
    "seeds_agree": 5,
