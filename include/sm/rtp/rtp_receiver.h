@@ -157,8 +157,8 @@ struct RtpReceiverConfig {
   // Receive statistics as libwebrtc's StreamStatisticianImpl (timing::ReceiveStatistics v2,
   // issue #575): the max reordering threshold (450, kMaxPacketAgeToNack, for video with NACK;
   // 50 otherwise), the stream-restart rule, 255-scaled fraction lost and the clamp of a
-  // negative cumulative loss. Off by default until the flip is judged on the parity report.
-  bool receive_statistics_v2 = false;
+  // negative cumulative loss. On by default, as libwebrtc's receive streams always run it.
+  bool receive_statistics_v2 = true;
 
   // --- Video ---
   const VideoPayloadParser* parser = nullptr;  // Required for video. Not owned.

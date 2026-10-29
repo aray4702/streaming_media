@@ -111,8 +111,9 @@ struct Scenario {
   bool per_stream_rtt = true;
   // `receive_statistics_v2 on|off`: both sessions keep receive statistics as libwebrtc's
   // StreamStatisticianImpl (max reordering threshold, stream restart, 255-scaled fraction lost;
-  // rtp::SessionConfig::receive_statistics_v2; issue #575). Off by default until it is judged.
-  bool receive_statistics_v2 = false;
+  // rtp::SessionConfig::receive_statistics_v2; issue #575). On by default, as libwebrtc; `off` keeps
+  // the RFC 3550 counts with no reordering threshold.
+  bool receive_statistics_v2 = true;
   // `expected_packet_overhead on|off`: the sender's video overhead rate counts the RTP header it
   // builds (RtpSender::ExpectedPerPacketOverhead: 12 + the registered non-volatile extensions + 2 with
   // RTX, 22 B here with NACK, 20 without), as libwebrtc's RtpVideoSender; off: a fixed 24 B

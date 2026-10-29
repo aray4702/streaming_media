@@ -164,10 +164,10 @@
    "area": "Jitter, reordering and timing",
    "catalog": "4.6",
    "title": "Video jitter estimation and render timing",
-   "status": "in-progress",
-   "evidence": "Timing v2 (#24, `include/sm/timing/vcm_timing.h`) ports M157's `JitterEstimator` (Kalman filter, inter-frame delay variation, `RttFilter`, 2.33 sigma - 30 ms, 10 ms OS jitter, 0.9 x RTT after 3 NACKed frames), `TimestampExtrapolator`, `DecodeTimePercentileFilter`, `VCMTiming`; default in the session and test bench. `VideoTimingConfig` defaults to version 2 since #579. #645 re-checked every part line by line against `compare/webrtc/reference/` and rewrote parity rows 4.1/4.2 for v2: every row is `same`. It ported libwebrtc's unit arithmetic in three places (90 kHz RTP delta truncated to the microsecond, frame rate in whole millihertz, `ShortRttFilter`'s division). Two parts rest on files not in `reference/` (asked on #645): `RollingAccumulator::ComputeMean` (floating-point rounding of the frame-period mean only) and `frame_helpers.cc`'s 10 s reset bound. No other difference is left.",
+   "status": "done",
+   "evidence": "Timing v2 (#24, `include/sm/timing/vcm_timing.h`) ports M157's `JitterEstimator` (Kalman filter, inter-frame delay variation, `RttFilter`, 2.33 sigma - 30 ms, 10 ms OS jitter, 0.9 x RTT after 3 NACKed frames), `TimestampExtrapolator`, `DecodeTimePercentileFilter`, `VCMTiming`; default in the session and test bench. `VideoTimingConfig` defaults to version 2 since #579. #645 re-checked every part line by line against `compare/webrtc/reference/` and rewrote parity rows 4.1/4.2 for v2: every row is `same`. It ported libwebrtc's unit arithmetic in three places (90 kHz RTP delta truncated to the microsecond, frame rate in whole millihertz, `ShortRttFilter`'s division). #674 checked the last two parts against the files now in `reference/`: `frame_helpers.cc`'s `FrameHasBadRenderTiming` / `TargetVideoDelayIsTooLarge` are the same rule as ours; `RollingAccumulator::ComputeMean` is a Welford running mean, which ours (sum / count) differed from in the last bit, so #674 ported it (`RollingMean`, unit tests `VcmTiming.JitterFrameRateMeanIsWelfordsAsRollingAccumulator` and `RollingMeanKeepsTheLast30SamplesWithWelfordsUpdate`; suite bit-identical on seed 1). No other difference is left.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
