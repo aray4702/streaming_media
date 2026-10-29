@@ -63,7 +63,7 @@
   "video.delay_jitter_buffer_p95_ms": 2402,
   "video.delay_network_p95_ms": 150.5,
   "video.delay_pacer_p95_ms": 1515,
-  "video.e2e_delay_p50_ms": 343.9,
+  "video.e2e_delay_p50_ms": 344.1,
   "video.e2e_delay_p95_ms": 2717,
   "video.encode_height_mean": 191.6,
   "video.encoder_dropped": 56,

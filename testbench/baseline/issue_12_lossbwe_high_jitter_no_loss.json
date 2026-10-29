@@ -73,7 +73,7 @@
   "video.freeze_total_ms": 0,
   "video.keyframe_requests": 2,
   "video.keyframes": 2,
-  "video.longest_freeze_ms": 25.69,
+  "video.longest_freeze_ms": 25.7,
   "video.pause_count": 0,
   "video.pause_total_ms": 0,
   "video.qp_mean": 27.28,

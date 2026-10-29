@@ -60,7 +60,7 @@
   "sync.av_offset_p95_ms": 100.1,
   "video.avg_kbps": 1388,
   "video.delay_encode_ms": 0,
-  "video.delay_jitter_buffer_p95_ms": 63.07,
+  "video.delay_jitter_buffer_p95_ms": 63.06,
   "video.delay_network_p95_ms": 89.47,
   "video.delay_pacer_p95_ms": 0,
   "video.e2e_delay_p50_ms": 111.2,
