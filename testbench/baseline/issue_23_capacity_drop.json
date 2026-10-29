@@ -17,7 +17,7 @@
   "cc.queue_max_ms": 389.5,
   "cc.queue_over_200ms_pct": 7.9,
   "cc.queue_p95_ms": 283,
-  "cc.rtt_p50_ms": 76,
+  "cc.rtt_p50_ms": 72,
   "cc.send_over_target_ms": 0,
   "cc.send_over_target_p95_pct": 14.41,
   "cc.target_avg_kbps": 1050,
