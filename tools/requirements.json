@@ -515,10 +515,10 @@
    "area": "Video quality and processing",
    "catalog": "7.5",
    "title": "Codec negotiation",
-   "status": "open",
+   "status": "done",
    "evidence": "Removed by #592 (`include/sm/video/codec_negotiation.h`: `NegotiateCodecs`, `ParseH264ProfileLevelId`) on the Owner's A on #566: SDP offer/answer stays with the host stack (program.md 0.1); libwebrtc's codec lists live in `webrtc_video_engine.cc`, outside the call path. Parity 7.3 row marked `removed`; catalog 7.5 moved to the not-implemented list.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
