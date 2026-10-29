@@ -50,7 +50,6 @@ deviation with its decision (none yet).
 | 10 | RTCP | Audio report block | the audio channel's own RTCP, 5 s (`ref/audio/channel_receive.cc:122-131`) | in every receiver compound | different | #484 |
 | 11 | RTP | Padding on the media SSRC without RTX, audio-only padding | `ref/modules/rtp_rtcp/source/rtp_sender.cc` | — | different | #514 |
 | 12 | RTP | Header extensions other than transport-cc | RFC 8285 map and demuxer, abs-capture-time, CVO, audio level | — | missing | #567 |
-| 13 | Library defaults | Standalone configs default to v1: `AudioJitterBufferConfig` (`include/sm/timing/audio_jitter_buffer.h:70`, also `RtpReceiverConfig::jitter_buffer`), `VideoTimingConfig` (`video_jitter_estimator.h:78`), `QualityScalerConfig` (`quality_scaler.h:58`), `CpuOveruseConfig` (`include/sm/cc/video_adaptation.h:110`) | NetEq, VCMTiming, QualityScaler, OveruseFrameDetector | Session and the send path select 2 | bench-only, **flip** | #579 |
 | 14 | Library defaults | `SessionConfig::audio_rtcp` false (audio RTCP only beside video, `src/rtp/session.cc:240`); `send_lntf` true; `min_keyframe_request_interval` 0; `RtpReceiverConfig::sps_pps_tracker` false; `PacketBufferConfig::missing_packets` false; `GccConfig::max_rate` 10 Mbps; max packet 1200; `allocation_max_bitrate` 10 Mbps | always on (`ref/audio/channel_send.cc:551`); LNTF off for H.264 (`ref/video/rtp_video_stream_receiver2.cc:373`); 300 ms (`ref/video/encoder_rtcp_feedback.cc:37`); tracker on; hold on; unbounded (`ref/call/rtp_transport_controller_send.cc:68-83`); 1460; the app's max | the bench sets libwebrtc's value for each | bench-only, **flip** | #580 |
 | 15 | Adaptation | Camera degradation preference | MAINTAIN_FRAMERATE (`ref/media/engine/webrtc_video_engine.cc:2032-2064`) | `DegradationConfig` balanced (`include/sm/cc/video_adaptation.h:70`), `SettingsFor` camera -> balanced (`src/video/content_policy.cc:25`); the send path hard-codes MAINTAIN_FRAMERATE | bench-only, **flip** or deviation | #581 |
 | 16 | Adaptation | `BalancedDegradationSettings` | read only under BALANCED (`ref/rtc_base/experiments/balanced_degradation_settings.cc:29`) | not ported | missing (unused by the call) | #566 |
@@ -137,6 +136,12 @@ The library runs no codec; the bench encodes with libopus
 | Decode-time filter: 95th percentile, 10 s, 5 ignored | `decode_time_percentile_filter.cc:20-24` | `vcm_timing.cc:70-72` |
 | Max wait 200 ms keyframe / 3 s frame; inactive 5 s; fast-forward 5 ms; zero-playout queue 8 | `ref/video/video_receive_stream2.h:73-74`, `video_receive_stream2.cc:1012`; `ref/video/frame_decode_timing.h:34`; `video_stream_buffer_controller.cc:54` | `include/sm/loss/keyframe_request.h:56-58`; `include/sm/timing/frame_release.h:11-12`, `:58-59`; `src/timing/frame_release.cc:10` |
 | Packet buffer 512 / 2048; H.264 `missing_packets_` hold | `ref/video/rtp_video_stream_receiver2.cc:102-103`; `ref/modules/video_coding/packet_buffer.cc:380-381` | `include/sm/timing/packet_buffer.h:46-47`; Session `missing_packets` on |
+
+### Library defaults (standalone configs)
+
+| Feature or default | libwebrtc M157 | Ours |
+|---|---|---|
+| A component built on its own runs libwebrtc's port: NetEq, VCMTiming and frame release, QualityScaler, OveruseFrameDetector (was row 13 of section 1) | `ref/modules/audio_coding/neteq/`, `ref/modules/video_coding/timing/`, `ref/modules/video_coding/utility/quality_scaler.cc`, `ref/video/adaptation/overuse_frame_detector.cc` | `version = 2` by default in `AudioJitterBufferConfig` (also `RtpReceiverConfig::jitter_buffer`), `VideoTimingConfig`, `QualityScalerConfig` and `CpuOveruseConfig` (#579); `version = 1` still selects the library's own until it is retired |
 
 ### NACK, RTX and FEC
 

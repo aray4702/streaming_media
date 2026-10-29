@@ -52,6 +52,7 @@ inline AudioJbSimResult RunAudioJbSim(const AudioJbSimParams& p) {
   lc.loss_rate = p.loss;
   sim::NetworkLink<std::pair<uint32_t, std::vector<float>>> link(lc, p.seed + 3);
   AudioJitterBufferConfig cfg;
+  cfg.version = 1;  // The library's own buffer and DelayManager; the default is NetEq (#579).
   cfg.sample_rate = fs;
   cfg.time_stretch = p.time_stretch && p.fixed_delay_ms == 0;
   if (p.fixed_delay_ms > 0) {

@@ -533,7 +533,9 @@ SM_TEST(RenderFrames, InvalidRenderDelayBecomesTenMs) {
 SM_TEST(QualityScaler, ThresholdsAndSignals) {
   SM_EXPECT_EQ(QpThresholds::ForCodec("vp8").high, 95);
   SM_EXPECT_EQ(QpThresholds::ForCodec("H264").low, 24);
-  QualityScaler q;  // H.264 thresholds.
+  QualityScalerConfig v1;
+  v1.version = 1;  // The library's own scaler; the default is libwebrtc's (#579).
+  QualityScaler q(v1);  // H.264 thresholds.
   for (int i = 0; i < 30; ++i) q.OnEncodedFrame(45);
   SM_EXPECT_TRUE(q.Check(Ms(0)) == QualityScaler::Signal::kAdaptDown);
   q.OnResolutionChanged();
@@ -542,7 +544,7 @@ SM_TEST(QualityScaler, ThresholdsAndSignals) {
   for (int i = 0; i < 30; ++i) q.OnEncodedFrame(18);
   SM_EXPECT_TRUE(q.Check(Ms(2500)) == QualityScaler::Signal::kNone);  // Rate limited.
   SM_EXPECT_TRUE(q.Check(Ms(4000)) == QualityScaler::Signal::kAdaptUp);
-  QualityScaler d;
+  QualityScaler d(v1);
   for (int i = 0; i < 20; ++i) d.OnFrameDropped();
   for (int i = 0; i < 5; ++i) d.OnEncodedFrame(20);
   SM_EXPECT_TRUE(d.Check(Ms(0)) == QualityScaler::Signal::kAdaptDown);  // 80% dropped.
