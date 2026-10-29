@@ -27,7 +27,9 @@ SM_TEST(KeyframeRequest, InOrderFramesAreDecodable) {
 }
 
 SM_TEST(KeyframeRequest, LateReferenceUnblocksWithoutPli) {
-  KeyframeRequester k;
+  KeyframeRequestConfig cfg;
+  cfg.send_lntf = true;  // libwebrtc's `lntf.enabled` (off by default since #580).
+  KeyframeRequester k(cfg);
   k.OnFrame(Key(0), Ms(0));
   k.OnFrame(Delta(2, 1), Ms(66));  // 1 is late (being NACKed).
   auto fb = k.Process(Ms(70));

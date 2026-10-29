@@ -20,12 +20,14 @@
 // Takes `now`, reads no clock and starts no thread.
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <map>
 #include <optional>
 #include <span>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "sm/cc/transport_feedback.h"
@@ -38,6 +40,8 @@
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/red.h"
 #include "sm/loss/ulpfec.h"
+#include "sm/rtp/sps_vui_rewriter.h"
+#include "sm/sync/capture_time.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/video/orientation.h"
 #include "sm/sync/stream_sync.h"
@@ -52,6 +56,15 @@
 
 namespace sm::rtp {
 
+// One NAL unit of an H.264 payload: libwebrtc's NaluInfo
+// (RTPVideoHeaderH264::nalus). -1 is an id the unit doesn't carry or that
+// wasn't parsed (an FU-A fragment of an SPS or PPS).
+struct VideoNaluInfo {
+  uint8_t type = 0;
+  int32_t sps_id = -1;
+  int32_t pps_id = -1;
+};
+
 // What the receiver needs to know about one video RTP packet.
 struct VideoPayloadInfo {
   bool valid = false;        // False: malformed payload, the packet is dropped.
@@ -60,6 +73,34 @@ struct VideoPayloadInfo {
   bool sps = false;          // Carries a sequence parameter set.
   bool pps = false;          // Carries a picture parameter set.
   bool keyframe = false;     // The depacketizer's frame type is key (the packet belongs to a keyframe).
+  std::vector<VideoNaluInfo> nalus;  // H.264: the units the depacketizer read, in order (empty for others).
+};
+
+// libwebrtc's H264SpsPpsTracker::CopyAndFixBitstream
+// (modules/video_coding/h264_sps_pps_tracker.cc:37-110), the decision part:
+// SPS and PPS are recorded by id (a PPS with the SPS id it refers to), and the
+// first packet of a frame that holds an IDR slice is let through only when the
+// slice's PPS and that PPS's SPS have been received. Units are handled in
+// order, so a STAP-A [SPS, PPS, IDR] passes. The rebuilt bitstream is
+// H264Depacketizer::Reassemble's. Parameter sets received out of band
+// (InsertSpsPpsNalus) are not supported, so the SPS resolution and bitstream
+// libwebrtc keeps per id are not kept.
+class H264SpsPpsTracker {
+ public:
+  enum class Action { kInsert, kDrop, kRequestKeyframe };
+  // kDrop: an SPS or PPS whose ids are missing or out of bounds (an FU-A
+  // fragment of a parameter set). kRequestKeyframe: an IDR at the start of a
+  // frame whose parameter sets are unknown.
+  Action CopyAndFixBitstream(std::span<const VideoNaluInfo> nalus, bool first_packet_in_frame);
+
+ private:
+  std::array<bool, kH264MaxSpsId + 1> sps_{};  // sps_data_: the SPS ids received.
+  std::array<int16_t, kH264MaxPpsId + 1> pps_sps_id_ = MakeNoPps();  // pps_data_: PPS id -> SPS id, -1 none.
+  static std::array<int16_t, kH264MaxPpsId + 1> MakeNoPps() {
+    std::array<int16_t, kH264MaxPpsId + 1> a{};
+    a.fill(-1);
+    return a;
+  }
 };
 
 class VideoPayloadParser {
@@ -112,6 +153,12 @@ struct RtpReceiverConfig {
   const sync::ExtensionMap* extensions = nullptr;
   cc::TransportFeedbackBuilder* feedback = nullptr;
 
+  // Receive statistics as libwebrtc's StreamStatisticianImpl (timing::ReceiveStatistics v2,
+  // issue #575): the max reordering threshold (450, kMaxPacketAgeToNack, for video with NACK;
+  // 50 otherwise), the stream-restart rule, 255-scaled fraction lost and the clamp of a
+  // negative cumulative loss. Off by default until the flip is judged on the parity report.
+  bool receive_statistics_v2 = false;
+
   // --- Video ---
   const VideoPayloadParser* parser = nullptr;  // Required for video. Not owned.
   VideoMediaObserver* media_observer = nullptr;  // Optional. Not owned.
@@ -123,13 +170,15 @@ struct RtpReceiverConfig {
   bool keyframe_needs_parameter_sets = false;
   // libwebrtc's H264SpsPpsTracker::CopyAndFixBitstream, as
   // RtpVideoStreamReceiver2::OnReceivedPayloadData runs it on every H.264
-  // packet (video/rtp_video_stream_receiver2.cc, kRequestKeyframe): a packet
-  // that starts an IDR slice before an SPS and a PPS have been received is
-  // dropped and a keyframe is requested. The NACK tracker has already counted
-  // it as received, so it is not retransmitted. The receiver does not know the
-  // codec, so this is off here; rtp::Session turns it on for H.264 streams, as
-  // libwebrtc runs it for every H.264 packet (issue #453).
-  bool sps_pps_tracker = false;
+  // packet (video/rtp_video_stream_receiver2.cc:924-941): a packet that
+  // starts an IDR slice before its PPS and that PPS's SPS have been received
+  // is dropped and a keyframe is requested (kRequestKeyframe); a parameter set
+  // without its ids (an FU-A fragment of an SPS or PPS) is dropped (kDrop). The NACK tracker has already counted
+  // it as received, so it is not retransmitted. On by default, as libwebrtc
+  // runs it for every H.264 packet (issues #453, #580); it acts only on the
+  // IDR, SPS and PPS flags an H.264 parser sets, and rtp::Session applies it to
+  // H.264 streams only.
+  bool sps_pps_tracker = true;
   // libwebrtc's pre-render smoothing (IncomingVideoStream + VideoRenderFrames,
   // video::RenderFrames), which VideoReceiveStream2 runs between the decoder and
   // the renderer when `enable_prerenderer_smoothing` is on, its default: a decoded
@@ -157,6 +206,13 @@ struct RtpReceiverConfig {
   EventSink* events = nullptr;
 };
 
+// A media packet's absolute capture time, received or interpolated, and its
+// capture clock offset against the local clock, as RtpPacketInfo carries them.
+struct PacketCaptureTime {
+  std::optional<sync::AbsoluteCaptureTime> absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
+};
+
 // What OnPacket made of a datagram, for the caller's accounting.
 enum class ReceivedKind : uint8_t { kMalformed, kMedia, kRtx, kFec, kPadding, kUnknown };
 
@@ -174,6 +230,27 @@ struct ReceivedFrame {
   // The last packet's video-orientation extension (CVO), 0 without it, as libwebrtc's
   // RtpVideoStreamReceiver2 (rtp_video_stream_receiver2.cc:797-802, 1108).
   video::Rotation rotation = video::Rotation::k0;
+  // The first packet's absolute capture time, received or interpolated
+  // (AbsoluteCaptureTimeInterpolator), and its capture clock offset against
+  // the local clock (CaptureClockOffsetUpdater), as RtpVideoStreamReceiver2::
+  // OnReceivedPayloadData sets them on the packet's RtpPacketInfo
+  // (rtp_video_stream_receiver2.cc:780-795).
+  std::optional<sync::AbsoluteCaptureTime> absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
+  // RtpFrameObject's ntp_time_ms: RemoteNtpTimeEstimator::Estimate of the first
+  // packet's RTP timestamp, the capture time on the local NTP clock in ms, -1
+  // until it is known (rtp_video_stream_receiver2.cc:1100-1104, with
+  // WebRTC-UseAbsCapTimeForG2gMetric off, its default).
+  int64_t ntp_time_ms = -1;
+};
+
+// An audio packet's absolute capture time, received or interpolated, and its
+// capture clock offset against the local clock: ChannelReceive::OnRtpPacket
+// and GetAudioFrameWithInfo (channel_receive.cc:474-503, 747-754).
+struct AudioCaptureTime {
+  uint32_t rtp_timestamp = 0;
+  sync::AbsoluteCaptureTime absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
 };
 
 // Feedback due toward the sender, for rtp::RtcpEngine.
@@ -196,8 +273,13 @@ struct RtpReceiverStats {
   uint64_t frames_received = 0;   // Assembled frames.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
+  // timing v2, FrameBuffer::InsertFrame: assembled frames the frame buffer refused (full, or at or
+  // below the last decoded id), and the times a keyframe cleared it.
+  uint64_t frames_refused = 0;
+  uint64_t frame_buffer_clears = 0;
   uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
-  uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before an SPS and PPS.
+  uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before their SPS and PPS.
+  uint64_t parameter_sets_without_ids = 0;  // sps_pps_tracker: SPS/PPS units without ids dropped (kDrop).
   // Gaps in the media sequence numbers as they arrive (recovered packets
   // included), for the protection controller (a real receiver reports this in
   // RTCP XR): runs of missing packets, and the packets in them.
@@ -206,6 +288,11 @@ struct RtpReceiverStats {
   uint64_t audio_frames = 0;
   uint64_t audio_decode_failures = 0;
   uint64_t audio_fec_frames = 0;       // In-band FEC frames given to the jitter buffer (version 2).
+  // Media packets that carried the absolute capture time extension, and those
+  // whose capture time AbsoluteCaptureTimeInterpolator extrapolated.
+  uint64_t abs_capture_time_received = 0;
+  uint64_t abs_capture_time_interpolated = 0;
+  uint64_t remote_ntp_updates = 0;  // SRs given to RemoteNtpTimeEstimator.
 };
 
 class RtpReceiver : public MetricsSource {
@@ -230,7 +317,22 @@ class RtpReceiver : public MetricsSource {
   void OnSenderReport(const timing::SenderReport& sr, Timestamp now) {
     stats_rtp_.OnSenderReport(sr, now);
     last_sr_ = sr;
+    last_sr_arrival_ = now;
   }
+  // After each RTCP packet, once its SRs and RTT are in (RtpVideoStreamReceiver2::
+  // DeliverRtcp, rtp_video_stream_receiver2.cc:1533-1569; ChannelReceive::
+  // ReceivedRTCPPacket, channel_receive.cc:818-847): with an RTT and an SR, the
+  // SR trains RemoteNtpTimeEstimator, and its remote-to-local clock offset goes
+  // to CaptureClockOffsetUpdater. Video takes only an SR that arrived with this
+  // packet (1 ms or less ago); audio gives the last SR again, which the
+  // estimator skips as the same measurement.
+  void OnRtcpPacket(Timestamp now);
+  // RemoteNtpTimeEstimator::Estimate: the capture time of `rtp_timestamp` on the
+  // local NTP clock in ms, -1 until two SRs are in.
+  int64_t EstimateNtpTimeMs(uint32_t rtp_timestamp) const;
+  // Audio: the last media packet's absolute capture time (received or
+  // interpolated), with the local capture clock offset; unset until one is known.
+  const std::optional<AudioCaptureTime>& last_audio_capture_time() const { return last_audio_capture_time_; }
   // A/V synchronization (issue #77), what the stream gives
   // sync::RtpStreamsSynchronizer as a Syncable. Video is libwebrtc's
   // VideoReceiveStream2::GetInfo (RtpVideoStreamReceiver2::GetSyncInfo: the
@@ -297,7 +399,13 @@ class RtpReceiver : public MetricsSource {
   void SendSeqNumNacks(Timestamp now);  // NackRequester::OnReceivedPacket's kSeqNumOnly batch.
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
+  // AbsoluteCaptureTimeInterpolator::OnReceivePacket on a media packet, then the
+  // local clock offset: what RtpPacketInfo carries for it.
+  PacketCaptureTime OnPacketCaptureTime(const RtpPacket& p, int clock_rate, Timestamp now);
   void AssembleFrames(Timestamp now);
+  // timing v2: FrameBuffer::InsertFrame's checks for an assembled frame; false if it is refused.
+  bool FrameBufferAccepts(int64_t id, bool keyframe, uint32_t rtp_timestamp, Timestamp now);
+  void ClearFrameBuffer(Timestamp now, const char* reason, int64_t id);
 
   RtpReceiverConfig cfg_;
   loss::NackTracker nack_;
@@ -317,14 +425,24 @@ class RtpReceiver : public MetricsSource {
   std::optional<timing::ReceiveStatistics> stats_rtx_;
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
-  bool have_sps_ = false;  // sps_pps_tracker: an SPS / a PPS has been received.
-  bool have_pps_ = false;
+  H264SpsPpsTracker sps_pps_tracker_;  // sps_pps_tracker.
   TimeDelta rtt_ = TimeDelta::Millis(100);
   bool have_rtt_ = false;
   Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.
   std::unordered_set<uint16_t> nacked_seqs_;  // timing v2: received packets that had been NACKed.
   // A/V sync (issue #77): the last SR, the last media packet and the last playout.
   std::optional<timing::SenderReport> last_sr_;
+  Timestamp last_sr_arrival_ = Timestamp::MinusInfinity();
+  // Absolute capture time (F8.3): per-packet interpolation, the SR-trained
+  // remote NTP estimate and the capture clock offset updater.
+  sync::AbsoluteCaptureTimeInterpolator abs_capture_interpolator_;
+  sync::RemoteNtpTimeEstimator ntp_estimator_;
+  sync::CaptureClockOffsetUpdater capture_clock_offset_updater_;
+  // Video: each packet-buffer packet's sequence number and capture time, by
+  // sequence number modulo the packet buffer's largest size, for its frame's
+  // first packet.
+  std::vector<std::optional<std::pair<uint16_t, PacketCaptureTime>>> packet_capture_times_;
+  std::optional<AudioCaptureTime> last_audio_capture_time_;
   std::optional<uint32_t> last_received_rtp_timestamp_;
   Timestamp last_received_rtp_time_ = Timestamp::MinusInfinity();
   Timestamp last_playout_time_ = Timestamp::MinusInfinity();
@@ -336,8 +454,17 @@ class RtpReceiver : public MetricsSource {
     Timestamp receive_time;      // Last packet's arrival.
     bool retransmitted = false;  // A packet of it was NACKed (timing v2).
     video::Rotation rotation = video::Rotation::k0;
+    PacketCaptureTime capture;  // The first packet's.
+    int64_t ntp_time_ms = -1;
   };
-  std::map<int64_t, FrameMeta> frames_;  // Frame id -> what the scheduler needs; bounded.
+  // Frame id -> what the scheduler needs; bounded. With timing v2 it holds the frames libwebrtc's
+  // FrameBuffer holds (assembled, not yet decoded or dropped), at most kMaxFramesBuffered.
+  std::map<int64_t, FrameMeta> frames_;
+  struct DecodedFrame {
+    int64_t id;
+    uint32_t rtp_timestamp;
+  };
+  std::optional<DecodedFrame> last_decoded_;  // timing v2: DecodedFramesHistory's last decoded frame.
   std::vector<ReceivedFrame> out_frames_;
   ReceiverFeedback feedback_;
   RtpReceiverStats stats_;

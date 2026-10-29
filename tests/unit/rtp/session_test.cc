@@ -1,4 +1,6 @@
 #include <algorithm>
+#include <cstdlib>
+#include <map>
 #include <vector>
 
 #include "rtp_test_payload.h"
@@ -131,7 +133,7 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   std::vector<RtpPacket> sent;
   for (auto& o : Pump(p.a, 0, 500)) {
     if (o.kind != OutgoingKind::kVideo) continue;
-    SM_EXPECT_LE(o.bytes.size(), 1200u);
+    SM_EXPECT_LE(o.bytes.size(), 1460u);  // ModuleRtpRtcpImpl2's default (#580).
     sent.push_back(*RtpPacket::Parse(o.bytes));
   }
   // SPS+PPS in a STAP-A, then the IDR slice in FU-A fragments; the marker is
@@ -144,9 +146,9 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   SM_EXPECT_TRUE(H264Depacketizer::Reassemble(sent, rebuilt));
   SM_EXPECT_TRUE(rebuilt == ParseOutgoingBitstreamAndRewrite(frame));
   // Full-size chunks leave room for the header extensions.
-  p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1188 * 3)}, Timestamp::Millis(500));
+  p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1448 * 3)}, Timestamp::Millis(500));
   for (auto& o : Pump(p.a, 500, 500)) {
-    if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1200u);
+    if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1460u);
   }
 }
 
@@ -213,6 +215,67 @@ SM_TEST(Session, RotatedFramesCarryCvoWithinThePacketLimit) {
   SM_EXPECT_EQ(largest, 1460u);
   SM_EXPECT_EQ(cvo, 100u);
   SM_EXPECT_EQ(a.video_sender(id).stats().video_orientation_packets, 100u);
+}
+
+// Absolute capture time (#567 F8.3): with the extension mapped and a capture time on the frame,
+// the frame's first packet carries it when AbsoluteCaptureTimeSender decides to send it, and the
+// packetizer leaves the room as first_packet_reduction_len (rtp_sender_video.cc:690-758), so
+// every packet still fits the whole-packet limit. Audio carries it per packet.
+SM_TEST(Session, CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(5, sync::uri::kVideoOrientation);
+  ca.extensions.Register(7, sync::uri::kAbsCaptureTime);
+  Session a(ca);
+  VideoStreamConfig v = Video();
+  v.nack = false;
+  v.max_payload_size = 1460 - 12;
+  const VideoSendId id = a.AddVideoSend(v);
+  size_t largest = 0, carried = 0;
+  auto check = [&](std::vector<OutgoingPacket> out) {
+    for (auto& o : out) {
+      if (o.kind != OutgoingKind::kVideo) continue;
+      largest = std::max(largest, o.bytes.size());
+      const auto pkt = RtpPacket::Parse(o.bytes);
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*pkt, sync::uri::kAbsCaptureTime);
+      if (!raw) continue;
+      ++carried;
+      const auto ext = sync::ParseAbsoluteCaptureTime(*raw);
+      SM_ASSERT_TRUE(ext.has_value());
+      SM_EXPECT_TRUE(ext->clock_offset == std::optional<int64_t>(0));
+    }
+  };
+  // Frames around the limit, one every 2 s so each one carries it, rotated so that a single
+  // packet also carries CVO.
+  for (int i = 0; i < 100; ++i) {
+    EncodedVideoFrame f;
+    const Bytes data = MakeFakeH264Frame(false, 1380 + static_cast<size_t>(i));
+    const Timestamp now = Timestamp::Seconds(2 * i);
+    f.rtp_timestamp = static_cast<uint32_t>(180000 * i);
+    f.data = data;
+    f.rotation = video::Rotation::k90;
+    f.capture_time = now - TimeDelta::Millis(15);
+    a.SendVideo(id, f, now);
+    check(Pump(a, 2000 * i, 2000));
+  }
+  SM_EXPECT_EQ(largest, 1460u);
+  SM_EXPECT_EQ(carried, 100u);
+  SM_EXPECT_EQ(a.video_sender(id).stats().abs_capture_time_packets, 100u);
+
+  // Audio: the first packet, then none while the receiver can interpolate.
+  Session b(ca);
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  const AudioSendId au = b.AddAudioSend(acfg);
+  const Bytes opus(60, 1);
+  for (int i = 0; i < 10; ++i) {
+    const Timestamp now = Timestamp::Seconds(300) + TimeDelta::Millis(20 * i);
+    EncodedAudioFrame f;
+    f.rtp_timestamp = static_cast<uint32_t>(960 * i);
+    f.data = opus;
+    f.capture_time = now;
+    b.SendAudio(au, f, now);
+  }
+  SM_EXPECT_EQ(b.audio_sender(au).stats().abs_capture_time_packets, 1u);
 }
 
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
@@ -864,27 +927,35 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
 }
 
 // #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
-// unless the config selects v1; AudioJitterBufferConfig on its own keeps v1.
+// unless the config selects v1; AudioJitterBufferConfig on its own defaults to v2 too (#579).
 SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
   SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
-  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 2);
+}
+
+// #574: ChannelReceive turns NetEq's muted state on (channel_receive.cc:107);
+// NetEq::Config, like AudioJitterBufferConfig on its own, leaves it off.
+SM_TEST(Session, AudioStreamTurnsOnNetEqsMutedState) {
+  SM_EXPECT_TRUE(AudioStreamConfig{}.jitter_buffer.enable_muted_state);
+  SM_EXPECT_FALSE(timing::AudioJitterBufferConfig{}.enable_muted_state);
 }
 
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
-// frame release); timing::VideoTimingConfig on its own keeps version 1.
+// frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
   SM_EXPECT_EQ(VideoStreamConfig{}.timing.version, 2);
-  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 2);
 }
 
 // #453: libwebrtc runs H264SpsPpsTracker (rtp_video_stream_receiver2.cc OnReceivedPayloadData) and
 // PacketBuffer's missing_packets_ hold (packet_buffer.cc FindFrames) on every H.264 stream, and on
-// no other codec. A session's video stream does the same; the building blocks keep both off.
+// no other codec. A session's video stream does the same. The building blocks have both on by
+// default too (#580), and the session turns them off for another codec.
 SM_TEST(Session, H264StreamsRunTheSpsPpsTrackerAndTheMissingPacketsHold) {
   SM_EXPECT_TRUE(VideoStreamConfig{}.sps_pps_tracker);
   SM_EXPECT_TRUE(VideoStreamConfig{}.packet_buffer.missing_packets);
-  SM_EXPECT_TRUE(!RtpReceiverConfig{}.sps_pps_tracker);
-  SM_EXPECT_TRUE(!timing::PacketBufferConfig{}.missing_packets);
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.sps_pps_tracker);
+  SM_EXPECT_TRUE(timing::PacketBufferConfig{}.missing_packets);
   Session s(Cfg(2));
   VideoStreamConfig h264 = Video();
   VideoStreamConfig vp8 = Video();
@@ -1058,4 +1129,51 @@ SM_TEST(Session, AudioReceiveRtcpIsTheDefault) {
   au.ssrc = 0x100;
   s.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
+}
+
+// #567 F8.3 part 6, receive half: back to back, with RRTR so that the receive-only side has an RTT
+// (ModuleRtpRtcpImpl2::LastRtt), the SRs train the video receiver's RemoteNtpTimeEstimator after each
+// RTCP packet (RtpVideoStreamReceiver2::DeliverRtcp). Frames then carry their capture time on the
+// local NTP clock and the capture clock offset against the local clock, 0 here (one clock, no delay).
+SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  for (SessionConfig* c : {&ca, &cb}) {
+    c->extensions.Register(7, sync::uri::kAbsCaptureTime);
+    c->rtcp.xr_rrtr = true;
+  }
+  Session a(ca), b(cb);
+  const VideoSendId vs = a.AddVideoSend(Video());
+  const VideoRecvId vr = b.AddVideoReceive(Video());
+  std::vector<std::pair<Timestamp, ReceivedVideoFrame>> frames;  // Capture time, frame.
+  std::map<uint32_t, Timestamp> captured;
+  for (int64_t t = 0; t < 12000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 33 == 0) {
+      EncodedVideoFrame f;
+      f.rtp_timestamp = static_cast<uint32_t>(t * 90);
+      const Bytes data = MakeFakeH264Frame(t == 0, 1500);
+      f.data = data;
+      f.keyframe = t == 0;
+      f.capture_time = now;
+      captured[f.rtp_timestamp] = now;
+      a.SendVideo(vs, f, now);
+    }
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+    for (auto& f : b.TakeVideoFrames(vr)) frames.emplace_back(captured[f.rtp_timestamp], std::move(f));
+  }
+  SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 3u);
+  SM_ASSERT_GT(frames.size(), 300u);
+  SM_EXPECT_TRUE(frames.front().second.absolute_capture_time.has_value());
+  SM_EXPECT_EQ(frames.front().second.ntp_time_ms, -1);  // Before any SR.
+  const auto& [capture, last] = frames.back();
+  SM_ASSERT_TRUE(last.absolute_capture_time.has_value());
+  SM_EXPECT_EQ(sync::UQ32x32ToInt64Ms(last.absolute_capture_time->capture_ntp),
+               sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value));
+  SM_ASSERT_TRUE(last.local_capture_clock_offset.has_value());
+  SM_EXPECT_LE(std::abs(last.local_capture_clock_offset->ms()), 1);
+  SM_EXPECT_NEAR(static_cast<double>(last.ntp_time_ms),
+                 static_cast<double>(sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value)), 1.0);
 }

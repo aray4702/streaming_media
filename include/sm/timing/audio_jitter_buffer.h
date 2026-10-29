@@ -28,7 +28,13 @@
 // best with one more expansion, scaled to the expansion's energy and
 // crossfaded in. When the sync buffer can't fill the output (packets under
 // 10 ms), version 2 plays silence, reads nothing from it and doesn't count
-// the frame, as NetEq's kSampleUnderrun (#568).
+// the frame, as NetEq's kSampleUnderrun (#568). With `enable_muted_state`
+// (NetEq::Config's, which libwebrtc's ChannelReceive turns on), once the
+// expand has faded to silence (NetEqExpand::Muted) and no packet is waiting,
+// version 2 plays a muted frame without running the decision logic or the
+// expand: the playout timestamp moves on by the output, the samples count as
+// concealed noise, and the sync buffer and decision state stay as they were
+// (NetEqImpl::GetAudioInternal's muted branch, #574).
 #pragma once
 
 #include <cstdint>
@@ -69,7 +75,12 @@ struct AudioJitterBufferConfig {
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
-  int version = 1;  // 2: the target delay and the operations as libwebrtc's NetEq.
+  // 2 (default, #579): the target delay and the operations as libwebrtc's
+  // NetEq. 1: the library's own buffer, kept for tests that pin it.
+  int version = 2;
+  // Version 2: NetEq::Config::enable_muted_state (off by default, as there;
+  // the session's audio receive turns it on, as ChannelReceive does).
+  bool enable_muted_state = false;
   NetEqDelayConfig neteq_delay;
   EventSink* events = nullptr;
 };
@@ -86,6 +97,7 @@ struct AudioJitterBufferStats {
   uint64_t total_samples_received = 0;       // Samples output.
   uint64_t concealed_samples = 0;
   uint64_t concealment_events = 0;
+  uint64_t muted_frames = 0;                 // Version 2's muted state (enable_muted_state).
   uint64_t inserted_samples_for_deceleration = 0;
   uint64_t removed_samples_for_acceleration = 0;
   uint64_t ops[6] = {0, 0, 0, 0, 0, 0};      // Indexed by AudioOperation.
@@ -194,6 +206,7 @@ class AudioJitterBuffer : public MetricsSource {
   bool started_ = false;
   std::optional<int64_t> playout_ts_;  // Unwrapped; NetEqImpl::playout_timestamp_.
   bool expanding_ = false;
+  bool muted_ = false;  // The last frame was muted (enable_muted_state).
   int64_t expanded_samples_ = 0;
   double filtered_level_ms_ = 0;
   int min_delay_ms_ = 0;

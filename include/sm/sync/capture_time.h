@@ -54,6 +54,11 @@ std::optional<AbsoluteCaptureTime> ParseAbsoluteCaptureTime(std::span<const uint
 int64_t UQ32x32ToInt64Ms(uint64_t q32x32);
 int64_t Q32x32ToInt64Ms(int64_t q32x32);
 int64_t Q32x32ToInt64Us(int64_t q32x32);
+// NtpTime::ToMs: whole seconds exactly, the fraction rounded to the nearest ms.
+int64_t NtpToMs(uint64_t ntp);
+// Milliseconds to UQ32.32 seconds, rounded and clamped to the uint64_t range
+// (ntp_time.h Int64MsToUQ32x32).
+uint64_t Int64MsToUQ32x32(int64_t ms);
 // A duration in NTP units (1/2^32 s), as ntp_time_util.h's ToNtpUnits.
 int64_t ToNtpUnits(TimeDelta delta);
 

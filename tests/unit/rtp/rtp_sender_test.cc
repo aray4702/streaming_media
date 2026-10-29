@@ -685,3 +685,141 @@ SM_TEST(RtpSender, LastPacketReductionIsTheRoomCvoTakes) {
   SM_EXPECT_EQ(bare.MediaHeaderSize(), 12u);
   SM_EXPECT_EQ(bare.LastPacketReduction(true, video::Rotation::k0), 8u);  // 4 + (1+1 -> 4).
 }
+
+// Absolute capture time (#567 F8.3): RTPSenderVideo::SendVideo asks AbsoluteCaptureTimeSender
+// once per frame with the capture time in whole NTP milliseconds and offset 0, and puts the
+// result on the frame's first packet (rtp_sender_video.cc:690-707, 425-428); RTPSenderAudio asks
+// per packet with the full-precision NTP time (rtp_sender_audio.cc:142-157, 252-256). The sender
+// resends after more than 1 s, or when interpolation would be off by more than 1 ms.
+namespace {
+std::optional<sync::AbsoluteCaptureTime> AbsCapture(const sync::ExtensionMap& map, const SenderPacket& p) {
+  auto raw = sync::ExtensionAccessor(map).GetRaw(p.packet, sync::uri::kAbsCaptureTime);
+  if (!raw) return std::nullopt;
+  return sync::ParseAbsoluteCaptureTime(*raw);
+}
+}  // namespace
+
+SM_TEST(RtpSender, VideoAbsoluteCaptureTimeOnTheFirstPacketWhenTheReceiverCantInterpolate) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  const Timestamp start = Timestamp::Seconds(1000);
+  std::vector<int> carried;
+  for (int i = 0; i < 40; ++i) {
+    // 30 ms frames (2700 ticks at 90 kHz), captured 10.4 ms before they are sent.
+    const Timestamp now = start + TimeDelta::Millis(30 * i);
+    const Timestamp capture = now - TimeDelta::Micros(10'400);
+    const uint32_t ts = static_cast<uint32_t>(2700 * i);
+    TimeDelta skew = i == 20 ? TimeDelta::Millis(5) : TimeDelta::Zero();  // A capture-time jump.
+    auto ext = s.VideoAbsoluteCaptureTime(ts, capture + skew, now);
+    auto chunks = Chunks({100, 100, 100});
+    s.SendVideoFrame(chunks, ts, now, i == 0, video::Rotation::k0, ext);
+    auto out = Release(s);
+    SM_ASSERT_EQ(out.size(), 3u);
+    SM_EXPECT_FALSE(AbsCapture(map, out[1]).has_value());
+    SM_EXPECT_FALSE(AbsCapture(map, out[2]).has_value());
+    const auto got = AbsCapture(map, out[0]);
+    SM_EXPECT_EQ(got.has_value(), ext.has_value());
+    if (!got) continue;
+    carried.push_back(i);
+    // Int64MsToUQ32x32(NtpTime::ToMs()): 10.4 ms rounds to whole milliseconds.
+    const int64_t ms = sync::NtpToMs(timing::NtpTime::FromTimestamp(capture + skew).value);
+    SM_EXPECT_EQ(got->capture_ntp, sync::Int64MsToUQ32x32(ms));
+    SM_EXPECT_TRUE(got->clock_offset == std::optional<int64_t>(0));
+  }
+  // Frame 0; the jump at frame 20 and frame 21, which interpolates 5 ms off frame 20's; then
+  // 1 s after frame 21 (1020 ms later, frame 55, is past the run, so none more).
+  SM_EXPECT_TRUE(carried == (std::vector<int>{0, 20, 21}));
+  SM_EXPECT_EQ(s.stats().abs_capture_time_packets, 3u);
+}
+
+SM_TEST(RtpSender, VideoAbsoluteCaptureTimeResendsAfterOneSecond) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  std::vector<int> sent;
+  for (int i = 0; i < 70; ++i) {
+    const Timestamp now = Timestamp::Seconds(1000) + TimeDelta::Millis(30 * i);
+    if (s.VideoAbsoluteCaptureTime(static_cast<uint32_t>(2700 * i), now, now)) sent.push_back(i);
+  }
+  // More than kInterpolationMaxInterval (1 s) after the last one: 1020 ms, frames 0, 34, 68.
+  SM_EXPECT_TRUE(sent == (std::vector<int>{0, 34, 68}));
+  // Without a capture time there is nothing to send.
+  SM_EXPECT_FALSE(s.VideoAbsoluteCaptureTime(0, std::nullopt, Timestamp::Seconds(2000)).has_value());
+}
+
+SM_TEST(RtpSender, AbsoluteCaptureTimeNeedsTheExtensionMapped) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  const Timestamp now = Timestamp::Seconds(1000);
+  // The sender still decides (its state moves, as libwebrtc's), but nothing is written.
+  auto ext = s.VideoAbsoluteCaptureTime(0, now, now);
+  SM_EXPECT_TRUE(ext.has_value());
+  SM_EXPECT_EQ(s.FirstPacketReduction(ext), 0u);
+  auto chunks = Chunks({100});
+  s.SendVideoFrame(chunks, 0, now, true, video::Rotation::k0, ext);
+  auto out = Release(s);
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_FALSE(sync::ExtensionAccessor(map).GetRaw(out[0].packet, sync::uri::kAbsCaptureTime).has_value());
+  SM_EXPECT_EQ(s.stats().abs_capture_time_packets, 0u);
+}
+
+// first_packet_reduction_len and single_packet_reduction_len (rtp_sender_video.cc:741-758): the
+// 16-byte extension (capture time and offset), with the extensions rounded up to 4 bytes.
+SM_TEST(RtpSender, FirstPacketReductionIsTheRoomAbsoluteCaptureTimeTakes) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  map.Register(5, sync::uri::kVideoOrientation);
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  const sync::AbsoluteCaptureTime ext{123, 0};
+  // Middle: 12 + 4 + (1+2 -> 4) = 20. First: 12 + 4 + (1+2 + 1+16 = 20) = 36.
+  // Single with CVO: 12 + 4 + (20 + 1+1 = 22 -> 24) = 40.
+  SM_EXPECT_EQ(s.MediaHeaderSize(), 20u);
+  SM_EXPECT_EQ(s.FirstPacketReduction(ext), 16u);
+  SM_EXPECT_EQ(s.FirstPacketReduction(std::nullopt), 0u);
+  SM_EXPECT_EQ(s.SinglePacketReduction(true, video::Rotation::k0, ext), 20u);
+  SM_EXPECT_EQ(s.SinglePacketReduction(false, video::Rotation::k0, ext), 16u);  // CVO not due.
+  SM_EXPECT_EQ(s.SinglePacketReduction(true, video::Rotation::k0, std::nullopt), s.LastPacketReduction(true, video::Rotation::k0));
+}
+
+SM_TEST(RtpSender, AudioAbsoluteCaptureTimeInFullPrecisionPerPacket) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig c;
+  c.ssrc = 0x3333;
+  c.payload_type = 111;
+  c.clock_rate = 48000;
+  c.video = false;
+  c.extensions = &map;
+  RtpSender s(c);
+  const Bytes frame(60, 0x5a);
+  std::vector<int> carried;
+  for (int i = 0; i < 60; ++i) {
+    const Timestamp now = Timestamp::Seconds(1000) + TimeDelta::Millis(20 * i);
+    const Timestamp capture = now - TimeDelta::Micros(4'321);  // Not whole milliseconds.
+    s.SendAudio(frame, static_cast<uint32_t>(960 * i), false, now, std::nullopt, capture);
+    auto out = Release(s);
+    SM_ASSERT_EQ(out.size(), 1u);
+    const auto got = AbsCapture(map, out[0]);
+    if (!got) continue;
+    carried.push_back(i);
+    SM_EXPECT_EQ(got->capture_ntp, timing::NtpTime::FromTimestamp(capture).value);
+    SM_EXPECT_TRUE(got->clock_offset == std::optional<int64_t>(0));
+  }
+  // Every 20 ms packet interpolates exactly; it is resent past 1 s: packets 0 and 51 (1020 ms).
+  SM_EXPECT_TRUE(carried == (std::vector<int>{0, 51}));
+  // Without a capture time the packet carries nothing and the sender is not asked.
+  s.SendAudio(frame, 960 * 60, false, Timestamp::Seconds(1010), std::nullopt);
+  auto out = Release(s);
+  SM_EXPECT_FALSE(AbsCapture(map, out[0]).has_value());
+}

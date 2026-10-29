@@ -52,10 +52,10 @@ struct PacketBufferConfig {
   // one of them is at or before its first packet. A keyframe is released, and
   // a released frame forgets the holes up to its last packet. A packet that
   // arrives later releases the held frames it makes contiguous, as FindFrames'
-  // walk forward does. The buffer does not know the codec, so this is off
-  // here; rtp::Session turns it on for H.264 streams, as libwebrtc applies it
-  // to every H.264 frame (issue #453).
-  bool missing_packets = false;
+  // walk forward does. On by default, as libwebrtc applies it to every H.264
+  // frame (issues #453, #580). The buffer does not know the codec: turn it off
+  // for another codec, as rtp::Session does for streams that are not H.264.
+  bool missing_packets = true;
   EventSink* events = nullptr;
 };
 

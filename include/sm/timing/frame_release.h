@@ -73,6 +73,9 @@ class FrameReleaseController : public MetricsSource {
   // Releases what is due. `decode_time` is fed to the decode-time estimate
   // for each decoded frame (the decoder's measured time in libwebrtc).
   std::vector<ReleaseAction> Process(Timestamp now, TimeDelta decode_time);
+  // The frame buffer was cleared (FrameBuffer::Clear): the queued frames and
+  // the scheduled one are forgotten, without decoding.
+  void Clear();
   Timestamp NextWakeup() const;
   size_t queued() const { return queue_.size(); }
   const FrameReleaseStats& stats() const { return stats_; }

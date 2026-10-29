@@ -34,6 +34,13 @@ RtpReceiverConfig ReceiverCfg() {
   c.parser = &kParser;
   return c;
 }
+// Without H.264's `missing_packets_` hold (on by default since #580): a delta frame behind a hole is
+// handed to the frame buffer, which these NACK tests count.
+RtpReceiverConfig NoHoldCfg() {
+  RtpReceiverConfig c = ReceiverCfg();
+  c.packet_buffer.missing_packets = false;
+  return c;
+}
 
 // The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
 // (SendSideController::Process), each followed by the FEC packets it completed.
@@ -118,7 +125,7 @@ SM_TEST(RtpReceiver, FramesInOrderAreAssembledScheduledAndRendered) {
 
 SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  RtpReceiver r(NoHoldCfg());
   r.Start(Timestamp::Millis(0));
   auto f0 = SendFrame(s, 0, true, 800, Timestamp::Millis(0));
   auto f1 = SendFrame(s, 1, false, 3000, Timestamp::Millis(33));
@@ -219,8 +226,11 @@ std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Byte
 }  // namespace
 
 SM_TEST(RtpReceiver, AnIdrAloneIsAKeyframeByDefault) {
-  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe).
-  auto frames = DeliverFrame(ReceiverCfg(), IdrOnlyFrame(2500));
+  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe). The SPS/PPS tracker
+  // (on by default since #580) would drop an IDR that has had no parameter sets before it.
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = false;
+  auto frames = DeliverFrame(cfg, IdrOnlyFrame(2500));
   SM_ASSERT_EQ(frames.size(), 1u);
   SM_EXPECT_TRUE(frames[0].keyframe);
   SM_EXPECT_TRUE(frames[0].render);
@@ -449,7 +459,7 @@ SM_TEST(RtpReceiver, RedPacketRestoredFromRtx) {
   RtpSenderConfig sc = SenderCfg();
   sc.fec = true;
   RtpSender s(sc);  // FEC rate 0: RED only.
-  RtpReceiverConfig rc = ReceiverCfg();
+  RtpReceiverConfig rc = NoHoldCfg();
   rc.fec = true;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
@@ -633,7 +643,10 @@ SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  // Timing v1's 1024-entry bound; timing v2's is the 800-frame buffer (#583, tested below).
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.timing.version = 1;
+  RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
   for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
   auto rb = r.receive_statistics()->MakeReportBlock(Timestamp::Millis(1000));
@@ -808,4 +821,285 @@ SM_TEST(RtpReceiver, FrameRotationComesFromTheLastPacketsCvo) {
   SM_ASSERT_EQ(frames.size(), 5u);
   // The fourth frame carries no CVO (0, unchanged): rotation 0, as libwebrtc resets it per packet.
   for (size_t i = 0; i < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].rotation == rotations[i]);
+}
+
+SM_TEST(RtpReceiver, SpsPpsTrackerDropsAParameterSetWithoutIds) {
+  // An SPS sent as FU-A carries no SPS id (ParseFuaNalu), so
+  // H264SpsPpsTracker::CopyAndFixBitstream returns kDrop: the packet is
+  // ignored without a keyframe request (rtp_video_stream_receiver2.cc:930-936).
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = true;
+  RtpReceiver r(cfg);
+  r.Start(Timestamp::Millis(0));
+  RtpPacket p;
+  p.ssrc = cfg.ssrc;
+  p.payload_type = 96;
+  p.seq = 10;
+  p.timestamp = 9000;
+  Bytes sps = {0x67};
+  sps.insert(sps.end(), kFakeH264Sps, kFakeH264Sps + sizeof(kFakeH264Sps));
+  p.payload = {static_cast<uint8_t>(0x60 | kH264NalFuA), static_cast<uint8_t>(0x80 | kH264NalSps)};
+  p.payload.insert(p.payload.end(), sps.begin() + 1, sps.end());
+  r.OnPacket(p.Serialize(), Timestamp::Millis(10));
+  r.Process(Timestamp::Millis(20));
+  SM_EXPECT_EQ(r.stats().parameter_sets_without_ids, 1u);
+  SM_EXPECT_EQ(r.stats().idr_without_parameter_sets, 0u);
+  SM_EXPECT_EQ(r.stats().invalid_payload, 0u);
+  int plis = 0;
+  for (const auto& m : r.TakeFeedback().keyframe) plis += m.type == loss::FeedbackType::kPli;
+  SM_EXPECT_EQ(plis, 0);
+}
+
+// receive_statistics_v2 (issue #575): the statisticians follow libwebrtc's receive streams:
+// video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
+// without NACK, RTX and audio kDefaultMaxReorderingThreshold (50).
+SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
+  RtpReceiverConfig c = ReceiverCfg();
+  RtpReceiver v1(c);
+  SM_EXPECT_FALSE(v1.receive_statistics()->v2());
+  SM_EXPECT_FALSE(v1.rtx_receive_statistics()->v2());
+  c.receive_statistics_v2 = true;
+  RtpReceiver nack(c);
+  SM_EXPECT_TRUE(nack.receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
+  SM_EXPECT_TRUE(nack.rtx_receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.rtx_receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  c.nack = false;
+  RtpReceiver no_nack(c);
+  SM_EXPECT_EQ(no_nack.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  RtpReceiverConfig a;
+  a.ssrc = kSsrc;
+  a.payload_type = 111;
+  a.clock_rate = 48000;
+  a.video = false;
+  a.receive_statistics_v2 = true;
+  RtpReceiver audio(a);
+  SM_EXPECT_TRUE(audio.receive_statistics()->v2());
+  SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+}
+
+// Frame buffer cap (#583), timing v2: libwebrtc's FrameBuffer holds at most kMaxFramesBuffered = 800
+// frames (compare/webrtc/reference/video/video_stream_buffer_controller.cc:46); in a full buffer a
+// delta frame is refused and a keyframe clears it (api/video/frame_buffer.cc:98-106).
+namespace {
+RtpReceiverConfig V2ReceiverCfg() {
+  RtpReceiverConfig rc = NoHoldCfg();  // Delta frames behind the lost one reach the frame buffer.
+  rc.timing.version = 2;
+  rc.nack = false;
+  return rc;
+}
+}  // namespace
+
+SM_TEST(RtpReceiver, AFullFrameBufferRefusesADeltaFrameAndAKeyframeClearsIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(V2ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  auto first = Run(r, 10, 12);
+  SM_ASSERT_EQ(first.size(), 1u);  // The keyframe is released at once.
+  SendFrame(s, 1, false, 100, Timestamp::Millis(33));  // Lost: every later delta frame waits for it.
+  Timestamp now = Timestamp::Millis(20);
+  for (int64_t i = 2; i < 802; ++i) {
+    for (auto& b : SendFrame(s, i, false, 100, now)) r.OnPacket(b, now);
+    r.Process(now);
+    now = now + TimeDelta::Millis(1);
+  }
+  SM_EXPECT_EQ(r.stats().frames_received, 801u);
+  SM_EXPECT_EQ(r.stats().frames_refused, 0u);
+  // The 801st buffered frame: a delta frame has no room.
+  for (auto& b : SendFrame(s, 802, false, 100, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frames_refused, 1u);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, 0u);
+  // A keyframe clears the full buffer and is decoded; the delta frame after it follows.
+  now = now + TimeDelta::Millis(1);
+  for (auto& b : SendFrame(s, 803, true, 800, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, 1u);
+  for (auto& b : SendFrame(s, 804, false, 100, now)) r.OnPacket(b, now);
+  std::vector<ReceivedFrame> frames;
+  for (int64_t t = now.ms(); t < now.ms() + 3000; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+  }
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 803u * 3000u);
+  SM_EXPECT_TRUE(!frames[1].keyframe && frames[1].render);
+  SM_EXPECT_EQ(frames[1].rtp_timestamp, 804u * 3000u);
+  SM_EXPECT_EQ(r.stats().frames_refused, 1u);
+}
+
+SM_TEST(RtpReceiver, AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKeyframe) {
+  // frame_buffer.cc:84-96. Packets of frames at or below the last decoded one are normally dropped by
+  // the packet buffer (ClearTo); after it overflows and is cleared, a sender restarted at lower
+  // sequence numbers gets through: its delta frame is refused, and its keyframe, with an older frame
+  // id but a newer RTP timestamp, clears the frame buffer and the decoded history and is decoded.
+  RtpSender s(SenderCfg());
+  RtpReceiver r(V2ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  SM_ASSERT_EQ(Run(r, 10, 12).size(), 1u);
+  // Frames whose last packet is lost stay in the packet buffer until it overflows and is cleared.
+  Timestamp now = Timestamp::Millis(20);
+  for (int64_t i = 1; i < 1100 && r.packet_buffer().stats().cleared == 0; ++i) {
+    auto packets = SendFrame(s, i, false, 3000, now);
+    SM_ASSERT_GE(packets.size(), 3u);
+    for (size_t k = 0; k + 1 < packets.size(); ++k) r.OnPacket(packets[k], now);
+    r.Process(now);
+    r.TakeFeedback();
+  }
+  SM_ASSERT_GT(r.packet_buffer().stats().cleared, 0u);
+  const uint64_t refused = r.stats().frames_refused;
+  const uint64_t clears = r.stats().frame_buffer_clears;
+  RtpSenderConfig restarted = SenderCfg();
+  restarted.initial_seq = 65530 - 300;
+  RtpSender s2(restarted);
+  now = now + TimeDelta::Millis(1);
+  for (auto& b : SendFrame(s2, 3000, false, 100, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frames_refused, refused + 1);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, clears);
+  for (auto& b : SendFrame(s2, 3001, true, 800, now)) r.OnPacket(b, now);
+  std::vector<ReceivedFrame> frames;
+  for (int64_t t = now.ms(); t < now.ms() + 3000; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+  }
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, clears + 1);
+  SM_ASSERT_GE(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 3001u * 3000u);
+}
+
+// Absolute capture time (#567 F8.3 part 6, receive half): RtpVideoStreamReceiver2::OnReceivedPayloadData
+// interpolates a packet without the extension from the last one at 90 kHz, and the frame takes its first
+// packet's (compare/webrtc/reference/video/rtp_video_stream_receiver2.cc:780-795, 1046-1076).
+SM_TEST(RtpReceiver, AFrameWithoutTheExtensionGetsTheInterpolatedCaptureTime) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig sc = SenderCfg();
+  sc.extensions = &map;
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  const uint64_t first_ntp = sync::Int64MsToUQ32x32(3'900'000'000'000);
+  for (int64_t i = 0; i < 4; ++i) {
+    const Timestamp at = Timestamp::Millis(i * 33);
+    auto chunks = test::MakeTestFrameChunks(i == 0, i == 0 ? 3000 : 800, s.config().max_payload_size);
+    std::optional<sync::AbsoluteCaptureTime> abs;
+    if (i == 0) abs = sync::AbsoluteCaptureTime{first_ntp, 0};
+    s.SendVideoFrame(chunks, static_cast<uint32_t>(i * 3000), at, i == 0, video::Rotation::k0, abs);
+    for (auto& p : Release(s, at)) r.OnPacket(p.packet.Serialize(), at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+  }
+  auto frames = Run(r, 200, 800);
+  SM_ASSERT_EQ(frames.size(), 4u);
+  for (size_t i = 0; i < frames.size(); ++i) {
+    SM_ASSERT_TRUE(frames[i].absolute_capture_time.has_value());
+    SM_EXPECT_EQ(frames[i].absolute_capture_time->capture_ntp,
+                 sync::AbsoluteCaptureTimeInterpolator::Interpolate(static_cast<uint32_t>(i * 3000), 90000, 0, first_ntp));
+    SM_EXPECT_TRUE(frames[i].absolute_capture_time->clock_offset == std::optional<int64_t>(0));
+    // No SR yet: neither the local capture clock offset nor the NTP estimate is known.
+    SM_EXPECT_FALSE(frames[i].local_capture_clock_offset.has_value());
+    SM_EXPECT_EQ(frames[i].ntp_time_ms, -1);
+  }
+  SM_EXPECT_EQ(r.stats().abs_capture_time_received, 1u);
+  SM_EXPECT_GE(r.stats().abs_capture_time_interpolated, 3u);
+}
+
+namespace {
+// A sender whose clock is 5 s ahead of ours sends an SR at our time `t`; it arrives 50 ms later (RTT 100 ms).
+timing::SenderReport RemoteSr(uint32_t ssrc, int64_t t_ms, int clock_rate) {
+  timing::SenderReport sr;
+  sr.ssrc = ssrc;
+  sr.ntp = timing::NtpTime::FromTimestamp(Timestamp::Millis(t_ms + 5000));
+  sr.rtp_timestamp = static_cast<uint32_t>(t_ms * (clock_rate / 1000));
+  return sr;
+}
+}  // namespace
+
+// RemoteNtpTimeEstimator from SRs (rtp_video_stream_receiver2.cc:1533-1569): once 3 SRs are in, the
+// remote-to-local clock offset (-5 s) goes to CaptureClockOffsetUpdater, and a frame's ntp_time_ms is its
+// capture time on our NTP clock. An SR older than 1 ms when the RTCP packet is handled is not used.
+SM_TEST(RtpReceiver, SenderReportsTrainTheRemoteNtpEstimateAndTheCaptureClockOffset) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpSenderConfig sc = SenderCfg();
+  sc.extensions = &map;
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  // Without an RTT nothing is used.
+  r.OnSenderReport(RemoteSr(kSsrc, 0, 90000), Timestamp::Millis(50));
+  r.OnRtcpPacket(Timestamp::Millis(50));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 0u);
+  r.OnRtt(TimeDelta::Millis(100));
+  for (int64_t t : {1000, 2000, 3000}) {
+    r.OnSenderReport(RemoteSr(kSsrc, t, 90000), Timestamp::Millis(t + 50));
+    r.OnRtcpPacket(Timestamp::Millis(t + 50));
+  }
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 3u);
+  // A stale SR: the RTCP packet that brought it was handled 2 ms later.
+  r.OnSenderReport(RemoteSr(kSsrc, 4000, 90000), Timestamp::Millis(4050));
+  r.OnRtcpPacket(Timestamp::Millis(4052));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 3u);
+
+  const int64_t t0 = 5000;
+  auto chunks = test::MakeTestFrameChunks(true, 3000, s.config().max_payload_size);
+  s.SendVideoFrame(chunks, static_cast<uint32_t>(t0 * 90), Timestamp::Millis(t0), true, video::Rotation::k0,
+                   sync::AbsoluteCaptureTime{sync::Int64MsToUQ32x32(123'000), 0});
+  for (auto& p : Release(s, Timestamp::Millis(t0))) r.OnPacket(p.packet.Serialize(), Timestamp::Millis(t0 + 20));
+  auto frames = Run(r, t0 + 20, t0 + 600);
+  SM_ASSERT_EQ(frames.size(), 1u);
+  SM_ASSERT_TRUE(frames[0].local_capture_clock_offset.has_value());
+  SM_EXPECT_EQ(frames[0].local_capture_clock_offset->ms(), -5000);
+  const int64_t expected = sync::NtpToMs(timing::NtpTime::FromTimestamp(Timestamp::Millis(t0)).value);
+  SM_EXPECT_NEAR(static_cast<double>(frames[0].ntp_time_ms), static_cast<double>(expected), 1.0);
+  SM_EXPECT_EQ(r.EstimateNtpTimeMs(static_cast<uint32_t>(t0 * 90)), frames[0].ntp_time_ms);
+}
+
+// Audio (channel_receive.cc:747-754, 818-847): every packet is interpolated at the stream's clock rate,
+// and an RTCP packet without a new SR gives the last SR again (no recency check).
+SM_TEST(RtpReceiver, AudioInterpolatesEachPacketAndReusesTheLastSenderReport) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  RtpReceiverConfig rc;
+  rc.ssrc = kSsrc;
+  rc.payload_type = 111;
+  rc.clock_rate = 48000;
+  rc.video = false;
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.OnRtt(TimeDelta::Millis(100));
+  // An SR arrives 2 ms before the packet is handled: audio still uses it.
+  r.OnSenderReport(RemoteSr(kSsrc, 0, 48000), Timestamp::Millis(50));
+  r.OnRtcpPacket(Timestamp::Millis(52));
+  SM_EXPECT_EQ(r.stats().remote_ntp_updates, 1u);
+  const uint64_t first_ntp = sync::Int64MsToUQ32x32(77'000);
+  for (uint32_t i = 0; i < 3; ++i) {
+    RtpPacket p;
+    p.ssrc = kSsrc;
+    p.payload_type = 111;
+    p.seq = static_cast<uint16_t>(100 + i);
+    p.timestamp = 960 * i;
+    p.payload = {1, 2, 3};
+    if (i == 0) {
+      sync::ExtensionAccessor(map).SetRaw(p, sync::uri::kAbsCaptureTime,
+                                          sync::SerializeAbsoluteCaptureTime({first_ntp, std::nullopt}));
+    }
+    r.OnPacket(p.Serialize(), Timestamp::Millis(100 + 20 * i));
+  }
+  const auto& last = r.last_audio_capture_time();
+  SM_ASSERT_TRUE(last.has_value());
+  SM_EXPECT_EQ(last->rtp_timestamp, 1920u);
+  SM_EXPECT_EQ(last->absolute_capture_time.capture_ntp,
+               sync::AbsoluteCaptureTimeInterpolator::Interpolate(1920, 48000, 0, first_ntp));
+  SM_EXPECT_FALSE(last->local_capture_clock_offset.has_value());  // The extension has no offset.
+  SM_EXPECT_EQ(r.stats().abs_capture_time_received, 1u);
+  SM_EXPECT_EQ(r.stats().abs_capture_time_interpolated, 2u);
 }

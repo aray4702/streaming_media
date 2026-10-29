@@ -283,6 +283,26 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     // NetEqImpl::FlushBuffers: Expand's overlap of zeros as lookahead.
     sync_.assign(expand_.overlap_length(), 0.0f);
   }
+  // NetEqImpl::GetAudioInternal (neteq_impl.cc:682-698): the expand has faded
+  // to silence and the packet buffer is empty, so the frame is muted without
+  // a decision or an expand. Nothing in the sync buffer or the decision state
+  // moves; the playout timestamp moves on by dead reckoning (GetAudio, as
+  // after an expand), the noise stopwatch keeps running, and the samples are
+  // expanded noise that starts no concealment event. NetEqController::
+  // NotifyMutedState is a no-op for DecisionLogic, which does not override it.
+  if (cfg_.enable_muted_state && expand_.Muted() && queue_.empty()) {
+    std::fill(out.begin(), out.end(), 0.0f);
+    if (!muted_) {
+      SM_EVENT(cfg_.events, now, "neteq", "muted", CurrentLevelMs(), next_ts_);
+    }
+    muted_ = true;
+    ++stats_.muted_frames;
+    AddConcealedSamples(need);
+    stats_.total_samples_received += static_cast<uint64_t>(need);
+    ++stats_.ops[static_cast<int>(AudioOperation::kExpand)];
+    return AudioOperation::kExpand;
+  }
+  muted_ = false;
   // PacketBuffer::DiscardOldPackets.
   while (!queue_.empty() && queue_.begin()->first < next_ts_) {
     queue_.erase(queue_.begin());
@@ -599,6 +619,7 @@ void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("total_samples_received", stats_.total_samples_received);
   w.Counter("concealed_samples", stats_.concealed_samples);
   w.Counter("concealment_events", stats_.concealment_events);
+  w.Counter("muted_frames", stats_.muted_frames);
   w.Counter("inserted_samples_for_deceleration", stats_.inserted_samples_for_deceleration);
   w.Counter("removed_samples_for_acceleration", stats_.removed_samples_for_acceleration);
   for (int i = 0; i < 6; ++i) {

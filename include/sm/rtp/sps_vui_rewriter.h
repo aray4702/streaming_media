@@ -43,6 +43,27 @@ struct SpsState {
   bool vui_params_present = false;
 };
 
+// libwebrtc's H264 namespace bounds (common_video/h264/h264_common.h:38-63).
+inline constexpr uint32_t kH264MaxReferenceIndex = 31;
+inline constexpr uint32_t kH264MaxSpsId = 31;
+inline constexpr uint32_t kH264MaxPpsId = 255;
+// Level 5.2's limits (H.264 table A-1), which libwebrtc applies to every SPS.
+inline constexpr int64_t kH264MaxMacroblockFrameSizeLevel52 = 36864;
+inline constexpr int64_t kH264MaxMacroblockDimensionLevel52 = 543;
+inline constexpr int64_t kH264MaxPixelDimensionLevel52 = kH264MaxMacroblockDimensionLevel52 * 16;
+
+// H264::IsValidResolution (h264_common.h:56-64): both dimensions positive and
+// at most 8688 pixels, and at most 36864 macroblocks in a frame.
+constexpr bool IsValidH264Resolution(int64_t width, int64_t height) {
+  if (width <= 0 || height <= 0 || width > kH264MaxPixelDimensionLevel52 ||
+      height > kH264MaxPixelDimensionLevel52) {
+    return false;
+  }
+  const int64_t width_in_mbs = (width + 15) / 16;
+  const int64_t height_in_mbs = (height + 15) / 16;
+  return width_in_mbs * height_in_mbs <= kH264MaxMacroblockFrameSizeLevel52;
+}
+
 // H.264 7.4.1: removes emulation prevention bytes (00 00 03 -> 00 00).
 std::vector<uint8_t> ParseRbsp(std::span<const uint8_t> data);
 // H.264 7.4.1: appends `rbsp` to `out` with an emulation prevention byte after
@@ -69,13 +90,14 @@ struct SpsRewriteStats {  // libwebrtc's kSentSps* histogram samples.
 SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<uint8_t>& destination,
                                     SpsState* parsed = nullptr);
 
-// The fields of a PPS and a slice header that VideoRtpDepacketizerH264 reads
-// through libwebrtc's PpsParser::ParsePpsIds and PpsParser::ParseSliceHeader.
-// pps_parser.cc is not in compare/webrtc/reference/ (requested on #568), so
-// these read the leading ue(v) fields of H.264 7.3.2.2 (pic_parameter_set_id,
-// seq_parameter_set_id) and 7.3.3 (first_mb_in_slice, slice_type,
-// pic_parameter_set_id) from the unescaped RBSP, and fail when the data ends
-// first. Both take the NAL unit payload without its header byte.
+// libwebrtc's PpsParser::ParsePpsIds and PpsParser::ParseSliceHeader
+// (common_video/h264/pps_parser.cc:44-88), the fields of a PPS and a slice
+// header that VideoRtpDepacketizerH264 reads: the leading ue(v) fields of
+// H.264 7.3.2.2 (pic_parameter_set_id, seq_parameter_set_id) and 7.3.3
+// (first_mb_in_slice, slice_type, pic_parameter_set_id) from the unescaped
+// RBSP. Empty when the data ends first or an id is out of bounds (a PPS id
+// over kH264MaxPpsId, an SPS id over kH264MaxSpsId). Both take the NAL unit
+// payload without its header byte.
 struct PpsIds {
   uint32_t pps_id = 0;
   uint32_t sps_id = 0;

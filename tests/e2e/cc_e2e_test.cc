@@ -271,7 +271,9 @@ SM_TEST(E2E_VideoAdaptation, CpuOveruseConvergesToSustainableResolution) {
   DegradationConfig dc;
   dc.preference = DegradationPreference::kMaintainFramerate;
   DegradationController deg(dc);
-  CpuOveruseDetector cpu;
+  CpuOveruseConfig v1;
+  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
+  CpuOveruseDetector cpu(v1);
   deg.OnTargetBitrate(DataRate::KilobitsPerSec(5000));
   int changes = 0;
   VideoFormat prev = deg.current();

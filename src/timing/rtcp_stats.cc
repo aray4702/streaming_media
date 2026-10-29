@@ -180,18 +180,54 @@ void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arriva
   OnPacket(seq, rtp_ts, arrival, clock_rate_);
 }
 
+// StreamStatisticianImpl::UpdateOutOfOrder (receive_statistics_impl.cc:71-115).
+// True if the packet is out of order: it moves neither the maximum nor the jitter.
+bool ReceiveStatistics::UpdateOutOfOrder(uint16_t seq, int64_t sequence_number) {
+  // Second packet of a stream restart?
+  if (received_seq_out_of_order_) {
+    // Count the held packet as received.
+    --cumulative_loss_;
+    const uint16_t expected_sequence_number = static_cast<uint16_t>(*received_seq_out_of_order_ + 1);
+    received_seq_out_of_order_.reset();
+    if (seq == expected_sequence_number) {
+      // The gap is a restart, not loss: net zero change of the cumulative loss
+      // for the two packets.
+      last_report_seq_max_ = sequence_number - 2;
+      received_seq_max_ = sequence_number - 2;
+      return false;
+    }
+  }
+  if (v2_ && std::abs(sequence_number - received_seq_max_) > max_reordering_threshold_) {
+    // Too large a gap: wait for the next packet to check for a restart, and
+    // count this one as received only then.
+    received_seq_out_of_order_ = seq;
+    ++cumulative_loss_;
+    return true;
+  }
+  return sequence_number <= received_seq_max_;
+}
+
 void ReceiveStatistics::OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival, int payload_frequency) {
-  int64_t s = unwrapper_.Unwrap(seq);
+  // StreamStatisticianImpl::UpdateCounters (receive_statistics_impl.cc:117-151).
+  ++received_;
+  --cumulative_loss_;
+  // Peek first: an out-of-order packet doesn't move the unwrapper.
+  const int64_t s = unwrapper_.PeekUnwrap(seq);
   const bool first = !started_;
   if (first) {
     started_ = true;
-    base_seq_ = max_seq_ = s;
+    received_seq_first_ = s;
+    last_report_seq_max_ = s - 1;
+    received_seq_max_ = s - 1;
+  } else if (UpdateOutOfOrder(seq, s)) {
+    return;
   }
-  ++received_;
-  // StreamStatisticianImpl::UpdateCounters: only an in-order packet moves the
-  // jitter state, and only one with a new timestamp after the first.
-  if (!first && s <= max_seq_) return;
-  max_seq_ = std::max(max_seq_, s);
+  // In order.
+  cumulative_loss_ += static_cast<int32_t>(s - received_seq_max_);
+  received_seq_max_ = s;
+  unwrapper_.Unwrap(seq);
+  // Only an in-order packet moves the jitter state, and only one with a new
+  // timestamp after the first.
   if (!first && rtp_ts != last_timestamp_) {
     // UpdateJitter: the receive gap in RTP units against the timestamp gap,
     // Q4 integer filter; a jump of 5 s of 90 kHz video clock is skipped.
@@ -223,29 +259,37 @@ void ReceiveStatistics::OnSenderReport(const SenderReport& sr, Timestamp arrival
 ReceiveStatsSnapshot ReceiveStatistics::Snapshot() const {
   ReceiveStatsSnapshot s;
   s.packets_received = received_;
-  s.expected = started_ ? max_seq_ - base_seq_ + 1 : 0;
-  s.cumulative_lost = s.expected - received_;
+  s.expected = started_ ? received_seq_max_ - received_seq_first_ + 1 : 0;
+  s.cumulative_lost = cumulative_loss_;
   s.fraction_lost = last_fraction_ / 256.0;
   s.jitter_ms = jitter_ms();
   return s;
 }
 
+// StreamStatisticianImpl::MaybeAppendReportBlockAndReset (receive_statistics_impl.cc:241-292).
 ReportBlock ReceiveStatistics::MakeReportBlock(Timestamp now) {
   ReportBlock rb;
   rb.ssrc = ssrc_;
-  int64_t expected = started_ ? max_seq_ - base_seq_ + 1 : 0;
-  int64_t expected_interval = expected - expected_prior_;
-  int64_t received_interval = static_cast<int64_t>(received_) - received_prior_;
-  int64_t lost_interval = expected_interval - received_interval;
-  expected_prior_ = expected;
-  received_prior_ = received_;
-  rb.fraction_lost = (expected_interval == 0 || lost_interval <= 0)
-                         ? 0
-                         : static_cast<uint8_t>(std::min<int64_t>(255, (lost_interval << 8) / expected_interval));
+  const int64_t exp_since_last = received_seq_max_ - last_report_seq_max_;
+  const int32_t lost_since_last = cumulative_loss_ - last_report_cumulative_loss_;
+  if (exp_since_last > 0 && lost_since_last > 0) {
+    // Scale 0 to 255, where 255 is 100% loss (v1: RFC 3550 A.3's 256, capped).
+    const int64_t lost = lost_since_last;
+    rb.fraction_lost = static_cast<uint8_t>(v2_ ? 255 * lost / exp_since_last
+                                                : std::min<int64_t>(255, (lost << 8) / exp_since_last));
+  }
   last_fraction_ = rb.fraction_lost;
-  rb.cumulative_lost = static_cast<int32_t>(expected - received_);
-  rb.extended_highest_seq = static_cast<uint32_t>(max_seq_);
+  int32_t packets_lost = cumulative_loss_ + cumulative_loss_rtcp_offset_;
+  if (v2_ && packets_lost < 0) {
+    // Clamp to zero, for senders that misbehave with negative cumulative loss.
+    packets_lost = 0;
+    cumulative_loss_rtcp_offset_ = -cumulative_loss_;
+  }
+  rb.cumulative_lost = v2_ ? std::min<int32_t>(packets_lost, 0x7fffff) : packets_lost;  // 24-bit signed field.
+  rb.extended_highest_seq = static_cast<uint32_t>(received_seq_max_);
   rb.jitter = static_cast<uint32_t>(jitter_q4_ >> 4);
+  last_report_cumulative_loss_ = cumulative_loss_;
+  last_report_seq_max_ = received_seq_max_;
   if (last_sr_arrival_.IsFinite()) {
     rb.last_sr = last_sr_compact_;
     rb.delay_since_last_sr = static_cast<uint32_t>(((now - last_sr_arrival_).us() << 16) / 1000000);
