@@ -19,7 +19,7 @@
 // recomputed only on an allocation update from the session's allocator
 // (OnBitrateUpdated), on an encoder reconfiguration and every 1 s
 // (MaybeEncodeVideoFrame's kParameterUpdateIntervalMs), and held in between
-// (issue #569); off (the default for now), on every captured frame.
+// (issue #569; on by default since #637, as libwebrtc); off, on every captured frame.
 //
 // `quality_scaling` (on by default since #84's flip, as libwebrtc for a camera
 // whose encoder reports scaling settings; issue #84 step 4) adds libwebrtc's
@@ -95,9 +95,9 @@ struct VideoSendControllerConfig {
   cc::EncoderBitrateAdjusterConfig adjuster;
   // VideoStreamEncoder's timing (issue #569): the adjuster re-runs only in UpdateBitrateAllocation,
   // on an allocation update from the session's allocator, on a reconfiguration and every 1 s
-  // (kParameterUpdateIntervalMs), and the encoder keeps its rate in between. Off (the default until
-  // the flip is judged on the parity report): it re-runs on every captured frame.
-  bool adjuster_on_update = false;
+  // (kParameterUpdateIntervalMs), and the encoder keeps its rate in between. On by default, as libwebrtc
+  // has no other timing (issue #637); off re-runs it on every captured frame (the behaviour before #637).
+  bool adjuster_on_update = true;
   // SimulcastRateAllocator::DistributeAllocationToSimulcastLayers for a single
   // stream (modules/video_coding/utility/simulcast_rate_allocator.cc): the
   // encoder is configured with max(minBitrate, min(target, maxBitrate)), so a
