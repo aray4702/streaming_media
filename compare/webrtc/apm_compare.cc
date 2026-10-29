@@ -326,7 +326,9 @@ void Gain(bool apm_v2) {
   auto c = MakeCall(q);
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= sm::dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
-  auto ours = RunOurs(c, cc);
+  ChainConfig v1 = cc;
+  v1.apm_v2 = false;
+  auto ours = RunOurs(c, v1);
   ChainConfig v2 = cc;
   v2.apm_v2 = true;
   auto ours_agc1 = RunOurs(c, v2);
@@ -364,7 +366,9 @@ void VoiceActivity() {
   s.far_talk = false;
   s.noise_amp = 0.015f;
   auto c = MakeCall(s);
-  auto in = RunOurs(c, {true, false, false, false, false}).out;
+  ChainConfig hpf_v1{true, false, false, false, false};
+  hpf_v1.apm_v2 = false;  // The input E2E_Vad's v1 detector reads.
+  auto in = RunOurs(c, hpf_v1).out;
   sm::audio::VadConfig vc;
   sm::audio::Vad ours(vc);
   auto webrtc = webrtc::CreateVad(webrtc::Vad::kVadNormal);

@@ -954,7 +954,7 @@ ALGORITHMS = [
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AEC3 (`audio/aec3.h`) runs, and this PBFDAF canceller runs only with `apm_v2 = false` until it is retired. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
                "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2. "
                "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`, for `apm v2`) is a port of libwebrtc M157's "
                "`aec3_fft`, the render buffers (`block_buffer`, `spectrum_buffer`, `fft_buffer`, `render_buffer` and the "
@@ -1048,7 +1048,7 @@ ALGORITHMS = [
          bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): AEC3's own delay estimation (`audio/aec3_delay.h`) runs, and this GCC-PHAT estimator runs only with `apm_v2 = false` until it is retired. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
                "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`, for `apm v2`) is a port of libwebrtc M157's "
                "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
                "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
@@ -1072,7 +1072,7 @@ ALGORITHMS = [
          bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's NS (`audio/ns.h`, kHigh) runs, and the v1 STFT-Wiener suppressor runs only with `apm_v2 = false` until it is retired. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
                "plugged into the same 10 ms interface. `apm v2` (#241): `ns::NoiseSuppressor` ports libwebrtc M157's "
                "NS (`modules/audio_processing/ns/`: quantile noise estimator with the parametric white/pink model "
                "during start-up, LRT, spectral flatness and spectral difference features with histogram-learnt "
@@ -1106,7 +1106,7 @@ ALGORITHMS = [
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs, and the v1 AGC and limiter run only with `apm_v2 = false` until they are retired. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
                "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
@@ -1184,7 +1184,7 @@ ALGORITHMS = [
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's filter (`audio/hpf.h`) runs, and the v1 Butterworth runs only with `apm_v2 = false` until it is retired. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
                       "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
                       "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
                       "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "

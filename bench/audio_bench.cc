@@ -231,8 +231,13 @@ SM_BENCH_QUALITY(audio, Q_NoiseSuppressor_7dB_snr) {
   s.far_talk = false;
   s.noise_amp = 0.03f;
   auto c = e2e::MakeCall(s);
-  auto r = e2e::RunChain(c, {true, false, true, false, false});
-  auto base = e2e::RunChain(c, {true, false, false, false, false});
+  // The v1 chain (`apm_v2 = false`): this gate measures the v1 suppressor,
+  // which stays until it is retired (#565). libwebrtc's NS, the default,
+  // gives -0.1 dB here as libwebrtc M157 (E2E_NoiseSuppressor.LibwebrtcNsAsLibwebrtc).
+  e2e::ChainConfig ns_cc{true, false, true, false, false}, hpf_cc{true, false, false, false, false};
+  ns_cc.apm_v2 = hpf_cc.apm_v2 = false;
+  auto r = e2e::RunChain(c, ns_cc);
+  auto base = e2e::RunChain(c, hpf_cc);
   std::vector<float> ref = c.talker;
   HighPassFilter hp;
   for (size_t i = 0; i + 160 <= ref.size(); i += 160) hp.Process(std::span<float>(ref.data() + i, 160));

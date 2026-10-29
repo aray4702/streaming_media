@@ -88,7 +88,8 @@ struct ChainConfig {
   // `ts`: the transient suppressor, an opt-in (#243): libwebrtc M157's APM
   // has none, and its deprecated `transient_suppression.enabled` is false.
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
-  // `apm v2`: libwebrtc's modules where ported (#239-#242). The high-pass
+  // `apm v2`, the default (#565): libwebrtc's modules where ported
+  // (#239-#242), as libwebrtc M157's APM runs them. The high-pass
   // filter is libwebrtc's (`hpf::HighPassFilter`, #239). The AGC is AGC1
   // as a call runs it (`AgcManagerDirect` in kAdaptiveAnalog with
   // `GainControl` in kFixedDigital, the volume emulated by `CaptureLevels`
@@ -98,8 +99,10 @@ struct ChainConfig {
   // (`aec3::EchoCanceller3`, #240), fed and called as APM does: the render
   // frame first, saturation checked on the capture after the pre-level
   // adjustment, the stream delay set to 0 every frame, and the AGC1 volume
-  // changes flagged as echo path gain changes.
-  bool apm_v2 = false;
+  // changes flagged as echo path gain changes. `false` runs the v1 modules
+  // (`audio::HighPassFilter`, `EchoCanceller`, `NoiseSuppressor`,
+  // `AutomaticGainControl`) until they are retired.
+  bool apm_v2 = true;
   // With `apm_v2`: AGC2 (`agc2::GainController2` with its RNN VAD) instead
   // of AGC1.
   bool agc2 = false;
