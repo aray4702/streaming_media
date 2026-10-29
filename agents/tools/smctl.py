@@ -4,8 +4,8 @@
 Same data and actions as the web console (agents/tools/console.py), in the terminal.
 
 Status (one tab, printed):
-  smctl overview | work | prs | issues | agents | dispatcher | log   [--fresh] [--all]
-  smctl                      interactive tabs (←/→ or 1-7 switch, ↑/↓ scroll, r refresh,
+  smctl overview | requirements | work | prs | issues | agents | dispatcher | log   [--fresh] [--all]
+  smctl                      interactive tabs (←/→ or 1-8 switch, ↑/↓ scroll, r refresh,
                              : runs a command below, q quits)
 
 Manage (each asks y/N; --yes skips it):
@@ -40,7 +40,7 @@ sys.path.insert(0, HERE)
 import console as c  # noqa: E402  (views and actions shared with the web console)
 
 PT = ZoneInfo("America/Los_Angeles")
-TABS = ["overview", "work", "prs", "issues", "agents", "dispatcher", "log"]
+TABS = ["overview", "requirements", "work", "prs", "issues", "agents", "dispatcher", "log"]
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "sm-console")
 STATE = os.path.join(STATE_DIR, "dashboard.json")
 DEFAULT_PORT = 8642
@@ -71,7 +71,30 @@ def render(tab, d, width=100, show_all=False):
     w = max(60, width)
     out = []
     add = out.append
+    if tab == "requirements":
+        if d.get("missing"):
+            add("The register (tools/requirements.json) is not on main yet.")
+            return out
+        add(f"STAGE 1 REQUIREMENTS: {d['done']} of {d['total']} done")
+        add("")
+        add(f"  {'area':<44} {'done':>5} {'in prog':>8} {'open':>5} {'unassessed':>11}")
+        for a, cnt in d["areas"].items():
+            add(f"  {cut(a, 44):<44} {cnt['done']:>5} {cnt['in-progress']:>8} {cnt['open']:>5} {cnt['unassessed']:>11}")
+        for p in d["problems"]:
+            add(f"  ! {p}")
+        add("")
+        for q in d["requirements"]:
+            if not show_all and q["status"] in ("done", "unassessed"):
+                continue
+            items = ", ".join(f"#{i['n']}" for i in q["items"]) or "-"
+            add(f"  {q['id']:<6} {q['status']:<11} {cut(q['title'], w - 40)}  [{items}]")
+        if not show_all:
+            add("  (in progress and open only; --all lists every requirement)")
+        return out
     if tab == "overview":
+        rq = d.get("requirements") or {}
+        add("REQUIREMENTS  " + ("register not on main yet" if rq.get("missing") else f"{rq.get('done')} of {rq.get('total')} done"))
+        add("")
         wk = d["work"]
         add("NEEDS YOU")
         for x in d["needs_you"] or []:

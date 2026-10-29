@@ -336,11 +336,41 @@ class Views:
         return {"comments": out[::-1], "url": issue["html_url"], "n": d.LOG_ISSUE}
 
     # ---- overview -------------------------------------------------------------------
+    def requirements(self, fresh=False):
+        """Stage 1 progress in requirements closed (Owner, 2026-10-28; program.md 0.4): the register
+        tools/requirements.json on main, with the open items labelled req:<id>."""
+        import base64
+        try:
+            raw = self.gh.get(f"repos/{self.r}/contents/tools/requirements.json?ref=main", fresh=fresh)
+            reg = json.loads(base64.b64decode(raw["content"]).decode())
+        except (RuntimeError, KeyError, ValueError, TypeError):
+            return {"missing": True, "done": 0, "total": 0, "areas": {}, "requirements": [], "problems": []}
+        items = {}
+        for i in self.gh.get(f"repos/{self.r}/issues?state=open&per_page=100", True, fresh) or []:
+            for name in lab(i):
+                if name.startswith("req:"):
+                    items.setdefault(name[4:], []).append({"n": i["number"], "title": i["title"],
+                                                           "pr": "pull_request" in i, "url": i["html_url"]})
+        reqs = reg.get("requirements", [])
+        areas = {}
+        for r in reqs:
+            a = areas.setdefault(r["area"], {"done": 0, "in-progress": 0, "open": 0, "unassessed": 0})
+            a[r.get("status", "unassessed")] = a.get(r.get("status", "unassessed"), 0) + 1
+        ids = {r["id"] for r in reqs}
+        problems = [f"{r['id']} is marked done but has open items" for r in reqs
+                    if r.get("status") == "done" and items.get(r["id"])]
+        problems += [f"label req:{k} matches no requirement" for k in items if k not in ids]
+        return {"missing": False, "done": sum(r.get("status") == "done" for r in reqs), "total": len(reqs),
+                "areas": areas, "problems": problems,
+                "requirements": [dict(r, items=items.get(r["id"], [])) for r in reqs]}
+
     def overview(self, fresh=False):
         with cf.ThreadPoolExecutor(4) as ex:
             fw, fi, fd, fa = (ex.submit(self.work, fresh), ex.submit(self.issues, fresh),
                               ex.submit(self.dispatcher, fresh), ex.submit(self.agents, fresh))
+            fr = ex.submit(self.requirements, fresh)
             work, issues, disp, agents = fw.result(), fi.result(), fd.result(), fa.result()
+            reqs = fr.result()
         pulls = self.gh.open_pulls(fresh)
         needs_you = [{"kind": "issue", "n": i["n"], "title": i["title"], "url": i["url"]}
                      for i in issues["issues"] if NEEDS_YOU & set(i["labels"])]
@@ -360,7 +390,8 @@ class Views:
         held = {k: [i["n"] for i in issues["issues"] if k in i["labels"]]
                 for k in ("needs-coordinator", "needs-builder", "blocked", "in-progress")}
         last_run = disp["runs"][0] if disp["runs"] else None
-        return {"work": {k: work[k] for k in ("open", "done", "in_progress", "max_in_progress", "next_free")},
+        return {"requirements": {k: reqs[k] for k in ("missing", "done", "total")},
+                "work": {k: work[k] for k in ("open", "done", "in_progress", "max_in_progress", "next_free")},
                 "next_items": [i for i in work["items"] if i.get("role")][:6],
                 "needs_you": needs_you, "asks_24h": asks[::-1], "unplaced": unplaced, "held": held,
                 "prs": len(pulls), "mode": disp["mode"], "stop": disp["stop"], "last_run": last_run,
@@ -462,7 +493,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 page = f.read().replace("__TOKEN__", self.server.token).replace("__REPO__", self.server.gh.r)
             return self._send(200, page, "text/html")
         view = url.path.removeprefix("/api/")
-        if url.path.startswith("/api/") and view in ("overview", "work", "prs", "issues", "agents", "dispatcher", "log"):
+        if url.path.startswith("/api/") and view in ("overview", "requirements", "work", "prs", "issues", "agents", "dispatcher", "log"):
             fresh = "fresh" in urllib.parse.parse_qs(url.query)
             try:
                 return self._json(200, getattr(self.server.views, view)(fresh))

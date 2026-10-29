@@ -124,7 +124,7 @@ dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-to
 
 <script>
 const TOKEN = "__TOKEN__", REPO = "__REPO__";
-const TABS = [["overview", "Overview"], ["work", "Work order"], ["prs", "PRs"], ["issues", "Issues"],
+const TABS = [["overview", "Overview"], ["requirements", "Requirements"], ["work", "Work order"], ["prs", "PRs"], ["issues", "Issues"],
               ["agents", "Agents"], ["dispatcher", "Dispatcher"], ["log", "Log #111"]];
 const KNOWN_LABELS = ["needs-owner", "needs-human", "needs-coordinator", "needs-builder", "needs-probe", "blocked", "in-progress",
   "parallel-ok", "owner-approved", "wontfix", "stage:later", "stage:baseline", "stage:ai", "roadmap", "record"];
@@ -272,6 +272,16 @@ const actBtn = (n, pr) => `<button class="btn small" data-item="${n}" data-pr="$
 
 // ---- tab renderers --------------------------------------------------------
 const RENDER = {
+  requirements(r) {
+    if (r.missing) return '<div class="card"><p class="muted">The register (<code>tools/requirements.json</code>) is not on <code>main</code> yet.</p></div>';
+    const SC = {done: "ok", "in-progress": "info", open: "warn", unassessed: ""};
+    const areas = Object.entries(r.areas).map(([a, c]) => `<tr><td>${esc(a)}</td><td>${c.done}</td><td>${c["in-progress"]}</td><td>${c.open}</td><td>${c.unassessed}</td></tr>`).join("");
+    const rows = r.requirements.map(q => `<tr><td><b>${esc(q.id)}</b></td><td><span class="chip ${SC[q.status] || ""}">${esc(q.status)}</span></td><td>${esc(q.title)}${q.evidence ? `<div class="small muted">${md(esc(q.evidence))}</div>` : ""}</td><td>${q.items.map(i => ref(i.n)).join(", ") || '<span class="muted">—</span>'}</td></tr>`).join("");
+    const probs = r.problems.length ? `<div class="card"><h2>Register problems</h2><ul class="plain">${r.problems.map(p => `<li class="err">${esc(p)}</li>`).join("")}</ul></div>` : "";
+    return `<div class="card"><h2>Stage 1 requirements: <span class="big">${r.done}</span> of ${r.total} done</h2>
+      <table><tr><th>area</th><th>done</th><th>in progress</th><th>open</th><th>unassessed</th></tr>${areas}</table></div>${probs}
+      <div class="card"><table><tr><th>id</th><th>status</th><th>requirement</th><th>open items</th></tr>${rows}</table></div>`;
+  },
   overview(o) {
     navCounts = {overview: o.needs_you.length};
     setAlert("needs", o.needs_you.length);
@@ -286,7 +296,10 @@ const RENDER = {
     const held = Object.entries(o.held).map(([k, ns]) => `<div class="row"><span class="chip ${LABEL_CLASS[k] || ""}">${k}</span> ${ns.length ? ns.map(ref).join(", ") : '<span class="muted">none</span>'}</div>`).join("");
     const agents = o.agents.map(a => `<tr><td>${esc(a.label)}${a.start_failing ? ' <span class="chip bad">start failing</span>' : ""}</td><td>${a.last_post ? `<a href="${a.last_post.url}" target="_blank">${when(a.last_post.at)}</a>` : '<span class="muted">none in 48 h</span>'}</td><td>${a.next ? when(a.next) : `<span class="muted">${a.enabled ? "on demand" : "off"}</span>`}</td></tr>`).join("");
     const run = o.last_run;
+    const rq = o.requirements;
     return `<div class="grid">
+      <div class="card"><h2>Stage 1 requirements</h2>${rq.missing ? '<p class="muted">The register (<code>tools/requirements.json</code>) is not on <code>main</code> yet.</p>'
+        : `<div class="row"><span class="big">${rq.done}</span><span class="muted">of ${rq.total} done</span></div><div class="row"><a href="#requirements">by area</a></div>`}</div>
       <div class="card"><h2>Needs you</h2>${needs}${asks}</div>
       <div class="card"><h2>Stage 1 work order</h2>
         <div class="row"><span class="big">${w.open}</span><span class="muted">open items on #64</span><span class="big" style="margin-left:14px">${w.done}</span><span class="muted">done</span></div>
