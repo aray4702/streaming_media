@@ -190,7 +190,7 @@ SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
 // The trace's rtx_room column (#555): RtxPacketOverhead's window opens at the first report block for the
 // media SSRC and closes at the first one for the RTX SSRC, in an SR or an RR of a compound packet.
 SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {
-  RtxAckPhase phase(2, 3);
+  RtxAckPhase phase(2, 3, true);
   SM_EXPECT_EQ(phase.Room(), 0);
   timing::ReceiverReport audio_only{.ssrc = 9, .blocks = {{.ssrc = 1}}};
   phase.OnRtcp(timing::SerializeReceiverReport(audio_only));
@@ -210,12 +210,16 @@ SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {
   phase.OnRtcp(rr);
   SM_EXPECT_EQ(phase.Room(), 0);
   // RTX acked first: no window.
-  RtxAckPhase other(2, 3);
+  RtxAckPhase other(2, 3, true);
   other.OnRtcp(timing::SerializeReceiverReport({.ssrc = 9, .blocks = {{.ssrc = 3}}}));
   other.OnRtcp(rr);
   SM_EXPECT_EQ(other.Room(), 0);
   other.OnRtcp(std::vector<uint8_t>{0x80, 201, 0, 9});  // A length past the end is ignored.
   SM_EXPECT_EQ(other.Room(), 0);
+  // Without NACK, RTPSenderVideo reserves no RTX room for any frame (rtp_sender_video.cc:685-687).
+  RtxAckPhase no_nack(2, 3, false);
+  no_nack.OnRtcp(rr);
+  SM_EXPECT_EQ(no_nack.Room(), 0);
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {

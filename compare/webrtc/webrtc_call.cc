@@ -881,7 +881,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.rng = Random(s.seed + 13);
   model.start_us = t0.us();
   model.now = [&] { return rel(sim.Now()); };
-  testbench::RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc);
+  testbench::RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
   if (opt.link_trace) model.rtx_ack = &rtx_ack;
   // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
   // complete, as in testbench/call.cc (issue #510).

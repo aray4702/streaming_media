@@ -136,20 +136,24 @@ inline uint32_t PcmHash(std::span<const int16_t> pcm, uint32_t h = 2166136261u) 
 // a packet's codec payload is `size - header` on either side.
 int32_t TraceHeaderBytes(std::span<const uint8_t> packet, int64_t wire_bytes, uint8_t red_pt);
 // The forward trace's `rtx_room` column (#555's drift check): whether the sender's RTPSender::RtxPacketOverhead
-// (rtp_sender.cc:564-595) reserves its MID/RID room, that is, whether a report block for the video's media SSRC has
-// reached the sender and none yet for its RTX SSRC (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
-// rtp_rtcp_impl2.cc:694-713). Both implementations hand it every RTCP packet their sender takes and read Room() when a
-// frame is handed to the sender, so the drift check compares frame splits within one reservation phase.
+// (rtp_sender.cc:564-595) reserves its MID/RID room for a frame. That is while a report block for the video's media
+// SSRC has reached the sender and none yet for its RTX SSRC (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
+// rtp_rtcp_impl2.cc:694-713), and only when the frame may be retransmitted, which RTPSenderVideo::SendVideo requires
+// for any RTX room (rtp_sender_video.cc:619-686): with the scenario's NACK on. Both implementations hand it every RTCP
+// packet their sender takes and read Room() when a frame is handed to the sender, so the drift check compares frame
+// splits within one reservation phase.
 class RtxAckPhase {
  public:
-  RtxAckPhase(uint32_t media_ssrc, uint32_t rtx_ssrc) : media_ssrc_(media_ssrc), rtx_ssrc_(rtx_ssrc) {}
+  RtxAckPhase(uint32_t media_ssrc, uint32_t rtx_ssrc, bool retransmission)
+      : media_ssrc_(media_ssrc), rtx_ssrc_(rtx_ssrc), retransmission_(retransmission) {}
   // A compound RTCP packet the sender takes: the report blocks of its SRs and RRs.
   void OnRtcp(std::span<const uint8_t> compound);
-  // 1 while the media SSRC is acked and the RTX SSRC is not, else 0.
-  int32_t Room() const { return media_acked_ && !rtx_acked_ ? 1 : 0; }
+  // 1 while the media SSRC is acked and the RTX SSRC is not, with retransmission; else 0.
+  int32_t Room() const { return retransmission_ && media_acked_ && !rtx_acked_ ? 1 : 0; }
 
  private:
   uint32_t media_ssrc_, rtx_ssrc_;
+  bool retransmission_;
   bool media_acked_ = false, rtx_acked_ = false;
 };
 // Appends the row of an RTP packet from `audio_ssrc` with a payload.
