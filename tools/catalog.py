@@ -248,7 +248,7 @@ ALGORITHMS = [
                "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
                "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
                "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first. "
-               "With SessionConfig::receive_statistics_v2 (off by default until the flip is judged on the parity report) "
+               "With SessionConfig::receive_statistics_v2 (on by default, as libwebrtc, since #575's flip) "
                "the sequence and report rules are StreamStatisticianImpl's (issue #575): a packet more than the max "
                "reordering threshold (450, kMaxPacketAgeToNack, for video with NACK; kDefaultMaxReorderingThreshold 50 "
                "for audio, RTX and video without NACK) from the highest sequence number is held, and if the next packet "
