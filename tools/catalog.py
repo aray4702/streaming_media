@@ -475,19 +475,6 @@ ALGORITHMS = [
                       "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
                       "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
                       "(304.4; capped at libwebrtc's worst seed)."),
-    dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
-         problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
-         headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
-         bench=["timing/DriftCompensator_10ms_16k", "timing/Q_ClockDrift_300ppm"],
-         scenario="120 s of audio from a sender whose clock is 300 ppm slow, over 40 ms + 5 ms jitter. The "
-                  "receiver plays 10 ms blocks from a FIFO; with compensation, the PI-controlled resampler holds "
-                  "the FIFO at 60 ms.",
-         notes="Using the per-window minimum transit time (lower envelope) instead of every packet makes the "
-               "drift fit almost immune to jitter. The resampler ratio is limited to +-0.5%.",
-         verification="Defect found: the first PI gains gave a ~500 s time constant (slow oscillation, 15.8 ms "
-                      "error). Retuned from the plant model (the buffer integrates at 10 ms per update) to a "
-                      "~3 s, near critically damped loop, with an EMA on the packet-granular level: the error "
-                      "fell to 1.8 ms."),
     # ------------------------------------------------------------------ 5
     dict(id="5.1", slug="transport-feedback", title="Transport-wide CC feedback (and REMB)",
          problems=["Fine-grained per-packet feedback -> transport-cc (Transport-Wide CC) RTCP feedback",
@@ -1576,6 +1563,7 @@ NOT_IMPLEMENTED = [
     ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
     ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
     ("3", "Temporal scalability (L1T2/L1T3) and temporal layer filtering", "Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566)."),
+    ("4", "Clock drift estimation and compensation", "Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566)."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),

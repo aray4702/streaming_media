@@ -10,7 +10,6 @@
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
 #include "sm/timing/audio_jitter_buffer.h"
-#include "sm/timing/clock_drift.h"
 #include "sm/timing/packet_buffer.h"
 #include "sm/timing/rtcp_stats.h"
 #include "sm/timing/video_jitter_estimator.h"
@@ -164,81 +163,6 @@ inline VideoJitterSimResult RunVideoJitterSim(bool use_estimator, TimeDelta jitt
   r.late_ratio = static_cast<double>(late) / static_cast<double>(frames);
   r.mean_delay_ms = delay_sum / static_cast<double>(frames);
   r.mean_jitter_ms = jitter_sum / static_cast<double>(frames);
-  return r;
-}
-
-// --- Clock drift compensation --------------------------------------------------
-
-struct DriftSimResult {
-  double estimated_ppm = 0;
-  double max_level_error_ms = 0;  // Over the second half.
-  double final_level_ms = 0;
-  uint64_t underflow_samples = 0;
-};
-
-inline DriftSimResult RunDriftSim(double ppm, bool compensate, double seconds, uint64_t seed) {
-  using namespace sm::timing;
-  const int fs = 16000;
-  sim::LinkConfig lc;
-  lc.base_delay = TimeDelta::Millis(40);
-  lc.jitter_stddev = TimeDelta::Millis(5);
-  lc.allow_reordering = false;
-  sim::NetworkLink<std::pair<uint32_t, std::vector<float>>> link(lc, seed);
-  ClockDriftEstimator est;
-  DriftCompensator comp;
-  std::deque<float> fifo;
-  auto x = sim::Sine(300, fs, seconds + 2, 0.3f);
-  DriftSimResult r;
-  const double target_ms = 60;
-  int64_t next_pkt = 0;
-  const int64_t end_us = static_cast<int64_t>(seconds * 1e6);
-  std::vector<float> out_buf;
-  bool started = false;
-  double level_sum = 0;
-  int level_n = 0;
-  for (int64_t t_us = 0; t_us < end_us; t_us += 1000) {
-    Timestamp now = Timestamp::Micros(t_us);
-    // Sender: packet i is produced at real time i * 20 ms * (1 + ppm).
-    while (static_cast<double>(next_pkt) * 20000.0 * (1 + ppm * 1e-6) <= static_cast<double>(t_us)) {
-      size_t off = static_cast<size_t>(next_pkt * 320);
-      std::vector<float> pcm(x.begin() + static_cast<std::ptrdiff_t>(off), x.begin() + static_cast<std::ptrdiff_t>(off + 320));
-      link.Send(now, {static_cast<uint32_t>(off), std::move(pcm)}, DataSize::Bytes(100));
-      ++next_pkt;
-    }
-    link.ReceiveEach(now, [&](std::pair<uint32_t, std::vector<float>> pk, Timestamp at) {
-      est.OnPacket(pk.first, fs, at);
-      out_buf.clear();
-      if (compensate) {
-        comp.Process(pk.second, out_buf);
-      } else {
-        out_buf = pk.second;
-      }
-      fifo.insert(fifo.end(), out_buf.begin(), out_buf.end());
-    });
-    if (!started && fifo.size() >= static_cast<size_t>(target_ms * fs / 1000)) started = true;
-    if (started && t_us % 10000 == 0) {
-      for (int k = 0; k < 160; ++k) {
-        if (fifo.empty()) {
-          ++r.underflow_samples;
-        } else {
-          fifo.pop_front();
-        }
-      }
-      double level = static_cast<double>(fifo.size()) * 1000.0 / fs;
-      if (compensate) comp.UpdateFromLevel(level, target_ms);
-      // Packet granularity makes the instantaneous level a 20 ms sawtooth;
-      // compare 1 s averages against the target.
-      level_sum += level;
-      if (++level_n == 100) {
-        double avg = level_sum / level_n;
-        if (t_us > end_us / 2) r.max_level_error_ms = std::max(r.max_level_error_ms, std::fabs(avg - target_ms));
-        r.final_level_ms = avg;
-        level_sum = 0;
-        level_n = 0;
-      }
-    }
-  }
-  r.estimated_ppm = est.drift_ppm();
   return r;
 }
 

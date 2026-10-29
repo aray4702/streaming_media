@@ -162,15 +162,3 @@ SM_TEST(E2E_VideoJitter, EstimatorPreventsLateFrames) {
   SM_EXPECT_GT(without.late_ratio, 0.3);
   SM_EXPECT_LT(with.mean_delay_ms, 200);
 }
-
-SM_TEST(E2E_ClockDrift, EstimateAndCompensate) {
-  auto with = RunDriftSim(300, true, 120, 7);
-  auto without = RunDriftSim(300, false, 120, 7);
-  SM_RECORD("estimated_ppm", with.estimated_ppm);
-  SM_RECORD("compensated_max_level_err_ms", with.max_level_error_ms);
-  SM_RECORD("uncompensated_max_level_err_ms", without.max_level_error_ms);
-  SM_EXPECT_NEAR(with.estimated_ppm, 300, 30);
-  SM_EXPECT_LT(with.max_level_error_ms, 15);
-  SM_EXPECT_GT(without.max_level_error_ms, 25);
-  SM_EXPECT_EQ(with.underflow_samples, 0u);
-}

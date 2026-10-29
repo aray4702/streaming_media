@@ -1,7 +1,6 @@
 sm_add_test_exe(sm_unit_timing LABEL unit DEPS sm::timing
   SOURCES
     unit/timing/audio_jitter_buffer_test.cc
-    unit/timing/clock_drift_test.cc
     unit/timing/delay_manager_test.cc
     unit/timing/neteq_background_noise_test.cc
     unit/timing/neteq_delay_test.cc
@@ -16,7 +15,6 @@ sm_add_test_exe(sm_unit_timing LABEL unit DEPS sm::timing
   SUITES
     AudioJitterBuffer
     AudioJitterBufferNetEqV2
-    ClockDrift
     DelayManager
     NetEqBackgroundNoise
     NetEqBufferLevelFilter
@@ -41,7 +39,6 @@ sm_add_test_exe(sm_e2e_timing LABEL e2e DEPS sm::timing
     e2e/timing_e2e_test.cc
   SUITES
     E2E_AudioJitterBuffer
-    E2E_ClockDrift
     E2E_DelayManager
     E2E_PacketBuffer
     E2E_RtcpStats
