@@ -368,7 +368,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;
   vs.frame_times.push_back(now);
   RtpSender& s = *vs.sender;
-  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation);
+  const size_t packetized = s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation);
+  send_.OnVideoPacketized(encoded_size, packetized, now);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {

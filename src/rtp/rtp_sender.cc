@@ -171,9 +171,10 @@ size_t RtpSender::LastPacketReduction(bool keyframe, video::Rotation rotation) c
   return p.HeaderSize() - middle;
 }
 
-void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                               bool keyframe, video::Rotation rotation) {
-  if (chunks.empty()) return;
+size_t RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+                                 bool keyframe, video::Rotation rotation) {
+  if (chunks.empty()) return 0;
+  size_t packetized = 0;
   ++stats_.frames;
   const bool set_rotation = SetsVideoRotation(keyframe, rotation);
   for (size_t i = 0; i < chunks.size(); ++i) {
@@ -194,10 +195,12 @@ void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uin
       sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(rotation)});
       ++stats_.video_orientation_packets;
     }
+    packetized += p.payload.size();
     StoreAndQueueMedia(std::move(p), now, keyframe, i == 0);
   }
   // Update details about the last sent frame (rtp_sender_video.cc:890).
   last_rotation_ = rotation;
+  return packetized;
 }
 
 void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
