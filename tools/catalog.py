@@ -1204,21 +1204,6 @@ ALGORITHMS = [
                       "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB. #243: off by default "
                       "as libwebrtc (`TransientSuppressor.OffByDefaultAsLibwebrtc`: the audio passes unchanged); "
                       "the tests that measure it opt in with `enabled = true`."),
-    dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
-         problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
-                   "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
-         headers=["audio/comfort_noise.h"], unit=["ComfortNoise"], e2e=["E2E_ComfortNoise"],
-         bench=["audio/DtxController_10ms", "audio/ComfortNoise_10ms"],
-         scenario="A one-sided stretch of a call (talks 15 s, listens 15 s) at -50 dBFS background noise; "
-                  "speech frames and SIDs cross a 2%-loss link. Transmitted-frame ratio against the actual "
-                  "speech ratio, and comfort-noise level against the real noise in pauses.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. SID reflection coefficients are interpolated between updates, so the synthesis filter is always "
-               "stable.",
-         verification="Defect found: SIDs were sent too often, because spectral-change detection used "
-                      "single-frame reflection coefficients (sigma about 0.08). The background description now "
-                      "comes from an averaged autocorrelation, and the transmit ratio fell from 0.65 to 0.49 "
-                      "(speech 0.43). A measurement bug that counted lost speech packets as silence was also "
-                      "fixed."),
     dict(id="6.8", slug="vad", title="Voice activity detection",
          problems=["Silence wasting bandwidth -> VAD", "Detecting who's talking -> voice activity"],
          headers=["audio/vad.h"], unit=["Vad"], e2e=["E2E_Vad"],
@@ -1594,6 +1579,7 @@ NOT_IMPLEMENTED = [
     ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
     ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
     ("3", "Temporal scalability (L1T2/L1T3) and temporal layer filtering", "Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566)."),
+    ("6", "DTX and comfort noise (RFC 3389)", "Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),

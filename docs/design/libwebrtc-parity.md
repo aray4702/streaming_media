@@ -287,10 +287,11 @@ double-talk test instead of AEC3's matched-filter delay estimate and adaptive fi
 
 ### 6.3 Items for the Owner to place
 
-1. **`DtxController` and the comfort-noise generator (6.7) have no libwebrtc counterpart on the Opus path.**
-   libwebrtc's Opus encoder does its own DTX (off unless the SDP has `usedtx=1`), and its separate CNG
-   (`modules/audio_coding/codecs/cng/`, not in `reference/`) is for codecs without DTX. Ours sends RFC 3389 SIDs
-   from a VAD decision. Keep as a deviation, or remove?
+1. **`DtxController` and the comfort-noise generator (6.7): removed in #591.** They had no libwebrtc
+   counterpart on the Opus path: libwebrtc's Opus encoder does its own DTX (off unless the SDP has `usedtx=1`),
+   and its separate CNG (`modules/audio_coding/codecs/cng/`, not in `reference/`) is for codecs without DTX.
+   Ours sent RFC 3389 SIDs from a VAD decision, and nothing in a call used it. Decided by the Owner's A on #566
+   ([11:33 PM PT 2026-10-28](https://github.com/aray4702/streaming_media/issues/111#issuecomment-6489730426)).
 2. **Which of 6.2 stay in the library at all.** In libwebrtc the audio processing module belongs to the audio
    device and send pipeline, not to RTP. If the host app already runs one, these ten modules duplicate it.
 3. **Add to #57:** `modules/audio_processing/` (aec3, ns, agc2, `high_pass_filter.*`, transient, vad),
@@ -560,7 +561,7 @@ when GoogCC sees them. The Owner may want it in Phase 3 before #19.
    (`rtp_sender.cc`, `rtp_packet.cc`, `rtp_header_extensions.cc`,
    `rtp_rtcp_interface.h`, `video_send_stream_config`). The rows that need them say
    "file needed".
-7. Keep `DtxController` and comfort noise (6.3 item 1), codec negotiation (7.3) and the
+7. Keep `DtxController` and comfort noise (6.3 item 1; removed in #591), codec negotiation (7.3) and the
    screen-content change detector (7.2) as deviations, or remove them as having no
    libwebrtc counterpart in a one-to-one call?
 8. Which of the ten audio-processing modules stay in the library (6.3 item 2)?

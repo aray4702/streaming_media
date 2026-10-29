@@ -91,7 +91,6 @@ if(SM_WITH_AUDIO)
     audio/aec3_suppression.cc
     audio/aec3.cc
     audio/transient_suppressor.cc
-    audio/comfort_noise.cc
     audio/audio_level.cc
     audio/resampler.cc
     audio/splitting_filter.cc

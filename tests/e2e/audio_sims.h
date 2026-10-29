@@ -13,7 +13,6 @@
 #include "sm/audio/agc1.h"
 #include "sm/audio/agc2.h"
 #include "sm/audio/agc_manager.h"
-#include "sm/audio/comfort_noise.h"
 #include "sm/audio/echo_canceller.h"
 #include "sm/audio/gain_control.h"
 #include "sm/audio/high_pass_filter.h"

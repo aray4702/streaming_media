@@ -1,8 +1,7 @@
 // Section 6 end-to-end tests: realistic capture scenarios through the APM
-// chain (HPF -> AEC -> NS -> VAD -> TS -> AGC), plus DTX/CNG over a lossy
-// link, conference level/active-speaker, mixing and rate conversion.
+// chain (HPF -> AEC -> NS -> VAD -> TS -> AGC), plus
+// conference level/active-speaker, mixing and rate conversion.
 #include <cmath>
-#include <map>
 
 #include "audio_sims.h"
 #include "sm/audio/audio_level.h"
@@ -454,80 +453,6 @@ SM_TEST(E2E_TransientSuppressor, KeyboardDuringCall) {
   double atten = 10 * std::log10(ein / eout);
   SM_RECORD("click_attenuation_in_pauses_db", atten);
   SM_EXPECT_GT(atten, 10.0);
-}
-
-SM_TEST(E2E_ComfortNoise, DtxSavesPacketsCngFillsSilence) {
-  CallScenario s;
-  s.far_talk = false;
-  s.noise_amp = 0.003f;
-  s.seconds = 30;
-  s.near_end_s = 15;  // Talks, then listens: a one-sided stretch of a call.
-  auto c = MakeCall(s);
-  // Sender: VAD + DTX. Receiver: plays speech frames, CNG otherwise.
-  Vad vad;
-  DtxController dtx;
-  ComfortNoiseGenerator cng;
-  sim::LinkConfig lc;
-  lc.loss_rate = 0.02;
-  sim::NetworkLink<std::pair<size_t, std::vector<uint8_t>>> link(lc, 3);
-  size_t frames = c.capture.size() / 160, sent = 0;
-  for (size_t f = 0; f < frames; ++f) {
-    std::span<const float> fr(c.capture.data() + f * 160, 160);
-    SidFrame sid;
-    auto d = dtx.Process(fr, vad.Process(fr), &sid);
-    if (d == DtxDecision::kSendSpeech) {
-      link.Send(Timestamp::Millis(static_cast<int64_t>(f * 10)), {f, {}}, DataSize::Bytes(40));
-      ++sent;
-    } else if (d == DtxDecision::kSendSid) {
-      link.Send(Timestamp::Millis(static_cast<int64_t>(f * 10)), {f, EncodeSid(sid)}, DataSize::Bytes(12));
-      ++sent;
-    }
-  }
-  std::vector<float> out(c.capture.size(), 0.0f);
-  std::vector<int> kind(frames, 0);  // 0 nothing, 1 speech, 2 SID
-  std::map<size_t, std::vector<uint8_t>> sids;
-  for (auto& [f, payload] : link.Receive(Timestamp::Seconds(3600))) {
-    kind[f] = payload.empty() ? 1 : 2;
-    if (!payload.empty()) sids[f] = payload;
-  }
-  for (size_t f = 0; f < frames; ++f) {
-    std::span<float> o(out.data() + f * 160, 160);
-    if (kind[f] == 1) {
-      std::copy(c.capture.begin() + static_cast<std::ptrdiff_t>(f * 160), c.capture.begin() + static_cast<std::ptrdiff_t>(f * 160 + 160), o.begin());
-    } else {
-      if (kind[f] == 2) cng.OnSid(*DecodeSid(sids[f]));
-      cng.Generate(o);
-    }
-  }
-  // Level during non-speech frames vs. the real background noise.
-  double eo = 0, en = 0;
-  size_t n = 0;
-  int since_speech = 1000;
-  for (size_t f = 0; f < frames; ++f) {
-    bool talking = dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160)) > -60.0f;
-    since_speech = talking ? 0 : since_speech + 1;
-    // Judge comfort noise only in real pauses (beyond VAD hangover).
-    if (f < 200 || kind[f] == 1 || since_speech < 30) continue;
-    for (size_t i = f * 160; i < f * 160 + 160; ++i) {
-      eo += static_cast<double>(out[i]) * out[i];
-      en += static_cast<double>(c.noise[i]) * c.noise[i];
-    }
-    n += 160;
-  }
-  double level_err = 10 * std::log10(eo / en);
-  double tx_ratio = static_cast<double>(sent) / static_cast<double>(frames);
-  size_t speech_frames = 0;
-  for (size_t f = 0; f < frames; ++f) {
-    speech_frames += dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160)) > -60.0f;
-  }
-  double speech_ratio = static_cast<double>(speech_frames) / static_cast<double>(frames);
-  SM_RECORD("speech_ratio", speech_ratio);
-  SM_RECORD("dtx_tx_ratio", tx_ratio);
-  SM_RECORD("cng_level_error_db", level_err);
-  // Transmitted = speech + hangover + SIDs (one per 400 ms at most).
-  SM_EXPECT_LT(tx_ratio, speech_ratio + 0.12);
-  SM_EXPECT_NEAR(level_err, 0.0, 3.0);
-  SM_EXPECT_GT(n, 16000u);
 }
 
 SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
