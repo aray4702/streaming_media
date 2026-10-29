@@ -199,6 +199,16 @@
     {"scenario": "issue_224_congestive_e2e_flip", "metric": "sync.av_offset_p95_ms", "issues": [474]},
     {"scenario": "issue_61_googcc_glue_congestive", "metric": "sync.av_offset_p95_ms", "issues": [474]},
     {"scenario": "issue_12_lossbwe_policer", "metric": "sync.av_offset_p95_ms", "issues": [411]},
-    {"scenario": "issue_150_gcc_v2_high_jitter_seed10", "metric": "sync.av_offset_p95_ms", "issues": [411]}
+    {"scenario": "issue_150_gcc_v2_high_jitter_seed10", "metric": "sync.av_offset_p95_ms", "issues": [411]},
+    {"scenario": "issue_12_lossbwe_congestive", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_224_congestive_e2e_flip", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_61_googcc_glue_congestive", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "video.longest_freeze_ms", "issues": [474]},
+    {"scenario": "issue_76_packetization_v2", "metric": "video.freeze_total_ms", "issues": [474]},
+    {"scenario": "issue_12_lossbwe_random_loss", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_15_aimd_v2_random_loss", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_18_random_loss_keyframes", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_7_no_fec_beside_nack", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "random_loss_5pct", "metric": "video.e2e_delay_p95_ms", "issues": [411]}
   ]
 }
