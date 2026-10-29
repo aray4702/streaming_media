@@ -78,9 +78,53 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
   out_.back().sender = this;
 }
 
-void RtpSender::AssignSequenceNumber(SenderPacket& p) {
+void RtpSender::AssignSequenceNumber(SenderPacket& p, Timestamp now) {
+  // PacketSequencer::Sequence. RTX packets keep the number RtxSender gave them.
+  if (p.kind == PacketKind::kPadding) {
+    if (p.packet.ssrc == cfg_.ssrc) {
+      // PopulatePaddingFields on the media SSRC: the last media packet's timestamp and payload type.
+      p.packet.timestamp = sequencer_last_rtp_timestamp_;
+      p.packet.payload_type = static_cast<uint8_t>(sequencer_last_payload_type_);
+      p.packet.seq = next_seq_++;
+    } else if (p.packet.payload.empty()) {
+      // On the RTX SSRC, empty padding only (payload padding keeps the resent packet's timestamp).
+      // libwebrtc advances the timestamp once the clock is past zero, which in a call means once a
+      // media packet has gone out; here time can start at 0, so that is what is checked.
+      p.packet.timestamp = sequencer_last_rtp_timestamp_;
+      if (sequencer_last_timestamp_time_) {
+        constexpr uint32_t kTimestampTicksPerMs = 90;
+        const TimeDelta since_last_media = now - *sequencer_last_timestamp_time_;
+        p.packet.timestamp += static_cast<uint32_t>(since_last_media.ms()) * kTimestampTicksPerMs;
+      }
+    }
+    return;
+  }
   if (p.kind != PacketKind::kAudio && p.kind != PacketKind::kVideo && p.kind != PacketKind::kFec) return;
   p.packet.seq = next_seq_++;
+  media_has_been_sent_ = true;
+  // UpdateLastPacketState. A RED-wrapped video or FEC packet (is_red) gives the payload type of
+  // its RED block; audio RED is not is_red, so it gives RED's.
+  sequencer_last_marker_ = p.packet.marker;
+  const bool is_red = cfg_.video && ulpfec_ && p.packet.payload_type == cfg_.ulpfec.red_payload_type;
+  sequencer_last_payload_type_ = is_red && !p.packet.payload.empty() ? p.packet.payload[0] : p.packet.payload_type;
+  sequencer_last_rtp_timestamp_ = p.packet.timestamp;
+  sequencer_last_timestamp_time_ = now;
+}
+
+bool RtpSender::CanSendPaddingOnMediaSsrc() const {
+  if (sequencer_last_payload_type_ == -1) return false;
+  // Without RTX, video can't pad in the middle of a frame; audio frames are one packet.
+  if (cfg_.video && !sequencer_last_marker_) return false;
+  return true;
+}
+
+bool RtpSender::SupportsPadding() const {
+  return cfg_.extensions &&
+         (cfg_.extensions->IdOf(sync::uri::kTransportCc) || cfg_.extensions->IdOf(sync::uri::kAbsSendTime));
+}
+
+bool RtpSender::SupportsRtxPayloadPadding() const {
+  return SupportsPadding() && cfg_.video && cfg_.rtx_ssrc.has_value();
 }
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
@@ -343,14 +387,10 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
   return {std::move(p), PacketKind::kPadding, cc::PacketPriority::kPadding};
 }
 
-std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32_t rtp_timestamp, Timestamp now) {
+std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, Timestamp now) {
   std::vector<SenderPacket> out;
-  if (!cfg_.rtx_ssrc) return out;
   size_t bytes_left = target_bytes;
-  const bool bwe_extension =
-      cfg_.extensions && (cfg_.extensions->IdOf(sync::uri::kTransportCc) || cfg_.extensions->IdOf(sync::uri::kAbsSendTime));
-  // SupportsRtxPayloadPadding: a video stream (kRtxRedundantPayloads) that has a BWE extension.
-  if (cfg_.video && bwe_extension) {
+  if (SupportsRtxPayloadPadding()) {
     // AppendPayloadPadding.
     while (bytes_left >= kMinPayloadPaddingBytes) {
       const size_t max_overshoot = static_cast<size_t>((kMaxPaddingSizeFactor - 1.0) * static_cast<double>(target_bytes) + 0.5);
@@ -366,9 +406,14 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32
       out.back().sender = this;
     }
   }
-  // Without abs-send-time or transport-cc a media packet must go first, so the timestamps
-  // used for estimation are right.
-  if (!bwe_extension && stats_.media_packets == 0) return out;
+  const bool rtx = cfg_.rtx_ssrc.has_value();
+  if (rtx) {
+    // Without abs-send-time or transport-cc a media packet must go first, so the timestamps
+    // used for estimation are right.
+    if (!media_has_been_sent_ && !SupportsPadding()) return out;
+  } else if (!CanSendPaddingOnMediaSsrc()) {
+    return out;
+  }
   // PaddingBytesInPacket with max_packet_size_ - max_padding_fec_packet_header_ (rtp_sender.cc:150-165,
   // 434-435): the padding packet's header and extensions fit in the whole-packet limit (issue #513).
   const size_t max_packet_size = cfg_.max_payload_size + RtpPacket::kFixedHeaderSize;
@@ -377,12 +422,16 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, uint32
   const size_t padding_bytes_in_packet =
       cfg_.video ? max_padding : std::clamp(bytes_left, std::min(kMinAudioPaddingLength, max_padding), max_padding);
   while (bytes_left > 0) {
-    // BuildPaddingPacket on the RTX SSRC.
+    // BuildPaddingPacket: on the RTX SSRC, else on the media SSRC (its payload type, timestamp and
+    // sequence number are set at release).
     RtpPacket p;
-    p.timestamp = rtp_timestamp;
-    p.ssrc = *cfg_.rtx_ssrc;
-    p.payload_type = cfg_.rtx_payload_type;
-    p.seq = rtx_.AllocateSeq();
+    if (rtx) {
+      p.ssrc = *cfg_.rtx_ssrc;
+      p.payload_type = cfg_.rtx_payload_type;
+      p.seq = rtx_.AllocateSeq();
+    } else {
+      p.ssrc = cfg_.ssrc;
+    }
     p.padding_size = static_cast<uint8_t>(padding_bytes_in_packet);
     ++stats_.padding_packets;
     SM_EVENT(cfg_.events, now, "rtp_sender", "padding", p.padding_size, p.ssrc);

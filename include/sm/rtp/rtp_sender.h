@@ -191,7 +191,20 @@ class RtpSender : public MetricsSource {
   // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
   // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
   // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then it carries 0.
-  void AssignSequenceNumber(SenderPacket& p);
+  // PacketSequencer::Sequence (packet_sequencer.cc:58-80): a padding packet takes its timestamp
+  // (and on the media SSRC its payload type and number) from the last media packet released, and
+  // empty RTX padding advances that timestamp by the time since, at 90 ticks per ms.
+  void AssignSequenceNumber(SenderPacket& p, Timestamp now);
+  // PacketSequencer::CanSendPaddingOnMediaSsrc (packet_sequencer.cc:139-154): a media packet has
+  // been released, and on video (require_marker_before_media_padding = !audio, rtp_rtcp_impl2.cc:69)
+  // it ended a frame. ModuleRtpRtcpImpl2::CanSendPacket drops media-SSRC padding when this no
+  // longer holds at release (rtp_rtcp_impl2.cc:337-350).
+  bool CanSendPaddingOnMediaSsrc() const;
+  // RTPSender::SupportsPadding / SupportsRtxPayloadPadding (rtp_sender.cc:401-412): a BWE
+  // extension (transport-cc or abs-send-time) is registered; for payload padding, also a video
+  // stream with RTX (kRtxRedundantPayloads).
+  bool SupportsPadding() const;
+  bool SupportsRtxPayloadPadding() const;
   // The pacer sent `p` (SendSideController::Process). The RTX history takes media packets
   // here (the packet as it goes out, RED-wrapped when RED is in use, so a resend is identical
   // apart from the RTX header) and learns that a resend left the queue. With FEC a video
@@ -245,21 +258,20 @@ class RtpSender : public MetricsSource {
 
   // A padding-only packet whose whole size is as close to `total_bytes` as
   // padding allows (at least a header plus one byte, at most 255 bytes of
-  // padding). On the RTX SSRC when RTX is configured, like libwebrtc's
-  // RTPSender::GeneratePadding, else on the media SSRC.
+  // padding). On the RTX SSRC when RTX is configured, else on the media SSRC.
   SenderPacket MakePadding(size_t total_bytes, uint32_t rtp_timestamp, Timestamp now);
 
-  // RTPSender::GeneratePadding (rtp_sender.cc:418-459), for a sender with RTX:
-  // `target_bytes` of padding for the pacer, as a list of packets with their real
-  // sizes. A video sender first answers with RTX payload padding, the newest large packet of
-  // the history resent on the RTX SSRC (AppendPayloadPadding: only while at least
-  // kMinPayloadPaddingBytes (50) are left, and never a packet that takes the total over
-  // kMaxPaddingSizeFactor (3.0) x the target); the remainder is empty padding on the RTX
-  // SSRC, packets of kMaxPaddingLength (255) bytes (an audio sender: of the bytes left, at
-  // least kMinAudioPaddingLength (50)). Like libwebrtc, with RTX the empty padding waits for
-  // a media packet unless transport-cc or abs-send-time is registered. All of them are
-  // PacketKind::kPadding at padding priority; nothing is queued, the caller enqueues them.
-  std::vector<SenderPacket> GeneratePadding(size_t target_bytes, uint32_t rtp_timestamp, Timestamp now);
+  // RTPSender::GeneratePadding (rtp_sender.cc:418-459): `target_bytes` of padding for the pacer, as
+  // a list of packets with their real sizes. A video sender with RTX first answers with RTX payload
+  // padding, the newest large packet of the history resent on the RTX SSRC (AppendPayloadPadding:
+  // only while at least kMinPayloadPaddingBytes (50) are left, and never a packet that takes the
+  // total over kMaxPaddingSizeFactor (3.0) x the target). The remainder is empty padding,
+  // packets of kMaxPaddingLength (255) bytes (an audio sender: of the bytes left, at least
+  // kMinAudioPaddingLength (50)): on the RTX SSRC, where it waits for a media packet unless
+  // transport-cc or abs-send-time is registered; without RTX on the media SSRC, only while
+  // CanSendPaddingOnMediaSsrc(). All of them are PacketKind::kPadding at padding priority; their
+  // timestamps are set at release (AssignSequenceNumber). Nothing is queued, the caller enqueues them.
+  std::vector<SenderPacket> GeneratePadding(size_t target_bytes, Timestamp now);
 
   // The peer acknowledged the MID: stop repeating it.
   void AcknowledgeMid() { mid_remaining_ = 0; }
@@ -323,6 +335,12 @@ class RtpSender : public MetricsSource {
   bool ssrc_has_acked_ = false;
   bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;
+  // PacketSequencer's state of the last media packet released (packet_sequencer.cc:107-126).
+  bool sequencer_last_marker_ = false;
+  int sequencer_last_payload_type_ = -1;
+  uint32_t sequencer_last_rtp_timestamp_ = 0;
+  std::optional<Timestamp> sequencer_last_timestamp_time_;
+  bool media_has_been_sent_ = false;  // RtpSenderEgress::MediaHasBeenSent.
   Timestamp last_media_time_ = Timestamp::MinusInfinity();
   uint32_t sr_packets_ = 0, sr_octets_ = 0;
   // Indexed by PacketKind (kAudio, kVideo, kRtx, kFec, kPadding).

@@ -44,6 +44,7 @@ INFO = {
     "net.audio_rtp_clock_hz",
     # The start sequence numbers and the first audio marker (issue #514): information only.
     "net.audio_start_seq", "net.video_start_seq", "net.audio_first_marker",
+    "net.padding_media_ssrc_packets", "net.padding_rtx_ssrc_packets", "net.padding_distinct_sizes",
     # Per kind packet sizes and queue drops (issue #119): information only.
     *(f"net.{k}_{m}" for k in ("audio", "video", "rtx", "padding")
       for m in ("size_p50_b", "size_p90_b", "size_max_b", "queue_drops")),

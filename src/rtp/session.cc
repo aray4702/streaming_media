@@ -133,10 +133,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   // off) the audio stream asks for periodic ALR probing (WebRTC-Audio-AlrProbing is on
   // unless disabled; audio_send_stream.cc:158-159, 297-308).
   if (cfg_.extensions.IdOf(sync::uri::kTransportCc)) send_.EnablePeriodicAlrProbing(true);
-  if (!send_has_padding_) {
-    send_.SetPaddingSender(audio_send_.back().sender.get());
-    send_has_padding_ = true;
-  }
+  send_.AddPaddingSender(audio_send_.back().sender.get());
   return {static_cast<int>(audio_send_.size()) - 1};
 }
 
@@ -168,8 +165,8 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
       std::min(cfg_.send_side.max_packet_size, kPathMtu - cfg_.send_side.transport_overhead_bytes)));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
-  // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
-  send_.SetPaddingSender(video_send_.back().sender.get());
+  // PacketRouter asks video streams to pad before audio ones.
+  send_.AddPaddingSender(video_send_.back().sender.get());
   // VideoSendStreamImpl's constructor (video_send_stream_impl.cc:487-523): with
   // transport-cc the stricter pacing factor (GetConfiguredPacingFactor,
   // kStrictPacingMultiplier) applies from the start, and periodic ALR probing is
@@ -179,7 +176,6 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
     send_.SetPacingFactor(kStrictPacingMultiplier);
     send_.EnablePeriodicAlrProbing(false);
   }
-  send_has_padding_ = true;
   UpdateVideoPacketOverhead();
   return {static_cast<int>(video_send_.size()) - 1};
 }

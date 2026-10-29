@@ -13,8 +13,8 @@
 //   - the GCC process interval (25 ms) runs from Process(). As in libwebrtc,
 //     nothing pauses the encoder on a feedback time-out: the outage monitor
 //     only follows the link (#151), and TakeActions() stays empty.
-// Padding and probes are real padding-only RTP packets made by the padding
-// stream registered with SetPaddingSender().
+// Padding and probes are real padding-only RTP packets made by the streams
+// registered with AddPaddingSender(), chosen as libwebrtc's PacketRouter does.
 //
 // ComputeRates() is the test bench's original video_rate() arithmetic: target
 // minus the audio wire rate, divided by (1 + FEC protection) and clamped.
@@ -142,6 +142,7 @@ struct ControllerActions {
 struct SendSideStats {
   uint64_t released = 0;
   uint64_t padding = 0;
+  uint64_t padding_dropped = 0;  // Media-SSRC padding preempted by media (CanSendPacket).
   uint64_t unknown_ids = 0;
   uint64_t flushed = 0;  // Packets a keyframe flushed from the pacer queue.
   int64_t released_bytes = 0;
@@ -199,8 +200,10 @@ class SendSideController : public MetricsSource {
   void OnVideoEncoderReconfigured(Timestamp now);
   bool video_registered() const { return video_registered_; }
 
-  // The stream whose SSRC pads and probes. Not owned.
+  // The only stream that pads and probes (none when null). Not owned.
   void SetPaddingSender(RtpSender* sender);
+  // Adds a stream that can pad (PacketRouter::AddSendRtpModule). Not owned.
+  void AddPaddingSender(RtpSender* sender);
 
   // RtpTransportControllerSend::SetPacingFactor: the pacing factor of the
   // streams (StreamsConfig::pacing_factor), which GoogCC uses in place of its
@@ -335,7 +338,10 @@ class SendSideController : public MetricsSource {
   DataRate window_target_;    // GoogCC last_loss_based_target_rate_: the target at the last pushback update.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
-  RtpSender* padding_sender_ = nullptr;
+  std::vector<SenderPacket> GeneratePadding(size_t target_bytes, Timestamp now);
+  // PacketRouter's send_modules_list_ (video first) and last_send_module_.
+  std::vector<RtpSender*> padding_senders_;
+  RtpSender* last_padding_sender_ = nullptr;
   std::unordered_map<uint64_t, SenderPacket> queued_;
   // Media packets (and the FEC on the media SSRC) by transport-wide sequence number, so that
   // feedback can cull the acknowledged ones and resend the trailing lost ones
