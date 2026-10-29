@@ -43,15 +43,15 @@ One document per algorithm: problem, the issue it solves, design, implementation
 
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
-| 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 2 | 1 | 3 | not recorded | not recorded | not recorded | not recorded |
-| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
-| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 6.1 | [Acoustic echo cancellation](6-audio/6.1-echo-canceller.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 6.2 | [Echo-path delay estimation](6-audio/6.2-echo-delay.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
+| 6.3 | [Noise suppression](6-audio/6.3-noise-suppression.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
+| 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 0 | 0 | 1 | not recorded | not recorded | not recorded | not recorded |
 
 ## 7. Video quality and processing

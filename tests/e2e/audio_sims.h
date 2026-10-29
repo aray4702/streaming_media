@@ -13,11 +13,7 @@
 #include "sm/audio/agc1.h"
 #include "sm/audio/agc2.h"
 #include "sm/audio/agc_manager.h"
-#include "sm/audio/echo_canceller.h"
-#include "sm/audio/gain_control.h"
-#include "sm/audio/high_pass_filter.h"
 #include "sm/audio/hpf.h"
-#include "sm/audio/noise_suppressor.h"
 #include "sm/audio/ns.h"
 #include "sm/audio/transient_suppressor.h"
 #include "sm/audio/vad.h"
@@ -82,28 +78,23 @@ inline CallSignals MakeCall(const CallScenario& s) {
   return c;
 }
 
-// The capture processing chain, in WebRTC APM order.
+// The capture processing chain, in WebRTC APM order: libwebrtc's modules
+// (#239-#242), as libwebrtc M157's APM runs them (#565 retired the
+// library's own v1 modules). The high-pass filter is libwebrtc's
+// (`hpf::HighPassFilter`, #239). The AGC is AGC1 as a call runs it
+// (`AgcManagerDirect` in kAdaptiveAnalog with `GainControl` in
+// kFixedDigital, the volume emulated by `CaptureLevels` from 255, #242), and
+// the NS is libwebrtc's (`ns::NoiseSuppressor`, kHigh), which analyzes the
+// capture before the AEC and suppresses after it, as APM does. The echo
+// canceller is libwebrtc's AEC3 (`aec3::EchoCanceller3`, #240), fed and
+// called as APM does: the render frame first, saturation checked on the
+// capture after the pre-level adjustment, the stream delay set to 0 every
+// frame, and the AGC1 volume changes flagged as echo path gain changes.
 struct ChainConfig {
   // `ts`: the transient suppressor, an opt-in (#243): libwebrtc M157's APM
   // has none, and its deprecated `transient_suppression.enabled` is false.
   bool hpf = true, aec = false, ns = false, ts = false, agc = false;
-  // `apm v2`, the default (#565): libwebrtc's modules where ported
-  // (#239-#242), as libwebrtc M157's APM runs them. The high-pass
-  // filter is libwebrtc's (`hpf::HighPassFilter`, #239). The AGC is AGC1
-  // as a call runs it (`AgcManagerDirect` in kAdaptiveAnalog with
-  // `GainControl` in kFixedDigital, the volume emulated by `CaptureLevels`
-  // from 255, #242), and the NS is libwebrtc's (`ns::NoiseSuppressor`,
-  // kHigh), which analyzes the capture before the AEC and suppresses after
-  // it, as APM does. The echo canceller is libwebrtc's AEC3
-  // (`aec3::EchoCanceller3`, #240), fed and called as APM does: the render
-  // frame first, saturation checked on the capture after the pre-level
-  // adjustment, the stream delay set to 0 every frame, and the AGC1 volume
-  // changes flagged as echo path gain changes. `false` runs the v1 modules
-  // (`audio::HighPassFilter`, `EchoCanceller`, `NoiseSuppressor`,
-  // `AutomaticGainControl`) until they are retired.
-  bool apm_v2 = true;
-  // With `apm_v2`: AGC2 (`agc2::GainController2` with its RNN VAD) instead
-  // of AGC1.
+  // AGC2 (`agc2::GainController2` with its RNN VAD) instead of AGC1.
   bool agc2 = false;
 };
 
@@ -111,45 +102,33 @@ struct ChainResult {
   std::vector<float> out;
   std::vector<bool> vad;  // Per 10 ms frame.
   size_t latency = 0;     // Samples of algorithmic delay.
-  audio::EchoCancellerStats aec;
 };
 
 inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs = 16000) {
-  audio::HighPassFilter hpf(fs);
-  audio::hpf::HighPassFilter hpf2(fs);
-  audio::EchoCancellerConfig ac;
-  ac.sample_rate = fs;
-  audio::EchoCanceller aec(ac);
+  audio::hpf::HighPassFilter hpf(fs);
   // AEC3 is ~1 MB of state: on the heap, as the AGC1 objects below.
   auto aec3_ptr = std::make_unique<audio::aec3::EchoCanceller3>(audio::aec3::Aec3Config{}, fs, 1, 1);
   audio::aec3::EchoCanceller3& aec3 = *aec3_ptr;
-  const bool aec3_on = cc.aec && cc.apm_v2;
+  const bool aec3_on = cc.aec;
   int last_applied_volume = -1;
-  audio::NoiseSuppressorConfig nc;
+  audio::ns::NoiseSuppressorConfig nc;
   nc.sample_rate = fs;
-  audio::NoiseSuppressor ns(nc);
-  audio::ns::NoiseSuppressorConfig nc2;
-  nc2.sample_rate = fs;
   // On the heap, as the AGC1 objects below: AGC1's pitch-based VAD needs
   // ~40 KB of stack (iSAC's PitchAnalysis, as in libwebrtc) and wasm's
   // stack is 64 KB.
-  auto ns2_ptr = std::make_unique<audio::ns::NoiseSuppressor>(nc2);
-  audio::ns::NoiseSuppressor& ns2 = *ns2_ptr;
+  auto ns_ptr = std::make_unique<audio::ns::NoiseSuppressor>(nc);
+  audio::ns::NoiseSuppressor& ns = *ns_ptr;
   audio::VadConfig vc;
   vc.sample_rate = fs;
   audio::Vad vad(vc);
   audio::TransientSuppressorConfig tc;
   tc.enabled = true;  // `ts` opts in, as APM's transient_suppression.enabled.
   audio::TransientSuppressor ts(tc);
-  audio::AgcConfig gc;
-  gc.sample_rate = fs;
-  gc.limiter.sample_rate = fs;
-  audio::AutomaticGainControl agc(gc);
   audio::agc2::GainController2Config gc2;
   gc2.sample_rate = fs;
   audio::agc2::GainController2 agc2(gc2);
   // AGC1 (#242): APM's order with the analog mic gain emulation.
-  const bool agc1_on = cc.agc && cc.apm_v2 && !cc.agc2;
+  const bool agc1_on = cc.agc && !cc.agc2;
   auto agc_manager_ptr = std::make_unique<audio::agc1::AgcManagerDirect>(1);
   audio::agc1::AgcManagerDirect& agc_manager = *agc_manager_ptr;
   agc_manager.Initialize();
@@ -182,11 +161,7 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       for (float& v : s16) v = std::clamp(v, -32768.0f, 32768.0f);
       aec3.AnalyzeRender(std::span<const float>(s16));
     }
-    if (cc.hpf && cc.apm_v2) {
-      hpf2.Process(f);
-    } else if (cc.hpf) {
-      hpf.Process(f);
-    }
+    if (cc.hpf) hpf.Process(f);
     if (agc1_on) {
       // The emulated volume is the applied input volume.
       agc_manager.set_stream_analog_level(levels.GetAnalogMicGainLevel());
@@ -197,7 +172,7 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       agc_manager.AnalyzePreProcess(cch);
       from_s16(f);
     }
-    if (cc.ns && cc.apm_v2) ns2.Analyze(f);
+    if (cc.ns) ns.Analyze(f);
     if (aec3_on) {
       // An applied volume change is an echo path gain change, as APM's
       // applied_input_volume_changed.
@@ -208,15 +183,8 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       aec3.SetAudioBufferDelay(0);
       aec3.ProcessCapture(std::span<float>(s16), level_change);
       from_s16(f);
-    } else if (cc.aec) {
-      aec.AnalyzeRender(std::span<const float>(c.far.data() + i, frame));
-      aec.ProcessCapture(f);
     }
-    if (cc.ns && cc.apm_v2) {
-      ns2.Process(f);
-    } else if (cc.ns) {
-      ns.Process(f);
-    }
+    if (cc.ns) ns.Process(f);
     bool v = vad.Process(f);
     r.vad.push_back(v);
     if (cc.ts) ts.Process(f, vad.voiced());
@@ -231,16 +199,13 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       levels.ApplyPostLevelAdjustment(ch);
       from_s16(f);
       levels.SetAnalogMicGainLevel(agc_manager.recommended_analog_level());
-    } else if (cc.agc && cc.apm_v2) {
-      agc2.Process(f);
     } else if (cc.agc) {
-      agc.Process(f, v);
+      agc2.Process(f);
     }
   }
   // AEC3's block framer delays the capture by one 64-sample block.
-  if (cc.aec) r.latency += aec3_on ? audio::aec3::kBlockSize : aec.latency_samples();
-  if (cc.ns) r.latency += cc.apm_v2 ? ns2.latency_samples() : ns.latency_samples();
-  r.aec = aec.stats();
+  if (cc.aec) r.latency += audio::aec3::kBlockSize;
+  if (cc.ns) r.latency += ns.latency_samples();
   return r;
 }
 

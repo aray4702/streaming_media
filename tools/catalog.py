@@ -948,19 +948,17 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 6
     dict(id="6.1", slug="echo-canceller", title="Acoustic echo cancellation",
          problems=["Echo (far-end audio coming back through the mic) -> AEC3 acoustic echo canceller; AECM for mobile"],
-         headers=["audio/echo_canceller.h", "audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
+         headers=["audio/aec3_filter.h", "audio/aec3_erle.h", "audio/aec3_reverb.h",
                   "audio/aec3_analysis.h", "audio/aec3_state.h", "audio/aec3_suppression.h", "audio/aec3.h"],
-         unit=["EchoCanceller", "Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression",
+         unit=["Aec3Filter", "Aec3Erle", "Aec3Reverb", "Aec3Analysis", "Aec3State", "Aec3Suppression",
                "Aec3"],
          e2e=["E2E_EchoCanceller"],
-         bench=["audio/EchoCanceller_10ms_80ms_tail", "audio/FullCaptureChain_10ms",
-                "audio/Q_EchoCanceller_full_duplex_call"],
+         bench=["audio/Q_EchoCanceller_full_duplex_call"],
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AEC3 (`audio/aec3.h`) runs, and this PBFDAF canceller runs only with `apm_v2 = false` until it is retired. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
-               "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2. "
-               "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`, for `apm v2`) is a port of libwebrtc M157's "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs libwebrtc's AEC3 (`audio/aec3.h`); the library's own PBFDAF canceller (v1) was retired in #565. "
+               "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`) is a port of libwebrtc M157's "
                "`aec3_fft`, the render buffers (`block_buffer`, `spectrum_buffer`, `fft_buffer`, `render_buffer` and the "
                "whole `render_delay_buffer`, of which 6.2's low-rate buffer is the decimated half), `adaptive_fir_filter` "
                "(partitioned frequency-domain filter, 64-sample partitions, one partition constrained per block), "
@@ -1053,12 +1051,12 @@ ALGORITHMS = [
                       "numbers stay at libwebrtc's."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
-         headers=["audio/echo_delay_estimator.h", "audio/aec3_delay.h"], unit=["EchoDelay", "Aec3Delay"], e2e=["E2E_EchoDelay"],
-         bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
+         headers=["audio/aec3_delay.h"], unit=["Aec3Delay"], e2e=["E2E_EchoDelay"],
+         bench=["audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): AEC3's own delay estimation (`audio/aec3_delay.h`) runs, and this GCC-PHAT estimator runs only with `apm_v2 = false` until it is retired. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
-               "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`, for `apm v2`) is a port of libwebrtc M157's "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs AEC3's own delay estimation (`audio/aec3_delay.h`); the library's GCC-PHAT estimator (v1) was retired in #565. "
+               "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`) is a port of libwebrtc M157's "
                "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
                "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
                "(5 filters of 32 sub-blocks at 4 kHz covering 0-552 ms, headroom 32 samples, thresholds 5/20, pre-echo "
@@ -1078,12 +1076,12 @@ ALGORITHMS = [
                       "estimate and no clock drift; the first estimate comes after 176 ms."),
     dict(id="6.3", slug="noise-suppression", title="Noise suppression",
          problems=["Background noise -> NS noise suppression (RNNoise-style ML in some builds)"],
-         headers=["audio/noise_suppressor.h", "audio/ns.h"], unit=["NoiseSuppressor", "Ns"], e2e=["E2E_NoiseSuppressor"],
-         bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
+         headers=["audio/ns.h"], unit=["Ns"], e2e=["E2E_NoiseSuppressor"],
+         bench=[],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's NS (`audio/ns.h`, kHigh) runs, and the v1 STFT-Wiener suppressor runs only with `apm_v2 = false` until it is retired. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
-               "plugged into the same 10 ms interface. `apm v2` (#241): `ns::NoiseSuppressor` ports libwebrtc M157's "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs libwebrtc's NS (`audio/ns.h`, kHigh); the library's STFT-Wiener suppressor (v1) was retired in #565. "
+               "`ns::NoiseSuppressor` (#241) ports libwebrtc M157's "
                "NS (`modules/audio_processing/ns/`: quantile noise estimator with the parametric white/pink model "
                "during start-up, LRT, spectral flatness and spectral difference features with histogram-learnt "
                "thresholds, speech probability, decision-directed Wiener filter with the attenuation adjustment, "
@@ -1095,9 +1093,9 @@ ALGORITHMS = [
                "(#241). Several channels are handled as libwebrtc does: per-channel estimators, one Wiener filter "
                "that is the minimum over the channels per bin, and the minimum overall scaling factor and upper-band "
                "gain (#241). No difference from libwebrtc's NS remains.",
-         verification="The first chain test measured SNR against the raw talker, so the HPF's low-frequency "
-                      "phase shift counted as noise; the reference now goes through the same HPF. NS raises SNR "
-                      "from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
+         verification="On the v1 suppressor (retired in #565): the first chain test measured SNR against the raw "
+                      "talker, so the HPF's low-frequency phase shift counted as noise; the reference then went through "
+                      "the same HPF, and v1 raised SNR from 7.6 to 12.9 dB. libwebrtc's NS (`apm v2`, #241) on the e2e noise case, measured as "
                       "`sm_apm_compare` measures both stacks: SNR improvement -0.2 dB (libwebrtc -0.1, v1 +5.3), "
                       "noise attenuation in pauses 17.9 dB (17.9, v1 16.9), level change in speech -3.2 dB (-2.9, "
                       "v1 -1.3), delay 6 ms (6, v1 10). Like libwebrtc's, it takes the speech down along with the "
@@ -1111,14 +1109,14 @@ ALGORITHMS = [
                       "comes from the chain in front of NS (this library's high-pass filter, #239), not from NS."),
     dict(id="6.4", slug="gain-control", title="Automatic gain control and limiter",
          problems=["Volume too quiet, too loud, or clipping -> AGC2 automatic gain control, limiter, clipping predictor"],
-         headers=["audio/gain_control.h", "audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainControl", "GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
+         headers=["audio/agc2.h", "audio/agc2_rnn_vad.h", "audio/sinc_resampler.h", "audio/agc1.h", "audio/agc1_vad.h", "audio/agc_manager.h", "audio/clipping_predictor.h"], unit=["GainController2", "Agc2RnnVad", "Agc1", "Agc1VoiceActivity", "Agc1Manager", "Agc1CaptureLevels", "Agc1ClippingPredictor", "Agc1ClippingLevelBuffer"],
          e2e=["E2E_GainControl"],
-         bench=["audio/Agc_10ms"],
-         scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
-                  "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs, and the v1 AGC and limiter run only with `apm_v2 = false` until they are retired. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
-               "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
-               "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
+         bench=[],
+         scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB), through AGC1 as a call runs it "
+                  "and through AGC2; the quiet and loud talkers' levels, the noise in pauses and the peak are "
+                  "compared with libwebrtc's on the same signal.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs; the library's own AGC and limiter (v1) were retired in #565. "
+               "`agc2::GainController2` (#242) ports libwebrtc M157's AGC2 "
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
                "defaults (headroom 5 dB, max gain 50 dB, initial gain 15 dB, 6 dB/s, noise cap -50 dBFS). "
@@ -1149,9 +1147,9 @@ ALGORITHMS = [
                "and `AgcManagerDirect` asks it for a step after the clipping wait, as libwebrtc does; it is off "
                "by default (`ClippingPredictor::enabled = false`), as in libwebrtc, so a call never creates it "
                "and no metric moves.",
-         verification="The first e2e expectations contradicted the AGC2 design (noise cap, no attenuation) and "
-                      "were rewritten to test those behaviours. A unit test reused a buffer that the limiter had "
-                      "already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
+         verification="On the v1 AGC (retired in #565): the first e2e expectations contradicted the AGC2 design "
+                      "(noise cap, no attenuation) and were rewritten to test those behaviours, and a unit test reused "
+                      "a buffer that the limiter had already modified in place. AGC2 (`apm v2`, #242) on the e2e quiet-then-loud talker: "
                       "quiet talker -21.1 dBFS (libwebrtc AGC2 -21.0, v1 -16.8), loud talker -1.2 dB (-1.0), "
                       "noise in pauses -62.7 dBFS (-62.9), peak 0 dBFS (0.0). libwebrtc's "
                       "`GainDoesNotChangeFast` unit test never runs its loops (its frame count is negative); "
@@ -1189,12 +1187,12 @@ ALGORITHMS = [
                       "the e2e chain is unchanged."),
     dict(id="6.5", slug="high-pass-filter", title="High-pass filter",
          problems=["Low-frequency rumble or DC offset -> high-pass filter"],
-         headers=["audio/high_pass_filter.h", "audio/hpf.h", "audio/cascaded_biquad_filter.h"],
-         unit=["HighPassFilter", "Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
-         bench=["audio/HighPassFilter_10ms"],
-         scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
-                  "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's filter (`audio/hpf.h`) runs, and the v1 Butterworth runs only with `apm_v2 = false` until it is retired. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+         headers=["audio/hpf.h", "audio/cascaded_biquad_filter.h"],
+         unit=["Hpf", "CascadedBiquadFilter"], e2e=["E2E_HighPassFilter"],
+         bench=[],
+         scenario="A capture with 0.1 DC offset and 50 Hz hum through the high-pass filter; the DC and hum left "
+                  "at the output, and the clean talker's level change, are measured.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain runs libwebrtc's filter (`audio/hpf.h`); the library's 4th-order Butterworth (v1) was retired in #565.", verification="On the v1 filter (retired in #565): no defects found; its response matched 4th-order Butterworth. #239: "
                       "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
                       "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
                       "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
@@ -1239,10 +1237,11 @@ ALGORITHMS = [
                       "(sm_rtcp_interop)."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
-         headers=["audio/resampler.h", "audio/spl_resampler.h", "audio/push_resampler.h"],
-         unit=["Resampler", "SplResampler", "PushResampler"], e2e=["E2E_Resampler"],
-         bench=["audio/Resampler_48k_to_16k_10ms", "audio/Resampler_44k1_to_48k_10ms"],
-         scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone; "
+         headers=["audio/spl_resampler.h", "audio/push_resampler.h"],
+         unit=["SplResampler", "PushResampler"], e2e=["E2E_Resampler"],
+         bench=[],
+         scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone, through "
+                  "`PushResampler<float>`; "
                   "end-to-end SNR after fitting gain and phase, plus the output length.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The Audio Device Module (platform audio I/O, device switching) is platform glue rather than an "
                "algorithm and is out of scope; the resampler is what bridges device and processing rates. "
@@ -1253,8 +1252,8 @@ ALGORITHMS = [
                "`push_resampler.cc`, one `PushSincResampler` per channel (int16 or FloatS16, up to 8 channels), which "
                "`PushSincResampler` now also takes as int16, as libwebrtc. Differences: scratch buffers are members "
                "rather than malloc'ed per call, and the fixed-point sums wrap explicitly where libwebrtc relies on "
-               "overflow under RTC_NO_SANITIZE (same output); the ARM/MIPS assembly variants are not ported. The v1 "
-               "Kaiser `Resampler` stays until the v1 retirement (#565).",
+               "overflow under RTC_NO_SANITIZE (same output); the ARM/MIPS assembly variants are not ported. The "
+               "library's v1 Kaiser `Resampler` was retired in #565.",
          verification="#565: `SplResampler` is bit-exact with libwebrtc's own `resampler.cc` and `resample*.c` "
                       "compiled from `reference/`, on all 94 rate pairs and channel counts that take 10 ms blocks "
                       "(8, 11, 16, 22, 32, 44, 48 and 96 kHz, mono and stereo; golden hashes in "
