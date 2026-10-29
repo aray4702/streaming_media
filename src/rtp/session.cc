@@ -143,6 +143,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   vs.h264_packetization_mode = v.h264_packetization_mode;
   vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
   video_send_.push_back(std::move(vs));
+  // RtpVideoSender sets the video module's RTCP size to RtpConfig::max_packet_size
+  // (rtp_video_sender.cc:272), then to min(max_packet_size, kPathMTU - transport
+  // overhead) once the overhead is known (:860-865).
+  static constexpr int64_t kPathMtu = 1500;
+  rtcp_.SetMaxDatagramBytes(static_cast<size_t>(
+      std::min(cfg_.send_side.max_packet_size, kPathMtu - cfg_.send_side.transport_overhead_bytes)));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
@@ -157,7 +163,24 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
     send_.EnablePeriodicAlrProbing(false);
   }
   send_has_padding_ = true;
+  UpdateVideoPacketOverhead();
   return {static_cast<int>(video_send_.size()) - 1};
+}
+
+void Session::UpdateVideoPacketOverhead() {
+  if (!cfg_.send_side.expected_packet_overhead || video_send_.empty()) return;
+  size_t overhead = 0;
+  for (const SendStream& v : video_send_) {
+    size_t bytes = v.sender->ExpectedPerPacketOverhead();
+    // With NACK off libwebrtc's stream has no RTX SSRC, so no RTX header is reserved (as the RTX
+    // reservation in SendVideo; issue #513).
+    constexpr size_t kRtxHeaderSize = 2;
+    if (v.sender->config().rtx_ssrc && !v.nack) bytes -= kRtxHeaderSize;
+    overhead += bytes;
+  }
+  // rtp_video_sender.cc:878-880: the average when more than one stream sends media.
+  overhead /= video_send_.size();
+  send_.SetRtpOverheadPerPacket(static_cast<int64_t>(overhead));
 }
 
 void Session::MaybeCreateSync() {
@@ -269,9 +292,11 @@ SendSideController::AudioAllocation Session::AudioAllocationOf(const SendStream&
   // AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver
   // (audio_send_stream.cc:808-901): overhead_per_packet_ is the transport's bytes plus
   // RTPSender::ExpectedPerPacketOverhead, the media header with its non-volatile
-  // extensions (UpdateOverheadPerPacket, :529-545).
-  const DataSize overhead =
-      DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(a.sender->MediaHeaderSize()));
+  // extensions (UpdateOverheadPerPacket, :529-545). Without expected_packet_overhead, the header
+  // the next packet carries (MediaHeaderSize: MID at its length while it is repeated, no audio level).
+  const size_t header =
+      cfg_.send_side.expected_packet_overhead ? a.sender->ExpectedPerPacketOverhead() : a.sender->MediaHeaderSize();
+  const DataSize overhead = DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(header));
   const DataRate at_longest = DataRate::FromSizeAndTime(overhead, a.max_frame_length);
   const DataRate at_shortest = DataRate::FromSizeAndTime(overhead, a.min_frame_length);
   return {a.min_bitrate + at_longest, a.max_bitrate + at_shortest, a.priority_bitrate + at_longest};
@@ -395,7 +420,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;
   vs.frame_times.push_back(now);
   RtpSender& s = *vs.sender;
-  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation, abs_capture_time);
+  const size_t packetized = s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation, abs_capture_time);
+  send_.OnVideoPacketized(encoded_size, packetized, now);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {
@@ -577,6 +603,13 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     for (auto& v : video_send_) handle(v);
     for (auto& a : audio_send_) handle(a);
   }
+  // Each receive stream's RTCPReceiver keeps the RTT of report blocks on its local SSRC
+  // (RegisteredSsrcs, RttStats::AddRtt; rtcp_receiver.cc:516-575): ModuleRtpRtcpImpl2::LastRtt.
+  for (size_t i = 0; i < in.rtts.size(); ++i) {
+    if (in.rtt_ssrcs[i] != cfg_.local_ssrc) continue;
+    for (auto& v : video_recv_) v.receiver->OnReportBlockRtt(in.rtts[i]);
+    for (auto& a : audio_recv_) a.receiver->OnReportBlockRtt(in.rtts[i]);
+  }
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
@@ -636,6 +669,8 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       if (rb.ssrc == a.sender->config().ssrc) a.sender->OnReceivedAckOnSsrc();
     }
   }
+  // RTPSender::OnReceivedAckOnSsrc / OnReceivedAckOnRtxSsrc call UpdateHeaderSizes: MID may stop counting.
+  if (!in.report_blocks.empty()) UpdateVideoPacketOverhead();
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;
     e.type = SessionEventType::kReportBlock;
@@ -715,6 +750,9 @@ void Session::PeriodicRttUpdate(Timestamp now) {
     }
     if (!video_recv_.empty() && pending_rr_rtt_) {
       OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
+      // set_rtt_ms on each video receive module, which has RRTR on (the audio one has it only with
+      // AudioReceiveStream's enable_non_sender_rtt, off by default).
+      for (auto& v : video_recv_) v.receiver->OnPeriodicRtt(TimeDelta::Millis(pending_rr_rtt_->ms()));
       pending_rr_rtt_.reset();
     }
     next_rtt_update_ += kRttUpdateInterval;

@@ -301,6 +301,50 @@ SM_TEST(VcmTiming, JitterFrameRateIsWholeMillihertz) {
   SM_EXPECT_TRUE(e.frame_rate_hz() == 33332 * (1 / 1000.0));
 }
 
+SM_TEST(VcmTiming, JitterFrameRateMeanIsWelfordsAsRollingAccumulator) {
+  // fps_counter_ is RollingAccumulator<uint64_t>::ComputeMean, RunningStatistics' Welford mean
+  // (#674). On these 7 periods it is 33345.999999999993 us, not the exact 33346, so
+  // TimeDelta::Micros truncates it to 33345 us: 1e9 / 33345 = 29989 mHz (sum / count gives 29988).
+  JitterEstimator e;
+  Timestamp now = Timestamp::Seconds(1);
+  e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);  // Sets the previous frame size only.
+  now += TimeDelta::Micros(33333);
+  e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);  // First update time, no period yet.
+  for (int64_t period_us : {33314, 33340, 33366, 33354, 33324, 33329, 33395}) {
+    now += TimeDelta::Micros(period_us);
+    e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);
+  }
+  SM_EXPECT_TRUE(e.frame_rate_hz() == 29989 * (1 / 1000.0));
+}
+
+SM_TEST(VcmTiming, RollingMeanKeepsTheLast30SamplesWithWelfordsUpdate) {
+  RollingMean m;
+  SM_EXPECT_TRUE(m.ComputeMean() == 0.0);  // GetMean().value_or(0) with no samples.
+  // RunningStatistics' update, written out: add while the window fills, then remove the oldest.
+  uint64_t samples[45];
+  for (int i = 0; i < 45; ++i) samples[i] = 33000 + static_cast<uint64_t>((i * 7919) % 701);
+  double mean = 0;
+  int64_t size = 0;
+  for (int i = 0; i < 45; ++i) {
+    if (size == 30) {
+      --size;
+      mean -= (static_cast<double>(samples[i - 30]) - mean) / static_cast<double>(size);
+    }
+    ++size;
+    mean += (static_cast<double>(samples[i]) - mean) / static_cast<double>(size);
+    m.AddSample(samples[i]);
+    SM_EXPECT_TRUE(m.ComputeMean() == mean);
+  }
+  // Only the last 30 samples count.
+  double sum = 0;
+  for (int i = 15; i < 45; ++i) sum += static_cast<double>(samples[i]);
+  SM_EXPECT_TRUE(std::fabs(m.ComputeMean() - sum / 30) < 1e-6);
+  m.Reset();
+  SM_EXPECT_TRUE(m.ComputeMean() == 0.0);
+  m.AddSample(40000);
+  SM_EXPECT_TRUE(m.ComputeMean() == 40000.0);
+}
+
 // --- DecodeTimePercentileFilter ---
 
 SM_TEST(VcmTiming, DecodeTimeFilterIgnoresFirstFiveSamples) {

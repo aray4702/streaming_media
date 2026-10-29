@@ -567,6 +567,36 @@ SM_TEST(Session, MidIsRepeatedUntilThePeerAnswersWithOne) {
   SM_EXPECT_EQ(q.a.audio_sender(q.a_audio).stats().mid_packets, 0u);
 }
 
+// RtpVideoSender::OnBitrateUpdated (rtp_video_sender.cc:869-882, issue #577): with
+// expected_packet_overhead the video overhead rate counts the senders' ExpectedPerPacketOverhead,
+// 22 B with transport-cc and RTX (as sm_compare's libwebrtc sender), 20 B when NACK is off (no RTX
+// stream in libwebrtc); off, the fixed 24 B.
+SM_TEST(Session, ExpectedPacketOverheadIsTheVideoSendersHeader) {
+  SessionConfig c;
+  c.local_ssrc = 1;
+  c.extensions.Register(1, sync::uri::kTransportCc);
+  c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  auto target = [&](bool on, bool nack) {
+    SessionConfig sc = c;
+    sc.send_side.expected_packet_overhead = on;
+    Session s(sc);
+    VideoStreamConfig v = Video();
+    v.nack = nack;
+    s.AddVideoSend(v);
+    s.Process(Timestamp::Millis(0));
+    return std::pair{s.send_side().rtp_overhead_per_packet(), s.rates().video_target.bps()};
+  };
+  const auto [off_bytes, off_rate] = target(false, true);
+  const auto [nack_bytes, nack_rate] = target(true, true);
+  const auto [plain_bytes, plain_rate] = target(true, false);
+  SM_EXPECT_EQ(off_bytes, 24);
+  SM_EXPECT_EQ(nack_bytes, 22);
+  SM_EXPECT_EQ(plain_bytes, 20);
+  // A smaller header leaves the encoder more of the same allocation.
+  SM_EXPECT_GT(nack_rate, off_rate);
+  SM_EXPECT_GE(plain_rate, nack_rate);
+}
+
 SM_TEST(Session, RatesSplitTheTargetBetweenAudioAndVideo) {
   SessionConfig c = Cfg(1);
   c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(1000);
@@ -1009,6 +1039,14 @@ SM_TEST(Session, RttIsAggregatedPerSendStreamByDefault) {
   SM_EXPECT_TRUE(SessionConfig{}.per_stream_rtt);
 }
 
+// #575: every receive stream keeps libwebrtc's StreamStatisticianImpl rules (max reordering
+// threshold, stream restart, 255-scaled fraction lost; receive_statistics_impl.cc), as
+// libwebrtc always does.
+SM_TEST(Session, ReceiveStatisticsFollowLibwebrtcByDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.receive_statistics_v2);
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.receive_statistics_v2);
+}
+
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
 // frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
@@ -1245,4 +1283,33 @@ SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
   SM_EXPECT_LE(std::abs(last.local_capture_clock_offset->ms()), 1);
   SM_EXPECT_NEAR(static_cast<double>(last.ntp_time_ms),
                  static_cast<double>(sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value)), 1.0);
+}
+
+// Each receive stream's RemoteNtpTimeEstimator waits for its own module's LastRtt
+// (rtp_rtcp_impl2.cc:482-491, 740-751): a receive-only video stream has the XR DLRR RTT from the 1 s
+// periodic update, while the audio one, without AudioReceiveStream's enable_non_sender_rtt (off by
+// default), has none, and so trains no estimate, as in libwebrtc's one-way call. SetRtt does not change it.
+SM_TEST(Session, ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  for (SessionConfig* c : {&ca, &cb}) c->rtcp.xr_rrtr = true;
+  Session a(ca), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  a.AddAudioSend(au);
+  a.AddVideoSend(Video());
+  NullDecoder dec;
+  const AudioRecvId ar = b.AddAudioReceive(au, &dec);
+  const VideoRecvId vr = b.AddVideoReceive(Video());
+  for (int64_t t = 0; t < 8000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t == 4000) b.SetRtt(TimeDelta::Millis(120));
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+  }
+  SM_EXPECT_TRUE(b.video_receiver(vr).LastRtt().has_value());
+  SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 1u);
+  SM_EXPECT_FALSE(b.audio_receiver(ar).LastRtt().has_value());
+  SM_EXPECT_EQ(b.audio_receiver(ar).stats().remote_ntp_updates, 0u);
 }

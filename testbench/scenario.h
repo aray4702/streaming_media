@@ -102,17 +102,23 @@ struct Scenario {
   bool rate_utilization_tracker = true;
   // `adjuster_on_update on|off`: the bitrate adjuster re-runs only when VideoStreamEncoder's
   // UpdateBitrateAllocation does (an allocation update, a reconfiguration, every 1 s; issue #569;
-  // rtp::VideoSendControllerConfig::adjuster_on_update). Off (the default until its flip is judged on
-  // the parity report): every captured frame.
-  bool adjuster_on_update = false;
+  // rtp::VideoSendControllerConfig::adjuster_on_update). On by default, as libwebrtc (issue #637); off:
+  // every captured frame.
+  bool adjuster_on_update = true;
   // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
   // issue #568). On by default, as libwebrtc; `off` keeps one session-wide RTT.
   bool per_stream_rtt = true;
   // `receive_statistics_v2 on|off`: both sessions keep receive statistics as libwebrtc's
   // StreamStatisticianImpl (max reordering threshold, stream restart, 255-scaled fraction lost;
-  // rtp::SessionConfig::receive_statistics_v2; issue #575). Off by default until it is judged.
-  bool receive_statistics_v2 = false;
+  // rtp::SessionConfig::receive_statistics_v2; issue #575). On by default, as libwebrtc; `off` keeps
+  // the RFC 3550 counts with no reordering threshold.
+  bool receive_statistics_v2 = true;
+  // `expected_packet_overhead on|off`: the sender's video overhead rate counts the RTP header it
+  // builds (RtpSender::ExpectedPerPacketOverhead: 12 + the registered non-volatile extensions + 2 with
+  // RTX, 22 B here with NACK, 20 without), as libwebrtc's RtpVideoSender; off: a fixed 24 B
+  // (rtp::SendSideConfig::expected_packet_overhead; issue #577). Off by default until it is judged.
+  bool expected_packet_overhead = false;
   // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). On by default, as libwebrtc.

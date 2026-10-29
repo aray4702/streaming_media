@@ -68,11 +68,36 @@ constexpr int64_t MulInt(int64_t a, int64_t s) {
   if (overflow) return positive ? kPlusInf : kMinusInf;
   return a * s;
 }
-// RelativeUnit::operator*(double) (unit_base.h:265-267). libwebrtc rounds with std::llround; this
-// still truncates, as before #451 (the rounding moves the scenario suite: #461).
+// std::llround, constexpr: the nearest integer, halves away from zero. The fractional part of a
+// double is exact, so comparing it with 0.5 rounds as llround does. Out of range saturates, NaN is
+// zero (both undefined for llround).
+constexpr int64_t RoundDouble(double v) {
+  if (v != v) return 0;
+  if (v >= 9223372036854775808.0) return kPlusInf;
+  if (v <= -9223372036854775808.0) return kMinusInf;
+  int64_t t = static_cast<int64_t>(v);
+  const double frac = v - static_cast<double>(t);
+  if (frac >= 0.5) ++t;
+  else if (frac <= -0.5) --t;
+  return t;
+}
+// RelativeUnit::operator*(double) (unit_base.h:265-267): std::llround(value * scalar) (#461).
 constexpr int64_t MulDouble(int64_t a, double s) {
   if (IsInf(a)) return s > 0 ? a : s < 0 ? Neg(a) : 0;
-  return FromDouble(static_cast<double>(a) * s);
+  return RoundDouble(static_cast<double>(a) * s);
+}
+// rtc_base/numerics/divide_round.h DivideRoundToNearest(v, d) for d > 0, used by UnitBase::ToFraction
+// (unit_base.h:163-167) for the integer getters: the nearest integer, halves toward plus infinity
+// (1.5 -> 2, -1.5 -> -1).
+constexpr int64_t DivideRoundToNearest(int64_t v, int64_t d) {
+  int64_t q = v / d;
+  const int64_t r = v % d;
+  if (v < 0) {
+    if (-r > d / 2) --q;
+  } else if (r > (d - 1) / 2) {
+    ++q;
+  }
+  return q;
 }
 constexpr int64_t ToInt64(size_t v) {
   return static_cast<uint64_t>(v) > static_cast<uint64_t>(kPlusInf) ? kPlusInf : static_cast<int64_t>(v);
@@ -97,7 +122,8 @@ class TimeDelta {
   static constexpr TimeDelta MinusInfinity() { return TimeDelta(std::numeric_limits<int64_t>::min()); }
 
   constexpr int64_t us() const { return us_; }
-  constexpr int64_t ms() const { return us_ / 1000; }
+  // TimeDelta::ms() (api/units/time_delta.h:64-66): ToFraction<1000>, rounded to the nearest (#461).
+  constexpr int64_t ms() const { return units_impl::DivideRoundToNearest(us_, 1000); }
   constexpr double ms_f() const { return static_cast<double>(us_) / 1e3; }
   constexpr double seconds() const { return static_cast<double>(us_) / 1e6; }
   constexpr bool IsFinite() const {
@@ -145,7 +171,8 @@ class Timestamp {
   static constexpr Timestamp MinusInfinity() { return Timestamp(std::numeric_limits<int64_t>::min()); }
 
   constexpr int64_t us() const { return us_; }
-  constexpr int64_t ms() const { return us_ / 1000; }
+  // Timestamp::ms() (api/units/timestamp.h:56-58): ToFraction<1000>, rounded to the nearest (#461).
+  constexpr int64_t ms() const { return units_impl::DivideRoundToNearest(us_, 1000); }
   constexpr double seconds() const { return static_cast<double>(us_) / 1e6; }
   constexpr bool IsFinite() const {
     return us_ != std::numeric_limits<int64_t>::max() && us_ != std::numeric_limits<int64_t>::min();
@@ -175,7 +202,8 @@ class DataSize {
   static constexpr DataSize PlusInfinity() { return DataSize(units_impl::kPlusInf); }
   static constexpr DataSize MinusInfinity() { return DataSize(units_impl::kMinusInf); }
   constexpr int64_t bytes() const { return bytes_; }
-  constexpr int64_t bits() const { return bytes_ * 8; }
+  // UnitBase::ToMultiple<8> (unit_base.h:175-181), saturating as MulInt.
+  constexpr int64_t bits() const { return units_impl::MulInt(bytes_, 8); }
   constexpr bool IsFinite() const { return !units_impl::IsInf(bytes_); }
   constexpr bool IsPlusInfinity() const { return bytes_ == units_impl::kPlusInf; }
   constexpr bool IsMinusInfinity() const { return bytes_ == units_impl::kMinusInf; }
@@ -228,15 +256,19 @@ class DataRate {
   constexpr auto operator<=>(const DataRate&) const = default;
 
   // size / time -> rate, rate * time -> size.
+  // operator/(DataSize, TimeDelta) (api/units/data_rate.h:99-102): data_rate_impl::Microbits(size) / us,
+  // truncated; the microbits saturate as MulInt.
   static constexpr DataRate FromSizeAndTime(DataSize s, TimeDelta t) {
-    return t.us() <= 0 ? DataRate::Zero() : DataRate(s.bits() * 1000000 / t.us());
+    return t.us() <= 0 ? DataRate::Zero() : DataRate(units_impl::Div(units_impl::MulInt(s.bytes(), 8000000), t.us()));
   }
-  // operator*(DataRate, TimeDelta) (api/units/data_rate.h). libwebrtc rounds the microbits to the
-  // nearest byte; this still truncates, as before #451 (#461).
+  // operator*(DataRate, TimeDelta) (api/units/data_rate.h:106-110): the microbits rounded to the
+  // nearest byte, (microbits + 4000000) / 8000000 (#461).
   constexpr DataSize operator*(TimeDelta t) const {
     const int64_t microbits = units_impl::MulInt(bps_, t.us());
     if (units_impl::IsInf(microbits)) return microbits > 0 ? DataSize::PlusInfinity() : DataSize::MinusInfinity();
-    return DataSize::Bytes(microbits / 8000000);
+    // The same value, without overflowing the + 4000000 for microbits near the maximum.
+    if (microbits >= 0) return DataSize::Bytes(microbits / 8000000 + (microbits % 8000000 + 4000000) / 8000000);
+    return DataSize::Bytes((microbits + 4000000) / 8000000);
   }
 
  private:

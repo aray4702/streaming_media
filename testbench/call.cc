@@ -191,18 +191,30 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
+void AddAvSyncToVideoTrace(const AvSyncMeter& av_sync, std::vector<VideoTraceRow>& trace) {
+  for (VideoTraceRow& r : trace) {
+    const AvSyncMeter::Second* sec = av_sync.InSecond(r.t_ms / 1000 - 1);
+    if (sec == nullptr || sec->frames == 0) continue;
+    r.av_offset_ms = sec->offset_sum_ms / sec->frames;
+    r.av_offset_abs_max_ms = sec->offset_abs_max_ms;
+    r.video_delay_ms = sec->video_delay_sum_ms / sec->frames;
+  }
+}
+
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
       "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
       "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,"
-      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped\n";
-  char ms[96], gap[64];
+      "qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped,av_offset_ms,av_offset_abs_max_ms,"
+      "video_delay_ms\n";
+  char ms[96], gap[64], av[96];
   for (const auto& r : trace) {
     const double n = r.encoded > 0 ? r.encoded : 1;
     std::snprintf(ms, sizeof(ms), "%.1f,%.1f,%.2f", r.pacer_queue_ms, static_cast<double>(r.qp_sum) / n,
                   static_cast<double>(r.encode_us_sum) / 1000.0 / n);
     std::snprintf(gap, sizeof(gap), "%.1f,%.1f", r.max_render_gap_ms, static_cast<double>(r.height_sum) / n);
+    std::snprintf(av, sizeof(av), "%.1f,%.1f,%.1f", r.av_offset_ms, r.av_offset_abs_max_ms, r.video_delay_ms);
     out += std::to_string(r.t_ms / 1000) + "," + std::to_string(r.encoder_target_bps) + "," +
            std::to_string(r.alloc_target_bps) + "," + std::to_string(r.captured) + "," + std::to_string(r.encoded) + "," +
            std::to_string(r.dropped_capturer) + "," + std::to_string(r.dropped_encoder_queue) + "," +
@@ -212,7 +224,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
            std::to_string(r.keyframes) + "," + std::to_string(r.keyframe_bytes) + "," + std::to_string(r.rendered) + "," +
            gap + "," + std::to_string(r.qs_checks) + "," + std::to_string(r.qs_qp_high) + "," +
            std::to_string(r.qs_qp_low) + "," + std::to_string(r.qs_drop_pct) + "," + std::to_string(r.qs_signal) + "," +
-           std::to_string(r.rx_complete) + "," + std::to_string(r.rx_decoded) + "," + std::to_string(r.rx_dropped) + "\n";
+           std::to_string(r.rx_complete) + "," + std::to_string(r.rx_decoded) + "," + std::to_string(r.rx_dropped) + "," + av + "\n";
   }
   return out;
 }
@@ -625,6 +637,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     c.send_side.send_rate_stats = s.send_rate_stats;
     c.send_side.link_headroom = s.link_headroom;
     c.send_side.control_handler = s.control_handler;
+    c.send_side.expected_packet_overhead = s.expected_packet_overhead;  // Issue #577.
     c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
     // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
     // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
@@ -948,14 +961,18 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     };
     // The encoder hands a frame to the library and the sender when it is done:
     // at once, or after the encode-time model with `encode_delay on`.
+    // As VideoStreamEncoder::OnEncodedImage, the frame goes to the sender first and the library's
+    // post-encode step (RunPostEncode) then gets the size of the frame as sent, after the keyframe SPS
+    // rewrite (issue #655).
     auto frame_encoded = [&](const PendingFrame& f) {
-      video_ctl.OnEncoded(f.report, f.done);
       frame_capture[f.rtp_ts] = f.capture;
       frame_times[f.rtp_ts].capture = f.capture;
       frame_times[f.rtp_ts].submitted = f.done;
       if (opt.link_trace) frame_rtx_room[f.rtp_ts] = rtx_ack.Room();
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
-      sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
+      rtp::EncodedFrameReport sent = f.report;
+      sent.size = sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
+      video_ctl.OnEncoded(sent, f.done);
     };
     // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
     // that encodes a held frame).
@@ -1388,6 +1405,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
     m["video.time_to_first_frame_ms"] = video_first.IsFinite() ? static_cast<double>(video_first.ms()) : static_cast<double>(end_ms);
     av_sync.AddMetrics(m);
+    AddAvSyncToVideoTrace(av_sync, rep.video_trace);
     m["video.avg_kbps"] = static_cast<double>(video_bytes_encoded) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] = frames_encoded ? static_cast<double>(qp_sum) / static_cast<double>(frames_encoded) : 0;
     m["video.encode_height_mean"] = frames_encoded ? static_cast<double>(height_sum) / static_cast<double>(frames_encoded) : 0;

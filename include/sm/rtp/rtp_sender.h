@@ -153,9 +153,11 @@ class RtpSender : public MetricsSource {
   // (rtp_cvo.h): the rotation alone, camera and flip bits 0.
   // `abs_capture_time` (from VideoAbsoluteCaptureTime) goes on the first
   // packet when the extension is mapped (rtp_sender_video.cc:425-428).
-  void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                      bool keyframe = false, video::Rotation rotation = video::Rotation::k0,
-                      const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
+  // Returns the payload bytes of the frame's video packets, RED headers
+  // included (RTPSenderVideo::LogAndSendToNetwork's packetized_payload_size).
+  size_t SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+                        bool keyframe = false, video::Rotation rotation = video::Rotation::k0,
+                        const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
   // RTPSenderVideo::SendVideo (rtp_sender_video.cc:690-707), once per frame
   // before packetization: the extension for a frame captured at
   // `capture_time` (on the `now` clock), whole milliseconds of NTP time and
@@ -205,6 +207,14 @@ class RtpSender : public MetricsSource {
   // while the media SSRC has been acked and the RTX SSRC not yet, the MID extension's room
   // (2 + its length; this sender has no RID) and 3 bytes for rounding the extensions up to 4.
   size_t RtxPacketOverhead() const;
+  // RTPSender::ExpectedPerPacketOverhead, the max_media_packet_header_ of UpdateHeaderSizes
+  // (rtp_sender.cc:537-540, :736-786): the fixed header plus the registered non-volatile extensions of
+  // kVideoExtensionSizes or kAudioExtensionSizes (IsNonVolatile, :116-140): transport-cc,
+  // abs-send-time, the audio level on audio, and MID at its largest (RtpMid::kMaxValueSizeBytes, 16)
+  // while the media SSRC, or the RTX SSRC, has not been acked; plus kRtxHeaderSize (2) with an RTX
+  // SSRC. RtpVideoSender::OnBitrateUpdated takes it as the packet overhead of its overhead rate
+  // (rtp_video_sender.cc:869-882; issue #577).
+  size_t ExpectedPerPacketOverhead() const;
   // RTPSender::OnReceivedAckOnSsrc / OnReceivedAckOnRtxSsrc (rtp_sender.cc:367-385): a report
   // block for the media or the RTX SSRC arrived (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
   // rtp_rtcp_impl2.cc:694-713).

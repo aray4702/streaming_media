@@ -75,6 +75,17 @@ SM_TEST(E2E_Apm, DefaultChainIsLibwebrtcs) {
   SM_EXPECT_TRUE(def.out != c.capture);
 }
 
+// libwebrtc M157's call runs AGC1, never AGC2 (#670):
+// `AudioProcessing::Config::GainController2::enabled` defaults to false
+// (api/audio/audio_processing.h), `WebRtcVoiceEngine::ApplyOptions` sets only
+// `gain_controller1` (media/engine/webrtc_voice_engine.cc), and APM creates
+// `GainController2`, the only user of the RNN VAD, only when it is enabled
+// (`AudioProcessingImpl::InitializeGainController2`). So AGC2 stays opt-in.
+SM_TEST(E2E_Apm, CallRunsAgc1NotAgc2AsLibwebrtc) {
+  const ChainConfig def;
+  SM_EXPECT_TRUE(!def.agc2);
+}
+
 SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   CallScenario s;
   s.far_talk = false;
@@ -332,7 +343,7 @@ SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
   for (size_t f = 0; f + 1 < speech.size() / 320; ++f) {
     std::span<const float> fr(speech.data() + f * 320, 320);
     std::span<const float> nz(noise.data() + f * 320, 320);
-    bool v = vad.Process(fr.first(160)) | vad.Process(fr.last(160));
+    bool v = vad.VoiceActivity(fr, fs) == Vad::kActive;  // 20 ms, as libwebrtc allows.
     auto rx = DecodeAudioLevelExtension(EncodeAudioLevelExtension({ComputeLevel(fr), v}));
     if (f * 20 >= 1500 && rx.level < 60) {
       speech_level += rx.level;

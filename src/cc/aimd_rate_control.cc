@@ -21,7 +21,7 @@ void BitrateEstimator::Update(Timestamp at_time, DataSize amount, bool in_alr) {
   // A larger window at the beginning gives a more stable first sample.
   if (bitrate_estimate_kbps_ < 0.f) rate_window_ms = kInitialRateWindowMs;
   bool is_small_sample = false;
-  float bitrate_sample_kbps = UpdateWindow(at_time.us() / 1000, static_cast<int>(amount.bytes()), rate_window_ms, &is_small_sample);
+  float bitrate_sample_kbps = UpdateWindow(at_time.ms(), static_cast<int>(amount.bytes()), rate_window_ms, &is_small_sample);
   if (bitrate_sample_kbps < 0.0f) return;
   if (bitrate_estimate_kbps_ < 0.0f) {
     bitrate_estimate_kbps_ = bitrate_sample_kbps;  // The very first sample.

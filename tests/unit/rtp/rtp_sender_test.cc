@@ -205,6 +205,19 @@ SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   SM_EXPECT_EQ(s.rtx().history_size(), 4u);
 }
 
+// Issue #619: SendVideoFrame returns the payload bytes of the frame's video packets, RED headers
+// included, as RTPSenderVideo::LogAndSendToNetwork sums them (rtp_sender_video.cc:245-251) for the
+// post-encode overhead.
+SM_TEST(RtpSender, VideoFrameReturnsItsPacketizedPayloadSize) {
+  RtpSender s(VideoCfg());
+  SM_EXPECT_EQ(s.SendVideoFrame(Chunks({100, 200, 50}), 1, Timestamp::Millis(0)), 350u);
+  SM_EXPECT_EQ(s.SendVideoFrame({}, 2, Timestamp::Millis(1)), 0u);
+  RtpSenderConfig c = VideoCfg();
+  c.fec = true;
+  RtpSender red(c);
+  SM_EXPECT_EQ(red.SendVideoFrame(Chunks({100, 100, 100, 100}), 1, Timestamp::Millis(0)), 404u);
+}
+
 // rtx_payload_type_map_: a RED packet is resent with the RTX payload type associated with RED.
 SM_TEST(RtpSender, RedPacketIsResentWithTheRedRtxPayloadType) {
   RtpSenderConfig c = VideoCfg();
@@ -516,6 +529,57 @@ SM_TEST(RtpSender, EmptyPaddingWithItsHeaderExtensionsFitsThePacketLimit) {
     SM_ASSERT_GT(out.size(), 0u);
     SM_EXPECT_EQ(static_cast<size_t>(out[0].packet.padding_size), std::min<size_t>(limit - 20, 255));
   }
+}
+
+// RTPSender::ExpectedPerPacketOverhead (rtp_sender.cc:537-540, UpdateHeaderSizes :736-786, issue #577):
+// the fixed header, the registered non-volatile extensions rounded up to 4, and kRtxHeaderSize with RTX.
+// sm_compare's libwebrtc sender (transport-cc only) reports 22 with RTX and 20 without.
+SM_TEST(RtpSender, ExpectedPerPacketOverheadIsTheHeaderWithNonVolatileExtensions) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &ext;
+  c.rtx_ssrc = 0x300;
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 22u);  // 12 + (4 + 3 -> 8) + 2.
+  c.rtx_ssrc.reset();
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 20u);
+  c.extensions = nullptr;
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 12u);  // No extensions: no block.
+  // abs-send-time (3) is non-volatile; the video orientation and absolute capture time are volatile.
+  sync::ExtensionMap more = TccExtensions();
+  more.Register(3, sync::uri::kAbsSendTime);
+  more.Register(5, sync::uri::kVideoOrientation);
+  more.Register(6, sync::uri::kAbsCaptureTime);
+  c.extensions = &more;
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 12u + 12u);  // 4 + 3 + 4 = 11 -> 12.
+  // The audio level is non-volatile on an audio sender (kAudioExtensionSizes).
+  more.Register(7, sync::uri::kAudioLevel);
+  RtpSenderConfig a = c;
+  a.video = false;
+  SM_EXPECT_EQ(RtpSender(a).ExpectedPerPacketOverhead(), 12u + 12u + 4u);  // 4 + 3 + 4 + 2 = 13 -> 16.
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 12u + 12u);  // Not in kVideoExtensionSizes.
+}
+
+// UpdateHeaderSizes (rtp_sender.cc:744-772): MID counts at its largest (16) while it is sent on the
+// media SSRC (not yet acked) or on the RTX SSRC (RTX not yet acked), whatever the MID's length.
+SM_TEST(RtpSender, ExpectedPerPacketOverheadCountsMidUntilBothSsrcsAreAcked) {
+  sync::ExtensionMap ext = TccExtensions();
+  ext.Register(4, sync::uri::kMid);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &ext;
+  c.mid = "v";
+  c.rtx_ssrc = 0x300;
+  RtpSender s(c);
+  SM_EXPECT_EQ(s.ExpectedPerPacketOverhead(), 12u + 24u + 2u);  // 4 + 3 + 17 = 24.
+  s.OnReceivedAckOnSsrc();
+  SM_EXPECT_EQ(s.ExpectedPerPacketOverhead(), 12u + 24u + 2u);  // Still sent on RTX.
+  s.OnReceivedAckOnRtxSsrc();
+  SM_EXPECT_EQ(s.ExpectedPerPacketOverhead(), 12u + 8u + 2u);
+  c.rtx_ssrc.reset();
+  RtpSender n(c);
+  n.OnReceivedAckOnSsrc();
+  SM_EXPECT_EQ(n.ExpectedPerPacketOverhead(), 12u + 8u);
+  c.mid.clear();
+  SM_EXPECT_EQ(RtpSender(c).ExpectedPerPacketOverhead(), 12u + 8u);  // No MID to send.
 }
 
 // RTPSender::RtxPacketOverhead (rtp_sender.cc:564-595): kRtxHeaderSize with RTX, 0 without.

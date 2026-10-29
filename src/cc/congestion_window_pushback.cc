@@ -5,7 +5,7 @@
 namespace sm::cc {
 
 void CongestionWindowPushback::OnFeedbackRtt(TimeDelta max_feedback_rtt) {
-  rtts_ms_.push_back(max_feedback_rtt.us() / 1000);
+  rtts_ms_.push_back(max_feedback_rtt.ms());  // goog_cc_network_control.cc:443, rounded (#461)
   if (rtts_ms_.size() > cfg_.rtt_window) rtts_ms_.pop_front();
 }
 

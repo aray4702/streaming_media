@@ -88,6 +88,14 @@ struct SendSideConfig {
   // TCP/IPv4 header (rtp_rtcp_impl2.cc:146-150; issue #580).
   int64_t max_packet_size = 1460;
   int64_t rtp_overhead_bytes = 24;
+  // RtpVideoSender::OnBitrateUpdated's overhead_bytes_per_packet (rtp_video_sender.cc:869-882, issue
+  // #577). On: the session sets `rtp_overhead_bytes` from its video senders' RtpSender::
+  // ExpectedPerPacketOverhead (the header with the registered non-volatile extensions, plus 2 with
+  // RTX), averaged over the streams, whenever it changes, and an audio stream's allocation limits
+  // add its ExpectedPerPacketOverhead (AudioSendStream::UpdateOverheadPerPacket). Off: the fixed 24,
+  // and the audio header the next packet carries. Off by default until the flip is judged on the
+  // parity report.
+  bool expected_packet_overhead = false;
   EventSink* events = nullptr;
 };
 
@@ -182,6 +190,12 @@ class SendSideController : public MetricsSource {
   // stream's pad-up rate is 0 (CalculateMaxPadBitrateBps for one stream without
   // min_transmit_bitrate), so disable_padding_ changes no limit.
   void OnVideoFrameEncoded(Timestamp now);
+  // RTPSenderVideo::LogAndSendToNetwork (rtp_sender_video.cc:241-258): a frame of
+  // `encoder_output_size` bytes went out as video packets whose payloads sum to
+  // `packetized_payload_size`. What packetization adds (H.264 FU-A headers less
+  // the Annex-B start codes; nothing when it saves bytes) is the post-encode
+  // overhead, tracked over 1 s and taken off the encoder target (issue #619).
+  void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
   bool video_registered() const { return video_registered_; }
 
@@ -193,6 +207,12 @@ class SendSideController : public MetricsSource {
   // defaults (cc::GccController::SetPacingFactor). The session sets 1.1 when it
   // adds a video stream with transport-cc, as VideoSendStreamImpl does (#187).
   void SetPacingFactor(double factor);
+
+  // The RTP bytes of one media packet in the video overhead rate (SendSideConfig::rtp_overhead_bytes),
+  // read at the next allocation, as RtpVideoSender reads ExpectedPerPacketOverhead in each
+  // OnBitrateUpdated. The session calls it with `expected_packet_overhead` (issue #577).
+  void SetRtpOverheadPerPacket(int64_t bytes) { cfg_.rtp_overhead_bytes = bytes; }
+  int64_t rtp_overhead_per_packet() const { return cfg_.rtp_overhead_bytes; }
 
   // RtpTransportControllerSend::EnablePeriodicAlrProbing (StreamsConfig::
   // requests_alr_probing): ALR probes every 5 s while application limited. The
@@ -338,6 +358,8 @@ class SendSideController : public MetricsSource {
   // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
   // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
   RateStatistics video_rate_, rtx_rate_, fec_rate_;
+  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read as of the last Process().
+  RateStatistics post_encode_overhead_rate_{1000, 8000.0f};
   Timestamp last_process_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
