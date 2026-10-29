@@ -1,27 +1,131 @@
 #include "sm/rtp/h264.h"
 
 #include <algorithm>
+#include <optional>
+
+#include "sm/rtp/sps_vui_rewriter.h"
 
 namespace sm::rtp {
 namespace {
 constexpr uint8_t kStartCode[4] = {0, 0, 0, 1};
 constexpr size_t kFuAOverhead = 2;  // FU indicator + FU header.
+constexpr size_t kLengthFieldSize = 2;  // A STAP-A unit's size field.
 
-bool IsSliceType(uint8_t t) { return t == kH264NalSlice || t == kH264NalIdr; }
-
-// Whether a NAL unit begins an access unit, given its header and the byte
-// after it.
-bool StartsFrame(uint8_t type, std::span<const uint8_t> nal) {
-  if (IsSliceType(type)) return nal.size() >= 2 && (nal[1] & 0x80) != 0;
-  return type == kH264NalSei || type == kH264NalSps || type == kH264NalPps || type == kH264NalAud;
+// ParseStapA (video_rtp_depacketizer_h264.cc:44-64): the aggregated units of
+// a STAP-A after its header byte; false if there are none, or a size field is
+// cut off, zero or runs past the end. Calls `f(offset, unit)` only once the
+// whole packet has parsed.
+template <typename F>
+bool ForEachStapAUnit(std::span<const uint8_t> p, F&& f) {
+  if (p.size() <= 1) return false;  // "Incorrect StapA packet."
+  for (int pass = 0; pass < 2; ++pass) {
+    for (size_t off = 1; off < p.size();) {
+      if (off + kLengthFieldSize > p.size()) return false;
+      const size_t len = (static_cast<size_t>(p[off]) << 8) | p[off + 1];
+      off += kLengthFieldSize;
+      if (len == 0 || off + len > p.size()) return false;
+      if (pass == 1) f(off, p.subspan(off, len));
+      off += len;
+    }
+  }
+  return true;
 }
 
-void Note(H264PayloadInfo& info, uint8_t type, std::span<const uint8_t> nal) {
-  if (type == kH264NalIdr) info.idr = true;
-  if (type == kH264NalSps) info.sps = true;
-  if (type == kH264NalIdr || type == kH264NalSps) info.keyframe = true;
-  if (type == kH264NalPps) info.pps = true;
-  if (StartsFrame(type, nal)) info.first_packet_in_frame = true;
+// VideoRtpDepacketizerH264's ProcessStapAOrSingleNalu
+// (video_rtp_depacketizer_h264.cc:66-224) for a single NAL unit packet or a
+// STAP-A: false where it returns nullopt (the packet is dropped). Each SPS goes
+// through SpsVuiRewriter::ParseAndRewriteSps in the incoming direction; when
+// one is rewritten, `rewritten` (if given) receives the new payload, built as
+// libwebrtc builds its output buffer (the bytes before the last SPS that
+// parsed are copied from the received payload).
+bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo& info, std::vector<uint8_t>* rewritten) {
+  const bool stap_a = (payload[0] & 0x1F) == kH264NalStapA;
+  bool ok = true;
+  bool modified_buffer = false;
+  std::vector<uint8_t> output_buffer;
+  auto process = [&](size_t unit_offset, std::span<const uint8_t> nal_unit) {
+    if (!ok) return;
+    const uint8_t type = nal_unit[0] & 0x1F;
+    const std::span<const uint8_t> nalu_data = nal_unit.subspan(1);
+    if (nalu_data.empty()) return;  // "Skipping empty NAL unit."
+    switch (type) {
+      case kH264NalSps: {
+        // Copy any previous data first (likely just the first header).
+        output_buffer.clear();
+        const size_t start_offset = unit_offset + 1;
+        const size_t end_offset = start_offset + nalu_data.size();
+        output_buffer.insert(output_buffer.end(), payload.begin(), payload.begin() + static_cast<std::ptrdiff_t>(start_offset));
+        SpsState sps;
+        const SpsRewriteResult result = ParseAndRewriteSps(nalu_data, output_buffer, &sps);
+        if (result == SpsRewriteResult::kFailure) {
+          ok = false;
+          return;
+        }
+        if (result == SpsRewriteResult::kVuiRewritten) {
+          if (stap_a) {
+            // Rewrite the length field to the new SPS size (it counts the
+            // NAL header byte too).
+            const size_t length_field_offset = start_offset - (1 + kLengthFieldSize);
+            const size_t rewritten_size = output_buffer.size() - start_offset + 1;
+            if (rewritten_size > 0xFFFF) {
+              ok = false;
+              return;
+            }
+            output_buffer[length_field_offset] = static_cast<uint8_t>(rewritten_size >> 8);
+            output_buffer[length_field_offset + 1] = static_cast<uint8_t>(rewritten_size);
+          }
+          output_buffer.insert(output_buffer.end(), payload.begin() + static_cast<std::ptrdiff_t>(end_offset), payload.end());
+          modified_buffer = true;
+        }
+        info.width = sps.width;
+        info.height = sps.height;
+        info.keyframe = true;
+        info.sps = true;
+        info.first_packet_in_frame = true;
+        break;
+      }
+      case kH264NalPps:
+        if (!ParsePpsIds(nalu_data)) {
+          ok = false;
+          return;
+        }
+        info.pps = true;
+        info.first_packet_in_frame = true;
+        break;
+      case kH264NalIdr:
+      case kH264NalSlice: {
+        if (type == kH264NalIdr) {
+          info.keyframe = true;
+          info.idr = true;
+        }
+        const std::optional<SliceHeader> slice = ParseSliceHeader(nalu_data);
+        if (!slice) {
+          ok = false;
+          return;
+        }
+        if (slice->first_mb_in_slice == 0) info.first_packet_in_frame = true;
+        break;
+      }
+      case kH264NalAud:
+      case kH264NalSei:
+        info.first_packet_in_frame = true;
+        break;
+      case kH264NalStapA:
+      case kH264NalFuA:
+        ok = false;  // "Unexpected STAP-A or FU-A received."
+        return;
+      default:
+        break;  // End of sequence or stream, filler, and the other types: no ids.
+    }
+  };
+  if (stap_a) {
+    if (!ForEachStapAUnit(payload, process)) return false;  // "Incorrect StapA packet."
+  } else {
+    process(0, payload);
+  }
+  if (!ok) return false;
+  if (modified_buffer && rewritten) *rewritten = std::move(output_buffer);
+  return true;
 }
 
 void AppendNal(std::vector<uint8_t>& out, std::span<const uint8_t> nal) {
@@ -206,87 +310,65 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
 
 H264PayloadInfo H264Depacketizer::Parse(std::span<const uint8_t> p) {
   H264PayloadInfo info;
-  if (p.empty()) return info;
-  const uint8_t type = p[0] & 0x1F;
-  if (type == kH264NalStapA) {
-    size_t off = 1;
-    bool any = false;
-    while (off < p.size()) {
-      if (off + 2 > p.size()) return H264PayloadInfo{};
-      const size_t len = (static_cast<size_t>(p[off]) << 8) | p[off + 1];
-      off += 2;
-      if (len == 0 || off + len > p.size()) return H264PayloadInfo{};
-      const auto nal = p.subspan(off, len);
-      Note(info, nal[0] & 0x1F, nal);
-      off += len;
-      any = true;
-    }
-    if (!any) return H264PayloadInfo{};
-  } else if (type == kH264NalFuA) {
-    if (p.size() < kFuAOverhead + 1) return H264PayloadInfo{};
-    const bool start = p[1] & 0x80;
-    const bool end = p[1] & 0x40;
-    if (start && end) return H264PayloadInfo{};  // RFC 6184 5.8: a fragment cannot be both.
-    if (p[1] & 0x20) return H264PayloadInfo{};   // The reserved bit must be 0.
-    info.fu_start = start;
-    info.fu_end = end;
-    info.fu_continuation = !start;
-    if ((p[1] & 0x1F) == kH264NalIdr) info.keyframe = true;
-    if (start) {
-      // The first byte after the FU header is the first byte after the NAL header.
-      const uint8_t nt = p[1] & 0x1F;
-      if (nt == kH264NalIdr) info.idr = true;
-      if (nt == kH264NalSps) info.sps = true;
-      if (nt == kH264NalPps) info.pps = true;
-      if (IsSliceType(nt) ? (p[2] & 0x80) != 0 : StartsFrame(nt, p.subspan(1))) info.first_packet_in_frame = true;
-    }
-  } else if (type >= 1 && type <= 23) {
-    Note(info, type, p);
-  } else {
-    return H264PayloadInfo{};  // STAP-B, MTAP16/24, FU-B and the reserved values.
+  if (p.empty()) return info;  // "Empty payload."
+  if ((p[0] & 0x1F) != kH264NalFuA) {
+    if (!ProcessStapAOrSingleNalu(p, info, nullptr)) return H264PayloadInfo{};
+    info.valid = true;
+    return info;
   }
+  // ParseFuaNalu (video_rtp_depacketizer_h264.cc:226-290).
+  if (p.size() < kFuAOverhead) return info;  // "FU-A NAL units truncated."
+  const uint8_t original_nal_type = p[1] & 0x1F;
+  const bool first_fragment = (p[1] & 0x80) != 0;
+  info.fu_start = first_fragment;
+  info.fu_end = (p[1] & 0x40) != 0;
+  info.fu_continuation = !first_fragment;
+  if (first_fragment) {
+    if (original_nal_type == kH264NalIdr || original_nal_type == kH264NalSlice) {
+      // A slice header that does not parse is only logged here.
+      const std::optional<SliceHeader> slice = ParseSliceHeader(p.subspan(kFuAOverhead));
+      if (slice) info.first_packet_in_frame = slice->first_mb_in_slice == 0;
+    }
+    info.idr = original_nal_type == kH264NalIdr;
+  }
+  info.keyframe = original_nal_type == kH264NalIdr;
   info.valid = true;
   return info;
 }
 
 bool H264Depacketizer::Reassemble(std::span<const RtpPacket> packets, std::vector<uint8_t>& out) {
-  bool in_fu = false;
+  // H264SpsPpsTracker::CopyAndFixBitstream (h264_sps_pps_tracker.cc:37-183)
+  // on the payloads VideoRtpDepacketizerH264::Parse leaves: a start code
+  // before each STAP-A unit, before a single NAL unit and before the first
+  // fragment of an FU-A (with its NAL header restored), none before the other
+  // fragments. Parameter sets received out of band are not supported.
+  std::vector<uint8_t> rewritten;
   for (const RtpPacket& pkt : packets) {
-    const auto p = std::span<const uint8_t>(pkt.payload);
+    auto p = std::span<const uint8_t>(pkt.payload);
     if (p.empty()) return false;
     const uint8_t type = p[0] & 0x1F;
     if (type == kH264NalFuA) {
-      if (p.size() < kFuAOverhead + 1) return false;
-      const bool start = p[1] & 0x80;
-      const bool end = p[1] & 0x40;
-      if (start == in_fu || (start && end)) return false;  // Start inside a unit, or a fragment without its start.
-      if (start) {
+      if (p.size() < kFuAOverhead) return false;
+      if (p[1] & 0x80) {
         out.insert(out.end(), kStartCode, kStartCode + 4);
         out.push_back(static_cast<uint8_t>((p[0] & 0xE0) | (p[1] & 0x1F)));
-        in_fu = true;
       }
       out.insert(out.end(), p.begin() + kFuAOverhead, p.end());
-      if (end) in_fu = false;
       continue;
     }
-    if (in_fu) return false;  // A unit ended without its last fragment.
+    H264PayloadInfo info;
+    rewritten.clear();
+    if (!ProcessStapAOrSingleNalu(p, info, &rewritten)) return false;
+    if (!rewritten.empty()) p = rewritten;  // An SPS whose VUI was rewritten on receive.
     if (type == kH264NalStapA) {
-      size_t off = 1;
-      while (off < p.size()) {
-        if (off + 2 > p.size()) return false;
-        const size_t len = (static_cast<size_t>(p[off]) << 8) | p[off + 1];
-        off += 2;
-        if (len == 0 || off + len > p.size()) return false;
-        AppendNal(out, p.subspan(off, len));
-        off += len;
-      }
-    } else if (type >= 1 && type <= 23) {
+      if (!ForEachStapAUnit(p, [&](size_t, std::span<const uint8_t> nal) { AppendNal(out, nal); })) return false;
+    } else if (p.size() > 1) {
       AppendNal(out, p);
     } else {
-      return false;
+      out.insert(out.end(), p.begin(), p.end());  // No NAL unit info, so no start code.
     }
   }
-  return !in_fu;
+  return true;
 }
 
 VideoPayloadInfo H264PayloadParser::Parse(const RtpPacket& p) const {

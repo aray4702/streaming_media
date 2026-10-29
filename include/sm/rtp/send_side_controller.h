@@ -98,6 +98,10 @@ struct SendRates {
   // allocation: the video allocation less overhead and protection, before the target is capped at
   // the encoder maximum (and before pushback). Zero without a configured allocation.
   DataRate video_link_allocation;
+  // How many allocations the BitrateAllocator has handed the video stream (each one is a
+  // VideoStreamEncoder::OnBitrateUpdated). With `control_handler` the rates above change only then;
+  // zero without it or without a configured allocation, where they are recomputed on every call.
+  uint64_t video_allocation_updates = 0;
   // Congestion-window pushback (issue #53): drop every N-th captured frame
   // (0 = none); `video_target` is already lowered to match. See
   // SendSideController::DropCapturedFrame().
@@ -300,6 +304,7 @@ class SendSideController : public MetricsSource {
   // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
   DataRate video_encoder_target_;
   DataRate video_link_allocation_;  // VideoSendStreamImpl's link_allocation as of the last allocation.
+  uint64_t video_allocation_updates_ = 0;
   DataRate video_allocation_;       // The video stream's last allocation, kept while it is unregistered.
   cc::StreamAllocationConfig video_alloc_cfg_;
   cc::BitrateAllocatorV2::Observer video_observer_;

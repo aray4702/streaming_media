@@ -157,4 +157,107 @@ void CodecFallbackController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("forced_fallbacks", stats_.forced_fallbacks);
 }
 
+// Line references below are to api/video_codecs/video_decoder_software_fallback_wrapper.cc.
+
+DecoderFallbackController::DecoderFallbackController(DecoderFallbackConfig cfg, FallbackDecoder& sw,
+                                                     FallbackDecoder& hw)
+    : cfg_(cfg),
+      fallback_(sw),
+      hw_(hw),
+      fallback_implementation_name_(sw.GetDecoderInfo().implementation_name +
+                                    " (fallback from: " + hw.GetDecoderInfo().implementation_name + ")") {}
+
+bool DecoderFallbackController::Configure(const DecoderSettings& settings, Timestamp now) {
+  // :101-115.
+  settings_ = settings;
+  if (cfg_.force_sw_decoder_fallback) return InitFallbackDecoder(now);
+  if (InitHwDecoder()) return true;
+  return InitFallbackDecoder(now);
+}
+
+bool DecoderFallbackController::InitHwDecoder() {
+  // :117-127.
+  if (!hw_.Configure(settings_)) return false;
+  decoder_type_ = DecoderType::kHardware;
+  return true;
+}
+
+bool DecoderFallbackController::InitFallbackDecoder(Timestamp now) {
+  // :129-148.
+  if (!fallback_.Configure(settings_)) {
+    SM_EVENT(cfg_.events, now, "decoder_fallback", "fallback_init_failed", 0, 0);
+    return false;
+  }
+  // UpdateFallbackDecoderHistograms (:150-181).
+  stats_.hw_decoded_frames_at_last_fallback = hw_decoded_frames_since_last_fallback_;
+  ++stats_.fallbacks;
+  SM_EVENT(cfg_.events, now, "decoder_fallback", "fallback", hw_decoded_frames_since_last_fallback_,
+           static_cast<int>(settings_.codec_type));
+  if (decoder_type_ == DecoderType::kHardware) hw_.Release();
+  decoder_type_ = DecoderType::kFallback;
+  return true;
+}
+
+FallbackDecoder* DecoderFallbackController::current() {
+  switch (decoder_type_) {
+    case DecoderType::kNone:
+      return nullptr;
+    case DecoderType::kHardware:
+      return &hw_;
+    case DecoderType::kFallback:
+      return &fallback_;
+  }
+  return nullptr;
+}
+
+bool DecoderFallbackController::OnDecodeResult(DecoderStatus status, bool is_keyframe, Timestamp now) {
+  ++stats_.frames;
+  if (status != DecoderStatus::kOk) ++stats_.errors;
+  // :183-225: only the main decoder's results can move to the fallback.
+  if (decoder_type_ != DecoderType::kHardware) return false;
+  if (status != DecoderStatus::kFallbackSoftware) {
+    if (status != DecoderStatus::kError) {
+      ++hw_decoded_frames_since_last_fallback_;
+      hw_consequtive_generic_errors_ = 0;
+      return false;
+    }
+    // Only keyframe errors count: a keyframe request should fix the others.
+    if (is_keyframe) ++hw_consequtive_generic_errors_;
+    if (hw_consequtive_generic_errors_ < kMaxConsequtiveHwErrors) return false;
+  }
+  // kFallbackSoftware, or too many generic errors on keyframes.
+  return InitFallbackDecoder(now);
+}
+
+DecoderStatus DecoderFallbackController::Release() {
+  // :233-253.
+  DecoderStatus status = DecoderStatus::kOk;
+  if (FallbackDecoder* d = current()) status = d->Release();
+  decoder_type_ = DecoderType::kNone;
+  return status;
+}
+
+FallbackDecoderInfo DecoderFallbackController::GetDecoderInfo() const {
+  // :255-263. Before Configure, and on the main decoder, the main decoder's info.
+  FallbackDecoderInfo info =
+      decoder_type_ == DecoderType::kFallback ? fallback_.GetDecoderInfo() : hw_.GetDecoderInfo();
+  if (decoder_type_ == DecoderType::kFallback) info.implementation_name = fallback_implementation_name_;
+  return info;
+}
+
+std::string DecoderFallbackController::ImplementationName() const {
+  // :265-272.
+  return decoder_type_ == DecoderType::kFallback ? fallback_implementation_name_
+                                                 : hw_.GetDecoderInfo().implementation_name;
+}
+
+void DecoderFallbackController::ExportMetrics(MetricsWriter& w) const {
+  w.Gauge("hardware", decoder_type_ == DecoderType::kHardware ? 1 : 0);
+  w.Gauge("decoder_type", static_cast<int>(decoder_type_));
+  w.Counter("frames", stats_.frames);
+  w.Counter("errors", stats_.errors);
+  w.Counter("fallbacks", stats_.fallbacks);
+  w.Gauge("hw_decoded_frames_at_last_fallback", stats_.hw_decoded_frames_at_last_fallback);
+}
+
 }  // namespace sm::video

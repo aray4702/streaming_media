@@ -844,8 +844,13 @@ ALGORITHMS = [
                "libwebrtc's RateUtilizationTracker (video/rate_utilization_tracker.cc; issue #355, "
                "`rate_utilization_tracker on|off`, on by default as libwebrtc since #355): produced bytes over the "
                "unadjusted target's budget, libwebrtc's default (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment); "
-               "off, the factor comes from the detector, as with the field trial disabled. Remaining differences: one stream with one temporal layer; rates adjusted per "
-               "captured frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "off, the factor comes from the detector, as with the field trial disabled. With `adjuster_on_update` (VideoSendControllerConfig, "
+               "off by default until its flip is judged on the parity report; issue #569) the adjusted rate is "
+               "recomputed when VideoStreamEncoder's UpdateBitrateAllocation runs: on each allocation update "
+               "(OnBitrateUpdated), on a reconfiguration and every 1 s (kParameterUpdateIntervalMs), and held in "
+               "between; there an update is applied at the next captured frame, the last of several between two "
+               "frames only. Remaining differences: one stream with one temporal layer; rates adjusted per captured "
+               "frame while the switch is off. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -960,7 +965,8 @@ ALGORITHMS = [
                "changes, a 25-block hangover after a coarse filter reset. The FFT is libwebrtc's 128-point `OouraFft` "
                "(`audio/ooura_fft.h`, from `common_audio/third_party/ooura/fft_size_128`, its C path and stored tables; "
                "#240 step 6). Remaining differences: the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
-               "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
+               "or capture channels feed the delay estimator through `alignment_mixer` (adaptive selection of the "
+               "strongest channel, M157's default; #565); Subtractor takes "
                "AecState's capture saturation flag as an argument. "
                "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
                "`aec3_analysis.h`) ports `aec_state` (linear filter usability after 0.4 s of active unsaturated render, "
@@ -991,9 +997,13 @@ ALGORITHMS = [
                "`block_delay_buffer` and `echo_canceller3` (render queue of 100 frames, capture saturation at 32700, "
                "10 ms frames cut into 64-sample blocks), and it runs in the `apm v2` chain as APM calls it. On #63's "
                "signals it gives libwebrtc M157's numbers: ERLE 33.2 / 50.1 / 8.0 / 49.0 dB on the route change, "
-               "67.0 dB with NS, near end -5.3 dB and SNR -0.2 dB in double talk. Remaining differences: the render "
-               "is used as one channel, as libwebrtc does until its MultiChannelContentDetector finds proper stereo "
-               "(that detector, ConfigSelector and the multichannel config aren't ported); AdjustConfig's field "
+               "67.0 dB with NS, near end -5.3 dB and SNR -0.2 dB in double talk. Multichannel render (#565) "
+               "ports `multi_channel_content_detector` (proper stereo after more than 2 s of frames whose channels "
+               "differ, back to mono after 300 s without; the channels' average in the meantime, flagged as an echo "
+               "path change), `config_selector` and `CreateDefaultMultichannelConfig` (coarse filter 11 blocks at "
+               "rate 0.95, suppressor max increase 1.5 and low-frequency decrease 0.35): on proper stereo AEC3 is "
+               "re-created on every render channel with that config, as APM's default. Remaining differences: "
+               "AdjustConfig's field "
                "trials are read as not set; no linear AEC output export (off by default) and no UMA histograms; "
                "the render queue is a FIFO, not a thread hand-off.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
@@ -1045,9 +1055,10 @@ ALGORITHMS = [
                "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
                "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
                "(5 filters of 32 sub-blocks at 4 kHz covering 0-552 ms, headroom 32 samples, thresholds 5/20, pre-echo "
-               "detection on). Remaining differences: mono only; the portable C matched-filter core where x86 libwebrtc "
-               "runs SSE2/AVX2 (float summation order only); no UMA metrics or data dumps. Nothing in a call uses it yet: "
-               "the adaptive filter and EchoCanceller3 integration are #240's next steps.",
+               "detection on), and `alignment_mixer`, which makes several render and capture channels mono for it "
+               "(adaptive selection of the strongest channel, M157's default; #565). It runs inside EchoCanceller3. "
+               "Remaining differences: the portable C matched-filter core where x86 libwebrtc runs SSE2/AVX2 (float "
+               "summation order only); no UMA metrics or data dumps.",
          verification="Defect found: with rectangular windows, the window edges correlated with each other and "
                       "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
                       "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
@@ -1276,23 +1287,32 @@ ALGORITHMS = [
                       "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
                       "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
                       "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
-    dict(id="7.2", slug="codec-fallback", title="Hardware -> software encoder fallback",
-         problems=["Hardware encoder failure -> automatic fallback to a software encoder"],
-         headers=["video/codec_fallback.h"], unit=["CodecFallback"], e2e=["E2E_CodecFallback"],
+    dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
+         problems=["Hardware encoder failure -> automatic fallback to a software encoder",
+                   "Hardware decoder failure -> automatic fallback to a software decoder"],
+         headers=["video/codec_fallback.h"], unit=["CodecFallback", "DecoderFallback"], e2e=["E2E_CodecFallback"],
          bench=["video/CodecFallback_frame"],
          scenario="A hardware encoder that starts failing at 10 s and asks for the software fallback on its "
                   "10th error; checks that plain errors don't switch, that exactly one fallback happens, that "
                   "the fallback is primed with the last rate and starts with a keyframe, and that the frame "
                   "that asked is encoded by the fallback, so the longest gap between encoded frames stays small.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
-               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper; the header comment above lists what "
+               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper, and since #607 of its "
+               "VideoDecoderSoftwareFallbackWrapper (DecoderFallbackController); the header comment above lists what "
                "is not ported.",
          verification="#573 replaced the library's own CodecFallbackController (3 consecutive errors, 10% error "
                       "rate over 100 frames, hardware retry after 60 s with back-off, none of which libwebrtc has) "
                       "with the port. libwebrtc's unit test file is not in reference/; CodecFallback.* covers the "
                       "wrapper's cases from the source: init failure, both failing, simulcast parameters, "
                       "fallback request only from the main encoder, failed fallback init, release and re-init, "
-                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge."),
+                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge. "
+                      "#607 ported the decoder side (api/video_codecs/video_decoder_software_fallback_wrapper.cc): "
+                      "fallback when the hardware decoder fails to configure, on FALLBACK_SOFTWARE from Decode (the "
+                      "same frame decoded again by the fallback), or on the 4th consecutive keyframe error "
+                      "(kMaxConsequtiveHwErrors; delta-frame errors don't count), sticky until Release, the forced "
+                      "fallback trial WebRTC-Video-ForcedSwDecoderFallback (off), the 'A (fallback from: B)' name and "
+                      "the hardware-decoded-frames histogram sample. Its unit test file is not in reference/; "
+                      "DecoderFallback.* covers each path of the source."),
     dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
          problems=["Rotated camera -> video orientation header extension (CVO)"],
          headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
@@ -1317,15 +1337,6 @@ ALGORITHMS = [
                   "change must be encoded immediately, while static frames are skipped.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
-         verification="No defects found."),
-    dict(id="7.6", slug="frame-scaler", title="Resolution scaling and aspect handling",
-         problems=["Frame size and aspect changes -> resolution adaptation and scaling mid-stream"],
-         headers=["video/frame_scaler.h"], unit=["FrameScaler"], e2e=["E2E_FrameScaler"],
-         bench=["video/Scale_720p_to_360p", "video/Scale_360p_to_720p", "video/Q_Scaler_psnr_720p_via_360p"],
-         scenario="720p frames down-scaled along the adaptation ladder and up-scaled back for display (PSNR per "
-                  "step), plus a 4:3 camera shown in a 16:9 tile with crop and letterbox.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Portable scalar code, about 1.7 ms per 720p frame on the reference machine; a SIMD library "
-               "(libyuv) is the natural drop-in for production.",
          verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
@@ -1443,7 +1454,14 @@ ALGORITHMS = [
                   "latency for every frame.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="Portability finding: interpolation used long double, which is software-emulated "
                                 "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
-                                "It now uses exact integer arithmetic."),
+                                "It now uses exact integer arithmetic. #567 part 5 ports libwebrtc M157's "
+                                "`AbsoluteCaptureTimeSender`, `AbsoluteCaptureTimeInterpolator`, `CaptureClockOffsetUpdater` "
+                                "and `RemoteNtpTimeEstimator` as units (`modules/rtp_rtcp/source/`): the sender's rules "
+                                "(more than 1 s, an error that rounds to more than 1 ms, a rate of 0, `force`), the "
+                                "interpolator retiring its extension at the first packet it can't interpolate, and the "
+                                "clock offset as the median of the last 7 SRs once 3 are in, where it was a minimum with a "
+                                "5% leak. `LatencyEstimator` computes capture time as `WebRTC-UseAbsCapTimeForG2gMetric` "
+                                "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
@@ -1480,7 +1498,7 @@ ALGORITHMS = [
                       "libwebrtc M157 (rtcp_sender.cc, video_send_stream.h, audio_send_stream.h), see the issue. "
                       "#517: unit.RtcpEngine checks that the interval draws are libwebrtc's from the same seed; on seed 1 "
                       "the sender's RTCP send times match libwebrtc's on audio_only_lossy (6 of 6) and the first 9 on high_jitter. "
-                      "#484: `SessionConfig::audio_receive_rtcp` (off by default until its flip) gives the audio receive streams "
+                      "#484: `SessionConfig::audio_receive_rtcp` (on by default since #484 part 2, libwebrtc's behaviour) gives the audio receive streams "
                       "their own engine, as libwebrtc's ChannelReceive (audio/channel_receive.cc:115-139, 608): an RR with the audio "
                       "block alone every 5 s, no SDES, and the video compounds carry only the video and RTX blocks; on seed 1 the "
                       "sender's audio report blocks match libwebrtc's in number and time on high_jitter, random_loss_5pct and "
@@ -1566,13 +1584,20 @@ ALGORITHMS = [
                "libwebrtc by default. Before packetizing a keyframe the session rewrites its SPS VUI as "
                "libwebrtc's FrameEncodeMetadataWriter::UpdateBitstream and SpsVuiRewriter do (#342): a VUI with "
                "bitstream_restriction (no frame reordering) is added or fixed, and AUDs are dropped. There is no "
-               "color space input (the encoders modelled set none, so the video signal type is copied).",
+               "color space input (the encoders modelled set none, so the video signal type is copied). The "
+               "depacketizer ports VideoRtpDepacketizerH264::Parse (#568): which payloads it drops (an SPS, PPS or "
+               "slice header that doesn't parse, a nested STAP-A or FU-A, an FU-A under 2 bytes), where frames start, "
+               "the SPS's resolution, and the incoming SPS VUI rewrite; reassembly follows "
+               "H264SpsPpsTracker::CopyAndFixBitstream. The SPS fields are read as libwebrtc's SpsParser.",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "
                       "suites yet. #342: the keyframe's STAP-A [SPS, PPS] is 77 B on both stacks (72 B before), "
                       "checked on `clean_link`'s per-packet trace against libwebrtc's, and the rewritten bytes are "
-                      "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units)."),
+                      "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units). #568: the "
+                      "depacketizer's accept and drop rules, frame starts and receive-side SPS rewrite are unit-tested "
+                      "against video_rtp_depacketizer_h264.cc case by case (`unit.H264`); the bench's frames are "
+                      "rewritten on send, so the receive side finds kVuiOk and no suite metric moves."),
 ]
 
 # Problem rows from sections 3-8 that are platform glue, codec internals or
@@ -1585,6 +1610,7 @@ NOT_IMPLEMENTED = [
     ("6", "DTX and comfort noise (RFC 3389)", "Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
     ("7", "Codec negotiation (SDP offer/answer, H.264 profile-level-id)", "Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566)."),
+    ("7", "Resolution scaling and aspect handling (`Scale`, `ScaleToFit`, `Crop`)", "Removed in #593: libwebrtc M157's one-to-one call has no such component (it scales with libyuv's `I420Buffer::Scale`, and the frames are the app's), and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it; the Owner's A on #566."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
 ]

@@ -100,6 +100,11 @@ struct Scenario {
   // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). On by default, as libwebrtc
   // (since #355's flip, after #362 turned periodic ALR probing off for video).
   bool rate_utilization_tracker = true;
+  // `adjuster_on_update on|off`: the bitrate adjuster re-runs only when VideoStreamEncoder's
+  // UpdateBitrateAllocation does (an allocation update, a reconfiguration, every 1 s; issue #569;
+  // rtp::VideoSendControllerConfig::adjuster_on_update). Off (the default until its flip is judged on
+  // the parity report): every captured frame.
+  bool adjuster_on_update = false;
   // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
   // issue #568). Off by default until it is judged.
@@ -127,7 +132,7 @@ struct Scenario {
   bool quality_scaling = true;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3). Off only empties the receiver's sync group; the sender's audio RTCP stays on, as libwebrtc's (issue #524).
-  bool audio_receive_rtcp = false;  // `audio_receive_rtcp on|off`: the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.
+  bool audio_receive_rtcp = true;  // `audio_receive_rtcp on|off` (default on, as libwebrtc): the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
   bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).

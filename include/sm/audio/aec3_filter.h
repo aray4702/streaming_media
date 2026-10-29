@@ -40,8 +40,8 @@
 // common_audio/third_party/ooura/fft_size_128), as aec3_fft.cc runs it.
 // Differences that remain (tools/catalog.py 6.1): the portable C paths,
 // where x86 libwebrtc runs SSE2/AVX2 (same arithmetic, different float
-// summation order). Several render channels are read as channel 0 for the
-// delay estimate (AlignmentMixer's downmix/adaptive selection isn't ported).
+// summation order). Several render channels are made mono for the delay
+// estimate by the render AlignmentMixer (adaptive selection by default).
 // No data dumps or render-jitter logging. Subtractor takes the capture
 // saturation flag that AecState holds; AecState itself, the residual echo
 // suppression and EchoCanceller3 are #240's next steps, so nothing calls this
@@ -245,7 +245,30 @@ struct Aec3Config {
   float render_power_gain_db = 0.f;
   // config.delay
   int fixed_capture_delay_samples = 0;
+  // EchoCanceller3Config::MultiChannel
+  struct MultiChannel {
+    bool detect_stereo_content = true;
+    float stereo_detection_threshold = 0.0f;
+    int stereo_detection_timeout_threshold_seconds = 300;
+    float stereo_detection_hysteresis_seconds = 2.0f;
+  } multi_channel;
 };
+
+// EchoCanceller3Config::CreateDefaultMultichannelConfig: the config AEC3 runs
+// with once it finds proper multichannel render, which APM passes when the
+// application sets no AEC3 config: a shorter, faster coarse filter (for the
+// larger number of filter coefficients to adapt) and a more conservative
+// suppressor outside near-end speech.
+inline Aec3Config CreateDefaultMultichannelConfig() {
+  Aec3Config cfg;
+  cfg.filter.coarse.length_blocks = 11;
+  cfg.filter.coarse.rate = 0.95f;
+  cfg.filter.coarse_initial.length_blocks = 11;
+  cfg.filter.coarse_initial.rate = 0.95f;
+  cfg.suppressor.normal_tuning.max_dec_factor_lf = 0.35f;
+  cfg.suppressor.normal_tuning.max_inc_factor = 1.5f;
+  return cfg;
+}
 
 // fft_data.h
 struct FftData {
@@ -289,31 +312,6 @@ class Aec3Fft {
 
  private:
   const ooura::OouraFft128 ooura_fft_{};
-};
-
-// block.h: bands x channels x 64 samples.
-class Block {
- public:
-  Block(int num_bands, int num_channels, float default_value = 0.0f)
-      : num_bands_(num_bands),
-        num_channels_(num_channels),
-        data_(static_cast<size_t>(num_bands * num_channels) * kBlockSize, default_value) {}
-  int NumBands() const { return num_bands_; }
-  int NumChannels() const { return num_channels_; }
-  std::span<float, kBlockSize> View(int band, int channel) {
-    return std::span<float, kBlockSize>(&data_[GetIndex(band, channel)], kBlockSize);
-  }
-  std::span<const float, kBlockSize> View(int band, int channel) const {
-    return std::span<const float, kBlockSize>(&data_[GetIndex(band, channel)], kBlockSize);
-  }
-
- private:
-  size_t GetIndex(int band, int channel) const {
-    return static_cast<size_t>(band * num_channels_ + channel) * kBlockSize;
-  }
-  int num_bands_;
-  int num_channels_;
-  std::vector<float> data_;
 };
 
 // The rings of block_buffer.h, spectrum_buffer.h and fft_buffer.h.
@@ -436,6 +434,7 @@ class RenderDelayBuffer : public MetricsSource {
   std::optional<size_t> delay_;
   RenderBuffer echo_remover_buffer_;
   DownsampledRenderBuffer low_rate_;
+  AlignmentMixer render_mixer_;
   Decimator render_decimator_;
   const Aec3Fft fft_;
   std::vector<float> render_ds_;

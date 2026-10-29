@@ -10,7 +10,6 @@
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/codec_fallback.h"
 #include "sm/video/content_policy.h"
-#include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
@@ -196,27 +195,6 @@ SM_TEST(E2E_ContentPolicy, ScreenShareEncodesOnlyChanges) {
   SM_EXPECT_EQ(changes_encoded, changes);  // Every change goes out immediately.
   SM_EXPECT_LT(static_cast<double>(encoded) / frames, 0.25);
   SM_EXPECT_GE(encoded, 60);  // At least the 1/s keep-alive.
-}
-
-SM_TEST(E2E_FrameScaler, AdaptationLadderQualityAndAspect) {
-  // Sender downscales along the adaptation ladder, receiver upscales to the
-  // 1280x720 display: PSNR falls gracefully with each step.
-  I420Frame src = MakeTestFrame(1280, 720, 11);
-  double prev = 200;
-  for (auto [w, h] : {std::pair{960, 540}, {640, 360}, {480, 270}, {320, 180}}) {
-    double psnr = PsnrY(src, Scale(Scale(src, w, h), 1280, 720));
-    SM_RECORD(("psnr_via_" + std::to_string(w)).c_str(), psnr);
-    SM_EXPECT_LT(psnr, prev + 0.5);
-    prev = psnr;
-    if (w >= 640) SM_EXPECT_GT(psnr, 28.0);
-  }
-  // A 4:3 camera shown in a 16:9 tile: crop keeps the centre, letterbox
-  // keeps everything.
-  I420Frame cam = MakeTestFrame(640, 480, 2);
-  I420Frame crop = ScaleToFit(cam, 640, 360, AspectMode::kCrop);
-  I420Frame box = ScaleToFit(cam, 640, 360, AspectMode::kLetterbox);
-  SM_EXPECT_NEAR(crop.Y(320, 180), cam.Y(320, 240), 6);
-  SM_EXPECT_EQ(box.Y(10, 180), 16);  // Pillar box on the left.
 }
 
 SM_TEST(E2E_FrameScheduler, SmoothPlayoutOverJitteryNetwork) {

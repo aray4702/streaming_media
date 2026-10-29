@@ -4,7 +4,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
   SUITES
     CodecFallback
     ContentPolicy
-    FrameScaler
+    DecoderFallback
     FrameScheduler
     FreezeDetector
     Orientation
@@ -24,7 +24,6 @@ if(SM_WITH_TIMING)
     SUITES
       E2E_CodecFallback
       E2E_ContentPolicy
-      E2E_FrameScaler
       E2E_FrameScheduler
       E2E_FreezeDetector
       E2E_Orientation

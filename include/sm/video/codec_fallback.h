@@ -30,11 +30,14 @@
 // Not ported: the temporal-layer based forced switch
 // (`prefer_temporal_support`), because temporal layers are removed (#572),
 // and the OnLossNotification replay (the library has no encoder
-// loss-notification input). Decoder fallback
-// (video_decoder_software_fallback_wrapper.cc) is not in
-// compare/webrtc/reference/ and is not provided.
+// loss-notification input).
+//
+// Decoder side: DecoderFallbackController ports
+// api/video_codecs/video_decoder_software_fallback_wrapper.cc (below).
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -153,6 +156,111 @@ class CodecFallbackController : public MetricsSource {
   std::optional<TimeDelta> rtt_;
   std::optional<float> packet_loss_;
   CodecFallbackStats stats_;
+};
+
+// ---------------------------------------------------------------------------
+// Decoder fallback: a port of libwebrtc's VideoDecoderSoftwareFallbackWrapper
+// (api/video_codecs/video_decoder_software_fallback_wrapper.cc). As on the
+// encoder side, the app runs both decoders (`FallbackDecoder`) and the wrapper
+// decides which one decodes.
+//
+// Configure tries the main (hardware) decoder, then the software decoder if
+// it fails; with the forced fallback (field trial
+// WebRTC-Video-ForcedSwDecoderFallback, off by default) only the software
+// decoder. A decode on the main decoder that returns kFallbackSoftware moves
+// to the software decoder, releases the main one, and the same frame is
+// decoded again by the software decoder. kError counts only on keyframes
+// (generic hardware errors are expected, and the keyframe request should fix
+// them); the 4th consecutive one (kMaxConsequtiveHwErrors) also moves to the
+// software decoder. Any other result counts as a decoded frame and resets the
+// error count. Nothing switches back: the state lasts until Release(), and
+// the next Configure tries the main decoder again. Each fallback records the
+// main decoder's frames so far (libwebrtc's histogram
+// WebRTC.Video.HardwareDecodedFramesBetweenSoftwareFallbacks.<codec>; like
+// libwebrtc, the count is never reset). Not ported: the decode-complete
+// callback, which the app handles itself.
+
+// The WEBRTC_VIDEO_CODEC_* results the decoder wrapper tells apart.
+// kOther is any other code (e.g. WEBRTC_VIDEO_CODEC_ERR_PARAMETER), which
+// libwebrtc counts as a decoded frame.
+enum class DecoderStatus { kOk, kError, kFallbackSoftware, kUninitialized, kOther };
+
+// VideoCodecType, the values libwebrtc's histogram names.
+enum class DecoderCodecType { kGeneric, kVP8, kVP9, kAV1, kH264, kH265 };
+
+// VideoDecoder::Settings, the field the wrapper reads.
+struct DecoderSettings {
+  DecoderCodecType codec_type = DecoderCodecType::kGeneric;
+};
+
+// VideoDecoder::DecoderInfo.
+struct FallbackDecoderInfo {
+  std::string implementation_name;
+  bool is_hardware_accelerated = false;
+};
+
+// One of the app's decoders, as the wrapper drives it.
+class FallbackDecoder {
+ public:
+  virtual ~FallbackDecoder() = default;
+  virtual bool Configure(const DecoderSettings& settings) = 0;
+  virtual DecoderStatus Release() = 0;
+  virtual FallbackDecoderInfo GetDecoderInfo() const = 0;
+};
+
+struct DecoderFallbackConfig {
+  // WebRTC-Video-ForcedSwDecoderFallback; off as in libwebrtc.
+  bool force_sw_decoder_fallback = false;
+  EventSink* events = nullptr;
+};
+
+struct DecoderFallbackStats {
+  uint64_t frames = 0, errors = 0, fallbacks = 0;
+  // The histogram sample of the last fallback.
+  int32_t hw_decoded_frames_at_last_fallback = 0;
+};
+
+class DecoderFallbackController : public MetricsSource {
+ public:
+  static constexpr size_t kMaxConsequtiveHwErrors = 4;
+
+  enum class DecoderType { kNone, kHardware, kFallback };
+
+  // `sw` is the software fallback, `hw` the main decoder; both outlive this.
+  DecoderFallbackController(DecoderFallbackConfig cfg, FallbackDecoder& sw, FallbackDecoder& hw);
+
+  bool Configure(const DecoderSettings& settings, Timestamp now);
+  DecoderStatus Release();
+
+  // The decoder to decode the next frame with; nullptr before Configure
+  // (libwebrtc's Decode returns WEBRTC_VIDEO_CODEC_UNINITIALIZED then).
+  FallbackDecoder* current();
+  // Report the result of decoding a frame with current(). Returns true when
+  // the main decoder's result moved the call to the software decoder: the app
+  // then decodes the same frame with current() (the fallback) and keeps that
+  // result. Otherwise the app keeps `status` as the frame's result.
+  bool OnDecodeResult(DecoderStatus status, bool is_keyframe, Timestamp now);
+
+  FallbackDecoderInfo GetDecoderInfo() const;
+  std::string ImplementationName() const;
+
+  DecoderType decoder_type() const { return decoder_type_; }
+  const DecoderFallbackStats& stats() const { return stats_; }
+  void ExportMetrics(MetricsWriter& w) const override;
+
+ private:
+  bool InitHwDecoder();
+  bool InitFallbackDecoder(Timestamp now);
+
+  DecoderFallbackConfig cfg_;
+  FallbackDecoder& fallback_;
+  FallbackDecoder& hw_;
+  DecoderType decoder_type_ = DecoderType::kNone;
+  DecoderSettings settings_;
+  const std::string fallback_implementation_name_;
+  int32_t hw_decoded_frames_since_last_fallback_ = 0;
+  size_t hw_consequtive_generic_errors_ = 0;
+  DecoderFallbackStats stats_;
 };
 
 }  // namespace sm::video
