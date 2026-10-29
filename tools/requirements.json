@@ -255,10 +255,10 @@
    "area": "Bandwidth, congestion and unstable links",
    "catalog": "5.6",
    "title": "Bandwidth probing",
-   "status": "in-progress",
-   "evidence": "`ProbeController`, `ProbeBitrateEstimator` and `BitrateProber` (#48), `AlrDetector` with libwebrtc's defaults (#152), call-start ALR probing for audio only (#62, #355); v1 deleted (#167); defaults as libwebrtc. Open: #514 (probe/ALR padding count and sizes on NACK-off and audio-only calls), #461 (rounding in `probing.cc`).",
+   "status": "done",
+   "evidence": "`ProbeController`, `ProbeBitrateEstimator` and `BitrateProber` (#48), `AlrDetector` with libwebrtc's defaults (#152), call-start ALR probing for audio only (#62, #355); v1 deleted (#167). Probe and ALR padding as libwebrtc's `PacketSequencer` / `RTPSender::GeneratePadding` (#707: media-SSRC padding without RTX, audio padding counts and sizes), units rounding as `unit_base.h` (#686). No open item.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
