@@ -8,6 +8,9 @@
 //   maintain-resolution: lower frame rate only (down to min_fps)
 //   balanced:            frame rate down to balanced_fps first, then
 //                        resolution, then frame rate down to min_fps
+// Frame-rate steps stop at libwebrtc's kMinFrameRateFps (2) and never raise
+// the rate; an input rate of 2 fps or less (0 = unknown) gets no frame-rate
+// steps, as VideoStreamAdapter (fix record docs/fixes/643-degradation-fps-hang.md).
 // Going down needs bpp_down, going back up needs the larger bpp_up, so the
 // format does not oscillate around a threshold. Resource limits (CPU
 // overuse, quality scaler) impose an extra cap on pixels or fps.
