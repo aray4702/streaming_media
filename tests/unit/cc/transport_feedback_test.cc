@@ -53,9 +53,10 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
       ++lost;
       continue;
     }
-    // 250 us quantization.
-    double expect_us = 1040000.0 + static_cast<double>(r.seq) * 1000 + 123;
-    SM_EXPECT_NEAR(static_cast<double>(r.receive_time.us()), expect_us, 250);
+    // 250 us quantization, then 1 ms rounding, on the adapter's local base: the feedback's receive
+    // time (1100 ms) stands for its base time (16 x 64 ms = 1024 ms).
+    double expect_us = 1040000.0 + static_cast<double>(r.seq) * 1000 + 123 - 1024000 + 1100000;
+    SM_EXPECT_NEAR(static_cast<double>(r.receive_time.us()), expect_us, 1250);
     SM_EXPECT_EQ(r.send_time.ms(), 1000 + r.seq);
   }
   SM_EXPECT_EQ(lost, 5);
@@ -64,7 +65,8 @@ SM_TEST(TransportFeedback, BuilderAndHistoryJoin) {
 }
 
 // TransportFeedbackAdapter::ProcessTransportFeedback (issue #354): the estimators get each
-// packet's time since the feedback's base time rounded down to 1 ms, toward zero.
+// packet's time since the feedback's base time rounded down to 1 ms, toward zero, added to the
+// adapter's local base (the first feedback's receive time, 700 ms here; #569).
 SM_TEST(TransportFeedback, HistoryRoundsReceiveTimesToTheMillisecond) {
   SendHistory h;
   for (uint16_t s = 0; s < 3; ++s) h.OnPacketSent(s, Timestamp::Millis(600 + s), DataSize::Bytes(500));
@@ -73,9 +75,9 @@ SM_TEST(TransportFeedback, HistoryRoundsReceiveTimesToTheMillisecond) {
   fb.packets = {{0, true, 7}, {1, true, 6}, {2, true, -16}};  // 1.75, 3.25 and -0.75 ms after the base.
   const auto res = h.OnFeedback(fb, Timestamp::Millis(700));
   SM_ASSERT_EQ(res.size(), 3u);
-  SM_EXPECT_EQ(res[0].receive_time.us(), 641000);
-  SM_EXPECT_EQ(res[1].receive_time.us(), 643000);
-  SM_EXPECT_EQ(res[2].receive_time.us(), 640000);
+  SM_EXPECT_EQ(res[0].receive_time.us(), 701000);
+  SM_EXPECT_EQ(res[1].receive_time.us(), 703000);
+  SM_EXPECT_EQ(res[2].receive_time.us(), 700000);
 }
 
 // rtcp::TransportFeedback::AddReceivedPacket (#365): each delta is rounded to the nearest
@@ -277,4 +279,87 @@ SM_TEST(TransportFeedback, PacketReportedReceivedTwiceIsIgnored) {
     if (r.received()) ++received;
   }
   SM_EXPECT_EQ(received, 1);
+}
+
+// --- libwebrtc's TransportFeedbackAdapter (#569 part 2) ---------
+namespace {
+TransportFeedback Report(uint16_t base, std::vector<bool> received, int32_t reference_time = 0, int64_t delta_ticks = 4) {
+  TransportFeedback f;
+  f.base_seq = base;
+  f.reference_time = reference_time;
+  for (size_t i = 0; i < received.size(); ++i) {
+    TransportFeedback::Packet p;
+    p.seq = static_cast<uint16_t>(base + i);
+    p.received = received[i];
+    p.delta_ticks = received[i] ? delta_ticks : 0;
+    f.packets.push_back(p);
+  }
+  return f;
+}
+}  // namespace
+
+// kSendTimeHistoryWindow: a packet stays 60 s from when it was added, however many follow
+// (the history had an 8192-packet cap that dropped packets still in flight).
+SM_TEST(TransportFeedbackAdapter, HistoryKeepsSixtySecondsNotACount) {
+  SendHistory h;
+  for (int i = 0; i < 10000; ++i) h.OnPacketSent(static_cast<uint16_t>(i), Timestamp::Millis(i), DataSize::Bytes(100));
+  SM_EXPECT_EQ(h.InFlight().bytes(), 1000000);  // All 10000 in flight.
+  auto res = h.OnFeedback(Report(0, {true}), Timestamp::Millis(10050));
+  SM_ASSERT_EQ(res.size(), 1u);  // The first packet is still known.
+  SM_EXPECT_EQ(res[0].send_time.ms(), 0);
+  SM_EXPECT_EQ(h.InFlight().bytes(), 999900);
+  // AddPacket more than 60 s after packet 1 was added (at 1 ms) prunes it, and its bytes leave
+  // flight; packet 2, exactly 60 s old, stays.
+  h.OnPacketSent(10000, Timestamp::Millis(60002), DataSize::Bytes(100));
+  SM_EXPECT_EQ(h.InFlight().bytes(), 999900);  // +100 for the new packet, -100 for packet 1.
+  SM_EXPECT_TRUE(h.OnFeedback(Report(1, {true}), Timestamp::Millis(60050)).empty());
+  res = h.OnFeedback(Report(2, {true}), Timestamp::Millis(60060));
+  SM_EXPECT_EQ(res.size(), 1u);
+}
+
+// RetrievePacketFeedback: every sequence number a feedback names moves the acknowledged point,
+// even one the history no longer has; in-flight data is what was sent above it. A packet reported
+// lost stays in the history, and a later feedback that reports it received still finds it.
+SM_TEST(TransportFeedbackAdapter, InFlightAboveTheLastAcknowledgedSequenceNumber) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 6; ++s) h.OnPacketSent(s, Timestamp::Millis(s), DataSize::Bytes(1000));
+  auto res = h.OnFeedback(Report(0, {true, false, true}), Timestamp::Millis(100));
+  SM_EXPECT_EQ(res.size(), 3u);
+  SM_EXPECT_EQ(h.InFlight().bytes(), 3000);  // 3, 4 and 5.
+  // 1 arrives late and is reported again with 2 (already reported received: not found), 3 and 4
+  // lost, and 5.
+  res = h.OnFeedback(Report(1, {true, true, false, false, true}), Timestamp::Millis(200));
+  SM_EXPECT_EQ(h.InFlight().bytes(), 0);
+  SM_ASSERT_EQ(res.size(), 4u);
+  SM_EXPECT_TRUE(res[0].received());  // 1: lost before, received now.
+  SM_EXPECT_EQ(res[0].seq, 1);
+  // A packet sent now is above everything acknowledged: in flight.
+  h.OnPacketSent(6, Timestamp::Millis(210), DataSize::Bytes(500));
+  SM_EXPECT_EQ(h.InFlight().bytes(), 500);
+  // 1 and 5 were reported received: a second report finds nothing, and the update is empty.
+  SM_EXPECT_TRUE(h.OnFeedback(Report(5, {true}), Timestamp::Millis(220)).empty());
+  // A feedback naming only unknown sequence numbers above 6 still acknowledges 6.
+  h.OnFeedback(Report(7, {false}), Timestamp::Millis(230));
+  SM_EXPECT_EQ(h.InFlight().bytes(), 0);
+}
+
+// ProcessTransportFeedback's local time base: the first feedback's receive time, moved by each
+// later feedback's base-time delta (GetBaseDelta, 64 ms ticks, nearest across the 24-bit wrap);
+// one that would put the base before zero restarts it at the feedback's receive time.
+SM_TEST(TransportFeedbackAdapter, ReceiveTimesOnTheLocalTimeBase) {
+  SendHistory h;
+  for (uint16_t s = 0; s < 4; ++s) h.OnPacketSent(s, Timestamp::Millis(s), DataSize::Bytes(100));
+  auto res = h.OnFeedback(Report(0, {true}, 100, 8), Timestamp::Millis(500));  // 2 ms after base 6.4 s.
+  SM_EXPECT_EQ(res[0].receive_time.us(), 502000);
+  res = h.OnFeedback(Report(1, {true}, 102, 8), Timestamp::Millis(700));  // Base +128 ms.
+  SM_EXPECT_EQ(res[0].receive_time.us(), 500000 + 128000 + 2000);
+  // Across the wrap: 0xFFFFFF -> 1 is +2 ticks.
+  SendHistory w;
+  for (uint16_t s = 0; s < 2; ++s) w.OnPacketSent(s, Timestamp::Millis(s), DataSize::Bytes(100));
+  w.OnFeedback(Report(0, {true}, 0xFFFFFF, 0), Timestamp::Millis(400));
+  res = w.OnFeedback(Report(1, {true}, 1, 0), Timestamp::Millis(530));
+  SM_EXPECT_EQ(res[0].receive_time.us(), 400000 + 128000);
+  // A base 10 s back from a 0.5 s offset would be negative: restart at the receive time.
+  res = h.OnFeedback(Report(2, {true}, 102 - 157, 8), Timestamp::Millis(900));
+  SM_EXPECT_EQ(res[0].receive_time.us(), 902000);
 }

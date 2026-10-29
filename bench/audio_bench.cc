@@ -113,27 +113,6 @@ SM_BENCH(audio, TransientSuppressor_10ms) {
   st.RequireRealtimeFactor(0.010, 2000);
 }
 
-SM_BENCH(audio, DtxController_10ms) {
-  DtxController d;
-  auto x = sim::WhiteNoise(16000, 2.0, 0.01f, 1);
-  size_t off = 0;
-  SidFrame sid;
-  for (auto _ : st) {
-    bench::DoNotOptimize(d.Process(std::span<const float>(x.data() + off, 160), false, &sid));
-    off = (off + 160) % (x.size() - 160);
-  }
-  st.RequireRealtimeFactor(0.010, 500);
-}
-
-SM_BENCH(audio, ComfortNoise_10ms) {
-  ComfortNoiseGenerator g;
-  auto x = sim::WhiteNoise(16000, 0.02, 0.01f, 1);
-  g.OnSid(AnalyzeNoise(std::span<const float>(x.data(), 160)));
-  std::vector<float> out(160);
-  for (auto _ : st) g.Generate(out);
-  st.RequireRealtimeFactor(0.010, 500);
-}
-
 SM_BENCH(audio, AudioLevel_20ms) {
   auto x = Speech();
   size_t off = 0;

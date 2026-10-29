@@ -135,38 +135,6 @@ SM_TEST(E2E_Keyframe, RecoversFromUnrepairableLoss) {
   SM_EXPECT_LE(with.pli, static_cast<uint64_t>(0.02 * with.frames * 2.5) + 2);
 }
 
-SM_TEST(E2E_TemporalLayers, UpperLayerLossDoesNotBreakStream) {
-  FrameSimParams p;
-  p.frame_loss = 0.05;
-  p.temporal_layers = 1;
-  auto l1 = RunFrameSim(p);
-  p.temporal_layers = 3;
-  auto l3 = RunFrameSim(p);
-  SM_RECORD("l1t1_decodable", l1.decodable_ratio);
-  SM_RECORD("l1t3_decodable", l3.decodable_ratio);
-  SM_RECORD("l1t1_freeze_ms", l1.total_freeze_ms);
-  SM_RECORD("l1t3_freeze_ms", l3.total_freeze_ms);
-  SM_EXPECT_GT(l3.decodable_ratio, l1.decodable_ratio + 0.05);
-  SM_EXPECT_LT(l3.total_freeze_ms, l1.total_freeze_ms);
-}
-
-SM_TEST(E2E_TemporalLayers, SfuFiltersToTargetFramerate) {
-  loss::TemporalLayerScheduler s(3);
-  loss::TemporalLayerFilter f;
-  loss::KeyframeRequester rx;
-  f.SetTargetLayer(1);
-  int fwd = 0;
-  for (int i = 0; i < 300; ++i) {
-    auto fr = s.NextFrame();
-    if (f.ShouldForward(fr)) {
-      ++fwd;
-      rx.OnFrame(fr.info, Timestamp::Millis(i * 33));
-    }
-  }
-  SM_EXPECT_EQ(fwd, 150);  // T0 + T1 = 1/2 frame rate.
-  SM_EXPECT_EQ(rx.TakeDecodableFrames().size(), 150u);  // All decodable.
-}
-
 // FecControllerDefault with NACK (kNackFec), as libwebrtc M157 (issue #29): no
 // FEC for delta frames below kLowRttNackMs (an RTT under 20 ms), FEC from the
 // rate table from 20 ms on, at most 128/255 of all packets (one FEC packet per

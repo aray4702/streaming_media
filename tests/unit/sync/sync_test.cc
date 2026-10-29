@@ -1,5 +1,7 @@
 // Section 8 unit tests.
 #include <cmath>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include "sm/sync/capture_time.h"
@@ -326,15 +328,145 @@ SM_TEST(CaptureTime, SenderOmitsInterpolatableExtensions) {
 SM_TEST(CaptureTime, LatencyWithClockOffset) {
   LatencyEstimator le;
   // Remote clock is 2.5 s ahead; one-way delay 40 ms, RTT 80 ms.
-  Timestamp local_send = Timestamp::Seconds(100);
-  NtpTime sr = NtpTime::FromTimestamp(local_send + TimeDelta::Millis(2500));
-  le.OnSenderReport(sr, local_send + TimeDelta::Millis(40), TimeDelta::Millis(80));
+  // RemoteNtpTimeEstimator gives an offset only once 3 SRs are in.
+  AbsoluteCaptureTime cap{NtpTime::FromTimestamp(Timestamp::Millis(104700)).value, 0};
+  for (int i = 0; i < 3; ++i) {
+    SM_EXPECT_FALSE(le.remote_to_local_offset().has_value());
+    SM_EXPECT_FALSE(le.OnRendered(cap, Timestamp::Millis(102350)).has_value());
+    Timestamp local_send = Timestamp::Seconds(100 + i);
+    NtpTime sr = NtpTime::FromTimestamp(local_send + TimeDelta::Millis(2500));
+    le.OnSenderReport(sr, local_send + TimeDelta::Millis(40), TimeDelta::Millis(80));
+  }
+  SM_ASSERT_TRUE(le.remote_to_local_offset().has_value());
   SM_EXPECT_NEAR(le.remote_to_local_offset()->ms_f(), 2500, 0.1);
-  // Frame captured at local 100.2 s (remote 102.7 s), rendered at 100.35 s.
-  AbsoluteCaptureTime cap{NtpTime::FromTimestamp(Timestamp::Millis(102700)).value, std::nullopt};
-  auto lat = le.OnRendered(cap, Timestamp::Millis(100350));
+  // Frame captured at local 102.2 s (remote 104.7 s), rendered at 102.35 s.
+  auto lat = le.OnRendered(cap, Timestamp::Millis(102350));
   SM_ASSERT_TRUE(lat.has_value());
-  SM_EXPECT_NEAR(lat->ms_f(), 150, 0.5);
+  SM_EXPECT_NEAR(lat->ms_f(), 150, 1.0);
+  // libwebrtc derives no local capture offset from an extension without one.
+  SM_EXPECT_FALSE(le.OnRendered({cap.capture_ntp, std::nullopt}, Timestamp::Millis(102350)).has_value());
+}
+
+// absolute_capture_time_sender.cc, ShouldSendExtension: each rule.
+SM_TEST(CaptureTime, SenderRulesAsLibwebrtc) {
+  const uint64_t base = uint64_t{1000} << 32;
+  const uint64_t ms = (uint64_t{1} << 32) / 1000;
+  {
+    AbsoluteCaptureTimeSender s;
+    Timestamp t0 = Timestamp::Seconds(10);
+    SM_EXPECT_TRUE(s.OnPacket(1, 0, 90000, {base, 0}, t0).has_value());  // First.
+    // Exactly interpolatable and 1 s old: not sent (the rule is "> 1 s").
+    SM_EXPECT_FALSE(s.OnPacket(1, 90000, 90000, {base + (uint64_t{1} << 32), 0}, t0 + TimeDelta::Seconds(1)).has_value());
+    SM_EXPECT_TRUE(s.OnPacket(1, 90000, 90000, {base + (uint64_t{1} << 32), 0},
+                              t0 + TimeDelta::Seconds(1) + TimeDelta::Micros(1)).has_value());
+  }
+  {
+    AbsoluteCaptureTimeSender s;
+    Timestamp t = Timestamp::Seconds(10);
+    s.OnPacket(1, 0, 90000, {base, 0}, t);
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 90000, {base, 0}, t).has_value());          // Source.
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 48000, {base, 0}, t).has_value());          // Rate.
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 48000, {base, 5}, t).has_value());          // Offset.
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 48000, {base, std::nullopt}, t).has_value());
+    SM_EXPECT_FALSE(s.OnPacket(2, 0, 48000, {base, std::nullopt}, t).has_value());
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 48000, {base, std::nullopt}, t, /*force=*/true).has_value());
+    // Interpolation error in whole rounded ms must exceed 1: 1.4 ms rounds
+    // to 1 (kept), 1.6 ms to 2 (sent), in either direction.
+    SM_EXPECT_FALSE(s.OnPacket(2, 0, 48000, {base + ms * 14 / 10, std::nullopt}, t).has_value());
+    SM_EXPECT_FALSE(s.OnPacket(2, 0, 48000, {base - ms * 14 / 10, std::nullopt}, t).has_value());
+    SM_EXPECT_TRUE(s.OnPacket(2, 0, 48000, {base - ms * 16 / 10, std::nullopt}, t).has_value());
+  }
+  {
+    AbsoluteCaptureTimeSender s;
+    Timestamp t = Timestamp::Seconds(10);
+    SM_EXPECT_TRUE(s.OnPacket(1, 0, 0, {base, 0}, t).has_value());
+    SM_EXPECT_TRUE(s.OnPacket(1, 0, 0, {base, 0}, t).has_value());  // A rate of 0 always sends.
+  }
+  const uint32_t csrcs[] = {7, 8};
+  SM_EXPECT_EQ(AbsoluteCaptureTimeSender::GetSource(3, csrcs), 7u);
+  SM_EXPECT_EQ(AbsoluteCaptureTimeSender::GetSource(3, {}), 3u);
+}
+
+// absolute_capture_time_interpolator.cc.
+SM_TEST(CaptureTime, InterpolatorRulesAsLibwebrtc) {
+  const uint64_t base = uint64_t{1000} << 32;
+  // A timestamp behind the last one interpolates backwards; integer rule.
+  SM_EXPECT_EQ(AbsoluteCaptureTimeInterpolator::Interpolate(0xFFFFFFFFu - 44999u, 90000, 0, base),
+               base - (uint64_t{1} << 31));
+  SM_EXPECT_EQ(AbsoluteCaptureTimeInterpolator::Interpolate(1, 3, 0, 0), ((uint64_t{1} << 32) / 3));
+  AbsoluteCaptureTimeInterpolator in;
+  Timestamp t = Timestamp::Seconds(1);
+  SM_EXPECT_FALSE(in.OnPacket(1, 0, 90000, std::nullopt, t).has_value());
+  in.OnPacket(1, 0, 90000, AbsoluteCaptureTime{base, 0}, t);
+  auto at5 = in.OnPacket(1, 90000, 90000, std::nullopt, t + TimeDelta::Seconds(5));
+  SM_ASSERT_TRUE(at5.has_value());
+  SM_EXPECT_EQ(at5->capture_ntp, base + (uint64_t{1} << 32));
+  SM_EXPECT_EQ(*at5->clock_offset, 0);
+  SM_EXPECT_FALSE(in.OnPacket(1, 90000, 90000, std::nullopt, t + TimeDelta::Seconds(5) + TimeDelta::Micros(1)).has_value());
+  // A packet that can't be interpolated retires the stored extension.
+  in.OnPacket(1, 0, 90000, AbsoluteCaptureTime{base, 0}, t);
+  SM_EXPECT_FALSE(in.OnPacket(2, 0, 90000, std::nullopt, t).has_value());
+  SM_EXPECT_FALSE(in.OnPacket(1, 0, 90000, std::nullopt, t).has_value());
+  in.OnPacket(1, 0, 90000, AbsoluteCaptureTime{base, 0}, t);
+  SM_EXPECT_FALSE(in.OnPacket(1, 0, 48000, std::nullopt, t).has_value());
+  SM_EXPECT_FALSE(in.OnPacket(1, 0, 90000, std::nullopt, t).has_value());
+  in.OnPacket(1, 0, 0, AbsoluteCaptureTime{base, 0}, t);
+  SM_EXPECT_FALSE(in.OnPacket(1, 0, 0, std::nullopt, t).has_value());  // Rate 0.
+}
+
+// capture_clock_offset_updater.cc.
+SM_TEST(CaptureTime, CaptureClockOffsetUpdater) {
+  CaptureClockOffsetUpdater u;
+  SM_EXPECT_FALSE(u.AdjustEstimatedCaptureClockOffset(5).has_value());
+  u.SetRemoteToLocalClockOffset(-7);
+  SM_EXPECT_FALSE(u.AdjustEstimatedCaptureClockOffset(std::nullopt).has_value());
+  SM_EXPECT_EQ(*u.AdjustEstimatedCaptureClockOffset(5), -2);
+  u.SetRemoteToLocalClockOffset(1);
+  SM_EXPECT_EQ(*u.AdjustEstimatedCaptureClockOffset(std::numeric_limits<int64_t>::max()), std::numeric_limits<int64_t>::min());
+  u.SetRemoteToLocalClockOffset(std::nullopt);
+  SM_EXPECT_FALSE(u.AdjustEstimatedCaptureClockOffset(5).has_value());
+  SM_EXPECT_FALSE(CaptureClockOffsetUpdater::ConvertToTimeDelta(std::nullopt).has_value());
+  const int64_t ms = (int64_t{1} << 32) / 1000;
+  SM_EXPECT_EQ(CaptureClockOffsetUpdater::ConvertToTimeDelta(ms * 26 / 10)->us(), 3000);  // 2.6 ms rounds to 3.
+  SM_EXPECT_EQ(CaptureClockOffsetUpdater::ConvertToTimeDelta(-ms * 14 / 10)->us(), -1000);
+}
+
+// moving_percentile_filter.h with percentile 0.5: the lower median.
+SM_TEST(CaptureTime, MovingMedianFilter) {
+  MovingMedianFilter f(7);
+  SM_EXPECT_EQ(f.GetFilteredValue(), 0);
+  f.Insert(10);
+  f.Insert(2);
+  SM_EXPECT_EQ(f.GetFilteredValue(), 2);  // Two samples: index 0.
+  for (int64_t v : {8, 4, 6, 100, -50}) f.Insert(v);
+  SM_EXPECT_EQ(f.GetFilteredValue(), 6);  // {-50,2,4,6,8,10,100}.
+  f.Insert(0);                            // Drops 10.
+  SM_EXPECT_EQ(f.GetNumberOfSamplesStored(), 7u);
+  SM_EXPECT_EQ(f.GetFilteredValue(), 4);
+}
+
+// remote_ntp_time_estimator.cc.
+SM_TEST(CaptureTime, RemoteNtpTimeEstimator) {
+  RemoteNtpTimeEstimator e;
+  const TimeDelta ahead = TimeDelta::Millis(2500), rtt = TimeDelta::Millis(80);
+  // SRs every second; one-way delays 40, 40, 140 (queued), 40 ms.
+  const int delays[] = {40, 40, 140, 40};
+  for (int i = 0; i < 4; ++i) {
+    SM_EXPECT_EQ(e.EstimateRemoteToLocalClockOffset().has_value(), i >= 3);
+    Timestamp send = Timestamp::Seconds(100 + i);
+    NtpTime sr = NtpTime::FromTimestamp(send + ahead);
+    SM_EXPECT_TRUE(e.UpdateRtcpTimestamp(rtt, sr, static_cast<uint32_t>(i * 90000), send + TimeDelta::Millis(delays[i])));
+    // The same SR again is not a new sample.
+    SM_EXPECT_TRUE(e.UpdateRtcpTimestamp(rtt, sr, static_cast<uint32_t>(i * 90000), send + TimeDelta::Millis(900)));
+  }
+  auto off = e.EstimateRemoteToLocalClockOffset();
+  SM_ASSERT_TRUE(off.has_value());
+  // Median of {-2500, -2500, -2400, -2500} ms: -2500 (the queued SR is ignored).
+  SM_EXPECT_EQ(Q32x32ToInt64Ms(*off), -2500);
+  // RTP 45000 is remote 100.5 + 2.5 s, local 100.5 s.
+  SM_EXPECT_NEAR((e.EstimateNtp(45000).ToTimestamp() - Timestamp::Millis(100500)).ms_f(), 0, 0.01);
+  RemoteNtpTimeEstimator empty;
+  SM_EXPECT_EQ(empty.EstimateNtp(0).value, 0u);
 }
 
 SM_TEST(HeaderExtensions, OneAndTwoByteForms) {
@@ -357,7 +489,104 @@ SM_TEST(HeaderExtensions, OneAndTwoByteForms) {
   // Survives full RTP serialization.
   auto rt = RtpPacket::Parse(q.Serialize());
   SM_EXPECT_EQ(ParseHeaderExtensions(rt->extension_profile, rt->extension)->size(), 2u);
-  SM_EXPECT_FALSE(ParseHeaderExtensions(0xBEDE, std::vector<uint8_t>{0x15, 1}).has_value());  // Truncated.
+  // Truncated: the packet still parses, without the oversized element (rtp_packet.cc:540-544).
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, std::vector<uint8_t>{0x15, 1})->size(), 0u);
+}
+
+// RtpPacket::ParseBuffer's element loop (rtp_packet.cc:512-571).
+SM_TEST(HeaderExtensions, ParseRulesAsLibwebrtc) {
+  using B = std::vector<uint8_t>;
+  // Elements before an oversized one are kept.
+  auto a = ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x23, 1, 2});
+  SM_ASSERT_EQ(a->size(), 1u);
+  SM_EXPECT_EQ((*a)[0].id, 1);
+  // The reserved id 15 stops parsing; so does a non-zero byte with id 0.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0xF0, 0x20, 0xBB, 0, 0, 0})->size(), 1u);
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x01, 0x20, 0xBB, 0, 0, 0})->size(), 1u);
+  // Padding bytes are skipped.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0, 0, 0x10, 0xAA, 0, 0x20, 0xBB, 0})->size(), 2u);
+  // A repeated id overwrites the earlier value, keeping one element.
+  auto d = ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0x20, 0xBB, 0x10, 0xCC, 0, 0});
+  SM_ASSERT_EQ(d->size(), 2u);
+  SM_EXPECT_EQ((*d)[0].id, 1);
+  SM_EXPECT_EQ((*d)[0].data, B{0xCC});
+  // A header byte with no room for even one data byte is not read.
+  SM_EXPECT_EQ(ParseHeaderExtensions(0xBEDE, B{0x10, 0xAA, 0, 0x30})->size(), 1u);
+  // Two-byte form: app bits are ignored and zero-length elements are allowed,
+  // but a header in the last two bytes is not read.
+  auto t = ParseHeaderExtensions(0x1001, B{5, 0, 6, 1, 0xAA, 0, 0, 0});
+  SM_ASSERT_EQ(t->size(), 2u);
+  SM_EXPECT_TRUE((*t)[0].data.empty());
+  SM_EXPECT_EQ(ParseHeaderExtensions(0x1000, B{6, 1, 0xAA, 0, 0, 0, 7, 0})->size(), 1u);
+  // Neither profile: no elements.
+  SM_EXPECT_FALSE(ParseHeaderExtensions(0xABCD, B{0x10, 0xAA, 0, 0}).has_value());
+}
+
+// RtpHeaderExtensionMap::RegisterByUri (rtp_header_extension_map.cc:100-170).
+SM_TEST(HeaderExtensions, MapRegistrationAsLibwebrtc) {
+  ExtensionMap m;
+  SM_EXPECT_FALSE(m.extmap_allow_mixed());
+  SM_EXPECT_FALSE(m.Register(1, "urn:example:not-a-webrtc-extension"));  // Unknown URI.
+  SM_EXPECT_FALSE(m.Register(0, uri::kMid));                              // Below kMinId.
+  SM_EXPECT_TRUE(m.Register(1, uri::kMid));
+  SM_EXPECT_TRUE(m.Register(1, uri::kMid));          // The same pair again.
+  SM_EXPECT_FALSE(m.Register(1, uri::kTransportCc));  // Id used by another URI: not overwritten.
+  SM_EXPECT_EQ(*m.UriOf(1), uri::kMid);
+  SM_EXPECT_FALSE(m.Register(2, uri::kMid));  // URI already at id 1.
+  SM_EXPECT_TRUE(m.Register(255, uri::kAbsCaptureTime));
+  SM_EXPECT_TRUE(m.Register(14, "http://www.webrtc.org/experiments/rtp-hdrext/playout-delay"));
+  m.Deregister(uri::kMid);
+  SM_EXPECT_FALSE(m.IdOf(uri::kMid).has_value());
+  SM_EXPECT_TRUE(m.Register(2, uri::kMid));
+}
+
+// RtpPacket::AllocateExtension and AllocateRawExtension (rtp_packet.cc:242-353, 620-639).
+SM_TEST(HeaderExtensions, AllocationAsLibwebrtc) {
+  using B = std::vector<uint8_t>;
+  ExtensionMap one;  // No extmap-allow-mixed: one-byte form only.
+  one.Register(1, uri::kTransportCc);
+  one.Register(2, uri::kMid);
+  one.Register(20, uri::kAbsCaptureTime);
+  ExtensionAccessor a(one);
+  RtpPacket p;
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kAbsCaptureTime, B(8, 1)));  // Id 20 needs the two-byte form.
+  SM_EXPECT_FALSE(a.SetString(p, uri::kMid, std::string(17, 'm')));  // 17 bytes too.
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kMid, {}));                    // Empty values are never written.
+  SM_EXPECT_FALSE(a.SetRaw(p, uri::kRid, B{1}));                  // Not registered.
+  SM_EXPECT_TRUE(p.extension.empty());
+  SM_EXPECT_TRUE(a.SetTransportSeq(p, 0x1234));
+  SM_EXPECT_TRUE(a.SetString(p, uri::kMid, "ab"));
+  SM_EXPECT_EQ(p.extension_profile, 0xBEDE);
+  SM_EXPECT_EQ(p.extension, (B{0x11, 0x12, 0x34, 0x21, 'a', 'b', 0, 0}));
+  // A rewrite keeps the element's place; another length is refused.
+  SM_EXPECT_TRUE(a.SetTransportSeq(p, 0x5678));
+  SM_EXPECT_EQ(p.extension, (B{0x11, 0x56, 0x78, 0x21, 'a', 'b', 0, 0}));
+  SM_EXPECT_FALSE(a.SetString(p, uri::kMid, "abc"));
+  SM_EXPECT_EQ(*a.GetString(p, uri::kMid), "ab");
+
+  // With extmap-allow-mixed, a two-byte element promotes the earlier ones.
+  ExtensionMap mixed(true);
+  mixed.Register(1, uri::kTransportCc);
+  mixed.Register(2, uri::kMid);
+  mixed.Register(20, uri::kVideoOrientation);
+  ExtensionAccessor m(mixed);
+  RtpPacket q;
+  SM_EXPECT_TRUE(m.SetTransportSeq(q, 0x1234));
+  SM_EXPECT_TRUE(m.SetString(q, uri::kMid, "ab"));
+  SM_EXPECT_EQ(q.extension_profile, 0xBEDE);
+  SM_EXPECT_TRUE(m.SetRaw(q, uri::kVideoOrientation, B{9}));
+  SM_EXPECT_EQ(q.extension_profile, 0x1000);
+  SM_EXPECT_EQ(q.extension, (B{1, 2, 0x12, 0x34, 2, 2, 'a', 'b', 20, 1, 9, 0}));
+  // A long value in a two-byte packet; a fresh packet starts two-byte.
+  SM_EXPECT_TRUE(m.SetString(q, uri::kMid, "ab"));
+  RtpPacket r;
+  SM_EXPECT_TRUE(m.SetString(r, uri::kMid, std::string(40, 'x')));
+  SM_EXPECT_EQ(r.extension_profile, 0x1000);
+  SM_EXPECT_EQ(*m.GetString(r, uri::kMid), std::string(40, 'x'));
+  auto rt = RtpPacket::Parse(q.Serialize());
+  SM_ASSERT_TRUE(rt.has_value());
+  SM_EXPECT_EQ(*m.GetTransportSeq(*rt), 0x1234);
+  SM_EXPECT_EQ(*m.GetRaw(*rt, uri::kVideoOrientation), B{9});
 }
 
 SM_TEST(HeaderExtensions, TypedAccessors) {

@@ -242,3 +242,36 @@ SM_TEST(AudioJitterBuffer, NetEqDiscardsPacketsAtUnsupportedRates) {
     }
   }
 }
+
+// #568: when the sync buffer can't fill the output (packets under 10 ms),
+// NetEqImpl::GetAudioInternal reads nothing from it, mutes the frame and
+// returns kSampleUnderrun (neteq_impl.cc, "treatment of under-run"); NetEq's
+// statistics don't count the frame. Version 2 plays silence there and keeps
+// the decoded audio for the next pull, instead of concealing the remainder.
+SM_TEST(AudioJitterBufferNetEqV2, SampleUnderrunMutesAndKeepsTheSyncBuffer) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  cfg.packet_ms = 5;
+  cfg.time_stretch = false;
+  AudioJitterBuffer jb(cfg);
+  std::vector<float> out(160, 1.0f);
+  jb.InsertPacket(0, std::vector<float>(80, 0.25f), Timestamp::Millis(0));
+  SM_EXPECT_TRUE(jb.GetAudio(out, Timestamp::Millis(0)) == AudioOperation::kSilence);
+  for (float s : out) SM_EXPECT_EQ(s, 0.0f);
+  SM_EXPECT_EQ(jb.stats().total_samples_received, 0u);
+  SM_EXPECT_EQ(jb.stats().concealed_samples, 0u);
+  SM_EXPECT_TRUE(!jb.PlayoutTimestamp().has_value());
+  // The next packet completes the frame: the first packet's audio is played,
+  // after Expand's lookahead of zeros.
+  jb.InsertPacket(80, std::vector<float>(80, 0.5f), Timestamp::Millis(10));
+  SM_EXPECT_TRUE(jb.GetAudio(out, Timestamp::Millis(10)) == AudioOperation::kNormal);
+  size_t first = 0, second = 0;
+  for (float s : out) {
+    if (s == 0.25f) ++first;
+    if (s == 0.5f) ++second;
+  }
+  SM_EXPECT_EQ(first, 80u);
+  SM_EXPECT_GT(second, 0u);
+  SM_EXPECT_EQ(jb.stats().total_samples_received, 160u);
+  SM_EXPECT_EQ(jb.stats().concealed_samples, 0u);
+}

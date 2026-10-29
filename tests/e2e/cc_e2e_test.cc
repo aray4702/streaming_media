@@ -45,7 +45,8 @@ struct L1T3 {
 // received twice (SendHistory drops a second report, as TransportFeedbackAdapter).
 // The wire carries arrival times in 250 us ticks; SendHistory then hands the
 // estimators each time since the feedback's base time rounded down to 1 ms, as
-// TransportFeedbackAdapter::ProcessTransportFeedback does (issue #365).
+// TransportFeedbackAdapter::ProcessTransportFeedback does (issue #365), on the
+// adapter's local time base (the first feedback's receive time, #569).
 SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization) {
   sim::LinkConfig f;
   f.base_delay = TimeDelta::Millis(25);
@@ -59,6 +60,7 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
   std::map<int64_t, int> reported, received;
   int64_t max_err_us = 0;
   int not_rounded = 0;
+  int64_t first_base_us = -1, first_feedback_us = 0;
   uint16_t seq = 0;
   for (int64_t t = 0; t < 30000; ++t) {
     Timestamp now = Timestamp::Millis(t);
@@ -81,13 +83,19 @@ SM_TEST(E2E_TransportFeedback, EveryPacketReportedReceivedOnceWithinQuantization
         wire[s] = at;
         max_err_us = std::max<int64_t>(max_err_us, std::llabs(at.us() - true_arrival[s].us()));
       }
+      // The adapter's local time base: the first feedback's receive time, then each base-time delta.
       const int64_t base_us = static_cast<int64_t>(fb->reference_time) * 64000;
+      if (first_base_us < 0) {
+        first_base_us = base_us;
+        first_feedback_us = now.us();
+      }
+      const int64_t offset_us = first_feedback_us + (base_us - first_base_us);
       for (const auto& r : history.OnFeedback(*fb, now)) {
         ++reported[r.seq];
         if (!r.received()) continue;
         ++received[r.seq];
         const int64_t since_base_us = wire.at(static_cast<uint16_t>(r.seq)).us() - base_us;
-        not_rounded += r.receive_time.us() != base_us + since_base_us / 1000 * 1000;
+        not_rounded += r.receive_time.us() != offset_us + since_base_us / 1000 * 1000;
       }
     });
   }

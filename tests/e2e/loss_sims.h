@@ -17,7 +17,6 @@
 #include "sm/loss/plc.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
-#include "sm/loss/temporal_layers.h"
 #include "sm/loss/ulpfec.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
@@ -285,10 +284,9 @@ inline PlcSimResult RunPlcSim(const sim::LinkConfig& link_cfg, double seconds, u
   return r;
 }
 
-// --- Video frames: keyframe requests and temporal layers ---------------------
+// --- Video frames: keyframe requests ------------------------------------------
 
 struct FrameSimParams {
-  int temporal_layers = 1;
   double frame_loss = 0.05;        // Whole-frame loss after NACK has given up.
   bool gilbert = false;
   TimeDelta one_way_delay = TimeDelta::Millis(50);
@@ -316,11 +314,11 @@ inline FrameSimResult RunFrameSim(const FrameSimParams& p) {
   } else {
     fcfg.loss_rate = p.frame_loss;
   }
-  sim::NetworkLink<LayerFrame> fwd(fcfg, p.seed);
+  sim::NetworkLink<FrameInfo> fwd(fcfg, p.seed);
   sim::LinkConfig rcfg;
   rcfg.base_delay = p.one_way_delay;
   sim::NetworkLink<FeedbackType> rev(rcfg, p.seed + 1);
-  TemporalLayerScheduler sched(p.temporal_layers);
+  int64_t next_frame_id = 0;
   KeyframeRequester req;
   bool force_key = false;
   FrameSimResult r;
@@ -329,15 +327,18 @@ inline FrameSimResult RunFrameSim(const FrameSimParams& p) {
   for (int64_t t = 0; t <= p.duration.ms() + 500; ++t) {
     Timestamp now = Timestamp::Millis(t);
     if (t < p.duration.ms() && t % interval == 0) {
-      LayerFrame f = sched.NextFrame(force_key);
+      // One spatial and temporal layer, as H.264 in M157: a delta frame references the previous frame.
+      FrameInfo f{next_frame_id, force_key || next_frame_id == 0, {}};
+      if (!f.keyframe) f.references = {next_frame_id - 1};
+      ++next_frame_id;
       if (f.keyframe) ++r.keyframes_sent;
       force_key = false;
       ++r.frames;
       fwd.Send(now, f, DataSize::Bytes(f.keyframe ? 20000 : 4000));
     }
-    fwd.ReceiveEach(now, [&](LayerFrame f, Timestamp at) {
-      req.OnMediaPacket(at, f.info.keyframe);
-      req.OnFrame(f.info, at);
+    fwd.ReceiveEach(now, [&](FrameInfo f, Timestamp at) {
+      req.OnMediaPacket(at, f.keyframe);
+      req.OnFrame(f, at);
     });
     for (auto id : req.TakeDecodableFrames()) {
       (void)id;
