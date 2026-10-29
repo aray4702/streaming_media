@@ -1316,13 +1316,6 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
          verification="No defects found."),
-    dict(id="7.5", slug="codec-negotiation", title="Codec negotiation",
-         problems=["Many codecs and devices -> codec negotiation (VP8, VP9, H.264, AV1, H.265 recently)"],
-         headers=["video/codec_negotiation.h"], unit=["CodecNegotiation"], e2e=["E2E_CodecNegotiation"],
-         bench=["video/CodecNegotiation_offer10"],
-         scenario="A browser-like offer (VP8, VP9, three H.264 profiles, AV1, RTX) against an embedded camera "
-                  "(hardware H.264 CB level 4.0, software VP8, no transport-cc), in both directions.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
     dict(id="7.6", slug="frame-scaler", title="Resolution scaling and aspect handling",
          problems=["Frame size and aspect changes -> resolution adaptation and scaling mid-stream"],
          headers=["video/frame_scaler.h"], unit=["FrameScaler"], e2e=["E2E_FrameScaler"],
@@ -1589,6 +1582,7 @@ NOT_IMPLEMENTED = [
     ("4", "Clock drift estimation and compensation", "Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566)."),
     ("6", "DTX and comfort noise (RFC 3389)", "Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
+    ("7", "Codec negotiation (SDP offer/answer, H.264 profile-level-id)", "Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566)."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
 ]

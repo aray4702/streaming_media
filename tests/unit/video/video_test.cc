@@ -5,7 +5,6 @@
 
 #include "sm/core/random.h"
 #include "sm/video/codec_fallback.h"
-#include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
 #include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
@@ -396,45 +395,6 @@ SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {
   SM_EXPECT_EQ(r.dirty_blocks, 1);
   SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(200)));  // Already absorbed by Analyze.
   SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(1300)));  // Keep-alive.
-}
-
-SM_TEST(CodecNegotiation, H264ProfileLevelParsing) {
-  auto cb = ParseH264ProfileLevelId("42e01f");
-  SM_ASSERT_TRUE(cb.has_value());
-  SM_EXPECT_TRUE(cb->profile == H264Profile::kConstrainedBaseline);
-  SM_EXPECT_EQ(cb->level_idc, 31);
-  auto high = ParseH264ProfileLevelId("640c34");
-  SM_ASSERT_TRUE(high.has_value());
-  SM_EXPECT_TRUE(high->profile == H264Profile::kConstrainedHigh);
-  SM_EXPECT_EQ(ParseH264ProfileLevelId("4d001f")->profile, H264Profile::kMain);
-  SM_EXPECT_FALSE(ParseH264ProfileLevelId("zz0000").has_value());
-  SM_EXPECT_EQ(H264ProfileLevelIdString(*cb), "42e01f");
-}
-
-SM_TEST(CodecNegotiation, AnswerKeepsSupportedInLocalOrder) {
-  std::vector<CodecCapability> offer = {
-      {"VP8", 96, {}, {"nack", "nack pli", "transport-cc"}},
-      {"rtx", 97, {{"apt", "96"}}, {}},
-      {"VP9", 98, {{"profile-id", "2"}}, {"nack"}},
-      {"H264", 102, {{"profile-level-id", "42e034"}, {"packetization-mode", "1"}}, {"nack", "ccm fir", "goog-remb"}},
-      {"rtx", 103, {{"apt", "102"}}, {}},
-      {"H264", 104, {{"profile-level-id", "640034"}, {"packetization-mode", "1"}}, {"nack"}},
-  };
-  std::vector<CodecCapability> local = {
-      {"VP8", 0, {}, {"nack", "nack pli", "transport-cc"}, false},
-      {"VP9", 0, {{"profile-id", "0"}}, {"nack"}, false},
-      {"H264", 0, {{"profile-level-id", "42e01f"}, {"packetization-mode", "1"}}, {"nack", "ccm fir"}, true},
-  };
-  auto ans = NegotiateCodecs(offer, local);
-  SM_ASSERT_EQ(ans.size(), 4u);  // H264 CB, VP8, rtx(96), rtx(102). VP9 p2 != p0.
-  SM_EXPECT_EQ(ans[0].name, "H264");  // Hardware first.
-  SM_EXPECT_EQ(ans[0].payload_type, 102);
-  SM_EXPECT_EQ(ans[0].params["profile-level-id"], "42e01f");  // min(5.2, 3.1)
-  SM_EXPECT_EQ(ans[0].feedback.size(), 2u);
-  SM_EXPECT_EQ(ans[1].name, "VP8");
-  SM_EXPECT_EQ(ans[1].payload_type, 96);
-  SM_EXPECT_EQ(ans[2].payload_type, 97);
-  SM_EXPECT_EQ(ans[3].payload_type, 103);
 }
 
 SM_TEST(FrameScaler, DownUpRoundTripQuality) {

@@ -310,7 +310,7 @@ thresholds), `modules/video_coding/codecs/` (VP8 and H.264 encoder wrappers), li
 
 **Where it runs.** The test bench uses `FreezeDetector` and, through the session layer, `FrameScheduler`; the
 other modules of this section (`QualityScaler`, `ContentSettings`, `FrameChangeDetector`, `CodecFallbackController` (7.2),
-codec negotiation, `Scale`, orientation) and `DegradationController`/`CpuOveruseDetector` (5.6) are not on any
+`Scale`, orientation) and `DegradationController`/`CpuOveruseDetector` (5.6) are not on any
 scenario's path. The harness configures libwebrtc with `DegradationPreference::DISABLED`
 (`webrtc_call.cc`), so **neither side adapts resolution or frame rate in any `sm_compare` scenario**; the
 quality-scaler and overuse rows below cannot show up in a metric until #37 puts adaptation in the call and the
@@ -343,7 +343,7 @@ libwebrtc's rendered frames to this library's `FreezeDetector`.
 
 | Our module | Reason | Status |
 |---|---|---|
-| `NegotiateCodecs`, `ParseH264ProfileLevelId` (7.5) | SDP offer/answer stays with the host stack (`program.md` 0.1); `webrtc_video_engine.cc` holds libwebrtc's codec lists. | n/a; the Owner may remove the module |
+| `NegotiateCodecs`, `ParseH264ProfileLevelId` (7.5, removed) | SDP offer/answer stays with the host stack (`program.md` 0.1); `webrtc_video_engine.cc` holds libwebrtc's codec lists. Removed in #592 (the Owner's A on #566, [11:33 PM PT 2026-10-28](https://github.com/aray4702/streaming_media/issues/111#issuecomment-6489730426)). | removed |
 | `Scale`, `ScaleToFit`, `Crop` (7.6) | libwebrtc scales with libyuv (`I420Buffer::Scale`, not in `reference/`); frames are the app's. | n/a (file needed to compare filters) |
 | `VideoOrientation`, CVO byte (7.3) | The wire format is 3GPP TS 26.114 in both. **Same** (#567): `RtpSender::SendVideoFrame` writes it as `RTPSenderVideo::AddRtpHeaderExtensions` (`rtp_sender_video.cc:388-408`), on the last packet of a keyframe, of a changed rotation and of any non-zero rotation, with `ConvertVideoRotationToCVOByte` (`rtp_cvo.h`); the receiver takes a frame's rotation from its last packet (`rtp_video_stream_receiver2.cc:797-802, 1108`); interop-checked against `VideoOrientation` both ways. Neither bench call maps it, so no parity cell moves. Rotation at render time is the host's. | same |
 
