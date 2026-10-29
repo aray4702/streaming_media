@@ -318,7 +318,7 @@ void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optiona
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
   Start(now);
   RtpSender& s = *audio_send_[static_cast<size_t>(id.index)].sender;
-  s.SendAudio(f.data, f.rtp_timestamp, f.start_of_talkspurt, now, level);
+  s.SendAudio(f.data, f.rtp_timestamp, f.start_of_talkspurt, now, level, f.capture_time);
   EnqueueSenderPackets(s, now);
 }
 
@@ -342,9 +342,11 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   // RtxPacketOverhead when the frame may be retransmitted (allow_retransmission: an H.264 frame with
   // a finite expected retransmission time, which RtpVideoSender gives every frame; the reservation
   // is 0 without RTX, and with NACK off libwebrtc's stream has no RTX; issue #513), less the header
-  // of a middle packet. The first packet carries no extension the middle one lacks here
-  // (transport-cc, abs-send-time and MID go on every packet), so its reduction is zero; the last
-  // and single packets also carry CVO when it is mapped and due (rtp_sender_video.cc:741-758).
+  // of a middle packet. Transport-cc, abs-send-time and MID go on every packet; the first packet
+  // also carries the absolute capture time when it is mapped and due, the last one CVO when it is
+  // mapped and due, and a single packet both (rtp_sender_video.cc:690-758).
+  const std::optional<sync::AbsoluteCaptureTime> abs_capture_time =
+      s.VideoAbsoluteCaptureTime(f.rtp_timestamp, f.capture_time, now);
   const size_t reserved =
       s.FecPacketOverhead() + (video_send_[static_cast<size_t>(id.index)].nack ? s.RtxPacketOverhead() : 0);
   const size_t whole = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
@@ -352,10 +354,11 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   const size_t header = s.MediaHeaderSize();
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
+  limits.first_packet_reduction_len = static_cast<int>(s.FirstPacketReduction(abs_capture_time));
   limits.last_packet_reduction_len = static_cast<int>(s.LastPacketReduction(f.keyframe, f.rotation));
-  limits.single_packet_reduction_len = limits.last_packet_reduction_len;
+  limits.single_packet_reduction_len = static_cast<int>(s.SinglePacketReduction(f.keyframe, f.rotation, abs_capture_time));
   const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(data, limits);
-  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size(), f.rotation);
+  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size(), f.rotation, abs_capture_time);
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
@@ -366,7 +369,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
-                              Timestamp now, bool keyframe, size_t encoded_size, video::Rotation rotation) {
+                              Timestamp now, bool keyframe, size_t encoded_size, video::Rotation rotation,
+                              const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   if (chunks.empty()) {
     ++stats_.empty_video_frames;
@@ -381,7 +385,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;
   vs.frame_times.push_back(now);
   RtpSender& s = *vs.sender;
-  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation);
+  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation, abs_capture_time);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {

@@ -31,6 +31,7 @@
 #include "sm/loss/ulpfec.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtcp_engine.h"
+#include "sm/sync/capture_time.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/video/orientation.h"
 
@@ -100,6 +101,7 @@ struct RtpSenderStats {
   uint64_t mid_packets = 0;
   uint64_t audio_level_packets = 0;
   uint64_t video_orientation_packets = 0;  // Packets carrying the CVO extension.
+  uint64_t abs_capture_time_packets = 0;   // Packets carrying the absolute capture time extension.
 };
 
 // Splits `bytes` into the fewest chunks of at most `max_payload` bytes, as
@@ -114,8 +116,14 @@ class RtpSender : public MetricsSource {
   // Audio: one frame becomes one packet (RED-wrapped when configured).
   // With `level` and the audio-level extension (RFC 6464) mapped, the packet
   // carries it, as libwebrtc's ChannelSend does when the level id is set.
+  // With `capture_time` (the frame's capture time on the `now` clock), the
+  // AbsoluteCaptureTimeSender decides per packet whether it carries the
+  // absolute capture time extension: the capture time in full NTP precision,
+  // offset 0, at the stream's clock rate, as RTPSenderAudio::SendAudio
+  // (rtp_sender_audio.cc:142-157, 252-256).
   void SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
-                 std::optional<audio::AudioLevel> level = std::nullopt);
+                 std::optional<audio::AudioLevel> level = std::nullopt,
+                 std::optional<Timestamp> capture_time = std::nullopt);
   // Header bytes of the next media packet with the extensions it will carry
   // (transport-cc, abs-send-time and, while it is repeated, MID): what
   // libwebrtc's RtpSenderVideo reads from the packet templates to size the
@@ -129,13 +137,32 @@ class RtpSender : public MetricsSource {
   // it is not 0, as RTPSenderVideo::AddRtpHeaderExtensions
   // (rtp_sender_video.cc:388-408); the byte is ConvertVideoRotationToCVOByte
   // (rtp_cvo.h): the rotation alone, camera and flip bits 0.
+  // `abs_capture_time` (from VideoAbsoluteCaptureTime) goes on the first
+  // packet when the extension is mapped (rtp_sender_video.cc:425-428).
   void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                      bool keyframe = false, video::Rotation rotation = video::Rotation::k0);
+                      bool keyframe = false, video::Rotation rotation = video::Rotation::k0,
+                      const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
+  // RTPSenderVideo::SendVideo (rtp_sender_video.cc:690-707), once per frame
+  // before packetization: the extension for a frame captured at
+  // `capture_time` (on the `now` clock), whole milliseconds of NTP time and
+  // offset 0, if AbsoluteCaptureTimeSender decides to send it at 90 kHz;
+  // nullopt without a capture time. The sender's state moves whether or not
+  // the extension is mapped, as libwebrtc's does.
+  std::optional<sync::AbsoluteCaptureTime> VideoAbsoluteCaptureTime(uint32_t rtp_timestamp,
+                                                                    std::optional<Timestamp> capture_time,
+                                                                    Timestamp now);
   // How much larger the last packet's header of such a frame is than a middle
-  // packet's: the packetizer's last_packet_reduction_len (and
-  // single_packet_reduction_len) in RTPSenderVideo::SendVideo
-  // (rtp_sender_video.cc:741-758). 0 unless the frame carries CVO.
+  // packet's: the packetizer's last_packet_reduction_len in
+  // RTPSenderVideo::SendVideo (rtp_sender_video.cc:741-758). 0 unless the
+  // frame carries CVO.
   size_t LastPacketReduction(bool keyframe, video::Rotation rotation) const;
+  // The same for the first packet (first_packet_reduction_len): 0 unless it
+  // carries the absolute capture time.
+  size_t FirstPacketReduction(const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
+  // And for a frame that fits one packet, which carries both
+  // (single_packet_reduction_len).
+  size_t SinglePacketReduction(bool keyframe, video::Rotation rotation,
+                               const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
 
   // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
   // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
@@ -236,6 +263,12 @@ class RtpSender : public MetricsSource {
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
   void StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe = false, bool first = false);
   bool SetsVideoRotation(bool keyframe, video::Rotation rotation) const;
+  bool SetsAbsoluteCaptureTime(const std::optional<sync::AbsoluteCaptureTime>& a) const;
+  void SetAbsoluteCaptureTime(RtpPacket& p, const sync::AbsoluteCaptureTime& a);
+  // Header size of a media packet with the extensions every packet carries, plus CVO and the
+  // absolute capture time when given (rtp_sender_video.cc:717, "set them").
+  size_t HeaderSizeWith(std::optional<video::Rotation> rotation,
+                        const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
 
   RtpSenderConfig cfg_;
   loss::RtxSender rtx_;
@@ -247,6 +280,7 @@ class RtpSender : public MetricsSource {
   uint16_t next_seq_;
   int mid_remaining_;
   video::Rotation last_rotation_ = video::Rotation::k0;  // RTPSenderVideo::last_rotation_.
+  sync::AbsoluteCaptureTimeSender abs_capture_time_sender_;
   bool ssrc_has_acked_ = false;
   bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;

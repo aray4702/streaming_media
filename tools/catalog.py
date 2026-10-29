@@ -1472,7 +1472,11 @@ ALGORITHMS = [
                                 "interpolator retiring its extension at the first packet it can't interpolate, and the "
                                 "clock offset as the median of the last 7 SRs once 3 are in, where it was a minimum with a "
                                 "5% leak. `LatencyEstimator` computes capture time as `WebRTC-UseAbsCapTimeForG2gMetric` "
-                                "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
+                                "does. #567 part 6 (send half): `RtpSender` writes the extension as libwebrtc's senders, "
+                                "once per video frame on its first packet (whole NTP milliseconds, offset 0, 90 kHz, with "
+                                "`first_packet_reduction_len`) and per audio packet (full precision), from the frame's "
+                                "`capture_time`; `sm_rtcp_interop` checks the bytes against libwebrtc both ways. The "
+                                "receivers don't use them yet (the receive half)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
