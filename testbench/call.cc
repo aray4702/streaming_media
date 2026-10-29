@@ -776,6 +776,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
                                               s.scene_change_factor};
   int64_t video_bytes_encoded = 0, qp_sum = 0, height_sum = 0;
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
+  bool held_frame = false;  // The video controller holds the last dropped frame (EncodeDecision::hold).
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
   std::array<uint64_t, 3> vt_rx_prev{};  // Frame release counters at the last row (issue #437).
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
@@ -956,6 +957,60 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
       sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
     };
+    // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
+    // that encodes a held frame).
+    auto encode_video = [&](const rtp::EncodeDecision& dec, Timestamp capture, Timestamp at) {
+      const int enc_w = dec.width, enc_h = dec.height;
+      const DataRate vr = dec.target;
+      const bool key = dec.keyframe;
+      // VideoSendStreamImpl::OnEncoderConfigurationChanged: the FEC controller takes the encoded size.
+      if (enc_w != fec_width || enc_h != fec_height) {
+        sender.SetVideoEncodingData(video_send, enc_w, enc_h);
+        fec_width = enc_w;
+        fec_height = enc_h;
+      }
+      ++vt_row.encoded;
+      ++frames_encoded;
+      double per_frame = static_cast<double>(vr.bps()) / 8 / s.video_fps;
+      int64_t bytes = static_cast<int64_t>(
+          key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2) * EncoderModel::DeltaSizeFactor(enc_behaviour, capture.ms(), s.video_fps));
+      bytes = std::max<int64_t>(bytes, 200);
+      vt_row.encoded_bytes += bytes;
+      const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
+      vt_row.qp_sum += qp;
+      vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
+      qp_sum += qp;
+      height_sum += enc_h;
+      vt_row.height_sum += enc_h;
+      if (key) ++keyframes_sent;
+      vt_row.encode_width = enc_w;
+      vt_row.encode_height = enc_h;
+      if (key) {
+        ++vt_row.keyframes;
+        vt_row.keyframe_bytes += bytes;
+      }
+      video_bytes_encoded += bytes;
+      const uint32_t rtp_ts = static_cast<uint32_t>(capture.ms() * 90);
+      const TimeDelta encode_time =
+          s.encode_delay ? TimeDelta::Micros(EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed)) : TimeDelta::Zero();
+      PendingFrame f{capture, at + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts};
+      if (encode_time > TimeDelta::Zero()) {
+        encoding.push_back(f);
+      } else {
+        frame_encoded(f);
+      }
+    };
+    // VideoStreamEncoder::OnBitrateUpdated after the session ran: a resume encodes the frame held during the
+    // pause (pending_frame_), with its capture time, as libwebrtc's encoder does in sm_compare.
+    auto poll_pending_frame = [&](Timestamp at) {
+      if (const std::optional<rtp::EncodeDecision> p = video_ctl.MaybeEncodePendingFrame(at)) {
+        held_frame = false;
+        --frames_skipped;  // Counted when it was held.
+        encode_video(*p, p->capture_time, at);
+      } else if (held_frame && !video_ctl.has_pending_frame()) {
+        held_frame = false;  // Released after kPendingFrameTimeoutMs without ProcessDroppedFrame: not a drop there.
+      }
+    };
     // A packet that arrived on the forward link, before the receiver takes it.
     auto on_forward = [&](const Fwd& w, Timestamp at) {
       int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
@@ -1018,6 +1073,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       sender_ran = at;
       put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, at, true);
       sender_events(at);
+      poll_pending_frame(at);
     };
     auto run_receiver = [&](Timestamp at) {
       receiver.Process(at);
@@ -1092,57 +1148,27 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       next_frame_ms = k * 1000 / s.video_fps;
       // The library decides: encode or drop, keyframe or not, and the rate.
       const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
-      // The size the library asks for (the captured size unless quality scaling adapts it).
-      const int enc_w = dec.width, enc_h = dec.height;
-      // VideoSendStreamImpl::OnEncoderConfigurationChanged: the FEC controller takes the encoded size.
-      if (dec.encode && (enc_w != fec_width || enc_h != fec_height)) {
-        sender.SetVideoEncodingData(video_send, enc_w, enc_h);
-        fec_width = enc_w;
-        fec_height = enc_h;
-      }
+      // The size the library asks for (the captured size unless quality scaling adapts it) is dec.width x
+      // dec.height; encode_video gives it to the FEC controller.
       const DataRate vr = dec.target;
-      const bool key = dec.keyframe;
       ++vt_row.captured;
       vt_row.encoder_target_bps = vr.bps();
       encoder_target_bps_sum += vr.bps();
+      // VideoStreamEncoder counts a frame it holds (pending_frame_, for its size or a pause) as dropped
+      // (kEncoderQueue) only when the next frame releases it, and not when a resume encodes it.
+      if (held_frame && dec.reason != rtp::DropReason::kCongestionWindow) ++vt_row.dropped_encoder_queue;
+      if (dec.reason != rtp::DropReason::kCongestionWindow) held_frame = dec.hold;
       if (!dec.encode) {
         ++frames_skipped;
         switch (dec.reason) {
           case rtp::DropReason::kFrameDropper: ++vt_row.dropped_rate_limiter; break;
           case rtp::DropReason::kCongestionWindow: ++vt_row.dropped_congestion_window; break;
-          default: ++vt_row.dropped_encoder_queue; break;  // Paused: libwebrtc's EncoderPaused path.
+          default:
+            if (!dec.hold) ++vt_row.dropped_encoder_queue;  // Paused: libwebrtc's EncoderPaused path.
+            break;
         }
       } else {
-        ++vt_row.encoded;
-        ++frames_encoded;
-        double per_frame = static_cast<double>(vr.bps()) / 8 / s.video_fps;
-        int64_t bytes = static_cast<int64_t>(
-            key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2) * EncoderModel::DeltaSizeFactor(enc_behaviour, t, s.video_fps));
-        bytes = std::max<int64_t>(bytes, 200);
-        vt_row.encoded_bytes += bytes;
-        const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
-        vt_row.qp_sum += qp;
-        vt_row.encode_us_sum += EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed);
-        qp_sum += qp;
-        height_sum += enc_h;
-        vt_row.height_sum += enc_h;
-        if (key) ++keyframes_sent;
-        vt_row.encode_width = enc_w;
-        vt_row.encode_height = enc_h;
-        if (key) {
-          ++vt_row.keyframes;
-          vt_row.keyframe_bytes += bytes;
-        }
-        video_bytes_encoded += bytes;
-        const uint32_t rtp_ts = static_cast<uint32_t>(t * 90);
-        const TimeDelta encode_time =
-            s.encode_delay ? TimeDelta::Micros(EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed)) : TimeDelta::Zero();
-        PendingFrame f{now, now + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts};
-        if (encode_time > TimeDelta::Zero()) {
-          encoding.push_back(f);
-        } else {
-          frame_encoded(f);
-        }
+        encode_video(dec, now, now);
       }
     }
 
@@ -1166,6 +1192,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     sender.Process(now);
     sender_ran = now;
     put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
+    poll_pending_frame(now);
 
     // --- Receiver -----------------------------------------------------------
     // The receiver learns each RTT sample the sender measures, for its

@@ -102,9 +102,9 @@ struct Scenario {
   bool rate_utilization_tracker = true;
   // `adjuster_on_update on|off`: the bitrate adjuster re-runs only when VideoStreamEncoder's
   // UpdateBitrateAllocation does (an allocation update, a reconfiguration, every 1 s; issue #569;
-  // rtp::VideoSendControllerConfig::adjuster_on_update). Off (the default until its flip is judged on
-  // the parity report): every captured frame.
-  bool adjuster_on_update = false;
+  // rtp::VideoSendControllerConfig::adjuster_on_update). On by default, as libwebrtc (issue #637); off:
+  // every captured frame.
+  bool adjuster_on_update = true;
   // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
   // issue #568). On by default, as libwebrtc; `off` keeps one session-wide RTT.

@@ -97,14 +97,15 @@ class JitterEstimator {
   void UpdateRtt(TimeDelta rtt) { rtt_filter_.Update(rtt); }
   // Diagnostics.
   double var_noise_ms2() const { return var_noise_ms2_; }
-  double frame_rate_hz() const { return GetFrameRate(); }
+  double frame_rate_hz() const;
   int nack_count() const { return nack_count_; }
 
  private:
   void EstimateRandomJitter(double d_dt, Timestamp now);
   double NoiseThreshold() const;
   TimeDelta CalculateEstimate();
-  double GetFrameRate() const;
+  // GetFrameRate(): a Frequency, so whole millihertz.
+  int64_t GetFrameRateMilliHz() const;
 
   FrameDelayVariationKalmanFilter kalman_filter_;
   double avg_frame_size_bytes_ = 0;

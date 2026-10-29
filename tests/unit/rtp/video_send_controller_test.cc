@@ -477,3 +477,130 @@ SM_TEST(VideoSendController, BitrateAdjusterRunsOnAllocationUpdatesAndEverySecon
   SM_EXPECT_TRUE(d.target != last);
   SM_EXPECT_TRUE(d.target == c.bitrate_adjuster().adjusted());
 }
+
+// VideoStreamEncoder's pending_frame_ (video_stream_encoder.cc MaybeEncodeVideoFrame and
+// OnBitrateUpdated): a frame dropped while the encoder is paused is held, and the resume encodes it at
+// once, before the next frame is captured, with its own capture time.
+SM_TEST(VideoSendController, PausedFrameIsHeldAndEncodedOnResume) {
+  Session s(Cfg());
+  VideoSendController c({}, s);
+  SM_EXPECT_TRUE(c.OnCapturedFrame({640, 360}, At(0)).encode);
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(0));
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(10)).has_value());  // Never paused.
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  auto d = c.OnCapturedFrame({640, 360}, At(33));
+  SM_EXPECT_TRUE(d.reason == DropReason::kPaused);
+  SM_EXPECT_TRUE(d.hold);
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(40)).has_value());  // Still paused.
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  const std::optional<EncodeDecision> p = c.MaybeEncodePendingFrame(At(50));
+  SM_EXPECT_TRUE(p.has_value());
+  SM_EXPECT_TRUE(p->encode);
+  SM_EXPECT_TRUE(p->capture_time == At(33));
+  SM_EXPECT_EQ(p->width, 640);
+  SM_EXPECT_EQ(p->height, 360);
+  SM_EXPECT_FALSE(p->keyframe);
+  SM_EXPECT_TRUE(p->target.bps() > 0);
+  c.OnEncoded({DataSize::Bytes(1000), false, 30}, At(50));
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(55)).has_value());  // Released.
+  d = c.OnCapturedFrame({640, 360}, At(66));
+  SM_EXPECT_TRUE(d.encode);
+  SM_EXPECT_FALSE(d.hold);
+  SM_EXPECT_TRUE(d.capture_time == At(66));
+}
+
+// Each MaybeEncodeVideoFrame drops the frame held before it (kEncoderQueue): only the last frame
+// captured during the pause is left to encode.
+SM_TEST(VideoSendController, NextCapturedFrameReplacesTheHeldFrame) {
+  Session s(Cfg());
+  VideoSendController c({}, s);
+  c.OnCapturedFrame({640, 360}, At(0));
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(0));
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  for (int t = 33; t <= 99; t += 33) SM_EXPECT_TRUE(c.OnCapturedFrame({640, 360}, At(t)).hold);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  const auto p = c.MaybeEncodePendingFrame(At(110));
+  SM_EXPECT_TRUE(p.has_value() && p->capture_time == At(99));
+}
+
+// kPendingFrameTimeoutMs: a frame held for 1 s or more is released without an encode.
+SM_TEST(VideoSendController, HeldFrameOlderThanOneSecondIsNotEncoded) {
+  Session s(Cfg());
+  VideoSendController c({}, s);
+  c.OnCapturedFrame({640, 360}, At(0));
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(0));
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  c.OnCapturedFrame({640, 360}, At(33));
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(1033)).has_value());
+  // 999 ms is still in time.
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  c.OnCapturedFrame({640, 360}, At(1066));
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  SM_EXPECT_TRUE(c.MaybeEncodePendingFrame(At(2065)).has_value());
+}
+
+// A frame dropped for its size is held too, but without a resume the next frame drops it; on a resume
+// a frame still too large (DropDueToSize) stays held and is not encoded.
+SM_TEST(VideoSendController, SizeDroppedFrameIsHeldButNotEncodedWhileTooLarge) {
+  Session s(Cfg());
+  VideoSendController c({}, s);  // Quality scaling on: the start rate allows 640x480 at most.
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderPause));
+  auto d = c.OnCapturedFrame({1280, 720}, At(0));
+  SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+  SM_EXPECT_TRUE(d.hold);
+  c.OnSessionEvent(Ev(SessionEventType::kEncoderResume));
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(10)).has_value());  // 1280x720 is still too large.
+  d = c.OnCapturedFrame({1280, 720}, At(33));  // Adapted to 960x540: still too large.
+  SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(40)).has_value());  // Not paused since the last look.
+  SM_EXPECT_TRUE(c.OnCapturedFrame({1280, 720}, At(66)).encode);
+}
+
+// InitialFrameDropper::SetTargetBitrate with QualityScalerSettings' initial_bitrate_interval_ms and
+// initial_bitrate_factor: the first target below factor x start bitrate within the interval restarts the
+// initial frame drop, once. Unset (the default, as M157) it never does.
+SM_TEST(VideoSendController, StartBitrateDropRestartsTheInitialFrameDrop) {
+  for (const bool configured : {false, true}) {
+    Session s(Cfg());
+    s.AddVideoSend(VideoStreamConfig{});
+    VideoSendControllerConfig cfg;
+    if (configured) {
+      cfg.initial_bitrate_interval = TimeDelta::Seconds(60);
+      cfg.initial_bitrate_factor = 0.5;
+    }
+    VideoSendController c(cfg, s);
+    // 320x180 fits any rate: the first frame ends the initial frame drop.
+    int t = 0;
+    const EncodeDecision first = c.OnCapturedFrame({320, 180}, At(t));
+    SM_EXPECT_TRUE(first.encode);
+    c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(t));
+    // The receiver caps the estimate at 100 kbps, under half the start rate (about 290 kbps for video).
+    s.Process(At(t));
+    s.send_side().OnRemb(DataRate::KilobitsPerSec(100));
+    t = 33;
+    s.Process(At(t));
+    SM_EXPECT_TRUE(s.rates().video_target < first.target * 0.5);
+    // The camera now delivers 640x360: above 320x240, too large for under 300 kbps.
+    const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
+    if (configured) {
+      // The initial frame drop runs again: dropped and adapted down, as at the start.
+      SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+      SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 1);
+    } else {
+      SM_EXPECT_TRUE(d.encode);
+      SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 0);
+    }
+    // As at the start it drops until a frame fits (480x270 too, then 320x180), and then no more.
+    int size_drops = d.reason == DropReason::kSize ? 1 : 0;
+    for (t = 66; t < 3000; t += 33) {
+      s.Process(At(t));
+      if (t == 1000) s.send_side().OnRemb(DataRate::KilobitsPerSec(60));
+      const EncodeDecision e = c.OnCapturedFrame({640, 360}, At(t));
+      if (e.reason == DropReason::kSize) ++size_drops;
+      if (e.encode) c.OnEncoded({DataSize::Bytes(300), e.keyframe, 30}, At(t));
+    }
+    SM_EXPECT_EQ(size_drops, configured ? 2 : 0);
+    SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), configured ? 2 : 0);
+  }
+}

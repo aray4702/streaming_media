@@ -459,9 +459,10 @@ ALGORITHMS = [
                   "bottleneck with 10 ms jitter. Each frame's render time comes from VideoTiming fed by the "
                   "estimator; a frame is late if it arrives (plus decode time) after its render time.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
-               "Deviation from libwebrtc: the jitter term is 3 sigma with no offset, where libwebrtc uses "
-               "2.33 sigma - 30 ms (it compensates elsewhere with OS-jitter and render allowances). Both are "
-               "configurable.",
+               "Timing v2 (the default) is libwebrtc's `video/timing/` and `VCMTiming` with their defaults; "
+               "rows 4.1 and 4.2 there list each part, re-checked line by line on #645. Timing v1 (`timing v1`, "
+               "not the default) differs from libwebrtc: its jitter term is 3 sigma with no offset, where "
+               "libwebrtc uses 2.33 sigma - 30 ms plus 10 ms of OS jitter.",
          verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
                       "network jitter, so about 600 of 1 800 frames arrived after their render time. With the new "
                       "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay. "
@@ -477,6 +478,11 @@ ALGORITHMS = [
                       "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
                       "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
                       "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
+                      "Re-checked against `compare/webrtc/reference/` on #645: libwebrtc's unit arithmetic in three places "
+                      "(the 90 kHz RTP delta truncates to the microsecond, the frame rate is whole millihertz, the "
+                      "RTT filter's short average divides), pinned by `unit.VcmTiming`'s "
+                      "`IfdvRtpDeltaTruncatesToTheMicrosecond` and `JitterFrameRateIsWholeMillihertz`; the suite "
+                      "moves by at most 0.2 ms. "
                       "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
                       "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
                       "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
@@ -859,12 +865,11 @@ ALGORITHMS = [
                "`rate_utilization_tracker on|off`, on by default as libwebrtc since #355): produced bytes over the "
                "unadjusted target's budget, libwebrtc's default (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment); "
                "off, the factor comes from the detector, as with the field trial disabled. With `adjuster_on_update` (VideoSendControllerConfig, "
-               "off by default until its flip is judged on the parity report; issue #569) the adjusted rate is "
+               "issue #569; on by default as libwebrtc since #637) the adjusted rate is "
                "recomputed when VideoStreamEncoder's UpdateBitrateAllocation runs: on each allocation update "
                "(OnBitrateUpdated), on a reconfiguration and every 1 s (kParameterUpdateIntervalMs), and held in "
                "between; there an update is applied at the next captured frame, the last of several between two "
-               "frames only. Remaining differences: one stream with one temporal layer; rates adjusted per captured "
-               "frame while the switch is off. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "frames only. Remaining differences: one stream with one temporal layer. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -1236,11 +1241,11 @@ ALGORITHMS = [
                                 "exclude the intended hangover."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
-         headers=["audio/audio_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
+         headers=["audio/audio_level.h", "core/rms_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
          bench=["audio/AudioLevel_20ms"],
          scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
                   "tones and silence must match.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. The RFC 6464 header level is libwebrtc's RmsLevel (modules/audio_processing/rms_level.cc, issue #567): the mean square over every 10 ms chunk since the last Average(), as -dBov rounded as libwebrtc, 127 for digital silence and 126 for faint non-zero input, restarted when the chunk size changes; ChannelSend feeds it each capture frame (AnalyzeMuted when muted) and writes Average() per packet. ComputeLevel is RmsLevel on one frame. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. The RFC 6464 header level is libwebrtc's RmsLevel (modules/audio_processing/rms_level.cc, issue #567): the mean square over every 10 ms chunk since the last Average(), as -dBov rounded as libwebrtc, 127 for digital silence and 126 for faint non-zero input, restarted when the chunk size changes. As ChannelSend, the send path computes it (issue #567): Session::AnalyzeAudioCapture feeds each 10 ms capture frame to the stream's RmsLevel in RtpSender (AnalyzeMuted for a muted frame after a muted one), and every audio packet carries Average() while the extension is mapped, unless the caller passes a level (the override); the voice bit is off for an Opus DTX frame. RmsLevel lives in core (sm/core/rms_level.h) so the RTP section can use it. ComputeLevel is RmsLevel on one frame. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
                       "the RFC 6464 codec and level are unchanged. RmsLevel (issue #567) is checked against libwebrtc's own RmsLevel "
                       "on 400 packets and the extension byte against libwebrtc's AudioLevelExtension in both directions "
                       "(sm_rtcp_interop)."),
@@ -1428,9 +1433,14 @@ ALGORITHMS = [
                       "(`call/adaptation/resource_adaptation_processor.cc`): each resource keeps the restrictions it "
                       "last asked for, and an adapt-up applies only for the resource with the most adaptations, "
                       "alone (`kNotMostLimitedResource`, `kSharedMostLimitedResource`). Not ported: the BALANCED and "
-                      "MAINTAIN_RESOLUTION steps, the processor's removal of a resource (both stay for the call), "
-                      "the initial-drop reset on a start-bitrate drop (off by default), and the dropped "
-                      "frame kept as `pending_frame_` (the next captured frame is used instead). The drop checks run "
+                      "MAINTAIN_RESOLUTION steps and the processor's removal of a resource (both stay for the "
+                      "call). #646 ports the initial-drop reset on a start-bitrate drop "
+                      "(`InitialFrameDropper::SetTargetBitrate`, behind QualityScalerSettings' "
+                      "`initial_bitrate_interval_ms` / `initial_bitrate_factor`, unset by default as in M157) and "
+                      "`pending_frame_`: a frame dropped for its size or a pause is held, the next frame releases "
+                      "it (kEncoderQueue), and a resume encodes it at once if it fits and is under 1 s old "
+                      "(`OnBitrateUpdated`, `kPendingFrameTimeoutMs`); unit tests cover each rule, and no scenario "
+                      "pauses the encoder on either stack (the parity traces show only the 4 initial drops). The drop checks run "
                       "in `VideoStreamEncoder`'s order when quality scaling is on: the congestion-window drop "
                       "(`OnFrame`), then `DropDueToSize` and `OnMaybeEncodeFrame`, the outage pause "
                       "(`EncoderPaused`) and the frame dropper. `issue_84_quality_scaling_720p_low_rate` and "
