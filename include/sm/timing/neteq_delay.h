@@ -153,6 +153,20 @@ class DelayConstraints {
   int packet_len_ms_ = 0;
 };
 
+// One DelayManager::Update or Reset, for the libwebrtc comparison's NetEq
+// trace (issue #721). The libwebrtc side writes the same rows from a
+// DelayManager wrapper in compare/webrtc/webrtc_call.cc.
+struct NetEqDelayTraceRow {
+  int64_t now_ms = 0;  // TickTimer ticks * 10 ms.
+  bool reset = false;
+  uint32_t rtp_timestamp = 0;
+  int delay_ms = 0;
+  bool reordered = false;
+  int underrun_ms = -1;  // UnderrunOptimizer::GetOptimalDelayMs(), -1 if none yet.
+  int reorder_ms = -1;   // ReorderOptimizer::GetOptimalDelayMs(), -1 if none yet.
+  int target_ms = 0;     // DelayManager::TargetDelayMs() after the call.
+};
+
 // DelayManager::Config defaults.
 struct NetEqDelayConfig {
   double quantile = 0.95;
@@ -164,6 +178,8 @@ struct NetEqDelayConfig {
   int ms_per_loss_percent = 20;
   int max_packets_in_buffer = 200;  // NetEq::Config::max_packets_in_buffer.
   int base_min_delay_ms = 0;        // NetEq::Config::min_delay_ms.
+  // Test bench only: when set, every update and reset is appended (issue #721).
+  std::vector<NetEqDelayTraceRow>* trace = nullptr;
 };
 
 // DelayManager with the packet-arrival half of DecisionLogic around it.
@@ -181,7 +197,7 @@ class NetEqDelayManager : public MetricsSource {
   int GetMaxDelayMs() const { return arrival_history_.GetMaxDelayMs(); }
   bool SetMinimumDelay(int delay_ms) { return constraints_.SetMinimumDelay(delay_ms); }
   // DecisionLogic::SoftReset (the delay part).
-  void SoftReset();
+  void SoftReset(int64_t now_ms = 0);
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

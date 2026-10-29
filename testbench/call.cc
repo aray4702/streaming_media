@@ -279,6 +279,20 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
   return out;
 }
 
+std::string NetEqTraceCsv(const std::vector<timing::NetEqDelayTraceRow>& rows) {
+  std::string out = "t_ms,event,rtp_ts,delay_ms,reordered,underrun_ms,reorder_ms,target_ms\n";
+  auto opt = [](int v) { return v < 0 ? std::string() : std::to_string(v); };
+  int64_t base = 0;
+  for (const auto& r : rows) {
+    if (r.reset) base = r.now_ms;
+    out += std::to_string(r.now_ms - base) + (r.reset ? ",reset," : ",update,") +
+           (r.reset ? std::string() : std::to_string(r.rtp_timestamp)) + "," +
+           (r.reset ? std::string() : std::to_string(r.delay_ms)) + "," + (r.reordered ? "1" : "0") + "," +
+           opt(r.underrun_ms) + "," + opt(r.reorder_ms) + "," + std::to_string(r.target_ms) + "\n";
+  }
+  return out;
+}
+
 int32_t TraceHeaderBytes(std::span<const uint8_t> p, int64_t wire_bytes, uint8_t red_pt) {
   if (p.size() < 12 || (p[0] >> 6) != 2) return -1;
   size_t off = 12 + 4 * static_cast<size_t>(p[0] & 0x0f);
@@ -693,6 +707,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
   audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
   audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
+  if (opt.audio_trace) audio_cfg.jitter_buffer.neteq_delay.trace = &rep.neteq_trace;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;

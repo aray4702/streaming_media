@@ -187,7 +187,7 @@ AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) 
   ++ticks_;  // NetEqImpl::GetAudioInternal: tick_timer_->Increment().
   last_decoded_timestamps_.clear();  // NetEqImpl::GetAudioInternal (neteq_impl.cc:674).
   if (cfg_.version >= 2 && !neteq_reset_done_ && stats_.packets_received > 0) {
-    neteq_delay_.SoftReset();
+    neteq_delay_.SoftReset(ticks_ * kMsPerTick);
     decision_.SoftReset(ticks_);
     neteq_reset_done_ = true;
   }

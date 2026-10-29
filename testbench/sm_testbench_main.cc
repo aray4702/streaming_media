@@ -120,6 +120,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.audio.csv",
                     std::ios::binary)
           << sm::testbench::AudioTraceCsv(report.audio_trace);
+      // NetEq's DelayManager per update (issue #721; neteq v2 only).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.neteq.csv",
+                    std::ios::binary)
+          << sm::testbench::NetEqTraceCsv(report.neteq_trace);
       // The audio send path per frame and report block (issue #477; tools/audio_send.py).
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) +
                         ".sm.audiosend.csv",

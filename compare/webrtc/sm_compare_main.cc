@@ -285,6 +285,9 @@ int main(int argc, char** argv) {
         // The audio send path per frame and report block (issue #477), same scenario and seed.
         const std::string sm_audio_send = sm::testbench::AudioSendCsv(ours.back().audio_send_trace);
         const std::string rtc_audio_send = sm::testbench::AudioSendCsv(theirs.back().audio_send_trace);
+        // NetEq's DelayManager per update (issue #721), same scenario and seed.
+        const std::string sm_neteq = sm::testbench::NetEqTraceCsv(ours.back().neteq_trace);
+        const std::string rtc_neteq = sm::testbench::NetEqTraceCsv(theirs.back().neteq_trace);
         if (named) {
           traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
@@ -292,7 +295,9 @@ int main(int argc, char** argv) {
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
                          ", \"webrtc_audio\": " + JsonString(rtc_audio) + ", \"sm_audiosend\": " +
-                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) + "}";
+                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
+                         ", \"sm_neteq\": " + JsonString(sm_neteq) + ", \"webrtc_neteq\": " + JsonString(rtc_neteq) +
+                         "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -310,6 +315,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.audio.csv") << rtc_audio;
           std::ofstream(stem + ".sm.audiosend.csv") << sm_audio_send;
           std::ofstream(stem + ".webrtc.audiosend.csv") << rtc_audio_send;
+          std::ofstream(stem + ".sm.neteq.csv") << sm_neteq;
+          std::ofstream(stem + ".webrtc.neteq.csv") << rtc_neteq;
         }
       }
       if (!dump_dir.empty()) {

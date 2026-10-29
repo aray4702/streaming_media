@@ -58,6 +58,14 @@
 #include "api/transport/network_control.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_delay_based.h"
 #include "logging/rtc_event_log/events/rtc_event_bwe_update_loss_based.h"
+#include "api/neteq/neteq_controller_factory.h"
+#include "api/neteq/neteq_factory.h"
+#include "api/neteq/tick_timer.h"
+#include "modules/audio_coding/neteq/decision_logic.h"
+#include "modules/audio_coding/neteq/delay_manager.h"
+#include "modules/audio_coding/neteq/neteq_impl.h"
+#include "modules/audio_coding/neteq/reorder_optimizer.h"
+#include "modules/audio_coding/neteq/underrun_optimizer.h"
 #include "modules/audio_device/include/fake_audio_device.h"
 #include "modules/audio_mixer/audio_mixer_impl.h"
 #include "modules/congestion_controller/goog_cc/delay_based_bwe.h"
@@ -404,6 +412,96 @@ class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
   std::function<int64_t()> now_us_;
   std::vector<cc::BweTraceRow>* rows_;
   w::Timestamp t0_;
+};
+
+// NetEq's DelayManager with every Update and Reset recorded (issue #721), in the rows
+// sm::timing::NetEqDelayManager writes for this library's. It forwards to libwebrtc's own
+// DelayManager, built as DefaultNetEqControllerFactory builds it
+// (api/neteq/default_neteq_controller_factory.cc:24-28). DelayManager keeps its two optimizers
+// private, so a copy of each, built as DelayManager's constructor builds them
+// (delay_manager.cc:29-37,66-74) and fed the same calls (delay_manager.cc:76-89), gives
+// their outputs; the row's target is the real DelayManager's.
+class TracingDelayManager final : public w::DelayManagerInterface {
+ public:
+  TracingDelayManager(const w::DelayManager::Config& config, const w::TickTimer* tick_timer,
+                      std::vector<timing::NetEqDelayTraceRow>* rows)
+      : delay_manager_(config, tick_timer),
+        underrun_(tick_timer, static_cast<int>((1 << 30) * config.quantile),
+                  static_cast<int>((1 << 15) * config.forget_factor), config.start_forget_weight,
+                  config.resample_interval_ms),
+        tick_timer_(tick_timer),
+        rows_(rows) {
+    if (config.use_reorder_optimizer) {
+      reorder_.emplace(static_cast<int>((1 << 15) * config.reorder_forget_factor), config.ms_per_loss_percent,
+                       config.start_forget_weight);
+    }
+    Record(/*reset=*/true, 0, 0, false);  // DelayManager's constructor resets it.
+  }
+  void Update(int arrival_delay_ms, bool reordered, w::NetEqController::PacketArrivedInfo info) override {
+    delay_manager_.Update(arrival_delay_ms, reordered, info);
+    if (!reorder_ || !reordered) underrun_.Update(arrival_delay_ms);
+    if (reorder_) {
+      reorder_->Update(arrival_delay_ms, reordered, underrun_.GetOptimalDelayMs().value_or(kStartDelayMs));
+    }
+    Record(/*reset=*/false, info.main_timestamp, arrival_delay_ms, reordered);
+  }
+  void Reset() override {
+    delay_manager_.Reset();
+    underrun_.Reset();
+    if (reorder_) reorder_->Reset();
+    Record(/*reset=*/true, 0, 0, false);
+  }
+  int TargetDelayMs() const override { return delay_manager_.TargetDelayMs(); }
+
+ private:
+  static constexpr int kStartDelayMs = 80;  // delay_manager.cc:27.
+  void Record(bool reset, uint32_t rtp_timestamp, int delay_ms, bool reordered) {
+    timing::NetEqDelayTraceRow r;
+    r.now_ms = static_cast<int64_t>(tick_timer_->ticks() * tick_timer_->ms_per_tick());
+    r.reset = reset;
+    r.rtp_timestamp = rtp_timestamp;
+    r.delay_ms = delay_ms;
+    r.reordered = reordered;
+    r.underrun_ms = underrun_.GetOptimalDelayMs().value_or(-1);
+    r.reorder_ms = reorder_ ? reorder_->GetOptimalDelayMs().value_or(-1) : -1;
+    r.target_ms = delay_manager_.TargetDelayMs();
+    rows_->push_back(r);
+  }
+  w::DelayManager delay_manager_;
+  w::UnderrunOptimizer underrun_;
+  std::optional<w::ReorderOptimizer> reorder_;
+  const w::TickTimer* tick_timer_;
+  std::vector<timing::NetEqDelayTraceRow>* rows_;
+};
+
+// DefaultNetEqControllerFactory with the DelayManager above.
+class TracingNetEqControllerFactory final : public w::NetEqControllerFactory {
+ public:
+  explicit TracingNetEqControllerFactory(std::vector<timing::NetEqDelayTraceRow>* rows) : rows_(rows) {}
+  std::unique_ptr<w::NetEqController> Create(const w::Environment& env,
+                                             const w::NetEqController::Config& config) const override {
+    auto delay_manager = std::make_unique<TracingDelayManager>(w::DelayManager::Config(env.field_trials()),
+                                                               config.tick_timer, rows_);
+    return std::make_unique<w::DecisionLogic>(env, config, std::move(delay_manager));
+  }
+
+ private:
+  std::vector<timing::NetEqDelayTraceRow>* rows_;
+};
+
+// DefaultNetEqFactory (api/neteq/default_neteq_factory.cc) with the controller factory above, for the
+// receiver's Call (CallConfig::neteq_factory).
+class TracingNetEqFactory final : public w::NetEqFactory {
+ public:
+  explicit TracingNetEqFactory(std::vector<timing::NetEqDelayTraceRow>* rows) : controller_factory_(rows) {}
+  std::unique_ptr<w::NetEq> Create(const w::Environment& env, const w::NetEq::Config& config,
+                                   w::scoped_refptr<w::AudioDecoderFactory> decoder_factory) const override {
+    return std::make_unique<w::NetEqImpl>(
+        config, w::NetEqImpl::Dependencies(env, config, std::move(decoder_factory), controller_factory_));
+  }
+
+ private:
+  TracingNetEqControllerFactory controller_factory_;
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
@@ -804,6 +902,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     sender_env_factory.Set(std::make_unique<w::FieldTrials>(
         "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
   }
+  TracingNetEqFactory neteq_trace(&rep.neteq_trace);
   DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
   const w::Environment sender_env = sender_env_factory.Create();
   QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
@@ -866,6 +965,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     c.audio_state = audio_state;
     // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
     if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
+    // The receiver's NetEq with its DelayManager traced (issue #721).
+    if (opt.audio_trace && &call_env != &sender_env) c.neteq_factory = &neteq_trace;
     return w::Call::Create(std::move(c));
   };
   run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });

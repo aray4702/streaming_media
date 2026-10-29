@@ -13,6 +13,7 @@
 #include "scenario.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/sim/network_link.h"
+#include "sm/timing/neteq_delay.h"
 
 namespace sm::testbench {
 
@@ -188,6 +189,8 @@ struct Report {
   std::vector<AudioTraceRow> audio_trace;
   // The audio send path, when RunOptions::link_trace is set (issue #477).
   std::vector<AudioSendRow> audio_send_trace;
+  // Every NetEq DelayManager update and reset, when RunOptions::audio_trace is set (issue #721).
+  std::vector<timing::NetEqDelayTraceRow> neteq_trace;
 };
 
 struct RunOptions {
@@ -261,6 +264,10 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
+// Report::neteq_trace as CSV: t_ms,event,rtp_ts,delay_ms,reordered,underrun_ms,reorder_ms,target_ms,
+// where t_ms counts from the last reset (NetEq's SoftReset at the first pull) and event is reset or
+// update; underrun_ms and reorder_ms are empty until the optimizer has a value (issue #721).
+std::string NetEqTraceCsv(const std::vector<timing::NetEqDelayTraceRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

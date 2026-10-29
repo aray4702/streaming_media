@@ -278,11 +278,12 @@ NetEqDelayManager::NetEqDelayManager(NetEqDelayConfig cfg)
   SoftReset();
 }
 
-void NetEqDelayManager::SoftReset() {
+void NetEqDelayManager::SoftReset(int64_t now_ms) {
   // DelayManager::Reset.
   underrun_.Reset();
   target_level_ms_ = kStartDelayMs;
   if (reorder_) reorder_->Reset();
+  if (cfg_.trace) cfg_.trace->push_back({now_ms, true, 0, 0, false, -1, -1, target_level_ms_});
   arrival_history_.Reset();
   packet_length_samples_ = 0;
 }
@@ -304,6 +305,11 @@ std::optional<int> NetEqDelayManager::PacketArrived(uint32_t rtp_timestamp, int 
   if (reorder_) {
     reorder_->Update(arrival_delay_ms, reordered, target_level_ms_);
     target_level_ms_ = std::max(target_level_ms_, reorder_->GetOptimalDelayMs().value_or(0));
+  }
+  if (cfg_.trace) {
+    cfg_.trace->push_back({now_ms, false, rtp_timestamp, arrival_delay_ms, reordered,
+                           underrun_.GetOptimalDelayMs().value_or(-1),
+                           reorder_ ? reorder_->GetOptimalDelayMs().value_or(-1) : -1, target_level_ms_});
   }
   ++updates_;
   if (reordered) ++reordered_;
