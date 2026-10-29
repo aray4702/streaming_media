@@ -49,10 +49,18 @@ AGENTS = {  # role -> how its posts are recognised (Fixer B: the routine's post_
     "builder": "<!-- sm-agent: builder -->",
 }
 LABELS = {"fixer_b": "Fixer B"}
+WORKING_MIN = 30  # a role that posted this recently counts as working (the Roles tab)
 
 
 def now():
     return dt.datetime.now(dt.timezone.utc)
+
+
+def pt_date(iso_utc):
+    """The California date (the Owner's) of a UTC timestamp."""
+    from zoneinfo import ZoneInfo
+    t = dt.datetime.fromisoformat(iso_utc.replace("Z", "+00:00"))
+    return t.astimezone(ZoneInfo("America/Los_Angeles")).strftime("%Y-%m-%d")
 
 
 def iso(t):
@@ -345,12 +353,18 @@ class Views:
             reg = json.loads(base64.b64decode(raw["content"]).decode())
         except (RuntimeError, KeyError, ValueError, TypeError):
             return {"missing": True, "done": 0, "total": 0, "areas": {}, "requirements": [], "problems": []}
-        items = {}
-        for i in self.gh.get(f"repos/{self.r}/issues?state=open&per_page=100", True, fresh) or []:
+        items, first_seen, merged = {}, {}, {}
+        for i in self.gh.get(f"repos/{self.r}/issues?state=all&per_page=100", True, fresh) or []:
             for name in lab(i):
-                if name.startswith("req:"):
-                    items.setdefault(name[4:], []).append({"n": i["number"], "title": i["title"],
-                                                           "pr": "pull_request" in i, "url": i["html_url"]})
+                if not name.startswith("req:"):
+                    continue
+                rid = name[4:]
+                first_seen[rid] = min(first_seen.get(rid, i["created_at"]), i["created_at"])
+                if i["state"] == "open":
+                    items.setdefault(rid, []).append({"n": i["number"], "title": i["title"],
+                                                      "pr": "pull_request" in i, "url": i["html_url"]})
+                elif (i.get("pull_request") or {}).get("merged_at"):
+                    merged[rid] = merged.get(rid, 0) + 1
         reqs = reg.get("requirements", [])
         areas = {}
         for r in reqs:
@@ -362,7 +376,64 @@ class Views:
         problems += [f"label req:{k} matches no requirement" for k in items if k not in ids]
         return {"missing": False, "done": sum(r.get("status") == "done" for r in reqs), "total": len(reqs),
                 "areas": areas, "problems": problems,
-                "requirements": [dict(r, items=items.get(r["id"], [])) for r in reqs]}
+                "requirements": [dict(r, items=items.get(r["id"], []),
+                                      start=r.get("start") or (pt_date(first_seen[r["id"]]) if r["id"] in first_seen else ""),
+                                      start_derived=not r.get("start") and r["id"] in first_seen,
+                                      end=r.get("end", ""), depends_on=r.get("depends_on", []),
+                                      cost=r.get("cost", ""), prs_merged=merged.get(r["id"], 0))
+                                 for r in reqs]}
+
+    def roles(self, fresh=False):
+        """Each role now: working (a post in the last WORKING_MIN minutes) on which item or PR, or idle;
+        plus the queue waiting for it (Owner, 2026-10-28: the dashboard's second tab)."""
+        ag = self.agents(fresh)
+        issues = self.gh.get(f"repos/{self.r}/issues?state=open&per_page=100", True, fresh) or []
+        pulls = self.gh.open_pulls(fresh)
+        by_label = lambda name: [{"n": i["number"], "title": i["title"], "url": i["html_url"]}
+                                 for i in issues if name in lab(i)]
+        # Which Fixer holds each in-progress item: the routine marker on its latest Fixer comment.
+        held = {"fixer": [], "fixer_b": []}
+        for i in issues:
+            if "in-progress" not in lab(i) or "pull_request" in i:
+                continue
+            cs = self.gh.get(f"repos/{self.r}/issues/{i['number']}/comments?per_page=100", True, fresh) or []
+            fx = [c for c in cs if "sm-agent: fixer" in (c["body"] or "")[:200]]
+            who = "fixer_b" if fx and "sm-routine: fixer-b" in (fx[-1]["body"] or "")[:300] else "fixer"
+            held[who].append({"n": i["number"], "title": i["title"], "url": i["html_url"]})
+        review_q = []
+        for p in pulls:
+            if p["draft"] or "ci-passed" not in d.labels(p) or d.labels(p) & {"needs-probe", "blocked"}:
+                continue
+            revs = [x for x in self.gh.get(f"repos/{self.r}/pulls/{p['number']}/reviews?per_page=100", fresh=fresh) or []
+                    if d.is_bot(x["user"]) and x["state"] != "COMMENTED"]
+            if not revs or revs[-1]["state"] != "APPROVED" or revs[-1]["commit_id"] != p["head"]["sha"]:
+                review_q.append({"n": p["number"], "title": p["title"], "url": p["html_url"]})
+        work = self.work(fresh)
+        queues = {
+            "coordinator": by_label("needs-coordinator"),
+            "builder": by_label("needs-builder"),
+            "reviewer": review_q,
+            "tester": [{"n": p["number"], "title": p["title"], "url": p["html_url"]} for p in pulls if "needs-probe" in d.labels(p)],
+            "fixer": [{"n": work["next_free"], "title": "next free work item", "url": f"https://github.com/{self.r}/issues/{work['next_free']}"}]
+                     if work.get("next_free") else [],
+        }
+        queues["fixer_b"] = queues["fixer"]
+        t = now()
+        out = []
+        for a in ag["roles"]:
+            lp = a.get("last_post")
+            age = (t - dt.datetime.fromisoformat(lp["at"].replace("Z", "+00:00"))).total_seconds() / 60 if lp else None
+            working = []
+            if age is not None and age <= WORKING_MIN:
+                working.append({"n": lp["n"], "title": lp["first"], "url": lp["url"]})
+            for h in held.get(a["role"], []):
+                if all(w["n"] != h["n"] for w in working):
+                    working.append(h)
+            out.append({"role": a["role"], "label": a["label"], "enabled": a["enabled"],
+                        "state": "working" if working else ("start failing" if a.get("start_failing") else "idle"),
+                        "working_on": working, "last_activity": lp, "next": a.get("next"),
+                        "queue": queues.get(a["role"], [])})
+        return {"roles": out, "working_min": WORKING_MIN, "now": iso(t)}
 
     def overview(self, fresh=False):
         with cf.ThreadPoolExecutor(4) as ex:
@@ -390,7 +461,7 @@ class Views:
         held = {k: [i["n"] for i in issues["issues"] if k in i["labels"]]
                 for k in ("needs-coordinator", "needs-builder", "blocked", "in-progress")}
         last_run = disp["runs"][0] if disp["runs"] else None
-        return {"requirements": {k: reqs[k] for k in ("missing", "done", "total")},
+        return {"requirements": reqs,
                 "work": {k: work[k] for k in ("open", "done", "in_progress", "max_in_progress", "next_free")},
                 "next_items": [i for i in work["items"] if i.get("role")][:6],
                 "needs_you": needs_you, "asks_24h": asks[::-1], "unplaced": unplaced, "held": held,
@@ -493,7 +564,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 page = f.read().replace("__TOKEN__", self.server.token).replace("__REPO__", self.server.gh.r)
             return self._send(200, page, "text/html")
         view = url.path.removeprefix("/api/")
-        if url.path.startswith("/api/") and view in ("overview", "requirements", "work", "prs", "issues", "agents", "dispatcher", "log"):
+        if url.path.startswith("/api/") and view in ("overview", "requirements", "roles", "work", "prs", "issues", "agents", "dispatcher", "log"):
             fresh = "fresh" in urllib.parse.parse_qs(url.query)
             try:
                 return self._json(200, getattr(self.server.views, view)(fresh))
