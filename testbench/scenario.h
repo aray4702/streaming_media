@@ -100,6 +100,11 @@ struct Scenario {
   // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). On by default, as libwebrtc
   // (since #355's flip, after #362 turned periodic ALR probing off for video).
   bool rate_utilization_tracker = true;
+  // `adjuster_on_update on|off`: the bitrate adjuster re-runs only when VideoStreamEncoder's
+  // UpdateBitrateAllocation does (an allocation update, a reconfiguration, every 1 s; issue #569;
+  // rtp::VideoSendControllerConfig::adjuster_on_update). Off (the default until its flip is judged on
+  // the parity report): every captured frame.
+  bool adjuster_on_update = false;
   // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
   // issue #568). Off by default until it is judged.
