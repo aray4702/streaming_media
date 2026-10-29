@@ -31,13 +31,20 @@
 //                       usable and from Y otherwise. A gain change holds
 //                       further gain changes off for 3 blocks.
 //
-// Differences that remain (tools/catalog.py 6.1): the render is used as one
-// channel (channel 0), as libwebrtc does until its MultiChannelContentDetector
-// finds proper stereo; that detector, ConfigSelector and the multichannel
-// config aren't ported. The field trials that AdjustConfig reads are read as
-// not set (M157's default), so the config is used as given. No neural
-// residual echo estimator, no linear AEC output export (off by default), no
-// UMA histograms (BlockProcessorMetrics, ApiCallJitterMetrics, and
+// Multichannel render (multi_channel_content_detector, config_selector):
+// AEC3 runs on one render channel until MultiChannelContentDetector finds
+// proper stereo (the channels differ, by more than the threshold, for more
+// than 2 s of frames in a row); it then re-creates the block processor on
+// every render channel with the multichannel config (ConfigSelector), and
+// goes back to mono after 300 s without stereo. Until then render channel 0
+// is used, or the channels' average while stereo has shown up but isn't yet
+// persistent, which also flags an echo path change on every capture block.
+//
+// Differences that remain (tools/catalog.py 6.1): the field trials that
+// AdjustConfig reads are read as not set (M157's default), so the config is
+// used as given. No neural residual echo estimator, no linear AEC output
+// export (off by default), no UMA histograms (BlockProcessorMetrics,
+// ApiCallJitterMetrics, MultiChannelContentDetector's MetricsLogger and
 // EchoRemoverMetrics's reporting, whose values are exported as metrics
 // instead), no data dumps. No render transfer queue thread hand-off: the
 // queue is a FIFO of the same depth. The render reference isn't high-passed
@@ -222,6 +229,57 @@ class EchoRemover : public MetricsSource {
   uint64_t delay_changes_ = 0;
 };
 
+// multi_channel_content_detector.{h,cc}: whether the render is proper
+// multichannel or upmixed mono. No UMA histograms (MetricsLogger); the frames
+// with persistent multichannel content are counted as a metric instead.
+class MultiChannelContentDetector {
+ public:
+  // With `stereo_detection_timeout_threshold_seconds` <= 0, once multichannel
+  // content is detected it stays detected.
+  MultiChannelContentDetector(bool detect_stereo_content, int num_render_input_channels, float detection_threshold,
+                              int stereo_detection_timeout_threshold_seconds,
+                              float stereo_detection_hysteresis_seconds);
+  // Compares the channels of one render `frame` ([band][channel][sample]).
+  // Returns whether the persistent detection changed.
+  bool UpdateDetection(const Frame& frame);
+  bool IsProperMultiChannelContentDetected() const { return persistent_multichannel_content_detected_; }
+  bool IsTemporaryMultiChannelContentDetected() const { return temporary_multichannel_content_detected_; }
+  uint64_t persistent_multichannel_frames() const { return persistent_multichannel_frames_; }
+
+ private:
+  const bool detect_stereo_content_;
+  const float detection_threshold_;
+  const std::optional<int> detection_timeout_threshold_frames_;
+  const int stereo_detection_hysteresis_frames_;
+  bool persistent_multichannel_content_detected_;
+  bool temporary_multichannel_content_detected_ = false;
+  int64_t frames_since_stereo_detected_last_ = 0;
+  int64_t consecutive_frames_with_stereo_ = 0;
+  uint64_t persistent_multichannel_frames_ = 0;
+};
+
+// config_selector.{h,cc}: the multichannel config while multichannel content
+// is detected and one is given, otherwise the mono config.
+class ConfigSelector {
+ public:
+  ConfigSelector(const Aec3Config& config, const std::optional<Aec3Config>& multichannel_config,
+                 int num_render_input_channels);
+  ConfigSelector(const ConfigSelector&) = delete;  // active_config_ points into this object.
+  ConfigSelector& operator=(const ConfigSelector&) = delete;
+  void Update(bool multichannel_content);
+  const Aec3Config& active_config() const { return *active_config_; }
+
+ private:
+  const Aec3Config config_;
+  const std::optional<Aec3Config> multichannel_config_;
+  const Aec3Config* active_config_ = nullptr;
+};
+
+// config_selector.cc's CompatibleConfigs: the fields both configs must share
+// (libwebrtc DCHECKs it; the linear output export and the render high-pass
+// aren't ported and are off in both).
+bool CompatibleConfigs(const Aec3Config& mono_config, const Aec3Config& multichannel_config);
+
 // block_processor.cc (BlockProcessorImpl), with libwebrtc's own delay
 // controller (config.delay.use_external_delay_estimator is false).
 class BlockProcessor : public MetricsSource {
@@ -266,8 +324,14 @@ class EchoCanceller3 : public MetricsSource {
   // (ValidFullBandRate; libwebrtc DCHECKs it, and APM only ever hands AEC3
   // one of these). At any other rate the canceller is not valid() and every
   // call below leaves the audio untouched (#594).
+  // `multichannel_config` is used while proper multichannel render is
+  // detected (APM passes CreateDefaultMultichannelConfig() when the
+  // application sets no config); without it `config` is used throughout.
+  EchoCanceller3(const Aec3Config& config, const std::optional<Aec3Config>& multichannel_config,
+                 int sample_rate_hz, size_t num_render_channels, size_t num_capture_channels);
   EchoCanceller3(const Aec3Config& config, int sample_rate_hz, size_t num_render_channels,
-                 size_t num_capture_channels);
+                 size_t num_capture_channels)
+      : EchoCanceller3(config, std::nullopt, sample_rate_hz, num_render_channels, num_capture_channels) {}
   EchoCanceller3(const EchoCanceller3&) = delete;
   EchoCanceller3& operator=(const EchoCanceller3&) = delete;
 
@@ -297,13 +361,21 @@ class EchoCanceller3 : public MetricsSource {
   }
   bool ActiveProcessing() const { return true; }
   const BlockProcessor& block_processor() const { return *block_processor_; }
+  // Whether the AEC runs on every render channel (proper stereo detected).
+  bool StereoRenderProcessingActive() const {
+    return multichannel_content_detector_.IsProperMultiChannelContentDetected();
+  }
+  const Aec3Config& active_config() const { return config_selector_.active_config(); }
+  size_t num_render_channels_to_aec() const { return num_render_channels_to_aec_; }
   // Render frames lost because the queue was full.
   uint64_t render_frames_dropped() const { return render_frames_dropped_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  void Initialize();
   void EmptyRenderQueue();
   void FillSubFrameView(Frame* frame, size_t sub_frame_index, size_t num_channels, SubFrameView* view) const;
+  void FillRenderSubFrameView(bool proper_downmix_needed, Frame* frame, size_t sub_frame_index);
 
   const Aec3Config config_;
   const bool valid_;
@@ -313,13 +385,14 @@ class EchoCanceller3 : public MetricsSource {
   const size_t num_bands_;
   const size_t num_render_input_channels_;
   const size_t num_capture_channels_;
-  // Render channels the AEC runs on: 1 until proper stereo is detected,
-  // which isn't ported.
-  const size_t num_render_channels_to_aec_ = 1;
+  ConfigSelector config_selector_;
+  MultiChannelContentDetector multichannel_content_detector_;
+  // Render channels the AEC runs on: 1 until proper stereo is detected.
+  size_t num_render_channels_to_aec_ = 1;
   std::unique_ptr<BlockDelayBuffer> block_delay_buffer_;
   BlockFramer output_framer_;
   FrameBlocker capture_blocker_;
-  FrameBlocker render_blocker_;
+  std::unique_ptr<FrameBlocker> render_blocker_;
   std::deque<Frame> render_transfer_queue_;
   Frame render_queue_output_frame_;
   Block render_block_;
@@ -332,6 +405,7 @@ class EchoCanceller3 : public MetricsSource {
   Frame mono_frame_;
   uint64_t render_frames_dropped_ = 0;
   uint64_t saturated_frames_ = 0;
+  uint64_t reinitializations_ = 0;
 };
 
 }  // namespace sm::audio::aec3

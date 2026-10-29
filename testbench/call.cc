@@ -715,6 +715,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   vsc_cfg.fps = s.video_fps;
   vsc_cfg.bitrate_adjuster = s.bitrate_adjuster;
   vsc_cfg.adjuster.newfangled_headroom_adjustment = s.rate_utilization_tracker;
+  vsc_cfg.adjuster_on_update = s.adjuster_on_update;
   // EncoderRtcpFeedback's kMinKeyframeSendIntervalMs (video/encoder_rtcp_feedback.cc).
   vsc_cfg.min_keyframe_request_interval = TimeDelta::Millis(300);
   // libwebrtc's SimulcastRateAllocator keeps the encoder at the codec minimum (VideoCodec::minBitrate =

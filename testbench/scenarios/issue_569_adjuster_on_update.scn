@@ -1,0 +1,10 @@
+name issue_569_adjuster_on_update
+describe random_loss_5pct with the bitrate adjuster re-run as libwebrtc's VideoStreamEncoder does (issue #569)
+duration 30s
+adjuster_on_update on
+at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
+expect audio.concealed_pct < 3
+expect audio.interruptions == 0
+expect video.residual_loss_pct < 0.5
+expect video.render_fps >= 25
+expect video.longest_freeze_ms < 2500
