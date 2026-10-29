@@ -364,7 +364,7 @@ std::optional<SpsState> ParseSpsUpToVui(BitReader& r) {
   r.ReadBits(8);
   s.level_idc = r.ReadUInt8();
   s.id = r.ReadExponentialGolomb();
-  if (s.id > 31) return std::nullopt;
+  if (!r.Ok() || s.id > kH264MaxSpsId) return std::nullopt;
   uint32_t chroma_format_idc = 1;
   switch (s.profile_idc) {
     case 100: case 110: case 122: case 244: case 44: case 83: case 86: case 118: case 128: case 138:
@@ -432,15 +432,21 @@ std::optional<SpsState> ParseSpsUpToVui(BitReader& r) {
     crop_bottom = r.ReadExponentialGolomb();
   }
   s.vui_params_present = r.ReadBit() != 0;
-  if (!r.Ok() || width_mbs_minus1 > 0xFFFF || height_map_units_minus1 > 0xFFFF) return std::nullopt;
+  if (!r.Ok()) return std::nullopt;
+  // Uncropped width and height in 64 bits, checked against level 5.2's
+  // limits as sps_parser.cc:213-222.
+  const int64_t uncropped_width = 16 * (static_cast<int64_t>(width_mbs_minus1) + 1);
+  const int64_t uncropped_height = 16 * (2 - static_cast<int64_t>(s.frame_mbs_only_flag)) *
+                                   (static_cast<int64_t>(height_map_units_minus1) + 1);
+  if (!IsValidH264Resolution(uncropped_width, uncropped_height)) return std::nullopt;
 
   // Crop units in luma samples, H.264 7.4.2.1.1 (table 6-1 for SubWidthC/SubHeightC).
   const uint32_t array_type = s.separate_colour_plane_flag ? 0 : chroma_format_idc;
   const uint32_t sub_w = array_type == 1 || array_type == 2 ? 2 : 1;
   const uint32_t sub_h = array_type == 1 ? 2 : 1;
   const uint32_t frame_height_factor = 2 - s.frame_mbs_only_flag;
-  const uint64_t w = 16ull * (width_mbs_minus1 + 1);
-  const uint64_t h = 16ull * frame_height_factor * (height_map_units_minus1 + 1);
+  const uint64_t w = static_cast<uint64_t>(uncropped_width);
+  const uint64_t h = static_cast<uint64_t>(uncropped_height);
   const uint64_t cw = uint64_t{sub_w} * (crop_left + uint64_t{crop_right});
   const uint64_t ch = uint64_t{sub_h} * frame_height_factor * (crop_top + uint64_t{crop_bottom});
   if (cw >= w || ch >= h) return std::nullopt;
@@ -503,7 +509,7 @@ std::optional<PpsIds> ParsePpsIds(std::span<const uint8_t> pps) {
   PpsIds ids;
   ids.pps_id = r.ReadExponentialGolomb();  // pic_parameter_set_id: ue(v)
   ids.sps_id = r.ReadExponentialGolomb();  // seq_parameter_set_id: ue(v)
-  if (!r.Ok()) return std::nullopt;
+  if (!r.Ok() || ids.pps_id > kH264MaxPpsId || ids.sps_id > kH264MaxSpsId) return std::nullopt;
   return ids;
 }
 
@@ -514,7 +520,8 @@ std::optional<SliceHeader> ParseSliceHeader(std::span<const uint8_t> slice) {
   h.first_mb_in_slice = r.ReadExponentialGolomb();     // first_mb_in_slice: ue(v)
   r.ReadExponentialGolomb();                           // slice_type: ue(v)
   h.pic_parameter_set_id = r.ReadExponentialGolomb();  // pic_parameter_set_id: ue(v)
-  if (!r.Ok()) return std::nullopt;
+  // The rest of the slice header needs the SPS.
+  if (!r.Ok() || h.pic_parameter_set_id > kH264MaxPpsId) return std::nullopt;
   return h;
 }
 

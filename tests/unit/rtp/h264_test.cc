@@ -399,3 +399,129 @@ SM_TEST(H264, NegativeOrZeroPayloadLimitGivesNoPacketsWithoutUndefinedBehaviour)
   limits.max_payload_len = 0;
   SM_EXPECT_TRUE(H264Packetizer::Packetize(frame, limits).empty());
 }
+
+namespace {
+// Parameter sets with ids other than 0, hand-encoded (H.264 7.3.2.1.1, 7.3.2.2, 7.3.3).
+// SPS id 1: Baseline, level 3.1, 320x192, POC type 2, one reference frame, no VUI.
+const Bytes kSpsId1 = {0x67, 0x42, 0x00, 0x1F, 0x56, 0x81, 0x41, 0x99};
+const Bytes kPps1Sps1 = {0x68, 0x4A};  // pic_parameter_set_id 1, seq_parameter_set_id 1.
+const Bytes kPps0Sps1 = {0x68, 0xA8};  // pic_parameter_set_id 0, seq_parameter_set_id 1.
+const Bytes kIdrPps1 = {0x65, 0x88, 0x50};  // first_mb_in_slice 0, slice_type 7, PPS 1.
+const Bytes kIdrPps0 = {0x65, 0x88, 0xC0};  // first_mb_in_slice 0, slice_type 7, PPS 0.
+
+Bytes StapA(std::initializer_list<Bytes> units) {
+  Bytes p = {kH264NalStapA};
+  for (const Bytes& u : units) {
+    p.push_back(static_cast<uint8_t>(u.size() >> 8));
+    p.push_back(static_cast<uint8_t>(u.size()));
+    p.insert(p.end(), u.begin(), u.end());
+  }
+  return p;
+}
+
+Bytes FuAStart(const Bytes& nal) {  // The first FU-A fragment of `nal` (all of it).
+  Bytes p = {static_cast<uint8_t>((nal[0] & 0xE0) | kH264NalFuA), static_cast<uint8_t>(0x80 | (nal[0] & 0x1F))};
+  p.insert(p.end(), nal.begin() + 1, nal.end());
+  return p;
+}
+}  // namespace
+
+SM_TEST(H264, ParseReportsEachUnitsIds) {
+  // RTPVideoHeaderH264::nalus as ProcessStapAOrSingleNalu fills it
+  // (video_rtp_depacketizer_h264.cc:97-219): SPS id, PPS and SPS ids, slice PPS id.
+  const H264PayloadInfo s = H264Depacketizer::Parse(StapA({kSpsId1, kPps0Sps1, kIdrPps0}));
+  SM_ASSERT_TRUE(s.valid);
+  SM_ASSERT_EQ(s.nalus.size(), 3u);
+  SM_EXPECT_EQ(s.nalus[0].type, kH264NalSps);
+  SM_EXPECT_EQ(s.nalus[0].sps_id, 1);
+  SM_EXPECT_EQ(s.nalus[0].pps_id, -1);
+  SM_EXPECT_EQ(s.nalus[1].type, kH264NalPps);
+  SM_EXPECT_EQ(s.nalus[1].pps_id, 0);
+  SM_EXPECT_EQ(s.nalus[1].sps_id, 1);
+  SM_EXPECT_EQ(s.nalus[2].type, kH264NalIdr);
+  SM_EXPECT_EQ(s.nalus[2].pps_id, 0);
+  SM_EXPECT_EQ(s.nalus[2].sps_id, -1);
+  SM_EXPECT_EQ(s.width, 320u);
+  SM_EXPECT_EQ(s.height, 192u);
+  // Units without ids are listed with -1 (SEI); empty units are skipped.
+  const H264PayloadInfo sei = H264Depacketizer::Parse(StapA({{0x06, 0x05}, {0x06}}));
+  SM_ASSERT_TRUE(sei.valid);
+  SM_ASSERT_EQ(sei.nalus.size(), 1u);
+  SM_EXPECT_EQ(sei.nalus[0].type, kH264NalSei);
+  // ParseFuaNalu (video_rtp_depacketizer_h264.cc:226-290): the first fragment
+  // lists its unit with the slice's PPS id; an SPS or PPS fragment has none;
+  // later fragments list nothing.
+  const H264PayloadInfo fu_idr = H264Depacketizer::Parse(FuAStart(kIdrPps1));
+  SM_ASSERT_EQ(fu_idr.nalus.size(), 1u);
+  SM_EXPECT_EQ(fu_idr.nalus[0].type, kH264NalIdr);
+  SM_EXPECT_EQ(fu_idr.nalus[0].pps_id, 1);
+  const H264PayloadInfo fu_sps = H264Depacketizer::Parse(FuAStart(kSpsId1));
+  SM_ASSERT_TRUE(fu_sps.valid);
+  SM_ASSERT_EQ(fu_sps.nalus.size(), 1u);
+  SM_EXPECT_EQ(fu_sps.nalus[0].type, kH264NalSps);
+  SM_EXPECT_EQ(fu_sps.nalus[0].sps_id, -1);
+  SM_EXPECT_FALSE(fu_sps.sps);
+  const Bytes middle = {kH264NalFuA, 0x05, 0xAA};
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(middle).nalus.empty());
+}
+
+SM_TEST(H264, IdsOutOfBoundsAreDroppedAsPpsParser) {
+  // A PPS with pic_parameter_set_id 256 (ue: 8 zeros, 100000001) or a slice
+  // naming PPS 256 fails PpsParser, so Parse drops the packet.
+  const Bytes pps256 = {0x68, 0x00, 0x80, 0xE0};  // pps 256, sps 0, trailing bits.
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(pps256).valid);
+  const Bytes slice256 = {0x41, 0x88, 0x00, 0x80, 0xC0};  // first_mb 0, type 7, pps 256, trailing.
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(slice256).valid);
+}
+
+SM_TEST(H264, SpsPpsTrackerKeepsParameterSetsById) {
+  // H264SpsPpsTracker::CopyAndFixBitstream (h264_sps_pps_tracker.cc:37-110).
+  using A = H264SpsPpsTracker::Action;
+  auto check = [](H264SpsPpsTracker& t, const Bytes& payload) {
+    const H264PayloadInfo i = H264Depacketizer::Parse(payload);
+    SM_EXPECT_TRUE(i.valid);
+    return t.CopyAndFixBitstream(i.nalus, i.first_packet_in_frame);
+  };
+  {
+    // SPS 0 and PPS 0 (the fake encoder's) are known, but the IDR names PPS 1:
+    // a keyframe request, where any-SPS-and-any-PPS would let it through.
+    H264SpsPpsTracker t;
+    Bytes sps0 = {0x67}, pps0 = {0x68};
+    sps0.insert(sps0.end(), kFakeH264Sps, kFakeH264Sps + sizeof(kFakeH264Sps));
+    pps0.insert(pps0.end(), kFakeH264Pps, kFakeH264Pps + sizeof(kFakeH264Pps));
+    SM_EXPECT_TRUE(check(t, StapA({sps0, pps0})) == A::kInsert);
+    SM_EXPECT_TRUE(check(t, kIdrPps1) == A::kRequestKeyframe);
+    SM_EXPECT_TRUE(check(t, kIdrPps0) == A::kInsert);
+    // PPS 1 refers to SPS 1, which hasn't come: still a request.
+    SM_EXPECT_TRUE(check(t, kPps1Sps1) == A::kInsert);
+    SM_EXPECT_TRUE(check(t, kIdrPps1) == A::kRequestKeyframe);
+    SM_EXPECT_TRUE(check(t, kSpsId1) == A::kInsert);
+    SM_EXPECT_TRUE(check(t, kIdrPps1) == A::kInsert);
+    // An FU-A IDR start is checked the same way; a later fragment isn't.
+    SM_EXPECT_TRUE(check(t, FuAStart(kIdrPps1)) == A::kInsert);
+    SM_EXPECT_TRUE(check(t, Bytes{kH264NalFuA, 0x45, 0xAA}) == A::kInsert);
+  }
+  {
+    // Units are handled in order: [SPS, PPS, IDR] passes, [IDR, SPS, PPS] doesn't.
+    H264SpsPpsTracker a;
+    SM_EXPECT_TRUE(check(a, StapA({kSpsId1, kPps1Sps1, kIdrPps1})) == A::kInsert);
+    H264SpsPpsTracker b;
+    SM_EXPECT_TRUE(check(b, StapA({kIdrPps1, kSpsId1, kPps1Sps1})) == A::kRequestKeyframe);
+    // A PPS id can be redefined to another SPS.
+    SM_EXPECT_TRUE(check(a, kPps1Sps1) == A::kInsert);
+    SM_EXPECT_TRUE(check(a, Bytes{0x68, 0x4E}) == A::kInsert);  // pps 1 -> sps 2 (ue 1, ue 2).
+    SM_EXPECT_TRUE(check(a, kIdrPps1) == A::kRequestKeyframe);  // No SPS 2.
+  }
+  {
+    // A parameter set in an FU-A has no ids: kDrop. An IDR that doesn't start
+    // a frame (first_mb_in_slice > 0) isn't checked.
+    H264SpsPpsTracker t;
+    SM_EXPECT_TRUE(check(t, FuAStart(kSpsId1)) == A::kDrop);
+    SM_EXPECT_TRUE(check(t, FuAStart(kPps1Sps1)) == A::kDrop);
+    const Bytes idr_not_first = {0x65, 0x42, 0x30};  // first_mb_in_slice 1, slice_type 7, PPS 0.
+    const H264PayloadInfo i = H264Depacketizer::Parse(idr_not_first);
+    SM_ASSERT_TRUE(i.valid);
+    SM_EXPECT_FALSE(i.first_packet_in_frame);
+    SM_EXPECT_TRUE(t.CopyAndFixBitstream(i.nalus, i.first_packet_in_frame) == A::kInsert);
+  }
+}
