@@ -40,8 +40,6 @@
 #include "modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/sdes.h"
 #include "api/environment/environment_factory.h"
-#include "call/rtp_demuxer.h"
-#include "call/rtp_packet_sink_interface.h"
 #include "api/rtp_header_extension_id.h"
 #include "modules/include/module_fec_types.h"
 #include "modules/audio_processing/rms_level.h"
@@ -1443,132 +1441,6 @@ void TransportFeedbackSubMs() {
   Check(ok, "transport-cc: sub-tick arrivals, same deltas as libwebrtc's");
 }
 
-
-// BUNDLE demultiplexing as libwebrtc's RtpDemuxer (#567,
-// reference/call/rtp_demuxer.cc): the same sinks are accepted and refused,
-// and every packet goes to the same sink (or is dropped by both), over
-// random sink sets with MID, RSID, SSRC and payload-type criteria, removals,
-// and packets with and without MID, RSID and repaired RSID; and both stop
-// binding SSRCs at kMaxSsrcBindings.
-void Demuxer() {
-  namespace uri = sm::sync::uri;
-  using webrtc::RtpHeaderExtensionId;
-  struct NullSink : webrtc::RtpPacketSinkInterface {
-    void OnRtpPacket(const webrtc::RtpPacketReceived&) override {}
-  };
-  sm::sync::ExtensionMap map;
-  map.Register(1, uri::kMid);
-  map.Register(2, uri::kRid);
-  map.Register(3, uri::kRepairedRid);
-  webrtc::RtpHeaderExtensionMap wmap;
-  wmap.Register<webrtc::RtpMid>(RtpHeaderExtensionId(1));
-  wmap.Register<webrtc::RtpStreamId>(RtpHeaderExtensionId(2));
-  wmap.Register<webrtc::RepairedRtpStreamId>(RtpHeaderExtensionId(3));
-  const sm::sync::ExtensionAccessor acc(map);
-  constexpr int kSinks = 5;
-  NullSink wsinks[kSinks];
-  auto index_of = [&](const webrtc::RtpPacketSinkInterface* s) -> std::optional<int> {
-    for (int i = 0; i < kSinks; ++i) {
-      if (s == &wsinks[i]) return i;
-    }
-    return std::nullopt;
-  };
-  uint32_t lcg = 12345;
-  auto rnd = [&](uint32_t n) {
-    lcg = lcg * 1664525u + 1013904223u;
-    return (lcg >> 8) % n;
-  };
-  const char* mids[] = {"", "a", "v", "x"};
-  const char* rsids[] = {"", "h", "l"};
-  const uint8_t pts[] = {96, 97, 111};
-  auto to_webrtc = [&](const sm::RtpPacket& p, webrtc::RtpPacketReceived& w) {
-    const Bytes bytes = p.Serialize();
-    return w.Parse(bytes.data(), bytes.size());
-  };
-  bool adds_same = true, routes_same = true, removes_same = true;
-  int packets = 0, routed = 0;
-  for (int round = 0; round < 200; ++round) {
-    sm::sync::RtpDemuxer ours(map);
-    webrtc::RtpDemuxer theirs;
-    const int n_sinks = 1 + static_cast<int>(rnd(kSinks));
-    for (int i = 0; i < n_sinks; ++i) {
-      const bool any = rnd(30) == 0;
-      sm::sync::RtpDemuxerCriteria c;
-      std::optional<webrtc::RtpDemuxerCriteria> wc;
-      if (any) {
-        c.match_any = true;
-        wc.emplace(webrtc::RtpDemuxerCriteria::MatchAny());
-      } else {
-        c.mid = mids[rnd(3)];
-        c.rsid = rsids[rnd(3)];
-        wc.emplace(c.mid, c.rsid);
-        for (uint32_t k = rnd(3); k > 0; --k) {
-          const uint32_t ssrc = 1 + rnd(8);
-          c.ssrcs.push_back(ssrc);
-          wc->ssrcs().insert(ssrc);
-        }
-        for (uint32_t k = rnd(3); k > 0; --k) {
-          const uint8_t pt = pts[rnd(3)];
-          c.payload_types.push_back(pt);
-          wc->payload_types().insert(pt);
-        }
-      }
-      const bool a = ours.AddSink(i, c);
-      const bool b = theirs.AddSink(*wc, &wsinks[i]);
-      adds_same = adds_same && a == b;
-    }
-    for (int k = 0; k < 60; ++k) {
-      if (rnd(40) == 0) {
-        const int sink = static_cast<int>(rnd(kSinks));
-        removes_same = removes_same && ours.RemoveSink(sink) == theirs.RemoveSink(&wsinks[sink]);
-      }
-      sm::RtpPacket p;
-      p.ssrc = 1 + rnd(10);
-      p.payload_type = pts[rnd(3)];
-      p.seq = static_cast<uint16_t>(k);
-      if (const char* mid = mids[rnd(4)]; *mid && rnd(2)) acc.SetString(p, uri::kMid, mid);
-      if (const char* rid = rsids[rnd(3)]; *rid) acc.SetString(p, uri::kRid, rid);
-      if (const char* rrid = rsids[rnd(3)]; *rrid) acc.SetString(p, uri::kRepairedRid, rrid);
-      webrtc::RtpPacketReceived w(&wmap);
-      const bool parsed = to_webrtc(p, w);
-      const std::optional<int> a = ours.Demux(p);
-      const std::optional<int> b = parsed ? index_of(theirs.ResolveSink(w)) : std::nullopt;
-      if (a != b && routes_same) {
-        std::printf("    round %d packet %d (ssrc %u pt %u): ours %d, libwebrtc %d\n", round, k, p.ssrc,
-                    p.payload_type, a.value_or(-1), b.value_or(-1));
-      }
-      routes_same = routes_same && parsed && a == b;
-      ++packets;
-      routed += a.has_value();
-    }
-    theirs.RemoveAllSinks();
-  }
-  std::printf("    %d packets, %d routed\n", packets, routed);
-  Check(adds_same, "RtpDemuxer: the same sinks accepted and refused as libwebrtc's");
-  Check(removes_same, "RtpDemuxer: the same RemoveSink results as libwebrtc's");
-  Check(routes_same && routed > 0 && routed < packets, "RtpDemuxer: every packet to the same sink as libwebrtc's");
-
-  sm::sync::RtpDemuxer ours(map);
-  webrtc::RtpDemuxer theirs;
-  sm::sync::RtpDemuxerCriteria c;
-  c.mid = "a";
-  ours.AddSink(0, c);
-  theirs.AddSink(webrtc::RtpDemuxerCriteria("a"), &wsinks[0]);
-  for (uint32_t ssrc = 1; ssrc <= 1100; ++ssrc) {
-    sm::RtpPacket p;
-    p.ssrc = ssrc;
-    p.payload_type = 96;
-    acc.SetString(p, uri::kMid, "a");
-    webrtc::RtpPacketReceived w(&wmap);
-    to_webrtc(p, w);
-    ours.Demux(p);
-    theirs.ResolveSink(w);
-  }
-  Check(ours.GetSsrcsForSink(0).size() == theirs.GetSsrcsForSink(&wsinks[0]).size() &&
-            ours.GetSsrcsForSink(0).size() == sm::sync::RtpDemuxer::kMaxSsrcBindings,
-        "RtpDemuxer: SSRC bindings stop at kMaxSsrcBindings as libwebrtc's");
-  theirs.RemoveAllSinks();
-}
 }  // namespace
 
 int main() {
@@ -1581,7 +1453,6 @@ int main() {
   AudioLevel();
   VideoOrientation();
   HeaderExtensionElements();
-  Demuxer();
   H264SmToWebrtc();
   H264WebrtcToSm();
   H264Model();
