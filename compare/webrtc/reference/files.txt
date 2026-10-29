@@ -251,7 +251,4 @@ common_video/h264/pps_parser.cc
 common_video/h264/h264_common.h
 common_video/h264/sps_parser.h
 modules/rtp_rtcp/source/rtp_rtcp_config.h
-rtc_base/numerics/rolling_accumulator.h
 rtc_base/numerics/running_statistics.h
-video/frame_helpers.cc
-video/frame_helpers.h
