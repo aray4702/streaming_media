@@ -41,7 +41,7 @@ VideoStreamConfig Video() {
 }
 
 struct Pair {
-  Pair() : a(Cfg(1)), b(Cfg(2)) {
+  explicit Pair(SessionConfig ca = Cfg(1)) : a(ca), b(Cfg(2)) {
     AudioStreamConfig au;
     au.ssrc = 0x100;
     a_audio = a.AddAudioSend(au);
@@ -287,6 +287,47 @@ SM_TEST(Session, PacketHistoryRttFollowsThePeriodicUpdateAndNacks) {
   peer.QueueNack(0x200, std::vector<uint16_t>{1});
   for (auto& r : peer.Process(Timestamp::Millis(3100))) p.a.OnPacket(r.bytes, Timestamp::Millis(3100));
   SM_EXPECT_EQ(history.rtt().ms(), 5 + periodic_ms);
+}
+
+// Each send stream has its own RTCPReceiver::RttStats (rtcp_receiver.cc:211-229, 567-569, issue
+// #568): only the block for the stream's media SSRC feeds it, so the RTX block's RTT and the other
+// stream's do not reach the stream's periodic update (rtp_rtcp_impl2.cc:740-751), its packet
+// history or its NACK RTT (rtp_rtcp_impl2.cc:678-692). The RTCP packet's RTT, the last block for
+// the stream's media or RTX SSRC, goes to GoogCC once per stream, video first, then audio
+// (rtcp_receiver.cc:1010-1012, call.cc:1357-1381).
+SM_TEST(Session, RttStatsArePerSendStreamAndFromTheMediaSsrcOnly) {
+  SessionConfig ca = Cfg(1);
+  ca.per_stream_rtt = true;
+  Pair p(ca);
+  Pump(p.a, 0, 400);
+  auto rr = [&](int64_t ms, int64_t video_rtt, int64_t rtx_rtt, int64_t audio_rtt) {
+    const uint32_t a = timing::NtpTime::FromTimestamp(Timestamp::Millis(ms)).Compact();
+    auto lsr = [&](int64_t rtt_ms) { return a - static_cast<uint32_t>((rtt_ms * 65536 + 999) / 1000); };
+    timing::ReceiverReport r;
+    r.ssrc = 2;
+    r.blocks = {{.ssrc = 0x200, .extended_highest_seq = 10, .last_sr = lsr(video_rtt)},
+                {.ssrc = 0x300, .extended_highest_seq = 10, .last_sr = lsr(rtx_rtt)},
+                {.ssrc = 0x100, .extended_highest_seq = 10, .last_sr = lsr(audio_rtt)}};
+    p.a.OnPacket(timing::SerializeReceiverReport(r), Timestamp::Millis(ms));
+  };
+  rr(400, 80, 300, 200);
+  rr(420, 60, 300, 200);
+  // GoogCC: the video stream's packet RTT (its RTX block, 300 ms), then the audio stream's.
+  SM_EXPECT_EQ(p.a.send_side().gcc().last_rtt().ms(), 200);
+  // Before the first periodic update a NACK takes the average of the stream's own samples:
+  // 5 + (80 + 60) / 2.
+  const loss::RtxSender& video_history = p.a.video_sender(p.a_video).rtx();
+  const loss::RtxSender& audio_history = p.a.audio_sender(p.a_audio).rtx();
+  RtcpConfig rc;
+  rc.local_ssrc = 2;
+  RtcpEngine peer(rc);
+  peer.QueueNack(0x200, std::vector<uint16_t>{1});
+  for (auto& r : peer.Process(Timestamp::Millis(430))) p.a.OnPacket(r.bytes, Timestamp::Millis(430));
+  SM_EXPECT_EQ(video_history.rtt().ms(), 75);
+  // The update at 1000 ms: each stream's last media-SSRC sample.
+  Pump(p.a, 431, 600);
+  SM_EXPECT_EQ(video_history.rtt().ms(), 60);
+  SM_EXPECT_EQ(audio_history.rtt().ms(), 200);
 }
 
 SM_TEST(Session, PliFromThePeerBecomesAKeyframeEvent) {

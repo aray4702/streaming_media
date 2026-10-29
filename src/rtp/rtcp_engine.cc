@@ -309,7 +309,10 @@ RtcpIncoming RtcpEngine::OnRtcp(std::span<const uint8_t> datagram, Timestamp now
       if (!local_ssrcs_.empty() &&
           std::find(local_ssrcs_.begin(), local_ssrcs_.end(), rb.ssrc) == local_ssrcs_.end())
         continue;
-      if (auto m = rtt_.OnReportBlock(rb, now)) in.rtts.push_back(*m);
+      if (auto m = rtt_.OnReportBlock(rb, now)) {
+        in.rtts.push_back(*m);
+        in.rtt_ssrcs.push_back(rb.ssrc);
+      }
     }
   };
 

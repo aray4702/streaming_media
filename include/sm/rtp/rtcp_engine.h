@@ -109,6 +109,7 @@ struct RtcpIncoming {
   std::vector<timing::SenderReport> sender_reports;
   std::vector<timing::ReportBlock> report_blocks;  // From SR and RR, all senders.
   std::vector<TimeDelta> rtts;                     // One per usable report block.
+  std::vector<uint32_t> rtt_ssrcs;                 // The reported (local) SSRC of each entry in rtts.
   std::vector<TimeDelta> xr_rtts;  // One per DLRR item that echoes our RRTR (with xr_rrtr).
   std::vector<loss::Nack> nacks;
   std::vector<cc::TransportFeedback> transport_feedback;

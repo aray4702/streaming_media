@@ -249,7 +249,11 @@ ALGORITHMS = [
                "the SR/RR wire format. Transport-wide feedback and abs-send-time are in 5.1 and 8.4. "
                "As libwebrtc's StreamStatisticianImpl (issue #76 group 5) the jitter filter runs in Q4 integers, only on "
                "in-order packets with a new timestamp, and skips a jump of 5 s of video clock; the RTT is floored at 1 ms "
-               "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101).",
+               "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101). "
+               "With SessionConfig::per_stream_rtt (off by default until #484 lands) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
+               "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
+               "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
+               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first.",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
@@ -1234,12 +1238,14 @@ ALGORITHMS = [
                                 "exclude the intended hangover."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
-         headers=["audio/audio_level.h"], unit=["AudioLevel"], e2e=["E2E_AudioLevel"],
+         headers=["audio/audio_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
          bench=["audio/AudioLevel_20ms"],
          scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
                   "tones and silence must match.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. ComputeLevel stays the RFC 6464 header level (RMS in -dBov). ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
-                      "the RFC 6464 codec and level are unchanged."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. The RFC 6464 header level is libwebrtc's RmsLevel (modules/audio_processing/rms_level.cc, issue #567): the mean square over every 10 ms chunk since the last Average(), as -dBov rounded as libwebrtc, 127 for digital silence and 126 for faint non-zero input, restarted when the chunk size changes; ChannelSend feeds it each capture frame (AnalyzeMuted when muted) and writes Average() per packet. ComputeLevel is RmsLevel on one frame. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+                      "the RFC 6464 codec and level are unchanged. RmsLevel (issue #567) is checked against libwebrtc's own RmsLevel "
+                      "on 400 packets and the extension byte against libwebrtc's AudioLevelExtension in both directions "
+                      "(sm_rtcp_interop)."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
          headers=["audio/resampler.h"], unit=["Resampler"], e2e=["E2E_Resampler"],
