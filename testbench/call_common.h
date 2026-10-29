@@ -383,6 +383,23 @@ class AvSyncMeter {
     if (!audio_at_.IsFinite()) return;
     const Timestamp audio_now = audio_capture_ + (now - audio_at_);
     offsets_ms_.push_back(static_cast<double>((audio_now - video_capture).us()) / 1000.0);
+    if (now.us() < 0) return;
+    Second& sec = seconds_[now.us() / 1000000];
+    sec.offset_sum_ms += offsets_ms_.back();
+    sec.offset_abs_max_ms = std::max(sec.offset_abs_max_ms, std::fabs(offsets_ms_.back()));
+    sec.video_delay_sum_ms += static_cast<double>((now - video_capture).us()) / 1000.0;
+    ++sec.frames;
+  }
+  // The measured frames rendered in second `sec` ([sec, sec + 1) s), for the
+  // video trace's av_offset_ms, av_offset_abs_max_ms and video_delay_ms
+  // columns (issue #522); nullptr when none was.
+  struct Second {
+    double offset_sum_ms = 0, offset_abs_max_ms = 0, video_delay_sum_ms = 0;
+    int frames = 0;
+  };
+  const Second* InSecond(int64_t sec) const {
+    auto it = seconds_.find(sec);
+    return it == seconds_.end() ? nullptr : &it->second;
   }
   // sync.av_offset_p50_ms (signed median), sync.av_offset_p95_ms (95th
   // percentile of the absolute offset) and sync.av_offset_max_ms (largest
@@ -401,6 +418,7 @@ class AvSyncMeter {
  private:
   Timestamp audio_at_ = Timestamp::MinusInfinity();
   Timestamp audio_capture_ = Timestamp::MinusInfinity();
+  std::map<int64_t, Second> seconds_;
   std::vector<double> offsets_ms_;
 };
 

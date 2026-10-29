@@ -1112,7 +1112,8 @@ SM_TEST(RtpReceiver, LastRttIsTheReportBlockRttElseThePeriodicOne) {
   SM_EXPECT_FALSE(r.LastRtt().has_value());
   r.OnRtt(TimeDelta::Millis(70));  // CallStats' RTT: not the module's.
   SM_EXPECT_FALSE(r.LastRtt().has_value());
-  r.OnPeriodicRtt(TimeDelta::Micros(900));  // Truncated to 0 ms by set_rtt_ms(rtt->ms()).
+  // 0 ms after set_rtt_ms(rtt->ms()); ms() rounds to the nearest ms as libwebrtc's unit_base.h (#686), so 0.4 ms.
+  r.OnPeriodicRtt(TimeDelta::Micros(400));
   SM_EXPECT_FALSE(r.LastRtt().has_value());
   r.OnPeriodicRtt(TimeDelta::Millis(80));
   SM_ASSERT_TRUE(r.LastRtt().has_value());

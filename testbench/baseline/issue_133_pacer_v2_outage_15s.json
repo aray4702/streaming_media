@@ -65,7 +65,7 @@
   "video.render_fps": 18.48,
   "video.render_ratio_pct": 75.41,
   "video.residual_loss_pct": 11.51,
-  "video.time_to_first_frame_ms": 203,
+  "video.time_to_first_frame_ms": 204,
   "video.undecodable_frames": 0
  },
  "passed": true,

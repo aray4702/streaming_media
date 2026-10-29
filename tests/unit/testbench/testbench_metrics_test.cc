@@ -365,6 +365,9 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
   trace[0].rx_complete = 25;  // Issue #437.
   trace[0].rx_decoded = 23;
   trace[0].rx_dropped = 2;
+  trace[0].av_offset_ms = -12.5;  // Issue #522.
+  trace[0].av_offset_abs_max_ms = 20;
+  trace[0].video_delay_ms = 107.5;
   trace[1].t_ms = 2000;
   trace[1].dropped_congestion_window = 2;
   trace[1].dropped_encoder_queue = 1;
@@ -373,9 +376,11 @@ SM_TEST(TestbenchMetrics, VideoTraceCsvWritesOneLinePerSecond) {
                "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
                "dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,"
                "encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,"
-               "qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped\n"
-               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,360.0,1,25,24,-1,1,25,23,2\n"
-               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0.0,0,-1,-1,-1,0,0,0,0\n");  // No frame encoded: 0.
+               "qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped,av_offset_ms,"
+               "av_offset_abs_max_ms,video_delay_ms\n"
+               "1,50000,60000,30,24,0,0,6,0,0,0,9000,12.5,33.5,10.00,640,360,1,1600,23,66.7,360.0,1,25,24,-1,1,25,23,2,"
+               "-12.5,20.0,107.5\n"
+               "2,0,0,0,0,0,1,0,2,0,1,0,0.0,0.0,0.00,0,0,0,0,0,0.0,0.0,0,-1,-1,-1,0,0,0,0,0.0,0.0,0.0\n");  // No frame encoded: 0.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCounters) {
@@ -581,6 +586,20 @@ SM_TEST(TestbenchMetrics, AvSyncOffset) {
   SM_EXPECT_NEAR(m["sync.av_offset_p50_ms"], 12.5, 1e-9);
   SM_EXPECT_NEAR(m["sync.av_offset_p95_ms"], 43.75, 1e-9);
   SM_EXPECT_NEAR(m["sync.av_offset_max_ms"], 45, 1e-9);
+
+  // Issue #522: the video trace's per-second columns. Both frames rendered in
+  // second 0, so the row ending at 1 s gets their mean offset (12.5 ms), the
+  // largest absolute one and their mean capture-to-render delay; the row for
+  // second 1, with no frame measured, stays 0.
+  std::vector<VideoTraceRow> trace(2);
+  trace[0].t_ms = 1000;
+  trace[1].t_ms = 2000;
+  AddAvSyncToVideoTrace(meter, trace);
+  SM_EXPECT_NEAR(trace[0].av_offset_ms, 12.5, 1e-9);
+  SM_EXPECT_NEAR(trace[0].av_offset_abs_max_ms, 45, 1e-9);
+  SM_EXPECT_NEAR(trace[0].video_delay_ms, (105 + 40) / 2.0, 1e-9);
+  SM_EXPECT_NEAR(trace[1].av_offset_ms, 0, 1e-9);
+  SM_EXPECT_NEAR(trace[1].video_delay_ms, 0, 1e-9);
 }
 
 // Issues #298 and #477: every capture rate is encoded at Opus's 48 kHz clock,
