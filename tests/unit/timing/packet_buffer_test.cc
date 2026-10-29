@@ -14,6 +14,12 @@ RtpPacket Pkt(uint16_t seq, uint32_t ts, bool marker) {
   return p;
 }
 Timestamp T0() { return Timestamp::Millis(0); }
+// A codec without H.264's `missing_packets_` hold (on by default since #580).
+PacketBufferConfig NoHoldCfg() {
+  PacketBufferConfig cfg;
+  cfg.missing_packets = false;
+  return cfg;
+}
 }  // namespace
 
 SM_TEST(PacketBuffer, AssemblesInOrderFrame) {
@@ -138,7 +144,7 @@ SM_TEST(PacketBuffer, StartPacketWaitsForAMissingPredecessor) {
 }
 
 SM_TEST(PacketBuffer, FrameWithoutItsLostFirstPacketIsNeverDelivered) {
-  PacketBuffer pb;
+  PacketBuffer pb(NoHoldCfg());
   pb.Insert(Pkt(1, 6, true), true, T0());
   SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
   pb.Insert(Pkt(3, 7, false), true, T0(), true);
@@ -162,7 +168,7 @@ SM_TEST(PacketBuffer, StartAfterPaddingIsARealStart) {
 SM_TEST(PacketBuffer, AnUnambiguousStartDoesNotWaitForAMissingPredecessor) {
   // A frame whose predecessor was lost whole still assembles: it opens with a
   // packet that can only be a frame's first, and the loss is NACK's to repair.
-  PacketBuffer pb;
+  PacketBuffer pb(NoHoldCfg());
   pb.Insert(Pkt(1, 6, true), true, T0());
   SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
   pb.Insert(Pkt(5, 8, true), true, T0());
@@ -258,7 +264,7 @@ SM_TEST(PacketBuffer, MissingPacketsHoldsADeltaFrameBehindAHoleUntilItIsFilled) 
 }
 
 SM_TEST(PacketBuffer, MissingPacketsOffHandsOutTheDeltaFrameAtOnce) {
-  PacketBuffer pb;  // Today's default.
+  PacketBuffer pb(NoHoldCfg());
   pb.Insert(Pkt(10, 100, true), true, T0(), false, true);
   pb.Insert(Pkt(12, 200, true), true, T0());
   SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 2u);

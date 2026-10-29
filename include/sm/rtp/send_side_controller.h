@@ -84,7 +84,9 @@ struct SendSideConfig {
   // overhead is added) and the RTP header bytes of a media packet (12 plus the
   // transport-wide sequence number and abs-send-time extensions; libwebrtc's
   // ExpectedPerPacketOverhead is the header the sender actually builds).
-  int64_t max_packet_size = 1200;
+  // 1460 by default, as ModuleRtpRtcpImpl2's IP_PACKET_SIZE less the 40-byte
+  // TCP/IPv4 header (rtp_rtcp_impl2.cc:146-150; issue #580).
+  int64_t max_packet_size = 1460;
   int64_t rtp_overhead_bytes = 24;
   EventSink* events = nullptr;
 };

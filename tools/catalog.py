@@ -162,7 +162,7 @@ ALGORITHMS = [
                "On the sender, the test bench runs libwebrtc's EncoderRtcpFeedback::OnReceivedIntraFrameRequest "
                "(video/encoder_rtcp_feedback.cc): a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last "
                "one passed to the encoder is ignored (rtp::VideoSendController, `min_keyframe_request_interval`; "
-               "issue #151). The outage monitor's own request is not filtered.",
+               "issue #151; the library default since #580). The outage monitor's own request is not filtered.",
          verification="Pass threshold derived analytically: each unrecoverable loss costs libwebrtc's decode time-out "
                       "(3 s from the last released frame) + RTT + keyframe transit, about 93 frames, so the longest freeze is "
                       "3.1 s and 2% frame loss leaves 28-49% of frames decodable on seeds 1-5 (3-10% without keyframe "
@@ -223,7 +223,7 @@ ALGORITHMS = [
                "full at 2048, and a restart when a packet is 1024 behind the lowest sequence number. Packets leave at "
                "frame assembly, and the receiver also calls ClearTo(last sequence number) when a frame leaves the scheduler (issue #101): "
                "it drops the packets up to it and ignores older ones; padding is kept only within a quarter of the buffer behind an insert. "
-               "`missing_packets` (on in a session's H.264 video streams, as libwebrtc; off in a bare PacketBufferConfig, which does not know the codec; issue #453): libwebrtc's H.264 rule in FindFrames and UpdateMissingPackets "
+               "`missing_packets` (on in a session's H.264 video streams, as libwebrtc, issue #453; on by default in a bare PacketBufferConfig too since #580, which a caller turns off for another codec): libwebrtc's H.264 rule in FindFrames and UpdateMissingPackets "
                "(packet_buffer.cc): the sequence numbers not yet received below the newest one (at most 1000 behind it) are kept, "
                "a complete frame without an IDR slice is held while one of them is at or before its first packet, a released "
                "frame forgets the holes up to its last packet, padding fills a hole, ClearTo forgets the holes below it, and a "

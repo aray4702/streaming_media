@@ -84,9 +84,10 @@ struct SessionConfig {
   // The audio send stream sends its own RTCP sender reports beside video's,
   // as libwebrtc's audio RtpRtcp module does (SSRC the audio SSRC, the 5 s
   // audio report interval), so a receiver can map audio RTP time to NTP for
-  // lip sync (issue #77). Off: only the first video stream's SR is sent when
-  // the session sends video.
-  bool audio_rtcp = false;
+  // lip sync (issue #77). On by default, as libwebrtc's audio channel always
+  // runs RtcpMode::kCompound (audio/channel_send.cc:551; issue #580). Off: only
+  // the first video stream's SR is sent when the session sends video.
+  bool audio_rtcp = true;
   // RTT aggregation as libwebrtc's per-module RTCPReceiver::RttStats and ModuleRtpRtcpImpl2 (issue
   // #568): each send stream keeps the RTT samples of its media SSRC's report block only, runs its
   // own 1 s periodic update to CallStats and its packet history, and takes its NACK RTT from them;
@@ -160,12 +161,14 @@ struct VideoStreamConfig {
   // beside NACK for a codec without a picture id.
   bool fec = false;
   loss::ulpfec::UlpfecConfig ulpfec;
-  // Whole packet <= 1200 bytes (libwebrtc's kVideoMtu). As libwebrtc's
+  // Whole packet <= 1460 bytes, ModuleRtpRtcpImpl2's default packet size
+  // (rtp_rtcp_impl2.cc:146-150; issue #580; libwebrtc's media engine lowers it
+  // to its kVideoMtu of 1200, webrtc_video_engine.cc:1925). As libwebrtc's
   // RtpSenderVideo, the payload room of each frame is this packet capacity less
   // the header (with the extensions the next packet will carry), and the
   // packetizer applies the first, last and single packet reductions. The sender
   // clamps it to a 100-1500 byte packet (RtpSenderConfig::max_payload_size).
-  size_t max_payload_size = 1200 - 12;
+  size_t max_payload_size = 1460 - 12;
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
@@ -176,8 +179,8 @@ struct VideoStreamConfig {
   VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;
   loss::NackConfig nack_config;
-  // libwebrtc's H.264 `missing_packets_` hold is on (issue #453); the session applies it to H.264 only.
-  timing::PacketBufferConfig packet_buffer = [] { timing::PacketBufferConfig c; c.missing_packets = true; return c; }();
+  // libwebrtc's H.264 `missing_packets_` hold is on by default (issue #453); the session applies it to H.264 only.
+  timing::PacketBufferConfig packet_buffer;
   loss::KeyframeRequestConfig keyframe;
   video::FrameSchedulerConfig scheduler;
   // libwebrtc's video receive timing (VCMTiming and frame release, version 2) is the session default (#24).

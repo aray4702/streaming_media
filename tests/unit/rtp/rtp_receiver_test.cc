@@ -33,6 +33,13 @@ RtpReceiverConfig ReceiverCfg() {
   c.parser = &kParser;
   return c;
 }
+// Without H.264's `missing_packets_` hold (on by default since #580): a delta frame behind a hole is
+// handed to the frame buffer, which these NACK tests count.
+RtpReceiverConfig NoHoldCfg() {
+  RtpReceiverConfig c = ReceiverCfg();
+  c.packet_buffer.missing_packets = false;
+  return c;
+}
 
 // The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
 // (SendSideController::Process), each followed by the FEC packets it completed.
@@ -114,7 +121,7 @@ SM_TEST(RtpReceiver, FramesInOrderAreAssembledScheduledAndRendered) {
 
 SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  RtpReceiver r(NoHoldCfg());
   r.Start(Timestamp::Millis(0));
   auto f0 = SendFrame(s, 0, true, 800, Timestamp::Millis(0));
   auto f1 = SendFrame(s, 1, false, 3000, Timestamp::Millis(33));
@@ -215,8 +222,11 @@ std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Byte
 }  // namespace
 
 SM_TEST(RtpReceiver, AnIdrAloneIsAKeyframeByDefault) {
-  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe).
-  auto frames = DeliverFrame(ReceiverCfg(), IdrOnlyFrame(2500));
+  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe). The SPS/PPS tracker
+  // (on by default since #580) would drop an IDR that has had no parameter sets before it.
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = false;
+  auto frames = DeliverFrame(cfg, IdrOnlyFrame(2500));
   SM_ASSERT_EQ(frames.size(), 1u);
   SM_EXPECT_TRUE(frames[0].keyframe);
   SM_EXPECT_TRUE(frames[0].render);
@@ -443,7 +453,7 @@ SM_TEST(RtpReceiver, RedPacketRestoredFromRtx) {
   RtpSenderConfig sc = SenderCfg();
   sc.fec = true;
   RtpSender s(sc);  // FEC rate 0: RED only.
-  RtpReceiverConfig rc = ReceiverCfg();
+  RtpReceiverConfig rc = NoHoldCfg();
   rc.fec = true;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));

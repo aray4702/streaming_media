@@ -94,11 +94,14 @@ struct VideoSendControllerConfig {
   // target below the codec minimum is raised to it (the frame dropper still gets
   // the target). 0 = off (the v1 behaviour; `allocator v2` turns it on).
   DataRate allocation_min_bitrate;
-  DataRate allocation_max_bitrate = DataRate::KilobitsPerSec(10000);
+  // The codec maximum is the stream's max_bitrate_bps, which the app sets;
+  // libwebrtc's allocator has no cap of its own, so neither does the default
+  // (issue #580): the session's allocation (SendSideConfig::video_max) bounds it.
+  DataRate allocation_max_bitrate = DataRate::PlusInfinity();
   // EncoderRtcpFeedback::OnReceivedIntraFrameRequest (video/encoder_rtcp_feedback.cc):
   // a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last one it
-  // passed on is ignored. 0 = off (the v1 behaviour; `keyframe v2` turns it on).
-  TimeDelta min_keyframe_request_interval = TimeDelta::Zero();
+  // passed on is ignored. 300 ms by default, as libwebrtc (issue #580); 0 = off.
+  TimeDelta min_keyframe_request_interval = TimeDelta::Millis(300);
   // QualityScalerResource and EncodeUsageResource with MAINTAIN_FRAMERATE and
   // the initial frame drop (see above). On by default, as libwebrtc (issue #84's flip).
   // Off = the v1 behaviour: the captured
