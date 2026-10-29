@@ -62,14 +62,25 @@
 // OnCapturedFrame and its completion in OnEncoded, so its encode time is the
 // time between the two calls (SendProcessingUsage1 measures on the clock); its
 // overuse adapts the resolution down and its underuse up. The two resources go
-// through a port of call/adaptation/resource_adaptation_processor.cc: each
-// keeps the restrictions it last asked for, an adapt-down is always applied,
+// through video::ResourceAdaptationProcessor (resource_adaptation_processor.cc):
+// each keeps the restrictions it last asked for, an adapt-down is always applied,
 // and an adapt-up only for the resource that set the most adaptations (shared
 // with none), so CPU underuse cannot undo the quality scaler's steps or the
 // reverse. The initial frame drop counts as the quality scaler's
 // (MaybeInitializePixelLimitResource / OnFrameDroppedDueToSize). OnEncoded must
 // be called for every frame the decision allowed, in order: the controller
 // pairs them by count, where libwebrtc uses the RTP timestamp.
+// Resources are removed and added again as libwebrtc's
+// VideoStreamEncoderResourceManager does when the encoder's info changes
+// (OnEncoderInfoChanged; ConfigureEncodeUsageResource, ConfigureQualityScaler):
+// the quality scaler stops without trusted QP thresholds (and the initial frame
+// drop with it), the CPU check without enable_cpu_overuse_detection.
+// ResourceAdaptationProcessor::RemoveResource drops the resource's limit and
+// its later signals; when it was the only adapted resource the restrictions
+// are cleared, and when it was more limited than the most limited one left
+// the stream goes back to that one's restrictions and counters
+// (RemoveLimitationsImposedByResource, VideoStreamAdapter::GetAdaptationTo;
+// issue #646). A started CPU check restarts with a fresh usage filter.
 // video::VideoStreamAdapter has every degradation preference (#646); the
 // controller runs MAINTAIN_FRAMERATE, the camera call's, and counts steps by
 // VideoAdaptationCounters::Total() as the processor does. The frame dropper is
@@ -88,6 +99,7 @@
 #include "sm/core/units.h"
 #include "sm/rtp/session.h"
 #include "sm/video/quality_scaler.h"
+#include "sm/video/resource_adaptation_processor.h"
 #include "sm/video/video_stream_adapter.h"
 
 namespace sm::rtp {
@@ -167,6 +179,16 @@ struct EncodedFrameReport {
   int qp = -1;  // EncodedImage::qp_; negative = not reported.
 };
 
+// The parts of VideoEncoder::EncoderInfo that decide which adaptation
+// resources run (VideoStreamEncoderResourceManager).
+struct EncoderAdaptationInfo {
+  // ConfigureQualityScaler's quality_scaling_allowed under MAINTAIN_FRAMERATE:
+  // scaling_settings.thresholds set and is_qp_trusted.
+  bool quality_scaling = true;
+  // enable_cpu_overuse_detection (ConfigureEncodeUsageResource).
+  bool cpu_overuse_detection = true;
+};
+
 class VideoSendController : public MetricsSource {
  public:
   // `session` (not owned) supplies the rates and the pushback state.
@@ -185,11 +207,20 @@ class VideoSendController : public MetricsSource {
   // kEncoderResume and kKeyframeRequested (a peer PLI/FIR or the outage monitor).
   void OnSessionEvent(const SessionEvent& e);
   void RequestKeyframe() { keyframe_needed_ = true; }
+  // VideoStreamEncoder's `encoder_info_ != info` branch: ConfigureEncodeUsageResource,
+  // then ConfigureQualityScaler, which add, restart or remove the two
+  // resources (see above). Only with `quality_scaling`; both start on.
+  void OnEncoderInfoChanged(const EncoderAdaptationInfo& info, Timestamp now);
+  bool quality_scaler_started() const { return processor_.HasResource(kQualityResource); }
+  bool encode_usage_started() const { return processor_.HasResource(kCpuResource); }
 
   const cc::FrameDropper& frame_dropper() const { return dropper_; }
   const cc::EncoderBitrateAdjuster& bitrate_adjuster() const { return adjuster_; }
   const video::QualityScaler& quality_scaler() const { return scaler_; }
   const video::VideoStreamAdapter& stream_adapter() const { return stream_adapter_; }
+  // The processor's resource ids.
+  enum Resource { kQualityResource = 0, kCpuResource = 1, kNumResources = 2 };
+  const video::ResourceAdaptationProcessor& adaptation_processor() const { return processor_; }
   const cc::CpuOveruseDetector& overuse_detector() const { return overuse_; }
   bool paused() const { return paused_; }
   // A frame is held (EncodeDecision::hold) and not yet released.
@@ -206,20 +237,15 @@ class VideoSendController : public MetricsSource {
   cc::FrameDropper dropper_;
   cc::EncoderBitrateAdjuster adjuster_;
   // Quality scaling and CPU adaptation (cfg_.quality_scaling).
-  enum Resource { kQualityResource = 0, kCpuResource = 1, kNumResources = 2 };
-  // ResourceAdaptationProcessor's adaptation_limits_by_resources_ entry.
-  struct ResourceLimit {
-    video::VideoSourceRestrictions restrictions;
-    int adaptations = 0;  // VideoAdaptationCounters::Total().
-  };
   void OnQualityScalerSignal(video::QualityScaler::Signal signal, Timestamp now);
   void OnCpuSignal(cc::CpuOveruseDetector::Signal signal, Timestamp now);
-  // ResourceAdaptationProcessor::OnResourceOveruse / OnResourceUnderuse.
-  void OnResourceOveruse(Resource r, Timestamp now);
-  void OnResourceUnderuse(Resource r, Timestamp now);
-  // VideoStreamAdapter::ApplyAdaptation with `r` as the reason, then the
-  // processor's OnVideoSourceRestrictionsUpdated and the sink wants.
-  void ApplyAdaptation(const video::VideoStreamAdapter::Adaptation& a, Resource r, Timestamp now);
+  // ResourceAdaptationProcessor::OnResourceUsageStateMeasured, then the sink wants.
+  void OnResourceUsageStateMeasured(Resource r, video::ResourceUsageState state, Timestamp now);
+  // After the processor changed the restrictions: the counts, the event and the
+  // sink wants (VideoSourceSinkController), for a step with `reason`.
+  void OnRestrictionsChanged(const video::VideoAdaptationCounters& before, int reason, Timestamp now);
+  // ResourceAdaptationProcessor::RemoveResource (VideoStreamEncoderResourceManager::RemoveResource).
+  void RemoveResource(Resource r, Timestamp now);
   bool QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now);
   // VideoStreamEncoder::UpdateBitrateAllocation's allocation and the bitrate adjuster (see the .cc).
   DataRate EncoderRate(const SendRates& rates, double fps, bool encode_path, bool new_adjuster, Timestamp now);
@@ -238,6 +264,7 @@ class VideoSendController : public MetricsSource {
   Timestamp last_parameters_update_ = Timestamp::MinusInfinity();  // last_parameters_update_ms_.
   video::QualityScaler scaler_;
   video::VideoStreamAdapter stream_adapter_;
+  video::ResourceAdaptationProcessor processor_{stream_adapter_};
   video::VideoAdapter video_adapter_;
   int initial_framedrop_ = 0;  // InitialFrameDropper::initial_framedrop_.
   // InitialFrameDropper's set_start_bitrate_ and its time, has_seen_first_bwe_drop_.
@@ -256,7 +283,7 @@ class VideoSendController : public MetricsSource {
   int configured_width_ = 0, configured_height_ = 0;  // The encoder's send_codec_ size.
   uint64_t adapt_downs_ = 0, adapt_ups_ = 0;
   cc::CpuOveruseDetector overuse_;
-  std::optional<ResourceLimit> limits_[kNumResources];
+  uint64_t resources_removed_ = 0, restrictions_restored_ = 0;
   uint32_t encodes_started_ = 0, encodes_completed_ = 0;  // Pair OnFrameCaptured with OnFrameSent.
   uint64_t cpu_adapt_downs_ = 0, cpu_adapt_ups_ = 0, adapt_ups_not_most_limited_ = 0;
   // RateStatistics (window 2970 ms, scale 1000) over captured frames.
