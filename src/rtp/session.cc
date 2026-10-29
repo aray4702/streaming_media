@@ -662,7 +662,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     e.time = now;
     e.ssrc = ssrc;
     Emit(e);
-  }
+  }  // Call::DeliverRtcpPacket_w hands every packet to each receive stream too, which then
+  // trains its RemoteNtpTimeEstimator from the SR (DeliverRtcp, ReceivedRTCPPacket).
+  for (auto& v : video_recv_) v.receiver->OnRtcpPacket(now);
+  for (auto& a : audio_recv_) a.receiver->OnRtcpPacket(now);
 }
 
 void Session::UpdateSenderState(Timestamp now) {

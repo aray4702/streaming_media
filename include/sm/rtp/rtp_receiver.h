@@ -27,6 +27,7 @@
 #include <optional>
 #include <span>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include "sm/cc/transport_feedback.h"
@@ -40,6 +41,7 @@
 #include "sm/loss/red.h"
 #include "sm/loss/ulpfec.h"
 #include "sm/rtp/sps_vui_rewriter.h"
+#include "sm/sync/capture_time.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/video/orientation.h"
 #include "sm/sync/stream_sync.h"
@@ -204,6 +206,13 @@ struct RtpReceiverConfig {
   EventSink* events = nullptr;
 };
 
+// A media packet's absolute capture time, received or interpolated, and its
+// capture clock offset against the local clock, as RtpPacketInfo carries them.
+struct PacketCaptureTime {
+  std::optional<sync::AbsoluteCaptureTime> absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
+};
+
 // What OnPacket made of a datagram, for the caller's accounting.
 enum class ReceivedKind : uint8_t { kMalformed, kMedia, kRtx, kFec, kPadding, kUnknown };
 
@@ -221,6 +230,27 @@ struct ReceivedFrame {
   // The last packet's video-orientation extension (CVO), 0 without it, as libwebrtc's
   // RtpVideoStreamReceiver2 (rtp_video_stream_receiver2.cc:797-802, 1108).
   video::Rotation rotation = video::Rotation::k0;
+  // The first packet's absolute capture time, received or interpolated
+  // (AbsoluteCaptureTimeInterpolator), and its capture clock offset against
+  // the local clock (CaptureClockOffsetUpdater), as RtpVideoStreamReceiver2::
+  // OnReceivedPayloadData sets them on the packet's RtpPacketInfo
+  // (rtp_video_stream_receiver2.cc:780-795).
+  std::optional<sync::AbsoluteCaptureTime> absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
+  // RtpFrameObject's ntp_time_ms: RemoteNtpTimeEstimator::Estimate of the first
+  // packet's RTP timestamp, the capture time on the local NTP clock in ms, -1
+  // until it is known (rtp_video_stream_receiver2.cc:1100-1104, with
+  // WebRTC-UseAbsCapTimeForG2gMetric off, its default).
+  int64_t ntp_time_ms = -1;
+};
+
+// An audio packet's absolute capture time, received or interpolated, and its
+// capture clock offset against the local clock: ChannelReceive::OnRtpPacket
+// and GetAudioFrameWithInfo (channel_receive.cc:474-503, 747-754).
+struct AudioCaptureTime {
+  uint32_t rtp_timestamp = 0;
+  sync::AbsoluteCaptureTime absolute_capture_time;
+  std::optional<TimeDelta> local_capture_clock_offset;
 };
 
 // Feedback due toward the sender, for rtp::RtcpEngine.
@@ -258,6 +288,11 @@ struct RtpReceiverStats {
   uint64_t audio_frames = 0;
   uint64_t audio_decode_failures = 0;
   uint64_t audio_fec_frames = 0;       // In-band FEC frames given to the jitter buffer (version 2).
+  // Media packets that carried the absolute capture time extension, and those
+  // whose capture time AbsoluteCaptureTimeInterpolator extrapolated.
+  uint64_t abs_capture_time_received = 0;
+  uint64_t abs_capture_time_interpolated = 0;
+  uint64_t remote_ntp_updates = 0;  // SRs given to RemoteNtpTimeEstimator.
 };
 
 class RtpReceiver : public MetricsSource {
@@ -282,7 +317,22 @@ class RtpReceiver : public MetricsSource {
   void OnSenderReport(const timing::SenderReport& sr, Timestamp now) {
     stats_rtp_.OnSenderReport(sr, now);
     last_sr_ = sr;
+    last_sr_arrival_ = now;
   }
+  // After each RTCP packet, once its SRs and RTT are in (RtpVideoStreamReceiver2::
+  // DeliverRtcp, rtp_video_stream_receiver2.cc:1533-1569; ChannelReceive::
+  // ReceivedRTCPPacket, channel_receive.cc:818-847): with an RTT and an SR, the
+  // SR trains RemoteNtpTimeEstimator, and its remote-to-local clock offset goes
+  // to CaptureClockOffsetUpdater. Video takes only an SR that arrived with this
+  // packet (1 ms or less ago); audio gives the last SR again, which the
+  // estimator skips as the same measurement.
+  void OnRtcpPacket(Timestamp now);
+  // RemoteNtpTimeEstimator::Estimate: the capture time of `rtp_timestamp` on the
+  // local NTP clock in ms, -1 until two SRs are in.
+  int64_t EstimateNtpTimeMs(uint32_t rtp_timestamp) const;
+  // Audio: the last media packet's absolute capture time (received or
+  // interpolated), with the local capture clock offset; unset until one is known.
+  const std::optional<AudioCaptureTime>& last_audio_capture_time() const { return last_audio_capture_time_; }
   // A/V synchronization (issue #77), what the stream gives
   // sync::RtpStreamsSynchronizer as a Syncable. Video is libwebrtc's
   // VideoReceiveStream2::GetInfo (RtpVideoStreamReceiver2::GetSyncInfo: the
@@ -349,6 +399,9 @@ class RtpReceiver : public MetricsSource {
   void SendSeqNumNacks(Timestamp now);  // NackRequester::OnReceivedPacket's kSeqNumOnly batch.
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
+  // AbsoluteCaptureTimeInterpolator::OnReceivePacket on a media packet, then the
+  // local clock offset: what RtpPacketInfo carries for it.
+  PacketCaptureTime OnPacketCaptureTime(const RtpPacket& p, int clock_rate, Timestamp now);
   void AssembleFrames(Timestamp now);
   // timing v2: FrameBuffer::InsertFrame's checks for an assembled frame; false if it is refused.
   bool FrameBufferAccepts(int64_t id, bool keyframe, uint32_t rtp_timestamp, Timestamp now);
@@ -379,6 +432,17 @@ class RtpReceiver : public MetricsSource {
   std::unordered_set<uint16_t> nacked_seqs_;  // timing v2: received packets that had been NACKed.
   // A/V sync (issue #77): the last SR, the last media packet and the last playout.
   std::optional<timing::SenderReport> last_sr_;
+  Timestamp last_sr_arrival_ = Timestamp::MinusInfinity();
+  // Absolute capture time (F8.3): per-packet interpolation, the SR-trained
+  // remote NTP estimate and the capture clock offset updater.
+  sync::AbsoluteCaptureTimeInterpolator abs_capture_interpolator_;
+  sync::RemoteNtpTimeEstimator ntp_estimator_;
+  sync::CaptureClockOffsetUpdater capture_clock_offset_updater_;
+  // Video: each packet-buffer packet's sequence number and capture time, by
+  // sequence number modulo the packet buffer's largest size, for its frame's
+  // first packet.
+  std::vector<std::optional<std::pair<uint16_t, PacketCaptureTime>>> packet_capture_times_;
+  std::optional<AudioCaptureTime> last_audio_capture_time_;
   std::optional<uint32_t> last_received_rtp_timestamp_;
   Timestamp last_received_rtp_time_ = Timestamp::MinusInfinity();
   Timestamp last_playout_time_ = Timestamp::MinusInfinity();
@@ -390,6 +454,8 @@ class RtpReceiver : public MetricsSource {
     Timestamp receive_time;      // Last packet's arrival.
     bool retransmitted = false;  // A packet of it was NACKed (timing v2).
     video::Rotation rotation = video::Rotation::k0;
+    PacketCaptureTime capture;  // The first packet's.
+    int64_t ntp_time_ms = -1;
   };
   // Frame id -> what the scheduler needs; bounded. With timing v2 it holds the frames libwebrtc's
   // FrameBuffer holds (assembled, not yet decoded or dropped), at most kMaxFramesBuffered.
