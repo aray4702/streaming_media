@@ -41,7 +41,7 @@ VideoStreamConfig Video() {
 }
 
 struct Pair {
-  Pair() : a(Cfg(1)), b(Cfg(2)) {
+  explicit Pair(SessionConfig ca = Cfg(1)) : a(ca), b(Cfg(2)) {
     AudioStreamConfig au;
     au.ssrc = 0x100;
     a_audio = a.AddAudioSend(au);
@@ -296,7 +296,9 @@ SM_TEST(Session, PacketHistoryRttFollowsThePeriodicUpdateAndNacks) {
 // the stream's media or RTX SSRC, goes to GoogCC once per stream, video first, then audio
 // (rtcp_receiver.cc:1010-1012, call.cc:1357-1381).
 SM_TEST(Session, RttStatsArePerSendStreamAndFromTheMediaSsrcOnly) {
-  Pair p;
+  SessionConfig ca = Cfg(1);
+  ca.per_stream_rtt = true;
+  Pair p(ca);
   Pump(p.a, 0, 400);
   auto rr = [&](int64_t ms, int64_t video_rtt, int64_t rtx_rtt, int64_t audio_rtt) {
     const uint32_t a = timing::NtpTime::FromTimestamp(Timestamp::Millis(ms)).Compact();
