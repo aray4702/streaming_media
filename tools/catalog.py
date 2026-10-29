@@ -1441,7 +1441,14 @@ ALGORITHMS = [
                   "latency for every frame.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="Portability finding: interpolation used long double, which is software-emulated "
                                 "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
-                                "It now uses exact integer arithmetic."),
+                                "It now uses exact integer arithmetic. #567 part 5 ports libwebrtc M157's "
+                                "`AbsoluteCaptureTimeSender`, `AbsoluteCaptureTimeInterpolator`, `CaptureClockOffsetUpdater` "
+                                "and `RemoteNtpTimeEstimator` as units (`modules/rtp_rtcp/source/`): the sender's rules "
+                                "(more than 1 s, an error that rounds to more than 1 ms, a rate of 0, `force`), the "
+                                "interpolator retiring its extension at the first packet it can't interpolate, and the "
+                                "clock offset as the median of the last 7 SRs once 3 are in, where it was a minimum with a "
+                                "5% leak. `LatencyEstimator` computes capture time as `WebRTC-UseAbsCapTimeForG2gMetric` "
+                                "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
