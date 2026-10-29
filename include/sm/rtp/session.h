@@ -45,6 +45,7 @@
 
 #include "sm/cc/transport_feedback.h"
 #include "sm/core/event_log.h"
+#include "sm/core/rate_tracker.h"
 #include "sm/core/metrics.h"
 #include "sm/core/units.h"
 #include "sm/loss/fec_controller.h"
@@ -415,8 +416,12 @@ class Session : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  // Starts the session before the first encode decision (VideoSendController::OnCapturedFrame).
+  // Starts the session before the first encode decision, and starts the sent frame rate at the
+  // first captured frame (VideoSendController::OnCapturedFrame).
   friend class VideoSendController;
+  // SendStatisticsProxy::OnIncomingFrame (send_statistics_proxy.cc:1251-1255): the sent frame rate
+  // starts at the first incoming frame rather than at the first encoded one.
+  void OnIncomingVideoFrame(Timestamp now);
 
   struct SendStream {
     std::unique_ptr<RtpSender> sender;
@@ -426,11 +431,11 @@ class Session : public MetricsSource {
     // `allocation_rate`).
     DataRate min_bitrate = DataRate::Zero(), max_bitrate = DataRate::Zero(), priority_bitrate = DataRate::Zero();
     TimeDelta min_frame_length = TimeDelta::Zero(), max_frame_length = TimeDelta::Zero();
-    // Video: RtpVideoSender's FecControllerDefault, and the times of the frames
-    // sent in the last second for the sent frame rate it takes.
+    // Video: RtpVideoSender's FecControllerDefault, and SendStatisticsProxy's
+    // encoded_frame_rate_tracker_ (100 ms x 10 buckets) for the sent frame rate
+    // it takes (send_statistics_proxy.cc:67-68, 183).
     std::unique_ptr<loss::FecControllerDefault> fec;
-    std::deque<Timestamp> frame_times;
-    Timestamp first_frame = Timestamp::MinusInfinity();
+    RateTracker sent_frame_rate{100, 10};
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
     H264PacketizationMode h264_packetization_mode = H264PacketizationMode::kNonInterleaved;  // Video (SendVideo).
     // The stream's own ModuleRtpRtcpImpl2 and RTCPReceiver (one per send stream in libwebrtc):
@@ -506,6 +511,8 @@ class Session : public MetricsSource {
   bool packet_since_process_ = false;  // OnPacket queued work (frames to assemble, RTCP) for the next Process.
   bool peer_mid_seen_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();
+  // The last Process time, for the `video_encode_frame_rate` gauge.
+  Timestamp last_process_ = Timestamp::MinusInfinity();
   // When the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess wakes next.
   Timestamp tcc_wake_ = Timestamp::MinusInfinity();
   DataRate last_tcc_estimate_ = DataRate::Zero();

@@ -431,8 +431,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   send_.OnVideoFrameEncoded(now);
   // RtpVideoSender::OnEncodedImage, and the sent frame rate SendStatisticsProxy counts.
   vs.fec->UpdateWithEncodedData(encoded_size, keyframe, now);
-  if (!vs.first_frame.IsFinite()) vs.first_frame = now;
-  vs.frame_times.push_back(now);
+  // SendStatisticsProxy::OnSendEncodedImage: one per encoded frame (send_statistics_proxy.cc:1189-1193).
+  vs.sent_frame_rate.Update(1, now.ms());
   RtpSender& s = *vs.sender;
   // RtpVideoSender::OnEncodedImage adds the module's StartTimestamp (rtp_video_sender.cc:658-660).
   const size_t packetized =
@@ -463,12 +463,15 @@ void Session::SetVideoEncodingData(VideoSendId id, int width, int height, int nu
 }
 
 int Session::SentFrameRate(SendStream& v, Timestamp now) {
-  // A rate over the last second, or over the time since the first frame within it.
-  while (!v.frame_times.empty() && v.frame_times.front() <= now - TimeDelta::Seconds(1)) v.frame_times.pop_front();
-  if (!v.first_frame.IsFinite()) return 0;
-  const TimeDelta window = std::min(TimeDelta::Seconds(1), now - v.first_frame);
-  if (window <= TimeDelta::Zero()) return 0;
-  return static_cast<int>(std::lround(static_cast<double>(v.frame_times.size()) * 1e6 / static_cast<double>(window.us())));
+  // SendStatisticsProxy::GetSendFrameRate (send_statistics_proxy.cc:1234-1237), which
+  // VideoSendStreamImpl::OnBitrateUpdated gives RtpVideoSender (video_send_stream_impl.cc:901).
+  return static_cast<int>(std::round(v.sent_frame_rate.Rate(now.ms())));
+}
+
+void Session::OnIncomingVideoFrame(Timestamp now) {
+  for (SendStream& v : video_send_) {
+    if (v.sent_frame_rate.TotalSampleCount() == 0) v.sent_frame_rate.Update(0, now.ms());
+  }
 }
 
 void Session::MaybeUpdateFecRates(Timestamp now) {
@@ -780,6 +783,7 @@ void Session::Process(Timestamp now) {
   // saturating (#441), RtcpEngine's catch-up loop would chase it forever, so it is ignored.
   if (!now.IsFinite()) return;
   Start(now);
+  last_process_ = now;
   packet_since_process_ = false;
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
@@ -935,6 +939,11 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   // Call::GetStats().rtt_ms: CallStats::LastProcessedRtt(), -1 before the first update.
   w.Gauge("call_stats_rtt_ms", static_cast<double>(call_stats_.LastProcessedRtt()));
   w.Gauge("target_kbps", send_.target().kbps());
+  // VideoSendStream::Stats::encode_frame_rate (send_statistics_proxy.cc:899): the sent frame rate
+  // the protection logic takes, at the last Process.
+  if (!video_send_.empty() && last_process_.IsFinite()) {
+    w.Gauge("video_encode_frame_rate", std::round(video_send_.front().sent_frame_rate.Rate(last_process_.ms())));
+  }
 }
 
 }  // namespace sm::rtp

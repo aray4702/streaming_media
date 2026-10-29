@@ -816,6 +816,42 @@ SM_TEST(Session, ExportsCallStatsLastProcessedRtt) {
   SM_EXPECT_LT(gauge(), 250.0);
 }
 
+// The sent frame rate FecControllerDefault takes is SendStatisticsProxy's
+// encoded_frame_rate_tracker_ (RateTracker, 10 buckets of 100 ms), exported as
+// VideoSendStream::Stats::encode_frame_rate (issue #710): 0 for the first
+// 100 ms after it starts, then frames over the time since it started, then
+// over the last second, with the oldest bucket counted in part.
+SM_TEST(Session, SentFrameRateIsSendStatisticsProxysRateTracker) {
+  Session s(Cfg(1));
+  const VideoSendId id = s.AddVideoSend(Video());
+  const auto fps = [&] {
+    MapMetricsWriter w;
+    s.ExportMetrics(w);
+    return w.Get("video_encode_frame_rate", -1);
+  };
+  const auto frame = [&](int64_t t) {
+    auto chunks = test::MakeTestFrameChunks(t == 0, 1500, 1188);
+    s.SendVideoChunks(id, chunks, static_cast<uint32_t>(t * 90), Timestamp::Millis(t));
+  };
+  frame(0);
+  frame(10);
+  s.Process(Timestamp::Millis(10));
+  // Not 2 frames over 10 ms: no rate until a bucket has passed.
+  SM_EXPECT_EQ(fps(), 0.0);
+  frame(50);
+  s.Process(Timestamp::Millis(100));
+  SM_EXPECT_EQ(fps(), 30.0);  // 3 frames over 100 ms.
+  // 25 fps from 100 ms to 2000 ms.
+  for (int64_t t = 100; t < 2000; t += 40) frame(t);
+  s.Process(Timestamp::Millis(2000));
+  SM_EXPECT_EQ(fps(), 25.0);
+  // 500 ms without a frame: only the last half second has frames.
+  s.Process(Timestamp::Millis(2500));
+  SM_EXPECT_EQ(fps(), 13.0);  // 13 frames in 1500-2000 ms.
+  s.Process(Timestamp::Millis(3000));
+  SM_EXPECT_EQ(fps(), 0.0);
+}
+
 SM_TEST(Session, AReceiveOnlyEndpointRunsNoSendSideController) {
   Session s(Cfg(2));
   NullDecoder dec;
