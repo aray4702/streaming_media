@@ -3,6 +3,7 @@
 #include "sm/core/rtp_packet.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/rtp/h264.h"
+#include "sm/rtp/sps_vui_rewriter.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -30,6 +31,10 @@ Bytes RoundTrip(const Bytes& frame, size_t max_payload, std::vector<Bytes>* payl
   if (payloads) *payloads = chunks;
   return out;
 }
+
+// A frame as Session::SendVideo hands it to the packetizer: the SPS's VUI
+// already rewritten, so the receive-side rewrite leaves it as it is.
+Bytes SentFrame(bool key, size_t bytes) { return ParseOutgoingBitstreamAndRewrite(MakeFakeH264Frame(key, bytes)); }
 
 Bytes Nal(std::initializer_list<uint8_t> b) {
   Bytes out = {0, 0, 0, 1};
@@ -70,7 +75,7 @@ SM_TEST(H264, SingleNalUnitPacketWhenAloneAndFitting) {
 }
 
 SM_TEST(H264, LargeNalIsFragmentedWithFuA) {
-  Bytes frame = MakeFakeH264Frame(true, 5000);
+  Bytes frame = SentFrame(true, 5000);
   std::vector<Bytes> payloads;
   SM_EXPECT_TRUE(RoundTrip(frame, 1188, &payloads) == frame);
   // STAP-A (SPS+PPS) then the IDR in FU-A fragments about equal in size.
@@ -99,7 +104,7 @@ SM_TEST(H264, RoundTripAtEveryPayloadLimitAndSize) {
   for (bool key : {false, true}) {
     for (size_t bytes : {40u, 300u, 1200u, 1201u, 2399u, 7000u}) {
       for (size_t limit : {3u, 20u, 100u, 1187u, 1188u}) {
-        Bytes frame = MakeFakeH264Frame(key, bytes);
+        Bytes frame = SentFrame(key, bytes);
         SM_EXPECT_TRUE(RoundTrip(frame, limit) == frame);
       }
     }
@@ -138,45 +143,140 @@ SM_TEST(H264, FrameStartNeedsFirstMbZero) {
 }
 
 SM_TEST(H264, MalformedPayloadsAreRejected) {
+  // Where VideoRtpDepacketizerH264::Parse returns nullopt.
   SM_EXPECT_FALSE(H264Depacketizer::Parse({}).valid);
   Bytes stap_short = {kH264NalStapA, 0, 5, 0x41, 1};  // Declared 5 bytes, 2 present.
   SM_EXPECT_FALSE(H264Depacketizer::Parse(stap_short).valid);
-  Bytes stap_empty = {kH264NalStapA};
+  Bytes stap_empty = {kH264NalStapA};  // ParseStapA finds no unit.
   SM_EXPECT_FALSE(H264Depacketizer::Parse(stap_empty).valid);
   Bytes stap_zero = {kH264NalStapA, 0, 0};
   SM_EXPECT_FALSE(H264Depacketizer::Parse(stap_zero).valid);
-  Bytes fu_short = {kH264NalFuA, 0x85};
+  Bytes stap_cut = {kH264NalStapA, 0, 1, 0x06, 0};  // A size field cut off.
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(stap_cut).valid);
+  Bytes fu_short = {kH264NalFuA};  // Shorter than kFuAHeaderSize.
   SM_EXPECT_FALSE(H264Depacketizer::Parse(fu_short).valid);
-  Bytes fu_both = {kH264NalFuA, 0xC5, 1};  // Start and end together.
-  SM_EXPECT_FALSE(H264Depacketizer::Parse(fu_both).valid);
-  Bytes fu_reserved = {kH264NalFuA, 0xA5, 1};
-  SM_EXPECT_FALSE(H264Depacketizer::Parse(fu_reserved).valid);
-  for (uint8_t t : {25, 26, 27, 29, 30, 31, 0}) {  // STAP-B, MTAP16, MTAP24, FU-B and reserved.
+  // A STAP-A or FU-A inside a STAP-A ("Unexpected STAP-A or FU-A received").
+  Bytes nested_stap = {kH264NalStapA, 0, 2, kH264NalStapA, 0};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(nested_stap).valid);
+  Bytes nested_fu = {kH264NalStapA, 0, 3, kH264NalFuA, 0x85, 0xAA};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(nested_fu).valid);
+}
+
+SM_TEST(H264, ParameterSetsAndSlicesThatDontParseAreDropped) {
+  // An SPS SpsVuiRewriter can't parse (profile and level, then no id).
+  Bytes sps = {0x67, 0x42, 0x00, 0x1F};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(sps).valid);
+  // A PPS (PpsParser::ParsePpsIds) or a slice (ParseSliceHeader) whose ue(v)
+  // ids run out of data.
+  Bytes pps = {0x68, 0x00};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(pps).valid);
+  Bytes slice = {0x41, 0x80};  // first_mb_in_slice 0, then slice_type runs out.
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(slice).valid);
+  Bytes idr = {0x65, 0x00, 0x00};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(idr).valid);
+  // In a STAP-A one such unit drops the whole packet.
+  Bytes stap = {kH264NalStapA, 0, 2, 0x06, 1, 0, 2, 0x68, 0x00};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(stap).valid);
+  // The fake encoder's PPS and slices parse: pps 0, sps 0; first_mb 0, slice
+  // type 1, pps 0.
+  SM_EXPECT_TRUE(ParsePpsIds(std::span<const uint8_t>(kFakeH264Pps + 1, sizeof(kFakeH264Pps) - 1)).has_value());
+  const auto h = ParseSliceHeader(Bytes{0xAA, 0x11});
+  SM_ASSERT_TRUE(h.has_value());
+  SM_EXPECT_EQ(h->first_mb_in_slice, 0u);
+  SM_EXPECT_EQ(h->pic_parameter_set_id, 0u);
+}
+
+SM_TEST(H264, PayloadsLibwebrtcAcceptsAreAccepted) {
+  // ParseFuaNalu checks only the size: two bytes, start and end together, or
+  // the reserved bit set, all pass.
+  Bytes fu_two = {kH264NalFuA, 0x85};
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(fu_two).valid);
+  Bytes fu_both = {kH264NalFuA, 0xC5, 0xAA};
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(fu_both).valid);
+  Bytes fu_reserved = {kH264NalFuA, 0xA5, 0xAA};
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(fu_reserved).valid);
+  // A first FU-A fragment whose slice header doesn't parse is only logged.
+  Bytes fu_bad_slice = {kH264NalFuA, 0x81, 0x80};
+  const H264PayloadInfo bad = H264Depacketizer::Parse(fu_bad_slice);
+  SM_EXPECT_TRUE(bad.valid && !bad.first_packet_in_frame);
+  // STAP-B, MTAP16, MTAP24, FU-B and the unspecified types go down the single
+  // NAL unit path, which reads nothing from them.
+  for (uint8_t t : {25, 26, 27, 29, 30, 31, 0}) {
     Bytes b = {t, 1, 2, 3};
-    SM_EXPECT_FALSE(H264Depacketizer::Parse(b).valid);
+    const H264PayloadInfo i = H264Depacketizer::Parse(b);
+    SM_EXPECT_TRUE(i.valid && !i.first_packet_in_frame && !i.keyframe);
+  }
+  // Empty units are skipped; end of sequence, end of stream and filler start
+  // nothing.
+  for (uint8_t t : {0x41, 0x0A, 0x0B, 0x0C}) {
+    Bytes b = {t};
+    SM_EXPECT_TRUE(H264Depacketizer::Parse(b).valid);
+  }
+  Bytes eos = {0x0A, 1};
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(eos).first_packet_in_frame);
+}
+
+SM_TEST(H264, FuAFrameStartIsAFirstSliceOnly) {
+  // ParseFuaNalu sets is_first_packet_in_frame from the slice header of a
+  // first fragment of a slice only; a fragmented SPS, PPS, SEI or AUD doesn't
+  // start a frame there.
+  Bytes slice_start = {kH264NalFuA | 0x40, 0x81, 0xAA};
+  SM_EXPECT_TRUE(H264Depacketizer::Parse(slice_start).first_packet_in_frame);
+  Bytes later_slice = {kH264NalFuA | 0x40, 0x81, 0x08, 0x11};  // first_mb_in_slice 7.
+  SM_EXPECT_FALSE(H264Depacketizer::Parse(later_slice).first_packet_in_frame);
+  for (uint8_t t : {kH264NalSps, kH264NalPps, kH264NalSei, kH264NalAud}) {
+    Bytes b = {kH264NalFuA | 0x60, static_cast<uint8_t>(0x80 | t), 0xAA, 0x11};
+    const H264PayloadInfo i = H264Depacketizer::Parse(b);
+    SM_EXPECT_TRUE(i.valid && !i.first_packet_in_frame && !i.sps && !i.pps);
   }
 }
 
-SM_TEST(H264, ReassembleRejectsInconsistentFragments) {
-  Bytes frame = MakeFakeH264Frame(false, 3000);
+SM_TEST(H264, SpsIsRewrittenOnReceive) {
+  // The fake encoder's SPS has no bitstream_restriction; the depacketizer
+  // rewrites it as SpsVuiRewriter (kIncoming) and the frame comes out as the
+  // sender's outgoing rewrite would have made it, in a single NAL unit packet,
+  // a STAP-A (its length field rewritten) or behind FU-A slices.
+  for (size_t limit : {100u, 1188u}) {
+    for (size_t bytes : {40u, 300u, 5000u}) {
+      const Bytes raw = MakeFakeH264Frame(true, bytes);
+      SM_EXPECT_TRUE(RoundTrip(raw, limit) == ParseOutgoingBitstreamAndRewrite(raw));
+    }
+  }
+  const Bytes raw = MakeFakeH264Frame(true, 40);
+  const auto nals = SplitAnnexB(raw);
+  Bytes single(nals[0].begin(), nals[0].end());
+  SM_EXPECT_EQ(single[0] & 0x1F, kH264NalSps);
+  Bytes out;
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(AsPackets({single}), out));
+  SM_EXPECT_EQ(out.size(), 4 + single.size() + 5);  // bitstream_restriction added.
+  // The SPS's resolution is reported as video_header.width and height.
+  const H264PayloadInfo i = H264Depacketizer::Parse(single);
+  SM_EXPECT_TRUE(i.valid && i.sps && i.keyframe && i.first_packet_in_frame);
+  SpsState state;
+  Bytes ignored;
+  SM_ASSERT_TRUE(ParseAndRewriteSps(std::span<const uint8_t>(single).subspan(1), ignored, &state) != SpsRewriteResult::kFailure);
+  SM_EXPECT_TRUE(state.width > 0 && state.height > 0);
+  SM_EXPECT_EQ(i.width, state.width);
+  SM_EXPECT_EQ(i.height, state.height);
+}
+
+SM_TEST(H264, ReassemblyCopiesFragmentsAsTheTracker) {
+  // H264SpsPpsTracker::CopyAndFixBitstream doesn't check the FU-A sequence:
+  // a start code goes before each first fragment and the rest is appended.
+  // The packet buffer hands over only frames from a first packet to a marker.
+  Bytes frame = SentFrame(false, 3000);
   auto chunks = H264Packetizer::Packetize(frame, 1200);
   SM_ASSERT_EQ(chunks.size(), 3u);
   Bytes out;
-  // A middle fragment arrives without its start.
   std::vector<Bytes> no_start(chunks.begin() + 1, chunks.end());
-  SM_EXPECT_FALSE(H264Depacketizer::Reassemble(AsPackets(no_start), out));
-  // The end fragment is missing.
-  out.clear();
-  std::vector<Bytes> no_end(chunks.begin(), chunks.end() - 1);
-  SM_EXPECT_FALSE(H264Depacketizer::Reassemble(AsPackets(no_end), out));
-  // A new unit starts inside an unfinished one.
-  out.clear();
-  std::vector<Bytes> twice = {chunks[0], chunks[0]};
-  SM_EXPECT_FALSE(H264Depacketizer::Reassemble(AsPackets(twice), out));
-  // The complete sequence is fine.
+  SM_EXPECT_TRUE(H264Depacketizer::Reassemble(AsPackets(no_start), out));
+  SM_EXPECT_EQ(out.size(), chunks[1].size() - 2 + chunks[2].size() - 2);  // No start code, no NAL header.
   out.clear();
   SM_EXPECT_TRUE(H264Depacketizer::Reassemble(AsPackets(chunks), out));
   SM_EXPECT_TRUE(out == frame);
+  // A payload the depacketizer drops can't be reassembled.
+  out.clear();
+  SM_EXPECT_FALSE(H264Depacketizer::Reassemble(AsPackets({Bytes{0x68, 0x00}}), out));
 }
 
 SM_TEST(H264, ParserReportsKeyframeParts) {
