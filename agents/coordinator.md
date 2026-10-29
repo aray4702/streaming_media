@@ -191,6 +191,10 @@ The Owner measures progress in requirements closed (`agents/program.md`
   when its acceptance holds (for a library feature: ported faithfully,
   defaults as libwebrtc's, no open `req:` item), back to `in-progress` if a
   new gap or item appears for it.
+- **Plan fields:** keep each requirement's `depends_on` (ids that must be
+  done first), `cost` (your estimate in Fixer runs) and a planned `end`
+  (`~YYYY-MM-DD`) current, and set `start` / `end` when it starts and is
+  done. The Owner's dashboard shows them in its default tab.
 - **Lead your daily summary** with `python3 tools/requirements_report.py`'s
   headline: done / total, what moved today, and what is next.
 
