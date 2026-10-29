@@ -476,10 +476,10 @@
    "area": "Video quality and processing",
    "catalog": "7.2",
    "title": "Hardware -> software codec fallback",
-   "status": "open",
-   "evidence": "`CodecFallbackController` (`include/sm/video/codec_fallback.h`: 3 errors, 10% over 100 frames, hardware retry after 60 s) is the library's own design, not a port; parity doc 7.3 `n/a (file needed to confirm)`: libwebrtc's `VideoEncoderSoftwareFallbackWrapper` (`api/video_codecs/`) is not in reference/. No recorded deviation; no open item; filed #566.",
+   "status": "done",
+   "evidence": "Ported from libwebrtc M157: #605 (#573) `VideoEncoderSoftwareFallbackWrapper` (`api/video_codecs/video_encoder_software_fallback_wrapper.cc`: fallback on init failure or `FALLBACK_SOFTWARE`, sticky until `Release`, rates/RTT/loss primed on switch, forced-fallback field trials off by default) and #627 (#607) `VideoDecoderSoftwareFallbackWrapper` (`video_decoder_software_fallback_wrapper.cc`: `FALLBACK_SOFTWARE` or the 4th consecutive keyframe error, sticky until `Release`, forced trial off). The app runs the codecs (program.md 0.1). Not ported: the temporal-layer forced switch (temporal layers removed, #572) and the `OnLossNotification` replay (no encoder loss-notification input). Not on the bench call path, so no parity cell.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
