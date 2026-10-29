@@ -25,6 +25,13 @@ double ToneAmp(std::span<const float> x, double freq, int fs) {
   }
   return 2 * std::sqrt(re * re + im * im) / static_cast<double>(x.size());
 }
+// The v1 chain: these tests pin the v1 modules, which stay until they are
+// retired (#565); the default chain is `apm v2`, libwebrtc's.
+ChainConfig V1(bool aec, bool ns, bool ts, bool agc) {
+  ChainConfig cc{true, aec, ns, ts, agc};
+  cc.apm_v2 = false;
+  return cc;
+}
 double Mean(std::span<const float> x) {
   double s = 0;
   for (float v : x) s += v;
@@ -39,7 +46,7 @@ SM_TEST(E2E_HighPassFilter, RemovesDcAndHumInFullChain) {
   s.hum_amp = 0.05f;
   s.noise_amp = 0.002f;
   auto c = MakeCall(s);
-  auto r = RunChain(c, {true, false, true, false, true});
+  auto r = RunChain(c, V1(false, true, false, true));
   std::span<const float> tail(r.out.data() + 10 * 16000, 8 * 16000);
   double hum_in = ToneAmp(std::span<const float>(c.capture.data() + 10 * 16000, 8 * 16000), 50, 16000);
   double hum_out = ToneAmp(tail, 50, 16000);
@@ -80,12 +87,32 @@ SM_TEST(E2E_HighPassFilter, LibwebrtcHpfAsLibwebrtc) {
   SM_EXPECT_NEAR(speech_db, -0.2, 0.1);
 }
 
+// The default capture chain is libwebrtc's (#565): the full chain with
+// every module on runs the ported modules, bit for bit the `apm v2` chain.
+SM_TEST(E2E_Apm, DefaultChainIsLibwebrtcs) {
+  SM_EXPECT_TRUE(ChainConfig{}.apm_v2);
+  CallScenario s;
+  s.seconds = 6;
+  s.near_start_s = 3;
+  s.noise_amp = 0.003f;
+  s.hum_amp = 0.02f;
+  auto c = MakeCall(s);
+  auto def = RunChain(c, {true, true, true, false, true});
+  ChainConfig v2{true, true, true, false, true};
+  v2.apm_v2 = true;
+  auto ported = RunChain(c, v2);
+  SM_EXPECT_TRUE(def.out == ported.out);
+  SM_EXPECT_EQ(def.latency, ported.latency);
+  SM_EXPECT_EQ(def.latency, 64u + 96u);  // AEC3's block plus NS's filter bank, as libwebrtc.
+  SM_EXPECT_TRUE(def.out != RunChain(c, V1(true, true, false, true)).out);
+}
+
 SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   CallScenario s;
   s.far_talk = false;
   s.noise_amp = 0.015f;  // ~10 dB SNR.
   auto c = MakeCall(s);
-  auto r = RunChain(c, {true, false, true, false, false});
+  auto r = RunChain(c, V1(false, true, false, false));
   int tp = 0, fn = 0, fp = 0, tn = 0, since = 1000;
   for (size_t f = 100; f < r.vad.size(); ++f) {
     bool truth = dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160)) > -45.0f;
@@ -108,8 +135,8 @@ SM_TEST(E2E_NoiseSuppressor, ImprovesSnrInChain) {
   s.far_talk = false;
   s.noise_amp = 0.03f;  // ~7 dB SNR: a noisy office or car.
   auto c = MakeCall(s);
-  auto r = RunChain(c, {true, false, true, false, false});
-  auto base = RunChain(c, {true, false, false, false, false});
+  auto r = RunChain(c, V1(false, true, false, false));
+  auto base = RunChain(c, V1(false, false, false, false));
   // Reference: the clean talker through the same high-pass filter, so the
   // HPF's phase response is not counted as noise.
   std::vector<float> talker_hp = c.talker;
@@ -206,7 +233,7 @@ SM_TEST(E2E_GainControl, NormalizesQuietTalkerLeavesLoudToLimiter) {
   ChainResult r;
   {
     // Run the chain manually to read the AGC gain at the end of each half.
-    r = RunChain(c, {true, false, false, false, true});
+    r = RunChain(c, V1(false, false, false, true));
   }
   auto level = [&](double a, double b) {
     double e = 0;
@@ -327,7 +354,7 @@ SM_TEST(E2E_EchoDelay, AecFollowsAudioRouteChange) {
   s.near_start_s = 1e9;    // Far end only.
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
-  auto r = RunChain(c, {true, true, false, false, false});
+  auto r = RunChain(c, V1(true, false, false, false));
   double erle_before = SegmentDb(c.echo, 6, 12) - SegmentDb(r.out, 6, 12, 16000, r.latency);
   double erle_after = SegmentDb(c.echo, 18, 24) - SegmentDb(r.out, 18, 24, 16000, r.latency);
   SM_RECORD("erle_before_change_db", erle_before);
@@ -345,7 +372,7 @@ SM_TEST(E2E_EchoCanceller, FullDuplexCall) {
   s.near_start_s = 15;  // Far end alone first, then double talk.
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
-  auto r = RunChain(c, {true, true, true, false, false});
+  auto r = RunChain(c, V1(true, true, false, false));
   double erle = SegmentDb(c.echo, 6, 15) - SegmentDb(r.out, 6, 15, 16000, r.latency);
   double near_change = SegmentDb(r.out, 18, 30, 16000, r.latency) - SegmentDb(c.talker, 18, 30);
   SM_RECORD("call_erle_db", erle);
@@ -416,8 +443,8 @@ SM_TEST(E2E_TransientSuppressor, KeyboardDuringCall) {
   s.click_interval_s = 0.25;
   s.noise_amp = 0.001f;
   auto c = MakeCall(s);
-  auto with = RunChain(c, {true, false, false, true, false});
-  auto without = RunChain(c, {true, false, false, false, false});
+  auto with = RunChain(c, V1(false, false, true, false));
+  auto without = RunChain(c, V1(false, false, false, false));
   double ein = 0, eout = 0;
   for (size_t i = 16000; i < c.clicks.size(); ++i) {
     if (c.clicks[i] == 0 || std::fabs(c.talker[i]) > 1e-4f) continue;  // Clicks in pauses.
