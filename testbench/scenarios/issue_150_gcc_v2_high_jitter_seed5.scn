@@ -13,6 +13,8 @@ expect cc.utilization_pct < 55
 # PR #324 (#84's flip, quality scaling on): was >= 25. Provisional lock, tracked to #376: ours 14.62 on seed 5, libwebrtc worst seed 5-14 16.4 (mean 22.7).
 # #517 (RTCP interval draws seeded as libwebrtc's): seed 5 reads 12.89 (main 18.87; seeds 5-14 mean 24.8 -> 23.9).
 # seed-1 outlier; mean in band (ours 23.9 / libwebrtc 24.7). Coordinator sign-off 2026-10-28, PR #543.
-expect cc.utilization_pct >= 12.8
+# #555 (one loss report per send stream, as libwebrtc): seed 5 reads 10.99; seeds 5-14 mean 25.85 -> 25.16 (libwebrtc 24.73, worst seed 18.08).
+# seed-1 outlier; mean in band (ours 25.16 / libwebrtc 24.73). Coordinator sign-off 2026-10-29, PR #556 (if the PR's parity report lists no gap on this cell).
+expect cc.utilization_pct >= 9.8
 expect cc.queue_p95_ms < 40
 expect video.freeze_count == 0

@@ -418,6 +418,7 @@ RtpSender* Session::SenderForSsrc(uint32_t ssrc) {
 
 void Session::OnPacket(std::span<const uint8_t> bytes, Timestamp now) {
   Start(now);
+  packet_since_process_ = true;
   ++stats_.datagrams_in;
   if (LooksLikeRtcp(bytes)) {
     ++stats_.rtcp_in;
@@ -601,6 +602,7 @@ void Session::Process(Timestamp now) {
   // saturating (#441), RtcpEngine's catch-up loop would chase it forever, so it is ignored.
   if (!now.IsFinite()) return;
   Start(now);
+  packet_since_process_ = false;
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
   OnCallStatsUpdate(call_stats_.Process(now));
@@ -696,7 +698,8 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
   next = std::min(next, call_stats_.NextProcessTime());
-  if (!video_recv_.empty()) next = std::min(next, now + TimeDelta::Millis(1));
+  if (packet_since_process_) return now;
+  for (const auto& v : video_recv_) next = std::min(next, v.receiver->NextProcessTime(now));
   if (av_sync_ && av_sync_->NextProcessTime()) next = std::min(next, *av_sync_->NextProcessTime());
   if (cfg_.transport_feedback_interval.us() > 0 && tcc_wake_.IsFinite()) next = std::min(next, tcc_wake_);
   return std::max(next, now);

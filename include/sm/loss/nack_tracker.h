@@ -59,6 +59,9 @@ class NackTracker : public MetricsSource {
   // only reordered, and arrives a moment after the one that revealed the gap, has then been NACKed already, as in
   // libwebrtc (issue #411).
   std::vector<uint16_t> GetSeqNumNackBatch(Timestamp now);
+  // When GetNackBatch has work next: the next 20 ms tick while requests are outstanding, or a first request's
+  // reorder wait. PlusInfinity when nothing is missing.
+  Timestamp NextProcessTime() const;
   // NackRequester::ClearUpTo: forgets the requests for every sequence number before `seq`. The
   // receiver calls it for each continuous frame (RtpVideoStreamReceiver2::FrameContinuous), so a keyframe
   // that follows an outage ends the repair of the packets lost during it.
@@ -71,7 +74,7 @@ class NackTracker : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  Timestamp last_process_ = Timestamp::MinusInfinity();  // The last 20 ms retry tick.
+  Timestamp last_process_ = Timestamp::MinusInfinity();  // The last 20 ms retry tick, on the grid of the first.
   struct Info {
     Timestamp detected;
     Timestamp last_sent = Timestamp::MinusInfinity();

@@ -294,8 +294,11 @@ class Session : public MetricsSource {
   // above); a backward step stalls sending until `now` catches up.
   // A non-finite `now` (PlusInfinity, MinusInfinity) is ignored.
   void Process(Timestamp now);
-  // When Process must run next. With a video receiver this is at most 1 ms
-  // away, because frame scheduling is evaluated on every call.
+  // When Process must run next: the earliest timer due (pacer, RTCP, transport
+  // feedback, CallStats, A/V sync, and each video receiver's frame release,
+  // render, decode time-out and NACK tick), or `now` after a packet arrived.
+  // A host that calls Process at these times runs every timer at its due
+  // microsecond, as libwebrtc's delayed tasks run.
   Timestamp NextProcessTime(Timestamp now) const;
 
   // --- Outputs ----------------------------------------------------------------
@@ -390,6 +393,7 @@ class Session : public MetricsSource {
   std::vector<OutgoingPacket> out_;
   std::vector<SessionEvent> events_;
   bool started_ = false;
+  bool packet_since_process_ = false;  // OnPacket queued work (frames to assemble, RTCP) for the next Process.
   bool peer_mid_seen_ = false;
   bool send_has_padding_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();

@@ -164,6 +164,11 @@ std::vector<FeedbackMessage> KeyframeRequester::Process(Timestamp now) {
   return out;
 }
 
+Timestamp KeyframeRequester::NextProcessTime() const {
+  if (lntf_pending_ || need_request_ || !timeout_base_.IsFinite()) return Timestamp::MinusInfinity();
+  return timeout_base_ + (decoded_any_ ? cfg_.max_wait_for_frame : cfg_.max_wait_for_keyframe);
+}
+
 std::vector<int64_t> KeyframeRequester::TakeDecodableFrames() {
   std::vector<int64_t> r;
   r.swap(ready_);

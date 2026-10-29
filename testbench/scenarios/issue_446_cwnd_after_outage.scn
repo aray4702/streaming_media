@@ -18,6 +18,9 @@ at 19s up
 reverse at 0s delay=30ms
 reverse at 15s down
 reverse at 19s up
-expect cc.queue_p95_ms < 70
+# PR for #518 (harness: timers at their due microsecond, the sides more alike; program.md 0.2's exception, up to
+# libwebrtc's worst seed): was < 70. Ours 71.1 on seed 3 (seeds 1-10 mean 56.6, main 54.1); libwebrtc 47.6 on seed 3,
+# seeds 1-10 mean 64.5, worst 121.1.
+expect cc.queue_p95_ms < 75
 expect video.pause_total_ms < 6900
 expect video.render_fps > 22.7

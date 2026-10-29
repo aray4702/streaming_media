@@ -90,6 +90,31 @@ SM_TEST(Session, MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine) {
   SM_EXPECT_GT(p.b.rtcp().stats().sr_received, 0u);
 }
 
+// Issue #518: a host that runs the session at NextProcessTime runs each timer at its due time, as
+// libwebrtc's delayed tasks run. With a video receiver that is no longer "at most 1 ms away": the
+// receiver reports its frame release, decode time-out and NACK tick, and a packet asks for a
+// Process at once.
+SM_TEST(Session, NextProcessTimeWithAVideoReceiverIsItsEarliestTimer) {
+  Pair p;
+  p.a.SendVideo(p.a_video, {0, MakeFakeH264Frame(true, 3000), true}, Timestamp::Millis(0));
+  const std::vector<OutgoingPacket> sent = Pump(p.a, 0, 100);
+  p.b.Process(Timestamp::Millis(0));
+  SM_EXPECT_GT(p.b.NextProcessTime(Timestamp::Millis(0)), Timestamp::Millis(1));
+  // Every packet at 30.4 ms: a Process is due at once, and after it the receiver waits again.
+  const Timestamp at = Timestamp::Micros(30400);
+  for (const auto& o : sent) {
+    if (o.kind == OutgoingKind::kVideo) p.b.OnPacket(o.bytes, at);
+  }
+  SM_EXPECT_EQ(p.b.NextProcessTime(at), at);
+  p.b.Process(at);
+  SM_EXPECT_EQ(p.b.TakeVideoFrames(p.b_video).size(), 1u);  // The keyframe, released at once.
+  const Timestamp next = p.b.NextProcessTime(at);
+  SM_EXPECT_GT(next, at + TimeDelta::Millis(1));
+  // The receiver's own timer is among them: with no frame after the keyframe, its 3 s decode
+  // time-out (kMaxWaitForFrame) runs from the release.
+  SM_EXPECT_LE(next, at + TimeDelta::Seconds(3));
+}
+
 SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
   Pair p;
   p.a.SendVideo(p.a_video, {0, {}}, Timestamp::Millis(0));
