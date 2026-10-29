@@ -9,6 +9,7 @@ describe audio+video call, 6 s outage at 15 s on both paths: video returns at li
 # Seeds 1-80 (#447, CI compare-webrtc at 42c1446), ours / libwebrtc: A/V offset p95 96.6 / 76.8 ms (libwebrtc sd 29.2),
 # ours higher on 48/80: in band, so seed spread.
 seed 1
+compare_seeds 80
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=300ms
 at 15s down

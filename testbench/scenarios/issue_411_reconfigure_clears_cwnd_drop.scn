@@ -18,6 +18,7 @@ describe The 3 s outage of issue_372 on seed 3: an encoder reconfiguration durin
 #   net.loss_pct            5.6 -> 8.6, libwebrtc 7.3
 #   video.e2e_delay_p95_ms  140 -> 142, libwebrtc 141
 #   cc.queue_p95_ms         62.5 -> 46.0, libwebrtc 46.3
+compare_seeds 80
 duration 30s
 seed 3
 at 0s capacity=2Mbps delay=40ms

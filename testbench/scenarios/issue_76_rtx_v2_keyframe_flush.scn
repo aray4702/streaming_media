@@ -3,6 +3,7 @@ describe pacer v2 + rtx v2 + keyframe v2 together under loss and a capacity drop
 # Keyframes flush queued resends under pacer v2. This scenario only checks the combination stays healthy;
 # the flushed-resend wiring (RtpSender::OnPacketDropped) is pinned by the unit test
 # SendSideController.FlushedResendCanBeRequestedAgainUnderPacerV2AndRtxV2.
+compare_seeds 80
 duration 40s
 at 0s  capacity=2500kbps delay=30ms queue=400ms loss=2%
 at 10s capacity=500kbps

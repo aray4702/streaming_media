@@ -11,6 +11,7 @@ describe From 8 s the host reports an RTT 75.8 ms short of the int64 limit, then
 # gives 2-4 freezes on seeds 1-5 with or without host_rtt, and with libopus (#460) one
 # audio interruption on seed 3 (170 ms without host_rtt, 200 ms with it).
 # fix-record-base-cmake: -DSM_SANITIZE=ON
+compare_seeds 80
 duration 30s
 at 0s capacity=2500kbps delay=30ms queue=400ms
 host_rtt 8s 9223372036854700000us

@@ -1,5 +1,6 @@
 name issue_21_shallow_drop_repair
 describe Shallow bottleneck buffer (20 ms) with a 3x capacity drop: repair traffic must follow the measured repair share, as in libwebrtc (issue #21)
+compare_seeds 80
 duration 40s
 at 0s  capacity=1500kbps delay=30ms queue=20ms
 at 10s capacity=500kbps

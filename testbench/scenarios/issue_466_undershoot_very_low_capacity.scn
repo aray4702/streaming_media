@@ -1,5 +1,6 @@
 name issue_466_undershoot_very_low_capacity
 describe 100 kbps link (as very_low_capacity), an encoder whose delta frames are 0.7x its target
+compare_seeds 80
 duration 40s
 encoder_overshoot 0.7
 at 0s capacity=100kbps delay=30ms queue=300ms

@@ -1,5 +1,6 @@
 name issue_372_outage_interruption_count
 describe A 3 s outage that starts on a round time (5 s): the audio is silent for 3 s and the bench must count one interruption of about 3 s (issue #372). Seed 1 used to report none (longest 40 ms, concealed 8.0 %) because the bench counted concealment by the pull's operation, and NetEq plays leftover expanded samples on Normal pulls. Counted from concealedSamples and concealmentEvents as libwebrtc's StatisticsCalculator does, seeds 1-5 read 1 interruption of 2976-2980 ms and 10.0-10.2 % concealed.
+compare_seeds 80
 duration 30s
 seed 1
 at 0s capacity=2Mbps delay=40ms

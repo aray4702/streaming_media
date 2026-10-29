@@ -1,5 +1,6 @@
 name issue_466_scene_change_very_low_capacity
 describe 100 kbps link (as very_low_capacity), a scene cut every 5 s: 5 delta frames at 3x
+compare_seeds 80
 duration 40s
 scene_change 5s 5 3
 at 0s capacity=100kbps delay=30ms queue=300ms

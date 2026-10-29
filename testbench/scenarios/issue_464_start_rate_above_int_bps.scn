@@ -7,6 +7,7 @@ describe The host configures a 20 Gbps start rate and a 9 Ebps max; the call set
 # 20 Gbps the call never settled (9-14 freezes, cc.unsettled 1 on seeds 1-5). cc::ConvertConstraints
 # now saturates the min, start and max rate at INT_MAX bps (src/cc/send_side_bwe.cc). 20 Gbps keeps
 # the base commit's run short; any start rate above INT_MAX bps now gives these same results.
+compare_seeds 80
 duration 10s
 max_rate 9000000000000mbps
 start_rate 20000mbps

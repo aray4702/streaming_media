@@ -2,6 +2,7 @@ name issue_12_lossbwe_policer
 describe Policer: 1.5 Mbps enforced by dropping, no queueing (queue=5ms); the loss-based estimate must keep backing off (#12)
 # LossBasedBweV2 as libwebrtc ships it (cc v2): loss above the inherent level at a rate above the
 # loss-limited bandwidth limits the target; the instant upper bound is 100 kbps / (loss - 5 %).
+compare_seeds 80
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=5ms
 # 5 seeds (cc v2): net.loss_pct 7.7-9.9, freeze_total_ms 0-764, target 400-412 kbps. `cc v1`: loss 19.8-25.0, freezes 1.0-1.6 s.

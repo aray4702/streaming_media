@@ -1,5 +1,6 @@
 name issue_12_lossbwe_shallow
 describe Shallow buffer: 1.5 Mbps with a 20 ms drop-tail queue; the loss-based estimate must keep backing off (#12)
+compare_seeds 80
 duration 40s
 at 0s capacity=1500kbps delay=30ms queue=20ms
 # 5 seeds (cc v2): net.loss_pct 8.2-14.7, freeze_total_ms 413-964, utilization 59-70 %. `cc v1`: loss 10.2-17.6 %.
