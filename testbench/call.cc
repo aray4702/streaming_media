@@ -182,6 +182,8 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), whole RTP packets"},
       {"repair.nack_recovered", "RTX packets that arrived before their original (from the link, as sm_compare)"},
       {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
+      {"rtcp.audio_report_blocks", "Report blocks about the audio SSRC in the RTCP the sender received (SRs and RRs; "
+                                   "libwebrtc's audio channel reports every 5 s, about 6 in 30 s; issue #484)"},
   };
   return k;
 }
@@ -606,6 +608,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // constructor schedules report_interval_ / 2 (rtcp_sender.cc:171), so 0.5 s
   // with video (issue #360; the receiver used to wait 1 s).
   receiver_cfg.av_sync = s.av_sync;  // Issue #77.
+  receiver_cfg.audio_receive_rtcp = s.audio_receive_rtcp;  // Issue #484.
   // The receiver measures its RTT as sm_compare's libwebrtc receiver does:
   // RRTR in its reports, the sender's DLRR echo (rtcp_xr.receiver_reference_time_report, issue #356).
   receiver_cfg.rtcp.xr_rrtr = s.video;
@@ -733,6 +736,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   // The trace's rtx_room column (#555): the sender's RTX reservation phase when each frame was handed to it.
   RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  std::vector<AudioSendRow> audio_reports;  // Each audio report block the sender received (issue #484).
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
@@ -988,6 +992,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       } else if (tr == at) {
         const Rev& r = rev_in[ri++].second;
         if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
+        TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, audio_reports);  // rtcp.audio_report_blocks (issue #484).
         if (opt.link_trace) rtx_ack.OnRtcp(r.bytes);
         sender.OnPacket(r.bytes, at);
         run_sender(at);
@@ -1340,6 +1345,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["cc.queue_over_200ms_pct"] = queue_samples.empty() ? 0 : 100.0 * static_cast<double>(over) / static_cast<double>(queue_samples.size());
   }
   m["cc.rtt_p50_ms"] = Percentile(rtt_samples, 50);
+  m["rtcp.audio_report_blocks"] = static_cast<double>(audio_reports.size());
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   AddLinkKindMetrics(ls, s, rep);

@@ -51,7 +51,8 @@
   "net.video_size_max_b": 0,
   "net.video_size_p50_b": 0,
   "net.video_size_p90_b": 0,
-  "repair.overhead_pct": 0
+  "repair.overhead_pct": 0,
+  "rtcp.audio_report_blocks": 6
  },
  "passed": true,
  "scenario": "issue_62_neteq_default"
