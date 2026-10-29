@@ -67,7 +67,10 @@ struct VideoFormat {
 
 struct DegradationConfig {
   VideoFormat input{1280, 720, 30};
-  DegradationPreference preference = DegradationPreference::kBalanced;
+  // libwebrtc's camera default (GetDegradationPreference,
+  // media/engine/webrtc_video_engine.cc:2032-2064): BALANCED only with the
+  // WebRTC-Video-BalancedDegradation trial, which is off.
+  DegradationPreference preference = DegradationPreference::kMaintainFramerate;
   double bpp_down = 0.04;
   double bpp_up = 0.06;
   double min_fps = 5;

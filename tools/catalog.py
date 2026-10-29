@@ -903,7 +903,9 @@ ALGORITHMS = [
                       "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
                       "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
                       "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
-                      "the behaviour."),
+                      "the behaviour. Issue #581: `DegradationConfig::preference` defaults to maintain-framerate, "
+                      "libwebrtc's camera default (`media/engine/webrtc_video_engine.cc:2032-2064`), where it was "
+                      "balanced; the send path already ran maintain-framerate, so no scenario moves."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -1335,7 +1337,11 @@ ALGORITHMS = [
                   "change must be encoded immediately, while static frames are skipped.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
-         verification="No defects found."),
+         verification="No defects found. Issue #581: with no hint, camera video maps to maintain-framerate (the "
+                      "`ContentSettings` default too), as libwebrtc's `GetDegradationPreference` "
+                      "(`media/engine/webrtc_video_engine.cc:2032-2064`; BALANCED only with the "
+                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. The QP ceilings and "
+                      "frame-rate floors stay with #566."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
