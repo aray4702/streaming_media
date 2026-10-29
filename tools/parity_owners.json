@@ -214,7 +214,7 @@
     {"scenario": "random_loss_5pct", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
     {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "sync.av_offset_p95_ms", "issues": [769], "note": "#769 (Fixer 2026-10-29): seed spread. Behind on seeds 1-10 since #656 (1230 vs 1051, band 151, 7/10), which moved single seeds but not the mean: on seeds 1-40, main 5bbe59d 1149 (sd 204) vs libwebrtc 1130 (sd 193, yardstick #689), in band. The scenario now compares 40 seeds (compare_seeds 40)."},
     {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "video.e2e_delay_p95_ms", "issues": [769], "note": "#769 (Fixer 2026-10-29): seed spread. Behind on seeds 1-10 since #656 (1748 vs 1577, band 150, 7/10), which moved single seeds but not the mean: on seeds 1-40, main 5bbe59d 1666 (sd 204) vs libwebrtc 1658 (sd 196, yardstick #689), in band. The scenario now compares 40 seeds (compare_seeds 40)."},
-    {"scenario": "issue_335_fps1_keyframe_packets", "metric": "video.pause_total_ms", "issues": [770]},
+    {"scenario": "issue_335_fps1_keyframe_packets", "metric": "video.pause_total_ms", "issues": [770], "note": "Seed noise: behind on 10 seeds (581 vs 0, seed 4 alone), in band on 80 seeds: 1653 vs 1544, band \u00b13.63e+03; ours pauses on 20/80 seeds, libwebrtc on 17/80 (#776 on main c77c654; the scenario now runs compare_seeds 80)."},
     {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.freeze_count", "issues": [736]},
     {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.longest_freeze_ms", "issues": [736]},
     {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.render_fps", "issues": [736]}
