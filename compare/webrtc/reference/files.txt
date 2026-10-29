@@ -244,3 +244,5 @@ api/video_codecs/video_decoder.cc
 api/video_codecs/video_encoder_software_fallback_wrapper.h
 common_video/h264/sps_parser.cc
 common_video/h264/h264_common.cc
+modules/rtp_rtcp/source/rtcp_packet/transport_feedback.h
+modules/rtp_rtcp/source/rtcp_packet/transport_feedback.cc
