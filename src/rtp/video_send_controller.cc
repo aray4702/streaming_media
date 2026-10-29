@@ -156,6 +156,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   int width = frame.width, height = frame.height;
   bool cwnd_drop = false;
   bool reconfigured = false;
+  bool new_adjuster = false;
   if (cfg_.quality_scaling) {
     // The quality scaler's CheckQpTask, then the source's VideoAdapter with the
     // sink wants, then the frame size the encoder sees (OnFrameSizeObserved).
@@ -192,12 +193,13 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // kMinFramesSinceLayoutChange frames have been encoded
     // (video/video_stream_encoder.cc l.1430-1442). Reset() is the same as a
     // new adjuster: its overshoot detector is created again on the next
-    // AdjustRate, which restarts the frame count.
+    // AdjustRate, which restarts the frame count. It runs below, after the
+    // rate update this frame may bring.
     if (width != configured_width_ || height != configured_height_) {
       const bool first_configuration = configured_width_ == 0;
       if (!first_configuration) keyframe_needed_ = true;
       dropper_.Reset();
-      adjuster_.Reset(now);
+      new_adjuster = true;
       configured_width_ = width;
       configured_height_ = height;
       // VideoSendStreamImpl::OnEncoderConfigurationChanged: the running stream
@@ -239,7 +241,7 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     allocation = std::max(cfg_.allocation_min_bitrate, std::min(target, cfg_.allocation_max_bitrate));
   }
   const DataRate link = std::max({target, allocation, rates.video_link_allocation});
-  const DataRate encoder_rate = cfg_.bitrate_adjuster ? adjuster_.AdjustRate(allocation, link, fps, now) : allocation;
+  const DataRate encoder_rate = cfg_.bitrate_adjuster ? AdjustedRate(allocation, link, fps, !cwnd_drop, new_adjuster, now) : allocation;
   // No keyframe sent yet: the first one is already due through keyframe_needed_.
   const bool periodic = cfg_.keyframe_interval.us() > 0 && last_keyframe_.IsFinite() &&
                         now - last_keyframe_ >= cfg_.keyframe_interval;
@@ -284,6 +286,41 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   SM_EVENT(cfg_.events, now, "video_send", "frame_dropped", static_cast<double>(d.reason), 0);
   if (reconfigured) session_.send_side().OnVideoEncoderReconfigured(now);
   return d;
+}
+
+DataRate VideoSendController::AdjustedRate(DataRate allocation, DataRate link, double fps, bool encode_path,
+                                           bool new_adjuster, Timestamp now) {
+  // VideoStreamEncoder runs EncoderBitrateAdjuster::AdjustRateAllocation in
+  // UpdateBitrateAllocation, and the encoder keeps the rate it was last set to
+  // (last_encoder_rate_settings_) in between. It runs on each allocation the
+  // allocator hands the stream (OnBitrateUpdated, l.2459-2507). Without an
+  // update count the rates are recomputed per call, and so is the adjustment.
+  if (!cfg_.adjuster_on_update) {
+    if (new_adjuster) adjuster_.Reset(now);
+    return adjuster_.AdjustRate(allocation, link, fps, now);
+  }
+  const uint64_t updates = session_.rates().video_allocation_updates;
+  if (!adjusted_once_ || updates == 0 || updates != allocation_updates_seen_) {
+    encoder_rate_ = adjuster_.AdjustRate(allocation, link, fps, now);
+    allocation_updates_seen_ = updates;
+    adjusted_once_ = true;
+  }
+  // MaybeEncodeVideoFrame (l.1921-1940), for a frame that got past OnFrame's
+  // congestion-window drop: ReconfigureEncoder's new adjuster gets the last
+  // rate settings with the input frame rate; otherwise they are applied again
+  // with the input frame rate every kParameterUpdateIntervalMs (1000 ms).
+  if (!encode_path) return encoder_rate_;
+  if (new_adjuster) {
+    adjuster_.Reset(now);
+    encoder_rate_ = adjuster_.AdjustRate(allocation, link, fps, now);
+    last_parameters_update_ = now;
+  } else if (!last_parameters_update_.IsFinite()) {
+    last_parameters_update_ = now;
+  } else if (now - last_parameters_update_ >= kParameterUpdateInterval) {
+    encoder_rate_ = adjuster_.AdjustRate(allocation, link, fps, now);
+    last_parameters_update_ = now;
+  }
+  return encoder_rate_;
 }
 
 bool VideoSendController::QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now) {

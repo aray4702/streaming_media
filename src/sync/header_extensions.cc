@@ -183,9 +183,12 @@ bool ExtensionAccessor::SetString(RtpPacket& p, const char* u, const std::string
 }
 
 std::optional<std::string> ExtensionAccessor::GetString(const RtpPacket& p, const char* u) const {
+  // BaseRtpStringExtension::Parse (rtp_header_extensions.cc:753-763): an
+  // empty value, or one starting with \0, is not a string; a \0 inside
+  // ends it.
   auto d = GetRaw(p, u);
-  if (!d) return std::nullopt;
-  return std::string(d->begin(), d->end());
+  if (!d || d->empty() || (*d)[0] == 0) return std::nullopt;
+  return std::string(d->begin(), std::find(d->begin(), d->end(), uint8_t{0}));
 }
 
 bool ExtensionAccessor::SetTransportSeq(RtpPacket& p, uint16_t seq) const {
@@ -210,56 +213,209 @@ std::optional<uint32_t> ExtensionAccessor::GetAbsSendTime24(const RtpPacket& p) 
   return (uint32_t{(*d)[0]} << 16) | (uint32_t{(*d)[1]} << 8) | (*d)[2];
 }
 
-void RtpDemuxer::AddSink(int sink, const std::string& mid, const std::string& rid, std::vector<uint8_t> pts) {
-  sinks_.push_back({sink, mid, rid, std::move(pts)});
+bool RtpDemuxerCriteria::IsValid() const {
+  // RtpDemuxerCriteria::IsValid (rtp_demuxer.cc:91-110); the string limit is
+  // BaseRtpStringExtension::kMaxValueSizeBytes.
+  if (!match_any && payload_types.empty() && ssrcs.empty() && mid.empty() && rsid.empty()) return false;
+  return mid.size() <= kOneByteHeaderExtensionMaxValueSize && rsid.size() <= kOneByteHeaderExtensionMaxValueSize;
+}
+
+bool RtpDemuxer::IsEmpty() const {
+  return sink_by_mid_.empty() && sink_by_ssrc_.empty() && sinks_by_pt_.empty() && sink_by_mid_and_rsid_.empty() &&
+         sink_by_rsid_.empty() && !match_any_sink_;
+}
+
+bool RtpDemuxer::AddSink(int sink, const RtpDemuxerCriteria& c) {
+  // RtpDemuxer::AddSink (rtp_demuxer.cc:140-196).
+  if (!c.IsValid() || CriteriaWouldConflict(c)) return false;
+  if (c.match_any) match_any_sink_ = sink;
+  if (!c.mid.empty()) {
+    if (c.rsid.empty()) {
+      sink_by_mid_.emplace(c.mid, sink);
+    } else {
+      sink_by_mid_and_rsid_.emplace(std::make_pair(c.mid, c.rsid), sink);
+    }
+  } else if (!c.rsid.empty()) {
+    sink_by_rsid_.emplace(c.rsid, sink);
+  }
+  for (uint32_t ssrc : c.ssrcs) {
+    // A binding learned from packets gives way to a signalled SSRC.
+    auto [it, inserted] = sink_by_ssrc_.emplace(ssrc, sink);
+    if (!inserted && !signaled_ssrcs_.contains(ssrc)) it->second = sink;
+    signaled_ssrcs_.insert(ssrc);
+  }
+  // libwebrtc's criteria hold the payload types as a flat_set, so a type
+  // listed twice is entered once (otherwise it would look like two sinks).
+  for (uint8_t pt : std::set<uint8_t>(c.payload_types.begin(), c.payload_types.end())) sinks_by_pt_.emplace(pt, sink);
+  RefreshKnownMids();
+  return true;
+}
+
+bool RtpDemuxer::AddSink(int sink, const std::string& mid, const std::string& rid, std::vector<uint8_t> pts) {
+  RtpDemuxerCriteria c;
+  c.mid = mid;
+  c.rsid = rid;
+  c.payload_types = std::move(pts);
+  return AddSink(sink, c);
+}
+
+bool RtpDemuxer::CriteriaWouldConflict(const RtpDemuxerCriteria& c) const {
+  // RtpDemuxer::CriteriaWouldConflict (rtp_demuxer.cc:198-257).
+  if (match_any_sink_) return true;
+  if (c.match_any) return !IsEmpty();
+  if (!c.mid.empty()) {
+    if (c.rsid.empty()) {
+      // A sink for this MID, or for this MID with some RSID, would be shadowed.
+      if (known_mids_.contains(c.mid)) return true;
+    } else {
+      if (sink_by_mid_and_rsid_.contains(std::make_pair(c.mid, c.rsid))) return true;
+      // The bare MID's sink would take every packet of this pair.
+      if (sink_by_mid_.contains(c.mid)) return true;
+    }
+  }
+  for (uint32_t ssrc : c.ssrcs) {
+    if (sink_by_ssrc_.contains(ssrc) && signaled_ssrcs_.contains(ssrc)) return true;
+  }
+  return false;
+}
+
+void RtpDemuxer::RefreshKnownMids() {
+  known_mids_.clear();
+  for (const auto& [mid, sink] : sink_by_mid_) known_mids_.insert(mid);
+  for (const auto& [key, sink] : sink_by_mid_and_rsid_) known_mids_.insert(key.first);
+}
+
+bool RtpDemuxer::RemoveSink(int sink) {
+  // RtpDemuxer::RemoveSink (rtp_demuxer.cc:290-307). The MIDs and RSIDs
+  // learned per SSRC are kept.
+  for (uint32_t ssrc : GetSsrcsForSink(sink)) signaled_ssrcs_.erase(ssrc);
+  auto by_value = [sink](const auto& e) { return e.second == sink; };
+  size_t removed = std::erase_if(sink_by_mid_, by_value) + std::erase_if(sink_by_ssrc_, by_value) +
+                   std::erase_if(sinks_by_pt_, by_value) + std::erase_if(sink_by_mid_and_rsid_, by_value) +
+                   std::erase_if(sink_by_rsid_, by_value);
+  if (match_any_sink_ == sink) {
+    match_any_sink_.reset();
+    ++removed;
+  }
+  RefreshKnownMids();
+  return removed > 0;
+}
+
+void RtpDemuxer::RemoveAllSinks() {
+  sink_by_mid_.clear();
+  sink_by_ssrc_.clear();
+  sinks_by_pt_.clear();
+  sink_by_mid_and_rsid_.clear();
+  sink_by_rsid_.clear();
+  signaled_ssrcs_.clear();
+  known_mids_.clear();
+  match_any_sink_.reset();
+  mid_by_ssrc_.clear();
+  rsid_by_ssrc_.clear();
+}
+
+std::vector<uint32_t> RtpDemuxer::GetSsrcsForSink(int sink) const {
+  std::vector<uint32_t> ssrcs;
+  for (const auto& [ssrc, s] : sink_by_ssrc_) {
+    if (s == sink) ssrcs.push_back(ssrc);
+  }
+  return ssrcs;
 }
 
 std::optional<int> RtpDemuxer::Demux(const RtpPacket& p) {
-  auto mid = access_.GetString(p, uri::kMid);
-  auto rid = access_.GetString(p, uri::kRid);
-  if (!rid) rid = access_.GetString(p, uri::kRepairedRid);
-  // 1. MID (+RID) present: authoritative, (re)binds the SSRC.
+  // RtpDemuxer::ResolveSink (rtp_demuxer.cc:318-428).
+  if (match_any_sink_) return match_any_sink_;
+  // A repaired RSID wins over an RSID on the same packet.
+  std::optional<std::string> packet_mid = use_mid_ ? access_.GetString(p, uri::kMid) : std::nullopt;
+  std::optional<std::string> packet_rsid = access_.GetString(p, uri::kRepairedRid);
+  if (!packet_rsid) packet_rsid = access_.GetString(p, uri::kRid);
+  const uint32_t ssrc = p.ssrc;
+  // RFC 8843: a packet with an unknown MID is dropped, even if its SSRC is bound.
+  if (packet_mid && !known_mids_.contains(*packet_mid)) {
+    ++stats_.unroutable;
+    return std::nullopt;
+  }
+  // Learn the SSRC's MID and RSID even without a sink for them yet, so a
+  // sink added later finds them.
+  const std::string* mid = nullptr;
+  if (packet_mid) {
+    mid = &(mid_by_ssrc_[ssrc] = *packet_mid);
+  } else if (auto it = mid_by_ssrc_.find(ssrc); it != mid_by_ssrc_.end()) {
+    mid = &it->second;
+  }
+  const std::string* rsid = nullptr;
+  if (packet_rsid) {
+    rsid = &(rsid_by_ssrc_[ssrc] = *packet_rsid);
+  } else if (auto it = rsid_by_ssrc_.find(ssrc); it != rsid_by_ssrc_.end()) {
+    rsid = &it->second;
+  }
   if (mid) {
-    for (const auto& s : sinks_) {
-      if (s.mid != *mid) continue;
-      if (!s.rid.empty() && (!rid || *rid != s.rid)) continue;
-      auto [it, inserted] = ssrc_to_sink_.insert_or_assign(p.ssrc, s.id);
-      (void)it;
-      if (inserted) ++stats_.ssrc_bindings;
-      ++stats_.by_mid;
-      return s.id;
+    std::optional<int> sink;
+    if (auto it = sink_by_mid_.find(*mid); it != sink_by_mid_.end()) {
+      sink = it->second;
+    } else if (rsid) {  // An RSID is scoped to its MID.
+      if (auto it2 = sink_by_mid_and_rsid_.find(std::make_pair(*mid, *rsid)); it2 != sink_by_mid_and_rsid_.end()) {
+        sink = it2->second;
+      }
+    }
+    if (!sink) {
+      // The MID has sinks only for other RSIDs: outside BUNDLE, dropped.
+      ++stats_.unroutable;
+      return std::nullopt;
+    }
+    AddSsrcSinkBinding(ssrc, *sink);
+    ++(packet_mid ? stats_.by_mid : stats_.by_ssrc);
+    return sink;
+  }
+  if (rsid) {
+    if (auto it = sink_by_rsid_.find(*rsid); it != sink_by_rsid_.end()) {
+      AddSsrcSinkBinding(ssrc, it->second);
+      ++(packet_rsid ? stats_.by_rsid : stats_.by_ssrc);
+      return it->second;
     }
   }
-  // 2. Known SSRC.
-  if (auto it = ssrc_to_sink_.find(p.ssrc); it != ssrc_to_sink_.end()) {
+  // A signalled SSRC is trusted more than a payload type.
+  if (auto it = sink_by_ssrc_.find(ssrc); it != sink_by_ssrc_.end()) {
     ++stats_.by_ssrc;
     return it->second;
   }
-  // 3. Payload type unique to one sink.
-  std::optional<int> match;
-  int count = 0;
-  for (const auto& s : sinks_) {
-    if (std::find(s.pts.begin(), s.pts.end(), p.payload_type) != s.pts.end()) {
-      match = s.id;
-      ++count;
+  if (use_payload_type_demuxing_) {
+    // Legacy senders signal only the payload type; it routes only if one
+    // sink has it.
+    auto [first, last] = sinks_by_pt_.equal_range(p.payload_type);
+    if (first != last && std::next(first) == last) {
+      AddSsrcSinkBinding(ssrc, first->second);
+      ++stats_.by_payload_type;
+      return first->second;
     }
-  }
-  if (count == 1) {
-    ssrc_to_sink_[p.ssrc] = *match;
-    ++stats_.ssrc_bindings;
-    ++stats_.by_payload_type;
-    return match;
   }
   ++stats_.unroutable;
   return std::nullopt;
 }
 
+void RtpDemuxer::AddSsrcSinkBinding(uint32_t ssrc, int sink) {
+  // RtpDemuxer::AddSsrcSinkBinding (rtp_demuxer.cc:487-507): at most
+  // kMaxSsrcBindings, against a peer sending many SSRCs.
+  if (sink_by_ssrc_.size() >= kMaxSsrcBindings) {
+    ++stats_.ssrc_binding_limit;
+    return;
+  }
+  auto [it, inserted] = sink_by_ssrc_.emplace(ssrc, sink);
+  if (inserted) {
+    ++stats_.ssrc_bindings;
+  } else {
+    it->second = sink;
+  }
+}
+
 void RtpDemuxer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("by_ssrc", stats_.by_ssrc);
   w.Counter("by_mid", stats_.by_mid);
+  w.Counter("by_rsid", stats_.by_rsid);
   w.Counter("by_payload_type", stats_.by_payload_type);
   w.Counter("unroutable", stats_.unroutable);
   w.Counter("ssrc_bindings", stats_.ssrc_bindings);
+  w.Counter("ssrc_binding_limit", stats_.ssrc_binding_limit);
 }
 
 }  // namespace sm::sync

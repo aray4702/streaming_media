@@ -544,6 +544,11 @@ SM_TEST(ContentPolicy, HintsMapToPolicies) {
   auto motion = SettingsFor(ContentHint::kMotion, false);
   SM_EXPECT_TRUE(motion.degradation == Degradation::kMaintainFramerate);
   SM_EXPECT_FALSE(motion.variable_framerate);
+  // No hint: camera keeps the frame rate, screencast the resolution, as
+  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064).
+  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, false).degradation == Degradation::kMaintainFramerate);
+  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, true).degradation == Degradation::kMaintainResolution);
+  SM_EXPECT_TRUE(ContentSettings{}.degradation == Degradation::kMaintainFramerate);
 }
 
 SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {

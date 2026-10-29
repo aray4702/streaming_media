@@ -125,6 +125,7 @@ void SendSideController::ConfigureAllocation(const AudioAllocation& audio, bool 
       const VideoAllocationSplit split = SplitVideoAllocation(alloc);
       video_encoder_target_ = split.encoder_target;
       video_link_allocation_ = split.link_allocation;
+      ++video_allocation_updates_;
       return split.protection;
     };
     allocator_.AddObserver("video", v, video_observer_);
@@ -530,6 +531,7 @@ SendRates SendSideController::AllocatedRates() const {
   if (cfg_.control_handler) {
     out.video_target = video_encoder_target_;
     out.video_link_allocation = video_link_allocation_;
+    out.video_allocation_updates = video_allocation_updates_;
   } else {
     const VideoAllocationSplit split = SplitVideoAllocation(allocator_.allocation("video"));
     out.video_target = split.encoder_target;
