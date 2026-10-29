@@ -83,6 +83,6 @@
   "video.time_to_first_frame_ms": 190,
   "video.undecodable_frames": 0
  },
- "passed": false,
+ "passed": true,
  "scenario": "issue_224_congestive_e2e_flip"
 }

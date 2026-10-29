@@ -1,13 +1,13 @@
 {
  "description": "The 3 s outage of issue_372 on seed 3: an encoder reconfiguration during the outage ends the congestion-window frame drops until feedback returns, as in libwebrtc, so video keeps going into the dead link, and the call is back to its delay at once after link-up (issue",
  "metrics": {
-  "audio.concealed_pct": 10.28,
-  "audio.interruption_ms": 2976,
+  "audio.concealed_pct": 10.29,
+  "audio.interruption_ms": 2978,
   "audio.interruptions": 1,
   "audio.jb_delay_p50_ms": 70,
   "audio.jb_delay_p95_ms": 130,
   "audio.late_discards": 0,
-  "audio.longest_interruption_ms": 2976,
+  "audio.longest_interruption_ms": 2978,
   "audio.mouth_to_ear_p95_ms": 217.8,
   "audio.net_delay_p95_ms": 87.81,
   "audio.stretch_pct": 0.668,

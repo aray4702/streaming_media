@@ -1,13 +1,13 @@
 {
  "description": "0.5 s outage on a 2 Mbps link: one keyframe is enough (Tester run 4 on",
  "metrics": {
-  "audio.concealed_pct": 1.807,
-  "audio.interruption_ms": 480,
+  "audio.concealed_pct": 1.79,
+  "audio.interruption_ms": 474,
   "audio.interruptions": 1,
   "audio.jb_delay_p50_ms": 80,
   "audio.jb_delay_p95_ms": 140,
   "audio.late_discards": 0,
-  "audio.longest_interruption_ms": 480,
+  "audio.longest_interruption_ms": 474,
   "audio.mouth_to_ear_p95_ms": 218.7,
   "audio.net_delay_p95_ms": 78.74,
   "audio.stretch_pct": 0.5674,

@@ -146,8 +146,14 @@ struct AudioStreamConfig {
   TimeDelta max_frame_length = TimeDelta::Millis(20);
   // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
   DataRate priority_bitrate = DataRate::Zero();
-  // Receive side. libwebrtc's NetEq (jitter buffer version 2) is the session default (#62).
-  timing::AudioJitterBufferConfig jitter_buffer = [] { timing::AudioJitterBufferConfig c; c.version = 2; return c; }();
+  // Receive side. libwebrtc's NetEq (jitter buffer version 2) is the session default (#62),
+  // with muted state on as ChannelReceive sets it (channel_receive.cc:107, #574).
+  timing::AudioJitterBufferConfig jitter_buffer = [] {
+    timing::AudioJitterBufferConfig c;
+    c.version = 2;
+    c.enable_muted_state = true;
+    return c;
+  }();
 };
 
 // Payload formats libwebrtc tells apart when it decides about video FEC.
