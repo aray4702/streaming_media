@@ -11,7 +11,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 3.3 | [RED audio redundancy (RFC 2198)](3-loss/3.3-red.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 3.6 | [Temporal scalability (L1T2/L1T3)](3-loss/3.6-temporal-layers.md) | 4 | 2 | 2 | pass | pass | pass | pass |
 | 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 0 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 
 ## 4. Jitter, reordering and timing
@@ -95,6 +94,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 |---|---|---|
 | 3 | Opus in-band FEC (LBRR), Opus DRED | Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback. |
 | 3 | Keyframe pacing, intra refresh, LTR frames | Encoder features (codec-specific bitstream tools). |
+| 3 | Temporal scalability (L1T2/L1T3) and temporal layer filtering | Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566). |
 | 6 | Audio Device Module (platform I/O, mute, device switching) | Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11. |
 | 7 | Error resilience inside the decoder | Codec internal; 7.2 handles the fallback decision. |
 | 7 | Screen-content coding tools (palette, intra-BC) | Encoder features; 7.4 flags when to enable them. |

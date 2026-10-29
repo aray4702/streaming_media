@@ -146,10 +146,10 @@ encoding come from elsewhere (FFmpeg, a platform codec, OpenH264).
   adaptation ([5.9](algorithms/5-cc/5.9-video-adaptation.md),
   [7.8](algorithms/7-video/7.8-quality-scaler.md)) and frame scaler
   ([7.6](algorithms/7-video/7.6-frame-scaler.md)) work around the encoder.
-- **Layers.** Temporal layers ([3.6](algorithms/3-loss/3.6-temporal-layers.md))
-  produce frames a receiver or SFU can drop safely. The bitrate allocator
-  ([5.7](algorithms/5-cc/5.7-bitrate-allocator.md)) splits the estimate
-  across streams. There is no SFU in the library.
+- **Layers.** The library sends one layer, as single-layer H.264 in
+  libwebrtc M157 (temporal layers were removed in #572). The bitrate
+  allocator ([5.7](algorithms/5-cc/5.7-bitrate-allocator.md)) splits the
+  estimate across streams. There is no SFU in the library.
 
 See [Call data flow](04-webrtc-call-data-flow.md) for how these pieces fit
 into a call.

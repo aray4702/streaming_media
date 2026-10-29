@@ -83,8 +83,8 @@ Reference files: `modules/video_coding/nack_requester.*`,
 
 | Our module | libwebrtc | Difference | Status | Issue |
 |---|---|---|---|---|
-| `TemporalLayerScheduler` | `modules/video_coding/codecs/vp8/default_temporal_layers.*`, `svc/` (not in `reference/`); `video/video_stream_encoder.cc` does not decide layers | libwebrtc's temporal layer patterns belong to the VP8/VP9/AV1 encoders. This library does not run codecs (`program.md` 0.1); H.264 as used here has no temporal layers in the RTP path. | n/a (codec's job) | none |
-| `TemporalLayerFilter` (forwarding a subset of layers) | none in the sender/receiver; the SFU does this | Only an SFU or multiparty call needs it. `program.md` 0.1: such components are removed unless the Owner changes it. | n/a (SFU-only; candidate for removal on the Owner's say) | none |
+| `TemporalLayerScheduler` (removed) | `modules/video_coding/codecs/vp8/default_temporal_layers.*`, `svc/` (not in `reference/`); `video/video_stream_encoder.cc` does not decide layers | libwebrtc's temporal layer patterns belong to the VP8/VP9/AV1 encoders; single-layer H.264 in M157 has no temporal layers. Removed in #572 (the Owner's A on #566, [11:33 PM PT 2026-10-28](https://github.com/aray4702/streaming_media/issues/111#issuecomment-6489730426)). | removed | #566, #572 |
+| `TemporalLayerFilter` (removed; forwarding a subset of layers) | none in the sender/receiver; the SFU does this | Only an SFU or multiparty call needs it. Removed in #572 under `program.md` 0.1 (one-to-one calls; the Builder's [decision](https://github.com/aray4702/streaming_media/issues/566#issuecomment-6487913407) on #566). | removed | #566, #572 |
 
 ### 3.7 Protection selection
 

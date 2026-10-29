@@ -130,14 +130,6 @@ SM_BENCH(loss, KeyframeRequester_Frame) {
   st.BudgetNsPerItem(2000);
 }
 
-SM_BENCH(loss, TemporalLayers_ScheduleAndFilter) {
-  TemporalLayerScheduler s(3);
-  TemporalLayerFilter f;
-  f.SetTargetLayer(1);
-  for (auto _ : st) bench::DoNotOptimize(f.ShouldForward(s.NextFrame()));
-  st.BudgetNsPerItem(500);
-}
-
 SM_BENCH(loss, FecControllerDefault_UpdateFecRates) {
   FecControllerDefault c;
   c.SetProtectionMethod(true, true);
@@ -206,17 +198,6 @@ SM_BENCH_QUALITY(loss, Q_Keyframe_2pct_frame_loss) {
   // (#167 deleted the v1 repair window, whose bounds were >= 0.78 and <= 700 ms); see E2E_Keyframe.
   st.Require("decodable", r.decodable_ratio, ">=", 0.25);
   st.Require("max_freeze_ms", r.max_freeze_ms, "<=", 3150);
-}
-
-SM_BENCH_QUALITY(loss, Q_TemporalLayers_5pct) {
-  e2e::FrameSimParams p;
-  p.frame_loss = 0.05;
-  auto l1 = e2e::RunFrameSim(p);
-  p.temporal_layers = 3;
-  auto l3 = e2e::RunFrameSim(p);
-  st.Counter("l1t1_decodable", l1.decodable_ratio);
-  st.Counter("l1t3_decodable", l3.decodable_ratio);
-  st.Require("decodable_gain", l3.decodable_ratio - l1.decodable_ratio, ">=", 0.05);
 }
 
 SM_BENCH_QUALITY(loss, Q_Protection_adaptive_rtt300) {

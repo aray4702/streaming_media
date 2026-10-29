@@ -74,7 +74,7 @@
    "catalog": "3.6",
    "title": "Temporal scalability (L1T2/L1T3)",
    "status": "open",
-   "evidence": "`TemporalLayerScheduler` and `TemporalLayerFilter` (`include/sm/loss/temporal_layers.h`) are not ported; parity 3.6 marks both `n/a` (the codec's job, `default_temporal_layers` not in reference/; the filter is SFU-only, 'candidate for removal on the Owner's say'), neither a recorded deviation. Not on the call path. Filed #566 for the decision.",
+   "evidence": "Removed by #572 (`include/sm/loss/temporal_layers.h`: `TemporalLayerFilter` on the Builder's decision on #566, SFU-only under the one-to-one rule; `TemporalLayerScheduler` on the Owner's A on #566, single-layer H.264 in M157 has no temporal layers). Parity 3.6 rows marked `removed`; catalog 3.6 moved to the not-implemented list.",
    "start": "",
    "end": "",
    "depends_on": [],
