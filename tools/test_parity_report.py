@@ -233,6 +233,30 @@ class Owners(unittest.TestCase):
             self.assertIn(issue, g[cell], cell)
 
 
+    def test_step2_cells_have_an_open_owner(self):
+        # #479 (step 2, main b48b3d8): the 11 gaps left without an owner go to step-4 items. Ahead cells
+        # join #411's clusters (D2 very low capacity, D4 low bandwidth, D8 outage, D9 policer); behind
+        # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
+        cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 411,
+                 ("issue_12_lossbwe_policer", "net.loss_pct"): 411,
+                 ("issue_12_lossbwe_policer", "repair.overhead_pct"): 411,
+                 ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 411,
+                 ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
+                 ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
+                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 411,
+                 ("issue_457_libopus_audio_rate", "video.render_fps"): 411,
+                 ("issue_430_av_outage_6s", "video.e2e_delay_p95_ms"): 474,
+                 ("issue_29_ulpfec_over_red", "video.avg_kbps"): 492,
+                 ("issue_464_start_rate_above_int_bps", "repair.overhead_pct"): 514}
+        d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners)}
+        self.assertEqual(len(g), len(cells))
+        for cell, issue in cells.items():
+            self.assertIn(issue, g[cell], cell)
+
+
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):
         base = data(scn("a", {"video.freeze_total_ms": ([5000] * 5, [0] * 5),
