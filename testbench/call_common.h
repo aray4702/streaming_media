@@ -18,6 +18,15 @@
 
 namespace sm::testbench {
 
+// The libwebrtc side's simulated clock at the call's start, in seconds: `compare_clock_start` if the scenario sets
+// it, else 100000 + 7919 (seed - 1) s, so each seed starts at its own time (#390, #399). libwebrtc's RTCPSender
+// seeds its report-interval draws with that clock in microseconds (rtcp_sender.cc:130), and the test bench seeds
+// every RtcpEngine with the same value, so both stacks draw the same RTCP schedule (#517).
+inline int64_t CallClockStartSeconds(const Scenario& s) {
+  return s.compare_clock_start_s > 0 ? s.compare_clock_start_s : 100000 + 7919 * static_cast<int64_t>((s.seed - 1) % 1000);
+}
+inline uint64_t RtcpRandomSeed(const Scenario& s) { return static_cast<uint64_t>(CallClockStartSeconds(s)) * 1000000; }
+
 // Goodput counts each media packet once (#329): the first delivery of an RTP
 // sequence number on a stream, as the original or as an RTX copy (RFC 4588
 // original sequence number). A copy whose original had already arrived (a

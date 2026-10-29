@@ -242,7 +242,8 @@ void Session::Start(Timestamp now) {
     r.has_video = false;
     r.report_interval = TimeDelta::Zero();
     r.first_report_delay = TimeDelta::Zero();
-    r.seed = cfg_.seed + 1;
+    // The audio channel's RTCPSender is built with the video one and seeded from the same clock time
+    // (rtcp_sender.cc:130), so it draws the same intervals (#517).
     audio_rtcp_ = std::make_unique<RtcpEngine>(r);
   }
   DataRate audio = DataRate::Zero();

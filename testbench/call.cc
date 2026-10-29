@@ -257,6 +257,23 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
   return out;
 }
 
+int32_t TraceHeaderBytes(std::span<const uint8_t> p, int64_t wire_bytes, uint8_t red_pt) {
+  if (p.size() < 12 || (p[0] >> 6) != 2) return -1;
+  size_t off = 12 + 4 * static_cast<size_t>(p[0] & 0x0f);
+  if (p[0] & 0x10) {  // Header extensions.
+    if (off + 4 > p.size()) return -1;
+    off += 4 + 4 * (static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]);
+  }
+  size_t end = p.size();
+  if (p[0] & 0x20) end -= std::min<size_t>(end, p[p.size() - 1]);  // RTP padding.
+  if (off > end) return -1;
+  if ((p[1] & 0x7f) == red_pt) {
+    while (off < end && (p[off] & 0x80)) off += 4;  // Redundant block headers.
+    off = std::min(off + 1, end);                    // The primary block's header.
+  }
+  return static_cast<int32_t>(wire_bytes - static_cast<int64_t>(end - off));
+}
+
 void TraceAudioRtp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_ssrc, std::vector<AudioSendRow>& rows) {
   if (p.size() < 12 || (p[0] >> 6) != 2) return;
   auto u32 = [&](size_t i) {
@@ -312,11 +329,20 @@ void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_
 }
 
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
-  std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost\n";
+  std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost,bitrate_bps,allocation_bps,"
+                    "overhead_bytes\n";
   std::optional<uint32_t> ts0;
   for (const auto& r : rows) {
     if (r.kind == AudioSendRow::Kind::kReport) {
-      out += "report," + std::to_string(r.time_us) + ",-1,-1,-1,-1,-1," + std::to_string(r.fraction_lost) + "\n";
+      out += "report," + std::to_string(r.time_us) + ",-1,-1,-1,-1,-1," + std::to_string(r.fraction_lost) + ",-1,-1,-1\n";
+      continue;
+    }
+    if (r.kind == AudioSendRow::Kind::kEncode) {
+      char hash[16];
+      std::snprintf(hash, sizeof(hash), "%08x", r.payload_hash);
+      out += "encode,-1," + std::to_string(r.seq) + ",-1,-1,-1," + hash + "," + std::to_string(r.fraction_lost) + "," +
+             std::to_string(r.bitrate_bps) + "," + std::to_string(r.allocation_bps) + "," +
+             std::to_string(r.overhead_bytes) + "\n";
       continue;
     }
     if (!ts0) ts0 = r.rtp_ts;
@@ -324,7 +350,7 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
     std::snprintf(hash, sizeof(hash), "%08x", r.payload_hash);
     out += "frame," + std::to_string(r.time_us) + "," + std::to_string(r.seq) + "," +
            std::to_string(static_cast<uint32_t>(r.rtp_ts - *ts0)) + "," + std::to_string(r.pt) + "," +
-           std::to_string(r.payload_bytes) + "," + hash + ",-1\n";
+           std::to_string(r.payload_bytes) + "," + hash + ",-1,-1,-1,-1\n";
   }
   return out;
 }
@@ -332,13 +358,13 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
            kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
            std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
-           std::to_string(r.key) + "\n";
+           std::to_string(r.key) + "," + std::to_string(r.header) + "\n";
   }
   return out;
 }
@@ -510,6 +536,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
   OpusSendEncoder opus_encoder(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), /*fec_enabled=*/true);
   OpusPacketLossRate opus_loss(Timestamp::Millis(0));  // The in-band FEC input (issue #62).
+  int32_t opus_loss_given = -1;                        // The last fraction it was given, times 256 (issue #547).
+  std::vector<AudioSendRow> opus_encode_rows;          // The encoder's inputs per packet (issue #547).
   OpusAudioDecoder decoder(sr);
   rtp::H264PayloadParser parser;
   RepairMeter repair;  // Issue #509: the repair metrics by the rule sm_compare's libwebrtc side uses.
@@ -538,10 +566,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // whole-packet limit, `video_max_payload` plus the 12-byte fixed header clamped to 100-1500 as
     // rtp::RtpSender does, as in sm_compare's libwebrtc call (#379); 1460 by default (#513).
     c.send_side.max_packet_size = static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500));
-    // libwebrtc's RTCPSender seeds its report-interval draws from the clock (rtcp_sender.cc:130), and sm_compare
-    // starts that clock per seed, so every scenario seed draws its own RTCP schedule (issue #399). Seed 1 keeps
-    // the schedule every seed drew before. Both ends get the seed, as both of libwebrtc's are built at the same time.
-    c.seed = s.seed;
+    // libwebrtc's RTCPSender seeds its report-interval draws with the clock in microseconds when it is built
+    // (rtcp_sender.cc:130), and sm_compare builds every one at the call's start: every engine here takes that same
+    // time, so both stacks draw the same RTCP schedule (#517; per seed since #399).
+    c.seed = RtcpRandomSeed(s);
     c.events = &events;
     return c;
   };
@@ -750,17 +778,22 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
       // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
-      int32_t marker = -1, osn = -1, key = -1;
+      int32_t marker = -1, osn = -1, key = -1, header = -1;
       if (opt.link_trace && seq >= 0) {
+        header = TraceHeaderBytes(p.bytes, p.wire_size.bytes(), video_cfg.ulpfec.red_payload_type);
         if (auto q = RtpPacket::Parse(p.bytes)) {
           rtp_ts = q->timestamp;
           marker = q->marker ? 1 : 0;
           if (q->ssrc == kRtxSsrc && q->payload.size() >= 2) osn = (q->payload[0] << 8) | q->payload[1];
-          if (kind == Kind::kVideo) key = rtp::H264Depacketizer::Parse(q->payload).keyframe ? 1 : 0;
+          if (kind == Kind::kVideo) {
+            // Behind RED, the primary block follows a one-byte header, as sm_compare's side skips it (#518).
+            const size_t skip = q->payload_type == video_cfg.ulpfec.red_payload_type && !q->payload.empty() ? 1 : 0;
+            key = rtp::H264Depacketizer::Parse(std::span<const uint8_t>(q->payload).subspan(skip)).keyframe ? 1 : 0;
+          }
         }
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
-      link.AnnotateLastTrace(rtp_ts, marker, osn, key);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header);
     }
   };
 
@@ -825,7 +858,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
             break;
           case rtp::SessionEventType::kReportBlock:
             // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
-            if (e.ssrc == kAudioSsrc) opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
+            if (e.ssrc == kAudioSsrc) {
+              opus_loss.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
+              opus_loss_given = static_cast<int32_t>(std::lround(static_cast<float>(e.loss_fraction) * 256));
+            }
             break;
           case rtp::SessionEventType::kTargetRateChanged: break;
         }
@@ -952,8 +988,20 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       const int64_t k = t / 20;
       opus_encoder.SetPacketLossPercent(opus_loss.percent());
       const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
-      const std::vector<uint8_t> frame = opus_encoder.Encode(
-          std::span<const int16_t>(opus_pcm).subspan(std::min(opus_off, opus_pcm.size())));
+      const std::span<const int16_t> opus_in = std::span<const int16_t>(opus_pcm).subspan(std::min(opus_off, opus_pcm.size()));
+      if (opt.link_trace) {
+        // What libopus encodes: the frame, zero-padded past the end of the signal (OpusSendEncoder::Encode).
+        std::vector<int16_t> in(OpusSendEncoder::kFrameSamples, 0);
+        std::copy_n(opus_in.begin(), std::min(opus_in.size(), in.size()), in.begin());
+        AudioSendRow r;
+        r.kind = AudioSendRow::Kind::kEncode;
+        r.seq = static_cast<int32_t>(k);
+        r.payload_hash = PcmHash(in);
+        r.fraction_lost = opus_loss_given;
+        r.bitrate_bps = opus_encoder.bitrate_bps();  // Built once from the configured rate: no allocation, no overhead.
+        opus_encode_rows.push_back(r);
+      }
+      const std::vector<uint8_t> frame = opus_encoder.Encode(opus_in);
       sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
     }
 
@@ -1273,6 +1321,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   }
   if (opt.link_trace) rep.link_trace = forward.trace();
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
+  rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());
   repair.AddMetrics(m, s.video, end_ms);
 
   EvaluateExpectations(rep);
