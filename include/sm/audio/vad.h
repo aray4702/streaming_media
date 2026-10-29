@@ -1,78 +1,74 @@
-// 6.8 Voice activity detection.
+// 6.8 Voice activity detection, as libwebrtc M157's `webrtc::Vad`.
 //
-// Per 10 ms frame:
-//  - frame energy (dBFS) against a tracked noise floor: the floor follows
-//    the energy down immediately, rises slowly (3 dB/s) during non-flat
-//    (speech-like) frames so speech cannot pull it up, and quickly
-//    (30 dB/s) during flat, noise-like frames so a louder background is
-//    learned in about a second;
-//  - spectral flatness of the 300-4000 Hz band of a ~30 ms averaged power
-//    spectrum: voiced speech has a peaky (harmonic) spectrum, noise a flat
-//    one (averaging also flattens the random peaks of musical noise left
-//    by noise suppression);
-//  - decision: SNR above `snr_threshold_db` and a non-flat spectrum (or a
-//    very high SNR), with a 2-frame onset requirement and a hangover so
-//    word endings and short pauses are not clipped.
+// Ported from compare/webrtc/reference/common_audio/vad/: include/vad.h and
+// vad.cc (`Vad`, `CreateVad`, `VadImpl`) over the `WebRtcVad` fixed-point
+// GMM VAD of webrtc_vad.c and vad_core.c, which is ported bit-exact in
+// `agc1_vad.h` (#242: AGC1's `VoiceActivityDetector` runs it in mode 3).
+// Per 10, 20 or 30 ms frame: six sub-band log energies (vad_filterbank.c),
+// a two-Gaussian speech and noise model per band (vad_gmm.c) whose noise
+// side adapts to the minimum of the last 100 frames (vad_sp.c), a
+// log-likelihood ratio test with the aggressiveness mode's thresholds, and
+// a hangover after speech (vad_core.c `kOverHangMax*`).
+//
+// Where libwebrtc M157 runs a VAD in a call: its `AudioProcessingImpl`
+// reports no VAD decision (`VoiceDetection` was removed; the statistics it
+// fills are the echo metrics, audio_processing_impl.cc:1434-1449). AGC1's
+// `Agc` runs `VoiceActivityDetector` (agc.cc:96, `agc1::Agc`), AGC2 its RNN
+// VAD (gain_controller2.cc:204, `agc2_rnn_vad.h`), and the Opus encoder its
+// own. `webrtc::Vad` (aggressiveness `kVadNormal`) is libwebrtc's
+// standalone VAD, the one `sm_apm_compare` measures this unit against, so it
+// is the catalog unit and the capture chain's per-frame VAD output. The
+// transient suppressor (an opt-in, #243) reads `VoiceActivityDetector`'s
+// pitch-based probability instead, so a broadband click is not speech.
+//
+// Differences from libwebrtc (scope, not behaviour):
+//  - 48 kHz returns kError: `WebRtcVad` here runs at 8, 16 and 32 kHz
+//    (the 48-to-8 kHz resampler is not ported, see `agc1_vad.h`).
+//  - A constructor in place of `CreateVad`; `Reset()` re-initializes the
+//    instance as `VadImpl::Reset` (free, create, init, set mode).
+//  - A float overload for frames in [-1, 1), scaled to S16 by rounding
+//    (as `sm_apm_compare` feeds libwebrtc), and metrics.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
-#include "sm/core/fft.h"
+#include "sm/audio/agc1_vad.h"
 #include "sm/core/metrics.h"
 
 namespace sm::audio {
 
-struct VadConfig {
-  int sample_rate = 16000;
-  float snr_threshold_db = 8.0f;
-  float strong_snr_db = 18.0f;    // Above this, a looser flatness test applies
-  float strong_flatness_threshold = 0.65f;  // (unvoiced fricatives are flat-ish).
-  float flatness_threshold = 0.5f;
-  float noise_rise_db_per_s = 3.0f;
-  float noise_fast_rise_db_per_s = 30.0f;  // While frames look like noise.
-  int onset_frames = 2;
-  int hangover_frames = 20;       // 200 ms.
-  float min_level_dbfs = -70.0f;  // Absolute floor: quieter is never speech.
-};
-
 struct VadStats {
   uint64_t frames = 0;
   uint64_t speech_frames = 0;
-  float noise_floor_dbfs = 0;
-  float last_snr_db = 0;
-  float last_flatness = 0;
+  uint64_t errors = 0;
 };
 
 class Vad : public MetricsSource {
  public:
-  explicit Vad(VadConfig cfg = {});
-  // Returns true if the frame contains speech (after hangover).
-  bool Process(std::span<const float> frame);
-  bool raw_decision() const { return raw_; }
-  // Current frame is voiced speech (harmonic spectrum, above the noise
-  // floor), without hangover. Used by the transient suppressor: a keyboard
-  // click is broadband, so it is never "voiced".
-  // Uses this frame's own spectrum (not the averaged one the VAD decision
-  // uses), so a click right after a word is not mistaken for voicing.
-  bool voiced() const { return stats_.last_snr_db > cfg_.snr_threshold_db && inst_flatness_ < cfg_.flatness_threshold; }
-  float noise_floor_dbfs() const { return noise_db_; }
+  enum Aggressiveness { kVadNormal = 0, kVadLowBitrate = 1, kVadAggressive = 2, kVadVeryAggressive = 3 };
+  enum Activity { kPassive = 0, kActive = 1, kError = -1 };
+
+  explicit Vad(Aggressiveness aggressiveness = kVadNormal);
+
+  // A VAD decision for one frame. Valid sample rates are 8000, 16000 and
+  // 32000 Hz, and the frame must be 10, 20 or 30 ms long.
+  Activity VoiceActivity(const int16_t* audio, size_t num_samples, int sample_rate_hz);
+  // The same for a float frame in [-1, 1).
+  Activity VoiceActivity(std::span<const float> frame, int sample_rate_hz);
+  // Resets the VAD state.
+  void Reset();
+
+  Aggressiveness aggressiveness() const { return aggressiveness_; }
   const VadStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  float Flatness(std::span<const float> frame);
-  VadConfig cfg_;
-  RealFft fft_;
-  std::vector<float> buf_;
-  std::vector<Complex> spec_;
-  std::vector<float> window_;
-  std::vector<double> avg_psd_;
-  float inst_flatness_ = 1.0f;
-  float noise_db_ = -60.0f;
-  bool init_ = false;
-  int onset_ = 0, hang_ = 0;
-  bool raw_ = false, active_ = false;
+  Aggressiveness aggressiveness_;
+  agc1::detail::WebRtcVad vad_;
+  std::vector<int16_t> pcm_;
   VadStats stats_;
 };
 

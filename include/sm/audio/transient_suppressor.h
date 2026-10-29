@@ -3,10 +3,10 @@
 // Keystrokes are short (2-10 ms), broadband, and start abruptly (< 1 ms).
 // Each 1 ms sub-block's energy is compared with a fast (4 ms) envelope of
 // the preceding signal, so even a click right after a word stands out; a
-// jump of more than `onset_db` marks a transient (twice that if the frame
-// is voiced speech, see Vad::voiced(), so vowels are left alone), and the
-// following `hold_ms` are attenuated by `attenuation_db` (instant attack,
-// smooth ramp back to unity).
+// jump of more than `onset_db` marks a transient (twice that if the VAD
+// calls the frame voiced: libwebrtc's pitch-based `VoiceActivityDetector`
+// in the chain, #671, so vowels are left alone), and the following `hold_ms` are attenuated by
+// `attenuation_db` (instant attack, smooth ramp back to unity).
 //
 // Off by default (#243): libwebrtc M157's APM has no transient suppression;
 // its `AudioProcessing::Config::TransientSuppression` keeps only `enabled`,
