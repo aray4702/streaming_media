@@ -53,9 +53,9 @@ struct QualityScalerConfig {
   int min_frames = 15;
   double smoothing = 0.15;           // EMA weight per frame.
   double max_drop_ratio = 0.6;
-  // 2: libwebrtc M157's QualityScaler (see above); the four fields above
-  // apply to version 1 only.
-  int version = 1;
+  // 2 (default, #579): libwebrtc M157's QualityScaler (see above). 1: the
+  // library's own scaler; the four fields above apply to it only.
+  int version = 2;
   EventSink* events = nullptr;
 };
 

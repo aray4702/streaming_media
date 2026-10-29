@@ -134,7 +134,9 @@ SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
 }
 
 SM_TEST(VideoAdaptation, CpuOveruseSignalsAndResourceCap) {
-  CpuOveruseDetector cpu;
+  CpuOveruseConfig v1;
+  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
+  CpuOveruseDetector cpu(v1);
   for (int i = 0; i < 100; ++i) cpu.OnFrameEncoded(TimeDelta::Millis(30), TimeDelta::Millis(33));
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(5)) == CpuOveruseDetector::Signal::kNone);  // 1st check.
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(10)) == CpuOveruseDetector::Signal::kOveruse);
