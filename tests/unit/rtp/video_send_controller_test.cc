@@ -224,10 +224,12 @@ SM_TEST(VideoSendController, PeerKeyframeRequestsWithin300msAreIgnored) {
   SM_EXPECT_TRUE(c.OnCapturedFrame({}, At(1433)).keyframe);
 }
 
-// Off by default (keyframe v1): every request is passed on.
-SM_TEST(VideoSendController, PeerKeyframeRequestsAreNotFilteredByDefault) {
+// 0 turns the filter off: every request is passed on (300 ms by default since #580, as libwebrtc).
+SM_TEST(VideoSendController, PeerKeyframeRequestsAreNotFilteredWithAZeroInterval) {
   Session s(Cfg());
-  VideoSendController c({}, s);
+  VideoSendControllerConfig cfg;
+  cfg.min_keyframe_request_interval = TimeDelta::Zero();
+  VideoSendController c(cfg, s);
   c.OnCapturedFrame({}, At(0));
   c.OnEncoded({DataSize::Bytes(4000), true}, At(0));
   SessionEvent e = Ev(SessionEventType::kKeyframeRequested);
