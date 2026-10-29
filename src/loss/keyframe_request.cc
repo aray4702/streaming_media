@@ -169,6 +169,13 @@ Timestamp KeyframeRequester::NextProcessTime() const {
   return timeout_base_ + (decoded_any_ ? cfg_.max_wait_for_frame : cfg_.max_wait_for_keyframe);
 }
 
+void KeyframeRequester::ClearFrames() {
+  stats_.frames_dropped += waiting_.size();
+  waiting_.clear();
+  decodable_.clear();
+  ready_.clear();
+}
+
 std::vector<int64_t> KeyframeRequester::TakeDecodableFrames() {
   std::vector<int64_t> r;
   r.swap(ready_);

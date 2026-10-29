@@ -121,6 +121,11 @@ std::vector<ReleaseAction> FrameReleaseController::Process(Timestamp now, TimeDe
   return out;
 }
 
+void FrameReleaseController::Clear() {
+  queue_.clear();
+  scheduled_.reset();
+}
+
 Timestamp FrameReleaseController::NextWakeup() const {
   if (queue_.empty()) return Timestamp::PlusInfinity();
   if (scheduled_ && scheduled_->id == queue_.front().id) return scheduled_->latest_decode_time;
