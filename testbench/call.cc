@@ -590,6 +590,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // (rtcp_sender.cc:130), and sm_compare builds every one at the call's start: every engine here takes that same
     // time, so both stacks draw the same RTCP schedule (#517; per seed since #399).
     c.seed = RtcpRandomSeed(s);
+    c.per_stream_rtt = s.per_stream_rtt;  // Issue #568.
     c.events = &events;
     return c;
   };

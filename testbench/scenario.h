@@ -100,6 +100,10 @@ struct Scenario {
   // cc::EncoderBitrateAdjusterConfig::newfangled_headroom_adjustment). On by default, as libwebrtc
   // (since #355's flip, after #362 turned periodic ALR probing off for video).
   bool rate_utilization_tracker = true;
+  // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
+  // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
+  // issue #568). Off by default until it is judged.
+  bool per_stream_rtt = false;
   // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). On by default, as libwebrtc.

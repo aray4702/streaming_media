@@ -87,6 +87,13 @@ struct SessionConfig {
   // lip sync (issue #77). Off: only the first video stream's SR is sent when
   // the session sends video.
   bool audio_rtcp = false;
+  // RTT aggregation as libwebrtc's per-module RTCPReceiver::RttStats and ModuleRtpRtcpImpl2 (issue
+  // #568): each send stream keeps the RTT samples of its media SSRC's report block only, runs its
+  // own 1 s periodic update to CallStats and its packet history, and takes its NACK RTT from them;
+  // GoogCC gets each stream's packet RTT. Off: one session-wide value, the last report block of
+  // any SSRC (or SetRtt), feeds every stream and one CallStats report a second. Off by default
+  // until the flip is judged on the parity report.
+  bool per_stream_rtt = false;
   EventSink* events = nullptr;
 };
 
@@ -340,6 +347,15 @@ class Session : public MetricsSource {
     std::deque<Timestamp> frame_times;
     Timestamp first_frame = Timestamp::MinusInfinity();
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
+    // The stream's own ModuleRtpRtcpImpl2 and RTCPReceiver (one per send stream in libwebrtc):
+    // RttStats (rtcp_receiver.cc:211-229), fed only by the report block for the local media SSRC
+    // (rtcp_receiver.cc:567-569); last_received_rb_, set by a block for the media or RTX SSRC
+    // (rtcp_receiver.cc:536); and rtt_ms_, refreshed by PeriodicUpdate (rtp_rtcp_impl2.cc:740-751).
+    TimeDelta last_rtt = TimeDelta::Zero();
+    TimeDelta sum_rtt = TimeDelta::Zero();
+    int64_t num_rtts = 0;
+    Timestamp last_received_rb = Timestamp::PlusInfinity();
+    int64_t rtt_ms = 0;
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;
@@ -419,11 +435,14 @@ class Session : public MetricsSource {
   };
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
-  // The packet history's RTT as ModuleRtpRtcpImpl2 keeps it (rtt_ms_,
-  // refreshed by PeriodicUpdate), and the samples' sum for RTCPReceiver::AverageRtt.
+  // Each send stream's ModuleRtpRtcpImpl2::PeriodicUpdate (kRttUpdateInterval). The streams'
+  // tasks are started together, so one schedule runs them all.
   static constexpr TimeDelta kRttUpdateInterval = TimeDelta::Millis(1000);
   void PeriodicRttUpdate(Timestamp now);
   Timestamp next_rtt_update_ = Timestamp::MinusInfinity();
+  SendStream* StreamForSsrc(uint32_t ssrc);
+  // per_stream_rtt off: the session-wide RTT the periodic update and NACKs take (rtt_ms_), and
+  // the samples' sum for AverageRtt.
   Timestamp last_report_block_ = Timestamp::MinusInfinity();
   TimeDelta periodic_rtt_ = TimeDelta::Zero();
   TimeDelta rtt_sum_ = TimeDelta::Zero();

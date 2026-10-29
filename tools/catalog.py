@@ -249,7 +249,11 @@ ALGORITHMS = [
                "the SR/RR wire format. Transport-wide feedback and abs-send-time are in 5.1 and 8.4. "
                "As libwebrtc's StreamStatisticianImpl (issue #76 group 5) the jitter filter runs in Q4 integers, only on "
                "in-order packets with a new timestamp, and skips a jump of 5 s of video clock; the RTT is floored at 1 ms "
-               "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101).",
+               "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101). "
+               "With SessionConfig::per_stream_rtt (off by default until #484 lands) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
+               "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
+               "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
+               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first.",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
