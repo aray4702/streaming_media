@@ -13,6 +13,12 @@ describe An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300
 #   net.loss_pct             7.2 (5.8-8.2)            7.4 (6.5-8.1)
 # No gap in the parity report. The expect lines hold the call at libwebrtc's worst seed plus about 10 %, so a change
 # that makes this case worse than libwebrtc fails here; the queue itself is capped by the 300 ms buffer on both stacks.
+# compare_seeds 40 (#769): A/V offset p95 and video e2e p95 swing about 200 ms from seed to seed on both stacks (a
+# repair or keyframe in the full queue sets the tail), so 10 seeds can't place them. #656 (adjuster timing, as
+# libwebrtc) moved single seeds without moving the mean, and seeds 1-10 then read behind by 7/10: 1230 vs 1051 and
+# 1748 vs 1577, band +-151. Seeds 1-40, ours on main 5bbe59d / libwebrtc (yardstick #689, run on 6c198f4): A/V offset
+# p95 1149 / 1130 (sd 204 / 193), video e2e p95 1666 / 1658 (sd 204 / 196); every metric of this scenario in band.
+compare_seeds 40
 duration 60s
 at 0s capacity=1000kbps delay=20ms queue=300ms
 at 20s cross=800kbps
