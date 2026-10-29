@@ -1,5 +1,7 @@
 #include "sm/rtp/video_send_controller.h"
 
+#include <vector>
+
 #include "sm_test.h"
 
 using namespace sm;
@@ -433,4 +435,39 @@ SM_TEST(VideoSendController, NewFrameSizeStartsAFreshBitrateAdjuster) {
   // Before the switch the adjuster had learned a factor near 1.0.
   SM_EXPECT_GT(before_switch_kbps, allocation_kbps / 1.1);
   SM_EXPECT_GE(frames_after, 30);
+}
+
+// Issue #569: VideoStreamEncoder runs EncoderBitrateAdjuster::AdjustRateAllocation only in
+// UpdateBitrateAllocation: on an allocation update (OnBitrateUpdated), on ReconfigureEncoder and every
+// kParameterUpdateIntervalMs (1 s) in MaybeEncodeVideoFrame. The encoder keeps its last rate in between.
+SM_TEST(VideoSendController, BitrateAdjusterRunsOnAllocationUpdatesAndEverySecond) {
+  Session s(Cfg());
+  s.AddVideoSend(VideoStreamConfig{});
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = false;
+  cfg.adjuster_on_update = true;
+  VideoSendController c(cfg, s);
+  // The encoder produces 1.5 times the rate it is given, so the adjuster's factor keeps moving once the
+  // first 30 frames are past.
+  std::vector<int> change_ms;
+  DataRate last;
+  int t = 0;
+  for (; t < 3500; t += 33) {
+    const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
+    if (t > 0 && d.target != last) change_ms.push_back(t);
+    last = d.target;
+    if (d.encode) c.OnEncoded({DataSize::Bytes(d.target.bps() * 3 / 2 / 8 / 30), false}, At(t));
+  }
+  // Held between the 1 s parameter updates (per frame it would move on every frame after the 30th).
+  SM_EXPECT_GE(change_ms.size(), size_t{2});
+  for (size_t i = 1; i < change_ms.size(); ++i) SM_EXPECT_GE(change_ms[i] - change_ms[i - 1], 1000);
+  // An allocation update re-runs the adjuster at the next frame, without waiting for the second.
+  const uint64_t updates = s.rates().video_allocation_updates;
+  SM_EXPECT_GT(updates, uint64_t{0});
+  s.send_side().OnVideoEncoderReconfigured(At(t));
+  SM_EXPECT_EQ(s.rates().video_allocation_updates, updates + 1);
+  const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
+  SM_EXPECT_TRUE(t - change_ms.back() < 1000);
+  SM_EXPECT_TRUE(d.target != last);
+  SM_EXPECT_TRUE(d.target == c.bitrate_adjuster().adjusted());
 }

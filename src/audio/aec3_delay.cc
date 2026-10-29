@@ -415,11 +415,109 @@ void ClockdriftDetector::Update(int delay_estimate) {
   delay_history_[0] = delay_estimate;
 }
 
+// --- alignment_mixer.cc ------------------------------------------------------
+
+namespace {
+
+AlignmentMixer::MixingVariant ChooseMixingVariant(bool downmix, bool adaptive_selection, size_t num_channels) {
+  if (num_channels == 1) return AlignmentMixer::MixingVariant::kFixed;
+  if (downmix) return AlignmentMixer::MixingVariant::kDownmix;
+  if (adaptive_selection) return AlignmentMixer::MixingVariant::kAdaptive;
+  return AlignmentMixer::MixingVariant::kFixed;
+}
+
+}  // namespace
+
+AlignmentMixer::AlignmentMixer(size_t num_channels, const DelayConfig::AlignmentMixing& config)
+    : AlignmentMixer(num_channels, config.downmix, config.adaptive_selection, config.activity_power_threshold,
+                     config.prefer_first_two_channels) {}
+
+AlignmentMixer::AlignmentMixer(size_t num_channels, bool downmix, bool adaptive_selection,
+                               float activity_power_threshold, bool prefer_first_two_channels)
+    : num_channels_(num_channels),
+      one_by_num_channels_(1.f / static_cast<float>(num_channels_)),
+      excitation_energy_threshold_(kBlockSize * activity_power_threshold),
+      prefer_first_two_channels_(prefer_first_two_channels),
+      selection_variant_(ChooseMixingVariant(downmix, adaptive_selection, num_channels_)) {
+  if (selection_variant_ == MixingVariant::kAdaptive) cumulative_energies_.assign(num_channels_, 0.f);
+}
+
+void AlignmentMixer::ProduceOutput(const Block& x, std::span<float, kBlockSize> y) {
+  if (selection_variant_ == MixingVariant::kDownmix) {
+    Downmix(x, y);
+    return;
+  }
+  const int ch = selection_variant_ == MixingVariant::kFixed ? 0 : SelectChannel(x);
+  const auto x_ch = x.View(/*band=*/0, ch);
+  std::copy(x_ch.begin(), x_ch.end(), y.begin());
+}
+
+void AlignmentMixer::Downmix(const Block& x, std::span<float, kBlockSize> y) const {
+  const auto x0 = x.View(/*band=*/0, /*channel=*/0);
+  std::copy(x0.begin(), x0.end(), y.begin());
+  for (size_t ch = 1; ch < num_channels_; ++ch) {
+    const auto x_ch = x.View(/*band=*/0, static_cast<int>(ch));
+    for (size_t i = 0; i < kBlockSize; ++i) y[i] += x_ch[i];
+  }
+  for (size_t i = 0; i < kBlockSize; ++i) y[i] *= one_by_num_channels_;
+}
+
+int AlignmentMixer::SelectChannel(const Block& x) {
+  constexpr size_t kBlocksToChooseLeftOrRight = static_cast<size_t>(0.5f * kNumBlocksPerSecond);
+  const bool good_signal_in_left_or_right =
+      prefer_first_two_channels_ && (strong_block_counters_[0] > kBlocksToChooseLeftOrRight ||
+                                     strong_block_counters_[1] > kBlocksToChooseLeftOrRight);
+
+  const int num_ch_to_analyze = good_signal_in_left_or_right ? 2 : static_cast<int>(num_channels_);
+
+  constexpr int kNumBlocksBeforeEnergySmoothing = 60 * kNumBlocksPerSecond;
+  ++block_counter_;
+
+  for (int ch = 0; ch < num_ch_to_analyze; ++ch) {
+    float x2_sum = 0.f;
+    const auto x_ch = x.View(/*band=*/0, ch);
+    for (size_t i = 0; i < kBlockSize; ++i) x2_sum += x_ch[i] * x_ch[i];
+
+    if (ch < 2 && x2_sum > excitation_energy_threshold_) ++strong_block_counters_[static_cast<size_t>(ch)];
+
+    if (block_counter_ <= kNumBlocksBeforeEnergySmoothing) {
+      cumulative_energies_[static_cast<size_t>(ch)] += x2_sum;
+    } else {
+      constexpr float kSmoothing = 1.f / (10 * kNumBlocksPerSecond);
+      cumulative_energies_[static_cast<size_t>(ch)] += kSmoothing * (x2_sum - cumulative_energies_[static_cast<size_t>(ch)]);
+    }
+  }
+
+  // Normalize the energies so that, from now on, they are smoothed.
+  if (block_counter_ == kNumBlocksBeforeEnergySmoothing) {
+    constexpr float kOneByNumBlocksBeforeEnergySmoothing = 1.f / kNumBlocksBeforeEnergySmoothing;
+    for (int ch = 0; ch < num_ch_to_analyze; ++ch) {
+      cumulative_energies_[static_cast<size_t>(ch)] *= kOneByNumBlocksBeforeEnergySmoothing;
+    }
+  }
+
+  int strongest_ch = 0;
+  for (int ch = 0; ch < num_ch_to_analyze; ++ch) {
+    if (cumulative_energies_[static_cast<size_t>(ch)] > cumulative_energies_[static_cast<size_t>(strongest_ch)]) {
+      strongest_ch = ch;
+    }
+  }
+
+  if ((good_signal_in_left_or_right && selected_channel_ > 1) ||
+      cumulative_energies_[static_cast<size_t>(strongest_ch)] >
+          2.f * cumulative_energies_[static_cast<size_t>(selected_channel_)]) {
+    selected_channel_ = strongest_ch;
+  }
+
+  return selected_channel_;
+}
+
 // --- echo_path_delay_estimator.cc --------------------------------------------
 
-EchoPathDelayEstimator::EchoPathDelayEstimator(const DelayConfig& config)
+EchoPathDelayEstimator::EchoPathDelayEstimator(const DelayConfig& config, size_t num_capture_channels)
     : down_sampling_factor_(config.down_sampling_factor),
       sub_block_size_(down_sampling_factor_ != 0 ? kBlockSize / down_sampling_factor_ : kBlockSize),
+      capture_mixer_(num_capture_channels, config.capture_alignment_mixing),
       capture_decimator_(down_sampling_factor_),
       matched_filter_(sub_block_size_, kMatchedFilterWindowSizeSubBlocks, static_cast<int>(config.num_filters),
                       kMatchedFilterAlignmentShiftSizeSubBlocks,
@@ -430,10 +528,16 @@ EchoPathDelayEstimator::EchoPathDelayEstimator(const DelayConfig& config)
       matched_filter_lag_aggregator_(matched_filter_.GetMaxFilterLag(), config) {}
 
 std::optional<DelayEstimate> EchoPathDelayEstimator::EstimateDelay(const DownsampledRenderBuffer& render_buffer,
+                                                                   const Block& capture) {
+  std::array<float, kBlockSize> downmixed_capture;
+  capture_mixer_.ProduceOutput(capture, downmixed_capture);
+  return EstimateDelay(render_buffer, std::span<const float>(downmixed_capture));
+}
+
+std::optional<DelayEstimate> EchoPathDelayEstimator::EstimateDelay(const DownsampledRenderBuffer& render_buffer,
                                                                    std::span<const float> capture) {
   std::array<float, kBlockSize> downsampled_capture_data;
   std::span<float> downsampled_capture(downsampled_capture_data.data(), sub_block_size_);
-  // AlignmentMixer with one capture channel: channel 0 as is.
   capture_decimator_.Decimate(capture, downsampled_capture);
   matched_filter_.Update(render_buffer, downsampled_capture, matched_filter_lag_aggregator_.ReliableDelayFound());
 
@@ -490,8 +594,9 @@ DelayEstimate ComputeBufferDelay(const std::optional<DelayEstimate>& current_del
 }
 }  // namespace
 
-RenderDelayController::RenderDelayController(const DelayConfig& config)
-    : hysteresis_limit_blocks_(static_cast<int>(config.hysteresis_limit_blocks)), delay_estimator_(config) {}
+RenderDelayController::RenderDelayController(const DelayConfig& config, size_t num_capture_channels)
+    : hysteresis_limit_blocks_(static_cast<int>(config.hysteresis_limit_blocks)),
+      delay_estimator_(config, num_capture_channels) {}
 
 void RenderDelayController::Reset(bool reset_delay_confidence) {
   delay_ = std::nullopt;
@@ -502,6 +607,13 @@ void RenderDelayController::Reset(bool reset_delay_confidence) {
 
 std::optional<DelayEstimate> RenderDelayController::GetDelay(const DownsampledRenderBuffer& render_buffer,
                                                              std::span<const float> capture) {
+  Block block(/*num_bands=*/1, /*num_channels=*/1);
+  std::copy(capture.begin(), capture.begin() + kBlockSize, block.View(0, 0).begin());
+  return GetDelay(render_buffer, block);
+}
+
+std::optional<DelayEstimate> RenderDelayController::GetDelay(const DownsampledRenderBuffer& render_buffer,
+                                                             const Block& capture) {
   ++capture_call_counter_;
   auto delay_samples = delay_estimator_.EstimateDelay(render_buffer, capture);
   if (delay_samples) delay_samples_ = delay_samples;

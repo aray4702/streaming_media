@@ -11,9 +11,14 @@ at 0s capacity=2500kbps delay=30ms queue=60ms
 at 15s capacity=800kbps
 # Was < 650. Owner accepted < 655 on PR #306 (2026-10-23 3:43 PM PT): with av_sync on and #328 merged, ours 653.6 on
 # seed 1 (seeds 1-10 mean 470, against 486 before #328); libwebrtc mean 420, worst seed 557. An exception to the tight rule.
-expect video.e2e_delay_p95_ms < 655
+# Moved to < 780 with #484's flip (#610; window, 2026-10-29, program.md 0.2): per-stream audio RTCP as libwebrtc gives
+# ours 773.8 on seed 1 (40 seeds: mean 384, worst 774); libwebrtc on 40 seeds (yardstick #618, run 40850075928):
+# mean 363, worst 797, 2 of 40 above 655 (713, 797). The line stays below libwebrtc's worst seed.
+expect video.e2e_delay_p95_ms < 780
 # Provisional lock, tracked to #77 (Owner accepted < 535 on PR #328, 2026-10-23 9:34 AM PT). Tightened on #306's head
 # (av_sync on both stacks, #328 merged): ours 436.2 on seed 1 (seeds 1-10 mean 297); libwebrtc with sync on per seed
 # 97/299/264/327/161/279/272/418/267/315 (mean 270, worst 418). The tight rule's "not above libwebrtc's worst" can't be
 # met on seed 1, so the line sits just above ours; the Owner accepted it as an exception (PR #306, 2026-10-23 3:43 PM PT).
-expect sync.av_offset_p95_ms < 440
+# Moved to < 500 with #484's flip (#610; window, 2026-10-29): ours 498.3 on seed 1; libwebrtc on 40 seeds (#618)
+# mean 195, worst 533.
+expect sync.av_offset_p95_ms < 500

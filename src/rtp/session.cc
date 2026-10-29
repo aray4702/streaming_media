@@ -199,7 +199,13 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   if (a.red_payload_type) pts.push_back(*a.red_payload_type);
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(false, static_cast<int>(audio_recv_.size()) - 1);
-  demux_.AddSink(sink, cfg_.mid_audio, "", std::move(pts));
+  // Call registers each receive stream by its SSRC (RtpStreamReceiverController), and the
+  // BUNDLE transport by its MID and payload types; one RtpDemuxer here takes all three.
+  sync::RtpDemuxerCriteria criteria;
+  criteria.mid = cfg_.mid_audio;
+  criteria.ssrcs = {a.ssrc};
+  criteria.payload_types = std::move(pts);
+  demux_.AddSink(sink, criteria);
   MaybeCreateSync();
   return {static_cast<int>(audio_recv_.size()) - 1};
 }
@@ -245,7 +251,12 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   }
   const int sink = static_cast<int>(sinks_.size());
   sinks_.emplace_back(true, static_cast<int>(video_recv_.size()) - 1);
-  demux_.AddSink(sink, cfg_.mid_video, "", std::move(pts));
+  sync::RtpDemuxerCriteria criteria;
+  criteria.mid = cfg_.mid_video;
+  criteria.ssrcs = {v.ssrc};
+  if (v.rtx_ssrc) criteria.ssrcs.push_back(*v.rtx_ssrc);
+  criteria.payload_types = std::move(pts);
+  demux_.AddSink(sink, criteria);
   MaybeCreateSync();
   return {static_cast<int>(video_recv_.size()) - 1};
 }

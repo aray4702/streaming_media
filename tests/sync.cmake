@@ -4,6 +4,7 @@ sm_add_test_exe(sm_unit_sync LABEL unit DEPS sm::sync
   SUITES
     CaptureTime
     HeaderExtensions
+    RtpDemuxer
     RtpToNtp
     StreamSync
 )

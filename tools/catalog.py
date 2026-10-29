@@ -842,8 +842,13 @@ ALGORITHMS = [
                "libwebrtc's RateUtilizationTracker (video/rate_utilization_tracker.cc; issue #355, "
                "`rate_utilization_tracker on|off`, on by default as libwebrtc since #355): produced bytes over the "
                "unadjusted target's budget, libwebrtc's default (WebRTC-BitrateAdjusterUseNewfangledHeadroomAdjustment); "
-               "off, the factor comes from the detector, as with the field trial disabled. Remaining differences: one stream with one temporal layer; rates adjusted per "
-               "captured frame, not per bitrate update. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "off, the factor comes from the detector, as with the field trial disabled. With `adjuster_on_update` (VideoSendControllerConfig, "
+               "off by default until its flip is judged on the parity report; issue #569) the adjusted rate is "
+               "recomputed when VideoStreamEncoder's UpdateBitrateAllocation runs: on each allocation update "
+               "(OnBitrateUpdated), on a reconfiguration and every 1 s (kParameterUpdateIntervalMs), and held in "
+               "between; there an update is applied at the next captured frame, the last of several between two "
+               "frames only. Remaining differences: one stream with one temporal layer; rates adjusted per captured "
+               "frame while the switch is off. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -898,7 +903,9 @@ ALGORITHMS = [
                       "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
                       "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
                       "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
-                      "the behaviour."),
+                      "the behaviour. Issue #581: `DegradationConfig::preference` defaults to maintain-framerate, "
+                      "libwebrtc's camera default (`media/engine/webrtc_video_engine.cc:2032-2064`), where it was "
+                      "balanced; the send path already ran maintain-framerate, so no scenario moves."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -958,7 +965,8 @@ ALGORITHMS = [
                "changes, a 25-block hangover after a coarse filter reset. The FFT is libwebrtc's 128-point `OouraFft` "
                "(`audio/ooura_fft.h`, from `common_audio/third_party/ooura/fft_size_128`, its C path and stored tables; "
                "#240 step 6). Remaining differences: the portable C paths where x86 libwebrtc runs SSE2/AVX2; several render "
-               "channels feed the delay estimator through channel 0 (AlignmentMixer isn't ported); Subtractor takes "
+               "or capture channels feed the delay estimator through `alignment_mixer` (adaptive selection of the "
+               "strongest channel, M157's default; #565); Subtractor takes "
                "AecState's capture saturation flag as an argument. "
                "AEC3's echo state (#240 step 3, `audio/aec3_state.h` with `aec3_erle.h`, `aec3_reverb.h` and "
                "`aec3_analysis.h`) ports `aec_state` (linear filter usability after 0.4 s of active unsaturated render, "
@@ -989,9 +997,13 @@ ALGORITHMS = [
                "`block_delay_buffer` and `echo_canceller3` (render queue of 100 frames, capture saturation at 32700, "
                "10 ms frames cut into 64-sample blocks), and it runs in the `apm v2` chain as APM calls it. On #63's "
                "signals it gives libwebrtc M157's numbers: ERLE 33.2 / 50.1 / 8.0 / 49.0 dB on the route change, "
-               "67.0 dB with NS, near end -5.3 dB and SNR -0.2 dB in double talk. Remaining differences: the render "
-               "is used as one channel, as libwebrtc does until its MultiChannelContentDetector finds proper stereo "
-               "(that detector, ConfigSelector and the multichannel config aren't ported); AdjustConfig's field "
+               "67.0 dB with NS, near end -5.3 dB and SNR -0.2 dB in double talk. Multichannel render (#565) "
+               "ports `multi_channel_content_detector` (proper stereo after more than 2 s of frames whose channels "
+               "differ, back to mono after 300 s without; the channels' average in the meantime, flagged as an echo "
+               "path change), `config_selector` and `CreateDefaultMultichannelConfig` (coarse filter 11 blocks at "
+               "rate 0.95, suppressor max increase 1.5 and low-frequency decrease 0.35): on proper stereo AEC3 is "
+               "re-created on every render channel with that config, as APM's default. Remaining differences: "
+               "AdjustConfig's field "
                "trials are read as not set; no linear AEC output export (off by default) and no UMA histograms; "
                "the render queue is a FIFO, not a thread hand-off.",
          verification="Several defects were found and fixed. (1) The delay estimate was wrong (see 6.2), which "
@@ -1043,9 +1055,10 @@ ALGORITHMS = [
                "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
                "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
                "(5 filters of 32 sub-blocks at 4 kHz covering 0-552 ms, headroom 32 samples, thresholds 5/20, pre-echo "
-               "detection on). Remaining differences: mono only; the portable C matched-filter core where x86 libwebrtc "
-               "runs SSE2/AVX2 (float summation order only); no UMA metrics or data dumps. Nothing in a call uses it yet: "
-               "the adaptive filter and EchoCanceller3 integration are #240's next steps.",
+               "detection on), and `alignment_mixer`, which makes several render and capture channels mono for it "
+               "(adaptive selection of the strongest channel, M157's default; #565). It runs inside EchoCanceller3. "
+               "Remaining differences: the portable C matched-filter core where x86 libwebrtc runs SSE2/AVX2 (float "
+               "summation order only); no UMA metrics or data dumps.",
          verification="Defect found: with rectangular windows, the window edges correlated with each other and "
                       "produced false peaks at both ends of the lag range (0 and 8000 samples). Fixed with "
                       "Hann/Tukey tapering and a partial phase transform (|C|^0.8). The synthetic room response "
@@ -1324,7 +1337,11 @@ ALGORITHMS = [
                   "change must be encoded immediately, while static frames are skipped.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
-         verification="No defects found."),
+         verification="No defects found. Issue #581: with no hint, camera video maps to maintain-framerate (the "
+                      "`ContentSettings` default too), as libwebrtc's `GetDegradationPreference` "
+                      "(`media/engine/webrtc_video_engine.cc:2032-2064`; BALANCED only with the "
+                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. The QP ceilings and "
+                      "frame-rate floors stay with #566."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
@@ -1451,12 +1468,19 @@ ALGORITHMS = [
                                 "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
-         headers=["sync/header_extensions.h"], unit=["HeaderExtensions"], e2e=["E2E_HeaderExtensions"],
+         headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
          bench=["sync/HeaderExtensions_WriteParse4", "sync/RtpDemuxer_by_ssrc"],
          scenario="One 5-tuple carrying audio, three simulcast video encodings and RTX (repaired RID) with "
                   "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
                   "mid-call. Routing accuracy.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. "
+               "The extension map and elements follow `RtpHeaderExtensionMap` and `RtpPacket` (#567, PR #598), and `RtpDemuxer` "
+               "follows `call/rtp_demuxer.cc` (#567): criteria with MID, RSID, SSRCs and payload types, libwebrtc's conflict rules, "
+               "and `ResolveSink`'s order (match-any, drop an unknown MID, MID/RSID from the packet or latched per SSRC, signalled "
+               "or bound SSRC, unique payload type), with at most 1000 SSRC bindings.",
+         verification="#567: unit.RtpDemuxer pins each rule of `ResolveSink` and `CriteriaWouldConflict`; "
+                      "`sm_rtcp_interop` (CI job compare-webrtc) runs this demuxer and libwebrtc's on the same random sinks "
+                      "and packets and checks that every packet goes to the same sink."),
     # ------------------------------------------------------------------ 9
     dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
@@ -1478,7 +1502,7 @@ ALGORITHMS = [
                       "libwebrtc M157 (rtcp_sender.cc, video_send_stream.h, audio_send_stream.h), see the issue. "
                       "#517: unit.RtcpEngine checks that the interval draws are libwebrtc's from the same seed; on seed 1 "
                       "the sender's RTCP send times match libwebrtc's on audio_only_lossy (6 of 6) and the first 9 on high_jitter. "
-                      "#484: `SessionConfig::audio_receive_rtcp` (off by default until its flip) gives the audio receive streams "
+                      "#484: `SessionConfig::audio_receive_rtcp` (on by default since #484 part 2, libwebrtc's behaviour) gives the audio receive streams "
                       "their own engine, as libwebrtc's ChannelReceive (audio/channel_receive.cc:115-139, 608): an RR with the audio "
                       "block alone every 5 s, no SDES, and the video compounds carry only the video and RTX blocks; on seed 1 the "
                       "sender's audio report blocks match libwebrtc's in number and time on high_jitter, random_loss_5pct and "
