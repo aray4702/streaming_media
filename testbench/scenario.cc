@@ -362,6 +362,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "per_stream_rtt") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: per_stream_rtt on|off");
       s.per_stream_rtt = tok[1] == "on";
+    } else if (key == "receive_statistics_v2") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: receive_statistics_v2 on|off");
+      s.receive_statistics_v2 = tok[1] == "on";
     } else if (key == "sps_pps_tracker") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: sps_pps_tracker on|off");
       s.sps_pps_tracker = tok[1] == "on";
@@ -484,6 +487,8 @@ std::string FormatScenario(const Scenario& s) {
   if (s.adjuster_on_update != d.adjuster_on_update)
     o += std::string("adjuster_on_update ") + (s.adjuster_on_update ? "on" : "off") + "\n";
   if (s.per_stream_rtt != d.per_stream_rtt) o += std::string("per_stream_rtt ") + (s.per_stream_rtt ? "on" : "off") + "\n";
+  if (s.receive_statistics_v2 != d.receive_statistics_v2)
+    o += std::string("receive_statistics_v2 ") + (s.receive_statistics_v2 ? "on" : "off") + "\n";
   if (s.sps_pps_tracker != d.sps_pps_tracker) o += std::string("sps_pps_tracker ") + (s.sps_pps_tracker ? "on" : "off") + "\n";
   if (s.render_smoothing != d.render_smoothing) o += std::string("render_smoothing ") + (s.render_smoothing ? "on" : "off") + "\n";
   if (s.keyframe_flush_padding != d.keyframe_flush_padding)

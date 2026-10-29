@@ -67,8 +67,13 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       release_(&vcm_timing_, ReleaseCfg(cfg_)),
       render_frames_({cfg_.timing.render_delay, cfg_.events}),
       jitter_buffer_(JitterCfg(cfg_)),
-      stats_rtp_(cfg_.ssrc, cfg_.clock_rate) {
-  if (cfg_.video && cfg_.rtx_ssrc) stats_rtx_.emplace(*cfg_.rtx_ssrc, cfg_.clock_rate);
+      // receive_statistics_v2: RtpVideoStreamReceiver2::OnRtpPacket's statistician: 450 (kMaxPacketAgeToNack)
+      // with NACK on (rtp_video_stream_receiver2.cc:365-367, :1293-1295); audio and RTX
+      // keep kDefaultMaxReorderingThreshold (ChannelReceive::SetNACKStatus gives audio
+      // its NACK history / 20 ms, 50 for the bench's 1000 ms, channel_receive.cc:931-943).
+      stats_rtp_(cfg_.ssrc, cfg_.clock_rate, cfg_.receive_statistics_v2,
+                 cfg_.video && cfg_.nack ? timing::kMaxPacketAgeToNack : timing::kDefaultMaxReorderingThreshold) {
+  if (cfg_.video && cfg_.rtx_ssrc) stats_rtx_.emplace(*cfg_.rtx_ssrc, cfg_.clock_rate, cfg_.receive_statistics_v2);
   if (cfg_.video && cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecReceiver>(cfg_.ssrc, cfg_.ulpfec.ulpfec_payload_type);
   }

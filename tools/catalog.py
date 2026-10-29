@@ -247,8 +247,15 @@ ALGORITHMS = [
                "With SessionConfig::per_stream_rtt (off by default until #484 lands) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
                "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
                "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
-               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first.",
-         verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
+               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first. "
+               "With SessionConfig::receive_statistics_v2 (off by default until the flip is judged on the parity report) "
+               "the sequence and report rules are StreamStatisticianImpl's (issue #575): a packet more than the max "
+               "reordering threshold (450, kMaxPacketAgeToNack, for video with NACK; kDefaultMaxReorderingThreshold 50 "
+               "for audio, RTX and video without NACK) from the highest sequence number is held, and if the next packet "
+               "follows it the stream restarted and the gap is no loss (UpdateOutOfOrder); fraction lost is "
+               "255 * lost / expected, and a negative cumulative loss reports 0 (MaybeAppendReportBlockAndReset).",
+         verification="No defects found; RTT min 60.6 ms against 60 ms configured. Issue #575: libwebrtc's "
+                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
          headers=["timing/delay_manager.h", "timing/neteq_delay.h"],
