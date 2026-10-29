@@ -39,6 +39,7 @@
   "net.video_size_max_b": 1486,
   "net.video_size_p50_b": 1391,
   "net.video_size_p90_b": 1464,
+  "net.video_start_seq": 6666,
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 34,
   "repair.overhead_pct": 0.5166,

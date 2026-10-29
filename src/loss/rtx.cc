@@ -39,7 +39,7 @@ constexpr size_t kOldPayloadPaddingSizeHysteresis = 100;
 constexpr uint16_t kMaxOldPayloadPaddingSequenceNumber = 1 << 13;
 }  // namespace
 
-RtxSender::RtxSender(RtxConfig cfg) : cfg_(cfg) {}
+RtxSender::RtxSender(RtxConfig cfg) : cfg_(cfg), rtx_seq_(cfg.initial_seq) {}
 
 // RtpPacketHistory::GetPacketIndex: the index of `seq` relative to the oldest stored packet,
 // negative when it is older.

@@ -1,0 +1,17 @@
+# Issue #514 row 3: each RTP stream starts at libwebrtc's random sequence number and timestamp
+# (PacketSequencer, RTPSender::timestamp_offset_, both drawn from the clock at the call's start), and
+# the first audio packet carries the marker bit (RTPSenderAudio::MarkerBit). On main every stream
+# started at sequence number 0 and timestamp 0, with no audio marker. libwebrtc on seed 1: audio and
+# video start at 6666, audio's first packet has the marker (parity-data traces, clean_link.1).
+name issue_514_rtp_start_values
+describe Each RTP stream starts at a random sequence number and timestamp and the first audio packet is marked, as libwebrtc
+duration 5s
+seed 1
+audio on
+video on
+at 0s capacity=2000kbps delay=40ms
+expect net.audio_start_seq >= 1
+expect net.audio_start_seq <= 32767
+expect net.video_start_seq >= 1
+expect net.video_start_seq <= 32767
+expect net.audio_first_marker == 1

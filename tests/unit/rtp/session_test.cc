@@ -1262,7 +1262,7 @@ SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
       f.data = data;
       f.keyframe = t == 0;
       f.capture_time = now;
-      captured[f.rtp_timestamp] = now;
+      captured[f.rtp_timestamp + a.video_sender(vs).StartTimestamp()] = now;  // The timestamp on the wire.
       a.SendVideo(vs, f, now);
     }
     a.Process(now);
@@ -1312,4 +1312,52 @@ SM_TEST(Session, ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt) {
   SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 1u);
   SM_EXPECT_FALSE(b.audio_receiver(ar).LastRtt().has_value());
   SM_EXPECT_EQ(b.audio_receiver(ar).stats().remote_ntp_updates, 0u);
+}
+
+// Issue #514: each stream starts at libwebrtc's random sequence number and RTP timestamp. Both come
+// from the clock time the modules are built at, which is the session's `seed` (RtcpRandomSeed in the
+// test bench): RTPSender's timestamp_offset_ is Random(t).Rand<uint32_t>() (rtp_sender.cc:247-250),
+// and the sequencer draws the media then the RTX start number, Rand(1, 32767) each. The values are
+// libwebrtc's own on the compare traces of seed 1 (clock 100000 s) and seed 3 (115838 s).
+SM_TEST(Session, StreamsStartAtLibwebrtcsRandomSequenceNumberAndTimestamp) {
+  struct Case {
+    uint64_t seed;
+    uint32_t timestamp_offset;
+    uint16_t seq, rtx_seq;
+  };
+  for (const Case& k : {Case{100000ull * 1000000, 873682028u, 6666, 887},
+                        Case{115838ull * 1000000, 2301725640u, 17561, 0}}) {
+    SessionConfig c = Cfg(1);
+    c.seed = k.seed;
+    Pair p(c);
+    SM_EXPECT_EQ(p.a.audio_sender(p.a_audio).StartTimestamp(), k.timestamp_offset);
+    SM_EXPECT_EQ(p.a.video_sender(p.a_video).StartTimestamp(), k.timestamp_offset);
+    if (k.rtx_seq) SM_EXPECT_EQ(p.a.video_sender(p.a_video).config().rtx.initial_seq, k.rtx_seq);
+    Bytes frame(60, 7);
+    p.a.SendAudio(p.a_audio, {960, frame, false}, Timestamp::Millis(0));
+    p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(true, 3000, 1188), 90, Timestamp::Millis(0));
+    std::optional<uint16_t> audio_seq, video_seq;
+    std::optional<uint32_t> audio_ts, video_ts;
+    std::optional<bool> audio_marker;
+    for (auto& o : Pump(p.a, 0, 200)) {
+      const uint16_t seq = static_cast<uint16_t>((o.bytes[2] << 8) | o.bytes[3]);
+      const uint32_t ts = (uint32_t{o.bytes[4]} << 24) | (uint32_t{o.bytes[5]} << 16) | (uint32_t{o.bytes[6]} << 8) | o.bytes[7];
+      if (o.kind == OutgoingKind::kAudio && !audio_seq) {
+        audio_seq = seq;
+        audio_ts = ts;
+        audio_marker = (o.bytes[1] & 0x80) != 0;
+      }
+      if (o.kind == OutgoingKind::kVideo && !video_seq) {
+        video_seq = seq;
+        video_ts = ts;
+      }
+    }
+    SM_ASSERT_TRUE(audio_seq.has_value() && video_seq.has_value());
+    SM_EXPECT_EQ(*audio_seq, k.seq);
+    SM_EXPECT_EQ(*video_seq, k.seq);
+    // ChannelSend and RtpVideoSender add the start timestamp to the frame's own.
+    SM_EXPECT_EQ(*audio_ts, k.timestamp_offset + 960u);
+    SM_EXPECT_EQ(*video_ts, k.timestamp_offset + 90u);
+    SM_EXPECT_TRUE(*audio_marker);  // RTPSenderAudio::MarkerBit: the stream's first packet.
+  }
 }

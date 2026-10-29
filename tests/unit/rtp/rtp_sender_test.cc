@@ -147,6 +147,35 @@ SM_TEST(RtpSender, AudioRedCarriesThePreviousFrame) {
   SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
 }
 
+// RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128): the marker goes on the stream's first
+// packet, and on the first speech frame after a DTX frame (ACM's kAudioFrameCN, inband VAD); a stream
+// that starts in DTX marks its first speech frame (issue #514).
+SM_TEST(RtpSender, AudioMarkerOnTheFirstPacketAndAfterDtx) {
+  RtpSenderConfig c;
+  c.video = false;
+  c.payload_type = 111;
+  const Bytes speech(40, 7), dtx(1, 0);
+  auto markers = [&](RtpSender& s, std::initializer_list<const Bytes*> frames) {
+    uint32_t ts = 0;
+    for (const Bytes* f : frames) s.SendAudio(*f, ts += 960, false, Timestamp::Millis(ts / 48));
+    std::vector<bool> out;
+    for (const SenderPacket& p : s.TakePackets()) out.push_back(p.packet.marker);
+    return out;
+  };
+  RtpSender a(c);
+  SM_EXPECT_TRUE(markers(a, {&speech, &speech, &dtx, &dtx, &speech, &speech}) ==
+                 (std::vector<bool>{true, false, false, false, true, false}));
+  RtpSender b(c);
+  SM_EXPECT_TRUE(markers(b, {&dtx, &speech, &speech}) == (std::vector<bool>{false, true, false}));
+  // The caller's marker still sets it.
+  RtpSender d(c);
+  d.SendAudio(speech, 960, false, Timestamp::Millis(0));
+  d.SendAudio(speech, 1920, true, Timestamp::Millis(20));
+  auto out = d.TakePackets();
+  SM_ASSERT_EQ(out.size(), 2u);
+  SM_EXPECT_TRUE(out[1].packet.marker);
+}
+
 SM_TEST(RtpSender, AudioWithoutRedIsOnePlainPacket) {
   RtpSenderConfig c;
   c.video = false;

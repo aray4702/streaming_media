@@ -155,6 +155,10 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
         sync::AbsoluteCaptureTimeSender::GetSource(cfg_.ssrc, {}), rtp_timestamp, cfg_.clock_rate,
         {timing::NtpTime::FromTimestamp(*capture_time).value, 0}, now);
   }
+  // The payload type of the packet (RED's when RED is on, as ACM's RED encoder reports it), and ACM's
+  // frame type: a DTX frame (at most 2 bytes) is kAudioFrameCN (audio_coding_module.cc:297-298).
+  const int payload_type = cfg_.red_payload_type ? *cfg_.red_payload_type : cfg_.payload_type;
+  marker = AudioMarkerBit(frame.size() > 2, payload_type) || marker;
   RtpPacket p;
   if (cfg_.red_payload_type) {
     p = NewPacket(*cfg_.red_payload_type, rtp_timestamp, marker);
@@ -176,6 +180,28 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
   // rtp_sender_audio.cc:252-256: SetExtension writes nothing when it is not registered.
   if (SetsAbsoluteCaptureTime(abs_capture_time)) SetAbsoluteCaptureTime(p, *abs_capture_time);
   StoreAndQueueMedia(std::move(p), now);
+  last_payload_type_ = payload_type;
+}
+
+bool RtpSender::AudioMarkerBit(bool speech, int payload_type) {
+  // RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128). No CNG payload types are registered
+  // (Opus's DTX is in band), so the CNG branch never applies.
+  bool marker_bit = false;
+  if (last_payload_type_ != payload_type) {
+    if (last_payload_type_ == -1) {
+      if (speech) return true;  // First packet and not CNG.
+      inband_vad_active_ = true;
+      return false;
+    }
+    marker_bit = true;  // The payload type changed.
+  }
+  if (!speech) {
+    inband_vad_active_ = true;
+  } else if (inband_vad_active_) {
+    inband_vad_active_ = false;
+    marker_bit = true;
+  }
+  return marker_bit;
 }
 
 bool RtpSender::SetsVideoRotation(bool keyframe, video::Rotation rotation) const {
