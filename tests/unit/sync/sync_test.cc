@@ -736,6 +736,21 @@ SM_TEST(RtpDemuxer, SsrcBeforePayloadType) {
   SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 40, 97)).has_value());
 }
 
+// RtpDemuxerCriteria::payload_types() is a flat_set in libwebrtc, so a payload
+// type a sink lists twice is still one sink's; found by sm_rtcp_interop
+// (round 7 packet 12: ssrc 2, pt 97 went to sink 0 in libwebrtc, nowhere here).
+SM_TEST(RtpDemuxer, RepeatedPayloadTypeIsOneSink) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("v", "", {5}, {97, 97})));
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("", "h", {}, {96})));
+  SM_EXPECT_EQ(d.Demux(DemuxPacket(a, 2, 97)).value_or(-1), 0);
+  SM_EXPECT_EQ(d.stats().by_payload_type, 1u);
+  SM_EXPECT_TRUE(d.RemoveSink(0));
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 3, 97)).has_value());
+}
+
 // RtpDemuxer::CriteriaWouldConflict and RtpDemuxerCriteria::IsValid.
 SM_TEST(RtpDemuxer, ConflictingAndInvalidCriteria) {
   const ExtensionMap m = DemuxMap();

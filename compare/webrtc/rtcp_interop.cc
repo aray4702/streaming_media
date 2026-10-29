@@ -1490,6 +1490,7 @@ void Demuxer() {
   for (int round = 0; round < 200; ++round) {
     sm::sync::RtpDemuxer ours(map);
     webrtc::RtpDemuxer theirs;
+    std::string criteria;  // This round's sinks, printed on a mismatch.
     const int n_sinks = 1 + static_cast<int>(rnd(kSinks));
     for (int i = 0; i < n_sinks; ++i) {
       const bool any = rnd(30) == 0;
@@ -1516,11 +1517,19 @@ void Demuxer() {
       const bool a = ours.AddSink(i, c);
       const bool b = theirs.AddSink(*wc, &wsinks[i]);
       adds_same = adds_same && a == b;
+      criteria += "      sink " + std::to_string(i) + (a ? "" : " (refused)") + ":";
+      if (c.match_any) criteria += " match-any";
+      if (!c.mid.empty()) criteria += " mid=" + c.mid;
+      if (!c.rsid.empty()) criteria += " rsid=" + c.rsid;
+      for (uint32_t ssrc : c.ssrcs) criteria += " ssrc=" + std::to_string(ssrc);
+      for (uint8_t pt : c.payload_types) criteria += " pt=" + std::to_string(pt);
+      criteria += a == b ? "\n" : " (libwebrtc differs)\n";
     }
     for (int k = 0; k < 60; ++k) {
       if (rnd(40) == 0) {
         const int sink = static_cast<int>(rnd(kSinks));
         removes_same = removes_same && ours.RemoveSink(sink) == theirs.RemoveSink(&wsinks[sink]);
+        criteria += "      packet " + std::to_string(k) + ": remove sink " + std::to_string(sink) + "\n";
       }
       sm::RtpPacket p;
       p.ssrc = 1 + rnd(10);
@@ -1534,8 +1543,10 @@ void Demuxer() {
       const std::optional<int> a = ours.Demux(p);
       const std::optional<int> b = parsed ? index_of(theirs.ResolveSink(w)) : std::nullopt;
       if (a != b && routes_same) {
-        std::printf("    round %d packet %d (ssrc %u pt %u): ours %d, libwebrtc %d\n", round, k, p.ssrc,
-                    p.payload_type, a.value_or(-1), b.value_or(-1));
+        const auto ext = [&](const char* u) { return acc.GetString(p, u).value_or("-"); };
+        std::printf("    round %d packet %d (ssrc %u pt %u mid %s rsid %s rrid %s): ours %d, libwebrtc %d\n%s",
+                    round, k, p.ssrc, p.payload_type, ext(uri::kMid).c_str(), ext(uri::kRid).c_str(),
+                    ext(uri::kRepairedRid).c_str(), a.value_or(-1), b.value_or(-1), criteria.c_str());
       }
       routes_same = routes_same && parsed && a == b;
       ++packets;
@@ -1553,7 +1564,9 @@ void Demuxer() {
   sm::sync::RtpDemuxerCriteria c;
   c.mid = "a";
   ours.AddSink(0, c);
-  theirs.AddSink(webrtc::RtpDemuxerCriteria("a"), &wsinks[0]);
+  // A string literal would pick the private RtpDemuxerCriteria(bool match_any) (pointer to bool beats the
+  // user-defined conversion to absl::string_view), so name the MID as a string_view.
+  theirs.AddSink(webrtc::RtpDemuxerCriteria(absl::string_view("a")), &wsinks[0]);
   for (uint32_t ssrc = 1; ssrc <= 1100; ++ssrc) {
     sm::RtpPacket p;
     p.ssrc = ssrc;
