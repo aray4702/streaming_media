@@ -50,7 +50,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 0 | 1 | 0 | not recorded | not recorded | not recorded | not recorded |
 | 6.12 | [Band splitting](6-audio/6.12-band-splitting.md) | 0 | 0 | 1 | not recorded | not recorded | not recorded | not recorded |
 
@@ -72,7 +72,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 8.1 | [RTP -> NTP mapping](8-sync/8.1-rtp-to-ntp.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 8.2 | [Audio/video synchronization and CNAME sync groups](8-sync/8.2-stream-sync.md) | 3 | 1 | 1 | pass | pass | pass | pass |
 | 8.3 | [Absolute capture time and glass-to-glass latency](8-sync/8.3-capture-time.md) | 3 | 1 | 1 | pass | pass | pass | pass |
-| 8.4 | [Header extensions (RFC 8285) and BUNDLE demuxing](8-sync/8.4-header-extensions.md) | 3 | 1 | 2 | pass | pass | pass | pass |
+| 8.4 | [Header extensions (RFC 8285) and BUNDLE demuxing](8-sync/8.4-header-extensions.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 
 ## 9. RTP/RTCP session layer
 

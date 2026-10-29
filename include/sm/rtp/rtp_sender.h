@@ -153,9 +153,11 @@ class RtpSender : public MetricsSource {
   // (rtp_cvo.h): the rotation alone, camera and flip bits 0.
   // `abs_capture_time` (from VideoAbsoluteCaptureTime) goes on the first
   // packet when the extension is mapped (rtp_sender_video.cc:425-428).
-  void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                      bool keyframe = false, video::Rotation rotation = video::Rotation::k0,
-                      const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
+  // Returns the payload bytes of the frame's video packets, RED headers
+  // included (RTPSenderVideo::LogAndSendToNetwork's packetized_payload_size).
+  size_t SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+                        bool keyframe = false, video::Rotation rotation = video::Rotation::k0,
+                        const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
   // RTPSenderVideo::SendVideo (rtp_sender_video.cc:690-707), once per frame
   // before packetization: the extension for a frame captured at
   // `capture_time` (on the `now` clock), whole milliseconds of NTP time and

@@ -41,7 +41,7 @@
   "net.video_size_p90_b": 1463,
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 43,
-  "repair.overhead_pct": 0.3911,
+  "repair.overhead_pct": 0.3912,
   "rtcp.audio_report_blocks": 0,
   "video.avg_kbps": 1667,
   "video.delay_encode_ms": 0,

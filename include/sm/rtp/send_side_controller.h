@@ -190,6 +190,12 @@ class SendSideController : public MetricsSource {
   // stream's pad-up rate is 0 (CalculateMaxPadBitrateBps for one stream without
   // min_transmit_bitrate), so disable_padding_ changes no limit.
   void OnVideoFrameEncoded(Timestamp now);
+  // RTPSenderVideo::LogAndSendToNetwork (rtp_sender_video.cc:241-258): a frame of
+  // `encoder_output_size` bytes went out as video packets whose payloads sum to
+  // `packetized_payload_size`. What packetization adds (H.264 FU-A headers less
+  // the Annex-B start codes; nothing when it saves bytes) is the post-encode
+  // overhead, tracked over 1 s and taken off the encoder target (issue #619).
+  void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
   bool video_registered() const { return video_registered_; }
 
@@ -352,6 +358,8 @@ class SendSideController : public MetricsSource {
   // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
   // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
   RateStatistics video_rate_, rtx_rate_, fec_rate_;
+  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read as of the last Process().
+  RateStatistics post_encode_overhead_rate_{1000, 8000.0f};
   Timestamp last_process_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
