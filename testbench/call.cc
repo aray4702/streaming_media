@@ -731,7 +731,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   // The trace's rtx_room column (#555): the sender's RTX reservation phase when each frame was handed to it.
-  RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc);
+  RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
