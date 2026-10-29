@@ -593,10 +593,10 @@
    "area": "Synchronization",
    "catalog": "8.3",
    "title": "Absolute capture time and glass-to-glass latency",
-   "status": "open",
-   "evidence": "Parity doc 8.3: `AbsoluteCaptureTimeSender`/`AbsoluteCaptureTimeInterpolator` are 'file needed (#57), unplaced' (ours decides per packet, libwebrtc per frame; no `CaptureClockOffsetUpdater`); the `LatencyEstimator` row is `port`, unplaced (min offset with a 5% leak vs `RemoteNtpTimeEstimator`'s median of 7 after 3 samples); `capture_to_render_ms` is a library extra libwebrtc reports only under a non-default trial (no recorded deviation). The harness never sends abs-capture-time. No open item serves it; filed #567.",
+   "status": "done",
+   "evidence": "Ported from libwebrtc M157: `AbsoluteCaptureTimeSender` and `AbsoluteCaptureTimeInterpolator` per frame, `CaptureClockOffsetUpdater`, `RemoteNtpTimeEstimator` (median of 7 after 3 SRs) and `MovingMedianFilter` as units (#622); the RTP sender writes abs-capture-time as `RTPSenderVideo`/`RTPSenderAudio` (#654, checked by libwebrtc's parser in `sm_rtcp_interop`); the receivers interpolate it and train the NTP estimate from SRs with their own module RTT, as `RtpVideoStreamReceiver2`/`ChannelReceive` (#659, #680), and decoded audio carries packet infos as NetEq (#680). Recorded deviation: `capture_to_render_ms` is a library metric libwebrtc reports only under the non-default `WebRTC-UseAbsCapTimeForG2gMetric` trial (#680).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
