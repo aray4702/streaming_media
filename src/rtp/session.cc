@@ -163,7 +163,24 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
     send_.EnablePeriodicAlrProbing(false);
   }
   send_has_padding_ = true;
+  UpdateVideoPacketOverhead();
   return {static_cast<int>(video_send_.size()) - 1};
+}
+
+void Session::UpdateVideoPacketOverhead() {
+  if (!cfg_.send_side.expected_packet_overhead || video_send_.empty()) return;
+  size_t overhead = 0;
+  for (const SendStream& v : video_send_) {
+    size_t bytes = v.sender->ExpectedPerPacketOverhead();
+    // With NACK off libwebrtc's stream has no RTX SSRC, so no RTX header is reserved (as the RTX
+    // reservation in SendVideo; issue #513).
+    constexpr size_t kRtxHeaderSize = 2;
+    if (v.sender->config().rtx_ssrc && !v.nack) bytes -= kRtxHeaderSize;
+    overhead += bytes;
+  }
+  // rtp_video_sender.cc:878-880: the average when more than one stream sends media.
+  overhead /= video_send_.size();
+  send_.SetRtpOverheadPerPacket(static_cast<int64_t>(overhead));
 }
 
 void Session::MaybeCreateSync() {
@@ -275,9 +292,11 @@ SendSideController::AudioAllocation Session::AudioAllocationOf(const SendStream&
   // AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver
   // (audio_send_stream.cc:808-901): overhead_per_packet_ is the transport's bytes plus
   // RTPSender::ExpectedPerPacketOverhead, the media header with its non-volatile
-  // extensions (UpdateOverheadPerPacket, :529-545).
-  const DataSize overhead =
-      DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(a.sender->MediaHeaderSize()));
+  // extensions (UpdateOverheadPerPacket, :529-545). Without expected_packet_overhead, the header
+  // the next packet carries (MediaHeaderSize: MID at its length while it is repeated, no audio level).
+  const size_t header =
+      cfg_.send_side.expected_packet_overhead ? a.sender->ExpectedPerPacketOverhead() : a.sender->MediaHeaderSize();
+  const DataSize overhead = DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(header));
   const DataRate at_longest = DataRate::FromSizeAndTime(overhead, a.max_frame_length);
   const DataRate at_shortest = DataRate::FromSizeAndTime(overhead, a.min_frame_length);
   return {a.min_bitrate + at_longest, a.max_bitrate + at_shortest, a.priority_bitrate + at_longest};
@@ -649,6 +668,8 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       if (rb.ssrc == a.sender->config().ssrc) a.sender->OnReceivedAckOnSsrc();
     }
   }
+  // RTPSender::OnReceivedAckOnSsrc / OnReceivedAckOnRtxSsrc call UpdateHeaderSizes: MID may stop counting.
+  if (!in.report_blocks.empty()) UpdateVideoPacketOverhead();
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;
     e.type = SessionEventType::kReportBlock;

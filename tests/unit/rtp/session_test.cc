@@ -567,6 +567,36 @@ SM_TEST(Session, MidIsRepeatedUntilThePeerAnswersWithOne) {
   SM_EXPECT_EQ(q.a.audio_sender(q.a_audio).stats().mid_packets, 0u);
 }
 
+// RtpVideoSender::OnBitrateUpdated (rtp_video_sender.cc:869-882, issue #577): with
+// expected_packet_overhead the video overhead rate counts the senders' ExpectedPerPacketOverhead,
+// 22 B with transport-cc and RTX (as sm_compare's libwebrtc sender), 20 B when NACK is off (no RTX
+// stream in libwebrtc); off, the fixed 24 B.
+SM_TEST(Session, ExpectedPacketOverheadIsTheVideoSendersHeader) {
+  SessionConfig c;
+  c.local_ssrc = 1;
+  c.extensions.Register(1, sync::uri::kTransportCc);
+  c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  auto target = [&](bool on, bool nack) {
+    SessionConfig sc = c;
+    sc.send_side.expected_packet_overhead = on;
+    Session s(sc);
+    VideoStreamConfig v = Video();
+    v.nack = nack;
+    s.AddVideoSend(v);
+    s.Process(Timestamp::Millis(0));
+    return std::pair{s.send_side().rtp_overhead_per_packet(), s.rates().video_target.bps()};
+  };
+  const auto [off_bytes, off_rate] = target(false, true);
+  const auto [nack_bytes, nack_rate] = target(true, true);
+  const auto [plain_bytes, plain_rate] = target(true, false);
+  SM_EXPECT_EQ(off_bytes, 24);
+  SM_EXPECT_EQ(nack_bytes, 22);
+  SM_EXPECT_EQ(plain_bytes, 20);
+  // A smaller header leaves the encoder more of the same allocation.
+  SM_EXPECT_GT(nack_rate, off_rate);
+  SM_EXPECT_GE(plain_rate, nack_rate);
+}
+
 SM_TEST(Session, RatesSplitTheTargetBetweenAudioAndVideo) {
   SessionConfig c = Cfg(1);
   c.send_side.gcc.start_rate = DataRate::KilobitsPerSec(1000);
