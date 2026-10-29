@@ -26,11 +26,11 @@
 // with the field trial disabled.
 //
 // Differences from libwebrtc (tools/catalog.py 5.8):
-//  - rtp::VideoSendController calls AdjustRate per captured frame by default.
-//    With `adjuster_on_update` it does so when libwebrtc's VideoStreamEncoder
-//    does (an allocation update, a reconfiguration, every 1 s; issue #569),
-//    but at the next captured frame rather than at the update's own time, and
-//    only for the last of several updates between two frames.
+//  - rtp::VideoSendController calls AdjustRate when libwebrtc's
+//    VideoStreamEncoder does (`adjuster_on_update`, on by default since #637:
+//    an allocation update, a reconfiguration, every 1 s; issue #569), but at
+//    the next captured frame rather than at the update's own time, and only
+//    for the last of several updates between two frames.
 //  - The tracker clamps a time earlier than its last data point to that point,
 //    where libwebrtc CHECKs.
 // Takes `now`, reads no clock.

@@ -1,11 +1,11 @@
 // Section 6 end-to-end tests: realistic capture scenarios through the APM
-// chain (HPF -> AEC -> NS -> VAD -> TS -> AGC), plus
+// chain (HPF -> AEC3 -> NS -> VAD -> TS -> AGC1), plus
 // conference level/active-speaker, mixing and rate conversion.
 #include <cmath>
 
 #include "audio_sims.h"
 #include "sm/audio/audio_level.h"
-#include "sm/audio/resampler.h"
+#include "sm/audio/push_resampler.h"
 #include "sm/sim/network_link.h"
 #include "sm_test.h"
 
@@ -24,36 +24,12 @@ double ToneAmp(std::span<const float> x, double freq, int fs) {
   }
   return 2 * std::sqrt(re * re + im * im) / static_cast<double>(x.size());
 }
-// The v1 chain: these tests pin the v1 modules, which stay until they are
-// retired (#565); the default chain is `apm v2`, libwebrtc's.
-ChainConfig V1(bool aec, bool ns, bool ts, bool agc) {
-  ChainConfig cc{true, aec, ns, ts, agc};
-  cc.apm_v2 = false;
-  return cc;
-}
 double Mean(std::span<const float> x) {
   double s = 0;
   for (float v : x) s += v;
   return s / static_cast<double>(x.size());
 }
 }  // namespace
-
-SM_TEST(E2E_HighPassFilter, RemovesDcAndHumInFullChain) {
-  CallScenario s;
-  s.far_talk = false;
-  s.dc = 0.1f;
-  s.hum_amp = 0.05f;
-  s.noise_amp = 0.002f;
-  auto c = MakeCall(s);
-  auto r = RunChain(c, V1(false, true, false, true));
-  std::span<const float> tail(r.out.data() + 10 * 16000, 8 * 16000);
-  double hum_in = ToneAmp(std::span<const float>(c.capture.data() + 10 * 16000, 8 * 16000), 50, 16000);
-  double hum_out = ToneAmp(tail, 50, 16000);
-  SM_RECORD("hum_attenuation_db", 20 * std::log10(hum_in / hum_out));
-  SM_RECORD("dc_out", Mean(tail));
-  SM_EXPECT_LT(std::fabs(Mean(tail)), 1e-3);
-  SM_EXPECT_GT(20 * std::log10(hum_in / hum_out), 15.0);
-}
 
 // `apm v2` (#239): libwebrtc's high-pass filter on the case sm_apm_compare
 // measures (the filter alone, so the hum left is the filter's). libwebrtc
@@ -67,7 +43,6 @@ SM_TEST(E2E_HighPassFilter, LibwebrtcHpfAsLibwebrtc) {
   s.noise_amp = 0.002f;
   auto c = MakeCall(s);
   ChainConfig cc{true, false, false, false, false};
-  cc.apm_v2 = true;
   auto r = RunChain(c, cc);
   std::span<const float> tail(r.out.data() + 10 * 16000, 8 * 16000);
   double hum_in = ToneAmp(std::span<const float>(c.capture.data() + 10 * 16000, 8 * 16000), 50, 16000);
@@ -86,10 +61,9 @@ SM_TEST(E2E_HighPassFilter, LibwebrtcHpfAsLibwebrtc) {
   SM_EXPECT_NEAR(speech_db, -0.2, 0.1);
 }
 
-// The default capture chain is libwebrtc's (#565): the full chain with
-// every module on runs the ported modules, bit for bit the `apm v2` chain.
+// The capture chain is libwebrtc's (#565): with every module on, its
+// algorithmic delay is AEC3's block plus NS's filter bank, as libwebrtc's.
 SM_TEST(E2E_Apm, DefaultChainIsLibwebrtcs) {
-  SM_EXPECT_TRUE(ChainConfig{}.apm_v2);
   CallScenario s;
   s.seconds = 6;
   s.near_start_s = 3;
@@ -97,13 +71,19 @@ SM_TEST(E2E_Apm, DefaultChainIsLibwebrtcs) {
   s.hum_amp = 0.02f;
   auto c = MakeCall(s);
   auto def = RunChain(c, {true, true, true, false, true});
-  ChainConfig v2{true, true, true, false, true};
-  v2.apm_v2 = true;
-  auto ported = RunChain(c, v2);
-  SM_EXPECT_TRUE(def.out == ported.out);
-  SM_EXPECT_EQ(def.latency, ported.latency);
   SM_EXPECT_EQ(def.latency, 64u + 96u);  // AEC3's block plus NS's filter bank, as libwebrtc.
-  SM_EXPECT_TRUE(def.out != RunChain(c, V1(true, true, false, true)).out);
+  SM_EXPECT_TRUE(def.out != c.capture);
+}
+
+// libwebrtc M157's call runs AGC1, never AGC2 (#670):
+// `AudioProcessing::Config::GainController2::enabled` defaults to false
+// (api/audio/audio_processing.h), `WebRtcVoiceEngine::ApplyOptions` sets only
+// `gain_controller1` (media/engine/webrtc_voice_engine.cc), and APM creates
+// `GainController2`, the only user of the RNN VAD, only when it is enabled
+// (`AudioProcessingImpl::InitializeGainController2`). So AGC2 stays opt-in.
+SM_TEST(E2E_Apm, CallRunsAgc1NotAgc2AsLibwebrtc) {
+  const ChainConfig def;
+  SM_EXPECT_TRUE(!def.agc2);
 }
 
 SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
@@ -111,7 +91,7 @@ SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   s.far_talk = false;
   s.noise_amp = 0.015f;  // ~10 dB SNR.
   auto c = MakeCall(s);
-  auto r = RunChain(c, V1(false, true, false, false));
+  auto r = RunChain(c, {true, false, true, false, false});
   int tp = 0, fn = 0, fp = 0, tn = 0, since = 1000;
   for (size_t f = 100; f < r.vad.size(); ++f) {
     bool truth = dsp::RmsDbfs(std::span<const float>(c.talker.data() + f * 160, 160)) > -45.0f;
@@ -129,27 +109,6 @@ SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   SM_EXPECT_LT(fpr, 0.10);
 }
 
-SM_TEST(E2E_NoiseSuppressor, ImprovesSnrInChain) {
-  CallScenario s;
-  s.far_talk = false;
-  s.noise_amp = 0.03f;  // ~7 dB SNR: a noisy office or car.
-  auto c = MakeCall(s);
-  auto r = RunChain(c, V1(false, true, false, false));
-  auto base = RunChain(c, V1(false, false, false, false));
-  // Reference: the clean talker through the same high-pass filter, so the
-  // HPF's phase response is not counted as noise.
-  std::vector<float> talker_hp = c.talker;
-  HighPassFilter hp_ref;
-  for (size_t i = 0; i + 160 <= talker_hp.size(); i += 160) hp_ref.Process(std::span<float>(talker_hp.data() + i, 160));
-  size_t lat = r.latency, start = 3 * 16000, n = c.talker.size() - start - lat;
-  std::span<const float> ref(talker_hp.data() + start, n);
-  double snr_in = dsp::SnrDb(ref, std::span<const float>(base.out.data() + start, n));
-  double snr_out = dsp::SnrDb(ref, std::span<const float>(r.out.data() + start + lat, n));
-  SM_RECORD("chain_snr_in_db", snr_in);
-  SM_RECORD("chain_snr_out_db", snr_out);
-  SM_EXPECT_GT(snr_out, snr_in + 4.0);
-}
-
 // `apm v2` (#241): libwebrtc's NS (kHigh) on the same signals, measured as
 // sm_apm_compare measures both stacks. libwebrtc M157's APM
 // (docs/results/apm-webrtc.md): SNR improvement -0.1 dB, noise attenuation
@@ -161,12 +120,10 @@ SM_TEST(E2E_NoiseSuppressor, LibwebrtcNsAsLibwebrtc) {
   s.noise_amp = 0.03f;
   auto c = MakeCall(s);
   ChainConfig cc{true, false, true, false, false};
-  cc.apm_v2 = true;
   auto r = RunChain(c, cc);
   // The input and the reference go through the same (`apm v2`, #239)
   // high-pass filter as the output, as sm_apm_compare runs each stack.
   ChainConfig hpf_only{true, false, false, false, false};
-  hpf_only.apm_v2 = true;
   auto base = RunChain(c, hpf_only);
   CallScenario t = s;
   t.noise_amp = 0;
@@ -219,49 +176,6 @@ SM_TEST(E2E_NoiseSuppressor, LibwebrtcNsAsLibwebrtc) {
   SM_EXPECT_NEAR(speech_change, -2.9, 0.5);
 }
 
-SM_TEST(E2E_GainControl, NormalizesQuietTalkerLeavesLoudToLimiter) {
-  // Quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB) for 20 s.
-  CallScenario q;
-  q.far_talk = false;
-  q.seconds = 40;
-  q.near_gain_db = -10;
-  q.noise_amp = 0.0002f;  // -74 dBFS room noise.
-  auto c = MakeCall(q);
-  for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= dsp::DbToLinear(20);
-  auto in_level = [&](double a, double b) { return SegmentDb(c.capture, a, b); };
-  ChainResult r;
-  {
-    // Run the chain manually to read the AGC gain at the end of each half.
-    r = RunChain(c, V1(false, false, false, true));
-  }
-  auto level = [&](double a, double b) {
-    double e = 0;
-    size_t n = 0;
-    for (size_t f = static_cast<size_t>(a * 100); f < static_cast<size_t>(b * 100) && f < r.vad.size(); ++f) {
-      if (!r.vad[f]) continue;
-      for (size_t i = f * 160; i < f * 160 + 160; ++i) e += static_cast<double>(r.out[i]) * r.out[i];
-      n += 160;
-    }
-    return 10 * std::log10(e / std::max<size_t>(1, n) + 1e-20);
-  };
-  float peak = 0;
-  for (float v : r.out) peak = std::max(peak, std::fabs(v));
-  SM_RECORD("quiet_talker_in_dbfs", in_level(12, 20));
-  SM_RECORD("quiet_talker_out_dbfs", level(12, 20));
-  SM_RECORD("loud_talker_in_dbfs", in_level(32, 40));
-  SM_RECORD("loud_talker_out_dbfs", level(32, 40));
-  SM_RECORD("peak", peak);
-  // Quiet speech is lifted to the -18 dBFS target.
-  SM_EXPECT_NEAR(level(12, 20), -18.0, 4.0);
-  // The digital AGC never attenuates: after the jump its gain returns to
-  // ~0 dB (6 dB/s), so loud speech is not amplified; only the limiter
-  // trims its peaks (a few dB at most) to keep them under -1 dBFS.
-  double loud_change = level(32, 40) - in_level(32, 40);
-  SM_EXPECT_LE(loud_change, 1.0);
-  SM_EXPECT_GE(loud_change, -4.0);
-  SM_EXPECT_LE(peak, dsp::DbToLinear(-1.0f) + 1e-6f);
-}
-
 namespace {
 
 struct QuietThenLoud {
@@ -279,7 +193,6 @@ QuietThenLoud RunQuietThenLoud(bool agc2) {
   auto c = MakeCall(q);
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
-  cc.apm_v2 = true;
   cc.agc2 = agc2;
   auto r = RunChain(c, cc);
   // Speech frames by the clean talker's level (as sm_apm_compare's truth),
@@ -345,42 +258,6 @@ SM_TEST(E2E_GainControl, Agc1LiftsQuietTalkerAsLibwebrtc) {
   SM_EXPECT_LE(m.peak_dbfs, 0.0);
 }
 
-SM_TEST(E2E_EchoDelay, AecFollowsAudioRouteChange) {
-  CallScenario s;
-  s.seconds = 24;
-  s.echo_delay_ms = 60;
-  s.echo_delay2_ms = 180;  // Speaker -> Bluetooth at 12 s.
-  s.near_start_s = 1e9;    // Far end only.
-  s.noise_amp = 0.0005f;
-  auto c = MakeCall(s);
-  auto r = RunChain(c, V1(true, false, false, false));
-  double erle_before = SegmentDb(c.echo, 6, 12) - SegmentDb(r.out, 6, 12, 16000, r.latency);
-  double erle_after = SegmentDb(c.echo, 18, 24) - SegmentDb(r.out, 18, 24, 16000, r.latency);
-  SM_RECORD("erle_before_change_db", erle_before);
-  SM_RECORD("erle_after_change_db", erle_after);
-  SM_RECORD("final_bulk_delay_ms", r.aec.delay_samples / 16.0);
-  SM_EXPECT_GT(erle_before, 20.0);
-  SM_EXPECT_GT(erle_after, 20.0);
-  SM_EXPECT_GE(r.aec.delay_changes, 2u);
-  SM_EXPECT_NEAR(r.aec.delay_samples / 16.0, 180 - 10, 3);  // Estimate minus 2-block margin.
-}
-
-SM_TEST(E2E_EchoCanceller, FullDuplexCall) {
-  CallScenario s;
-  s.seconds = 30;
-  s.near_start_s = 15;  // Far end alone first, then double talk.
-  s.noise_amp = 0.0005f;
-  auto c = MakeCall(s);
-  auto r = RunChain(c, V1(true, true, false, false));
-  double erle = SegmentDb(c.echo, 6, 15) - SegmentDb(r.out, 6, 15, 16000, r.latency);
-  double near_change = SegmentDb(r.out, 18, 30, 16000, r.latency) - SegmentDb(c.talker, 18, 30);
-  SM_RECORD("call_erle_db", erle);
-  SM_RECORD("call_double_talk_near_level_change_db", near_change);
-  SM_EXPECT_GT(erle, 25.0);
-  SM_EXPECT_GT(near_change, -6.0);
-  SM_EXPECT_LT(near_change, 3.0);
-}
-
 // `apm v2` (#240): libwebrtc's AEC3. libwebrtc M157's APM on the same call
 // (docs/results/apm-webrtc.md, sm_apm_compare): ERLE 33.2 dB at 1-3 s, 50.1
 // at 6-12 s, 8.0 just after the delay change, 49.0 at 18-24 s.
@@ -393,7 +270,6 @@ SM_TEST(E2E_EchoDelay, Aec3FollowsAudioRouteChangeAsLibwebrtc) {
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, false, false, false};
-  cc.apm_v2 = true;
   auto r = RunChain(c, cc);
   auto erle = [&](double a, double b) { return SegmentDb(c.echo, a, b) - SegmentDb(r.out, a, b, 16000, r.latency); };
   SM_RECORD("erle_1_3_db", erle(1, 3));
@@ -417,7 +293,6 @@ SM_TEST(E2E_EchoCanceller, Aec3FullDuplexCallAsLibwebrtc) {
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, true, false, false};
-  cc.apm_v2 = true;
   auto r = RunChain(c, cc);
   double erle = SegmentDb(c.echo, 6, 15) - SegmentDb(r.out, 6, 15, 16000, r.latency);
   double near_change = SegmentDb(r.out, 18, 30, 16000, r.latency) - SegmentDb(c.talker, 18, 30);
@@ -442,8 +317,8 @@ SM_TEST(E2E_TransientSuppressor, KeyboardDuringCall) {
   s.click_interval_s = 0.25;
   s.noise_amp = 0.001f;
   auto c = MakeCall(s);
-  auto with = RunChain(c, V1(false, false, true, false));
-  auto without = RunChain(c, V1(false, false, false, false));
+  auto with = RunChain(c, {true, false, false, true, false});
+  auto without = RunChain(c, {true, false, false, false, false});
   double ein = 0, eout = 0;
   for (size_t i = 16000; i < c.clicks.size(); ++i) {
     if (c.clicks[i] == 0 || std::fabs(c.talker[i]) > 1e-4f) continue;  // Clicks in pauses.
@@ -468,7 +343,7 @@ SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
   for (size_t f = 0; f + 1 < speech.size() / 320; ++f) {
     std::span<const float> fr(speech.data() + f * 320, 320);
     std::span<const float> nz(noise.data() + f * 320, 320);
-    bool v = vad.Process(fr.first(160)) | vad.Process(fr.last(160));
+    bool v = vad.VoiceActivity(fr, fs) == Vad::kActive;  // 20 ms, as libwebrtc allows.
     auto rx = DecodeAudioLevelExtension(EncodeAudioLevelExtension({ComputeLevel(fr), v}));
     if (f * 20 >= 1500 && rx.level < 60) {
       speech_level += rx.level;
@@ -489,17 +364,17 @@ SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
 }
 
 SM_TEST(E2E_Resampler, DeviceToProcessingToPlayout) {
-  // 44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker.
+  // 44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker, with
+  // libwebrtc's PushResampler and high-pass filter.
   auto mic = sim::Sine(1000, 44100, 3.0, 0.4f);
-  Resampler down(44100, 16000), up(16000, 48000);
-  HighPassFilter hpf(16000);
-  std::vector<float> mid, out;
+  PushResampler<float> down(441, 160, 1), up(160, 480, 1);
+  hpf::HighPassFilter hpf(16000);
+  std::vector<float> m(160), o480(480), out;
   for (size_t i = 0; i + 441 <= mic.size(); i += 441) {
-    std::vector<float> m;
-    down.Process(std::span<const float>(mic.data() + i, 441), m);
+    down.Resample(std::span<const float>(mic.data() + i, 441), std::span<float>(m));
     hpf.Process(m);
-    mid.insert(mid.end(), m.begin(), m.end());
-    up.Process(m, out);
+    up.Resample(std::span<const float>(m), std::span<float>(o480));
+    out.insert(out.end(), o480.begin(), o480.end());
   }
   SM_EXPECT_NEAR(static_cast<double>(out.size()), 3.0 * 48000, 2);
   // Compare with an ideal 1 kHz tone at 48 kHz, fitting amplitude/phase
@@ -519,7 +394,14 @@ SM_TEST(E2E_Resampler, DeviceToProcessingToPlayout) {
     fit[i] = static_cast<float>(re * std::cos(a) + im * std::sin(a));
   }
   double snr = dsp::SnrDb(fit, o);
+  // libwebrtc's high-pass filter is about 0.4 dB down at 1 kHz (its pass
+  // band, 6.5): the resamplers must keep the tone at that level.
+  auto tone16 = sim::Sine(1000, 16000, 2.0, 0.4f);
+  hpf::HighPassFilter hpf_ref(16000);
+  for (size_t i = 0; i + 160 <= tone16.size(); i += 160) hpf_ref.Process(std::span<float>(tone16.data() + i, 160));
+  const double hpf_amp = ToneAmp(std::span<const float>(tone16.data() + 16000, 16000), 1000, 16000);
   SM_RECORD("chain_44k_16k_48k_snr_db", snr);
+  SM_RECORD("hpf_1khz_amplitude", hpf_amp);
   SM_EXPECT_GT(snr, 50.0);
-  SM_EXPECT_NEAR(std::sqrt(re * re + im * im), 0.4, 0.01);
+  SM_EXPECT_NEAR(std::sqrt(re * re + im * im), hpf_amp, 0.01);
 }

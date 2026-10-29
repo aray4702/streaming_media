@@ -1,0 +1,15 @@
+name issue_522_outage_to_500kbps
+describe 1 s outage (Wi-Fi to LTE handover) after which the link is 500 kbps instead of 3 Mbps (#522)
+# Tester run 52 (#522): video black 2.8-4.7 s after link-up, audio back in 1 s. This yardstick runs the
+# repro on both stacks to get libwebrtc's column. On main 21eb8fa, seeds 1-6: longest freeze
+# 3385/3090/2824/3045/4588/3564 ms, freeze total 6728/6932/5139/4339/5968/4906 ms, e2e p95 1342/1475/347/300/346/351 ms.
+# Target (issue #522): libwebrtc's values on this scenario, within the parity band.
+duration 50s
+at 0s  capacity=3Mbps delay=40ms queue=300ms
+at 20s down
+at 21s up capacity=500kbps
+reverse at 0s delay=40ms
+reverse at 20s down
+reverse at 21s up
+expect video.longest_freeze_ms < 6000
+expect audio.longest_interruption_ms < 1500

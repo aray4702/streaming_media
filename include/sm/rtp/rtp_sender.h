@@ -25,6 +25,7 @@
 #include "sm/core/metrics.h"
 #include "sm/core/rate_statistics.h"
 #include "sm/audio/audio_level.h"
+#include "sm/core/rms_level.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/units.h"
 #include "sm/loss/red.h"
@@ -114,9 +115,21 @@ class RtpSender : public MetricsSource {
  public:
   explicit RtpSender(RtpSenderConfig cfg = {});
 
+  // Audio capture, before the encoder: one 10 ms frame of int16 samples (all
+  // channels), after muting, as ChannelSend::ProcessAndEncodeAudio
+  // (channel_send.cc:909-924). With the audio-level extension (RFC 6464)
+  // mapped it feeds the stream's RmsLevel: `AnalyzeMuted` for a muted frame
+  // after a muted one, `Analyze` otherwise. Without it, it does nothing.
+  void AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted);
   // Audio: one frame becomes one packet (RED-wrapped when configured).
-  // With `level` and the audio-level extension (RFC 6464) mapped, the packet
-  // carries it, as libwebrtc's ChannelSend does when the level id is set.
+  // With the audio-level extension (RFC 6464) mapped, every packet carries
+  // the level, as ChannelSend::SendData and RTPSenderAudio::SendAudio
+  // (channel_send.cc:389-396, rtp_sender_audio.cc:248-250): `level` when
+  // given (the override; it also sets the voice bit), otherwise the
+  // RmsLevel average of the capture frames analyzed since the last packet
+  // (127 when none were), with the voice bit set unless the frame is an
+  // Opus DTX frame (at most 2 bytes; AudioEncoderOpusImpl's `speech`,
+  // opus_interface.cc:179-192).
   // With `capture_time` (the frame's capture time on the `now` clock), the
   // AbsoluteCaptureTimeSender decides per packet whether it carries the
   // absolute capture time extension: the capture time in full NTP precision,
@@ -284,6 +297,8 @@ class RtpSender : public MetricsSource {
   int mid_remaining_;
   video::Rotation last_rotation_ = video::Rotation::k0;  // RTPSenderVideo::last_rotation_.
   sync::AbsoluteCaptureTimeSender abs_capture_time_sender_;
+  dsp::RmsLevel rms_level_;            // ChannelSend::rms_level_.
+  bool previous_frame_muted_ = false;  // ChannelSend::previous_frame_muted_.
   bool ssrc_has_acked_ = false;
   bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;

@@ -50,14 +50,24 @@ struct PayloadSizeLimits {
   int single_packet_reduction_len = 0;
 };
 
+// libwebrtc's H264PacketizationMode (RFC 6184 packetization-mode), which
+// RtpPacketizerH264 takes from RTPVideoHeaderH264 (rtp_format.cc:64-69).
+enum class H264PacketizationMode {
+  kNonInterleaved,  // Mode 1: single NAL unit, STAP-A and FU-A packets.
+  kSingleNalUnit,   // Mode 0: one NAL unit per packet, no aggregation or fragmentation.
+};
+
 class H264Packetizer {
  public:
-  // RtpPacketizerH264 (rtp_format_h264.cc) with the reductions of `limits`:
-  // a unit larger than the room of its packet is split by FU-A with
-  // SplitAboutEqually, the rest are aggregated by STAP-A. Empty when the frame
-  // cannot be packetized (max_payload_len of 2 or less for an FU-A, or no room
-  // for a byte in the first or last packet).
-  static std::vector<std::vector<uint8_t>> Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& limits);
+  // RtpPacketizerH264 (rtp_format_h264.cc) with the reductions of `limits`.
+  // Mode 1 (GeneratePackets, l.70-100): a unit larger than the room of its
+  // packet is split by FU-A with SplitAboutEqually, the rest are aggregated by
+  // STAP-A. Mode 0 (PacketizeSingleNalu, l.204-226): each unit is one packet.
+  // Empty when the frame cannot be packetized (max_payload_len of 2 or less for
+  // an FU-A, no room for a byte in the first or last packet, or in mode 0 a unit
+  // larger than the room of its packet).
+  static std::vector<std::vector<uint8_t>> Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& limits,
+                                                     H264PacketizationMode mode = H264PacketizationMode::kNonInterleaved);
 
   // The payloads of the RTP packets of one access unit, in order, each at most
   // `max_payload` bytes (at least 3 is needed for FU-A; smaller is raised).

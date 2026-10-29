@@ -213,7 +213,8 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
   return Packetize(annexb, limits);
 }
 
-std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& in) {
+std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint8_t> annexb, const PayloadSizeLimits& in,
+                                                           H264PacketizationMode mode) {
   std::vector<std::vector<uint8_t>> out;
   // PayloadSizeLimits::Sanitize.
   PayloadSizeLimits limits = in;
@@ -232,6 +233,13 @@ std::vector<std::vector<uint8_t>> H264Packetizer::Packetize(std::span<const uint
       capacity -= limits.first_packet_reduction_len;
     } else if (i + 1 == count) {
       capacity -= limits.last_packet_reduction_len;
+    }
+    if (mode == H264PacketizationMode::kSingleNalUnit) {
+      // PacketizeSingleNalu: a unit that does not fit its packet fails the frame.
+      if (static_cast<int>(nal.size()) > capacity) return {};
+      out.emplace_back(nal.begin(), nal.end());
+      ++i;
+      continue;
     }
     if (static_cast<int>(nal.size()) > capacity) {
       // FU-A (PacketizeFuA): the NAL header's F and NRI go in the indicator,

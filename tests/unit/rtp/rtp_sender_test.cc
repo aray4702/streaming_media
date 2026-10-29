@@ -314,14 +314,18 @@ SM_TEST(RtpSender, AudioLevelByteIsWrittenWhenTheExtensionIsMapped) {
   RtpSender s(c);
   const Bytes frame(60, 3);
   s.SendAudio(frame, 960, false, Timestamp::Millis(0), audio::AudioLevel{37, true});
-  s.SendAudio(frame, 1920, false, Timestamp::Millis(20));  // No level given: none written.
+  // No level given and no capture frame analyzed: RmsLevel::Average() of nothing, 127, as
+  // ChannelSend::SendData always sets one while the extension is registered (channel_send.cc:389-396).
+  s.SendAudio(frame, 1920, false, Timestamp::Millis(20));
   auto out = s.TakePackets();
   SM_ASSERT_EQ(out.size(), 2u);
   auto level = sync::ExtensionAccessor(map).GetRaw(out[0].packet, sync::uri::kAudioLevel);
   SM_ASSERT_TRUE(level.has_value());
   SM_EXPECT_EQ((*level)[0], 0x80 | 37);
-  SM_EXPECT_FALSE(sync::ExtensionAccessor(map).GetRaw(out[1].packet, sync::uri::kAudioLevel).has_value());
-  SM_EXPECT_EQ(s.stats().audio_level_packets, 1u);
+  level = sync::ExtensionAccessor(map).GetRaw(out[1].packet, sync::uri::kAudioLevel);
+  SM_ASSERT_TRUE(level.has_value());
+  SM_EXPECT_EQ((*level)[0], 0x80 | 127);
+  SM_EXPECT_EQ(s.stats().audio_level_packets, 2u);
 
   sync::ExtensionMap none;  // Not mapped: nothing is written.
   RtpSenderConfig c2;
@@ -329,6 +333,80 @@ SM_TEST(RtpSender, AudioLevelByteIsWrittenWhenTheExtensionIsMapped) {
   c2.extensions = &none;
   RtpSender s2(c2);
   s2.SendAudio(frame, 960, false, Timestamp::Millis(0), audio::AudioLevel{37, true});
+  SM_EXPECT_EQ(s2.stats().audio_level_packets, 0u);
+}
+
+// #567 F6.9: the level is computed in the send path, as ChannelSend: each 10 ms capture frame
+// feeds RmsLevel (AnalyzeMuted for a muted frame after a muted one, channel_send.cc:909-924), and
+// each packet takes Average() and resets it (channel_send.cc:389-396); the voice bit is the
+// encoder's `speech`, off for an Opus DTX frame of at most 2 bytes (rtp_sender_audio.cc:248-250,
+// opus_interface.cc:179-192, audio_encoder_opus.cc:604).
+SM_TEST(RtpSender, AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket) {
+  sync::ExtensionMap map;
+  map.Register(2, sync::uri::kAudioLevel);
+  RtpSenderConfig c;
+  c.video = false;
+  c.extensions = &map;
+  RtpSender s(c);
+  const std::vector<int16_t> loud(480, 1000);  // 10 ms at 48 kHz: -30.3 dBov.
+  const std::vector<int16_t> silent(480, 0);
+  const Bytes opus(60, 3);
+  const Bytes dtx(2, 3);
+  auto level_of = [&](const SenderPacket& p) {
+    const auto raw = sync::ExtensionAccessor(map).GetRaw(p.packet, sync::uri::kAudioLevel);
+    return raw ? int{(*raw)[0]} : -1;
+  };
+
+  // Two loud frames: 30.
+  s.AnalyzeAudioCapture(loud, false);
+  s.AnalyzeAudioCapture(loud, false);
+  s.SendAudio(opus, 960, false, Timestamp::Millis(20));
+  // One loud, one silent: the mean square halves, 33 (RmsLevel over both, not the last frame).
+  s.AnalyzeAudioCapture(loud, false);
+  s.AnalyzeAudioCapture(silent, false);
+  s.SendAudio(opus, 1920, false, Timestamp::Millis(40));
+  // Muted: the first muted frame is analyzed as given (the caller's faded frame); later muted
+  // frames count as zeros whatever they hold.
+  s.AnalyzeAudioCapture(loud, false);
+  s.AnalyzeAudioCapture(loud, true);
+  s.SendAudio(opus, 2880, false, Timestamp::Millis(60));
+  s.AnalyzeAudioCapture(loud, true);
+  s.AnalyzeAudioCapture(loud, true);
+  s.SendAudio(dtx, 3840, false, Timestamp::Millis(80));
+  // Unmuting analyzes the frame again.
+  s.AnalyzeAudioCapture(loud, false);
+  s.AnalyzeAudioCapture(loud, false);
+  s.SendAudio(opus, 4800, false, Timestamp::Millis(100));
+  // An override (ChannelSend's audio_level_dbov_override) wins, and the average is still reset.
+  s.AnalyzeAudioCapture(loud, false);
+  s.SendAudio(opus, 5760, false, Timestamp::Millis(120), audio::AudioLevel{50, false});
+  s.SendAudio(opus, 6720, false, Timestamp::Millis(140));
+
+  auto out = s.TakePackets();
+  SM_ASSERT_EQ(out.size(), 7u);
+  SM_EXPECT_EQ(level_of(out[0]), 0x80 | 30);
+  SM_EXPECT_EQ(level_of(out[1]), 0x80 | 33);
+  SM_EXPECT_EQ(level_of(out[2]), 0x80 | 30);
+  SM_EXPECT_EQ(level_of(out[3]), 127);  // Muted zeros, and a DTX frame: no voice bit.
+  SM_EXPECT_EQ(level_of(out[4]), 0x80 | 30);
+  SM_EXPECT_EQ(level_of(out[5]), 50);
+  SM_EXPECT_EQ(level_of(out[6]), 0x80 | 127);
+  SM_EXPECT_EQ(s.stats().audio_level_packets, 7u);
+
+  // The same frames through libwebrtc's RmsLevel directly.
+  audio::RmsLevel r;
+  r.Analyze(std::span<const int16_t>(loud));
+  r.Analyze(std::span<const int16_t>(silent));
+  SM_EXPECT_EQ(r.Average(), 33);
+
+  // Not mapped: nothing is analyzed or written.
+  sync::ExtensionMap none;
+  RtpSenderConfig c2;
+  c2.video = false;
+  c2.extensions = &none;
+  RtpSender s2(c2);
+  s2.AnalyzeAudioCapture(loud, false);
+  s2.SendAudio(opus, 960, false, Timestamp::Millis(20));
   SM_EXPECT_EQ(s2.stats().audio_level_packets, 0u);
 }
 

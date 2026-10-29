@@ -501,8 +501,7 @@ void AdaptiveDigitalGainController::Process(const FrameInfo& info, std::span<flo
   last_gain_db_ = last_gain_db_ + change_db;
 }
 
-// GainController2 (modules/audio_processing/gain_controller2.cc, not in the
-// reference sources yet: see the header).
+// GainController2 (modules/audio_processing/gain_controller2.cc).
 namespace {
 // ValidateAudioFormat's floor; the limiter's kMaximalNumberOfSamplesPerChannel.
 constexpr int kMinSampleRateHz = 8000;

@@ -49,6 +49,7 @@
 #include "sm/core/units.h"
 #include "sm/loss/fec_controller.h"
 #include "sm/rtp/call_stats.h"
+#include "sm/rtp/h264.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/rtp/rtp_receiver.h"
 #include "sm/rtp/rtp_sender.h"
@@ -92,9 +93,9 @@ struct SessionConfig {
   // #568): each send stream keeps the RTT samples of its media SSRC's report block only, runs its
   // own 1 s periodic update to CallStats and its packet history, and takes its NACK RTT from them;
   // GoogCC gets each stream's packet RTT. Off: one session-wide value, the last report block of
-  // any SSRC (or SetRtt), feeds every stream and one CallStats report a second. Off by default
-  // until the flip is judged on the parity report.
-  bool per_stream_rtt = false;
+  // any SSRC (or SetRtt), feeds every stream and one CallStats report a second. On by default, as
+  // libwebrtc (flipped after #484 made the audio block arrive in the audio stream's own 5 s RTCP).
+  bool per_stream_rtt = true;
   // Receive statistics as libwebrtc's StreamStatisticianImpl for every receive stream
   // (RtpReceiverConfig::receive_statistics_v2, issue #575): max reordering threshold, stream
   // restart, 255-scaled fraction lost. Off by default until the flip is judged on the parity report.
@@ -179,6 +180,13 @@ struct VideoStreamConfig {
   // packetizer applies the first, last and single packet reductions. The sender
   // clamps it to a 100-1500 byte packet (RtpSenderConfig::max_payload_size).
   size_t max_payload_size = 1460 - 12;
+  // RFC 6184 packetization-mode that the call negotiated, as libwebrtc's
+  // RTPVideoHeaderH264::packetization_mode (rtp_format.cc:64-69): mode 1
+  // (non-interleaved) by default, as the one-to-one call negotiates it
+  // (packetization-mode=1); mode 0 sends each NAL unit in its own packet and a
+  // frame with a unit too large for its packet is not sent (rtp_format_h264.cc
+  // PacketizeSingleNalu).
+  H264PacketizationMode h264_packetization_mode = H264PacketizationMode::kNonInterleaved;
   int clock_rate = 90000;
   // Receive side. The parser is not owned and must outlive the session.
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
@@ -312,10 +320,24 @@ class Session : public MetricsSource {
   VideoRecvId AddVideoReceive(const VideoStreamConfig& cfg);
 
   // --- Egress -----------------------------------------------------------------
+  // Each 10 ms capture frame of an audio stream as it goes to the encoder
+  // (int16, all channels, after muting): the session computes the RFC 6464
+  // level of the next packets from them, as libwebrtc's ChannelSend
+  // (RtpSender::AnalyzeAudioCapture). Does nothing unless the session maps
+  // the audio-level extension.
+  void AnalyzeAudioCapture(AudioSendId id, std::span<const int16_t> frame, bool muted = false);
+  // When the session maps the audio-level extension, the packet carries the
+  // level of the capture frames analyzed since the last packet.
   void SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now);
-  // With the audio level of the frame (RFC 6464), written when the session maps the extension.
+  // With the audio level of the frame (RFC 6464) given by the caller, which overrides the
+  // computed one (ChannelSend's `audio_level_dbov_override`); written when the session maps the extension.
   void SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optional<audio::AudioLevel> level, Timestamp now);
-  void SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now);
+  // Returns the size of the access unit sent, after the keyframe SPS rewrite
+  // (VideoStreamEncoder::AugmentEncodedImage), which is the size libwebrtc's
+  // RunPostEncode gives the frame dropper and the bitrate adjuster
+  // (video_stream_encoder.cc:2387-2396, 2638-2652): pass it to
+  // VideoSendController::OnEncoded. Zero for an empty frame or an unknown stream.
+  DataSize SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now);
   // A frame already split into packet payloads: for another codec's
   // packetizer, or for tests of malformed payloads.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
@@ -342,8 +364,11 @@ class Session : public MetricsSource {
   // receivers' NACK and jitter estimate (VideoReceiveStream2::OnRttUpdate).
   // With `rtcp.xr_rrtr` the session measures that RTT itself, and this one
   // does not go to CallStats.
-  // The congestion controller and the audio receivers take it at once. It
-  // raises no event.
+  // The congestion controller and the audio receivers (for NACK) take it at
+  // once. Without `rtcp.xr_rrtr` it is also the video receive streams' module
+  // RTT for their remote NTP estimate (RtpReceiver::LastRtt, at the periodic
+  // update); the audio ones, like libwebrtc's without enable_non_sender_rtt,
+  // don't use it there. It raises no event.
   void SetRtt(TimeDelta rtt);
   // The decoder failed on a frame: ask the sender for a keyframe.
   void OnDecodeFailure(VideoRecvId id, Timestamp now);
@@ -406,6 +431,7 @@ class Session : public MetricsSource {
     std::deque<Timestamp> frame_times;
     Timestamp first_frame = Timestamp::MinusInfinity();
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
+    H264PacketizationMode h264_packetization_mode = H264PacketizationMode::kNonInterleaved;  // Video (SendVideo).
     // The stream's own ModuleRtpRtcpImpl2 and RTCPReceiver (one per send stream in libwebrtc):
     // RttStats (rtcp_receiver.cc:211-229), fed only by the report block for the local media SSRC
     // (rtcp_receiver.cc:567-569); last_received_rb_, set by a block for the media or RTX SSRC

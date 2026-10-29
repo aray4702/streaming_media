@@ -16,6 +16,8 @@ int64_t RoundMs(TimeDelta d) {
   return us >= 0 ? (us + 500) / 1000 : -((-us + 500) / 1000);
 }
 TimeDelta Scale(TimeDelta d, double f) { return TimeDelta::Micros(std::llround(static_cast<double>(d.us()) * f)); }
+// Frequency::hertz<double>() and TimeDelta::seconds<double>() (unit_base.h ToFraction): times 1/denominator.
+double MilliHzToHz(int64_t mhz) { return static_cast<double>(mhz) * (1 / 1000.0); }
 
 // --- rtt_filter.cc ---
 constexpr TimeDelta kMaxRtt = TimeDelta::Seconds(3);
@@ -46,7 +48,7 @@ constexpr TimeDelta kNackCountTimeout = TimeDelta::Seconds(60);
 constexpr int kNackLimit = 3;
 constexpr double kRttMult = 0.9;
 constexpr TimeDelta kRttMultAddCap = TimeDelta::Millis(200);
-constexpr double kMaxFramerateEstimate = 200.0;
+constexpr int64_t kMaxFramerateEstimateMilliHz = 200'000;
 constexpr size_t kFpsWindow = 30;  // fps_counter_(30).
 
 // --- timestamp_extrapolator.cc (and its default Config) ---
@@ -156,7 +158,8 @@ void RttFilter::ShortRttFilter(const std::deque<TimeDelta>& buf) {
     if (rtt > max_rtt_) max_rtt_ = rtt;
     avg_rtt_ += rtt;
   }
-  avg_rtt_ = Scale(avg_rtt_, 1.0 / static_cast<double>(buf.size()));
+  // TimeDelta / double rounds to the nearest microsecond.
+  avg_rtt_ = TimeDelta::Micros(std::llround(static_cast<double>(avg_rtt_.us()) / static_cast<double>(buf.size())));
 }
 
 // --- FrameDelayVariationKalmanFilter -----------------------------------------
@@ -208,7 +211,7 @@ void FrameDelayVariationKalmanFilter::PredictAndUpdate(double frame_delay_variat
 // --- InterFrameDelayVariationCalculator ---------------------------------------
 
 void InterFrameDelayVariationCalculator::Reset() {
-  unwrapper_ = SeqNumUnwrapper<uint32_t>();
+  // As libwebrtc, the unwrapper keeps its state.
   prev_wall_clock_ = std::nullopt;
   prev_rtp_timestamp_unwrapped_ = 0;
 }
@@ -226,8 +229,10 @@ std::optional<TimeDelta> InterFrameDelayVariationCalculator::Calculate(uint32_t 
   }
   const TimeDelta delta_wall = now - *prev_wall_clock_;
   const int64_t d_rtp_ticks = rtp_timestamp_unwrapped - prev_rtp_timestamp_unwrapped_;
-  // `d_rtp_ticks / k90kHz`: int64 / Frequency rounds to the microsecond.
-  const TimeDelta delta_rtp = TimeDelta::Micros(std::llround(static_cast<double>(d_rtp_ticks) * 1000.0 / 90.0));
+  // `d_rtp_ticks / k90kHz`: int64 / Frequency (frequency.h) is an integer division in microseconds and
+  // millihertz, so it truncates.
+  constexpr int64_t k90kHzInMilliHz = 90'000'000;
+  const TimeDelta delta_rtp = TimeDelta::Micros(d_rtp_ticks * 1'000'000'000 / k90kHzInMilliHz);
   prev_wall_clock_ = now;
   prev_rtp_timestamp_unwrapped_ = rtp_timestamp_unwrapped;
   return delta_wall - delta_rtp;
@@ -323,10 +328,10 @@ void JitterEstimator::EstimateRandomJitter(double d_dt, Timestamp now) {
   double alpha = static_cast<double>(alpha_count_ - 1) / static_cast<double>(alpha_count_);
   ++alpha_count_;
   if (alpha_count_ > kAlphaCountMax) alpha_count_ = kAlphaCountMax;
-  // Scale the alpha weight relative to a 30 fps stream.
-  const double fps = GetFrameRate();
-  if (fps > 0) {
-    double rate_scale = 30.0 / fps;
+  // Scale the alpha weight relative to a 30 fps stream (Frequency / Frequency, in millihertz).
+  const int64_t fps_mhz = GetFrameRateMilliHz();
+  if (fps_mhz > 0) {
+    double rate_scale = 30'000.0 / static_cast<double>(fps_mhz);
     if (alpha_count_ < kFrameProcessingStartupCount) {
       rate_scale = (static_cast<double>(alpha_count_) * rate_scale +
                     static_cast<double>(kFrameProcessingStartupCount - alpha_count_)) /
@@ -368,28 +373,35 @@ TimeDelta JitterEstimator::GetEstimate(Timestamp now) {
   if (now - latest_nack_ > kNackCountTimeout) nack_count_ = 0;
   if (filter_jitter_estimate_ > jitter) jitter = filter_jitter_estimate_;
   if (nack_count_ >= kNackLimit) jitter += std::min(Scale(rtt_filter_.Rtt(), kRttMult), kRttMultAddCap);
-  constexpr double kJitterScaleLowThreshold = 5.0;
-  constexpr double kJitterScaleHighThreshold = 10.0;
-  const double fps = GetFrameRate();
-  if (fps < kJitterScaleLowThreshold) {
-    if (fps == 0) return std::max(TimeDelta::Zero(), jitter);
+  constexpr int64_t kJitterScaleLowThresholdMilliHz = 5'000;
+  constexpr int64_t kJitterScaleHighThresholdMilliHz = 10'000;
+  const int64_t fps_mhz = GetFrameRateMilliHz();
+  if (fps_mhz < kJitterScaleLowThresholdMilliHz) {
+    if (fps_mhz == 0) return std::max(TimeDelta::Zero(), jitter);
     return TimeDelta::Zero();
   }
-  if (fps < kJitterScaleHighThreshold) {
-    jitter = Scale(jitter, (1.0 / (kJitterScaleHighThreshold - kJitterScaleLowThreshold)) *
-                               (fps - kJitterScaleLowThreshold));
+  if (fps_mhz < kJitterScaleHighThresholdMilliHz) {
+    // `(1.0 / (high - low)) * (fps - low) * jitter`: 1 / Frequency is a TimeDelta in whole microseconds,
+    // TimeDelta * Frequency is hertz<double>() * seconds<double>(), and double * TimeDelta rounds.
+    const int64_t period_us = 1'000'000'000 / (kJitterScaleHighThresholdMilliHz - kJitterScaleLowThresholdMilliHz);
+    const double factor =
+        MilliHzToHz(fps_mhz - kJitterScaleLowThresholdMilliHz) * (static_cast<double>(period_us) * (1 / 1e6));
+    jitter = Scale(jitter, factor);
   }
   return std::max(TimeDelta::Zero(), jitter);
 }
 
-double JitterEstimator::GetFrameRate() const {
+double JitterEstimator::frame_rate_hz() const { return MilliHzToHz(GetFrameRateMilliHz()); }
+
+int64_t JitterEstimator::GetFrameRateMilliHz() const {
   if (fps_counter_.empty()) return 0;
-  // RollingAccumulator::ComputeMean over the window.
+  // RollingAccumulator::ComputeMean over the window; TimeDelta::Micros(double) truncates.
   double sum = 0;
   for (int64_t v : fps_counter_) sum += static_cast<double>(v);
   const int64_t mean_us = static_cast<int64_t>(sum / static_cast<double>(fps_counter_.size()));
   if (mean_us <= 0) return 0;
-  return std::min(1e6 / static_cast<double>(mean_us), kMaxFramerateEstimate);
+  // `1 / mean_frame_period` (frequency.h): an integer division to millihertz.
+  return std::min<int64_t>(1'000'000'000 / mean_us, kMaxFramerateEstimateMilliHz);
 }
 
 // --- TimestampExtrapolator -------------------------------------------------------

@@ -279,6 +279,28 @@ SM_TEST(VcmTiming, IfdvFirstFrameIsZeroAndOldTimestampIsRejected) {
   SM_EXPECT_EQ(c.Calculate(183000, now + TimeDelta::Millis(40))->us(), 6667);
 }
 
+SM_TEST(VcmTiming, IfdvRtpDeltaTruncatesToTheMicrosecond) {
+  // `d_rtp_ticks / k90kHz` is int64 / Frequency (api/units/frequency.h): 3005 ticks are 33388.9 us,
+  // truncated to 33388, not rounded to 33389.
+  InterFrameDelayVariationCalculator c;
+  const Timestamp now = Timestamp::Millis(1000);
+  SM_EXPECT_EQ(c.Calculate(180000, now)->us(), 0);
+  SM_EXPECT_EQ(c.Calculate(183005, now + TimeDelta::Micros(33388))->us(), 0);
+}
+
+SM_TEST(VcmTiming, JitterFrameRateIsWholeMillihertz) {
+  // JitterEstimator::GetFrameRate is `1 / mean_frame_period`, a Frequency in whole millihertz: a 30001 us
+  // period is 33.332 Hz, not 33.3322.
+  JitterEstimator e;
+  Timestamp now = Timestamp::Seconds(1);
+  e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);  // Sets the previous frame size only.
+  now += TimeDelta::Micros(30001);
+  e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);
+  now += TimeDelta::Micros(30001);
+  e.UpdateEstimate(TimeDelta::Zero(), DataSize::Bytes(1000), now);
+  SM_EXPECT_TRUE(e.frame_rate_hz() == 33332 * (1 / 1000.0));
+}
+
 // --- DecodeTimePercentileFilter ---
 
 SM_TEST(VcmTiming, DecodeTimeFilterIgnoresFirstFiveSamples) {

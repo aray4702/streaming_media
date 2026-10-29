@@ -126,6 +126,41 @@ SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
   SM_EXPECT_EQ(p.a.stats().empty_video_frames, 2u);
 }
 
+// Issue #655: SendVideo returns the size of the access unit it sent, after the keyframe SPS VUI
+// rewrite (VideoStreamEncoder::AugmentEncodedImage), which libwebrtc's RunPostEncode gives the frame
+// dropper and the bitrate adjuster (video_stream_encoder.cc:2387-2396, 2638-2652).
+SM_TEST(Session, SendVideoReturnsTheSizeAfterTheSpsRewrite) {
+  Pair p;
+  const Bytes key = MakeFakeH264Frame(true, 3000);
+  const DataSize k = p.a.SendVideo(p.a_video, {0, key, true}, Timestamp::Millis(0));
+  SM_EXPECT_EQ(k.bytes(), static_cast<int64_t>(ParseOutgoingBitstreamAndRewrite(key).size()));
+  SM_EXPECT_GT(k.bytes(), int64_t{3000});  // The VUI the rewrite adds.
+  const DataSize d = p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1000), false}, Timestamp::Millis(33));
+  SM_EXPECT_EQ(d.bytes(), int64_t{1000});  // A delta frame is sent as it is.
+  SM_EXPECT_TRUE(p.a.SendVideo(p.a_video, {6000, {}}, Timestamp::Millis(66)).bytes() == 0);
+  SM_EXPECT_TRUE(p.a.SendVideo(VideoSendId{7}, {6000, MakeFakeH264Frame(false, 1000)}, Timestamp::Millis(66)).bytes() == 0);
+}
+
+// Issue #655: VideoStreamConfig::h264_packetization_mode 0 reaches the packetizer: each NAL unit is
+// its own packet, and a frame with a unit larger than a packet is not sent.
+SM_TEST(Session, H264PacketizationModeZeroSendsSingleNalUnits) {
+  Session a(Cfg(1));
+  VideoStreamConfig v = Video();
+  v.h264_packetization_mode = H264PacketizationMode::kSingleNalUnit;
+  const VideoSendId id = a.AddVideoSend(v);
+  a.SendVideo(id, {0, MakeFakeH264Frame(true, 500), true}, Timestamp::Millis(0));
+  std::vector<int> types;
+  for (auto& o : Pump(a, 0, 100)) {
+    if (o.kind == OutgoingKind::kVideo) types.push_back(RtpPacket::Parse(o.bytes)->payload[0] & 0x1F);
+  }
+  SM_EXPECT_TRUE((types == std::vector<int>{kH264NalSps, kH264NalPps, kH264NalIdr}));
+  a.SendVideo(id, {3000, MakeFakeH264Frame(false, 5000), false}, Timestamp::Millis(100));
+  size_t video = 0;
+  for (auto& o : Pump(a, 100, 100)) video += o.kind == OutgoingKind::kVideo;
+  SM_EXPECT_EQ(video, 0u);
+  SM_EXPECT_EQ(a.stats().empty_video_frames, 1u);
+}
+
 SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   Pair p;
   const Bytes frame = MakeFakeH264Frame(true, 5000);
@@ -276,6 +311,34 @@ SM_TEST(Session, CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit) {
     b.SendAudio(au, f, now);
   }
   SM_EXPECT_EQ(b.audio_sender(au).stats().abs_capture_time_packets, 1u);
+}
+
+// #567 F6.9: the session computes the RFC 6464 level from the capture frames it is given, as
+// ChannelSend (channel_send.cc:389-396, 909-924), and writes it on every audio packet.
+SM_TEST(Session, AudioPacketsCarryTheLevelOfTheCaptureFrames) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(4, sync::uri::kAudioLevel);
+  Session a(ca);
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  const AudioSendId au = a.AddAudioSend(acfg);
+  const std::vector<int16_t> pcm(480, 1000);
+  const Bytes opus(60, 1);
+  std::vector<int> levels;
+  for (int i = 0; i < 5; ++i) {
+    a.AnalyzeAudioCapture(au, pcm, /*muted=*/i >= 3);
+    a.AnalyzeAudioCapture(au, pcm, /*muted=*/i >= 3);
+    a.SendAudio(au, {static_cast<uint32_t>(960 * i), opus, false}, Timestamp::Millis(20 * i));
+    for (auto& o : Pump(a, 20 * i, 20)) {
+      if (o.kind != OutgoingKind::kAudio) continue;
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*RtpPacket::Parse(o.bytes), sync::uri::kAudioLevel);
+      levels.push_back(raw ? (*raw)[0] : -1);
+    }
+  }
+  // Packet 4: the first muted frame is analyzed as given (the caller's faded frame), the next one
+  // counts as zeros, so the mean square halves (30 -> 33). Packet 5: muted throughout, 127.
+  SM_EXPECT_TRUE(levels == (std::vector<int>{0x80 | 30, 0x80 | 30, 0x80 | 30, 0x80 | 33, 0x80 | 127}));
+  SM_EXPECT_EQ(a.audio_sender(au).stats().audio_level_packets, 5u);
 }
 
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
@@ -940,6 +1003,12 @@ SM_TEST(Session, AudioStreamTurnsOnNetEqsMutedState) {
   SM_EXPECT_FALSE(timing::AudioJitterBufferConfig{}.enable_muted_state);
 }
 
+// #568: a session aggregates the RTT per send stream (RTCPReceiver::RttStats per
+// module, rtcp_receiver.cc:211-229), as libwebrtc always does.
+SM_TEST(Session, RttIsAggregatedPerSendStreamByDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.per_stream_rtt);
+}
+
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
 // frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
@@ -1176,4 +1245,33 @@ SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
   SM_EXPECT_LE(std::abs(last.local_capture_clock_offset->ms()), 1);
   SM_EXPECT_NEAR(static_cast<double>(last.ntp_time_ms),
                  static_cast<double>(sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value)), 1.0);
+}
+
+// Each receive stream's RemoteNtpTimeEstimator waits for its own module's LastRtt
+// (rtp_rtcp_impl2.cc:482-491, 740-751): a receive-only video stream has the XR DLRR RTT from the 1 s
+// periodic update, while the audio one, without AudioReceiveStream's enable_non_sender_rtt (off by
+// default), has none, and so trains no estimate, as in libwebrtc's one-way call. SetRtt does not change it.
+SM_TEST(Session, ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  for (SessionConfig* c : {&ca, &cb}) c->rtcp.xr_rrtr = true;
+  Session a(ca), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  a.AddAudioSend(au);
+  a.AddVideoSend(Video());
+  NullDecoder dec;
+  const AudioRecvId ar = b.AddAudioReceive(au, &dec);
+  const VideoRecvId vr = b.AddVideoReceive(Video());
+  for (int64_t t = 0; t < 8000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t == 4000) b.SetRtt(TimeDelta::Millis(120));
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+  }
+  SM_EXPECT_TRUE(b.video_receiver(vr).LastRtt().has_value());
+  SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 1u);
+  SM_EXPECT_FALSE(b.audio_receiver(ar).LastRtt().has_value());
+  SM_EXPECT_EQ(b.audio_receiver(ar).stats().remote_ntp_updates, 0u);
 }
