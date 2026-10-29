@@ -1,6 +1,8 @@
 name issue_62_neteq_v2_high_jitter
 describe high_jitter with NetEq's target delay (neteq v2, issue #62): buffer as libwebrtc, conceal as little
 duration 30s
+# Yardstick for #696 (#577): libwebrtc's jitter-buffer delay tail on 40 seeds.
+compare_seeds 40
 neteq v2
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
 # libwebrtc M157 on high_jitter (compare-webrtc, seeds 1-10): concealed 0.07-0.27 %,
