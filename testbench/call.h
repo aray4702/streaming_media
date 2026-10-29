@@ -236,8 +236,10 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // libwebrtc's VideoSendStream::Stats reasons. This library maps its drop
 // points onto them: the frame dropper is dropped_rate_limiter (libwebrtc's
 // kMediaOptimization), congestion-window pushback is dropped_congestion_window
-// and a paused encoder is dropped_encoder_queue (libwebrtc's EncoderPaused
-// path). It has no counterpart for dropped_capturer, DropDueToSize or
+// and a frame dropped for its size or a paused encoder is dropped_encoder_queue
+// (libwebrtc's DropDueToSize and EncoderPaused paths): as there, the frame is
+// held (pending_frame_) and counted when the next frame releases it, not when
+// a resume encodes it. It has no counterpart for dropped_capturer or
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
