@@ -432,7 +432,7 @@ BlockProcessor::BlockProcessor(const Aec3Config& config, int sample_rate_hz, siz
     : config_(config),
       sample_rate_hz_(sample_rate_hz),
       render_buffer_(config, sample_rate_hz, num_render_channels),
-      delay_controller_(config.delay),
+      delay_controller_(config.delay, num_capture_channels),
       echo_remover_(config, sample_rate_hz, num_render_channels, num_capture_channels) {}
 
 void BlockProcessor::ProcessCapture(bool echo_path_gain_change, bool capture_signal_saturation, Block* linear_output,
@@ -475,7 +475,7 @@ void BlockProcessor::ProcessCapture(bool echo_path_gain_change, bool capture_sig
   // Compute and apply the render delay required to achieve proper signal
   // alignment.
   estimated_delay_ =
-      delay_controller_.GetDelay(render_buffer_.GetDownsampledRenderBuffer(), capture_block->View(0, 0));
+      delay_controller_.GetDelay(render_buffer_.GetDownsampledRenderBuffer(), *capture_block);
 
   if (estimated_delay_) {
     bool delay_change = render_buffer_.AlignFromDelay(estimated_delay_->delay);
@@ -532,42 +532,155 @@ Frame MakeFrame(size_t num_bands, size_t num_channels) {
 
 }  // namespace
 
-EchoCanceller3::EchoCanceller3(const Aec3Config& config, int sample_rate_hz, size_t num_render_channels,
-                               size_t num_capture_channels)
+// --- multi_channel_content_detector.cc ---------------------------------------
+
+namespace {
+
+constexpr int kNumFramesPerSecond = 100;
+
+// Whether the left and right channels of `frame` differ by more than
+// `detection_threshold` anywhere (a margin for differences that hardware
+// drivers add to upmixed mono).
+bool HasStereoContent(const Frame& frame, float detection_threshold) {
+  if (frame[0].size() < 2) return false;
+  for (size_t band = 0; band < frame.size(); ++band) {
+    for (size_t k = 0; k < frame[band][0].size(); ++k) {
+      if (std::fabs(frame[band][0][k] - frame[band][1][k]) > detection_threshold) return true;
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+MultiChannelContentDetector::MultiChannelContentDetector(bool detect_stereo_content, int num_render_input_channels,
+                                                         float detection_threshold,
+                                                         int stereo_detection_timeout_threshold_seconds,
+                                                         float stereo_detection_hysteresis_seconds)
+    : detect_stereo_content_(detect_stereo_content),
+      detection_threshold_(detection_threshold),
+      detection_timeout_threshold_frames_(
+          stereo_detection_timeout_threshold_seconds > 0
+              ? std::make_optional(stereo_detection_timeout_threshold_seconds * kNumFramesPerSecond)
+              : std::nullopt),
+      stereo_detection_hysteresis_frames_(
+          static_cast<int>(stereo_detection_hysteresis_seconds * kNumFramesPerSecond)),
+      persistent_multichannel_content_detected_(!detect_stereo_content && num_render_input_channels > 1) {}
+
+bool MultiChannelContentDetector::UpdateDetection(const Frame& frame) {
+  if (!detect_stereo_content_) return false;
+
+  const bool previous_persistent_multichannel_content_detected = persistent_multichannel_content_detected_;
+  const bool stereo_detected_in_frame = HasStereoContent(frame, detection_threshold_);
+
+  consecutive_frames_with_stereo_ = stereo_detected_in_frame ? consecutive_frames_with_stereo_ + 1 : 0;
+  frames_since_stereo_detected_last_ = stereo_detected_in_frame ? 0 : frames_since_stereo_detected_last_ + 1;
+
+  // Detect persistent multichannel content.
+  if (consecutive_frames_with_stereo_ > stereo_detection_hysteresis_frames_) {
+    persistent_multichannel_content_detected_ = true;
+  }
+  if (detection_timeout_threshold_frames_.has_value() &&
+      frames_since_stereo_detected_last_ >= *detection_timeout_threshold_frames_) {
+    persistent_multichannel_content_detected_ = false;
+  }
+
+  // Detect temporary multichannel content.
+  temporary_multichannel_content_detected_ =
+      persistent_multichannel_content_detected_ ? false : stereo_detected_in_frame;
+
+  if (persistent_multichannel_content_detected_) ++persistent_multichannel_frames_;
+
+  return previous_persistent_multichannel_content_detected != persistent_multichannel_content_detected_;
+}
+
+// --- config_selector.cc -------------------------------------------------------
+
+bool CompatibleConfigs(const Aec3Config& mono_config, const Aec3Config& multichannel_config) {
+  return mono_config.fixed_capture_delay_samples == multichannel_config.fixed_capture_delay_samples &&
+         mono_config.multi_channel.detect_stereo_content == multichannel_config.multi_channel.detect_stereo_content &&
+         mono_config.multi_channel.stereo_detection_timeout_threshold_seconds ==
+             multichannel_config.multi_channel.stereo_detection_timeout_threshold_seconds;
+}
+
+ConfigSelector::ConfigSelector(const Aec3Config& config, const std::optional<Aec3Config>& multichannel_config,
+                               int num_render_input_channels)
+    : config_(config), multichannel_config_(multichannel_config) {
+  Update(!config_.multi_channel.detect_stereo_content && num_render_input_channels > 1);
+}
+
+void ConfigSelector::Update(bool multichannel_content) {
+  active_config_ = multichannel_content && multichannel_config_.has_value() ? &(*multichannel_config_) : &config_;
+}
+
+// --- echo_canceller3.cc (continued) -------------------------------------------
+
+EchoCanceller3::EchoCanceller3(const Aec3Config& config, const std::optional<Aec3Config>& multichannel_config,
+                               int sample_rate_hz, size_t num_render_channels, size_t num_capture_channels)
     : config_(config),
       valid_(ValidFullBandRate(sample_rate_hz)),
       sample_rate_hz_(valid_ ? sample_rate_hz : 16000),
       num_bands_(NumBandsForRate(sample_rate_hz_)),
       num_render_input_channels_(num_render_channels),
       num_capture_channels_(num_capture_channels),
+      config_selector_(config_, multichannel_config, static_cast<int>(num_render_input_channels_)),
+      multichannel_content_detector_(
+          config_selector_.active_config().multi_channel.detect_stereo_content,
+          static_cast<int>(num_render_input_channels_),
+          config_selector_.active_config().multi_channel.stereo_detection_threshold,
+          config_selector_.active_config().multi_channel.stereo_detection_timeout_threshold_seconds,
+          config_selector_.active_config().multi_channel.stereo_detection_hysteresis_seconds),
       output_framer_(num_bands_, num_capture_channels_),
       capture_blocker_(num_bands_, num_capture_channels_),
-      render_blocker_(num_bands_, num_render_channels_to_aec_),
       render_queue_output_frame_(MakeFrame(num_bands_, num_render_input_channels_)),
-      render_block_(static_cast<int>(num_bands_), static_cast<int>(num_render_channels_to_aec_)),
+      render_block_(static_cast<int>(num_bands_), static_cast<int>(num_render_input_channels_)),
       capture_block_(static_cast<int>(num_bands_), static_cast<int>(num_capture_channels_)),
-      render_sub_frame_view_(num_bands_, std::vector<std::span<float>>(num_render_channels_to_aec_)),
       capture_sub_frame_view_(num_bands_, std::vector<std::span<float>>(num_capture_channels_)),
-      block_processor_(std::make_unique<BlockProcessor>(config_, sample_rate_hz_, num_render_channels_to_aec_,
-                                                        num_capture_channels_)),
       mono_frame_(MakeFrame(1, 1)) {
-  if (config_.fixed_capture_delay_samples > 0) {
+  if (config_selector_.active_config().fixed_capture_delay_samples > 0) {
     block_delay_buffer_ = std::make_unique<BlockDelayBuffer>(
         num_capture_channels_, num_bands_, kFrameSize, static_cast<size_t>(config_.fixed_capture_delay_samples));
   }
+  Initialize();
+}
+
+void EchoCanceller3::Initialize() {
+  num_render_channels_to_aec_ =
+      multichannel_content_detector_.IsProperMultiChannelContentDetected() ? num_render_input_channels_ : 1;
+  config_selector_.Update(multichannel_content_detector_.IsProperMultiChannelContentDetected());
+  render_block_.SetNumChannels(static_cast<int>(num_render_channels_to_aec_));
+  render_blocker_ = std::make_unique<FrameBlocker>(num_bands_, num_render_channels_to_aec_);
+  block_processor_ = std::make_unique<BlockProcessor>(config_selector_.active_config(), sample_rate_hz_,
+                                                      num_render_channels_to_aec_, num_capture_channels_);
+  render_sub_frame_view_ = SubFrameView(num_bands_, std::vector<std::span<float>>(num_render_channels_to_aec_));
 }
 
 void EchoCanceller3::FillSubFrameView(Frame* frame, size_t sub_frame_index, size_t num_channels,
                                       SubFrameView* view) const {
-  // With more frame channels than view channels (the render before stereo is
-  // detected), channel 0 is used: libwebrtc downmixes only while temporary
-  // stereo content is detected, which needs the content detector.
   for (size_t band = 0; band < view->size(); ++band) {
     for (size_t channel = 0; channel < num_channels; ++channel) {
       (*view)[band][channel] =
           std::span<float>(&(*frame)[band][channel][sub_frame_index * kSubFrameLength], kSubFrameLength);
     }
   }
+}
+
+void EchoCanceller3::FillRenderSubFrameView(bool proper_downmix_needed, Frame* frame, size_t sub_frame_index) {
+  const size_t frame_num_channels = (*frame)[0].size();
+  if (frame_num_channels > num_render_channels_to_aec_ && proper_downmix_needed) {
+    // Proper stereo in the render that the AEC still processes in mono: the
+    // channels' average, in channel 0 (otherwise channel 0 as it is).
+    const float one_by_num_channels = 1.0f / static_cast<float>(frame_num_channels);
+    for (size_t band = 0; band < frame->size(); ++band) {
+      float* out = &(*frame)[band][0][sub_frame_index * kSubFrameLength];
+      for (size_t ch = 1; ch < frame_num_channels; ++ch) {
+        const float* in = &(*frame)[band][ch][sub_frame_index * kSubFrameLength];
+        for (size_t k = 0; k < kSubFrameLength; ++k) out[k] += in[k];
+      }
+      for (size_t k = 0; k < kSubFrameLength; ++k) out[k] *= one_by_num_channels;
+    }
+  }
+  FillSubFrameView(frame, sub_frame_index, num_render_channels_to_aec_, &render_sub_frame_view_);
 }
 
 void EchoCanceller3::AnalyzeRender(const Frame& render) {
@@ -596,19 +709,23 @@ void EchoCanceller3::ProcessCapture(Frame* capture, bool level_change) {
 
   EmptyRenderQueue();
 
+  // A render that is stereo but not yet persistently so is downmixed for the
+  // mono AEC; every capture block then counts as an echo path gain change.
+  const bool aec_reference_is_downmixed_stereo =
+      multichannel_content_detector_.IsTemporaryMultiChannelContentDetected();
   // The blocks of the two 80-sample sub-frames, then the block left over
   // every fourth frame.
   for (size_t sub_frame_index = 0; sub_frame_index < 2; ++sub_frame_index) {
     FillSubFrameView(capture, sub_frame_index, num_capture_channels_, &capture_sub_frame_view_);
     capture_blocker_.InsertSubFrameAndExtractBlock(capture_sub_frame_view_, &capture_block_);
-    block_processor_->ProcessCapture(/*echo_path_gain_change=*/level_change, saturated_microphone_signal_,
-                                     /*linear_output=*/nullptr, &capture_block_);
+    block_processor_->ProcessCapture(/*echo_path_gain_change=*/level_change || aec_reference_is_downmixed_stereo,
+                                     saturated_microphone_signal_, /*linear_output=*/nullptr, &capture_block_);
     output_framer_.InsertBlockAndExtractSubFrame(capture_block_, &capture_sub_frame_view_);
   }
   if (capture_blocker_.IsBlockAvailable()) {
     capture_blocker_.ExtractBlock(&capture_block_);
-    block_processor_->ProcessCapture(/*echo_path_gain_change=*/level_change, saturated_microphone_signal_,
-                                     /*linear_output=*/nullptr, &capture_block_);
+    block_processor_->ProcessCapture(/*echo_path_gain_change=*/level_change || aec_reference_is_downmixed_stereo,
+                                     saturated_microphone_signal_, /*linear_output=*/nullptr, &capture_block_);
     output_framer_.InsertBlock(capture_block_);
   }
 }
@@ -617,14 +734,19 @@ void EchoCanceller3::EmptyRenderQueue() {
   while (!render_transfer_queue_.empty()) {
     render_queue_output_frame_.swap(render_transfer_queue_.front());
     render_transfer_queue_.pop_front();
+    if (multichannel_content_detector_.UpdateDetection(render_queue_output_frame_)) {
+      // Re-create the AEC when proper stereo starts or ends.
+      Initialize();
+      ++reinitializations_;
+    }
+    const bool proper_downmix_needed = multichannel_content_detector_.IsTemporaryMultiChannelContentDetected();
     for (size_t sub_frame_index = 0; sub_frame_index < 2; ++sub_frame_index) {
-      FillSubFrameView(&render_queue_output_frame_, sub_frame_index, num_render_channels_to_aec_,
-                       &render_sub_frame_view_);
-      render_blocker_.InsertSubFrameAndExtractBlock(render_sub_frame_view_, &render_block_);
+      FillRenderSubFrameView(proper_downmix_needed, &render_queue_output_frame_, sub_frame_index);
+      render_blocker_->InsertSubFrameAndExtractBlock(render_sub_frame_view_, &render_block_);
       block_processor_->BufferRender(render_block_);
     }
-    if (render_blocker_.IsBlockAvailable()) {
-      render_blocker_.ExtractBlock(&render_block_);
+    if (render_blocker_->IsBlockAvailable()) {
+      render_blocker_->ExtractBlock(&render_block_);
       block_processor_->BufferRender(render_block_);
     }
   }
@@ -654,6 +776,9 @@ EchoControlMetrics EchoCanceller3::GetMetrics() const {
 void EchoCanceller3::ExportMetrics(MetricsWriter& w) const {
   w.Counter("render_frames_dropped", render_frames_dropped_);
   w.Counter("saturated_capture_frames", saturated_frames_);
+  w.Counter("multichannel_reinitializations", reinitializations_);
+  w.Counter("persistent_multichannel_frames", multichannel_content_detector_.persistent_multichannel_frames());
+  w.Gauge("render_channels_to_aec", static_cast<double>(num_render_channels_to_aec_));
   const EchoControlMetrics m = GetMetrics();
   w.Gauge("erl_db", m.echo_return_loss);
   w.Gauge("erle_db", m.echo_return_loss_enhancement);
