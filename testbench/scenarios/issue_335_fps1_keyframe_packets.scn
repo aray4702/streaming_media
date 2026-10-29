@@ -3,6 +3,11 @@ describe 1 fps video next to audio on a clean 2 Mbps link: no keyframe request w
 duration 30s
 seed 1
 video_fps 1
+# compare_seeds 80 (#770): video.pause_total_ms is decided by whether one seed's longest gap
+# between rendered frames crosses the 5 s pause threshold. At 1 fps one frame more or less
+# moves it: seed 4 renders 17 frames on main c77c654 (one 5.8 s pause) against 18 before #716
+# (no pause), and ours pauses on 20 of seeds 1-80 (16 before #577).
+compare_seeds 80
 at 0s capacity=2Mbps delay=40ms
 # The Tester's repro (#335). The first keyframe takes ~0.5 s to arrive; the
 # receiver counted only its first packet as a keyframe packet, asked for
