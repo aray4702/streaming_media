@@ -13,9 +13,10 @@
 // `color_space` argument is the encoded image's, which is unset for the
 // encoders this library models, and then the video signal type is copied as
 // is), and the result histogram (WebRTC.Video.H264.SpsValid) is the count in
-// SpsRewriteStats. The SPS fields up to the VUI are read as in H.264 7.3.2.1.1
-// and the RBSP escaping is H.264 7.4.1 (libwebrtc's SpsParser and h264_common
-// are not in compare/webrtc/reference/).
+// SpsRewriteStats. The SPS fields up to the VUI are read as libwebrtc's
+// SpsParser::ParseSpsUpToVui (common_video/h264/sps_parser.cc) and the RBSP
+// escaping is h264_common.cc's ParseRbsp/WriteRbsp (#568). The receive side
+// (VideoRtpDepacketizerH264, sm/rtp/h264.h) uses the same rewrite.
 #pragma once
 
 #include <cstdint>
@@ -62,8 +63,29 @@ struct SpsRewriteStats {  // libwebrtc's kSentSps* histogram samples.
 
 // SpsVuiRewriter::ParseAndRewriteSps: `sps` is an SPS NAL unit payload without
 // its header byte, still escaped. On kVuiRewritten the escaped new payload is
-// appended to `destination`; otherwise `destination` is unchanged.
-SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<uint8_t>& destination);
+// appended to `destination`; otherwise `destination` is unchanged. `parsed`,
+// if given, receives the SPS fields whenever they parse (kVuiOk and
+// kVuiRewritten).
+SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<uint8_t>& destination,
+                                    SpsState* parsed = nullptr);
+
+// The fields of a PPS and a slice header that VideoRtpDepacketizerH264 reads
+// through libwebrtc's PpsParser::ParsePpsIds and PpsParser::ParseSliceHeader.
+// pps_parser.cc is not in compare/webrtc/reference/ (requested on #568), so
+// these read the leading ue(v) fields of H.264 7.3.2.2 (pic_parameter_set_id,
+// seq_parameter_set_id) and 7.3.3 (first_mb_in_slice, slice_type,
+// pic_parameter_set_id) from the unescaped RBSP, and fail when the data ends
+// first. Both take the NAL unit payload without its header byte.
+struct PpsIds {
+  uint32_t pps_id = 0;
+  uint32_t sps_id = 0;
+};
+std::optional<PpsIds> ParsePpsIds(std::span<const uint8_t> pps);
+struct SliceHeader {
+  uint32_t first_mb_in_slice = 0;
+  uint32_t pic_parameter_set_id = 0;
+};
+std::optional<SliceHeader> ParseSliceHeader(std::span<const uint8_t> slice);
 
 // SpsVuiRewriter::ParseOutgoingBitstreamAndRewrite on an Annex-B access unit:
 // SPS units rewritten where needed, AUDs dropped, the rest copied with their

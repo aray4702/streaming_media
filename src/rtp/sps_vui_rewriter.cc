@@ -368,7 +368,7 @@ std::optional<SpsState> ParseSpsUpToVui(BitReader& r) {
   uint32_t chroma_format_idc = 1;
   switch (s.profile_idc) {
     case 100: case 110: case 122: case 244: case 44: case 83: case 86: case 118: case 128: case 138:
-    case 139: case 134: case 135: {
+    case 139: case 134: {
       chroma_format_idc = r.ReadExponentialGolomb();
       if (chroma_format_idc > 3) return std::nullopt;
       if (chroma_format_idc == 3) s.separate_colour_plane_flag = r.ReadBit();
@@ -403,9 +403,13 @@ std::optional<SpsState> ParseSpsUpToVui(BitReader& r) {
     // offset_for_non_ref_pic, offset_for_top_to_bottom_field: se(v)
     r.ReadSignedExponentialGolomb();
     r.ReadSignedExponentialGolomb();
+    // num_ref_frames_in_pic_order_cnt_cycle: ue(v), not bounded, as
+    // sps_parser.cc: the loop ends when the data does.
     const uint32_t cycle = r.ReadExponentialGolomb();
-    if (cycle > 255) return std::nullopt;
-    for (uint32_t i = 0; i < cycle && r.Ok(); ++i) r.ReadSignedExponentialGolomb();  // offset_for_ref_frame
+    for (uint32_t i = 0; i < cycle; ++i) {
+      r.ReadSignedExponentialGolomb();  // offset_for_ref_frame[i]
+      if (!r.Ok()) return std::nullopt;
+    }
   } else if (s.pic_order_cnt_type > 2) {
     return std::nullopt;
   }
@@ -452,11 +456,12 @@ std::optional<SpsState> ParseSpsUpToVui(std::span<const uint8_t> rbsp) {
   return ParseSpsUpToVui(r);
 }
 
-SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<uint8_t>& destination) {
+SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<uint8_t>& destination, SpsState* parsed) {
   const std::vector<uint8_t> rbsp = ParseRbsp(sps);
   BitReader source(rbsp);
   const std::optional<SpsState> state = ParseSpsUpToVui(source);
   if (!state) return SpsRewriteResult::kFailure;
+  if (parsed) *parsed = *state;
 
   std::vector<uint8_t> out(sps.size() + kMaxVuiSpsIncrease, 0);
   BitWriter writer(out);
@@ -490,6 +495,27 @@ SpsRewriteResult ParseAndRewriteSps(std::span<const uint8_t> sps, std::vector<ui
   out.resize(byte_offset);
   WriteRbsp(out, destination);
   return SpsRewriteResult::kVuiRewritten;
+}
+
+std::optional<PpsIds> ParsePpsIds(std::span<const uint8_t> pps) {
+  const std::vector<uint8_t> rbsp = ParseRbsp(pps);
+  BitReader r(rbsp);
+  PpsIds ids;
+  ids.pps_id = r.ReadExponentialGolomb();  // pic_parameter_set_id: ue(v)
+  ids.sps_id = r.ReadExponentialGolomb();  // seq_parameter_set_id: ue(v)
+  if (!r.Ok()) return std::nullopt;
+  return ids;
+}
+
+std::optional<SliceHeader> ParseSliceHeader(std::span<const uint8_t> slice) {
+  const std::vector<uint8_t> rbsp = ParseRbsp(slice);
+  BitReader r(rbsp);
+  SliceHeader h;
+  h.first_mb_in_slice = r.ReadExponentialGolomb();     // first_mb_in_slice: ue(v)
+  r.ReadExponentialGolomb();                           // slice_type: ue(v)
+  h.pic_parameter_set_id = r.ReadExponentialGolomb();  // pic_parameter_set_id: ue(v)
+  if (!r.Ok()) return std::nullopt;
+  return h;
 }
 
 std::vector<uint8_t> ParseOutgoingBitstreamAndRewrite(std::span<const uint8_t> annexb, SpsRewriteStats* stats) {

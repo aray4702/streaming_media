@@ -83,6 +83,7 @@ const std::vector<Shown>& ShownMetrics() {
       {"cc.rtt_p50_ms", Better::kLower, 10},
       {"net.loss_pct", Better::kLower, 0.5},
       {"repair.overhead_pct", Better::kLower, 2},
+      {"rtcp.audio_report_blocks", Better::kLower, 1},  // Issue #484: the audio stream's own RTCP, 5 s apart.
   };
   return k;
 }
