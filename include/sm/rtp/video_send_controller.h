@@ -70,7 +70,9 @@
 // (MaybeInitializePixelLimitResource / OnFrameDroppedDueToSize). OnEncoded must
 // be called for every frame the decision allowed, in order: the controller
 // pairs them by count, where libwebrtc uses the RTP timestamp.
-// The other degradation preferences are not wired yet. The frame dropper is
+// video::VideoStreamAdapter has every degradation preference (#646); the
+// controller runs MAINTAIN_FRAMERATE, the camera call's, and counts steps by
+// VideoAdaptationCounters::Total() as the processor does. The frame dropper is
 // libwebrtc's, applied to keyframes too (issue #5).
 #pragma once
 
