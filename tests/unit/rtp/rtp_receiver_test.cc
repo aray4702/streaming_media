@@ -48,11 +48,11 @@ RtpReceiverConfig NoHoldCfg() {
 std::vector<SenderPacket> Release(RtpSender& s, Timestamp now) {
   std::vector<SenderPacket> out;
   for (auto& p : s.TakePackets()) {
-    s.AssignSequenceNumber(p);
+    s.AssignSequenceNumber(p, now);
     s.OnPacketReleased(p, now);
     out.push_back(std::move(p));
     for (auto& f : s.TakeFecPackets()) {
-      s.AssignSequenceNumber(f);
+      s.AssignSequenceNumber(f, now);
       s.OnPacketReleased(f, now);
       out.push_back(std::move(f));
     }

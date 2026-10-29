@@ -1,0 +1,14 @@
+# Issue #514 row 1: without RTX (NACK off) libwebrtc pads on the media SSRC (RTPSender::GeneratePadding,
+# rtp_sender.cc:437-449), on video only after a frame's last packet and else on audio
+# (PacketSequencer::CanSendPaddingOnMediaSsrc, packet_sequencer.cc:139-154; PacketRouter::GeneratePadding,
+# packet_router.cc:255-297). Before, the test bench gave video an RTX stream even with NACK off, which
+# sm_compare's libwebrtc call does not have (webrtc_call.cc, `if (s.nack)`), and the padding went there.
+# libwebrtc on issue_29_ulpfec_over_red seed 1: 383 padding packets, none on an RTX SSRC (parity-data traces).
+name issue_514_padding_without_rtx
+describe NACK off: no RTX stream, and padding goes on the media SSRCs as libwebrtc's
+duration 5s
+seed 1
+nack off
+at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
+expect net.padding_media_ssrc_packets > 0
+expect net.padding_rtx_ssrc_packets == 0

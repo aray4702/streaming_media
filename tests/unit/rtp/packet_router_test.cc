@@ -168,6 +168,59 @@ SM_TEST(PacketRouter, VideoWithoutRtxPadsOnTheMediaSsrc) {
   SM_EXPECT_TRUE(AllEqual(ssrcs, 0x200));
 }
 
+// PacketRouter::GeneratePadding (packet_router.cc:273-286) asks the video stream first; without RTX
+// it pads only after a frame's last packet (PacketSequencer::CanSendPaddingOnMediaSsrc), so in the
+// middle of a frame the audio stream pads instead (issue #514).
+SM_TEST(PacketRouter, MidFrameVideoWithoutRtxLeavesThePaddingToAudio) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  SendSideController c(V2(), &map);
+  RtpSenderConfig ac;
+  ac.ssrc = 0x10;
+  ac.video = false;
+  ac.extensions = &map;
+  RtpSender audio(ac);
+  RtpSenderConfig vc;
+  vc.ssrc = 0x20;
+  vc.extensions = &map;
+  RtpSender video(vc);
+  c.AddPaddingSender(&audio);
+  c.AddPaddingSender(&video);
+  c.Start(Timestamp::Millis(0));
+  const std::vector<uint8_t> opus(100, 7);
+  audio.SendAudio(opus, 960, false, Timestamp::Millis(0));
+  const std::vector<std::vector<uint8_t>> frame(2, std::vector<uint8_t>(300, 1));
+  video.SendVideoFrame(frame, 9000, Timestamp::Millis(0));
+  auto vp = video.TakePackets();
+  SM_ASSERT_EQ(vp.size(), 2u);
+  for (auto& p : audio.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  c.Enqueue(std::move(vp[0]), Timestamp::Millis(0));  // The frame's last packet is held back.
+  std::vector<uint32_t> ssrcs;
+  for (auto& r : Run(c, 0, 500)) {
+    if (r.kind != PacketKind::kPadding) continue;
+    auto p = RtpPacket::Parse(r.bytes);
+    SM_ASSERT_TRUE(p.has_value());
+    ssrcs.push_back(p->ssrc);
+  }
+  SM_EXPECT_GT(ssrcs.size(), 0u);
+  SM_EXPECT_TRUE(AllEqual(ssrcs, 0x10));
+  c.Enqueue(std::move(vp[1]), Timestamp::Millis(500));
+  ssrcs.clear();
+  for (int t = 500; t < 1000; ++t) {
+    // A padding rate, as GoogCC sets with ALR probing or a min transmit rate.
+    c.pacer().SetPacingRates(DataRate::KilobitsPerSec(1000), DataRate::KilobitsPerSec(200));
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      if (r.kind != PacketKind::kPadding) continue;
+      auto p = RtpPacket::Parse(r.bytes);
+      SM_ASSERT_TRUE(p.has_value());
+      ssrcs.push_back(p->ssrc);
+    }
+  }
+  // Once the frame has ended, the video stream pads.
+  SM_EXPECT_GT(ssrcs.size(), 0u);
+  SM_EXPECT_TRUE(AllEqual(ssrcs, 0x20));
+}
+
 // AllocatesRtpSequenceNumbersIfPacketCanBeSent: the media packets carry no RTP
 // sequence number until the pacer releases them, and get consecutive numbers in release order.
 // (DoNotAllocatesRtpSequenceNumbersIfPacketCanNotBeSent is SendSideController.
