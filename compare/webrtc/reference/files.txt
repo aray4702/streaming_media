@@ -232,3 +232,10 @@ api/audio_codecs/opus/audio_decoder_opus_config.h
 # webrtc::Random (RTCPSender report intervals), for #517.
 rtc_base/random.h
 rtc_base/random.cc
+# For #567, #566 (F7.2) and #568 (F9.5): NEEDS YOU on #111, 2026-10-28.
+modules/rtp_rtcp/source/rtp_header_extensions.cc
+modules/audio_processing/rms_level.cc
+modules/rtp_rtcp/include/rtp_cvo.h
+api/video_codecs/video_encoder_software_fallback_wrapper.cc
+common_video/h264/sps_parser.cc
+common_video/h264/h264_common.cc
