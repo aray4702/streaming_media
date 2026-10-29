@@ -14,6 +14,8 @@ describe An 800 kbps constant-rate competing flow joins a 1 Mbps bottleneck (300
 # No gap in the parity report. The expect lines hold the call at libwebrtc's worst seed plus about 10 %, so a change
 # that makes this case worse than libwebrtc fails here; the queue itself is capped by the 300 ms buffer on both stacks.
 duration 60s
+# Yardstick for #669 (#655): libwebrtc's longest-freeze tail on 40 seeds.
+compare_seeds 40
 at 0s capacity=1000kbps delay=20ms queue=300ms
 at 20s cross=800kbps
 expect video.freeze_total_ms < 31500
