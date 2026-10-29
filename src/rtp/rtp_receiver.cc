@@ -10,6 +10,8 @@ namespace {
 // many newer ones have been seen are forgotten (the keyframe requester drops
 // them the same way, at the next keyframe).
 constexpr size_t kMaxFrameMeta = 1024;
+// timing v2: the frame buffer's size, kMaxFramesBuffered (video/video_stream_buffer_controller.cc:46).
+constexpr size_t kMaxFramesBuffered = 800;
 
 loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
   loss::NackConfig n = c.nack_config;
@@ -337,11 +339,13 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
     // that frame was lost, its id never arrives and the frame waits for the
     // repair or a keyframe.
     if (!keyframe) fi.references.push_back(packet_buffer_.PrecedingMediaSeq(f.first_seq));
-    keyframes_.OnFrame(fi, now);
     bool retransmitted = false;
     if (cfg_.timing.version >= 2) {
       for (const RtpPacket& pkt : f.packets) retransmitted = nacked_seqs_.erase(pkt.seq) > 0 || retransmitted;
-    } else {
+      if (!FrameBufferAccepts(fi.frame_id, keyframe, f.timestamp, now)) continue;
+    }
+    keyframes_.OnFrame(fi, now);
+    if (cfg_.timing.version < 2) {
       video_jitter_.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
       video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
     }
@@ -361,6 +365,44 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       ++stats_.frame_meta_evicted;
     }
   }
+}
+
+bool RtpReceiver::FrameBufferAccepts(int64_t id, bool keyframe, uint32_t rtp_timestamp, Timestamp now) {
+  // FrameBuffer::InsertFrame (api/video/frame_buffer.cc:84-113): a frame at or below the last decoded
+  // id is refused, unless it is a keyframe with a newer RTP timestamp, which clears the buffer; in a
+  // full buffer a keyframe clears it and a delta frame is refused. A refused frame never reaches the
+  // decodability tracking, as VideoStreamBufferController::InsertFrame then reports nothing continuous.
+  if (last_decoded_ && id <= last_decoded_->id) {
+    if (!keyframe || !AheadOf(rtp_timestamp, last_decoded_->rtp_timestamp)) {
+      ++stats_.frames_refused;
+      SM_EVENT(cfg_.events, now, "frame_buffer", "refused_decoded", static_cast<double>(last_decoded_->id), id);
+      return false;
+    }
+    ClearFrameBuffer(now, "clear_older_keyframe", id);
+  }
+  if (frames_.size() >= kMaxFramesBuffered) {
+    if (!keyframe) {
+      ++stats_.frames_refused;
+      SM_EVENT(cfg_.events, now, "frame_buffer", "refused_full", static_cast<double>(frames_.size()), id);
+      return false;
+    }
+    ClearFrameBuffer(now, "clear_full", id);
+  }
+  if (frames_.count(id) > 0) {  // Already inserted.
+    ++stats_.frames_refused;
+    return false;
+  }
+  return true;
+}
+
+void RtpReceiver::ClearFrameBuffer(Timestamp now, const char* reason, int64_t id) {
+  // FrameBuffer::Clear: the buffered frames and the decoded-frame history go.
+  SM_EVENT(cfg_.events, now, "frame_buffer", reason, static_cast<double>(frames_.size()), id);
+  ++stats_.frame_buffer_clears;
+  frames_.clear();
+  last_decoded_.reset();
+  keyframes_.ClearFrames();
+  release_.Clear();
 }
 
 std::optional<sync::Syncable::Info> RtpReceiver::SyncInfo() const {
@@ -443,7 +485,14 @@ void RtpReceiver::Process(Timestamp now) {
     } else {
       out_frames_.push_back(std::move(r));
     }
-    frames_.erase(it);
+    if (cfg_.timing.version >= 2) {
+      // FrameBuffer::ExtractNextDecodableTemporalUnit / DropNextDecodableTemporalUnit: the frames up to
+      // this one leave the buffer; only a decoded one enters the decoded-frame history.
+      if (render) last_decoded_ = DecodedFrame{id, it->second.rtp_timestamp};
+      frames_.erase(frames_.begin(), std::next(it));
+    } else {
+      frames_.erase(it);
+    }
     // RtpVideoStreamReceiver2::FrameDecoded: the packet buffer drops what the decoded frame used.
     packet_buffer_.ClearTo(id);
   };
@@ -503,6 +552,8 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frames_received", stats_.frames_received);
   w.Counter("frames_scheduled", stats_.frames_scheduled);
   w.Counter("frame_meta_evicted", stats_.frame_meta_evicted);
+  w.Counter("frames_refused", stats_.frames_refused);
+  w.Counter("frame_buffer_clears", stats_.frame_buffer_clears);
   w.Counter("reassembly_failures", stats_.reassembly_failures);
   w.Counter("idr_without_parameter_sets", stats_.idr_without_parameter_sets);
   w.Counter("parameter_sets_without_ids", stats_.parameter_sets_without_ids);

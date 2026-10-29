@@ -1376,7 +1376,13 @@ ALGORITHMS = [
                                 "`render_smoothing` (off by default). With it on, `very_low_capacity` seeds 1-10 render "
                                 "466 -> 421 frames and freeze 25.3 -> 24.6 times (libwebrtc 369 and 21.3); "
                                 "`issue_437_render_smoothing_very_low_capacity` locks it in "
-                                "([fix record](../../fixes/437-render-smoothing.md))."),
+                                "([fix record](../../fixes/437-render-smoothing.md)). "
+                                "Issue #583: with timing v2 the receiver's frame buffer holds at most 800 frames as "
+                                "libwebrtc's FrameBuffer (video_stream_buffer_controller.cc:46, frame_buffer.cc:84-106): "
+                                "in a full buffer a delta frame is refused and a keyframe clears it, a frame at or "
+                                "below the last decoded id is refused unless it is a keyframe with a newer RTP "
+                                "timestamp, which clears it; unit tests `RtpReceiver.AFullFrameBuffer...` and "
+                                "`RtpReceiver.AfterAPacketBufferReset...`."),
     dict(id="7.8", slug="quality-scaler", title="QP-based quality scaler",
          problems=["Region-of-interest quality -> quality scaler and per-codec QP control"],
          headers=["video/quality_scaler.h", "video/video_stream_adapter.h"],

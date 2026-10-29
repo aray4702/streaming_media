@@ -643,7 +643,10 @@ SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  // Timing v1's 1024-entry bound; timing v2's is the 800-frame buffer (#583, tested below).
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.timing.version = 1;
+  RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
   for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
   auto rb = r.receive_statistics()->MakeReportBlock(Timestamp::Millis(1000));
@@ -873,4 +876,98 @@ SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
   RtpReceiver audio(a);
   SM_EXPECT_TRUE(audio.receive_statistics()->v2());
   SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+}
+
+// Frame buffer cap (#583), timing v2: libwebrtc's FrameBuffer holds at most kMaxFramesBuffered = 800
+// frames (compare/webrtc/reference/video/video_stream_buffer_controller.cc:46); in a full buffer a
+// delta frame is refused and a keyframe clears it (api/video/frame_buffer.cc:98-106).
+namespace {
+RtpReceiverConfig V2ReceiverCfg() {
+  RtpReceiverConfig rc = NoHoldCfg();  // Delta frames behind the lost one reach the frame buffer.
+  rc.timing.version = 2;
+  rc.nack = false;
+  return rc;
+}
+}  // namespace
+
+SM_TEST(RtpReceiver, AFullFrameBufferRefusesADeltaFrameAndAKeyframeClearsIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(V2ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  auto first = Run(r, 10, 12);
+  SM_ASSERT_EQ(first.size(), 1u);  // The keyframe is released at once.
+  SendFrame(s, 1, false, 100, Timestamp::Millis(33));  // Lost: every later delta frame waits for it.
+  Timestamp now = Timestamp::Millis(20);
+  for (int64_t i = 2; i < 802; ++i) {
+    for (auto& b : SendFrame(s, i, false, 100, now)) r.OnPacket(b, now);
+    r.Process(now);
+    now = now + TimeDelta::Millis(1);
+  }
+  SM_EXPECT_EQ(r.stats().frames_received, 801u);
+  SM_EXPECT_EQ(r.stats().frames_refused, 0u);
+  // The 801st buffered frame: a delta frame has no room.
+  for (auto& b : SendFrame(s, 802, false, 100, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frames_refused, 1u);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, 0u);
+  // A keyframe clears the full buffer and is decoded; the delta frame after it follows.
+  now = now + TimeDelta::Millis(1);
+  for (auto& b : SendFrame(s, 803, true, 800, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, 1u);
+  for (auto& b : SendFrame(s, 804, false, 100, now)) r.OnPacket(b, now);
+  std::vector<ReceivedFrame> frames;
+  for (int64_t t = now.ms(); t < now.ms() + 3000; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+  }
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 803u * 3000u);
+  SM_EXPECT_TRUE(!frames[1].keyframe && frames[1].render);
+  SM_EXPECT_EQ(frames[1].rtp_timestamp, 804u * 3000u);
+  SM_EXPECT_EQ(r.stats().frames_refused, 1u);
+}
+
+SM_TEST(RtpReceiver, AfterAPacketBufferResetAnOlderIdIsRefusedUnlessItIsANewerKeyframe) {
+  // frame_buffer.cc:84-96. Packets of frames at or below the last decoded one are normally dropped by
+  // the packet buffer (ClearTo); after it overflows and is cleared, a sender restarted at lower
+  // sequence numbers gets through: its delta frame is refused, and its keyframe, with an older frame
+  // id but a newer RTP timestamp, clears the frame buffer and the decoded history and is decoded.
+  RtpSender s(SenderCfg());
+  RtpReceiver r(V2ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  SM_ASSERT_EQ(Run(r, 10, 12).size(), 1u);
+  // Frames whose last packet is lost stay in the packet buffer until it overflows and is cleared.
+  Timestamp now = Timestamp::Millis(20);
+  for (int64_t i = 1; i < 1100 && r.packet_buffer().stats().cleared == 0; ++i) {
+    auto packets = SendFrame(s, i, false, 3000, now);
+    SM_ASSERT_GE(packets.size(), 3u);
+    for (size_t k = 0; k + 1 < packets.size(); ++k) r.OnPacket(packets[k], now);
+    r.Process(now);
+    r.TakeFeedback();
+  }
+  SM_ASSERT_GT(r.packet_buffer().stats().cleared, 0u);
+  const uint64_t refused = r.stats().frames_refused;
+  const uint64_t clears = r.stats().frame_buffer_clears;
+  RtpSenderConfig restarted = SenderCfg();
+  restarted.initial_seq = 65530 - 300;
+  RtpSender s2(restarted);
+  now = now + TimeDelta::Millis(1);
+  for (auto& b : SendFrame(s2, 3000, false, 100, now)) r.OnPacket(b, now);
+  r.Process(now);
+  SM_EXPECT_EQ(r.stats().frames_refused, refused + 1);
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, clears);
+  for (auto& b : SendFrame(s2, 3001, true, 800, now)) r.OnPacket(b, now);
+  std::vector<ReceivedFrame> frames;
+  for (int64_t t = now.ms(); t < now.ms() + 3000; ++t) {
+    r.Process(Timestamp::Millis(t));
+    for (auto& f : r.TakeFrames()) frames.push_back(f);
+  }
+  SM_EXPECT_EQ(r.stats().frame_buffer_clears, clears + 1);
+  SM_ASSERT_GE(frames.size(), 1u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 3001u * 3000u);
 }
