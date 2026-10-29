@@ -1556,9 +1556,7 @@ void Demuxer() {
   sm::sync::RtpDemuxerCriteria c;
   c.mid = "a";
   ours.AddSink(0, c);
-  // A string literal would pick the private RtpDemuxerCriteria(bool match_any) (pointer to bool beats the
-  // user-defined conversion to absl::string_view), so name the MID as a string_view.
-  theirs.AddSink(webrtc::RtpDemuxerCriteria(absl::string_view("a")), &wsinks[0]);
+  theirs.AddSink(webrtc::RtpDemuxerCriteria("a"), &wsinks[0]);
   for (uint32_t ssrc = 1; ssrc <= 1100; ++ssrc) {
     sm::RtpPacket p;
     p.ssrc = ssrc;
