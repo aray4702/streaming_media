@@ -39,7 +39,7 @@ A gap is a metric whose means differ by more than the band, in either direction:
 | issue_451_host_rtt_near_limit | `cc.rtt_p50_ms` | 9147300000000000 | 70.5 | ±457365000000000 | behind | 10/10 | #451 (closed, no note: #61) |
 | issue_451_host_rtt_near_limit | `cc.utilization_pct` | 60.8 | 64.8 | ±3.2 | behind | 9/10 | #451 (closed, no note: #19, #15, #48, #12, #61) |
 | issue_451_host_rtt_near_limit | `video.avg_kbps` | 1224 | 1308 | ±65.4 | behind | 9/10 | #451 (closed, no note: #37, #61) |
-| issue_451_host_rtt_near_limit | `video.e2e_delay_p95_ms` | 342 | 297 | ±17.2 | behind | 10/10 | #451 (closed, no note: #24, #37) |
+| issue_451_host_rtt_near_limit | `video.e2e_delay_p95_ms` | 343 | 297 | ±17.2 | behind | 10/10 | #451 (closed, no note: #24, #37) |
 | issue_451_host_rtt_near_limit | `video.freeze_total_ms` | 3458 | 1216 | ±192 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
 | issue_451_host_rtt_near_limit | `video.keyframe_requests` | 0.9 | 0 | ±0.5 | behind | 9/10 | #451 (closed, no note: #23) |
 | issue_451_host_rtt_near_limit | `video.longest_freeze_ms` | 2919 | 683 | ±212 | behind | 9/10 | #451 (closed, no note: #5, #37, #24) |
