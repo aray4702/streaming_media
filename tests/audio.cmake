@@ -4,6 +4,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/aec3_delay_test.cc
     unit/audio/aec3_erle_test.cc
     unit/audio/aec3_filter_test.cc
+    unit/audio/aec3_multichannel_test.cc
     unit/audio/aec3_reverb_test.cc
     unit/audio/aec3_state_test.cc
     unit/audio/aec3_suppression_test.cc
@@ -37,14 +38,17 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Agc1Manager
     Agc1VoiceActivity
     Agc2RnnVad
+    AlignmentMixer
     AudioLevel
     CascadedBiquadFilter
+    ConfigSelector
     EchoCanceller
     EchoDelay
     GainControl
     GainController2
     HighPassFilter
     Hpf
+    MultiChannelContentDetector
     NoiseSuppressor
     Ns
     PushResampler
