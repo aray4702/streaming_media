@@ -112,7 +112,8 @@ const std::vector<const char*>& InfoMetrics() {
 const char* const kDefaultTraced =
     "very_low_capacity,very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
-    "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window";
+    "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window,"
+    "issue_641_outage_7s_audio_delay,issue_641_av_outage_4s_seed3,issue_641_av_outage_6s_seed3";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";

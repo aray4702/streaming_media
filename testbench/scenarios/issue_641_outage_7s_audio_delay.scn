@@ -1,0 +1,13 @@
+name issue_641_outage_7s_audio_delay
+describe 7 s outage with audio+video at 10 s: the audio jitter buffer stays at 300-460 ms for ~20 s afterwards (#641; yardstick for libwebrtc's side)
+# Tester's repro from #641 (ours, 10 seeds @ ba3ba5a: mouth-to-ear p95 650 ms mean, 586-717). Traced in sm_compare so
+# libwebrtc's per-packet, audio and bwe traces of seed 1 can be read next to ours.
+duration 40s
+seed 1
+at 0s capacity=1500kbps delay=30ms queue=300ms
+reverse at 0s delay=30ms
+at 10s down
+at 17s up
+reverse at 10s down
+reverse at 17s up
+expect video.frames_rendered > 0

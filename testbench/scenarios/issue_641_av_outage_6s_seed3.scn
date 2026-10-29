@@ -1,0 +1,20 @@
+name issue_641_av_outage_6s_seed3
+describe #430's 6 s outage on seed 3, where our audio delay is about twice libwebrtc's (#641; yardstick: traced in sm_compare)
+# #430's 6 s variant. Two modes on both stacks: video back at link-up + 0.2 s, or one decode timeout later (+3.2 s)
+# (#433's compare-webrtc, seeds 1-10, @ 0d86dcc): ours 4/10 seeds late, libwebrtc 3/10.
+#   metric                ours mean (min-max)       libwebrtc mean (min-max)
+#   video.pause_total_ms  7384 (6156-9240)          7076 (6156-9203)
+#   video.render_fps      24.34 (22.88-25.28)       24.57 (22.98-25.25)
+# Both stacks wait for the receiver's 3 s decode timeout (video_receive_stream2.cc kMaxWaitForFrame, OnDecodableFrameTimeout): the first keyframe request falls in the outage and is lost, the next one is sent 3 s later. The expect lines hold the call at libwebrtc's worst seed plus about 10 %.
+# Seeds 1-80 (#447, CI compare-webrtc at 42c1446), ours / libwebrtc: A/V offset p95 96.6 / 76.8 ms (libwebrtc sd 29.2),
+# ours higher on 48/80: in band, so seed spread.
+seed 3
+duration 40s
+at 0s capacity=1500kbps delay=30ms queue=300ms
+at 15s down
+at 21s up
+reverse at 0s delay=30ms
+reverse at 15s down
+reverse at 21s up
+expect video.pause_total_ms < 10150
+expect video.render_fps > 20.6
