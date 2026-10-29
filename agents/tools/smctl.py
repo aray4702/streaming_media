@@ -4,8 +4,8 @@
 Same data and actions as the web console (agents/tools/console.py), in the terminal.
 
 Status (one tab, printed):
-  smctl overview | work | prs | issues | agents | dispatcher | log   [--fresh] [--all]
-  smctl                      interactive tabs (←/→ or 1-7 switch, ↑/↓ scroll, r refresh,
+  smctl progress | roles | needs | work | held | prs | issues | agents | dispatcher | log   [--fresh] [--all]
+  smctl                      interactive tabs (←/→ or 1-9, 0 switch, ↑/↓ scroll, r refresh,
                              : runs a command below, q quits)
 
 Manage (each asks y/N; --yes skips it):
@@ -40,7 +40,8 @@ sys.path.insert(0, HERE)
 import console as c  # noqa: E402  (views and actions shared with the web console)
 
 PT = ZoneInfo("America/Los_Angeles")
-TABS = ["overview", "work", "prs", "issues", "agents", "dispatcher", "log"]
+TABS = ["progress", "roles", "needs", "work", "held", "prs", "issues", "agents", "dispatcher", "log"]
+VIEW = {"progress": "overview", "needs": "overview", "held": "overview"}  # tabs that share the overview data
 STATE_DIR = os.path.join(os.path.expanduser("~"), ".cache", "sm-console")
 STATE = os.path.join(STATE_DIR, "dashboard.json")
 DEFAULT_PORT = 8642
@@ -71,8 +72,32 @@ def render(tab, d, width=100, show_all=False):
     w = max(60, width)
     out = []
     add = out.append
-    if tab == "overview":
-        wk = d["work"]
+    if tab == "roles":
+        add(f"ROLES (working = posted in the last {d['working_min']} min, or holds an in-progress item)")
+        add("")
+        for x in d["roles"]:
+            add(f"  {x['label']:<12} {x['state']:<14} last {when(x['last_activity']['at']) if x['last_activity'] else 'none in 48 h'}")
+            for wo in x["working_on"]:
+                add(f"      working on #{wo['n']}  {cut(wo['title'] or '', w - 24)}")
+            add("      waiting: " + (", ".join(f"#{q['n']}" for q in x["queue"]) or "nothing"))
+        return out
+    if tab == "progress":
+        rq = d.get("requirements") or {}
+        if rq.get("missing"):
+            add("STAGE 1 REQUIREMENTS: the register (tools/requirements.json) is not on main yet")
+        else:
+            add(f"STAGE 1 REQUIREMENTS: {rq['done']} of {rq['total']} done")
+            add(f"  {'id':<6} {'status':<11} {'start':<11} {'end':<12} {'depends on':<14} {'cost':<16} requirement")
+            for q in rq["requirements"]:
+                if not show_all and q["status"] == "unassessed":
+                    continue
+                cost = (q["cost"] or "-") + (f" ({q['prs_merged']} PRs)" if q["prs_merged"] else "")
+                add(f"  {q['id']:<6} {q['status']:<11} {q['start'] or '-':<11} {q['end'] or '-':<12} "
+                    f"{','.join(q['depends_on']) or '-':<14} {cut(cost, 16):<16} {cut(q['title'], w - 80)}")
+            hidden = sum(q["status"] == "unassessed" for q in rq["requirements"])
+            if hidden and not show_all:
+                add(f"  ({hidden} unassessed not shown; --all lists them)")
+    elif tab == "needs":
         add("NEEDS YOU")
         for x in d["needs_you"] or []:
             add(f"  {x['kind']} {'#' + str(x['n']) if x['n'] else ''}  {cut(x['title'], w - 14)}")
@@ -82,27 +107,11 @@ def render(tab, d, width=100, show_all=False):
             add("  NEEDS YOU posts on #111, last 24 h (a later post may withdraw one):")
             for a in d["asks_24h"]:
                 add(f"    {when(a['at'])}  {cut(a['first'], w - 30)}")
-        add("")
-        add(f"WORK ORDER (#64)  {wk['open']} open, {wk['done']} done · in-progress {wk['in_progress']}/{wk['max_in_progress']}"
-            f" · next free {('#' + str(wk['next_free'])) if wk['next_free'] else 'none'}")
-        for i in d["next_items"]:
-            add(f"  #{i['n']:<5} {i['role']:<6} {cut(i['title'], w - 16)}")
-        add("")
+    elif tab == "held":
         add("HELD")
         for k, ns in d["held"].items():
             add(f"  {k:<18} {', '.join('#' + str(n) for n in ns) or '-'}")
         add(f"  {'unplaced':<18} {', '.join('#' + str(i['n']) for i in d['unplaced']) or '-'}")
-        add("")
-        add(f"DISPATCHER  mode {d['mode']} · {'STOPPED (#' + str(d['stop']['n']) + ')' if d['stop'] else 'agents running'}"
-            f" · open PRs {d['prs']}")
-        r = d["last_run"]
-        if r:
-            add(f"  last run {when(r['at'])} {r['conclusion'] or r['status']} ({r['event']})")
-        add("")
-        add("AGENTS        last post                    next run")
-        for a in d["agents"]:
-            nxt = when(a["next"]) if a["next"] else ("on demand" if a["enabled"] else "off")
-            add(f"  {a['label']:<12}{when(a['last_post']['at']) if a['last_post'] else 'none in 48 h':<29}{nxt}")
     elif tab == "work":
         add(f"{d['open']} open, {d['done']} done · in-progress {d['in_progress']}/{d['max_in_progress']}"
             f" · next free {('#' + str(d['next_free'])) if d['next_free'] else 'none'}")
@@ -182,7 +191,7 @@ class System:
         self.actions = c.Actions(self.gh, self.views)
 
     def view(self, tab, fresh=False):
-        return getattr(self.views, tab)(fresh)
+        return getattr(self.views, VIEW.get(tab, tab))(fresh)
 
 
 def describe(a):
@@ -296,7 +305,7 @@ def dashboard(ns):
 
 
 # ---- interactive tabs --------------------------------------------------------------
-def tui(system, parser, start_tab="overview"):
+def tui(system, parser, start_tab="progress"):
     import curses
 
     def main(scr):
@@ -414,8 +423,8 @@ def tui(system, parser, start_tab="overview"):
                 tab = (tab + 1) % len(TABS)
             elif k in (curses.KEY_LEFT, curses.KEY_BTAB, ord("h")):
                 tab = (tab - 1) % len(TABS)
-            elif ord("1") <= k <= ord(str(len(TABS))):
-                tab = k - ord("1")
+            elif ord("0") <= k <= ord("9") and (k - ord("1")) % 10 < len(TABS):
+                tab = (k - ord("1")) % 10  # 1-9, then 0 for the tenth tab
             elif k in (curses.KEY_DOWN, ord("j")):
                 scroll[name] += 1
             elif k in (curses.KEY_UP, ord("k")):
@@ -478,7 +487,7 @@ def build_parser():
     s.add_argument("--open", action="store_true", help="start: open it in the browser")
     s.add_argument("--repo", default=os.environ.get("GITHUB_REPOSITORY", "aray4702/streaming_media"))
     s = sub.add_parser("tui", help="interactive tabs (the default on a terminal)")
-    s.add_argument("tab", nargs="?", choices=TABS, default="overview")
+    s.add_argument("tab", nargs="?", choices=TABS, default="progress")
     return p
 
 
@@ -490,9 +499,9 @@ def main(argv=None):
     system = System(ns.repo)
     if ns.cmd in (None, "tui"):
         if not sys.stdout.isatty():
-            ns.cmd, ns.fresh, ns.all, ns.json = "overview", False, False, False
+            ns.cmd, ns.fresh, ns.all, ns.json = "progress", False, False, False
         else:
-            return tui(system, build_parser(), getattr(ns, "tab", "overview"))
+            return tui(system, build_parser(), getattr(ns, "tab", "progress"))
     if ns.cmd in TABS:
         d = system.view(ns.cmd, ns.fresh)
         if ns.json:
