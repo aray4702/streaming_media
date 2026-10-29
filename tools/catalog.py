@@ -1643,7 +1643,8 @@ ALGORITHMS = [
                "negotiated (VideoStreamConfig::h264_packetization_mode, mode 1 by default): mode 0 sends each NAL "
                "unit alone and fails a frame with a unit that does not fit, as RtpPacketizerH264::PacketizeSingleNalu "
                "(#655). Session::SendVideo returns the size of the access unit after the rewrite, which "
-               "VideoStreamEncoder::RunPostEncode gives the frame dropper and the bitrate adjuster.",
+               "VideoStreamEncoder::RunPostEncode gives the frame dropper and the bitrate adjuster; the test bench "
+               "sends each frame first and passes that size to VideoSendController::OnEncoded, as OnEncodedImage.",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "

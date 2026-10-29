@@ -948,14 +948,18 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     };
     // The encoder hands a frame to the library and the sender when it is done:
     // at once, or after the encode-time model with `encode_delay on`.
+    // As VideoStreamEncoder::OnEncodedImage (video_stream_encoder.cc:2371-2396), the frame is sent first and
+    // RunPostEncode (the frame dropper, the bitrate adjuster) gets the size that was sent: after the keyframe
+    // SPS VUI rewrite (AugmentEncodedImage), which Session::SendVideo returns (#655).
     auto frame_encoded = [&](const PendingFrame& f) {
-      video_ctl.OnEncoded(f.report, f.done);
       frame_capture[f.rtp_ts] = f.capture;
       frame_times[f.rtp_ts].capture = f.capture;
       frame_times[f.rtp_ts].submitted = f.done;
       if (opt.link_trace) frame_rtx_room[f.rtp_ts] = rtx_ack.Room();
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
-      sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
+      rtp::EncodedFrameReport sent = f.report;
+      sent.size = sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
+      video_ctl.OnEncoded(sent, f.done);
     };
     // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
     // that encodes a held frame).
