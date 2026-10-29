@@ -124,14 +124,15 @@ dialog section { border-top: 1px solid var(--line); padding-top: 10px; margin-to
 
 <script>
 const TOKEN = "__TOKEN__", REPO = "__REPO__";
-const TABS = [["overview", "Overview"], ["roles", "Roles"], ["work", "Work order"], ["prs", "PRs"], ["issues", "Issues"],
-              ["agents", "Agents"], ["dispatcher", "Dispatcher"], ["log", "Log #111"]];
+const TABS = [["progress", "Progress"], ["roles", "Roles"], ["needs", "Needs you"], ["work", "Work order"], ["held", "Held items"],
+              ["prs", "PRs"], ["issues", "Issues"], ["agents", "Agents"], ["dispatcher", "Dispatcher"], ["log", "Log #111"]];
+const VIEW = {progress: "overview", needs: "overview", held: "overview"};  // tabs that share the overview data
 const KNOWN_LABELS = ["needs-owner", "needs-human", "needs-coordinator", "needs-builder", "needs-probe", "blocked", "in-progress",
   "parallel-ok", "owner-approved", "wontfix", "stage:later", "stage:baseline", "stage:ai", "roadmap", "record"];
 let tab = (() => {
   const h = location.hash.slice(1);
   if (TABS.some(([k]) => k === h)) return h;
-  try { return localStorage.getItem("sm-console-tab") || "overview"; } catch (e) { return "overview"; }
+  try { const t = localStorage.getItem("sm-console-tab"); return TABS.some(([k]) => k === t) ? t : "progress"; } catch (e) { return "progress"; }
 })();
 let showDone = false, issueFilter = "";
 const $ = s => document.querySelector(s);
@@ -182,7 +183,7 @@ async function load(fresh) {
   const v = $("#view");
   v.innerHTML = '<p class="muted">Loading from GitHub…</p>';
   try {
-    const data = await api(tab, fresh);
+    const data = await api(VIEW[tab] || tab, fresh);
     v.innerHTML = RENDER[tab](data);
     (BIND[tab] || (() => {}))(data);
     $("#stamp").textContent = "Updated " + new Date().toLocaleTimeString("en-US", {...PT, hour: "numeric", minute: "2-digit"}) + " PT";
@@ -309,36 +310,36 @@ const RENDER = {
       <table><tr><th>area</th><th>done</th><th>in progress</th><th>open</th><th>unassessed</th></tr>${areas}</table></div>${probs}
       <div class="card"><table><tr><th>id</th><th>status</th><th>requirement</th><th>open items</th></tr>${rows}</table></div>`;
   },
-  overview(o) {
-    navCounts = {overview: o.needs_you.length};
+  progress(o) {
+    navCounts = {needs: o.needs_you.length, held: Object.values(o.held).reduce((n, v) => n + v.length, 0)};
     setAlert("needs", o.needs_you.length);
     renderTabs(navCounts);
-    const w = o.work;
+    return reqTable(o.requirements);
+  },
+  needs(o) {
+    navCounts = {needs: o.needs_you.length, held: Object.values(o.held).reduce((n, v) => n + v.length, 0)};
+    setAlert("needs", o.needs_you.length);
+    renderTabs(navCounts);
     const needs = o.needs_you.length ? `<ul class="plain">${o.needs_you.map(x =>
       (x.n == null ? `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">${esc(x.title)}</a></li>` : `<li><span class="chip bad">${x.kind}</span> <a href="${x.url}" target="_blank">#${x.n}</a> ${esc(x.title)} ${actBtn(x.n, x.kind === "PR")}</li>`)).join("")}</ul>`
       : '<p class="muted">Nothing labelled <code>needs-owner</code>.</p>';
     const asks = o.asks_24h.length ? `<div class="small" style="margin-top:8px"><b>NEEDS YOU posts on #111, last 24 h</b> (a later post may withdraw one)<ul class="plain">${o.asks_24h.map(a =>
       `<li><a href="${a.url}" target="_blank">${when(a.at)}</a>: ${md(esc(a.first))}</li>`).join("")}</ul></div>` : "";
-    const heads = o.next_items.map(i => `<tr><td>${ref(i.n)}</td><td><span class="chip ${i.role === "next" ? "ok" : i.role === "busy" ? "info" : "warn"}">${i.role}</span></td><td>${esc(i.title)}<div>${chips(i.labels)}</div></td></tr>`).join("");
+    return `<div class="card"><h2>Needs you</h2>${needs}${asks}</div>`;
+  },
+  held(o) {
+    navCounts = {needs: o.needs_you.length, held: Object.values(o.held).reduce((n, v) => n + v.length, 0)};
+    renderTabs(navCounts);
     const held = Object.entries(o.held).map(([k, ns]) => `<div class="row"><span class="chip ${LABEL_CLASS[k] || ""}">${k}</span> ${ns.length ? ns.map(ref).join(", ") : '<span class="muted">none</span>'}</div>`).join("");
-    const agents = o.agents.map(a => `<tr><td>${esc(a.label)}${a.start_failing ? ' <span class="chip bad">start failing</span>' : ""}</td><td>${a.last_post ? `<a href="${a.last_post.url}" target="_blank">${when(a.last_post.at)}</a>` : '<span class="muted">none in 48 h</span>'}</td><td>${a.next ? when(a.next) : `<span class="muted">${a.enabled ? "on demand" : "off"}</span>`}</td></tr>`).join("");
-    const run = o.last_run;
-    return `${reqTable(o.requirements)}<div class="grid">
-      <div class="card"><h2>Needs you</h2>${needs}${asks}</div>
-      <div class="card"><h2>Stage 1 work order</h2>
-        <div class="row"><span class="big">${w.open}</span><span class="muted">open items on #64</span><span class="big" style="margin-left:14px">${w.done}</span><span class="muted">done</span></div>
-        <div class="row">in-progress ${w.in_progress} / ${w.max_in_progress} · next free item: ${w.next_free ? ref(w.next_free) : '<span class="muted">none (head busy)</span>'}</div>
-        <table>${heads || '<tr><td class="muted">no open items</td></tr>'}</table></div>
-      <div class="card"><h2>Held items</h2>${held}
-        <div class="row"><span class="chip">unplaced</span> ${o.unplaced.length ? o.unplaced.map(i => ref(i.n)).join(", ") : '<span class="muted">none</span>'}</div></div>
-      <div class="card"><h2>Agents</h2><table><tr><th>role</th><th>last post</th><th>next scheduled run</th></tr>${agents}</table></div>
-      <div class="card"><h2>Dispatcher</h2>
-        <div class="row">mode <b>${esc(o.mode)}</b> · ${o.stop ? `<a class="err" href="${o.stop.url}" target="_blank">STOP AGENTS is open</a>` : "agents running"}</div>
-        <div class="row">last run ${run ? `<a href="${run.url}" target="_blank">${when(run.at)}</a> <span class="chip ${run.conclusion === "success" ? "ok" : run.conclusion ? "bad" : "info"}">${esc(run.conclusion || run.status)}</span> <span class="muted">${esc(run.event)}</span>` : "—"}</div>
-        <div class="row">open PRs: ${o.prs}</div></div>
-    </div>`;
+    return `<div class="card"><h2>Held items</h2>${held}
+      <div class="row"><span class="chip">unplaced</span> ${o.unplaced.length ? o.unplaced.map(i => ref(i.n)).join(", ") : '<span class="muted">none</span>'}</div></div>`;
   },
   work(w) {
+    const heads = w.items.filter(i => i.role).slice(0, 6).map(i => `<tr><td>${ref(i.n)}</td><td><span class="chip ${i.role === "next" ? "ok" : i.role === "busy" ? "info" : "warn"}">${i.role}</span></td><td>${esc(i.title || i.text)}<div>${chips(i.labels)}</div></td></tr>`).join("");
+    const summary = `<div class="card"><h2>Stage 1 work order</h2>
+      <div class="row"><span class="big">${w.open}</span><span class="muted">open items on #64</span><span class="big" style="margin-left:14px">${w.done}</span><span class="muted">done</span></div>
+      <div class="row">in-progress ${w.in_progress} / ${w.max_in_progress} · next free item: ${w.next_free ? ref(w.next_free) : '<span class="muted">none (head busy)</span>'}</div>
+      <table>${heads || '<tr><td class="muted">no open items</td></tr>'}</table></div>`;
     const rows = w.items.filter(i => showDone || !i.done).map(i => i.done
       ? `<tr class="done"><td>${ref(i.n)}</td><td>${esc(i.section)}</td><td colspan="4">✓ ${linkify(i.text)}</td></tr>`
       : `<tr><td>${ref(i.n)}</td><td class="small">${esc(i.section)}</td>
@@ -346,7 +347,7 @@ const RENDER = {
           <td><span class="chip ${i.closed ? "warn" : i.status === "free" ? "ok" : "info"}">${esc(i.status)}</span>${i.role && i.role !== i.status ? `<div><span class="chip ${i.role === "next" ? "ok" : "warn"}">${i.role}</span></div>` : ""}</td>
           <td>${chips(i.labels)}</td><td>${(i.prs || []).map(p => `<a href="https://github.com/${REPO}/pull/${p}" target="_blank">#${p}</a>`).join(" ")}</td>
           <td>${i.closed ? "" : actBtn(i.n)}</td></tr>`).join("");
-    return `<div class="row"><span><b>${w.open}</b> open, <b>${w.done}</b> done · in-progress ${w.in_progress}/${w.max_in_progress} · next free ${w.next_free ? ref(w.next_free) : "none"}</span>
+    return summary + `<div class="row"><span><b>${w.open}</b> open, <b>${w.done}</b> done · in-progress ${w.in_progress}/${w.max_in_progress} · next free ${w.next_free ? ref(w.next_free) : "none"}</span>
       <span class="spacer"></span><label><input type="checkbox" id="showDone" ${showDone ? "checked" : ""}> show done items</label>
       <a href="${w.roadmap_url}" target="_blank">edit #64 on GitHub</a></div>
       ${w.roadmap_author !== "aray4702" ? '<p class="err">#64 is not authored by aray4702; the Fixer ignores it.</p>' : ""}
@@ -418,7 +419,7 @@ const RENDER = {
 };
 
 const BIND = {
-  overview(o) { bindItemButtons(n => o.needs_you.find(x => x.n === n)); },
+  needs(o) { bindItemButtons(n => o.needs_you.find(x => x.n === n)); },
   work(w) {
     $("#showDone").onchange = e => { showDone = e.target.checked; $("#view").innerHTML = RENDER.work(w); BIND.work(w); };
     bindItemButtons(n => w.items.find(i => i.n === n));
