@@ -70,6 +70,7 @@
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
 #include "sm/rtp/sps_vui_rewriter.h"
+#include "sm/sync/capture_time.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/video/orientation.h"
 
@@ -639,6 +640,96 @@ void VideoOrientation() {
            sm::video::DecodeCvo((*raw)[0]).rotation == ours[i];
   }
   Check(back, "libwebrtc's CVO byte read here as the same rotation");
+}
+
+// Absolute capture time (#567 F8.3): the extension RtpSender puts on a video
+// frame's first packet (whole NTP milliseconds, offset 0) and on an audio
+// packet (full precision) is the AbsoluteCaptureTimeExtension libwebrtc parses,
+// with the same value, and libwebrtc's bytes (with and without the offset)
+// read back here as the same value.
+void AbsCaptureTime() {
+  sm::sync::ExtensionMap map;
+  map.Register(6, sm::sync::uri::kAbsCaptureTime);
+  webrtc::RtpHeaderExtensionMap wmap;
+  wmap.Register<webrtc::AbsoluteCaptureTimeExtension>(webrtc::RtpHeaderExtensionId(6));
+  auto same = [](const std::optional<webrtc::AbsoluteCaptureTime>& w, const sm::sync::AbsoluteCaptureTime& a) {
+    return w && w->absolute_capture_timestamp == a.capture_ntp &&
+           w->estimated_capture_clock_offset == a.clock_offset;
+  };
+  bool ok = true;
+  int carried = 0;
+  {
+    sm::rtp::RtpSenderConfig sc;
+    sc.ssrc = 0x1111;
+    sc.payload_type = 96;
+    sc.extensions = &map;
+    sm::rtp::RtpSender sender(sc);
+    for (int i = 0; i < 4; ++i) {
+      // One frame every 2 s, so each one carries it; captured 12.3 ms before it is sent.
+      const sm::Timestamp now = sm::Timestamp::Seconds(1000 + 2 * i);
+      const auto ext = sender.VideoAbsoluteCaptureTime(180000u * static_cast<uint32_t>(i),
+                                                       now - sm::TimeDelta::Micros(12'300), now);
+      ok = ok && ext.has_value();
+      if (!ext) break;
+      const std::vector<Bytes> chunks = {Bytes(100, 1), Bytes(100, 2)};
+      sender.SendVideoFrame(chunks, 180000u * static_cast<uint32_t>(i), now, i == 0, sm::video::Rotation::k0, ext);
+      auto packets = sender.TakePackets();
+      ok = ok && packets.size() == 2;
+      for (size_t k = 0; ok && k < packets.size(); ++k) {
+        const Bytes bytes = packets[k].packet.Serialize();
+        webrtc::RtpPacketReceived w(&wmap);
+        ok = w.Parse(bytes.data(), bytes.size());
+        const auto got = w.GetExtension<webrtc::AbsoluteCaptureTimeExtension>();
+        ok = ok && got.has_value() == (k == 0) && (!got || same(got, *ext));
+        carried += got ? 1 : 0;
+      }
+    }
+  }
+  {
+    sm::rtp::RtpSenderConfig sc;
+    sc.ssrc = 0x2222;
+    sc.payload_type = 111;
+    sc.clock_rate = 48000;
+    sc.video = false;
+    sc.extensions = &map;
+    sm::rtp::RtpSender sender(sc);
+    const Bytes frame(60, 7);
+    const sm::Timestamp now = sm::Timestamp::Seconds(1000);
+    const sm::Timestamp capture = now - sm::TimeDelta::Micros(4'321);
+    sender.SendAudio(frame, 960, false, now, std::nullopt, capture);
+    auto packets = sender.TakePackets();
+    ok = ok && packets.size() == 1;
+    if (ok) {
+      const Bytes bytes = packets[0].packet.Serialize();
+      webrtc::RtpPacketReceived w(&wmap);
+      ok = w.Parse(bytes.data(), bytes.size());
+      const sm::sync::AbsoluteCaptureTime want{sm::timing::NtpTime::FromTimestamp(capture).value, 0};
+      ok = ok && same(w.GetExtension<webrtc::AbsoluteCaptureTimeExtension>(), want);
+      ++carried;
+    }
+  }
+  Check(ok && carried == 5, "RtpSender: abs-capture-time (video first packet, audio) parsed by libwebrtc with the same value");
+
+  bool back = true;
+  const webrtc::AbsoluteCaptureTime theirs[] = {
+      {0xE1234567'89ABCDEFull, std::nullopt},
+      {0xE1234567'89ABCDEFull, int64_t{0}},
+      {0x00000001'00000000ull, int64_t{-0x00000002'80000000ll}},
+  };
+  for (const webrtc::AbsoluteCaptureTime& t : theirs) {
+    webrtc::RtpPacketToSend w(&wmap);
+    w.SetPayloadType(96);
+    w.SetSequenceNumber(1);
+    w.SetTimestamp(3000);
+    w.SetSsrc(0x1111);
+    w.SetExtension<webrtc::AbsoluteCaptureTimeExtension>(t);
+    w.SetPayloadSize(10);
+    auto p = sm::RtpPacket::Parse(std::span<const uint8_t>(w.data(), w.size()));
+    const auto raw = p ? sm::sync::ExtensionAccessor(map).GetRaw(*p, sm::sync::uri::kAbsCaptureTime) : std::nullopt;
+    const auto ours = raw ? sm::sync::ParseAbsoluteCaptureTime(*raw) : std::nullopt;
+    back = back && ours && same(t, *ours);
+  }
+  Check(back, "libwebrtc's abs-capture-time (with and without the offset) read here as the same value");
 }
 
 // RFC 8285 elements as libwebrtc's RtpHeaderExtensionMap and RtpPacket
@@ -1596,6 +1687,7 @@ int main() {
   WebrtcToSender();
   AudioLevel();
   VideoOrientation();
+  AbsCaptureTime();
   HeaderExtensionElements();
   Demuxer();
   H264SmToWebrtc();

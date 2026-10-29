@@ -39,6 +39,8 @@ constexpr size_t kMinPayloadPaddingBytes = 50;
 constexpr double kMaxPaddingSizeFactor = 3.0;
 constexpr size_t kMaxPaddingLength = 255;
 constexpr size_t kRtxHeaderSize = 2;
+// rtp_video_header.h / video_codec_constants: every video payload type runs at 90 kHz.
+constexpr int kVideoPayloadTypeFrequency = 90000;
 }  // namespace
 
 RtpSender::RtpSender(RtpSenderConfig cfg)
@@ -132,8 +134,15 @@ size_t RtpSender::MediaHeaderSize() const {
 }
 
 void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
-                          std::optional<audio::AudioLevel> level) {
+                          std::optional<audio::AudioLevel> level, std::optional<Timestamp> capture_time) {
   ++stats_.frames;
+  // rtp_sender_audio.cc:142-157: sent periodically; the receiver interpolates the rest.
+  std::optional<sync::AbsoluteCaptureTime> abs_capture_time;
+  if (capture_time) {
+    abs_capture_time = abs_capture_time_sender_.OnPacket(
+        sync::AbsoluteCaptureTimeSender::GetSource(cfg_.ssrc, {}), rtp_timestamp, cfg_.clock_rate,
+        {timing::NtpTime::FromTimestamp(*capture_time).value, 0}, now);
+  }
   RtpPacket p;
   if (cfg_.red_payload_type) {
     p = NewPacket(*cfg_.red_payload_type, rtp_timestamp, marker);
@@ -148,6 +157,8 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
     sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAudioLevel, {byte});
     ++stats_.audio_level_packets;
   }
+  // rtp_sender_audio.cc:252-256: SetExtension writes nothing when it is not registered.
+  if (SetsAbsoluteCaptureTime(abs_capture_time)) SetAbsoluteCaptureTime(p, *abs_capture_time);
   StoreAndQueueMedia(std::move(p), now);
 }
 
@@ -158,21 +169,64 @@ bool RtpSender::SetsVideoRotation(bool keyframe, video::Rotation rotation) const
          (keyframe || rotation != last_rotation_ || rotation != video::Rotation::k0);
 }
 
-size_t RtpSender::LastPacketReduction(bool keyframe, video::Rotation rotation) const {
-  if (!SetsVideoRotation(keyframe, rotation)) return 0;
-  // Simplest way to estimate how much extensions would occupy is to set them (rtp_sender_video.cc:717).
+bool RtpSender::SetsAbsoluteCaptureTime(const std::optional<sync::AbsoluteCaptureTime>& a) const {
+  return a && cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kAbsCaptureTime);
+}
+
+void RtpSender::SetAbsoluteCaptureTime(RtpPacket& p, const sync::AbsoluteCaptureTime& a) {
+  sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kAbsCaptureTime, sync::SerializeAbsoluteCaptureTime(a));
+  ++stats_.abs_capture_time_packets;
+}
+
+std::optional<sync::AbsoluteCaptureTime> RtpSender::VideoAbsoluteCaptureTime(uint32_t rtp_timestamp,
+                                                                             std::optional<Timestamp> capture_time,
+                                                                             Timestamp now) {
+  if (!capture_time) return std::nullopt;
+  // rtp_sender_video.cc:690-707: Int64MsToUQ32x32(ConvertTimestampToNtpTime(capture_time).ToMs()),
+  // estimated_capture_clock_offset 0; then AbsoluteCaptureTimeSender decides.
+  const int64_t ntp_ms = sync::NtpToMs(timing::NtpTime::FromTimestamp(*capture_time).value);
+  const sync::AbsoluteCaptureTime actual{sync::Int64MsToUQ32x32(ntp_ms), 0};
+  return abs_capture_time_sender_.OnPacket(sync::AbsoluteCaptureTimeSender::GetSource(cfg_.ssrc, {}), rtp_timestamp,
+                                           kVideoPayloadTypeFrequency, actual, now);
+}
+
+size_t RtpSender::HeaderSizeWith(std::optional<video::Rotation> rotation,
+                                 const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const {
+  // Simplest way to estimate how much extensions would occupy is to set them (rtp_sender_video.cc:717),
+  // in AddRtpHeaderExtensions' order: CVO, then the absolute capture time.
   RtpPacket p;
+  if (!cfg_.extensions) return p.HeaderSize();
   const sync::ExtensionAccessor access(*cfg_.extensions);
   if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
   if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
   if (mid_remaining_ > 0 && !cfg_.mid.empty()) access.SetString(p, sync::uri::kMid, cfg_.mid);
-  const size_t middle = p.HeaderSize();
-  access.SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(rotation)});
-  return p.HeaderSize() - middle;
+  if (rotation) access.SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(*rotation)});
+  if (SetsAbsoluteCaptureTime(abs_capture_time)) {
+    access.SetRaw(p, sync::uri::kAbsCaptureTime, sync::SerializeAbsoluteCaptureTime(*abs_capture_time));
+  }
+  return p.HeaderSize();
+}
+
+size_t RtpSender::LastPacketReduction(bool keyframe, video::Rotation rotation) const {
+  if (!SetsVideoRotation(keyframe, rotation)) return 0;
+  return HeaderSizeWith(rotation, std::nullopt) - HeaderSizeWith(std::nullopt, std::nullopt);
+}
+
+size_t RtpSender::FirstPacketReduction(const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const {
+  if (!SetsAbsoluteCaptureTime(abs_capture_time)) return 0;
+  return HeaderSizeWith(std::nullopt, abs_capture_time) - HeaderSizeWith(std::nullopt, std::nullopt);
+}
+
+size_t RtpSender::SinglePacketReduction(bool keyframe, video::Rotation rotation,
+                                        const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const {
+  const std::optional<video::Rotation> cvo =
+      SetsVideoRotation(keyframe, rotation) ? std::optional(rotation) : std::nullopt;
+  return HeaderSizeWith(cvo, abs_capture_time) - HeaderSizeWith(std::nullopt, std::nullopt);
 }
 
 void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                               bool keyframe, video::Rotation rotation) {
+                               bool keyframe, video::Rotation rotation,
+                               const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) {
   if (chunks.empty()) return;
   ++stats_.frames;
   const bool set_rotation = SetsVideoRotation(keyframe, rotation);
@@ -194,6 +248,8 @@ void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uin
       sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(rotation)});
       ++stats_.video_orientation_packets;
     }
+    // rtp_sender_video.cc:425-428: on the frame's first packet.
+    if (i == 0 && SetsAbsoluteCaptureTime(abs_capture_time)) SetAbsoluteCaptureTime(p, *abs_capture_time);
     StoreAndQueueMedia(std::move(p), now, keyframe, i == 0);
   }
   // Update details about the last sent frame (rtp_sender_video.cc:890).
@@ -375,6 +431,7 @@ void RtpSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("mid_packets", stats_.mid_packets);
   w.Counter("audio_level_packets", stats_.audio_level_packets);
   w.Counter("video_orientation_packets", stats_.video_orientation_packets);
+  w.Counter("abs_capture_time_packets", stats_.abs_capture_time_packets);
 }
 
 }  // namespace sm::rtp

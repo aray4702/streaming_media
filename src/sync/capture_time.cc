@@ -45,6 +45,19 @@ int64_t UQ32x32ToInt64Ms(uint64_t q) { return static_cast<int64_t>(std::round(st
 int64_t Q32x32ToInt64Ms(int64_t q) { return static_cast<int64_t>(std::round(static_cast<double>(q) * (1000.0 / kFractionsPerSecond))); }
 int64_t Q32x32ToInt64Us(int64_t q) { return static_cast<int64_t>(std::round(static_cast<double>(q) * (1'000'000.0 / kFractionsPerSecond))); }
 
+int64_t NtpToMs(uint64_t ntp) {
+  constexpr double kNtpFracPerMs = 4.294967296E6;  // 2^32 / 1000.
+  const double frac_ms = static_cast<double>(ntp & 0xFFFFFFFFu) / kNtpFracPerMs;
+  return 1000 * static_cast<int64_t>(ntp >> 32) + static_cast<int64_t>(frac_ms + 0.5);
+}
+
+uint64_t Int64MsToUQ32x32(int64_t ms) {
+  const double result = std::round(static_cast<double>(ms) * (kFractionsPerSecond / 1000.0));
+  if (result <= 0.0) return 0;
+  if (result >= static_cast<double>(std::numeric_limits<uint64_t>::max())) return std::numeric_limits<uint64_t>::max();
+  return static_cast<uint64_t>(result);
+}
+
 int64_t ToNtpUnits(TimeDelta delta) {
   // ntp_time_util.h: saturated_cast<int32_t>(us) * 2^32 / 1e6.
   const int64_t us = std::clamp<int64_t>(delta.us(), std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max());
