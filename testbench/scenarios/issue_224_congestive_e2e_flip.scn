@@ -7,7 +7,8 @@ describe Congestive loss (2.5 Mbps, 60 ms queue, drop to 800 kbps at 15 s): vide
 # 394 448 467 450, mean 484), av offset p95 466 (mean 379).
 # Target (issue #224): within the parity band of libwebrtc's mean (420 ms, band ~96 ms).
 duration 40s
-compare_seeds 40  # yardstick for #611: libwebrtc's tail on 40 seeds
+# Yardstick for #611: libwebrtc's tail on 40 seeds.
+compare_seeds 40
 at 0s capacity=2500kbps delay=30ms queue=60ms
 at 15s capacity=800kbps
 # Was < 650. Owner accepted < 655 on PR #306 (2026-10-23 3:43 PM PT): with av_sync on and #328 merged, ours 653.6 on
