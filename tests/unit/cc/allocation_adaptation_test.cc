@@ -104,9 +104,20 @@ SM_TEST(VideoAdaptation, LaddersFollowPreference) {
   DegradationController b(rs);
   for (const auto& f : b.ladder()) SM_EXPECT_EQ(f.width, 1280);
   SM_EXPECT_EQ(b.ladder().back().fps, 5.0);
-  DegradationController c;  // Balanced: fps first.
+  DegradationConfig bal;
+  bal.preference = DegradationPreference::kBalanced;
+  DegradationController c(bal);  // Balanced: fps first.
   SM_EXPECT_EQ(c.ladder()[1].width, 1280);
   SM_EXPECT_LT(c.ladder()[1].fps, 30.0);
+}
+
+// libwebrtc's camera default is MAINTAIN_FRAMERATE: BALANCED only with the
+// WebRTC-Video-BalancedDegradation trial (webrtc_video_engine.cc:2032-2064).
+SM_TEST(VideoAdaptation, DefaultPreferenceIsMaintainFramerate) {
+  SM_EXPECT_TRUE(DegradationConfig{}.preference == DegradationPreference::kMaintainFramerate);
+  DegradationController d;
+  for (const auto& f : d.ladder()) SM_EXPECT_EQ(f.fps, 30.0);
+  SM_EXPECT_LT(d.ladder().back().pixels(), d.ladder().front().pixels());
 }
 
 SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
@@ -123,7 +134,9 @@ SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
 }
 
 SM_TEST(VideoAdaptation, CpuOveruseSignalsAndResourceCap) {
-  CpuOveruseDetector cpu;
+  CpuOveruseConfig v1;
+  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
+  CpuOveruseDetector cpu(v1);
   for (int i = 0; i < 100; ++i) cpu.OnFrameEncoded(TimeDelta::Millis(30), TimeDelta::Millis(33));
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(5)) == CpuOveruseDetector::Signal::kNone);  // 1st check.
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(10)) == CpuOveruseDetector::Signal::kOveruse);

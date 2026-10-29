@@ -89,9 +89,25 @@ struct ReceiveStatsSnapshot {
 };
 
 // Per-SSRC receive statistics as defined in RFC 3550 A.3 and A.8.
+// rtp_rtcp_config.h: the max reordering threshold of a receive stream, in
+// sequence numbers, unless the receiver sets another.
+inline constexpr int kDefaultMaxReorderingThreshold = 50;
+// RtpVideoStreamReceiver2 (rtp_video_stream_receiver2.cc:106, :365-367): the
+// threshold of a video stream with NACK on.
+inline constexpr int kMaxPacketAgeToNack = 450;
+
 class ReceiveStatistics : public MetricsSource {
  public:
   ReceiveStatistics(uint32_t ssrc, int clock_rate) : ssrc_(ssrc), clock_rate_(clock_rate) {}
+  // `v2`: the sequence and report rules of libwebrtc's StreamStatisticianImpl (issue #575).
+  // `max_reordering_threshold` is its SetMaxReorderingThreshold: a packet further than this
+  // from the highest sequence number is held; if the next packet follows it, the stream
+  // restarted and the gap is not loss, else it was an old packet (receive_statistics_impl.cc:
+  // 71-115). Fraction lost is 255 * lost / expected, and a negative cumulative loss reports 0
+  // (:263-274). Off: no threshold (any later packet is the new maximum and a jump is loss),
+  // fraction lost 256 * lost / expected capped at 255, and the cumulative loss as counted.
+  ReceiveStatistics(uint32_t ssrc, int clock_rate, bool v2, int max_reordering_threshold = kDefaultMaxReorderingThreshold)
+      : ssrc_(ssrc), clock_rate_(clock_rate), v2_(v2), max_reordering_threshold_(max_reordering_threshold) {}
   void OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival);
   // As above for a stream whose payload type changes the RTP clock rate:
   // `payload_frequency` is the rate of this packet (libwebrtc's
@@ -110,17 +126,27 @@ class ReceiveStatistics : public MetricsSource {
   ReceiveStatsSnapshot Snapshot() const;
   double jitter_ms() const { return jitter_q4_ / 16.0 * 1000.0 / clock_rate_; }
   int jitter_frequency() const { return clock_rate_; }
+  bool v2() const { return v2_; }
+  int max_reordering_threshold() const { return max_reordering_threshold_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
   uint32_t ssrc_;
   int clock_rate_;
+  // StreamStatisticianImpl's sequence state (receive_statistics_impl.cc).
+  bool UpdateOutOfOrder(uint16_t seq, int64_t sequence_number);
+  bool v2_ = false;
+  int max_reordering_threshold_ = kDefaultMaxReorderingThreshold;
   SeqNumUnwrapper<uint16_t> unwrapper_;
   bool started_ = false;
-  int64_t base_seq_ = 0, max_seq_ = 0;
-  uint32_t received_ = 0;
-  int64_t expected_prior_ = 0;
-  uint32_t received_prior_ = 0;
+  uint32_t received_ = 0;  // receive_counters_.transmitted.packets.
+  int64_t received_seq_first_ = -1;
+  int64_t received_seq_max_ = -1;
+  std::optional<uint16_t> received_seq_out_of_order_;
+  int32_t cumulative_loss_ = 0;
+  int32_t cumulative_loss_rtcp_offset_ = 0;
+  int32_t last_report_cumulative_loss_ = 0;
+  int64_t last_report_seq_max_ = -1;
   int32_t jitter_q4_ = 0;  // RTP units scaled by 16 (RFC 3550 A.8, integer as libwebrtc).
   uint32_t last_timestamp_ = 0;
   Timestamp last_receive_time_ = Timestamp::MinusInfinity();

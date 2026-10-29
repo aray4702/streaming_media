@@ -67,6 +67,16 @@ endif()
 if(SM_WITH_SYNC)
   include(${CMAKE_CURRENT_SOURCE_DIR}/sync.cmake)
 endif()
+# The browser binding's native code (web/), without Emscripten.
+if(SM_WITH_TIMING AND SM_WITH_AUDIO)
+  sm_add_test_exe(sm_unit_web LABEL unit DEPS sm::timing sm::audio
+    SOURCES
+      unit/web/audio_jitter_buffer_binding_test.cc
+    SUITES
+      WebAudioJitterBuffer
+  )
+  target_include_directories(sm_unit_web PRIVATE ${PROJECT_SOURCE_DIR}/web)
+endif()
 if(SM_WITH_RTP)
   include(${CMAKE_CURRENT_SOURCE_DIR}/rtp.cmake)
 endif()

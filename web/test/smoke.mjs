@@ -37,6 +37,26 @@ check(concealed < 5, `jitter buffer plays without concealment (${concealed} expa
 check(jb.targetDelayMs() > 0, `jitter buffer target delay ${jb.targetDelayMs()} ms`);
 jb.delete();
 
+// At 44.1 kHz, the usual AudioContext rate, NetEq runs at 48 kHz and the
+// binding resamples (#579): the page hears the tone, not silence.
+const jb44 = new sm.AudioJitterBuffer(44100);
+let expands44 = 0, energy44 = 0;
+for (let t = 0; t < 1000; t += 10) {
+  if (t % 20 === 0) {
+    const x = new Float32Array(882);
+    for (let i = 0; i < 882; i++) x[i] = 0.3 * Math.sin(2 * Math.PI * 440 * (Math.round(t * 44.1) + i) / 44100);
+    jb44.insertPacket(Math.round(t * 44.1), x, t + 30);
+  }
+  const out = jb44.getAudio(441, t + 30);
+  if (out.length !== 441) failures++;
+  if (jb44.lastOperation() === 'expand') expands44++;
+  if (t >= 500) for (const s of out) energy44 += s * s;
+}
+const rms44 = Math.sqrt(energy44 / (50 * 441));
+check(expands44 < 5, `jitter buffer at 44.1 kHz plays without concealment (${expands44} expands)`);
+check(rms44 > 0.15, `jitter buffer at 44.1 kHz plays the tone (rms ${rms44.toFixed(3)})`);
+jb44.delete();
+
 // GCC + transport feedback round trip.
 const gcc = new sm.GccController(300, 30, 5000);
 const fbb = new sm.TransportFeedbackBuilder();

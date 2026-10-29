@@ -2,8 +2,9 @@
 // rtp-session.md, sections 6.1 to 6.4). Follows libwebrtc's RtpPacketizerH264
 // (modules/rtp_rtcp/source/rtp_format_h264.cc) and VideoRtpDepacketizerH264:
 // single NAL unit packets, STAP-A aggregation and FU-A fragmentation. STAP-B,
-// MTAP and FU-B belong to mode 2, which libwebrtc does not negotiate, and are
-// rejected as malformed.
+// MTAP and FU-B belong to mode 2, which libwebrtc does not negotiate: its
+// depacketizer takes them (and types 0 and 30-31) as single NAL units it reads
+// nothing from, and so does ours.
 //
 // An access unit is handed over as an Annex-B byte stream (start codes
 // 00 00 01 or 00 00 00 01). The packetizer removes the start codes, the
@@ -64,17 +65,23 @@ class H264Packetizer {
   static std::vector<std::vector<uint8_t>> Packetize(std::span<const uint8_t> annexb, size_t max_payload);
 };
 
-// What one RTP payload holds.
+// What one RTP payload holds: VideoRtpDepacketizerH264::Parse's video header
+// (video_rtp_depacketizer_h264.cc).
 struct H264PayloadInfo {
-  bool valid = false;  // False: malformed (the packet is dropped).
+  bool valid = false;  // False: Parse returns nullopt there (the packet is dropped).
+  // is_first_packet_in_frame: an SPS, PPS, AUD or SEI unit, or a slice whose
+  // first_mb_in_slice is 0 (in an FU-A, the first fragment of a slice only).
   bool first_packet_in_frame = false;
   bool idr = false;  // An IDR slice (nal_unit_type 5), or its first FU-A fragment.
-  // VideoRtpDepacketizerH264's frame_type kVideoFrameKey: an SPS or an IDR
-  // slice in a single NAL unit or STAP-A, or any FU-A fragment of an IDR slice
-  // (ParseFuaNalu reads the original NAL type from every fragment).
+  // frame_type kVideoFrameKey: an SPS or an IDR slice in a single NAL unit or
+  // STAP-A, or any FU-A fragment of an IDR slice (ParseFuaNalu reads the
+  // original NAL type from every fragment).
   bool keyframe = false;
-  bool sps = false;
-  bool pps = false;
+  bool sps = false;  // An SPS that parsed (single NAL unit or STAP-A).
+  bool pps = false;  // A PPS whose ids parsed (single NAL unit or STAP-A).
+  // The SPS's resolution (video_header.width/height), 0 without an SPS.
+  uint32_t width = 0;
+  uint32_t height = 0;
   bool fu_start = false;  // An FU-A fragment with the start bit.
   bool fu_end = false;    // An FU-A fragment with the end bit.
   bool fu_continuation = false;  // An FU-A fragment without the start bit.
@@ -82,16 +89,19 @@ struct H264PayloadInfo {
 
 class H264Depacketizer {
  public:
-  // Classifies one RTP payload without keeping state. A slice or IDR starts a
-  // frame when first_mb_in_slice is 0, which in the first byte after the NAL
-  // header is a leading 1 bit (ue(v) of 0); SPS, PPS, SEI and AUD always
-  // start one, as they precede the slices of an access unit.
+  // VideoRtpDepacketizerH264::Parse without keeping state. A single NAL unit
+  // or STAP-A is dropped when a unit is an SPS that SpsVuiRewriter cannot
+  // parse, a PPS or slice whose ids don't parse, or a nested STAP-A or FU-A; an
+  // FU-A when it is shorter than its two header bytes. Empty units are
+  // skipped. The FU-A start and end bits are not checked, as in libwebrtc.
   static H264PayloadInfo Parse(std::span<const uint8_t> payload);
 
   // Rebuilds the Annex-B access unit from the payloads of one frame's packets,
-  // in sequence order. False if a FU-A fragment sequence is inconsistent
-  // (a fragment without its start, a start inside an unfinished unit, an end
-  // missing) or a payload is malformed; `out` is left with what was appended.
+  // in sequence order, as H264SpsPpsTracker::CopyAndFixBitstream: a start
+  // code before each unit and before the first fragment of an FU-A. An SPS is
+  // rewritten as the depacketizer rewrites it on receive (SpsVuiRewriter,
+  // kIncoming). False if a payload is one Parse drops; `out` is left with
+  // what was appended.
   static bool Reassemble(std::span<const RtpPacket> packets, std::vector<uint8_t>& out);
 };
 

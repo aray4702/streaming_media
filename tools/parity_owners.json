@@ -194,6 +194,21 @@
     {"scenario": "random_loss_5pct", "metric": "sync.av_offset_p95_ms", "issues": [479], "note": "Seed noise: behind on 10 seeds (101 vs 86.08), in band on 80 seeds: 89.18 vs 84.29, band \u00b115.1 (#562 on main 0bd468a; #479 step 2)."},
     {"scenario": "very_low_capacity", "metric": "video.longest_freeze_ms", "issues": [479], "note": "Seed noise: ahead on 10 seeds (3855 vs 4431), in band on 80 seeds: 4039 vs 4230, band \u00b11.03e+03 (#562 on main 0bd468a; #479 step 2)."},
     {"scenario": "very_low_capacity_allocator_v2", "metric": "video.longest_freeze_ms", "issues": [479], "note": "Seed noise: ahead on 10 seeds (3855 vs 4431), in band on 80 seeds (run as `very_low_capacity`, identical results): 4039 vs 4230, band \u00b11.03e+03 (#562 on main 0bd468a; #479 step 2)."},
-    {"scenario": "issue_466_undershoot_very_low_capacity", "metric": "video.render_fps", "issues": [411]}
+    {"scenario": "issue_466_undershoot_very_low_capacity", "metric": "video.render_fps", "issues": [411]},
+    {"scenario": "issue_12_lossbwe_congestive", "metric": "sync.av_offset_p95_ms", "issues": [474]},
+    {"scenario": "issue_224_congestive_e2e_flip", "metric": "sync.av_offset_p95_ms", "issues": [474]},
+    {"scenario": "issue_61_googcc_glue_congestive", "metric": "sync.av_offset_p95_ms", "issues": [474]},
+    {"scenario": "issue_12_lossbwe_policer", "metric": "sync.av_offset_p95_ms", "issues": [411]},
+    {"scenario": "issue_150_gcc_v2_high_jitter_seed10", "metric": "sync.av_offset_p95_ms", "issues": [411]},
+    {"scenario": "issue_12_lossbwe_congestive", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_224_congestive_e2e_flip", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_61_googcc_glue_congestive", "metric": "video.e2e_delay_p95_ms", "issues": [474]},
+    {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "video.longest_freeze_ms", "issues": [474]},
+    {"scenario": "issue_76_packetization_v2", "metric": "video.freeze_total_ms", "issues": [474]},
+    {"scenario": "issue_12_lossbwe_random_loss", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_15_aimd_v2_random_loss", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_18_random_loss_keyframes", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_7_no_fec_beside_nack", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "random_loss_5pct", "metric": "video.e2e_delay_p95_ms", "issues": [411]}
   ]
 }

@@ -864,17 +864,17 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
 }
 
 // #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
-// unless the config selects v1; AudioJitterBufferConfig on its own keeps v1.
+// unless the config selects v1; AudioJitterBufferConfig on its own defaults to v2 too (#579).
 SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
   SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
-  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 2);
 }
 
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
-// frame release); timing::VideoTimingConfig on its own keeps version 1.
+// frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
   SM_EXPECT_EQ(VideoStreamConfig{}.timing.version, 2);
-  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 2);
 }
 
 // #453: libwebrtc runs H264SpsPpsTracker (rtp_video_stream_receiver2.cc OnReceivedPayloadData) and
@@ -1043,7 +1043,20 @@ SM_TEST(Session, AudioReceiveRtcpEngineExistsOnlyWithAnAudioReceiveStream) {
   au.ssrc = 0x100;
   s.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
-  Session off(Cfg(2));
+  SessionConfig co = Cfg(2);
+  co.audio_receive_rtcp = false;
+  Session off(co);
   off.AddAudioReceive(au, &dec);
   SM_EXPECT_TRUE(off.audio_receive_rtcp() == nullptr);
+}
+
+// Issue #484: per-stream audio RTCP is the default, as libwebrtc's ChannelReceive.
+SM_TEST(Session, AudioReceiveRtcpIsTheDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.audio_receive_rtcp);
+  Session s(Cfg(2));
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioReceive(au, &dec);
+  SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
 }

@@ -6,7 +6,6 @@
 #include "sm/core/random.h"
 #include "sm/video/codec_fallback.h"
 #include "sm/video/content_policy.h"
-#include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
@@ -346,6 +345,169 @@ SM_TEST(CodecFallback, EncoderInfoMerge) {
   SM_EXPECT_EQ(w.GetEncoderInfo().min_pixels_per_frame, 1000);
 }
 
+namespace {
+// A scripted decoder, as CountingFakeDecoder in libwebrtc's
+// video_decoder_software_fallback_wrapper_unittest.cc.
+struct FakeDecoder : FallbackDecoder {
+  bool configure_result = true;
+  DecoderStatus release_result = DecoderStatus::kOk;
+  FallbackDecoderInfo info;
+  int configure_count = 0, release_count = 0;
+  DecoderSettings last_settings;
+  explicit FakeDecoder(std::string name = "fake") { info.implementation_name = std::move(name); }
+  bool Configure(const DecoderSettings& s) override {
+    ++configure_count;
+    last_settings = s;
+    return configure_result;
+  }
+  DecoderStatus Release() override {
+    ++release_count;
+    return release_result;
+  }
+  FallbackDecoderInfo GetDecoderInfo() const override { return info; }
+};
+DecoderSettings H264Decoder() { return {DecoderCodecType::kH264}; }
+using DecoderType = DecoderFallbackController::DecoderType;
+}  // namespace
+
+SM_TEST(DecoderFallback, InitializesHardwareDecoder) {
+  FakeDecoder sw, hw;
+  DecoderFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.current() == nullptr);  // Decode before Configure: UNINITIALIZED.
+  SM_EXPECT_TRUE(w.Configure(H264Decoder(), Ms(0)));
+  SM_EXPECT_TRUE(w.decoder_type() == DecoderType::kHardware);
+  SM_EXPECT_TRUE(w.current() == &hw);
+  SM_EXPECT_EQ(hw.configure_count, 1);
+  SM_EXPECT_EQ(sw.configure_count, 0);
+  SM_EXPECT_TRUE(hw.last_settings.codec_type == DecoderCodecType::kH264);
+}
+
+SM_TEST(DecoderFallback, ConfigureFailureUsesSoftware) {
+  FakeDecoder sw, hw;
+  hw.configure_result = false;
+  DecoderFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.Configure(H264Decoder(), Ms(0)));
+  SM_EXPECT_TRUE(w.decoder_type() == DecoderType::kFallback);
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(hw.release_count, 0);  // The hardware decoder never configured.
+  SM_EXPECT_EQ(w.stats().fallbacks, 1u);
+  // Both fail: Configure fails and there is nothing to decode with.
+  FakeDecoder sw2, hw2;
+  sw2.configure_result = hw2.configure_result = false;
+  DecoderFallbackController w2({}, sw2, hw2);
+  SM_EXPECT_FALSE(w2.Configure(H264Decoder(), Ms(0)));
+  SM_EXPECT_TRUE(w2.current() == nullptr);
+  SM_EXPECT_EQ(w2.stats().fallbacks, 0u);
+}
+
+SM_TEST(DecoderFallback, FallbackRequestOnDecodeIsSticky) {
+  FakeDecoder sw, hw;
+  DecoderFallbackController w({}, sw, hw);
+  w.Configure(H264Decoder(), Ms(0));
+  for (int i = 0; i < 10; ++i) SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kOk, i == 0, Ms(33 * i)));
+  // The same frame is decoded again by the software decoder.
+  SM_EXPECT_TRUE(w.OnDecodeResult(DecoderStatus::kFallbackSoftware, false, Ms(330)));
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(hw.release_count, 1);
+  SM_EXPECT_EQ(sw.configure_count, 1);
+  SM_EXPECT_EQ(w.stats().hw_decoded_frames_at_last_fallback, 10);
+  // IsSoftwareFallbackSticky: the fallback's own results never move back.
+  for (auto st : {DecoderStatus::kOk, DecoderStatus::kError, DecoderStatus::kFallbackSoftware})
+    SM_EXPECT_FALSE(w.OnDecodeResult(st, true, Ms(363)));
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(sw.configure_count, 1);
+  SM_EXPECT_EQ(w.stats().fallbacks, 1u);
+}
+
+SM_TEST(DecoderFallback, FailedFallbackInitKeepsHardware) {
+  FakeDecoder sw, hw;
+  sw.configure_result = false;
+  DecoderFallbackController w({}, sw, hw);
+  w.Configure(H264Decoder(), Ms(0));
+  // The hardware decoder's result is kept as the frame's result.
+  SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kFallbackSoftware, true, Ms(33)));
+  SM_EXPECT_TRUE(w.current() == &hw);
+  SM_EXPECT_EQ(hw.release_count, 0);
+  SM_EXPECT_EQ(w.stats().fallbacks, 0u);
+}
+
+SM_TEST(DecoderFallback, GenericErrorsCountOnlyOnKeyframes) {
+  FakeDecoder sw, hw;
+  DecoderFallbackController w({}, sw, hw);
+  w.Configure(H264Decoder(), Ms(0));
+  // DoesNotFallbackOnEveryError / on delta frames: any number of delta-frame errors.
+  for (int i = 0; i < 50; ++i) SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kError, false, Ms(i)));
+  // Three keyframe errors stay on the hardware decoder.
+  for (int i = 0; i < 3; ++i) SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kError, true, Ms(100 + i)));
+  // A decoded frame (or any non-error code) resets the count.
+  SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kOther, false, Ms(200)));
+  for (int i = 0; i < 3; ++i) SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kError, true, Ms(300 + i)));
+  SM_EXPECT_TRUE(w.current() == &hw);
+  // The 4th consecutive keyframe error (kMaxConsequtiveHwErrors) falls back,
+  // with delta-frame errors in between not breaking the run.
+  SM_EXPECT_FALSE(w.OnDecodeResult(DecoderStatus::kError, false, Ms(400)));
+  SM_EXPECT_TRUE(w.OnDecodeResult(DecoderStatus::kError, true, Ms(401)));
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(w.stats().hw_decoded_frames_at_last_fallback, 1);  // Only the kOther frame.
+}
+
+SM_TEST(DecoderFallback, ReleaseAndReconfigureTriesHardwareAgain) {
+  FakeDecoder sw, hw;
+  DecoderFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.Release() == DecoderStatus::kOk);  // Nothing configured: OK, no call.
+  SM_EXPECT_EQ(hw.release_count + sw.release_count, 0);
+  w.Configure(H264Decoder(), Ms(0));
+  hw.release_result = DecoderStatus::kError;
+  SM_EXPECT_TRUE(w.Release() == DecoderStatus::kError);  // ForwardsReleaseCall.
+  SM_EXPECT_EQ(hw.release_count, 1);
+  SM_EXPECT_TRUE(w.current() == nullptr);
+  w.Configure(H264Decoder(), Ms(10));
+  w.OnDecodeResult(DecoderStatus::kOk, true, Ms(20));
+  w.OnDecodeResult(DecoderStatus::kFallbackSoftware, false, Ms(53));
+  SM_EXPECT_TRUE(w.Release() == DecoderStatus::kOk);
+  SM_EXPECT_EQ(sw.release_count, 1);
+  // UsesHwDecoderAfterReinit.
+  SM_EXPECT_TRUE(w.Configure(H264Decoder(), Ms(100)));
+  SM_EXPECT_TRUE(w.current() == &hw);
+  SM_EXPECT_EQ(hw.configure_count, 3);
+  // The histogram count is never reset, as in libwebrtc.
+  w.OnDecodeResult(DecoderStatus::kOk, true, Ms(133));
+  w.OnDecodeResult(DecoderStatus::kFallbackSoftware, false, Ms(166));
+  SM_EXPECT_EQ(w.stats().hw_decoded_frames_at_last_fallback, 2);
+  SM_EXPECT_EQ(w.stats().fallbacks, 2u);
+}
+
+SM_TEST(DecoderFallback, ForcedSoftwareDecoderFallback) {
+  // WebRTC-Video-ForcedSwDecoderFallback/Enabled/.
+  DecoderFallbackConfig cfg;
+  cfg.force_sw_decoder_fallback = true;
+  FakeDecoder sw, hw;
+  DecoderFallbackController w(cfg, sw, hw);
+  SM_EXPECT_TRUE(w.Configure(H264Decoder(), Ms(0)));
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(hw.configure_count, 0);
+  // Forced and the software decoder fails: no hardware attempt.
+  FakeDecoder sw2, hw2;
+  sw2.configure_result = false;
+  DecoderFallbackController w2(cfg, sw2, hw2);
+  SM_EXPECT_FALSE(w2.Configure(H264Decoder(), Ms(0)));
+  SM_EXPECT_EQ(hw2.configure_count, 0);
+}
+
+SM_TEST(DecoderFallback, ReportsFallbackImplementationName) {
+  FakeDecoder sw("libavcodec"), hw("VideoToolbox");
+  hw.info.is_hardware_accelerated = true;
+  DecoderFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.ImplementationName() == "VideoToolbox");  // Before Configure: the main decoder's.
+  w.Configure(H264Decoder(), Ms(0));
+  SM_EXPECT_TRUE(w.GetDecoderInfo().is_hardware_accelerated);
+  w.OnDecodeResult(DecoderStatus::kFallbackSoftware, true, Ms(33));
+  SM_EXPECT_TRUE(w.ImplementationName() == "libavcodec (fallback from: VideoToolbox)");
+  FallbackDecoderInfo info = w.GetDecoderInfo();
+  SM_EXPECT_TRUE(info.implementation_name == "libavcodec (fallback from: VideoToolbox)");
+  SM_EXPECT_FALSE(info.is_hardware_accelerated);
+}
+
 SM_TEST(Orientation, CvoByteAndRotation) {
   VideoOrientation o{Rotation::k90, true, true};
   uint8_t b = EncodeCvo(o);
@@ -382,6 +544,11 @@ SM_TEST(ContentPolicy, HintsMapToPolicies) {
   auto motion = SettingsFor(ContentHint::kMotion, false);
   SM_EXPECT_TRUE(motion.degradation == Degradation::kMaintainFramerate);
   SM_EXPECT_FALSE(motion.variable_framerate);
+  // No hint: camera keeps the frame rate, screencast the resolution, as
+  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064).
+  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, false).degradation == Degradation::kMaintainFramerate);
+  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, true).degradation == Degradation::kMaintainResolution);
+  SM_EXPECT_TRUE(ContentSettings{}.degradation == Degradation::kMaintainFramerate);
 }
 
 SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {
@@ -395,30 +562,6 @@ SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {
   SM_EXPECT_EQ(r.dirty_blocks, 1);
   SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(200)));  // Already absorbed by Analyze.
   SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(1300)));  // Keep-alive.
-}
-
-SM_TEST(FrameScaler, DownUpRoundTripQuality) {
-  I420Frame f = MakeTestFrame(640, 360, 1);
-  for (auto [w, h] : {std::pair{480, 270}, {320, 180}, {160, 90}}) {
-    I420Frame back = Scale(Scale(f, w, h), 640, 360);
-    double psnr = PsnrY(f, back);
-    SM_EXPECT_GT(psnr, w >= 320 ? 26.0 : 20.0);
-  }
-  I420Frame same = Scale(f, 640, 360);
-  SM_EXPECT_TRUE(same == f);
-}
-
-SM_TEST(FrameScaler, BoxFilterPreservesMeanAndAspectModes) {
-  I420Frame f(64, 64);
-  for (size_t i = 0; i < f.y.size(); ++i) f.y[i] = (i % 2) ? 200 : 100;  // Fine detail.
-  I420Frame s = Scale(f, 16, 16);
-  for (uint8_t v : s.y) SM_EXPECT_NEAR(v, 150, 1);  // Averaged, no aliasing.
-  I420Frame wide = MakeTestFrame(640, 360, 0);
-  I420Frame crop = ScaleToFit(wide, 320, 320, AspectMode::kCrop);
-  SM_EXPECT_EQ(crop.width, 320);
-  I420Frame box = ScaleToFit(wide, 320, 320, AspectMode::kLetterbox);
-  SM_EXPECT_EQ(box.Y(160, 0), 16);    // Black bar on top.
-  SM_EXPECT_NE(box.Y(160, 160), 16);  // Picture in the middle.
 }
 
 SM_TEST(FrameScheduler, RendersOnTimeDropsLateWhenNewerWaiting) {
@@ -533,7 +676,9 @@ SM_TEST(RenderFrames, InvalidRenderDelayBecomesTenMs) {
 SM_TEST(QualityScaler, ThresholdsAndSignals) {
   SM_EXPECT_EQ(QpThresholds::ForCodec("vp8").high, 95);
   SM_EXPECT_EQ(QpThresholds::ForCodec("H264").low, 24);
-  QualityScaler q;  // H.264 thresholds.
+  QualityScalerConfig v1;
+  v1.version = 1;  // The library's own scaler; the default is libwebrtc's (#579).
+  QualityScaler q(v1);  // H.264 thresholds.
   for (int i = 0; i < 30; ++i) q.OnEncodedFrame(45);
   SM_EXPECT_TRUE(q.Check(Ms(0)) == QualityScaler::Signal::kAdaptDown);
   q.OnResolutionChanged();
@@ -542,7 +687,7 @@ SM_TEST(QualityScaler, ThresholdsAndSignals) {
   for (int i = 0; i < 30; ++i) q.OnEncodedFrame(18);
   SM_EXPECT_TRUE(q.Check(Ms(2500)) == QualityScaler::Signal::kNone);  // Rate limited.
   SM_EXPECT_TRUE(q.Check(Ms(4000)) == QualityScaler::Signal::kAdaptUp);
-  QualityScaler d;
+  QualityScaler d(v1);
   for (int i = 0; i < 20; ++i) d.OnFrameDropped();
   for (int i = 0; i < 5; ++i) d.OnEncodedFrame(20);
   SM_EXPECT_TRUE(d.Check(Ms(0)) == QualityScaler::Signal::kAdaptDown);  // 80% dropped.
