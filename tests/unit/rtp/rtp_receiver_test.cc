@@ -820,6 +820,33 @@ SM_TEST(RtpReceiver, FrameRotationComesFromTheLastPacketsCvo) {
   for (size_t i = 0; i < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].rotation == rotations[i]);
 }
 
+SM_TEST(RtpReceiver, SpsPpsTrackerDropsAParameterSetWithoutIds) {
+  // An SPS sent as FU-A carries no SPS id (ParseFuaNalu), so
+  // H264SpsPpsTracker::CopyAndFixBitstream returns kDrop: the packet is
+  // ignored without a keyframe request (rtp_video_stream_receiver2.cc:930-936).
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = true;
+  RtpReceiver r(cfg);
+  r.Start(Timestamp::Millis(0));
+  RtpPacket p;
+  p.ssrc = cfg.ssrc;
+  p.payload_type = 96;
+  p.seq = 10;
+  p.timestamp = 9000;
+  Bytes sps = {0x67};
+  sps.insert(sps.end(), kFakeH264Sps, kFakeH264Sps + sizeof(kFakeH264Sps));
+  p.payload = {static_cast<uint8_t>(0x60 | kH264NalFuA), static_cast<uint8_t>(0x80 | kH264NalSps)};
+  p.payload.insert(p.payload.end(), sps.begin() + 1, sps.end());
+  r.OnPacket(p.Serialize(), Timestamp::Millis(10));
+  r.Process(Timestamp::Millis(20));
+  SM_EXPECT_EQ(r.stats().parameter_sets_without_ids, 1u);
+  SM_EXPECT_EQ(r.stats().idr_without_parameter_sets, 0u);
+  SM_EXPECT_EQ(r.stats().invalid_payload, 0u);
+  int plis = 0;
+  for (const auto& m : r.TakeFeedback().keyframe) plis += m.type == loss::FeedbackType::kPli;
+  SM_EXPECT_EQ(plis, 0);
+}
+
 // receive_statistics_v2 (issue #575): the statisticians follow libwebrtc's receive streams:
 // video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
 // without NACK, RTX and audio kDefaultMaxReorderingThreshold (50).

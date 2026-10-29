@@ -1554,9 +1554,10 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Frame ids and dependencies come from sequence numbers rather than a descriptor (design 6.4). LNTF is "
                "sent only when negotiated and frame information is present, so it is off for H.264, as in "
                "libwebrtc (follow-up #47). `sps_pps_tracker` (on by default for H.264 streams, as libwebrtc; issue #453): libwebrtc's "
-               "H264SpsPpsTracker rule that drops the first packet of an IDR slice received before an SPS and a "
-               "PPS and requests a keyframe (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe). "
-               "The tracker keeps no parameter-set ids, because the bench sends one SPS and one PPS. With it, the "
+               "H264SpsPpsTracker rule that drops the first packet of an IDR slice received before its PPS and "
+               "that PPS's SPS and requests a keyframe (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe). "
+               "Parameter sets are kept by id, as CopyAndFixBitstream keeps them (#568), and an SPS or PPS without "
+               "ids (an FU-A fragment) is dropped without a request (kDrop). With it, the "
                "packet buffer's `missing_packets` hold (4.1, `VideoStreamConfig::packet_buffer`) keeps the delta "
                "frames after a dropped IDR start from reaching the first-frame-delta keyframe request, as "
                "libwebrtc's PacketBuffer does. Both are on by default in a session's H.264 video streams and off for "
@@ -1599,7 +1600,10 @@ ALGORITHMS = [
                "depacketizer ports VideoRtpDepacketizerH264::Parse (#568): which payloads it drops (an SPS, PPS or "
                "slice header that doesn't parse, a nested STAP-A or FU-A, an FU-A under 2 bytes), where frames start, "
                "the SPS's resolution, and the incoming SPS VUI rewrite; reassembly follows "
-               "H264SpsPpsTracker::CopyAndFixBitstream. The SPS fields are read as libwebrtc's SpsParser.",
+               "H264SpsPpsTracker::CopyAndFixBitstream. The SPS fields are read as libwebrtc's SpsParser, with "
+               "H264::IsValidResolution's level 5.2 bound, and the PPS and slice ids as PpsParser::ParsePpsIds and "
+               "ParseSliceHeader (ids bounded by kMaxPpsId and kMaxSpsId). Each unit's ids go to the receiver's "
+               "parameter-set tracker (RTPVideoHeaderH264::nalus).",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "
@@ -1608,7 +1612,10 @@ ALGORITHMS = [
                       "checked against libwebrtc's SpsVuiRewriter by `sm_rtcp_interop` (25 access units). #568: the "
                       "depacketizer's accept and drop rules, frame starts and receive-side SPS rewrite are unit-tested "
                       "against video_rtp_depacketizer_h264.cc case by case (`unit.H264`); the bench's frames are "
-                      "rewritten on send, so the receive side finds kVuiOk and no suite metric moves."),
+                      "rewritten on send, so the receive side finds kVuiOk and no suite metric moves. The PPS and "
+                      "slice id bounds, the SPS resolution bound and the per-unit ids are unit-tested against "
+                      "pps_parser.cc, h264_common.h and video_rtp_depacketizer_h264.cc (`unit.H264`, "
+                      "`unit.SpsVuiRewriter`); no suite metric moves."),
 ]
 
 # Problem rows from sections 3-8 that are platform glue, codec internals or

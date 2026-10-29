@@ -85,6 +85,11 @@ struct H264PayloadInfo {
   bool fu_start = false;  // An FU-A fragment with the start bit.
   bool fu_end = false;    // An FU-A fragment with the end bit.
   bool fu_continuation = false;  // An FU-A fragment without the start bit.
+  // RTPVideoHeaderH264::nalus: each non-empty unit of a single NAL unit or
+  // STAP-A with the ids it carries (SPS: its id; PPS: both; slice: its PPS
+  // id), and an FU-A's first fragment with its slice's PPS id (-1 for an SPS
+  // or PPS, whose ids an FU-A doesn't give). Other fragments have none.
+  std::vector<VideoNaluInfo> nalus;
 };
 
 class H264Depacketizer {

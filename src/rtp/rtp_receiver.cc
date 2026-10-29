@@ -190,6 +190,39 @@ void RtpReceiver::TrackSequence(uint16_t seq) {
   }
 }
 
+H264SpsPpsTracker::Action H264SpsPpsTracker::CopyAndFixBitstream(std::span<const VideoNaluInfo> nalus,
+                                                                bool first_packet_in_frame) {
+  constexpr int32_t kMaxSps = static_cast<int32_t>(kH264MaxSpsId);
+  constexpr int32_t kMaxPps = static_cast<int32_t>(kH264MaxPpsId);
+  for (const VideoNaluInfo& nalu : nalus) {
+    switch (nalu.type) {
+      case 7: {  // kSps
+        if (nalu.sps_id < 0 || nalu.sps_id > kMaxSps) return Action::kDrop;  // "SPS id out of bounds"
+        sps_[static_cast<size_t>(nalu.sps_id)] = true;
+        break;
+      }
+      case 8: {  // kPps
+        if (nalu.pps_id < 0 || nalu.pps_id > kMaxPps || nalu.sps_id < 0 || nalu.sps_id > kMaxSps) {
+          return Action::kDrop;  // "PPS or SPS id out of bounds"
+        }
+        pps_sps_id_[static_cast<size_t>(nalu.pps_id)] = static_cast<int16_t>(nalu.sps_id);
+        break;
+      }
+      case 5: {  // kIdr
+        if (!first_packet_in_frame) break;
+        if (nalu.pps_id < 0 || nalu.pps_id > kMaxPps) return Action::kRequestKeyframe;  // "No PPS id in IDR nalu."
+        const int16_t sps_id = pps_sps_id_[static_cast<size_t>(nalu.pps_id)];
+        if (sps_id < 0) return Action::kRequestKeyframe;                       // "No PPS with id .. received"
+        if (!sps_[static_cast<size_t>(sps_id)]) return Action::kRequestKeyframe;  // "No SPS with id .. received"
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  return Action::kInsert;
+}
+
 void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered) {
   VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
   if (!info.valid) {
@@ -221,18 +254,24 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
       nacked_seqs_.insert(p.seq);
     }
   }
-  // H264SpsPpsTracker::CopyAndFixBitstream: an SPS or PPS in the packet is
-  // recorded first (a STAP-A [SPS, PPS, IDR] passes); the first packet of an
-  // IDR slice without both is dropped with a keyframe request
-  // (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe).
+  // H264SpsPpsTracker::CopyAndFixBitstream: the SPS and PPS in the packet
+  // are recorded by id first (a STAP-A [SPS, PPS, IDR] passes); the first
+  // packet of an IDR slice whose PPS or SPS is unknown is dropped with a
+  // keyframe request, and a parameter set without ids is dropped
+  // (RtpVideoStreamReceiver2::OnReceivedPayloadData, kRequestKeyframe/kDrop).
   if (cfg_.sps_pps_tracker) {
-    have_sps_ = have_sps_ || info.sps;
-    have_pps_ = have_pps_ || info.pps;
-    if (info.idr && info.frame_start && !(have_sps_ && have_pps_)) {
-      ++stats_.idr_without_parameter_sets;
-      SM_EVENT(cfg_.events, now, "rtp_receiver", "idr_without_parameter_sets", p.seq, 0);
-      keyframes_.OnExternalRequest(now, "trigger_idr_without_parameter_sets");
-      return;
+    switch (sps_pps_tracker_.CopyAndFixBitstream(info.nalus, info.frame_start)) {
+      case H264SpsPpsTracker::Action::kRequestKeyframe:
+        ++stats_.idr_without_parameter_sets;
+        SM_EVENT(cfg_.events, now, "rtp_receiver", "idr_without_parameter_sets", p.seq, 0);
+        keyframes_.OnExternalRequest(now, "trigger_idr_without_parameter_sets");
+        return;
+      case H264SpsPpsTracker::Action::kDrop:
+        ++stats_.parameter_sets_without_ids;
+        SM_EVENT(cfg_.events, now, "rtp_receiver", "parameter_set_without_ids", p.seq, 0);
+        return;
+      case H264SpsPpsTracker::Action::kInsert:
+        break;
     }
   }
   // An IDR slice that starts a packet (no parameter sets in it) may follow
@@ -466,6 +505,7 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frame_meta_evicted", stats_.frame_meta_evicted);
   w.Counter("reassembly_failures", stats_.reassembly_failures);
   w.Counter("idr_without_parameter_sets", stats_.idr_without_parameter_sets);
+  w.Counter("parameter_sets_without_ids", stats_.parameter_sets_without_ids);
   w.Counter("gaps", stats_.gaps);
   w.Counter("missing", stats_.missing);
   w.Counter("audio_frames", stats_.audio_frames);
