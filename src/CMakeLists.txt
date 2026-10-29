@@ -2,6 +2,7 @@ sm_add_library(core SOURCES
   core/metrics.cc
   core/event_log.cc
   core/fft.cc
+  core/rms_level.cc
   core/dsp.cc
   core/rtp_packet.cc)
 
