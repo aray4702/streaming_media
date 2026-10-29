@@ -15,7 +15,8 @@ int64_t RoundMs(TimeDelta d) {
   const int64_t us = d.us();
   return us >= 0 ? (us + 500) / 1000 : -((-us + 500) / 1000);
 }
-TimeDelta Scale(TimeDelta d, double f) { return TimeDelta::Micros(std::llround(static_cast<double>(d.us()) * f)); }
+// TimeDelta * double, which rounds with std::llround as libwebrtc (#461).
+TimeDelta Scale(TimeDelta d, double f) { return d * f; }
 // Frequency::hertz<double>() and TimeDelta::seconds<double>() (unit_base.h ToFraction): times 1/denominator.
 double MilliHzToHz(int64_t mhz) { return static_cast<double>(mhz) * (1 / 1000.0); }
 

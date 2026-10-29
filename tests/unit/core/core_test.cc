@@ -84,6 +84,29 @@ SM_TEST(Units, RoundTo) {
   SM_EXPECT_TRUE(TimeDelta::PlusInfinity().RoundTo(ms).IsPlusInfinity());
 }
 
+// Issue #461: the integer getters round to the nearest, as libwebrtc's UnitBase::ToFraction
+// (DivideRoundToNearest: halves toward plus infinity), and bits() / size over time saturate.
+SM_TEST(Units, GettersRoundToNearest) {
+  SM_EXPECT_EQ(TimeDelta::Micros(1499).ms(), 1);
+  SM_EXPECT_EQ(TimeDelta::Micros(1500).ms(), 2);
+  SM_EXPECT_EQ(TimeDelta::Micros(999).ms(), 1);
+  SM_EXPECT_EQ(TimeDelta::Micros(-1499).ms(), -1);
+  SM_EXPECT_EQ(TimeDelta::Micros(-1500).ms(), -1);
+  SM_EXPECT_EQ(TimeDelta::Micros(-1501).ms(), -2);
+  SM_EXPECT_EQ(Timestamp::Micros(2500).ms(), 3);
+  SM_EXPECT_EQ(Timestamp::Micros(2499).ms(), 2);
+  SM_EXPECT_EQ(Timestamp::Micros(-500).ms(), 0);
+  SM_EXPECT_EQ(units_impl::DivideRoundToNearest(7, 3), 2);
+  SM_EXPECT_EQ(units_impl::DivideRoundToNearest(-7, 3), -2);
+  SM_EXPECT_EQ(units_impl::DivideRoundToNearest(-5, 2), -2);
+  SM_EXPECT_EQ(units_impl::DivideRoundToNearest(5, 2), 3);
+  const int64_t max = std::numeric_limits<int64_t>::max();
+  SM_EXPECT_EQ(DataSize::Bytes(max / 4).bits(), max);
+  SM_EXPECT_EQ(DataSize::Bytes(-(max / 4)).bits(), std::numeric_limits<int64_t>::min());
+  SM_EXPECT_TRUE(DataRate::FromSizeAndTime(DataSize::PlusInfinity(), TimeDelta::Seconds(1)).IsPlusInfinity());
+  SM_EXPECT_EQ(DataRate::FromSizeAndTime(DataSize::Bytes(3), TimeDelta::Micros(7)).bps(), 3428571);
+}
+
 // Issue #451: the remaining operators and constructors keep infinity and saturate out-of-range
 // results instead of overflowing (UB), as libwebrtc's RelativeUnit (rtc_base/units/unit_base.h).
 // The four cases of the issue first, then libwebrtc's time_delta_unittest.cc / data_rate_unittest.cc.
@@ -126,19 +149,25 @@ SM_TEST(Units, RelativeUnitOperatorsSaturate) {
   SM_EXPECT_TRUE(TimeDelta::SecondsF(std::numeric_limits<double>::quiet_NaN()).IsZero());
 
   // Finite values: integer scalars are exact and division truncates, as libwebrtc. operator*(double)
-  // and rate * time still truncate where libwebrtc rounds to the nearest (#461).
-  SM_EXPECT_EQ((TimeDelta::Micros(10) * 0.25).us(), 2);
-  SM_EXPECT_EQ((TimeDelta::Micros(-10) * 0.25).us(), -2);
-  SM_EXPECT_EQ((TimeDelta::Micros(9) * 0.3).us(), 2);
+  // rounds with std::llround (halves away from zero) and rate * time to the nearest byte (#461).
+  SM_EXPECT_EQ((TimeDelta::Micros(10) * 0.25).us(), 3);
+  SM_EXPECT_EQ((TimeDelta::Micros(-10) * 0.25).us(), -3);
+  SM_EXPECT_EQ((TimeDelta::Micros(9) * 0.3).us(), 3);
+  SM_EXPECT_EQ((TimeDelta::Micros(10) * 0.24).us(), 2);
+  SM_EXPECT_EQ((DataRate::BitsPerSec(1001) * 0.5).bps(), 501);
+  SM_EXPECT_EQ((DataSize::Bytes(-3) * 0.5).bytes(), -2);
   SM_EXPECT_EQ((TimeDelta::Millis(30) * 3).us(), 90000);
   SM_EXPECT_EQ((int32_t{3} * TimeDelta::Millis(30)).us(), 90000);
   SM_EXPECT_EQ((0.5 * DataRate::KilobitsPerSec(300)).bps(), 150000);
   SM_EXPECT_EQ((TimeDelta::Millis(100) * size_t{2}).ms(), 200);
   SM_EXPECT_EQ((TimeDelta::Micros(-7) / 2).us(), -3);
   SM_EXPECT_EQ((DataRate::KilobitsPerSec(300) / 3).bps(), 100000);
-  SM_EXPECT_EQ((DataRate::BitsPerSec(15) * TimeDelta::Seconds(1)).bytes(), 1);  // 1.875 bytes
+  SM_EXPECT_EQ((DataRate::BitsPerSec(15) * TimeDelta::Seconds(1)).bytes(), 2);  // 1.875 bytes
+  SM_EXPECT_EQ((DataRate::BitsPerSec(12) * TimeDelta::Seconds(1)).bytes(), 2);  // 1.5 bytes
+  SM_EXPECT_EQ((DataRate::BitsPerSec(11) * TimeDelta::Seconds(1)).bytes(), 1);  // 1.375 bytes
+  SM_EXPECT_EQ((DataRate::BitsPerSec(-12) * TimeDelta::Seconds(1)).bytes(), -1);  // (-12e6 + 4e6) / 8e6
   SM_EXPECT_EQ((DataRate::KilobitsPerSec(800) * TimeDelta::Millis(10)).bytes(), 1000);
-  SM_EXPECT_EQ((DataRate::BitsPerSec(max / 1000000) * TimeDelta::Seconds(1)).bytes(), (max / 1000000) / 8);
+  SM_EXPECT_EQ((DataRate::BitsPerSec(max / 1000000) * TimeDelta::Seconds(1)).bytes(), (max / 1000000 + 4) / 8);
   SM_EXPECT_EQ((DataSize::Bytes(100) * 2.5).bytes(), 250);
   SM_EXPECT_EQ(DataSize::Bytes(30) / DataSize::Bytes(60), 0.5);
 }

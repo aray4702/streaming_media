@@ -195,7 +195,7 @@ DataRate DelayBasedBwe::MaybeUpdateEstimate(std::optional<DataRate> acked, std::
       last_result_.updated = true;
       // Overusing before there is an acknowledged rate: halve every
       // clamp(rtt, 10, 200) ms.
-      rc2_.SetEstimate(rc2_.LatestEstimate() * 0.5, now);
+      rc2_.SetEstimate(rc2_.LatestEstimate() / 2, now);  // delay_based_bwe.cc:231, integer division
       SM_EVENT(cfg_.events, now, "gcc", "halve_no_acked", rc2_.LatestEstimate().bps(), before.bps());
     }
   } else if (probe) {
