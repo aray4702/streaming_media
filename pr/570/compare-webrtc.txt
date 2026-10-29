@@ -839,9 +839,9 @@ issue_12_lossbwe_burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            92         98.7  =
-  audio.mouth_to_ear_p95_ms               278          298  sm
-  audio.jb_delay_p95_ms                   173          188  sm
+  audio.longest_interruption_ms          92.1         98.7  =
+  audio.mouth_to_ear_p95_ms               279          298  sm
+  audio.jb_delay_p95_ms                   174          188  sm
   video.freeze_count                      1.6          1.6  =
   video.freeze_total_ms                   410          404  =
   video.longest_freeze_ms                 250          267  =
@@ -4894,7 +4894,7 @@ issue_476_libopus_decode - audio_only_lossy with our side decoding libopus as li
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          34.3         31.9  =
+  audio.longest_interruption_ms          35.4         31.9  =
   audio.mouth_to_ear_p95_ms               156          164  =
   audio.jb_delay_p95_ms                    82         78.0  =
   cc.utilization_pct                     77.1         77.1  =
@@ -5171,11 +5171,11 @@ issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shall
 
 issue_547_opus_output_buffer - Audio call over a 2 s jitter link, cut before either stack's loss input changes again: libopus codes the same frames as libwebrtc's
   metric                                   sm       webrtc  better
-  audio.concealed_pct                    48.3         47.6  =
+  audio.concealed_pct                    48.3         47.7  =
   audio.interruptions                     4.9          4.7  =
   audio.longest_interruption_ms           404          389  =
-  audio.mouth_to_ear_p95_ms              3983         3933  =
-  audio.jb_delay_p95_ms                   747          743  =
+  audio.mouth_to_ear_p95_ms              3983         3932  =
+  audio.jb_delay_p95_ms                   747          742  =
   cc.utilization_pct                        0            0  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                          0            0  =
@@ -6700,7 +6700,7 @@ probe_v2_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   audio.interruptions                     1.3          1.2  =
   audio.longest_interruption_ms           204          202  =
   audio.mouth_to_ear_p95_ms               835          835  =
-  audio.jb_delay_p95_ms                   509          508  =
+  audio.jb_delay_p95_ms                   508          508  =
   video.freeze_count                      1.7          1.7  =
   video.freeze_total_ms                  2995         3026  =
   video.longest_freeze_ms                2499         2477  =
@@ -6711,7 +6711,7 @@ probe_v2_capacity_drop - Capacity drops from 2.5 Mbps to 500 kbps at 10 s and re
   video.time_to_first_frame_ms            190          190  =
   video.avg_kbps                          848          850  =
   video.keyframe_requests                 0.3          0.4  =
-  sync.av_offset_p95_ms                   247          241  =
+  sync.av_offset_p95_ms                   248          241  =
   cc.utilization_pct                     54.3         54.4  =
   cc.queue_p95_ms                         289          289  =
   cc.max_settle_ms                      14970        14870  =
@@ -7017,8 +7017,8 @@ very_low_capacity_allocator_v2 - 100 kbps link with libwebrtc's BitrateAllocator
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           222          225  =
-  audio.mouth_to_ear_p95_ms              2185         2119  =
-  audio.jb_delay_p95_ms                  1852         1786  =
+  audio.mouth_to_ear_p95_ms              2184         2119  =
+  audio.jb_delay_p95_ms                  1851         1786  =
   video.freeze_count                     21.6           21  =
   video.freeze_total_ms                 26945        26874  =
   video.longest_freeze_ms                3855         4431  sm

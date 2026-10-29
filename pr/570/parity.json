@@ -1161,7 +1161,7 @@
    "scenario": "issue_7_no_fec_beside_nack",
    "metric": "sync.av_offset_p95_ms",
    "sm": 101.014,
-   "webrtc": 86.0737,
+   "webrtc": 86.075,
    "band": 10,
    "direction": "behind",
    "seeds_agree": 5,
