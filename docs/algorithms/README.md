@@ -60,7 +60,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.2 | [Hardware -> software encoder fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |

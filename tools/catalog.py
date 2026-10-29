@@ -1289,23 +1289,32 @@ ALGORITHMS = [
                       "gives libwebrtc's counts on every freeze input (9 vs 9 freezes at 180-230 ms gaps, 7 vs 7 at "
                       "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
                       "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
-    dict(id="7.2", slug="codec-fallback", title="Hardware -> software encoder fallback",
-         problems=["Hardware encoder failure -> automatic fallback to a software encoder"],
-         headers=["video/codec_fallback.h"], unit=["CodecFallback"], e2e=["E2E_CodecFallback"],
+    dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
+         problems=["Hardware encoder failure -> automatic fallback to a software encoder",
+                   "Hardware decoder failure -> automatic fallback to a software decoder"],
+         headers=["video/codec_fallback.h"], unit=["CodecFallback", "DecoderFallback"], e2e=["E2E_CodecFallback"],
          bench=["video/CodecFallback_frame"],
          scenario="A hardware encoder that starts failing at 10 s and asks for the software fallback on its "
                   "10th error; checks that plain errors don't switch, that exactly one fallback happens, that "
                   "the fallback is primed with the last rate and starts with a keyframe, and that the frame "
                   "that asked is encoded by the fallback, so the longest gap between encoded frames stays small.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
-               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper; the header comment above lists what "
+               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper, and since #607 of its "
+               "VideoDecoderSoftwareFallbackWrapper (DecoderFallbackController); the header comment above lists what "
                "is not ported.",
          verification="#573 replaced the library's own CodecFallbackController (3 consecutive errors, 10% error "
                       "rate over 100 frames, hardware retry after 60 s with back-off, none of which libwebrtc has) "
                       "with the port. libwebrtc's unit test file is not in reference/; CodecFallback.* covers the "
                       "wrapper's cases from the source: init failure, both failing, simulcast parameters, "
                       "fallback request only from the main encoder, failed fallback init, release and re-init, "
-                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge."),
+                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge. "
+                      "#607 ported the decoder side (api/video_codecs/video_decoder_software_fallback_wrapper.cc): "
+                      "fallback when the hardware decoder fails to configure, on FALLBACK_SOFTWARE from Decode (the "
+                      "same frame decoded again by the fallback), or on the 4th consecutive keyframe error "
+                      "(kMaxConsequtiveHwErrors; delta-frame errors don't count), sticky until Release, the forced "
+                      "fallback trial WebRTC-Video-ForcedSwDecoderFallback (off), the 'A (fallback from: B)' name and "
+                      "the hardware-decoded-frames histogram sample. Its unit test file is not in reference/; "
+                      "DecoderFallback.* covers each path of the source."),
     dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
          problems=["Rotated camera -> video orientation header extension (CVO)"],
          headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
