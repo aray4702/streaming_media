@@ -7,6 +7,8 @@ describe low_bandwidth with seed 4: lip sync raises the audio delay past 2 s and
 # Seed 4: sync.av_offset_p95_ms 2355 -> 1892 ms (libwebrtc 1900 on main's compare-webrtc), median 1271 -> 1065 ms.
 # low_bandwidth seeds 1-10 mean 1765 -> 1708 ms (libwebrtc 1576, band 188); seeds 1-40 mean 1839 -> 1694 ms.
 duration 40s
+# Yardstick for #656 (#637): libwebrtc's A/V offset tail on 40 seeds.
+compare_seeds 40
 at 0s capacity=150kbps delay=40ms queue=500ms
 seed 4
 # Guard rail moved by #356 (program.md 0.2). Provisional lock, accepted by the Owner on 2026-10-24 and tracked to #356, now #360 (below): with the receiver's RTT measured over XR
