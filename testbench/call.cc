@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <deque>
 #include <optional>
+#include <set>
 #include <string_view>
 #include <unordered_map>
 
@@ -183,6 +184,11 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"net.video_start_seq", "RTP sequence number of the first video media packet on the forward link (#514)"},
       {"net.audio_first_marker", "1 if the first audio packet on the forward link has the marker bit "
                                  "(RTPSenderAudio::MarkerBit; #514)"},
+      {"net.padding_media_ssrc_packets", "Padding-only packets on the audio or video media SSRC, on the forward "
+                                         "link (RTPSender::GeneratePadding without RTX; #514)"},
+      {"net.padding_rtx_ssrc_packets", "Padding-only packets on the RTX SSRC, on the forward link (#514)"},
+      {"net.padding_distinct_sizes", "Number of distinct wire sizes of the padding-only packets on the forward link "
+                                     "(audio padding is sized by the bytes the pacer asks for; #514)"},
       {"net.video_kbps", "Video media sent on the forward link, wire rate averaged over the call"},
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
       {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
@@ -690,8 +696,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;
-  video_cfg.rtx_ssrc = kRtxSsrc;
-  video_cfg.rtx_payload_type = kRtxPt;
+  // RTX only with NACK, as sm_compare configures libwebrtc's send and receive streams
+  // (compare/webrtc/webrtc_call.cc, `if (s.nack)`; issue #514).
+  if (s.nack) {
+    video_cfg.rtx_ssrc = kRtxSsrc;
+    video_cfg.rtx_payload_type = kRtxPt;
+  }
   video_cfg.fec = s.fec;
   // libwebrtc's whole-packet limit less the fixed header; the session subtracts the real header and
   // the FEC and RTX reservations (issue #513).
@@ -850,6 +860,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // The first audio and video media packets on the forward link (issue #514).
   std::optional<uint16_t> audio_start_seq, video_start_seq;
   bool audio_first_marker = false;
+  // Padding-only packets by SSRC (issue #514).
+  int64_t padding_media_ssrc = 0, padding_rtx_ssrc = 0;
+  std::set<int64_t> padding_sizes;
 
   // Sends what a session has ready onto its link; returns nothing to count
   // beyond the pacer-released bytes the caller tallies.
@@ -871,6 +884,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
             audio_first_marker = (p.bytes[1] & 0x80) != 0;
           }
           audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
+        }
+        if (kind == Kind::kPadding) {
+          if (auto q = RtpPacket::Parse(p.bytes)) (q->ssrc == kRtxSsrc ? padding_rtx_ssrc : padding_media_ssrc)++;
+          padding_sizes.insert(p.wire_size.bytes());
         }
         if (kind == Kind::kVideo) {
           if (!video_start_seq) video_start_seq = RtpSeq(p.bytes);
@@ -1476,6 +1493,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["net.audio_first_marker"] = audio_first_marker ? 1 : 0;
   }
   if (video_start_seq) rep.metrics["net.video_start_seq"] = *video_start_seq;
+  rep.metrics["net.padding_media_ssrc_packets"] = static_cast<double>(padding_media_ssrc);
+  rep.metrics["net.padding_rtx_ssrc_packets"] = static_cast<double>(padding_rtx_ssrc);
+  rep.metrics["net.padding_distinct_sizes"] = static_cast<double>(padding_sizes.size());
   if (opt.link_trace) rep.link_trace = forward.trace();
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());

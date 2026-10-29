@@ -241,17 +241,26 @@ void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packet
 }
 
 void SendSideController::SetPaddingSender(RtpSender* sender) {
-  padding_sender_ = sender;
-  // Padding is made as libwebrtc's RTPSender::GeneratePadding does: RTX payload padding from the
-  // history, then empty padding, each packet with its real size. Without RTX the pacer keeps
-  // fixed-size placeholders that MakePadding() fills in when sent.
-  if (!sender || !sender->config().rtx_ssrc) {
-    pacer_.SetPaddingGenerator(nullptr);
-    return;
+  padding_senders_.clear();
+  last_padding_sender_ = nullptr;
+  if (sender) AddPaddingSender(sender);
+  if (!sender) pacer_.SetPaddingGenerator(nullptr);
+}
+
+void SendSideController::AddPaddingSender(RtpSender* sender) {
+  // PacketRouter::AddSendRtpModule / AddSendRtpModuleToMap (packet_router.cc:52-118): audio streams
+  // at the back, so video is asked first; a stream that supports RTX payload padding becomes the
+  // one asked before all others.
+  if (sender->config().video) {
+    padding_senders_.insert(padding_senders_.begin(), sender);
+  } else {
+    padding_senders_.push_back(sender);
   }
+  if (sender->SupportsRtxPayloadPadding()) last_padding_sender_ = sender;
+  // Padding is made as libwebrtc's RTPSender::GeneratePadding does, each packet with its real size.
   pacer_.SetPaddingGenerator([this](DataSize target, Timestamp now) {
     std::vector<cc::PacedPacket> out;
-    for (SenderPacket& sp : padding_sender_->GeneratePadding(static_cast<size_t>(target.bytes()), padding_sender_->last_rtp_timestamp(), now)) {
+    for (SenderPacket& sp : GeneratePadding(static_cast<size_t>(target.bytes()), now)) {
       WriteSendExtensions(sp.packet, 0, now);  // Reserve the extensions written at release.
       const uint64_t id = next_id_++;
       out.push_back({id, cc::PacketPriority::kPadding, DataSize::Bytes(static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes), now});
@@ -260,6 +269,26 @@ void SendSideController::SetPaddingSender(RtpSender* sender) {
     }
     return out;
   });
+}
+
+std::vector<SenderPacket> SendSideController::GeneratePadding(size_t target_bytes, Timestamp now) {
+  // PacketRouter::GeneratePadding (packet_router.cc:255-297): first the last stream that padded, if
+  // it supports RTX payload padding; else the first stream, video before audio, that makes any.
+  std::vector<SenderPacket> padding;
+  if (last_padding_sender_ && last_padding_sender_->SupportsRtxPayloadPadding()) {
+    padding = last_padding_sender_->GeneratePadding(target_bytes, now);
+  }
+  if (padding.empty()) {
+    for (RtpSender* sender : padding_senders_) {
+      if (!sender->SupportsPadding()) continue;
+      padding = sender->GeneratePadding(target_bytes, now);
+      if (!padding.empty()) {
+        last_padding_sender_ = sender;
+        break;
+      }
+    }
+  }
+  return padding;
 }
 
 void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
@@ -288,17 +317,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   for (const auto& sent : pacer_.Process(now)) {
     SenderPacket sp;
     if (sent.is_padding) {
-      if (!padding_sender_) continue;
-      size_t room = static_cast<size_t>(std::max<int64_t>(0, sent.size.bytes() - cfg_.transport_overhead_bytes));
-      sp = padding_sender_->MakePadding(room, padding_sender_->last_rtp_timestamp(), now);
-      // The send extensions are written below: take their size off the
-      // padding so the packet stays within the size the pacer accounted.
-      WriteSendExtensions(sp.packet, 0, now);
-      const int64_t over = static_cast<int64_t>(sp.packet.size()) + cfg_.transport_overhead_bytes - sent.size.bytes();
-      if (over > 0) {
-        sp.packet.padding_size = static_cast<uint8_t>(std::max<int64_t>(1, sp.packet.padding_size - over));
-      }
-      ++stats_.padding;
+      continue;  // The pacer's own placeholder: no stream to pad on (PacketRouter has no module).
     } else {
       auto it = queued_.find(sent.id);
       if (it == queued_.end()) {
@@ -308,7 +327,14 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
       sp = std::move(it->second);
       queued_.erase(it);
     }
-    if (sp.sender) sp.sender->AssignSequenceNumber(sp);
+    // ModuleRtpRtcpImpl2::CanSendPacket (rtp_rtcp_impl2.cc:337-350): media-SSRC padding that a new
+    // media packet preempted (it no longer follows a frame's last packet) is dropped.
+    if (sp.kind == PacketKind::kPadding && sp.sender && sp.packet.ssrc == sp.sender->config().ssrc &&
+        !sp.sender->CanSendPaddingOnMediaSsrc()) {
+      ++stats_.padding_dropped;
+      continue;
+    }
+    if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
     ReleasedPacket r;
     // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
     // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
@@ -573,6 +599,7 @@ SendRates SendSideController::ComputeMeasuredRates(DataRate audio_wire_rate) con
 void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("released", stats_.released);
   w.Counter("padding", stats_.padding);
+  w.Counter("padding_dropped", stats_.padding_dropped);
   w.Counter("unknown_ids", stats_.unknown_ids);
   w.Counter("flushed", stats_.flushed);
   w.Counter("released_bytes", static_cast<uint64_t>(stats_.released_bytes));

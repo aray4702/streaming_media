@@ -99,7 +99,10 @@ SM_TEST(SendSideController, SilentFeedbackDoesNothingUnderGccV2) {
   }
 }
 
-SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccountedSize) {
+// PacketSequencer::PopulatePaddingFields (packet_sequencer.cc:120-137): empty RTX padding carries the
+// last released media packet's timestamp advanced at 90 ticks per ms since, and 0 before any media
+// (the probe's first packet goes before the frame); payload padding keeps the resent packet's.
+SM_TEST(SendSideController, PaddingTimestampFollowsTheSequencerAndFitsItsAccountedSize) {
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);
   map.Register(2, sync::uri::kAbsSendTime);
@@ -114,18 +117,27 @@ SM_TEST(SendSideController, PaddingCarriesTheLastMediaTimestampAndFitsItsAccount
   // A packet large enough to start the start-up probes, which then go out as padding.
   sender.SendVideoFrame(std::vector<std::vector<uint8_t>>{std::vector<uint8_t>(300, 1)}, 123456, Timestamp::Millis(0));
   for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
-  size_t padding = 0;
+  size_t padding = 0, before_media = 0;
+  std::optional<int> media_ms;
   for (int t = 0; t < 1000; ++t) {
     for (auto& r : c.Process(Timestamp::Millis(t))) {
-      if (r.kind != PacketKind::kPadding) continue;
       auto p = RtpPacket::Parse(r.bytes);
       SM_ASSERT_TRUE(p.has_value());
-      SM_EXPECT_EQ(p->timestamp, 123456u);
+      if (r.kind == PacketKind::kVideo) media_ms = t;
+      if (r.kind != PacketKind::kPadding) continue;
+      if (!p->payload.empty()) {
+        SM_EXPECT_EQ(p->timestamp, 123456u);
+      } else if (!media_ms) {
+        SM_EXPECT_EQ(p->timestamp, 0u);
+        ++before_media;
+      } else {
+        SM_EXPECT_EQ(p->timestamp, 123456u + 90u * static_cast<uint32_t>(t - *media_ms));
+      }
       SM_EXPECT_LE(static_cast<int64_t>(r.bytes.size()) + 28, r.wire_size.bytes());
       ++padding;
     }
   }
-  SM_EXPECT_GT(padding, 0u);
+  SM_EXPECT_GT(padding, before_media);
 }
 
 SM_TEST(SendSideController, VideoBudgetShrinksByTheMeasuredRepairShare) {

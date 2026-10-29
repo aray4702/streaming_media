@@ -1,0 +1,14 @@
+# Issue #514 row 2: an audio-only call pads on the audio SSRC (no RTX), each padding packet the bytes
+# the pacer asked for clamped to [50, min(max payload, 255)] (PaddingBytesInPacket, rtp_sender.cc:150-160),
+# so the sizes vary with the request. Before, the pacer sent fixed 224-byte placeholders (2 sizes with the
+# 102-byte probe start).
+# libwebrtc on audio_only_lossy seed 1: 851 padding packets of 25 sizes, 104-303 bytes on the wire
+# (parity-data traces).
+name issue_514_audio_padding
+describe Audio-only padding sized by RTPSender::GeneratePadding, as libwebrtc's
+duration 30s
+seed 1
+video off
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+expect net.padding_media_ssrc_packets > 0
+expect net.padding_distinct_sizes > 4

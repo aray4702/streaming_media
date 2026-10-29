@@ -259,3 +259,5 @@ modules/rtp_rtcp/source/rtp_header_extension_size.h
 modules/rtp_rtcp/source/rtp_header_extension_size.cc
 modules/rtp_rtcp/source/packet_sequencer.h
 modules/rtp_rtcp/source/packet_sequencer.cc
+video/send_statistics_proxy.h
+video/send_statistics_proxy.cc

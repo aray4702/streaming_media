@@ -505,7 +505,6 @@ class Session : public MetricsSource {
   bool started_ = false;
   bool packet_since_process_ = false;  // OnPacket queued work (frames to assemble, RTCP) for the next Process.
   bool peer_mid_seen_ = false;
-  bool send_has_padding_ = false;
   Timestamp last_tcc_ = Timestamp::MinusInfinity();
   // When the RepeatingTask that runs ReceiveSideCongestionController::MaybeProcess wakes next.
   Timestamp tcc_wake_ = Timestamp::MinusInfinity();
