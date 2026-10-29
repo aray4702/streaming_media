@@ -111,7 +111,9 @@ struct VideoSendControllerConfig {
   // stream (modules/video_coding/utility/simulcast_rate_allocator.cc): the
   // encoder is configured with max(minBitrate, min(target, maxBitrate)), so a
   // target below the codec minimum is raised to it (the frame dropper still gets
-  // the target). 0 = off (the v1 behaviour; `allocator v2` turns it on).
+  // the target), and DistributeAllocationToTemporalLayers hands the one temporal
+  // layer that rate in whole kbps, rounded down (issue #577). 0 = off (the v1
+  // behaviour; `allocator v2` turns it on).
   DataRate allocation_min_bitrate;
   // The codec maximum is the stream's max_bitrate_bps, which the app sets;
   // libwebrtc's allocator has no cap of its own, so neither does the default
