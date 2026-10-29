@@ -637,6 +637,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // time, so both stacks draw the same RTCP schedule (#517; per seed since #399).
     c.seed = RtcpRandomSeed(s);
     c.per_stream_rtt = s.per_stream_rtt;  // Issue #568.
+    c.receive_statistics_v2 = s.receive_statistics_v2;  // Issue #575.
     c.events = &events;
     return c;
   };

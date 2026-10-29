@@ -397,8 +397,9 @@ SM_TEST(SendSideController, AllocatorLiftsTheTargetToTheSumOfTheMinimums) {
   const SendRates r = c.ComputeMeasuredRates(DataRate::KilobitsPerSec(50));
   SM_EXPECT_NEAR(r.audio_rate.kbps(), 50.0, 0.01);
   // Its minimum less the packet-overhead rate (RtpVideoSender::OnBitrateUpdated), with no repair
-  // traffic yet: 50 kbps / (1228 bytes x 8) = 6 packets/s (rounded up) of 24 + 28 bytes.
-  SM_EXPECT_NEAR(r.video_target.kbps(), 50.0 - 6 * (24 + 28) * 8 / 1000.0, 0.01);
+  // traffic yet: 50 kbps / (1488 bytes x 8) = 5 packets/s (rounded up) of 24 + 28 bytes (1460-byte
+  // packets by default since #580).
+  SM_EXPECT_NEAR(r.video_target.kbps(), 50.0 - 5 * (24 + 28) * 8 / 1000.0, 0.01);
   SM_EXPECT_EQ(c.allocator().limits().min_allocatable.kbps(), 100.0);
 }
 
@@ -411,8 +412,8 @@ SM_TEST(SendSideController, V2SubtractsThePacketOverheadFromTheVideoAllocation) 
   c.ConfigureAllocation(DataRate::Zero(), true);
   c.Start(Timestamp::Millis(0));
   const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
-  // 1 Mbps / (1228 bytes x 8) = 102 packets/s (rounded up), each with 24 + 28 bytes of overhead.
-  const int64_t overhead = 102 * (24 + 28) * 8;
+  // 1 Mbps / (1488 bytes x 8) = 85 packets/s (rounded up), each with 24 + 28 bytes of overhead.
+  const int64_t overhead = 85 * (24 + 28) * 8;
   SM_EXPECT_EQ(r.video_target.bps(), c.allocator().allocation("video").bps() - overhead);
 }
 

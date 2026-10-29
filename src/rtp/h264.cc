@@ -48,6 +48,8 @@ bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo&
     const uint8_t type = nal_unit[0] & 0x1F;
     const std::span<const uint8_t> nalu_data = nal_unit.subspan(1);
     if (nalu_data.empty()) return;  // "Skipping empty NAL unit."
+    VideoNaluInfo nalu;
+    nalu.type = type;
     switch (type) {
       case kH264NalSps: {
         // Copy any previous data first (likely just the first header).
@@ -77,6 +79,7 @@ bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo&
           output_buffer.insert(output_buffer.end(), payload.begin() + static_cast<std::ptrdiff_t>(end_offset), payload.end());
           modified_buffer = true;
         }
+        nalu.sps_id = static_cast<int32_t>(sps.id);
         info.width = sps.width;
         info.height = sps.height;
         info.keyframe = true;
@@ -84,14 +87,18 @@ bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo&
         info.first_packet_in_frame = true;
         break;
       }
-      case kH264NalPps:
-        if (!ParsePpsIds(nalu_data)) {
+      case kH264NalPps: {
+        const std::optional<PpsIds> ids = ParsePpsIds(nalu_data);
+        if (!ids) {
           ok = false;
           return;
         }
+        nalu.pps_id = static_cast<int32_t>(ids->pps_id);
+        nalu.sps_id = static_cast<int32_t>(ids->sps_id);
         info.pps = true;
         info.first_packet_in_frame = true;
         break;
+      }
       case kH264NalIdr:
       case kH264NalSlice: {
         if (type == kH264NalIdr) {
@@ -103,6 +110,7 @@ bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo&
           ok = false;
           return;
         }
+        nalu.pps_id = static_cast<int32_t>(slice->pic_parameter_set_id);
         if (slice->first_mb_in_slice == 0) info.first_packet_in_frame = true;
         break;
       }
@@ -117,6 +125,7 @@ bool ProcessStapAOrSingleNalu(std::span<const uint8_t> payload, H264PayloadInfo&
       default:
         break;  // End of sequence or stream, filler, and the other types: no ids.
     }
+    info.nalus.push_back(nalu);
   };
   if (stap_a) {
     if (!ForEachStapAUnit(payload, process)) return false;  // "Incorrect StapA packet."
@@ -324,12 +333,18 @@ H264PayloadInfo H264Depacketizer::Parse(std::span<const uint8_t> p) {
   info.fu_end = (p[1] & 0x40) != 0;
   info.fu_continuation = !first_fragment;
   if (first_fragment) {
+    VideoNaluInfo nalu;
+    nalu.type = original_nal_type;
     if (original_nal_type == kH264NalIdr || original_nal_type == kH264NalSlice) {
       // A slice header that does not parse is only logged here.
       const std::optional<SliceHeader> slice = ParseSliceHeader(p.subspan(kFuAOverhead));
-      if (slice) info.first_packet_in_frame = slice->first_mb_in_slice == 0;
+      if (slice) {
+        nalu.pps_id = static_cast<int32_t>(slice->pic_parameter_set_id);
+        info.first_packet_in_frame = slice->first_mb_in_slice == 0;
+      }
     }
     info.idr = original_nal_type == kH264NalIdr;
+    info.nalus = {nalu};
   }
   info.keyframe = original_nal_type == kH264NalIdr;
   info.valid = true;
@@ -380,6 +395,7 @@ VideoPayloadInfo H264PayloadParser::Parse(const RtpPacket& p) const {
   i.keyframe = h.keyframe;
   i.sps = h.sps;
   i.pps = h.pps;
+  i.nalus = std::move(h.nalus);
   return i;
 }
 

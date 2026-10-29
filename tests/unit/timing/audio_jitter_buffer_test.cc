@@ -9,10 +9,17 @@ namespace {
 std::vector<float> Chunk(const std::vector<float>& x, int i, int n = 320) {
   return std::vector<float>(x.begin() + i * n, x.begin() + (i + 1) * n);
 }
+
+// The library's own buffer (version 1); the default is NetEq (version 2, #579).
+AudioJitterBufferConfig V1() {
+  AudioJitterBufferConfig c;
+  c.version = 1;
+  return c;
+}
 }  // namespace
 
 SM_TEST(AudioJitterBuffer, PerfectNetworkPlaysNormally) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   auto x = sim::SpeechLike(16000, 3.0, 1, false);
   std::vector<float> out(160);
   int expands = 0;
@@ -27,7 +34,7 @@ SM_TEST(AudioJitterBuffer, PerfectNetworkPlaysNormally) {
 }
 
 SM_TEST(AudioJitterBuffer, LostPacketIsConcealedThenSkipped) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   auto x = sim::SpeechLike(16000, 2.0, 2, false);
   std::vector<float> out(160);
   for (int t = 0; t < 1900; t += 10) {
@@ -42,7 +49,7 @@ SM_TEST(AudioJitterBuffer, LostPacketIsConcealedThenSkipped) {
 }
 
 SM_TEST(AudioJitterBuffer, LatePacketMergesInsteadOfLoss) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   auto x = sim::Sine(200, 16000, 2.0, 0.3f);
   std::vector<float> out(160);
   for (int t = 0; t < 1900; t += 10) {
@@ -59,7 +66,7 @@ SM_TEST(AudioJitterBuffer, LatePacketMergesInsteadOfLoss) {
 }
 
 SM_TEST(AudioJitterBuffer, BurstArrivalTriggersAccelerate) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   auto x = sim::Sine(180, 16000, 12.0, 0.3f);
   std::vector<float> out(160);
   int pkt = 0;
@@ -80,7 +87,7 @@ SM_TEST(AudioJitterBuffer, BurstArrivalTriggersAccelerate) {
 }
 
 SM_TEST(AudioJitterBuffer, MinimumDelayHonoured) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   jb.SetMinimumDelayMs(120);
   SM_EXPECT_EQ(jb.TargetDelayMs(), 120);
 }
@@ -136,7 +143,7 @@ SM_TEST(AudioJitterBuffer, V2HoldsTwoHundredPacketsThenFlushesThemAll) {
 }
 
 SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
-  AudioJitterBuffer jb;
+  AudioJitterBuffer jb(V1());
   jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
   jb.InsertPacket(320, std::vector<float>(320, 0.25f), Timestamp::Millis(5), {1, 0});
   jb.InsertPacket(320, std::vector<float>(320, 0.5f), Timestamp::Millis(20), {0, 0});

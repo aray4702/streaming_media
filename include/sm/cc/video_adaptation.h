@@ -8,6 +8,9 @@
 //   maintain-resolution: lower frame rate only (down to min_fps)
 //   balanced:            frame rate down to balanced_fps first, then
 //                        resolution, then frame rate down to min_fps
+// Frame-rate steps stop at libwebrtc's kMinFrameRateFps (2) and never raise
+// the rate; an input rate of 2 fps or less (0 = unknown) gets no frame-rate
+// steps, as VideoStreamAdapter (fix record docs/fixes/643-degradation-fps-hang.md).
 // Going down needs bpp_down, going back up needs the larger bpp_up, so the
 // format does not oscillate around a threshold. Resource limits (CPU
 // overuse, quality scaler) impose an extra cap on pixels or fps.
@@ -67,7 +70,10 @@ struct VideoFormat {
 
 struct DegradationConfig {
   VideoFormat input{1280, 720, 30};
-  DegradationPreference preference = DegradationPreference::kBalanced;
+  // libwebrtc's camera default (GetDegradationPreference,
+  // media/engine/webrtc_video_engine.cc:2032-2064): BALANCED only with the
+  // WebRTC-Video-BalancedDegradation trial, which is off.
+  DegradationPreference preference = DegradationPreference::kMaintainFramerate;
   double bpp_down = 0.04;
   double bpp_up = 0.06;
   double min_fps = 5;
@@ -105,9 +111,10 @@ struct CpuOveruseConfig {
   TimeDelta check_interval = TimeDelta::Seconds(5);
   int consecutive_checks = 2;  // Also v2's high_threshold_consecutive_count.
   double smoothing = 0.1;  // EMA weight per frame.
-  // 1: the filter above. 2: libwebrtc M157's OveruseFrameDetector (see above);
-  // the fields below are its CpuOveruseOptions, with their defaults.
-  int version = 1;
+  // 1: the filter above. 2 (default, #579): libwebrtc M157's
+  // OveruseFrameDetector (see above); the fields below are its
+  // CpuOveruseOptions, with their defaults.
+  int version = 2;
   int high_encode_usage_threshold_percent = 85;
   int low_encode_usage_threshold_percent = (85 - 1) / 2;
   TimeDelta frame_timeout_interval = TimeDelta::Millis(1500);

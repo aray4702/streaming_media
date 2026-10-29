@@ -24,7 +24,14 @@ std::vector<std::pair<int, int>> ResolutionSteps(const VideoFormat& in, int min_
   }
   return out;
 }
+// call/adaptation/video_stream_adapter.cc: a frame-rate step never goes below
+// kMinFrameRateFps, and never to a rate that is not lower than the current
+// one (CanDecreaseFrameRateTo). Input below that floor, including an unknown
+// (0) or negative rate, gets no frame-rate steps (issue #643: it hung here).
+constexpr double kMinFrameRateFps = 2;
 std::vector<double> FpsSteps(double from, double to) {
+  to = std::max(to, kMinFrameRateFps);
+  if (!(from >= to)) return {from};
   std::vector<double> out;
   for (double f = from; f >= to - 1e-9; f = f * 2 / 3) out.push_back(f);
   if (out.empty() || out.back() > to + 1e-9) out.push_back(to);

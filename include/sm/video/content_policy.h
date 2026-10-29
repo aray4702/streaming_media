@@ -25,7 +25,7 @@ enum class ContentHint { kNone, kMotion, kDetail, kText };
 enum class Degradation { kMaintainFramerate, kMaintainResolution, kBalanced };
 
 struct ContentSettings {
-  Degradation degradation = Degradation::kBalanced;
+  Degradation degradation = Degradation::kMaintainFramerate;  // libwebrtc's camera default.
   double max_fps = 30;
   double min_fps = 10;
   int max_qp_h264 = 51;          // QP ceiling (H.264 scale 0..51).

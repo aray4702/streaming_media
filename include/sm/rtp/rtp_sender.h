@@ -57,11 +57,12 @@ struct RtpSenderConfig {
   bool video = true;       // Picks the packet kind and pacer priority.
   uint16_t initial_seq = 0;
   // Largest payload of one video packet (the whole packet stays within
-  // libwebrtc's kVideoMtu of 1200 bytes). Clamped so the whole packet (with
+  // ModuleRtpRtcpImpl2's default 1460 bytes, rtp_rtcp_impl2.cc:146-150; issue
+  // #580). Clamped so the whole packet (with
   // the 12-byte fixed header) is 100 to 1500 bytes, the range libwebrtc's
   // RTPSender::SetMaxRtpPacketSize accepts: a smaller value would leave no
   // room for padding or media (issue #257).
-  size_t max_payload_size = 1200 - 12;
+  size_t max_payload_size = 1460 - 12;
 
   // RTX (RFC 4588). Without an RTX SSRC, NACKs cannot be answered.
   std::optional<uint32_t> rtx_ssrc;

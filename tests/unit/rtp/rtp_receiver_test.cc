@@ -34,6 +34,13 @@ RtpReceiverConfig ReceiverCfg() {
   c.parser = &kParser;
   return c;
 }
+// Without H.264's `missing_packets_` hold (on by default since #580): a delta frame behind a hole is
+// handed to the frame buffer, which these NACK tests count.
+RtpReceiverConfig NoHoldCfg() {
+  RtpReceiverConfig c = ReceiverCfg();
+  c.packet_buffer.missing_packets = false;
+  return c;
+}
 
 // The sender's queued packets as the pacer releases them: numbered and stored in the RTX history
 // (SendSideController::Process), each followed by the FEC packets it completed.
@@ -118,7 +125,7 @@ SM_TEST(RtpReceiver, FramesInOrderAreAssembledScheduledAndRendered) {
 
 SM_TEST(RtpReceiver, LostPacketIsNackedAndRtxCompletesTheFrame) {
   RtpSender s(SenderCfg());
-  RtpReceiver r(ReceiverCfg());
+  RtpReceiver r(NoHoldCfg());
   r.Start(Timestamp::Millis(0));
   auto f0 = SendFrame(s, 0, true, 800, Timestamp::Millis(0));
   auto f1 = SendFrame(s, 1, false, 3000, Timestamp::Millis(33));
@@ -219,8 +226,11 @@ std::vector<ReceivedFrame> DeliverFrame(const RtpReceiverConfig& cfg, const Byte
 }  // namespace
 
 SM_TEST(RtpReceiver, AnIdrAloneIsAKeyframeByDefault) {
-  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe).
-  auto frames = DeliverFrame(ReceiverCfg(), IdrOnlyFrame(2500));
+  // libwebrtc's default (H26xPacketBuffer without sps-pps-idr-in-keyframe). The SPS/PPS tracker
+  // (on by default since #580) would drop an IDR that has had no parameter sets before it.
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = false;
+  auto frames = DeliverFrame(cfg, IdrOnlyFrame(2500));
   SM_ASSERT_EQ(frames.size(), 1u);
   SM_EXPECT_TRUE(frames[0].keyframe);
   SM_EXPECT_TRUE(frames[0].render);
@@ -449,7 +459,7 @@ SM_TEST(RtpReceiver, RedPacketRestoredFromRtx) {
   RtpSenderConfig sc = SenderCfg();
   sc.fec = true;
   RtpSender s(sc);  // FEC rate 0: RED only.
-  RtpReceiverConfig rc = ReceiverCfg();
+  RtpReceiverConfig rc = NoHoldCfg();
   rc.fec = true;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
@@ -808,4 +818,59 @@ SM_TEST(RtpReceiver, FrameRotationComesFromTheLastPacketsCvo) {
   SM_ASSERT_EQ(frames.size(), 5u);
   // The fourth frame carries no CVO (0, unchanged): rotation 0, as libwebrtc resets it per packet.
   for (size_t i = 0; i < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].rotation == rotations[i]);
+}
+
+SM_TEST(RtpReceiver, SpsPpsTrackerDropsAParameterSetWithoutIds) {
+  // An SPS sent as FU-A carries no SPS id (ParseFuaNalu), so
+  // H264SpsPpsTracker::CopyAndFixBitstream returns kDrop: the packet is
+  // ignored without a keyframe request (rtp_video_stream_receiver2.cc:930-936).
+  RtpReceiverConfig cfg = ReceiverCfg();
+  cfg.sps_pps_tracker = true;
+  RtpReceiver r(cfg);
+  r.Start(Timestamp::Millis(0));
+  RtpPacket p;
+  p.ssrc = cfg.ssrc;
+  p.payload_type = 96;
+  p.seq = 10;
+  p.timestamp = 9000;
+  Bytes sps = {0x67};
+  sps.insert(sps.end(), kFakeH264Sps, kFakeH264Sps + sizeof(kFakeH264Sps));
+  p.payload = {static_cast<uint8_t>(0x60 | kH264NalFuA), static_cast<uint8_t>(0x80 | kH264NalSps)};
+  p.payload.insert(p.payload.end(), sps.begin() + 1, sps.end());
+  r.OnPacket(p.Serialize(), Timestamp::Millis(10));
+  r.Process(Timestamp::Millis(20));
+  SM_EXPECT_EQ(r.stats().parameter_sets_without_ids, 1u);
+  SM_EXPECT_EQ(r.stats().idr_without_parameter_sets, 0u);
+  SM_EXPECT_EQ(r.stats().invalid_payload, 0u);
+  int plis = 0;
+  for (const auto& m : r.TakeFeedback().keyframe) plis += m.type == loss::FeedbackType::kPli;
+  SM_EXPECT_EQ(plis, 0);
+}
+
+// receive_statistics_v2 (issue #575): the statisticians follow libwebrtc's receive streams:
+// video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
+// without NACK, RTX and audio kDefaultMaxReorderingThreshold (50).
+SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
+  RtpReceiverConfig c = ReceiverCfg();
+  RtpReceiver v1(c);
+  SM_EXPECT_FALSE(v1.receive_statistics()->v2());
+  SM_EXPECT_FALSE(v1.rtx_receive_statistics()->v2());
+  c.receive_statistics_v2 = true;
+  RtpReceiver nack(c);
+  SM_EXPECT_TRUE(nack.receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
+  SM_EXPECT_TRUE(nack.rtx_receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.rtx_receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  c.nack = false;
+  RtpReceiver no_nack(c);
+  SM_EXPECT_EQ(no_nack.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  RtpReceiverConfig a;
+  a.ssrc = kSsrc;
+  a.payload_type = 111;
+  a.clock_rate = 48000;
+  a.video = false;
+  a.receive_statistics_v2 = true;
+  RtpReceiver audio(a);
+  SM_EXPECT_TRUE(audio.receive_statistics()->v2());
+  SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
 }

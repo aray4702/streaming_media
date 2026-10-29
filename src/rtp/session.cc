@@ -177,6 +177,7 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   c.decoder = decoder;
   c.red = a.red_payload_type.has_value();
   c.jitter_buffer = a.jitter_buffer;
+  c.receive_statistics_v2 = cfg_.receive_statistics_v2;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
   if (cfg_.audio_receive_rtcp) {
@@ -238,6 +239,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.scheduler = v.scheduler;
   c.timing = v.timing;
   c.decode_time = v.decode_time;
+  c.receive_statistics_v2 = cfg_.receive_statistics_v2;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
   rtcp_.AddReceiveStatistics(r->receive_statistics());
