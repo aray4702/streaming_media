@@ -3,7 +3,9 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <iterator>
 #include <limits>
+#include <numeric>
 
 #include "sm/core/dsp.h"
 
@@ -921,19 +923,122 @@ int32_t MaxAbsValueW32(const int32_t* v, size_t n) {
 // WebRtcSpl_DivW32W16.
 int32_t DivW32W16(int32_t num, int16_t den) { return den != 0 ? num / den : 0x7FFFFFFF; }
 
-// AudioVector::CrossFade: the last `n` samples of `out` fade into `in`
-// (`out`'s weight falls from 16384 in steps of 16384 / (n + 1), Q14), and
-// the rest of `in` is appended.
-void CrossFade(std::vector<float>& out, const float* in, size_t in_length, size_t n) {
-  n = std::min({n, out.size(), in_length});
+// DspHelper::kParabolaCoefficients.
+constexpr int16_t kParabolaCoefficients[17][3] = {
+    {120, 32, 64},   {140, 44, 75},   {150, 50, 80},   {160, 57, 85},   {180, 72, 96},   {200, 89, 107},
+    {210, 98, 112},  {220, 108, 117}, {240, 128, 128}, {260, 150, 139}, {270, 162, 144}, {280, 174, 149},
+    {300, 200, 160}, {320, 228, 171}, {330, 242, 176}, {340, 257, 181}, {360, 288, 192}};
+
+// DspHelper::ParabolicFit in fixed point: the vertex of the parabola through
+// three points around the peak of a 4 kHz vector, at the full rate (2 *
+// fs_mult samples per 4 kHz sample), as a table lookup. `peak_index` holds
+// the 4 kHz peak on entry.
+void ParabolicFitW16(const int16_t* signal_points, int fs_mult, size_t* peak_index, int16_t* peak_value) {
+  uint16_t fit_index[13];
+  if (fs_mult == 1) {
+    const uint16_t f[] = {0, 8, 16};
+    std::copy(std::begin(f), std::end(f), fit_index);
+  } else if (fs_mult == 2) {
+    const uint16_t f[] = {0, 4, 8, 12, 16};
+    std::copy(std::begin(f), std::end(f), fit_index);
+  } else if (fs_mult == 4) {
+    const uint16_t f[] = {0, 2, 4, 6, 8, 10, 12, 14, 16};
+    std::copy(std::begin(f), std::end(f), fit_index);
+  } else {
+    const uint16_t f[] = {0, 1, 3, 4, 5, 7, 8, 9, 11, 12, 13, 15, 16};
+    std::copy(std::begin(f), std::end(f), fit_index);
+  }
+  const int32_t num = (signal_points[0] * -3) + (signal_points[1] * 4) - signal_points[2];
+  const int32_t den = signal_points[0] + (signal_points[1] * -2) + signal_points[2];
+  const int32_t temp = num * 120;
+  int flag = 1;
+  const int16_t stp = static_cast<int16_t>(kParabolaCoefficients[fit_index[fs_mult]][0] -
+                                           kParabolaCoefficients[fit_index[fs_mult - 1]][0]);
+  const int16_t strt = static_cast<int16_t>(
+      (kParabolaCoefficients[fit_index[fs_mult]][0] + kParabolaCoefficients[fit_index[fs_mult - 1]][0]) / 2);
+  int16_t lmt;
+  if (temp < -den * strt) {
+    lmt = static_cast<int16_t>(strt - stp);
+    while (flag) {
+      if ((flag == fs_mult) || (temp > -den * lmt)) {
+        *peak_value = static_cast<int16_t>((den * kParabolaCoefficients[fit_index[fs_mult - flag]][1] +
+                                            num * kParabolaCoefficients[fit_index[fs_mult - flag]][2] +
+                                            signal_points[0] * 256) /
+                                           256);
+        *peak_index = *peak_index * 2 * static_cast<size_t>(fs_mult) - static_cast<size_t>(flag);
+        flag = 0;
+      } else {
+        flag++;
+        lmt = static_cast<int16_t>(lmt - stp);
+      }
+    }
+  } else if (temp > -den * (strt + stp)) {
+    lmt = static_cast<int16_t>(strt + 2 * stp);
+    while (flag) {
+      if ((flag == fs_mult) || (temp < -den * lmt)) {
+        *peak_value = static_cast<int16_t>((den * kParabolaCoefficients[fit_index[fs_mult + flag]][1] +
+                                            num * kParabolaCoefficients[fit_index[fs_mult + flag]][2] +
+                                            signal_points[0] * 256) /
+                                           256);
+        *peak_index = *peak_index * 2 * static_cast<size_t>(fs_mult) + static_cast<size_t>(flag);
+        flag = 0;
+      } else {
+        flag++;
+        lmt = static_cast<int16_t>(lmt + stp);
+      }
+    }
+  } else {
+    *peak_value = signal_points[1];
+    *peak_index = *peak_index * 2 * static_cast<size_t>(fs_mult);
+  }
+}
+
+// DspHelper::PeakDetection with one peak (RefinePeak), in fixed point: the
+// first largest sample (WebRtcSpl_MaxIndexW16), refined by ParabolicFitW16;
+// a peak on the last sample has a zero past it, and is placed half a 4 kHz
+// sample to the right when it isn't above that zero.
+void PeakDetectionW16(const int16_t* data, size_t data_length, int fs_mult, size_t* peak_index, int16_t* peak_value) {
+  const size_t edge_index = data_length - 1;
+  size_t peak = 0;
+  int16_t maximum = std::numeric_limits<int16_t>::min();
+  for (size_t i = 0; i < data_length; ++i) {
+    if (data[i] > maximum) {
+      maximum = data[i];
+      peak = i;
+    }
+  }
+  const int16_t next = peak == edge_index ? 0 : data[peak + 1];
+  *peak_index = peak;
+  if (peak == 0) {
+    *peak_value = data[0];
+    *peak_index = 0;
+  } else if (peak == edge_index) {
+    if (data[peak] > next) {
+      const int16_t points[3] = {data[peak - 1], data[peak], next};
+      ParabolicFitW16(points, fs_mult, peak_index, peak_value);
+    } else {
+      *peak_value = std::midpoint(data[peak], next);
+      *peak_index = (peak * 2 + 1) * static_cast<size_t>(fs_mult);
+    }
+  } else {
+    ParabolicFitW16(&data[peak - 1], fs_mult, peak_index, peak_value);
+  }
+}
+
+// AudioVector::CrossFade on int16 samples: the `n` samples of `fade_out`
+// (the last `n` of `out`) fade into `fade_in` with `fade_out`'s weight
+// falling from 16384 in steps of 16384 / (n + 1), Q14 rounded. The result
+// replaces the last `n` samples of `out`, on the [-1, 1) scale.
+void CrossFade(std::vector<float>& out, const int16_t* fade_out, const int16_t* fade_in, size_t n) {
+  n = std::min(n, out.size());
   const int alpha_step = 16384 / (static_cast<int>(n) + 1);
   int alpha = 16384;
   const size_t position = out.size() - n;
   for (size_t i = 0; i < n; ++i) {
     alpha -= alpha_step;
-    out[position + i] = (static_cast<float>(alpha) * out[position + i] + static_cast<float>(16384 - alpha) * in[i]) / 16384.0f;
+    const int16_t v = static_cast<int16_t>((alpha * fade_out[i] + (16384 - alpha) * fade_in[i] + 8192) >> 14);
+    out[position + i] = static_cast<float>(v) / kInt16Scale;
   }
-  out.insert(out.end(), in + n, in + in_length);
 }
 
 }  // namespace
@@ -964,11 +1069,9 @@ void NetEqTimeStretch::Analyze(std::span<const float> input, const NetEqBackgrou
   AutoCorrelation();
 
   // The strongest correlation peak.
-  float correlation[kCorrelationLen + 1];
-  for (size_t i = 0; i <= kCorrelationLen; ++i) correlation[i] = auto_correlation_[i];
   size_t peak_index = 0;
-  float peak_value = 0;
-  PeakDetection(correlation, kCorrelationLen, 1, fs_mult_, &peak_index, &peak_value);
+  int16_t peak_value = 0;
+  PeakDetectionW16(auto_correlation_, kCorrelationLen, fs_mult_, &peak_index, &peak_value);
   // AutoCorrelation starts at kMinLag (4 kHz).
   peak_index += kMinLag * fs_mult * 2;  // At most 119 * fs_mult, under 15 ms.
 
@@ -1076,14 +1179,16 @@ NetEqTimeStretch::Result NetEqTimeStretch::Accelerate(std::span<const float> inp
     return Result::kNoStretch;
   }
   size_t peak_index = peak_index_;
-  // Fast mode removes as many whole periods as fit in 15 ms.
+  // Fast mode removes as many whole periods as fit in 15 ms. As in
+  // TimeStretch::Process, `length_change` is still one period: the multiple
+  // is local to Accelerate::CheckCriteriaAndStretch.
   if (fast_mode) peak_index = (fs_mult_120 / peak_index) * peak_index;
   // 0 to 15 ms, then the period from 15 ms crossfaded onto its end, then
   // the rest from 15 ms plus one period.
   out.insert(out.end(), input.begin(), input.begin() + static_cast<std::ptrdiff_t>(fs_mult_120));
-  CrossFade(out, input.data() + fs_mult_120, peak_index, peak_index);
+  CrossFade(out, &signal_[fs_mult_120 - peak_index], &signal_[fs_mult_120], peak_index);
   out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(fs_mult_120 + peak_index), input.end());
-  *length_change = peak_index;
+  *length_change = peak_index_;
   return active_speech_ ? Result::kSuccess : Result::kSuccessLowEnergy;
 }
 
@@ -1110,7 +1215,7 @@ NetEqTimeStretch::Result NetEqTimeStretch::PreemptiveExpand(std::span<const floa
   // The first part with the crossfade region, the period before it
   // crossfaded onto its end, then the rest from the unmodified part on.
   out.insert(out.end(), input.begin(), input.begin() + static_cast<std::ptrdiff_t>(unmodified_length + peak_index));
-  CrossFade(out, input.data() + unmodified_length - peak_index, peak_index, peak_index);
+  CrossFade(out, &signal_[unmodified_length], &signal_[unmodified_length - peak_index], peak_index);
   out.insert(out.end(), input.begin() + static_cast<std::ptrdiff_t>(unmodified_length), input.end());
   *length_change = peak_index;
   return active_speech_ ? Result::kSuccess : Result::kSuccessLowEnergy;

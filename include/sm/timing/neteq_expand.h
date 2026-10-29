@@ -277,9 +277,13 @@ class NetEqMerge {
 // which adds L samples. The crossfade is AudioVector::CrossFade's linear ramp
 // of step 16384 / (L + 1).
 //
-// The decision values (energies, the VAD, the correlation, the scaling
-// shifts) keep libwebrtc's integer arithmetic on the int16 samples; the
-// stretched signal is float.
+// All of it is libwebrtc's fixed-point arithmetic on the int16 samples
+// (#644): the energies, the VAD, the correlation, the scaling shifts,
+// DspHelper::PeakDetection with the table ParabolicFit, and the crossfade
+// rounded as AudioVector's ((a x + (16384 - a) y + 8192) >> 14). On int16
+// input the output is bit-exact with libwebrtc's (the unit test's golden
+// hashes come from the reference sources compiled unchanged). Fast mode's
+// length change is one period, as TimeStretch::Process reports it.
 class NetEqTimeStretch {
  public:
   enum class Result { kSuccess, kSuccessLowEnergy, kNoStretch, kError };
@@ -294,7 +298,8 @@ class NetEqTimeStretch {
   explicit NetEqTimeStretch(int sample_rate);
 
   // Accelerate::Process: appends the stretched `input` to `out`, and sets
-  // `length_change` to the samples removed (0 unless it succeeded).
+  // `length_change` to the samples removed (0 unless it succeeded; one
+  // period in fast mode, which removes as many as fit in 15 ms).
   Result Accelerate(std::span<const float> input, bool fast_mode, const NetEqBackgroundNoise& background_noise,
                     std::vector<float>& out, size_t* length_change);
   // PreemptiveExpand::Process: the first `old_data_length` samples of
