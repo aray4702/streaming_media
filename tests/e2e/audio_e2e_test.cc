@@ -75,6 +75,17 @@ SM_TEST(E2E_Apm, DefaultChainIsLibwebrtcs) {
   SM_EXPECT_TRUE(def.out != c.capture);
 }
 
+// libwebrtc M157's call runs AGC1, never AGC2 (#670):
+// `AudioProcessing::Config::GainController2::enabled` defaults to false
+// (api/audio/audio_processing.h), `WebRtcVoiceEngine::ApplyOptions` sets only
+// `gain_controller1` (media/engine/webrtc_voice_engine.cc), and APM creates
+// `GainController2`, the only user of the RNN VAD, only when it is enabled
+// (`AudioProcessingImpl::InitializeGainController2`). So AGC2 stays opt-in.
+SM_TEST(E2E_Apm, CallRunsAgc1NotAgc2AsLibwebrtc) {
+  const ChainConfig def;
+  SM_EXPECT_TRUE(!def.agc2);
+}
+
 SM_TEST(E2E_Vad, DetectsSpeechAfterNoiseSuppression) {
   CallScenario s;
   s.far_talk = false;

@@ -359,10 +359,10 @@
    "area": "Audio quality (APM)",
    "catalog": "6.4",
    "title": "Automatic gain control and limiter",
-   "status": "open",
-   "evidence": "AGC1 (`agc1.h` digital stage bit-exact, `agc1_vad.h`, `AgcManagerDirect`/`MonoAgc`, `CaptureLevelsAdjuster`, clipping predictor off as libwebrtc) and AGC2 with its RNN VAD are ported (#242); the apm v2 chain matches libwebrtc AGC1. Default is still the v1 `AutomaticGainControl`/`Limiter` (`apm v2` off). AGC2's RNN VAD is float-close, not bit-exact (PFFFT). No open item; filed #565.",
+   "status": "done",
+   "evidence": "AGC1 as a call runs it (`agc1.h` digital stage bit-exact, `agc1_vad.h`, `AgcManagerDirect`/`MonoAgc`, `CaptureLevelsAdjuster`, clipping predictor off as libwebrtc) is ported (#242) and the only AGC in the default chain since #565 (v1 AGC and limiter retired). AGC2 with its RNN VAD is ported too (#242) and stays opt-in, as in libwebrtc: M157's call never runs AGC2 (`GainController2::enabled` defaults to false, `WebRtcVoiceEngine::ApplyOptions` sets only `gain_controller1`, the `WebRTC-Audio-GainController2` trial is registered but read nowhere), so the RNN VAD's float-close, not bit-exact, FFT (PFFFT) touches no call (#670; `E2E_Apm.CallRunsAgc1NotAgc2AsLibwebrtc`).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },

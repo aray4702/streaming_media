@@ -1130,7 +1130,7 @@ ALGORITHMS = [
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB), through AGC1 as a call runs it "
                   "and through AGC2; the quiet and loud talkers' levels, the noise in pauses and the peak are "
                   "compared with libwebrtc's on the same signal.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs; the library's own AGC and limiter (v1) were retired in #565. "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request, as libwebrtc M157's call never enables `gain_controller2`, #670) runs; the library's own AGC and limiter (v1) were retired in #565. "
                "`agc2::GainController2` (#242) ports libwebrtc M157's AGC2 "
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
