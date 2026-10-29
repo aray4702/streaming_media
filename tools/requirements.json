@@ -112,10 +112,10 @@
    "area": "Jitter, reordering and timing",
    "catalog": "4.2",
    "title": "RTCP statistics: loss, jitter and RTT",
-   "status": "open",
-   "evidence": "`ReceiverStatistics` (`src/timing/rtcp_stats.cc`) has `StreamStatisticianImpl`'s guards (#76 group 5: Q4 jitter, in-order new-timestamp packets, 5 s jump skip), `ReviseFrequencyAndJitter` (#101) and the `CompactNtpRttToTimeDelta` 1 ms floor; no switch. Short: the `RttEstimator` row is 'not compared (aggregation)' (ours a 7/8-smoothed value and a minimum) and lists libwebrtc's whole-ms RTT rounding for the controller as remaining; the 'ReceiverStatistics jitter' row's status is stale ('port', text says ported). No open item serves it; filed #568.",
+   "status": "done",
+   "evidence": "RTCP statistics as libwebrtc M157: `StreamStatisticianImpl`'s rules are the default (#647, #694: max reordering threshold 450 with NACK / 50, stream restart, 255-scaled fraction lost, negative-loss clamp; Q4 jitter with its in-order, new-timestamp and 5 s guards and `ReviseFrequencyAndJitter`, #76, #101); RTT aggregated per send stream as `RTCPReceiver::RttStats` by default (#587, #660), the units rounding as libwebrtc's `unit_base.h` (#686), the `CompactNtpRttToTimeDelta` 1 ms floor. Parity rows `ReceiverStatistics` jitter and `RttEstimator` are `same` (the jitter row's prose still lists the pre-#76 differences).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
