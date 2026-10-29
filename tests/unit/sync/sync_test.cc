@@ -637,3 +637,165 @@ SM_TEST(HeaderExtensions, DemuxRules) {
   SM_EXPECT_FALSE(d.Demux(amb).has_value());
   SM_EXPECT_EQ(d.stats().unroutable, 1u);
 }
+
+namespace {
+// A packet with the given SSRC, payload type and identification extensions
+// (empty strings are left out).
+RtpPacket DemuxPacket(const ExtensionAccessor& a, uint32_t ssrc, uint8_t pt, const std::string& mid = "",
+                      const std::string& rid = "", const std::string& rrid = "") {
+  RtpPacket p;
+  p.ssrc = ssrc;
+  p.payload_type = pt;
+  if (!mid.empty()) a.SetString(p, uri::kMid, mid);
+  if (!rid.empty()) a.SetString(p, uri::kRid, rid);
+  if (!rrid.empty()) a.SetString(p, uri::kRepairedRid, rrid);
+  return p;
+}
+
+ExtensionMap DemuxMap() {
+  ExtensionMap m;
+  m.Register(1, uri::kMid);
+  m.Register(2, uri::kRid);
+  m.Register(3, uri::kRepairedRid);
+  return m;
+}
+
+RtpDemuxerCriteria Criteria(const std::string& mid, const std::string& rsid, std::vector<uint32_t> ssrcs = {},
+                            std::vector<uint8_t> pts = {}) {
+  RtpDemuxerCriteria c;
+  c.mid = mid;
+  c.rsid = rsid;
+  c.ssrcs = std::move(ssrcs);
+  c.payload_types = std::move(pts);
+  return c;
+}
+}  // namespace
+
+// RtpDemuxer::ResolveSink (call/rtp_demuxer.cc:318-428): a packet with a MID
+// no sink knows is dropped, even when its SSRC is bound to a sink.
+SM_TEST(RtpDemuxer, UnknownMidDroppedEvenWithBoundSsrc) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("a", "", {5})));
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 5, 96)), 0);
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 5, 96, "zz")).has_value());
+  SM_EXPECT_EQ(d.stats().unroutable, 1u);
+}
+
+// A MID learned from one packet routes the SSRC's later packets, and a sink
+// added after the MID was learned gets them.
+SM_TEST(RtpDemuxer, LatchedMidRoutesLaterPackets) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("a", "", {}, {111})));
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("v", "l")));
+  // MID "v" is known (through its RSID sink) but the packet has no RSID: dropped,
+  // and the MID is latched for SSRC 7.
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 7, 96, "v")).has_value());
+  SM_EXPECT_TRUE(d.RemoveSink(1));
+  SM_EXPECT_TRUE(d.AddSink(2, Criteria("v", "")));
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 7, 96)), 2);  // No MID on the packet.
+  SM_EXPECT_EQ(d.stats().by_ssrc, 1u);
+  SM_EXPECT_EQ(d.stats().by_mid, 0u);
+  SM_EXPECT_EQ(d.GetSsrcsForSink(2).size(), 1u);
+  SM_EXPECT_EQ(d.GetSsrcsForSink(2).front(), 7u);
+}
+
+// The repaired RSID wins over the RSID; an RSID without a MID routes through
+// an RSID-only sink.
+SM_TEST(RtpDemuxer, RsidRules) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("v", "h")));
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("v", "l")));
+  SM_EXPECT_TRUE(d.AddSink(2, Criteria("", "s")));
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 1, 96, "v", "h", "l")), 1);
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 2, 96, "", "s")), 2);
+  SM_EXPECT_EQ(d.stats().by_rsid, 1u);
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 3, 96, "v", "m")).has_value());  // A MID's unknown RSID.
+}
+
+// A signalled SSRC is trusted over a payload type; payload-type routing needs
+// exactly one sink with that type and can be turned off.
+SM_TEST(RtpDemuxer, SsrcBeforePayloadType) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("", "", {10}, {96})));
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("", "", {20}, {97})));
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 20, 96)), 1);
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 30, 96)), 0);  // Binds SSRC 30 to sink 0.
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 30, 97)), 0);
+  // Signalling SSRC 30 for sink 2 replaces the learned binding.
+  SM_EXPECT_TRUE(d.AddSink(2, Criteria("", "", {30})));
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 30, 97)), 2);
+  d.set_use_payload_type_demuxing(false);
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 40, 97)).has_value());
+}
+
+// RtpDemuxerCriteria::payload_types() is a flat_set in libwebrtc, so a payload
+// type a sink lists twice is still one sink's; found by sm_rtcp_interop
+// (round 7 packet 12: ssrc 2, pt 97 went to sink 0 in libwebrtc, nowhere here).
+SM_TEST(RtpDemuxer, RepeatedPayloadTypeIsOneSink) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("v", "", {5}, {97, 97})));
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("", "h", {}, {96})));
+  SM_EXPECT_EQ(d.Demux(DemuxPacket(a, 2, 97)).value_or(-1), 0);
+  SM_EXPECT_EQ(d.stats().by_payload_type, 1u);
+  SM_EXPECT_TRUE(d.RemoveSink(0));
+  SM_EXPECT_FALSE(d.Demux(DemuxPacket(a, 3, 97)).has_value());
+}
+
+// RtpDemuxer::CriteriaWouldConflict and RtpDemuxerCriteria::IsValid.
+SM_TEST(RtpDemuxer, ConflictingAndInvalidCriteria) {
+  const ExtensionMap m = DemuxMap();
+  RtpDemuxer d(m);
+  SM_EXPECT_FALSE(d.AddSink(0, RtpDemuxerCriteria{}));                       // Matches nothing.
+  SM_EXPECT_FALSE(d.AddSink(0, Criteria(std::string(17, 'm'), "")));        // MID too long.
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("v", "h", {1})));
+  SM_EXPECT_FALSE(d.AddSink(1, Criteria("v", "h")));                          // Same pair.
+  SM_EXPECT_FALSE(d.AddSink(1, Criteria("v", "")));                           // MID already known.
+  SM_EXPECT_FALSE(d.AddSink(1, Criteria("", "", {1})));                       // SSRC signalled.
+  SM_EXPECT_TRUE(d.AddSink(1, Criteria("a", "")));
+  SM_EXPECT_FALSE(d.AddSink(2, Criteria("a", "h")));                          // Shadowed by MID "a".
+  RtpDemuxerCriteria any;
+  any.match_any = true;
+  SM_EXPECT_FALSE(d.AddSink(2, any));                                         // Not empty.
+  d.RemoveAllSinks();
+  SM_EXPECT_TRUE(d.IsEmpty());
+  SM_EXPECT_TRUE(d.AddSink(2, any));
+  SM_EXPECT_FALSE(d.AddSink(3, Criteria("a", "")));                           // After match-any.
+  ExtensionAccessor a(m);
+  SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, 9, 1, "zz")), 2);
+}
+
+// At most kMaxSsrcBindings SSRCs are bound, against a peer that sends many.
+SM_TEST(RtpDemuxer, SsrcBindingsBounded) {
+  const ExtensionMap m = DemuxMap();
+  ExtensionAccessor a(m);
+  RtpDemuxer d(m);
+  SM_EXPECT_TRUE(d.AddSink(0, Criteria("", "", {}, {96})));
+  for (uint32_t ssrc = 1; ssrc <= 1100; ++ssrc) SM_EXPECT_EQ(*d.Demux(DemuxPacket(a, ssrc, 96)), 0);
+  SM_EXPECT_EQ(d.GetSsrcsForSink(0).size(), RtpDemuxer::kMaxSsrcBindings);
+  SM_EXPECT_EQ(d.stats().ssrc_bindings, 1000u);
+  SM_EXPECT_EQ(d.stats().ssrc_binding_limit, 100u);
+}
+
+// BaseRtpStringExtension::Parse: an empty value or one starting with \0 is
+// not a string, and a \0 inside ends it.
+SM_TEST(HeaderExtensions, StringParsedAsLibwebrtc) {
+  ExtensionMap m(true);
+  m.Register(1, uri::kMid);
+  ExtensionAccessor a(m);
+  RtpPacket p;
+  a.SetRaw(p, uri::kMid, {'a', 0, 'b'});
+  SM_EXPECT_EQ(*a.GetString(p, uri::kMid), "a");
+  RtpPacket q;
+  a.SetRaw(q, uri::kMid, {0, 'b'});
+  SM_EXPECT_FALSE(a.GetString(q, uri::kMid).has_value());
+}
