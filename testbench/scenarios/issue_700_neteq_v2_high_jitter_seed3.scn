@@ -1,0 +1,10 @@
+name issue_700_neteq_v2_high_jitter_seed3
+describe issue_62_neteq_v2_high_jitter on seed 3, where our jb_delay_p95_ms reaches 190 against libwebrtc's 180 (issue #700); traced on both stacks
+seed 3
+duration 30s
+neteq v2
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+expect audio.interruptions == 0
+expect audio.concealed_pct < 0.5
+expect audio.jb_delay_p95_ms >= 95
+# Measurement copy (#700): ours 190 on this seed, libwebrtc 180 (#697), so it carries no upper line; issue_62_neteq_v2_high_jitter keeps <= 180.
