@@ -22,7 +22,9 @@ ContentSettings SettingsFor(ContentHint hint, bool is_screencast) {
       s.max_qp_h264 = 32;  // Text must stay legible: prefer dropping frames.
       break;
     case ContentHint::kNone:
-      s.degradation = is_screencast ? Degradation::kMaintainResolution : Degradation::kBalanced;
+      // As GetDegradationPreference (webrtc_video_engine.cc:2032-2064):
+      // camera keeps MAINTAIN_FRAMERATE until BALANCED is tuned.
+      s.degradation = is_screencast ? Degradation::kMaintainResolution : Degradation::kMaintainFramerate;
       if (is_screencast) s.min_fps = 2;
       break;
   }
