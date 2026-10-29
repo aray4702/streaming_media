@@ -11,7 +11,7 @@
   "audio.mouth_to_ear_p95_ms": 187.7,
   "audio.net_delay_p95_ms": 87.7,
   "audio.stretch_pct": 0.3254,
-  "audio.time_to_first_ms": 40,
+  "audio.time_to_first_ms": 41,
   "cc.goodput_kbps": 917.1,
   "cc.max_settle_ms": 300,
   "cc.queue_max_ms": 87.26,
@@ -80,7 +80,7 @@
   "video.render_fps": 29.85,
   "video.render_ratio_pct": 99.83,
   "video.residual_loss_pct": 0,
-  "video.time_to_first_frame_ms": 196,
+  "video.time_to_first_frame_ms": 197,
   "video.undecodable_frames": 0
  },
  "passed": true,

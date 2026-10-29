@@ -7,7 +7,8 @@ namespace sm::cc {
 
 namespace {
 // libwebrtc's unit arithmetic: DataRate * double and DataRate * TimeDelta round to nearest.
-DataRate Scale(DataRate r, double f) { return DataRate::BitsPerSec(static_cast<int64_t>(std::llround(static_cast<double>(r.bps()) * f))); }
+// DataRate * double, which rounds with std::llround as libwebrtc (#461).
+DataRate Scale(DataRate r, double f) { return r * f; }
 DataSize Mul(DataRate r, TimeDelta t) {
   return DataSize::Bytes(static_cast<int64_t>(std::llround(static_cast<double>(r.bps()) * static_cast<double>(t.us()) / 8e6)));
 }

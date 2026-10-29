@@ -11,7 +11,7 @@
   "audio.mouth_to_ear_p95_ms": 259.6,
   "audio.net_delay_p95_ms": 49.64,
   "audio.stretch_pct": 1.754,
-  "audio.time_to_first_ms": 44,
+  "audio.time_to_first_ms": 45,
   "cc.goodput_kbps": 68.66,
   "cc.max_settle_ms": 4000,
   "cc.queue_max_ms": 196.1,

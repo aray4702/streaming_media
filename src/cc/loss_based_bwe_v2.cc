@@ -16,8 +16,9 @@ constexpr DataRate kMinBitrate = DataRate::BitsPerSec(5000);
 double ToKiloBytes(DataSize s) { return static_cast<double>(s.bytes()) / 1000.0; }
 
 // webrtc units round to nearest when scaling by a double.
-DataRate Scale(DataRate r, double f) { return DataRate::BitsPerSec(std::llround(static_cast<double>(r.bps()) * f)); }
-DataSize Scale(DataSize s, double f) { return DataSize::Bytes(std::llround(static_cast<double>(s.bytes()) * f)); }
+// Unit * double, which rounds with std::llround as libwebrtc (#461).
+DataRate Scale(DataRate r, double f) { return r * f; }
+DataSize Scale(DataSize s, double f) { return s * f; }
 
 double GetLossProbability(double inherent_loss, std::optional<DataRate> loss_limited_bandwidth, std::optional<DataRate> sending_rate) {
   inherent_loss = std::min(std::max(inherent_loss, 0.0), 1.0);

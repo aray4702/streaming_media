@@ -7,19 +7,6 @@ namespace sm::cc {
 
 namespace {
 constexpr int64_t kWindowMs = 500;  // interval_budget.cc
-
-// rtc_base/numerics/divide_round.h DivideRoundToNearest(us, 1000): halves away from zero.
-int64_t RoundToNearestMs(TimeDelta d) {
-  const int64_t us = d.us();
-  int64_t q = us / 1000;
-  const int64_t r = us % 1000;
-  if (us >= 0) {
-    if (r > 499) ++q;
-  } else if (-r > 500) {
-    --q;
-  }
-  return q;
-}
 }  // namespace
 
 IntervalBudget::IntervalBudget(int initial_target_rate_kbps, bool can_build_up_underuse)
@@ -68,7 +55,7 @@ void AlrDetector::OnBytesSent(DataSize bytes_sent, Timestamp send_time) {
   alr_budget_.UseBudget(static_cast<size_t>(bytes_sent.bytes()));
   // TimeDelta::ms() rounds to the nearest millisecond (DivideRoundToNearest in
   // rtc_base/units/unit_base.h), so a 0.5-1 ms gap between packets credits 1 ms.
-  alr_budget_.IncreaseBudget(RoundToNearestMs(delta_time));
+  alr_budget_.IncreaseBudget(delta_time.ms());
   if (alr_budget_.budget_ratio() > kStartBudgetLevelRatio && !alr_started_time_) {
     // The libwebrtc detector stamps the state with the clock; the send time of
     // the packet that triggered it is the same instant here.
