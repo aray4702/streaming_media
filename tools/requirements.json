@@ -268,10 +268,10 @@
    "area": "Bandwidth, congestion and unstable links",
    "catalog": "5.7",
    "title": "Bitrate allocation among streams",
-   "status": "open",
-   "evidence": "`BitrateAllocator` ported (`include/sm/cc/bitrate_allocator_v2.h`, #104: low/normal/max allocation, hysteresis, `min_total_allocated_bitrate`, max padding; encoder activity time-out #375); v1 deleted (#167). Short: libwebrtc's `AudioSendStream::GetMinMaxBitrateConstraints` (`audio_send_stream.cc:808-901`, in reference/) adds per-packet overhead over the Opus frame-length range, where `rtp::Session::AddAudioSend` hands a fixed `allocation_rate` (audio 49.6 vs libwebrtc 39.2 kbps, #196/#151). No open item; filed #569.",
+   "status": "done",
+   "evidence": "`BitrateAllocator` ported (`include/sm/cc/bitrate_allocator_v2.h`, #104: low/normal/max allocation, hysteresis, `min_total_allocated_bitrate`, max padding; encoder activity time-out #375); v1 deleted (#167). Audio registers with it as libwebrtc's `AudioSendStream::GetMinMaxBitrateConstraints` (#586, #569), and the per-packet overhead comes from the registered extensions as `RTPSender::ExpectedPerPacketOverhead`, on by default (#687, #696, #577), with the encoder allocation in whole kbps as `SimulcastRateAllocator`. No open item.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
