@@ -528,10 +528,10 @@
    "area": "Video quality and processing",
    "catalog": "7.6",
    "title": "Resolution scaling and aspect handling",
-   "status": "open",
+   "status": "done",
    "evidence": "Removed by #593 (`include/sm/video/frame_scaler.h`: `Scale`, `ScaleToFit`, `Crop`, on the Owner's A on #566: libwebrtc M157's one-to-one call has no such component; it scales with libyuv's `I420Buffer::Scale` and the frames are the app's). Parity doc 7.3 row marked removed; catalog 7.6 moved to the not-implemented list.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
