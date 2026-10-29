@@ -14,6 +14,9 @@
 #include "encoder_model.h"
 #include "opus_decoder.h"
 #include "opus_encoder.h"
+#include "sm/audio/aec3.h"
+#include "sm/audio/agc2.h"
+#include "sm/audio/ns.h"
 #include "sm/core/event_log.h"
 #include "sm/core/metrics.h"
 #include "sm/core/random.h"
@@ -182,14 +185,10 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"repair.overhead_pct", "(RTX + FEC packet bytes) / (audio + video media packet bytes), whole RTP packets"},
       {"repair.nack_recovered", "RTX packets that arrived before their original (from the link, as sm_compare)"},
       {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
+      {"rtcp.audio_report_blocks", "Report blocks about the audio SSRC in the RTCP the sender received (SRs and RRs; "
+                                   "libwebrtc's audio channel reports every 5 s, about 6 in 30 s; issue #484)"},
   };
   return k;
-}
-
-DataRate AudioAllocationRate(const Scenario& s) {
-  if (!s.audio) return DataRate::Zero();
-  constexpr int64_t kRtpHeader = 12 + 8;
-  return DataRate::BitsPerSec(s.audio_bitrate.bps() + (kRtpHeader + kUdpIpOverhead) * 8 * 50);
 }
 
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
@@ -517,6 +516,53 @@ void EvaluateExpectations(Report& rep) {
   }
 }
 
+namespace {
+
+// `apm_rate`: AEC3, NS and AGC2 built at one rate, each fed 50 frames of 10 ms
+// as a host would (issue #594). AEC3 takes split-band frames with room for every
+// band; NS and AGC2 take rate / 100 samples.
+void ProbeApm(int rate, std::map<std::string, double>& m) {
+  constexpr float kAec3Level = 50.f, kNsLevel = 0.03f, kAgc2Level = 0.1f;
+  const size_t samples = rate / 100 > 0 ? static_cast<size_t>(rate / 100) : 1;
+  bool untouched = true;
+  auto same = [](const std::vector<float>& v, float x) {
+    return std::all_of(v.begin(), v.end(), [x](float y) { return y == x; });
+  };
+
+  audio::aec3::EchoCanceller3 aec3(audio::aec3::Aec3Config{}, rate, 1, 1);
+  audio::aec3::Frame frame(audio::aec3::kMaxNumBands,
+                           std::vector<std::vector<float>>(1, std::vector<float>(audio::aec3::kFrameSize, kAec3Level)));
+  for (int i = 0; i < 50; ++i) {
+    aec3.AnalyzeRender(frame);
+    aec3.ProcessCapture(&frame, false);
+  }
+  if (!aec3.valid()) untouched = untouched && same(frame[0][0], kAec3Level);
+
+  audio::ns::NoiseSuppressorConfig nc;
+  nc.sample_rate = rate;
+  audio::ns::NoiseSuppressor ns(nc);
+  std::vector<float> nf(samples, kNsLevel);
+  for (int i = 0; i < 50; ++i) {
+    ns.Analyze(nf);
+    ns.Process(nf);
+  }
+  if (!ns.valid()) untouched = untouched && same(nf, kNsLevel);
+
+  audio::agc2::GainController2Config gc;
+  gc.sample_rate = rate;
+  audio::agc2::GainController2 agc2(gc);
+  std::vector<float> gf(samples, kAgc2Level);
+  for (int i = 0; i < 50; ++i) agc2.Process(gf);
+  if (!agc2.valid()) untouched = untouched && same(gf, kAgc2Level);
+
+  m["apm.aec3_valid"] = aec3.valid() ? 1 : 0;
+  m["apm.ns_valid"] = ns.valid() ? 1 : 0;
+  m["apm.agc2_valid"] = agc2.valid() ? 1 : 0;
+  m["apm.untouched"] = untouched ? 1 : 0;
+}
+
+}  // namespace
+
 int AudioCodecRate(int /*capture_rate*/) { return OpusDefaults::kSampleRateHz; }
 
 Report RunCall(const Scenario& s, const RunOptions& opt) {
@@ -606,6 +652,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // constructor schedules report_interval_ / 2 (rtcp_sender.cc:171), so 0.5 s
   // with video (issue #360; the receiver used to wait 1 s).
   receiver_cfg.av_sync = s.av_sync;  // Issue #77.
+  receiver_cfg.audio_receive_rtcp = s.audio_receive_rtcp;  // Issue #484.
   // The receiver measures its RTT as sm_compare's libwebrtc receiver does:
   // RRTR in its reports, the sender's DLRR echo (rtcp_xr.receiver_reference_time_report, issue #356).
   receiver_cfg.rtcp.xr_rrtr = s.video;
@@ -617,8 +664,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
   audio_cfg.clock_rate = sr;
   audio_cfg.nominal_rate = audio_wire_rate;
-  // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
-  audio_cfg.allocation_rate = AudioAllocationRate(s);
+  // sm_compare's AudioSendStream::Config: min = max = the codec rate, 20 ms Opus frames. The session
+  // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
+  audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
   audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
@@ -733,6 +781,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
   // The trace's rtx_room column (#555): the sender's RTX reservation phase when each frame was handed to it.
   RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  std::vector<AudioSendRow> audio_reports;  // Each audio report block the sender received (issue #484).
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
@@ -988,6 +1037,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       } else if (tr == at) {
         const Rev& r = rev_in[ri++].second;
         if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
+        TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, audio_reports);  // rtcp.audio_report_blocks (issue #484).
         if (opt.link_trace) rtx_ack.OnRtcp(r.bytes);
         sender.OnPacket(r.bytes, at);
         run_sender(at);
@@ -1340,6 +1390,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["cc.queue_over_200ms_pct"] = queue_samples.empty() ? 0 : 100.0 * static_cast<double>(over) / static_cast<double>(queue_samples.size());
   }
   m["cc.rtt_p50_ms"] = Percentile(rtt_samples, 50);
+  m["rtcp.audio_report_blocks"] = static_cast<double>(audio_reports.size());
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   AddLinkKindMetrics(ls, s, rep);
@@ -1352,6 +1403,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());
   repair.AddMetrics(m, s.video, end_ms);
+  if (s.apm_rate) ProbeApm(*s.apm_rate, m);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

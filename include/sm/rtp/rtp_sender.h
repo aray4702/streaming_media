@@ -32,6 +32,7 @@
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtcp_engine.h"
 #include "sm/sync/header_extensions.h"
+#include "sm/video/orientation.h"
 
 namespace sm::rtp {
 
@@ -98,6 +99,7 @@ struct RtpSenderStats {
   uint64_t nacks_without_rtx = 0;
   uint64_t mid_packets = 0;
   uint64_t audio_level_packets = 0;
+  uint64_t video_orientation_packets = 0;  // Packets carrying the CVO extension.
 };
 
 // Splits `bytes` into the fewest chunks of at most `max_payload` bytes, as
@@ -121,9 +123,19 @@ class RtpSender : public MetricsSource {
   size_t MediaHeaderSize() const;
   // Video: one packetized frame. The marker is set on the last chunk. With
   // FEC each packet is wrapped in RED (rtp_sender_video.cc BuildRedPayload).
-  // `keyframe` marks its media packets for the pacer (keyframe flush).
+  // `keyframe` marks its media packets for the pacer (keyframe flush). With
+  // the video-orientation extension (CVO) mapped, the last packet carries
+  // `rotation` on a keyframe, when it changed since the last frame, or when
+  // it is not 0, as RTPSenderVideo::AddRtpHeaderExtensions
+  // (rtp_sender_video.cc:388-408); the byte is ConvertVideoRotationToCVOByte
+  // (rtp_cvo.h): the rotation alone, camera and flip bits 0.
   void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                      bool keyframe = false);
+                      bool keyframe = false, video::Rotation rotation = video::Rotation::k0);
+  // How much larger the last packet's header of such a frame is than a middle
+  // packet's: the packetizer's last_packet_reduction_len (and
+  // single_packet_reduction_len) in RTPSenderVideo::SendVideo
+  // (rtp_sender_video.cc:741-758). 0 unless the frame carries CVO.
+  size_t LastPacketReduction(bool keyframe, video::Rotation rotation) const;
 
   // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
   // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
@@ -223,6 +235,7 @@ class RtpSender : public MetricsSource {
   RtpPacket NewPacket(uint8_t pt, uint32_t rtp_timestamp, bool marker);
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
   void StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe = false, bool first = false);
+  bool SetsVideoRotation(bool keyframe, video::Rotation rotation) const;
 
   RtpSenderConfig cfg_;
   loss::RtxSender rtx_;
@@ -233,6 +246,7 @@ class RtpSender : public MetricsSource {
   std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
   int mid_remaining_;
+  video::Rotation last_rotation_ = video::Rotation::k0;  // RTPSenderVideo::last_rotation_.
   bool ssrc_has_acked_ = false;
   bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;

@@ -151,10 +151,31 @@ void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp
   StoreAndQueueMedia(std::move(p), now);
 }
 
+bool RtpSender::SetsVideoRotation(bool keyframe, video::Rotation rotation) const {
+  // rtp_sender_video.cc:388-408: on a keyframe or a change (TS 26.114 7.4.5), or when not 0
+  // (for the current receivers). SetExtension writes nothing when the extension is not registered.
+  return cfg_.extensions && cfg_.extensions->IdOf(sync::uri::kVideoOrientation) &&
+         (keyframe || rotation != last_rotation_ || rotation != video::Rotation::k0);
+}
+
+size_t RtpSender::LastPacketReduction(bool keyframe, video::Rotation rotation) const {
+  if (!SetsVideoRotation(keyframe, rotation)) return 0;
+  // Simplest way to estimate how much extensions would occupy is to set them (rtp_sender_video.cc:717).
+  RtpPacket p;
+  const sync::ExtensionAccessor access(*cfg_.extensions);
+  if (cfg_.extensions->IdOf(sync::uri::kTransportCc)) access.SetTransportSeq(p, 0);
+  if (cfg_.extensions->IdOf(sync::uri::kAbsSendTime)) access.SetAbsSendTime(p, Timestamp::Micros(0));
+  if (mid_remaining_ > 0 && !cfg_.mid.empty()) access.SetString(p, sync::uri::kMid, cfg_.mid);
+  const size_t middle = p.HeaderSize();
+  access.SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(rotation)});
+  return p.HeaderSize() - middle;
+}
+
 void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
-                               bool keyframe) {
+                               bool keyframe, video::Rotation rotation) {
   if (chunks.empty()) return;
   ++stats_.frames;
+  const bool set_rotation = SetsVideoRotation(keyframe, rotation);
   for (size_t i = 0; i < chunks.size(); ++i) {
     bool last = i + 1 == chunks.size();
     RtpPacket p;
@@ -168,8 +189,15 @@ void RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uin
       p = NewPacket(cfg_.payload_type, rtp_timestamp, last);
       p.payload = chunks[i];
     }
+    if (last && set_rotation) {
+      // ConvertVideoRotationToCVOByte (rtp_cvo.h): |0 0 0 0 C F R R| with C and F 0.
+      sync::ExtensionAccessor(*cfg_.extensions).SetRaw(p, sync::uri::kVideoOrientation, {static_cast<uint8_t>(rotation)});
+      ++stats_.video_orientation_packets;
+    }
     StoreAndQueueMedia(std::move(p), now, keyframe, i == 0);
   }
+  // Update details about the last sent frame (rtp_sender_video.cc:890).
+  last_rotation_ = rotation;
 }
 
 void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
@@ -346,6 +374,7 @@ void RtpSender::ExportMetrics(MetricsWriter& w) const {
   w.Counter("nacks_without_rtx", stats_.nacks_without_rtx);
   w.Counter("mid_packets", stats_.mid_packets);
   w.Counter("audio_level_packets", stats_.audio_level_packets);
+  w.Counter("video_orientation_packets", stats_.video_orientation_packets);
 }
 
 }  // namespace sm::rtp

@@ -40,6 +40,7 @@
 #include "api/environment/environment_factory.h"
 #include "api/rtp_header_extension_id.h"
 #include "modules/include/module_fec_types.h"
+#include "modules/audio_processing/rms_level.h"
 #include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
@@ -53,6 +54,7 @@
 #include "modules/video_coding/h26x_packet_buffer.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "system_wrappers/include/clock.h"
+#include "sm/audio/audio_level.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/fake_h264.h"
@@ -65,6 +67,7 @@
 #include "sm/rtp/send_side_controller.h"
 #include "sm/rtp/sps_vui_rewriter.h"
 #include "sm/sync/header_extensions.h"
+#include "sm/video/orientation.h"
 
 #include "model_h264.h"
 
@@ -495,6 +498,145 @@ void WebrtcToSender() {
             access.GetString(*p, sm::sync::uri::kMid) == std::optional<std::string>("video0");
   Check(ok, "libwebrtc packet with MID and transport-cc parsed");
 }
+// RFC 6464 audio level (#567): this library's RmsLevel gives libwebrtc's
+// value on the same 10 ms chunks (speech-like, faint, muted, clipped, a new
+// chunk size), and the extension byte RtpSender writes is the one libwebrtc
+// parses, in both directions.
+void AudioLevel() {
+  bool same = true;
+  sm::audio::RmsLevel ours;
+  webrtc::RmsLevel theirs;
+  uint32_t rng = 12345;
+  auto next = [&rng] { return rng = rng * 1664525u + 1013904223u; };
+  for (int packet = 0; packet < 400; ++packet) {
+    const size_t n = packet < 300 ? 480 : 160;  // 48 kHz, then 16 kHz.
+    const int kind = packet % 7;
+    const int amp = kind == 0 ? 0 : kind == 1 ? 1 : kind == 2 ? 40000 : 30 << (packet % 10);
+    for (int frame = 0; frame < 2; ++frame) {
+      if (kind == 0 && frame == 1) {
+        ours.AnalyzeMuted(n);
+        theirs.AnalyzeMuted(n);
+        continue;
+      }
+      std::vector<int16_t> pcm(n);
+      std::vector<float> fl(n);
+      for (size_t i = 0; i < n; ++i) {
+        const int v = amp == 0 ? 0 : static_cast<int>(next() % (2 * amp + 1)) - amp;
+        pcm[i] = static_cast<int16_t>(std::clamp(v, -32768, 32767));
+        fl[i] = static_cast<float>(v) + 0.25f;
+      }
+      if (packet % 2) {
+        ours.Analyze(std::span<const int16_t>(pcm));
+        theirs.Analyze(std::span<const int16_t>(pcm));
+      } else {
+        ours.Analyze(std::span<const float>(fl));
+        theirs.Analyze(std::span<const float>(fl));
+      }
+    }
+    if (packet % 5 == 4) {
+      const auto a = ours.AverageAndPeak();
+      const auto b = theirs.AverageAndPeak();
+      same = same && a.average == b.average && a.peak == b.peak;
+    } else {
+      same = same && ours.Average() == theirs.Average();
+    }
+  }
+  Check(same, "RmsLevel: the same RFC 6464 levels as libwebrtc's on 400 packets");
+
+  sm::sync::ExtensionMap map;
+  map.Register(1, sm::sync::uri::kAudioLevel);
+  webrtc::RtpHeaderExtensionMap wmap;
+  wmap.Register<webrtc::AudioLevelExtension>(webrtc::RtpHeaderExtensionId(1));
+  sm::rtp::RtpSenderConfig sc;
+  sc.ssrc = 0x3333;
+  sc.payload_type = 111;
+  sc.extensions = &map;
+  sm::rtp::RtpSender sender(sc);
+  const Bytes frame(60, 7);
+  const sm::audio::AudioLevel levels[] = {{0, true}, {37, true}, {126, false}, {127, false}};
+  for (const auto& l : levels) sender.SendAudio(frame, 960, false, sm::Timestamp::Millis(0), l);
+  auto packets = sender.TakePackets();
+  bool ok = packets.size() == 4;
+  for (size_t i = 0; ok && i < packets.size(); ++i) {
+    const Bytes bytes = packets[i].packet.Serialize();
+    webrtc::RtpPacketReceived w(&wmap);
+    webrtc::AudioLevel got;
+    ok = w.Parse(bytes.data(), bytes.size()) && w.GetExtension<webrtc::AudioLevelExtension>(&got) &&
+         got.level() == levels[i].level && got.voice_activity() == levels[i].voice;
+  }
+  Check(ok, "RtpSender: the RFC 6464 byte is parsed by libwebrtc");
+
+  bool back = true;
+  for (const auto& l : levels) {
+    webrtc::RtpPacketToSend w(&wmap);
+    w.SetPayloadType(111);
+    w.SetSequenceNumber(1);
+    w.SetTimestamp(960);
+    w.SetSsrc(0x3333);
+    w.SetExtension<webrtc::AudioLevelExtension>(webrtc::AudioLevel(l.voice, l.level));
+    w.SetPayloadSize(10);
+    auto p = sm::RtpPacket::Parse(std::span<const uint8_t>(w.data(), w.size()));
+    const auto raw = p ? sm::sync::ExtensionAccessor(map).GetRaw(*p, sm::sync::uri::kAudioLevel) : std::nullopt;
+    const auto d = raw && raw->size() == 1 ? std::optional(sm::audio::DecodeAudioLevelExtension((*raw)[0])) : std::nullopt;
+    back = back && d && d->level == l.level && d->voice == l.voice;
+  }
+  Check(back, "libwebrtc's RFC 6464 byte parsed here");
+}
+
+// Video orientation (CVO, #567): the byte RtpSender puts on a frame's last
+// packet is the VideoOrientation extension libwebrtc parses, with the rotation
+// it was given, and libwebrtc's byte (ConvertVideoRotationToCVOByte) reads back
+// as the same rotation here.
+void VideoOrientation() {
+  const sm::video::Rotation ours[] = {sm::video::Rotation::k0, sm::video::Rotation::k90, sm::video::Rotation::k180,
+                                      sm::video::Rotation::k270};
+  const webrtc::VideoRotation theirs[] = {webrtc::kVideoRotation_0, webrtc::kVideoRotation_90,
+                                          webrtc::kVideoRotation_180, webrtc::kVideoRotation_270};
+  sm::sync::ExtensionMap map;
+  map.Register(4, sm::sync::uri::kVideoOrientation);
+  webrtc::RtpHeaderExtensionMap wmap;
+  wmap.Register<webrtc::VideoOrientation>(webrtc::RtpHeaderExtensionId(4));
+  sm::rtp::RtpSenderConfig sc;
+  sc.ssrc = 0x1111;
+  sc.payload_type = 96;
+  sc.extensions = &map;
+  sm::rtp::RtpSender sender(sc);
+  bool ok = true;
+  for (int i = 0; i < 4; ++i) {
+    const std::vector<Bytes> chunks = {Bytes(100, 1), Bytes(100, 2)};
+    sender.SendVideoFrame(chunks, 3000u * static_cast<uint32_t>(i), sm::Timestamp::Millis(0), i == 0, ours[i]);
+    auto packets = sender.TakePackets();
+    ok = ok && packets.size() == 2;
+    for (size_t k = 0; ok && k < packets.size(); ++k) {
+      const Bytes bytes = packets[k].packet.Serialize();
+      webrtc::RtpPacketReceived w(&wmap);
+      webrtc::VideoRotation got = webrtc::kVideoRotation_0;
+      ok = w.Parse(bytes.data(), bytes.size());
+      const bool has = ok && w.GetExtension<webrtc::VideoOrientation>(&got);
+      ok = ok && has == (k == 1) && (!has || got == theirs[i]);
+    }
+  }
+  Check(ok, "RtpSender: CVO on the last packet is parsed by libwebrtc with the frame's rotation");
+
+  bool back = true;
+  for (int i = 0; i < 4; ++i) {
+    webrtc::RtpPacketToSend w(&wmap);
+    w.SetPayloadType(96);
+    w.SetSequenceNumber(1);
+    w.SetTimestamp(3000);
+    w.SetSsrc(0x1111);
+    w.SetMarker(true);
+    w.SetExtension<webrtc::VideoOrientation>(theirs[i]);
+    w.SetPayloadSize(10);
+    auto p = sm::RtpPacket::Parse(std::span<const uint8_t>(w.data(), w.size()));
+    const auto raw = p ? sm::sync::ExtensionAccessor(map).GetRaw(*p, sm::sync::uri::kVideoOrientation) : std::nullopt;
+    // ConvertVideoRotationToCVOByte (reference/modules/rtp_rtcp/include/rtp_cvo.h): 0-3, C and F 0.
+    back = back && raw && raw->size() == 1 && (*raw)[0] == i &&
+           sm::video::DecodeCvo((*raw)[0]).rotation == ours[i];
+  }
+  Check(back, "libwebrtc's CVO byte read here as the same rotation");
+}
+
 // H.264 access units of the shapes the test bench produces (keyframe with SPS
 // and PPS, delta frames from one packet to many) and a few with several NAL
 // units, at the payload limit the bench uses.
@@ -1165,6 +1307,8 @@ int main() {
   WebrtcToEngine();
   SenderToWebrtc();
   WebrtcToSender();
+  AudioLevel();
+  VideoOrientation();
   H264SmToWebrtc();
   H264WebrtcToSm();
   H264Model();

@@ -175,6 +175,46 @@ SM_TEST(Session, VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted)
   }
 }
 
+// CVO (#567): with the video-orientation extension mapped, the last packet of a rotated frame
+// carries it and still fits the whole-packet limit, because the packetizer leaves the room as
+// last_packet_reduction_len (rtp_sender_video.cc:741-758).
+SM_TEST(Session, RotatedFramesCarryCvoWithinThePacketLimit) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(5, sync::uri::kVideoOrientation);
+  Session a(ca);
+  VideoStreamConfig v = Video();
+  v.nack = false;
+  v.max_payload_size = 1460 - 12;
+  const VideoSendId id = a.AddVideoSend(v);
+  size_t largest = 0, cvo = 0;
+  auto check = [&](std::vector<OutgoingPacket> out) {
+    for (auto& o : out) {
+      if (o.kind != OutgoingKind::kVideo) continue;
+      largest = std::max(largest, o.bytes.size());
+      const auto pkt = RtpPacket::Parse(o.bytes);
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*pkt, sync::uri::kVideoOrientation);
+      if (!raw) continue;
+      ++cvo;
+      SM_EXPECT_TRUE(pkt->marker);
+      SM_EXPECT_TRUE(*raw == Bytes{1});
+    }
+  };
+  // Frames around the limit, as VideoPacketsLeaveRoomForTheRtxHeaderWhenTheyMayBeRetransmitted.
+  for (int i = 0; i < 100; ++i) {
+    EncodedVideoFrame f;
+    const Bytes data = MakeFakeH264Frame(false, 1380 + static_cast<size_t>(i));
+    f.rtp_timestamp = static_cast<uint32_t>(3000 * i);
+    f.data = data;
+    f.rotation = video::Rotation::k90;
+    a.SendVideo(id, f, Timestamp::Millis(100 * i));
+    check(Pump(a, 100 * i, 100));
+  }
+  check(Pump(a, 10000, 5000));
+  SM_EXPECT_EQ(largest, 1460u);
+  SM_EXPECT_EQ(cvo, 100u);
+  SM_EXPECT_EQ(a.video_sender(id).stats().video_orientation_packets, 100u);
+}
+
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
 // libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
 // STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta
@@ -415,6 +455,65 @@ SM_TEST(Session, RatesSplitTheTargetBetweenAudioAndVideo) {
   SM_EXPECT_EQ(r.audio_rate.bps(), 100000);
   SM_EXPECT_LE(r.video_target.bps(), r.target.bps() - 100000);
   SM_EXPECT_GT(r.video_target.bps(), 0);
+}
+
+// AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver (issue #569): a
+// 32 kbps Opus stream in 20 ms frames registers 32000 + 48 B / 20 ms = 51200 as its min and max
+// (28 B transport + the 20 B header with transport-cc), and a priority rate of the overhead
+// alone, 19200 (AudioAllocationConfig::priority_bitrate 0 + overhead / longest frame).
+SM_TEST(Session, AudioRegistersLibwebrtcsMinMaxAndPriorityRate) {
+  SessionConfig c = Cfg(1);
+  c.mid_audio.clear();
+  Session s(c);
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.nominal_rate = DataRate::KilobitsPerSec(48);
+  a.min_bitrate = a.max_bitrate = DataRate::BitsPerSec(32000);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 51200);
+  SM_EXPECT_EQ(cfg->max.bps(), 51200);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 19200);
+  SM_EXPECT_TRUE(cfg->enforce_min);
+}
+
+// A frame length range (Opus with its network adaptor, 20-120 ms) spreads the overhead: the min
+// adds it at the longest frame, the max at the shortest, and the priority rate at the longest.
+SM_TEST(Session, AudioFrameLengthRangeSetsTheOverheadOfMinMaxAndPriority) {
+  SessionConfig c = Cfg(1);
+  c.mid_audio.clear();
+  Session s(c);
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.min_bitrate = DataRate::BitsPerSec(6000);
+  a.max_bitrate = DataRate::BitsPerSec(32000);
+  a.min_frame_length = TimeDelta::Millis(20);
+  a.max_frame_length = TimeDelta::Millis(120);
+  a.priority_bitrate = DataRate::BitsPerSec(1000);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 6000 + 48 * 8 * 1000 / 120);
+  SM_EXPECT_EQ(cfg->max.bps(), 32000 + 48 * 8 * 1000 / 20);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 1000 + 48 * 8 * 1000 / 120);
+}
+
+// Without a codec range the stream keeps the fixed rate it was given.
+SM_TEST(Session, AudioWithoutARangeRegistersItsFixedRate) {
+  Session s(Cfg(1));
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.nominal_rate = DataRate::KilobitsPerSec(40);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 40000);
+  SM_EXPECT_EQ(cfg->max.bps(), 40000);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 40000);
 }
 
 SM_TEST(Session, ExportsMetrics) {
@@ -842,4 +941,108 @@ SM_TEST(Session, AudioOnlyInitialProbesAreNotCappedByTheAllocation) {
   s.Process(Timestamp::Millis(0));
   const auto& pc = s.send_side().gcc().probe_controller_v2();
   SM_EXPECT_TRUE(pc.state() == cc::ProbeControllerV2::State::kWaitingForProbingResult);
+}
+
+namespace {
+// The SSRCs of the report blocks in each SR and RR of one compound RTCP datagram.
+std::vector<uint32_t> ReportBlockSsrcs(const Bytes& p) {
+  std::vector<uint32_t> out;
+  for (size_t off = 0; off + 4 <= p.size();) {
+    const size_t len = 4 * ((static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]) + 1);
+    if (off + len > p.size()) break;
+    const int type = p[off + 1];
+    if (type == 200 || type == 201) {
+      const size_t first = off + (type == 200 ? 28 : 8);
+      for (size_t b = 0; b < static_cast<size_t>(p[off] & 0x1f) && first + 24 * (b + 1) <= off + len; ++b) {
+        const size_t at = first + 24 * b;
+        out.push_back(static_cast<uint32_t>(p[at]) << 24 | static_cast<uint32_t>(p[at + 1]) << 16 |
+                      static_cast<uint32_t>(p[at + 2]) << 8 | p[at + 3]);
+      }
+    }
+    off += len;
+  }
+  return out;
+}
+
+struct ReceiverRtcp {
+  std::vector<int64_t> audio_ms;  // When each compound with the audio block left the receiver.
+  size_t mixed = 0;               // Compounds with the audio block and a video or RTX block.
+  size_t audio_only_sizes_ok = 0;  // Audio compounds that are one RR with one block (32 bytes, no SDES).
+};
+
+// A 30 s call of audio every 20 ms and video every 33 ms from `a` to `b`; what b's RTCP carried.
+ReceiverRtcp RunCall(bool audio_receive_rtcp) {
+  NullDecoder dec;
+  SessionConfig cb = Cfg(2);
+  cb.audio_receive_rtcp = audio_receive_rtcp;
+  Session a(Cfg(1)), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  const AudioSendId a_audio = a.AddAudioSend(au);
+  const VideoSendId a_video = a.AddVideoSend(Video());
+  b.AddAudioReceive(au, &dec);
+  b.AddVideoReceive(Video());
+  ReceiverRtcp r;
+  const Bytes frame(60, 7);
+  for (int64_t t = 0; t < 30000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) a.SendAudio(a_audio, {static_cast<uint32_t>(t * 48), frame, t == 0}, now);
+    if (t % 33 == 0) a.SendVideoChunks(a_video, test::MakeTestFrameChunks(t == 0, 1500, 1188), static_cast<uint32_t>(t * 90), now);
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp) {
+        const std::vector<uint32_t> ssrcs = ReportBlockSsrcs(o.bytes);
+        if (std::find(ssrcs.begin(), ssrcs.end(), 0x100u) != ssrcs.end()) {
+          r.audio_ms.push_back(t);
+          r.mixed += ssrcs.size() > 1;
+          r.audio_only_sizes_ok += ssrcs.size() == 1 && o.bytes.size() == 32;
+        }
+      }
+      a.OnPacket(o.bytes, now);
+    }
+    a.TakeEvents();
+    b.TakeEvents();
+  }
+  return r;
+}
+}  // namespace
+
+// Issue #484: libwebrtc's audio ChannelReceive has its own ReceiveStatistics and a receiver-only RtpRtcp module
+// (audio/channel_receive.cc:115-139, 608), so the audio block goes out alone in an RR every 5 s
+// (rtcp_receiver.cc:85 kDefaultAudioReportInterval), the first at half of it (rtcp_sender.cc:171), without SDES,
+// and the video stream's RRs, NACKs and PLIs carry only the video and RTX blocks.
+SM_TEST(Session, AudioReceiveStreamReportsInItsOwnRtcpEveryFiveSeconds) {
+  const ReceiverRtcp on = RunCall(true);
+  SM_EXPECT_EQ(on.mixed, 0u);
+  SM_EXPECT_EQ(on.audio_only_sizes_ok, on.audio_ms.size());
+  SM_EXPECT_GE(on.audio_ms.size(), 4u);  // 30 s at 5 s, each interval drawn from [2.5, 7.5] s.
+  SM_EXPECT_LE(on.audio_ms.size(), 8u);
+  SM_EXPECT_EQ(on.audio_ms.front(), 2500);  // Half the nominal interval, no draw.
+  for (size_t i = 1; i < on.audio_ms.size(); ++i) {
+    SM_EXPECT_GE(on.audio_ms[i] - on.audio_ms[i - 1], 2500);
+    SM_EXPECT_LE(on.audio_ms[i] - on.audio_ms[i - 1], 7500);
+  }
+  // Off: the audio block rides in every compound with the video blocks (the 1 s video RRs at least).
+  const ReceiverRtcp off = RunCall(false);
+  SM_EXPECT_GE(off.audio_ms.size(), 25u);
+  SM_EXPECT_EQ(off.mixed, off.audio_ms.size());
+}
+
+SM_TEST(Session, AudioReceiveRtcpEngineExistsOnlyWithAnAudioReceiveStream) {
+  SessionConfig c = Cfg(2);
+  c.audio_receive_rtcp = true;
+  Session s(c);
+  SM_EXPECT_TRUE(s.audio_receive_rtcp() == nullptr);
+  s.AddVideoReceive(Video());
+  SM_EXPECT_TRUE(s.audio_receive_rtcp() == nullptr);
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioReceive(au, &dec);
+  SM_EXPECT_TRUE(s.audio_receive_rtcp() != nullptr);
+  Session off(Cfg(2));
+  off.AddAudioReceive(au, &dec);
+  SM_EXPECT_TRUE(off.audio_receive_rtcp() == nullptr);
 }

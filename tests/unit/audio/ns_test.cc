@@ -328,3 +328,54 @@ SM_TEST(Ns, IdenticalChannelsGiveTheMonoOutput) {
   }
   SM_EXPECT_TRUE(same);
 }
+
+// #594: libwebrtc's NoiseSuppressor runs only at 16, 32 or 48 kHz
+// (`NumBandsForRate`'s RTC_DCHECK, noise_suppressor.cc). Any other rate is
+// rejected: valid() is false and Analyze/Process leave the audio untouched,
+// where 8 and 11.025 kHz used to read past the caller's frame.
+SM_TEST(Ns, RejectsUnsupportedRates) {
+  for (int rate : {0, 8000, 11025, 12000, 24000, 44100, -16000}) {
+    NoiseSuppressorConfig c;
+    c.sample_rate = rate;
+    NoiseSuppressor ns(c);
+    SM_EXPECT_FALSE(ns.valid());
+    std::vector<float> f(rate / 100 > 0 ? static_cast<size_t>(rate / 100) : 160, 0.03f);
+    for (int i = 0; i < 20; ++i) {
+      ns.Analyze(f);
+      ns.Process(f);
+    }
+    SM_EXPECT_TRUE(std::all_of(f.begin(), f.end(), [](float x) { return x == 0.03f; }));
+    SM_EXPECT_EQ(ns.stats().processed_frames, 0u);
+  }
+}
+
+// At a supported rate, a frame shorter than num_channels() * frame_samples()
+// is rejected the same way.
+SM_TEST(Ns, RejectsShortFrames) {
+  NoiseSuppressorConfig c;
+  c.sample_rate = 32000;
+  NoiseSuppressor ns(c);
+  SM_EXPECT_TRUE(ns.valid());
+  std::vector<float> f(kNsFrameSize, 0.03f);  // One band; 32 kHz needs two.
+  for (int i = 0; i < 20; ++i) {
+    ns.Analyze(f);
+    ns.Process(f);
+  }
+  SM_EXPECT_TRUE(std::all_of(f.begin(), f.end(), [](float x) { return x == 0.03f; }));
+  SM_EXPECT_EQ(ns.stats().processed_frames, 0u);
+}
+
+SM_TEST(Ns, RunsAtFullBandRates) {
+  for (int rate : {16000, 32000, 48000}) {
+    NoiseSuppressorConfig c;
+    c.sample_rate = rate;
+    NoiseSuppressor ns(c);
+    SM_EXPECT_TRUE(ns.valid());
+    std::vector<float> f(ns.frame_samples(), 0.03f);
+    for (int i = 0; i < 20; ++i) {
+      ns.Analyze(f);
+      ns.Process(f);
+    }
+    SM_EXPECT_EQ(ns.stats().processed_frames, 20u);
+  }
+}

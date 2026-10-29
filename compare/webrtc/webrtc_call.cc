@@ -882,6 +882,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.start_us = t0.us();
   model.now = [&] { return rel(sim.Now()); };
   testbench::RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  std::vector<testbench::AudioSendRow> audio_reports;  // Each audio report block the sender received (issue #484).
   if (opt.link_trace) model.rtx_ack = &rtx_ack;
   // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
   // complete, as in testbench/call.cc (issue #510).
@@ -1301,6 +1302,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     reverse.ReceiveEach(horizon, [&](Pkt p, sm::Timestamp at) {
       if (p.cross || !p.rtcp) return;
       if (opt.link_trace) testbench::TraceAudioRtcp(p.data, at.us(), kAudioSsrc, rep.audio_send_trace);
+      testbench::TraceAudioRtcp(p.data, at.us(), kAudioSsrc, audio_reports);  // rtcp.audio_report_blocks (issue #484).
       post_at(sender_q.get(), t0 + w::TimeDelta::Micros(at.us()),
               [&, buf = w::CopyOnWriteBuffer(p.data)] {
                 if (opt.link_trace) rtx_ack.OnRtcp(std::span<const uint8_t>(buf.cdata(), buf.size()));
@@ -1605,6 +1607,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         queue_samples.empty() ? 0 : 100.0 * static_cast<double>(over) / static_cast<double>(queue_samples.size());
   }
   m["cc.rtt_p50_ms"] = testbench::Percentile(rtt_samples, 50);
+  m["rtcp.audio_report_blocks"] = static_cast<double>(audio_reports.size());
   const auto& ls = forward.stats();
   m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
   testbench::AddLinkKindMetrics(ls, s, rep);

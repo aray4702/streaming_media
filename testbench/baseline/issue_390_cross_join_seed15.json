@@ -54,6 +54,7 @@
   "repair.fec_recovered": 0,
   "repair.nack_recovered": 23,
   "repair.overhead_pct": 0.7783,
+  "rtcp.audio_report_blocks": 67,
   "sync.av_offset_max_ms": 691.4,
   "sync.av_offset_p50_ms": -9.235,
   "sync.av_offset_p95_ms": 256.2,
@@ -82,6 +83,6 @@
   "video.time_to_first_frame_ms": 199,
   "video.undecodable_frames": 0
  },
- "passed": false,
+ "passed": true,
  "scenario": "issue_390_cross_join_seed15"
 }

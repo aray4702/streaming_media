@@ -261,6 +261,13 @@ DataRate BitrateAllocatorV2::allocation(const std::string& id) const {
   return DataRate::Zero();
 }
 
+std::optional<StreamAllocationConfig> BitrateAllocatorV2::config(const std::string& id) const {
+  for (const Track& t : tracks_) {
+    if (t.id == id) return t.cfg;
+  }
+  return std::nullopt;
+}
+
 double BitrateAllocatorV2::cwnd_reduce_ratio(const std::string& id) const {
   for (const Track& t : tracks_) {
     if (t.id == id) return t.cwnd_reduce_ratio;

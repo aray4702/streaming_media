@@ -56,6 +56,7 @@ sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SOURCES
     e2e/audio_e2e_test.cc
   SUITES
+    E2E_Apm
     E2E_AudioLevel
     E2E_ComfortNoise
     E2E_EchoCanceller

@@ -127,6 +127,7 @@ struct Scenario {
   bool quality_scaling = true;
   bool timing_v2 = true;  // `timing v2`: libwebrtc's video receive timing (VCMTiming, JitterEstimator, frame release; issue #24; default v2 since #24; v1 is the library's FrameScheduler).
   bool av_sync = true;  // `av_sync on|off`: lip sync, audio and video in one sync group on both stacks (issue #77; rtp::SessionConfig::av_sync; default on since #77 step 3). Off only empties the receiver's sync group; the sender's audio RTCP stays on, as libwebrtc's (issue #524).
+  bool audio_receive_rtcp = false;  // `audio_receive_rtcp on|off`: the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
   bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
@@ -138,6 +139,12 @@ struct Scenario {
   // measured itself (Session::SetRtt at every step), for RTTs the call cannot produce, such as one
   // near the int64 limit (issue #451).
   std::optional<std::pair<TimeDelta, TimeDelta>> host_rtt;
+  // `apm_rate <hz>`: before the call the host builds the ported APM modules (AEC3, NS, AGC2)
+  // at that rate and feeds each 50 frames of 10 ms, as a host that configured them would.
+  // Reports apm.{aec3,ns,agc2}_valid (1 runs, 0 rejected) and apm.untouched (1 when every
+  // rejected module left its audio as it was). A rate libwebrtc doesn't run them at corrupted
+  // memory before #594; the bench call itself runs no APM.
+  std::optional<int> apm_rate;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

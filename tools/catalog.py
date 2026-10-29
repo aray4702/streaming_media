@@ -962,7 +962,7 @@ ALGORITHMS = [
          scenario="A 30 s two-party call: far-end speech played into a simulated room (40 ms response, RT60 "
                   "100 ms, 60 ms bulk delay), far end alone for 15 s, then double talk. ERLE is measured while "
                   "only the far end talks, and near-end preservation during double talk, through HPF -> AEC -> NS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AEC3 (`audio/aec3.h`) runs, and this PBFDAF canceller runs only with `apm_v2 = false` until it is retired. This is a compact PBFDAF canceller (in the spirit of Speex MDF), not a port of AEC3. Blocks are "
                "5 ms, with 16 partitions (80 ms tail) after bulk-delay alignment by 6.2. "
                "AEC3's linear stage (issue #240 step 2, `audio/aec3_filter.h`, for `apm v2`) is a port of libwebrtc M157's "
                "`aec3_fft`, the render buffers (`block_buffer`, `spectrum_buffer`, `fft_buffer`, `render_buffer` and the "
@@ -1056,7 +1056,7 @@ ALGORITHMS = [
          bench=["audio/EchoDelayEstimator_10ms", "audio/Q_EchoDelay_route_change"],
          scenario="A far-end-only call where the echo delay jumps from 60 to 180 ms at 12 s (speaker -> "
                   "Bluetooth). The AEC must re-estimate the delay and re-converge.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): AEC3's own delay estimation (`audio/aec3_delay.h`) runs, and this GCC-PHAT estimator runs only with `apm_v2 = false` until it is retired. The search range is 500 ms; updates run every 100 ms and only while the far end is active. "
                "AEC3's delay estimation (issue #240 step 1, `audio/aec3_delay.h`, for `apm v2`) is a port of libwebrtc M157's "
                "decimator, matched filter, lag aggregator, clock-drift detector, echo-path delay estimator, render delay "
                "controller and the low-rate half of the render delay buffer, with EchoCanceller3Config's delay defaults "
@@ -1080,7 +1080,7 @@ ALGORITHMS = [
          bench=["audio/NoiseSuppressor_10ms", "audio/Q_NoiseSuppressor_7dB_snr"],
          scenario="Near-end speech in white noise at about 7 dB SNR through HPF -> NS; SNR against the clean "
                   "talker (passed through the same HPF) before and after.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's NS (`audio/ns.h`, kHigh) runs, and the v1 STFT-Wiener suppressor runs only with `apm_v2 = false` until it is retired. Classic statistical NS (Wiener + decision-directed SNR); an ML suppressor (RNNoise) could be "
                "plugged into the same 10 ms interface. `apm v2` (#241): `ns::NoiseSuppressor` ports libwebrtc M157's "
                "NS (`modules/audio_processing/ns/`: quantile noise estimator with the parametric white/pink model "
                "during start-up, LRT, spectral flatness and spectral difference features with histogram-learnt "
@@ -1114,7 +1114,7 @@ ALGORITHMS = [
          bench=["audio/Agc_10ms"],
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB). Quiet speech must reach "
                   "-18 dBFS; loud speech must not be amplified and every peak must stay under -1 dBFS.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs, and the v1 AGC and limiter run only with `apm_v2 = false` until they are retired. As in AGC2, the adaptive digital gain is never negative and is capped so background noise stays "
                "under -50 dBFS; attenuation of hot inputs is left to the limiter and the mic-gain "
                "recommendation. `apm v2` (#242): `agc2::GainController2` ports libwebrtc M157's AGC2 "
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
@@ -1192,7 +1192,7 @@ ALGORITHMS = [
          bench=["audio/HighPassFilter_10ms"],
          scenario="A capture with 0.1 DC offset and 50 Hz hum through HPF -> NS -> AGC; the DC and hum left at "
                   "the output are measured.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's filter (`audio/hpf.h`) runs, and the v1 Butterworth runs only with `apm_v2 = false` until it is retired. ", verification="No defects found; the frequency response matches 4th-order Butterworth. `apm v2` (#239): "
                       "`hpf::HighPassFilter` is libwebrtc M157's filter with its coefficient tables; it passes the "
                       "ports of `cascaded_biquad_filter_unittest.cc` (`CascadedBiquadFilter.*`), its measured "
                       "response matches the analytic response of libwebrtc's 16 kHz table within 0.05 dB "
@@ -1242,12 +1242,14 @@ ALGORITHMS = [
                                 "exclude the intended hangover."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
-         headers=["audio/audio_level.h"], unit=["AudioLevel"], e2e=["E2E_AudioLevel"],
+         headers=["audio/audio_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
          bench=["audio/AudioLevel_20ms"],
          scenario="Level and voice flag are encoded into the RFC 6464 byte and decoded again; the level of known "
                   "tones and silence must match.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. ComputeLevel stays the RFC 6464 header level (RMS in -dBov). ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
-                      "the RFC 6464 codec and level are unchanged."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. AudioLevelMeter is libwebrtc's voe::AudioLevel (issue #101): the stats level of a send stream, the maximum absolute sample refreshed every 11th frame and decayed to a quarter, and total energy and duration. The RFC 6464 header level is libwebrtc's RmsLevel (modules/audio_processing/rms_level.cc, issue #567): the mean square over every 10 ms chunk since the last Average(), as -dBov rounded as libwebrtc, 127 for digital silence and 126 for faint non-zero input, restarted when the chunk size changes; ChannelSend feeds it each capture frame (AnalyzeMuted when muted) and writes Average() per packet. ComputeLevel is RmsLevel on one frame. ", verification="Active speaker detection was removed with the other SFU-only components (issue #27); "
+                      "the RFC 6464 codec and level are unchanged. RmsLevel (issue #567) is checked against libwebrtc's own RmsLevel "
+                      "on 400 packets and the extension byte against libwebrtc's AudioLevelExtension in both directions "
+                      "(sm_rtcp_interop)."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
          headers=["audio/resampler.h"], unit=["Resampler"], e2e=["E2E_Resampler"],
@@ -1306,7 +1308,15 @@ ALGORITHMS = [
          bench=["video/Orientation_rotate90_720p"],
          scenario="A phone rotating through all 4 rotations, with and without mirroring; frames carry CVO in a "
                   "real RTP header extension and the receiver must show the scene upright, bit-exact.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
+               "On the wire (issue #567), rtp::RtpSender writes the extension as libwebrtc's RTPSenderVideo::AddRtpHeaderExtensions "
+               "(rtp_sender_video.cc:388-408) when it is mapped: on the last packet of a keyframe, of a frame whose rotation changed, "
+               "and of every frame whose rotation is not 0, with the byte of ConvertVideoRotationToCVOByte (rtp_cvo.h; the camera and "
+               "flip bits 0). The packetizer leaves the room as last_packet_reduction_len. rtp::RtpReceiver gives each frame the "
+               "rotation of its last packet, 0 without the extension (rtp_video_stream_receiver2.cc:797-802, 1108). "
+               "Session::SendVideo takes it as EncodedVideoFrame::rotation. ",
+         verification="No defects found. The CVO byte RtpSender writes is checked against libwebrtc's VideoOrientation "
+                      "extension in both directions (sm_rtcp_interop, issue #567)."),
     dict(id="7.4", slug="content-policy", title="Content hints and screen-content variable frame rate",
          problems=["Screen sharing (text must stay sharp) -> content hint, screen-content coding tools, variable framerate",
                    "Talking head vs. motion -> content-type-aware rate control"],
@@ -1479,6 +1489,11 @@ ALGORITHMS = [
                       "libwebrtc M157 (rtcp_sender.cc, video_send_stream.h, audio_send_stream.h), see the issue. "
                       "#517: unit.RtcpEngine checks that the interval draws are libwebrtc's from the same seed; on seed 1 "
                       "the sender's RTCP send times match libwebrtc's on audio_only_lossy (6 of 6) and the first 9 on high_jitter. "
+                      "#484: `SessionConfig::audio_receive_rtcp` (off by default until its flip) gives the audio receive streams "
+                      "their own engine, as libwebrtc's ChannelReceive (audio/channel_receive.cc:115-139, 608): an RR with the audio "
+                      "block alone every 5 s, no SDES, and the video compounds carry only the video and RTX blocks; on seed 1 the "
+                      "sender's audio report blocks match libwebrtc's in number and time on high_jitter, random_loss_5pct and "
+                      "clean_link (6 of 6; [fix record](../../fixes/484-audio-report-blocks.md)). "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

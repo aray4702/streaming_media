@@ -104,6 +104,14 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   as.sender = std::make_unique<RtpSender>(c);
   as.nominal_rate = a.nominal_rate;
   as.allocation_rate = a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate;
+  if (a.allocation_rate <= DataRate::Zero() && a.max_bitrate > DataRate::Zero()) {
+    as.allocation_rate = DataRate::Zero();
+    as.min_bitrate = a.min_bitrate;
+    as.max_bitrate = std::max(a.max_bitrate, a.min_bitrate);
+    as.priority_bitrate = a.priority_bitrate;
+    as.min_frame_length = a.min_frame_length;
+    as.max_frame_length = std::max(a.max_frame_length, a.min_frame_length);
+  }
   audio_send_.push_back(std::move(as));
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   // AudioSendStream::ConfigureStream: with transport-cc (and allocate_audio_without_feedback_
@@ -171,7 +179,21 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   c.jitter_buffer = a.jitter_buffer;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
-  rtcp_.AddReceiveStatistics(r->receive_statistics());
+  if (cfg_.audio_receive_rtcp) {
+    // ChannelReceive's own receiver-only RtpRtcp module (channel_receive.cc:115-139, 608).
+    if (!audio_recv_rtcp_) {
+      RtcpConfig rc = MakeRtcpConfig(cfg_);
+      rc.cname.clear();
+      rc.has_video = false;
+      rc.report_interval = TimeDelta::Zero();
+      rc.first_report_delay = TimeDelta::Zero();
+      rc.xr_rrtr = false;
+      audio_recv_rtcp_ = std::make_unique<RtcpEngine>(rc);
+    }
+    audio_recv_rtcp_->AddReceiveStatistics(r->receive_statistics());
+  } else {
+    rtcp_.AddReceiveStatistics(r->receive_statistics());
+  }
   audio_recv_.push_back({std::move(r), a.ssrc, 0});
   std::vector<uint8_t> pts = {a.payload_type};
   if (a.red_payload_type) pts.push_back(*a.red_payload_type);
@@ -228,6 +250,19 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   return {static_cast<int>(video_recv_.size()) - 1};
 }
 
+SendSideController::AudioAllocation Session::AudioAllocationOf(const SendStream& a) const {
+  if (a.max_bitrate <= DataRate::Zero()) return {a.allocation_rate, a.allocation_rate, a.allocation_rate};
+  // AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver
+  // (audio_send_stream.cc:808-901): overhead_per_packet_ is the transport's bytes plus
+  // RTPSender::ExpectedPerPacketOverhead, the media header with its non-volatile
+  // extensions (UpdateOverheadPerPacket, :529-545).
+  const DataSize overhead =
+      DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(a.sender->MediaHeaderSize()));
+  const DataRate at_longest = DataRate::FromSizeAndTime(overhead, a.max_frame_length);
+  const DataRate at_shortest = DataRate::FromSizeAndTime(overhead, a.min_frame_length);
+  return {a.min_bitrate + at_longest, a.max_bitrate + at_shortest, a.priority_bitrate + at_longest};
+}
+
 void Session::Start(Timestamp now) {
   if (started_) return;
   started_ = true;
@@ -247,8 +282,13 @@ void Session::Start(Timestamp now) {
     // (rtcp_sender.cc:130), so it draws the same intervals (#517).
     audio_rtcp_ = std::make_unique<RtcpEngine>(r);
   }
-  DataRate audio = DataRate::Zero();
-  for (const auto& a : audio_send_) audio = audio + a.allocation_rate;
+  SendSideController::AudioAllocation audio;
+  for (const auto& a : audio_send_) {
+    const SendSideController::AudioAllocation c = AudioAllocationOf(a);
+    audio.min += c.min;
+    audio.max += c.max;
+    audio.priority_rate += c.priority_rate;
+  }
   send_.ConfigureAllocation(audio, !video_send_.empty());
   send_.Start(now);
   send_.OnRtt(rtt_);
@@ -289,9 +329,9 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   // RtxPacketOverhead when the frame may be retransmitted (allow_retransmission: an H.264 frame with
   // a finite expected retransmission time, which RtpVideoSender gives every frame; the reservation
   // is 0 without RTX, and with NACK off libwebrtc's stream has no RTX; issue #513), less the header
-  // of a middle packet. The first, last and single packets carry no extension the middle one
-  // lacks here (transport-cc, abs-send-time and MID go on every packet), so
-  // their reductions are zero.
+  // of a middle packet. The first packet carries no extension the middle one lacks here
+  // (transport-cc, abs-send-time and MID go on every packet), so its reduction is zero; the last
+  // and single packets also carry CVO when it is mapped and due (rtp_sender_video.cc:741-758).
   const size_t reserved =
       s.FecPacketOverhead() + (video_send_[static_cast<size_t>(id.index)].nack ? s.RtxPacketOverhead() : 0);
   const size_t whole = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
@@ -299,8 +339,10 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   const size_t header = s.MediaHeaderSize();
   PayloadSizeLimits limits;
   limits.max_payload_len = static_cast<int>(capacity > header ? capacity - header : 0);
+  limits.last_packet_reduction_len = static_cast<int>(s.LastPacketReduction(f.keyframe, f.rotation));
+  limits.single_packet_reduction_len = limits.last_packet_reduction_len;
   const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(data, limits);
-  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size());
+  SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size(), f.rotation);
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
@@ -311,7 +353,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
-                              Timestamp now, bool keyframe, size_t encoded_size) {
+                              Timestamp now, bool keyframe, size_t encoded_size, video::Rotation rotation) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
   if (chunks.empty()) {
     ++stats_.empty_video_frames;
@@ -326,7 +368,7 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;
   vs.frame_times.push_back(now);
   RtpSender& s = *vs.sender;
-  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe);
+  s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.
   if (keyframe && rtcp_.ReportDue(now, true)) {
@@ -711,6 +753,12 @@ void Session::Process(Timestamp now) {
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
     }
   }
+  if (audio_recv_rtcp_) {
+    for (RtcpOutgoing& o : audio_recv_rtcp_->Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
 }
 
 // libwebrtc: the generator's interval follows this endpoint's own
@@ -747,6 +795,7 @@ void Session::ProcessTransportFeedback(Timestamp now) {
 Timestamp Session::NextProcessTime(Timestamp now) const {
   Timestamp next = rtcp_.NextProcessTime(now);
   if (audio_rtcp_) next = std::min(next, audio_rtcp_->NextProcessTime(now));
+  if (audio_recv_rtcp_) next = std::min(next, audio_recv_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
   next = std::min(next, call_stats_.NextProcessTime());

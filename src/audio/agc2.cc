@@ -503,17 +503,25 @@ void AdaptiveDigitalGainController::Process(const FrameInfo& info, std::span<flo
 
 // GainController2 (modules/audio_processing/gain_controller2.cc, not in the
 // reference sources yet: see the header).
+namespace {
+// ValidateAudioFormat's floor; the limiter's kMaximalNumberOfSamplesPerChannel.
+constexpr int kMinSampleRateHz = 8000;
+constexpr int kMaxSampleRateHz = kMaximalNumberOfSamplesPerChannel * 100;
+}  // namespace
+
 GainController2::GainController2(GainController2Config cfg)
     : cfg_(cfg),
+      valid_(cfg.sample_rate >= kMinSampleRateHz && cfg.sample_rate <= kMaxSampleRateHz),
       fixed_gain_applier_(/*hard_clip_samples=*/false, DbToRatio(cfg.fixed_gain_db)),
       speech_level_estimator_(cfg.adaptive_digital, kAdjacentSpeechFramesThreshold),
       saturation_protector_(kSaturationProtectorInitialHeadroomDb, kAdjacentSpeechFramesThreshold),
       adaptive_digital_(cfg.adaptive_digital, kAdjacentSpeechFramesThreshold),
-      limiter_(cfg.sample_rate / 100) {}
+      limiter_(valid_ ? cfg.sample_rate / 100 : 160) {}
 
 GainController2::~GainController2() = default;
 
 void GainController2::Process(std::span<float> frame) {
+  if (!accepts(frame)) return;
   // APM creates the controller with `use_internal_vad` (audio_processing_impl.cc).
   if (!vad_) vad_ = std::make_unique<VoiceActivityDetectorWrapper>(cfg_.sample_rate, kVadResetPeriodMs);
   ToFloatS16(frame);
@@ -521,6 +529,7 @@ void GainController2::Process(std::span<float> frame) {
 }
 
 void GainController2::Process(std::span<float> frame, float speech_probability) {
+  if (!accepts(frame)) return;
   ToFloatS16(frame);
   ProcessFloatS16(frame, speech_probability);
 }

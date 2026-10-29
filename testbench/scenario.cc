@@ -338,6 +338,9 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "av_sync") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: av_sync on|off");
       s.av_sync = tok[1] == "on";
+    } else if (key == "audio_receive_rtcp") {
+      if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: audio_receive_rtcp on|off");
+      s.audio_receive_rtcp = tok[1] == "on";
     } else if (key == "send_rate_stats") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: send_rate_stats on|off");
       s.send_rate_stats = tok[1] == "on";
@@ -378,6 +381,11 @@ ParseResult ParseScenario(const std::string& text) {
       TimeDelta t;
       if (!need(2) || !ParseTime(tok[1], &t)) return fail("usage: host_rtt_inf <time>");
       s.host_rtt_inf = t;
+    } else if (key == "apm_rate") {
+      char* end = nullptr;
+      const long v = need(2) ? std::strtol(tok[1].c_str(), &end, 10) : 0;
+      if (!need(2) || *end != '\0' || v < -384000 || v > 384000) return fail("usage: apm_rate <hz>");
+      s.apm_rate = static_cast<int>(v);
     } else if (key == "host_rtt") {
       TimeDelta t, rtt;
       if (!need(3) || !ParseTime(tok[1], &t) || !ParseTime(tok[2], &rtt)) return fail("usage: host_rtt <time> <rtt>");
@@ -485,6 +493,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
+  if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";

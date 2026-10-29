@@ -39,6 +39,7 @@
 #include "sm/loss/red.h"
 #include "sm/loss/ulpfec.h"
 #include "sm/sync/header_extensions.h"
+#include "sm/video/orientation.h"
 #include "sm/sync/stream_sync.h"
 #include "sm/timing/audio_jitter_buffer.h"
 #include "sm/timing/frame_release.h"
@@ -170,6 +171,9 @@ struct ReceivedFrame {
   TimeDelta lateness;  // Positive = late.
   size_t size_bytes = 0;  // RTP payload bytes of the frame's packets.
   std::vector<uint8_t> bitstream;  // The access unit (Annex-B for H.264); empty if not rebuilt.
+  // The last packet's video-orientation extension (CVO), 0 without it, as libwebrtc's
+  // RtpVideoStreamReceiver2 (rtp_video_stream_receiver2.cc:797-802, 1108).
+  video::Rotation rotation = video::Rotation::k0;
 };
 
 // Feedback due toward the sender, for rtp::RtcpEngine.
@@ -331,6 +335,7 @@ class RtpReceiver : public MetricsSource {
     std::vector<uint8_t> bitstream;
     Timestamp receive_time;      // Last packet's arrival.
     bool retransmitted = false;  // A packet of it was NACKed (timing v2).
+    video::Rotation rotation = video::Rotation::k0;
   };
   std::map<int64_t, FrameMeta> frames_;  // Frame id -> what the scheduler needs; bounded.
   std::vector<ReceivedFrame> out_frames_;
