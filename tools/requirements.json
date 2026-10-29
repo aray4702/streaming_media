@@ -177,10 +177,10 @@
    "area": "Jitter, reordering and timing",
    "catalog": "4.7",
    "title": "Clock drift estimation and compensation",
-   "status": "open",
-   "evidence": "`ClockDriftEstimator`, `RlsLineFit` and `DriftCompensator` (`src/timing/clock_drift.cc`) are the library's own design (lower-envelope fit, PI resampler within +-0.5%), not ported; the parity row is 'not compared' and points to closed #63. Nothing in `rtp::Session` or the test bench uses them; in a call libwebrtc absorbs drift with NetEq's time stretch and the `rtp_to_ntp_estimator`/`timestamp_extrapolator`. No recorded deviation, no open item; filed #566.",
+   "status": "done",
+   "evidence": "Removed by #590 (`include/sm/timing/clock_drift.h`: `ClockDriftEstimator`, `RlsLineFit`, `DriftCompensator`, with their tests and benchmarks) on the Owner's A on #566: libwebrtc M157's one-to-one call has no such component and absorbs drift with NetEq's time stretch and the `rtp_to_ntp_estimator`/`timestamp_extrapolator`; nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it. Parity row marked `removed`; catalog 4.7 moved to the not-implemented list.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },

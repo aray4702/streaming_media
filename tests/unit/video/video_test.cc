@@ -158,39 +158,193 @@ SM_TEST(FreezeDetector, AverageRoundedDownToWholeMs) {
   }
 }
 
-SM_TEST(CodecFallback, InitFailureAndConsecutiveErrors) {
-  CodecFallbackController a;
-  a.OnInitResult(false, Ms(0));
-  SM_EXPECT_TRUE(a.active() == CodecImpl::kSoftware);
-  SM_EXPECT_TRUE(a.TakeKeyframeRequest());
-  SM_EXPECT_FALSE(a.TakeKeyframeRequest());
-  CodecFallbackController b;
-  b.OnFrameResult(false, Ms(0));
-  b.OnFrameResult(false, Ms(33));
-  SM_EXPECT_TRUE(b.active() == CodecImpl::kHardware);
-  b.OnFrameResult(false, Ms(66));
-  SM_EXPECT_TRUE(b.active() == CodecImpl::kSoftware);
+namespace {
+// A scripted encoder, as libwebrtc's CountingFakeEncoder in
+// video_encoder_software_fallback_wrapper_unittest.cc.
+struct FakeEncoder : FallbackEncoder {
+  EncoderStatus init_result = EncoderStatus::kOk;
+  FallbackEncoderInfo info;
+  int init_count = 0, release_count = 0, set_rates_count = 0, rtt_count = 0, loss_count = 0;
+  EncoderRates last_rates;
+  EncoderCodecSettings last_settings;
+  EncoderStatus InitEncode(const EncoderCodecSettings& s) override {
+    ++init_count;
+    last_settings = s;
+    return init_result;
+  }
+  void Release() override { ++release_count; }
+  void SetRates(const EncoderRates& r) override {
+    ++set_rates_count;
+    last_rates = r;
+  }
+  void OnRttUpdate(TimeDelta) override { ++rtt_count; }
+  void OnPacketLossRateUpdate(float) override { ++loss_count; }
+  FallbackEncoderInfo GetEncoderInfo() const override { return info; }
+};
+EncoderCodecSettings Vga(bool vp8 = true) { return {640, 480, vp8, 1}; }
+}  // namespace
+
+SM_TEST(CodecFallback, InitializesMainEncoder) {
+  FakeEncoder sw, hw;
+  CodecFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.current() == nullptr);  // Encode before InitEncode is an error.
+  SM_EXPECT_TRUE(w.InitEncode(Vga(), Ms(0)) == EncoderStatus::kOk);
+  SM_EXPECT_TRUE(w.state() == EncoderState::kMainEncoderUsed);
+  SM_EXPECT_TRUE(w.current() == &hw);
+  SM_EXPECT_EQ(sw.init_count, 0);
+  SM_EXPECT_FALSE(w.forced_params().has_value());  // Both field trials off by default.
 }
 
-SM_TEST(CodecFallback, ErrorRateAndRetryBackoff) {
+SM_TEST(CodecFallback, InitFailureUsesSoftware) {
+  FakeEncoder sw, hw;
+  hw.init_result = EncoderStatus::kError;
+  CodecFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.InitEncode(Vga(), Ms(0)) == EncoderStatus::kOk);
+  SM_EXPECT_TRUE(w.state() == EncoderState::kFallbackDueToFailure);
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(sw.last_settings.width, 640);
+  SM_EXPECT_EQ(hw.release_count, 0);  // The main encoder was never initialized.
+  // Both fail: the main encoder's error, and nothing to encode with.
+  FakeEncoder sw2, hw2;
+  hw2.init_result = EncoderStatus::kError;
+  sw2.init_result = EncoderStatus::kError;
+  CodecFallbackController w2({}, sw2, hw2);
+  SM_EXPECT_TRUE(w2.InitEncode(Vga(), Ms(0)) == EncoderStatus::kError);
+  SM_EXPECT_TRUE(w2.current() == nullptr);
+  SM_EXPECT_EQ(sw2.release_count, 1);
+}
+
+SM_TEST(CodecFallback, SimulcastNotSupportedDoesNotFallBack) {
+  FakeEncoder sw, hw;
+  hw.init_result = EncoderStatus::kSimulcastParametersNotSupported;
+  CodecFallbackController w({}, sw, hw);
+  SM_EXPECT_TRUE(w.InitEncode(Vga(), Ms(0)) == EncoderStatus::kSimulcastParametersNotSupported);
+  SM_EXPECT_EQ(sw.init_count, 0);
+  SM_EXPECT_TRUE(w.current() == nullptr);
+}
+
+SM_TEST(CodecFallback, EncodeRequestsFallbackOnlyWithFallbackSoftware) {
+  FakeEncoder sw, hw;
+  CodecFallbackController w({}, sw, hw);
+  w.InitEncode(Vga(), Ms(0));
+  w.SetRates({DataRate::KilobitsPerSec(300), 30});
+  w.OnRttUpdate(TimeDelta::Millis(100));
+  w.OnPacketLossRateUpdate(0.05f);
+  // Plain errors are returned as they are, however many.
+  for (int i = 0; i < 20; ++i) SM_EXPECT_FALSE(w.OnEncodeResult(EncoderStatus::kError, Ms(33 * i)));
+  SM_EXPECT_TRUE(w.state() == EncoderState::kMainEncoderUsed);
+  SM_EXPECT_TRUE(w.OnEncodeResult(EncoderStatus::kFallbackSoftware, Ms(700)));
+  SM_EXPECT_TRUE(w.state() == EncoderState::kFallbackDueToFailure);
+  SM_EXPECT_TRUE(w.current() == &sw);
+  SM_EXPECT_EQ(hw.release_count, 1);  // InternalEncoderReleasedDuringFallback.
+  // PrimeEncoder: the fallback gets the last rates and channel parameters.
+  SM_EXPECT_EQ(sw.set_rates_count, 1);
+  SM_EXPECT_EQ(sw.last_rates.bitrate.bps(), 300000);
+  SM_EXPECT_EQ(sw.rtt_count, 1);
+  SM_EXPECT_EQ(sw.loss_count, 1);
+  // Further calls go to the fallback only; the fallback's own errors don't move.
+  w.SetRates({DataRate::KilobitsPerSec(200), 30});
+  SM_EXPECT_EQ(sw.set_rates_count, 2);
+  SM_EXPECT_EQ(hw.set_rates_count, 1);
+  SM_EXPECT_FALSE(w.OnEncodeResult(EncoderStatus::kFallbackSoftware, Ms(733)));
+  SM_EXPECT_EQ(w.stats().fallbacks, 1u);
+}
+
+SM_TEST(CodecFallback, FailedFallbackInitKeepsMainEncoder) {
+  FakeEncoder sw, hw;
+  sw.init_result = EncoderStatus::kError;
+  CodecFallbackController w({}, sw, hw);
+  w.InitEncode(Vga(), Ms(0));
+  SM_EXPECT_FALSE(w.OnEncodeResult(EncoderStatus::kFallbackSoftware, Ms(33)));
+  SM_EXPECT_TRUE(w.state() == EncoderState::kMainEncoderUsed);
+  SM_EXPECT_EQ(hw.release_count, 0);
+}
+
+SM_TEST(CodecFallback, ReleaseAndReinitTriesMainAgain) {
+  FakeEncoder sw, hw;
+  CodecFallbackController w({}, sw, hw);
+  w.InitEncode(Vga(), Ms(0));
+  w.SetRates({DataRate::KilobitsPerSec(300), 30});
+  w.OnEncodeResult(EncoderStatus::kFallbackSoftware, Ms(33));
+  w.Release();
+  SM_EXPECT_EQ(sw.release_count, 1);
+  SM_EXPECT_TRUE(w.current() == nullptr);
+  SM_EXPECT_TRUE(w.InitEncode(Vga(), Ms(1000)) == EncoderStatus::kOk);
+  SM_EXPECT_TRUE(w.state() == EncoderState::kMainEncoderUsed);
+  // InitEncode clears the stored rates: none replayed on this init.
+  SM_EXPECT_EQ(hw.set_rates_count, 1);
+}
+
+SM_TEST(CodecFallback, ForcedFallbackByResolution) {
+  // WebRTC-Video-EncoderFallbackSettings/resolution_threshold_px:76800/.
   CodecFallbackConfig cfg;
-  cfg.retry_hardware_after = TimeDelta::Seconds(10);
-  CodecFallbackController c(cfg);
-  for (int i = 0; i < 100; ++i) c.OnFrameResult(i % 6 != 0, Ms(i * 33));  // ~17% errors.
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kSoftware);
-  int64_t fell = 3300;
-  c.Process(Ms(fell + 5000));
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kSoftware);
-  c.Process(Ms(fell + 10500));
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kHardware);
-  // Retry fails again: back-off doubles to 20 s.
-  for (int i = 0; i < 3; ++i) c.OnFrameResult(false, Ms(fell + 11000 + i));
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kSoftware);
-  c.Process(Ms(fell + 11000 + 15000));
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kSoftware);
-  c.Process(Ms(fell + 11000 + 21000));
-  SM_EXPECT_TRUE(c.active() == CodecImpl::kHardware);
-  SM_EXPECT_EQ(c.stats().fallbacks, 2u);
+  cfg.resolution_threshold_px = 320 * 240;
+  FakeEncoder sw, hw;
+  CodecFallbackController w(cfg, sw, hw);
+  SM_EXPECT_TRUE(w.InitEncode({320, 240, false, 1}, Ms(0)) == EncoderStatus::kOk);
+  SM_EXPECT_TRUE(w.state() == EncoderState::kForcedFallback);
+  SM_EXPECT_EQ(hw.init_count, 0);
+  w.Release();
+  SM_EXPECT_TRUE(w.InitEncode({321, 240, false, 1}, Ms(0)) == EncoderStatus::kOk);
+  SM_EXPECT_TRUE(w.state() == EncoderState::kMainEncoderUsed);
+  SM_EXPECT_EQ(w.stats().forced_fallbacks, 1u);
+}
+
+SM_TEST(CodecFallback, Vp8ForcedFallbackTrial) {
+  FallbackEncoderInfo main;  // min_pixels_per_frame 320x180.
+  CodecFallbackConfig cfg;
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Disabled-1,76800,30000";
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-1,76800";  // Too few values.
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-1,57598,30000";  // max below min_pixels_per_frame - 1.
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-1,57599,30000";  // At the bound: valid.
+  SM_EXPECT_TRUE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-1,57599,0";  // min_bps must be positive.
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-0,76800,30000";  // min_pixels must be positive.
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-80000,76800,30000";  // max below min.
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main).has_value());
+  cfg.vp8_forced_fallback = "Enabled-57600,76800,30000";
+  auto p = ParseForcedFallbackParams(cfg, main);
+  SM_ASSERT_TRUE(p.has_value());
+  SM_EXPECT_TRUE(p->vp8_specific_resolution_switch);
+  // VP8, one stream, at most max_pixels only.
+  SM_EXPECT_TRUE(p->SupportsResolutionBasedSwitch({320, 240, true, 1}));
+  SM_EXPECT_FALSE(p->SupportsResolutionBasedSwitch({320, 240, false, 1}));
+  SM_EXPECT_FALSE(p->SupportsResolutionBasedSwitch({320, 240, true, 2}));
+  SM_EXPECT_FALSE(p->SupportsResolutionBasedSwitch({640, 480, true, 1}));
+  // The settings trial wins over the VP8 one.
+  cfg.resolution_threshold_px = 100;
+  SM_EXPECT_FALSE(ParseForcedFallbackParams(cfg, main)->vp8_specific_resolution_switch);
+  // GetEncoderInfo reports the trial's min_pixels as the scaling floor.
+  cfg.resolution_threshold_px.reset();
+  FakeEncoder sw, hw;
+  CodecFallbackController w(cfg, sw, hw);
+  SM_EXPECT_EQ(w.GetEncoderInfo().min_pixels_per_frame, 57600);
+}
+
+SM_TEST(CodecFallback, EncoderInfoMerge) {
+  FakeEncoder sw, hw;
+  sw.info.requested_resolution_alignment = 4;
+  sw.info.max_pixels_per_frame = 1920 * 1080;
+  sw.info.min_pixels_per_frame = 1000;
+  hw.info.requested_resolution_alignment = 6;
+  hw.info.apply_alignment_to_all_simulcast_layers = true;
+  hw.info.max_pixels_per_frame = 1280 * 720;
+  hw.info.min_pixels_per_frame = 2000;
+  CodecFallbackController w({}, sw, hw);
+  w.InitEncode(Vga(), Ms(0));
+  FallbackEncoderInfo info = w.GetEncoderInfo();
+  SM_EXPECT_EQ(info.requested_resolution_alignment, 12);  // lcm(4, 6).
+  SM_EXPECT_TRUE(info.apply_alignment_to_all_simulcast_layers);
+  SM_EXPECT_EQ(*info.max_pixels_per_frame, size_t{1920 * 1080});  // Always the fallback's.
+  SM_EXPECT_EQ(info.min_pixels_per_frame, 2000);  // The active encoder's.
+  w.OnEncodeResult(EncoderStatus::kFallbackSoftware, Ms(33));
+  SM_EXPECT_EQ(w.GetEncoderInfo().min_pixels_per_frame, 1000);
 }
 
 SM_TEST(Orientation, CvoByteAndRotation) {

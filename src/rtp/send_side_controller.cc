@@ -393,7 +393,14 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }
-  Apply(gcc_.OnTransportFeedback(fb, now), now);
+  const cc::NetworkControlUpdate u = gcc_.OnTransportFeedback(fb, now);
+  if (!gcc_.last_feedback_used()) {
+    // TransportFeedbackAdapter found none of the feedback's packets (all reported received before,
+    // or unknown): RtpTransportControllerSend passes nothing on (transport_feedback_adapter.cc:457-458).
+    outage_.OnFeedback(now);
+    return;
+  }
+  Apply(u, now);
   // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
   // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
   // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
