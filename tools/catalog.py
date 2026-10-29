@@ -1603,7 +1603,7 @@ ALGORITHMS = [
                       "accounting, zero-byte frames) were fixed in PR 5. Issue #577 ported RTPSender::"
                       "ExpectedPerPacketOverhead (RtpSender::ExpectedPerPacketOverhead; unit tests "
                       "RtpSender.ExpectedPerPacketOverhead* and Session.ExpectedPacketOverheadIsTheVideoSendersHeader) "
-                      "behind `expected_packet_overhead`, off until the flip is judged on the parity report. "
+                      "behind `expected_packet_overhead`, on by default since the flip (#577 part 2). "
                       "Per-suite results are recorded by ctest "
                       "and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.3", slug="rtp-receiver", title="RTP receiver",

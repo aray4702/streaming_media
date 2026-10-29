@@ -93,9 +93,8 @@ struct SendSideConfig {
   // ExpectedPerPacketOverhead (the header with the registered non-volatile extensions, plus 2 with
   // RTX), averaged over the streams, whenever it changes, and an audio stream's allocation limits
   // add its ExpectedPerPacketOverhead (AudioSendStream::UpdateOverheadPerPacket). Off: the fixed 24,
-  // and the audio header the next packet carries. Off by default until the flip is judged on the
-  // parity report.
-  bool expected_packet_overhead = false;
+  // and the audio header the next packet carries. On by default, as libwebrtc.
+  bool expected_packet_overhead = true;
   EventSink* events = nullptr;
 };
 
