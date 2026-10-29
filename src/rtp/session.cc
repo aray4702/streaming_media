@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
+#include "sm/core/random.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/sps_vui_rewriter.h"
 
@@ -11,6 +13,8 @@ namespace {
 // VideoSendStreamImpl's kStrictPacingMultiplier (PacingConfig::pacing_factor's
 // default): the pacing factor a video stream with send-side BWE sets.
 constexpr double kStrictPacingMultiplier = 1.1;
+// PacketSequencer's kMaxInitRtpSeqNumber: the start sequence numbers stay below half the space.
+constexpr uint32_t kMaxInitRtpSeqNumber = 32767;
 RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   RtcpConfig r = c.rtcp;
   r.local_ssrc = c.local_ssrc;
@@ -65,6 +69,17 @@ RtpSenderConfig Session::SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool
   c.mid_packets = mid.empty() ? 0 : cfg_.mid_packets;
   c.extensions = &cfg_.extensions;
   c.events = cfg_.events;
+  // Each RTP module seeds its generators from the clock when it is built, which is the time that
+  // seeds RTCP (`seed`; the test bench builds both at the call's start, as libwebrtc does): RTPSender
+  // takes the start timestamp from Random(now_us).Rand<uint32_t>() (rtp_sender.cc:247-250), and
+  // PacketSequencer, built beside it (rtp_rtcp_impl2.cc:67-70), the media then the RTX start sequence
+  // number, each Rand(1, kMaxInitRtpSeqNumber). On libwebrtc's traces (seed 1: 873682028, 6666 and
+  // 887) these are the very numbers (issue #514).
+  XorshiftRandom offset_random(cfg_.seed);
+  c.timestamp_offset = offset_random.Rand(std::numeric_limits<uint32_t>::max());
+  XorshiftRandom seq_random(cfg_.seed);
+  c.initial_seq = static_cast<uint16_t>(seq_random.Rand(1u, kMaxInitRtpSeqNumber));
+  c.rtx.initial_seq = static_cast<uint16_t>(seq_random.Rand(1u, kMaxInitRtpSeqNumber));
   return c;
 }
 
@@ -130,7 +145,9 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   c.max_payload_size = v.max_payload_size;  // Sized per frame from the header (SendVideo).
   c.rtx_ssrc = v.rtx_ssrc;
   c.rtx_payload_type = v.rtx_payload_type;
+  const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
+  c.rtx.initial_seq = rtx_initial_seq;
   c.fec = VideoFecEnabled(v);
   c.ulpfec = v.ulpfec;
   // RtpVideoSender's constructor: FecControllerDefault with the method the stream has on,
@@ -349,7 +366,8 @@ void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optiona
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
   Start(now);
   RtpSender& s = *audio_send_[static_cast<size_t>(id.index)].sender;
-  s.SendAudio(f.data, f.rtp_timestamp, f.start_of_talkspurt, now, level, f.capture_time);
+  // ChannelSend::SendRtpAudio adds the module's StartTimestamp (channel_send.cc:406).
+  s.SendAudio(f.data, f.rtp_timestamp + s.StartTimestamp(), f.start_of_talkspurt, now, level, f.capture_time);
   EnqueueSenderPackets(s, now);
 }
 
@@ -377,7 +395,7 @@ DataSize Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestam
   // also carries the absolute capture time when it is mapped and due, the last one CVO when it is
   // mapped and due, and a single packet both (rtp_sender_video.cc:690-758).
   const std::optional<sync::AbsoluteCaptureTime> abs_capture_time =
-      s.VideoAbsoluteCaptureTime(f.rtp_timestamp, f.capture_time, now);
+      s.VideoAbsoluteCaptureTime(f.rtp_timestamp + s.StartTimestamp(), f.capture_time, now);
   const size_t reserved =
       s.FecPacketOverhead() + (video_send_[static_cast<size_t>(id.index)].nack ? s.RtxPacketOverhead() : 0);
   const size_t whole = s.config().max_payload_size + RtpPacket::kFixedHeaderSize;
@@ -420,7 +438,9 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
   if (!vs.first_frame.IsFinite()) vs.first_frame = now;
   vs.frame_times.push_back(now);
   RtpSender& s = *vs.sender;
-  const size_t packetized = s.SendVideoFrame(chunks, rtp_timestamp, now, keyframe, rotation, abs_capture_time);
+  // RtpVideoSender::OnEncodedImage adds the module's StartTimestamp (rtp_video_sender.cc:658-660).
+  const size_t packetized =
+      s.SendVideoFrame(chunks, rtp_timestamp + s.StartTimestamp(), now, keyframe, rotation, abs_capture_time);
   send_.OnVideoPacketized(encoded_size, packetized, now);
   // RtpRtcpImpl2::OnSendingRtpFrame: a report that is due within 100 ms is sent
   // before a keyframe instead of queueing behind it.

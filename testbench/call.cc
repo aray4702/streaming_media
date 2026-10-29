@@ -178,6 +178,11 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"net.audio_kbps", "Audio sent on the forward link, wire rate averaged over the call"},
       {"net.audio_rtp_clock_hz", "RTP clock of the audio packets on the forward link: timestamp advance per second "
                                  "sent, to the nearest kHz (Opus: 48000, RFC 7587)"},
+      {"net.audio_start_seq", "RTP sequence number of the first audio packet on the forward link (libwebrtc starts "
+                              "each stream at a random 1-32767; #514)"},
+      {"net.video_start_seq", "RTP sequence number of the first video media packet on the forward link (#514)"},
+      {"net.audio_first_marker", "1 if the first audio packet on the forward link has the marker bit "
+                                 "(RTPSenderAudio::MarkerBit; #514)"},
       {"net.video_kbps", "Video media sent on the forward link, wire rate averaged over the call"},
       {"net.rtx_kbps", "RTX retransmissions sent on the forward link, wire rate averaged over the call"},
       {"net.padding_kbps", "Padding-only packets sent on the forward link, wire rate averaged over the call"},
@@ -722,6 +727,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     video_send = sender.AddVideoSend(video_cfg);
     video_recv = receiver.AddVideoReceive(video_cfg);
   }
+  // Each stream starts its RTP timestamps at a random offset, as libwebrtc (issue #514). The
+  // measurement maps wire timestamps back to the capture clock by taking the offset off again, as
+  // webrtc_call.cc takes off the first audio timestamp and the video frames' offset.
+  const uint32_t audio_ts_offset = s.audio ? sender.audio_sender(audio_send).StartTimestamp() : 0;
+  const uint32_t video_ts_offset = s.video ? sender.video_sender(video_send).StartTimestamp() : 0;
 
   // The encoder side: the frame dropper. The session decides the FEC protection (#29).
   rtp::VideoSendControllerConfig vsc_cfg;
@@ -837,6 +847,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
   // The first and last audio packet on the forward link: RTP timestamp and send time (net.audio_rtp_clock_hz).
   std::optional<std::pair<uint32_t, Timestamp>> audio_ts_first, audio_ts_last;
+  // The first audio and video media packets on the forward link (issue #514).
+  std::optional<uint16_t> audio_start_seq, video_start_seq;
+  bool audio_first_marker = false;
 
   // Sends what a session has ready onto its link; returns nothing to count
   // beyond the pacer-released bytes the caller tallies.
@@ -852,10 +865,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
         if (kind != Kind::kRtcp) w_send += p.wire_size.bytes();
         if (kind == Kind::kAudio) {
-          if (!audio_ts_first) audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
+          if (!audio_ts_first) {
+            audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
+            audio_start_seq = RtpSeq(p.bytes);
+            audio_first_marker = (p.bytes[1] & 0x80) != 0;
+          }
           audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
         }
         if (kind == Kind::kVideo) {
+          if (!video_start_seq) video_start_seq = RtpSeq(p.bytes);
           auto ft = frame_times.find(RtpTimestamp(p.bytes));
           if (ft != frame_times.end()) ft->second.last_sent = now;
         }
@@ -965,10 +983,12 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // post-encode step (RunPostEncode) then gets the size of the frame as sent, after the keyframe SPS
     // rewrite (issue #655).
     auto frame_encoded = [&](const PendingFrame& f) {
-      frame_capture[f.rtp_ts] = f.capture;
-      frame_times[f.rtp_ts].capture = f.capture;
-      frame_times[f.rtp_ts].submitted = f.done;
-      if (opt.link_trace) frame_rtx_room[f.rtp_ts] = rtx_ack.Room();
+      // Keyed by the timestamp on the wire.
+      const uint32_t wire_ts = f.rtp_ts + video_ts_offset;
+      frame_capture[wire_ts] = f.capture;
+      frame_times[wire_ts].capture = f.capture;
+      frame_times[wire_ts].submitted = f.done;
+      if (opt.link_trace) frame_rtx_room[wire_ts] = rtx_ack.Room();
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
       rtp::EncodedFrameReport sent = f.report;
       sent.size = sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
@@ -1007,7 +1027,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         vt_row.keyframe_bytes += bytes;
       }
       video_bytes_encoded += bytes;
-      const uint32_t rtp_ts = static_cast<uint32_t>(capture.ms() * 90);
+      // VideoStreamEncoder gives a frame the RTP time 90 x its capture NTP time in ms; on libwebrtc's
+      // simulated clock that is the clock (which starts at CallClockStartSeconds) plus the NTP epoch
+      // offset, 2208988800 s (issue #514). The sender adds the stream's start offset.
+      const int64_t capture_ntp_ms = (CallClockStartSeconds(s) + 2208988800LL) * 1000 + capture.ms();
+      const uint32_t rtp_ts = static_cast<uint32_t>(capture_ntp_ms * 90);
       const TimeDelta encode_time =
           s.encode_delay ? TimeDelta::Micros(EncoderModel::EncodeTimeUs(enc_w, enc_h, s.encoder_speed)) : TimeDelta::Zero();
       PendingFrame f{capture, at + encode_time, {DataSize::Bytes(bytes), key, qp}, rtp_ts};
@@ -1034,7 +1058,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       switch (w.kind) {
         case Kind::kAudio: {
           if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
-          int64_t capture_ms = static_cast<int64_t>(RtpTimestamp(w.bytes)) * 1000 / sr;
+          int64_t capture_ms = static_cast<int64_t>(static_cast<uint32_t>(RtpTimestamp(w.bytes) - audio_ts_offset)) * 1000 / sr;
           audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
           audio_started = true;
           break;
@@ -1237,9 +1261,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
       receiver.GetAudio(audio_recv, audio_out, now);
-      // Audio RTP timestamps count samples from the call start (capture at t = 0).
+      // Audio RTP timestamps, less the stream's offset, count samples from the call start (capture at t = 0).
       if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
-        av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(*ts) * 1000000 / sr));
+        const uint32_t samples = static_cast<uint32_t>(*ts - audio_ts_offset);
+        av_sync.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(samples) * 1000000 / sr));
       }
       const auto& jb = receiver.audio_receiver(audio_recv).jitter_buffer();
       const auto& jst = jb.stats();
@@ -1446,6 +1471,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
                       (static_cast<double>((audio_ts_last->second - audio_ts_first->second).us()) / 1e6);
     rep.metrics["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
   }
+  if (audio_start_seq) {
+    rep.metrics["net.audio_start_seq"] = *audio_start_seq;
+    rep.metrics["net.audio_first_marker"] = audio_first_marker ? 1 : 0;
+  }
+  if (video_start_seq) rep.metrics["net.video_start_seq"] = *video_start_seq;
   if (opt.link_trace) rep.link_trace = forward.trace();
   if (opt.link_trace) rep.reverse_trace = reverse.trace();
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), opus_encode_rows.begin(), opus_encode_rows.end());

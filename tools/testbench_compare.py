@@ -42,6 +42,8 @@ INFO = {
     "net.audio_kbps", "net.video_kbps", "net.rtx_kbps", "net.padding_kbps", "net.fec_kbps",
     # The audio RTP clock (issue #477): information only.
     "net.audio_rtp_clock_hz",
+    # The start sequence numbers and the first audio marker (issue #514): information only.
+    "net.audio_start_seq", "net.video_start_seq", "net.audio_first_marker",
     # Per kind packet sizes and queue drops (issue #119): information only.
     *(f"net.{k}_{m}" for k in ("audio", "video", "rtx", "padding")
       for m in ("size_p50_b", "size_p90_b", "size_max_b", "queue_drops")),

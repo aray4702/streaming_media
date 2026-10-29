@@ -58,6 +58,10 @@ struct RtpSenderConfig {
   int clock_rate = 90000;  // 90000 video, 48000 Opus.
   bool video = true;       // Picks the packet kind and pacer priority.
   uint16_t initial_seq = 0;
+  // RTPSender::timestamp_offset_ (rtp_sender.cc:247-250): the stream's start RTP timestamp, which the
+  // caller adds to every frame's timestamp, as ChannelSend and RtpVideoSender add StartTimestamp()
+  // (channel_send.cc:406, rtp_video_sender.cc:660). Session draws it as libwebrtc does (issue #514).
+  uint32_t timestamp_offset = 0;
   // Largest payload of one video packet (the whole packet stays within
   // ModuleRtpRtcpImpl2's default 1460 bytes, rtp_rtcp_impl2.cc:146-150; issue
   // #580). Clamped so the whole packet (with
@@ -122,6 +126,10 @@ class RtpSender : public MetricsSource {
   // after a muted one, `Analyze` otherwise. Without it, it does nothing.
   void AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted);
   // Audio: one frame becomes one packet (RED-wrapped when configured).
+  // The marker bit is RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128,
+  // 243, 262): set on the first packet of the stream, on a change of payload
+  // type, and on the first speech frame after an Opus DTX frame (at most 2
+  // bytes, ACM's kAudioFrameCN); `marker` from the caller also sets it.
   // With the audio-level extension (RFC 6464) mapped, every packet carries
   // the level, as ChannelSend::SendData and RTPSenderAudio::SendAudio
   // (channel_send.cc:389-396, rtp_sender_audio.cc:248-250): `level` when
@@ -277,6 +285,8 @@ class RtpSender : public MetricsSource {
   DataRate SendRate(Timestamp now) const;
   // RTP timestamp of the last media packet; padding carries it, like libwebrtc.
   uint32_t last_rtp_timestamp() const { return last_rtp_timestamp_; }
+  // ModuleRtpRtcpImpl2::StartTimestamp (rtp_rtcp_impl2.cc:194-196).
+  uint32_t StartTimestamp() const { return cfg_.timestamp_offset; }
   const RtpSenderConfig& config() const { return cfg_; }
   const RtpSenderStats& stats() const { return stats_; }
   const loss::RtxSender& rtx() const { return rtx_; }
@@ -287,6 +297,7 @@ class RtpSender : public MetricsSource {
   void Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio);
   void StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe = false, bool first = false);
   bool SetsVideoRotation(bool keyframe, video::Rotation rotation) const;
+  bool AudioMarkerBit(bool speech, int payload_type);
   bool SetsAbsoluteCaptureTime(const std::optional<sync::AbsoluteCaptureTime>& a) const;
   void SetAbsoluteCaptureTime(RtpPacket& p, const sync::AbsoluteCaptureTime& a);
   // Header size of a media packet with the extensions every packet carries, plus CVO and the
@@ -307,6 +318,8 @@ class RtpSender : public MetricsSource {
   sync::AbsoluteCaptureTimeSender abs_capture_time_sender_;
   dsp::RmsLevel rms_level_;            // ChannelSend::rms_level_.
   bool previous_frame_muted_ = false;  // ChannelSend::previous_frame_muted_.
+  int last_payload_type_ = -1;         // RTPSenderAudio::last_payload_type_.
+  bool inband_vad_active_ = false;     // RTPSenderAudio::inband_vad_active_.
   bool ssrc_has_acked_ = false;
   bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;
