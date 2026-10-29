@@ -443,7 +443,11 @@ SM_TEST(VideoSendController, NewFrameSizeStartsAFreshBitrateAdjuster) {
 // UpdateBitrateAllocation: on an allocation update (OnBitrateUpdated), on ReconfigureEncoder and every
 // kParameterUpdateIntervalMs (1 s) in MaybeEncodeVideoFrame. The encoder keeps its last rate in between.
 SM_TEST(VideoSendController, BitrateAdjusterRunsOnAllocationUpdatesAndEverySecond) {
-  Session s(Cfg());
+  // Written for 1200-byte packets, the default before #639 (now 1460): at 1460 this rate pattern gives
+  // the re-run after the update the same rate as the last one, so the change below would not show.
+  SessionConfig sc = Cfg();
+  sc.send_side.max_packet_size = 1200;
+  Session s(sc);
   s.AddVideoSend(VideoStreamConfig{});
   VideoSendControllerConfig cfg;
   cfg.quality_scaling = false;
