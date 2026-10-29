@@ -93,9 +93,9 @@ struct SessionConfig {
   // #568): each send stream keeps the RTT samples of its media SSRC's report block only, runs its
   // own 1 s periodic update to CallStats and its packet history, and takes its NACK RTT from them;
   // GoogCC gets each stream's packet RTT. Off: one session-wide value, the last report block of
-  // any SSRC (or SetRtt), feeds every stream and one CallStats report a second. Off by default
-  // until the flip is judged on the parity report.
-  bool per_stream_rtt = false;
+  // any SSRC (or SetRtt), feeds every stream and one CallStats report a second. On by default, as
+  // libwebrtc (flipped after #484 made the audio block arrive in the audio stream's own 5 s RTCP).
+  bool per_stream_rtt = true;
   // Receive statistics as libwebrtc's StreamStatisticianImpl for every receive stream
   // (RtpReceiverConfig::receive_statistics_v2, issue #575): max reordering threshold, stream
   // restart, 255-scaled fraction lost. Off by default until the flip is judged on the parity report.

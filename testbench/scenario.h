@@ -107,8 +107,8 @@ struct Scenario {
   bool adjuster_on_update = false;
   // `per_stream_rtt on|off`: both sessions aggregate the RTT per send stream, as libwebrtc's
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
-  // issue #568). Off by default until it is judged.
-  bool per_stream_rtt = false;
+  // issue #568). On by default, as libwebrtc; `off` keeps one session-wide RTT.
+  bool per_stream_rtt = true;
   // `receive_statistics_v2 on|off`: both sessions keep receive statistics as libwebrtc's
   // StreamStatisticianImpl (max reordering threshold, stream restart, 255-scaled fraction lost;
   // rtp::SessionConfig::receive_statistics_v2; issue #575). Off by default until it is judged.

@@ -975,6 +975,12 @@ SM_TEST(Session, AudioStreamTurnsOnNetEqsMutedState) {
   SM_EXPECT_FALSE(timing::AudioJitterBufferConfig{}.enable_muted_state);
 }
 
+// #568: a session aggregates the RTT per send stream (RTCPReceiver::RttStats per
+// module, rtcp_receiver.cc:211-229), as libwebrtc always does.
+SM_TEST(Session, RttIsAggregatedPerSendStreamByDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.per_stream_rtt);
+}
+
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
 // frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {

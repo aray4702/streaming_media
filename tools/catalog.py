@@ -244,7 +244,7 @@ ALGORITHMS = [
                "As libwebrtc's StreamStatisticianImpl (issue #76 group 5) the jitter filter runs in Q4 integers, only on "
                "in-order packets with a new timestamp, and skips a jump of 5 s of video clock; the RTT is floored at 1 ms "
                "(CompactNtpRttToTimeDelta, group 4). When the payload frequency changes the jitter is rescaled (ReviseFrequencyAndJitter, issue #101). "
-               "With SessionConfig::per_stream_rtt (off by default until #484 lands) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
+               "With SessionConfig::per_stream_rtt (on by default, as libwebrtc, since #484 landed) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
                "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
                "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
                "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first. "
