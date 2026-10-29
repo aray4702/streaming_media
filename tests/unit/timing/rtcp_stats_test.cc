@@ -215,3 +215,102 @@ SM_TEST(RtcpStats, ReportBlockDueOnceReceivedUntilEightSecondsOfSilence) {
   s.OnPacket(11, 2000, Timestamp::Millis(9000));
   SM_EXPECT_TRUE(s.ReportBlockDue(Timestamp::Millis(9000)));
 }
+
+// StreamStatisticianImpl::UpdateOutOfOrder (receive_statistics_impl.cc:71-115): a
+// sequence number more than the max reordering threshold away is held; if the next
+// packet follows it, the stream restarted and the gap is no loss
+// (ReceiveStatisticsTest.StreamRestartDoesntCountAsLoss).
+SM_TEST(RtcpStats, StreamRestartDoesntCountAsLoss) {
+  ReceiveStatistics rs(1, 90000, true);  // kDefaultMaxReorderingThreshold, 50.
+  SM_EXPECT_EQ(rs.max_reordering_threshold(), kDefaultMaxReorderingThreshold);
+  SM_EXPECT_EQ(kDefaultMaxReorderingThreshold, 50);
+  for (uint16_t s = 0; s < 10; ++s) rs.OnPacket(s, s * 3000u, Timestamp::Millis(s * 33));
+  rs.OnPacket(1000, 30000, Timestamp::Millis(330));
+  // Held until the next packet: not yet received, the maximum doesn't move.
+  SM_EXPECT_EQ(rs.Snapshot().cumulative_lost, 0);
+  ReportBlock held = rs.MakeReportBlock(Timestamp::Millis(340));
+  SM_EXPECT_EQ(held.extended_highest_seq, 9u);
+  SM_EXPECT_EQ(held.cumulative_lost, 0);
+  rs.OnPacket(1001, 33000, Timestamp::Millis(363));
+  rs.OnPacket(1002, 36000, Timestamp::Millis(396));
+  ReportBlock rb = rs.MakeReportBlock(Timestamp::Millis(400));
+  SM_EXPECT_EQ(rb.cumulative_lost, 0);
+  SM_EXPECT_EQ(rb.fraction_lost, 0);
+  SM_EXPECT_EQ(rb.extended_highest_seq, 1002u);
+  // Loss after the restart counts as usual.
+  rs.OnPacket(1004, 42000, Timestamp::Millis(462));
+  SM_EXPECT_EQ(rs.MakeReportBlock(Timestamp::Millis(470)).cumulative_lost, 1);
+}
+
+// A jump that the next packet doesn't follow is an old out-of-order packet: it
+// counts as received and doesn't move the maximum (ReceiveStatisticsTest.
+// StreamRestartNeedsTwoConsecutivePackets).
+SM_TEST(RtcpStats, StreamRestartNeedsTwoConsecutivePackets) {
+  ReceiveStatistics rs(1, 90000, true);
+  for (uint16_t s = 0; s < 10; ++s) rs.OnPacket(s, s * 3000u, Timestamp::Millis(s * 33));
+  rs.OnPacket(400, 30000, Timestamp::Millis(330));
+  rs.OnPacket(10, 30000, Timestamp::Millis(363));
+  rs.OnPacket(11, 33000, Timestamp::Millis(396));
+  ReportBlock rb = rs.MakeReportBlock(Timestamp::Millis(400));
+  SM_EXPECT_EQ(rb.extended_highest_seq, 11u);
+  // 13 packets received for 12 expected: libwebrtc clamps the negative loss to 0.
+  SM_EXPECT_EQ(rb.cumulative_lost, 0);
+  SM_EXPECT_EQ(rb.fraction_lost, 0);
+  SM_EXPECT_EQ(rs.Snapshot().packets_received, 13u);
+}
+
+// Within the threshold a jump is loss. RtpVideoStreamReceiver2 sets 450
+// (kMaxPacketAgeToNack) with NACK on (rtp_video_stream_receiver2.cc:106, :365-367).
+SM_TEST(RtcpStats, JumpWithinMaxReorderingThresholdIsLoss) {
+  ReceiveStatistics rs(1, 90000, true, kMaxPacketAgeToNack);
+  SM_EXPECT_EQ(rs.max_reordering_threshold(), 450);
+  for (uint16_t s = 0; s < 10; ++s) rs.OnPacket(s, s * 3000u, Timestamp::Millis(s * 33));
+  rs.OnPacket(309, 30000, Timestamp::Millis(330));
+  rs.OnPacket(310, 33000, Timestamp::Millis(363));
+  ReportBlock rb = rs.MakeReportBlock(Timestamp::Millis(400));
+  SM_EXPECT_EQ(rb.cumulative_lost, 299);
+  SM_EXPECT_EQ(rb.extended_highest_seq, 310u);
+  // MaybeAppendReportBlockAndReset: 255 * lost / expected (receive_statistics_impl.cc:263-266).
+  SM_EXPECT_EQ(rb.fraction_lost, 255 * 299 / 311);
+  // The same jump with the default threshold is a restart.
+  ReceiveStatistics def(1, 90000, true);
+  for (uint16_t s = 0; s < 10; ++s) def.OnPacket(s, s * 3000u, Timestamp::Millis(s * 33));
+  def.OnPacket(309, 30000, Timestamp::Millis(330));
+  def.OnPacket(310, 33000, Timestamp::Millis(363));
+  SM_EXPECT_EQ(def.MakeReportBlock(Timestamp::Millis(400)).cumulative_lost, 0);
+}
+
+// Fraction lost scales by 255, not 256 (receive_statistics_impl.cc:263-266), and a
+// negative cumulative loss (duplicates) reports 0 (:268-274).
+SM_TEST(RtcpStats, FractionLostScalesBy255AndNegativeLossClampsToZero) {
+  ReceiveStatistics rs(1, 90000, true);
+  rs.OnPacket(0, 0, Timestamp::Millis(0));
+  SM_EXPECT_EQ(rs.MakeReportBlock(Timestamp::Millis(10)).fraction_lost, 0);
+  rs.OnPacket(2, 3000, Timestamp::Millis(33));
+  // One of two lost: 127, where 256 * 1 / 2 would be 128.
+  ReportBlock rb = rs.MakeReportBlock(Timestamp::Millis(40));
+  SM_EXPECT_EQ(rb.fraction_lost, 127);
+  SM_EXPECT_EQ(rb.cumulative_lost, 1);
+  for (int i = 0; i < 5; ++i) rs.OnPacket(2, 3000, Timestamp::Millis(120 + i));
+  ReportBlock dup = rs.MakeReportBlock(Timestamp::Millis(200));
+  SM_EXPECT_EQ(dup.cumulative_lost, 0);
+  SM_EXPECT_EQ(dup.fraction_lost, 0);
+}
+
+// v1 (receive_statistics_v2 off, the default until the flip): no threshold, so a jump
+// is loss; fraction lost 256 * lost / expected capped at 255; the loss as counted.
+SM_TEST(RtcpStats, V1KeepsJumpsAsLossAnd256Scale) {
+  ReceiveStatistics rs(1, 90000);
+  SM_EXPECT_FALSE(rs.v2());
+  rs.OnPacket(0, 0, Timestamp::Millis(0));
+  rs.MakeReportBlock(Timestamp::Millis(10));
+  rs.OnPacket(2, 3000, Timestamp::Millis(33));
+  SM_EXPECT_EQ(rs.MakeReportBlock(Timestamp::Millis(40)).fraction_lost, 128);
+  rs.OnPacket(1000, 6000, Timestamp::Millis(66));
+  rs.OnPacket(1001, 9000, Timestamp::Millis(99));
+  ReportBlock rb = rs.MakeReportBlock(Timestamp::Millis(100));
+  SM_EXPECT_EQ(rb.cumulative_lost, 998);
+  SM_EXPECT_EQ(rb.extended_highest_seq, 1001u);
+  for (int i = 0; i < 5; ++i) rs.OnPacket(10, 9000, Timestamp::Millis(120 + i));
+  SM_EXPECT_EQ(rs.MakeReportBlock(Timestamp::Millis(200)).cumulative_lost, 993);
+}

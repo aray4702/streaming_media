@@ -104,6 +104,10 @@ struct Scenario {
   // RTCPReceiver::RttStats and ModuleRtpRtcpImpl2::PeriodicUpdate (rtp::SessionConfig::per_stream_rtt;
   // issue #568). Off by default until it is judged.
   bool per_stream_rtt = false;
+  // `receive_statistics_v2 on|off`: both sessions keep receive statistics as libwebrtc's
+  // StreamStatisticianImpl (max reordering threshold, stream restart, 255-scaled fraction lost;
+  // rtp::SessionConfig::receive_statistics_v2; issue #575). Off by default until it is judged.
+  bool receive_statistics_v2 = false;
   // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). On by default, as libwebrtc.

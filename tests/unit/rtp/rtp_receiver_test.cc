@@ -803,3 +803,31 @@ SM_TEST(RtpReceiver, FrameRotationComesFromTheLastPacketsCvo) {
   // The fourth frame carries no CVO (0, unchanged): rotation 0, as libwebrtc resets it per packet.
   for (size_t i = 0; i < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].rotation == rotations[i]);
 }
+
+// receive_statistics_v2 (issue #575): the statisticians follow libwebrtc's receive streams:
+// video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
+// without NACK, RTX and audio kDefaultMaxReorderingThreshold (50).
+SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
+  RtpReceiverConfig c = ReceiverCfg();
+  RtpReceiver v1(c);
+  SM_EXPECT_FALSE(v1.receive_statistics()->v2());
+  SM_EXPECT_FALSE(v1.rtx_receive_statistics()->v2());
+  c.receive_statistics_v2 = true;
+  RtpReceiver nack(c);
+  SM_EXPECT_TRUE(nack.receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
+  SM_EXPECT_TRUE(nack.rtx_receive_statistics()->v2());
+  SM_EXPECT_EQ(nack.rtx_receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  c.nack = false;
+  RtpReceiver no_nack(c);
+  SM_EXPECT_EQ(no_nack.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  RtpReceiverConfig a;
+  a.ssrc = kSsrc;
+  a.payload_type = 111;
+  a.clock_rate = 48000;
+  a.video = false;
+  a.receive_statistics_v2 = true;
+  RtpReceiver audio(a);
+  SM_EXPECT_TRUE(audio.receive_statistics()->v2());
+  SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+}
