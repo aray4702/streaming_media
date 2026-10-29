@@ -11,8 +11,8 @@
 // the chain switched on, at the settings `WebRtcVoiceEngine` applies to a
 // call (media/engine/webrtc_voice_engine.cc, `ApplyOptions`): AEC3, the
 // high-pass filter, noise suppression at kHigh, and AGC1 in adaptive analog
-// mode on desktop. Our AGC follows AGC2's adaptive digital controller, so it
-// is also measured against that. The VAD is `webrtc::CreateVad` (the
+// mode on desktop. Our side runs the ports of the same modules (#239-#242);
+// AGC2 is also measured against libwebrtc's AGC2. The VAD is `webrtc::CreateVad` (the
 // common_audio GMM VAD), which APM no longer runs itself.
 //
 //   out/compare/sm_apm_compare            # Markdown table on stdout
@@ -180,8 +180,8 @@ void Add(std::string module, std::string scenario, std::string metric, double ou
 }
 
 // E2E_HighPassFilter: DC 0.1 and 50 Hz hum 0.05 under a near-end talker.
-// With `apm_v2`, our side is the port of libwebrtc's filter (#239).
-void HighPass(bool apm_v2) {
+// Our side is the port of libwebrtc's filter (#239).
+void HighPass() {
   CallScenario s;
   s.far_talk = false;
   s.dc = 0.1f;
@@ -189,9 +189,8 @@ void HighPass(bool apm_v2) {
   s.noise_amp = 0.002f;
   auto c = MakeCall(s);
   ChainConfig cc{true, false, false, false, false};
-  ChainConfig ours_cc = cc;
-  ours_cc.apm_v2 = apm_v2;
-  const std::string module = apm_v2 ? "high-pass filter (apm v2)" : "high-pass filter";
+  const ChainConfig& ours_cc = cc;
+  const std::string module = "high-pass filter";
   auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   double hum_in = ToneAmp(Seg(c.capture, 10, 8), 50);
@@ -210,9 +209,9 @@ void HighPass(bool apm_v2) {
       SegmentDb(webrtc_t.out, 3, 20) - in);
 }
 
-// E2E_EchoDelay: far end only, echo path 60 ms, then 180 ms at 12 s. With
-// `apm_v2`, our side is the port of libwebrtc's AEC3 (#240).
-void EchoRouteChange(bool apm_v2) {
+// E2E_EchoDelay: far end only, echo path 60 ms, then 180 ms at 12 s. Our
+// side is the port of libwebrtc's AEC3 (#240).
+void EchoRouteChange() {
   CallScenario s;
   s.seconds = 24;
   s.echo_delay_ms = 60;
@@ -221,35 +220,33 @@ void EchoRouteChange(bool apm_v2) {
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, false, false, false};
-  ChainConfig ours_cc = cc;
-  ours_cc.apm_v2 = apm_v2;
-  const std::string module = apm_v2 ? "echo canceller (apm v2)" : "echo canceller";
+  const ChainConfig& ours_cc = cc;
+  const std::string module = "echo canceller";
   auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto erle = [&](const Output& o, double a, double b) {
     return SegmentDb(c.echo, a, b) - SegmentDb(o.out, a, b, kFs, o.latency);
   };
   Add(module, "far end only, route change", "ERLE 1-3 s (dB)", erle(ours, 1, 3), erle(webrtc, 1, 3),
-      apm_v2 ? "ours is libwebrtc's AEC3 (#240)" : "convergence");
+      "ours is libwebrtc's AEC3 (#240)");
   Add(module, "far end only, route change", "ERLE 6-12 s (dB)", erle(ours, 6, 12), erle(webrtc, 6, 12));
   Add(module, "far end only, route change", "ERLE 12-14 s (dB)", erle(ours, 12, 14), erle(webrtc, 12, 14),
       "just after the delay change");
   Add(module, "far end only, route change", "ERLE 18-24 s (dB)", erle(ours, 18, 24), erle(webrtc, 18, 24));
 }
 
-// E2E_EchoCanceller.FullDuplexCall: far end alone, then double talk at 15 s.
-// With `apm_v2`, our side is the port of libwebrtc's AEC3 (#240) and NS
+// E2E_EchoCanceller.Aec3FullDuplexCallAsLibwebrtc: far end alone, then
+// double talk at 15 s. Our side is the port of libwebrtc's AEC3 (#240) and NS
 // (#241).
-void EchoDoubleTalk(bool apm_v2) {
+void EchoDoubleTalk() {
   CallScenario s;
   s.seconds = 30;
   s.near_start_s = 15;
   s.noise_amp = 0.0005f;
   auto c = MakeCall(s);
   ChainConfig cc{true, true, true, false, false};
-  ChainConfig ours_cc = cc;
-  ours_cc.apm_v2 = apm_v2;
-  const std::string module = apm_v2 ? "echo canceller + NS (apm v2)" : "echo canceller + NS";
+  const ChainConfig& ours_cc = cc;
+  const std::string module = "echo canceller + NS";
   auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto erle = [&](const Output& o) { return SegmentDb(c.echo, 6, 15) - SegmentDb(o.out, 6, 15, kFs, o.latency); };
@@ -269,18 +266,17 @@ void EchoDoubleTalk(bool apm_v2) {
   Add(module, "full duplex", "near-end SNR in double talk (dB)", so, sw);
 }
 
-// E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR. With
-// `apm_v2`, our side is the port of libwebrtc's NS (#241).
-void Noise(bool apm_v2) {
+// E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR. Our side is
+// the port of libwebrtc's NS (#241).
+void Noise() {
   CallScenario s;
   s.far_talk = false;
   s.noise_amp = 0.03f;
   auto c = MakeCall(s);
   ChainConfig base{true, false, false, false, false};
   ChainConfig cc{true, false, true, false, false};
-  const std::string module = apm_v2 ? "noise suppressor (apm v2)" : "noise suppressor";
-  ChainConfig ours_cc = cc, ours_base_cc = base;
-  ours_cc.apm_v2 = ours_base_cc.apm_v2 = apm_v2;
+  const std::string module = "noise suppressor";
+  const ChainConfig &ours_cc = cc, &ours_base_cc = base;
   auto ours = RunOurs(c, ours_cc);
   auto webrtc = RunWebrtc(c, WebrtcConfig(cc));
   auto ours_base = RunOurs(c, ours_base_cc);
@@ -297,7 +293,7 @@ void Noise(bool apm_v2) {
   double out_o = BestLagSnr(ref_o, ours.out, start, &lo);
   double out_w = BestLagSnr(ref_w, webrtc.out, start, &lw);
   Add(module, "white noise, ~7 dB SNR", "SNR improvement (dB)", out_o - in_o, out_w - in_w,
-      apm_v2 ? "both kHigh (18 dB)" : "libwebrtc kHigh (18 dB), ours 18 dB");
+      "both kHigh (18 dB)");
   auto truth = SpeechTruth(c, -45.0f);
   auto atten = [&](const Output& o, const Output& b) {
     return FramesDb(b.out, truth, Truth::kSilence, 3, 20, 0) - FramesDb(o.out, truth, Truth::kSilence, 3, 20, o.latency);
@@ -314,10 +310,10 @@ void Noise(bool apm_v2) {
   Add(module, "white noise, ~7 dB SNR", "algorithmic delay (ms)", lo / 16.0, lw / 16.0);
 }
 
-// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB. With
-// `apm_v2`, our side is the port of the same controller (#242): AGC1 with the
-// emulated mic volume against libwebrtc's AGC1, AGC2 against its AGC2.
-void Gain(bool apm_v2) {
+// E2E_GainControl: a quiet talker (~-33 dBFS) for 20 s, then +20 dB. Our
+// side is the port of the same controller (#242): AGC1 with the emulated mic
+// volume against libwebrtc's AGC1, AGC2 against its AGC2.
+void Gain() {
   CallScenario q;
   q.far_talk = false;
   q.seconds = 40;
@@ -326,14 +322,10 @@ void Gain(bool apm_v2) {
   auto c = MakeCall(q);
   for (size_t i = c.capture.size() / 2; i < c.capture.size(); ++i) c.capture[i] *= sm::dsp::DbToLinear(20);
   ChainConfig cc{true, false, false, false, true};
-  ChainConfig v1 = cc;
-  v1.apm_v2 = false;
-  auto ours = RunOurs(c, v1);
-  ChainConfig v2 = cc;
-  v2.apm_v2 = true;
-  auto ours_agc1 = RunOurs(c, v2);
-  v2.agc2 = true;
-  auto ours_agc2 = RunOurs(c, v2);
+  auto ours_agc1 = RunOurs(c, cc);
+  ChainConfig cc2 = cc;
+  cc2.agc2 = true;
+  auto ours_agc2 = RunOurs(c, cc2);
   auto agc1 = RunWebrtc(c, WebrtcConfig(cc));
   auto agc2 = RunWebrtc(c, WebrtcConfig(cc, true));
   auto truth = SpeechTruth(c, -60.0f);
@@ -344,10 +336,10 @@ void Gain(bool apm_v2) {
     for (float v : o.out) p = std::max(p, std::fabs(v));
     return 20 * std::log10(p);
   };
-  const std::string module = apm_v2 ? "gain control (apm v2)" : "gain control";
+  const std::string module = "gain control";
   for (int i = 0; i < 2; ++i) {
     const Output& w = i == 0 ? agc1 : agc2;
-    if (apm_v2) ours = i == 0 ? ours_agc1 : ours_agc2;
+    const Output& ours = i == 0 ? ours_agc1 : ours_agc2;
     std::string sc = i == 0 ? "quiet then loud talker, AGC1 (default)" : "quiet then loud talker, AGC2 digital";
     Add(module, sc, "quiet talker in -> out, 12-20 s (dBFS)", lvl(ours, 12, 20), lvl(w, 12, 20),
         "input " + std::to_string(static_cast<int>(std::lround(in(12, 20)))) + " dBFS");
@@ -366,9 +358,7 @@ void VoiceActivity() {
   s.far_talk = false;
   s.noise_amp = 0.015f;
   auto c = MakeCall(s);
-  ChainConfig hpf_v1{true, false, false, false, false};
-  hpf_v1.apm_v2 = false;  // The input E2E_Vad's v1 detector reads.
-  auto in = RunOurs(c, hpf_v1).out;
+  auto in = RunOurs(c, {true, false, false, false, false}).out;
   sm::audio::VadConfig vc;
   sm::audio::Vad ours(vc);
   auto webrtc = webrtc::CreateVad(webrtc::Vad::kVadNormal);
@@ -396,16 +386,11 @@ void VoiceActivity() {
 }  // namespace
 
 int main() {
-  HighPass(false);
-  HighPass(true);
-  EchoRouteChange(false);
-  EchoRouteChange(true);
-  EchoDoubleTalk(false);
-  EchoDoubleTalk(true);
-  Noise(false);
-  Noise(true);
-  Gain(false);
-  Gain(true);
+  HighPass();
+  EchoRouteChange();
+  EchoDoubleTalk();
+  Noise();
+  Gain();
   VoiceActivity();
   std::printf("| module | scenario | metric | ours | libwebrtc | note |\n|---|---|---|---|---|---|\n");
   for (const auto& r : rows) {

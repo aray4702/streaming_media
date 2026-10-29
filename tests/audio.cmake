@@ -16,7 +16,6 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/agc_manager_test.cc
     unit/audio/clipping_predictor_test.cc
     unit/audio/dtx_level_mixer_test.cc
-    unit/audio/echo_test.cc
     unit/audio/filters_test.cc
     unit/audio/hpf_test.cc
     unit/audio/ns_test.cc
@@ -42,17 +41,11 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     AudioLevel
     CascadedBiquadFilter
     ConfigSelector
-    EchoCanceller
-    EchoDelay
-    GainControl
     GainController2
-    HighPassFilter
     Hpf
     MultiChannelContentDetector
-    NoiseSuppressor
     Ns
     PushResampler
-    Resampler
     SplResampler
     SplittingFilter
     TransientSuppressor
