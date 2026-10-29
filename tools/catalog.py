@@ -1451,12 +1451,19 @@ ALGORITHMS = [
                                 "It now uses exact integer arithmetic."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
-         headers=["sync/header_extensions.h"], unit=["HeaderExtensions"], e2e=["E2E_HeaderExtensions"],
+         headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],
          bench=["sync/HeaderExtensions_WriteParse4", "sync/RtpDemuxer_by_ssrc"],
          scenario="One 5-tuple carrying audio, three simulcast video encodings and RTX (repaired RID) with "
                   "reordering; MID/RID are only on each SSRC's first 10 packets, and one stream changes SSRC "
                   "mid-call. Routing accuracy.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. "
+               "The extension map and elements follow `RtpHeaderExtensionMap` and `RtpPacket` (#567, PR #598), and `RtpDemuxer` "
+               "follows `call/rtp_demuxer.cc` (#567): criteria with MID, RSID, SSRCs and payload types, libwebrtc's conflict rules, "
+               "and `ResolveSink`'s order (match-any, drop an unknown MID, MID/RSID from the packet or latched per SSRC, signalled "
+               "or bound SSRC, unique payload type), with at most 1000 SSRC bindings.",
+         verification="#567: unit.RtpDemuxer pins each rule of `ResolveSink` and `CriteriaWouldConflict`; "
+                      "`sm_rtcp_interop` (CI job compare-webrtc) runs this demuxer and libwebrtc's on the same random sinks "
+                      "and packets and checks that every packet goes to the same sink."),
     # ------------------------------------------------------------------ 9
     dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",

@@ -428,15 +428,15 @@ PR #304) and `video/rtp_video_stream_receiver2.cc` for #77.
 
 ### 8.4 Header extensions and BUNDLE demultiplexing (`src/sync/header_extensions.cc`)
 
-No libwebrtc source for this area is in `reference/`: the RFC 8285 parser and writer
-(`rtp_packet.cc`, `rtp_header_extensions.cc`), `RtpHeaderExtensionMap` and the
-BUNDLE demuxer (`call/rtp_demuxer.cc`, `call/rtp_stream_receiver_controller.*`) are
-missing. The table records what can be said without them.
+The RFC 8285 map, parser and writer (`rtp_header_extension_map.cc`, `rtp_packet.cc`,
+`rtp_header_extensions.cc`) and the BUNDLE demuxer (`call/rtp_demuxer.cc`) are in
+`reference/` since #571 and are ported (#567). `IsLegalMidName` / `IsLegalRsidName`
+(the character rules `RtpDemuxerCriteria::IsValid` applies) are not in `reference/`.
 
 | Our module | libwebrtc | Difference | Status | Issue |
 |---|---|---|---|---|
-| One- and two-byte extension forms, `ExtensionMap` | `rtp_packet.cc`, `rtp_header_extension_map.cc` | Not compared (file needed). Our `WriteHeaderExtensions` picks the one-byte form when all elements fit. Interop with libwebrtc's parser is covered for transport-cc and MID in `compare/webrtc/rtcp_interop.cc`; other extensions are not. | file needed (#57) | unplaced |
-| `RtpDemuxer` order (MID(+RID), known SSRC, unique payload type) | `call/rtp_demuxer.cc` (`ResolveSink`: SSRC sinks, then MID + RSID, then payload type) | Not compared (file needed). The one-to-one product decision keeps BUNDLE demultiplexing (`program.md` 0.1), but simulcast RID routing is only needed by an SFU. | file needed (#57) | unplaced |
+| One- and two-byte extension forms, `ExtensionMap` | `rtp_packet.cc`, `rtp_header_extension_map.cc` | **Same** (#567, PR #598): registration by URI, one-byte form only without extmap-allow-mixed, promotion to the two-byte form, rewrites in place, and the parser's rules for padding, id 15, oversized and repeated elements; interop-checked in `compare/webrtc/rtcp_interop.cc`. String values parse as `BaseRtpStringExtension::Parse` (empty or leading `\0` is no value, a `\0` ends it). | same | |
+| `RtpDemuxer` | `call/rtp_demuxer.cc` | **Same** (#567): criteria (MID, RSID, SSRCs, payload types, match-any) and their conflicts as `AddSink` / `CriteriaWouldConflict`; `ResolveSink`'s order: match-any, drop an unknown MID, MID or MID + RSID (from the packet or latched per SSRC; repaired RSID first), RSID alone, signalled or bound SSRC, then a payload type unique to one sink; `kMaxSsrcBindings` = 1000. `RtpDemuxerCriteria::IsValid` checks the 16-byte length but not the MID/RSID characters (`IsLegalMidName`, not in `reference/`). Interop: `sm_rtcp_interop` runs both demuxers on the same random sinks and packets. The session registers each receive stream by MID, SSRCs (media and RTX) and payload types, as Call (by SSRC) and the BUNDLE transport (by MID and payload type) do between them; the bench routes the same packets as before, so no parity cell moves. As in libwebrtc, the MID and RSID learned per SSRC are not bounded. | same | |
 | Extensions the harness registers | `webrtc_call.cc` | Only transport-wide sequence number. MID, abs-send-time and abs-capture-time are never on the wire in a comparison scenario. | n/a | |
 
 ### 8.5 Items for the Owner to place
