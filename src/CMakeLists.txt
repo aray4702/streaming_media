@@ -75,6 +75,7 @@ if(SM_WITH_AUDIO)
     audio/agc2_rnn_vad.cc
     audio/agc2_rnn_vad_weights.cc
     audio/sinc_resampler.cc
+    audio/spl_resampler.cc
     audio/agc1.cc
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc
