@@ -31,6 +31,11 @@ bool DropDueToSize(int pixel_count, int64_t bitrate_bps) {
   if (bitrate_bps < 500000) return pixel_count > 640 * 480;  // vga
   return false;
 }
+
+// video_stream_encoder.cc's kPendingFrameTimeoutMs.
+constexpr TimeDelta kPendingFrameTimeout = TimeDelta::Millis(1000);
+// QualityScalerSettings' kMinScaleFactor.
+constexpr double kMinScaleFactor = 0.01;
 }  // namespace
 
 VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session& session)
@@ -226,22 +231,22 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   const double fps = input_fps();
   const SendRates& rates = session_.rates();
   const DataRate target = rates.video_target;
-  dropper_.SetRates(target, fps);
-  // VideoSendStreamImpl::OnBitrateUpdated: link_allocation is the encoder
-  // target less the protection before the target is capped at the encoder
-  // maximum (SendRates::video_link_allocation), and at least the target, so
-  // the adjuster has headroom when the allocation is above the maximum.
-  // Congestion-window pushback lowers only the target
-  // (VideoStreamEncoder::UpdateTargetBitrate).
-  // VideoStreamEncoder::UpdateBitrateAllocation: the allocator may raise the
-  // allocation to the codec minimum, and the bandwidth allocation is at least
-  // that (the dropper above has already been given the unraised target).
-  DataRate allocation = target;
-  if (cfg_.allocation_min_bitrate.bps() > 0 && target.bps() > 0) {
-    allocation = std::max(cfg_.allocation_min_bitrate, std::min(target, cfg_.allocation_max_bitrate));
+  // VideoSendStreamImpl's constructor gives the encoder the allocator's start bitrate (SetStartBitrate),
+  // before the first allocation.
+  if (!start_bitrate_set_) {
+    start_bitrate_set_ = true;
+    // VideoStreamEncoderResourceManager::SetStartBitrate passes the time in microseconds
+    // (clock_->TimeInMicroseconds()), and InitialFrameDropper::SetTargetBitrate subtracts it from the
+    // time in milliseconds, as here.
+    start_bitrate_ = target;
+    start_bitrate_time_ = now.us();
   }
-  const DataRate link = std::max({target, allocation, rates.video_link_allocation});
-  const DataRate encoder_rate = cfg_.bitrate_adjuster ? AdjustedRate(allocation, link, fps, !cwnd_drop, new_adjuster, now) : allocation;
+  if (rates.video_allocation_updates == 0 || rates.video_allocation_updates != target_updates_seen_) {
+    target_updates_seen_ = rates.video_allocation_updates;
+    OnTargetBitrate(target, now);
+  }
+  dropper_.SetRates(target, fps);
+  const DataRate encoder_rate = EncoderRate(rates, fps, !cwnd_drop, new_adjuster, now);
   // No keyframe sent yet: the first one is already due through keyframe_needed_.
   const bool periodic = cfg_.keyframe_interval.us() > 0 && last_keyframe_.IsFinite() &&
                         now - last_keyframe_ >= cfg_.keyframe_interval;
@@ -253,12 +258,14 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   d.width = width;
   d.height = height;
   d.fps = fps;
+  d.capture_time = now;
   // The outage pause, then congestion-window pushback (keyframes included),
   // then the frame dropper (keyframes included). With quality scaling the
   // order is VideoStreamEncoder's: the congestion-window drop (OnFrame), then
   // in MaybeEncodeVideoFrame the initial frame drop (DropDueToSize and
   // OnMaybeEncodeFrame), the pause (EncoderPaused) and the frame dropper.
   const bool paused = paused_ || rates.encoder_paused;
+  encoder_paused_seen_ = paused;
   if (paused && !cfg_.quality_scaling) {
     d.reason = DropReason::kPaused;
   } else if (cwnd_drop || (!cfg_.quality_scaling && session_.send_side().DropCapturedFrame())) {
@@ -267,9 +274,24 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     d.reason = DropReason::kSize;
   } else if (paused) {
     d.reason = DropReason::kPaused;
-  } else if (dropper_.ShouldDrop(fps)) {
-    d.reason = DropReason::kFrameDropper;
   } else {
+    d.reason = DropReason::kNone;
+  }
+  // MaybeEncodeVideoFrame's pending_frame_: a frame held from before is dropped now (ProcessDroppedFrame,
+  // kEncoderQueue), and a frame dropped for its size or the pause is held in its place. OnFrame's
+  // congestion-window drop returns before MaybeEncodeVideoFrame and leaves it.
+  if (d.reason != DropReason::kCongestionWindow) {
+    if (pending_frame_) {
+      pending_frame_.reset();
+      ++pending_dropped_;
+    }
+    if (d.reason == DropReason::kSize || d.reason == DropReason::kPaused) {
+      pending_frame_ = PendingFrame{width, height, now};
+      d.hold = true;
+    }
+  }
+  if (d.reason == DropReason::kNone && dropper_.ShouldDrop(fps)) d.reason = DropReason::kFrameDropper;
+  if (d.reason == DropReason::kNone) {
     d.encode = true;
     // EncodeVideoFrame: OnEncodeStarted with the encoded frame and the time
     // the frame was first seen.
@@ -285,6 +307,87 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   ++dropped_[static_cast<int>(d.reason)];
   SM_EVENT(cfg_.events, now, "video_send", "frame_dropped", static_cast<double>(d.reason), 0);
   if (reconfigured) session_.send_side().OnVideoEncoderReconfigured(now);
+  return d;
+}
+
+DataRate VideoSendController::EncoderRate(const SendRates& rates, double fps, bool encode_path, bool new_adjuster,
+                                          Timestamp now) {
+  // VideoSendStreamImpl::OnBitrateUpdated: link_allocation is the encoder
+  // target less the protection before the target is capped at the encoder
+  // maximum (SendRates::video_link_allocation), and at least the target, so
+  // the adjuster has headroom when the allocation is above the maximum.
+  // Congestion-window pushback lowers only the target
+  // (VideoStreamEncoder::UpdateTargetBitrate).
+  // VideoStreamEncoder::UpdateBitrateAllocation: the allocator may raise the
+  // allocation to the codec minimum, and the bandwidth allocation is at least
+  // that (the frame dropper is given the unraised target).
+  const DataRate target = rates.video_target;
+  DataRate allocation = target;
+  if (cfg_.allocation_min_bitrate.bps() > 0 && target.bps() > 0) {
+    allocation = std::max(cfg_.allocation_min_bitrate, std::min(target, cfg_.allocation_max_bitrate));
+  }
+  const DataRate link = std::max({target, allocation, rates.video_link_allocation});
+  return cfg_.bitrate_adjuster ? AdjustedRate(allocation, link, fps, encode_path, new_adjuster, now) : allocation;
+}
+
+void VideoSendController::OnTargetBitrate(DataRate target, Timestamp now) {
+  // InitialFrameDropper::SetTargetBitrate: once, within the interval after the start bitrate was set, a
+  // target below `factor` times it restarts the initial frame drop (the estimate fell far below the start
+  // rate, so the resolution may be too large again).
+  if (start_bitrate_.bps() <= 0 || has_seen_first_bwe_drop_ || !cfg_.quality_scaling) return;
+  const int64_t interval_ms = cfg_.initial_bitrate_interval.value_or(TimeDelta::Millis(-1)).ms();
+  const double factor = cfg_.initial_bitrate_factor.value_or(0);
+  if (interval_ms < 0 || factor < kMinScaleFactor) return;  // Unset or ignored.
+  const int64_t diff_ms = now.ms() - start_bitrate_time_;
+  if (diff_ms < interval_ms && target < start_bitrate_ * factor) {
+    initial_framedrop_ = 0;
+    has_seen_first_bwe_drop_ = true;
+    ++initial_framedrop_resets_;
+    SM_EVENT(cfg_.events, now, "video_send", "initial_frame_drop_reset", static_cast<double>(start_bitrate_.bps()),
+             static_cast<double>(target.bps()));
+  }
+}
+
+std::optional<EncodeDecision> VideoSendController::MaybeEncodePendingFrame(Timestamp now) {
+  // VideoStreamEncoder::OnBitrateUpdated: video_suspension_changed to not suspended, with a stored frame
+  // that DropDueToSize lets through, encodes it (EncodeVideoFrame, past the frame dropper) if it was posted
+  // less than kPendingFrameTimeoutMs ago; the stored frame is released either way.
+  // Each allocation update is an OnBitrateUpdated: SetTargetBitrate runs first.
+  const SendRates& rates = session_.rates();
+  const DataRate target = rates.video_target;
+  if (start_bitrate_set_ && rates.video_allocation_updates != 0 && rates.video_allocation_updates != target_updates_seen_) {
+    target_updates_seen_ = rates.video_allocation_updates;
+    OnTargetBitrate(target, now);
+  }
+  const bool paused = paused_ || rates.encoder_paused;
+  const bool resumed = encoder_paused_seen_ && !paused;
+  encoder_paused_seen_ = paused;
+  if (!resumed || !pending_frame_) return std::nullopt;
+  const PendingFrame p = *pending_frame_;
+  if (cfg_.quality_scaling && initial_framedrop_ < kMaxInitialFramedrop && target.bps() > 0 &&
+      DropDueToSize(p.width * p.height, target.bps())) {
+    return std::nullopt;  // Still held: the next captured frame drops it.
+  }
+  pending_frame_.reset();
+  if (now - p.posted >= kPendingFrameTimeout) {
+    ++pending_dropped_;
+    return std::nullopt;
+  }
+  const double fps = input_fps();
+  dropper_.SetRates(target, fps);
+  EncodeDecision d;
+  d.encode = true;
+  d.target = EncoderRate(rates, fps, false, false, now);
+  const bool periodic = cfg_.keyframe_interval.us() > 0 && last_keyframe_.IsFinite() &&
+                        now - last_keyframe_ >= cfg_.keyframe_interval;
+  d.keyframe = keyframe_needed_ || periodic;
+  d.width = p.width;
+  d.height = p.height;
+  d.fps = fps;
+  d.capture_time = p.posted;
+  if (cfg_.quality_scaling) overuse_.OnFrameCaptured(p.width * p.height, encodes_started_++, now);
+  ++pending_encoded_;
+  SM_EVENT(cfg_.events, now, "video_send", "pending_frame_encoded", static_cast<double>((now - p.posted).us()) / 1000.0, 0);
   return d;
 }
 
@@ -392,6 +495,9 @@ void VideoSendController::ExportMetrics(MetricsWriter& w) const {
     w.Counter("cpu_adapt_ups", cpu_adapt_ups_);
     w.Counter("adapt_ups_not_most_limited", adapt_ups_not_most_limited_);
   }
+  w.Counter("pending_dropped", pending_dropped_);
+  w.Counter("pending_encoded", pending_encoded_);
+  if (cfg_.quality_scaling) w.Counter("initial_framedrop_resets", initial_framedrop_resets_);
   w.Gauge("paused", paused_ ? 1 : 0);
 }
 

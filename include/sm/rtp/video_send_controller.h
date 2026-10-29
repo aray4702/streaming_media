@@ -37,9 +37,16 @@
 // above 640x480 under 500 kbps; the encoder model reports no resolution
 // bitrate limits), each one adapting the resolution down. A new frame size
 // reconfigures the encoder, which makes the next frame a keyframe
-// (ReconfigureEncoder's encoder reset). Not ported: the start-bitrate reset of
-// the initial frame drop (QualityScalerSettings' InitialBitrateIntervalMs and
-// Factor are unset by default) and the dropped frame kept as `pending_frame_`.
+// (ReconfigureEncoder's encoder reset). The start-bitrate reset of the initial
+// frame drop (InitialFrameDropper::SetTargetBitrate) runs only with
+// QualityScalerSettings' InitialBitrateIntervalMs and Factor, which are unset
+// by default, as here (`initial_bitrate_interval`, `initial_bitrate_factor`).
+// A frame dropped for its size or while the encoder is paused is held, as
+// VideoStreamEncoder's `pending_frame_` (EncodeDecision::hold): the next
+// captured frame drops it (kEncoderQueue), and when the encoder resumes
+// (OnBitrateUpdated with a non-zero target after a zero one) it is encoded at
+// once if it is no longer too large and was captured less than 1 s ago
+// (kPendingFrameTimeoutMs). MaybeEncodePendingFrame returns that decision.
 // The quality scaler's CheckQpTask due at a frame's capture time runs after
 // that frame was encoded and its QP reported, and its restriction reaches the
 // source through a worker-queue task (OnVideoSourceRestrictionsUpdated), so a
@@ -121,6 +128,13 @@ struct VideoSendControllerConfig {
   // default 24/37) and kDefaultMinPixelsPerFrame.
   video::QpThresholds qp_thresholds;
   int min_pixels_per_frame = 320 * 180;
+  // QualityScalerSettings' WebRTC-Video-QualityScalerSettings `initial_bitrate_interval_ms` and
+  // `initial_bitrate_factor` (rtc_base/experiments/quality_scaler_settings.cc), unset by default as in
+  // M157: with both, a target below `factor` times the start bitrate within `interval` of it restarts the
+  // initial frame drop once (InitialFrameDropper::SetTargetBitrate). A negative interval or a factor below
+  // 0.01 (kMinScaleFactor) is ignored, as there.
+  std::optional<TimeDelta> initial_bitrate_interval;
+  std::optional<double> initial_bitrate_factor;
   EventSink* events = nullptr;
 };
 
@@ -138,6 +152,11 @@ struct EncodeDecision {
   DataRate target;  // Rate to configure the encoder with (after the bitrate adjuster).
   int width = 0, height = 0;
   double fps = 0;  // Measured input frame rate (GetInputFramerateFps).
+  // A dropped frame the app keeps: MaybeEncodePendingFrame may ask for it on resume (VideoStreamEncoder's
+  // pending_frame_, set for kSize and kPaused). The next OnCapturedFrame releases it.
+  bool hold = false;
+  // When the frame to encode was captured (OnCapturedFrame's `now`); a held frame's, from MaybeEncodePendingFrame.
+  Timestamp capture_time = Timestamp::MinusInfinity();
 };
 
 struct EncodedFrameReport {
@@ -153,6 +172,11 @@ class VideoSendController : public MetricsSource {
 
   // Per captured frame, before encoding.
   EncodeDecision OnCapturedFrame(const CapturedFrame& frame, Timestamp now);
+  // After the session ran (Process, OnPacket): VideoStreamEncoder::OnBitrateUpdated's resume. When the
+  // encoder was paused at the last call and is not any more, the held frame (EncodeDecision::hold) is
+  // encoded if it fits and is less than kPendingFrameTimeoutMs (1 s) old; the decision names it by its
+  // capture_time. Otherwise nothing. The decision is an encode like OnCapturedFrame's (OnEncoded follows).
+  std::optional<EncodeDecision> MaybeEncodePendingFrame(Timestamp now);
   // After a frame the decision allowed was encoded. Not called for a drop.
   void OnEncoded(const EncodedFrameReport& report, Timestamp now);
   // Forward every Session event: the controller acts on kEncoderPause,
@@ -166,6 +190,8 @@ class VideoSendController : public MetricsSource {
   const video::VideoStreamAdapter& stream_adapter() const { return stream_adapter_; }
   const cc::CpuOveruseDetector& overuse_detector() const { return overuse_; }
   bool paused() const { return paused_; }
+  // A frame is held (EncodeDecision::hold) and not yet released.
+  bool has_pending_frame() const { return pending_frame_.has_value(); }
   // VideoStreamEncoder::GetInputFramerateFps: the rate of captured frames over
   // the last 2970 ms (FrameCadenceAdapter's RateStatistics), or the configured
   // maximum while it is unavailable or zero.
@@ -193,6 +219,10 @@ class VideoSendController : public MetricsSource {
   // processor's OnVideoSourceRestrictionsUpdated and the sink wants.
   void ApplyAdaptation(const video::VideoStreamAdapter::Adaptation& a, Resource r, Timestamp now);
   bool QualityScalingDropsForSize(int width, int height, DataRate target, Timestamp now);
+  // VideoStreamEncoder::UpdateBitrateAllocation's allocation and the bitrate adjuster (see the .cc).
+  DataRate EncoderRate(const SendRates& rates, double fps, bool encode_path, bool new_adjuster, Timestamp now);
+  // VideoStreamEncoderResourceManager::SetStartBitrate / SetTargetBitrate for the InitialFrameDropper.
+  void OnTargetBitrate(DataRate target, Timestamp now);
   // The rate the encoder is set to, re-adjusted only when libwebrtc's
   // VideoStreamEncoder calls UpdateBitrateAllocation (see the .cc).
   // `encode_path`: the frame got past OnFrame's congestion-window drop.
@@ -208,6 +238,19 @@ class VideoSendController : public MetricsSource {
   video::VideoStreamAdapter stream_adapter_;
   video::VideoAdapter video_adapter_;
   int initial_framedrop_ = 0;  // InitialFrameDropper::initial_framedrop_.
+  // InitialFrameDropper's set_start_bitrate_ and its time, has_seen_first_bwe_drop_.
+  DataRate start_bitrate_ = DataRate::Zero();
+  int64_t start_bitrate_time_ = 0;
+  bool start_bitrate_set_ = false, has_seen_first_bwe_drop_ = false;
+  uint64_t target_updates_seen_ = 0;
+  // VideoStreamEncoder::pending_frame_ (its size as encoded) and pending_frame_post_time_us_.
+  struct PendingFrame {
+    int width = 0, height = 0;
+    Timestamp posted;
+  };
+  std::optional<PendingFrame> pending_frame_;
+  bool encoder_paused_seen_ = false;  // EncoderPaused() at the last look: a resume is a change from it.
+  uint64_t pending_dropped_ = 0, pending_encoded_ = 0, initial_framedrop_resets_ = 0;
   int configured_width_ = 0, configured_height_ = 0;  // The encoder's send_codec_ size.
   uint64_t adapt_downs_ = 0, adapt_ups_ = 0;
   cc::CpuOveruseDetector overuse_;
