@@ -1039,6 +1039,14 @@ SM_TEST(Session, RttIsAggregatedPerSendStreamByDefault) {
   SM_EXPECT_TRUE(SessionConfig{}.per_stream_rtt);
 }
 
+// #575: every receive stream keeps libwebrtc's StreamStatisticianImpl rules (max reordering
+// threshold, stream restart, 255-scaled fraction lost; receive_statistics_impl.cc), as
+// libwebrtc always does.
+SM_TEST(Session, ReceiveStatisticsFollowLibwebrtcByDefault) {
+  SM_EXPECT_TRUE(SessionConfig{}.receive_statistics_v2);
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.receive_statistics_v2);
+}
+
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
 // frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {

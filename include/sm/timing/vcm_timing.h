@@ -21,6 +21,8 @@
 // `now`. Field-trial overrides are not ported; every default is.
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -86,6 +88,24 @@ class InterFrameDelayVariationCalculator {
   int64_t prev_rtp_timestamp_unwrapped_ = 0;
 };
 
+// rtc_base/rolling_accumulator.h's RollingAccumulator<uint64_t>, mean only: a window of the last
+// kWindow samples whose mean is rtc_base/numerics/running_statistics.h's Welford update, with its
+// reciprocal when the oldest sample leaves. Not sum / count: the two can differ in the last bit,
+// which moves a truncated mean by 1 (#674).
+class RollingMean {
+ public:
+  static constexpr size_t kWindow = 30;  // JitterEstimator's fps_counter_(30).
+  void Reset();
+  void AddSample(uint64_t sample);
+  double ComputeMean() const { return size_ == 0 ? 0 : mean_; }  // GetMean().value_or(0).
+
+ private:
+  std::array<uint64_t, kWindow> samples_{};
+  size_t next_index_ = 0;
+  int64_t size_ = 0;
+  double mean_ = 0;
+};
+
 // video/timing/jitter_estimator.cc with its default Config.
 class JitterEstimator {
  public:
@@ -124,7 +144,7 @@ class JitterEstimator {
   Timestamp latest_nack_ = Timestamp::Micros(0);
   int nack_count_ = 0;
   RttFilter rtt_filter_;
-  std::deque<int64_t> fps_counter_;  // RollingAccumulator<uint64_t>(30): frame periods in us.
+  RollingMean fps_counter_;  // RollingAccumulator<uint64_t>(30): frame periods in us.
 };
 
 // video/timing/timestamp_extrapolator.cc with its default Config.

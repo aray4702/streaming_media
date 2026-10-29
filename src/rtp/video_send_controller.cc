@@ -95,10 +95,10 @@ void VideoSendController::OnCpuSignal(cc::CpuOveruseDetector::Signal signal, Tim
 }
 
 void VideoSendController::ApplyAdaptation(const video::VideoStreamAdapter::Adaptation& a, Resource r, Timestamp now) {
-  const bool down = a.resolution_adaptations > stream_adapter_.resolution_adaptations();
+  const bool down = a.counters().Total() > stream_adapter_.counters().Total();
   stream_adapter_.ApplyAdaptation(a);
   // OnVideoSourceRestrictionsUpdated with a reason: UpdateResourceLimitations.
-  limits_[r] = ResourceLimit{a.restrictions, a.resolution_adaptations};
+  limits_[r] = ResourceLimit{a.restrictions, a.counters().Total()};
   ++(down ? adapt_downs_ : adapt_ups_);
   if (r == kCpuResource) ++(down ? cpu_adapt_downs_ : cpu_adapt_ups_);
   video_adapter_.OnSinkWants(stream_adapter_.restrictions());
@@ -141,7 +141,7 @@ void VideoSendController::OnResourceUnderuse(Resource r, Timestamp now) {
       r_most = r_most || i == r;
     }
   }
-  if (n_most > 0 && most >= stream_adapter_.resolution_adaptations()) {
+  if (n_most > 0 && most >= stream_adapter_.counters().Total()) {
     if (!r_most) {
       ++adapt_ups_not_most_limited_;  // kNotMostLimitedResource.
       return;
@@ -149,7 +149,7 @@ void VideoSendController::OnResourceUnderuse(Resource r, Timestamp now) {
     if (n_most > 1) {
       // kSharedMostLimitedResource: the resource's limit is relaxed, the
       // stream is not.
-      limits_[r] = ResourceLimit{a.restrictions, a.resolution_adaptations};
+      limits_[r] = ResourceLimit{a.restrictions, a.counters().Total()};
       return;
     }
   }

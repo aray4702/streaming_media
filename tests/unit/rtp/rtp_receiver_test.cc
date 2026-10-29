@@ -852,13 +852,15 @@ SM_TEST(RtpReceiver, SpsPpsTrackerDropsAParameterSetWithoutIds) {
 
 // receive_statistics_v2 (issue #575): the statisticians follow libwebrtc's receive streams:
 // video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
-// without NACK, RTX and audio kDefaultMaxReorderingThreshold (50).
+// without NACK, RTX and audio kDefaultMaxReorderingThreshold (50). On by default, as
+// libwebrtc; off keeps the v1 counts.
 SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
   RtpReceiverConfig c = ReceiverCfg();
+  c.receive_statistics_v2 = false;
   RtpReceiver v1(c);
   SM_EXPECT_FALSE(v1.receive_statistics()->v2());
   SM_EXPECT_FALSE(v1.rtx_receive_statistics()->v2());
-  c.receive_statistics_v2 = true;
+  c = ReceiverCfg();
   RtpReceiver nack(c);
   SM_EXPECT_TRUE(nack.receive_statistics()->v2());
   SM_EXPECT_EQ(nack.receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
@@ -872,7 +874,6 @@ SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
   a.payload_type = 111;
   a.clock_rate = 48000;
   a.video = false;
-  a.receive_statistics_v2 = true;
   RtpReceiver audio(a);
   SM_EXPECT_TRUE(audio.receive_statistics()->v2());
   SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);

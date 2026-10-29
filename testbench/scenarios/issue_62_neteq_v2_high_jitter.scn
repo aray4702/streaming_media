@@ -17,8 +17,4 @@ expect audio.jb_delay_p95_ms >= 95
 # (9e436cb). Capped at libwebrtc's worst seed, as for #457.
 # PR for #477 (Opus RTP clock and NetEq at 48 kHz, as libwebrtc): stays <= 180 (set for #476). With #476 merged, ours 170
 # on seed 1 (seeds 1-10 100-170, mean 133); libwebrtc seeds 1-10 100-180 (mean 129) on main's compare-webrtc.
-# PR for #577 (expected_packet_overhead on by default, as libwebrtc's RtpVideoSender; program.md 0.2, needs-human): was <= 180.
-# Ours 190 on seed 1 (seeds 1-10 90-190, mean 123); off (main) seeds 1-10 100-190, mean 129, 190 on seed 3.
-# libwebrtc seeds 1-10 100-180 (mean 129) on main's compare-webrtc (high_jitter). 2 B per video packet moves the
-# jitter draw, not the buffer: one step (10 ms) past libwebrtc's worst seed, which main already reaches on seed 3.
-expect audio.jb_delay_p95_ms <= 190
+expect audio.jb_delay_p95_ms <= 180

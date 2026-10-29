@@ -1,9 +1,9 @@
 {
  "description": "Video-only call, 3 s outage at 10 s: freezes counted as libwebrtc's VideoQualityObserver counts them (issue",
  "metrics": {
-  "cc.goodput_kbps": 2323,
+  "cc.goodput_kbps": 2322,
   "cc.max_settle_ms": 27000,
-  "cc.queue_max_ms": 92.33,
+  "cc.queue_max_ms": 92.32,
   "cc.queue_over_200ms_pct": 0,
   "cc.queue_p95_ms": 26.68,
   "cc.rtt_p50_ms": 91,
@@ -61,7 +61,7 @@
   "video.longest_freeze_ms": 3249,
   "video.pause_count": 0,
   "video.pause_total_ms": 0,
-  "video.qp_mean": 20.62,
+  "video.qp_mean": 20.63,
   "video.render_fps": 27.4,
   "video.render_ratio_pct": 94.73,
   "video.residual_loss_pct": 3.344,
