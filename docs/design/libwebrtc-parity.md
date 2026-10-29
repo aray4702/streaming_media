@@ -24,6 +24,9 @@ session layer (numbered 9, as in the algorithm catalog). Rows were found by read
 `same` was compared; a module not listed has not been compared yet. No code
 is changed by this document.
 
+The defaults, field trials and switches a call runs with are inventoried
+separately, in [config-inventory.md](config-inventory.md) (step 3, #480).
+
 ## 3. Packet loss
 
 Reference files: `modules/video_coding/nack_requester.*`,
