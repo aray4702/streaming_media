@@ -476,6 +476,12 @@ VideoStreamAdapter::Status VideoStreamAdapter::AdaptUp() {
   return a.status;
 }
 
+VideoStreamAdapter::Adaptation VideoStreamAdapter::GetAdaptationTo(const VideoAdaptationCounters& counters,
+                                                                 const VideoSourceRestrictions& restrictions) const {
+  // Adapts up/down from the current levels so counters are equal.
+  return ToAdaptation(Step{Status::kValid, restrictions, counters});
+}
+
 void VideoStreamAdapter::ApplyAdaptation(const Adaptation& a) {
   if (a.status != Status::kValid) return;
   if (DidIncreaseResolution(restrictions_, a.restrictions)) {

@@ -184,6 +184,10 @@ class VideoStreamAdapter {
   Adaptation GetAdaptationDown() const;
   Adaptation GetAdaptationUp() const;
   Adaptation GetAdaptDownResolution() const;
+  // GetAdaptationTo: a step straight to `counters` and `restrictions`, which
+  // ResourceAdaptationProcessor takes when the most limiting resource is
+  // removed (always valid).
+  Adaptation GetAdaptationTo(const VideoAdaptationCounters& counters, const VideoSourceRestrictions& restrictions) const;
   // Applies a valid step computed on the current state.
   void ApplyAdaptation(const Adaptation& a);
   // GetAdaptationDown / GetAdaptationUp, then ApplyAdaptation when valid.

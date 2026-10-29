@@ -622,3 +622,104 @@ SM_TEST(VideoSendController, StartBitrateDropRestartsTheInitialFrameDrop) {
     SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), configured ? 2 : 0);
   }
 }
+
+SM_TEST(VideoSendController, QualityScalerRemovalClearsItsStepsAndReAddingRestartsTheInitialDrop) {
+  // VideoStreamEncoderResourceManager::ConfigureQualityScaler on an encoder
+  // info change (issue #646): without trusted QP thresholds the quality scaler
+  // is removed. It imposed the only steps (the initial frame drop's two), so
+  // RemoveLimitationsImposedByResource clears the restrictions, and the initial
+  // frame drop is disabled (OnQualityScalerSettingsUpdated).
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  VideoSendController c(cfg, s);
+  int t = 0;
+  EncodeDecision d;
+  do {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    t += 33;
+  } while (!d.encode);
+  SM_EXPECT_EQ(d.height, 360);
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(t - 33));
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  SM_EXPECT_TRUE(c.quality_scaler_started());
+
+  c.OnEncoderInfoChanged({.quality_scaling = false, .cpu_overuse_detection = true}, At(t));
+  SM_EXPECT_FALSE(c.quality_scaler_started());
+  SM_EXPECT_TRUE(c.encode_usage_started());
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 0);
+  // 720p again, encoded although it is too large for the rate: no initial drop.
+  d = c.OnCapturedFrame({1280, 720}, At(t));
+  SM_EXPECT_TRUE(d.encode);
+  SM_EXPECT_EQ(d.height, 720);
+  SM_EXPECT_TRUE(d.keyframe);  // A new size resets the encoder.
+  // High QP no longer adapts down: the removed resource is not listened to.
+  for (int i = 0; i < 200; ++i) {
+    t += 33;
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 50}, At(t));
+  }
+  SM_EXPECT_EQ(d.height, 720);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 0);
+
+  // Added again: a new QualityScaler, and the initial frame drop restarts.
+  c.OnEncoderInfoChanged({}, At(t += 33));
+  SM_EXPECT_TRUE(c.quality_scaler_started());
+  d = c.OnCapturedFrame({1280, 720}, At(t));
+  SM_EXPECT_TRUE(d.reason == DropReason::kSize);
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 1);
+}
+
+SM_TEST(VideoSendController, RemovingTheMostLimitedResourceRestoresTheNextOne) {
+  // ResourceAdaptationProcessor::RemoveLimitationsImposedByResource (issue
+  // #646): the quality scaler holds the initial frame drop's two steps (640x360),
+  // CPU overuse adds a third (480x270). Removing the CPU resource (an encoder
+  // without enable_cpu_overuse_detection) goes back to the quality scaler's
+  // restrictions and counters; removing the quality scaler then clears them.
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  VideoSendController c(cfg, s);
+  int t = 0;
+  for (; t < 40000 && c.stream_adapter().resolution_adaptations() < 3; t += 33) {
+    const auto d = c.OnCapturedFrame({1280, 720}, At(t));
+    // Every frame takes a whole frame interval to encode: 100% usage.
+    if (d.encode) c.OnEncoded({DataSize::Bytes(1000), d.keyframe, 30}, At(t + 33));
+  }
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 3);
+  SM_EXPECT_EQ(c.OnCapturedFrame({1280, 720}, At(t)).height, 270);
+  const auto quality = c.adaptation_processor().limitations(VideoSendController::kQualityResource);
+  SM_ASSERT_TRUE(quality.has_value());
+  SM_EXPECT_EQ(quality->counters.resolution_adaptations, 2);
+
+  c.OnEncoderInfoChanged({.quality_scaling = true, .cpu_overuse_detection = false}, At(t += 33));
+  SM_EXPECT_FALSE(c.encode_usage_started());
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  SM_EXPECT_TRUE(c.stream_adapter().restrictions() == quality->restrictions);
+  SM_EXPECT_EQ(c.OnCapturedFrame({1280, 720}, At(t)).height, 360);
+
+  c.OnEncoderInfoChanged({.quality_scaling = false, .cpu_overuse_detection = false}, At(t += 33));
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 0);
+  SM_EXPECT_EQ(c.OnCapturedFrame({1280, 720}, At(t)).height, 720);
+}
+
+SM_TEST(VideoSendController, RemovingALessLimitedResourceKeepsTheRestrictions) {
+  // The CPU resource imposed nothing: removing it leaves the quality scaler's
+  // steps (RemoveLimitationsImposedByResource returns early), and adding it
+  // back restarts its check (ConfigureEncodeUsageResource).
+  Session s(Cfg());
+  VideoSendControllerConfig cfg;
+  VideoSendController c(cfg, s);
+  int t = 0;
+  EncodeDecision d;
+  do {
+    d = c.OnCapturedFrame({1280, 720}, At(t));
+    t += 33;
+  } while (!d.encode);
+  c.OnEncoded({DataSize::Bytes(4000), true, 30}, At(t - 33));
+  c.OnEncoderInfoChanged({.quality_scaling = true, .cpu_overuse_detection = false}, At(t));
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  SM_EXPECT_EQ(c.OnCapturedFrame({1280, 720}, At(t)).height, 360);
+  c.OnEncoderInfoChanged({}, At(t += 33));
+  SM_EXPECT_TRUE(c.encode_usage_started());
+  SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
+  SM_EXPECT_FALSE(c.overuse_detector().encode_usage_percent().has_value());
+}

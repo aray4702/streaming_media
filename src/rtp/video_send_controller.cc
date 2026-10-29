@@ -48,6 +48,12 @@ VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session&
   // EncodeUsageResource::SetTargetFrameRate: the codec's maximum frame rate
   // (MaybeUpdateTargetFrameRate; MAINTAIN_FRAMERATE sets no frame-rate limit).
   overuse_.OnTargetFramerateUpdated(static_cast<int>(cfg.fps));
+  // ConfigureQualityScaler and ConfigureEncodeUsageResource with the encoder's
+  // default info (trusted QP thresholds, CPU overuse detection on).
+  if (cfg.quality_scaling) {
+    processor_.AddResource(kQualityResource);
+    processor_.AddResource(kCpuResource);
+  }
 }
 
 namespace {
@@ -83,77 +89,78 @@ void VideoSendController::UpdateFrameRate(Timestamp now) {
 void VideoSendController::OnQualityScalerSignal(video::QualityScaler::Signal signal, Timestamp now) {
   // QualityScalerResource::OnReportQpUsageHigh / Low.
   using Signal = video::QualityScaler::Signal;
-  if (signal == Signal::kAdaptDown) OnResourceOveruse(kQualityResource, now);
-  if (signal == Signal::kAdaptUp) OnResourceUnderuse(kQualityResource, now);
+  using State = video::ResourceUsageState;
+  if (signal == Signal::kAdaptDown) OnResourceUsageStateMeasured(kQualityResource, State::kOveruse, now);
+  if (signal == Signal::kAdaptUp) OnResourceUsageStateMeasured(kQualityResource, State::kUnderuse, now);
 }
 
 void VideoSendController::OnCpuSignal(cc::CpuOveruseDetector::Signal signal, Timestamp now) {
   // EncodeUsageResource::AdaptDown / AdaptUp.
   using Signal = cc::CpuOveruseDetector::Signal;
-  if (signal == Signal::kOveruse) OnResourceOveruse(kCpuResource, now);
-  if (signal == Signal::kUnderuse) OnResourceUnderuse(kCpuResource, now);
+  using State = video::ResourceUsageState;
+  if (signal == Signal::kOveruse) OnResourceUsageStateMeasured(kCpuResource, State::kOveruse, now);
+  if (signal == Signal::kUnderuse) OnResourceUsageStateMeasured(kCpuResource, State::kUnderuse, now);
 }
 
-void VideoSendController::ApplyAdaptation(const video::VideoStreamAdapter::Adaptation& a, Resource r, Timestamp now) {
-  const bool down = a.counters().Total() > stream_adapter_.counters().Total();
-  stream_adapter_.ApplyAdaptation(a);
-  // OnVideoSourceRestrictionsUpdated with a reason: UpdateResourceLimitations.
-  limits_[r] = ResourceLimit{a.restrictions, a.counters().Total()};
+void VideoSendController::OnResourceUsageStateMeasured(Resource r, video::ResourceUsageState state, Timestamp now) {
+  using Result = video::ResourceAdaptationProcessor::MitigationResult;
+  const video::VideoAdaptationCounters before = stream_adapter_.counters();
+  const Result result = processor_.OnResourceUsageStateMeasured(r, state);
+  if (result == Result::kNotMostLimitedResource) ++adapt_ups_not_most_limited_;
+  if (result == Result::kAdaptationApplied) OnRestrictionsChanged(before, r, now);
+}
+
+void VideoSendController::OnRestrictionsChanged(const video::VideoAdaptationCounters& before, int reason,
+                                                Timestamp now) {
+  const bool down = stream_adapter_.counters().Total() > before.Total();
   ++(down ? adapt_downs_ : adapt_ups_);
-  if (r == kCpuResource) ++(down ? cpu_adapt_downs_ : cpu_adapt_ups_);
+  if (reason == kCpuResource) ++(down ? cpu_adapt_downs_ : cpu_adapt_ups_);
   video_adapter_.OnSinkWants(stream_adapter_.restrictions());
-  SM_EVENT(cfg_.events, now, "video_send", down ? "adapt_down" : "adapt_up", static_cast<double>(r),
-           a.resolution_adaptations);
+  SM_EVENT(cfg_.events, now, "video_send", down ? "adapt_down" : "adapt_up", static_cast<double>(reason),
+           stream_adapter_.resolution_adaptations());
 }
 
-void VideoSendController::OnResourceOveruse(Resource r, Timestamp now) {
-  using Status = video::VideoStreamAdapter::Status;
-  const auto a = stream_adapter_.GetAdaptationDown();
-  if (a.status == Status::kLimitReached) {
-    // The resource is held at the most limited restrictions so far
-    // (FindMostLimitedResources; none = unrestricted).
-    ResourceLimit most;
-    for (const auto& l : limits_) {
-      if (l && l->adaptations > most.adaptations) most = *l;
-    }
-    limits_[r] = most;
+void VideoSendController::RemoveResource(Resource r, Timestamp now) {
+  const video::VideoSourceRestrictions before = stream_adapter_.restrictions();
+  processor_.RemoveResource(r);
+  ++resources_removed_;
+  SM_EVENT(cfg_.events, now, "video_send", "resource_removed", static_cast<double>(r),
+           stream_adapter_.resolution_adaptations());
+  // RemoveLimitationsImposedByResource cleared or restored the restrictions.
+  if (!(stream_adapter_.restrictions() == before)) {
+    ++restrictions_restored_;
+    video_adapter_.OnSinkWants(stream_adapter_.restrictions());
   }
-  if (a.status != Status::kValid) return;
-  ApplyAdaptation(a, r, now);
 }
 
-void VideoSendController::OnResourceUnderuse(Resource r, Timestamp now) {
-  const auto a = stream_adapter_.GetAdaptationUp();
-  if (a.status != video::VideoStreamAdapter::Status::kValid) return;
-  // FindMostLimitedResources: the resources with the most adaptations (ties
-  // compare equal counters, so a resource at zero ties with the start state).
-  int most = 0;
-  bool r_most = false;
-  int n_most = 0;
-  for (int i = 0; i < kNumResources; ++i) {
-    if (!limits_[i]) continue;
-    if (limits_[i]->adaptations > most) {
-      most = limits_[i]->adaptations;
-      n_most = 1;
-      r_most = i == r;
-    } else if (limits_[i]->adaptations == most) {
-      ++n_most;
-      r_most = r_most || i == r;
-    }
+void VideoSendController::OnEncoderInfoChanged(const EncoderAdaptationInfo& info, Timestamp now) {
+  if (!cfg_.quality_scaling) return;
+  // ConfigureEncodeUsageResource: without CPU overuse detection the check stops
+  // and the resource is removed; with it, a started check restarts and a
+  // stopped one is added and started (StartCheckForOveruse with the target frame rate).
+  if (!info.cpu_overuse_detection) {
+    if (processor_.HasResource(kCpuResource)) RemoveResource(kCpuResource, now);
+  } else {
+    processor_.AddResource(kCpuResource);
+    overuse_.RestartCheckForOveruse();
+    overuse_.OnTargetFramerateUpdated(static_cast<int>(cfg_.fps));
+    overuse_.Check(now);  // DelayedStart: the first run 100 ms from now.
   }
-  if (n_most > 0 && most >= stream_adapter_.counters().Total()) {
-    if (!r_most) {
-      ++adapt_ups_not_most_limited_;  // kNotMostLimitedResource.
-      return;
-    }
-    if (n_most > 1) {
-      // kSharedMostLimitedResource: the resource's limit is relaxed, the
-      // stream is not.
-      limits_[r] = ResourceLimit{a.restrictions, a.counters().Total()};
-      return;
-    }
+  // ConfigureQualityScaler: allowed and not started, a new QualityScaler (its
+  // check task starts now) and the resource added; not allowed, the scaler is
+  // destroyed and the resource removed. UpdateQualityScalerSettings then tells
+  // the initial frame dropper (OnQualityScalerSettingsUpdated): restart the
+  // drops for size if the scaler runs, else disable them.
+  if (info.quality_scaling) {
+    if (processor_.HasResource(kQualityResource)) return;
+    processor_.AddResource(kQualityResource);
+    scaler_ = video::QualityScaler(ScalerConfig(cfg_));
+    scaler_.Check(now);
+    initial_framedrop_ = 0;
+  } else {
+    if (processor_.HasResource(kQualityResource)) RemoveResource(kQualityResource, now);
+    initial_framedrop_ = kMaxInitialFramedrop;
   }
-  ApplyAdaptation(a, r, now);
 }
 
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
@@ -171,13 +178,16 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // (VideoStreamEncoder::OnVideoSourceRestrictionsUpdated), so it applies
     // from the next frame. Each task due before this frame runs here, at its
     // due time (issue #348).
-    if (!scaler_.next_check().IsFinite()) scaler_.Check(now);
-    while (scaler_.next_check() < now) {
-      const Timestamp due = scaler_.next_check();
-      OnQualityScalerSignal(scaler_.Check(due), due);
+    if (processor_.HasResource(kQualityResource)) {
+      if (!scaler_.next_check().IsFinite()) scaler_.Check(now);
+      while (scaler_.next_check() < now) {
+        const Timestamp due = scaler_.next_check();
+        OnQualityScalerSignal(scaler_.Check(due), due);
+      }
     }
-    // OveruseFrameDetector's CheckForOveruse task.
-    OnCpuSignal(overuse_.Check(now), now);
+    // OveruseFrameDetector's CheckForOveruse task (stopped with the resource;
+    // EncodeUsageResource still passes it every encoded frame).
+    if (processor_.HasResource(kCpuResource)) OnCpuSignal(overuse_.Check(now), now);
     if (frame.width > 0 && frame.height > 0) video_adapter_.AdaptFrameResolution(frame.width, frame.height, &width, &height);
     // VideoStreamEncoder::OnFrame drops for the congestion window before
     // MaybeEncodeVideoFrame (video_stream_encoder.cc l.1635-1660), which
@@ -303,7 +313,9 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
   if (d.reason == DropReason::kFrameDropper && cfg_.bitrate_adjuster) adjuster_.OnFrameDropped(now);
   // QualityScalerResource::OnFrameDropped counts kMediaOptimization (the frame
   // dropper) and kEncoder drops only.
-  if (d.reason == DropReason::kFrameDropper && cfg_.quality_scaling) scaler_.OnFrameDropped();
+  if (d.reason == DropReason::kFrameDropper && cfg_.quality_scaling && processor_.HasResource(kQualityResource)) {
+    scaler_.OnFrameDropped();
+  }
   ++dropped_[static_cast<int>(d.reason)];
   SM_EVENT(cfg_.events, now, "video_send", "frame_dropped", static_cast<double>(d.reason), 0);
   if (reconfigured) session_.send_side().OnVideoEncoderReconfigured(now);
@@ -337,7 +349,8 @@ void VideoSendController::OnTargetBitrate(DataRate target, Timestamp now) {
   // InitialFrameDropper::SetTargetBitrate: once, within the interval after the start bitrate was set, a
   // target below `factor` times it restarts the initial frame drop (the estimate fell far below the start
   // rate, so the resolution may be too large again).
-  if (start_bitrate_.bps() <= 0 || has_seen_first_bwe_drop_ || !cfg_.quality_scaling) return;
+  // quality_scaler_resource_->is_started().
+  if (start_bitrate_.bps() <= 0 || has_seen_first_bwe_drop_ || !processor_.HasResource(kQualityResource)) return;
   const int64_t interval_ms = cfg_.initial_bitrate_interval.value_or(TimeDelta::Millis(-1)).ms();
   const double factor = cfg_.initial_bitrate_factor.value_or(0);
   if (interval_ms < 0 || factor < kMinScaleFactor) return;  // Unset or ignored.
@@ -440,7 +453,11 @@ bool VideoSendController::QualityScalingDropsForSize(int width, int height, Data
   ++initial_framedrop_;
   // MaybeInitializePixelLimitResource: the step counts as the quality scaler's.
   const auto a = stream_adapter_.GetAdaptationDown();
-  if (a.status == video::VideoStreamAdapter::Status::kValid) ApplyAdaptation(a, kQualityResource, now);
+  if (a.status == video::VideoStreamAdapter::Status::kValid) {
+    const video::VideoAdaptationCounters before = stream_adapter_.counters();
+    processor_.ApplyAdaptation(a, kQualityResource);
+    OnRestrictionsChanged(before, kQualityResource, now);
+  }
   SM_EVENT(cfg_.events, now, "video_send", "initial_frame_drop", width * height, static_cast<double>(target.bps()));
   return true;
 }
@@ -448,7 +465,7 @@ bool VideoSendController::QualityScalingDropsForSize(int width, int height, Data
 void VideoSendController::OnEncoded(const EncodedFrameReport& r, Timestamp now) {
   ++encoded_;
   // QualityScalerResource::OnEncodeCompleted: QP with the send time.
-  if (cfg_.quality_scaling && r.qp >= 0) scaler_.OnEncodedFrame(r.qp, now);
+  if (cfg_.quality_scaling && processor_.HasResource(kQualityResource) && r.qp >= 0) scaler_.OnEncodedFrame(r.qp, now);
   // EncodeUsageResource::OnEncodeCompleted, with the time the frame came out.
   if (cfg_.quality_scaling) overuse_.OnFrameSent(encodes_completed_++, now);
   dropper_.OnEncodedFrame(r.size, r.keyframe);
@@ -497,6 +514,8 @@ void VideoSendController::ExportMetrics(MetricsWriter& w) const {
     w.Counter("cpu_adapt_downs", cpu_adapt_downs_);
     w.Counter("cpu_adapt_ups", cpu_adapt_ups_);
     w.Counter("adapt_ups_not_most_limited", adapt_ups_not_most_limited_);
+    w.Counter("resources_removed", resources_removed_);
+    w.Counter("restrictions_restored", restrictions_restored_);
   }
   w.Counter("pending_dropped", pending_dropped_);
   w.Counter("pending_encoded", pending_encoded_);

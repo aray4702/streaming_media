@@ -1,5 +1,6 @@
 sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
   SOURCES
+    unit/video/resource_adaptation_processor_test.cc
     unit/video/video_test.cc
   SUITES
     CodecFallback
@@ -10,6 +11,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     Orientation
     QualityScaler
     RenderFrames
+    ResourceAdaptationProcessor
     VideoAdapter
     VideoStreamAdapter
 )

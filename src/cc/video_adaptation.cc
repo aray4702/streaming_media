@@ -150,6 +150,12 @@ void CpuOveruseDetector::ResetUsage() {
   filtered_processing_ms_.Apply(1.0f, initial_usage * kInitialSampleDiffMs / 100);
 }
 
+void CpuOveruseDetector::RestartCheckForOveruse() {
+  ResetUsage();
+  num_pixels_ = 0;
+  next_check_ = Timestamp::MinusInfinity();
+}
+
 void CpuOveruseDetector::ResetAll(int num_pixels) {
   // Reset state, as a result resolution being changed. Do not however change
   // the current frame rate back to the default.
