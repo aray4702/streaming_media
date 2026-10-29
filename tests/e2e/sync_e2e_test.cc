@@ -170,7 +170,9 @@ SM_TEST(E2E_CaptureTime, GlassToGlassLatencyThroughSfu) {
     Timestamp now = Timestamp::Millis(t);
     if (t % 33 == 0) {
       Timestamp capture = now - TimeDelta::Millis(15);  // Camera pipeline latency.
-      AbsoluteCaptureTime act{NtpTime::FromTimestamp(capture + sender_ahead).value, std::nullopt};
+      // libwebrtc's senders write an estimated capture clock offset of 0
+      // (rtp_sender_video.cc:701, rtp_sender_audio.cc:156).
+      AbsoluteCaptureTime act{NtpTime::FromTimestamp(capture + sender_ahead).value, 0};
       uint32_t rtp = static_cast<uint32_t>((t - 15) * 90);
       auto ext = sender.OnPacket(1, rtp, 90000, act, now);
       up.Send(now, {rtp, ext ? std::optional(SerializeAbsoluteCaptureTime(*ext)) : std::nullopt, capture}, DataSize::Bytes(4000));
