@@ -406,14 +406,19 @@ void Session::OnDecodeFailure(VideoRecvId id, Timestamp now) {
   video_recv_[static_cast<size_t>(id.index)].receiver->OnDecodeFailure(now);
 }
 
-RtpSender* Session::SenderForSsrc(uint32_t ssrc) {
+Session::SendStream* Session::StreamForSsrc(uint32_t ssrc) {
   for (auto& v : video_send_) {
-    if (v.sender->config().ssrc == ssrc) return v.sender.get();
+    if (v.sender->config().ssrc == ssrc) return &v;
   }
   for (auto& a : audio_send_) {
-    if (a.sender->config().ssrc == ssrc) return a.sender.get();
+    if (a.sender->config().ssrc == ssrc) return &a;
   }
   return nullptr;
+}
+
+RtpSender* Session::SenderForSsrc(uint32_t ssrc) {
+  SendStream* st = StreamForSsrc(ssrc);
+  return st ? st->sender.get() : nullptr;
 }
 
 void Session::OnPacket(std::span<const uint8_t> bytes, Timestamp now) {
@@ -466,16 +471,39 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
       if (a.ssrc == sr.ssrc) a.receiver->OnSenderReport(sr, now);
     }
   }
-  if (!in.report_blocks.empty()) last_report_block_ = now;
   // RTCPReceiver::HandleXrDlrrReportBlock keeps the latest XR RTT for
   // GetAndResetXrRrRtt at the next periodic update.
   if (!in.xr_rtts.empty()) pending_rr_rtt_ = in.xr_rtts.back();
+  {
+    // Each send stream's RTCPReceiver::HandleReportBlock (rtcp_receiver.cc:516-575) for the blocks
+    // of its media and RTX SSRCs: last_received_rb_ for any of them, RttStats::AddRtt only for the
+    // media SSRC, and the packet's `rtt` from the last of them, which TriggerCallbacksFromRtcpPacket
+    // hands to RtpTransportControllerSend::OnRttUpdate (rtcp_receiver.cc:1010-1012) once per
+    // stream, video streams first (Call::DeliverRtcpPacket_w, call.cc:1357-1381).
+    auto handle = [&](SendStream& st) {
+      const RtpSenderConfig& c = st.sender->config();
+      auto mine = [&](uint32_t ssrc) { return ssrc == c.ssrc || (c.rtx_ssrc && ssrc == *c.rtx_ssrc); };
+      for (const auto& rb : in.report_blocks) {
+        if (mine(rb.ssrc)) st.last_received_rb = now;
+      }
+      std::optional<TimeDelta> packet_rtt;
+      for (size_t i = 0; i < in.rtts.size(); ++i) {
+        if (!mine(in.rtt_ssrcs[i])) continue;
+        if (in.rtt_ssrcs[i] == c.ssrc) {
+          st.last_rtt = in.rtts[i];
+          st.sum_rtt = st.sum_rtt + in.rtts[i];
+          ++st.num_rtts;
+        }
+        packet_rtt = in.rtts[i];
+      }
+      if (packet_rtt) send_.OnRtt(*packet_rtt);
+    };
+    for (auto& v : video_send_) handle(v);
+    for (auto& a : audio_send_) handle(a);
+  }
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
-    rtt_sum_ = rtt_sum_ + rtt_;
-    ++rtt_count_;
-    send_.OnRtt(rtt_);
     for (auto& a : audio_recv_) a.receiver->OnRtt(rtt_);
     // The packet history and CallStats (so the video receivers) take their RTT
     // from the 1 s periodic update, the history also from each NACK
@@ -541,13 +569,14 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     Emit(e);
   }
   for (const auto& n : in.nacks) {
-    if (RtpSender* s = SenderForSsrc(n.media_ssrc)) {
+    if (SendStream* st = StreamForSsrc(n.media_ssrc)) {
+      RtpSender* s = st->sender.get();
       if (!n.seqs.empty()) {
-        // ModuleRtpRtcpImpl2::OnReceivedNack: the RTT of the last periodic update,
-        // else the average of every sample; RTPSender::OnReceivedNack adds 5 ms.
-        TimeDelta rtt = periodic_rtt_;
-        if (rtt.IsZero() && rtt_count_ > 0) rtt = TimeDelta::Millis((rtt_sum_ / rtt_count_).ms());
-        s->SetRtt(TimeDelta::Millis(5) + rtt, now);
+        // ModuleRtpRtcpImpl2::OnReceivedNack (rtp_rtcp_impl2.cc:678-692): the stream's RTT of the
+        // last periodic update, else the average of its samples; RTPSender::OnReceivedNack adds 5 ms.
+        int64_t rtt_ms = st->rtt_ms;
+        if (rtt_ms == 0 && st->num_rtts > 0) rtt_ms = (st->sum_rtt / st->num_rtts).ms();
+        s->SetRtt(TimeDelta::Millis(5 + rtt_ms), now);
       }
       s->OnNack(n.seqs, now, rtt_);
       EnqueueSenderPackets(*s, now);
@@ -572,23 +601,28 @@ void Session::UpdateSenderState(Timestamp now) {
   if (s) rtcp_.SetSenderState(s->SenderState(now));
 }
 
-// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s), with
-// RTCPReceiver::OnPeriodicRttUpdate. While sending, the last RTT sample goes
-// to the packet history and to CallStats if a report block arrived within the
-// interval. A receive stream reports its XR RTT to CallStats, here the
-// measurement SetRtt gave since the last update (GetAndResetXrRrRtt).
+// ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s; rtp_rtcp_impl2.cc:740-751),
+// with RTCPReceiver::OnPeriodicRttUpdate (rtcp_receiver.cc:259-286), for each send stream's
+// module. While sending, the stream's last media-SSRC RTT sample goes to CallStats and to its
+// packet history if it has had no report block yet or one within the interval. A receive stream
+// reports its XR RTT to CallStats, here the measurement SetRtt gave since the last update
+// (GetAndResetXrRrRtt).
 void Session::PeriodicRttUpdate(Timestamp now) {
   if (!HasSendStreams() && video_recv_.empty()) return;
   if (!next_rtt_update_.IsFinite()) next_rtt_update_ = now + kRttUpdateInterval;
   while (now >= next_rtt_update_) {
     const Timestamp at = next_rtt_update_;
     const Timestamp check_since = at - kRttUpdateInterval;
-    if (HasSendStreams() && have_rtt_ && rtt_count_ > 0 && last_report_block_ > check_since) {
-      periodic_rtt_ = TimeDelta::Millis(rtt_.ms());
-      OnCallStatsUpdate(call_stats_.OnRttUpdate(periodic_rtt_.ms(), at));
-      for (auto& v : video_send_) v.sender->SetRtt(periodic_rtt_, now);
-      for (auto& a : audio_send_) a.sender->SetRtt(periodic_rtt_, now);
-    }
+    // The harness creates the audio send stream before the video one (compare/webrtc/webrtc_call.cc).
+    auto update = [&](SendStream& st) {
+      if (st.num_rtts == 0) return;  // RttStats::last_rtt() is nullopt.
+      if (st.last_received_rb.IsFinite() && st.last_received_rb <= check_since) return;
+      st.rtt_ms = st.last_rtt.ms();
+      OnCallStatsUpdate(call_stats_.OnRttUpdate(st.rtt_ms, at));
+      st.sender->SetRtt(TimeDelta::Millis(st.rtt_ms), now);  // set_rtt_ms: the packet history.
+    };
+    for (auto& a : audio_send_) update(a);
+    for (auto& v : video_send_) update(v);
     if (!video_recv_.empty() && pending_rr_rtt_) {
       OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
       pending_rr_rtt_.reset();

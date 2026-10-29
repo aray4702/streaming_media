@@ -340,6 +340,15 @@ class Session : public MetricsSource {
     std::deque<Timestamp> frame_times;
     Timestamp first_frame = Timestamp::MinusInfinity();
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
+    // The stream's own ModuleRtpRtcpImpl2 and RTCPReceiver (one per send stream in libwebrtc):
+    // RttStats (rtcp_receiver.cc:211-229), fed only by the report block for the local media SSRC
+    // (rtcp_receiver.cc:567-569); last_received_rb_, set by a block for the media or RTX SSRC
+    // (rtcp_receiver.cc:536); and rtt_ms_, refreshed by PeriodicUpdate (rtp_rtcp_impl2.cc:740-751).
+    TimeDelta last_rtt = TimeDelta::Zero();
+    TimeDelta sum_rtt = TimeDelta::Zero();
+    int64_t num_rtts = 0;
+    Timestamp last_received_rb = Timestamp::PlusInfinity();
+    int64_t rtt_ms = 0;
   };
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;
@@ -419,15 +428,12 @@ class Session : public MetricsSource {
   };
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
-  // The packet history's RTT as ModuleRtpRtcpImpl2 keeps it (rtt_ms_,
-  // refreshed by PeriodicUpdate), and the samples' sum for RTCPReceiver::AverageRtt.
+  // Each send stream's ModuleRtpRtcpImpl2::PeriodicUpdate (kRttUpdateInterval). The streams'
+  // tasks are started together, so one schedule runs them all.
   static constexpr TimeDelta kRttUpdateInterval = TimeDelta::Millis(1000);
   void PeriodicRttUpdate(Timestamp now);
   Timestamp next_rtt_update_ = Timestamp::MinusInfinity();
-  Timestamp last_report_block_ = Timestamp::MinusInfinity();
-  TimeDelta periodic_rtt_ = TimeDelta::Zero();
-  TimeDelta rtt_sum_ = TimeDelta::Zero();
-  int64_t rtt_count_ = 0;
+  SendStream* StreamForSsrc(uint32_t ssrc);
   // CallStats for the video receivers, fed by the periodic update: the
   // sender's periodic RTT, and a receive-only stream's RTT from the XR DLRR
   // (rtcp.xr_rrtr) or else SetRtt (RTCPReceiver::GetAndResetXrRrRtt: each
