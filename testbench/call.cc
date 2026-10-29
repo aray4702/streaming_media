@@ -188,12 +188,6 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
   return k;
 }
 
-DataRate AudioAllocationRate(const Scenario& s) {
-  if (!s.audio) return DataRate::Zero();
-  constexpr int64_t kRtpHeader = 12 + 8;
-  return DataRate::BitsPerSec(s.audio_bitrate.bps() + (kRtpHeader + kUdpIpOverhead) * 8 * 50);
-}
-
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   std::string out =
       "t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,"
@@ -620,8 +614,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
   audio_cfg.clock_rate = sr;
   audio_cfg.nominal_rate = audio_wire_rate;
-  // The allocator sees the codec rate plus the headers of one packet per 20 ms, not the redundancy.
-  audio_cfg.allocation_rate = AudioAllocationRate(s);
+  // sm_compare's AudioSendStream::Config: min = max = the codec rate, 20 ms Opus frames. The session
+  // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
+  audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
   audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;

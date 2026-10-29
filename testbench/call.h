@@ -240,14 +240,6 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // path). It has no counterpart for dropped_capturer, DropDueToSize or
 // dropped_encoder, so those stay 0.
 std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace);
-// The rate the sender's allocator reserves for audio (zero without audio).
-// `allocator v2` reserves what libwebrtc's AudioSendStream registers with
-// BitrateAllocator (audio_send_stream.cc GetMinMaxBitrateConstraints): the codec
-// rate plus one packet's overhead per 20 ms Opus frame, where the overhead is
-// transport (UDP/IPv4, 28 B) + RTPSender::ExpectedPerPacketOverhead (12 B header
-// + 8 B transport-cc extension block) = 48 B, so 51.2 kbps at 32 kbps (issue
-// #196). v1 counts a 4 B extension, 49.6 kbps.
-DataRate AudioAllocationRate(const Scenario& s);
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).

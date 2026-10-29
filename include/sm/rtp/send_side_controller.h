@@ -151,6 +151,16 @@ class SendSideController : public MetricsSource {
   // (min `video_min`, max `video_max`, enforce_min true: suspend_below_min_bitrate
   // is off by default) is registered when `video` is true.
   void ConfigureAllocation(DataRate audio_wire_rate, bool video);
+  // The same with the audio stream's range and priority rate, as
+  // AudioSendStream::ConfigureBitrateObserver registers them (min, max and
+  // priority_bitrate_bps, enforce_min_bitrate true; audio_send_stream.cc:808-848).
+  // A zero `max` means no audio stream.
+  struct AudioAllocation {
+    DataRate min = DataRate::Zero();
+    DataRate max = DataRate::Zero();
+    DataRate priority_rate = DataRate::Zero();
+  };
+  void ConfigureAllocation(const AudioAllocation& audio, bool video);
 
   // VideoSendStreamImpl's encoder activity check (video_send_stream_impl.cc:84,
   // 677-760, 846-875): every kEncoderTimeOut (2 s) from Start(), a video stream
