@@ -131,7 +131,7 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   std::vector<RtpPacket> sent;
   for (auto& o : Pump(p.a, 0, 500)) {
     if (o.kind != OutgoingKind::kVideo) continue;
-    SM_EXPECT_LE(o.bytes.size(), 1200u);
+    SM_EXPECT_LE(o.bytes.size(), 1460u);  // ModuleRtpRtcpImpl2's default (#580).
     sent.push_back(*RtpPacket::Parse(o.bytes));
   }
   // SPS+PPS in a STAP-A, then the IDR slice in FU-A fragments; the marker is
@@ -144,9 +144,9 @@ SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   SM_EXPECT_TRUE(H264Depacketizer::Reassemble(sent, rebuilt));
   SM_EXPECT_TRUE(rebuilt == ParseOutgoingBitstreamAndRewrite(frame));
   // Full-size chunks leave room for the header extensions.
-  p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1188 * 3)}, Timestamp::Millis(500));
+  p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1448 * 3)}, Timestamp::Millis(500));
   for (auto& o : Pump(p.a, 500, 500)) {
-    if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1200u);
+    if (o.kind == OutgoingKind::kVideo) SM_EXPECT_LE(o.bytes.size(), 1460u);
   }
 }
 
@@ -864,27 +864,28 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
 }
 
 // #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
-// unless the config selects v1; AudioJitterBufferConfig on its own keeps v1.
+// unless the config selects v1; AudioJitterBufferConfig on its own defaults to v2 too (#579).
 SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
   SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
-  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 2);
 }
 
 // #24: a session's video stream runs libwebrtc's receive timing (VCMTiming and
-// frame release); timing::VideoTimingConfig on its own keeps version 1.
+// frame release); timing::VideoTimingConfig on its own defaults to it too (#579).
 SM_TEST(Session, VideoStreamDefaultsToLibwebrtcsReceiveTiming) {
   SM_EXPECT_EQ(VideoStreamConfig{}.timing.version, 2);
-  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 1);
+  SM_EXPECT_EQ(timing::VideoTimingConfig{}.version, 2);
 }
 
 // #453: libwebrtc runs H264SpsPpsTracker (rtp_video_stream_receiver2.cc OnReceivedPayloadData) and
 // PacketBuffer's missing_packets_ hold (packet_buffer.cc FindFrames) on every H.264 stream, and on
-// no other codec. A session's video stream does the same; the building blocks keep both off.
+// no other codec. A session's video stream does the same. The building blocks have both on by
+// default too (#580), and the session turns them off for another codec.
 SM_TEST(Session, H264StreamsRunTheSpsPpsTrackerAndTheMissingPacketsHold) {
   SM_EXPECT_TRUE(VideoStreamConfig{}.sps_pps_tracker);
   SM_EXPECT_TRUE(VideoStreamConfig{}.packet_buffer.missing_packets);
-  SM_EXPECT_TRUE(!RtpReceiverConfig{}.sps_pps_tracker);
-  SM_EXPECT_TRUE(!timing::PacketBufferConfig{}.missing_packets);
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.sps_pps_tracker);
+  SM_EXPECT_TRUE(timing::PacketBufferConfig{}.missing_packets);
   Session s(Cfg(2));
   VideoStreamConfig h264 = Video();
   VideoStreamConfig vp8 = Video();

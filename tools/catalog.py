@@ -162,7 +162,7 @@ ALGORITHMS = [
                "On the sender, the test bench runs libwebrtc's EncoderRtcpFeedback::OnReceivedIntraFrameRequest "
                "(video/encoder_rtcp_feedback.cc): a PLI or FIR within kMinKeyframeSendIntervalMs (300 ms) of the last "
                "one passed to the encoder is ignored (rtp::VideoSendController, `min_keyframe_request_interval`; "
-               "issue #151). The outage monitor's own request is not filtered.",
+               "issue #151; the library default since #580). The outage monitor's own request is not filtered.",
          verification="Pass threshold derived analytically: each unrecoverable loss costs libwebrtc's decode time-out "
                       "(3 s from the last released frame) + RTT + keyframe transit, about 93 frames, so the longest freeze is "
                       "3.1 s and 2% frame loss leaves 28-49% of frames decodable on seeds 1-5 (3-10% without keyframe "
@@ -223,7 +223,7 @@ ALGORITHMS = [
                "full at 2048, and a restart when a packet is 1024 behind the lowest sequence number. Packets leave at "
                "frame assembly, and the receiver also calls ClearTo(last sequence number) when a frame leaves the scheduler (issue #101): "
                "it drops the packets up to it and ignores older ones; padding is kept only within a quarter of the buffer behind an insert. "
-               "`missing_packets` (on in a session's H.264 video streams, as libwebrtc; off in a bare PacketBufferConfig, which does not know the codec; issue #453): libwebrtc's H.264 rule in FindFrames and UpdateMissingPackets "
+               "`missing_packets` (on in a session's H.264 video streams, as libwebrtc, issue #453; on by default in a bare PacketBufferConfig too since #580, which a caller turns off for another codec): libwebrtc's H.264 rule in FindFrames and UpdateMissingPackets "
                "(packet_buffer.cc): the sequence numbers not yet received below the newest one (at most 1000 behind it) are kept, "
                "a complete frame without an IDR slice is held while one of them is at or before its first packet, a released "
                "frame forgets the holes up to its last packet, padding fills a hole, ClearTo forgets the holes below it, and a "
@@ -247,8 +247,15 @@ ALGORITHMS = [
                "With SessionConfig::per_stream_rtt (off by default until #484 lands) the session aggregates the RTT as libwebrtc's per-stream RTCPReceiver::RttStats and "
                "ModuleRtpRtcpImpl2::PeriodicUpdate (issue #568): each send stream keeps the samples of its media "
                "SSRC's block only, gives its last one to CallStats and its packet history every second, takes its "
-               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first.",
-         verification="No defects found; RTT min 60.6 ms against 60 ms configured."),
+               "NACK RTT from that or its average, and GoogCC gets each stream's packet RTT, video first. "
+               "With SessionConfig::receive_statistics_v2 (off by default until the flip is judged on the parity report) "
+               "the sequence and report rules are StreamStatisticianImpl's (issue #575): a packet more than the max "
+               "reordering threshold (450, kMaxPacketAgeToNack, for video with NACK; kDefaultMaxReorderingThreshold 50 "
+               "for audio, RTX and video without NACK) from the highest sequence number is held, and if the next packet "
+               "follows it the stream restarted and the gap is no loss (UpdateOutOfOrder); fraction lost is "
+               "255 * lost / expected, and a negative cumulative loss reports 0 (MaybeAppendReportBlockAndReset).",
+         verification="No defects found; RTT min 60.6 ms against 60 ms configured. Issue #575: libwebrtc's "
+                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
          headers=["timing/delay_manager.h", "timing/neteq_delay.h"],
@@ -261,7 +268,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
                "packets, while falling jitter takes several seconds, so the buffer does not oscillate. "
-               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to v2 since #62, `AudioJitterBufferConfig` on its own keeps v1): "
+               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to v2 since #62, and `AudioJitterBufferConfig` on its own since #579): "
                "`NetEqDelayManager` ports libwebrtc M157's modules/audio_coding/neteq/ histogram.cc (Q30 buckets, "
                "Q15 forget factor from 0 with start_forget_weight 2), underrun_optimizer.cc (95th percentile of the "
                "largest relative delay of each 500 ms interval, 100 buckets of 20 ms, forget factor 0.983), "
@@ -452,7 +459,7 @@ ALGORITHMS = [
                       "Provisional lock (Owner, PR #180): `issue_76_tcc_v2_high_jitter` holds video e2e delay p95 "
                       "at < 1300 ms (libwebrtc 136 ms) until the receive-side delay under jitter with reordering is "
                       "fixed in #24. "
-                      "Timing v2 ([fix record](../../fixes/24-timing-v2.md), partial for #24): `timing.version = 2` "
+                      "Timing v2 ([fix record](../../fixes/24-timing-v2.md), partial for #24; `VideoTimingConfig`'s default since #579): `timing.version = 2` "
                       "ports libwebrtc M157's JitterEstimator, TimestampExtrapolator, RttFilter, "
                       "DecodeTimePercentileFilter and VCMTiming with their defaults (2.33 sigma - 30 ms, 10 ms OS "
                       "jitter, +0.9 x RTT after 3 NACKed frames); libwebrtc's JitterEstimator SteadyStateConvergence "
@@ -888,7 +895,7 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
                "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
-         verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3) "
+         verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3; the default since #579) "
                       "is libwebrtc M157's `OveruseFrameDetector` (`video/adaptation/overuse_frame_detector.cc`) "
                       "with its default estimator `SendProcessingUsage1` and the `CpuOveruseOptions` a software "
                       "encoder gets (85% / 42%, 120 frame samples, 3 process counts, 2 checks in a row, 1.5 s frame "
@@ -1380,7 +1387,7 @@ ALGORITHMS = [
                       "rates (720p 1000 kbps, 360p 500 kbps), +6 per halving of the bits per frame, clamped to 0..51, "
                       "and 10 ms per 720p frame of encode time. Deviation: a model in place of a codec, identical on "
                       "both stacks, so scaling decisions compare like for like. "
-                      "`version = 2` (issue #84 step 2) is libwebrtc M157's `QualityScaler` "
+                      "`version = 2` (issue #84 step 2; the default since #579) is libwebrtc M157's `QualityScaler` "
                       "(`modules/video_coding/utility/quality_scaler.cc`) with `QualityScalingExperiment`'s default "
                       "smoothers: 2 s checks until the first adapt-down, then 5 s; 60 frames over a 150-frame "
                       "window; drop rate >= 60%; smoothed QP > high or <= low. `sm_video_compare` gives the same "

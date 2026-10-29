@@ -41,7 +41,12 @@ struct FeedbackMessage {
 struct KeyframeRequestConfig {
   // libwebrtc has no repair window, no retry timer and no receiver-side
   // throttle (the v1 policy, deleted by #167).
-  bool send_lntf = true;
+  // Loss notifications (RTCP LNTF) need frame ids and dependencies from a
+  // generic descriptor; libwebrtc sends them only with the `lntf.enabled`
+  // receive config, which is off by default
+  // (video/rtp_video_stream_receiver2.cc:373), so they are off here too
+  // (issue #580). On: an LNTF goes out with each keyframe request.
+  bool send_lntf = false;
   // The decode time-out, from compare/webrtc/reference/video/
   // (added by PR #95):
   //  - video_receive_stream2.h kMaxWaitForKeyFrame 200 ms and kMaxWaitForFrame

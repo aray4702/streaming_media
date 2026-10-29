@@ -2,6 +2,7 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
   SOURCES
     unit/rtp/call_stats_test.cc
     unit/rtp/h264_test.cc
+    unit/rtp/libwebrtc_defaults_test.cc
     unit/rtp/packet_router_test.cc
     unit/rtp/rtcp_engine_test.cc
     unit/rtp/rtcp_sdes_bye_test.cc
@@ -14,6 +15,7 @@ sm_add_test_exe(sm_unit_rtp LABEL unit DEPS sm::rtp
   SUITES
     CallStats
     H264
+    LibwebrtcDefaults
     PacketRouter
     RtcpEngine
     RtcpSdesBye

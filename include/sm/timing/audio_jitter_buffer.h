@@ -69,7 +69,9 @@ struct AudioJitterBufferConfig {
   size_t max_packets = 100;
   bool time_stretch = true;
   DelayManagerConfig delay;
-  int version = 1;  // 2: the target delay and the operations as libwebrtc's NetEq.
+  // 2 (default, #579): the target delay and the operations as libwebrtc's
+  // NetEq. 1: the library's own buffer, kept for tests that pin it.
+  int version = 2;
   NetEqDelayConfig neteq_delay;
   EventSink* events = nullptr;
 };

@@ -120,6 +120,37 @@ SM_TEST(VideoAdaptation, DefaultPreferenceIsMaintainFramerate) {
   SM_EXPECT_LT(d.ladder().back().pixels(), d.ladder().front().pixels());
 }
 
+// Issue #643: an unknown (0) or negative input frame rate hung the frame-rate
+// ladder. libwebrtc never adapts the frame rate of such input
+// (VideoStreamAdapter::HasSufficientInputForAdaptation needs >= kMinFrameRateFps
+// for MAINTAIN_RESOLUTION) and never steps below kMinFrameRateFps (2).
+SM_TEST(VideoAdaptation, NonPositiveInputFpsBuildsLadderForEveryPreference) {
+  for (double fps : {0.0, -1.0, -30.0, 1.0}) {
+    for (auto pref : {DegradationPreference::kDisabled, DegradationPreference::kMaintainFramerate,
+                      DegradationPreference::kMaintainResolution, DegradationPreference::kBalanced}) {
+      for (double min_fps : {5.0, 0.0, -1.0}) {
+        DegradationConfig c;
+        c.input = {1280, 720, fps};
+        c.preference = pref;
+        c.min_fps = min_fps;
+        DegradationController d(c);
+        SM_EXPECT_GE(d.ladder().size(), size_t{1});
+        SM_EXPECT_LT(d.ladder().size(), size_t{64});
+        // No frame-rate step raises the input rate.
+        for (const auto& f : d.ladder()) SM_EXPECT_LE(f.fps, fps);
+        d.OnTargetBitrate(DataRate::KilobitsPerSec(50), Timestamp::Millis(0));
+        d.OnResourceOveruse();
+      }
+    }
+  }
+  // A valid input keeps libwebrtc's 2 fps floor even when min_fps is lower.
+  DegradationConfig c;
+  c.preference = DegradationPreference::kMaintainResolution;
+  c.min_fps = 0;
+  DegradationController d(c);
+  SM_EXPECT_GE(d.ladder().back().fps, 2.0);
+}
+
 SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
   DegradationConfig cfg;
   cfg.preference = DegradationPreference::kMaintainFramerate;
@@ -134,7 +165,9 @@ SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
 }
 
 SM_TEST(VideoAdaptation, CpuOveruseSignalsAndResourceCap) {
-  CpuOveruseDetector cpu;
+  CpuOveruseConfig v1;
+  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
+  CpuOveruseDetector cpu(v1);
   for (int i = 0; i < 100; ++i) cpu.OnFrameEncoded(TimeDelta::Millis(30), TimeDelta::Millis(33));
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(5)) == CpuOveruseDetector::Signal::kNone);  // 1st check.
   SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(10)) == CpuOveruseDetector::Signal::kOveruse);

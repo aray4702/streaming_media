@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "audio_jitter_buffer_binding.h"
 #include "call.h"
 #include "scenario.h"
 #include "sm/cc/send_side_bwe.h"
@@ -75,7 +76,9 @@ val MetricCatalog() {
 
 class AudioJitterBuffer {
  public:
-  explicit AudioJitterBuffer(int sample_rate) : jb_(Config(sample_rate)) {}
+  // NetEq at `sample_rate` when it supports it, else at 48 kHz with the
+  // audio resampled at both ends (audio_jitter_buffer_binding.h, #579).
+  explicit AudioJitterBuffer(int sample_rate) : jb_(sample_rate) {}
   // `samples`: Float32Array (or array) with one decoded frame.
   void insertPacket(uint32_t rtp_timestamp, val samples, double arrival_ms) {
     jb_.InsertPacket(rtp_timestamp, emscripten::convertJSArrayToNumberVector<float>(samples), Ms(arrival_ms));
@@ -87,17 +90,12 @@ class AudioJitterBuffer {
     return ToTypedArray("Float32Array", out_);
   }
   std::string lastOperation() const { return last_op_; }
-  int targetDelayMs() const { return jb_.TargetDelayMs(); }
-  double bufferLevelMs() const { return jb_.CurrentLevelMs(); }
-  std::string metrics() const { return MetricsJson(jb_); }
+  int targetDelayMs() const { return jb_.jitter_buffer().TargetDelayMs(); }
+  double bufferLevelMs() const { return jb_.jitter_buffer().CurrentLevelMs(); }
+  std::string metrics() const { return MetricsJson(jb_.jitter_buffer()); }
 
  private:
-  static sm::timing::AudioJitterBufferConfig Config(int sr) {
-    sm::timing::AudioJitterBufferConfig c;
-    c.sample_rate = sr;
-    return c;
-  }
-  sm::timing::AudioJitterBuffer jb_;
+  sm::web::AudioJitterBufferBinding jb_;
   std::vector<float> out_;
   std::string last_op_ = "silence";
 };
