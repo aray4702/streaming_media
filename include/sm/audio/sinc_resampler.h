@@ -15,6 +15,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -72,14 +73,21 @@ class PushSincResampler : private SincResampler {
   PushSincResampler(size_t source_frames, size_t destination_frames);
   // `source` must hold `source_frames` and `destination` `destination_frames`.
   void Resample(std::span<const float> source, std::span<float> destination);
+  // The int16 path: reads int16 input as FloatS16 and rounds the output back
+  // to int16 with saturation (FloatS16ToS16), as libwebrtc's overload.
+  void Resample(std::span<const int16_t> source, std::span<int16_t> destination);
   // The SincResampler's ChunkSize(); before the first Resample() call,
   // destination_frames minus it is the delay in output samples.
   size_t chunk_size_for_testing() const { return ChunkSize(); }
 
  private:
   void Run(size_t frames, float* destination) override;
+  // A null `source` reads `source_ptr_int_` instead.
+  void ResampleFrom(const float* source, size_t source_length, std::span<float> destination);
 
   const float* source_ptr_ = nullptr;
+  const int16_t* source_ptr_int_ = nullptr;
+  std::vector<float> float_buffer_;
   const size_t destination_frames_;
   bool first_pass_ = true;
   size_t source_available_ = 0;

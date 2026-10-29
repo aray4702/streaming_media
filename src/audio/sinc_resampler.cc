@@ -140,10 +140,14 @@ PushSincResampler::PushSincResampler(size_t source_frames, size_t destination_fr
       destination_frames_(destination_frames) {}
 
 void PushSincResampler::Resample(std::span<const float> source, std::span<float> destination) {
-  assert(source.size() == request_frames());
+  ResampleFrom(source.data(), source.size(), destination);
+}
+
+void PushSincResampler::ResampleFrom(const float* source, size_t source_length, std::span<float> destination) {
+  assert(source_length == request_frames());
   assert(destination.size() >= destination_frames_);
-  source_ptr_ = source.data();
-  source_available_ = source.size();
+  source_ptr_ = source;
+  source_available_ = source_length;
   // On the first pass Resample() runs twice: the first call reads dummy input
   // and its output is discarded. That primes the buffer with the correct delay
   // (half the kernel), so every later call reads its input with one Run().
@@ -151,6 +155,19 @@ void PushSincResampler::Resample(std::span<const float> source, std::span<float>
   if (first_pass_) SincResampler::Resample(ChunkSize(), destination.data());
   SincResampler::Resample(destination_frames_, destination.data());
   source_ptr_ = nullptr;
+}
+
+void PushSincResampler::Resample(std::span<const int16_t> source, std::span<int16_t> destination) {
+  assert(destination.size() >= destination_frames_);
+  if (float_buffer_.empty()) float_buffer_.resize(destination_frames_);
+  source_ptr_int_ = source.data();
+  // A null float source makes Run() read the int16 source.
+  ResampleFrom(nullptr, source.size(), float_buffer_);
+  for (size_t i = 0; i < destination_frames_; ++i) {
+    float v = std::max(std::min(float_buffer_[i], 32767.f), -32768.f);  // FloatS16ToS16
+    destination[i] = static_cast<int16_t>(v + std::copysign(0.5f, v));
+  }
+  source_ptr_int_ = nullptr;
 }
 
 void PushSincResampler::Run(size_t frames, float* destination) {
@@ -161,7 +178,11 @@ void PushSincResampler::Run(size_t frames, float* destination) {
     first_pass_ = false;
     return;
   }
-  std::memcpy(destination, source_ptr_, frames * sizeof(*destination));
+  if (source_ptr_) {
+    std::memcpy(destination, source_ptr_, frames * sizeof(*destination));
+  } else {
+    for (size_t i = 0; i < frames; ++i) destination[i] = static_cast<float>(source_ptr_int_[i]);
+  }
   source_available_ -= frames;
 }
 

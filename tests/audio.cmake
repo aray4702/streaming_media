@@ -19,6 +19,7 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     unit/audio/filters_test.cc
     unit/audio/hpf_test.cc
     unit/audio/ns_test.cc
+    unit/audio/push_resampler_test.cc
     unit/audio/splitting_filter_test.cc
   SUITES
     Aec3
@@ -47,7 +48,9 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Hpf
     NoiseSuppressor
     Ns
+    PushResampler
     Resampler
+    SplResampler
     SplittingFilter
     TransientSuppressor
     Vad
