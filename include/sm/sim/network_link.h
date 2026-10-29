@@ -94,6 +94,11 @@ struct LinkTraceRecord {
   // header, extensions, padding, RED header; testbench::TraceHeaderBytes), so
   // the drift check reads each packet's payload; -1 when not known.
   int32_t header = -1;
+  // #555: for a video packet, 1 if its frame was packetized while the sender had a report block
+  // for the media SSRC and none yet for the RTX SSRC (the window in which RTPSender::
+  // RtxPacketOverhead reserves extension room; testbench::RtxAckPhase), else 0; -1 for other
+  // packets or when not known.
+  int32_t rtx_room = -1;
 };
 
 struct LinkStats {
@@ -126,9 +131,11 @@ class NetworkLink {
   void EnableTrace() { trace_on_ = true; }
   const std::vector<LinkTraceRecord>& trace() const { return trace_; }
   // Adds the RTP fields to the record of the packet just sent (issue #437).
-  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1, int32_t header = -1) {
+  void AnnotateLastTrace(int64_t rtp_ts, int32_t marker, int32_t osn, int32_t key = -1, int32_t header = -1,
+                         int32_t rtx_room = -1) {
     if (!trace_on_ || trace_.empty()) return;
     trace_.back().header = header;
+    trace_.back().rtx_room = rtx_room;
     trace_.back().rtp_ts = rtp_ts;
     trace_.back().marker = marker;
     trace_.back().osn = osn;

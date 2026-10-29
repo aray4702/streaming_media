@@ -412,6 +412,32 @@ SM_TEST(Session, ReportBlocksAckTheMediaAndRtxSsrcs) {
   SM_EXPECT_EQ(s.RtxPacketOverhead(), rtx_block ? 2u : 5u);
 }
 
+// Call::DeliverRtcpPacket_w and RtpTransportControllerSend::OnReport (issue #555): each send stream
+// passes only the blocks for its own SSRCs (media and RTX) to the loss estimate, video first, and a
+// stream's report with no packet received is dropped. A block for an SSRC nobody sends is ignored.
+SM_TEST(Session, LossReportsArePerSendStreamAndNeedAReceivedPacket) {
+  Pair p;
+  auto rr = [&](uint32_t video_seq, uint32_t audio_seq, int32_t audio_lost, uint32_t other_seq, int64_t ms) {
+    timing::ReceiverReport r;
+    r.ssrc = 2;
+    r.blocks = {{.ssrc = 0x200, .extended_highest_seq = video_seq},
+                {.ssrc = 0x300, .extended_highest_seq = 7},
+                {.ssrc = 0x100, .cumulative_lost = audio_lost, .extended_highest_seq = audio_seq},
+                {.ssrc = 0x999, .cumulative_lost = static_cast<int32_t>(other_seq), .extended_highest_seq = other_seq}};
+    p.a.OnPacket(timing::SerializeReceiverReport(r), Timestamp::Millis(ms));
+  };
+  const cc::SendSideBandwidthEstimation& bwe = p.a.send_side().gcc().send_side_bwe();
+  rr(100, 50, 0, 100, 1000);
+  // Video: 30 received. Audio: 10 more, all lost, so its report is dropped. 0x999: 100 lost.
+  // Summed over the packet this would be 110 of 140 lost.
+  rr(130, 60, 10, 200, 2000);
+  SM_EXPECT_EQ(static_cast<int>(bwe.fraction_loss()), 0);
+  SM_EXPECT_EQ(bwe.expected_packets_since_last_loss_update(), 0);
+  // Video 10 received (< 20, accumulated), then audio 20 with 5 lost: 5 of 30, in the second report.
+  rr(140, 80, 15, 200, 3000);
+  SM_EXPECT_EQ(static_cast<int>(bwe.fraction_loss()), (5 << 8) / 30);
+}
+
 SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
   Pair p;
   p.b.SetRtt(TimeDelta::Millis(250));
