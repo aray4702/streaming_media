@@ -94,18 +94,27 @@ class Drift(unittest.TestCase):
         self.assertFalse(rows[0]["ok"])
 
 
-def vtrace(frames, padding=(), seq0=0):
-    """frames: [(rtp_ts, key, [sizes])] in send order."""
-    rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key"]
+def vtrace(frames, padding=(), seq0=0, header=49):
+    """frames: [(rtp_ts, key, [sizes])] in send order; `header` is each packet's trace header column."""
+    rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header"]
     seq, t = seq0, 0
     for ts, key, sizes in frames:
         for sz in sizes:
-            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0))
+            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0, header))
             seq, t = seq + 1, t + 1000
     for sz in padding:
-        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1" % (t, sz, seq, t + 1))
+        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1,%d" % (t, sz, seq, t + 1, header))
         seq, t = seq + 1, t + 1000
     return "\n".join(rows) + "\n"
+
+
+def packetize(nalu_bytes, limit, header=49):
+    """A delta frame of one NAL unit of `nalu_bytes`, split as libwebrtc splits it under the wire packet
+    limit `limit` with the same header on every packet: wire sizes."""
+    if nalu_bytes + header <= limit:
+        return [nalu_bytes + header]
+    frags = hd.split_about_equally(nalu_bytes - 1, limit - header - hd.FUA_HEADER, 0, 0)
+    return [f + hd.FUA_HEADER + header for f in frags]
 
 
 def vdata(sm, rtc, name="clean"):
@@ -113,7 +122,8 @@ def vdata(sm, rtc, name="clean"):
 
 
 class VideoSplit(unittest.TestCase):
-    FRAMES = [(0, True, [77, 1155, 1155, 1155]), (3000, False, [955]), (6000, False, [1200, 1200])]
+    # A 1200 B limit: a 2296 B NAL unit (2295 fragment bytes) splits into 1147 + 1148 payload bytes.
+    FRAMES = [(0, True, [77, 1155, 1155, 1155]), (3000, False, [955]), (6000, False, [1198, 1199])]
 
     def test_same_splits_pass_with_other_sequence_numbers_and_timestamps(self):
         other = [(ts + 90000, k, s) for ts, k, s in self.FRAMES]
@@ -122,22 +132,39 @@ class VideoSplit(unittest.TestCase):
         self.assertEqual((rows[0]["shared"], rows[0]["differ"]), (3, 0))
 
     def test_a_frame_split_differently_fails(self):
-        theirs = self.FRAMES[:2] + [(6000, False, [1199, 1201])]
+        theirs = self.FRAMES[:2] + [(6000, False, [1197, 1200])]
         rows, failed = hd.check_video(vdata(vtrace(self.FRAMES), vtrace(theirs)), ["clean"])
         self.assertEqual(len(failed), 1)
         self.assertEqual(rows[0]["differ"], 1)
 
     def test_a_keyframe_and_a_delta_frame_of_one_size_are_not_compared(self):
-        ours = self.FRAMES + [(9000, True, [1000, 1000])]
-        theirs = self.FRAMES + [(9000, False, [1100, 900])]
+        ours = self.FRAMES + [(9000, True, [1100, 900])]
+        theirs = self.FRAMES + [(9000, False, [1000, 1000])]
         _, failed = hd.check_video(vdata(vtrace(ours), vtrace(theirs)), ["clean"])
         self.assertEqual(failed, [])
 
-    def test_a_larger_packet_limit_fails(self):
-        # issue_29_ulpfec_over_red before #513: 1460 on ours, 1462 on libwebrtc.
-        _, failed = hd.check_video(vdata(vtrace(self.FRAMES + [(9000, False, [1460])]),
-                                         vtrace(self.FRAMES + [(9000, False, [1462])])), ["clean"])
+    def test_frames_in_one_packet_only_compare_the_largest_packet(self):
+        # issue_29_ulpfec_over_red before #513 had 1460 on ours, 1462 on libwebrtc. With every delta frame
+        # in one packet, neither side bounds its limit from above, so the largest packets must match.
+        one = [(0, True, [77, 1155]), (3000, False, [955])]
+        _, failed = hd.check_video(vdata(vtrace(one + [(9000, False, [1460])]),
+                                         vtrace(one + [(9000, False, [1462])])), ["clean"])
         self.assertEqual(len(failed), 1)
+        _, failed = hd.check_video(vdata(vtrace(one + [(9000, False, [1462])]),
+                                         vtrace(one + [(9000, False, [1462])])), ["clean"])
+        self.assertEqual(failed, [])
+
+    def test_frames_over_one_packet_on_one_side_only_fail(self):
+        one = [(0, True, [77, 1155]), (3000, False, [955])]
+        _, failed = hd.check_video(vdata(vtrace(one), vtrace(self.FRAMES)), ["clean"])
+        self.assertEqual(len(failed), 1)
+
+    def test_a_trace_without_the_header_column_fails(self):
+        old = "\n".join(",".join(r.split(",")[:-1]) for r in vtrace(self.FRAMES).splitlines()) + "\n"
+        rows, failed = hd.check_video(vdata(old, vtrace(self.FRAMES)), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertIsNone(rows[0]["limit_ours"])
+
 
     def test_full_padding_packets_of_other_sizes_fail(self):
         # issue_257_zero_max_payload before #513: 136 on ours, 128 on libwebrtc.
@@ -151,6 +178,95 @@ class VideoSplit(unittest.TestCase):
     def test_missing_required_trace_fails(self):
         _, failed = hd.check_video({}, ["clean"])
         self.assertEqual(len(failed), 1)
+
+
+class PacketLimit(unittest.TestCase):
+    """#518: the limit both sides' splits allow, from each packet's payload (size minus header)."""
+    # At a 1462 B wire limit with 49 B headers, a packet has room for 1411 fragment bytes after the 2 B
+    # FU-A header: 3 * 1411 = 4233 fragment bytes fit in 3 packets at 1462 and need 4 at 1461.
+    PIN = 4234  # NAL unit bytes (4233 fragment bytes)
+    COMMON = [(0, True, [77, 1155]), (3000, False, [955]), (6000, False, packetize(3000, 1462))]
+
+    def side(self, limit, nalus):
+        frames = self.COMMON + [(9000 + 3000 * i, False, packetize(n, limit)) for i, n in enumerate(nalus)]
+        return vtrace(frames, [303])
+
+    def test_the_split_of_a_limit_is_explained_by_that_limit(self):
+        for limit in (1200, 1461, 1462, 1500):
+            lim = hd.packet_limits(self.side(limit, [self.PIN, 2500, 7000, 10000]))
+            self.assertEqual(lim[3], 0, limit)
+            self.assertLessEqual(lim[0], limit)
+            self.assertGreaterEqual(lim[1], limit)
+
+    def test_the_pin_frame_bounds_each_limit(self):
+        self.assertEqual(packetize(self.PIN, 1462), [1462, 1462, 1462])
+        self.assertEqual(len(packetize(self.PIN, 1461)), 4)
+        self.assertEqual(hd.packet_limits(self.side(1462, [self.PIN]))[0], 1462)
+        self.assertLessEqual(hd.packet_limits(self.side(1461, [self.PIN]))[1], 1461)
+
+    def test_limits_one_byte_apart_fail_when_both_sides_reach_them(self):
+        # Builder's condition (b): both send a limit-hitting frame, the limits differ by 1 B.
+        ours = self.side(1462, [self.PIN])
+        theirs = self.side(1461, [self.PIN - 3, self.PIN])
+        self.assertEqual(packetize(self.PIN - 3, 1461), [1461, 1461, 1461])
+        rows, failed = hd.check_video(vdata(ours, theirs), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(rows[0]["differ"], 0)
+
+    def test_equal_limits_pass_when_only_one_side_reaches_them(self):
+        # #549's case: the same 1462 B limit, but only our side sends a frame that fills a packet.
+        ours = self.side(1462, [self.PIN])
+        theirs = self.side(1462, [self.PIN - 3])
+        self.assertEqual(packetize(self.PIN - 3, 1462), [1461, 1461, 1461])
+        _, failed = hd.check_video(vdata(ours, theirs), ["clean"])
+        self.assertEqual(failed, [])
+
+    def test_a_split_no_limit_explains_fails(self):
+        theirs = self.COMMON + [(9000, False, [1462, 1000, 1462])]
+        lim = hd.packet_limits(vtrace(theirs))
+        self.assertEqual(lim[3], 1)
+        _, failed = hd.check_video(vdata(self.side(1462, []), vtrace(theirs, [303])), ["clean"])
+        self.assertEqual(len(failed), 1)
+
+    def test_first_and_last_packet_headers_are_reductions(self):
+        # A first packet 4 B longer header (an extension only it carries) gets 4 B less payload room.
+        frags = hd.split_about_equally(5000, 1462 - 49 - hd.FUA_HEADER, 4, 0)
+        sizes = [f + hd.FUA_HEADER + 49 for f in frags]
+        rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header"]
+        for i, sz in enumerate(sizes):
+            h = 53 if i == 0 else 49
+            rows.append("%d,%d,video,%d,0,delivered,0,0,0,-1,0,%d" % (i, sz + (4 if i == 0 else 0), i, h))
+        lo, hi, multi, unexplained = hd.packet_limits("\n".join(rows) + "\n")
+        self.assertEqual((multi, unexplained), (1, 0))
+        self.assertTrue(lo <= 1462 <= hi)
+
+    def known_case(self, name, theirs_max=1462):
+        # Limits 1 B apart that both sides reach, as in test_limits_one_byte_apart_fail_when_both_sides_reach_them,
+        # with an extra frame on libwebrtc's side so its largest delta packet is `theirs_max`.
+        ours = self.side(1462, [self.PIN])
+        theirs = self.side(1461, [self.PIN - 3, self.PIN]) + "99000,%d,video,99,0,delivered,99001,99000,0,-1,0,49\n" % theirs_max
+        return hd.check_video(vdata(ours, theirs, name), [name])
+
+    def test_a_known_limit_difference_is_reported_not_required(self):
+        # Builder, 2026-10-28, on #553: issue_257_zero_max_payload's limit test is KNOWN (#555).
+        name = next(iter(hd.KNOWN_LIMIT))
+        rows, failed = self.known_case(name)
+        self.assertEqual(failed, [])
+        self.assertEqual(rows[0]["known"], hd.KNOWN_LIMIT[name])
+        self.assertIn("KNOWN (#%d)" % hd.KNOWN_LIMIT[name], hd.markdown_video(rows, failed))
+
+    def test_a_known_row_still_requires_equal_largest_packets(self):
+        name = next(iter(hd.KNOWN_LIMIT))
+        _, failed = self.known_case(name, theirs_max=1461)
+        self.assertEqual(len(failed), 1)
+
+    def test_the_same_limit_difference_on_any_other_row_fails(self):
+        self.assertEqual(list(hd.KNOWN_LIMIT), ["issue_257_zero_max_payload"])
+        for name in hd.VIDEO_REQUIRED:
+            if name not in hd.KNOWN_LIMIT:
+                rows, failed = self.known_case(name)
+                self.assertEqual(len(failed), 1, name)
+                self.assertIsNone(rows[0]["known"], name)
 
 
 if __name__ == "__main__":
