@@ -259,10 +259,16 @@ class Owners(unittest.TestCase):
     def test_504_owns_only_issue_533_audio_cells(self):
         # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
         # through StreamSynchronization, so they go to the scenario's video/CC owner with a note; #504
-        # keeps only issue_533's NetEq cells; issue_451 keeps #451's not-comparable note.
+        # keeps issue_533's NetEq cells and the receive-side cells below; issue_451 keeps #451's not-comparable note.
         cells = {"issue_12_lossbwe_policer": 411, "issue_12_lossbwe_shallow": 411,
                  "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
-                 "issue_533_opus_decoder_frame_older_than_window": 504}
+                 "issue_533_opus_decoder_frame_older_than_window": 504,
+                 # On #716's run these were owned only through the catch-all's #504: NetEq on audio-only
+                 # calls, the post-handover backlog and high_jitter seed 5's target split stay with #504.
+                 "audio_only_lossy": 504, "issue_476_libopus_decode": 504, "issue_514_audio_padding": 504,
+                 "issue_62_neteq_default": 504, "issue_62_neteq_v2_audio_only_lossy": 504,
+                 "issue_120_rtx_payload_padding": 504, "issue_23_handover": 504, "issue_76_rtx_v2_handover": 504,
+                 "wifi_to_lte_handover": 504, "issue_150_gcc_v2_high_jitter_seed5": 504}
         metrics = {"audio.jb_delay_p95_ms": ([300] * 5, [400] * 5), "audio.mouth_to_ear_p95_ms": ([300] * 5, [400] * 5)}
         d = data(*[scn(n, metrics) for n in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
@@ -273,7 +279,7 @@ class Owners(unittest.TestCase):
         self.assertEqual(len(g), 2 * len(cells))
         for (name, metric), o in g.items():
             self.assertIn(cells[name], o, (name, metric))
-            self.assertEqual(504 in o, name.startswith("issue_533_"), (name, metric))
+            self.assertEqual(504 in o, cells[name] == 504, (name, metric))
 
 
 class Delta(unittest.TestCase):
