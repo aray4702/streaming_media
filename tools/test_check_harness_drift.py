@@ -3,6 +3,7 @@
 import os
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_harness_drift as hd  # noqa: E402
@@ -94,16 +95,21 @@ class Drift(unittest.TestCase):
         self.assertFalse(rows[0]["ok"])
 
 
-def vtrace(frames, padding=(), seq0=0, header=49):
-    """frames: [(rtp_ts, key, [sizes])] in send order; `header` is each packet's trace header column."""
-    rows = ["time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header"]
+def vtrace(frames, padding=(), seq0=0, header=49, rtx_room=None):
+    """frames: [(rtp_ts, key, [sizes])] in send order; `header` is each packet's trace header column.
+    With `rtx_room` ({rtp_ts: 0 or 1}, others 0), the trace has #555's rtx_room column."""
+    cols = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header"
+    rows = [cols + (",rtx_room" if rtx_room is not None else "")]
+    room = (lambda ts: ",%d" % rtx_room.get(ts, 0)) if rtx_room is not None else (lambda ts: "")
     seq, t = seq0, 0
     for ts, key, sizes in frames:
         for sz in sizes:
-            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d,%d" % (t, sz, seq, t + 1, ts, 1 if key else 0, header))
+            rows.append("%d,%d,video,%d,0,delivered,%d,%d,0,-1,%d,%d%s" % (t, sz, seq, t + 1, ts, 1 if key else 0,
+                                                                         header, room(ts)))
             seq, t = seq + 1, t + 1000
     for sz in padding:
-        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1,%d" % (t, sz, seq, t + 1, header))
+        rows.append("%d,%d,padding,%d,0,delivered,%d,0,0,-1,-1,%d%s" % (t, sz, seq, t + 1, header,
+                                                                      ",-1" if rtx_room is not None else ""))
         seq, t = seq + 1, t + 1000
     return "\n".join(rows) + "\n"
 
@@ -240,6 +246,60 @@ class PacketLimit(unittest.TestCase):
         self.assertEqual((multi, unexplained), (1, 0))
         self.assertTrue(lo <= 1462 <= hi)
 
+    @staticmethod
+    def pin(limit):
+        """The NAL unit that fills 3 packets exactly at wire limit `limit` (49 B headers), so it needs 4 below it."""
+        return 3 * (limit - 49 - hd.FUA_HEADER) + 1
+
+    def phase_side(self, limit, window_limit, window_nalus, after_nalus=None):
+        """Frames of `window_nalus` split at `window_limit` in the RTX phase (rtx_room 1), then frames of
+        `after_nalus` (the same by default) split at `limit` after it."""
+        window = [(9000 + 3000 * i, False, packetize(n, window_limit)) for i, n in enumerate(window_nalus)]
+        after = [(90000 + 3000 * i, False, packetize(n, limit)) for i, n in enumerate(after_nalus or window_nalus)]
+        return vtrace(self.COMMON + window + after, [303], rtx_room={ts: 1 for ts, _, _ in window})
+
+    def test_one_frame_size_split_differently_in_two_rtx_phases_passes(self):
+        # #555: libwebrtc reserves 3 B more while the RTX SSRC is not acked, so the same frame size splits
+        # differently inside and after that window, on both sides.
+        side = self.phase_side(1462, 1459, [self.PIN])
+        self.assertEqual(len(packetize(self.PIN, 1459)), 4)
+        rows, failed = hd.check_video(vdata(side, side), ["clean"])
+        self.assertEqual(failed, [])
+        self.assertEqual(rows[0]["differ"], 0)
+        # The same frames without the column are one phase: no limit explains both splits.
+        old = "\n".join(",".join(r.split(",")[:-1]) for r in side.splitlines()) + "\n"
+        _, failed = hd.check_video(vdata(old, old), ["clean"])
+        self.assertEqual(len(failed), 1)
+
+    def test_a_split_difference_within_one_rtx_phase_fails(self):
+        # One frame size split two ways inside the window, as test_a_frame_split_differently_fails does without it.
+        def side(window_split):
+            return vtrace(self.COMMON + [(9000, False, window_split), (90000, False, packetize(self.PIN, 1462))],
+                          [303], rtx_room={9000: 1})
+        rows, failed = hd.check_video(vdata(side([1198, 1199]), side([1197, 1200])), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(rows[0]["differ"], 1)
+        _, failed = hd.check_video(vdata(side([1198, 1199]), side([1198, 1199])), ["clean"])
+        self.assertEqual(failed, [])
+
+    def test_a_limit_difference_within_one_rtx_phase_fails(self):
+        # The window frames need 1459 on ours and at most 1458 on libwebrtc's (whose pin(1459) frame takes 4
+        # packets), with no frame size in common.
+        ours = self.phase_side(1462, 1459, [self.pin(1459)], [self.PIN])
+        theirs = self.phase_side(1462, 1458, [self.pin(1458), self.pin(1459)], [self.PIN])
+        rows, failed = hd.check_video(vdata(ours, theirs), ["clean"])
+        self.assertEqual(rows[0]["differ"], 0)
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(hd.packet_limits(ours, "1")[0], 1459)
+        self.assertEqual(hd.packet_limits(theirs, "1")[1], 1458)
+
+    def test_an_rtx_phase_on_one_side_only_fails(self):
+        ours = self.phase_side(1462, 1459, [self.PIN])
+        theirs = vtrace(self.COMMON + [(90000, False, packetize(self.PIN, 1462))], [303], rtx_room={})
+        rows, failed = hd.check_video(vdata(ours, theirs), ["clean"])
+        self.assertEqual(len(failed), 1)
+        self.assertEqual((rows[0]["phases_ours"], rows[0]["phases_webrtc"]), (["0", "1"], ["0"]))
+
     def known_case(self, name, theirs_max=1462):
         # Limits 1 B apart that both sides reach, as in test_limits_one_byte_apart_fail_when_both_sides_reach_them,
         # with an extra frame on libwebrtc's side so its largest delta packet is `theirs_max`.
@@ -247,21 +307,23 @@ class PacketLimit(unittest.TestCase):
         theirs = self.side(1461, [self.PIN - 3, self.PIN]) + "99000,%d,video,99,0,delivered,99001,99000,0,-1,0,49\n" % theirs_max
         return hd.check_video(vdata(ours, theirs, name), [name])
 
+    @mock.patch.dict(hd.KNOWN_LIMIT, {"issue_257_zero_max_payload": 555})
     def test_a_known_limit_difference_is_reported_not_required(self):
-        # Builder, 2026-10-28, on #553: issue_257_zero_max_payload's limit test is KNOWN (#555).
+        # Builder, 2026-10-28, on #553: a row's limit test can be KNOWN (#item); #555 used it until its fix.
         name = next(iter(hd.KNOWN_LIMIT))
         rows, failed = self.known_case(name)
         self.assertEqual(failed, [])
         self.assertEqual(rows[0]["known"], hd.KNOWN_LIMIT[name])
         self.assertIn("KNOWN (#%d)" % hd.KNOWN_LIMIT[name], hd.markdown_video(rows, failed))
 
+    @mock.patch.dict(hd.KNOWN_LIMIT, {"issue_257_zero_max_payload": 555})
     def test_a_known_row_still_requires_equal_largest_packets(self):
         name = next(iter(hd.KNOWN_LIMIT))
         _, failed = self.known_case(name, theirs_max=1461)
         self.assertEqual(len(failed), 1)
 
     def test_the_same_limit_difference_on_any_other_row_fails(self):
-        self.assertEqual(list(hd.KNOWN_LIMIT), ["issue_257_zero_max_payload"])
+        self.assertEqual(list(hd.KNOWN_LIMIT), [])  # #555's fix removed issue_257_zero_max_payload.
         for name in hd.VIDEO_REQUIRED:
             if name not in hd.KNOWN_LIMIT:
                 rows, failed = self.known_case(name)

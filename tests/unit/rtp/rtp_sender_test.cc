@@ -439,13 +439,48 @@ SM_TEST(RtpSender, EmptyPaddingWithItsHeaderExtensionsFitsThePacketLimit) {
   }
 }
 
-// RTPSender::RtxPacketOverhead (rtp_sender.cc:566-595): kRtxHeaderSize with RTX, 0 without.
+// RTPSender::RtxPacketOverhead (rtp_sender.cc:564-595): kRtxHeaderSize with RTX, 0 without.
 SM_TEST(RtpSender, RtxPacketOverheadIsTheRtxHeaderWithRtx) {
   RtpSenderConfig c = VideoCfg();
   c.rtx_ssrc = 0x300;
   SM_EXPECT_EQ(RtpSender(c).RtxPacketOverhead(), 2u);
   c.rtx_ssrc.reset();
   SM_EXPECT_EQ(RtpSender(c).RtxPacketOverhead(), 0u);
+}
+
+// rtp_sender.cc:574-590 (issue #555): while the media SSRC has been acked and the RTX SSRC has not,
+// RtxPacketOverhead adds MID room (2 + its length) and 3 bytes of extension rounding; libwebrtc's
+// first video frames after the first receiver report are split to this smaller limit until the
+// first report block for the RTX SSRC arrives.
+SM_TEST(RtpSender, RtxPacketOverheadReservesExtensionRoomUntilTheRtxSsrcIsAcked) {
+  RtpSenderConfig c = VideoCfg();
+  c.rtx_ssrc = 0x300;
+  {
+    RtpSender s(c);
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u);  // Nothing acked yet.
+    s.OnReceivedAckOnSsrc();
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u + 3u);
+    s.OnReceivedAckOnRtxSsrc();
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u);
+  }
+  {
+    RtpSender s(c);
+    s.OnReceivedAckOnRtxSsrc();  // RTX acked first: no window.
+    s.OnReceivedAckOnSsrc();
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u);
+  }
+  {
+    c.mid = "video0";
+    RtpSender s(c);
+    s.OnReceivedAckOnSsrc();
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u + (2u + 6u) + 3u);
+  }
+  {
+    c.rtx_ssrc.reset();
+    RtpSender s(c);
+    s.OnReceivedAckOnSsrc();
+    SM_EXPECT_EQ(s.RtxPacketOverhead(), 0u);
+  }
 }
 
 // AppendPayloadPadding: the newest large packet of the history goes out again on the RTX SSRC, with the OSN

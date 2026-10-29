@@ -274,6 +274,26 @@ int32_t TraceHeaderBytes(std::span<const uint8_t> p, int64_t wire_bytes, uint8_t
   return static_cast<int32_t>(wire_bytes - static_cast<int64_t>(end - off));
 }
 
+void RtxAckPhase::OnRtcp(std::span<const uint8_t> p) {
+  for (size_t off = 0; off + 4 <= p.size();) {
+    if ((p[off] >> 6) != 2) return;
+    const size_t len = 4 * ((static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]) + 1);
+    if (off + len > p.size()) return;
+    const uint8_t pt = p[off + 1];
+    // SR (200): the blocks follow the sender SSRC and the 20-byte sender info; RR (201): the sender SSRC.
+    if (pt == 200 || pt == 201) {
+      const size_t count = p[off] & 0x1f;
+      size_t b = off + (pt == 200 ? 28 : 8);
+      for (size_t i = 0; i < count && b + 24 <= off + len; ++i, b += 24) {
+        const uint32_t ssrc = static_cast<uint32_t>(p[b]) << 24 | p[b + 1] << 16 | p[b + 2] << 8 | p[b + 3];
+        media_acked_ |= ssrc == media_ssrc_;
+        rtx_acked_ |= ssrc == rtx_ssrc_;
+      }
+    }
+    off += len;
+  }
+}
+
 void TraceAudioRtp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_ssrc, std::vector<AudioSendRow>& rows) {
   if (p.size() < 12 || (p[0] >> 6) != 2) return;
   auto u32 = [&](size_t i) {
@@ -358,13 +378,13 @@ std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
 std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace) {
   static const char* const kKinds[] = {"other", "audio", "video", "rtx", "padding", "fec"};
   static const char* const kOutcomes[] = {"delivered", "queue_drop", "lost", "down"};
-  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n";
+  std::string out = "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n";
   for (const auto& r : trace) {
     out += std::to_string(r.time_us) + "," + std::to_string(r.size) + "," + kKinds[static_cast<size_t>(r.kind)] + "," +
            std::to_string(r.seq) + "," + std::to_string(r.queue_bytes) + "," +
            kOutcomes[static_cast<size_t>(r.outcome)] + "," + std::to_string(r.arrival_us) + "," +
            std::to_string(r.rtp_ts) + "," + std::to_string(r.marker) + "," + std::to_string(r.osn) + "," +
-           std::to_string(r.key) + "," + std::to_string(r.header) + "\n";
+           std::to_string(r.key) + "," + std::to_string(r.header) + "," + std::to_string(r.rtx_room) + "\n";
   }
   return out;
 }
@@ -710,6 +730,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
   std::unordered_map<uint32_t, VideoFrameTimes> frame_times;  // RTP timestamp -> its path (issue #60).
+  // The trace's rtx_room column (#555): the sender's RTX reservation phase when each frame was handed to it.
+  RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
   std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
@@ -778,8 +801,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       // The frame trace's RTP fields (issue #437): timestamp, marker, an RTX packet's original sequence number
       // and whether a video packet belongs to a keyframe.
       int64_t rtp_ts = -1;
-      int32_t marker = -1, osn = -1, key = -1, header = -1;
+      int32_t marker = -1, osn = -1, key = -1, header = -1, rtx_room = -1;
       if (opt.link_trace && seq >= 0) {
+        if (kind == Kind::kVideo) {
+          if (auto it = frame_rtx_room.find(RtpTimestamp(p.bytes)); it != frame_rtx_room.end()) rtx_room = it->second;
+        }
         header = TraceHeaderBytes(p.bytes, p.wire_size.bytes(), video_cfg.ulpfec.red_payload_type);
         if (auto q = RtpPacket::Parse(p.bytes)) {
           rtp_ts = q->timestamp;
@@ -793,7 +819,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         }
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
-      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header);
+      link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
     }
   };
 
@@ -874,6 +900,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       frame_capture[f.rtp_ts] = f.capture;
       frame_times[f.rtp_ts].capture = f.capture;
       frame_times[f.rtp_ts].submitted = f.done;
+      if (opt.link_trace) frame_rtx_room[f.rtp_ts] = rtx_ack.Room();
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
       sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
     };
@@ -960,6 +987,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       } else if (tr == at) {
         const Rev& r = rev_in[ri++].second;
         if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
+        if (opt.link_trace) rtx_ack.OnRtcp(r.bytes);
         sender.OnPacket(r.bytes, at);
         run_sender(at);
       } else if (te == at) {

@@ -147,11 +147,18 @@ class RtpSender : public MetricsSource {
   // the registered extensions of kFecOrPaddingExtensionSizes (transport-cc, abs-send-time, MID
   // at its largest). A padding packet's padding is at most the whole-packet limit less this.
   size_t PaddingFecPacketHeaderSize() const;
-  // RTPSender::RtxPacketOverhead (rtp_sender.cc:566-595): the room a media packet leaves for its
-  // RTX resend, kRtxHeaderSize (2, the original sequence number), 0 without an RTX SSRC.
-  // libwebrtc also reserves MID/RID room while only the media SSRC is acked; this sender writes
-  // no MID on RTX packets, so that term is 0 here.
-  size_t RtxPacketOverhead() const { return cfg_.rtx_ssrc ? 2 : 0; }
+  // RTPSender::RtxPacketOverhead (rtp_sender.cc:564-595): the room a media packet leaves for its
+  // RTX resend, 0 without an RTX SSRC. kRtxHeaderSize (2, the original sequence number), plus,
+  // while the media SSRC has been acked and the RTX SSRC not yet, the MID extension's room
+  // (2 + its length; this sender has no RID) and 3 bytes for rounding the extensions up to 4.
+  size_t RtxPacketOverhead() const;
+  // RTPSender::OnReceivedAckOnSsrc / OnReceivedAckOnRtxSsrc (rtp_sender.cc:367-385): a report
+  // block for the media or the RTX SSRC arrived (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
+  // rtp_rtcp_impl2.cc:694-713).
+  void OnReceivedAckOnSsrc() { ssrc_has_acked_ = true; }
+  void OnReceivedAckOnRtxSsrc() { rtx_ssrc_has_acked_ = true; }
+  bool ssrc_has_acked() const { return ssrc_has_acked_; }
+  bool rtx_ssrc_has_acked() const { return rtx_ssrc_has_acked_; }
   // A measured RTT (history retention).
   void SetRtt(TimeDelta rtt, Timestamp now) { rtx_.SetRtt(rtt, now); }
   // Packets the peer acknowledged by transport-wide feedback leave the history.
@@ -226,6 +233,8 @@ class RtpSender : public MetricsSource {
   std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
   int mid_remaining_;
+  bool ssrc_has_acked_ = false;
+  bool rtx_ssrc_has_acked_ = false;
   uint32_t last_rtp_timestamp_ = 0;
   Timestamp last_media_time_ = Timestamp::MinusInfinity();
   uint32_t sr_packets_ = 0, sr_octets_ = 0;

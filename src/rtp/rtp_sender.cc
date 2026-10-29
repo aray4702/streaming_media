@@ -290,6 +290,21 @@ size_t RtpSender::PaddingFecPacketHeaderSize() const {
   return p.HeaderSize();
 }
 
+size_t RtpSender::RtxPacketOverhead() const {
+  if (!cfg_.rtx_ssrc) return 0;
+  size_t overhead = 0;
+  // always_send_mid_and_rid is false (RtpRtcpInterface::Configuration's default): the RTX packets
+  // would still need the MID the media packets no longer carry.
+  if (!rtx_ssrc_has_acked_ && ssrc_has_acked_) {
+    constexpr size_t kRtpExtensionHeaderSize = 2;  // Two-byte header form, the larger.
+    if (!cfg_.mid.empty()) overhead += kRtpExtensionHeaderSize + cfg_.mid.size();
+    // Extensions are rounded up to 4 bytes: adding MID and RRID may add up to 3 bytes of padding.
+    overhead += 3;
+  }
+  constexpr size_t kRtxHeaderSize = 2;  // The original sequence number.
+  return overhead + kRtxHeaderSize;
+}
+
 size_t RtpSender::FecPacketOverhead() const {
   if (!ulpfec_) return 0;
   return loss::ulpfec::ForwardErrorCorrection::MaxPacketOverhead() + loss::ulpfec::kRedForFecHeaderLength +

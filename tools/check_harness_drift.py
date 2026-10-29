@@ -22,6 +22,10 @@ RTPSenderVideo's per-position limits), on each packet's payload (`size` minus
 the trace's `header` column), to find the interval of limits that explains
 every split, and the two sides' intervals must meet (#518). A row in KNOWN_LIMIT reports its limit test
 as KNOWN (#item) instead of failing, while its largest delta-frame packets must still be equal.
+Libwebrtc's RTPSender::RtxPacketOverhead reserves MID/RID room while the media SSRC is acked and the RTX
+SSRC is not (rtp_sender.cc:564-595), so the limit changes during the call (#555): the trace's `rtx_room`
+column says which phase each frame was packetized in (testbench::RtxAckPhase, on both sides), the splits and
+the limit test compare frames within one phase, and both sides must have the same phases.
 
 Scenarios with loss are reported but not required: their audio still parts
 at the first loss report, because our receiver sends report blocks more often
@@ -58,7 +62,9 @@ VIDEO_REQUIRED = REQUIRED + ["issue_124_burst_loss_v2", "low_bandwidth", "very_l
 # difference (Builder, 2026-10-28, on #553). Only the limit test is exempt: the row's largest
 # delta-frame packets must still be equal, as before #518, with the shared-frame splits and the padding.
 # The item's fix PR removes its entry.
-KNOWN_LIMIT = {"issue_257_zero_max_payload": 555}  # libwebrtc reserves more RTX room early in the call
+# #555's fix removed issue_257_zero_max_payload's entry: both sides now reserve RTPSender::RtxPacketOverhead's
+# MID/RID room until the RTX SSRC is acked, and each RTX phase is compared on its own.
+KNOWN_LIMIT = {}
 
 
 def audio_sizes(trace_csv):
@@ -72,17 +78,21 @@ def audio_sizes(trace_csv):
 
 
 def video_splits(trace_csv):
-    """{(frame size, keyframe): set of splits}: the wire sizes of each frame's video packets (first
-    sends, by RTP timestamp, in sequence order), keyed by their sum and the frame type."""
+    """{(frame size, keyframe, RTX phase): set of splits}: the wire sizes of each frame's video packets
+    (first sends, by RTP timestamp, in sequence order), keyed by their sum, the frame type and the
+    trace's `rtx_room` column (#555: whether the sender reserved RTPSender::RtxPacketOverhead's MID/RID
+    room when it packetized the frame, which changes the packet limit during the call). Frames are
+    compared only within one phase; a trace without the column puts every frame in one phase."""
     seen, frames = set(), {}
     for r in csv.DictReader(io.StringIO(trace_csv)):
         if r["kind"] == "video" and r["seq"] not in seen:
             seen.add(r["seq"])
-            frames.setdefault((r["rtp_ts"], r["key"] == "1"), []).append((int(r["seq"]), int(r["size"])))
+            frames.setdefault((r["rtp_ts"], r["key"] == "1", r.get("rtx_room") or "-1"), []).append(
+                (int(r["seq"]), int(r["size"])))
     out = {}
-    for (_, key), pkts in frames.items():
+    for (_, key, phase), pkts in frames.items():
         sizes = tuple(sz for _, sz in sorted(pkts))
-        out.setdefault((sum(sizes), key), set()).add(sizes)
+        out.setdefault((sum(sizes), key, phase), set()).add(sizes)
     return out
 
 
@@ -111,10 +121,21 @@ def split_about_equally(payload_len, max_len, first_red, last_red):
     return out
 
 
-def delta_frames(trace_csv):
+def rtx_phase(r):
+    """A trace row's `rtx_room` column (#555), "-1" when the trace has none."""
+    return r.get("rtx_room") or "-1"
+
+
+def rtx_phases(trace_csv):
+    """The RTX phases (rtx_phase) of a trace's delta-frame video packets."""
+    return {rtx_phase(r) for r in csv.DictReader(io.StringIO(trace_csv)) if r["kind"] == "video" and r.get("key") != "1"}
+
+
+def delta_frames(trace_csv, phase=None):
     """Each delta frame's video packets (first sends, in sequence order) as (payload, header) pairs,
     payload being `size` minus the trace's `header` column (#518). None if the trace has no column.
-    Keyframes are left out, as our SPS rewrite can make a keyframe a byte longer than libwebrtc's."""
+    Keyframes are left out, as our SPS rewrite can make a keyframe a byte longer than libwebrtc's.
+    With `phase`, only the frames of that RTX phase (#555)."""
     seen, frames = set(), {}
     for r in csv.DictReader(io.StringIO(trace_csv)):
         if r["kind"] != "video" or r["seq"] in seen:
@@ -122,13 +143,15 @@ def delta_frames(trace_csv):
         seen.add(r["seq"])
         if r.get("header") in (None, "", "-1"):
             return None
+        if phase is not None and rtx_phase(r) != phase:
+            continue
         if r.get("key") != "1":
             frames.setdefault(r["rtp_ts"], []).append((int(r["seq"]), int(r["size"]) - int(r["header"]),
                                                        int(r["header"])))
     return [[(p, h) for _, p, h in sorted(pkts)] for pkts in frames.values()]
 
 
-def packet_limits(trace_csv):
+def packet_limits(trace_csv, phase=None):
     """The interval [lo, hi] of whole-packet limits (in the trace's wire bytes, after the RTX and FEC
     room) that explains every delta frame's split, as libwebrtc's RTPSenderVideo and RtpPacketizerH264
     make it (rtp_sender_video.cc, rtp_format_h264.cc, rtp_format.cc). For a packet limit K, a packet
@@ -142,8 +165,9 @@ def packet_limits(trace_csv):
       so it must be the split SplitAboutEqually makes, or no limit explains the frame.
     h_mid is the frame's own middle packets' header; a two-packet frame has none, and its bounds do not
     depend on it. Returns (lo, hi, frames that need more than one packet, frames no limit explains), with
-    hi None when unbounded, or None when the trace has no header column."""
-    frames = delta_frames(trace_csv)
+    hi None when unbounded, or None when the trace has no header column. With `phase`, only the frames of
+    that RTX phase (#555): RtxPacketOverhead's MID/RID room changes the limit during the call."""
+    frames = delta_frames(trace_csv, phase)
     if frames is None:
         return None
     singles = [f[0][1] for f in frames if len(f) == 1]
@@ -184,10 +208,12 @@ def limits_text(lim):
                                       ", %d unexplained" % unexplained if unexplained else "")
 
 
-def max_video_packet(trace_csv):
-    """The largest video packet of a delta frame (keyframes left out, as in delta_frames)."""
+def max_video_packet(trace_csv, phase=None):
+    """The largest video packet of a delta frame (keyframes left out, as in delta_frames), of `phase` if
+    given."""
     return max((int(r["size"]) for r in csv.DictReader(io.StringIO(trace_csv))
-                if r["kind"] == "video" and r.get("key") != "1"), default=0)
+                if r["kind"] == "video" and r.get("key") != "1" and (phase is None or rtx_phase(r) == phase)),
+               default=0)
 
 
 def limits_meet(a, b, max_a, max_b):
@@ -222,14 +248,26 @@ def compare_video(trace):
     # Only the full-size padding packet is compared; smaller ones are libwebrtc's media-SSRC and audio
     # padding, which #514 owns.
     pad_ok = not pa or not pb or pa[-1] == pb[-1]
-    la, lb = packet_limits(trace["sm"]), packet_limits(trace["webrtc"])
-    ma, mb = max_video_packet(trace["sm"]), max_video_packet(trace["webrtc"])
-    limit_ok = limits_meet(la, lb, ma, mb)
+    # The limit test runs within each RTX phase both sides have (#555). The row shows the first phase that
+    # fails, or else the one with the most frames over one packet.
+    # A phase only one side has is a difference in when the RTX room is reserved, and fails.
+    phases_a, phases_b = rtx_phases(trace["sm"]), rtx_phases(trace["webrtc"])
+    phases_ok = phases_a == phases_b or "-1" in phases_a | phases_b
+    results = []
+    for ph in sorted(phases_a & phases_b) or [None]:
+        pa_, pb_ = packet_limits(trace["sm"], ph), packet_limits(trace["webrtc"], ph)
+        xa, xb = max_video_packet(trace["sm"], ph), max_video_packet(trace["webrtc"], ph)
+        results.append((limits_meet(pa_, pb_, xa, xb), pa_, pb_, xa, xb))
+    limit_ok = all(r[0] for r in results)
+    shown = next((r for r in results if not r[0]), None) or max(results, key=lambda r: (r[1] or (0, 0, 0))[2])
+    _, la, lb, ma, mb = shown
     known = KNOWN_LIMIT.get(trace["scenario"]) if not limit_ok else None
     return {"scenario": trace["scenario"], "shared": len(shared), "differ": len(differ),
             "example": differ[0] if differ else None, "padding_ours": pa, "padding_webrtc": pb,
             "limit_ours": la, "limit_webrtc": lb, "max_ours": ma, "max_webrtc": mb, "known": known,
-            "ok": bool(shared) and not differ and pad_ok and (limit_ok or (known is not None and ma == mb))}
+            "phases_ours": sorted(phases_a), "phases_webrtc": sorted(phases_b),
+            "ok": bool(shared) and not differ and pad_ok and phases_ok and
+            (limit_ok or (known is not None and ma == mb))}
 
 
 def compare(trace):
@@ -272,9 +310,10 @@ def check_video(traces, required):
         rows.append(r)
         if not r["ok"]:
             failed.append("%s: video split differs (%d of %d shared frame sizes, e.g. %s; packet limit "
-                          "%s vs %s; full padding packet %s vs %s B)" % (
+                          "%s vs %s; full padding packet %s vs %s B; RTX phases %s vs %s)" % (
                               name, r["differ"], r["shared"], r["example"], limits_text(r["limit_ours"]),
-                              limits_text(r["limit_webrtc"]), r["padding_ours"][-1:], r["padding_webrtc"][-1:]))
+                              limits_text(r["limit_webrtc"]), r["padding_ours"][-1:], r["padding_webrtc"][-1:],
+                              r["phases_ours"], r["phases_webrtc"]))
     return rows, failed
 
 

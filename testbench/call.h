@@ -135,6 +135,27 @@ inline uint32_t PcmHash(std::span<const int16_t> pcm, uint32_t h = 2166136261u) 
 // block and 1 for the primary). -1 when `packet` is not RTP. Both implementations call it on the bytes they send, so
 // a packet's codec payload is `size - header` on either side.
 int32_t TraceHeaderBytes(std::span<const uint8_t> packet, int64_t wire_bytes, uint8_t red_pt);
+// The forward trace's `rtx_room` column (#555's drift check): whether the sender's RTPSender::RtxPacketOverhead
+// (rtp_sender.cc:564-595) reserves its MID/RID room for a frame. That is while a report block for the video's media
+// SSRC has reached the sender and none yet for its RTX SSRC (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
+// rtp_rtcp_impl2.cc:694-713), and only when the frame may be retransmitted, which RTPSenderVideo::SendVideo requires
+// for any RTX room (rtp_sender_video.cc:619-686): with the scenario's NACK on. Both implementations hand it every RTCP
+// packet their sender takes and read Room() when a frame is handed to the sender, so the drift check compares frame
+// splits within one reservation phase.
+class RtxAckPhase {
+ public:
+  RtxAckPhase(uint32_t media_ssrc, uint32_t rtx_ssrc, bool retransmission)
+      : media_ssrc_(media_ssrc), rtx_ssrc_(rtx_ssrc), retransmission_(retransmission) {}
+  // A compound RTCP packet the sender takes: the report blocks of its SRs and RRs.
+  void OnRtcp(std::span<const uint8_t> compound);
+  // 1 while the media SSRC is acked and the RTX SSRC is not, with retransmission; else 0.
+  int32_t Room() const { return retransmission_ && media_acked_ && !rtx_acked_ ? 1 : 0; }
+
+ private:
+  uint32_t media_ssrc_, rtx_ssrc_;
+  bool retransmission_;
+  bool media_acked_ = false, rtx_acked_ = false;
+};
 // Appends the row of an RTP packet from `audio_ssrc` with a payload.
 void TraceAudioRtp(std::span<const uint8_t> packet, int64_t time_us, uint32_t audio_ssrc,
                    std::vector<AudioSendRow>& rows);
@@ -201,7 +222,8 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
 // rtx, padding, fec or other (RTCP, cross traffic); `seq` is the RTP sequence
 // number or -1; `queue_bytes` is the bottleneck queue before the packet;
 // `outcome` is delivered, queue_drop, lost or down. Then arrival_us, rtp_ts,
-// marker, osn, key (issue #437) and header (TraceHeaderBytes, #518).
+// marker, osn, key (issue #437), header (TraceHeaderBytes, #518) and rtx_room
+// (RtxAckPhase, #555).
 // The per-second video send trace as CSV (issue #131), identical for both
 // implementations: a header line, then one line per second:
 // t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,

@@ -7,6 +7,7 @@
 #include "call.h"
 #include "call_common.h"
 #include "scenario.h"
+#include "sm/timing/rtcp_stats.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -157,15 +158,16 @@ SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
   trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered, 30500, 960, 1, -1});
   trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop, -1, 9000, 0, 12});
-  trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1, 69});
+  trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1, 69, 1});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n"
-               "0,213,audio,7,0,delivered,30500,960,1,-1,-1,-1\n"
-               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1,-1\n"
-               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1,69\n"
-               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1,-1\n");
-  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n"
+               "0,213,audio,7,0,delivered,30500,960,1,-1,-1,-1,-1\n"
+               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1,-1,-1\n"
+               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1,69,1\n"
+               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1,-1,-1\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}),
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header,rtx_room\n");
 }
 
 // The trace's header column (#518): every wire byte that is not codec payload.
@@ -183,6 +185,41 @@ SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
   p.back() = 3;
   SM_EXPECT_EQ(TraceHeaderBytes(p, static_cast<int64_t>(p.size()) + 28, 118), 28 + 12 + 4 + 12 + 3);
   SM_EXPECT_EQ(TraceHeaderBytes(std::vector<uint8_t>{0x80, 200, 0, 1}, 32, 118), -1);  // Not RTP.
+}
+
+// The trace's rtx_room column (#555): RtxPacketOverhead's window opens at the first report block for the
+// media SSRC and closes at the first one for the RTX SSRC, in an SR or an RR of a compound packet.
+SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {
+  RtxAckPhase phase(2, 3, true);
+  SM_EXPECT_EQ(phase.Room(), 0);
+  timing::ReceiverReport audio_only{.ssrc = 9, .blocks = {{.ssrc = 1}}};
+  phase.OnRtcp(timing::SerializeReceiverReport(audio_only));
+  SM_EXPECT_EQ(phase.Room(), 0);
+  // An SR from the peer, then an RR, in one compound packet: the RR's block for the media SSRC counts.
+  timing::SenderReport sr{.ssrc = 9, .blocks = {{.ssrc = 1}}};
+  std::vector<uint8_t> compound = timing::SerializeSenderReport(sr);
+  const std::vector<uint8_t> rr = timing::SerializeReceiverReport({.ssrc = 9, .blocks = {{.ssrc = 1}, {.ssrc = 2}}});
+  compound.insert(compound.end(), rr.begin(), rr.end());
+  phase.OnRtcp(compound);
+  SM_EXPECT_EQ(phase.Room(), 1);
+  phase.OnRtcp(rr);
+  SM_EXPECT_EQ(phase.Room(), 1);
+  // The RTX block in an SR's report blocks closes it for good.
+  phase.OnRtcp(timing::SerializeSenderReport({.ssrc = 9, .blocks = {{.ssrc = 3}}}));
+  SM_EXPECT_EQ(phase.Room(), 0);
+  phase.OnRtcp(rr);
+  SM_EXPECT_EQ(phase.Room(), 0);
+  // RTX acked first: no window.
+  RtxAckPhase other(2, 3, true);
+  other.OnRtcp(timing::SerializeReceiverReport({.ssrc = 9, .blocks = {{.ssrc = 3}}}));
+  other.OnRtcp(rr);
+  SM_EXPECT_EQ(other.Room(), 0);
+  other.OnRtcp(std::vector<uint8_t>{0x80, 201, 0, 9});  // A length past the end is ignored.
+  SM_EXPECT_EQ(other.Room(), 0);
+  // Without NACK, RTPSenderVideo reserves no RTX room for any frame (rtp_sender_video.cc:685-687).
+  RtxAckPhase no_nack(2, 3, false);
+  no_nack.OnRtcp(rr);
+  SM_EXPECT_EQ(no_nack.Room(), 0);
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {

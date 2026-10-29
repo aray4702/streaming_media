@@ -487,6 +487,10 @@ struct VideoModel {
   std::unordered_map<uint32_t, int64_t> capture_us_by_rtp;
   std::optional<uint32_t> first_rtp_ts;  // Encoder RTP timestamp of the first frame encoded.
   std::optional<uint32_t> rtp_ts_offset;  // Wire RTP timestamp minus the encoder's.
+  // The trace's rtx_room column (#555): the sender's RTX reservation phase when each frame was handed to
+  // VideoStreamEncoder (encoder RTP timestamp -> rtx_room), from the RTCP the send Call takes.
+  testbench::RtxAckPhase* rtx_ack = nullptr;
+  std::unordered_map<uint32_t, int32_t> frame_rtx_room;
   // Each frame's path by the encoder's RTP timestamp, as the test bench's (issue #510): the encoder sets the capture
   // time and the time it hands the frame on, the send transport the last media packet's send time, the forward link
   // the arrival of its last media or RTX packet, and the renderer the render time.
@@ -602,6 +606,7 @@ class ModelEncoder final : public w::VideoEncoder {
   // Hands the encoded frame to VideoStreamEncoder: the test bench's `submitted` time (issue #510).
   void Deliver(const w::EncodedImage& img, const w::CodecSpecificInfo& info) {
     if (m_->now) m_->frame_times[img.RtpTimestamp()].submitted = m_->now();
+    if (m_->rtx_ack) m_->frame_rtx_room[img.RtpTimestamp()] = m_->rtx_ack->Room();
     cb_->OnEncodedImage(img, &info);
   }
 
@@ -876,6 +881,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   model.rng = Random(s.seed + 13);
   model.start_us = t0.us();
   model.now = [&] { return rel(sim.Now()); };
+  testbench::RtxAckPhase rtx_ack(kVideoSsrc, kRtxSsrc, s.nack);
+  if (opt.link_trace) model.rtx_ack = &rtx_ack;
   // The last media or RTX packet of a frame (RFC 4588 keeps the original RTP timestamp) before it renders marks it
   // complete, as in testbench/call.cc (issue #510).
   auto frame_complete = [&](uint32_t wire_ts, sm::Timestamp at) {
@@ -967,7 +974,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     // The frame trace's RTP fields (issue #437), as the test bench writes them.
     int64_t trace_ts = -1;
-    int32_t trace_marker = -1, trace_osn = -1, trace_key = -1, trace_header = -1;
+    int32_t trace_marker = -1, trace_osn = -1, trace_key = -1, trace_header = -1, trace_rtx_room = -1;
     if (opt.link_trace && trace_seq >= 0) {
       trace_header = testbench::TraceHeaderBytes(data, wire, kRedPt);
       const RtpInfo r = ParseRtp(data);
@@ -982,11 +989,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         const std::span<const uint8_t> payload =
             r.payload_len > skip ? data.subspan(r.payload_off + skip, r.payload_len - skip) : std::span<const uint8_t>();
         trace_key = sm::rtp::H264Depacketizer::Parse(payload).keyframe ? 1 : 0;
+        if (model.rtp_ts_offset) {
+          auto it = model.frame_rtx_room.find(r.ts - *model.rtp_ts_offset);
+          if (it != model.frame_rtx_room.end()) trace_rtx_room = it->second;
+        }
       }
     }
     forward.Send(rel(now), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(wire), link_kind, trace_seq);
-    forward.AnnotateLastTrace(trace_ts, trace_marker, trace_osn, trace_key, trace_header);
+    forward.AnnotateLastTrace(trace_ts, trace_marker, trace_osn, trace_key, trace_header, trace_rtx_room);
   });
   LinkTransport recv_transport([&](std::span<const uint8_t> data, bool rtcp, const w::PacketOptions&) {
     advance_links(rel(sim.Now()));
@@ -1291,7 +1302,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (p.cross || !p.rtcp) return;
       if (opt.link_trace) testbench::TraceAudioRtcp(p.data, at.us(), kAudioSsrc, rep.audio_send_trace);
       post_at(sender_q.get(), t0 + w::TimeDelta::Micros(at.us()),
-              [&, buf = w::CopyOnWriteBuffer(p.data)] { send_call->Receiver()->DeliverRtcpPacket(buf); });
+              [&, buf = w::CopyOnWriteBuffer(p.data)] {
+                if (opt.link_trace) rtx_ack.OnRtcp(std::span<const uint8_t>(buf.cdata(), buf.size()));
+                send_call->Receiver()->DeliverRtcpPacket(buf);
+              });
     });
 
     // Receive-side frame counters once per second (issue #437), read on the receiver's queue: frames inserted into

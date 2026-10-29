@@ -202,3 +202,16 @@ SM_TEST(RtcpStats, ExtendedReportsSkipUnknownAndMisSizedBlocks) {
   SM_EXPECT_FALSE(ParseExtendedReports(bad).has_value());
   SM_EXPECT_FALSE(ParseExtendedReports(std::vector<uint8_t>{0x80, 207, 0}).has_value());
 }
+
+// StreamStatisticianImpl::MaybeAppendReportBlockAndReset (receive_statistics_impl.cc:241-250):
+// no report block before the stream's first packet, nor 8 s (kStatisticsTimeout) after its last.
+SM_TEST(RtcpStats, ReportBlockDueOnceReceivedUntilEightSecondsOfSilence) {
+  ReceiveStatistics s(0x300, 90000);
+  SM_EXPECT_FALSE(s.ReportBlockDue(Timestamp::Millis(0)));
+  s.OnPacket(10, 1000, Timestamp::Millis(100));
+  SM_EXPECT_TRUE(s.ReportBlockDue(Timestamp::Millis(100)));
+  SM_EXPECT_TRUE(s.ReportBlockDue(Timestamp::Millis(8099)));
+  SM_EXPECT_FALSE(s.ReportBlockDue(Timestamp::Millis(8100)));
+  s.OnPacket(11, 2000, Timestamp::Millis(9000));
+  SM_EXPECT_TRUE(s.ReportBlockDue(Timestamp::Millis(9000)));
+}

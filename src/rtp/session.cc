@@ -213,6 +213,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
   rtcp_.AddReceiveStatistics(r->receive_statistics());
+  rtcp_.AddReceiveStatistics(r->rtx_receive_statistics());
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
   std::vector<uint8_t> pts = {v.payload_type};
   if (v.rtx_ssrc) pts.push_back(v.rtx_payload_type);
@@ -486,18 +487,50 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     Emit(e);
   }
   {
-    // Loss from all report blocks since their previous report.
-    int64_t packets_delta = 0, lost_delta = 0;
-    for (const auto& rb : in.report_blocks) {
-      auto [it, inserted] = last_report_blocks_.try_emplace(rb.ssrc);
-      if (!inserted) {
-        packets_delta += static_cast<int32_t>(rb.extended_highest_seq - it->second.extended_highest_seq);
-        lost_delta += rb.cumulative_lost - it->second.cumulative_lost;
+    // Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands the packet to every video send stream,
+    // then every audio send stream. Each one's RTCPReceiver keeps only the report blocks for its
+    // own SSRCs (RegisteredSsrcs: media and RTX, rtcp_receiver.cc:104-119, 532) and passes them
+    // to RtpTransportControllerSend::OnReport (rtcp_receiver.cc:1006-1009), so GoogCC gets one
+    // loss report per send stream, not one for the whole packet.
+    auto report = [&](uint32_t ssrc, std::optional<uint32_t> rtx_ssrc) {
+      // RtpTransportControllerSend::OnReport (rtp_transport_controller_send.cc:850-891).
+      int total_packets_delta = 0, total_packets_lost_delta = 0;
+      bool any = false;
+      for (const auto& rb : in.report_blocks) {
+        if (rb.ssrc != ssrc && rb.ssrc != rtx_ssrc) continue;
+        any = true;
+        auto [it, inserted] = last_report_blocks_.try_emplace(rb.ssrc);
+        if (!inserted) {
+          total_packets_delta += static_cast<int>(rb.extended_highest_seq - it->second.extended_highest_seq);
+          total_packets_lost_delta += rb.cumulative_lost - it->second.cumulative_lost;
+        }
+        it->second.extended_highest_seq = rb.extended_highest_seq;
+        it->second.cumulative_lost = rb.cumulative_lost;
       }
-      it->second.extended_highest_seq = rb.extended_highest_seq;
-      it->second.cumulative_lost = rb.cumulative_lost;
+      // No previous blocks to compare to, so nothing to report.
+      if (!any || !total_packets_delta) return;
+      // To detect lost packets, at least one packet has to be received.
+      const int packets_received_delta = total_packets_delta - total_packets_lost_delta;
+      if (packets_received_delta < 1) return;
+      send_.OnLossReport(total_packets_lost_delta, total_packets_lost_delta + packets_received_delta, now);
+    };
+    for (auto& v : video_send_) report(v.sender->config().ssrc, v.sender->config().rtx_ssrc);
+    for (auto& a : audio_send_) report(a.sender->config().ssrc, std::nullopt);
+  }
+  // ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks (rtp_rtcp_impl2.cc:694-713): a report block
+  // for a sender's media or RTX SSRC acknowledges that SSRC (RtxPacketOverhead reads it).
+  for (const auto& rb : in.report_blocks) {
+    for (auto& v : video_send_) {
+      const RtpSenderConfig& c = v.sender->config();
+      if (rb.ssrc == c.ssrc) {
+        v.sender->OnReceivedAckOnSsrc();
+      } else if (c.rtx_ssrc && rb.ssrc == *c.rtx_ssrc) {
+        v.sender->OnReceivedAckOnRtxSsrc();
+      }
     }
-    if (packets_delta > 0) send_.OnLossReport(lost_delta, packets_delta, now);
+    for (auto& a : audio_send_) {
+      if (rb.ssrc == a.sender->config().ssrc) a.sender->OnReceivedAckOnSsrc();
+    }
   }
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;

@@ -114,6 +114,7 @@ std::vector<uint8_t> RtcpEngine::BuildReport(Timestamp now) {
   std::vector<timing::ReportBlock> blocks;
   for (auto* s : receive_stats_) {
     if (blocks.size() == 31) break;  // 5-bit report count.
+    if (!s->ReportBlockDue(now)) continue;
     blocks.push_back(s->MakeReportBlock(now));
   }
   if (sender_) {

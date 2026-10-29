@@ -99,6 +99,12 @@ class ReceiveStatistics : public MetricsSource {
   // (`StreamStatisticianImpl::ReviseFrequencyAndJitter`).
   void OnPacket(uint16_t seq, uint32_t rtp_ts, Timestamp arrival, int payload_frequency);
   void OnSenderReport(const SenderReport& sr, Timestamp arrival);
+  // StreamStatisticianImpl::MaybeAppendReportBlockAndReset (receive_statistics_impl.cc:241-250):
+  // a stream is reported once it has received a packet, and not after 8 s (kStatisticsTimeout)
+  // without an in-order one.
+  bool ReportBlockDue(Timestamp now) const {
+    return started_ && now - last_receive_time_ < TimeDelta::Seconds(8);
+  }
   // Builds a report block and starts a new fraction-lost interval.
   ReportBlock MakeReportBlock(Timestamp now);
   ReceiveStatsSnapshot Snapshot() const;

@@ -258,6 +258,9 @@ class RtpReceiver : public MetricsSource {
 
   // Report block source for rtp::RtcpEngine::AddReceiveStatistics.
   timing::ReceiveStatistics* receive_statistics() { return &stats_rtp_; }
+  // The RTX SSRC's own statistics (RtxReceiveStream counts every packet on it, padding included,
+  // in the receive statistics, video_receive_stream2.cc:313-316); null without RTX.
+  timing::ReceiveStatistics* rtx_receive_statistics() { return stats_rtx_ ? &*stats_rtx_ : nullptr; }
 
   const RtpReceiverConfig& config() const { return cfg_; }
   const RtpReceiverStats& stats() const { return stats_; }
@@ -307,6 +310,7 @@ class RtpReceiver : public MetricsSource {
   std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
+  std::optional<timing::ReceiveStatistics> stats_rtx_;
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
   bool have_sps_ = false;  // sps_pps_tracker: an SPS / a PPS has been received.

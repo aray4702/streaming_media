@@ -413,10 +413,54 @@ SM_TEST(Session, ReportBlocksFromThePeerBecomeEventsWithTheLossFraction) {
   for (const auto& e : events) {
     if (e.type != SessionEventType::kReportBlock) continue;
     ++blocks;
-    SM_EXPECT_TRUE(e.ssrc == 0x100 || e.ssrc == 0x200);
+    // The RTX SSRC (0x300) is reported once it has received a packet (RtxReceiveStream counts it
+    // in the receive statistics, video_receive_stream2.cc:313-316; issue #555).
+    SM_EXPECT_TRUE(e.ssrc == 0x100 || e.ssrc == 0x200 || e.ssrc == 0x300);
     SM_EXPECT_EQ(e.loss_fraction, 0.0);
   }
   SM_EXPECT_GE(blocks, 2u);  // One receiver report: an audio and a video block.
+}
+
+// ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks (rtp_rtcp_impl2.cc:694-713, issue #555): a report
+// block for the media SSRC acks it, one for the RTX SSRC acks that, and RtxPacketOverhead keeps
+// 3 more bytes only in between.
+SM_TEST(Session, ReportBlocksAckTheMediaAndRtxSsrcs) {
+  Pair p;
+  const RtpSender& s = p.a.video_sender(p.a_video);
+  SM_EXPECT_FALSE(s.ssrc_has_acked());
+  SM_EXPECT_EQ(s.RtxPacketOverhead(), 2u);
+  auto events = Exchange(p, 1600);
+  bool rtx_block = false;
+  for (const auto& e : events) rtx_block |= e.type == SessionEventType::kReportBlock && e.ssrc == 0x300;
+  SM_EXPECT_TRUE(s.ssrc_has_acked());
+  SM_EXPECT_EQ(s.rtx_ssrc_has_acked(), rtx_block);
+  SM_EXPECT_EQ(s.RtxPacketOverhead(), rtx_block ? 2u : 5u);
+}
+
+// Call::DeliverRtcpPacket_w and RtpTransportControllerSend::OnReport (issue #555): each send stream
+// passes only the blocks for its own SSRCs (media and RTX) to the loss estimate, video first, and a
+// stream's report with no packet received is dropped. A block for an SSRC nobody sends is ignored.
+SM_TEST(Session, LossReportsArePerSendStreamAndNeedAReceivedPacket) {
+  Pair p;
+  auto rr = [&](uint32_t video_seq, uint32_t audio_seq, int32_t audio_lost, uint32_t other_seq, int64_t ms) {
+    timing::ReceiverReport r;
+    r.ssrc = 2;
+    r.blocks = {{.ssrc = 0x200, .extended_highest_seq = video_seq},
+                {.ssrc = 0x300, .extended_highest_seq = 7},
+                {.ssrc = 0x100, .cumulative_lost = audio_lost, .extended_highest_seq = audio_seq},
+                {.ssrc = 0x999, .cumulative_lost = static_cast<int32_t>(other_seq), .extended_highest_seq = other_seq}};
+    p.a.OnPacket(timing::SerializeReceiverReport(r), Timestamp::Millis(ms));
+  };
+  const cc::SendSideBandwidthEstimation& bwe = p.a.send_side().gcc().send_side_bwe();
+  rr(100, 50, 0, 100, 1000);
+  // Video: 30 received. Audio: 10 more, all lost, so its report is dropped. 0x999: 100 lost.
+  // Summed over the packet this would be 110 of 140 lost.
+  rr(130, 60, 10, 200, 2000);
+  SM_EXPECT_EQ(static_cast<int>(bwe.fraction_loss()), 0);
+  SM_EXPECT_EQ(bwe.expected_packets_since_last_loss_update(), 0);
+  // Video 10 received (< 20, accumulated), then audio 20 with 5 lost: 5 of 30, in the second report.
+  rr(140, 80, 15, 200, 3000);
+  SM_EXPECT_EQ(static_cast<int>(bwe.fraction_loss()), (5 << 8) / 30);
 }
 
 SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
