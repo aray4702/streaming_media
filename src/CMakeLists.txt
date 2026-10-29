@@ -15,7 +15,6 @@ if(SM_WITH_LOSS)
     loss/plc.cc
     loss/keyframe_request.cc
     loss/rtcp_feedback.cc
-    loss/temporal_layers.cc
     loss/ulpfec.cc
     loss/ulpfec_tables.cc
     loss/fec_controller.cc

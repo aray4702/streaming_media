@@ -166,16 +166,6 @@ ALGORITHMS = [
                       "[#335](../../fixes/335-keyframe-packets.md): a 1 fps keyframe that took 0.5 s to arrive was asked "
                       "for again at 400 ms because only its first packet counted as a keyframe packet; with every packet "
                       "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms)."),
-    dict(id="3.6", slug="temporal-layers", title="Temporal scalability (L1T2/L1T3)",
-         problems=["A single loss breaking every later frame -> Temporal layers / SVC: dependent frames can be dropped safely"],
-         headers=["loss/temporal_layers.h"], unit=["TemporalLayers"], e2e=["E2E_TemporalLayers"],
-         bench=["loss/TemporalLayers_ScheduleAndFilter", "loss/Q_TemporalLayers_5pct"],
-         scenario="Same frame-loss simulation at 5% loss with L1T1 versus L1T3 (keyframe requests on), plus an "
-                  "SFU forwarding only T0+T1 and checking that every forwarded frame is decodable.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "Bitrate split follows libvpx defaults (40/20/40% for L1T3). Layer-sync frames (that depend only "
-               "on T0) are where a receiver may switch up.",
-         verification="No defects found."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
          problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
          headers=["loss/fec_controller.h"], unit=["FecController"], e2e=["E2E_Protection"],
@@ -1585,6 +1575,7 @@ ALGORITHMS = [
 NOT_IMPLEMENTED = [
     ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
     ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
+    ("3", "Temporal scalability (L1T2/L1T3) and temporal layer filtering", "Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566)."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
