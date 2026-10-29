@@ -215,6 +215,67 @@ SM_TEST(Session, RotatedFramesCarryCvoWithinThePacketLimit) {
   SM_EXPECT_EQ(a.video_sender(id).stats().video_orientation_packets, 100u);
 }
 
+// Absolute capture time (#567 F8.3): with the extension mapped and a capture time on the frame,
+// the frame's first packet carries it when AbsoluteCaptureTimeSender decides to send it, and the
+// packetizer leaves the room as first_packet_reduction_len (rtp_sender_video.cc:690-758), so
+// every packet still fits the whole-packet limit. Audio carries it per packet.
+SM_TEST(Session, CapturedFramesCarryAbsoluteCaptureTimeWithinThePacketLimit) {
+  SessionConfig ca = Cfg(1);
+  ca.extensions.Register(5, sync::uri::kVideoOrientation);
+  ca.extensions.Register(7, sync::uri::kAbsCaptureTime);
+  Session a(ca);
+  VideoStreamConfig v = Video();
+  v.nack = false;
+  v.max_payload_size = 1460 - 12;
+  const VideoSendId id = a.AddVideoSend(v);
+  size_t largest = 0, carried = 0;
+  auto check = [&](std::vector<OutgoingPacket> out) {
+    for (auto& o : out) {
+      if (o.kind != OutgoingKind::kVideo) continue;
+      largest = std::max(largest, o.bytes.size());
+      const auto pkt = RtpPacket::Parse(o.bytes);
+      const auto raw = sync::ExtensionAccessor(ca.extensions).GetRaw(*pkt, sync::uri::kAbsCaptureTime);
+      if (!raw) continue;
+      ++carried;
+      const auto ext = sync::ParseAbsoluteCaptureTime(*raw);
+      SM_ASSERT_TRUE(ext.has_value());
+      SM_EXPECT_TRUE(ext->clock_offset == std::optional<int64_t>(0));
+    }
+  };
+  // Frames around the limit, one every 2 s so each one carries it, rotated so that a single
+  // packet also carries CVO.
+  for (int i = 0; i < 100; ++i) {
+    EncodedVideoFrame f;
+    const Bytes data = MakeFakeH264Frame(false, 1380 + static_cast<size_t>(i));
+    const Timestamp now = Timestamp::Seconds(2 * i);
+    f.rtp_timestamp = static_cast<uint32_t>(180000 * i);
+    f.data = data;
+    f.rotation = video::Rotation::k90;
+    f.capture_time = now - TimeDelta::Millis(15);
+    a.SendVideo(id, f, now);
+    check(Pump(a, 2000 * i, 2000));
+  }
+  SM_EXPECT_EQ(largest, 1460u);
+  SM_EXPECT_EQ(carried, 100u);
+  SM_EXPECT_EQ(a.video_sender(id).stats().abs_capture_time_packets, 100u);
+
+  // Audio: the first packet, then none while the receiver can interpolate.
+  Session b(ca);
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  const AudioSendId au = b.AddAudioSend(acfg);
+  const Bytes opus(60, 1);
+  for (int i = 0; i < 10; ++i) {
+    const Timestamp now = Timestamp::Seconds(300) + TimeDelta::Millis(20 * i);
+    EncodedAudioFrame f;
+    f.rtp_timestamp = static_cast<uint32_t>(960 * i);
+    f.data = opus;
+    f.capture_time = now;
+    b.SendAudio(au, f, now);
+  }
+  SM_EXPECT_EQ(b.audio_sender(au).stats().abs_capture_time_packets, 1u);
+}
+
 // FrameEncodeMetadataWriter::UpdateBitstream (#342): a keyframe's SPS gets
 // libwebrtc's VUI, 5 bytes more on the fake encoder's SPS (the test bench's
 // STAP-A [SPS, PPS] packet grows from 72 to 77 bytes, as libwebrtc's); delta

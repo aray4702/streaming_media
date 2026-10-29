@@ -231,6 +231,10 @@ struct EncodedAudioFrame {  // One Opus packet.
   uint32_t rtp_timestamp = 0;
   std::span<const uint8_t> data;
   bool start_of_talkspurt = false;  // RTP marker (DTX resume).
+  // When the audio was captured, on the clock of `now`. With it the absolute
+  // capture time extension is sent when the session maps it
+  // (RtpSender::SendAudio, as RTPSenderAudio).
+  std::optional<Timestamp> capture_time = std::nullopt;
 };
 
 struct EncodedVideoFrame {
@@ -246,6 +250,10 @@ struct EncodedVideoFrame {
   // The capture rotation (VideoFrame::rotation), sent in the video-orientation
   // extension (CVO) when the session maps it (RtpSender::SendVideoFrame).
   video::Rotation rotation = video::Rotation::k0;
+  // When the frame was captured, on the clock of `now`. With it the absolute
+  // capture time extension goes on the frame's first packet when the session
+  // maps it and RtpSender::VideoAbsoluteCaptureTime decides to send it.
+  std::optional<Timestamp> capture_time = std::nullopt;
 };
 
 enum class OutgoingKind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding, kRtcp };
@@ -436,7 +444,8 @@ class Session : public MetricsSource {
   // SendVideoChunks with the encoded frame's size, for FecControllerDefault::UpdateWithEncodedData.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now, bool keyframe, size_t encoded_size,
-                       video::Rotation rotation = video::Rotation::k0);
+                       video::Rotation rotation = video::Rotation::k0,
+                       const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time = std::nullopt);
   // RtpVideoSender::OnBitrateUpdated's FEC half: on each network estimate change
   // (CongestionControlHandler::GetUpdate: the target, the loss or the RTT), each
   // video stream's FecControllerDefault sets the protection of the next frames.

@@ -243,6 +243,10 @@ struct RtpReceiverStats {
   uint64_t frames_received = 0;   // Assembled frames.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
+  // timing v2, FrameBuffer::InsertFrame: assembled frames the frame buffer refused (full, or at or
+  // below the last decoded id), and the times a keyframe cleared it.
+  uint64_t frames_refused = 0;
+  uint64_t frame_buffer_clears = 0;
   uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
   uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before their SPS and PPS.
   uint64_t parameter_sets_without_ids = 0;  // sps_pps_tracker: SPS/PPS units without ids dropped (kDrop).
@@ -346,6 +350,9 @@ class RtpReceiver : public MetricsSource {
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   void AssembleFrames(Timestamp now);
+  // timing v2: FrameBuffer::InsertFrame's checks for an assembled frame; false if it is refused.
+  bool FrameBufferAccepts(int64_t id, bool keyframe, uint32_t rtp_timestamp, Timestamp now);
+  void ClearFrameBuffer(Timestamp now, const char* reason, int64_t id);
 
   RtpReceiverConfig cfg_;
   loss::NackTracker nack_;
@@ -384,7 +391,14 @@ class RtpReceiver : public MetricsSource {
     bool retransmitted = false;  // A packet of it was NACKed (timing v2).
     video::Rotation rotation = video::Rotation::k0;
   };
-  std::map<int64_t, FrameMeta> frames_;  // Frame id -> what the scheduler needs; bounded.
+  // Frame id -> what the scheduler needs; bounded. With timing v2 it holds the frames libwebrtc's
+  // FrameBuffer holds (assembled, not yet decoded or dropped), at most kMaxFramesBuffered.
+  std::map<int64_t, FrameMeta> frames_;
+  struct DecodedFrame {
+    int64_t id;
+    uint32_t rtp_timestamp;
+  };
+  std::optional<DecodedFrame> last_decoded_;  // timing v2: DecodedFramesHistory's last decoded frame.
   std::vector<ReceivedFrame> out_frames_;
   ReceiverFeedback feedback_;
   RtpReceiverStats stats_;
