@@ -50,7 +50,6 @@ constexpr int kNackLimit = 3;
 constexpr double kRttMult = 0.9;
 constexpr TimeDelta kRttMultAddCap = TimeDelta::Millis(200);
 constexpr int64_t kMaxFramerateEstimateMilliHz = 200'000;
-constexpr size_t kFpsWindow = 30;  // fps_counter_(30).
 
 // --- timestamp_extrapolator.cc (and its default Config) ---
 constexpr double kLambda = 1;
@@ -78,6 +77,29 @@ constexpr int64_t kTimeLimitMs = 10000;
 constexpr TimeDelta kLowLatencyStreamMaxPlayoutDelayThreshold = TimeDelta::Millis(500);
 
 }  // namespace
+
+// --- RollingMean -------------------------------------------------------------
+
+void RollingMean::Reset() {
+  next_index_ = 0;
+  size_ = 0;
+  mean_ = 0;
+}
+
+void RollingMean::AddSample(uint64_t sample) {
+  if (size_ == static_cast<int64_t>(kWindow)) {
+    // RunningStatistics::RemoveSample of the oldest sample.
+    --size_;
+    const double delta = static_cast<double>(samples_[next_index_]) - mean_;
+    mean_ -= delta / static_cast<double>(size_);
+  }
+  samples_[next_index_] = sample;
+  // RunningStatistics::AddSample: Welford's incremental update.
+  ++size_;
+  const double delta = static_cast<double>(sample) - mean_;
+  mean_ += delta / static_cast<double>(size_);
+  next_index_ = (next_index_ + 1) % kWindow;
+}
 
 // --- RttFilter ---------------------------------------------------------------
 
@@ -258,7 +280,7 @@ void JitterEstimator::Reset() {
   startup_frame_size_count_ = 0;
   startup_count_ = 0;
   rtt_filter_.Reset();
-  fps_counter_.clear();
+  fps_counter_.Reset();
   kalman_filter_ = FrameDelayVariationKalmanFilter();
 }
 
@@ -321,8 +343,7 @@ void JitterEstimator::FrameNacked(Timestamp now) {
 
 void JitterEstimator::EstimateRandomJitter(double d_dt, Timestamp now) {
   if (last_update_time_) {
-    fps_counter_.push_back((now - *last_update_time_).us());
-    if (fps_counter_.size() > kFpsWindow) fps_counter_.pop_front();
+    fps_counter_.AddSample(static_cast<uint64_t>((now - *last_update_time_).us()));
   }
   last_update_time_ = now;
   if (alpha_count_ == 0) return;
@@ -395,11 +416,8 @@ TimeDelta JitterEstimator::GetEstimate(Timestamp now) {
 double JitterEstimator::frame_rate_hz() const { return MilliHzToHz(GetFrameRateMilliHz()); }
 
 int64_t JitterEstimator::GetFrameRateMilliHz() const {
-  if (fps_counter_.empty()) return 0;
-  // RollingAccumulator::ComputeMean over the window; TimeDelta::Micros(double) truncates.
-  double sum = 0;
-  for (int64_t v : fps_counter_) sum += static_cast<double>(v);
-  const int64_t mean_us = static_cast<int64_t>(sum / static_cast<double>(fps_counter_.size()));
+  // TimeDelta::Micros(double) truncates.
+  const int64_t mean_us = static_cast<int64_t>(fps_counter_.ComputeMean());
   if (mean_us <= 0) return 0;
   // `1 / mean_frame_period` (frequency.h): an integer division to millihertz.
   return std::min<int64_t>(1'000'000'000 / mean_us, kMaxFramerateEstimateMilliHz);
