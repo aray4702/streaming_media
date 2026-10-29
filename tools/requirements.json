@@ -203,10 +203,10 @@
    "area": "Bandwidth, congestion and unstable links",
    "catalog": "5.2",
    "title": "Delay-based bandwidth estimation (GCC)",
-   "status": "in-progress",
-   "evidence": "Ported as a unit from `goog_cc` (`InterArrivalDelta`, trendline, #19; `AimdRateControl`, `LinkCapacityEstimator`, #15; `AlrDetector`, #48/#152; `RobustThroughputEstimator`, #150), with libwebrtc's unit tests (#166); v1 deleted (#167). Library default differs: `GccConfig::max_rate` 10 Mbps where libwebrtc's is unbounded (`send_side_bandwidth_estimation.cc:44`); the bench gives both stacks 5000 kbps. #480 inventories GoogCC defaults.",
+   "status": "done",
+   "evidence": "Ported as a unit from `goog_cc` (`InterArrivalDelta`, trendline, #19; `AimdRateControl`, `LinkCapacityEstimator`, #15; `AlrDetector`, #48/#152; `RobustThroughputEstimator`, #150), with libwebrtc's unit tests (#166); v1 deleted (#167). The library default `GccConfig::max_rate` is now unbounded as libwebrtc's (#639, #580). The Fixer's seed-1 trace on #611 found the detector's rows (trend, threshold, send/recv deltas) identical to libwebrtc's to 4 decimals until an upstream 1-byte input difference.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
