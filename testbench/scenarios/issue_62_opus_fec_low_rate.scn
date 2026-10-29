@@ -11,4 +11,8 @@ at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
 # decision: concealed 0.84-1.44 % on seeds 1-5 (seed 1 1.07); with LBRR at any
 # loss above 0 (before): 0.50-0.94 (seed 1 0.74).
 expect audio.interruptions == 0
-expect audio.concealed_pct >= 0.8
+# PR for #518 merged with main after #543 and #551 (harness: timers at their due microsecond, the sides more alike;
+# program.md 0.2's exception, down to libwebrtc's lowest seed): was >= 0.8. Ours seeds 1-10 0.792 1.335 1.087 1.089 0.950
+# 1.110 0.832 0.932 1.030 1.811 (mean 1.097; main's test bench seed 1 0.969); libwebrtc seeds 1-10 1.212 1.119 0.774 1.303
+# 1.011 0.925 1.415 0.834 1.496 1.113 (mean 1.120). Seed-1 outlier, mean in band; libwebrtc's lowest seed 0.774.
+expect audio.concealed_pct >= 0.77
