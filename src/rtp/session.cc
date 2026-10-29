@@ -143,6 +143,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   vs.h264_packetization_mode = v.h264_packetization_mode;
   vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
   video_send_.push_back(std::move(vs));
+  // RtpVideoSender sets the video module's RTCP size to RtpConfig::max_packet_size
+  // (rtp_video_sender.cc:272), then to min(max_packet_size, kPathMTU - transport
+  // overhead) once the overhead is known (:860-865).
+  static constexpr int64_t kPathMtu = 1500;
+  rtcp_.SetMaxDatagramBytes(static_cast<size_t>(
+      std::min(cfg_.send_side.max_packet_size, kPathMtu - cfg_.send_side.transport_overhead_bytes)));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
