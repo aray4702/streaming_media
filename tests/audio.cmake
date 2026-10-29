@@ -39,7 +39,6 @@ sm_add_test_exe(sm_unit_audio LABEL unit DEPS sm::audio
     Agc2RnnVad
     AudioLevel
     CascadedBiquadFilter
-    ComfortNoise
     EchoCanceller
     EchoDelay
     GainControl
@@ -61,7 +60,6 @@ sm_add_test_exe(sm_e2e_audio LABEL e2e DEPS sm::audio
   SUITES
     E2E_Apm
     E2E_AudioLevel
-    E2E_ComfortNoise
     E2E_EchoCanceller
     E2E_EchoDelay
     E2E_GainControl

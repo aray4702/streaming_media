@@ -101,7 +101,7 @@ the smallest targets.
 ```
  SENDER                                              RECEIVER
  capture --> HPF -> AEC(6.1,6.2) -> NS -> VAD -> TS -> AGC          (6.x)
-         --> DTX/CNG (6.7) -> RED (3.3) ---------------------------> RED rx -> NetEq-lite (4.3-4.5) -> PLC (3.4)
+         --> RED (3.3) --------------------------------------------> RED rx -> NetEq-lite (4.3-4.5) -> PLC (3.4)
  camera  --> content policy (7.4) -> adaptation (5.9, 7.8) -> scaler (7.6) -> encoder
          --> frame dropper (5.8) -> temporal layers (3.6) -> FEC (3.2) --> packet buffer (4.1) -> keyframe req (3.5)
          --> RTX history (3.1) -> pacer (5.5) --> network -->          -> video timing (4.6) -> scheduler (7.7) -> freeze (7.1)
