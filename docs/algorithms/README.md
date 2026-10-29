@@ -62,7 +62,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.2 | [Hardware -> software encoder fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
-| 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
@@ -96,6 +95,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 4 | Clock drift estimation and compensation | Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566). |
 | 6 | DTX and comfort noise (RFC 3389) | Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566. |
 | 6 | Audio Device Module (platform I/O, mute, device switching) | Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11. |
+| 7 | Codec negotiation (SDP offer/answer, H.264 profile-level-id) | Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566). |
 | 7 | Error resilience inside the decoder | Codec internal; 7.2 handles the fallback decision. |
 | 7 | Screen-content coding tools (palette, intra-BC) | Encoder features; 7.4 flags when to enable them. |
 

@@ -516,7 +516,7 @@
    "catalog": "7.5",
    "title": "Codec negotiation",
    "status": "open",
-   "evidence": "`NegotiateCodecs`/`ParseH264ProfileLevelId` (`include/sm/video/codec_negotiation.h`) are the library's own; parity doc 7.3 'n/a; the Owner may remove the module' (SDP stays with the host stack, program.md 0.1), not a recorded decision. Not compared with `webrtc_video_engine.cc`'s codec lists; `api/video_codecs/` not in reference/. No open item; filed #566.",
+   "evidence": "Removed by #592 (`include/sm/video/codec_negotiation.h`: `NegotiateCodecs`, `ParseH264ProfileLevelId`) on the Owner's A on #566: SDP offer/answer stays with the host stack (program.md 0.1); libwebrtc's codec lists live in `webrtc_video_engine.cc`, outside the call path. Parity 7.3 row marked `removed`; catalog 7.5 moved to the not-implemented list.",
    "start": "",
    "end": "",
    "depends_on": [],
