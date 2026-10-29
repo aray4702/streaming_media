@@ -81,8 +81,9 @@ ALGORITHMS = [
                "sequence number as received (`RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader`, "
                "`NotifyReceiverOfEmptyPacket`), so it is not NACKed. The library's own XOR format (`loss/fec.h`, a "
                "separate FEC SSRC) is removed. "
-               "Remaining differences: the FEC enqueued after a pacer release goes out from the next pacer pass, where "
-               "libwebrtc's `ProcessPackets` loop can send it in the same pass; one RTX payload type per stream plus "
+               "The FEC a packet completes joins the queue the pacer's send loop is draining, as libwebrtc's "
+               "`ProcessPackets` does after each `SendPacket` (#771). "
+               "Remaining differences: one RTX payload type per stream plus "
                "the RED one, where libwebrtc maps each associated payload type; FEC packets are not in the sender "
                "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is "
                "`FecControllerDefault` (3.7).",

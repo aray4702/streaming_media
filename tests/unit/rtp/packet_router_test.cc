@@ -130,6 +130,41 @@ SM_TEST(PacketRouter, PaddingIsRtxPayloadOnTheRtxSsrc) {
   SM_EXPECT_GT(sender.stats().payload_padding_packets, 0u);
 }
 
+// PacingController::ProcessPackets sends each packet through PacketRouter::SendPacket before it asks
+// for padding, so the history already holds the frame the same pass just sent, and the probe that
+// follows it is RTX payload padding, not padding-only packets (issue #771).
+SM_TEST(PacketRouter, PaddingInTheSamePassResendsTheFrameJustSent) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  SendSideConfig cfg = V2();
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(3000);  // Start-up probes larger than the frame.
+  SendSideController c(cfg, &map);
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  sc.extensions = &map;
+  RtpSender sender(sc);
+  c.SetPaddingSender(&sender);
+  c.Start(Timestamp::Millis(0));
+  const std::vector<uint8_t> chunk(250, 1);  // Smaller than the probe: the pass goes on to pad.
+  sender.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000, Timestamp::Millis(0));
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  bool frame_sent = false;
+  size_t payload_padding = 0, empty_padding = 0;
+  for (int t = 0; t < 1000 && !frame_sent; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) {
+      if (r.kind == PacketKind::kVideo) frame_sent = true;
+      if (!frame_sent || r.kind != PacketKind::kPadding) continue;
+      auto p = RtpPacket::Parse(r.bytes);
+      SM_ASSERT_TRUE(p.has_value());
+      ++(p->payload.empty() ? empty_padding : payload_padding);
+    }
+  }
+  SM_ASSERT_TRUE(frame_sent);
+  SM_EXPECT_GT(payload_padding, 0u);
+  SM_EXPECT_EQ(empty_padding, 0u);
+}
+
 // GeneratePaddingPrioritizesVideo: with only an audio stream, padding goes on the audio SSRC; once a
 // video stream is added it pads, whatever the order the streams were added in.
 SM_TEST(PacketRouter, PaddingPrefersTheVideoStream) {

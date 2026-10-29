@@ -38,6 +38,10 @@ struct PacedPacket {
 // (PacingControllerConfig::padding_packet) that the caller fills in when they are sent.
 using PaddingGenerator = std::function<std::vector<PacedPacket>(DataSize target, Timestamp now)>;
 
+// PacketSender::SendPacket, as the pacer sees it: called with each packet (probe cluster set) as the
+// send loop takes it, at `now`.
+using PacketSender = std::function<void(const PacedPacket& p, Timestamp now)>;
+
 struct PacerStats {
   std::array<uint64_t, 5> sent_packets{};
   std::array<int64_t, 5> sent_bytes{};

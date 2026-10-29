@@ -42,6 +42,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
       pushback_target_(gcc_.target()),
       window_target_(gcc_.target()) {
   pacer_.SetTransportOverhead(DataSize::Bytes(cfg_.transport_overhead_bytes));
+  pacer_.SetPacketSender([this](const cc::PacedPacket& sent, Timestamp now) { SendPacket(sent, now); });
 }
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
@@ -320,51 +321,63 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   }
 }
 
+void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) {
+  // PacketRouter::SendPacket and RtpSenderEgress::SendPacket, inside the pacer's send loop
+  // (PacingController::ProcessPackets, pacing_controller.cc:523-527): the packet gets its sequence
+  // numbers and goes into its stream's history before the loop asks for padding, and the FEC it
+  // completes joins the queue the loop is draining (issue #771).
+  if (sent.is_padding) return;  // The pacer's own placeholder: no stream to pad on (PacketRouter has no module).
+  auto it = queued_.find(sent.id);
+  if (it == queued_.end()) {
+    ++stats_.unknown_ids;
+    return;
+  }
+  SenderPacket sp = std::move(it->second);
+  queued_.erase(it);
+  // ModuleRtpRtcpImpl2::CanSendPacket (rtp_rtcp_impl2.cc:337-350): media-SSRC padding that a new
+  // media packet preempted (it no longer follows a frame's last packet) is dropped.
+  if (sp.kind == PacketKind::kPadding && sp.sender && sp.packet.ssrc == sp.sender->config().ssrc &&
+      !sp.sender->CanSendPaddingOnMediaSsrc()) {
+    ++stats_.padding_dropped;
+    return;
+  }
+  if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
+  ReleasedPacket r;
+  // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
+  // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
+  // reported to the bandwidth estimator (RtpTransportControllerSend::NotifyBweOfPacedSentPacket).
+  const bool numbered = extensions_ && extensions_->IdOf(sync::uri::kTransportCc);
+  if (numbered) r.transport_seq = transport_seq_++;
+  WriteSendExtensions(sp.packet, r.transport_seq, now);
+  r.bytes = sp.packet.Serialize();
+  r.kind = sp.kind;
+  r.wire_size = sent.size;
+  r.probe_cluster = sent.probe_cluster;
+  r.send_time = now;
+  if (sp.sender) {
+    sp.sender->OnPacketReleased(sp, now);
+    // PacingController::ProcessPackets: the FEC the packet completed joins the queue.
+    for (SenderPacket& f : sp.sender->TakeFecPackets()) Enqueue(std::move(f), now);
+    if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo || sp.kind == PacketKind::kFec)) {
+      sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
+      // Feedback never covers more than a few seconds; bound the table.
+      sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));
+    }
+  }
+  egress_.push_back({sent, std::move(r)});
+}
+
 std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   std::vector<ReleasedPacket> out;
-  for (const auto& sent : pacer_.Process(now)) {
-    SenderPacket sp;
-    if (sent.is_padding) {
-      continue;  // The pacer's own placeholder: no stream to pad on (PacketRouter has no module).
-    } else {
-      auto it = queued_.find(sent.id);
-      if (it == queued_.end()) {
-        ++stats_.unknown_ids;
-        continue;
-      }
-      sp = std::move(it->second);
-      queued_.erase(it);
-    }
-    // ModuleRtpRtcpImpl2::CanSendPacket (rtp_rtcp_impl2.cc:337-350): media-SSRC padding that a new
-    // media packet preempted (it no longer follows a frame's last packet) is dropped.
-    if (sp.kind == PacketKind::kPadding && sp.sender && sp.packet.ssrc == sp.sender->config().ssrc &&
-        !sp.sender->CanSendPaddingOnMediaSsrc()) {
-      ++stats_.padding_dropped;
-      continue;
-    }
-    if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
-    ReleasedPacket r;
-    // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
-    // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
-    // reported to the bandwidth estimator (RtpTransportControllerSend::NotifyBweOfPacedSentPacket).
+  pacer_.Process(now);  // Each packet goes through SendPacket() as the pacer sends it.
+  // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator, the
+  // congestion window and the rate statistics see the packets once the loop is done.
+  std::vector<Egress> egress;
+  egress.swap(egress_);
+  for (Egress& e : egress) {
+    const cc::PacedPacket& sent = e.sent;
+    ReleasedPacket& r = e.released;
     const bool numbered = extensions_ && extensions_->IdOf(sync::uri::kTransportCc);
-    if (numbered) r.transport_seq = transport_seq_++;
-    WriteSendExtensions(sp.packet, r.transport_seq, now);
-    r.bytes = sp.packet.Serialize();
-    r.kind = sp.kind;
-    r.wire_size = sent.size;
-    r.probe_cluster = sent.probe_cluster;
-    r.send_time = now;
-    if (sp.sender) {
-      sp.sender->OnPacketReleased(sp, now);
-      // PacingController::ProcessPackets: the FEC the packet completed joins the queue.
-      for (SenderPacket& f : sp.sender->TakeFecPackets()) Enqueue(std::move(f), now);
-      if (numbered && (sp.kind == PacketKind::kAudio || sp.kind == PacketKind::kVideo || sp.kind == PacketKind::kFec)) {
-        sent_media_[r.transport_seq] = {sp.sender, sp.packet.seq};
-        // Feedback never covers more than a few seconds; bound the table.
-        sent_media_.erase(static_cast<uint16_t>(r.transport_seq - 20000));
-      }
-    }
     if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
     UpdatePushback(now, false);
     if (cfg_.cwnd.enabled) PostTargetRate(now);
