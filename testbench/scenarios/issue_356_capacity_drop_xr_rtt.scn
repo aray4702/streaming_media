@@ -25,4 +25,7 @@ at 25s capacity=2500kbps
 # reads 1804 ms (main 2411). libwebrtc on parity-data (main e212cc5) seeds 1-10: 1899, 3177, 2502, 3044, 1805, 3116,
 # 1688, 3128, 1623, 2785 (mean 2477, worst 1623). Ours seeds 1-10 mean: switch off 2712, on 2368, so the mean moves
 # toward libwebrtc. The line goes to libwebrtc's worst seed. Was > 2030.
-expect video.longest_freeze_ms > 1620
+# PR for #655 (the frame dropper and bitrate adjuster get the keyframe size after the SPS VUI rewrite, +5 B, as libwebrtc's
+# RunPostEncode; program.md 0.2, needs the sign-off): was > 1620 (#637). Ours on top of #637: 1804 on seed 1, seeds 2-5 3039, 1654, 3148, 2951; libwebrtc on parity-data (M157,
+# seeds 1-10): 1899, 3177, 2502, 3044, 1805, 3116, 1688, 3128, 1623, 2785, worst 1623 (seed 9). Moved to libwebrtc's worst.
+expect video.longest_freeze_ms > 1623
