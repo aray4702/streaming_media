@@ -44,6 +44,8 @@ class Pacer : public MetricsSource {
   void Enqueue(PacedPacket p);
   // See PacingController::SetPaddingGenerator.
   void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }
+  // See PacingController::SetPacketSender.
+  void SetPacketSender(PacketSender s) { pc_->SetPacketSender(std::move(s)); }
   // See PacingController::SetTransportOverhead.
   void SetTransportOverhead(DataSize overhead_per_packet) { pc_->SetTransportOverhead(overhead_per_packet); }
   void AddProbeCluster(const ProbeCluster& c);

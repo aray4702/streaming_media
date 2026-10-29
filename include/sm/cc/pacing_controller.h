@@ -138,6 +138,12 @@ class PacingController : public MetricsSource {
   // Unset: fixed-size placeholders. A generator that returns nothing for the padding rate
   // only charges the padding budget (PacingController::ProcessPackets).
   void SetPaddingGenerator(PaddingGenerator g) { padding_generator_ = std::move(g); }
+  // PacketSender::SendPacket, called for each packet as the send loop takes it, before the loop
+  // asks for padding or the next packet (PacingController::ProcessPackets, pacing_controller.cc:
+  // 427, 523): the packet's stream stores it in its history at once, so padding generated later
+  // in the same Process() call can resend it as RTX payload padding (issue #771). Packets the
+  // sender enqueues from the callback (FEC, FetchFec) join this Process() call's queue.
+  void SetPacketSender(PacketSender s) { packet_sender_ = std::move(s); }
   // PacingController::SetTransportOverhead: the per-packet transport overhead that
   // PacedPacket::size includes. The prober's "large enough packet" check takes the RTP
   // packet's size without it, as libwebrtc's EnqueuePacket passes RtpPacketToSend::size()
@@ -200,6 +206,7 @@ class PacingController : public MetricsSource {
 
   PacingControllerConfig cfg_;
   PaddingGenerator padding_generator_;
+  PacketSender packet_sender_;
   DataSize transport_overhead_ = DataSize::Zero();
   bool started_ = false;
   Timestamp last_timestamp_ = Timestamp::MinusInfinity();

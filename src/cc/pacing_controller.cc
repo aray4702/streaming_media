@@ -373,6 +373,7 @@ void PacingController::Account(PacedPacket& p, Timestamp now, const ProbeSendInf
     ++stats_.probe_packets;
   }
   sent.push_back(p);
+  if (packet_sender_) packet_sender_(p, now);
 }
 
 PacedPacket PacingController::MakePadding(DataSize size, Timestamp now) {
