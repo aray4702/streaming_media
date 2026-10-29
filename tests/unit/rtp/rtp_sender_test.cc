@@ -205,6 +205,19 @@ SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   SM_EXPECT_EQ(s.rtx().history_size(), 4u);
 }
 
+// Issue #619: SendVideoFrame returns the payload bytes of the frame's video packets, RED headers
+// included, as RTPSenderVideo::LogAndSendToNetwork sums them (rtp_sender_video.cc:245-251) for the
+// post-encode overhead.
+SM_TEST(RtpSender, VideoFrameReturnsItsPacketizedPayloadSize) {
+  RtpSender s(VideoCfg());
+  SM_EXPECT_EQ(s.SendVideoFrame(Chunks({100, 200, 50}), 1, Timestamp::Millis(0)), 350u);
+  SM_EXPECT_EQ(s.SendVideoFrame({}, 2, Timestamp::Millis(1)), 0u);
+  RtpSenderConfig c = VideoCfg();
+  c.fec = true;
+  RtpSender red(c);
+  SM_EXPECT_EQ(red.SendVideoFrame(Chunks({100, 100, 100, 100}), 1, Timestamp::Millis(0)), 404u);
+}
+
 // rtx_payload_type_map_: a RED packet is resent with the RTX payload type associated with RED.
 SM_TEST(RtpSender, RedPacketIsResentWithTheRedRtxPayloadType) {
   RtpSenderConfig c = VideoCfg();

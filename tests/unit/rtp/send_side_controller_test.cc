@@ -500,6 +500,57 @@ SM_TEST(SendSideController, LinkAllocationIsTheEncoderTargetBelowTheMaximum) {
   SM_EXPECT_EQ(r.video_link_allocation.bps(), 1197256);
 }
 
+// Issue #619: RtpVideoSender::OnBitrateUpdated (rtp_video_sender.cc:909-938) takes the post-encode
+// overhead (RTPSenderVideo::post_encode_overhead_bitrate_, a 1 s BitrateTracker fed by
+// LogAndSendToNetwork, rtp_sender_video.cc:241-258) off the encoder target and counts it in the media
+// rate, so the protection is unchanged. Frames every 100 ms whose packets carry 125 bytes more than
+// the encoder produced: at t = 1 s the window holds 10 of them, 1250 bytes = 10000 bps, so the
+// 1197256 bps target of LinkAllocationIsTheEncoderTargetBelowTheMaximum drops by 10000 bps.
+SM_TEST(SendSideController, PostEncodeOverheadComesOffTheEncoderTargetAsLibwebrtc) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  cfg.control_handler = false;  // Read live; with the handler it applies at the next update.
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t <= 1000; t += 100) c.OnVideoPacketized(5000, 5125, Timestamp::Millis(t));
+  c.Process(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
+  const SendRates r = c.ComputeMeasuredRates(DataRate::Zero());
+  SM_EXPECT_EQ(r.video_target.bps(), 1197256 - 10000);
+}
+
+// rtp_sender_video.cc:252-257: a frame whose packets carry fewer bytes than the encoder produced
+// (H.264 start codes are not sent) adds nothing; it is not a negative overhead.
+SM_TEST(SendSideController, PacketizationThatSavesBytesAddsNoPostEncodeOverhead) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  cfg.control_handler = false;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t <= 1000; t += 100) c.OnVideoPacketized(5000, 4996, Timestamp::Millis(t));
+  c.Process(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256);
+}
+
+// rtp_video_sender.cc:909-915: the post-encode overhead takes at most half the encoder target.
+SM_TEST(SendSideController, PostEncodeOverheadTakesAtMostHalfTheEncoderTarget) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  cfg.control_handler = false;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  // 10 x 100000 bytes in the window: 8 Mbps of overhead.
+  for (int t = 0; t <= 1000; t += 100) c.OnVideoPacketized(0, 100000, Timestamp::Millis(t));
+  c.Process(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256 / 2);
+}
+
 // Issue #375: VideoSendStreamImpl's encoder activity check (video_send_stream_impl.cc:84, 677-760).
 // Every kEncoderTimeOut (2 s) from the start, a video stream that encoded nothing since the last
 // check leaves the BitrateAllocator, so max_total_allocated_bitrate falls to the audio's; an

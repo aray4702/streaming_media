@@ -180,7 +180,7 @@ class SendSideController : public MetricsSource {
   // `encoder_output_size` bytes went out as video packets whose payloads sum to
   // `packetized_payload_size`. What packetization adds (H.264 FU-A headers less
   // the Annex-B start codes; nothing when it saves bytes) is the post-encode
-  // overhead, tracked over 1 s and taken off the encoder target (issue #611).
+  // overhead, tracked over 1 s and taken off the encoder target (issue #619).
   void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
   bool video_registered() const { return video_registered_; }
