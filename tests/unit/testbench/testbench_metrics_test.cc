@@ -157,15 +157,32 @@ SM_TEST(TestbenchMetrics, LinkTraceCsvWritesOneLinePerPacket) {
   std::vector<sim::LinkTraceRecord> trace;
   trace.push_back({0, 213, sim::LinkKind::kAudio, 7, 0, sim::LinkOutcome::kDelivered, 30500, 960, 1, -1});
   trace.push_back({20000, 1200, sim::LinkKind::kRtx, 65535, 450, sim::LinkOutcome::kQueueDrop, -1, 9000, 0, 12});
-  trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1});
+  trace.push_back({20100, 1100, sim::LinkKind::kVideo, 41, 0, sim::LinkOutcome::kDelivered, 50100, 9000, 0, -1, 1, 69});
   trace.push_back({20500, 60, sim::LinkKind::kOther, -1, 0, sim::LinkOutcome::kLost});
   SM_EXPECT_EQ(LinkTraceCsv(trace),
-               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n"
-               "0,213,audio,7,0,delivered,30500,960,1,-1,-1\n"
-               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1\n"
-               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1\n"
-               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1\n");
-  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key\n");
+               "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n"
+               "0,213,audio,7,0,delivered,30500,960,1,-1,-1,-1\n"
+               "20000,1200,rtx,65535,450,queue_drop,-1,9000,0,12,-1,-1\n"
+               "20100,1100,video,41,0,delivered,50100,9000,0,-1,1,69\n"
+               "20500,60,other,-1,0,lost,-1,-1,-1,-1,-1,-1\n");
+  SM_EXPECT_EQ(LinkTraceCsv({}), "time_us,size,kind,seq,queue_bytes,outcome,arrival_us,rtp_ts,marker,osn,key,header\n");
+}
+
+// The trace's header column (#518): every wire byte that is not codec payload.
+SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
+  // V=2, X=1, CC=1; one CSRC; a 2-word extension block; 10 payload bytes.
+  std::vector<uint8_t> p = {0x91, 96, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 9, 0xbe, 0xde, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0};
+  p.resize(p.size() + 10, 0x55);
+  SM_EXPECT_EQ(TraceHeaderBytes(p, static_cast<int64_t>(p.size()) + 28, 118), 28 + 12 + 4 + 12);
+  // The same packet with payload type 118 (RED): one primary block header byte comes off the payload.
+  p[1] = 118;
+  SM_EXPECT_EQ(TraceHeaderBytes(p, static_cast<int64_t>(p.size()) + 28, 118), 28 + 12 + 4 + 12 + 1);
+  // RTP padding (P bit, the last byte its count) is not payload either.
+  p[1] = 96;
+  p[0] |= 0x20;
+  p.back() = 3;
+  SM_EXPECT_EQ(TraceHeaderBytes(p, static_cast<int64_t>(p.size()) + 28, 118), 28 + 12 + 4 + 12 + 3);
+  SM_EXPECT_EQ(TraceHeaderBytes(std::vector<uint8_t>{0x80, 200, 0, 1}, 32, 118), -1);  // Not RTP.
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheLinkTraceOnRequestAndItAgreesWithTheCounters) {
