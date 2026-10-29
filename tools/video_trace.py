@@ -10,7 +10,8 @@ video send path, in the same CSV for this library and for libwebrtc:
   dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,
   encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,
   height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,
-  rx_complete,rx_decoded,rx_dropped
+  rx_complete,rx_decoded,rx_dropped,av_offset_ms,av_offset_abs_max_ms,
+  video_delay_ms
 
 The drop columns are libwebrtc's VideoSendStream::Stats reasons. This library
 maps its drop points onto them (frame dropper -> dropped_rate_limiter,
@@ -34,7 +35,12 @@ older traces read them so. rx_complete, rx_decoded and rx_dropped (issue
 #437) follow the receive side: frames inserted into the frame buffer
 (libwebrtc's received_frame_counts, counted on insertion), frames decoded, and frames
 the buffer dropped (fast-forwards and frames cleared for a keyframe);
-older traces read them as 0. CI publishes the traces
+older traces read them as 0. av_offset_ms, av_offset_abs_max_ms and
+video_delay_ms (issue #522) come from the A/V sync meter both stacks share
+(testbench/call_common.h): the mean signed A/V offset at the frames rendered
+in the second (positive: video later than audio), the largest absolute one,
+and their mean capture-to-render delay; 0 when no frame was measured, and
+this script does not summarise them. CI publishes the traces
 in compare-webrtc.json under "traces" ("sm_video", "webrtc_video"); with
 --trace-dir they are also written as <scenario>.<seed>.{sm,webrtc}.video.csv.
 

@@ -1577,6 +1577,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       testbench::AddVideoDelayMetrics(all, m);  // Issue #510: as testbench/call.cc.
     }
     if (s.audio) av_sync.AddMetrics(m);
+    testbench::AddAvSyncToVideoTrace(av_sync, rep.video_trace);
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] =
         model.frames_encoded ? static_cast<double>(model.qp_sum) / static_cast<double>(model.frames_encoded) : 0;
