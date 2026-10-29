@@ -1,6 +1,7 @@
 // Section 7 unit tests.
 #include <cmath>
 #include <functional>
+#include <limits>
 #include <vector>
 
 #include "sm/core/random.h"
@@ -918,6 +919,448 @@ SM_TEST(VideoStreamAdapter, AwaitsThePreviousAdaptation) {
   SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kAwaitingPreviousAdaptation);
 }
 
+// The other degradation preferences (issue #646), ported from the same
+// unittest with its BalancedFieldTrialConfig (320x240: 10 fps, 640x480: 20 fps,
+// 1280x720: 30 fps).
+namespace {
+constexpr int kBalancedHighPixels = 1280 * 720;
+constexpr int kBalancedHighFps = 30;
+constexpr int kBalancedMediumPixels = 640 * 480;
+constexpr int kBalancedMediumFps = 20;
+constexpr int kBalancedLowPixels = 320 * 240;
+constexpr int kBalancedLowFps = 10;
+constexpr int kDefaultMinPixels = 320 * 180;
+
+BalancedDegradationSettings TestBalancedSettings() {
+  std::vector<BalancedDegradationSettings::Config> c(3);
+  c[0].pixels = kBalancedLowPixels;
+  c[0].fps = kBalancedLowFps;
+  c[1].pixels = kBalancedMediumPixels;
+  c[1].fps = kBalancedMediumFps;
+  c[2].pixels = kBalancedHighPixels;
+  c[2].fps = kBalancedHighFps;
+  return BalancedDegradationSettings(c);
+}
+
+// FakeVideoStream: the input follows the restrictions, pixels and fps.
+struct FakeVideoStream {
+  VideoStreamAdapter& adapter;
+  int input_pixels;
+  int input_fps;
+  FakeVideoStream(VideoStreamAdapter& a, int pixels, int fps) : adapter(a), input_pixels(pixels), input_fps(fps) {
+    Set();
+  }
+  void Set() {
+    adapter.OnFrameSizeObserved(input_pixels);
+    adapter.OnFrameRateObserved(input_fps);
+  }
+  void ApplyAdaptation(const VideoStreamAdapter::Adaptation& a) {
+    adapter.ApplyAdaptation(a);
+    const auto& r = adapter.restrictions();
+    if (r.target_pixels_per_frame) {
+      input_pixels = *r.target_pixels_per_frame;
+    } else if (r.max_pixels_per_frame) {
+      input_pixels = *r.max_pixels_per_frame;
+    }
+    if (r.max_frame_rate) input_fps = static_cast<int>(*r.max_frame_rate);
+    Set();
+  }
+};
+
+bool IsStatus(const VideoStreamAdapter::Adaptation& a, VideoStreamAdapter::Status s) { return a.status == s; }
+
+BalancedDegradationSettings::Config Cfg(int pixels, int fps, int kbps = 0, int kbps_res = 0) {
+  BalancedDegradationSettings::Config c;
+  c.pixels = pixels;
+  c.fps = fps;
+  c.kbps = kbps;
+  c.kbps_res = kbps_res;
+  return c;
+}
+}  // namespace
+
+SM_TEST(VideoStreamAdapter, MaintainResolutionStepsFpsByTwoThirdsAndThreeHalves) {
+  using S = VideoStreamAdapter::Status;
+  {
+    // MaintainResolution_DecreasesFpsToTwoThirds.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(30);
+    const auto down = a.GetAdaptationDown();
+    SM_EXPECT_TRUE(IsStatus(down, S::kValid));
+    a.ApplyAdaptation(down);
+    SM_EXPECT_FALSE(a.restrictions().max_pixels_per_frame.has_value());
+    SM_EXPECT_FALSE(a.restrictions().target_pixels_per_frame.has_value());
+    SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), 20.0);
+    SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  }
+  {
+    // MaintainResolution_DecreasesFpsToLimitReached: clamped to 2 fps.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    FakeVideoStream f(a, 1280 * 720, kMinFrameRateFps + 1);
+    const auto down = a.GetAdaptationDown();
+    SM_EXPECT_TRUE(IsStatus(down, S::kValid));
+    f.ApplyAdaptation(down);
+    SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kMinFrameRateFps));
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationDown(), S::kLimitReached));
+  }
+  {
+    // MaintainResolution_IncreaseFpsToThreeHalves, then _IncreaseFpsToUnrestricted.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    FakeVideoStream f(a, 1280 * 720, 30);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kLimitReached));
+    f.ApplyAdaptation(a.GetAdaptationDown());
+    f.ApplyAdaptation(a.GetAdaptationDown());
+    SM_EXPECT_EQ(a.fps_adaptations(), 2);
+    const int input_fps = f.input_fps;
+    const auto up = a.GetAdaptationUp();
+    SM_EXPECT_TRUE(IsStatus(up, S::kValid));
+    f.ApplyAdaptation(up);
+    SM_EXPECT_FALSE(a.restrictions().max_pixels_per_frame.has_value());
+    SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(input_fps * 3 / 2));
+    SM_EXPECT_EQ(a.fps_adaptations(), 1);
+    f.ApplyAdaptation(a.GetAdaptationUp());
+    SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+    SM_EXPECT_EQ(a.counters().Total(), 0);
+  }
+  {
+    // Under 2 fps of input there is nothing to adapt (HasSufficientInputForAdaptation).
+    VideoStreamAdapter a;
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(1);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationDown(), S::kInsufficientInput));
+  }
+}
+
+SM_TEST(VideoStreamAdapter, BalancedLowersFpsThenResolutionAndRaisesFpsFirst) {
+  using S = VideoStreamAdapter::Status;
+  {
+    // Balanced_DecreaseFrameRate: to the frame rate of the input's resolution.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kBalanced);
+    a.OnFrameSizeObserved(kBalancedMediumPixels);
+    a.OnFrameRateObserved(kBalancedHighFps);
+    const auto down = a.GetAdaptationDown();
+    SM_EXPECT_TRUE(IsStatus(down, S::kValid));
+    a.ApplyAdaptation(down);
+    SM_EXPECT_FALSE(a.restrictions().max_pixels_per_frame.has_value());
+    SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedMediumFps));
+    SM_EXPECT_EQ(a.resolution_adaptations(), 0);
+    SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  }
+  // Balanced_IncreaseFrameRateAndResolution (it covers Balanced_DecreaseResolution).
+  VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+  a.SetDegradationPreference(DegradationPreference::kBalanced);
+  FakeVideoStream f(a, kBalancedHighPixels, kBalancedHighFps);
+  constexpr int kFirst = kBalancedHighPixels * 3 / 5;
+  constexpr int kSecond = kFirst * 3 / 5;
+  constexpr int kThird = kSecond * 3 / 5;
+  static_assert(kSecond > kBalancedMediumPixels && kThird <= kBalancedMediumPixels);
+  // The first step restricts the frame rate to the input's 30 fps.
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedHighFps));
+  SM_EXPECT_FALSE(a.restrictions().max_pixels_per_frame.has_value());
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  // Then the resolution, as MAINTAIN_FRAMERATE, until it is in the medium range.
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_pixels_per_frame.value_or(0), kFirst);
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedHighFps));
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_pixels_per_frame.value_or(0), kSecond);
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_pixels_per_frame.value_or(0), kThird);
+  // Now the medium frame rate.
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedMediumFps));
+  SM_EXPECT_EQ(a.resolution_adaptations(), 3);
+  SM_EXPECT_EQ(a.fps_adaptations(), 2);
+  // Up: the next config's frame rate first.
+  auto up = a.GetAdaptationUp();
+  SM_EXPECT_TRUE(IsStatus(up, S::kValid));
+  f.ApplyAdaptation(up);
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedHighFps));
+  SM_EXPECT_EQ(a.resolution_adaptations(), 3);
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  // That frame rate is reached, so the resolution (off by one from kSecond).
+  up = a.GetAdaptationUp();
+  SM_EXPECT_TRUE(IsStatus(up, S::kValid));
+  f.ApplyAdaptation(up);
+  SM_EXPECT_EQ(a.restrictions().target_pixels_per_frame.value_or(0), kThird * 5 / 3);
+  SM_EXPECT_EQ(a.resolution_adaptations(), 2);
+  // In the high range the next frame rate up is unlimited.
+  f.ApplyAdaptation(a.GetAdaptationUp());
+  SM_EXPECT_FALSE(a.restrictions().max_frame_rate.has_value());
+  SM_EXPECT_EQ(a.resolution_adaptations(), 2);
+  SM_EXPECT_EQ(a.fps_adaptations(), 0);
+  f.ApplyAdaptation(a.GetAdaptationUp());
+  SM_EXPECT_EQ(a.restrictions().target_pixels_per_frame.value_or(0), kThird * 5 / 3 * 5 / 3);
+  SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+  f.ApplyAdaptation(a.GetAdaptationUp());
+  SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+  SM_EXPECT_EQ(a.counters().Total(), 0);
+}
+
+SM_TEST(VideoStreamAdapter, BalancedReachesItsLimit) {
+  // Balanced_LimitReached.
+  using S = VideoStreamAdapter::Status;
+  VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+  a.SetDegradationPreference(DegradationPreference::kBalanced);
+  FakeVideoStream f(a, kBalancedLowPixels, kBalancedLowFps);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kLimitReached));
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedLowFps));
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  int previous = kBalancedLowPixels;
+  bool did_reach_limit = false;
+  for (int i = 0; i < 5; ++i) {
+    const auto down = a.GetAdaptationDown();
+    if (IsStatus(down, S::kLimitReached)) {
+      did_reach_limit = true;
+      break;
+    }
+    SM_EXPECT_TRUE(IsStatus(down, S::kValid));
+    f.ApplyAdaptation(down);
+    SM_EXPECT_LT(a.restrictions().max_pixels_per_frame.value_or(previous), previous);
+    previous = a.restrictions().max_pixels_per_frame.value_or(previous);
+  }
+  SM_EXPECT_TRUE(did_reach_limit);
+  SM_EXPECT_EQ(a.restrictions().max_frame_rate.value_or(0), static_cast<double>(kBalancedLowFps));
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+}
+
+SM_TEST(VideoStreamAdapter, PreferenceSwitchesAndDisabled) {
+  using S = VideoStreamAdapter::Status;
+  {
+    // MaintainFramerate_AdaptsDownAfterSwitchingDegradationPreference.
+    VideoStreamAdapter a;
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    FakeVideoStream f(a, 1280 * 720, 30);
+    f.ApplyAdaptation(a.GetAdaptationDown());
+    SM_EXPECT_EQ(a.fps_adaptations(), 1);
+    a.SetDegradationPreference(DegradationPreference::kMaintainFramerate);
+    const auto down = a.GetAdaptationDown();
+    SM_EXPECT_TRUE(IsStatus(down, S::kValid));
+    f.ApplyAdaptation(down);
+    SM_EXPECT_EQ(a.fps_adaptations(), 1);
+    SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+    // The source sees only the resolution in MAINTAIN_FRAMERATE.
+    SM_EXPECT_FALSE(a.filtered_restrictions().max_frame_rate.has_value());
+    SM_EXPECT_TRUE(a.filtered_restrictions().max_pixels_per_frame.has_value());
+  }
+  {
+    // PendingResolutionDecreaseAllowsAdaptDownAfterSwitchToMaintainResolution.
+    VideoStreamAdapter a;
+    FakeVideoStream f(a, 1280 * 720, 30);
+    a.ApplyAdaptation(a.GetAdaptationDown());
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationDown(), S::kAwaitingPreviousAdaptation));
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationDown(), S::kValid));
+  }
+  {
+    // PendingResolutionIncreaseAllowsAdaptUpAfterSwitchToMaintainResolution.
+    VideoStreamAdapter a;
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    FakeVideoStream f(a, 1280 * 720, 30);
+    f.ApplyAdaptation(a.GetAdaptationDown());
+    a.SetDegradationPreference(DegradationPreference::kMaintainFramerate);
+    f.ApplyAdaptation(a.GetAdaptationDown());
+    a.ApplyAdaptation(a.GetAdaptationUp());
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kAwaitingPreviousAdaptation));
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kValid));
+  }
+  {
+    // SetDegradationPreferenceToOrFromBalancedClearsRestrictions.
+    VideoStreamAdapter a;
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(30);
+    a.ApplyAdaptation(a.GetAdaptationDown());
+    SM_EXPECT_NE(a.counters().Total(), 0);
+    a.SetDegradationPreference(DegradationPreference::kBalanced);
+    SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+    SM_EXPECT_EQ(a.counters().Total(), 0);
+    a.ApplyAdaptation(a.GetAdaptationDown());
+    SM_EXPECT_NE(a.counters().Total(), 0);
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    SM_EXPECT_TRUE(a.restrictions() == VideoSourceRestrictions{});
+    SM_EXPECT_EQ(a.counters().Total(), 0);
+  }
+  {
+    // AdaptationDisabledStatusWhenPreferenceIsMaintainFramerateAndResolution.
+    VideoStreamAdapter a;
+    a.SetDegradationPreference(DegradationPreference::kMaintainFramerateAndResolution);
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(30);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationDown(), S::kAdaptationDisabled));
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kAdaptationDisabled));
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptDownResolution(), S::kAdaptationDisabled));
+    a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+    SM_EXPECT_TRUE(IsStatus(a.GetAdaptDownResolution(), S::kLimitReached));
+  }
+}
+
+SM_TEST(VideoStreamAdapter, GetAdaptDownResolutionInEachPreference) {
+  using S = VideoStreamAdapter::Status;
+  {
+    // GetAdaptDownResolutionAdaptsResolutionInMaintainFramerate.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(30);
+    const auto r = a.GetAdaptDownResolution();
+    SM_EXPECT_TRUE(IsStatus(r, S::kValid));
+    SM_EXPECT_EQ(r.resolution_adaptations, 1);
+    SM_EXPECT_EQ(r.fps_adaptations, 0);
+  }
+  {
+    // GetAdaptDownResolutionAdaptsFpsAndResolutionInBalanced.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kBalanced);
+    a.OnFrameSizeObserved(1280 * 720);
+    a.OnFrameRateObserved(30);
+    const auto r = a.GetAdaptDownResolution();
+    SM_EXPECT_TRUE(IsStatus(r, S::kValid));
+    SM_EXPECT_EQ(r.resolution_adaptations, 1);
+    SM_EXPECT_EQ(r.fps_adaptations, 1);
+  }
+  {
+    // GetAdaptDownResolutionAdaptsOnlyResolutionIfFpsAlreadyAdapterInBalanced.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kBalanced);
+    FakeVideoStream f(a, 1280 * 720, 30);
+    const auto first = a.GetAdaptationDown();
+    f.ApplyAdaptation(first);
+    const auto r = a.GetAdaptDownResolution();
+    SM_EXPECT_TRUE(IsStatus(r, S::kValid));
+    SM_EXPECT_EQ(r.resolution_adaptations, 1);
+    SM_EXPECT_EQ(r.fps_adaptations, first.fps_adaptations);
+  }
+  {
+    // GetAdaptDownResolutionAdaptsOnlyFpsIfResolutionLowInBalanced.
+    VideoStreamAdapter a(kDefaultMinPixels, TestBalancedSettings());
+    a.SetDegradationPreference(DegradationPreference::kBalanced);
+    a.OnFrameSizeObserved(kDefaultMinPixels);
+    a.OnFrameRateObserved(30);
+    const auto r = a.GetAdaptDownResolution();
+    SM_EXPECT_TRUE(IsStatus(r, S::kValid));
+    SM_EXPECT_EQ(r.resolution_adaptations, 0);
+    SM_EXPECT_EQ(r.fps_adaptations, 1);
+  }
+}
+
+SM_TEST(BalancedDegradationSettings, DefaultsAndLookups) {
+  // balanced_degradation_settings_unittest.cc: GetsDefaultConfigIfNoList and
+  // the MinFps / MaxFps / MinFpsDiff lookups on the defaults.
+  const BalancedDegradationSettings s;
+  SM_EXPECT_EQ(s.configs().size(), 3u);
+  SM_EXPECT_EQ(s.configs()[0].pixels, 320 * 240);
+  SM_EXPECT_EQ(s.configs()[0].fps, 7);
+  SM_EXPECT_EQ(s.configs()[1].pixels, 480 * 360);
+  SM_EXPECT_EQ(s.configs()[1].fps, 10);
+  SM_EXPECT_EQ(s.configs()[2].pixels, 640 * 480);
+  SM_EXPECT_EQ(s.configs()[2].fps, 15);
+  const auto g = VideoCodecType::kGeneric;
+  SM_EXPECT_EQ(s.MinFps(g, 1), 7);
+  SM_EXPECT_EQ(s.MinFps(g, 320 * 240), 7);
+  SM_EXPECT_EQ(s.MinFps(g, 320 * 240 + 1), 10);
+  SM_EXPECT_EQ(s.MinFps(g, 640 * 480), 15);
+  SM_EXPECT_EQ(s.MinFps(g, 640 * 480 + 1), std::numeric_limits<int>::max());
+  SM_EXPECT_EQ(s.MaxFps(g, 320 * 240), 10);
+  SM_EXPECT_EQ(s.MaxFps(g, 480 * 360), 15);
+  SM_EXPECT_EQ(s.MaxFps(g, 480 * 360 + 1), std::numeric_limits<int>::max());
+  SM_EXPECT_FALSE(s.MinFpsDiff(320 * 240).has_value());
+  SM_EXPECT_EQ(s.MinFpsDiff(480 * 360).value_or(0), 1);
+  SM_EXPECT_FALSE(s.MinFpsDiff(640 * 480 + 1).has_value());
+  SM_EXPECT_TRUE(s.CanAdaptUp(g, 1000, 1));  // No kbps configured.
+  SM_EXPECT_FALSE(s.GetQpThresholds(g, 1000).has_value());
+}
+
+SM_TEST(BalancedDegradationSettings, InvalidListsFallBackAndLimitsApply) {
+  using Config = BalancedDegradationSettings::Config;
+  const auto defaults = BalancedDegradationSettings::DefaultConfigs();
+  // One config, a decreasing fps, or fps 0 are invalid: the defaults.
+  std::vector<Config> one(1);
+  one[0].pixels = 1000;
+  one[0].fps = 5;
+  SM_EXPECT_EQ(BalancedDegradationSettings(one).configs()[0].fps, defaults[0].fps);
+  std::vector<Config> decreasing(2);
+  decreasing[0] = Cfg(1000, 15);
+  decreasing[1] = Cfg(2000, 5);
+  SM_EXPECT_EQ(BalancedDegradationSettings(decreasing).configs().size(), defaults.size());
+  // kbps limits (CanAdaptUp / CanAdaptUpResolution from the next config) and
+  // codec-specific fps (VP9's for H.265) and QP (H.264's for H.265).
+  std::vector<Config> c(3);
+  c[0] = Cfg(1000, 5, 0, 0);
+  c[1] = Cfg(2000, 15, 80, 90);
+  c[2] = Cfg(3000, 25, 100, 110);
+  c[0].vp9.fps = 7;
+  c[1].vp9.fps = 17;
+  c[2].vp9.fps = 27;
+  c[0].h264.qp_low = 20;
+  c[0].h264.qp_high = 30;
+  c[1].h264.qp_low = 21;
+  c[1].h264.qp_high = 31;
+  c[2].h264.qp_low = 22;
+  c[2].h264.qp_high = 32;
+  const BalancedDegradationSettings s(c);
+  const auto g = VideoCodecType::kGeneric;
+  SM_EXPECT_FALSE(s.CanAdaptUp(g, 1000, 79999));
+  SM_EXPECT_TRUE(s.CanAdaptUp(g, 1000, 80000));
+  SM_EXPECT_TRUE(s.CanAdaptUp(g, 1000, 0));  // Unknown bitrate.
+  SM_EXPECT_FALSE(s.CanAdaptUpResolution(g, 2000, 109999));
+  SM_EXPECT_TRUE(s.CanAdaptUpResolution(g, 2000, 110000));
+  SM_EXPECT_EQ(s.MinFps(VideoCodecType::kH265, 1000), 7);
+  SM_EXPECT_EQ(s.MinFps(VideoCodecType::kH264, 1000), 5);
+  const auto qp = s.GetQpThresholds(VideoCodecType::kH265, 2500);
+  SM_EXPECT_TRUE(qp.has_value());
+  SM_EXPECT_EQ(qp ? qp->low : 0, 22);
+  SM_EXPECT_FALSE(s.GetQpThresholds(VideoCodecType::kVP9, 2500).has_value());
+}
+
+SM_TEST(VideoStreamAdapter, BalancedTakesASecondStepWhenTheFpsDiffIsTooSmall) {
+  // AdaptIfFpsDiffInsufficient with the default configs (640x480: 15 fps,
+  // fps_diff 1): from 15 fps input, a cap at 15 fps lowers nothing, so the
+  // same step also lowers the resolution; from 16 fps the cap alone is enough.
+  VideoStreamAdapter a;
+  a.SetDegradationPreference(DegradationPreference::kBalanced);
+  a.OnFrameSizeObserved(640 * 480);
+  a.OnFrameRateObserved(15);
+  auto down = a.GetAdaptationDown();
+  SM_EXPECT_TRUE(IsStatus(down, VideoStreamAdapter::Status::kValid));
+  SM_EXPECT_EQ(down.fps_adaptations, 1);
+  SM_EXPECT_EQ(down.resolution_adaptations, 1);
+  SM_EXPECT_EQ(down.restrictions.max_frame_rate.value_or(0), 15.0);
+  SM_EXPECT_EQ(down.restrictions.max_pixels_per_frame.value_or(0), 640 * 480 * 3 / 5);
+  a.OnFrameRateObserved(16);
+  down = a.GetAdaptationDown();
+  SM_EXPECT_EQ(down.fps_adaptations, 1);
+  SM_EXPECT_EQ(down.resolution_adaptations, 0);
+}
+
+SM_TEST(VideoStreamAdapter, BalancedConstraintRefusesUpBelowTheConfigsKbps) {
+  // BalancedConstraint::IsAdaptationUpAllowed through GetAdaptationUp.
+  using Config = BalancedDegradationSettings::Config;
+  using S = VideoStreamAdapter::Status;
+  std::vector<Config> c(3);
+  c[0] = Cfg(kBalancedLowPixels, kBalancedLowFps, 0, 0);
+  c[1] = Cfg(kBalancedMediumPixels, kBalancedMediumFps, 200, 300);
+  c[2] = Cfg(kBalancedHighPixels, kBalancedHighFps, 400, 500);
+  VideoStreamAdapter a(kDefaultMinPixels, BalancedDegradationSettings(c));
+  a.SetDegradationPreference(DegradationPreference::kBalanced);
+  FakeVideoStream f(a, kBalancedLowPixels, 30);
+  f.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  a.OnEncoderTargetBitrateUpdated(199000);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kRejectedByConstraint));
+  a.OnEncoderTargetBitrateUpdated(200000);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kValid));
+  a.OnEncoderTargetBitrateUpdated(std::nullopt);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kValid));
+}
+
 SM_TEST(VideoAdapter, ScalesThroughLibwebrtcsSeries) {
   // 1280x720: 3/4 -> 960x540, 1/2 -> 640x360, 3/8 -> 480x270, 1/4 -> 320x180.
   VideoAdapter v;
@@ -929,7 +1372,7 @@ SM_TEST(VideoAdapter, ScalesThroughLibwebrtcsSeries) {
   int pixels = 1280 * 720;
   for (const auto& e : expected) {
     pixels = GetLowerResolutionThan(pixels);
-    v.OnSinkWants({pixels, std::nullopt});
+    v.OnSinkWants({pixels, std::nullopt, std::nullopt});
     v.AdaptFrameResolution(1280, 720, &w, &h);
     SM_EXPECT_EQ(w, e[0]);
     SM_EXPECT_EQ(h, e[1]);
@@ -937,12 +1380,12 @@ SM_TEST(VideoAdapter, ScalesThroughLibwebrtcsSeries) {
   }
   // Going up: target 5/3 of 320x180, maximum 12/5 of that -> 480x270 is closest.
   const int target = GetHigherResolutionThan(320 * 180);
-  v.OnSinkWants({target * 12 / 5, target});
+  v.OnSinkWants({target * 12 / 5, target, std::nullopt});
   v.AdaptFrameResolution(1280, 720, &w, &h);
   SM_EXPECT_EQ(w, 480);
   SM_EXPECT_EQ(h, 270);
   // 960x540 divides by 3, so the series starts with 2/3: 3/5 of it -> 640x360.
-  v.OnSinkWants({GetLowerResolutionThan(960 * 540), std::nullopt});
+  v.OnSinkWants({GetLowerResolutionThan(960 * 540), std::nullopt, std::nullopt});
   v.AdaptFrameResolution(960, 540, &w, &h);
   SM_EXPECT_EQ(w, 640);
   SM_EXPECT_EQ(h, 360);
