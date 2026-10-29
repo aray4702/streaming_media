@@ -198,6 +198,12 @@ void SendSideController::OnVideoFrameEncoded(Timestamp now) {
   }
 }
 
+void SendSideController::OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now) {
+  // AV1 and H264 packetizers may produce less packetized bytes than unpacketized.
+  if (packetized_payload_size >= encoder_output_size)
+    post_encode_overhead_rate_.Update(static_cast<int64_t>(packetized_payload_size - encoder_output_size), now.ms());
+}
+
 void SendSideController::RunDueVideoActivityChecks(Timestamp now) {
   while (next_video_activity_check_ <= now) {
     const Timestamp due = next_video_activity_check_;
@@ -504,12 +510,21 @@ SendSideController::VideoAllocationSplit SendSideController::SplitVideoAllocatio
   const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
   const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
   const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, pkt));
-  const DataRate encoder = payload * keep;  // encoder_target_rate_bps_, not yet capped at the encoder maximum.
-  // The protection is the allocation less the encoder target and its packet overhead.
+  DataRate encoder = payload * keep;  // encoder_target_rate_bps_, not yet capped at the encoder maximum.
+  // rtp_video_sender.cc:913-915: less the post-encode overhead (RtpVideoSender::GetPostEncodeOverhead),
+  // at most half the target.
+  const DataRate post_encode =
+      std::min(last_process_.IsFinite()
+                   ? DataRate::BitsPerSec(post_encode_overhead_rate_.Rate(last_process_.ms()).value_or(0))
+                   : DataRate::Zero(),
+               encoder / 2);
+  encoder -= post_encode;
+  // The protection is the allocation less the encoder target, its packet overhead and the post-encode
+  // overhead (rtp_video_sender.cc:918-938).
   DataRate enc_overhead = encoder.IsZero() ? DataRate::Zero() : OverheadRate(encoder, pkt - cfg_.rtp_overhead_bytes);
   enc_overhead = std::min(enc_overhead, std::max(DataRate::Zero(), alloc - encoder));
   VideoAllocationSplit out;
-  out.protection = std::max(DataRate::Zero(), alloc - (encoder + enc_overhead));
+  out.protection = std::max(DataRate::Zero(), alloc - (encoder + enc_overhead + post_encode));
   // VideoSendStreamImpl::OnBitrateUpdated (video_send_stream_impl.cc:902-914): the link allocation is the
   // encoder target less the protection, taken before the target is capped at the encoder maximum, and at
   // least the capped target. Above the maximum the encoder bitrate adjuster gets the difference as headroom.

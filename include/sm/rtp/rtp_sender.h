@@ -128,8 +128,10 @@ class RtpSender : public MetricsSource {
   // `rotation` on a keyframe, when it changed since the last frame, or when
   // it is not 0, as RTPSenderVideo::AddRtpHeaderExtensions
   // (rtp_sender_video.cc:388-408); the byte is ConvertVideoRotationToCVOByte
-  // (rtp_cvo.h): the rotation alone, camera and flip bits 0.
-  void SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
+  // (rtp_cvo.h): the rotation alone, camera and flip bits 0. Returns the
+  // payload bytes of the frame's video packets, RED headers included
+  // (RTPSenderVideo::LogAndSendToNetwork's packetized_payload_size).
+  size_t SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp, Timestamp now,
                       bool keyframe = false, video::Rotation rotation = video::Rotation::k0);
   // How much larger the last packet's header of such a frame is than a middle
   // packet's: the packetizer's last_packet_reduction_len (and
