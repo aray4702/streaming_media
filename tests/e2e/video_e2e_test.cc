@@ -9,9 +9,7 @@
 #include "sm/sim/network_link.h"
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/codec_fallback.h"
-#include "sm/video/codec_negotiation.h"
 #include "sm/video/content_policy.h"
-#include "sm/video/frame_scaler.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
@@ -77,33 +75,68 @@ SM_TEST(E2E_FreezeDetector, MatchesGroundTruthGapsOverLossyLink) {
   SM_EXPECT_LT(fd.HarmonicFps(), 30.0);
 }
 
+namespace {
+// A hardware encoder that asks for the software fallback (libwebrtc's
+// WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE) once it starts failing, and a
+// software encoder whose first frame after InitEncode is a keyframe.
+struct ScriptedEncoder : FallbackEncoder {
+  bool initialized = false, next_is_keyframe = false;
+  DataRate rate = DataRate::Zero();
+  EncoderStatus InitEncode(const EncoderCodecSettings&) override {
+    initialized = next_is_keyframe = true;
+    return EncoderStatus::kOk;
+  }
+  void Release() override { initialized = false; }
+  void SetRates(const EncoderRates& r) override { rate = r.bitrate; }
+  void OnRttUpdate(TimeDelta) override {}
+  void OnPacketLossRateUpdate(float) override {}
+  FallbackEncoderInfo GetEncoderInfo() const override { return {}; }
+};
+}  // namespace
+
 SM_TEST(E2E_CodecFallback, HardwareFailureMidCallKeepsVideoFlowing) {
-  // The hardware encoder starts failing 30% of frames at 10 s.
-  CodecFallbackConfig cfg;
-  cfg.retry_hardware_after = TimeDelta::Zero();
-  CodecFallbackController ctl(cfg);
+  // The hardware encoder fails at 10 s and errs on 30% of frames from then
+  // on; every 10th of its errors is the fallback request, as a MediaCodec
+  // wrapper reports a dead codec after a few transient errors.
+  ScriptedEncoder sw, hw;
+  CodecFallbackController ctl({}, sw, hw);
+  SM_ASSERT_TRUE(ctl.InitEncode({1280, 720, false, 1}, Timestamp::Millis(0)) == EncoderStatus::kOk);
+  ctl.SetRates({DataRate::KilobitsPerSec(1500), 30});
   Random rng(2);
   int64_t last_ok = 0, max_gap = 0;
-  int keyframes_after_switch = 0;
-  bool was_hw = true;
+  int hw_errors = 0, sw_keyframes = 0, frames_on_sw = 0;
   for (int64_t t = 0; t < 30000; t += 33) {
     Timestamp now = Timestamp::Millis(t);
-    bool hw = ctl.active() == CodecImpl::kHardware;
-    bool ok = !(hw && t >= 10000 && rng.Bernoulli(0.3));
-    ctl.OnFrameResult(ok, now);
-    if (was_hw && ctl.active() == CodecImpl::kSoftware && ctl.TakeKeyframeRequest()) ++keyframes_after_switch;
-    was_hw = ctl.active() == CodecImpl::kHardware;
-    if (ok) {
+    FallbackEncoder* enc = ctl.current();
+    SM_ASSERT_TRUE(enc != nullptr);
+    EncoderStatus st = EncoderStatus::kOk;
+    if (enc == &hw && t >= 10000 && rng.Bernoulli(0.3))
+      st = (++hw_errors % 10 == 0) ? EncoderStatus::kFallbackSoftware : EncoderStatus::kError;
+    if (ctl.OnEncodeResult(st, now)) {
+      enc = ctl.current();  // The same frame, encoded by the fallback.
+      st = EncoderStatus::kOk;
+    }
+    if (enc == &sw && st == EncoderStatus::kOk) {
+      ++frames_on_sw;
+      if (sw.next_is_keyframe) ++sw_keyframes;
+      sw.next_is_keyframe = false;
+    }
+    if (st == EncoderStatus::kOk) {
       max_gap = std::max(max_gap, t - last_ok);
       last_ok = t;
     }
   }
   SM_RECORD("fallbacks", ctl.stats().fallbacks);
+  SM_RECORD("hardware_errors", hw_errors);
   SM_RECORD("max_encoded_gap_ms", max_gap);
   SM_EXPECT_EQ(ctl.stats().fallbacks, 1u);
-  SM_EXPECT_EQ(keyframes_after_switch, 1);
+  SM_EXPECT_TRUE(ctl.state() == EncoderState::kFallbackDueToFailure);
+  SM_EXPECT_EQ(hw_errors, 10);  // Plain errors don't switch; the request does.
+  SM_EXPECT_FALSE(hw.initialized);  // Released on the switch.
+  SM_EXPECT_EQ(sw.rate.kbps(), 1500.0);  // Primed with the last rate.
+  SM_EXPECT_EQ(sw_keyframes, 1);
+  SM_EXPECT_GT(frames_on_sw, 0);
   SM_EXPECT_LE(max_gap, 200);
-  SM_EXPECT_TRUE(ctl.active() == CodecImpl::kSoftware);
 }
 
 SM_TEST(E2E_Orientation, RotatingPhoneRendersUpright) {
@@ -162,72 +195,6 @@ SM_TEST(E2E_ContentPolicy, ScreenShareEncodesOnlyChanges) {
   SM_EXPECT_EQ(changes_encoded, changes);  // Every change goes out immediately.
   SM_EXPECT_LT(static_cast<double>(encoded) / frames, 0.25);
   SM_EXPECT_GE(encoded, 60);  // At least the 1/s keep-alive.
-}
-
-SM_TEST(E2E_CodecNegotiation, BrowserAndDeviceAgreeBothDirections) {
-  std::vector<CodecCapability> browser = {
-      {"VP8", 96, {}, {"goog-remb", "transport-cc", "ccm fir", "nack", "nack pli"}},
-      {"rtx", 97, {{"apt", "96"}}, {}},
-      {"VP9", 98, {{"profile-id", "0"}}, {"transport-cc", "nack", "nack pli"}},
-      {"rtx", 99, {{"apt", "98"}}, {}},
-      {"H264", 102, {{"profile-level-id", "42001f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack", "nack pli"}},
-      {"H264", 106, {{"profile-level-id", "42e01f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack", "nack pli"}},
-      {"rtx", 107, {{"apt", "106"}}, {}},
-      {"H264", 112, {{"profile-level-id", "64001f"}, {"packetization-mode", "1"}}, {"transport-cc", "nack"}},
-      {"AV1", 45, {}, {"transport-cc", "nack"}},
-  };
-  // Embedded camera: hardware H.264 constrained baseline up to level 4.0,
-  // software VP8; no transport-cc (REMB only).
-  std::vector<CodecCapability> device = {
-      {"VP8", 120, {}, {"nack", "nack pli", "goog-remb"}, false},
-      {"H264", 121, {{"profile-level-id", "42e028"}, {"packetization-mode", "1"}}, {"nack", "nack pli", "goog-remb", "ccm fir"}, true},
-      {"rtx", 122, {{"apt", "121"}}, {}, false},
-  };
-  auto answer = NegotiateCodecs(browser, device);
-  SM_ASSERT_GE(answer.size(), 2u);
-  SM_EXPECT_EQ(answer[0].name, "H264");
-  SM_EXPECT_EQ(answer[0].payload_type, 106);                            // Browser's PT.
-  SM_EXPECT_EQ(answer[0].params["profile-level-id"], "42e01f");         // min(3.1, 4.0)
-  SM_EXPECT_EQ(answer[1].name, "VP8");
-  bool has_rtx_106 = false;
-  for (const auto& c : answer) has_rtx_106 |= c.name == "rtx" && c.params.count("apt") && c.params.at("apt") == "106";
-  SM_EXPECT_TRUE(has_rtx_106);
-  for (const auto& c : answer) {
-    if (c.name == "rtx") continue;
-    // Each answered codec matches an offered one with the same PT.
-    bool match = false;
-    for (const auto& o : browser) match |= o.payload_type == c.payload_type && IsSameCodec(o, c);
-    SM_EXPECT_TRUE(match);
-    for (const auto& fb : c.feedback) SM_EXPECT_NE(fb, std::string("transport-cc"));  // Device lacks it.
-  }
-  // Reverse direction: the device offers, the browser answers.
-  auto reverse = NegotiateCodecs(device, browser);
-  SM_ASSERT_GE(reverse.size(), 2u);
-  SM_EXPECT_EQ(reverse[0].payload_type, 120);  // Browser prefers VP8; device PTs.
-  bool h264 = false;
-  for (const auto& c : reverse) h264 |= c.name == "H264" && c.payload_type == 121;
-  SM_EXPECT_TRUE(h264);
-}
-
-SM_TEST(E2E_FrameScaler, AdaptationLadderQualityAndAspect) {
-  // Sender downscales along the adaptation ladder, receiver upscales to the
-  // 1280x720 display: PSNR falls gracefully with each step.
-  I420Frame src = MakeTestFrame(1280, 720, 11);
-  double prev = 200;
-  for (auto [w, h] : {std::pair{960, 540}, {640, 360}, {480, 270}, {320, 180}}) {
-    double psnr = PsnrY(src, Scale(Scale(src, w, h), 1280, 720));
-    SM_RECORD(("psnr_via_" + std::to_string(w)).c_str(), psnr);
-    SM_EXPECT_LT(psnr, prev + 0.5);
-    prev = psnr;
-    if (w >= 640) SM_EXPECT_GT(psnr, 28.0);
-  }
-  // A 4:3 camera shown in a 16:9 tile: crop keeps the centre, letterbox
-  // keeps everything.
-  I420Frame cam = MakeTestFrame(640, 480, 2);
-  I420Frame crop = ScaleToFit(cam, 640, 360, AspectMode::kCrop);
-  I420Frame box = ScaleToFit(cam, 640, 360, AspectMode::kLetterbox);
-  SM_EXPECT_NEAR(crop.Y(320, 180), cam.Y(320, 240), 6);
-  SM_EXPECT_EQ(box.Y(10, 180), 16);  // Pillar box on the left.
 }
 
 SM_TEST(E2E_FrameScheduler, SmoothPlayoutOverJitteryNetwork) {

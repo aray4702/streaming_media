@@ -26,7 +26,9 @@
 // decode after it. A merge (the packet after a lost one) is joined with
 // NetEq's Merge (NetEqMerge): the decoded audio goes in where it correlates
 // best with one more expansion, scaled to the expansion's energy and
-// crossfaded in.
+// crossfaded in. When the sync buffer can't fill the output (packets under
+// 10 ms), version 2 plays silence, reads nothing from it and doesn't count
+// the frame, as NetEq's kSampleUnderrun (#568).
 #pragma once
 
 #include <cstdint>
@@ -174,7 +176,7 @@ class AudioJitterBuffer : public MetricsSource {
   int64_t ticks_ = 0;
   bool neteq_reset_done_ = false;
   TimeStretcher stretcher_;
-  loss::PacketLossConcealer plc_;
+  loss::PacketLossConcealer plc_;  // Version 1's concealment.
   NetEqExpand expand_;
   NetEqMerge merge_;
   NetEqTimeStretch time_stretch_;  // Version 2's accelerate and preemptive expand.

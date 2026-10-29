@@ -23,7 +23,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 4.4 | [Time stretching (WSOLA accelerate / preemptive expand)](4-timing/4.4-time-stretch.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 | 4.5 | [Adaptive audio jitter buffer (NetEq-lite)](4-timing/4.5-audio-jitter-buffer.md) | 5 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 4.6 | [Video jitter estimation and render timing](4-timing/4.6-video-jitter.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 4.7 | [Clock drift estimation and compensation](4-timing/4.7-clock-drift.md) | 4 | 1 | 2 | pass | pass | pass | pass |
 
 ## 5. Bandwidth, congestion and unstable links
 
@@ -50,7 +49,6 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 6.4 | [Automatic gain control and limiter](6-audio/6.4-gain-control.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.5 | [High-pass filter](6-audio/6.5-high-pass-filter.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 6.6 | [Transient (keyboard click) suppression](6-audio/6.6-transient-suppressor.md) | 1 | 1 | 1 | pass | pass | pass | pass |
-| 6.7 | [DTX and comfort noise (RFC 3389)](6-audio/6.7-dtx-cng.md) | 3 | 1 | 2 | pass | pass | pass | pass |
 | 6.8 | [Voice activity detection](6-audio/6.8-vad.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.9 | [Audio level (RFC 6464)](6-audio/6.9-audio-level.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 6.11 | [Sample-rate conversion](6-audio/6.11-resampler.md) | 2 | 1 | 2 | pass | pass | pass | pass |
@@ -61,11 +59,9 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | # | Algorithm | Unit | E2E | Benchmarks | macOS arm64 (native) | WebAssembly (Node) | ASan+UBSan (Debug) | -fno-exceptions -fno-rtti |
 |---|---|---|---|---|---|---|---|---|
 | 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | pass | pass | pass | pass |
+| 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
-| 7.5 | [Codec negotiation](7-video/7.5-codec-negotiation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.6 | [Resolution scaling and aspect handling](7-video/7.6-frame-scaler.md) | 2 | 1 | 3 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 
@@ -95,7 +91,11 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 3 | Opus in-band FEC (LBRR), Opus DRED | Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback. |
 | 3 | Keyframe pacing, intra refresh, LTR frames | Encoder features (codec-specific bitstream tools). |
 | 3 | Temporal scalability (L1T2/L1T3) and temporal layer filtering | Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566). |
+| 4 | Clock drift estimation and compensation | Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566). |
+| 6 | DTX and comfort noise (RFC 3389) | Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566. |
 | 6 | Audio Device Module (platform I/O, mute, device switching) | Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11. |
+| 7 | Codec negotiation (SDP offer/answer, H.264 profile-level-id) | Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566). |
+| 7 | Resolution scaling and aspect handling (`Scale`, `ScaleToFit`, `Crop`) | Removed in #593: libwebrtc M157's one-to-one call has no such component (it scales with libyuv's `I420Buffer::Scale`, and the frames are the app's), and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it; the Owner's A on #566. |
 | 7 | Error resilience inside the decoder | Codec internal; 7.2 handles the fallback decision. |
 | 7 | Screen-content coding tools (palette, intra-BC) | Encoder features; 7.4 flags when to enable them. |
 

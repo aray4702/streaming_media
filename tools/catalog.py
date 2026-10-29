@@ -132,8 +132,12 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
                "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
-               "the 'expand' operation of the audio jitter buffer (4.5).",
-         verification="No defects found."),
+               "the 'expand' operation of the audio jitter buffer's version 1 (4.5). Version 2 (`neteq v2`, the "
+               "session's and bench's NetEq) conceals only with NetEq's Expand; where its sync buffer can't fill "
+               "the output it plays silence as NetEq's `kSampleUnderrun` (#568), so this module isn't used there.",
+         verification="No defects found. #568 removed it from the jitter buffer's version 2, where it concealed "
+                      "the remainder of an output frame the sync buffer couldn't fill; NetEq mutes that frame "
+                      "(`neteq_impl.cc` GetAudioInternal). No scenario in the suite reaches that case on seed 1."),
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
@@ -475,19 +479,6 @@ ALGORITHMS = [
                       "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
                       "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
                       "(304.4; capped at libwebrtc's worst seed)."),
-    dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
-         problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
-         headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
-         bench=["timing/DriftCompensator_10ms_16k", "timing/Q_ClockDrift_300ppm"],
-         scenario="120 s of audio from a sender whose clock is 300 ppm slow, over 40 ms + 5 ms jitter. The "
-                  "receiver plays 10 ms blocks from a FIFO; with compensation, the PI-controlled resampler holds "
-                  "the FIFO at 60 ms.",
-         notes="Using the per-window minimum transit time (lower envelope) instead of every packet makes the "
-               "drift fit almost immune to jitter. The resampler ratio is limited to +-0.5%.",
-         verification="Defect found: the first PI gains gave a ~500 s time constant (slow oscillation, 15.8 ms "
-                      "error). Retuned from the plant model (the buffer integrates at 10 ms per update) to a "
-                      "~3 s, near critically damped loop, with an EMA on the packet-granular level: the error "
-                      "fell to 1.8 ms."),
     # ------------------------------------------------------------------ 5
     dict(id="5.1", slug="transport-feedback", title="Transport-wide CC feedback (and REMB)",
          problems=["Fine-grained per-packet feedback -> transport-cc (Transport-Wide CC) RTCP feedback",
@@ -498,7 +489,8 @@ ALGORITHMS = [
                   "real wire format, parsed and joined with the send history. Each packet must be reported received "
                   "once (a reordered packet first reported lost comes back received, as libwebrtc's generator "
                   "re-reports it), with arrival-time error within the 250 us quantization of the wire, and each time since the feedback's base "
-                  "time handed to the estimators rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter (#365).",
+                  "time handed to the estimators rounded down to 1 ms, on the adapter's local time base, as libwebrtc's "
+                  "TransportFeedbackAdapter (#365, #569).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
                "Status chunks use run-length coding for runs of 14 or more, otherwise 1-bit or 2-bit status "
                "vectors. Each arrival delta is rounded to the nearest 250 us tick, half away from zero, as "
@@ -515,7 +507,11 @@ ALGORITHMS = [
          verification="No defects found; maximum arrival-time error 249 us. Issue #217: the first feedback went out "
                       "at 50 ms where libwebrtc's goes out at 100 ms, so the first probe estimate came from the first "
                       "cluster alone (`issue_120_rtx_payload_padding` seed 1: 913 kbps at 65 ms, libwebrtc 1608 at "
-                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`."),
+                      "115 ms); unit test `Session.TransportFeedbackFirstReportWaitsTheDefaultInterval`. Issue #569 part 2: the send "
+                      "history ported as libwebrtc's TransportFeedbackAdapter (60 s window by creation time instead of "
+                      "an 8192-packet cap, in-flight data above the last acknowledged sequence number, the local "
+                      "receive-time base, no update for a feedback that finds no packet); unit tests "
+                      "`TransportFeedbackAdapter.*`; the scenario suite is unchanged, metric for metric."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
@@ -1206,21 +1202,6 @@ ALGORITHMS = [
                       "detection) is used. Attenuation in pauses went from 3 dB to 13.5 dB. #243: off by default "
                       "as libwebrtc (`TransientSuppressor.OffByDefaultAsLibwebrtc`: the audio passes unchanged); "
                       "the tests that measure it opt in with `enabled = true`."),
-    dict(id="6.7", slug="dtx-cng", title="DTX and comfort noise (RFC 3389)",
-         problems=["Silence wasting bandwidth -> VAD + DTX (discontinuous transmission)",
-                   "Silence sounding 'dead' at the receiver -> CNG (comfort noise generation)"],
-         headers=["audio/comfort_noise.h"], unit=["ComfortNoise"], e2e=["E2E_ComfortNoise"],
-         bench=["audio/DtxController_10ms", "audio/ComfortNoise_10ms"],
-         scenario="A one-sided stretch of a call (talks 15 s, listens 15 s) at -50 dBFS background noise; "
-                  "speech frames and SIDs cross a 2%-loss link. Transmitted-frame ratio against the actual "
-                  "speech ratio, and comfort-noise level against the real noise in pauses.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. SID reflection coefficients are interpolated between updates, so the synthesis filter is always "
-               "stable.",
-         verification="Defect found: SIDs were sent too often, because spectral-change detection used "
-                      "single-frame reflection coefficients (sigma about 0.08). The background description now "
-                      "comes from an averaged autocorrelation, and the transmit ratio fell from 0.65 to 0.49 "
-                      "(speech 0.43). A measurement bug that counted lost speech packets as silence was also "
-                      "fixed."),
     dict(id="6.8", slug="vad", title="Voice activity detection",
          problems=["Silence wasting bandwidth -> VAD", "Detecting who's talking -> voice activity"],
          headers=["audio/vad.h"], unit=["Vad"], e2e=["E2E_Vad"],
@@ -1300,14 +1281,31 @@ ALGORITHMS = [
                       "3 fps, 57 vs 57 on random gaps), and `FreezeDetector.*` pins them "
                       "([fix record](../../fixes/268-freeze-rule-as-libwebrtc.md))."),
     dict(id="7.2", slug="codec-fallback", title="Hardware -> software codec fallback",
-         problems=["Decoder errors or corrupt bitstream -> decoder fallback (hardware -> software)",
-                   "Hardware encoder failure -> automatic fallback to a software encoder"],
-         headers=["video/codec_fallback.h"], unit=["CodecFallback"], e2e=["E2E_CodecFallback"],
+         problems=["Hardware encoder failure -> automatic fallback to a software encoder",
+                   "Hardware decoder failure -> automatic fallback to a software decoder"],
+         headers=["video/codec_fallback.h"], unit=["CodecFallback", "DecoderFallback"], e2e=["E2E_CodecFallback"],
          bench=["video/CodecFallback_frame"],
-         scenario="A hardware encoder that starts failing 30% of frames at 10 s; checks that exactly one "
-                  "fallback happens with one keyframe, and that the longest gap between encoded frames stays "
-                  "small.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
+         scenario="A hardware encoder that starts failing at 10 s and asks for the software fallback on its "
+                  "10th error; checks that plain errors don't switch, that exactly one fallback happens, that "
+                  "the fallback is primed with the last rate and starts with a keyframe, and that the frame "
+                  "that asked is encoded by the fallback, so the longest gap between encoded frames stays small.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
+               "Since #573 a port of libwebrtc's VideoEncoderSoftwareFallbackWrapper, and since #607 of its "
+               "VideoDecoderSoftwareFallbackWrapper (DecoderFallbackController); the header comment above lists what "
+               "is not ported.",
+         verification="#573 replaced the library's own CodecFallbackController (3 consecutive errors, 10% error "
+                      "rate over 100 frames, hardware retry after 60 s with back-off, none of which libwebrtc has) "
+                      "with the port. libwebrtc's unit test file is not in reference/; CodecFallback.* covers the "
+                      "wrapper's cases from the source: init failure, both failing, simulcast parameters, "
+                      "fallback request only from the main encoder, failed fallback init, release and re-init, "
+                      "forced fallback by resolution and by the VP8 trial with its parameter checks, and the info merge. "
+                      "#607 ported the decoder side (api/video_codecs/video_decoder_software_fallback_wrapper.cc): "
+                      "fallback when the hardware decoder fails to configure, on FALLBACK_SOFTWARE from Decode (the "
+                      "same frame decoded again by the fallback), or on the 4th consecutive keyframe error "
+                      "(kMaxConsequtiveHwErrors; delta-frame errors don't count), sticky until Release, the forced "
+                      "fallback trial WebRTC-Video-ForcedSwDecoderFallback (off), the 'A (fallback from: B)' name and "
+                      "the hardware-decoded-frames histogram sample. Its unit test file is not in reference/; "
+                      "DecoderFallback.* covers each path of the source."),
     dict(id="7.3", slug="orientation", title="Video orientation (CVO)",
          problems=["Rotated camera -> video orientation header extension (CVO)"],
          headers=["video/orientation.h"], unit=["Orientation"], e2e=["E2E_Orientation"],
@@ -1332,22 +1330,6 @@ ALGORITHMS = [
                   "change must be encoded immediately, while static frames are skipped.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
                "only flags that they should be enabled.",
-         verification="No defects found."),
-    dict(id="7.5", slug="codec-negotiation", title="Codec negotiation",
-         problems=["Many codecs and devices -> codec negotiation (VP8, VP9, H.264, AV1, H.265 recently)"],
-         headers=["video/codec_negotiation.h"], unit=["CodecNegotiation"], e2e=["E2E_CodecNegotiation"],
-         bench=["video/CodecNegotiation_offer10"],
-         scenario="A browser-like offer (VP8, VP9, three H.264 profiles, AV1, RTX) against an embedded camera "
-                  "(hardware H.264 CB level 4.0, software VP8, no transport-cc), in both directions.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
-    dict(id="7.6", slug="frame-scaler", title="Resolution scaling and aspect handling",
-         problems=["Frame size and aspect changes -> resolution adaptation and scaling mid-stream"],
-         headers=["video/frame_scaler.h"], unit=["FrameScaler"], e2e=["E2E_FrameScaler"],
-         bench=["video/Scale_720p_to_360p", "video/Scale_360p_to_720p", "video/Q_Scaler_psnr_720p_via_360p"],
-         scenario="720p frames down-scaled along the adaptation ladder and up-scaled back for display (PSNR per "
-                  "step), plus a 4:3 camera shown in a 16:9 tile with crop and letterbox.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Portable scalar code, about 1.7 ms per 720p frame on the reference machine; a SIMD library "
-               "(libyuv) is the natural drop-in for production.",
          verification="No defects found."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
@@ -1465,7 +1447,14 @@ ALGORITHMS = [
                   "latency for every frame.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. ", verification="Portability finding: interpolation used long double, which is software-emulated "
                                 "on WebAssembly and made the benchmark miss its budget there (347 ns vs 200). "
-                                "It now uses exact integer arithmetic."),
+                                "It now uses exact integer arithmetic. #567 part 5 ports libwebrtc M157's "
+                                "`AbsoluteCaptureTimeSender`, `AbsoluteCaptureTimeInterpolator`, `CaptureClockOffsetUpdater` "
+                                "and `RemoteNtpTimeEstimator` as units (`modules/rtp_rtcp/source/`): the sender's rules "
+                                "(more than 1 s, an error that rounds to more than 1 ms, a rate of 0, `force`), the "
+                                "interpolator retiring its extension at the first packet it can't interpolate, and the "
+                                "clock offset as the median of the last 7 SRs once 3 are in, where it was a minimum with a "
+                                "5% leak. `LatencyEstimator` computes capture time as `WebRTC-UseAbsCapTimeForG2gMetric` "
+                                "does. The RTP sender and receivers don't use them yet (#567 part 6)."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions"], e2e=["E2E_HeaderExtensions"],
@@ -1596,7 +1585,11 @@ NOT_IMPLEMENTED = [
     ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
     ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
     ("3", "Temporal scalability (L1T2/L1T3) and temporal layer filtering", "Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566)."),
+    ("4", "Clock drift estimation and compensation", "Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566)."),
+    ("6", "DTX and comfort noise (RFC 3389)", "Removed in #591: libwebrtc M157's one-to-one call has no such component on the Opus path (Opus DTX is off without `usedtx=1`, and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it); the Owner's A on #566."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
+    ("7", "Codec negotiation (SDP offer/answer, H.264 profile-level-id)", "Removed in #592: SDP stays with the host stack (program.md 0.1); libwebrtc M157's one-to-one H.264 call takes its codec from the negotiated SDP in `webrtc_video_engine.cc`, outside this library (the Owner's A on #566)."),
+    ("7", "Resolution scaling and aspect handling (`Scale`, `ScaleToFit`, `Crop`)", "Removed in #593: libwebrtc M157's one-to-one call has no such component (it scales with libyuv's `I420Buffer::Scale`, and the frames are the app's), and nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it; the Owner's A on #566."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
 ]

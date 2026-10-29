@@ -33,8 +33,7 @@ if(SM_WITH_TIMING)
     timing/audio_jitter_buffer.cc
     timing/video_jitter_estimator.cc
     timing/vcm_timing.cc
-    timing/frame_release.cc
-    timing/clock_drift.cc)
+    timing/frame_release.cc)
   list(APPEND SM_SECTIONS timing)
 endif()
 
@@ -91,7 +90,6 @@ if(SM_WITH_AUDIO)
     audio/aec3_suppression.cc
     audio/aec3.cc
     audio/transient_suppressor.cc
-    audio/comfort_noise.cc
     audio/audio_level.cc
     audio/resampler.cc
     audio/splitting_filter.cc
@@ -115,8 +113,6 @@ if(SM_WITH_VIDEO)
     video/codec_fallback.cc
     video/orientation.cc
     video/content_policy.cc
-    video/codec_negotiation.cc
-    video/frame_scaler.cc
     video/frame_scheduler.cc
     video/render_frames.cc
     video/quality_scaler.cc

@@ -80,19 +80,6 @@ SM_BENCH(timing, VideoJitterEstimator_Update) {
   st.BudgetNsPerItem(500);
 }
 
-SM_BENCH(timing, DriftCompensator_10ms_16k) {
-  DriftCompensator c;
-  c.SetRatio(1.0003);
-  std::vector<float> in(160, 0.1f), out;
-  out.reserve(400);
-  for (auto _ : st) {
-    out.clear();
-    c.Process(in, out);
-    bench::DoNotOptimize(out);
-  }
-  st.RequireRealtimeFactor(0.010, 200);
-}
-
 // --- Quality ------------------------------------------------------------------
 
 SM_BENCH_QUALITY(timing, Q_AudioJitterBuffer_jitter25_loss2) {
@@ -125,12 +112,4 @@ SM_BENCH_QUALITY(timing, Q_VideoJitter_late_frames) {
   st.Counter("late_ratio", r.late_ratio);
   st.Counter("mean_delay_ms", r.mean_delay_ms);
   st.Require("late_ratio", r.late_ratio, "<=", 0.03);
-}
-
-SM_BENCH_QUALITY(timing, Q_ClockDrift_300ppm) {
-  auto r = e2e::RunDriftSim(300, true, 120, 7);
-  st.Counter("estimated_ppm", r.estimated_ppm);
-  st.Counter("max_level_error_ms", r.max_level_error_ms);
-  st.Require("ppm_error", std::fabs(r.estimated_ppm - 300), "<=", 30);
-  st.Require("max_level_error_ms", r.max_level_error_ms, "<=", 15);
 }

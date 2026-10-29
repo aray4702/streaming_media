@@ -134,7 +134,7 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   const uint64_t samples = pkt.pcm.size();
   stats_.jitter_buffer_delay_ms_samples += static_cast<uint64_t>((ticks_ - pkt.insert_tick) * kMsPerTick) * samples;
   stats_.jitter_buffer_emitted_count += samples;
-  plc_.OnGoodFrame(pkt.pcm);  // Keeps PLC history; crossfades after an expand.
+  if (cfg_.version < 2) plc_.OnGoodFrame(pkt.pcm);  // Keeps PLC history; crossfades after an expand.
   AudioOperation op = AudioOperation::kNormal;
   if (expanding_) {
     expanding_ = false;
@@ -188,7 +188,8 @@ AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) 
   // NetEqImpl::GetAudioInternal: after an expand the playout timestamp moves on
   // by the output (dead reckoning); otherwise it is the sync buffer's end minus
   // its future length, never moved backwards.
-  if (started_) {
+  // Not after a sample underrun (kSilence once started), which returns first.
+  if (started_ && op != AudioOperation::kSilence) {
     const int64_t played = next_ts_ - static_cast<int64_t>(sync_.size());
     if (op == AudioOperation::kExpand && playout_ts_) {
       *playout_ts_ += static_cast<int64_t>(out.size());
@@ -467,17 +468,22 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
       break;
   }
   if (last_mode_ != NetEqMode::kExpand) {
-    noise_start_tick_.reset();
     expanding_ = false;
     expanded_samples_ = 0;
   }
   if (static_cast<int64_t>(sync_.size()) < need) {
-    // Not reached with whole packets of 10 ms or more; conceal the rest.
-    scratch_.assign(static_cast<size_t>(need) - sync_.size(), 0.0f);
-    plc_.Conceal(scratch_);
-    AddConcealedSamples(static_cast<int64_t>(scratch_.size()));
-    sync_.insert(sync_.end(), scratch_.begin(), scratch_.end());
+    // NetEqImpl::GetAudioInternal: SyncBuffer::GetNextAudioInterleaved reads
+    // nothing when it holds less than the output, so the frame is muted and
+    // kSampleUnderrun returned before the background noise, playout
+    // timestamp and noise stopwatch updates; NetEqImpl::GetAudio then skips
+    // StatisticsCalculator::IncreaseCounter. Not reached with whole packets
+    // of 10 ms or more.
+    std::fill(out.begin(), out.end(), 0.0f);
+    SM_EVENT(cfg_.events, now, "neteq", "underrun", static_cast<double>(sync_.size()), next_ts_);
+    ++stats_.ops[static_cast<int>(AudioOperation::kSilence)];
+    return AudioOperation::kSilence;
   }
+  if (last_mode_ != NetEqMode::kExpand) noise_start_tick_.reset();
   std::copy(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need), out.begin());
   sync_.erase(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need));
   played_.insert(played_.end(), out.begin(), out.end());
