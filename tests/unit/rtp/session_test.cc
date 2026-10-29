@@ -124,6 +124,41 @@ SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
   SM_EXPECT_EQ(p.a.stats().empty_video_frames, 2u);
 }
 
+// Issue #655: SendVideo returns the size of the access unit it sent, after the keyframe SPS VUI
+// rewrite (VideoStreamEncoder::AugmentEncodedImage), which libwebrtc's RunPostEncode gives the frame
+// dropper and the bitrate adjuster (video_stream_encoder.cc:2387-2396, 2638-2652).
+SM_TEST(Session, SendVideoReturnsTheSizeAfterTheSpsRewrite) {
+  Pair p;
+  const Bytes key = MakeFakeH264Frame(true, 3000);
+  const DataSize k = p.a.SendVideo(p.a_video, {0, key, true}, Timestamp::Millis(0));
+  SM_EXPECT_EQ(k.bytes(), static_cast<int64_t>(ParseOutgoingBitstreamAndRewrite(key).size()));
+  SM_EXPECT_GT(k.bytes(), int64_t{3000});  // The VUI the rewrite adds.
+  const DataSize d = p.a.SendVideo(p.a_video, {3000, MakeFakeH264Frame(false, 1000), false}, Timestamp::Millis(33));
+  SM_EXPECT_EQ(d.bytes(), int64_t{1000});  // A delta frame is sent as it is.
+  SM_EXPECT_TRUE(p.a.SendVideo(p.a_video, {6000, {}}, Timestamp::Millis(66)).bytes() == 0);
+  SM_EXPECT_TRUE(p.a.SendVideo(VideoSendId{7}, {6000, MakeFakeH264Frame(false, 1000)}, Timestamp::Millis(66)).bytes() == 0);
+}
+
+// Issue #655: VideoStreamConfig::h264_packetization_mode 0 reaches the packetizer: each NAL unit is
+// its own packet, and a frame with a unit larger than a packet is not sent.
+SM_TEST(Session, H264PacketizationModeZeroSendsSingleNalUnits) {
+  Session a(Cfg(1));
+  VideoStreamConfig v = Video();
+  v.h264_packetization_mode = H264PacketizationMode::kSingleNalUnit;
+  const VideoSendId id = a.AddVideoSend(v);
+  a.SendVideo(id, {0, MakeFakeH264Frame(true, 500), true}, Timestamp::Millis(0));
+  std::vector<int> types;
+  for (auto& o : Pump(a, 0, 100)) {
+    if (o.kind == OutgoingKind::kVideo) types.push_back(RtpPacket::Parse(o.bytes)->payload[0] & 0x1F);
+  }
+  SM_EXPECT_TRUE((types == std::vector<int>{kH264NalSps, kH264NalPps, kH264NalIdr}));
+  a.SendVideo(id, {3000, MakeFakeH264Frame(false, 5000), false}, Timestamp::Millis(100));
+  size_t video = 0;
+  for (auto& o : Pump(a, 100, 100)) video += o.kind == OutgoingKind::kVideo;
+  SM_EXPECT_EQ(video, 0u);
+  SM_EXPECT_EQ(a.stats().empty_video_frames, 1u);
+}
+
 SM_TEST(Session, SendVideoPacketizesAnAnnexBFrameWithinTheMtu) {
   Pair p;
   const Bytes frame = MakeFakeH264Frame(true, 5000);

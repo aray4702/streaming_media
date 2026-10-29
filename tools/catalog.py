@@ -1594,7 +1594,7 @@ ALGORITHMS = [
                       "through real packet sizes; each change is explained in PR #46. Per-suite results are "
                       "recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.5", slug="h264", title="H.264 packetization (RFC 6184) and fake encoder",
-         problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A"],
+         problems=["Video payload format on the wire -> H.264 packetization-mode 1: single NAL, STAP-A, FU-A; mode 0: single NAL units"],
          headers=["rtp/h264.h", "rtp/fake_h264.h", "rtp/sps_vui_rewriter.h"], unit=["H264", "SpsVuiRewriter"], e2e=["E2E_RtpSession"], bench=[],
          scenario="The test bench's encoder model emits SPS, PPS and IDR on keyframes and one slice on delta "
                   "frames; the packetizer splits them, the depacketizer rebuilds the access unit.",
@@ -1612,7 +1612,11 @@ ALGORITHMS = [
                "H264SpsPpsTracker::CopyAndFixBitstream. The SPS fields are read as libwebrtc's SpsParser, with "
                "H264::IsValidResolution's level 5.2 bound, and the PPS and slice ids as PpsParser::ParsePpsIds and "
                "ParseSliceHeader (ids bounded by kMaxPpsId and kMaxSpsId). Each unit's ids go to the receiver's "
-               "parameter-set tracker (RTPVideoHeaderH264::nalus).",
+               "parameter-set tracker (RTPVideoHeaderH264::nalus). The packetization mode is the one the host "
+               "negotiated (VideoStreamConfig::h264_packetization_mode, mode 1 by default): mode 0 sends each NAL "
+               "unit alone and fails a frame with a unit that does not fit, as RtpPacketizerH264::PacketizeSingleNalu "
+               "(#655). Session::SendVideo returns the size of the access unit after the rewrite, which "
+               "VideoStreamEncoder::RunPostEncode gives the frame dropper and the bitrate adjuster.",
          verification="Introduced by #32 plan PR 7. The 24-byte SPS+PPS packet that now opens the call exposed a "
                       "start-up fragility in the pacer and probing code (first probe cluster rejected), tracked in "
                       "#48. Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these "

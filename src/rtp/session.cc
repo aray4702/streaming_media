@@ -140,6 +140,7 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   vs.fec = std::make_unique<loss::FecControllerDefault>(cfg_.events);
   vs.fec->SetProtectionMethod(c.fec, v.nack);
   vs.nack = v.nack;
+  vs.h264_packetization_mode = v.h264_packetization_mode;
   vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
   video_send_.push_back(std::move(vs));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
@@ -322,12 +323,12 @@ void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optiona
   EnqueueSenderPackets(s, now);
 }
 
-void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now) {
-  if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return;
+DataSize Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= video_send_.size()) return DataSize::Zero();
   RtpSender& s = *video_send_[static_cast<size_t>(id.index)].sender;
   if (f.data.empty()) {
     ++stats_.empty_video_frames;
-    return;
+    return DataSize::Zero();
   }
   // VideoStreamEncoder::AugmentEncodedImage -> FrameEncodeMetadataWriter::UpdateBitstream: the
   // SPS of a keyframe gets a VUI that forbids frame reordering, and AUDs are dropped (#342).
@@ -357,8 +358,12 @@ void Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp no
   limits.first_packet_reduction_len = static_cast<int>(s.FirstPacketReduction(abs_capture_time));
   limits.last_packet_reduction_len = static_cast<int>(s.LastPacketReduction(f.keyframe, f.rotation));
   limits.single_packet_reduction_len = static_cast<int>(s.SinglePacketReduction(f.keyframe, f.rotation, abs_capture_time));
-  const std::vector<std::vector<uint8_t>> chunks = H264Packetizer::Packetize(data, limits);
+  const std::vector<std::vector<uint8_t>> chunks =
+      H264Packetizer::Packetize(data, limits, video_send_[static_cast<size_t>(id.index)].h264_packetization_mode);
   SendVideoChunks(id, chunks, f.rtp_timestamp, now, f.keyframe, data.size(), f.rotation, abs_capture_time);
+  // VideoStreamEncoder::OnEncodedImage: RunPostEncode takes the size of the augmented image, sent or
+  // not (video_stream_encoder.cc:2387-2396).
+  return DataSize::Bytes(static_cast<int64_t>(data.size()));
 }
 
 void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
