@@ -139,6 +139,12 @@ struct Scenario {
   // measured itself (Session::SetRtt at every step), for RTTs the call cannot produce, such as one
   // near the int64 limit (issue #451).
   std::optional<std::pair<TimeDelta, TimeDelta>> host_rtt;
+  // `apm_rate <hz>`: before the call the host builds the ported APM modules (AEC3, NS, AGC2)
+  // at that rate and feeds each 50 frames of 10 ms, as a host that configured them would.
+  // Reports apm.{aec3,ns,agc2}_valid (1 runs, 0 rejected) and apm.untouched (1 when every
+  // rejected module left its audio as it was). A rate libwebrtc doesn't run them at corrupted
+  // memory before #594; the bench call itself runs no APM.
+  std::optional<int> apm_rate;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);

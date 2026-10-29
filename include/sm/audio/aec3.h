@@ -262,6 +262,10 @@ class BlockProcessor : public MetricsSource {
 // echo_canceller3.h: the EchoControl that APM runs.
 class EchoCanceller3 : public MetricsSource {
  public:
+  // `sample_rate_hz` is the full-band rate: 16000, 32000 or 48000
+  // (ValidFullBandRate; libwebrtc DCHECKs it, and APM only ever hands AEC3
+  // one of these). At any other rate the canceller is not valid() and every
+  // call below leaves the audio untouched (#594).
   EchoCanceller3(const Aec3Config& config, int sample_rate_hz, size_t num_render_channels,
                  size_t num_capture_channels);
   EchoCanceller3(const EchoCanceller3&) = delete;
@@ -278,10 +282,14 @@ class EchoCanceller3 : public MetricsSource {
   void ProcessCapture(Frame* capture, bool level_change);
 
   // Mono 16 kHz convenience: 160 samples in the S16 range. AnalyzeCapture
-  // and ProcessCapture of one frame.
+  // and ProcessCapture of one frame. A canceller at another rate or with
+  // more capture channels, or a span of another length, leaves the audio
+  // untouched.
   void AnalyzeRender(std::span<const float> render);
   void ProcessCapture(std::span<float> capture, bool level_change = false);
 
+  // False when built for a rate ValidFullBandRate rejects.
+  bool valid() const { return valid_; }
   EchoControlMetrics GetMetrics() const;
   void SetAudioBufferDelay(int delay_ms) { block_processor_->SetAudioBufferDelay(delay_ms); }
   void SetCaptureOutputUsage(bool capture_output_used) {
@@ -298,6 +306,9 @@ class EchoCanceller3 : public MetricsSource {
   void FillSubFrameView(Frame* frame, size_t sub_frame_index, size_t num_channels, SubFrameView* view) const;
 
   const Aec3Config config_;
+  const bool valid_;
+  // The requested rate when valid_, else 16000, so that the state below is
+  // consistent and never used.
   const int sample_rate_hz_;
   const size_t num_bands_;
   const size_t num_render_input_channels_;
