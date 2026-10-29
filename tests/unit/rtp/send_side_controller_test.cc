@@ -51,6 +51,61 @@ SM_TEST(SendSideController, ReleasesWithTransportSequenceNumbersInPriorityOrder)
   SM_EXPECT_EQ(c.send_rate(Timestamp::Millis(10000)).bps(), 0);
 }
 
+// PacketRouter hands the pacer RtpPacketToSend, whose queue counts payload and padding plus the
+// transport overhead (QueueSizeData with IncludeOverheadInPacedSender, which RtpVideoSender sets
+// with transport feedback); the budget still takes the wire size.
+SM_TEST(SendSideController, PacerQueueDataLeavesOutTheRtpHeaders) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  map.Register(2, sync::uri::kAbsSendTime);
+  SendSideController c(SendSideConfig{}, &map);
+  c.Start(Timestamp::Millis(0));
+  SenderPacket p = Media(10, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000);
+  p.packet.padding_size = 50;
+  c.Enqueue(std::move(p), Timestamp::Millis(0));
+  // 12 B fixed header, 4 B extension header, transport-cc (3 B) and abs-send-time (4 B), padded to 24 B.
+  SM_EXPECT_EQ(c.pacer().QueueSize().bytes(), 24 + 1000 + 50 + 28);
+  SM_EXPECT_EQ(c.pacer().QueueSizeData().bytes(), 1000 + 50 + 28);
+}
+
+// GoogCC takes the pacer queue only on the process interval (ProcessInterval::pacer_queue,
+// goog_cc_network_control.cc:215-217); a sent packet updates the outstanding data, not the queue.
+SM_TEST(SendSideController, PushbackTakesThePacerQueueOnTheProcessInterval) {
+  SendSideController c;
+  c.Start(Timestamp::Millis(0));
+  for (uint16_t i = 0; i < 40; ++i)
+    c.Enqueue(Media(i, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), Timestamp::Millis(0));
+  c.Process(Timestamp::Millis(0));
+  const DataSize at_interval = c.congestion_window().pacing_queue();
+  SM_EXPECT_EQ(at_interval.bytes(), c.pacer().QueueSizeData().bytes());
+  SM_EXPECT_GT(at_interval.bytes(), 0);
+  for (int t = 1; t < 25; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_LT(c.pacer().QueueSizeData().bytes(), at_interval.bytes());  // Packets left meanwhile.
+  SM_EXPECT_EQ(c.congestion_window().pacing_queue().bytes(), at_interval.bytes());
+  c.Process(Timestamp::Millis(25));
+  SM_EXPECT_EQ(c.congestion_window().pacing_queue().bytes(), c.pacer().QueueSizeData().bytes());
+}
+
+// GoogCcNetworkController::OnTransportLossReport returns an empty update (goog_cc_network_control.cc:380-387):
+// the estimator takes the loss at once, and the transport's target, pacer and allocator follow at the
+// next process interval.
+SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  SendSideController c(cfg);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t <= 1000; ++t) c.Process(Timestamp::Millis(t));
+  const DataRate before = c.target();
+  c.OnLossReport(50, 100, Timestamp::Millis(1010));
+  SM_EXPECT_LT(c.gcc().target().bps(), before.bps());  // 50% loss: the estimator backs off.
+  SM_EXPECT_EQ(c.target().bps(), before.bps());
+  for (int t = 1011; t < 1025; ++t) c.Process(Timestamp::Millis(t));
+  SM_EXPECT_EQ(c.target().bps(), before.bps());
+  c.Process(Timestamp::Millis(1025));
+  SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());
+  SM_EXPECT_LT(c.target().bps(), before.bps());
+}
+
 SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
   SendSideController c;
   c.Start(Timestamp::Millis(0));

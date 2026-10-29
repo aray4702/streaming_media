@@ -99,7 +99,9 @@ class GccController : public MetricsSource {
   // GoogCcNetworkController::OnTransportLossReport. The loss and packet
   // counts are the deltas between two receiver reports (summed over the report
   // blocks). Used for the loss rate until LossBasedBweV2 has three observations.
-  NetworkControlUpdate OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
+  // Returns no update, as libwebrtc's: the target follows at the next feedback
+  // or process interval.
+  void OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
   // StreamsConfig::max_total_allocated_bitrate, the sum of the maximum bitrates
   // the allocator hands out: a rise probes up to twice that rate, and it caps
   // every probe at twice that rate. Returns the clusters to send. Before Start()

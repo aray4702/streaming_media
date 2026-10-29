@@ -26,6 +26,9 @@ struct PacedPacket {
   // reads RtpPacketToSend::is_key_frame() and is_first_packet_of_frame()).
   bool is_key_frame = false;
   bool first_packet_of_frame = false;
+  // The RTP header bytes in `size` (RtpPacketToSend::headers_size()). libwebrtc's queue counts
+  // payload and padding only, plus the transport overhead (PacingController::QueueSizeData).
+  DataSize header_size = DataSize::Zero();
 };
 
 // PacketRouter::GeneratePadding, as the pacer sees it: the packets that make about
