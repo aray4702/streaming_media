@@ -632,10 +632,10 @@
    "area": "RTP/RTCP session layer",
    "catalog": "9.2",
    "title": "RTP sender and send-side controller",
-   "status": "in-progress",
-   "evidence": "`RtpSender`/`SendSideController` follow `rtp_sender_video.cc`/`rtp_sender_egress.cc` (payload size from header sizes #76 group 7, #124; `send_rate_stats` on since #224). Open #514: no padding on the media SSRC without RTX (4 vs 383 on `issue_29_ulpfec_over_red`), audio-only padding, random start sequence number/timestamp (ours `initial_seq` 0), first audio marker. Parity doc 9.3 'SendSideController composition' is 'not compared'.",
+   "status": "done",
+   "evidence": "`RtpSender`/`SendSideController` follow `rtp_sender_video.cc`/`rtp_sender_egress.cc` (payload size from header sizes #76 group 7, #124; `send_rate_stats` on since #224). The RTP sender wire differences are ported (#514: padding on the media SSRC, audio-only padding, random start sequence number and timestamp, first audio marker; #704: `packet_sequencer.cc`). The composition is compared with `RtpVideoSender`/`RtpTransportControllerSend` and the remaining wiring ported (#711, #716: pacer queue size into GoogCC, the congestion-window pushback queue, `OnTransportLossReport`). Expected per-packet overhead is on by default as libwebrtc (#577, #696).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
