@@ -132,8 +132,12 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
                "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
-               "the 'expand' operation of the audio jitter buffer (4.5).",
-         verification="No defects found."),
+               "the 'expand' operation of the audio jitter buffer's version 1 (4.5). Version 2 (`neteq v2`, the "
+               "session's and bench's NetEq) conceals only with NetEq's Expand; where its sync buffer can't fill "
+               "the output it plays silence as NetEq's `kSampleUnderrun` (#568), so this module isn't used there.",
+         verification="No defects found. #568 removed it from the jitter buffer's version 2, where it concealed "
+                      "the remainder of an output frame the sync buffer couldn't fill; NetEq mutes that frame "
+                      "(`neteq_impl.cc` GetAudioInternal). No scenario in the suite reaches that case on seed 1."),
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
