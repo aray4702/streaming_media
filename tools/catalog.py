@@ -132,8 +132,12 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
                "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
-               "the 'expand' operation of the audio jitter buffer (4.5).",
-         verification="No defects found."),
+               "the 'expand' operation of the audio jitter buffer's version 1 (4.5). Version 2 (`neteq v2`, the "
+               "session's and bench's NetEq) conceals only with NetEq's Expand; where its sync buffer can't fill "
+               "the output it plays silence as NetEq's `kSampleUnderrun` (#568), so this module isn't used there.",
+         verification="No defects found. #568 removed it from the jitter buffer's version 2, where it concealed "
+                      "the remainder of an output frame the sync buffer couldn't fill; NetEq mutes that frame "
+                      "(`neteq_impl.cc` GetAudioInternal). No scenario in the suite reaches that case on seed 1."),
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
@@ -475,19 +479,6 @@ ALGORITHMS = [
                       "`issue_12_lossbwe_policer` `net.loss_pct < 14` (ours 13.18, libwebrtc worst 15.97) and "
                       "`video.freeze_total_ms < 6000` (4685, 15854); `issue_124_burst_loss_v2` `video.e2e_delay_p95_ms < 314.08` "
                       "(304.4; capped at libwebrtc's worst seed)."),
-    dict(id="4.7", slug="clock-drift", title="Clock drift estimation and compensation",
-         problems=["Clock drift between sender and receiver -> sample-rate drift compensation in the audio device module"],
-         headers=["timing/clock_drift.h"], unit=["ClockDrift"], e2e=["E2E_ClockDrift"],
-         bench=["timing/DriftCompensator_10ms_16k", "timing/Q_ClockDrift_300ppm"],
-         scenario="120 s of audio from a sender whose clock is 300 ppm slow, over 40 ms + 5 ms jitter. The "
-                  "receiver plays 10 ms blocks from a FIFO; with compensation, the PI-controlled resampler holds "
-                  "the FIFO at 60 ms.",
-         notes="Using the per-window minimum transit time (lower envelope) instead of every packet makes the "
-               "drift fit almost immune to jitter. The resampler ratio is limited to +-0.5%.",
-         verification="Defect found: the first PI gains gave a ~500 s time constant (slow oscillation, 15.8 ms "
-                      "error). Retuned from the plant model (the buffer integrates at 10 ms per update) to a "
-                      "~3 s, near critically damped loop, with an EMA on the packet-granular level: the error "
-                      "fell to 1.8 ms."),
     # ------------------------------------------------------------------ 5
     dict(id="5.1", slug="transport-feedback", title="Transport-wide CC feedback (and REMB)",
          problems=["Fine-grained per-packet feedback -> transport-cc (Transport-Wide CC) RTCP feedback",
@@ -1238,13 +1229,27 @@ ALGORITHMS = [
                       "(sm_rtcp_interop)."),
     dict(id="6.11", slug="resampler", title="Sample-rate conversion",
          problems=["Device sample-rate mismatch -> resampler"],
-         headers=["audio/resampler.h"], unit=["Resampler"], e2e=["E2E_Resampler"],
+         headers=["audio/resampler.h", "audio/spl_resampler.h", "audio/push_resampler.h"],
+         unit=["Resampler", "SplResampler", "PushResampler"], e2e=["E2E_Resampler"],
          bench=["audio/Resampler_48k_to_16k_10ms", "audio/Resampler_44k1_to_48k_10ms"],
          scenario="44.1 kHz microphone -> 16 kHz processing (HPF) -> 48 kHz speaker with a 1 kHz tone; "
                   "end-to-end SNR after fitting gain and phase, plus the output length.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The Audio Device Module (platform audio I/O, device switching) is platform glue rather than an "
-               "algorithm and is out of scope; the resampler is what bridges device and processing rates.",
-         verification="Defect found: when decimating, the filter used too few taps (transition band several kHz "
+               "algorithm and is out of scope; the resampler is what bridges device and processing rates. "
+               "libwebrtc's resamplers are ported (issue #565): `SplResampler` is `common_audio/resampler/resampler.cc`, "
+               "the fixed-point int16 resampler on the signal processing library's allpass half-band and fractional "
+               "filters (`resample_by_2.c`, `resample_by_2_internal.c`, `resample.c`, `resample_48khz.c`, "
+               "`resample_fractional.c`), with its 21 modes, block sizes and coefficients; `PushResampler<T>` is "
+               "`push_resampler.cc`, one `PushSincResampler` per channel (int16 or FloatS16, up to 8 channels), which "
+               "`PushSincResampler` now also takes as int16, as libwebrtc. Differences: scratch buffers are members "
+               "rather than malloc'ed per call, and the fixed-point sums wrap explicitly where libwebrtc relies on "
+               "overflow under RTC_NO_SANITIZE (same output); the ARM/MIPS assembly variants are not ported. The v1 "
+               "Kaiser `Resampler` stays until the v1 retirement (#565).",
+         verification="#565: `SplResampler` is bit-exact with libwebrtc's own `resampler.cc` and `resample*.c` "
+                      "compiled from `reference/`, on all 94 rate pairs and channel counts that take 10 ms blocks "
+                      "(8, 11, 16, 22, 32, 44, 48 and 96 kHz, mono and stereo; golden hashes in "
+                      "`SplResampler.BitExactWithLibwebrtc`), and passes the ports of `resampler_unittest.cc` and "
+                      "`push_resampler_unittest.cc`. Earlier, on the v1 resampler: defect found: when decimating, the filter used too few taps (transition band several kHz "
                       "wide), so a 10 kHz tone aliased at only -36 dB into 48 -> 16 kHz output. Taps now scale "
                       "with the decimation factor: 91 dB rejection, 107 dB SNR."),
     dict(id="6.12", slug="band-splitting", title="Band splitting",
@@ -1584,6 +1589,7 @@ NOT_IMPLEMENTED = [
     ("3", "Opus in-band FEC (LBRR), Opus DRED", "Inside the Opus codec; used by configuring the codec. 3.4 is the codec-agnostic fallback."),
     ("3", "Keyframe pacing, intra refresh, LTR frames", "Encoder features (codec-specific bitstream tools)."),
     ("3", "Temporal scalability (L1T2/L1T3) and temporal layer filtering", "Removed in #572: single-layer H.264 in libwebrtc M157 has no temporal layers (the patterns belong to the VP8/VP9/AV1 encoders), and forwarding a subset of layers is an SFU's job, which a one-to-one call does not need (program.md 0.1; Builder's and Owner's decisions on #566)."),
+    ("4", "Clock drift estimation and compensation", "Removed in #590: libwebrtc M157's one-to-one call has no such component; it absorbs drift with NetEq's time stretch (4.4) and the RTP-to-NTP estimator and timestamp extrapolator (4.2, 8). Nothing in `rtp::Session`, the test bench, `web/` or `compare/` used it (Owner's A on #566)."),
     ("6", "Audio Device Module (platform I/O, mute, device switching)", "Platform glue per OS; the algorithms take 10 ms PCM frames. Rate bridging is 6.11."),
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),

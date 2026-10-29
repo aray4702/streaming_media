@@ -33,8 +33,7 @@ if(SM_WITH_TIMING)
     timing/audio_jitter_buffer.cc
     timing/video_jitter_estimator.cc
     timing/vcm_timing.cc
-    timing/frame_release.cc
-    timing/clock_drift.cc)
+    timing/frame_release.cc)
   list(APPEND SM_SECTIONS timing)
 endif()
 
@@ -74,6 +73,7 @@ if(SM_WITH_AUDIO)
     audio/agc2_rnn_vad.cc
     audio/agc2_rnn_vad_weights.cc
     audio/sinc_resampler.cc
+    audio/spl_resampler.cc
     audio/agc1.cc
     audio/agc1_vad.cc
     audio/agc1_vad_isac.cc
