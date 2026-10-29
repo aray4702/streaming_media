@@ -8,6 +8,7 @@
 #include "sm/core/fft.h"
 #include "sm/core/metrics.h"
 #include "sm/core/rate_statistics.h"
+#include "sm/core/rate_tracker.h"
 #include "sm/core/random.h"
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
@@ -504,6 +505,125 @@ SM_TEST(NetworkLink, TraceMarksOutageAndRandomLoss) {
   SM_ASSERT_EQ(link.trace().size(), 2u);
   SM_EXPECT_TRUE(link.trace()[0].outcome == sim::LinkOutcome::kDown);
   SM_EXPECT_TRUE(link.trace()[1].outcome == sim::LinkOutcome::kLost);
+}
+
+// libwebrtc's RateTracker (rtc_base/rate_tracker_unittest.cc, M150 release
+// branch): 10 buckets of 100 ms, as SendStatisticsProxy's frame rate trackers.
+namespace {
+struct RateTrackerForTest {
+  RateTracker tracker{100, 10};
+  int64_t time_ms = 0;
+  void AdvanceTime(int64_t d) { time_ms += d; }
+  void AddSamples(int64_t n) { tracker.Update(n, time_ms); }
+  double ComputeRate() const { return tracker.Rate(time_ms); }
+  double ComputeRateForInterval(int64_t interval_ms) const { return tracker.ComputeRateForInterval(time_ms, interval_ms); }
+};
+}  // namespace
+
+SM_TEST(RateTracker, Test30FPS) {
+  RateTrackerForTest t;
+  for (int i = 0; i < 300; ++i) {
+    t.AddSamples(1);
+    t.AdvanceTime(33);
+    if (i % 3 == 0) t.AdvanceTime(1);
+  }
+  SM_EXPECT_EQ(t.ComputeRateForInterval(50000), 30.0);
+}
+
+SM_TEST(RateTracker, Test60FPS) {
+  RateTrackerForTest t;
+  for (int i = 0; i < 300; ++i) {
+    t.AddSamples(1);
+    t.AdvanceTime(16);
+    if (i % 3 != 0) t.AdvanceTime(1);
+  }
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 60.0);
+}
+
+SM_TEST(RateTracker, Basics) {
+  RateTrackerForTest t;
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 0.0);
+  t.AddSamples(1234);
+  // Less than one bucket after the first sample: no rate.
+  t.AdvanceTime(99);
+  SM_EXPECT_EQ(t.ComputeRate(), 0.0);
+  t.AdvanceTime(1);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 12340.0);
+  SM_EXPECT_EQ(t.ComputeRate(), 12340.0);
+  SM_EXPECT_EQ(t.tracker.TotalSampleCount(), 1234);
+  t.AddSamples(1234);
+  t.AdvanceTime(100);
+  SM_EXPECT_EQ(t.ComputeRate(), 12340.0);
+  SM_EXPECT_EQ(t.tracker.TotalSampleCount(), 1234 * 2);
+  // A full second elapsed.
+  t.AdvanceTime(800);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 1234.0 * 2.0);
+  SM_EXPECT_EQ(t.ComputeRate(), 1234.0 * 2.0);
+  SM_EXPECT_EQ(t.ComputeRate(), 1234.0 * 2.0);
+  // A second with nothing: zero.
+  t.AdvanceTime(1000);
+  SM_EXPECT_EQ(t.ComputeRate(), 0.0);
+  SM_EXPECT_EQ(t.tracker.TotalSampleCount(), 1234 * 2);
+  for (int i = 0; i < 5500; i += 100) {
+    t.AddSamples(9876);
+    t.AdvanceTime(100);
+  }
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 9876.0 * 10.0);
+  SM_EXPECT_EQ(t.ComputeRate(), 9876.0 * 10.0);
+  SM_EXPECT_EQ(t.tracker.TotalSampleCount(), 1234 * 2 + 9876 * 55);
+  // Half a second with nothing halves the rate.
+  t.AdvanceTime(500);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 9876.0 * 5.0);
+  SM_EXPECT_EQ(t.ComputeRate(), 9876.0 * 5.0);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(500), 0.0);
+}
+
+SM_TEST(RateTracker, LongPeriodBetweenSamples) {
+  RateTrackerForTest t;
+  t.AddSamples(1);
+  t.AdvanceTime(1000);
+  SM_EXPECT_EQ(t.ComputeRate(), 1.0);
+  t.AdvanceTime(2000);
+  SM_EXPECT_EQ(t.ComputeRate(), 0.0);
+  t.AdvanceTime(2000);
+  t.AddSamples(1);
+  SM_EXPECT_EQ(t.ComputeRate(), 1.0);
+}
+
+SM_TEST(RateTracker, Rolloff) {
+  RateTrackerForTest t;
+  for (int i = 0; i < 10; ++i) {
+    t.AddSamples(1);
+    t.AdvanceTime(100);
+  }
+  SM_EXPECT_EQ(t.ComputeRate(), 10.0);
+  for (int i = 0; i < 10; ++i) {
+    t.AddSamples(1);
+    t.AdvanceTime(50);
+  }
+  SM_EXPECT_EQ(t.ComputeRate(), 15.0);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(500), 20.0);
+  for (int i = 0; i < 10; ++i) {
+    t.AddSamples(1);
+    t.AdvanceTime(50);
+  }
+  SM_EXPECT_EQ(t.ComputeRate(), 20.0);
+}
+
+SM_TEST(RateTracker, UnitSecondsAfterInitialValue) {
+  RateTrackerForTest t;
+  t.AddSamples(1234);
+  t.AdvanceTime(1000);
+  SM_EXPECT_EQ(t.ComputeRateForInterval(1000), 1234.0);
+}
+
+SM_TEST(RateTracker, LargeNumbers) {
+  RateTrackerForTest t;
+  const int64_t large = 0x100000000;
+  t.AddSamples(large);
+  t.AdvanceTime(1000);
+  t.AddSamples(large);
+  SM_EXPECT_EQ(t.ComputeRate(), static_cast<double>(large * 2));
 }
 
 // libwebrtc's RateStatistics (rtc_base/rate_statistics.cc), as BitrateTracker

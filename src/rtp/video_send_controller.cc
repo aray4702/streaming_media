@@ -165,6 +165,8 @@ void VideoSendController::OnEncoderInfoChanged(const EncoderAdaptationInfo& info
 
 EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, Timestamp now) {
   UpdateFrameRate(now);
+  // VideoStreamEncoder::OnFrame -> SendStatisticsProxy::OnIncomingFrame (video_stream_encoder.cc:1632).
+  session_.OnIncomingVideoFrame(now);
   int width = frame.width, height = frame.height;
   bool cwnd_drop = false;
   bool reconfigured = false;
