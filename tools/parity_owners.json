@@ -148,7 +148,7 @@
     {"scenario": "issue_457_libopus_audio_rate", "metric": "video.render_fps", "issues": [411]},
     {"scenario": "issue_430_av_outage_6s", "metric": "video.e2e_delay_p95_ms", "issues": [474], "note": "#474 (Fixer 2026-10-29): explained as seed noise. Behind on 10 seeds on main 27f95b6 (136.7 vs 116.1, band \u00b118.6, 3/10 seeds), the same means as #479's run; in band on 80 seeds: 124.2 vs 116.1, band \u00b119.8 (#562 on main 0bd468a)."},
     {"scenario": "issue_29_ulpfec_over_red", "metric": "video.avg_kbps", "issues": [492, 514]},
-    {"scenario": "issue_464_start_rate_above_int_bps", "metric": "repair.overhead_pct", "issues": [514]},
+    {"scenario": "issue_464_start_rate_above_int_bps", "metric": "repair.overhead_pct", "issues": [514, 771]},
     {"scenario": "issue_123_v2_allocation_min", "metric": "video.longest_freeze_ms", "issues": [479], "note": "Seed noise: ahead on 10 seeds (3855 vs 4431), in band on 80 seeds (run as `very_low_capacity`, identical results): 4039 vs 4230, band \u00b11.03e+03 (#562 on main 0bd468a; #479 step 2)."},
     {"scenario": "issue_127_all_v2_no_stall", "metric": "audio.jb_delay_p95_ms", "issues": [479], "note": "Seed noise: ahead on 10 seeds (231 vs 244), in band on 80 seeds: 232.8 vs 244, band \u00b113.3 (#562 on main 0bd468a; #479 step 2)."},
     {"scenario": "issue_12_lossbwe_policer", "metric": "audio.mouth_to_ear_p95_ms", "issues": [479], "note": "Seed noise: ahead on 10 seeds (696.2 vs 1045), in band on 80 seeds: 751.6 vs 856.1, band \u00b1297 (#562 on main 0bd468a; #479 step 2)."},
@@ -211,6 +211,12 @@
     {"scenario": "issue_15_aimd_v2_random_loss", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
     {"scenario": "issue_18_random_loss_keyframes", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
     {"scenario": "issue_7_no_fec_beside_nack", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
-    {"scenario": "random_loss_5pct", "metric": "video.e2e_delay_p95_ms", "issues": [411]}
+    {"scenario": "random_loss_5pct", "metric": "video.e2e_delay_p95_ms", "issues": [411]},
+    {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "sync.av_offset_p95_ms", "issues": [769]},
+    {"scenario": "issue_415_cross_80pct_standing_queue", "metric": "video.e2e_delay_p95_ms", "issues": [769]},
+    {"scenario": "issue_335_fps1_keyframe_packets", "metric": "video.pause_total_ms", "issues": [770]},
+    {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.freeze_count", "issues": [736]},
+    {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.longest_freeze_ms", "issues": [736]},
+    {"scenario": "issue_76_rtx_v2_keyframe_flush", "metric": "video.render_fps", "issues": [736]}
   ]
 }
