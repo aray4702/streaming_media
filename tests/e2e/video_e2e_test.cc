@@ -77,33 +77,68 @@ SM_TEST(E2E_FreezeDetector, MatchesGroundTruthGapsOverLossyLink) {
   SM_EXPECT_LT(fd.HarmonicFps(), 30.0);
 }
 
+namespace {
+// A hardware encoder that asks for the software fallback (libwebrtc's
+// WEBRTC_VIDEO_CODEC_FALLBACK_SOFTWARE) once it starts failing, and a
+// software encoder whose first frame after InitEncode is a keyframe.
+struct ScriptedEncoder : FallbackEncoder {
+  bool initialized = false, next_is_keyframe = false;
+  DataRate rate = DataRate::Zero();
+  EncoderStatus InitEncode(const EncoderCodecSettings&) override {
+    initialized = next_is_keyframe = true;
+    return EncoderStatus::kOk;
+  }
+  void Release() override { initialized = false; }
+  void SetRates(const EncoderRates& r) override { rate = r.bitrate; }
+  void OnRttUpdate(TimeDelta) override {}
+  void OnPacketLossRateUpdate(float) override {}
+  FallbackEncoderInfo GetEncoderInfo() const override { return {}; }
+};
+}  // namespace
+
 SM_TEST(E2E_CodecFallback, HardwareFailureMidCallKeepsVideoFlowing) {
-  // The hardware encoder starts failing 30% of frames at 10 s.
-  CodecFallbackConfig cfg;
-  cfg.retry_hardware_after = TimeDelta::Zero();
-  CodecFallbackController ctl(cfg);
+  // The hardware encoder fails at 10 s and errs on 30% of frames from then
+  // on; every 10th of its errors is the fallback request, as a MediaCodec
+  // wrapper reports a dead codec after a few transient errors.
+  ScriptedEncoder sw, hw;
+  CodecFallbackController ctl({}, sw, hw);
+  SM_ASSERT_TRUE(ctl.InitEncode({1280, 720, false, 1}, Timestamp::Millis(0)) == EncoderStatus::kOk);
+  ctl.SetRates({DataRate::KilobitsPerSec(1500), 30});
   Random rng(2);
   int64_t last_ok = 0, max_gap = 0;
-  int keyframes_after_switch = 0;
-  bool was_hw = true;
+  int hw_errors = 0, sw_keyframes = 0, frames_on_sw = 0;
   for (int64_t t = 0; t < 30000; t += 33) {
     Timestamp now = Timestamp::Millis(t);
-    bool hw = ctl.active() == CodecImpl::kHardware;
-    bool ok = !(hw && t >= 10000 && rng.Bernoulli(0.3));
-    ctl.OnFrameResult(ok, now);
-    if (was_hw && ctl.active() == CodecImpl::kSoftware && ctl.TakeKeyframeRequest()) ++keyframes_after_switch;
-    was_hw = ctl.active() == CodecImpl::kHardware;
-    if (ok) {
+    FallbackEncoder* enc = ctl.current();
+    SM_ASSERT_TRUE(enc != nullptr);
+    EncoderStatus st = EncoderStatus::kOk;
+    if (enc == &hw && t >= 10000 && rng.Bernoulli(0.3))
+      st = (++hw_errors % 10 == 0) ? EncoderStatus::kFallbackSoftware : EncoderStatus::kError;
+    if (ctl.OnEncodeResult(st, now)) {
+      enc = ctl.current();  // The same frame, encoded by the fallback.
+      st = EncoderStatus::kOk;
+    }
+    if (enc == &sw && st == EncoderStatus::kOk) {
+      ++frames_on_sw;
+      if (sw.next_is_keyframe) ++sw_keyframes;
+      sw.next_is_keyframe = false;
+    }
+    if (st == EncoderStatus::kOk) {
       max_gap = std::max(max_gap, t - last_ok);
       last_ok = t;
     }
   }
   SM_RECORD("fallbacks", ctl.stats().fallbacks);
+  SM_RECORD("hardware_errors", hw_errors);
   SM_RECORD("max_encoded_gap_ms", max_gap);
   SM_EXPECT_EQ(ctl.stats().fallbacks, 1u);
-  SM_EXPECT_EQ(keyframes_after_switch, 1);
+  SM_EXPECT_TRUE(ctl.state() == EncoderState::kFallbackDueToFailure);
+  SM_EXPECT_EQ(hw_errors, 10);  // Plain errors don't switch; the request does.
+  SM_EXPECT_FALSE(hw.initialized);  // Released on the switch.
+  SM_EXPECT_EQ(sw.rate.kbps(), 1500.0);  // Primed with the last rate.
+  SM_EXPECT_EQ(sw_keyframes, 1);
+  SM_EXPECT_GT(frames_on_sw, 0);
   SM_EXPECT_LE(max_gap, 200);
-  SM_EXPECT_TRUE(ctl.active() == CodecImpl::kSoftware);
 }
 
 SM_TEST(E2E_Orientation, RotatingPhoneRendersUpright) {

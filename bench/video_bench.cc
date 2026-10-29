@@ -23,12 +23,25 @@ SM_BENCH(video, FreezeDetector_frame) {
   st.BudgetNsPerItem(200);
 }
 
+namespace {
+struct NullEncoder : FallbackEncoder {
+  EncoderStatus InitEncode(const EncoderCodecSettings&) override { return EncoderStatus::kOk; }
+  void Release() override {}
+  void SetRates(const EncoderRates&) override {}
+  void OnRttUpdate(TimeDelta) override {}
+  void OnPacketLossRateUpdate(float) override {}
+  FallbackEncoderInfo GetEncoderInfo() const override { return {}; }
+};
+}  // namespace
+
 SM_BENCH(video, CodecFallback_frame) {
-  CodecFallbackController c;
+  NullEncoder sw, hw;
+  CodecFallbackController c({}, sw, hw);
+  c.InitEncode({1280, 720, false, 1}, Timestamp::Millis(0));
   int64_t t = 0;
   for (auto _ : st) {
-    c.OnFrameResult(t % 97 != 0, Timestamp::Millis(t));
-    c.Process(Timestamp::Millis(t));
+    bench::DoNotOptimize(c.current());
+    c.OnEncodeResult(t % 97 != 0 ? EncoderStatus::kOk : EncoderStatus::kError, Timestamp::Millis(t));
     t += 33;
   }
   st.BudgetNsPerItem(200);
