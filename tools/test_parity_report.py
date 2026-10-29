@@ -256,6 +256,25 @@ class Owners(unittest.TestCase):
         for cell, issue in cells.items():
             self.assertIn(issue, g[cell], cell)
 
+    def test_504_owns_only_issue_533_audio_cells(self):
+        # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
+        # through StreamSynchronization, so they go to the scenario's video/CC owner with a note; #504
+        # keeps only issue_533's NetEq cells; issue_451 keeps #451's not-comparable note.
+        cells = {"issue_12_lossbwe_policer": 411, "issue_12_lossbwe_shallow": 411,
+                 "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
+                 "issue_533_opus_decoder_frame_older_than_window": 504}
+        metrics = {"audio.jb_delay_p95_ms": ([300] * 5, [400] * 5), "audio.mouth_to_ear_p95_ms": ([300] * 5, [400] * 5)}
+        d = data(*[scn(n, metrics) for n in cells])
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        # Only #504 open: every other cell must be owned through a rule with a note.
+        states = {i: "open" if i == 504 else "closed" for i in pr.owner_issues(owners)}
+        g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners, states=states)}
+        self.assertEqual(len(g), 2 * len(cells))
+        for (name, metric), o in g.items():
+            self.assertIn(cells[name], o, (name, metric))
+            self.assertEqual(504 in o, name.startswith("issue_533_"), (name, metric))
+
 
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):
