@@ -455,9 +455,10 @@ ALGORITHMS = [
                   "bottleneck with 10 ms jitter. Each frame's render time comes from VideoTiming fed by the "
                   "estimator; a frame is late if it arrives (plus decode time) after its render time.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
-               "Deviation from libwebrtc: the jitter term is 3 sigma with no offset, where libwebrtc uses "
-               "2.33 sigma - 30 ms (it compensates elsewhere with OS-jitter and render allowances). Both are "
-               "configurable.",
+               "Timing v2 (the default) is libwebrtc's `video/timing/` and `VCMTiming` with their defaults; "
+               "rows 4.1 and 4.2 there list each part, re-checked line by line on #645. Timing v1 (`timing v1`, "
+               "not the default) differs from libwebrtc: its jitter term is 3 sigma with no offset, where "
+               "libwebrtc uses 2.33 sigma - 30 ms plus 10 ms of OS jitter.",
          verification="Defect found: with libwebrtc's -30 ms offset the jitter delay collapsed to 1 ms for 15 ms "
                       "network jitter, so about 600 of 1 800 frames arrived after their render time. With the new "
                       "default, late frames fell from 2.8% to 0.1% in the timing e2e test, at 134 ms mean delay. "
@@ -473,6 +474,11 @@ ALGORITHMS = [
                       "(timing v1 158-245, libwebrtc 92); `issue_24_timing_v2_high_jitter` locks it in. On `clean_link` with every v2 "
                       "switch on, video e2e delay p50 is 71-79 ms on seeds 1-40 (timing v1 59-63, libwebrtc 74.8) and time to "
                       "first frame 52 ms (timing v1 68, libwebrtc 53.7); `issue_24_timing_v2_clean_link` locks it in. "
+                      "Re-checked against `compare/webrtc/reference/` on #645: libwebrtc's unit arithmetic in three places "
+                      "(the 90 kHz RTP delta truncates to the microsecond, the frame rate is whole millihertz, the "
+                      "RTT filter's short average divides), pinned by `unit.VcmTiming`'s "
+                      "`IfdvRtpDeltaTruncatesToTheMicrosecond` and `JitterFrameRateIsWholeMillihertz`; the suite "
+                      "moves by at most 0.2 ms. "
                       "Default v2 since #24 ([fix record](../../fixes/24-timing-v2-default.md)): `rtp::VideoStreamConfig` "
                       "and the test bench run timing v2 (`timing v1` still selects the library's own). On top of the #61 "
                       "flip it closes 88 parity gaps and opens 11 (seeds 1-10); `issue_76_tcc_v2_high_jitter` is back "
