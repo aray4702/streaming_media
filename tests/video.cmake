@@ -4,6 +4,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
   SUITES
     CodecFallback
     ContentPolicy
+    DecoderFallback
     FrameScaler
     FrameScheduler
     FreezeDetector
