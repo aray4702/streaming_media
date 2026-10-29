@@ -140,6 +140,12 @@ class CpuOveruseDetector : public MetricsSource {
   // One encoded layer of the frame was sent at `time_sent`.
   void OnFrameSent(uint32_t rtp_timestamp, Timestamp time_sent);
   void OnTargetFramerateUpdated(int framerate_fps);
+  // Version 2: OveruseFrameDetector::StopCheckForOveruse then
+  // StartCheckForOveruse (EncodeUsageResource, when the encoder is configured
+  // again): SetOptions' new SendProcessingUsage1, a reset with the next frame
+  // (num_pixels_ = 0), and the check task started again, its first run 100 ms
+  // after the next Check(). The overuse and rampup state are kept, as there.
+  void RestartCheckForOveruse();
   // One run of CheckForOveruse, outside the task schedule.
   Signal CheckForOveruse(Timestamp now);
   // The usage of the last measured encode time; empty until one is measured
