@@ -261,3 +261,14 @@ modules/rtp_rtcp/source/packet_sequencer.h
 modules/rtp_rtcp/source/packet_sequencer.cc
 video/send_statistics_proxy.h
 video/send_statistics_proxy.cc
+api/neteq/default_neteq_controller_factory.h
+api/neteq/default_neteq_controller_factory.cc
+api/neteq/default_neteq_factory.h
+api/neteq/default_neteq_factory.cc
+api/neteq/delay_manager_interface.h
+api/neteq/neteq_controller.h
+api/neteq/neteq.h
+api/neteq/tick_timer.h
+api/neteq/tick_timer.cc
+api/neteq/neteq_controller_factory.h
+api/neteq/neteq_factory.h

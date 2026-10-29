@@ -723,3 +723,22 @@ SM_TEST(VideoSendController, RemovingALessLimitedResourceKeepsTheRestrictions) {
   SM_EXPECT_EQ(c.stream_adapter().resolution_adaptations(), 2);
   SM_EXPECT_FALSE(c.overuse_detector().encode_usage_percent().has_value());
 }
+
+// SendStatisticsProxy::OnIncomingFrame starts the sent frame rate at the first
+// captured frame, so frames encoded later count over the time since capture
+// started, not since the first encoded frame (issue #710).
+SM_TEST(VideoSendController, SentFrameRateStartsAtTheFirstCapturedFrame) {
+  Session s(Cfg());
+  VideoStreamConfig v;
+  v.ssrc = 0x200;
+  const VideoSendId id = s.AddVideoSend(v);
+  VideoSendController c({}, s);
+  c.OnCapturedFrame({640, 360}, At(0));
+  const std::vector<std::vector<uint8_t>> chunk{std::vector<uint8_t>(100, 0)};
+  for (int t = 500; t < 1000; t += 50) s.SendVideoChunks(id, chunk, static_cast<uint32_t>(t * 90), At(t));
+  s.Process(At(1000));
+  MapMetricsWriter w;
+  s.ExportMetrics(w);
+  // 10 frames over the 1000 ms since the first captured frame (20 if it started at 500 ms).
+  SM_EXPECT_EQ(w.Get("video_encode_frame_rate", -1), 10.0);
+}

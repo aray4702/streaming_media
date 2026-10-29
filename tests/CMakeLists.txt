@@ -14,6 +14,7 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
     Metrics
     NetworkLink
     RateStatistics
+    RateTracker
     RtpPacket
     SeqNum
     Units

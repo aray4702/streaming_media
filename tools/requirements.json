@@ -86,10 +86,10 @@
    "area": "Packet loss",
    "catalog": "3.7",
    "title": "NACK/FEC protection selection",
-   "status": "in-progress",
-   "evidence": "`FecControllerDefault`, `VCMLossProtectionLogic`, `VCMNackFecMethod` and `kFecRateTable` ported value for value (#29), driven by `rtp::Session` on target, loss and RTT; the 0.5 protection share with `send_rate_stats` (#224, on). Remaining (parity 3.7): sent frame rate counted over the last second (libwebrtc's `SendStatisticsProxy` tracker not in reference/). The FEC amount differs on `issue_29_ulpfec_over_red` (`video.avg_kbps` behind 48/80), owned by #492 (and #514).",
+   "status": "done",
+   "evidence": "`FecControllerDefault`, `VCMLossProtectionLogic`, `VCMNackFecMethod` and `kFecRateTable` ported value for value (#29), driven by `rtp::Session` on target, loss and RTT; the 0.5 protection share with `send_rate_stats` (#224, on). The sent frame rate it reads is libwebrtc's `SendStatisticsProxy::GetSendFrameRate` (`RateTracker` of 10 x 100 ms from the first captured frame, rounded; #714). Padding on the media SSRC as `PacketSequencer` (#707). `issue_29_ulpfec_over_red`'s cells are in band on `main` (#492). No open item.",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
