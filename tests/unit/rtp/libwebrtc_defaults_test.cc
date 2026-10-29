@@ -56,3 +56,10 @@ SM_TEST(LibwebrtcDefaults, PacketsAreUpTo1460Bytes) {
 SM_TEST(LibwebrtcDefaults, TheEncoderAllocationHasNoMaximumOfItsOwn) {
   SM_EXPECT_TRUE(VideoSendControllerConfig{}.allocation_max_bitrate.IsPlusInfinity());
 }
+
+// Issue #637: VideoStreamEncoder re-runs the bitrate adjuster only in UpdateBitrateAllocation (an
+// allocation update, a reconfiguration, every kParameterUpdateIntervalMs), not per captured frame
+// (video/video_stream_encoder.cc).
+SM_TEST(LibwebrtcDefaults, TheBitrateAdjusterRunsOnAllocationUpdates) {
+  SM_EXPECT_TRUE(VideoSendControllerConfig{}.adjuster_on_update);
+}
