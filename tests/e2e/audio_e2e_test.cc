@@ -343,7 +343,7 @@ SM_TEST(E2E_AudioLevel, ExtensionByteTracksSpeechAndSilence) {
   for (size_t f = 0; f + 1 < speech.size() / 320; ++f) {
     std::span<const float> fr(speech.data() + f * 320, 320);
     std::span<const float> nz(noise.data() + f * 320, 320);
-    bool v = vad.Process(fr.first(160)) | vad.Process(fr.last(160));
+    bool v = vad.VoiceActivity(fr, fs) == Vad::kActive;  // 20 ms, as libwebrtc allows.
     auto rx = DecodeAudioLevelExtension(EncodeAudioLevelExtension({ComputeLevel(fr), v}));
     if (f * 20 >= 1500 && rx.level < 60) {
       speech_level += rx.level;

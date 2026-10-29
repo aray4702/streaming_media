@@ -359,8 +359,7 @@ void VoiceActivity() {
   s.noise_amp = 0.015f;
   auto c = MakeCall(s);
   auto in = RunOurs(c, {true, false, false, false, false}).out;
-  sm::audio::VadConfig vc;
-  sm::audio::Vad ours(vc);
+  sm::audio::Vad ours(sm::audio::Vad::kVadNormal);
   auto webrtc = webrtc::CreateVad(webrtc::Vad::kVadNormal);
   auto truth = SpeechTruth(c, -45.0f);
   int tp[2] = {}, fn[2] = {}, fp[2] = {}, tn[2] = {};
@@ -370,7 +369,7 @@ void VoiceActivity() {
     for (size_t i = 0; i < kFrame; ++i) {
       pcm[i] = static_cast<int16_t>(std::clamp(std::lround(fr[i] * 32768.0f), -32768L, 32767L));
     }
-    bool v[2] = {ours.Process(fr), webrtc->VoiceActivity(pcm.data(), kFrame, kFs) == webrtc::Vad::kActive};
+    bool v[2] = {ours.VoiceActivity(fr, kFs) == sm::audio::Vad::kActive, webrtc->VoiceActivity(pcm.data(), kFrame, kFs) == webrtc::Vad::kActive};
     if (f < 100) continue;  // As E2E_Vad: the first second is warm-up.
     for (int k = 0; k < 2; ++k) {
       if (truth[f] == Truth::kSpeech) (v[k] ? tp[k] : fn[k])++;

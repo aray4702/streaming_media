@@ -118,9 +118,14 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
   // stack is 64 KB.
   auto ns_ptr = std::make_unique<audio::ns::NoiseSuppressor>(nc);
   audio::ns::NoiseSuppressor& ns = *ns_ptr;
-  audio::VadConfig vc;
-  vc.sample_rate = fs;
-  audio::Vad vad(vc);
+  // libwebrtc's `webrtc::Vad` (kVadNormal), the chain's VAD output (#671).
+  audio::Vad vad;
+  // The transient suppressor's voice input: libwebrtc's pitch-based
+  // `VoiceActivityDetector` (modules/audio_processing/vad, the probability
+  // AGC1 reports as `voice_probability()`), so a broadband click is not
+  // taken for speech. 16 kHz chunks, as AgcManagerDirect feeds it.
+  auto voice_ptr = std::make_unique<audio::agc1::VoiceActivityDetector>();
+  audio::agc1::VoiceActivityDetector& voice = *voice_ptr;
   audio::TransientSuppressorConfig tc;
   tc.enabled = true;  // `ts` opts in, as APM's transient_suppression.enabled.
   audio::TransientSuppressor ts(tc);
@@ -185,9 +190,15 @@ inline ChainResult RunChain(const CallSignals& c, const ChainConfig& cc, int fs 
       from_s16(f);
     }
     if (cc.ns) ns.Process(f);
-    bool v = vad.Process(f);
+    const bool v = vad.VoiceActivity(f, fs) == audio::Vad::kActive;
     r.vad.push_back(v);
-    if (cc.ts) ts.Process(f, vad.voiced());
+    if (cc.ts) {
+      to_s16(f);
+      for (float& x : s16) x = std::clamp(std::round(x), -32768.0f, 32767.0f);
+      std::vector<int16_t> pcm(s16.begin(), s16.end());
+      voice.ProcessChunk(pcm);
+      ts.Process(f, voice.last_voice_probability() > 0.5f);
+    }
     if (agc1_on) {
       to_s16(f);
       const std::span<const float> band0[1] = {s16};
