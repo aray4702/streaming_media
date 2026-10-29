@@ -237,5 +237,10 @@ modules/rtp_rtcp/source/rtp_header_extensions.cc
 modules/audio_processing/rms_level.cc
 modules/rtp_rtcp/include/rtp_cvo.h
 api/video_codecs/video_encoder_software_fallback_wrapper.cc
+api/video_codecs/video_decoder_software_fallback_wrapper.h
+api/video_codecs/video_decoder_software_fallback_wrapper.cc
+api/video_codecs/video_decoder.h
+api/video_codecs/video_decoder.cc
+api/video_codecs/video_encoder_software_fallback_wrapper.h
 common_video/h264/sps_parser.cc
 common_video/h264/h264_common.cc
