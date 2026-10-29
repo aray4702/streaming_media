@@ -255,6 +255,19 @@ SM_TEST(RtcpEngine, FeedbackIsSplitBeforeTheDatagramLimit) {
   SM_EXPECT_EQ(plis, 20u);
 }
 
+// Issue #576: RTCPSender's max_packet_size_ is 1460 by default
+// (rtp_rtcp_impl2.cc:146-150, 463), so 1300 bytes of feedback go in one datagram.
+SM_TEST(RtcpEngine, FeedbackUpTo1460BytesIsOneDatagram) {
+  SM_EXPECT_EQ(RtcpConfig{}.max_datagram_bytes, 1460u);
+  RtcpEngine e;
+  e.Process(Timestamp::Millis(0));
+  for (int i = 0; i < 100; ++i) e.QueuePli(static_cast<uint32_t>(i));  // 1200 bytes of PLIs.
+  auto out = e.Process(Timestamp::Millis(1));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_GT(out[0].bytes.size(), 1200u);
+  SM_EXPECT_LE(out[0].bytes.size(), 1460u);
+}
+
 SM_TEST(RtcpEngine, TransportFeedbackAndRembSurviveARoundTrip) {
   RtcpConfig c;
   c.local_ssrc = 5;

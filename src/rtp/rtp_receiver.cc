@@ -92,14 +92,35 @@ void RtpReceiver::OnRtt(TimeDelta rtt) {
 
 void RtpReceiver::OnRtcpPacket(Timestamp now) {
   // ModuleRtpRtcpImpl2::LastRtt and GetSenderReportStats: wait for both.
-  if (!have_rtt_ || !last_sr_) return;
+  const std::optional<TimeDelta> rtt = LastRtt();
+  if (!rtt || !last_sr_) return;
   // RtpVideoStreamReceiver2::DeliverRtcp: "Don't use old SRs to estimate time."
   if (cfg_.video && now - last_sr_arrival_ > TimeDelta::Millis(1)) return;
-  ntp_estimator_.UpdateRtcpTimestamp(rtt_, last_sr_->ntp, last_sr_->rtp_timestamp, now);
+  ntp_estimator_.UpdateRtcpTimestamp(*rtt, last_sr_->ntp, last_sr_->rtp_timestamp, now);
   ++stats_.remote_ntp_updates;
   if (auto offset = ntp_estimator_.EstimateRemoteToLocalClockOffset()) {
     capture_clock_offset_updater_.SetRemoteToLocalClockOffset(*offset);
   }
+}
+
+timing::AudioOperation RtpReceiver::GetAudio(std::span<float> out, Timestamp now) {
+  last_playout_time_ = now;
+  const timing::AudioOperation op = jitter_buffer_.GetAudio(out, now);
+  // ChannelReceive::GetAudioFrameWithInfo (channel_receive.cc:472-507): the frame's packet infos, each with
+  // an absolute capture time given the local capture clock offset known now.
+  audio_packet_infos_.clear();
+  for (uint32_t ts : jitter_buffer_.last_decoded_timestamps()) {
+    auto it = std::find_if(received_audio_packet_infos_.rbegin(), received_audio_packet_infos_.rend(),
+                           [&](const AudioPacketInfo& i) { return i.rtp_timestamp == ts; });
+    if (it == received_audio_packet_infos_.rend()) continue;
+    AudioPacketInfo info = *it;
+    if (info.absolute_capture_time) {
+      info.local_capture_clock_offset = sync::CaptureClockOffsetUpdater::ConvertToTimeDelta(
+          capture_clock_offset_updater_.AdjustEstimatedCaptureClockOffset(info.absolute_capture_time->clock_offset));
+    }
+    audio_packet_infos_.push_back(info);
+  }
+  return op;
 }
 
 int64_t RtpReceiver::EstimateNtpTimeMs(uint32_t rtp_timestamp) const {
@@ -337,9 +358,14 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
   last_received_rtp_time_ = now;
   // ChannelReceive::OnRtpPacket interpolates at the payload type's frequency
   // (channel_receive.cc:747-754); GetAudioFrameWithInfo adds the local offset.
-  if (PacketCaptureTime c = OnPacketCaptureTime(p, cfg_.clock_rate, now); c.absolute_capture_time) {
+  const PacketCaptureTime c = OnPacketCaptureTime(p, cfg_.clock_rate, now);
+  if (c.absolute_capture_time) {
     last_audio_capture_time_ = AudioCaptureTime{p.timestamp, *c.absolute_capture_time, c.local_capture_clock_offset};
   }
+  // The packet's RtpPacketInfo, which NetEq keeps with its primary payload (neteq_impl.cc:316-318).
+  if (received_audio_packet_infos_.size() >= kMaxAudioPacketInfos) received_audio_packet_infos_.pop_front();
+  received_audio_packet_infos_.push_back(AudioPacketInfo{
+      .ssrc = p.ssrc, .rtp_timestamp = p.timestamp, .receive_time = now, .absolute_capture_time = c.absolute_capture_time});
   if (!cfg_.decoder) return;
   // NetEqImpl::InsertPacketInternal: each RED block (red level 0 for the
   // primary, 1 for the redundant one) goes through the decoder's ParsePayload.

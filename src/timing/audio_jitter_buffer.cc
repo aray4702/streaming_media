@@ -126,8 +126,14 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
 
 AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* dst) {
   auto it = queue_.begin();
+  const int64_t ts = it->first;
   Packet pkt = std::move(it->second);
   queue_.erase(it);
+  // NetEqImpl::DecodeLoop: the packet's RtpPacketInfo, which only the primary payload carries
+  // (neteq_impl.cc:316-318, 1352-1354).
+  if (pkt.priority.codec_level == 0 && pkt.priority.red_level == 0) {
+    last_decoded_timestamps_.push_back(static_cast<uint32_t>(ts));
+  }
   next_ts_ += static_cast<int64_t>(pkt.pcm.size());
   const size_t ahead = sync_.size() + (dst ? dst->size() : 0);
   stats_.jitter_buffer_delay_ms.Add((now - pkt.arrival).ms_f() + ahead * 1000.0 / cfg_.sample_rate);
@@ -179,6 +185,7 @@ AudioOperation AudioJitterBuffer::MaybeStretch(Timestamp now) {
 
 AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) {
   ++ticks_;  // NetEqImpl::GetAudioInternal: tick_timer_->Increment().
+  last_decoded_timestamps_.clear();  // NetEqImpl::GetAudioInternal (neteq_impl.cc:674).
   if (cfg_.version >= 2 && !neteq_reset_done_ && stats_.packets_received > 0) {
     neteq_delay_.SoftReset();
     decision_.SoftReset(ticks_);

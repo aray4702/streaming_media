@@ -20,7 +20,7 @@ SM_BENCH(audio, Vad_10ms) {
   auto x = Speech();
   size_t off = 0;
   for (auto _ : st) {
-    bench::DoNotOptimize(v.Process(std::span<const float>(x.data() + off, 160)));
+    bench::DoNotOptimize(v.VoiceActivity(std::span<const float>(x.data() + off, 160), 16000));
     off = (off + 160) % (x.size() - 160);
   }
   st.RequireRealtimeFactor(0.010, 500);

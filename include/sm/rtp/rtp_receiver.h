@@ -22,6 +22,7 @@
 
 #include <array>
 #include <cstdint>
+#include <deque>
 #include <memory>
 #include <map>
 #include <optional>
@@ -253,6 +254,19 @@ struct AudioCaptureTime {
   std::optional<TimeDelta> local_capture_clock_offset;
 };
 
+// RtpPacketInfo of a packet whose audio the last GetAudio decoded
+// (AudioFrame::packet_infos_: NetEqImpl::last_decoded_packet_infos_, primary
+// packets only, neteq_impl.cc:316-318, 1352-1354). The local capture clock
+// offset is the one known at playout (GetAudioFrameWithInfo,
+// channel_receive.cc:492-507).
+struct AudioPacketInfo {
+  uint32_t ssrc = 0;
+  uint32_t rtp_timestamp = 0;
+  Timestamp receive_time = Timestamp::MinusInfinity();
+  std::optional<sync::AbsoluteCaptureTime> absolute_capture_time;  // Received or interpolated.
+  std::optional<TimeDelta> local_capture_clock_offset;
+};
+
 // Feedback due toward the sender, for rtp::RtcpEngine.
 struct ReceiverFeedback {
   std::vector<uint16_t> nacks;                  // One NACK batch.
@@ -350,17 +364,31 @@ class RtpReceiver : public MetricsSource {
   // ChannelReceive::GetPlayoutRtpTimestamp: the RTP timestamp of the audio
   // last played and when (audio only).
   std::optional<sync::Syncable::PlayoutInfo> PlayoutRtpTimestamp() const;
+  // The RTT for NACK and the jitter estimate (video: CallStats' maximum,
+  // VideoReceiveStream2::OnRttUpdate).
   void OnRtt(TimeDelta rtt);
+  // ModuleRtpRtcpImpl2::LastRtt of the stream's own RTP/RTCP module
+  // (rtp_rtcp_impl2.cc:482-491), which RemoteNtpTimeEstimator waits for
+  // (OnRtcpPacket): the last report-block RTT on the stream's local SSRC
+  // (RTCPReceiver::LastRtt), else the RTT of its last periodic update
+  // (set_rtt_ms with a receive-only module's XR DLRR RTT,
+  // RTCPReceiver::OnPeriodicRttUpdate), used when over 0 ms.
+  void OnReportBlockRtt(TimeDelta rtt) { report_block_rtt_ = rtt; }
+  void OnPeriodicRtt(TimeDelta rtt) { periodic_rtt_ms_ = rtt.ms(); }
+  std::optional<TimeDelta> LastRtt() const {
+    if (report_block_rtt_) return report_block_rtt_;
+    if (periodic_rtt_ms_ > 0) return TimeDelta::Millis(periodic_rtt_ms_);
+    return std::nullopt;
+  }
   // The decoder failed: ask for a keyframe.
   void OnDecodeFailure(Timestamp now) { keyframes_.OnDecoderError(now); }
 
   std::vector<ReceivedFrame> TakeFrames();
   ReceiverFeedback TakeFeedback();
   // Audio: the device pulls 10 ms.
-  timing::AudioOperation GetAudio(std::span<float> out, Timestamp now) {
-    last_playout_time_ = now;
-    return jitter_buffer_.GetAudio(out, now);
-  }
+  timing::AudioOperation GetAudio(std::span<float> out, Timestamp now);
+  // The packets whose audio the last GetAudio decoded, in decoding order.
+  const std::vector<AudioPacketInfo>& audio_packet_infos() const { return audio_packet_infos_; }
 
   // Report block source for rtp::RtcpEngine::AddReceiveStatistics.
   timing::ReceiveStatistics* receive_statistics() { return &stats_rtp_; }
@@ -443,6 +471,13 @@ class RtpReceiver : public MetricsSource {
   // first packet.
   std::vector<std::optional<std::pair<uint16_t, PacketCaptureTime>>> packet_capture_times_;
   std::optional<AudioCaptureTime> last_audio_capture_time_;
+  // Audio: each received media packet's RtpPacketInfo (offset not yet set), oldest first, at most
+  // kMaxAudioPacketInfos (NetEq's 200-packet buffer, twice), and the last GetAudio's.
+  static constexpr size_t kMaxAudioPacketInfos = 400;
+  std::deque<AudioPacketInfo> received_audio_packet_infos_;
+  std::vector<AudioPacketInfo> audio_packet_infos_;
+  std::optional<TimeDelta> report_block_rtt_;
+  int64_t periodic_rtt_ms_ = 0;  // ModuleRtpRtcpImpl2::rtt_ms_.
   std::optional<uint32_t> last_received_rtp_timestamp_;
   Timestamp last_received_rtp_time_ = Timestamp::MinusInfinity();
   Timestamp last_playout_time_ = Timestamp::MinusInfinity();

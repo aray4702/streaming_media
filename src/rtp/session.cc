@@ -143,6 +143,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   vs.h264_packetization_mode = v.h264_packetization_mode;
   vs.fec->SetEncodingData(704, 576, 1, static_cast<size_t>(cfg_.send_side.max_packet_size));
   video_send_.push_back(std::move(vs));
+  // RtpVideoSender sets the video module's RTCP size to RtpConfig::max_packet_size
+  // (rtp_video_sender.cc:272), then to min(max_packet_size, kPathMTU - transport
+  // overhead) once the overhead is known (:860-865).
+  static constexpr int64_t kPathMtu = 1500;
+  rtcp_.SetMaxDatagramBytes(static_cast<size_t>(
+      std::min(cfg_.send_side.max_packet_size, kPathMtu - cfg_.send_side.transport_overhead_bytes)));
   rtcp_.AddLocalMediaSsrc(v.ssrc);
   if (v.rtx_ssrc) rtcp_.AddLocalMediaSsrc(*v.rtx_ssrc);
   // Padding and probes go on the video stream's RTX SSRC, like libwebrtc.
@@ -577,6 +583,13 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     for (auto& v : video_send_) handle(v);
     for (auto& a : audio_send_) handle(a);
   }
+  // Each receive stream's RTCPReceiver keeps the RTT of report blocks on its local SSRC
+  // (RegisteredSsrcs, RttStats::AddRtt; rtcp_receiver.cc:516-575): ModuleRtpRtcpImpl2::LastRtt.
+  for (size_t i = 0; i < in.rtts.size(); ++i) {
+    if (in.rtt_ssrcs[i] != cfg_.local_ssrc) continue;
+    for (auto& v : video_recv_) v.receiver->OnReportBlockRtt(in.rtts[i]);
+    for (auto& a : audio_recv_) a.receiver->OnReportBlockRtt(in.rtts[i]);
+  }
   if (!in.rtts.empty()) {
     rtt_ = in.rtts.back();
     have_rtt_ = true;
@@ -715,6 +728,9 @@ void Session::PeriodicRttUpdate(Timestamp now) {
     }
     if (!video_recv_.empty() && pending_rr_rtt_) {
       OnCallStatsUpdate(call_stats_.OnRttUpdate(pending_rr_rtt_->ms(), at));
+      // set_rtt_ms on each video receive module, which has RRTR on (the audio one has it only with
+      // AudioReceiveStream's enable_non_sender_rtt, off by default).
+      for (auto& v : video_recv_) v.receiver->OnPeriodicRtt(TimeDelta::Millis(pending_rr_rtt_->ms()));
       pending_rr_rtt_.reset();
     }
     next_rtt_update_ += kRttUpdateInterval;

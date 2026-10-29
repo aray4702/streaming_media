@@ -1034,11 +1034,12 @@ SM_TEST(RtpReceiver, SenderReportsTrainTheRemoteNtpEstimateAndTheCaptureClockOff
   rc.extensions = &map;
   RtpReceiver r(rc);
   r.Start(Timestamp::Millis(0));
-  // Without an RTT nothing is used.
+  // Without the module's RTT nothing is used; CallStats' RTT (OnRtt) is not it.
+  r.OnRtt(TimeDelta::Millis(100));
   r.OnSenderReport(RemoteSr(kSsrc, 0, 90000), Timestamp::Millis(50));
   r.OnRtcpPacket(Timestamp::Millis(50));
   SM_EXPECT_EQ(r.stats().remote_ntp_updates, 0u);
-  r.OnRtt(TimeDelta::Millis(100));
+  r.OnPeriodicRtt(TimeDelta::Millis(100));
   for (int64_t t : {1000, 2000, 3000}) {
     r.OnSenderReport(RemoteSr(kSsrc, t, 90000), Timestamp::Millis(t + 50));
     r.OnRtcpPacket(Timestamp::Millis(t + 50));
@@ -1075,7 +1076,7 @@ SM_TEST(RtpReceiver, AudioInterpolatesEachPacketAndReusesTheLastSenderReport) {
   rc.video = false;
   rc.extensions = &map;
   RtpReceiver r(rc);
-  r.OnRtt(TimeDelta::Millis(100));
+  r.OnReportBlockRtt(TimeDelta::Millis(100));
   // An SR arrives 2 ms before the packet is handled: audio still uses it.
   r.OnSenderReport(RemoteSr(kSsrc, 0, 48000), Timestamp::Millis(50));
   r.OnRtcpPacket(Timestamp::Millis(52));
@@ -1102,4 +1103,82 @@ SM_TEST(RtpReceiver, AudioInterpolatesEachPacketAndReusesTheLastSenderReport) {
   SM_EXPECT_FALSE(last->local_capture_clock_offset.has_value());  // The extension has no offset.
   SM_EXPECT_EQ(r.stats().abs_capture_time_received, 1u);
   SM_EXPECT_EQ(r.stats().abs_capture_time_interpolated, 2u);
+}
+
+// ModuleRtpRtcpImpl2::LastRtt (rtp_rtcp_impl2.cc:482-491): the last report-block RTT once there is one,
+// else the periodic update's RTT when it is over 0 ms (rtt_ms_ > 0).
+SM_TEST(RtpReceiver, LastRttIsTheReportBlockRttElseThePeriodicOne) {
+  RtpReceiver r(ReceiverCfg());
+  SM_EXPECT_FALSE(r.LastRtt().has_value());
+  r.OnRtt(TimeDelta::Millis(70));  // CallStats' RTT: not the module's.
+  SM_EXPECT_FALSE(r.LastRtt().has_value());
+  r.OnPeriodicRtt(TimeDelta::Micros(900));  // Truncated to 0 ms by set_rtt_ms(rtt->ms()).
+  SM_EXPECT_FALSE(r.LastRtt().has_value());
+  r.OnPeriodicRtt(TimeDelta::Millis(80));
+  SM_ASSERT_TRUE(r.LastRtt().has_value());
+  SM_EXPECT_EQ(r.LastRtt()->ms(), 80);
+  r.OnReportBlockRtt(TimeDelta::Millis(30));
+  r.OnPeriodicRtt(TimeDelta::Millis(90));
+  SM_EXPECT_EQ(r.LastRtt()->ms(), 30);
+}
+
+// ChannelReceive::GetAudioFrameWithInfo (channel_receive.cc:472-507) with NetEq's
+// last_decoded_packet_infos_ (neteq_impl.cc:674, 1352-1354): each GetAudio gives the packet infos of the
+// packets it decoded, in order, and each capture time gets the local capture clock offset known at
+// playout, not at arrival.
+SM_TEST(RtpReceiver, DecodedAudioCarriesThePacketInfosOfItsPackets) {
+  sync::ExtensionMap map;
+  map.Register(7, sync::uri::kAbsCaptureTime);
+  FakeDecoder dec;
+  RtpReceiverConfig c;
+  c.ssrc = kSsrc;
+  c.payload_type = 111;
+  c.clock_rate = 8000;
+  c.video = false;
+  c.decoder = &dec;
+  c.extensions = &map;
+  RtpReceiver r(c);
+  const uint64_t first_ntp = sync::Int64MsToUQ32x32(77'000);
+  for (uint16_t i = 0; i < 5; ++i) {
+    RtpPacket p;
+    p.ssrc = kSsrc;
+    p.payload_type = 111;
+    p.seq = i;
+    p.timestamp = static_cast<uint32_t>(i) * 160;
+    p.payload = Bytes(40, static_cast<uint8_t>(10 + i));
+    if (i == 0) {
+      sync::ExtensionAccessor(map).SetRaw(p, sync::uri::kAbsCaptureTime,
+                                          sync::SerializeAbsoluteCaptureTime({first_ntp, int64_t{0}}));
+    }
+    r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
+  }
+  // The packets arrived before any SR: no offset then.
+  SM_ASSERT_TRUE(r.last_audio_capture_time().has_value());
+  SM_EXPECT_FALSE(r.last_audio_capture_time()->local_capture_clock_offset.has_value());
+  // The sender's clock is 5 s ahead; 3 SRs train the remote-to-local offset before playout.
+  r.OnReportBlockRtt(TimeDelta::Millis(100));
+  for (int64_t t : {1000, 2000, 3000}) {
+    r.OnSenderReport(RemoteSr(kSsrc, t, 8000), Timestamp::Millis(t + 50));
+    r.OnRtcpPacket(Timestamp::Millis(t + 50));
+  }
+  std::vector<AudioPacketInfo> infos;
+  std::vector<float> out(80);
+  for (int64_t t = 3100; t < 3300; t += 10) {
+    r.GetAudio(out, Timestamp::Millis(t));
+    for (const auto& i : r.audio_packet_infos()) infos.push_back(i);
+  }
+  SM_ASSERT_EQ(infos.size(), 5u);
+  for (size_t i = 0; i < infos.size(); ++i) {
+    SM_EXPECT_EQ(infos[i].ssrc, kSsrc);
+    SM_EXPECT_EQ(infos[i].rtp_timestamp, static_cast<uint32_t>(i * 160));
+    SM_EXPECT_EQ(infos[i].receive_time.ms(), static_cast<int64_t>(i * 20 + 5));
+    SM_ASSERT_TRUE(infos[i].absolute_capture_time.has_value());
+    SM_EXPECT_EQ(infos[i].absolute_capture_time->capture_ntp,
+                 sync::AbsoluteCaptureTimeInterpolator::Interpolate(static_cast<uint32_t>(i * 160), 8000, 0, first_ntp));
+    SM_ASSERT_TRUE(infos[i].local_capture_clock_offset.has_value());
+    SM_EXPECT_EQ(infos[i].local_capture_clock_offset->ms(), -5000);
+  }
+  // A GetAudio that decodes nothing has no packet infos.
+  r.GetAudio(out, Timestamp::Millis(3300));
+  SM_EXPECT_TRUE(r.audio_packet_infos().empty());
 }

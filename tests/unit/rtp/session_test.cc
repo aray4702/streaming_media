@@ -1246,3 +1246,32 @@ SM_TEST(Session, ReceivedFramesCarryTheCaptureTimeOnTheLocalClock) {
   SM_EXPECT_NEAR(static_cast<double>(last.ntp_time_ms),
                  static_cast<double>(sync::NtpToMs(timing::NtpTime::FromTimestamp(capture).value)), 1.0);
 }
+
+// Each receive stream's RemoteNtpTimeEstimator waits for its own module's LastRtt
+// (rtp_rtcp_impl2.cc:482-491, 740-751): a receive-only video stream has the XR DLRR RTT from the 1 s
+// periodic update, while the audio one, without AudioReceiveStream's enable_non_sender_rtt (off by
+// default), has none, and so trains no estimate, as in libwebrtc's one-way call. SetRtt does not change it.
+SM_TEST(Session, ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt) {
+  SessionConfig ca = Cfg(1), cb = Cfg(2);
+  for (SessionConfig* c : {&ca, &cb}) c->rtcp.xr_rrtr = true;
+  Session a(ca), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  a.AddAudioSend(au);
+  a.AddVideoSend(Video());
+  NullDecoder dec;
+  const AudioRecvId ar = b.AddAudioReceive(au, &dec);
+  const VideoRecvId vr = b.AddVideoReceive(Video());
+  for (int64_t t = 0; t < 8000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t == 4000) b.SetRtt(TimeDelta::Millis(120));
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) b.OnPacket(o.bytes, now);
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+  }
+  SM_EXPECT_TRUE(b.video_receiver(vr).LastRtt().has_value());
+  SM_EXPECT_GE(b.video_receiver(vr).stats().remote_ntp_updates, 1u);
+  SM_EXPECT_FALSE(b.audio_receiver(ar).LastRtt().has_value());
+  SM_EXPECT_EQ(b.audio_receiver(ar).stats().remote_ntp_updates, 0u);
+}

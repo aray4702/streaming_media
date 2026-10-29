@@ -1129,7 +1129,7 @@ ALGORITHMS = [
          scenario="A quiet talker (~-33 dBFS) for 20 s, then a loud one (+20 dB), through AGC1 as a call runs it "
                   "and through AGC2; the quiet and loud talkers' levels, the noise in pauses and the peak are "
                   "compared with libwebrtc's on the same signal.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request) runs; the library's own AGC and limiter (v1) were retired in #565. "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. The capture chain's default is `apm v2` (#565): libwebrtc's AGC1 (`AgcManagerDirect` with the emulated mic volume, as a call runs it; AGC2 on request, as libwebrtc M157's call never enables `gain_controller2`, #670) runs; the library's own AGC and limiter (v1) were retired in #565. "
                "`agc2::GainController2` (#242) ports libwebrtc M157's AGC2 "
                "(`modules/audio_processing/agc2/`: adaptive digital gain, speech and noise level "
                "estimators, saturation protector, limiter with its interpolated gain curve) with its "
@@ -1219,7 +1219,7 @@ ALGORITHMS = [
          bench=["audio/TransientSuppressor_10ms"],
          scenario="Speech with a keyboard click every 250 ms; the click energy that falls in speech pauses is "
                   "compared with and without suppression.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. Uses Vad::voiced() (this frame's own spectrum, no hangover) to avoid attacking vowels. "
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. In the e2e chain it reads libwebrtc's pitch-based `VoiceActivityDetector` (probability above 0.5) to avoid attacking vowels (issue #671; before, the retired v1 `Vad::voiced()`). "
                "Keeping it as an opt-in (`enabled = true`) for later stages is an Owner decision (#243, 2026-10-22).",
          verification="Three defects were found and fixed. (1) The envelope started at 1e-8 and was frozen during "
                       "transients, so it locked into 'transient' forever. (2) The gain ramped down across the "
@@ -1233,12 +1233,23 @@ ALGORITHMS = [
          headers=["audio/vad.h"], unit=["Vad"], e2e=["E2E_Vad"],
          bench=["audio/Vad_10ms"],
          scenario="Speech in noise at about 10 dB SNR after noise suppression; recall and false-positive rate "
-                  "(beyond the intended 200 ms hangover).",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. ", verification="Defects found: (1) residual 'musical noise' after NS looked voiced in a single "
-                                "frame (false-positive rate 27%), so flatness now uses a ~30 ms averaged spectrum "
-                                "(9%); (2) after a +20 dB noise step the floor rose only 3 dB/s, so noise-like "
-                                "frames now raise it at 30 dB/s. The unit-test metric was also changed to "
-                                "exclude the intended hangover."),
+                  "(beyond a 250 ms hangover).",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#6-audio-quality) for the differences from libwebrtc. "
+               "`Vad` is libwebrtc M157's `webrtc::Vad` (common_audio/vad/vad.cc, `CreateVad`) over the bit-exact "
+               "`WebRtcVad` port in `agc1_vad.h` (issue #671); aggressiveness kVadNormal by default, as `sm_apm_compare` "
+               "runs libwebrtc's. M157's `AudioProcessingImpl` reports no VAD decision, so the capture chain's per-frame "
+               "VAD output is this `Vad`; the opt-in transient suppressor reads libwebrtc's pitch-based "
+               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. 48 kHz is not "
+               "ported (kError). ",
+         verification="Issue #671 retired the library's own energy/spectral-flatness detector (v1) for libwebrtc's: "
+                      "`Vad.ApiAsLibwebrtc` (vad_unittest.cc's rates, frame lengths and modes on the wrapper), "
+                      "`Vad.IsWebRtcVadAndResets` (decisions equal `WebRtcVad`'s in every mode, and Reset() restarts "
+                      "it as `VadImpl::Reset`), `Vad.NoiseLevelStepAsLibwebrtc` (a +20 dB step to -26 dBFS white "
+                      "noise reads as speech in kVadNormal because the GMM caps its noise means, vad_core.c "
+                      "`kMaximumNoise`; v1 learned the new floor). E2E_Vad recall 99.7 %, false positives 0 % "
+                      "(libwebrtc kVadNormal in `sm_apm_compare`: 99.9 % and 0.0 % on the same talker behind the "
+                      "high-pass filter). The v1 detector's history: musical noise after NS and a slow noise-floor "
+                      "rise were fixed before #671."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
          headers=["audio/audio_level.h", "core/rms_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
@@ -1507,8 +1518,18 @@ ALGORITHMS = [
                                 "`ntp_time_ms` from `RemoteNtpTimeEstimator::Estimate` (the trial off). After each RTCP packet "
                                 "the SR trains `RemoteNtpTimeEstimator` once there is an RTT, video only with an SR that arrived "
                                 "with that packet (DeliverRtcp, ReceivedRTCPPacket). unit.RtpReceiver and unit.Session "
-                                "(`ReceivedFramesCarryTheCaptureTimeOnTheLocalClock`) pin it. Remaining: the decoded audio "
-                                "frame's packet infos (`GetAudioFrameWithInfo`): ours keeps the last packet's."),
+                                "(`ReceivedFramesCarryTheCaptureTimeOnTheLocalClock`) pin it. #661: the estimator waits for the "
+                                "stream's own module RTT, `ModuleRtpRtcpImpl2::LastRtt` (rtp_rtcp_impl2.cc:482-491: the "
+                                "report-block RTT on the local SSRC, else the 1 s periodic update's XR DLRR RTT, video only, "
+                                "as the audio receive stream has no RRTR by default), not CallStats' or the session's RTT; "
+                                "decoded audio carries the packet infos of the primary packets each `GetAudio` decoded "
+                                "(NetEq's `last_decoded_packet_infos_`), with the local capture clock offset taken at playout "
+                                "(`GetAudioFrameWithInfo`, channel_receive.cc:472-507); unit.RtpReceiver "
+                                "(`LastRttIsTheReportBlockRttElseThePeriodicOne`, `DecodedAudioCarriesThePacketInfosOfItsPackets`) "
+                                "and unit.Session (`ReceiveStreamsTrainTheirNtpEstimateFromTheirOwnModulesRtt`) pin it. "
+                                "Deviation (recorded on #661): `capture_to_render_ms` is a library metric that libwebrtc "
+                                "reports only with the non-default `WebRTC-UseAbsCapTimeForG2gMetric` trial; it changes no "
+                                "decision and no test bench or `sm_compare` metric reads it."),
     dict(id="8.4", slug="header-extensions", title="Header extensions (RFC 8285) and BUNDLE demuxing",
          problems=["Identifying streams -> SSRC, MID and RID header extensions"],
          headers=["sync/header_extensions.h"], unit=["HeaderExtensions", "RtpDemuxer"], e2e=["E2E_HeaderExtensions"],

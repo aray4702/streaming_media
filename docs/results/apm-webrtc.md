@@ -87,9 +87,10 @@ control are libwebrtc's code (#239-#242), and the v1 modules that showed
 gaps here (16 dB less hum attenuation, 20-37 dB less ERLE, a different NS
 and AGC) are gone (#565).
 
-- **VAD: no gap** on this signal. Ours is still the library's own
-  energy/flatness detector (6.8), which the transient suppressor reads;
-  libwebrtc's `WebRtcVad` is ported inside AGC1 (`agc1_vad.h`).
+- **VAD: no gap** on this signal. Since #671 ours is libwebrtc's
+  `webrtc::Vad` (6.8, kVadNormal) over the bit-exact `WebRtcVad` port
+  (`agc1_vad.h`), so the next `compare-webrtc` log should show the same
+  decisions on both sides; the v1 energy/flatness detector is retired.
 - **Transient suppressor: off by default, as libwebrtc** (#243). libwebrtc
   M157 has none in APM; ours stays as an explicit opt-in
   (`TransientSuppressorConfig::enabled`).
