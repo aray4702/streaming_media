@@ -411,10 +411,10 @@
    "area": "Audio quality (APM)",
    "catalog": "6.8",
    "title": "Voice activity detection",
-   "status": "open",
+   "status": "done",
    "evidence": "#671: the catalog unit `Vad` (`include/sm/audio/vad.h`) is libwebrtc M157's `webrtc::Vad` (common_audio/vad/vad.cc) over the bit-exact `WebRtcVad` port (`agc1_vad.h`, #242), kVadNormal by default as `sm_apm_compare` runs libwebrtc's; the v1 energy/flatness detector is retired. M157's `AudioProcessingImpl` reports no VAD decision, so the e2e chain's per-frame VAD output is this `Vad`; the opt-in transient suppressor reads libwebrtc's `VoiceActivityDetector`. Remaining scope difference: 48 kHz not ported (kError).",
    "start": "",
-   "end": "",
+   "end": "2026-10-29",
    "depends_on": [],
    "cost": ""
   },
