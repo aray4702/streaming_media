@@ -1,7 +1,7 @@
 {
  "description": "issue_268_freeze_rule_outage with rate_utilization_tracker on: after the 3 s outage the video recovers with one freeze, as libwebrtc (issue",
  "metrics": {
-  "cc.goodput_kbps": 2324,
+  "cc.goodput_kbps": 2323,
   "cc.max_settle_ms": 27000,
   "cc.queue_max_ms": 80.22,
   "cc.queue_over_200ms_pct": 0,

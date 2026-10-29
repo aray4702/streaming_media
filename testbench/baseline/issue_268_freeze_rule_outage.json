@@ -1,7 +1,7 @@
 {
  "description": "Video-only call, 3 s outage at 10 s: freezes counted as libwebrtc's VideoQualityObserver counts them (issue",
  "metrics": {
-  "cc.goodput_kbps": 2324,
+  "cc.goodput_kbps": 2323,
   "cc.max_settle_ms": 27000,
   "cc.queue_max_ms": 80.22,
   "cc.queue_over_200ms_pct": 0,
