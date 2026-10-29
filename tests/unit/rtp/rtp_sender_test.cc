@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <optional>
 #include <set>
 #include <vector>
 
@@ -584,4 +585,90 @@ SM_TEST(RtpSender, GeneratePaddingWithoutBweExtensionWaitsForMedia) {
   auto chunks = Chunks({100});
   s.SendVideoFrame(chunks, 9000, Timestamp::Millis(2));
   SM_EXPECT_FALSE(s.GeneratePadding(500, 9000, Timestamp::Millis(3)).empty());
+}
+
+// Video orientation (CVO, #567): RTPSenderVideo::AddRtpHeaderExtensions
+// (compare/webrtc/reference/modules/rtp_rtcp/source/rtp_sender_video.cc:388-408) puts the
+// rotation on the last packet of a keyframe, of a frame whose rotation changed, and of every
+// frame whose rotation is not 0; the byte is ConvertVideoRotationToCVOByte (rtp_cvo.h).
+namespace {
+std::optional<uint8_t> Cvo(const sync::ExtensionMap& map, const SenderPacket& p) {
+  auto raw = sync::ExtensionAccessor(map).GetRaw(p.packet, sync::uri::kVideoOrientation);
+  if (!raw || raw->size() != 1) return std::nullopt;
+  return (*raw)[0];
+}
+}  // namespace
+
+SM_TEST(RtpSender, VideoOrientationOnKeyframesChangesAndNonZeroRotation) {
+  sync::ExtensionMap map;
+  map.Register(5, sync::uri::kVideoOrientation);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  struct Step {
+    bool key;
+    video::Rotation rotation;
+    std::optional<uint8_t> want;
+  };
+  const Step steps[] = {
+      {true, video::Rotation::k0, 0},              // Keyframe.
+      {false, video::Rotation::k0, std::nullopt},  // Unchanged and 0.
+      {false, video::Rotation::k90, 1},            // Changed.
+      {false, video::Rotation::k90, 1},            // Not 0.
+      {false, video::Rotation::k270, 3},
+      {false, video::Rotation::k180, 2},
+      {false, video::Rotation::k0, 0},             // Changed back to 0.
+      {false, video::Rotation::k0, std::nullopt},
+      {true, video::Rotation::k0, 0},
+  };
+  uint32_t ts = 0;
+  for (const Step& st : steps) {
+    auto chunks = Chunks({100, 100, 100});
+    ts += 3000;
+    s.SendVideoFrame(chunks, ts, Timestamp::Millis(ts / 90), st.key, st.rotation);
+    auto out = Release(s);
+    SM_ASSERT_EQ(out.size(), 3u);
+    SM_EXPECT_FALSE(Cvo(map, out[0]).has_value());  // Only the last packet carries it.
+    SM_EXPECT_FALSE(Cvo(map, out[1]).has_value());
+    SM_EXPECT_TRUE(Cvo(map, out[2]) == st.want);
+  }
+  SM_EXPECT_EQ(s.stats().video_orientation_packets, 7u);
+}
+
+SM_TEST(RtpSender, VideoOrientationNeedsTheExtensionMapped) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  auto chunks = Chunks({100});
+  s.SendVideoFrame(chunks, 3000, Timestamp::Millis(0), true, video::Rotation::k90);
+  auto out = Release(s);
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_FALSE(Cvo(map, out[0]).has_value());
+  SM_EXPECT_EQ(s.LastPacketReduction(true, video::Rotation::k90), 0u);
+  SM_EXPECT_EQ(s.stats().video_orientation_packets, 0u);
+}
+
+// The packetizer's last_packet_reduction_len (rtp_sender_video.cc:741-758): the last packet's
+// header less a middle packet's, with the extensions rounded up to 4 bytes.
+SM_TEST(RtpSender, LastPacketReductionIsTheRoomCvoTakes) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kTransportCc);
+  map.Register(5, sync::uri::kVideoOrientation);
+  RtpSenderConfig c = VideoCfg();
+  c.extensions = &map;
+  RtpSender s(c);
+  // Middle: 12 + 4 + (1+2 -> 4). Last: 12 + 4 + (1+2 + 1+1 = 5 -> 8).
+  SM_EXPECT_EQ(s.MediaHeaderSize(), 20u);
+  SM_EXPECT_EQ(s.LastPacketReduction(true, video::Rotation::k0), 4u);
+  SM_EXPECT_EQ(s.LastPacketReduction(false, video::Rotation::k0), 0u);  // Not due.
+  SM_EXPECT_EQ(s.LastPacketReduction(false, video::Rotation::k90), 4u);
+
+  sync::ExtensionMap only_cvo;
+  only_cvo.Register(5, sync::uri::kVideoOrientation);
+  c.extensions = &only_cvo;
+  RtpSender bare(c);
+  SM_EXPECT_EQ(bare.MediaHeaderSize(), 12u);
+  SM_EXPECT_EQ(bare.LastPacketReduction(true, video::Rotation::k0), 8u);  // 4 + (1+1 -> 4).
 }

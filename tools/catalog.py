@@ -1304,7 +1304,15 @@ ALGORITHMS = [
          bench=["video/Orientation_rotate90_720p"],
          scenario="A phone rotating through all 4 rotations, with and without mirroring; frames carry CVO in a "
                   "real RTP header extension and the receiver must show the scene upright, bit-exact.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. ", verification="No defects found."),
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
+               "On the wire (issue #567), rtp::RtpSender writes the extension as libwebrtc's RTPSenderVideo::AddRtpHeaderExtensions "
+               "(rtp_sender_video.cc:388-408) when it is mapped: on the last packet of a keyframe, of a frame whose rotation changed, "
+               "and of every frame whose rotation is not 0, with the byte of ConvertVideoRotationToCVOByte (rtp_cvo.h; the camera and "
+               "flip bits 0). The packetizer leaves the room as last_packet_reduction_len. rtp::RtpReceiver gives each frame the "
+               "rotation of its last packet, 0 without the extension (rtp_video_stream_receiver2.cc:797-802, 1108). "
+               "Session::SendVideo takes it as EncodedVideoFrame::rotation. ",
+         verification="No defects found. The CVO byte RtpSender writes is checked against libwebrtc's VideoOrientation "
+                      "extension in both directions (sm_rtcp_interop, issue #567)."),
     dict(id="7.4", slug="content-policy", title="Content hints and screen-content variable frame rate",
          problems=["Screen sharing (text must stay sharp) -> content hint, screen-content coding tools, variable framerate",
                    "Talking head vs. motion -> content-type-aware rate control"],

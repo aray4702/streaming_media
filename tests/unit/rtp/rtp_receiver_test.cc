@@ -775,3 +775,31 @@ SM_TEST(RtpReceiver, SpsPpsTrackerPassesAKeyframeInOrder) {
   SM_ASSERT_EQ(frames.size(), 1u);
   SM_EXPECT_TRUE(frames[0].keyframe);
 }
+
+// Video orientation (CVO, #567): a frame takes its rotation from its last packet's extension,
+// 0 when it has none (RtpVideoStreamReceiver2::ReceivePacket and OnAssembledFrame,
+// compare/webrtc/reference/video/rtp_video_stream_receiver2.cc:797-802, 1108).
+SM_TEST(RtpReceiver, FrameRotationComesFromTheLastPacketsCvo) {
+  sync::ExtensionMap map;
+  map.Register(5, sync::uri::kVideoOrientation);
+  RtpSenderConfig sc = SenderCfg();
+  sc.extensions = &map;
+  RtpSender s(sc);
+  RtpReceiverConfig rc = ReceiverCfg();
+  rc.extensions = &map;
+  RtpReceiver r(rc);
+  r.Start(Timestamp::Millis(0));
+  const video::Rotation rotations[] = {video::Rotation::k90, video::Rotation::k90, video::Rotation::k0,
+                                       video::Rotation::k0, video::Rotation::k270};
+  for (int64_t i = 0; i < 5; ++i) {
+    const Timestamp at = Timestamp::Millis(i * 33);
+    auto chunks = test::MakeTestFrameChunks(i == 0, i == 0 ? 3000 : 800, s.config().max_payload_size);
+    s.SendVideoFrame(chunks, static_cast<uint32_t>(i * 3000), at, i == 0, rotations[i]);
+    for (auto& p : Release(s, at)) r.OnPacket(p.packet.Serialize(), at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+  }
+  auto frames = Run(r, 200, 800);
+  SM_ASSERT_EQ(frames.size(), 5u);
+  // The fourth frame carries no CVO (0, unchanged): rotation 0, as libwebrtc resets it per packet.
+  for (size_t i = 0; i < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].rotation == rotations[i]);
+}
