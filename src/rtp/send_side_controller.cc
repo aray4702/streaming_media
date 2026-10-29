@@ -98,10 +98,16 @@ void SendSideController::WriteSendExtensions(RtpPacket& p, uint16_t transport_se
 }
 
 void SendSideController::ConfigureAllocation(DataRate audio_wire_rate, bool video) {
+  ConfigureAllocation(AudioAllocation{audio_wire_rate, audio_wire_rate, audio_wire_rate}, video);
+}
+
+void SendSideController::ConfigureAllocation(const AudioAllocation& audio, bool video) {
   allocation_configured_ = true;
-  if (audio_wire_rate > DataRate::Zero()) {
+  if (audio.max > DataRate::Zero()) {
     cc::StreamAllocationConfig a;
-    a.min = a.max = a.priority_rate = audio_wire_rate;
+    a.min = audio.min;
+    a.max = audio.max;
+    a.priority_rate = audio.priority_rate;
     a.enforce_min = true;
     allocator_.AddObserver("audio", a, [](DataRate) { return DataRate::Zero(); });
   }

@@ -103,8 +103,26 @@ struct AudioStreamConfig {
   // allocator as both its minimum and maximum. libwebrtc registers the codec's
   // payload rate plus the per-packet overhead at the packet interval
   // (AudioSendStream::GetMinMaxBitrateConstraints); redundancy is not counted.
-  // Zero means `nominal_rate`.
+  // Zero means the range below or, without one, `nominal_rate`.
   DataRate allocation_rate = DataRate::Zero();
+  // Send side, used when `max_bitrate` is set and `allocation_rate` is not
+  // (issue #569): the codec's payload rate range (AudioSendStream::Config::
+  // min_bitrate_bps / max_bitrate_bps) and the encoder's frame length range
+  // (AudioEncoder::GetFrameLengthRange; Opus without its network adaptor
+  // reports its frame size for both). The session registers the stream as
+  // AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver
+  // do (audio_send_stream.cc:808-901): min + overhead / longest frame,
+  // max + overhead / shortest frame, and a priority rate of `priority_bitrate`
+  // + overhead / longest frame (WebRTC-Audio-PriorityBitrate, on by default),
+  // where the overhead is the transport's bytes plus the media packet header
+  // (ExpectedPerPacketOverhead). A max below the min is raised to the min
+  // (libwebrtc rejects such a config).
+  DataRate min_bitrate = DataRate::Zero();
+  DataRate max_bitrate = DataRate::Zero();
+  TimeDelta min_frame_length = TimeDelta::Millis(20);
+  TimeDelta max_frame_length = TimeDelta::Millis(20);
+  // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
+  DataRate priority_bitrate = DataRate::Zero();
   // Receive side. libwebrtc's NetEq (jitter buffer version 2) is the session default (#62).
   timing::AudioJitterBufferConfig jitter_buffer = [] { timing::AudioJitterBufferConfig c; c.version = 2; return c; }();
 };
@@ -334,6 +352,10 @@ class Session : public MetricsSource {
     std::unique_ptr<RtpSender> sender;
     DataRate nominal_rate = DataRate::Zero();
     DataRate allocation_rate = DataRate::Zero();
+    // Audio: AudioStreamConfig's codec and frame length ranges (zero `max_bitrate`: the fixed
+    // `allocation_rate`).
+    DataRate min_bitrate = DataRate::Zero(), max_bitrate = DataRate::Zero(), priority_bitrate = DataRate::Zero();
+    TimeDelta min_frame_length = TimeDelta::Zero(), max_frame_length = TimeDelta::Zero();
     // Video: RtpVideoSender's FecControllerDefault, and the times of the frames
     // sent in the last second for the sent frame rate it takes.
     std::unique_ptr<loss::FecControllerDefault> fec;
@@ -341,6 +363,8 @@ class Session : public MetricsSource {
     Timestamp first_frame = Timestamp::MinusInfinity();
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
   };
+  // The allocator registration of one audio stream (AudioStreamConfig::max_bitrate).
+  SendSideController::AudioAllocation AudioAllocationOf(const SendStream& a) const;
   struct RecvStream {
     std::unique_ptr<RtpReceiver> receiver;
     uint32_t ssrc = 0;

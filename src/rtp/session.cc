@@ -104,6 +104,14 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   as.sender = std::make_unique<RtpSender>(c);
   as.nominal_rate = a.nominal_rate;
   as.allocation_rate = a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate;
+  if (a.allocation_rate <= DataRate::Zero() && a.max_bitrate > DataRate::Zero()) {
+    as.allocation_rate = DataRate::Zero();
+    as.min_bitrate = a.min_bitrate;
+    as.max_bitrate = std::max(a.max_bitrate, a.min_bitrate);
+    as.priority_bitrate = a.priority_bitrate;
+    as.min_frame_length = a.min_frame_length;
+    as.max_frame_length = std::max(a.max_frame_length, a.min_frame_length);
+  }
   audio_send_.push_back(std::move(as));
   rtcp_.AddLocalMediaSsrc(a.ssrc);
   // AudioSendStream::ConfigureStream: with transport-cc (and allocate_audio_without_feedback_
@@ -228,6 +236,19 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   return {static_cast<int>(video_recv_.size()) - 1};
 }
 
+SendSideController::AudioAllocation Session::AudioAllocationOf(const SendStream& a) const {
+  if (a.max_bitrate <= DataRate::Zero()) return {a.allocation_rate, a.allocation_rate, a.allocation_rate};
+  // AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver
+  // (audio_send_stream.cc:808-901): overhead_per_packet_ is the transport's bytes plus
+  // RTPSender::ExpectedPerPacketOverhead, the media header with its non-volatile
+  // extensions (UpdateOverheadPerPacket, :529-545).
+  const DataSize overhead =
+      DataSize::Bytes(cfg_.send_side.transport_overhead_bytes + static_cast<int64_t>(a.sender->MediaHeaderSize()));
+  const DataRate at_longest = DataRate::FromSizeAndTime(overhead, a.max_frame_length);
+  const DataRate at_shortest = DataRate::FromSizeAndTime(overhead, a.min_frame_length);
+  return {a.min_bitrate + at_longest, a.max_bitrate + at_shortest, a.priority_bitrate + at_longest};
+}
+
 void Session::Start(Timestamp now) {
   if (started_) return;
   started_ = true;
@@ -247,8 +268,13 @@ void Session::Start(Timestamp now) {
     // (rtcp_sender.cc:130), so it draws the same intervals (#517).
     audio_rtcp_ = std::make_unique<RtcpEngine>(r);
   }
-  DataRate audio = DataRate::Zero();
-  for (const auto& a : audio_send_) audio = audio + a.allocation_rate;
+  SendSideController::AudioAllocation audio;
+  for (const auto& a : audio_send_) {
+    const SendSideController::AudioAllocation c = AudioAllocationOf(a);
+    audio.min += c.min;
+    audio.max += c.max;
+    audio.priority_rate += c.priority_rate;
+  }
   send_.ConfigureAllocation(audio, !video_send_.empty());
   send_.Start(now);
   send_.OnRtt(rtt_);

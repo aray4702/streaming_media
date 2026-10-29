@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -73,6 +74,8 @@ class BitrateAllocatorV2 : public MetricsSource {
   // The last allocation of the stream; Zero when it is paused or unknown.
   DataRate allocation(const std::string& id) const;
   bool paused(const std::string& id) const;
+  // The stream's registered config; nullopt if it is not registered.
+  std::optional<StreamAllocationConfig> config(const std::string& id) const;
   // The cwnd_reduce_ratio of the last update the stream was given; 0 if none.
   double cwnd_reduce_ratio(const std::string& id) const;
   DataRate target() const { return DataRate::BitsPerSec(last_target_bps_); }

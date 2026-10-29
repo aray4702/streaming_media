@@ -376,6 +376,65 @@ SM_TEST(Session, RatesSplitTheTargetBetweenAudioAndVideo) {
   SM_EXPECT_GT(r.video_target.bps(), 0);
 }
 
+// AudioSendStream::GetMinMaxBitrateConstraints and ConfigureBitrateObserver (issue #569): a
+// 32 kbps Opus stream in 20 ms frames registers 32000 + 48 B / 20 ms = 51200 as its min and max
+// (28 B transport + the 20 B header with transport-cc), and a priority rate of the overhead
+// alone, 19200 (AudioAllocationConfig::priority_bitrate 0 + overhead / longest frame).
+SM_TEST(Session, AudioRegistersLibwebrtcsMinMaxAndPriorityRate) {
+  SessionConfig c = Cfg(1);
+  c.mid_audio.clear();
+  Session s(c);
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.nominal_rate = DataRate::KilobitsPerSec(48);
+  a.min_bitrate = a.max_bitrate = DataRate::BitsPerSec(32000);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 51200);
+  SM_EXPECT_EQ(cfg->max.bps(), 51200);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 19200);
+  SM_EXPECT_TRUE(cfg->enforce_min);
+}
+
+// A frame length range (Opus with its network adaptor, 20-120 ms) spreads the overhead: the min
+// adds it at the longest frame, the max at the shortest, and the priority rate at the longest.
+SM_TEST(Session, AudioFrameLengthRangeSetsTheOverheadOfMinMaxAndPriority) {
+  SessionConfig c = Cfg(1);
+  c.mid_audio.clear();
+  Session s(c);
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.min_bitrate = DataRate::BitsPerSec(6000);
+  a.max_bitrate = DataRate::BitsPerSec(32000);
+  a.min_frame_length = TimeDelta::Millis(20);
+  a.max_frame_length = TimeDelta::Millis(120);
+  a.priority_bitrate = DataRate::BitsPerSec(1000);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 6000 + 48 * 8 * 1000 / 120);
+  SM_EXPECT_EQ(cfg->max.bps(), 32000 + 48 * 8 * 1000 / 20);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 1000 + 48 * 8 * 1000 / 120);
+}
+
+// Without a codec range the stream keeps the fixed rate it was given.
+SM_TEST(Session, AudioWithoutARangeRegistersItsFixedRate) {
+  Session s(Cfg(1));
+  AudioStreamConfig a;
+  a.ssrc = 1;
+  a.nominal_rate = DataRate::KilobitsPerSec(40);
+  s.AddAudioSend(a);
+  s.Process(Timestamp::Millis(0));
+  const auto cfg = s.send_side().allocator().config("audio");
+  SM_ASSERT_TRUE(cfg.has_value());
+  SM_EXPECT_EQ(cfg->min.bps(), 40000);
+  SM_EXPECT_EQ(cfg->max.bps(), 40000);
+  SM_EXPECT_EQ(cfg->priority_rate.bps(), 40000);
+}
+
 SM_TEST(Session, ExportsMetrics) {
   Pair p;
   MapMetricsWriter w;
