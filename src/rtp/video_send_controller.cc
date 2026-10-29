@@ -339,6 +339,9 @@ DataRate VideoSendController::EncoderRate(const SendRates& rates, double fps, bo
   DataRate allocation = target;
   if (cfg_.allocation_min_bitrate.bps() > 0 && target.bps() > 0) {
     allocation = std::max(cfg_.allocation_min_bitrate, std::min(target, cfg_.allocation_max_bitrate));
+    // DistributeAllocationToTemporalLayers (simulcast_rate_allocator.cc:219-221, :269-272): the stream's one
+    // temporal layer gets its rate in whole kbps, rounded down (issue #577); below 1 kbps it keeps the rate.
+    if (allocation.bps() >= 1000) allocation = DataRate::BitsPerSec(allocation.bps() / 1000 * 1000);
   }
   const DataRate link = std::max({target, allocation, rates.video_link_allocation});
   return cfg_.bitrate_adjuster ? AdjustedRate(allocation, link, fps, encode_path, new_adjuster, now) : allocation;

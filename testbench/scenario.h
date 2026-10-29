@@ -117,8 +117,8 @@ struct Scenario {
   // `expected_packet_overhead on|off`: the sender's video overhead rate counts the RTP header it
   // builds (RtpSender::ExpectedPerPacketOverhead: 12 + the registered non-volatile extensions + 2 with
   // RTX, 22 B here with NACK, 20 without), as libwebrtc's RtpVideoSender; off: a fixed 24 B
-  // (rtp::SendSideConfig::expected_packet_overhead; issue #577). Off by default until it is judged.
-  bool expected_packet_overhead = false;
+  // (rtp::SendSideConfig::expected_packet_overhead; issue #577). On by default, as libwebrtc.
+  bool expected_packet_overhead = true;
   // `sps_pps_tracker on|off`: the receiver drops the first packet of an IDR slice that arrives
   // before an SPS and a PPS and requests a keyframe, as libwebrtc's H264SpsPpsTracker
   // (rtp::RtpReceiverConfig::sps_pps_tracker; issue #453). On by default, as libwebrtc.

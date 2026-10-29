@@ -193,6 +193,24 @@ SM_TEST(VideoSendController, AllocationIsRaisedToTheCodecMinimum) {
   SM_EXPECT_TRUE(off.OnCapturedFrame({}, At(0)).target == target);
 }
 
+// SimulcastRateAllocator::DistributeAllocationToTemporalLayers (simulcast_rate_allocator.cc:219-221,
+// :269-272; issue #577): the one temporal layer gets the allocation in whole kbps, rounded down, as
+// libwebrtc's encoder gets 240000 for a 240400 bps allocation in sm_compare's low_bandwidth. Below 1 kbps
+// the layer keeps its rate.
+SM_TEST(VideoSendController, AllocationIsWholeKbpsRoundedDown) {
+  Session s(Cfg());
+  SM_EXPECT_TRUE(s.rates().video_target > DataRate::BitsPerSec(240'999));
+  VideoSendControllerConfig cfg;
+  cfg.bitrate_adjuster = false;
+  cfg.allocation_min_bitrate = DataRate::BitsPerSec(1);
+  cfg.allocation_max_bitrate = DataRate::BitsPerSec(240'400);
+  VideoSendController kbps(cfg, s);
+  SM_EXPECT_EQ(kbps.OnCapturedFrame({}, At(0)).target.bps(), 240'000);
+  cfg.allocation_max_bitrate = DataRate::BitsPerSec(999);
+  VideoSendController below(cfg, s);
+  SM_EXPECT_EQ(below.OnCapturedFrame({}, At(0)).target.bps(), 999);
+}
+
 // EncoderRtcpFeedback::OnReceivedIntraFrameRequest (video/encoder_rtcp_feedback.cc):
 // a PLI/FIR less than kMinKeyframeSendIntervalMs (300 ms) after the last one it
 // passed on is ignored; one exactly 300 ms later goes through.
