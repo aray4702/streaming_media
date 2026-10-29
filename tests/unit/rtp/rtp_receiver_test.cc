@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include "rtp_test_payload.h"
@@ -854,29 +855,31 @@ SM_TEST(RtpReceiver, SpsPpsTrackerDropsAParameterSetWithoutIds) {
 // video with NACK 450 (kMaxPacketAgeToNack, rtp_video_stream_receiver2.cc:365-367), video
 // without NACK, RTX and audio kDefaultMaxReorderingThreshold (50). On by default, as
 // libwebrtc; off keeps the v1 counts.
+// The receivers are on the heap: each is about 17 KB, and four on the stack overflow the 64 KB
+// default stack of the wasm test binaries that don't link Opus.
 SM_TEST(RtpReceiver, ReceiveStatisticsV2Thresholds) {
   RtpReceiverConfig c = ReceiverCfg();
   c.receive_statistics_v2 = false;
-  RtpReceiver v1(c);
-  SM_EXPECT_FALSE(v1.receive_statistics()->v2());
-  SM_EXPECT_FALSE(v1.rtx_receive_statistics()->v2());
+  auto v1 = std::make_unique<RtpReceiver>(c);
+  SM_EXPECT_FALSE(v1->receive_statistics()->v2());
+  SM_EXPECT_FALSE(v1->rtx_receive_statistics()->v2());
   c = ReceiverCfg();
-  RtpReceiver nack(c);
-  SM_EXPECT_TRUE(nack.receive_statistics()->v2());
-  SM_EXPECT_EQ(nack.receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
-  SM_EXPECT_TRUE(nack.rtx_receive_statistics()->v2());
-  SM_EXPECT_EQ(nack.rtx_receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  auto nack = std::make_unique<RtpReceiver>(c);
+  SM_EXPECT_TRUE(nack->receive_statistics()->v2());
+  SM_EXPECT_EQ(nack->receive_statistics()->max_reordering_threshold(), timing::kMaxPacketAgeToNack);
+  SM_EXPECT_TRUE(nack->rtx_receive_statistics()->v2());
+  SM_EXPECT_EQ(nack->rtx_receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
   c.nack = false;
-  RtpReceiver no_nack(c);
-  SM_EXPECT_EQ(no_nack.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  auto no_nack = std::make_unique<RtpReceiver>(c);
+  SM_EXPECT_EQ(no_nack->receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
   RtpReceiverConfig a;
   a.ssrc = kSsrc;
   a.payload_type = 111;
   a.clock_rate = 48000;
   a.video = false;
-  RtpReceiver audio(a);
-  SM_EXPECT_TRUE(audio.receive_statistics()->v2());
-  SM_EXPECT_EQ(audio.receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
+  auto audio = std::make_unique<RtpReceiver>(a);
+  SM_EXPECT_TRUE(audio->receive_statistics()->v2());
+  SM_EXPECT_EQ(audio->receive_statistics()->max_reordering_threshold(), timing::kDefaultMaxReorderingThreshold);
 }
 
 // Frame buffer cap (#583), timing v2: libwebrtc's FrameBuffer holds at most kMaxFramesBuffered = 800
