@@ -1,0 +1,37 @@
+name issue_536_loss20_av_sync
+describe 20% random loss on a clean 2 Mbps / 50 ms link: video pacer queue grows to seconds and A/V sync drags audio with it
+# #536 (Tester): the pacer queue grows to 0.6-2.2 s, video arrives up to 2.4 s late and A/V sync drags audio to
+# 0.6-1.1 s mouth-to-ear. Yardstick #792 (#724) ran it on both stacks, 10 seeds: every cell is in the parity band
+# (#725), and libwebrtc M157 does the same (mean m2e p95 728 vs ours 613 ms, pacer p95 1529 vs 1117 ms). So these
+# lines sit at libwebrtc's worst seed in 1-10 (#729); the Tester's stage-2 targets (m2e < 400, video e2e < 1000,
+# pacer < 500) are a `stage:later` item, not suite lines.
+compare_seeds 10
+seed 1
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=20% queue=300ms
+# libwebrtc seeds 1-10 (#792): 993 274 1063 792 265 1051 335 137 1473 903 (worst 1473). Ours seed 1: 1042.
+expect audio.mouth_to_ear_p95_ms < 1474
+# libwebrtc: 1.65 1.27 1.59 1.34 1.18 2.06 2.23 1.07 2.29 1.34 (worst 2.29). Ours seed 1: 0.74.
+expect audio.concealed_pct < 2.3
+# libwebrtc: 0 on every seed; longest gap 38-90 ms (worst 90). Ours seed 1: 0, 37.
+expect audio.interruptions == 0
+expect audio.longest_interruption_ms <= 90
+# libwebrtc: 2522 910 2519 2441 508 2468 633 442 2744 2570 (worst 2744). Ours seed 1: 2515.
+expect video.e2e_delay_p95_ms < 2744
+# libwebrtc: 1764 670 1581 1751 348 1474 391 318 1603 1828 (worst 1828). Ours seed 1: 1570.
+expect sync.av_offset_p95_ms < 1829
+# libwebrtc: freezes 35 24 33 28 17 28 24 27 29 29 (worst 35); total 10016 6909 10278 7519 4593 8464 7549 7690 9193
+# 8820 (worst 10278); longest 540 659 634 404 502 747 680 460 795 811 (worst 811). Ours seed 1: 35, 9874, 640.
+expect video.freeze_count <= 35
+expect video.freeze_total_ms <= 10278
+expect video.longest_freeze_ms <= 811
+# libwebrtc: 27.13 28.60 27.50 26.67 29.53 27.43 29.00 28.87 26.47 27.23 (worst 26.47). Ours seed 1: 27.3.
+expect video.render_fps > 26.4
+# libwebrtc: 211 211 430 969 211 211 452 232 585 211 (worst 969). Ours seed 1: 211.
+expect video.time_to_first_frame_ms < 970
+# libwebrtc: 0 0 0 4 0 0 0 0 1 0 (worst 4). Ours seed 1: 0.
+expect video.keyframe_requests <= 4
+# libwebrtc: 11.71 14.07 11.32 10.63 15.57 9.78 17.72 24.63 10.53 13.49 (worst 9.78). Ours seed 1: 11.3.
+expect cc.utilization_pct > 9.7
+# libwebrtc: 18.82 21.93 19.42 19.88 22.19 18.37 21.07 20.70 20.79 23.05 (worst 23.05). Ours seed 1: 18.5.
+expect repair.overhead_pct < 23.1
