@@ -105,9 +105,10 @@ void RtcpEngine::QueueBye(std::span<const uint32_t> ssrcs, std::string reason) {
 }
 
 // Transport-cc and REMB go out through RTCPSender::SendCombinedRtcpPacket,
-// which adds no report; everything else is a compound RTCP packet.
+// which adds no report; everything else is a compound RTCP packet. A BYE is
+// sent as SendRTCP(kRtcpBye), so PrepareReport adds the report to it too.
 bool RtcpEngine::CarriesReport(Tag tag) {
-  return tag == Tag::kNack || tag == Tag::kPli || tag == Tag::kFir || tag == Tag::kLntf;
+  return tag == Tag::kNack || tag == Tag::kPli || tag == Tag::kFir || tag == Tag::kLntf || tag == Tag::kBye;
 }
 
 std::vector<uint8_t> RtcpEngine::BuildReport(Timestamp now) {
@@ -161,10 +162,12 @@ void RtcpEngine::Flush(std::vector<std::vector<uint8_t>>& packets, RtcpOutKind k
   packets.clear();
 }
 
-// The SR or RR with its report blocks, then SDES CNAME (RTCPSender::PrepareReport).
+// The SR or RR with its report blocks, then SDES CNAME. RTCPSender::PrepareReport
+// (rtcp_sender.cc:713) adds SDES to every SR, with an empty CNAME if none was
+// set, and to an RR only when the module has a CNAME (issue #820).
 void RtcpEngine::AppendReport(Timestamp now, std::vector<std::vector<uint8_t>>& packets) {
   packets.push_back(BuildReport(now));
-  if (!cfg_.cname.empty()) {
+  if (sender_ || (cfg_.cname_in_receiver_report && !cfg_.cname.empty())) {
     SdesChunk c;
     c.ssrc = sender_ && sender_->ssrc ? sender_->ssrc : cfg_.local_ssrc;
     c.items.push_back({kSdesCname, cfg_.cname});
@@ -243,9 +246,14 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   // The XR of a compound that carries the report goes last, after the
   // feedback (RTCPSender's report flags are ordered by packet type).
   std::vector<uint8_t> xr;
+  // ComputeCompoundRTCPPacket holds a BYE back and appends it after every
+  // other packet of the compound, the XR included (rtcp_sender.cc:631-650).
+  std::vector<uint8_t> bye;
   auto flush = [&] {
     if (!xr.empty()) packets.push_back(std::move(xr));
     xr.clear();
+    if (!bye.empty()) packets.push_back(std::move(bye));
+    bye.clear();
     Flush(packets, RtcpOutKind::kFeedback, out);
   };
   for (auto& q : queue_) {
@@ -256,8 +264,8 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
     if (packets.empty() && !cfg_.reduced_size) {
       if (CarriesReport(q.tag)) {
         // RTCPSender::SendCompoundRTCP in compound mode (#178): PrepareReport
-        // adds the full SR/RR (report blocks) and SDES to NACK, PLI, FIR and
-        // loss notification, and restarts the report timer.
+        // adds the full SR/RR (report blocks) and SDES to NACK, PLI, FIR,
+        // loss notification and BYE, and restarts the report timer.
         AppendReport(now, packets);
         xr = BuildExtendedReports(now);
         bytes += xr.size();
@@ -278,6 +286,10 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
       case Tag::kBye: break;
     }
     SM_EVENT(cfg_.events, now, "rtcp", "feedback", q.bytes.size(), static_cast<int>(q.tag));
+    if (q.tag == Tag::kBye) {
+      bye.insert(bye.end(), q.bytes.begin(), q.bytes.end());
+      continue;
+    }
     packets.push_back(std::move(q.bytes));
   }
   queue_.clear();

@@ -19,6 +19,8 @@ RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   RtcpConfig r = c.rtcp;
   r.local_ssrc = c.local_ssrc;
   r.cname = c.cname;
+  // The session's RR is the video receive module's, which has no CNAME (issue #820).
+  r.cname_in_receiver_report = false;
   r.seed = c.seed;
   if (!r.events) r.events = c.events;
   return r;

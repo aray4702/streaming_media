@@ -92,6 +92,54 @@ SM_TEST(Session, MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine) {
   SM_EXPECT_GT(p.b.rtcp().stats().sr_received, 0u);
 }
 
+// Issue #820: the sending session's SRs carry its CNAME in SDES, as RTCPSender
+// with the CNAME RtpVideoSender and ChannelSend set (rtcp_sender.cc:713). The
+// receiving session's RRs carry no SDES, as libwebrtc's receive-only modules
+// have no CNAME (CreateRtpRtcpModule, video/rtp_video_stream_receiver2.cc:124-158).
+SM_TEST(Session, SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes) {
+  Pair p;
+  Bytes frame(60, 7);
+  size_t sr = 0, rr = 0;
+  bool sr_sdes = true, rr_sdes = false;
+  auto check = [&](const Bytes& d) {
+    auto split = loss::SplitCompoundRtcp(d);
+    if (!split || split->empty()) return;
+    bool has_sdes = false;
+    for (const auto& v : *split) {
+      if (v.type != loss::RtcpType::kSdes) continue;
+      has_sdes = true;
+      auto sdes = ParseSdes(v.data);
+      if (!sdes || sdes->empty() || (*sdes)[0].items.empty() || (*sdes)[0].items[0].text != "test") sr_sdes = false;
+    }
+    if ((*split)[0].type == loss::RtcpType::kSenderReport) {
+      ++sr;
+      sr_sdes = sr_sdes && has_sdes;
+    } else if ((*split)[0].type == loss::RtcpType::kReceiverReport) {
+      ++rr;
+      rr_sdes = rr_sdes || has_sdes;
+    }
+  };
+  for (int64_t t = 0; t < 6000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) p.a.SendAudio(p.a_audio, {960, frame, false}, now);
+    if (t % 100 == 0) p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(t == 0, 3000, 1188), static_cast<uint32_t>(t * 90), now);
+    p.a.Process(now);
+    p.b.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp) check(o.bytes);
+      p.b.OnPacket(o.bytes, now);
+    }
+    for (auto& o : p.b.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp) check(o.bytes);
+      p.a.OnPacket(o.bytes, now);
+    }
+  }
+  SM_EXPECT_GT(sr, 0u);
+  SM_EXPECT_GT(rr, 0u);
+  SM_EXPECT_TRUE(sr_sdes);
+  SM_EXPECT_FALSE(rr_sdes);
+}
+
 // Issue #518: a host that runs the session at NextProcessTime runs each timer at its due time, as
 // libwebrtc's delayed tasks run. With a video receiver that is no longer "at most 1 ms away": the
 // receiver reports its frame release, decode time-out and NACK tick, and a packet asks for a
