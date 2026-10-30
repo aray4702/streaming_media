@@ -61,7 +61,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
+| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 
