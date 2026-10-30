@@ -7,8 +7,11 @@ namespace sm::video {
 
 namespace {
 // TimeDelta::Seconds(1) / fps: unit_base.h's division by a double rounds
-// to the nearest microsecond (std::llround).
-TimeDelta PeriodOf(double fps) { return TimeDelta::Micros(std::llround(1e6 / fps)); }
+// to the nearest microsecond (std::llround). Deviation (issue #887): at least
+// 1 us. From about 2e6 fps libwebrtc's period rounds to 0 and each repeat is
+// due when it is posted, which spins its encoder queue; here one Process()
+// call would never return. Rates below 2e6 fps get libwebrtc's period.
+TimeDelta PeriodOf(double fps) { return TimeDelta::Micros(std::max<int64_t>(1, std::llround(1e6 / fps))); }
 }  // namespace
 
 void FrameCadenceAdapter::Post(Task t) {

@@ -1512,7 +1512,11 @@ ALGORITHMS = [
                       "`QualityConvergenceController`/`Monitor` (`video/quality_convergence_*.cc`), with their "
                       "constants: one frame period of delay, short repeats until quality converges, idle repeats "
                       "every 1000 ms, refresh-frame requests after 3 periods. Not ported: `queue_overload` (no "
-                      "encoder queue here) and the VSync metronome mode (only with an encode metronome)."),
+                      "encoder queue here) and the VSync metronome mode (only with an encode metronome). "
+                      "Deviation (issue #887, [fix record](../../fixes/887-zero-period-clamp.md)): the frame period "
+                      "is at least 1 us. From a max fps of about 2e6, libwebrtc's 1 s / max fps rounds to 0 us and "
+                      "each repeat is due when it is posted, which spins its encoder queue; here one `Process()` "
+                      "call never returned. Rates below 2e6 fps, which every source reports, are unchanged."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],

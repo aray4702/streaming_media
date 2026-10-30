@@ -223,6 +223,25 @@ SM_TEST(FrameCadenceAdapter, RestrictedFrameRateLengthensTheShortRepeats) {
   SM_EXPECT_EQ(EncodeTimes(sent), (std::vector<int64_t>{610, 810}));
 }
 
+// Issue #887: from about 2e6 fps, 1 s / max_fps rounds to 0 us, so each
+// repeat was due at the time it was posted and one Process() call never
+// returned. The period is at least 1 us, so Process(now) ends and leaves the
+// next repeat after `now`.
+SM_TEST(FrameCadenceAdapter, FrameRateAboveOneMegahertzStillAdvancesTime) {
+  for (double max_fps : {1e6, 2e6, 1e7, 1e300}) {
+    FrameCadenceAdapter a;
+    a.SetZeroHertzModeEnabled(FrameCadenceAdapter::ZeroHertzModeParams{1}, Ms(0));
+    a.OnConstraintsChanged({0.0, max_fps}, Ms(0));
+    a.OnFrame(1, Ms(0), Ms(0));
+    auto out = a.Process(Ms(2));
+    // One frame per microsecond at most over 2 ms (the first one after a
+    // period, then the repeats), plus the refresh requests.
+    SM_EXPECT_LE(out.size(), 2001u + 1u);
+    SM_EXPECT_GE(out.size(), 1000u);
+    SM_EXPECT_TRUE(a.NextProcessTime() > Ms(2));
+  }
+}
+
 SM_TEST(QualityConvergence, StaticThresholdsAsLibwebrtc) {
   SM_EXPECT_EQ(QualityConvergenceController::DefaultStaticQpThreshold(VideoCodecType::kVP8), 15);
   SM_EXPECT_EQ(QualityConvergenceController::DefaultStaticQpThreshold(VideoCodecType::kVP9), 32);
