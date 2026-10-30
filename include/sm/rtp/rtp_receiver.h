@@ -185,9 +185,9 @@ struct RtpReceiverConfig {
   // the renderer when `enable_prerenderer_smoothing` is on, its default: a decoded
   // frame waits until `timing.render_delay` before its render time, and of several
   // due at once only the newest is shown. Frames it drops come out with
-  // `render` false. Off (today's behaviour) by default until it is judged against
-  // libwebrtc (issue #437).
-  bool render_smoothing = false;
+  // `render` false. On by default, as libwebrtc (call/video_receive_stream.h:291,
+  // media/base/media_config.h:62 at M157; issue #437).
+  bool render_smoothing = true;
   bool deliver_bitstream = true;  // Rebuild each frame's bitstream (ReceivedFrame::bitstream).
   // Video RED + ULPFEC on the media SSRC, with `ulpfec`'s payload types.
   bool fec = false;

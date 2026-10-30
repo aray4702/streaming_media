@@ -125,12 +125,12 @@ struct Scenario {
   bool sps_pps_tracker = true;
   // `render_smoothing on|off`: decoded frames pass libwebrtc's pre-render queue (IncomingVideoStream,
   // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
-  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
-  bool render_smoothing = false;
+  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). On by default, as libwebrtc.
+  bool render_smoothing = true;
   // `keyframe_flush_padding on|off`: a keyframe's pacer flush also removes queued padding, which
   // libwebrtc sends on the video stream's RTX SSRC and flushes with it
-  // (cc::PacingControllerConfig::keyframe_flush_padding; issue #437). Off by default until it is judged.
-  bool keyframe_flush_padding = false;
+  // (cc::PacingControllerConfig::keyframe_flush_padding; issue #437). On by default, as libwebrtc.
+  bool keyframe_flush_padding = true;
   // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
   // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
   // (timing::PacketBufferConfig::missing_packets; issue #453). On by default, as libwebrtc.
