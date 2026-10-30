@@ -93,6 +93,18 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // Issue #842: LossBasedBweV2's state and loss-limited estimate, read through SendSideBandwidthEstimation (which
+  // also declares this friend), for the loss_state / loss_limit_bps columns of the loss-based rows.
+  static const SendSideBandwidthEstimation& Ssbe(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->bandwidth_estimation_;
+  }
+  static int LossState(const NetworkControllerInterface* c) { return static_cast<int>(Ssbe(c).loss_based_state()); }
+  static int64_t LossLimitBps(const NetworkControllerInterface* c) {
+    const auto& v2 = Ssbe(c).loss_based_bandwidth_estimator_v2_;
+    if (!v2) return -1;
+    const DataRate r = v2->GetLossBasedResult().bandwidth_estimate;
+    return r.IsFinite() ? r.bps() : -1;
+  }
 };
 }  // namespace webrtc
 
@@ -337,6 +349,29 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
+    // Issue #842: LossBasedBweV2's state after this feedback, on the loss-based rows it logged, plus a row of its own
+    // when the state or the loss-limited estimate changed without one (the event is logged only on a new estimate).
+    const int state = P::LossState(inner_.get());
+    const int64_t limit = P::LossLimitBps(inner_.get());
+    bool logged = false;
+    for (size_t i = first_row; i < rows_->size(); ++i) {
+      cc::BweTraceRow& r = (*rows_)[i];
+      if (r.kind != cc::BweTraceRow::Kind::kLossBased) continue;
+      r.loss_state = state;
+      r.loss_limit_bps = limit;
+      logged = true;
+    }
+    if (!logged && (state != last_loss_state_ || limit != last_loss_limit_bps_)) {
+      cc::BweTraceRow r;
+      r.time_us = now_us_();
+      r.kind = cc::BweTraceRow::Kind::kLossBased;
+      r.bitrate_bps = limit;
+      r.loss_state = state;
+      r.loss_limit_bps = limit;
+      rows_->push_back(r);
+    }
+    last_loss_state_ = state;
+    last_loss_limit_bps_ = limit;
     return Cwnd(std::move(u));
   }
 
@@ -406,6 +441,8 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
   int64_t cwnd_target_bps_ = -1;
   double cwnd_ratio_ = -1;
+  int last_loss_state_ = -1;           // Issue #842.
+  int64_t last_loss_limit_bps_ = -1;
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
