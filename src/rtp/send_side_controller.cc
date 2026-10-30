@@ -256,7 +256,8 @@ void SendSideController::SetPacingFactor(double factor) {
 }
 
 // RtpTransportControllerSend::OnReport posts GoogCC's update, which is empty for a loss report: the
-// pacer, the pushback and the allocator get the new target with the next feedback or process interval.
+// pacer, the pushback and the allocator get the new target with the next sent packet (with the pushback
+// on, its default), feedback or process interval.
 void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
   gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now);
 }
@@ -394,8 +395,22 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     ReleasedPacket& r = e.released;
     const bool numbered = extensions_ && extensions_->IdOf(sync::uri::kTransportCc);
     if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
-    UpdatePushback(now, false);
-    if (cfg_.cwnd.enabled) PostTargetRate(now);
+    if (numbered && cfg_.cwnd.enabled) {
+      // RtpTransportControllerSend::ProcessSentPacket (rtp_transport_controller_send.cc:456-485): with the
+      // pushback on, GoogCC's OnSentPacket runs MaybeTriggerOnNetworkChanged, and PostUpdates hands its
+      // update to the pacer and the control handler. The update carries the target and the pacer config
+      // when the loss-based target, its state, the loss fraction, the RTT, the ALR state or the pushback
+      // target changed (goog_cc_network_control.cc:610-648).
+      const DataRate last_pushback = pushback_target_;
+      const cc::NetworkControlUpdate u = gcc_.MaybeTriggerOnSentPacket(now);
+      if (u.triggered) ApplyTarget(u, now);
+      UpdatePushback(now, false);
+      if (u.triggered || pushback_target_ != last_pushback) ApplyPacer(u);
+      PostTargetRate(now);
+    } else {
+      UpdatePushback(now, false);
+      if (cfg_.cwnd.enabled) PostTargetRate(now);
+    }
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
       (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();

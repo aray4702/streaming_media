@@ -87,8 +87,8 @@ SM_TEST(SendSideController, PushbackTakesThePacerQueueOnTheProcessInterval) {
 }
 
 // GoogCcNetworkController::OnTransportLossReport returns an empty update (goog_cc_network_control.cc:380-387):
-// the estimator takes the loss at once, and the transport's target, pacer and allocator follow at the
-// next process interval.
+// the estimator takes the loss at once, and with no packet sent the transport's target, pacer and allocator
+// follow at the next process interval.
 SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) {
   SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
@@ -104,6 +104,44 @@ SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) 
   c.Process(Timestamp::Millis(1025));
   SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());
   SM_EXPECT_LT(c.target().bps(), before.bps());
+}
+
+// With the congestion-window pushback on (its default), GoogCcNetworkController::OnSentPacket runs
+// MaybeTriggerOnNetworkChanged (goog_cc_network_control.cc:263-287) and RtpTransportControllerSend::
+// ProcessSentPacket posts its update (rtp_transport_controller_send.cc:456-485): a target a loss report
+// moved reaches the transport, the pacer and the allocator with the next packet that carries the
+// transport-wide number, before the process interval. With the pushback off, OnSentPacket returns nothing.
+SM_TEST(SendSideController, LossReportReachesTheTargetWithTheNextSentPacket) {
+  for (const bool pushback : {true, false}) {
+    sync::ExtensionMap map;
+    map.Register(3, sync::uri::kTransportCc);
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+    cfg.cwnd.enabled = pushback;
+    SendSideController c(cfg, &map);
+    SendSideController::AudioAllocation audio;
+    audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+    c.ConfigureAllocation(audio, true);
+    c.Start(Timestamp::Millis(0));
+    for (int t = 0; t <= 1000; ++t) c.Process(Timestamp::Millis(t));
+    const DataRate before = c.target();
+    c.OnLossReport(50, 100, Timestamp::Millis(1010));
+    SM_EXPECT_LT(c.gcc().target().bps(), before.bps());
+    c.Process(Timestamp::Millis(1011));
+    SM_EXPECT_EQ(c.target().bps(), before.bps());  // No packet sent yet.
+    c.Enqueue(Media(1, PacketKind::kAudio, cc::PacketPriority::kAudio, 100), Timestamp::Millis(1012));
+    SM_ASSERT_EQ(c.Process(Timestamp::Millis(1012)).size(), 1u);
+    const SendRates rates = c.ComputeMeasuredRates(DataRate::Zero());
+    const DataRate allocated = rates.video_target + rates.audio_rate;
+    if (pushback) {
+      SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());
+      SM_EXPECT_LT(allocated.bps(), before.bps());
+    } else {
+      SM_EXPECT_EQ(c.target().bps(), before.bps());
+    }
+    for (int t = 1013; t <= 1025; ++t) c.Process(Timestamp::Millis(t));
+    SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());  // The process interval, either way.
+  }
 }
 
 // GoogCC's cwnd_reduce_ratio comes from the pushback target after it is clamped to the estimator's
