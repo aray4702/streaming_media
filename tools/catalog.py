@@ -437,7 +437,15 @@ ALGORITHMS = [
                "and the bench's decoder finds it with WebRtcOpus_PacketHasFec's parse: the encoder's loss input is ported "
                "(ChannelSend::OnReportBlockDataUpdated, PacketLossFractionSmoother, SetProjectedPacketLossRate). "
                "Verified by `issue_62_opus_fec_low_rate` (no LBRR at 12 kbps, 10% loss) and the "
-               "OpusEncoder unit tests.",
+               "OpusEncoder unit tests. "
+               "Comfort noise (comfort_noise.cc, NetEq's kRfc3389Cng and kCodecInternalCng) is not ported: it is "
+               "unreachable on libwebrtc's defaults (issue #827). RFC 3389 CN needs a CN payload type, which Opus "
+               "never gets (allow_comfort_noise false, audio_encoder_opus.cc:240; CN at 8 kHz only, "
+               "webrtc_voice_engine.cc:1538-1553), and codec-internal CNG needs a 1-2 byte Opus payload "
+               "(opus_interface.cc DetermineAudioType), which only DTX sends, off unless the SDP has usedtx=1 "
+               "(audio_encoder_opus.cc:257). The session registers no CN payload type and the test bench's "
+               "encoder never sends a DTX-sized payload (`OpusEncoder, DefaultsSendNoDtxPayloads`); an app that "
+               "turns DTX on gets those frames decoded as normal frames. Recorded in the parity inventory (4.4).",
          verification="Issue #256 (fix record docs/fixes/256-neteq-unsupported-rate.md): at a rate other than "
                       "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
                       "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
