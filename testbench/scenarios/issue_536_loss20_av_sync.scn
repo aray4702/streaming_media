@@ -1,0 +1,11 @@
+name issue_536_loss20_av_sync
+describe 20% random loss on a clean 2 Mbps / 50 ms link: video pacer queue grows to seconds and A/V sync drags audio with it
+# Yardstick for #724 (part 1 of #536): sm_compare runs this on 10 seeds so the parity report has libwebrtc's column.
+# The Tester's repro (#536) on 53cff05, seeds 1-5: audio.mouth_to_ear_p95_ms 1082 / 244 / 594 / 616 / 202,
+# video.delay_pacer_p95_ms 2210 / 644 / 1490 / 2150 / 204, target 276-431 kbps.
+# Target (issue #536, until #725 classifies it against libwebrtc): audio.mouth_to_ear_p95_ms < 400,
+# video.e2e_delay_p95_ms < 1000, video.delay_pacer_p95_ms < 500.
+compare_seeds 10
+seed 1
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=20% queue=300ms

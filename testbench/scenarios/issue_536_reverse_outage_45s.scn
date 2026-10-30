@@ -1,0 +1,14 @@
+name issue_536_reverse_outage_45s
+describe forward link healthy, feedback path down for 45 s (asymmetric path failure): video waits in the pacer and A/V sync drags audio
+# Yardstick for #724 (part 1 of #536): the Tester's rev_outage.scn (#536, comment of 2026-10-29), run by sm_compare on
+# 10 seeds so the parity report has libwebrtc's column. On 82af33b, seeds 1-3: audio.mouth_to_ear_p95_ms 1991-2009,
+# video.e2e_delay_p95_ms 2208-2249; the target falls 995 -> 101 kbps over 20-34 s (RTT backoff).
+# Target (issue #536, until #725 classifies it against libwebrtc): audio.mouth_to_ear_p95_ms < 400,
+# video.e2e_delay_p95_ms < 1000.
+compare_seeds 10
+seed 1
+duration 120s
+at 0s capacity=1000kbps delay=40ms queue=300ms
+reverse at 0s delay=40ms
+reverse at 20s down
+reverse at 65s up
