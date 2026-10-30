@@ -319,6 +319,9 @@ class SendSideController : public MetricsSource {
   cc::BitrateAllocatorV2 allocator_;
   bool allocation_configured_ = false;
   cc::CongestionControlHandler control_handler_;
+  // The last kCwnd row written to the BWE trace (issue #738).
+  int64_t trace_cwnd_target_bps_ = -1;
+  double trace_cwnd_ratio_ = -1;
   // The reduce ratio of the last update passed on (BitrateAllocationUpdate::cwnd_reduce_ratio).
   double reported_reduce_ratio_ = 0;
   // AllocatedVideoTarget() as of the last allocation (RtpVideoSender::encoder_target_rate_bps_).
