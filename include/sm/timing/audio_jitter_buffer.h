@@ -179,6 +179,8 @@ class AudioJitterBuffer : public MetricsSource {
   // Decodes the next packet into `dst` (the sync buffer when null).
   AudioOperation DecodeNext(Timestamp now, std::vector<float>* dst = nullptr);
   bool NextPacketReady() const;
+  // PacketBuffer::DiscardOldPackets(limit, horizon) (version 2).
+  void DiscardOldPackets(int64_t limit, int64_t horizon_samples, Timestamp now);
   AudioOperation MaybeStretch(Timestamp now);
   AudioOperation GetAudioV1(std::span<float> out, Timestamp now);
   // NetEqImpl::GetAudioInternal and GetDecision (version 2).

@@ -569,7 +569,8 @@ SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
 // reaches NetEq. Packet 2 is lost, so packet 3's redundant copy of frame 2
 // arrives after frame 3 and is reordered. So is packet 1's copy of frame 0:
 // the first pull's SoftReset cleared frame 0's arrival (#721's t = 50 row).
-// The copies of frames that arrived are inserted too: frame 0's is late, the
+// The copies of frames that arrived are inserted too: frame 0's is late and
+// waits in the buffer until the next pull's DiscardOldPackets (#783), the
 // copies of frames 3 and 4 are duplicates.
 SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   FakeDecoder dec;
@@ -603,8 +604,10 @@ SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 9u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 2u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 1u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 0u);
   SM_EXPECT_EQ(CollectMetrics(r.jitter_buffer().neteq_delay()).at("reordered"), 2.0);
+  r.GetAudio(out, Timestamp::Millis(126));
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 1u);
 }
 
 namespace {
