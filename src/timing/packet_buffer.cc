@@ -31,13 +31,11 @@ void PacketBuffer::Clear() {
   newest_inserted_ = INT64_MIN;
   cleared_to_first_seq_ = false;
   highest_ = INT64_MIN;
-  first_inserted_ = INT64_MIN;
   first_seq_ = INT64_MIN;
   size_ = cfg_.start_size;
 }
 
-InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame,
-                                  bool idr) {
+InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool idr) {
   int64_t s = unwrapper_.Unwrap(p.seq);
   if (first_seq_ == INT64_MIN) {
     first_seq_ = s;
@@ -76,10 +74,9 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     ++stats_.reordered;
     stats_.reorder_distance.Add(static_cast<double>(highest_ - s));
   }
-  if (first_inserted_ == INT64_MIN) first_inserted_ = s;
   highest_ = std::max(highest_, s);
   ++stats_.inserted;
-  packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, idr, now});
+  packets_.emplace(s, Entry{std::move(p), frame_start, idr, now});
   if (cfg_.missing_packets) UpdateMissingPackets(s);
   // received_padding_.erase(begin, lower_bound(seq - buffer_.size() / 4)): padding only matters
   // near the packets being inserted.
@@ -119,7 +116,13 @@ void PacketBuffer::TryAssemble(int64_t seq) {
   // each look like a start (H.264: the parameter sets, then the IDR slice), so
   // the walk goes on through contiguous packets of the same timestamp and
   // stops where the previous packet is missing, belongs to another frame, or
-  // ended its frame with the marker bit.
+  // ended its frame with the marker bit. The frame opens at the packet where
+  // the walk stops if that one is a start (PotentialNewFrame's continuity
+  // starts at an `is_first_packet_in_frame` packet), even when an earlier
+  // packet of the same frame is still missing: libwebrtc's H.264 walk back in
+  // FindFrames stops at the first missing packet and hands the frame out from
+  // there ("This may cause the PacketBuffer to hand out incomplete frames",
+  // packet_buffer.cc), e.g. an IDR slice whose parameter-set packet was lost.
   int64_t first = seq;
   for (;;) {
     const Entry& e = packets_.at(first);
@@ -130,14 +133,6 @@ void PacketBuffer::TryAssemble(int64_t seq) {
       continue;
     }
     if (!e.frame_start) return;
-    // A start that may continue a frame (the IDR slice after its parameter
-    // sets) opens it only if the packet before is known to belong to the
-    // previous frame. If that one is missing (lost or on its way) it may be
-    // the frame's own earlier packet, so wait for it: NACK recovers it, or the
-    // keyframe request follows if it never comes. The first packet ever
-    // inserted has nothing before it, and padding or a delivered frame ahead
-    // of it settles it too.
-    if (e.may_continue_frame && prev == packets_.end() && !done_.count(first - 1) && first != first_inserted_) return;
     break;
   }
   // Walk forward to the marker.

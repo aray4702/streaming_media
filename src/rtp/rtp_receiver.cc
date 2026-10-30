@@ -422,10 +422,7 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& wire, Timestamp now, bool recove
         break;
     }
   }
-  // An IDR slice that starts a packet (no parameter sets in it) may follow
-  // the parameter-set packet of the same access unit.
-  if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps,
-                            info.idr) == timing::InsertResult::kBufferCleared) {
+  if (packet_buffer_.Insert(p, info.frame_start, now, info.idr) == timing::InsertResult::kBufferCleared) {
     // OnInsertedPacket's buffer_cleared (rtp_video_stream_receiver2.cc:1117-1123).
     keyframes_.ResetPacketReceiveTimes();
     last_received_rtp_time_ = Timestamp::MinusInfinity();

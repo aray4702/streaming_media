@@ -279,7 +279,14 @@ SM_TEST(RtpReceiver, FrameIdsAndReferencesComeFromSequenceNumbers) {
   }
 }
 
-SM_TEST(RtpReceiver, ALostParameterSetPacketIsNackedAndNoKeyframeWithoutItIsDelivered) {
+// libwebrtc's default H.264 path (PacketBuffer::FindFrames, packet_buffer.cc;
+// H26xPacketBuffer is behind a trial that is off in M157): the IDR start is a
+// first packet, so the frame is handed out from it when the parameter-set
+// packet before it is lost, and it is a keyframe because it has an IDR slice
+// (WebRTC-SpsPpsIdrIsH264Keyframe off). The parameter sets are known from the
+// first keyframe, so H264SpsPpsTracker lets the IDR through. The lost packet
+// is still NACKed, and its retransmission makes no second frame.
+SM_TEST(RtpReceiver, AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr) {
   RtpSender s(SenderCfg());
   RtpReceiver r(ReceiverCfg());
   r.Start(Timestamp::Millis(0));
@@ -298,15 +305,15 @@ SM_TEST(RtpReceiver, ALostParameterSetPacketIsNackedAndNoKeyframeWithoutItIsDeli
     for (uint16_t n : r.TakeFeedback().nacks) nacked = nacked || n == lost->seq;
   }
   SM_EXPECT_TRUE(nacked);
-  SM_ASSERT_EQ(frames.size(), 1u);  // Only the first keyframe: the IDR alone is not handed over.
-  // The retransmission completes it.
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[1].keyframe);
+  // The retransmission of the parameter-set packet completes no frame.
   r.OnPacket(key2[0], Timestamp::Millis(400));
   for (int64_t t = 400; t < 700; ++t) {
     r.Process(Timestamp::Millis(t));
     for (auto& f : r.TakeFrames()) frames.push_back(f);
   }
-  SM_ASSERT_EQ(frames.size(), 2u);
-  SM_EXPECT_TRUE(frames[1].keyframe);
+  SM_EXPECT_EQ(frames.size(), 2u);
 }
 
 SM_TEST(RtpReceiver, PaddingOnlyPacketsAreNotMedia) {
