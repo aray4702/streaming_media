@@ -62,8 +62,8 @@ struct PacingControllerConfig {
   // A keyframe's flush also removes queued padding, as libwebrtc's EnqueuePacket does with
   // RemovePacketsForSsrc(rtx_ssrc): padding is generated on the video stream's RTX SSRC
   // (RTPSender::GeneratePadding; on the media SSRC without RTX), which that call clears
-  // (pacing_controller.cc:227-231). Off by default until it is judged (issue #437).
-  bool keyframe_flush_padding = false;
+  // (pacing_controller.cc:227-231). On by default, as libwebrtc (issue #437).
+  bool keyframe_flush_padding = true;
   BitrateProberConfig prober;
   int circuit_breaker_iterations = 1 << 16;
   EventSink* events = nullptr;

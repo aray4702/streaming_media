@@ -84,3 +84,18 @@ SM_TEST(LibwebrtcDefaults, TheEncoderAllocationHasNoMaximumOfItsOwn) {
 SM_TEST(LibwebrtcDefaults, TheBitrateAdjusterRunsOnAllocationUpdates) {
   SM_EXPECT_TRUE(VideoSendControllerConfig{}.adjuster_on_update);
 }
+
+// enable_prerenderer_smoothing defaults to true (call/video_receive_stream.h:291,
+// media/base/media_config.h:62 at M157), so decoded frames pass IncomingVideoStream /
+// VideoRenderFrames (video/video_receive_stream2.cc:400-403). Issue #437.
+SM_TEST(LibwebrtcDefaults, DecodedFramesPassThePreRenderQueue) {
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.render_smoothing);
+  SM_EXPECT_TRUE(VideoStreamConfig{}.render_smoothing);
+}
+
+// A keyframe's flush clears the RTX SSRC too, where padding is queued
+// (RemovePacketsForSsrc(rtx_ssrc), modules/pacing/pacing_controller.cc:227-231). Issue #437.
+SM_TEST(LibwebrtcDefaults, AKeyframeFlushAlsoDropsQueuedPadding) {
+  SM_EXPECT_TRUE(cc::PacingControllerConfig{}.keyframe_flush_padding);
+  SM_EXPECT_TRUE(SessionConfig{}.send_side.pacer.controller.keyframe_flush_padding);
+}

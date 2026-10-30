@@ -194,7 +194,7 @@ struct VideoStreamConfig {
   const VideoPayloadParser* parser = nullptr;  // rtp::H264PayloadParser for H.264.
   bool keyframe_needs_parameter_sets = false;  // See RtpReceiverConfig.
   bool sps_pps_tracker = true;                 // See RtpReceiverConfig (issue #453). On, as libwebrtc; H.264 only.
-  bool render_smoothing = false;               // See RtpReceiverConfig (issue #437).
+  bool render_smoothing = true;                // See RtpReceiverConfig (issue #437). On, as libwebrtc.
   bool deliver_bitstream = true;               // See RtpReceiverConfig.
   VideoMediaObserver* media_observer = nullptr;  // Optional, not owned.
   bool nack = true;
