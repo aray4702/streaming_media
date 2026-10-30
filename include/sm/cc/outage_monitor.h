@@ -3,13 +3,19 @@
 // Watches feedback from the remote side (RTCP, transport feedback, any
 // packet). States:
 //   kUp        feedback within degraded_after
-//   kDegraded  no feedback for degraded_after: stop growing the estimate
-//   kDown      no feedback for down_after: pause the encoder (sending into
-//              a dead link only fills queues) and keep sending keep-alives
-//   ICE restart is requested after ice_restart_after of continuous outage.
-// On the first feedback after kDown: resume, request a keyframe (the
-// decoder state on the far side is stale), and reset the bandwidth estimate
-// to a fraction of the pre-outage value (the path may have changed).
+//   kDegraded  no feedback for degraded_after
+//   kDown      no feedback for down_after
+// Process() also proposes actions (OutageActions): an encoder pause on kDown,
+// an ICE restart request after ice_restart_after of continuous outage, and on
+// the first feedback after kDown a resume, a keyframe and a reset of the
+// estimate to a fraction of the pre-outage rate.
+//
+// libwebrtc M157 has no outage monitor and takes no sender action on an
+// outage: SendSideBandwidthEstimation backs off on missing feedback
+// (kMaxRtcpFeedbackInterval) and the receiver's decode time-out asks for the
+// keyframe. So on the call path rtp::SendSideController runs Process() every
+// time it processes, only to follow the link (state, metrics, events), and
+// acts on none of these actions (issues #151, #849).
 #pragma once
 
 #include "sm/core/event_log.h"

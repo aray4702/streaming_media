@@ -427,7 +427,8 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
   // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. So does this one;
-  // the monitor only follows the link (its metrics), and its decisions are not acted on.
+  // the monitor only follows the link (its state, metrics and events), and its decisions are not acted on.
+  (void)outage_.Process(now);
   return out;
 }
 
