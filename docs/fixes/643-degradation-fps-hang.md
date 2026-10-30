@@ -70,3 +70,8 @@ it.
 
 The scenario suite against the baseline (`tools/testbench_compare.py`): no
 metric changed, as expected (the controller isn't in the call path).
+
+**Superseded (#819):** `DegradationController` had no libwebrtc counterpart
+and was removed with its tests. libwebrtc's frame-rate steps, which this fix
+followed, are `video::VideoStreamAdapter`'s (`HasSufficientInput`,
+`kMinFrameRateFps`), tested in `tests/unit/video/video_test.cc`.

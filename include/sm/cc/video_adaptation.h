@@ -1,26 +1,13 @@
-// 5.9 Video adaptation to bandwidth and CPU (degradationPreference).
+// 5.9 Video adaptation to bandwidth and CPU: CPU overuse detection.
 //
-// DegradationController picks the encoded resolution and frame rate for a
-// target bitrate using a bits-per-pixel budget:
-//   bitrate >= width * height * fps * bpp
-// Candidate formats are ordered by preference:
-//   maintain-framerate:  lower resolution only
-//   maintain-resolution: lower frame rate only (down to min_fps)
-//   balanced:            frame rate down to balanced_fps first, then
-//                        resolution, then frame rate down to min_fps
-// Frame-rate steps stop at libwebrtc's kMinFrameRateFps (2) and never raise
-// the rate; an input rate of 2 fps or less (0 = unknown) gets no frame-rate
-// steps, as VideoStreamAdapter (fix record docs/fixes/643-degradation-fps-hang.md).
-// Going down needs bpp_down, going back up needs the larger bpp_up, so the
-// format does not oscillate around a threshold. Resource limits (CPU
-// overuse, quality scaler) impose an extra cap on pixels or fps.
+// The adaptation itself (the restrictions a resource asks for, the
+// degradation preferences, BalancedConstraint and BitrateConstraint) is
+// video::VideoStreamAdapter and video::ResourceAdaptationProcessor, driven by
+// rtp::VideoSendController. The library's own bits-per-pixel ladder
+// (DegradationController) and the exponentially filtered v1 detector had no
+// libwebrtc counterpart and were removed (issue #819).
 //
-// CpuOveruseDetector: encode usage = encode time / frame interval,
-// exponentially filtered. Above 85% for consecutive checks -> overuse
-// (adapt down); below 42% -> underuse (adapt up), with a back-off after an
-// adapt-up that caused overuse, to avoid oscillating.
-//
-// `version = 2` is libwebrtc M157's OveruseFrameDetector (issue #84 step 3),
+// CpuOveruseDetector is libwebrtc M157's OveruseFrameDetector (issue #84 step 3),
 // ported from compare/webrtc/reference/video/adaptation/overuse_frame_detector.cc
 // with its default estimator, SendProcessingUsage1 (`WebRTC-CpuLoadEstimator`
 // is off by default, so `filter_time_ms` stays 0) and the CpuOveruseOptions
@@ -49,7 +36,6 @@
 
 #include <list>
 #include <optional>
-#include <vector>
 
 #include "sm/cc/frame_dropper.h"  // ExpFilter.
 #include "sm/core/event_log.h"
@@ -58,63 +44,9 @@
 
 namespace sm::cc {
 
-enum class DegradationPreference { kMaintainFramerate, kMaintainResolution, kBalanced, kDisabled };
-
-struct VideoFormat {
-  int width = 0;
-  int height = 0;
-  double fps = 0;
-  int64_t pixels() const { return int64_t{width} * height; }
-  bool operator==(const VideoFormat& o) const = default;
-};
-
-struct DegradationConfig {
-  VideoFormat input{1280, 720, 30};
-  // libwebrtc's camera default (GetDegradationPreference,
-  // media/engine/webrtc_video_engine.cc:2032-2064): BALANCED only with the
-  // WebRTC-Video-BalancedDegradation trial, which is off.
-  DegradationPreference preference = DegradationPreference::kMaintainFramerate;
-  double bpp_down = 0.04;
-  double bpp_up = 0.06;
-  double min_fps = 5;
-  double balanced_fps = 15;
-  int min_pixels = 320 * 180;
-  EventSink* events = nullptr;
-};
-
-class DegradationController : public MetricsSource {
- public:
-  explicit DegradationController(DegradationConfig cfg = {});
-  VideoFormat OnTargetBitrate(DataRate target, Timestamp now = Timestamp::Micros(0));
-  // Resource-driven steps (CPU overuse, quality scaler). Each call moves
-  // the resource cap one step along the preference ladder.
-  void OnResourceOveruse();
-  void OnResourceUnderuse();
-  VideoFormat current() const { return current_; }
-  const std::vector<VideoFormat>& ladder() const { return ladder_; }
-  void ExportMetrics(MetricsWriter& w) const override;
-
- private:
-  bool Fits(const VideoFormat& f, DataRate r, double bpp) const;
-  DegradationConfig cfg_;
-  std::vector<VideoFormat> ladder_;  // Best first.
-  size_t index_ = 0;                 // Bitrate-chosen step.
-  size_t resource_cap_ = 0;          // Minimum step index forced by resources.
-  VideoFormat current_;
-  DataRate last_target_;
-  uint64_t adapt_down_ = 0, adapt_up_ = 0;
-};
-
 struct CpuOveruseConfig {
-  double high_threshold = 0.85;
-  double low_threshold = 0.42;
-  TimeDelta check_interval = TimeDelta::Seconds(5);
-  int consecutive_checks = 2;  // Also v2's high_threshold_consecutive_count.
-  double smoothing = 0.1;  // EMA weight per frame.
-  // 1: the filter above. 2 (default, #579): libwebrtc M157's
-  // OveruseFrameDetector (see above); the fields below are its
   // CpuOveruseOptions, with their defaults.
-  int version = 2;
+  int consecutive_checks = 2;  // high_threshold_consecutive_count.
   int high_encode_usage_threshold_percent = 85;
   int low_encode_usage_threshold_percent = (85 - 1) / 2;
   TimeDelta frame_timeout_interval = TimeDelta::Millis(1500);
@@ -127,21 +59,19 @@ class CpuOveruseDetector : public MetricsSource {
  public:
   enum class Signal { kNone, kOveruse, kUnderuse };
   explicit CpuOveruseDetector(CpuOveruseConfig cfg = {});
-  // Version 1.
-  void OnFrameEncoded(TimeDelta encode_time, TimeDelta frame_interval);
-  // Version 1: a check every `check_interval`. Version 2: the repeating task,
-  // 100 ms after the first call and then every 5 s; call it at least that often.
+  // The repeating task: 100 ms after the first call and then every 5 s; call
+  // it at least that often.
   Signal Check(Timestamp now);
-  double usage() const { return version2() ? encode_usage_percent_.value_or(0) / 100.0 : usage_; }
+  double usage() const { return encode_usage_percent_.value_or(0) / 100.0; }
 
-  // Version 2 (OveruseFrameDetector). `now` is when the encoder first saw the
-  // frame; `rtp_timestamp` identifies it in OnFrameSent.
+  // `now` is when the encoder first saw the frame; `rtp_timestamp`
+  // identifies it in OnFrameSent.
   void OnFrameCaptured(int num_pixels, uint32_t rtp_timestamp, Timestamp now);
   // One encoded layer of the frame was sent at `time_sent`.
   void OnFrameSent(uint32_t rtp_timestamp, Timestamp time_sent);
   void OnTargetFramerateUpdated(int framerate_fps);
-  // Version 2: OveruseFrameDetector::StopCheckForOveruse then
-  // StartCheckForOveruse (EncodeUsageResource, when the encoder is configured
+  // OveruseFrameDetector::StopCheckForOveruse then StartCheckForOveruse
+  // (EncodeUsageResource, when the encoder is configured
   // again): SetOptions' new SendProcessingUsage1, a reset with the next frame
   // (num_pixels_ = 0), and the check task started again, its first run 100 ms
   // after the next Check(). The overuse and rampup state are kept, as there.
@@ -155,7 +85,6 @@ class CpuOveruseDetector : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
-  bool version2() const { return cfg_.version >= 2; }
   // SendProcessingUsage1's FrameTiming; capture_us is when the frame was first seen.
   struct FrameTiming { uint32_t timestamp; int64_t capture_us; int64_t last_send_us = -1; };
   void ResetUsage();
@@ -165,7 +94,7 @@ class CpuOveruseDetector : public MetricsSource {
   bool IsUnderusing(int usage_percent, int64_t now_ms) const;
 
   CpuOveruseConfig cfg_;
-  // Version 2 state (OveruseFrameDetector and SendProcessingUsage1).
+  // OveruseFrameDetector and SendProcessingUsage1 state.
   std::list<FrameTiming> frame_timing_;
   uint64_t count_ = 0;
   int64_t last_processed_capture_time_us_ = -1;
@@ -184,13 +113,6 @@ class CpuOveruseDetector : public MetricsSource {
   int current_rampup_delay_ms_ = 40 * 1000;
   std::optional<int> encode_usage_percent_;
   Timestamp next_check_ = Timestamp::MinusInfinity();
-  double usage_ = 0;
-  bool has_usage_ = false;
-  Timestamp last_check_ = Timestamp::MinusInfinity();
-  int over_checks_ = 0;
-  int under_checks_needed_ = 1;
-  int under_checks_ = 0;
-  bool last_was_up_ = false;
   uint64_t overuses_ = 0, underuses_ = 0;
 };
 

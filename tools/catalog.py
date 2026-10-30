@@ -719,8 +719,8 @@ ALGORITHMS = [
                "Guard rails changed with the `cc v1` deletion (program.md 0.2, #167, Owner sign-off pending): the "
                "closed-loop simulation's 800 kbps phase queue p95 (`E2E_DelayBwe`, `Q_Gcc_capacity_steps`) 200 -> 600 ms, "
                "its clean 2.5 Mbps audio delay p95 (`E2E_Pacer`, `Q_Pacer_audio_delay`) 60 -> 130 ms, and the "
-               "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`) "
-               "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
+               "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`, both "
+               "removed with the bits-per-pixel ladder in #819) 1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
                "on `clean_link` queue p95 74 ms. "
                "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 with #62. "
                "The test bench's Opus frame-size model, an approved deviation until #457, is replaced by libopus "
@@ -985,14 +985,19 @@ ALGORITHMS = [
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
-         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation", "OveruseFrameDetector"], e2e=["E2E_VideoAdaptation"],
-         bench=["cc/Degradation_and_CpuDetector", "cc/Q_Adaptation_bandwidth_drop"],
-         scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
-                  "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
-                  "settle on a sustainable resolution without oscillating.",
+         headers=["cc/video_adaptation.h"], unit=["OveruseFrameDetector", "BitrateConstraint"], e2e=["E2E_VideoAdaptation"],
+         bench=["cc/CpuOveruseDetector_PerFrame"],
+         scenario="(a) A slow device (40 ms of encode per megapixel) through libwebrtc's chain (OveruseFrameDetector, "
+                  "ResourceAdaptationProcessor, VideoStreamAdapter, VideoAdapter): the CPU detector must settle on a "
+                  "sustainable resolution without oscillating. (b) With the encoder's resolution bitrate limits, the "
+                  "step back up to 720p waits until the encoder target reaches 720p's min_start_bitrate "
+                  "(BitrateConstraint); without them it does not wait.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
-               "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
+               "The adaptation itself is libwebrtc's, in `video::VideoStreamAdapter` and "
+               "`video::ResourceAdaptationProcessor` (7.8), driven by `rtp::VideoSendController`. "
+               "Issue #819 removed the library's own bits-per-pixel ladder (`DegradationController`, "
+               "0.04/0.06 bpp hysteresis) and the exponentially filtered v1 CPU detector "
+               "(`CpuOveruseConfig::version = 1`): neither has a libwebrtc counterpart, and no call path used them.",
          verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3; the default since #579) "
                       "is libwebrtc M157's `OveruseFrameDetector` (`video/adaptation/overuse_frame_detector.cc`) "
                       "with its default estimator `SendProcessingUsage1` and the `CpuOveruseOptions` a software "
@@ -1008,9 +1013,17 @@ ALGORITHMS = [
                       "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
                       "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
                       "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
-                      "the behaviour. Issue #581: `DegradationConfig::preference` defaults to maintain-framerate, "
-                      "libwebrtc's camera default (`media/engine/webrtc_video_engine.cc:2032-2064`), where it was "
-                      "balanced; the send path already ran maintain-framerate, so no scenario moves."),
+                      "the behaviour. Issue #819: `BitrateConstraint` (`video/adaptation/bitrate_constraint.cc`) is ported into "
+                      "`video::VideoStreamAdapter::GetAdaptationUp` with `EncoderInfo::GetEncoderBitrateLimitsForResolution`; "
+                      "`rtp::VideoSendController` gives it the start bitrate and every nonzero encoder target "
+                      "(`VideoStreamEncoderResourceManager::SetStartBitrate` / `SetTargetBitrate`) and "
+                      "`VideoSendControllerConfig::resolution_bitrate_limits`, empty by default as libwebrtc's software "
+                      "encoders and both stacks' encoder model in `sm_compare` report, so it allows every step and no "
+                      "scenario moves. Unit tests `BitrateConstraint.*` port `bitrate_constraint_unittest.cc`'s "
+                      "singlecast cases (simulcast and SVC are not ported). The bits-per-pixel `DegradationController` "
+                      "and CPU detector v1 were removed, with their tests (`VideoAdaptation.*`, the closed-loop "
+                      "`E2E_VideoAdaptation.ResolutionFollowsBandwidth`, `Q_Adaptation_bandwidth_drop`); "
+                      "`E2E_VideoAdaptation` now runs libwebrtc's chain (`tests/e2e/video_adaptation_e2e_test.cc`)."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],

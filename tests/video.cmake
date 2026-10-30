@@ -3,6 +3,7 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     unit/video/resource_adaptation_processor_test.cc
     unit/video/video_test.cc
   SUITES
+    BitrateConstraint
     CodecFallback
     ContentPolicy
     DecoderFallback

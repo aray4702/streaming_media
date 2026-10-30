@@ -418,6 +418,29 @@ VideoStreamAdapter::Step VideoStreamAdapter::GetAdaptationUpStep() const {
   return Fail(Status::kAdaptationDisabled);
 }
 
+std::optional<ResolutionBitrateLimits> GetEncoderBitrateLimitsForResolution(std::vector<ResolutionBitrateLimits> limits,
+                                                                             int frame_size_pixels) {
+  std::sort(limits.begin(), limits.end(), [](const ResolutionBitrateLimits& a, const ResolutionBitrateLimits& b) {
+    return a.frame_size_pixels < b.frame_size_pixels;
+  });
+  for (const ResolutionBitrateLimits& l : limits) {
+    if (l.frame_size_pixels >= frame_size_pixels) return l;
+  }
+  return std::nullopt;
+}
+
+bool VideoStreamAdapter::BitrateAllowsUp(const VideoSourceRestrictions& after) const {
+  // BitrateConstraint::IsAdaptationUpAllowed. Limits are set only once the
+  // encoder is configured (encoder_settings_), and a one-to-one call is singlecast.
+  if (!DidIncreaseResolution(restrictions_, after)) return true;
+  const uint32_t bps = encoder_target_bps_.value_or(0);
+  if (bps == 0) return true;
+  if (frame_size_pixels_ <= 0) return true;  // No single_active_stream_pixels yet.
+  const auto limits = GetEncoderBitrateLimitsForResolution(bitrate_limits_, GetHigherResolutionThan(frame_size_pixels_));
+  if (limits) return bps >= static_cast<uint32_t>(limits->min_start_bitrate_bps);
+  return true;
+}
+
 bool VideoStreamAdapter::BalancedAllowsUp(const VideoSourceRestrictions& after) const {
   // BalancedConstraint::IsAdaptationUpAllowed.
   if (preference_ != DegradationPreference::kBalanced) return true;
@@ -439,7 +462,10 @@ VideoStreamAdapter::Adaptation VideoStreamAdapter::GetAdaptationDown() const {
 
 VideoStreamAdapter::Adaptation VideoStreamAdapter::GetAdaptationUp() const {
   Step s = GetAdaptationUpStep();
-  if (s.status == Status::kValid && !BalancedAllowsUp(s.restrictions)) s = Fail(Status::kRejectedByConstraint);
+  // VideoStreamEncoderResourceManager::AdaptationConstraints: BitrateConstraint, then BalancedConstraint.
+  if (s.status == Status::kValid && (!BitrateAllowsUp(s.restrictions) || !BalancedAllowsUp(s.restrictions))) {
+    s = Fail(Status::kRejectedByConstraint);
+  }
   return ToAdaptation(s);
 }
 

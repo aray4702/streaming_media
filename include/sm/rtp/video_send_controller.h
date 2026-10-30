@@ -144,6 +144,10 @@ struct VideoSendControllerConfig {
   // default 24/37) and kDefaultMinPixelsPerFrame.
   video::QpThresholds qp_thresholds;
   int min_pixels_per_frame = 320 * 180;
+  // EncoderInfo::resolution_bitrate_limits, for BitrateConstraint (issue #819;
+  // video::VideoStreamAdapter). Empty, as libwebrtc's software encoders report
+  // by default: no step up is held back for the bitrate.
+  std::vector<video::ResolutionBitrateLimits> resolution_bitrate_limits;
   // QualityScalerSettings' WebRTC-Video-QualityScalerSettings `initial_bitrate_interval_ms` and
   // `initial_bitrate_factor` (rtc_base/experiments/quality_scaler_settings.cc), unset by default as in
   // M157: with both, a target below `factor` times the start bitrate within `interval` of it restarts the
