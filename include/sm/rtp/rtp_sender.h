@@ -188,9 +188,11 @@ class RtpSender : public MetricsSource {
   size_t SinglePacketReduction(bool keyframe, video::Rotation rotation,
                                const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
 
-  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
-  // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
-  // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then it carries 0.
+  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media,
+  // FEC, RTX or padding packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
+  // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then a media packet carries
+  // 0. A packet on the RTX SSRC takes the next RTX number, whatever RtxSender gave it, so one the
+  // pacer never releases uses none (issue #854).
   // PacketSequencer::Sequence (packet_sequencer.cc:58-80): a padding packet takes its timestamp
   // (and on the media SSRC its payload type and number) from the last media packet released, and
   // empty RTX padding advances that timestamp by the time since, at 90 ticks per ms.
@@ -270,7 +272,7 @@ class RtpSender : public MetricsSource {
   // kMinAudioPaddingLength (50)): on the RTX SSRC, where it waits for a media packet unless
   // transport-cc or abs-send-time is registered; without RTX on the media SSRC, only while
   // CanSendPaddingOnMediaSsrc(). All of them are PacketKind::kPadding at padding priority; their
-  // timestamps are set at release (AssignSequenceNumber). Nothing is queued, the caller enqueues them.
+  // timestamps and sequence numbers are set at release (AssignSequenceNumber). Nothing is queued, the caller enqueues them.
   std::vector<SenderPacket> GeneratePadding(size_t target_bytes, Timestamp now);
 
   // The peer acknowledged the MID: stop repeating it.
@@ -329,6 +331,7 @@ class RtpSender : public MetricsSource {
   loss::ulpfec::FecProtectionParams key_fec_params_;
   std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
+  uint16_t next_rtx_seq_;  // PacketSequencer::rtx_sequence_number_.
   int mid_remaining_;
   video::Rotation last_rotation_ = video::Rotation::k0;  // RTPSenderVideo::last_rotation_.
   sync::AbsoluteCaptureTimeSender abs_capture_time_sender_;
