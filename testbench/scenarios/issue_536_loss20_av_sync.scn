@@ -4,7 +4,7 @@ describe 20% random loss on a clean 2 Mbps / 50 ms link: video pacer queue grows
 # 0.6-1.1 s mouth-to-ear. Yardstick #792 (#724) ran it on both stacks, 10 seeds: every cell is in the parity band
 # (#725), and libwebrtc M157 does the same (mean m2e p95 728 vs ours 613 ms, pacer p95 1529 vs 1117 ms). So these
 # lines sit at libwebrtc's worst seed in 1-10 (#729); the Tester's stage-2 targets (m2e < 400, video e2e < 1000,
-# pacer < 500) are a `stage:later` item, not suite lines.
+# pacer < 500) are the `stage:later` item #795, not suite lines.
 compare_seeds 10
 seed 1
 duration 30s

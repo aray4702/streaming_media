@@ -4,7 +4,7 @@ describe forward link healthy, feedback path down for 45 s (asymmetric path fail
 # video waits in the pacer and A/V sync drags audio to ~2 s mouth-to-ear. Yardstick #792 (#724) ran it on both
 # stacks, 10 seeds: every cell is in the parity band (#725), and libwebrtc M157 does the same (m2e p95 2070 vs ours
 # 2059 ms, pacer p95 2245 vs 2244 ms, target 656 vs 657 kbps). So these lines sit at libwebrtc's worst seed in 1-10
-# (#729); the Tester's stage-2 targets (m2e < 400, video e2e < 1000) are a `stage:later` item, not suite lines.
+# (#729); the Tester's stage-2 targets (m2e < 400, video e2e < 1000) are the `stage:later` item #795, not suite lines.
 compare_seeds 10
 seed 1
 duration 120s
