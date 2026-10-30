@@ -1493,13 +1493,16 @@ ALGORITHMS = [
          bench=["video/FrameChangeDetector_1080p", "video/Q_ScreenShare_encode_ratio"],
          scenario="60 s of screen sharing at 15 fps: a new slide every 10 s and a blinking cursor; every content "
                   "change must be encoded immediately, while static frames are skipped.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
-               "only flags that they should be enabled.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
+               "Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy does not set them.",
          verification="No defects found. Issue #581: with no hint, camera video maps to maintain-framerate (the "
                       "`ContentSettings` default too), as libwebrtc's `GetDegradationPreference` "
                       "(`media/engine/webrtc_video_engine.cc:2032-2064`; BALANCED only with the "
-                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. The QP ceilings and "
-                      "frame-rate floors stay with #566."),
+                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. Issue #877 (Owner decision): "
+                      "`SettingsFor` and `ContentSettings` carry only the degradation preference; the QP ceilings "
+                      "(40 detail, 32 text), frame-rate floors (15, 2, 1), the screencast frame-rate cap and the "
+                      "variable-frame-rate and screen-tools flags are removed, as libwebrtc derives none of them "
+                      "from the hint. Nothing in the call read them, so no test bench metric moves."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],

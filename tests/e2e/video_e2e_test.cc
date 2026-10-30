@@ -169,9 +169,8 @@ SM_TEST(E2E_Orientation, RotatingPhoneRendersUpright) {
 SM_TEST(E2E_ContentPolicy, ScreenShareEncodesOnlyChanges) {
   // 60 s of screen sharing at 15 fps: a new slide every 10 s, a blinking
   // cursor for 2 s of every 10 s, otherwise static.
-  ContentSettings s = SettingsFor(ContentHint::kText, true);
   FrameChangeDetector cd(TimeDelta::Seconds(1));
-  const int fps = static_cast<int>(s.max_fps);
+  const int fps = 15;
   int frames = 0, encoded = 0, changes = 0, changes_encoded = 0;
   I420Frame prev;
   for (int i = 0; i < 60 * fps; ++i) {
