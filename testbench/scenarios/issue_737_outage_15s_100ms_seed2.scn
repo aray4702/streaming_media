@@ -1,0 +1,11 @@
+name issue_737_outage_15s_100ms_seed2
+describe issue_737_outage_15s_100ms with seed 2: ours in the ~1 s video-delay mode after link-up (e2e p95 951 ms), libwebrtc in the fast one (205 ms, loss 22 %) (#738)
+# Yardstick (#738): the seed where the stacks split. Ours sends 64 RTX at 20.2 s ahead of the
+# link-up keyframe (20.3 s) and renders the outage backlog about 1.1 s late; on fast seed 4 only
+# 37 RTX go first. Traced on both stacks (kDefaultTraced) to see what libwebrtc sends into the
+# outage and at link-up.
+duration 40s
+seed 2
+at 0s capacity=2Mbps delay=100ms
+at 5s down
+at 20s up

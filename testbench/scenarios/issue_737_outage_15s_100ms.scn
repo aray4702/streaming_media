@@ -3,7 +3,10 @@ name issue_737_outage_15s_100ms
 describe 15 s outage at 5 s on a 2 Mbps link with 100 ms one-way delay: video.e2e_delay_p95_ms about 0.95 s after #471 (0.35 s before) (issue #737, libwebrtc column for D8 step 2)
 duration 40s
 seed 1
-compare_seeds 20
+# compare_seeds 40 (#738): libwebrtc's net.loss_pct is bimodal on #803's 20 seeds (about 19 or
+# 22 %, the 22 % seeds mostly in the fast video mode); ours is 18.3-19.5 % on all 40 local seeds,
+# and in the ~1 s e2e mode on 26/40. Forty seeds on both stacks settle mean against spread.
+compare_seeds 40
 at 0s capacity=2Mbps delay=100ms
 at 5s down
 at 20s up
