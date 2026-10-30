@@ -1,5 +1,7 @@
 name very_low_capacity_allocator_v2
 describe 100 kbps link with libwebrtc's BitrateAllocator: the sum of the minimums is the target's lower bound (issue #104)
+# 80 seeds in compare-webrtc (#739): render fps is in band there (yardstick #798).
+compare_seeds 80
 duration 40s
 at 0s capacity=100kbps delay=30ms queue=300ms
 # Acceptance for issue #104 (roadmap #64), the very_low_capacity link with
