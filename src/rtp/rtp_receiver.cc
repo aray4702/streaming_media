@@ -372,17 +372,40 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
   // With version 2, AudioDecoderOpusImpl::ParsePayload puts the frame's
   // in-band FEC first, at the previous frame's timestamp and codec level 1;
   // the jitter buffer keeps the higher priority of two at one timestamp.
+  // With a decoder that gives a frame's duration (AudioDecoder::PacketDuration),
+  // version 2 hands the jitter buffer the frame still encoded, and it is
+  // decoded when NetEq's DecodeLoop would decode it: at playout, in timestamp
+  // order (#783).
   const bool neteq_v2 = cfg_.jitter_buffer.version >= 2;
+  AudioDecoder* decoder = cfg_.decoder;
   auto decode = [&](std::span<const uint8_t> frame, uint32_t ts, int red_level) {
     if (neteq_v2) {
-      if (const uint32_t d = cfg_.decoder->FecDuration(frame); d > 0) {
-        if (auto fec = cfg_.decoder->DecodeFec(frame, ts - d)) {
+      if (const uint32_t d = decoder->FecDuration(frame); d > 0) {
+        if (decoder->PacketDuration(frame) > 0) {
+          ++stats_.audio_fec_frames;
+          jitter_buffer_.InsertPacket(
+              ts - d, d,
+              [decoder, payload = std::vector<uint8_t>(frame.begin(), frame.end()), fec_ts = ts - d] {
+                return decoder->DecodeFec(payload, fec_ts).value_or(std::vector<float>{});
+              },
+              now, {1, red_level});
+        } else if (auto fec = decoder->DecodeFec(frame, ts - d)) {
           ++stats_.audio_fec_frames;
           jitter_buffer_.InsertPacket(ts - d, std::move(*fec), now, {1, red_level});
         }
       }
+      if (const uint32_t samples = decoder->PacketDuration(frame); samples > 0) {
+        ++stats_.audio_frames;
+        jitter_buffer_.InsertPacket(
+            ts, samples,
+            [decoder, payload = std::vector<uint8_t>(frame.begin(), frame.end()), ts] {
+              return decoder->Decode(payload, ts).value_or(std::vector<float>{});
+            },
+            now, {0, red_level});
+        return;
+      }
     }
-    auto pcm = cfg_.decoder->Decode(frame, ts);
+    auto pcm = decoder->Decode(frame, ts);
     if (!pcm) {
       ++stats_.audio_decode_failures;
       return;

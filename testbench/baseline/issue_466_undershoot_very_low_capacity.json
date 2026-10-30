@@ -10,7 +10,7 @@
   "audio.longest_interruption_ms": 219,
   "audio.mouth_to_ear_p95_ms": 2734,
   "audio.net_delay_p95_ms": 333.8,
-  "audio.stretch_pct": 8.911,
+  "audio.stretch_pct": 8.986,
   "audio.time_to_first_ms": 49,
   "cc.goodput_kbps": 98.46,
   "cc.max_settle_ms": 40000,

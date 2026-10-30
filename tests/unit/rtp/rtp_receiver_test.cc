@@ -675,6 +675,52 @@ SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
   SM_EXPECT_EQ(r.jitter_buffer().stats().concealment_events, all.jitter_buffer().stats().concealment_events);
 }
 
+namespace {
+// Gives each frame's duration (AudioDecoder::PacketDuration), so the jitter
+// buffer decodes it at playout; records the order of the decodes.
+class PlayoutDecoder : public FecDecoder {
+ public:
+  uint32_t PacketDuration(std::span<const uint8_t>) const override { return 160; }
+  std::optional<std::vector<float>> Decode(std::span<const uint8_t> frame, uint32_t ts) override {
+    order.push_back(ts);
+    return FecDecoder::Decode(frame, ts);
+  }
+  std::vector<uint32_t> order;
+};
+}  // namespace
+
+// NetEqImpl::DecodeLoop decodes each packet when it extracts it, in timestamp
+// order (#783): a RED packet's primary goes into NetEq first, but the
+// redundant (older) frame is decoded first, and a stateful decoder (Opus) sees
+// NetEq's sequence. A copy that a higher priority replaced is never decoded.
+SM_TEST(RtpReceiver, NetEqV2DecodesFramesAtPlayoutInTimestampOrder) {
+  PlayoutDecoder dec;
+  RtpReceiverConfig c = FecAudioCfg(&dec, 2);
+  c.payload_type = 63;
+  c.red = true;
+  RtpReceiver r(c);
+  loss::RedEncoder red(1);
+  red.Encode(111, 0, Bytes(40, 10));  // Frame 0 is lost; packet 1 repeats it.
+  for (uint16_t i = 1; i < 4; ++i) {
+    RtpPacket p;
+    p.ssrc = 7;
+    p.payload_type = 63;
+    p.seq = i;
+    p.timestamp = 160u * i;
+    Bytes frame(40, static_cast<uint8_t>(10 + i));
+    frame[1] = 1;  // In-band FEC of the frame before, which the RED copy or the frame itself replaces.
+    p.payload = red.Encode(111, p.timestamp, frame);
+    r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
+  }
+  SM_EXPECT_TRUE(dec.order.empty());  // Nothing is decoded on arrival.
+  SM_EXPECT_EQ(r.stats().audio_frames, 6u);
+  std::vector<float> out(80);
+  for (int t = 0; t < 100; t += 10) r.GetAudio(out, Timestamp::Millis(100 + t));
+  SM_EXPECT_EQ(dec.order.size(), 4u);
+  for (size_t i = 0; i < dec.order.size(); ++i) SM_EXPECT_EQ(dec.order[i], 160u * i);
+  SM_EXPECT_TRUE(dec.fec_ts.empty());
+}
+
 SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
   FecDecoder dec;
   RtpReceiver r(FecAudioCfg(&dec, 1));
