@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "sm/audio/audio_level.h"
+#include "sm/core/audio_frame_operations.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtp_sender.h"
@@ -439,6 +440,59 @@ SM_TEST(RtpSender, AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket) 
   s2.AnalyzeAudioCapture(loud, false);
   s2.SendAudio(opus, 960, false, Timestamp::Millis(20));
   SM_EXPECT_EQ(s2.stats().audio_level_packets, 0u);
+}
+
+// #879: ProcessAudioCapture mutes as ChannelSend::ProcessAndEncodeAudio (channel_send.cc:909-924):
+// AudioFrameOperations::Mute with the stream's previous mute state, then the level. The frame
+// where mute starts fades out over its last 128 samples, muted frames after it are zeros, and
+// the frame where mute ends fades in over its first 128 samples.
+SM_TEST(RtpSender, ProcessAudioCaptureFadesOnMuteAsChannelSend) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kAudioLevel);
+  RtpSenderConfig c;
+  c.video = false;
+  c.extensions = &map;
+  RtpSender s(c);
+  const std::vector<int16_t> loud(960, 1000);  // 10 ms of stereo at 48 kHz.
+  auto frame = loud;
+  s.ProcessAudioCapture(frame, 2, false);
+  SM_EXPECT_TRUE(frame == loud);
+  // Mute starts: kept up to sample 351, then 1000 * (1 - k/128) truncated, 0 on the last.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, true);
+  SM_EXPECT_EQ(frame[2 * 351], 1000);
+  SM_EXPECT_EQ(frame[2 * 352], 992);
+  SM_EXPECT_EQ(frame[2 * 352 + 1], 992);
+  SM_EXPECT_EQ(frame[2 * 478], 7);
+  SM_EXPECT_EQ(frame[2 * 479], 0);
+  SM_EXPECT_EQ(frame[2 * 479 + 1], 0);
+  // Muted throughout: zeros.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, true);
+  SM_EXPECT_TRUE(frame == std::vector<int16_t>(960, 0));
+  // Mute ends: ramps up over the first 128 samples per channel.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, false);
+  SM_EXPECT_EQ(frame[0], 7);
+  SM_EXPECT_EQ(frame[1], 7);
+  SM_EXPECT_EQ(frame[2 * 127], 1000);
+  SM_EXPECT_EQ(frame[2 * 479], 1000);
+  // The level is analyzed after the fade, as ChannelSend: frames 1-4 above give the packet's level.
+  s.SendAudio(Bytes(60, 3), 960, false, Timestamp::Millis(40));
+  dsp::RmsLevel r;
+  r.Analyze(std::span<const int16_t>(loud));
+  auto faded = loud;
+  dsp::MuteAudioFrame(faded, 2, false, true);
+  r.Analyze(std::span<const int16_t>(faded));
+  r.AnalyzeMuted(loud.size());
+  auto rising = loud;
+  dsp::MuteAudioFrame(rising, 2, true, false);
+  r.Analyze(std::span<const int16_t>(rising));
+  const auto out = s.TakePackets();
+  SM_ASSERT_EQ(out.size(), 1u);
+  const auto raw = sync::ExtensionAccessor(map).GetRaw(out[0].packet, sync::uri::kAudioLevel);
+  SM_ASSERT_TRUE(raw.has_value());
+  SM_EXPECT_EQ(int{(*raw)[0]}, 0x80 | r.Average());
 }
 
 SM_TEST(RtpSender, MediaHeaderSizeCountsTheExtensionsTheNextPacketCarries) {
