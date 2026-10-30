@@ -10,9 +10,11 @@
 #include "sm/timing/video_jitter_estimator.h"
 #include "sm/video/codec_fallback.h"
 #include "sm/video/content_policy.h"
+#include "sm/video/frame_cadence_adapter.h"
 #include "sm/video/frame_scheduler.h"
 #include "sm/video/freeze_detector.h"
 #include "sm/video/orientation.h"
+#include "sm/video/quality_convergence.h"
 #include "sm/video/quality_scaler.h"
 #include "sm_test.h"
 
@@ -166,35 +168,81 @@ SM_TEST(E2E_Orientation, RotatingPhoneRendersUpright) {
   SM_EXPECT_EQ(exact, frames);
 }
 
-SM_TEST(E2E_ContentPolicy, ScreenShareEncodesOnlyChanges) {
-  // 60 s of screen sharing at 15 fps: a new slide every 10 s, a blinking
-  // cursor for 2 s of every 10 s, otherwise static.
-  ContentSettings s = SettingsFor(ContentHint::kText, true);
-  FrameChangeDetector cd(TimeDelta::Seconds(1));
-  const int fps = static_cast<int>(s.max_fps);
-  int frames = 0, encoded = 0, changes = 0, changes_encoded = 0;
+SM_TEST(E2E_ContentPolicy, ScreenShareZeroHertzRepeatsAsLibwebrtc) {
+  // 60 s of screen sharing, max 15 fps, VP8:
+  // a new slide every 10 s and a cursor blinking at 3.75 Hz for 2 s of every
+  // 10 s. The capturer delivers a frame only when the screen changes (min fps
+  // 0), as a zero-hertz source; FrameCadenceAdapter repeats the last frame
+  // while the screen is static, and the encoder's QP (a model: 40 on a new
+  // frame, 4 lower on each refresh) feeds QualityConvergenceController as
+  // VideoStreamEncoder does (video_stream_encoder.cc:2316-2325).
+  const double fps = 15;
+  FrameCadenceAdapter a;
+  QualityConvergenceController quality;
+  quality.Initialize(1, std::nullopt, VideoCodecType::kVP8);
+  a.SetZeroHertzModeEnabled(FrameCadenceAdapter::ZeroHertzModeParams{1}, Timestamp::Millis(0));
+  a.OnConstraintsChanged({0.0, fps}, Timestamp::Millis(0));
+  SM_ASSERT_TRUE(a.zero_hertz());
+
+  const int64_t period_us = 66667;  // 1 s / 15, rounded as unit_base.h.
+  std::vector<int64_t> change_us, encode_us;
+  std::vector<bool> encode_repeat;
+  int qp = 0;
+  auto run_until = [&](Timestamp until) {
+    for (Timestamp next = a.NextProcessTime(); next.IsFinite() && next <= until; next = a.NextProcessTime()) {
+      for (const auto& o : a.Process(next)) {
+        if (o.kind != FrameCadenceAdapter::Output::Kind::kEncode) continue;
+        encode_us.push_back(next.us());
+        encode_repeat.push_back(o.is_repeat);
+        qp = o.is_repeat ? std::max(qp - 4, 0) : 40;
+        a.UpdateLayerQualityConvergence(0, quality.AddSampleAndCheckTargetQuality(0, qp, o.is_repeat));
+      }
+    }
+  };
   I420Frame prev;
-  for (int i = 0; i < 60 * fps; ++i) {
-    int64_t t_ms = static_cast<int64_t>(i) * 1000 / fps;
-    int slide = static_cast<int>(t_ms / 10000);
-    I420Frame f = MakeTestFrame(320, 180, slide * 50);
+  for (int i = 0; i < static_cast<int>(60 * fps); ++i) {
+    int64_t t_ms = static_cast<int64_t>(i) * 1000 / static_cast<int64_t>(fps);
+    I420Frame f = MakeTestFrame(320, 180, static_cast<int>(t_ms / 10000) * 50);
     bool blink = (t_ms % 10000) > 3000 && (t_ms % 10000) < 5000 && (i % 4 < 2);
     if (blink) {
       for (int y = 40; y < 52; ++y) f.Y(200, y) = 255;
     }
-    bool changed = !(f == prev);
+    run_until(Timestamp::Millis(t_ms));
+    if (!(f == prev)) {  // The capturer only delivers changes.
+      a.OnFrame(i, Timestamp::Millis(t_ms), Timestamp::Millis(t_ms));
+      change_us.push_back(t_ms * 1000);
+      run_until(Timestamp::Millis(t_ms));
+    }
     prev = f;
-    bool enc = cd.ShouldEncode(f, Timestamp::Millis(t_ms));
-    ++frames;
-    encoded += enc;
-    changes += changed;
-    changes_encoded += changed && enc;
   }
-  SM_RECORD("screen_encode_ratio", static_cast<double>(encoded) / frames);
-  SM_RECORD("content_changes", changes);
-  SM_EXPECT_EQ(changes_encoded, changes);  // Every change goes out immediately.
-  SM_EXPECT_LT(static_cast<double>(encoded) / frames, 0.25);
-  SM_EXPECT_GE(encoded, 60);  // At least the 1/s keep-alive.
+  run_until(Timestamp::Seconds(60));
+
+  // Every change is encoded one frame period after it arrives.
+  size_t originals = 0;
+  for (size_t k = 0; k < encode_us.size(); ++k) {
+    if (encode_repeat[k]) continue;
+    SM_ASSERT_TRUE(originals < change_us.size());
+    SM_EXPECT_EQ(encode_us[k] - change_us[originals], period_us);
+    ++originals;
+  }
+  SM_EXPECT_EQ(originals, change_us.size());
+  // Static screen: repeats at the frame period until QP reaches VP8's static
+  // threshold (40 -> 16 -> 12 after 7 refreshes), then one per second.
+  // A gap is a frame period (66 667 us) or the idle period, never longer.
+  int64_t max_gap = 0, idle_gaps = 0;
+  for (size_t k = 1; k < encode_us.size(); ++k) {
+    int64_t gap = encode_us[k] - encode_us[k - 1];
+    max_gap = std::max(max_gap, gap);
+    idle_gaps += gap == 1000000;
+  }
+  SM_EXPECT_EQ(max_gap, 1000000);  // kZeroHertzIdleRepeatRatePeriod.
+  // Per 10 s: 2 idle repeats before the cursor blinks (from 0.53 s) and 4
+  // after it stops (from 5.53 s).
+  SM_EXPECT_EQ(idle_gaps, 36);
+  // While the cursor blinks every 133 ms, a repeat fills each gap: 15 fps.
+  const double encode_ratio = static_cast<double>(encode_us.size()) / (60 * fps);
+  SM_RECORD("screen_encode_ratio", encode_ratio);
+  SM_RECORD("content_changes", static_cast<double>(change_us.size()));
 }
 
 SM_TEST(E2E_FrameScheduler, SmoothPlayoutOverJitteryNetwork) {
