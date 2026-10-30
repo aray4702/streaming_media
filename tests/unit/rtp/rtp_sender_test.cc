@@ -314,10 +314,11 @@ SM_TEST(RtpSender, PaddingUsesTheRtxStreamAndKeepsSequenceNumbersApart) {
   SM_EXPECT_EQ(pad.packet.payload_type, 97);
   SM_EXPECT_TRUE(pad.packet.payload.empty());
   SM_EXPECT_EQ(pad.packet.size(), 196u);
-  // A resend after the padding takes the next RTX sequence number.
+  // A resend after the padding takes the next RTX sequence number, at release.
+  s.AssignSequenceNumber(pad, Timestamp::Millis(1));
   uint16_t want[] = {65534};
   s.OnNack(want, Timestamp::Millis(50), TimeDelta::Millis(10));
-  auto rtx = s.TakePackets();
+  auto rtx = Release(s, Timestamp::Millis(50));
   SM_ASSERT_EQ(rtx.size(), 1u);
   SM_EXPECT_EQ(static_cast<uint16_t>(rtx[0].packet.seq - pad.packet.seq), 1u);
   // Sizes are clamped to what padding can express.
@@ -493,13 +494,14 @@ SM_TEST(RtpSender, GeneratePaddingEmptyPacketsAreFullOnTheRtxSsrc) {
   RtpSender s(PaddingCfg(&ext));
   auto out = s.GeneratePadding(600, Timestamp::Millis(5));
   SM_ASSERT_EQ(out.size(), 3u);  // 255 + 255 + 255 >= 600
+  for (auto& o : out) SM_EXPECT_EQ(o.packet.timestamp, 0u);  // Set at release (PacketSequencer).
+  for (auto& o : out) s.AssignSequenceNumber(o, Timestamp::Millis(5));
   uint16_t prev_seq = out[0].packet.seq;
   for (size_t i = 0; i < out.size(); ++i) {
     SM_EXPECT_EQ(out[i].packet.ssrc, 0x2222u);
     SM_EXPECT_EQ(out[i].packet.payload_type, 97);
     SM_EXPECT_EQ(out[i].packet.padding_size, 255);
     SM_EXPECT_TRUE(out[i].packet.payload.empty());
-    SM_EXPECT_EQ(out[i].packet.timestamp, 0u);  // Set at release (PacketSequencer).
     SM_EXPECT_TRUE(out[i].kind == PacketKind::kPadding);
     SM_EXPECT_TRUE(out[i].priority == cc::PacketPriority::kPadding);
     if (i > 0) SM_EXPECT_EQ(out[i].packet.seq, static_cast<uint16_t>(prev_seq + 1));
@@ -674,8 +676,40 @@ SM_TEST(RtpSender, GeneratePaddingResendsTheNewestLargePacketAsPayload) {
   SM_EXPECT_TRUE(out[0].kind == PacketKind::kPadding);
   SM_EXPECT_EQ(out[0].packet.timestamp, 9000u);
   SM_EXPECT_EQ(s.stats().payload_padding_packets, 2u);
-  // The RTX sequence numbers are used in order.
+  // The RTX sequence numbers are used in order, at release.
+  for (auto& o : out) s.AssignSequenceNumber(o, Timestamp::Millis(2));
   SM_EXPECT_EQ(out[1].packet.seq, static_cast<uint16_t>(out[0].packet.seq + 1));
+}
+
+// PacketSequencer::Sequence (packet_sequencer.cc:71-75) numbers a packet on the RTX SSRC when the
+// pacer releases it (PacketRouter::SendPacket). A resend or padding packet that is built but never
+// released takes no RTX sequence number, so the next one released follows the last one sent
+// without a gap (issue #854: on very_low_capacity ours used one more number than libwebrtc).
+SM_TEST(RtpSender, RtxSequenceNumbersAreAssignedAtReleaseOnly) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = PaddingCfg(&ext);
+  c.rtx.initial_seq = 893;
+  RtpSender s(c);
+  SendAndRelease(s, {900, 900, 900}, 9000, Timestamp::Millis(1));
+  const uint16_t first = 65534;
+  // Two resends built; the pacer releases only the second (the first is never sent).
+  uint16_t want[] = {first, static_cast<uint16_t>(first + 1)};
+  s.OnNack(want, Timestamp::Millis(10), TimeDelta::Millis(20));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 2u);
+  // Empty padding built and dropped too.
+  auto dropped = s.GeneratePadding(100, Timestamp::Millis(11));
+  SM_ASSERT_FALSE(dropped.empty());
+  s.AssignSequenceNumber(rtx[1], Timestamp::Millis(12));
+  SM_EXPECT_EQ(rtx[1].packet.seq, 893);
+  auto pad = s.GeneratePadding(100, Timestamp::Millis(13));
+  SM_ASSERT_FALSE(pad.empty());
+  s.AssignSequenceNumber(pad[0], Timestamp::Millis(13));
+  SM_EXPECT_EQ(pad[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(pad[0].packet.seq, 894);
+  // The media sequence numbers are untouched.
+  s.SendVideoFrame(Chunks({10}), 9001, Timestamp::Millis(20));
+  SM_EXPECT_EQ(Release(s, Timestamp::Millis(20))[0].packet.seq, 1);
 }
 
 // kMaxPaddingSizeFactor: a packet that would take the total over 3 x the target is not used; the

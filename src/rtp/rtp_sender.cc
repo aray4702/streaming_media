@@ -56,6 +56,7 @@ RtpSender::RtpSender(RtpSenderConfig cfg)
       rtx_padding_payload_type_(RtxPaddingPayloadType(cfg_, MakeRtxConfig(cfg_))),
       red_(std::max(1, cfg_.red_distance)),
       next_seq_(cfg_.initial_seq),
+      next_rtx_seq_(cfg_.rtx.initial_seq),
       mid_remaining_(cfg_.mid_packets) {
   if (cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecGenerator>(cfg_.ulpfec.red_payload_type,
@@ -87,14 +88,23 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
 }
 
 void RtpSender::AssignSequenceNumber(SenderPacket& p, Timestamp now) {
-  // PacketSequencer::Sequence. RTX packets keep the number RtxSender gave them.
+  // PacketSequencer::Sequence. A packet on the RTX SSRC (a resend or padding) takes the next RTX
+  // number here, at release, as libwebrtc does (packet_sequencer.cc:71-75), so a resend or padding
+  // packet the pacer never sends uses no number (issue #854).
+  if (p.kind == PacketKind::kRtx) {
+    p.packet.seq = next_rtx_seq_++;
+    return;
+  }
   if (p.kind == PacketKind::kPadding) {
     if (p.packet.ssrc == cfg_.ssrc) {
       // PopulatePaddingFields on the media SSRC: the last media packet's timestamp and payload type.
       p.packet.timestamp = sequencer_last_rtp_timestamp_;
       p.packet.payload_type = static_cast<uint8_t>(sequencer_last_payload_type_);
       p.packet.seq = next_seq_++;
-    } else if (p.packet.payload.empty()) {
+      return;
+    }
+    p.packet.seq = next_rtx_seq_++;
+    if (p.packet.payload.empty()) {
       // On the RTX SSRC, empty padding only (payload padding keeps the resent packet's timestamp).
       // libwebrtc advances the timestamp once the clock is past zero, which in a call means once a
       // media packet has gone out; here time can start at 0, so that is what is checked.
@@ -386,7 +396,6 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
   if (cfg_.rtx_ssrc) {
     p.ssrc = *cfg_.rtx_ssrc;
     p.payload_type = rtx_padding_payload_type_;
-    p.seq = rtx_.AllocateSeq();
   } else {
     p.ssrc = cfg_.ssrc;
     p.payload_type = cfg_.payload_type;
@@ -440,7 +449,6 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, Timest
     if (rtx) {
       p.ssrc = *cfg_.rtx_ssrc;
       p.payload_type = rtx_padding_payload_type_;
-      p.seq = rtx_.AllocateSeq();
     } else {
       p.ssrc = cfg_.ssrc;
     }
