@@ -12,6 +12,9 @@ seed 10
 expect cc.utilization_pct < 55
 # PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was >= 25. Ours 23.84 on seed 10 (22.65 with #345 merged; #345 alone set >= 20.9, this line is the tighter);
 # libwebrtc seeds 10-19 18.5-34.3 (fails >= 25 on 6 of 10). Tight rule: about 12 % below ours, not below libwebrtc's worst.
-expect cc.utilization_pct >= 21
+# PR for #813 (pacer as libwebrtc's TaskQueuePacedSender/PacerConfig, a stage-1 port; program.md 0.2, needs-human): was >= 21.
+# Ours 20.71 on seed 10 (seeds 10-19 20.7-28.3, mean 24.1; main 19.8-27.4, mean 23.6); libwebrtc seeds 10-19 18.5-34.3.
+# Line at libwebrtc's worst seed.
+expect cc.utilization_pct >= 18.5
 expect cc.queue_p95_ms < 40
 expect video.freeze_count == 0

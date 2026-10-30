@@ -133,6 +133,8 @@ class PacingController : public MetricsSource {
  public:
   explicit PacingController(PacingControllerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  // A rate as it comes out of a PacerConfig with this time window: whole bytes per window.
+  static DataRate ThroughPacerConfig(DataRate rate, TimeDelta time_window);
   // Where padding comes from (PacketRouter::GeneratePadding): keep-alives, the first packet of
   // a probe and the padding rate ask it for packets, and the pacer accounts their real sizes.
   // Unset: fixed-size placeholders. A generator that returns nothing for the padding rate

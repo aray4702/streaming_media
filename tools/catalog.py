@@ -738,10 +738,13 @@ ALGORITHMS = [
                "burst (padding fills it when there is no media), times the next burst by the bytes sent at the "
                "cluster rate and drops a cluster whose burst is more than 10 ms late (at most 5 pending, 5 s "
                "old). The pacer is also scheduled as `TaskQueuePacedSender` does (`Pacer::ProcessScheduled`, #123): a "
-               "pass runs only when a packet, a rate or the pause state changed or the timer of the last pass is due, "
-               "and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
+               "pass runs only when a packet was enqueued, a probe cluster was added, a rate or the congestion state changed or "
+               "the pacer resumed while packets are queued (`PostMaybeProcessPackets`, #813), or the timer of the last "
+               "pass is due, and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
                "`PacingController` every millisecond lets the early-return branch of `ProcessPackets` re-base its "
-               "debt every call and sends queued packets between the audio packets instead of with them.",
+               "debt every call and sends queued packets between the audio packets instead of with them. The rates reach "
+               "the pacer as `PacerConfig` carries them, whole bytes per 40 ms window (#813), and after the pushback "
+               "target of the same GoogCC update (`GetPacingRates` in `MaybeTriggerOnNetworkChanged`).",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
                       "congestion keep-alives). `PrioritizedPacketQueue` (#166) ports prioritized_packet_queue_unittest.cc: "
