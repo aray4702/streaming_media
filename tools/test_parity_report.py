@@ -244,9 +244,10 @@ class Owners(unittest.TestCase):
         # join #411's clusters (D2 very low capacity, D4 low bandwidth, D8 outage, D9 policer); behind
         # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
         # #733: D4 is retired; issue_457's render fps is seed noise (in band on 80 seeds), #479's note.
-        cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 411,
-                 ("issue_12_lossbwe_policer", "net.loss_pct"): 411,
-                 ("issue_12_lossbwe_policer", "repair.overhead_pct"): 411,
+        # #741: D9's policer cells are in band on 80 seeds; #479's notes own them.
+        cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 479,
+                 ("issue_12_lossbwe_policer", "net.loss_pct"): 479,
+                 ("issue_12_lossbwe_policer", "repair.overhead_pct"): 479,
                  ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 411,
                  ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
                  ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
@@ -267,8 +268,8 @@ class Owners(unittest.TestCase):
         # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
         # through StreamSynchronization, so they go to the scenario's video/CC owner with a note;
         # issue_451 keeps #451's not-comparable note. #723 closed #504 and moved its issue_533 NetEq
-        # cells and the receive-side cells below to #783.
-        cells = {"issue_12_lossbwe_policer": 411, "issue_12_lossbwe_shallow": 411,
+        # cells and the receive-side cells below to #783. #741 gives the policer audio rule #719's number.
+        cells = {"issue_12_lossbwe_policer": 719, "issue_12_lossbwe_shallow": 411,
                  "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
                  "issue_533_opus_decoder_frame_older_than_window": 783,
                  # On #716's run these were owned only through the catch-all's #504: NetEq on audio-only
@@ -289,6 +290,23 @@ class Owners(unittest.TestCase):
             self.assertIn(cells[name], o, (name, metric))
             self.assertEqual(783 in o, cells[name] == 783, (name, metric))
 
+
+    def test_741_no_policer_cell_is_owned_only_by_411(self):
+        # #741 (#411 D9): the policer's e2e, loss and overhead cells are in band on 80 seeds (#479's notes),
+        # its A/V offset is seed noise with #741's note, and its audio cells keep #719's A/V sync note.
+        metrics = ["video.e2e_delay_p95_ms", "net.loss_pct", "repair.overhead_pct", "sync.av_offset_p95_ms",
+                   "audio.jb_delay_p95_ms", "audio.mouth_to_ear_p95_ms", "audio.concealed_pct"]
+        d = data(scn("issue_12_lossbwe_policer", {m: ([300] * 5, [100] * 5) for m in metrics}))
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        # Everything closed: a cell is owned only through a rule with a note.
+        states = {i: "closed" for i in pr.owner_issues(owners)}
+        g = {x["metric"]: x["owners"] for x in pr.report(d, owners, states=states)}
+        self.assertEqual(sorted(g), sorted(metrics))
+        for m, o in g.items():
+            self.assertTrue(o, m)
+            self.assertNotIn(411, o, m)
+        self.assertEqual(g["sync.av_offset_p95_ms"], [741])
 
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):
