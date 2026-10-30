@@ -158,6 +158,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     return ReceivedKind::kMalformed;
   }
   ++stats_.packets;
+  CommitReceiveStatistics();
   const RtpPacket& p = *parsed;
   if (cfg_.extensions && cfg_.feedback) {
     if (auto tseq = sync::ExtensionAccessor(*cfg_.extensions).GetTransportSeq(p)) cfg_.feedback->OnPacket(*tseq, now);
@@ -191,12 +192,12 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     // Padding on the media SSRC (no RTX configured) holds a media sequence
     // number: it is received, so it is no gap, no NACK and no loss in the RR.
     ++stats_.padding;
-    stats_rtp_.OnPacket(p.seq, p.timestamp, now);
+    CountReceived(p.seq, p.timestamp, now);
     if (cfg_.video) OnEmptyPacket(p.seq, now);
     return ReceivedKind::kPadding;
   }
   // FEC packets hold media sequence numbers: they count in the receive statistics too.
-  stats_rtp_.OnPacket(p.seq, p.timestamp, now);
+  CountReceived(p.seq, p.timestamp, now);
   if (cfg_.video) {
     const ReceivedKind kind = OnVideoRtp(p, now, /*recovered=*/false);
     if (kind == ReceivedKind::kMedia) ++stats_.media;
@@ -205,6 +206,21 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   ++stats_.media;
   OnAudioMedia(p, now);
   return ReceivedKind::kMedia;
+}
+
+void RtpReceiver::CountReceived(uint16_t seq, uint32_t rtp_ts, Timestamp now) {
+  if (defer_receive_statistics_ && cfg_.video) {
+    pending_count_ = PendingCount{seq, rtp_ts, now};
+    return;
+  }
+  stats_rtp_.OnPacket(seq, rtp_ts, now);
+}
+
+void RtpReceiver::CommitReceiveStatistics() {
+  if (!pending_count_) return;
+  const PendingCount c = *pending_count_;
+  pending_count_.reset();
+  stats_rtp_.OnPacket(c.seq, c.rtp_ts, c.at);
 }
 
 ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered) {

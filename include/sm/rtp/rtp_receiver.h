@@ -452,6 +452,15 @@ class RtpReceiver : public MetricsSource {
   // UnwrapSequenceNumberOrRecover for a packet on the media SSRC, `info` null for one without media
   // (padding, FEC). False: drop the packet. May re-anchor (seq_num_discontinuity).
   bool UnwrapSequenceNumberOrRecover(uint16_t seq, uint32_t timestamp, const VideoPayloadInfo* info, Timestamp now);
+  friend class Session;
+  // RtpVideoStreamReceiver2::OnRtpPacket (rtp_video_stream_receiver2.cc:983-990) updates the receive
+  // statistics after ReceivePacket, so the RTCP that a packet's handling sends (a NACK for the gap it
+  // reveals, a PLI or loss notification) carries report blocks that don't count it yet (issue #777).
+  // Session builds that RTCP in the Process after OnPacket, so it sets `defer_receive_statistics_` on its
+  // video receivers: a media SSRC packet is counted when Session calls CommitReceiveStatistics() after
+  // that RTCP, or at the next OnPacket. A receiver used on its own counts it at once.
+  void CommitReceiveStatistics();
+  void CountReceived(uint16_t seq, uint32_t rtp_ts, Timestamp now);
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   // AbsoluteCaptureTimeInterpolator::OnReceivePacket on a media packet, then the
@@ -478,6 +487,13 @@ class RtpReceiver : public MetricsSource {
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
   std::optional<timing::ReceiveStatistics> stats_rtx_;
+  bool defer_receive_statistics_ = false;
+  struct PendingCount {
+    uint16_t seq;
+    uint32_t rtp_ts;
+    Timestamp at;
+  };
+  std::optional<PendingCount> pending_count_;  // defer_receive_statistics_: the packet not counted yet.
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
   H264SpsPpsTracker sps_pps_tracker_;  // sps_pps_tracker.

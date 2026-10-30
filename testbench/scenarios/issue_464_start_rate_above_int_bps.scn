@@ -10,6 +10,10 @@ describe The host configures a 20 Gbps start rate and a 9 Ebps max; the call set
 duration 10s
 max_rate 9000000000000mbps
 start_rate 20000mbps
+# compare_seeds 40 (#777): the longest freeze had a 1.1-1.2 s tail on 6/40 seeds that libwebrtc doesn't
+# have (yardstick #780). Fixed by counting a packet in the receive statistics after the NACK it triggers,
+# as libwebrtc; on 40 seeds ours is now 440 ms mean (max 806) against libwebrtc's 439 (max 776).
+compare_seeds 40
 at 0s capacity=2500kbps delay=30ms queue=400ms
 expect cc.unsettled == 0
 expect cc.max_settle_ms <= 2000

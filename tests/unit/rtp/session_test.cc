@@ -1494,3 +1494,71 @@ SM_TEST(Session, StreamsStartAtLibwebrtcsRandomSequenceNumberAndTimestamp) {
     SM_EXPECT_TRUE(*audio_marker);  // RTPSenderAudio::MarkerBit: the stream's first packet.
   }
 }
+
+// Issue #777: RtpVideoStreamReceiver2::OnRtpPacket updates the receive statistics after
+// ReceivePacket (rtp_video_stream_receiver2.cc:983-990), so the NACK that a packet's gap triggers
+// goes out with report blocks that don't count that packet yet; the next report counts it.
+// libwebrtc's sender then sees the gap's loss in one report (fraction 54 at 610 ms on
+// issue_464_start_rate_above_int_bps, every seed).
+SM_TEST(Session, TheNackForAGapCarriesReportBlocksWithoutThePacketThatRevealedIt) {
+  Pair p;
+  struct Report {
+    bool nack = false;
+    timing::ReportBlock video;
+  };
+  std::vector<Report> reports;
+  auto read = [&](const Bytes& d) {
+    auto split = loss::SplitCompoundRtcp(d);
+    if (!split || split->empty() || (*split)[0].type != loss::RtcpType::kReceiverReport) return;
+    auto rr = timing::ParseReceiverReport((*split)[0].data);
+    if (!rr) return;
+    Report r;
+    for (const auto& b : rr->blocks) {
+      if (b.ssrc == 0x200) r.video = b;
+    }
+    if (r.video.ssrc == 0) return;
+    for (const auto& v : *split) r.nack = r.nack || v.type == loss::RtcpType::kNack;
+    reports.push_back(r);
+  };
+  auto deliver = [&](const Bytes& bytes, Timestamp now) {
+    // Each arriving packet is handled, and its RTCP sent, before the next one.
+    p.b.OnPacket(bytes, now);
+    p.b.Process(now);
+    for (auto& r : p.b.TakeOutgoing()) {
+      if (r.kind == OutgoingKind::kRtcp) read(r.bytes);
+    }
+  };
+  // Video sequence numbers per frame, in sending order (the RTP timestamps start at random).
+  std::vector<std::pair<uint32_t, std::vector<uint16_t>>> frames;
+  for (int64_t t = 0; t < 2000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 100 == 0) p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(t == 0, 3000, 1188), static_cast<uint32_t>(t * 90), now);
+    p.a.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kVideo) {
+        const auto rtp = RtpPacket::Parse(o.bytes);
+        if (frames.empty() || frames.back().first != rtp->timestamp) frames.push_back({rtp->timestamp, {}});
+        frames.back().second.push_back(rtp->seq);
+        if (frames.size() == 2) continue;  // The second frame is lost on the way.
+      }
+      deliver(o.bytes, now);
+    }
+    p.b.Process(now);
+    for (auto& r : p.b.TakeOutgoing()) {
+      if (r.kind == OutgoingKind::kRtcp) read(r.bytes);
+    }
+  }
+  SM_ASSERT_GE(frames.size(), 3u);
+  const uint16_t keyframe_last = frames[0].second.back();
+  const auto lost = static_cast<int32_t>(frames[1].second.size());
+  const uint16_t revealing = frames[2].second.front();
+  const auto first_nack = std::find_if(reports.begin(), reports.end(), [](const Report& r) { return r.nack; });
+  SM_ASSERT_TRUE(first_nack != reports.end());
+  // The third frame's first packet revealed the gap: the NACK's block ends at the keyframe, no loss yet.
+  SM_EXPECT_EQ(first_nack->video.extended_highest_seq & 0xffff, keyframe_last);
+  SM_EXPECT_EQ(first_nack->video.cumulative_lost, 0);
+  // The next report counts it, with the lost frame.
+  SM_ASSERT_TRUE(first_nack + 1 != reports.end());
+  SM_EXPECT_GE((first_nack + 1)->video.extended_highest_seq & 0xffff, revealing);
+  SM_EXPECT_EQ((first_nack + 1)->video.cumulative_lost, lost);
+}
