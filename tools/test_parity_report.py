@@ -245,13 +245,14 @@ class Owners(unittest.TestCase):
         # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
         # #733: D4 is retired; issue_457's render fps is seed noise (in band on 80 seeds), #479's note.
         # #741: D9's policer cells are in band on 80 seeds; #479's notes own them.
+        # #739: D2's render fps is seed noise too (in band on 80 seeds, yardstick #798), #739's note.
         cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 479,
                  ("issue_12_lossbwe_policer", "net.loss_pct"): 479,
                  ("issue_12_lossbwe_policer", "repair.overhead_pct"): 479,
                  ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 411,
                  ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
                  ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
-                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 411,
+                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 739,
                  ("issue_457_libopus_audio_rate", "video.render_fps"): 479,
                  ("issue_430_av_outage_6s", "video.e2e_delay_p95_ms"): 474,
                  ("issue_29_ulpfec_over_red", "video.avg_kbps"): 492,
