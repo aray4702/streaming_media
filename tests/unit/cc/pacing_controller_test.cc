@@ -581,3 +581,22 @@ SM_TEST(PacingController, PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPac
   SM_EXPECT_TRUE(off.non_audio > 50);
   SM_EXPECT_TRUE(off.with_audio < off.non_audio);
 }
+
+// SetPacingRates is SetPacerConfig(PacerConfig::Create(..., send_burst_interval_)): the rates travel as
+// whole bytes per time window (DataRate * TimeDelta rounds to the nearest byte) and are read back as
+// bytes / window (api/transport/network_types.{h,cc}; api/units/data_rate.h). Issue #813: GoogCC's
+// 304495 bps padding rate reaches libwebrtc's pacer as 304400 bps, which moves its padding timer.
+SM_TEST(PacingController, RatesArriveAsWholeBytesPerTimeWindow) {
+  const TimeDelta k40ms = TimeDelta::Millis(40);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(304495), k40ms).bps(), 304400);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(334945), k40ms).bps(), 335000);
+  // A zero window counts as 1 s (PacerConfig::rate_window).
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(304495), TimeDelta::Zero()).bps(), 304496);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::Zero(), k40ms).bps(), 0);
+
+  PacingControllerConfig cfg;
+  cfg.send_burst_interval = k40ms;
+  PacingController pacer(cfg);
+  pacer.SetPacingRates(DataRate::BitsPerSec(334945), DataRate::BitsPerSec(304495));
+  SM_EXPECT_EQ(pacer.pacing_rate().bps(), 335000);
+}

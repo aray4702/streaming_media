@@ -272,6 +272,8 @@ class SendSideController : public MetricsSource {
 
  private:
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
+  void ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now);
+  void ApplyPacer(const cc::NetworkControlUpdate& u);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
   void PostTargetRate(Timestamp now);

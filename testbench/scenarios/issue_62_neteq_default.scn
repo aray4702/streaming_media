@@ -16,7 +16,11 @@ expect audio.interruptions == 0
 # 0.531 0.714 0.357 0.729 0.333 (mean 0.510; main's test bench seed 1 0.442); libwebrtc seeds 1-10 0.963 0.491 0.297 0.282
 # 0.445 0.534 0.755 0.503 0.459 0.356 (mean 0.509). Seed-1 outlier, mean in band: 10 % above seed 1 (0.84 x 1.10), below
 # libwebrtc's worst seed 0.963.
-expect audio.concealed_pct < 0.93
+# PR for #813 (pacer as libwebrtc's TaskQueuePacedSender/PacerConfig, a stage-1 port; program.md 0.2, needs-human): was < 0.93.
+# audio_only_lossy seed 1 is now packet for packet libwebrtc's forward link (2357 packets), and libwebrtc conceals 0.963 there.
+# Ours seeds 1-10 0.943 0.246 0.297 0.287 0.439 0.420 0.755 0.462 0.460 0.380 (mean 0.473); libwebrtc seeds 1-10 0.963 0.491
+# 0.297 0.282 0.445 0.534 0.755 0.503 0.459 0.356 (mean 0.509). Line at libwebrtc's worst seed.
+expect audio.concealed_pct < 0.964
 expect audio.jb_delay_p95_ms >= 55
 expect audio.mouth_to_ear_p95_ms >= 130
 # PR for #457 (libopus 55513e81 replaces the Opus size model; program.md 0.2, needs-human): was <= 170. Ours 175.3 on seed 1

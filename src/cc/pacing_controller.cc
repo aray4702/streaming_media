@@ -53,7 +53,20 @@ Timestamp PacingController::Cur(Timestamp now) {
 
 // --- Configuration ---------------------------------------------------------
 
+// PacerConfig::Create and data_rate() / pad_rate() (api/transport/network_types.{h,cc}): a rate reaches the
+// pacer as a whole number of bytes per time window (DataRate * TimeDelta rounds to the nearest byte), read back
+// as bytes / window, truncated to bps. A zero window counts as 1 s (issue #813).
+DataRate PacingController::ThroughPacerConfig(DataRate rate, TimeDelta time_window) {
+  if (!rate.IsFinite() || rate.bps() < 0) return rate;
+  const int64_t window_us = time_window.IsZero() ? 1000000 : time_window.us();
+  const int64_t bytes = (rate.bps() * window_us + 4000000) / 8000000;
+  return DataRate::BitsPerSec(bytes * 8000000 / window_us);
+}
+
+// SetPacingRates is SetPacerConfig(PacerConfig::Create(..., send_burst_interval_)) (pacing_controller.cc:173-177).
 void PacingController::SetPacingRates(DataRate pacing, DataRate padding) {
+  pacing = ThroughPacerConfig(pacing, send_burst_interval_);
+  padding = ThroughPacerConfig(padding, send_burst_interval_);
   padding_rate_ = std::min(padding, pacing);  // SetPacerConfig caps padding at the pacing rate.
   pacing_rate_ = pacing;
   if (started_) MaybeUpdateMediaRateDueToLongQueue(last_timestamp_);

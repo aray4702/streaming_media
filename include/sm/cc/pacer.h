@@ -73,6 +73,7 @@ class Pacer : public MetricsSource {
 
  private:
   std::vector<PacedPacket> ProcessScheduled(Timestamp now);
+  void PostMaybeProcessPackets();
 
   bool task_queue_;
   TimeDelta hold_back_window_;
