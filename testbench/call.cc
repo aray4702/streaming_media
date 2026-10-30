@@ -343,6 +343,57 @@ void TraceAudioRtp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_s
   rows.push_back(r);
 }
 
+RtcpTraceFields TraceRtcpFields(std::span<const uint8_t> p) {
+  RtcpTraceFields f;
+  if (p.size() < 4 || p[1] < 192 || p[1] > 223) return f;
+  f.rtp_ts = 0;
+  f.marker = 0;
+  f.header = 0;
+  int codes = 0;
+  for (size_t off = 0; off + 4 <= p.size();) {
+    if ((p[off] >> 6) != 2) break;
+    const size_t len = 4 * ((static_cast<size_t>(p[off + 2]) << 8 | p[off + 3]) + 1);
+    if (off + len > p.size()) break;
+    const int type = p[off + 1];
+    const int fmt = p[off] & 0x1f;
+    int code = 0;
+    if (type == 205) {
+      code = 20 + fmt;
+    } else if (type == 206) {
+      code = 40 + fmt;
+    } else if (type >= 200 && type <= 207) {
+      code = type - 190;
+    }
+    if (codes < 9) {
+      f.rtp_ts = f.rtp_ts * 100 + code;
+      ++codes;
+    }
+    if (type == 200 || type == 201) {  // SR, RR: LSR is the fifth word of each report block.
+      const size_t first = off + (type == 200 ? 28 : 8);
+      for (size_t b = 0; b < static_cast<size_t>(fmt); ++b) {
+        const size_t at = first + 24 * b;
+        if (at + 24 > off + len) break;
+        if (p[at + 16] | p[at + 17] | p[at + 18] | p[at + 19]) ++f.marker;
+      }
+    }
+    if (type == 205 && fmt == 1) {  // Generic NACK (RFC 4585): PID and BLP pairs after the two SSRCs.
+      for (size_t at = off + 12; at + 4 <= off + len; at += 4) {
+        const int pid = p[at] << 8 | p[at + 1];
+        const int blp = p[at + 2] << 8 | p[at + 3];
+        for (int i = -1; i < 16; ++i) {
+          if (i >= 0 && !(blp & (1 << i))) continue;
+          const int seq = (pid + i + 1) & 0xffff;
+          if (f.key < 0) f.key = seq;
+          f.osn = seq;
+          ++f.header;
+        }
+      }
+    }
+    off += len;
+  }
+  return f;
+}
+
 void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_ssrc, std::vector<AudioSendRow>& rows) {
   auto u32 = [&](size_t i) {
     return static_cast<uint32_t>(p[i]) << 24 | static_cast<uint32_t>(p[i + 1]) << 16 |
@@ -919,6 +970,14 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
             key = rtp::H264Depacketizer::Parse(std::span<const uint8_t>(q->payload).subspan(skip)).keyframe ? 1 : 0;
           }
         }
+      }
+      if (opt.link_trace && !is_forward) {
+        const RtcpTraceFields f = TraceRtcpFields(p.bytes);
+        rtp_ts = f.rtp_ts;
+        marker = f.marker;
+        osn = f.osn;
+        key = f.key;
+        header = f.header;
       }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
       link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);

@@ -161,6 +161,17 @@ class RtxAckPhase {
   bool retransmission_;
   bool media_acked_ = false, rtx_acked_ = false;
 };
+// The reverse trace's RTP columns for an RTCP datagram (#869): what it carries, in order, so the two stacks' feedback
+// can be compared packet by packet. `rtp_ts` is the compound's packets as two-digit codes in order (10 SR, 11 RR,
+// 12 SDES, 13 BYE, 14 APP, 17 XR; 20 + FMT for RTPFB: 21 NACK, 35 transport-cc; 40 + FMT for PSFB: 41 PLI, 44 FIR,
+// 55 REMB), `marker` the report blocks with a non-zero LSR (the sender can measure an RTT from them), `key` and `osn`
+// the lowest and highest sequence number the NACKs request, and `header` how many they request. Both
+// implementations call it on the bytes their receiver sends.
+struct RtcpTraceFields {
+  int64_t rtp_ts = -1;
+  int32_t marker = -1, osn = -1, key = -1, header = -1;
+};
+RtcpTraceFields TraceRtcpFields(std::span<const uint8_t> datagram);
 // Appends the row of an RTP packet from `audio_ssrc` with a payload.
 void TraceAudioRtp(std::span<const uint8_t> packet, int64_t time_us, uint32_t audio_ssrc,
                    std::vector<AudioSendRow>& rows);

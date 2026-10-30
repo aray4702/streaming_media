@@ -187,6 +187,29 @@ SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
   SM_EXPECT_EQ(TraceHeaderBytes(std::vector<uint8_t>{0x80, 200, 0, 1}, 32, 118), -1);  // Not RTP.
 }
 
+// The reverse trace's RTCP columns (#869): the packet types in order, the report blocks with an LSR, and the
+// sequence numbers the NACKs request.
+SM_TEST(TestbenchMetrics, TraceRtcpFieldsListsTheCompoundAndTheNackedSequenceNumbers) {
+  std::vector<uint8_t> c = timing::SerializeReceiverReport({.ssrc = 9, .blocks = {{.ssrc = 1}, {.ssrc = 2}}});
+  c[8 + 24 + 17] = 1;  // The second block's LSR is non-zero.
+  // Generic NACK from SSRC 9 for SSRC 2: PID 65534 with BLP bits 0 and 2 (65535 and 1, across the wrap).
+  const std::vector<uint8_t> nack = {0x81, 205, 0, 3, 0, 0, 0, 9, 0, 0, 0, 2, 0xff, 0xfe, 0x00, 0x05};
+  c.insert(c.end(), nack.begin(), nack.end());
+  const RtcpTraceFields f = TraceRtcpFields(c);
+  SM_EXPECT_EQ(f.rtp_ts, 1121);
+  SM_EXPECT_EQ(f.marker, 1);
+  SM_EXPECT_EQ(f.key, 65534);
+  SM_EXPECT_EQ(f.osn, 1);
+  SM_EXPECT_EQ(f.header, 3);
+  // Transport feedback and a PLI, without a report.
+  const std::vector<uint8_t> fb = {0x8f, 205, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2, 0x81, 206, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2};
+  const RtcpTraceFields g = TraceRtcpFields(fb);
+  SM_EXPECT_EQ(g.rtp_ts, 3541);
+  SM_EXPECT_EQ(g.key, -1);
+  SM_EXPECT_EQ(g.header, 0);
+  SM_EXPECT_EQ(TraceRtcpFields(std::vector<uint8_t>{0x80, 96, 0, 1}).rtp_ts, -1);  // RTP, not RTCP.
+}
+
 // The trace's rtx_room column (#555): RtxPacketOverhead's window opens at the first report block for the
 // media SSRC and closes at the first one for the RTX SSRC, in an SR or an RR of a compound packet.
 SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {
