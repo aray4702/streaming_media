@@ -96,6 +96,17 @@ void SendSideController::PostTargetRate(Timestamp now) {
   msg.cwnd_reduce_ratio = pushback_reduce_ratio_;
   msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
   msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
+  if (cfg_.gcc.bwe_trace && (msg.target_rate.bps() != trace_cwnd_target_bps_ || msg.cwnd_reduce_ratio != trace_cwnd_ratio_)) {
+    // Issue #738: the target and reduce ratio GoogCC hands on, when either changes.
+    trace_cwnd_target_bps_ = msg.target_rate.bps();
+    trace_cwnd_ratio_ = msg.cwnd_reduce_ratio;
+    cc::BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = cc::BweTraceRow::Kind::kCwnd;
+    r.bitrate_bps = msg.target_rate.bps();
+    r.cwnd_reduce_ratio = msg.cwnd_reduce_ratio;
+    cfg_.gcc.bwe_trace->push_back(r);
+  }
   control_handler_.SetTargetRate(msg);
   UpdateControlState(now);
 }

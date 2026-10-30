@@ -309,25 +309,25 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   DetectorTraceController(std::unique_ptr<w::NetworkControllerInterface> inner, const w::Environment& env,
                           std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
       : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
-  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return inner_->OnNetworkAvailability(m); }
-  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
-  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
-  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
-  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
-  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
-  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
+  w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return Cwnd(inner_->OnNetworkAvailability(m)); }
+  w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return Cwnd(inner_->OnNetworkRouteChange(m)); }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return Cwnd(inner_->OnProcessInterval(m)); }
+  w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return Cwnd(inner_->OnRemoteBitrateReport(m)); }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return Cwnd(inner_->OnRoundTripTimeUpdate(m)); }
+  w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return Cwnd(inner_->OnSentPacket(m)); }
+  w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return Cwnd(inner_->OnReceivedPacket(m)); }
+  w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return Cwnd(inner_->OnStreamsConfig(m)); }
   w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
-    return inner_->OnTargetRateConstraints(m);
+    return Cwnd(inner_->OnTargetRateConstraints(m));
   }
-  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return inner_->OnTransportLossReport(m); }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return Cwnd(inner_->OnTransportLossReport(m)); }
   w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override {
-    return inner_->OnNetworkStateEstimate(m);
+    return Cwnd(inner_->OnNetworkStateEstimate(m));
   }
   bool SupportsEcnAdaptation() const override { return inner_->SupportsEcnAdaptation(); }
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
-    if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
+    if (m.packet_feedbacks.empty()) return Cwnd(inner_->OnTransportPacketsFeedback(std::move(m)));  // GoogCC returns early.
     const size_t first_row = rows_->size();
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
@@ -337,10 +337,27 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
-    return u;
+    return Cwnd(std::move(u));
   }
 
  private:
+  // Issue #738: the target and reduce ratio GoogCC hands on (MaybeTriggerOnNetworkChanged), when either changes,
+  // as this library's SendSideController::PostTargetRate logs them.
+  w::NetworkControlUpdate Cwnd(w::NetworkControlUpdate u) {
+    if (u.target_rate && (u.target_rate->target_rate.bps() != cwnd_target_bps_ ||
+                          u.target_rate->cwnd_reduce_ratio != cwnd_ratio_)) {
+      cwnd_target_bps_ = u.target_rate->target_rate.bps();
+      cwnd_ratio_ = u.target_rate->cwnd_reduce_ratio;
+      cc::BweTraceRow r;
+      r.time_us = now_us_();
+      r.kind = cc::BweTraceRow::Kind::kCwnd;
+      r.bitrate_bps = cwnd_target_bps_;
+      r.cwnd_reduce_ratio = cwnd_ratio_;
+      rows_->push_back(r);
+    }
+    return u;
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
@@ -387,6 +404,8 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   std::unique_ptr<w::InterArrivalDelta> inter_arrival_;
   std::unique_ptr<w::TrendlineEstimator> detector_;
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
+  int64_t cwnd_target_bps_ = -1;
+  double cwnd_ratio_ = -1;
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
