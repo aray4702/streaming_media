@@ -109,6 +109,12 @@ void KeyframeRequester::OnStreamStart(Timestamp now) {
   SM_EVENT(cfg_.events, now, "keyframe", "stream_start", 0, 0);
 }
 
+void KeyframeRequester::ResetPacketReceiveTimes() {
+  last_packet_ = Timestamp::MinusInfinity();
+  last_keyframe_packet_ = Timestamp::MinusInfinity();
+  last_keyframe_rtp_timestamp_.reset();
+}
+
 void KeyframeRequester::RequestKeyframe(Timestamp now, bool fir, const char* reason) {
   if (!request_pending_) first_request_ = now;
   request_pending_ = true;
@@ -155,7 +161,7 @@ std::vector<FeedbackMessage> KeyframeRequester::Process(Timestamp now) {
     timeout_base_ = now;  // Re-arms after each firing.
   }
   if (need_request_) {
-    const bool fir = need_fir_;
+    const bool fir = need_fir_ || cfg_.method == KeyframeMethod::kFir;
     RequestKeyframe(now, fir, fir ? "fir" : "pli");
     FeedbackMessage m{fir ? FeedbackType::kFir : FeedbackType::kPli};
     m.fir_seq = fir_seq_;

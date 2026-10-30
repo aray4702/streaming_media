@@ -1237,3 +1237,92 @@ SM_TEST(RtpReceiver, DecodedAudioCarriesThePacketInfosOfItsPackets) {
   r.GetAudio(out, Timestamp::Millis(3300));
   SM_EXPECT_TRUE(r.audio_packet_infos().empty());
 }
+
+// RtpVideoStreamReceiver2::UnwrapSequenceNumberOrRecover (video/rtp_video_stream_receiver2.cc:651-753,
+// issue #818): a sender that restarts its sequence numbers more than 2048 behind, with newer RTP
+// timestamps, is a discontinuity. Its packets are dropped and a keyframe is requested at most every
+// max_wait_for_keyframe (200 ms) until a keyframe starts; there the receiver re-anchors, and NACKs go
+// out on the restarted sender's sequence numbers. libwebrtc runs this for codecs other than H.264 and
+// H.265 (rtp::Session's switch); the H.264 test payload stands in for one here.
+SM_TEST(RtpReceiver, ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors) {
+  RtpReceiverConfig cfg = NoHoldCfg();
+  cfg.seq_num_discontinuity = true;
+  RtpSender s(SenderCfg());
+  RtpReceiver r(cfg);
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  for (auto& b : SendFrame(s, 1, false, 800, Timestamp::Millis(33))) r.OnPacket(b, Timestamp::Millis(43));
+  SM_ASSERT_EQ(Run(r, 10, 300).size(), 2u);
+  SM_ASSERT_TRUE(r.TakeFeedback().keyframe.empty());
+
+  RtpSenderConfig restarted = SenderCfg();
+  restarted.initial_seq = static_cast<uint16_t>(65530 - 5000);
+  RtpSender s2(restarted);
+  const auto count_requests = [&](int64_t t) {
+    r.Process(Timestamp::Millis(t));
+    return r.TakeFeedback().keyframe.size();
+  };
+  for (auto& b : SendFrame(s2, 10, false, 800, Timestamp::Millis(300))) r.OnPacket(b, Timestamp::Millis(310));
+  SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 1u);
+  SM_EXPECT_GT(r.stats().seq_num_discontinuity_dropped, 0u);
+  SM_EXPECT_EQ(count_requests(310), 1u);
+  // Within max_wait_for_keyframe of the request: dropped, no new request.
+  for (auto& b : SendFrame(s2, 11, false, 800, Timestamp::Millis(400))) r.OnPacket(b, Timestamp::Millis(410));
+  SM_EXPECT_EQ(count_requests(410), 0u);
+  // After it: requested again.
+  for (auto& b : SendFrame(s2, 12, false, 800, Timestamp::Millis(520))) r.OnPacket(b, Timestamp::Millis(520));
+  SM_EXPECT_EQ(count_requests(520), 1u);
+  SM_EXPECT_EQ(r.stats().seq_num_reanchors, 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 2u);
+
+  // The keyframe re-anchors, and frames after it are decoded.
+  for (auto& b : SendFrame(s2, 13, true, 800, Timestamp::Millis(600))) r.OnPacket(b, Timestamp::Millis(610));
+  SM_EXPECT_EQ(r.stats().seq_num_reanchors, 1u);
+  SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 1u);
+  // A lost packet after the re-anchor is NACKed with the restarted sender's sequence number, and its RTX
+  // copy completes the frame.
+  auto f14 = SendFrame(s2, 14, false, 3000, Timestamp::Millis(633));
+  SM_ASSERT_GE(f14.size(), 3u);
+  auto lost = RtpPacket::Parse(f14[1]);
+  SM_ASSERT_TRUE(lost.has_value());
+  for (size_t i = 0; i < f14.size(); ++i)
+    if (i != 1) r.OnPacket(f14[i], Timestamp::Millis(643));
+  r.Process(Timestamp::Millis(643));
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 1u);
+  SM_EXPECT_EQ(fb.nacks[0], lost->seq);
+  SM_EXPECT_TRUE(fb.keyframe.empty());
+  s2.OnNack(fb.nacks, Timestamp::Millis(650), TimeDelta::Millis(40));
+  auto rtx = s2.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  r.OnPacket(rtx[0].packet.Serialize(), Timestamp::Millis(660));
+  auto frames = Run(r, 610, 1500);
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 13u * 3000u);
+  SM_EXPECT_EQ(frames[1].rtp_timestamp, 14u * 3000u);
+  SM_EXPECT_TRUE(frames[1].frame_id > frames[0].frame_id);
+  SM_EXPECT_EQ(r.stats().gaps, 1u);  // The lost packet; the restart is no gap.
+  SM_EXPECT_TRUE(r.TakeFeedback().keyframe.empty());
+}
+
+// Outside a discontinuity, a packet more than 2048 behind the newest media packet with an older RTP timestamp
+// (a severely reordered old one) is dropped and starts nothing. With the switch off (H.264, the receiver's
+// default) the restarted sender's packets go to the packet buffer.
+SM_TEST(RtpReceiver, AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule) {
+  for (bool on : {true, false}) {
+    RtpReceiverConfig cfg = NoHoldCfg();
+    cfg.seq_num_discontinuity = on;
+    RtpSender s(SenderCfg());
+    RtpReceiver r(cfg);
+    for (auto& b : SendFrame(s, 100, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+    SM_ASSERT_EQ(Run(r, 10, 300).size(), 1u);
+    RtpSenderConfig old = SenderCfg();
+    old.initial_seq = static_cast<uint16_t>(65530 - 5000);
+    RtpSender s2(old);
+    for (auto& b : SendFrame(s2, 1, false, 800, Timestamp::Millis(300))) r.OnPacket(b, Timestamp::Millis(310));
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 0u);
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuity_dropped > 0, on);
+    for (auto& b : SendFrame(s2, 101, false, 800, Timestamp::Millis(310))) r.OnPacket(b, Timestamp::Millis(320));
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuities, on ? 1u : 0u);
+  }
+}

@@ -268,6 +268,8 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   // tracker for kVideoCodecH264, and FindFrames keeps missing_packets_ for an H.264 descriptor.
   const bool h264 = v.codec == VideoCodecType::kH264;
   c.sps_pps_tracker = v.sps_pps_tracker && h264;
+  // UnwrapSequenceNumberOrRecover returns before its discontinuity rule for H.264 and H.265.
+  c.seq_num_discontinuity = !h264;
   c.render_smoothing = v.render_smoothing;
   c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;

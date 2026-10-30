@@ -348,6 +348,27 @@ SM_TEST(RtcpEngine, LossNotificationNeverRequestsAKeyframe) {
   SM_EXPECT_EQ(in.loss_notifications.size(), 1u);
 }
 
+// RTCPSender::BuildFIR (rtcp_sender.cc:405-414) increments sequence_number_fir_ before it writes the
+// request: the first FIR carries 1, the next 2 (issue #818).
+SM_TEST(RtcpEngine, FirSequenceNumbersStartAtOne) {
+  RtcpEngine tx;
+  tx.Process(Timestamp::Millis(0));
+  for (uint8_t want : {1, 2}) {
+    tx.QueueFir(55);
+    auto out = tx.Process(Timestamp::Millis(want));
+    SM_ASSERT_EQ(out.size(), 1u);
+    auto views = loss::SplitCompoundRtcp(out[0].bytes);
+    SM_ASSERT_TRUE(views.has_value());
+    std::optional<loss::Fir> fir;
+    for (const auto& v : *views)
+      if (v.type == loss::RtcpType::kFir) fir = loss::ParseFir(v.data);
+    SM_ASSERT_TRUE(fir.has_value());
+    SM_ASSERT_EQ(fir->entries.size(), 1u);
+    SM_EXPECT_EQ(fir->entries[0].ssrc, 55u);
+    SM_EXPECT_EQ(fir->entries[0].seq_nr, want);
+  }
+}
+
 SM_TEST(RtcpEngine, RepeatedFirSequenceNumberIsIgnored) {
   RtcpEngine tx, rx;
   tx.Process(Timestamp::Millis(0));
