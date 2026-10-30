@@ -249,6 +249,12 @@ int main(int argc, char** argv) {
       return 2;
     }
     const Scenario base = *parsed.scenario;
+    if (base.two_way) {
+      // libwebrtc's side runs a one-way call only, so a two-way scenario has nothing to compare
+      // and stays out of the JSON and the parity report (issue #743).
+      std::fprintf(stderr, "%s: skipped, call two-way (sm_compare runs one-way calls only)\n", f.c_str());
+      continue;
+    }
     std::vector<Report> ours, theirs;
     sm::testbench::RunOptions opt;
     opt.timeseries = !dump_dir.empty();
