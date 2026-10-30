@@ -1,7 +1,9 @@
 // 4.5 Adaptive audio jitter buffer (a compact NetEq).
 //
-// Packets (decoded PCM) are inserted on arrival; the audio device pulls a
-// fixed block (10 ms) at a time. On each pull the buffer chooses one
+// Packets (decoded PCM, or with version 2 encoded frames that are decoded
+// when played, as NetEq's DecodeLoop does) are inserted on arrival; the audio
+// device pulls a fixed block (10 ms) at a time. On each pull the buffer
+// chooses one
 // operation:
 //   normal            next packet is present and the buffer level is on target
 //   accelerate        level well above target: drop one pitch period (WSOLA)
@@ -38,6 +40,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <span>
@@ -130,6 +133,16 @@ class AudioJitterBuffer : public MetricsSource {
   // version 1 keeps the first. A late in-band FEC frame is not counted as a
   // late discard (NetEq counts secondary discards apart).
   void InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival, AudioPacketPriority priority = {});
+  // A frame still encoded, `samples` long (AudioDecoder::PacketDuration), that
+  // the buffer decodes only when it plays it, as NetEq's DecodeLoop decodes
+  // each packet it extracts, in timestamp order (neteq_impl.cc). A stateful
+  // decoder (Opus) then sees the frames NetEq's sees, in NetEq's order: the
+  // copies a higher priority replaced and the late packets discarded are
+  // never decoded (#783). `decode` returns the frame's samples, empty on a
+  // decode error, which plays `samples` of silence.
+  using FrameDecoder = std::function<std::vector<float>()>;
+  void InsertPacket(uint32_t rtp_ts, size_t samples, FrameDecoder decode, Timestamp arrival,
+                    AudioPacketPriority priority = {});
   // Fills `out` (typically 10 ms) and reports the operation performed.
   AudioOperation GetAudio(std::span<float> out, Timestamp now);
 
@@ -205,7 +218,10 @@ class AudioJitterBuffer : public MetricsSource {
     Timestamp arrival;
     int64_t insert_tick = 0;  // Packet::waiting_time.
     AudioPacketPriority priority;
+    size_t samples = 0;   // The frame's duration: pcm.size(), or before `decode` runs.
+    FrameDecoder decode;  // Set until the frame is decoded at playout.
   };
+  void Insert(uint32_t rtp_ts, Packet pkt);
   std::map<int64_t, Packet> queue_;
   std::vector<float> sync_;          // Decoded samples waiting for playout.
   int64_t next_ts_ = 0;              // RTP time of the first sample after sync_.
