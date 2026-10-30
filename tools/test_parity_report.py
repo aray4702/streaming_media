@@ -170,8 +170,9 @@ class Owners(unittest.TestCase):
         # #406: #360 closed; the shallow and low-bandwidth cells still on main went to #411 as well.
         # #409: #63 closed; the session-layer cell #416 opened again went to #420 as well.
         # #732: #411's D3 shallow cells close as explained, with a note under #732.
+        # #733: #411's D4 low-bandwidth rules are retired (in band since #460), so issue_331 keeps #360 alone.
         cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 732],
-                 "issue_12_lossbwe_shallow": [24, 37, 732], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
+                 "issue_12_lossbwe_shallow": [24, 37, 732], "issue_331_low_bandwidth_av_offset_seed4": [360],
                  "issue_76_session_layer_v2": [63, 420],
                  "issue_152_alr_request_probe_v2": [360],
                  "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
@@ -191,6 +192,7 @@ class Owners(unittest.TestCase):
         # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
         # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
         # The shallow-queue D3 cells (#411, split to #732) close as explained under #732, with a note.
+        # The low-bandwidth D4 cells (#733) are in band since #460 (#479's re-measure) and lose their rules.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -201,7 +203,6 @@ class Owners(unittest.TestCase):
                  ("issue_21_shallow_drop_repair", "video.freeze_count"): 732,
                  ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 732,
                  ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 732,
-                 ("low_bandwidth", "cc.rtt_p50_ms"): 411,
                  ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
                  ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
         d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
@@ -239,6 +240,7 @@ class Owners(unittest.TestCase):
         # #479 (step 2, main b48b3d8): the 11 gaps left without an owner go to step-4 items. Ahead cells
         # join #411's clusters (D2 very low capacity, D4 low bandwidth, D8 outage, D9 policer); behind
         # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
+        # #733: D4 is retired; issue_457's render fps is seed noise (in band on 80 seeds), #479's note.
         cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 411,
                  ("issue_12_lossbwe_policer", "net.loss_pct"): 411,
                  ("issue_12_lossbwe_policer", "repair.overhead_pct"): 411,
@@ -246,7 +248,7 @@ class Owners(unittest.TestCase):
                  ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
                  ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
                  ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 411,
-                 ("issue_457_libopus_audio_rate", "video.render_fps"): 411,
+                 ("issue_457_libopus_audio_rate", "video.render_fps"): 479,
                  ("issue_430_av_outage_6s", "video.e2e_delay_p95_ms"): 474,
                  ("issue_29_ulpfec_over_red", "video.avg_kbps"): 492,
                  ("issue_464_start_rate_above_int_bps", "repair.overhead_pct"): 514}
