@@ -75,7 +75,9 @@ void RtcpEngine::QueuePli(uint32_t media_ssrc) {
 void RtcpEngine::QueueFir(uint32_t media_ssrc) {
   loss::Fir f;
   f.sender_ssrc = cfg_.local_ssrc;
-  f.entries.push_back({media_ssrc, fir_seq_out_[media_ssrc]++});
+  // RTCPSender::BuildFIR (rtcp_sender.cc:405-414) increments sequence_number_fir_ before it writes the
+  // request, so the first FIR carries 1.
+  f.entries.push_back({media_ssrc, ++fir_seq_out_[media_ssrc]});
   queue_.push_back({Tag::kFir, 1, loss::SerializeFir(f)});
 }
 

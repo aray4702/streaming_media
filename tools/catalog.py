@@ -160,8 +160,15 @@ ALGORITHMS = [
                   "the longest freeze and the number of PLIs (no request storms).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "The receiver asks on libwebrtc's RtpVideoStreamReceiver2 triggers (issue #23): the first assembled frame is "
-               "not a keyframe, a decoder error, a NACK list or packet buffer overflow, and the decode time-out "
+               "not a keyframe, a decoder error, a NACK list or packet buffer overflow, an H.264 IDR without its "
+               "parameter sets, and the decode time-out "
                "(200 ms before the first frame, 3 s after; not while a keyframe is arriving or the stream is idle). "
+               "For codecs other than H.264, a sequence-number discontinuity (a media packet more than 2048 behind "
+               "the newest with a newer RTP timestamp) drops packets and asks again every 200 ms until a newer "
+               "keyframe re-anchors the receiver (UnwrapSequenceNumberOrRecover, issue #818). The missing-video-"
+               "structure trigger needs the dependency descriptor extension, which the library does not carry, so it "
+               "cannot fire. Every request is the configured method, PLI by default as libwebrtc's "
+               "`rtp.keyframe_method` (KeyframeRequestConfig::method; FIR sequence numbers start at 1, issue #818). "
                "A keyframe is arriving while a packet came within 200 ms whose depacketized frame type is key (every "
                "FU-A fragment of an IDR slice, an SPS or IDR NAL unit) or that has the last keyframe's RTP timestamp, "
                "counting packets received as sent only (RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps, "
@@ -181,7 +188,12 @@ ALGORITHMS = [
                       "requests). The v1 repair window gave 83% and 0.5 s until #167 deleted it. "
                       "[#335](../../fixes/335-keyframe-packets.md): a 1 fps keyframe that took 0.5 s to arrive was asked "
                       "for again at 400 ms because only its first packet counted as a keyframe packet; with every packet "
-                      "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms)."),
+                      "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms). "
+                      "#818: the discontinuity trigger, the keyframe method and the FIR sequence number are pinned by "
+                      "RtpReceiver.ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors, "
+                      "KeyframeRequest.EveryRequestUsesTheConfiguredMethod, RtcpEngine.FirSequenceNumbersStartAtOne and "
+                      "LibwebrtcDefaults.TheSequenceDiscontinuityRuleRunsForCodecsOtherThanH264 / KeyframeRequestsArePli; "
+                      "the bench's H.264 stream sends PLI only, as libwebrtc's, so no metric moves."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
          problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
          headers=["loss/fec_controller.h"], unit=["FecController"], e2e=["E2E_Protection"],

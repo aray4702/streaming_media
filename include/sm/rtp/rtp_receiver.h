@@ -185,6 +185,20 @@ struct RtpReceiverConfig {
   // IDR, SPS and PPS flags an H.264 parser sets, and rtp::Session applies it to
   // H.264 streams only.
   bool sps_pps_tracker = true;
+  // RtpVideoStreamReceiver2::UnwrapSequenceNumberOrRecover
+  // (video/rtp_video_stream_receiver2.cc:651-753): a media packet more than
+  // 2048 (kPacketBufferMaxSize) sequence numbers behind the newest media
+  // packet, with a newer RTP timestamp, is a sequence-number discontinuity
+  // (the sender restarted its numbering). Every packet is then dropped, and a
+  // keyframe is requested at most every keyframe.max_wait_for_keyframe, until
+  // the first packet of a keyframe with a newer timestamp arrives; there the
+  // receiver re-anchors: the packet buffer and the NACK list are cleared and
+  // the sequence numbers continue from that packet. Outside a discontinuity, a
+  // packet that far behind is dropped (padding, FEC or old media). libwebrtc
+  // skips all of it for H.264 and H.265 (the H26x packet buffer has no reset).
+  // Off by default, as the receiver's defaults are H.264's; rtp::Session turns
+  // it on for streams that are not H.264.
+  bool seq_num_discontinuity = false;
   // libwebrtc's pre-render smoothing (IncomingVideoStream + VideoRenderFrames,
   // video::RenderFrames), which VideoReceiveStream2 runs between the decoder and
   // the renderer when `enable_prerenderer_smoothing` is on, its default: a decoded
@@ -299,6 +313,11 @@ struct RtpReceiverStats {
   uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
   uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before their SPS and PPS.
   uint64_t parameter_sets_without_ids = 0;  // sps_pps_tracker: SPS/PPS units without ids dropped (kDrop).
+  // seq_num_discontinuity: discontinuities detected, packets dropped while waiting for the recovery
+  // keyframe or as too far behind, and the times the receiver re-anchored at a keyframe.
+  uint64_t seq_num_discontinuities = 0;
+  uint64_t seq_num_discontinuity_dropped = 0;
+  uint64_t seq_num_reanchors = 0;
   // Gaps in the media sequence numbers as they arrive (recovered packets
   // included), for the protection controller (a real receiver reports this in
   // RTCP XR): runs of missing packets, and the packets in them.
@@ -428,8 +447,12 @@ class RtpReceiver : public MetricsSource {
   void OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered);
   // A packet that holds a media sequence number but no media (padding, FEC):
   // RtpVideoStreamReceiver2::NotifyReceiverOfEmptyPacket.
-  void OnEmptyPacket(uint16_t seq, Timestamp now);
+  void OnEmptyPacket(uint16_t wire_seq, Timestamp now);
   void SendSeqNumNacks(Timestamp now);  // NackRequester::OnReceivedPacket's kSeqNumOnly batch.
+  void AppendNacks(const std::vector<uint16_t>& batch);  // To feedback_, on the sender's sequence numbers.
+  // UnwrapSequenceNumberOrRecover for a packet on the media SSRC, `info` null for one without media
+  // (padding, FEC). False: drop the packet. May re-anchor (seq_num_discontinuity).
+  bool UnwrapSequenceNumberOrRecover(uint16_t seq, uint32_t timestamp, const VideoPayloadInfo* info, Timestamp now);
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   // AbsoluteCaptureTimeInterpolator::OnReceivePacket on a media packet, then the
@@ -459,6 +482,17 @@ class RtpReceiver : public MetricsSource {
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
   H264SpsPpsTracker sps_pps_tracker_;  // sps_pps_tracker.
+  // seq_num_discontinuity: rtp_seq_num_unwrapper_, newest_media_seq_num_, newest_media_rtp_timestamp_,
+  // waiting_for_keyframe_after_seq_num_discontinuity_ and next_keyframe_request_for_seq_num_discontinuity_.
+  // After a re-anchor the sender's sequence numbers are moved by `seq_shift_` so that the NACK tracker,
+  // the packet buffer and the frame ids continue after the old ones (libwebrtc restarts its frame ids
+  // above the last completed picture id instead); NACKs go out on the sender's numbers.
+  SeqNumUnwrapper<uint16_t> rtp_seq_unwrap_;
+  std::optional<int64_t> newest_media_seq_;
+  std::optional<uint32_t> newest_media_timestamp_;
+  bool waiting_for_keyframe_after_discontinuity_ = false;
+  Timestamp next_discontinuity_request_ = Timestamp::MinusInfinity();
+  uint16_t seq_shift_ = 0;
   TimeDelta rtt_ = TimeDelta::Millis(100);
   bool have_rtt_ = false;
   Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.

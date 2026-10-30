@@ -225,7 +225,7 @@ class RtcpEngine : public MetricsSource {
     std::vector<uint8_t> bytes;
   };
   std::vector<Queued> queue_;
-  std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> next seq_nr
+  std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> last seq_nr sent
   std::map<std::pair<uint32_t, uint32_t>, uint8_t> fir_seq_in_;   // (sender, media) -> last seq_nr
   void UpdateSendRate(Timestamp now);
   std::deque<std::pair<Timestamp, uint32_t>> rate_samples_;
