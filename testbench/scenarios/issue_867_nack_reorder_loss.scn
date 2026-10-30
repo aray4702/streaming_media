@@ -3,8 +3,9 @@ describe Issue #867: 3% loss with 60 ms jitter and reordering. libwebrtc's NackR
 # The #851 probe's `p_reorder` link. Ours on seeds 1-10 (main cd24e24): freeze_total_ms 529 764 0 246 256 195 281 0
 # 199 0 (mean 247), longest 332 ms, repair overhead 33-42%. Each freeze follows a video packet whose first RTX was
 # lost too (3% loss applies to RTX), so the second request waits a further RTT plus the 20 ms tick, under 60 ms jitter.
-# sm_compare runs 40 seeds here, so the parity report measures libwebrtc on the same link.
-compare_seeds 40
+# sm_compare runs 80 seeds here (#870: this link's video rate, repair overhead and A/V offset cells are judged
+# in band on 80 seeds), so the parity report measures libwebrtc on the same link.
+compare_seeds 80
 seed 1
 duration 40s
 at 0s capacity=3000kbps delay=40ms jitter=60ms reorder=on loss=3% queue=300ms
