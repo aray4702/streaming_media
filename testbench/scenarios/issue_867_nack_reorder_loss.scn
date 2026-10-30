@@ -1,0 +1,13 @@
+name issue_867_nack_reorder_loss
+describe Issue #867: 3% loss with 60 ms jitter and reordering. libwebrtc's NackRequester NACKs a gap as soon as it is found (M157 never fills its reordering histogram, so WaitNumberOfPackets is 0), and so does ours
+# The #851 probe's `p_reorder` link. Ours on seeds 1-10 (main cd24e24): freeze_total_ms 529 764 0 246 256 195 281 0
+# 199 0 (mean 247), longest 332 ms, repair overhead 33-42%. Each freeze follows a video packet whose first RTX was
+# lost too (3% loss applies to RTX), so the second request waits a further RTT plus the 20 ms tick, under 60 ms jitter.
+# sm_compare runs 40 seeds here, so the parity report measures libwebrtc on the same link.
+compare_seeds 40
+seed 1
+duration 40s
+at 0s capacity=3000kbps delay=40ms jitter=60ms reorder=on loss=3% queue=300ms
+expect video.longest_freeze_ms < 1000
+expect video.residual_loss_pct < 1
+expect audio.interruptions == 0

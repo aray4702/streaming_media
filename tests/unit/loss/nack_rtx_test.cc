@@ -137,6 +137,47 @@ SM_TEST(NackTracker, GivesUpAfter100RetriesWithoutKeyframeRequest) {
   SM_EXPECT_FALSE(n.TakeKeyframeRequest());
 }
 
+// nack_requester.cc GetNackBatch: the 100th request erases the entry as it is sent (issue #867), so the
+// packet arriving after it was never NACKed as far as the list knows, and pending() drops at once.
+SM_TEST(NackTracker, HundredthRequestErasesTheEntryAsItIsSent) {
+  NackTracker n;
+  n.UpdateRtt(TimeDelta::Millis(10));
+  n.OnReceivedPacket(1, true, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(0));
+  int sent = 0;
+  int t = 0;
+  for (; sent < 100; t += 20) {
+    sent += static_cast<int>(n.GetNackBatch(Ms(t)).size());
+    if (sent < 100) SM_EXPECT_EQ(n.pending(), 1u);
+  }
+  SM_EXPECT_EQ(sent, 100);
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_EQ(n.stats().abandoned, 1u);
+  SM_EXPECT_EQ(n.OnReceivedPacket(2, false, Ms(t)), 0);
+  SM_EXPECT_FALSE(n.TakeKeyframeRequest());
+}
+
+// NackRequester never fills its reordering histogram in M157 (OnReceivedPacket's `is_retransmitted = true`),
+// so WaitNumberOfPackets(0.5) is 0 however much the link reorders: after many reordered packets a new gap is
+// still requested with the packet that reveals it (issue #867).
+SM_TEST(NackTracker, ReorderingNeverDelaysTheFirstRequest) {
+  NackTracker n;
+  n.UpdateRtt(TimeDelta::Millis(50));
+  n.OnReceivedPacket(0, true, Ms(0));
+  uint16_t seq = 0;
+  for (int i = 0; i < 50; ++i) {  // Each run of five arrives after the packet behind it.
+    n.OnReceivedPacket(static_cast<uint16_t>(seq + 6), false, Ms(i));
+    n.GetSeqNumNackBatch(Ms(i));
+    for (uint16_t k = 1; k <= 5; ++k) n.OnReceivedPacket(static_cast<uint16_t>(seq + k), false, Ms(i));
+    seq = static_cast<uint16_t>(seq + 6);
+  }
+  SM_EXPECT_EQ(n.pending(), 0u);
+  n.OnReceivedPacket(static_cast<uint16_t>(seq + 2), false, Ms(100));
+  auto batch = n.GetSeqNumNackBatch(Ms(100));
+  SM_ASSERT_EQ(batch.size(), 1u);
+  SM_EXPECT_EQ(batch[0], static_cast<uint16_t>(seq + 1));
+}
+
 SM_TEST(NackTracker, ClearUpToForgetsRequestsBeforeAContinuousFrame) {
   // NackRequester::ClearUpTo(seq): erases the entries with a sequence number below `seq`.
   NackConfig cfg;

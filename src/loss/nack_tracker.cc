@@ -106,26 +106,21 @@ std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
     Info& info = it->second;
     bool due = info.retries == 0 ? (now - info.detected >= cfg_.reorder_wait)
                                  : (tick && now - info.last_sent >= retry);
-    if (due && info.retries >= cfg_.max_retries) {
-      ++stats_.abandoned;
-      SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);
-      it = missing_.erase(it);  // libwebrtc gives up without a keyframe request.
-      continue;
-    }
-    if (due) Send(it->first, info, now, out);
-    ++it;
+    it = due ? Send(it, now, out) : std::next(it);
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
 }
 
 // nack_requester.cc GetNackBatch(kSeqNumOnly): every request not sent yet whose `send_at_seq_num` the newest
-// packet has reached. That is the gap's own sequence number, because the reordering histogram stays empty
-// (OnReceivedPacket treats every packet as retransmitted, so WaitNumberOfPackets is 0).
+// packet has reached. That is the gap's own sequence number, because the reordering histogram stays empty:
+// NackRequester::OnReceivedPacket sets `is_retransmitted = true` for every packet (its TODO), so
+// UpdateReorderingStatistics never runs and WaitNumberOfPackets(0.5) is 0 (issue #867).
 std::vector<uint16_t> NackTracker::GetSeqNumNackBatch(Timestamp now) {
   std::vector<uint16_t> out;
-  for (auto& [seq, info] : missing_) {
-    if (info.retries == 0 && now - info.detected >= cfg_.reorder_wait) Send(seq, info, now, out);
+  for (auto it = missing_.begin(); it != missing_.end();) {
+    const Info& info = it->second;
+    it = info.retries == 0 && now - info.detected >= cfg_.reorder_wait ? Send(it, now, out) : std::next(it);
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
@@ -140,11 +135,19 @@ Timestamp NackTracker::NextProcessTime() const {
   return next;
 }
 
-void NackTracker::Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out) {
-  out.push_back(static_cast<uint16_t>(seq));
+// nack_requester.cc GetNackBatch: the request that reaches kMaxNackRetries is sent, and the entry is erased
+// with it, without a keyframe request (issue #867).
+NackTracker::MissingMap::iterator NackTracker::Send(MissingMap::iterator it, Timestamp now,
+                                                    std::vector<uint16_t>& out) {
+  Info& info = it->second;
+  out.push_back(static_cast<uint16_t>(it->first));
   info.last_sent = now;
   ++info.retries;
   ++stats_.nack_requests;
+  if (info.retries < cfg_.max_retries) return std::next(it);
+  ++stats_.abandoned;
+  SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);
+  return missing_.erase(it);
 }
 
 bool NackTracker::TakeKeyframeRequest() {

@@ -2,8 +2,12 @@
 //
 // Detects sequence-number gaps, schedules retransmission requests with
 // RTT-based retry spacing and retires requests that exceed their retry budget,
-// as libwebrtc's NackRequester (issue #23): giving up asks for no keyframe,
-// and a list that would pass `max_nack_list` is cleared and asks for one.
+// as libwebrtc's NackRequester (issue #23): the request that reaches
+// `max_retries` is the last, and its entry goes with it (issue #867); giving
+// up asks for no keyframe, and a list that would pass `max_nack_list` is
+// cleared and asks for one. A gap is NACKed as soon as it is found: M157
+// never fills the reordering histogram (OnReceivedPacket's
+// `is_retransmitted = true`), so WaitNumberOfPackets is 0 (issue #867).
 // A packet recovered (by FEC or RTX) ahead of the newest received one is kept
 // in a recovered list and never NACKed, as NackRequester's recovered_list_ (issue #846).
 #pragma once
@@ -37,7 +41,7 @@ struct NackStats {
   uint64_t missing_detected = 0;
   uint64_t nack_requests = 0;       // Sequence numbers sent in NACKs (incl. retries).
   uint64_t recovered = 0;           // Gaps later filled.
-  uint64_t abandoned = 0;           // Gave up after max_retries or age.
+  uint64_t abandoned = 0;           // Gave up at the max_retries-th request, or by age.
   uint64_t cleared = 0;             // Requests dropped by ClearUpTo.
   uint64_t keyframe_requests = 0;
   uint64_t recovered_ahead = 0;     // Recovered (FEC/RTX) ahead of the newest packet: never NACKed.
@@ -85,15 +89,17 @@ class NackTracker : public MetricsSource {
     Timestamp last_sent = Timestamp::MinusInfinity();
     int retries = 0;
   };
+  using MissingMap = std::map<int64_t, Info>;
   void AddMissing(int64_t from, int64_t to, Timestamp now);
-  void Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out);
+  // Requests the entry and returns the next one; the request that reaches max_retries erases the entry.
+  MissingMap::iterator Send(MissingMap::iterator it, Timestamp now, std::vector<uint16_t>& out);
 
   NackConfig cfg_;
   TimeDelta rtt_;
   SeqNumUnwrapper<uint16_t> unwrapper_;
   bool initialized_ = false;
   int64_t newest_ = 0;
-  std::map<int64_t, Info> missing_;
+  MissingMap missing_;
   std::set<int64_t> recovered_;  // NackRequester::recovered_list_.
   bool keyframe_needed_ = false;
   NackStats stats_;
