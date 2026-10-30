@@ -1,6 +1,8 @@
 name issue_61_googcc_glue_congestive
 describe Congestive loss with every v2 switch on: GoogCC's glue (pacing 1.1 x target, padding, overhead rate, cwnd drop through the allocator) keeps the sender at its target (#61)
 # packetization v2 and audio v2 added on 2026-10-20 (#152, Owner): the flip (#61) turns on all nine v2 switches.
+# 40 seeds in compare-webrtc (#825): video e2e p95 spreads 240-620 ms per seed on both stacks.
+compare_seeds 40
 duration 40s
 at 0s capacity=2500kbps delay=30ms queue=60ms
 at 15s capacity=800kbps
