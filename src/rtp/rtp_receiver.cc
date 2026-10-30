@@ -390,7 +390,16 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
     ++stats_.audio_frames;
     jitter_buffer_.InsertPacket(ts, std::move(*pcm), now, {0, red_level});
   };
-  if (cfg_.red) {
+  if (cfg_.red && neteq_v2) {
+    // NetEqImpl::InsertPacketInternal: RedPayloadSplitter::SplitRed puts the
+    // primary first, then the redundant blocks newest to oldest, and every
+    // block goes on, copies included (the packet buffer and the arrival
+    // history drop them). A redundant block that NetEq has not seen yet so
+    // arrives after a newer timestamp, and PacketArrived counts it as
+    // reordered (issue #722).
+    for (const auto& b : red_.SplitForNetEq(p.payload, p.timestamp, p.payload_type))
+      decode(b.payload, b.timestamp, b.red_level);
+  } else if (cfg_.red) {
     for (const auto& b : red_.OnPacket(p.payload, p.timestamp)) decode(b.payload, b.timestamp, b.primary ? 0 : 1);
   } else {
     decode(p.payload, p.timestamp, 0);

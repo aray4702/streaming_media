@@ -123,7 +123,11 @@ ALGORITHMS = [
                       "revision libwebrtc M157 builds, set up as `AudioEncoderOpusImpl` sets it up (`testbench/opus_encoder.h`: "
                       "48 kHz mono VOIP, 20 ms, 32 kbps VBR, complexity 9, DTX off, in-band FEC on, max bandwidth fullband). "
                       "It replaced the frame-size model fitted to libwebrtc's traces (#126, #375), which was an approved deviation "
-                      "(Owner's decision C on #452)."),
+                      "(Owner's decision C on #452). Receive side (#722): with `neteq v2` the receiver splits RED as NetEq's "
+                      "`RedPayloadSplitter::SplitRed` and `CheckRedPayloads` (`SplitRed`), primary first, then the redundant "
+                      "blocks newest to oldest, every block to the jitter buffer; on `issue_533_opus_decoder_frame_older_than_window` "
+                      "seed 1 the DelayManager's 923 updates (arrival delay, reordered flag, target) are then the same as "
+                      "libwebrtc's (yardstick #779), where the header-order, deduplicated split differed from the first one."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
          headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
