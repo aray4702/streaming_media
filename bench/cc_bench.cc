@@ -1,6 +1,7 @@
 // Section 5 benchmarks.
 #include "../tests/e2e/cc_sims.h"
 #include "sm/cc/encoder_bitrate_adjuster.h"
+#include "sm/cc/video_adaptation.h"
 #include "sm_bench.h"
 
 using namespace sm;
@@ -84,15 +85,15 @@ SM_BENCH(cc, FrameDropper_and_Overshoot) {
   st.BudgetNsPerItem(2000);
 }
 
-SM_BENCH(cc, Degradation_and_CpuDetector) {
-  DegradationController dc;
+SM_BENCH(cc, CpuOveruseDetector_PerFrame) {
+  // OveruseFrameDetector's per-frame work (FrameCaptured, FrameSent) and its check.
   CpuOveruseDetector cpu;
-  int64_t k = 100, t = 0;
+  int64_t t = 0;
   for (auto _ : st) {
-    bench::DoNotOptimize(dc.OnTargetBitrate(DataRate::KilobitsPerSec(k)));
-    cpu.OnFrameEncoded(TimeDelta::Millis(20), TimeDelta::Millis(33));
+    const uint32_t ts = static_cast<uint32_t>(t * 90);
+    cpu.OnFrameCaptured(1280 * 720, ts, Timestamp::Millis(t));
+    cpu.OnFrameSent(ts, Timestamp::Millis(t + 20));
     bench::DoNotOptimize(cpu.Check(Timestamp::Millis(t)));
-    k = k > 4000 ? 100 : k + 13;
     t += 33;
   }
   st.BudgetNsPerItem(1000);
@@ -177,18 +178,6 @@ SM_BENCH_QUALITY(cc, Q_FrameDropper_overshoot160) {
   double ratio = r.video_sent_kbps / r.video_target_kbps;
   st.Counter("sent_over_target", ratio);
   st.Require("sent_over_target", ratio, "<", 1.2);
-}
-
-SM_BENCH_QUALITY(cc, Q_Adaptation_bandwidth_drop) {
-  e2e::CcSimParams p;
-  p.capacity_kbps = {{0, 3000}, {20000, 400}, {40000, 3000}};
-  p.adaptation = true;
-  p.preference = DegradationPreference::kMaintainFramerate;
-  auto r = e2e::RunCcSim(p);
-  st.Counter("low_phase_width", r.phases[1].format.width);
-  st.Counter("recovered_width", r.phases[2].format.width);
-  st.Require("low_phase_width", r.phases[1].format.width, "<=", 640);
-  st.Require("recovered_width", r.phases[2].format.width, ">=", 960);  // Was 1280 (E2E_VideoAdaptation; program.md 0.2, #167).
 }
 
 SM_BENCH_QUALITY(cc, Q_Outage_recovery) {

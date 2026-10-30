@@ -26,7 +26,6 @@ constexpr TimeDelta kProcessTime = TimeDelta::Millis(5);
 struct Fixture {
   CpuOveruseConfig options = [] {
     CpuOveruseConfig c;
-    c.version = 2;
     c.min_process_count = 0;
     return c;
   }();
@@ -289,7 +288,6 @@ SM_TEST(OveruseFrameDetector, CheckScheduleIsDelayedStartThenEveryFiveSeconds) {
   // then kCheckForOveruseIntervalMs = 5000 after each run. With the default
   // min_process_count 3, the 4th run is the first that can act.
   CpuOveruseConfig c;
-  c.version = 2;
   CpuOveruseDetector d(c);
   Timestamp t = Timestamp::Seconds(100);
   d.Check(t);

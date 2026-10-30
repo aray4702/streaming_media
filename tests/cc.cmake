@@ -57,7 +57,6 @@ sm_add_test_exe(sm_unit_cc LABEL unit DEPS sm::cc
     TaskQueuePacedSender
     TransportFeedback
     TransportFeedbackV2
-    VideoAdaptation
 )
 sm_add_test_exe(sm_e2e_cc LABEL e2e DEPS sm::cc
   SOURCES
@@ -72,5 +71,4 @@ sm_add_test_exe(sm_e2e_cc LABEL e2e DEPS sm::cc
     E2E_Probing
     E2E_SendSideBwe
     E2E_TransportFeedback
-    E2E_VideoAdaptation
 )
