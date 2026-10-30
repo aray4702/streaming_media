@@ -52,7 +52,7 @@ int AudioJitterBuffer::TargetDelayMs() const {
 int64_t AudioJitterBuffer::SpanSamples() const {
   if (queue_.empty()) return 0;
   const auto& last = *queue_.rbegin();
-  return last.first + static_cast<int64_t>(last.second.pcm.size()) - next_ts_;
+  return last.first + static_cast<int64_t>(last.second.samples) - next_ts_;
 }
 
 int AudioJitterBuffer::FilteredCurrentDelayMs() const {
@@ -68,6 +68,18 @@ double AudioJitterBuffer::CurrentLevelMs() const {
 
 void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival,
                                      AudioPacketPriority priority) {
+  const size_t samples = pcm.size();
+  Insert(rtp_ts, Packet{std::move(pcm), arrival, ticks_, priority, samples, {}});
+}
+
+void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, size_t samples, FrameDecoder decode, Timestamp arrival,
+                                     AudioPacketPriority priority) {
+  Insert(rtp_ts, Packet{{}, arrival, ticks_, priority, samples, std::move(decode)});
+}
+
+void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
+  const Timestamp arrival = pkt.arrival;
+  const AudioPacketPriority priority = pkt.priority;
   if (cfg_.version >= 2 && !NetEqSupportsSampleRate(cfg_.sample_rate)) {
     // As libwebrtc, where no decoder exists for such a rate (#256): NetEq's
     // expand, merge and time stretch assume one of the four rates.
@@ -82,7 +94,7 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
     // first GetAudio are dropped from the statistics by the SoftReset that
     // the new codec triggers there.
     if (neteq_reset_done_) {
-      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pcm.size()), cfg_.sample_rate, ticks_ * kMsPerTick);
+      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pkt.samples), cfg_.sample_rate, ticks_ * kMsPerTick);
     }
   } else {
     delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
@@ -96,7 +108,7 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
   if (auto it = queue_.find(ts); it != queue_.end()) {
     ++stats_.packets_duplicate;
     // PacketBuffer::InsertPacket: one packet per timestamp, the higher priority.
-    if (cfg_.version >= 2 && priority < it->second.priority) it->second = Packet{std::move(pcm), arrival, ticks_, priority};
+    if (cfg_.version >= 2 && priority < it->second.priority) it->second = std::move(pkt);
     return;
   }
   if (cfg_.version >= 2 && queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
@@ -112,7 +124,7 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
   }
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
-  queue_.emplace(ts, Packet{std::move(pcm), arrival, ticks_, priority});
+  queue_.emplace(ts, std::move(pkt));
   if (cfg_.version < 2 && queue_.size() > cfg_.max_packets) {
     // Far too much audio: drop everything but the newest few packets.
     while (queue_.size() > 3) queue_.erase(queue_.begin());
@@ -129,6 +141,10 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   const int64_t ts = it->first;
   Packet pkt = std::move(it->second);
   queue_.erase(it);
+  if (pkt.decode) {
+    pkt.pcm = pkt.decode();
+    if (pkt.pcm.empty()) pkt.pcm.assign(pkt.samples, 0.0f);
+  }
   // NetEqImpl::DecodeLoop: the packet's RtpPacketInfo, which only the primary payload carries
   // (neteq_impl.cc:316-318, 1352-1354).
   if (pkt.priority.codec_level == 0 && pkt.priority.red_level == 0) {
@@ -267,7 +283,7 @@ int64_t AudioJitterBuffer::PacketSpanSamples(bool count_waiting_time) const {
   if (count_waiting_time) {
     span += (ticks_ - back.second.insert_tick) * kMsPerTick * (cfg_.sample_rate / 1000);
   } else {
-    span += static_cast<int64_t>(back.second.pcm.size());
+    span += static_cast<int64_t>(back.second.samples);
   }
   return span;
 }
