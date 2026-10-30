@@ -169,8 +169,9 @@ class Owners(unittest.TestCase):
         # #365 closed: its lossy_feedback cell and the issue_84 low-rate cells went to #360 (Owner 2026-10-25).
         # #406: #360 closed; the shallow and low-bandwidth cells still on main went to #411 as well.
         # #409: #63 closed; the session-layer cell #416 opened again went to #420 as well.
-        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 411],
-                 "issue_12_lossbwe_shallow": [24, 37, 411], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
+        # #732: #411's D3 shallow cells close as explained, with a note under #732.
+        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 732],
+                 "issue_12_lossbwe_shallow": [24, 37, 732], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
                  "issue_76_session_layer_v2": [63, 420],
                  "issue_152_alr_request_probe_v2": [360],
                  "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
@@ -189,6 +190,7 @@ class Owners(unittest.TestCase):
         # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
         # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
         # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
+        # The shallow-queue D3 cells (#411, split to #732) close as explained under #732, with a note.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -196,9 +198,9 @@ class Owners(unittest.TestCase):
                  ("issue_5_burst15_freeze", "cc.queue_p95_ms"): 410,
                  ("burst_loss", "audio.jb_delay_p95_ms"): 410,
                  ("issue_29_ulpfec_over_red", "video.freeze_total_ms"): 410,
-                 ("issue_21_shallow_drop_repair", "video.freeze_count"): 411,
-                 ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 411,
-                 ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 411,
+                 ("issue_21_shallow_drop_repair", "video.freeze_count"): 732,
+                 ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 732,
+                 ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 732,
                  ("low_bandwidth", "cc.rtt_p50_ms"): 411,
                  ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
                  ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
