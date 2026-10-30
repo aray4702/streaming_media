@@ -534,36 +534,6 @@ SM_TEST(RtpReceiver, AudioFramesAreDecodedIntoTheJitterBuffer) {
   r.GetAudio(out, Timestamp::Millis(120));  // Playout does not crash.
 }
 
-SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
-  FakeDecoder dec;
-  RtpReceiverConfig c;
-  c.ssrc = 7;
-  c.payload_type = 63;
-  c.clock_rate = 8000;
-  c.video = false;
-  c.red = true;
-  c.decoder = &dec;
-  c.jitter_buffer.version = 1;  // Version 2 splits RED as NetEq: RedBlocksReachNetEqAsSplitRedOrders.
-  RtpReceiver r(c);
-  loss::RedEncoder red(1);
-  for (uint16_t i = 0; i < 6; ++i) {
-    if (i == 2) {  // Packet 2 is lost; packet 3 repeats its frame.
-      red.Encode(111, 160u * i, Bytes(40, 99));
-      continue;
-    }
-    RtpPacket p;
-    p.ssrc = 7;
-    p.payload_type = 63;
-    p.seq = i;
-    p.timestamp = 160u * i;
-    p.payload = red.Encode(111, p.timestamp, Bytes(40, static_cast<uint8_t>(10 + i)));
-    r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
-  }
-  SM_EXPECT_EQ(dec.calls, 6);  // Five received plus the one recovered from RED.
-  SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 6u);
-}
-
 // NetEqImpl::InsertPacketInternal with RedPayloadSplitter::SplitRed (issue
 // #722): the primary goes in first, then the redundant block, and every block
 // reaches NetEq. Packet 2 is lost, so packet 3's redundant copy of frame 2
@@ -581,7 +551,6 @@ SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   c.video = false;
   c.red = true;
   c.decoder = &dec;
-  c.jitter_buffer.version = 2;
   RtpReceiver r(c);
   loss::RedEncoder red(1);
   std::vector<float> out(80);
@@ -623,14 +592,13 @@ class FecDecoder : public FakeDecoder {
   std::vector<uint32_t> fec_ts;
 };
 
-RtpReceiverConfig FecAudioCfg(AudioDecoder* dec, int jitter_buffer_version) {
+RtpReceiverConfig FecAudioCfg(AudioDecoder* dec) {
   RtpReceiverConfig c;
   c.ssrc = 7;
   c.payload_type = 111;
   c.clock_rate = 8000;
   c.video = false;
   c.decoder = dec;
-  c.jitter_buffer.version = jitter_buffer_version;
   return c;
 }
 
@@ -648,10 +616,10 @@ void SendFecAudio(RtpReceiver& r, uint16_t i, bool fec) {
 
 // AudioDecoderOpusImpl::ParsePayload (audio_decoder_opus.cc): a packet with
 // in-band FEC gives NetEq a second frame at its timestamp less the FEC's
-// duration, which fills a lost packet's slot (neteq v2 only).
+// duration, which fills a lost packet's slot.
 SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
   FecDecoder dec;
-  RtpReceiver r(FecAudioCfg(&dec, 2));
+  RtpReceiver r(FecAudioCfg(&dec));
   for (uint16_t i = 0; i < 6; ++i) {
     if (i != 2) SendFecAudio(r, i, i > 0);  // Packet 2 is lost; packet 3 carries it.
   }
@@ -666,7 +634,7 @@ SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 3u);
   // Playout conceals exactly as much as a receiver that got every packet.
   FecDecoder all_dec;
-  RtpReceiver all(FecAudioCfg(&all_dec, 2));
+  RtpReceiver all(FecAudioCfg(&all_dec));
   for (uint16_t i = 0; i < 6; ++i) SendFecAudio(all, i, false);
   std::vector<float> out(80);
   for (int t = 0; t < 200; t += 10) {
@@ -698,7 +666,7 @@ class PlayoutDecoder : public FecDecoder {
 // NetEq's sequence. A copy that a higher priority replaced is never decoded.
 SM_TEST(RtpReceiver, NetEqV2DecodesFramesAtPlayoutInTimestampOrder) {
   PlayoutDecoder dec;
-  RtpReceiverConfig c = FecAudioCfg(&dec, 2);
+  RtpReceiverConfig c = FecAudioCfg(&dec);
   c.payload_type = 63;
   c.red = true;
   RtpReceiver r(c);
@@ -722,17 +690,6 @@ SM_TEST(RtpReceiver, NetEqV2DecodesFramesAtPlayoutInTimestampOrder) {
   SM_EXPECT_EQ(dec.order.size(), 4u);
   for (size_t i = 0; i < dec.order.size(); ++i) SM_EXPECT_EQ(dec.order[i], 160u * i);
   SM_EXPECT_TRUE(dec.fec_ts.empty());
-}
-
-SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
-  FecDecoder dec;
-  RtpReceiver r(FecAudioCfg(&dec, 1));
-  for (uint16_t i = 0; i < 6; ++i) {
-    if (i != 2) SendFecAudio(r, i, i > 0);
-  }
-  SM_EXPECT_TRUE(dec.fec_ts.empty());
-  SM_EXPECT_EQ(r.stats().audio_fec_frames, 0u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 5u);
 }
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {

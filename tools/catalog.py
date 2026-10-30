@@ -137,19 +137,30 @@ ALGORITHMS = [
                       "libwebrtc's (yardstick #779), where the header-order, deduplicated split differed from the first one."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
-         headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
-         bench=["loss/Plc_Conceal10ms_16k", "loss/Q_Plc_10pct_speech"],
-         scenario="20 s of synthetic voiced speech, 10 ms frames, 10% random loss. Compares the whole-signal SNR "
-                  "of the concealed output against zero insertion, and the SNR/level inside the lost frames.",
+         headers=["timing/neteq_expand.h"], unit=["NetEqExpand", "NetEqMerge", "NetEqBackgroundNoise", "NetEqRandomVector"],
+         e2e=["E2E_Plc"],
+         bench=["timing/Q_Plc_10pct_speech"],
+         scenario="20 s of synthetic voiced speech in 20 ms packets over a link with 10% random loss and a constant "
+                  "40 ms delay, played 10 ms at a time through the audio jitter buffer (4.5) with time stretch off. "
+                  "Every lost packet must be concealed, and the concealed audio must keep the speech's level "
+                  "(RMS of the expand blocks against the normal blocks).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
-               "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
-               "the 'expand' operation of the audio jitter buffer's version 1 (4.5). Version 2 (`neteq v2`, the "
-               "session's and bench's NetEq) conceals only with NetEq's Expand; where its sync buffer can't fill "
-               "the output it plays silence as NetEq's `kSampleUnderrun` (#568), so this module isn't used there.",
-         verification="No defects found. #568 removed it from the jitter buffer's version 2, where it concealed "
-                      "the remainder of an output frame the sync buffer couldn't fill; NetEq mutes that frame "
-                      "(`neteq_impl.cc` GetAudioInternal). No scenario in the suite reaches that case on seed 1."),
+               "Concealment is libwebrtc M157's NetEq: `Expand` (with `RandomVector`), `BackgroundNoise`, `Merge` "
+               "and `Normal`'s first decode after an expand (modules/audio_coding/neteq/expand.cc, "
+               "background_noise.cc, random_vector.cc, merge.cc, normal.cc), ported as `NetEqExpand`, "
+               "`NetEqBackgroundNoise` and `NetEqMerge` (`timing/neteq_expand.h`, #62) and bit-exact with them on "
+               "int16 input (#789, #796). The audio jitter buffer (4.5) runs them; where its sync buffer can't "
+               "fill the output it plays silence as NetEq's `kSampleUnderrun` (#568). Opus LBRR (in-band FEC) and "
+               "DRED live inside the Opus codec; in-band FEC goes into the buffer as NetEq's ParsePayload puts it "
+               "(see 4.5). The library's own codec-agnostic concealer, `loss::PacketLossConcealer` (pitch repeat "
+               "with its own fades, the jitter buffer's version 1), was not libwebrtc's and was removed with "
+               "version 1 in #817.",
+         verification="NetEq's Expand, Merge and BackgroundNoise unit tests (golden hashes from the reference "
+                      "sources compiled unchanged) pass. #568 removed PacketLossConcealer from version 2, and "
+                      "#817 removed it and version 1. `E2E_Plc` and `Q_Plc_10pct_speech` measure NetEq's "
+                      "concealment (they measured PacketLossConcealer's before #817): seed 11, 11.2% packet loss, "
+                      "11.2% of the samples concealed in 98 expands, the expand blocks at 0.90 of the normal "
+                      "blocks' level."),
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
@@ -287,7 +298,8 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
                "packets, while falling jitter takes several seconds, so the buffer does not oscillate. "
-               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to v2 since #62, and `AudioJitterBufferConfig` on its own since #579): "
+               "That `DelayManager` was the v1 jitter buffer's; since #817 removed version 1 it has no caller in the library. "
+               "NetEq v2 (issue #62, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to it since #62, `AudioJitterBufferConfig` on its own since #579, and it is the only jitter buffer since #817 removed version 1): "
                "`NetEqDelayManager` ports libwebrtc M157's modules/audio_coding/neteq/ histogram.cc (Q30 buckets, "
                "Q15 forget factor from 0 with start_forget_weight 2), underrun_optimizer.cc (95th percentile of the "
                "largest relative delay of each 500 ms interval, 100 buckets of 20 ms, forget factor 0.983), "
@@ -315,7 +327,8 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
                "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
-               "audible. This is the v1 jitter buffer's DSP; `neteq v2` uses NetEq's (NetEqTimeStretch, see 4.5).",
+               "audible. This was the v1 jitter buffer's DSP; the jitter buffer uses NetEq's (NetEqTimeStretch, see 4.5), "
+               "and since #817 removed version 1 `TimeStretcher` has no caller in the library.",
          verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
                       "ready, but WSOLA needs 30 ms, so stretching never ran and latency stayed at 600 ms after "
                       "a stall. Fixed by decoding ahead only when a stretch is wanted (AudioJitterBuffer::"
@@ -330,8 +343,8 @@ ALGORITHMS = [
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
                   "buffer is compared with a fixed 20 ms and a fixed 200 ms buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
-               "Decoded PCM can be inserted (decode-on-insert, version 1 and decoders without a duration); with "
-               "version 2 and a decoder that gives the frame's duration (rtp::AudioDecoder::PacketDuration, "
+               "Decoded PCM can be inserted (decode-on-insert, for decoders without a duration); with "
+               "a decoder that gives the frame's duration (rtp::AudioDecoder::PacketDuration, "
                "AudioDecoder::PacketDuration in libwebrtc) the frame is inserted encoded and decoded when it is "
                "played, in timestamp order, as NetEqImpl::DecodeLoop decodes (#783): a stateful decoder (Opus) "
                "then sees NetEq's sequence, and copies replaced by a higher priority or discarded as late are "
@@ -355,7 +368,7 @@ ALGORITHMS = [
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
                "The packet buffer holds NetEq::Config::max_packets_in_buffer (200) packets and is flushed "
                "completely when a packet arrives to a full buffer, as PacketBuffer::InsertPacket without the "
-               "smart-flushing field trial (issue #331; version 1 keeps its own 100-packet limit). The flush takes "
+               "smart-flushing field trial (issue #331). The flush takes "
                "NetEqImpl's new_codec_ path (issue #773, docs/fixes/773-neteq-flush-reset.md): the packets up to the "
                "next decision skip the controller's statistics and DiscardOldPackets, the sync buffer is kept, and "
                "that decision (after the early return for a full output block) restarts the timestamp at the next "

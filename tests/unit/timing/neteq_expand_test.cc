@@ -265,7 +265,6 @@ SM_TEST(NetEqExpand, UnvoicedMutesFast) {
 // overlap as lookahead: every 10 ms of a gap is an expand.
 SM_TEST(AudioJitterBufferNetEqV2, ExpandCoversEveryTickOfAGap) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   std::vector<float> out(160);
   const std::vector<float> tone = Voiced(16000, 200, 320 * 400);

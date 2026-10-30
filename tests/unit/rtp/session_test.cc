@@ -1055,11 +1055,12 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
   SM_EXPECT_EQ(pacing_bps(true, false), 750000);  // No transport-cc: no override.
 }
 
-// #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
-// unless the config selects v1; AudioJitterBufferConfig on its own defaults to v2 too (#579).
+// #62: an audio stream receives through libwebrtc's NetEq, the only jitter buffer since
+// #817 removed version 1, with NetEq::Config's defaults (neteq.h: 200 packets, no minimum delay).
 SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
-  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
-  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 2);
+  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.neteq_delay.max_packets_in_buffer, 200);
+  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.neteq_delay.base_min_delay_ms, 0);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.neteq_delay.max_packets_in_buffer, 200);
 }
 
 // #574: ChannelReceive turns NetEq's muted state on (channel_receive.cc:107);

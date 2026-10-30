@@ -692,7 +692,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // sm_compare's AudioSendStream::Config: min = max = the codec rate, 20 ms Opus frames. The session
   // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
   audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
-  audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;

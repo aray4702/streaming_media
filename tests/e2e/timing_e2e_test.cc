@@ -151,6 +151,27 @@ SM_TEST(E2E_AudioJitterBuffer, AdaptiveBeatsFixedBuffers) {
   SM_EXPECT_GE(small.final_level_ms, 3 * 20.0);
 }
 
+// Concealment through NetEq (Expand, Merge, Normal) at 10% packet loss: every
+// lost packet is concealed, and the concealed audio keeps the speech's level
+// instead of dropping to silence.
+SM_TEST(E2E_Plc, SpeechOverLossyLink) {
+  sim::LinkConfig cfg;
+  cfg.base_delay = TimeDelta::Millis(40);
+  cfg.loss_rate = 0.10;
+  auto r = RunPlcSim(cfg, 20.0, 11);
+  SM_RECORD("plc_loss", r.loss);
+  SM_RECORD("plc_concealed", r.concealed);
+  SM_RECORD("plc_events", static_cast<double>(r.events));
+  SM_RECORD("plc_expand_level_ratio", r.expand_level_ratio);
+  SM_RECORD("plc_normal_level_ratio", r.normal_level_ratio);
+  SM_EXPECT_GT(r.loss, 0.07);
+  SM_EXPECT_GT(r.concealed, r.loss * 0.5);
+  SM_EXPECT_LT(r.concealed, r.loss * 2.0);
+  SM_EXPECT_GT(r.events, 0u);
+  SM_EXPECT_GT(r.expand_level_ratio, 0.6);
+  SM_EXPECT_GT(r.normal_level_ratio, 0.8);
+}
+
 SM_TEST(E2E_VideoJitter, EstimatorPreventsLateFrames) {
   auto with = RunVideoJitterSim(true, TimeDelta::Millis(10), 4);
   auto without = RunVideoJitterSim(false, TimeDelta::Millis(10), 4);

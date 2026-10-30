@@ -1,6 +1,8 @@
 // Section 4 benchmarks.
 #include "../tests/e2e/timing_sims.h"
 #include "sm_bench.h"
+#include "sm/timing/delay_manager.h"
+#include "sm/timing/time_stretch.h"
 
 using namespace sm;
 using namespace sm::timing;
@@ -112,4 +114,14 @@ SM_BENCH_QUALITY(timing, Q_VideoJitter_late_frames) {
   st.Counter("late_ratio", r.late_ratio);
   st.Counter("mean_delay_ms", r.mean_delay_ms);
   st.Require("late_ratio", r.late_ratio, "<=", 0.03);
+}
+
+SM_BENCH_QUALITY(timing, Q_Plc_10pct_speech) {
+  sim::LinkConfig cfg;
+  cfg.base_delay = TimeDelta::Millis(40);
+  cfg.loss_rate = 0.10;
+  auto r = e2e::RunPlcSim(cfg, 20.0, 11);
+  st.Counter("concealed", r.concealed);
+  st.Counter("expand_level_ratio", r.expand_level_ratio);
+  st.Require("expand_level_ratio", r.expand_level_ratio, ">=", 0.6);
 }

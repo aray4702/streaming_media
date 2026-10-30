@@ -13,7 +13,6 @@ if(SM_WITH_LOSS)
     loss/nack_tracker.cc
     loss/rtx.cc
     loss/red.cc
-    loss/plc.cc
     loss/keyframe_request.cc
     loss/rtcp_feedback.cc
     loss/ulpfec.cc

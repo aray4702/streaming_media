@@ -32,7 +32,7 @@ include(cmake/SmHelpers.cmake)
 
 # Section dependencies (timing uses loss/PLC and audio DSP, sync uses timing).
 if(SM_WITH_TIMING AND NOT SM_WITH_LOSS)
-  message(FATAL_ERROR "SM_WITH_TIMING requires SM_WITH_LOSS (NetEq-lite uses PLC)")
+  message(FATAL_ERROR "SM_WITH_TIMING requires SM_WITH_LOSS (the video e2e tests use its keyframe requests with timing)")
 endif()
 if(SM_WITH_SYNC AND NOT SM_WITH_TIMING)
   message(FATAL_ERROR "SM_WITH_SYNC requires SM_WITH_TIMING")
