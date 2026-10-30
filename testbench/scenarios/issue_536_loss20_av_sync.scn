@@ -26,10 +26,7 @@ expect sync.av_offset_p95_ms < 1829
 # is 11290 and 1178, past libwebrtc's worst seed (10278 / 811); in band on 10 seeds (#873's seed table, parity run
 # 41118441708: freeze total 8395 vs libwebrtc 8103, longest 692 vs 623). Window ruling, 2026-10-30, past
 # libwebrtc's worst seed (10278 / 811), in band on 10 seeds.
-# Issue #875 (send rates counted in the pacer's loop, read at the current time, as RtpSenderEgress; program.md 0.2,
-# needs the window's sign-off): was <= 35. Ours seed 1 35 -> 36, one past libwebrtc's worst seed (35); seeds 1-10
-# mean 21.8 -> 28.8 against libwebrtc's 27.4 (freeze total 6655 -> 8789 against 8103).
-expect video.freeze_count <= 36
+expect video.freeze_count <= 35
 expect video.freeze_total_ms <= 11300
 expect video.longest_freeze_ms <= 1180
 # libwebrtc: 27.13 28.60 27.50 26.67 29.53 27.43 29.00 28.87 26.47 27.23 (worst 26.47). Ours seed 1: 27.3.
