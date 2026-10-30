@@ -1018,8 +1018,8 @@ issue_12_lossbwe_policer - Policer: 1.5 Mbps enforced by dropping, no queueing (
   audio.concealed_pct                     0.0          0.0  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms           5.8          1.7  =
-  audio.mouth_to_ear_p95_ms               907         1047  sm
-  audio.jb_delay_p95_ms                   866         1006  sm
+  audio.mouth_to_ear_p95_ms               906         1047  sm
+  audio.jb_delay_p95_ms                   865         1006  sm
   video.freeze_count                      6.1          7.2  sm
   video.freeze_total_ms                  8854        11343  sm
   video.longest_freeze_ms                3139         2946  webrtc
@@ -1954,8 +1954,8 @@ issue_15_aimd_v2_random_loss - 5% random loss on a 2 Mbps link, `cc v2`: the del
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          28.7           32  =
-  audio.mouth_to_ear_p95_ms               214          228  sm
-  audio.jb_delay_p95_ms                   131          144  sm
+  audio.mouth_to_ear_p95_ms               213          228  sm
+  audio.jb_delay_p95_ms                   130          144  sm
   video.freeze_count                      1.2          2.1  sm
   video.freeze_total_ms                   321          479  sm
   video.longest_freeze_ms                 261          228  =
@@ -3880,8 +3880,8 @@ issue_410_queue_sample_phase - Audio-only call on an idle 200 kbps link: the bot
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          64.2         64.2  =
-  audio.mouth_to_ear_p95_ms               179          179  =
-  audio.jb_delay_p95_ms                   130          130  =
+  audio.mouth_to_ear_p95_ms               180          180  =
+  audio.jb_delay_p95_ms                   131          131  =
   cc.utilization_pct                     85.3         85.3  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                       4400         4400  =
@@ -5734,8 +5734,8 @@ issue_569_adjuster_on_update - random_loss_5pct with the bitrate adjuster re-run
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          28.7           32  =
-  audio.mouth_to_ear_p95_ms               214          228  sm
-  audio.jb_delay_p95_ms                   131          144  sm
+  audio.mouth_to_ear_p95_ms               213          228  sm
+  audio.jb_delay_p95_ms                   130          144  sm
   video.freeze_count                      1.2          2.1  sm
   video.freeze_total_ms                   321          479  sm
   video.longest_freeze_ms                 261          228  =
@@ -7600,8 +7600,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2121         2150  =
-  audio.jb_delay_p95_ms                  1693         1733  =
+  audio.mouth_to_ear_p95_ms              2122         2150  =
+  audio.jb_delay_p95_ms                  1694         1733  =
   video.freeze_count                      2.4          2.6  =
   video.freeze_total_ms                  2069         1434  webrtc
   video.longest_freeze_ms                 873          597  webrtc
@@ -7924,11 +7924,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               502          494  =
-  audio.jb_delay_p95_ms                   300          295  =
+  audio.mouth_to_ear_p95_ms               502          495  =
+  audio.jb_delay_p95_ms                   300          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                13.7         13.4  =
+  video.longest_freeze_ms                13.6         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
