@@ -3,6 +3,18 @@
 // testfile32kHz.pcm, plus tests of the ported decisions (the alignment,
 // SignalScaling's mute factor, the unmuting and the crossfade) and of the
 // jitter buffer's use of them.
+//
+// `NetEqMerge, BitExactWithLibwebrtc` (#783): the golden hashes come from
+// libwebrtc itself: compare/webrtc/reference/modules/audio_coding/neteq/
+// merge.cc, sync_buffer.cc, audio_multi_vector.cc, audio_vector.cc,
+// dsp_helper.cc and cross_correlation.cc with the signal processing
+// library's C files, compiled unchanged against the prebuilt's headers (stubs
+// for rtc_base/checks.h, DCHECKs off as in a release build, and for Expand,
+// which hands Merge::Process the case's period, mute factor, max lag and
+// overlap), driven with ForEachMergeCase() below. Each case hashes (FNV-1a
+// step h = (h ^ v) * prime) Process's return value, the sync buffer's
+// unplayed samples after the merge and every output sample as uint16. The
+// merge is integer only, so the hashes hold on every platform.
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +56,83 @@ std::vector<int16_t> ToInt16(const std::vector<float>& x) {
   std::vector<int16_t> y(x.size());
   for (size_t i = 0; i < x.size(); ++i) y[i] = static_cast<int16_t>(std::lround(x[i] * 32768.0f));
   return y;
+}
+
+// Integer-only test signals (the time stretch test's GoldenSignal).
+std::vector<int16_t> GoldenSignal(int kind, size_t n, int64_t p, int64_t a, uint32_t seed) {
+  std::vector<int16_t> x(n);
+  uint32_t s = seed;
+  for (size_t i = 0; i < n; ++i) {
+    s = s * 1664525u + 1013904223u;
+    const int64_t noise = (static_cast<int64_t>(s >> 16) - 32768) * a / 32768;
+    const int64_t pp = kind == 3 ? p + static_cast<int64_t>(i / 64) : p;
+    const int64_t ph = static_cast<int64_t>(i + seed) % pp;
+    const int64_t tri = ph < pp / 2 ? (4 * a * ph) / pp - a : 3 * a - (4 * a * ph) / pp;
+    const int64_t pp3 = pp / 3 > 1 ? pp / 3 : 2;
+    const int64_t ph3 = static_cast<int64_t>(i + seed) % pp3;
+    const int64_t tri3 = (ph3 < pp3 / 2 ? (4 * a * ph3) / pp3 - a : 3 * a - (4 * a * ph3) / pp3) / 3;
+    int64_t v = 0;
+    switch (kind) {
+      case 0: v = tri + tri3; break;
+      case 1: v = noise; break;
+      case 2: v = tri + tri3 + noise / 4; break;
+      default:
+        v = (tri + tri3) * 2;
+        if (i % 211 < 2) v = (i & 1) ? 32767 : -32768;
+        break;
+    }
+    x[i] = static_cast<int16_t>(std::clamp<int64_t>(v, -32768, 32767));
+  }
+  return x;
+}
+
+uint64_t Mix(uint64_t h, uint64_t v) { return (h ^ v) * 1099511628211ull; }
+
+struct MergeCase {
+  std::vector<int16_t> sync;  // Oldest first; the last `old_length` are unplayed.
+  size_t old_length;
+  std::vector<int16_t> period;  // Expand's output.
+  int16_t mute_factor;
+  size_t max_lag;
+  size_t overlap_length;
+  std::vector<int16_t> input;
+};
+
+// Every case at `fs_hz`: 4 signal kinds x 5 pitch periods x 3 unplayed
+// lengths x 3 decoded lengths (10 ms, which takes Downsample's short path,
+// 20 and 60 ms) x 3 Expand mute factors x 3 expansion / decoded amplitudes.
+template <class F>
+void ForEachMergeCase(int fs_hz, F f) {
+  const size_t m = static_cast<size_t>(fs_hz / 8000);
+  const size_t pitches[] = {20, 37, 64, 97, 120};
+  const size_t olds[] = {5, 18, 80};
+  const size_t inputs[] = {80, 160, 480};
+  const int16_t mutes[] = {16384, 9000, 0};
+  const int64_t amps[][2] = {{8000, 8000}, {2000, 12000}, {12000, 2000}};
+  uint32_t seed = 1;
+  for (int kind = 0; kind < 4; ++kind) {
+    for (size_t p : pitches) {
+      for (size_t old : olds) {
+        for (size_t in : inputs) {
+          for (int16_t mute : mutes) {
+            for (const auto& a : amps) {
+              ++seed;
+              MergeCase c;
+              const size_t pitch = p * m;
+              c.sync = GoldenSignal(kind, 1500 * m, static_cast<int64_t>(pitch), a[0], seed);
+              c.old_length = old * m;
+              c.period = GoldenSignal(kind, pitch, static_cast<int64_t>(pitch), a[0], seed + 7);
+              c.mute_factor = mute;
+              c.max_lag = pitch + (seed % 3) * m;
+              c.overlap_length = 5 * m;
+              c.input = GoldenSignal(kind, in * m, static_cast<int64_t>(pitch), a[1], seed + 13);
+              f(c);
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 struct Recorder : EventSink {
@@ -170,7 +259,9 @@ SM_TEST(NetEqMerge, ShortExpansionUnmutesAtTheMinimumRate) {
   std::vector<float> sync = Voiced(16000, 200, 1600);
   ExpandInto(expand, sync);
   const size_t future = expand.overlap_length();
-  const std::vector<float> input = Voiced(16000, 200, 320, 0.3, sync.size() - future);
+  // Decoded audio is int16, as from a decoder.
+  std::vector<float> input = Voiced(16000, 200, 320, 0.3, sync.size() - future);
+  for (float& v : input) v = static_cast<float>(std::lround(v * 32768.0f)) / 32768.0f;
   std::vector<float> out;
   const size_t n = merge.Process(input, sync, future, expand, out);
   const int mute = merge.mute_factor();
@@ -240,4 +331,38 @@ SM_TEST(AudioJitterBufferNetEqV2, MergeAfterALostPacketIsContinuous) {
   float worst = 0;
   for (size_t i = 1; i < played.size(); ++i) worst = std::max(worst, std::fabs(played[i] - played[i - 1]));
   SM_EXPECT_LT(worst, 1.5f * max_step);
+}
+
+// Merge::Process after GetExpandedSignal, bit for bit with libwebrtc's
+// merge.cc (see the top of this file): SignalScaling, Downsample's Q12
+// filter, CrossCorrelationWithAutoShift normalized to 14 bits, the fixed
+// point peak search, RampSignal, UnmuteSignal and CrossFade.
+SM_TEST(NetEqMerge, BitExactWithLibwebrtc) {
+  const struct {
+    int fs_hz;
+    uint64_t hash;
+  } golden[] = {{8000, 0xfb20724263b5f776ull},
+                {16000, 0x2ae4a81243795bc6ull},
+                {32000, 0x439fa8525d9f6c60ull},
+                {48000, 0x3fbcc1d89cebc94full}};
+  for (const auto& g : golden) {
+    uint64_t h = 1469598103934665603ull;
+    size_t n = 0;
+    ForEachMergeCase(g.fs_hz, [&](const MergeCase& c) {
+      // GetExpandedSignal: the unplayed samples, then Expand's period
+      // repeated to 202 * fs/8000 samples.
+      std::vector<int16_t> expanded(c.sync.end() - static_cast<std::ptrdiff_t>(c.old_length), c.sync.end());
+      const size_t required = static_cast<size_t>(202 * g.fs_hz / 8000);
+      while (expanded.size() < required) expanded.insert(expanded.end(), c.period.begin(), c.period.end());
+      expanded.resize(std::max(required, c.old_length));
+      NetEqMerge merge(g.fs_hz);
+      const size_t length = merge.MergeExpanded(c.input, expanded, c.old_length, c.period.size(), c.mute_factor,
+                                                c.max_lag, c.overlap_length);
+      h = Mix(h, length - c.old_length);
+      for (size_t i = 0; i < length; ++i) h = Mix(h, static_cast<uint16_t>(merge.merged()[i]));
+      ++n;
+    });
+    SM_EXPECT_EQ(n, 1620u);
+    SM_EXPECT_EQ(h, g.hash);
+  }
 }

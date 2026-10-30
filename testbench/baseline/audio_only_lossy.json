@@ -1,7 +1,7 @@
 {
  "description": "Audio-only call over 10% random loss with jitter",
  "metrics": {
-  "audio.concealed_pct": 0.7569,
+  "audio.concealed_pct": 0.7568,
   "audio.interruption_ms": 0,
   "audio.interruptions": 0,
   "audio.jb_delay_p50_ms": 70,
