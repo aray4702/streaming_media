@@ -6,7 +6,7 @@ describe Congestive loss (2.5 Mbps, 60 ms queue, drop to 800 kbps at 15 s): vide
 # With `send_rate_stats` and `control_handler` on: e2e p95 574 on seed 1 (seeds 1-10: 574 610 430 526 413 530
 # 394 448 467 450, mean 484), av offset p95 466 (mean 379).
 # Target (issue #224): within the parity band of libwebrtc's mean (420 ms, band ~96 ms).
-# 40 seeds in compare-webrtc (#825): video e2e p95 spreads 240-620 ms per seed on both stacks.
+# 40 seeds in compare-webrtc (#825): video e2e p95 spreads 240-620 ms per seed on both stacks; in band on 40 (yardstick #826).
 compare_seeds 40
 duration 40s
 at 0s capacity=2500kbps delay=30ms queue=60ms
