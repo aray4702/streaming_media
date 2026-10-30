@@ -538,18 +538,29 @@ SM_TEST(Orientation, InverseRestoresAllEightCases) {
 }
 
 SM_TEST(ContentPolicy, HintsMapToPolicies) {
-  auto text = SettingsFor(ContentHint::kText, true);
-  SM_EXPECT_TRUE(text.degradation == Degradation::kMaintainResolution);
-  SM_EXPECT_TRUE(text.variable_framerate);
-  SM_EXPECT_LE(text.max_qp_h264, 32);
-  auto motion = SettingsFor(ContentHint::kMotion, false);
-  SM_EXPECT_TRUE(motion.degradation == Degradation::kMaintainFramerate);
-  SM_EXPECT_FALSE(motion.variable_framerate);
-  // No hint: camera keeps the frame rate, screencast the resolution, as
-  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064).
-  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, false).degradation == Degradation::kMaintainFramerate);
-  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, true).degradation == Degradation::kMaintainResolution);
+  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064):
+  // kFluid keeps the frame rate; screencast, kDetailed and kText keep the
+  // resolution; otherwise MAINTAIN_FRAMERATE (BALANCED only with a trial).
+  struct Case {
+    ContentHint hint;
+    bool screencast;
+    Degradation want;
+  };
+  const Case cases[] = {
+      {ContentHint::kNone, false, Degradation::kMaintainFramerate},
+      {ContentHint::kNone, true, Degradation::kMaintainResolution},
+      {ContentHint::kMotion, false, Degradation::kMaintainFramerate},
+      {ContentHint::kMotion, true, Degradation::kMaintainFramerate},
+      {ContentHint::kDetail, false, Degradation::kMaintainResolution},
+      {ContentHint::kDetail, true, Degradation::kMaintainResolution},
+      {ContentHint::kText, false, Degradation::kMaintainResolution},
+      {ContentHint::kText, true, Degradation::kMaintainResolution},
+  };
+  for (const Case& c : cases) SM_EXPECT_TRUE(SettingsFor(c.hint, c.screencast).degradation == c.want);
   SM_EXPECT_TRUE(ContentSettings{}.degradation == Degradation::kMaintainFramerate);
+  // The hint picks only the degradation preference (#877): no QP ceiling,
+  // frame-rate floor or cap, which libwebrtc does not derive from it.
+  static_assert(sizeof(ContentSettings) == sizeof(Degradation));
 }
 
 SM_TEST(FrameScheduler, RendersOnTimeDropsLateWhenNewerWaiting) {

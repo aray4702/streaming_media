@@ -169,15 +169,14 @@ SM_TEST(E2E_Orientation, RotatingPhoneRendersUpright) {
 }
 
 SM_TEST(E2E_ContentPolicy, ScreenShareZeroHertzRepeatsAsLibwebrtc) {
-  // 60 s of screen sharing, max 15 fps (SettingsFor's screencast cap), VP8:
+  // 60 s of screen sharing, max 15 fps, VP8:
   // a new slide every 10 s and a cursor blinking at 3.75 Hz for 2 s of every
   // 10 s. The capturer delivers a frame only when the screen changes (min fps
   // 0), as a zero-hertz source; FrameCadenceAdapter repeats the last frame
   // while the screen is static, and the encoder's QP (a model: 40 on a new
   // frame, 4 lower on each refresh) feeds QualityConvergenceController as
   // VideoStreamEncoder does (video_stream_encoder.cc:2316-2325).
-  ContentSettings s = SettingsFor(ContentHint::kText, true);
-  const double fps = s.max_fps;
+  const double fps = 15;
   FrameCadenceAdapter a;
   QualityConvergenceController quality;
   quality.Initialize(1, std::nullopt, VideoCodecType::kVP8);

@@ -1496,13 +1496,16 @@ ALGORITHMS = [
                   "new slide every 10 s and a blinking cursor, delivered by a zero-hertz capturer only when the "
                   "screen changes. Every change is encoded one frame period after it arrives; a static screen is "
                   "repeated at the frame period until the QP converges, then once per second.",
-         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy "
-               "only flags that they should be enabled.",
+         notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
+               "Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy does not set them.",
          verification="No defects found. Issue #581: with no hint, camera video maps to maintain-framerate (the "
                       "`ContentSettings` default too), as libwebrtc's `GetDegradationPreference` "
                       "(`media/engine/webrtc_video_engine.cc:2032-2064`; BALANCED only with the "
-                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. The QP ceilings and "
-                      "frame-rate floors stay with #566. "
+                      "`WebRTC-Video-BalancedDegradation` trial, off); it was balanced. Issue #877 (Owner decision): "
+                      "`SettingsFor` and `ContentSettings` carry only the degradation preference; the QP ceilings "
+                      "(40 detail, 32 text), frame-rate floors (15, 2, 1), the screencast frame-rate cap and the "
+                      "variable-frame-rate and screen-tools flags are removed, as libwebrtc derives none of them "
+                      "from the hint. Nothing in the call read them, so no test bench metric moves. "
                       "Issue #878: the block-hash `FrameChangeDetector` (which skipped unchanged frames and sent a "
                       "1/s keep-alive) is replaced by a port of libwebrtc's `FrameCadenceAdapter` "
                       "(`video/frame_cadence_adapter.cc`: passthrough and `ZeroHertzAdapterMode`) and "
@@ -1701,7 +1704,7 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 9
     dict(id="9.1", slug="rtcp-engine", title="RTCP engine, SDES and BYE",
          problems=["Receiver and sender reports, RTT and feedback -> one RTCP engine per session",
-                   "Early feedback (NACK, PLI, FIR, loss notification, transport-cc, REMB) -> compound packets sent at once"],
+                   "Early feedback (NACK, PLI, FIR, loss notification, transport-cc, REMB) -> sent at once, one datagram per libwebrtc send call"],
          headers=["rtp/rtcp_engine.h", "rtp/rtcp_sdes_bye.h"], unit=["RtcpEngine", "RtcpSdesBye"], e2e=["E2E_RtpSession"],
          bench=[],
          scenario="Two sessions exchange bytes over sim::NetworkLink (tests/e2e/rtp_session_e2e_test.cc): reports "
@@ -1716,7 +1719,7 @@ ALGORITHMS = [
                "(issue #820). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
                "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum with libwebrtc's `webrtc::Random` (xorshift64*, `XorshiftRandom`; rtc_base/random.cc) seeded as `RTCPSender::random_` is, with the clock in microseconds when the engine is built (the caller passes it in; the test bench passes sm_compare's clock start to every engine, so both stacks draw the same intervals, issue #517), at least "
-               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). With `xr_rrtr` (libwebrtc's `rtcp_xr.receiver_reference_time_report`) a receive-only engine adds an RFC 3611 RRTR to every report and takes the RTT from the sender's DLRR echo (RTCPSender::BuildExtendedReports, RTCPReceiver::HandleXrDlrrReportBlock); every engine echoes the RRTRs it received in a DLRR on its next report, and the XR goes last in the compound (issue #356). Differs in having one engine per session where libwebrtc has "
+               "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). Each libwebrtc send call is its own datagram: transport-cc and REMB (each a SendCombinedRtcpPacket call) never share one with a NACK, PLI, FIR or loss notification compound (SendRTCP), and the session builds its transport feedback before its receivers' 20 ms NACK tick, the order libwebrtc's task queue runs them in when both are due at once, since ReceiveSideCongestionController's task was posted first (issue #860). With `xr_rrtr` (libwebrtc's `rtcp_xr.receiver_reference_time_report`) a receive-only engine adds an RFC 3611 RRTR to every report and takes the RTT from the sender's DLRR echo (RTCPSender::BuildExtendedReports, RTCPReceiver::HandleXrDlrrReportBlock); every engine echoes the RRTRs it received in a DLRR on its next report, and the XR goes last in the compound (issue #356). Differs in having one engine per session where libwebrtc has "
                "one per SSRC, which one-to-one calls allow. Wire layouts are checked against libwebrtc's parsers in "
                "compare/webrtc/rtcp_interop.cc (CI job compare-webrtc).",
          verification="Introduced by #32 plan PRs 1 and 2. The Owner checked the scheduling constants against "
@@ -1732,6 +1735,11 @@ ALGORITHMS = [
                       "(unit.RtcpEngine.SenderReportCarriesSdesEvenWithoutACname, ReceiverReportCarriesSdesOnlyWithACname, "
                       "ByeGoesLastInACompoundWithTheFullReport, unit.Session.SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes) "
                       "and checked both ways in sm_rtcp_interop. "
+                      "#860: one datagram per send call and transport feedback ahead of the NACK tick "
+                      "(unit.RtcpEngine.TransportFeedbackNeverSharesADatagramWithACompound, "
+                      "unit.Session.TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime); on seed 1 of "
+                      "issue_12_lossbwe_policer the forward link now matches libwebrtc's packet for packet through 690 ms "
+                      "(104 rows), where it matched through 410 ms (60 rows) before. "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

@@ -424,10 +424,14 @@ void EngineToWebrtc() {
     std::vector<uint32_t> ssrcs = {0x5555};
     e.QueueRemb(sm::DataRate::KilobitsPerSec(1200), ssrcs);
     auto out = e.Process(sm::Timestamp::Millis(1));
-    bool ok = out.size() == 1;
+    // One datagram per RTCPSender call (issue #860): SendRTCP's compound with NACK, PLI and FIR, then
+    // transport-cc and REMB, each a SendCombinedRtcpPacket datagram behind an empty RR.
+    bool ok = out.size() == 3;
     auto hs = ok ? WebrtcWalk(out[0].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
-    ok = ok && hs.size() == 6;
-    webrtc::rtcp::ReceiverReport lead;
+    auto hs_tcc = ok ? WebrtcWalk(out[1].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
+    auto hs_remb = ok ? WebrtcWalk(out[2].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
+    ok = ok && hs.size() == 4 && hs_tcc.size() == 2 && hs_remb.size() == 2;
+    webrtc::rtcp::ReceiverReport lead, lead_tcc, lead_remb;
     webrtc::rtcp::Nack nack;
     webrtc::rtcp::Pli pli;
     webrtc::rtcp::Fir fir;
@@ -436,11 +440,13 @@ void EngineToWebrtc() {
     ok = ok && lead.Parse(hs[0]) && lead.sender_ssrc() == 0x4444 && lead.report_blocks().empty() &&
          nack.Parse(hs[1]) && nack.packet_ids() == std::vector<uint16_t>(seqs) && pli.Parse(hs[2]) &&
          pli.media_ssrc() == 0x5555 && fir.Parse(hs[3]) && fir.requests().size() == 1 &&
-         fir.requests()[0].ssrc == 0x5555 && tcc.Parse(hs[4]) && tcc.sender_ssrc() == 0x4444 &&
-         tcc.media_ssrc() == 0x5555 && remb.Parse(hs[5]) && remb.sender_ssrc() == 0x4444 &&
+         fir.requests()[0].ssrc == 0x5555 && lead_tcc.Parse(hs_tcc[0]) && lead_tcc.sender_ssrc() == 0x4444 &&
+         lead_tcc.report_blocks().empty() && tcc.Parse(hs_tcc[1]) && tcc.sender_ssrc() == 0x4444 &&
+         tcc.media_ssrc() == 0x5555 && lead_remb.Parse(hs_remb[0]) && lead_remb.sender_ssrc() == 0x4444 &&
+         lead_remb.report_blocks().empty() && remb.Parse(hs_remb[1]) && remb.sender_ssrc() == 0x4444 &&
          remb.ssrcs() == std::vector<uint32_t>{0x5555} && remb.bitrate_bps() > 1100000 &&
          remb.bitrate_bps() < 1300000;
-    Check(ok, "feedback compound: RR + NACK + PLI + FIR + transport-cc + REMB");
+    Check(ok, "feedback datagrams: RR + NACK + PLI + FIR, RR + transport-cc, RR + REMB");
   }
 }
 
