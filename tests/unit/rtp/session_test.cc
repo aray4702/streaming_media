@@ -477,6 +477,47 @@ SM_TEST(Session, NackFromThePeerIsAnsweredWithRtxOnTheRtxSsrc) {
   SM_EXPECT_EQ(rtx, 1u);
 }
 
+// Issue #860: transport-cc goes out through SendCombinedRtcpPacket, a datagram of its own, and
+// ReceiveSideCongestionController's task runs before a NACK sent at the same time (it was posted
+// first), so the sender's early-loss resends come before the NACK's, as libwebrtc's.
+SM_TEST(Session, TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime) {
+  Pair p;
+  auto chunks = test::MakeTestFrameChunks(true, 3000, 1188);
+  p.a.SendVideoChunks(p.a_video, chunks, 0, Timestamp::Millis(0));
+  std::vector<Bytes> video;
+  for (auto& o : Pump(p.a, 0, 300)) {
+    if (o.kind == OutgoingKind::kVideo) video.push_back(std::move(o.bytes));
+  }
+  SM_ASSERT_GE(video.size(), 3u);
+  for (int64_t t = 0; t < 100; ++t) {
+    p.b.Process(Timestamp::Millis(t));
+    p.b.TakeOutgoing();
+  }
+  // The first transport feedback is due at 100 ms; the packet after a lost one arrives then too.
+  const Timestamp now = Timestamp::Millis(100);
+  for (size_t i = 0; i < video.size(); ++i) {
+    if (i != 1) p.b.OnPacket(video[i], now);
+  }
+  p.b.Process(now);
+  std::vector<std::vector<loss::RtcpType>> datagrams;
+  for (auto& o : p.b.TakeOutgoing()) {
+    if (o.kind != OutgoingKind::kRtcp) continue;
+    auto split = loss::SplitCompoundRtcp(o.bytes);
+    SM_ASSERT_TRUE(split.has_value());
+    std::vector<loss::RtcpType> types;
+    for (const auto& q : *split) types.push_back(q.type);
+    datagrams.push_back(types);
+  }
+  const auto has = [](const std::vector<loss::RtcpType>& t, loss::RtcpType x) {
+    return std::find(t.begin(), t.end(), x) != t.end();
+  };
+  SM_ASSERT_EQ(datagrams.size(), 2u);
+  SM_EXPECT_TRUE(has(datagrams[0], loss::RtcpType::kTransportCc));
+  SM_EXPECT_FALSE(has(datagrams[0], loss::RtcpType::kNack));
+  SM_EXPECT_TRUE(has(datagrams[1], loss::RtcpType::kNack));
+  SM_EXPECT_FALSE(has(datagrams[1], loss::RtcpType::kTransportCc));
+}
+
 // ModuleRtpRtcpImpl2 (rtp_rtcp_impl2.cc PeriodicUpdate, OnReceivedNack; issue #217):
 // the packet history takes the RTT once a second from the last sample, and
 // 5 ms + that RTT on each NACK, not every sample as it arrives.

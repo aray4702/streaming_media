@@ -268,6 +268,26 @@ SM_TEST(RtcpEngine, FeedbackUpTo1460BytesIsOneDatagram) {
   SM_EXPECT_LE(out[0].bytes.size(), 1460u);
 }
 
+// Issue #860: RTCPSender sends transport-cc and REMB with SendCombinedRtcpPacket, each call a
+// datagram of its own, and NACK, PLI, FIR and loss notification with SendRTCP, a compound with the
+// report. Feedback queued at one time keeps its order, one datagram per call.
+SM_TEST(RtcpEngine, TransportFeedbackNeverSharesADatagramWithACompound) {
+  RtcpEngine e;
+  e.Process(Timestamp::Millis(0));
+  e.QueueTransportFeedback(cc::TransportFeedback{});
+  e.QueueNack(0x1234, std::vector<uint16_t>{7});
+  e.QueuePli(0x1234);
+  e.QueueTransportFeedback(cc::TransportFeedback{});
+  e.QueueRemb(DataRate::KilobitsPerSec(300), std::vector<uint32_t>{0x1234});
+  auto out = e.Process(Timestamp::Millis(1));
+  using T = loss::RtcpType;
+  SM_ASSERT_EQ(out.size(), 4u);
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
+  SM_EXPECT_TRUE((Types(out[1].bytes) == std::vector<T>{T::kReceiverReport, T::kNack, T::kPli}));
+  SM_EXPECT_TRUE((Types(out[2].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
+  SM_EXPECT_TRUE((Types(out[3].bytes) == std::vector<T>{T::kReceiverReport, T::kRemb}));
+}
+
 SM_TEST(RtcpEngine, TransportFeedbackAndRembSurviveARoundTrip) {
   RtcpConfig c;
   c.local_ssrc = 5;
@@ -281,9 +301,15 @@ SM_TEST(RtcpEngine, TransportFeedbackAndRembSurviveARoundTrip) {
   std::vector<uint32_t> ssrcs = {77};
   tx.QueueRemb(DataRate::KilobitsPerSec(800), ssrcs);
   auto out = tx.Process(Timestamp::Millis(1));
-  SM_ASSERT_EQ(out.size(), 1u);
+  // Two SendCombinedRtcpPacket calls, two datagrams (issue #860).
+  SM_ASSERT_EQ(out.size(), 2u);
   auto in = rx.OnRtcp(out[0].bytes, Timestamp::Millis(30));
   SM_EXPECT_TRUE(in.valid);
+  SM_EXPECT_TRUE(in.remb.empty());
+  auto in_remb = rx.OnRtcp(out[1].bytes, Timestamp::Millis(30));
+  SM_EXPECT_TRUE(in_remb.valid);
+  SM_EXPECT_TRUE(in_remb.transport_feedback.empty());
+  in.remb = in_remb.remb;
   SM_ASSERT_EQ(in.transport_feedback.size(), 1u);
   SM_EXPECT_EQ(in.transport_feedback[0].sender_ssrc, 5u);
   SM_EXPECT_EQ(in.transport_feedback[0].packets.size(), 6u);
