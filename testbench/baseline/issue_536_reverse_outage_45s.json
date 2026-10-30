@@ -89,6 +89,6 @@
   "video.time_to_first_frame_ms": 206,
   "video.undecodable_frames": 0
  },
- "passed": false,
+ "passed": true,
  "scenario": "issue_536_reverse_outage_45s"
 }

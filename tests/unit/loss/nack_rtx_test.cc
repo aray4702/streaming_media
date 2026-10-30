@@ -26,7 +26,6 @@ SM_TEST(NackTracker, DetectsGapAndRequestsImmediately) {
 
 SM_TEST(NackTracker, RetriesAfterRttThenRecovers) {
   NackConfig cfg;
-  cfg.min_retry_interval = TimeDelta::Millis(10);
   NackTracker n(cfg);
   n.UpdateRtt(TimeDelta::Millis(50));
   n.OnReceivedPacket(1, true, Ms(0));
@@ -46,7 +45,6 @@ SM_TEST(NackTracker, RetriesAfterRttThenRecovers) {
 // first one whenever GetNackBatch is called between them (issue #518).
 SM_TEST(NackTracker, RetryTicksKeepTheGridOfTheFirstAndReportTheNext) {
   NackConfig cfg;
-  cfg.min_retry_interval = TimeDelta::Millis(10);
   NackTracker n(cfg);
   n.UpdateRtt(TimeDelta::Millis(10));
   SM_EXPECT_FALSE(n.NextProcessTime().IsFinite());  // Nothing missing.
@@ -127,7 +125,6 @@ SM_TEST(Rtx, EncapsulationRoundTrip) {
 SM_TEST(NackTracker, GivesUpAfter100RetriesWithoutKeyframeRequest) {
   // NackRequester: kMaxNackRetries 100, and the entry is only erased.
   NackConfig cfg;
-  cfg.min_retry_interval = TimeDelta::Millis(10);
   NackTracker n(cfg);
   n.UpdateRtt(TimeDelta::Millis(10));
   n.OnReceivedPacket(1, true, Ms(0));
@@ -153,6 +150,70 @@ SM_TEST(NackTracker, ClearUpToForgetsRequestsBeforeAContinuousFrame) {
   n.ClearUpTo(4);
   SM_EXPECT_EQ(n.pending(), 0u);
   SM_EXPECT_TRUE(n.GetNackBatch(Ms(1000)).empty());
+}
+
+// NackRequester::OnReceivedPacket(seq, is_recovered): a packet recovered by FEC or RTX ahead of the
+// newest goes to recovered_list_ without moving the newest, sends nothing, and AddPacketsToNack skips it
+// when the next packet received as sent reveals the gap (libwebrtc's HandleFecRecoveredPacket; issue #846).
+SM_TEST(NackTracker, RecoveredPacketAheadIsNeverNacked) {
+  NackTracker n;
+  n.OnReceivedPacket(1, false, Ms(0));
+  SM_EXPECT_EQ(n.OnReceivedPacket(4, false, Ms(1), /*is_recovered=*/true), 0);
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_TRUE(n.GetSeqNumNackBatch(Ms(1)).empty());
+  n.OnReceivedPacket(5, false, Ms(2));
+  auto batch = n.GetSeqNumNackBatch(Ms(2));
+  SM_ASSERT_EQ(batch.size(), 2u);
+  SM_EXPECT_EQ(batch[0], 2);
+  SM_EXPECT_EQ(batch[1], 3);
+  SM_EXPECT_EQ(n.stats().recovered_ahead, 1u);
+  SM_EXPECT_EQ(n.stats().missing_detected, 2u);
+}
+
+// A recovered packet behind the newest is handled as any late packet: it leaves the NACK list and
+// reports how often it was NACKed (the AheadOf branch comes before the is_recovered one).
+SM_TEST(NackTracker, RecoveredPacketBehindLeavesTheList) {
+  NackTracker n;
+  n.OnReceivedPacket(1, false, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(0));
+  SM_EXPECT_EQ(n.GetSeqNumNackBatch(Ms(0)).size(), 1u);
+  SM_EXPECT_EQ(n.OnReceivedPacket(2, false, Ms(30), /*is_recovered=*/true), 1);
+  SM_EXPECT_EQ(n.pending(), 0u);
+  SM_EXPECT_EQ(n.stats().recovered_ahead, 0u);
+}
+
+// ClearUpTo also erases recovered_list_ below `seq`; recovered_list_ keeps kMaxPacketAge sequence
+// numbers behind each newly recovered one. A recovered entry that was forgotten is NACKed again.
+SM_TEST(NackTracker, RecoveredListIsClearedAndAged) {
+  NackConfig cfg;
+  cfg.max_packet_age = 100;
+  NackTracker n(cfg);
+  n.OnReceivedPacket(1, false, Ms(0));
+  n.OnReceivedPacket(3, false, Ms(0), /*is_recovered=*/true);
+  n.ClearUpTo(4);  // Drops recovered 3.
+  n.OnReceivedPacket(5, false, Ms(0));
+  SM_EXPECT_EQ(n.pending(), 3u);  // 2, 3 and 4.
+  NackTracker m(cfg);
+  m.OnReceivedPacket(1, false, Ms(0));
+  m.OnReceivedPacket(3, false, Ms(0), /*is_recovered=*/true);
+  m.OnReceivedPacket(104, false, Ms(0), /*is_recovered=*/true);  // Ages out 3 (< 104 - 100).
+  m.OnReceivedPacket(105, false, Ms(0));
+  SM_EXPECT_EQ(m.pending(), 102u);  // 2-103 (3 aged out of the recovered list); 104 skipped.
+}
+
+// GetNackBatch resends once `now - sent_at >= rtt` with no floor (nack_on_rtt_passed): a request sent
+// with the revealing packet 5 ms before a tick is resent on that tick when the RTT is 5 ms, where a
+// 20 ms minimum interval would hold it to the tick after (issue #846).
+SM_TEST(NackTracker, RetryHasNoFloorBelowTheRtt) {
+  NackTracker n;
+  n.UpdateRtt(TimeDelta::Millis(5));
+  n.OnReceivedPacket(1, false, Ms(0));
+  SM_EXPECT_TRUE(n.GetNackBatch(Ms(0)).empty());  // The 20 ms ticks start at 0.
+  n.OnReceivedPacket(3, false, Ms(15));
+  SM_EXPECT_EQ(n.GetSeqNumNackBatch(Ms(15)).size(), 1u);
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(20)).size(), 1u);
+  n.UpdateRtt(TimeDelta::Zero());
+  SM_EXPECT_EQ(n.GetNackBatch(Ms(40)).size(), 1u);
 }
 
 SM_TEST(NackTracker, ListOverflowClearsEverythingAndRequestsKeyframe) {
