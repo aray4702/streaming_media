@@ -195,6 +195,7 @@ class Owners(unittest.TestCase):
         # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
         # The shallow-queue D3 cells (#411, split to #732) close as explained under #732, with a note.
         # The low-bandwidth D4 cells (#733) are in band since #460 (#479's re-measure) and lose their rules.
+        # The keyframe-flush D7 cells (#736) are in band on 80 seeds since #460; #479's notes own them.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -205,7 +206,7 @@ class Owners(unittest.TestCase):
                  ("issue_21_shallow_drop_repair", "video.freeze_count"): 732,
                  ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 732,
                  ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 732,
-                 ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
+                 ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 479,
                  ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
         d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
