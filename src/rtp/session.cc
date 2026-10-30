@@ -804,6 +804,11 @@ void Session::Process(Timestamp now) {
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
   OnCallStatsUpdate(call_stats_.Process(now));
+  // Transport-wide feedback covers every stream of the transport. It goes before the receivers'
+  // 20 ms NACK tick: when both are due at once, libwebrtc runs the task posted first, and
+  // ReceiveSideCongestionController's task (posted at least 50 ms earlier, at its last run) is older
+  // than NackPeriodicProcessor's (posted 20 ms earlier), so its datagram leaves first (issue #860).
+  ProcessTransportFeedback(now);
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
     RtpReceiver& r = *v.receiver;
@@ -827,8 +832,6 @@ void Session::Process(Timestamp now) {
   }
   // RtpStreamsSynchronizer's 1 s task.
   if (av_sync_) av_sync_->Process(now);
-  // Transport-wide feedback covers every stream of the transport.
-  ProcessTransportFeedback(now);
   // Paced media.
   if (HasSendStreams()) {
     for (ReleasedPacket& r : send_.Process(now)) {

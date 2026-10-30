@@ -1,6 +1,7 @@
 #include "sm/rtp/rtcp_engine.h"
 
 #include <algorithm>
+#include <optional>
 
 namespace sm::rtp {
 
@@ -258,11 +259,17 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
     bye.clear();
     Flush(packets, RtcpOutKind::kFeedback, out);
   };
+  // Each RTCPSender call is its own datagram: transport-cc and REMB go out through
+  // SendCombinedRtcpPacket (rtcp_sender.cc), apart from the compound that SendRTCP builds for NACK,
+  // PLI, FIR or loss notification, so a sender handles them one datagram at a time (issue #860).
+  std::optional<Tag> combined;  // The tag of the open SendCombinedRtcpPacket datagram, if one is open.
   for (auto& q : queue_) {
-    if (!packets.empty() && bytes + q.bytes.size() > cfg_.max_datagram_bytes) {
+    const std::optional<Tag> q_combined = CarriesReport(q.tag) ? std::nullopt : std::optional<Tag>(q.tag);
+    if (!packets.empty() && (bytes + q.bytes.size() > cfg_.max_datagram_bytes || q_combined != combined)) {
       flush();
       bytes = 0;
     }
+    combined = q_combined;
     if (packets.empty() && !cfg_.reduced_size) {
       if (CarriesReport(q.tag)) {
         // RTCPSender::SendCompoundRTCP in compound mode (#178): PrepareReport
