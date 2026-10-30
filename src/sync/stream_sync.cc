@@ -182,20 +182,38 @@ void RtpStreamsSynchronizer::ExportMetrics(MetricsWriter& w) const {
   w.Gauge("video_target_delay_ms", last_targets_.total_video_delay_target_ms);
 }
 
-void MediaSyncGroups::AddStream(uint32_t ssrc, const std::string& cname, Kind kind) { streams_[ssrc] = {cname, kind}; }
-void MediaSyncGroups::RemoveStream(uint32_t ssrc) { streams_.erase(ssrc); }
+void MediaSyncGroups::AddStream(uint32_t ssrc, const std::string& sync_group, Kind kind) {
+  for (Stream& s : streams_) {
+    if (s.ssrc == ssrc) {
+      s.sync_group = sync_group;
+      s.kind = kind;
+      return;
+    }
+  }
+  streams_.push_back({ssrc, sync_group, kind});
+}
+
+void MediaSyncGroups::RemoveStream(uint32_t ssrc) {
+  std::erase_if(streams_, [ssrc](const Stream& s) { return s.ssrc == ssrc; });
+}
 
 std::vector<std::pair<uint32_t, uint32_t>> MediaSyncGroups::SyncPairs() const {
-  std::map<std::string, std::pair<std::optional<uint32_t>, std::optional<uint32_t>>> by;
-  for (const auto& [ssrc, info] : streams_) {
-    auto& slot = by[info.cname];
-    // The lowest SSRC of each kind represents the participant (stable).
-    auto& target = info.kind == Kind::kAudio ? slot.first : slot.second;
-    if (!target || ssrc < *target) target = ssrc;
-  }
   std::vector<std::pair<uint32_t, uint32_t>> out;
-  for (const auto& [cname, p] : by) {
-    if (p.first && p.second) out.emplace_back(*p.first, *p.second);
+  std::vector<const std::string*> configured;
+  for (const Stream& video : streams_) {
+    if (video.kind != Kind::kVideo || video.sync_group.empty()) continue;
+    // Call::ConfigureSync: only the group's first video stream gets the audio.
+    bool seen = false;
+    for (const std::string* g : configured) seen = seen || *g == video.sync_group;
+    if (seen) continue;
+    configured.push_back(&video.sync_group);
+    // FindAudioStreamForSyncGroup: the group's first audio stream, if any.
+    for (const Stream& audio : streams_) {
+      if (audio.kind == Kind::kAudio && audio.sync_group == video.sync_group) {
+        out.emplace_back(audio.ssrc, video.ssrc);
+        break;
+      }
+    }
   }
   return out;
 }

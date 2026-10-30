@@ -117,6 +117,37 @@ SM_TEST(Session, NextProcessTimeWithAVideoReceiverIsItsEarliestTimer) {
   SM_EXPECT_LE(next, at + TimeDelta::Seconds(3));
 }
 
+// Issue #821: `av_sync` puts the session's receive streams in one sync group, paired as
+// Call::ConfigureSync (call/call.cc:1300-1341) pairs them: none without it (an empty sync group),
+// the first video stream with the first audio stream once both exist, whichever came first, and a
+// later stream changes nothing (RtpStreamsSynchronizer::ConfigureSync with the same audio is a no-op).
+SM_TEST(Session, AvSyncPairsTheFirstAudioAndVideoReceiveStreams) {
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  Session off(Cfg(2));
+  off.AddAudioReceive(au, &dec);
+  off.AddVideoReceive(Video());
+  SM_EXPECT_TRUE(off.av_sync() == nullptr);
+
+  SessionConfig c = Cfg(2);
+  c.av_sync = true;
+  Session s(c);
+  s.AddVideoReceive(Video());
+  SM_EXPECT_TRUE(s.av_sync() == nullptr);  // SetSync(nullptr): no audio in the group yet.
+  s.AddAudioReceive(au, &dec);
+  const sync::RtpStreamsSynchronizer* sync = s.av_sync();
+  SM_ASSERT_TRUE(sync != nullptr);
+  VideoStreamConfig second = Video();
+  second.ssrc = 0x400;
+  second.rtx_ssrc = 0x500;
+  s.AddVideoReceive(second);
+  AudioStreamConfig au2;
+  au2.ssrc = 0x600;
+  s.AddAudioReceive(au2, &dec);
+  SM_EXPECT_TRUE(s.av_sync() == sync);
+}
+
 SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
   Pair p;
   p.a.SendVideo(p.a_video, {0, {}}, Timestamp::Millis(0));
