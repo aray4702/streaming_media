@@ -231,6 +231,6 @@
     {"scenario": "issue_12_lossbwe_policer", "metric": "repair.overhead_pct", "issues": [860]},
     {"scenario": "issue_256_audio_24khz", "metric": "sync.av_offset_p95_ms", "issues": [861]},
     {"scenario": "issue_298_audio_24khz_plays", "metric": "sync.av_offset_p95_ms", "issues": [861]},
-    {"scenario": "issue_867_nack_reorder_loss", "metric": "*", "issues": [867]}
+    {"scenario": "issue_867_nack_reorder_loss", "metric": "*", "issues": [870]}
   ]
 }
