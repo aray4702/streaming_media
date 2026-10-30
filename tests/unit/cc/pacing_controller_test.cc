@@ -600,3 +600,23 @@ SM_TEST(PacingController, RatesArriveAsWholeBytesPerTimeWindow) {
   pacer.SetPacingRates(DataRate::BitsPerSec(334945), DataRate::BitsPerSec(304495));
   SM_EXPECT_EQ(pacer.pacing_rate().bps(), 335000);
 }
+
+// SendsFecPackets (pacing_controller_unittest.cc:2276-2307) / issue #816: FEC that the packet sender
+// produces for a sent packet (PacketSender::FetchFec) is enqueued inside the send loop
+// (pacing_controller.cc:523-526), so with budget left it leaves in the same ProcessPackets() call.
+SM_TEST(PacingController, FecFromThePacketSenderLeavesInTheSameProcessCall) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(2000), DataRate::Zero());
+  Timestamp now = Timestamp::Millis(1000);
+  pacer.SetPacketSender([&](const PacedPacket& p, Timestamp t) {
+    if (p.priority == PacketPriority::kVideo) pacer.Enqueue(Pkt(100 + p.id, PacketPriority::kFec, 300, t));
+  });
+  pacer.Enqueue(Pkt(1, PacketPriority::kVideo, 300, now));
+  pacer.Enqueue(Pkt(2, PacketPriority::kVideo, 300, now));
+  now = std::max(now, pacer.NextSendTime(now));
+  std::vector<uint64_t> ids;
+  for (auto& p : pacer.Process(now)) ids.push_back(p.id);
+  const std::vector<uint64_t> want = {1, 2, 101, 102};
+  SM_EXPECT_TRUE(ids == want);
+  SM_EXPECT_EQ(pacer.QueuePackets(), 0u);
+}

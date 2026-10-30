@@ -228,8 +228,9 @@ SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   }
   SM_EXPECT_TRUE(s.TakeFecPackets().empty());
   SM_EXPECT_EQ(s.stats().fec_packets, 2u);
-  // FEC packets are not in the sender report counts.
-  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 4u);
+  // The FEC packets are in the sender report count, as RtpSenderEgress::UpdateRtpStats adds every
+  // packet sent on the SSRC to `transmitted` (rtp_sender_egress.cc:488-493; issue #816).
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 6u);
   // The FEC packets are not kept for retransmission.
   SM_EXPECT_EQ(s.rtx().history_size(), 4u);
 }
@@ -1078,4 +1079,70 @@ SM_TEST(RtpSender, AudioAbsoluteCaptureTimeInFullPrecisionPerPacket) {
   s.SendAudio(frame, 960 * 60, false, Timestamp::Seconds(1010), std::nullopt);
   auto out = Release(s);
   SM_EXPECT_FALSE(AbsCapture(map, out[0]).has_value());
+}
+
+// Issue #816: the SR packet and octet counts are libwebrtc's `transmitted` counters of the media and
+// RTX SSRCs (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:251-254), which
+// RtpSenderEgress::UpdateRtpStats adds to as each packet is sent (rtp_sender_egress.cc:332-336,
+// 467-493): media, retransmissions and padding, with the payload octets (RtpPacketCounter keeps the
+// padding bytes apart). A packet still in the pacer queue is not counted.
+SM_TEST(RtpSender, SenderReportCountsEveryPacketSentOnTheMediaAndRtxSsrcs) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  s.SendVideoFrame(Chunks({100, 200}), 1, Timestamp::Millis(0));
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 0u);  // Queued, not sent.
+  auto media = Release(s);
+  SM_ASSERT_EQ(media.size(), 2u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 2u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).octet_count, 300u);
+  // A resend: its payload is the original's plus the 2-byte original sequence number.
+  s.OnNack(std::vector<uint16_t>{media[1].packet.seq}, Timestamp::Millis(50), TimeDelta::Millis(10));
+  auto rtx = Release(s, Timestamp::Millis(50));
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(50)).packet_count, 3u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(50)).octet_count, 502u);
+  // Empty padding: one packet each, no payload octets.
+  auto padding = s.GeneratePadding(60, Timestamp::Millis(60));
+  SM_ASSERT_FALSE(padding.empty());
+  for (auto& p : padding) {
+    SM_ASSERT_TRUE(p.packet.payload.empty());
+    s.AssignSequenceNumber(p, Timestamp::Millis(60));
+    s.OnPacketReleased(p, Timestamp::Millis(60));
+  }
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(60)).packet_count, 3u + padding.size());
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(60)).octet_count, 502u);
+}
+
+// Issue #816: padding on the RTX SSRC takes rtx_payload_type_map_.begin()->second
+// (RTPSender::BuildPaddingPacket, rtp_sender.cc:497-502), the RTX payload type of the lowest
+// associated payload type. With sm_compare's types (video 125, RED 118 -> RTX 99) that is RED's.
+SM_TEST(RtpSender, RtxPaddingTakesTheRtxTypeOfTheLowestAssociatedPayloadType) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = PaddingCfg(&ext);
+  c.payload_type = 125;
+  c.rtx_payload_type = 98;
+  c.fec = true;
+  c.ulpfec.red_payload_type = 118;
+  c.ulpfec.red_rtx_payload_type = 99;
+  RtpSender lower_red(c);
+  auto out = lower_red.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(out[0].packet.payload_type, 99);
+  // RED in the RTX map without FEC running (ConfigureRtx maps it whenever RED is configured, also
+  // when ShouldDisableRedAndUlpfec turns FEC off beside NACK).
+  c.fec = false;
+  c.rtx.red_payload_type = 118;
+  c.rtx.rtx_red_payload_type = 99;
+  RtpSender red_mapped(c);
+  out = red_mapped.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.payload_type, 99);
+  // The media type is the lower one: its RTX type.
+  c.payload_type = 96;
+  c.rtx_payload_type = 97;
+  RtpSender lower_media(c);
+  out = lower_media.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.payload_type, 97);
 }

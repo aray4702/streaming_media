@@ -145,6 +145,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
   c.rtx.initial_seq = rtx_initial_seq;
+  // ConfigureRtx (call/rtp_video_sender.cc:245-252): RED's RTX payload type is in the RTX map
+  // whenever RED is configured, also when ShouldDisableRedAndUlpfec turns FEC off beside NACK.
+  if (v.fec && v.rtx_ssrc) {
+    c.rtx.red_payload_type = v.ulpfec.red_payload_type;
+    c.rtx.rtx_red_payload_type = v.ulpfec.red_rtx_payload_type;
+  }
   c.fec = VideoFecEnabled(v);
   c.ulpfec = v.ulpfec;
   // RtpVideoSender's constructor: FecControllerDefault with the method the stream has on,
