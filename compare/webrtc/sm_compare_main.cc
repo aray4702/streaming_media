@@ -292,7 +292,9 @@ int main(int argc, char** argv) {
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
                          ", \"webrtc_audio\": " + JsonString(rtc_audio) + ", \"sm_audiosend\": " +
-                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) + "}";
+                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
+                         ", \"sm_reverse\": " + JsonString(sm::testbench::LinkTraceCsv(ours.back().reverse_trace)) +
+                         ", \"webrtc_reverse\": " + JsonString(sm::testbench::LinkTraceCsv(theirs.back().reverse_trace)) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
