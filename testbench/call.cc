@@ -279,6 +279,19 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
   return out;
 }
 
+int32_t RtcpFeedbackMask(std::span<const uint8_t> p) {
+  if (p.size() < 4 || (p[0] >> 6) != 2 || p[1] < 192 || p[1] > 223) return -1;
+  int32_t mask = 0;
+  for (size_t off = 0; off + 4 <= p.size();) {
+    const uint8_t fmt = p[off] & 0x1f, pt = p[off + 1];
+    if (pt == 206 && fmt == 1) mask |= 1;
+    if (pt == 206 && fmt == 4) mask |= 2;
+    if (pt == 205 && fmt == 1) mask |= 4;
+    off += 4 * (static_cast<size_t>((p[off + 2] << 8) | p[off + 3]) + 1);
+  }
+  return mask;
+}
+
 int32_t TraceHeaderBytes(std::span<const uint8_t> p, int64_t wire_bytes, uint8_t red_pt) {
   if (p.size() < 12 || (p[0] >> 6) != 2) return -1;
   size_t off = 12 + 4 * static_cast<size_t>(p[0] & 0x0f);
@@ -920,6 +933,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           }
         }
       }
+      if (opt.link_trace && !is_forward) key = RtcpFeedbackMask(p.bytes);
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
       link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
     }

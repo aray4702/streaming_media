@@ -1061,6 +1061,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     advance_links(rel(sim.Now()));
     reverse.Send(rel(sim.Now()), Pkt{std::vector<uint8_t>(data.begin(), data.end()), rtcp || IsRtcp(data), false},
                  DataSize::Bytes(static_cast<int64_t>(data.size()) + kUdpIpOverhead));
+    reverse.AnnotateLastTrace(-1, -1, -1, testbench::RtcpFeedbackMask(data));
   });
 
   // --- Streams ----------------------------------------------------------------

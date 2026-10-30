@@ -187,6 +187,27 @@ SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
   SM_EXPECT_EQ(TraceHeaderBytes(std::vector<uint8_t>{0x80, 200, 0, 1}, 32, 118), -1);  // Not RTP.
 }
 
+// The reverse trace's key column (#842): PLI, FIR and NACK found anywhere in a compound RTCP packet.
+SM_TEST(TestbenchMetrics, RtcpFeedbackMaskFindsPliFirAndNackInACompoundPacket) {
+  const std::vector<uint8_t> rr = {0x80, 201, 0, 1, 0, 0, 0, 9};                      // RR, no blocks.
+  const std::vector<uint8_t> pli = {0x81, 206, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2};         // PSFB FMT 1.
+  const std::vector<uint8_t> fir = {0x84, 206, 0, 4, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 2, 7, 0, 0, 0};  // PSFB FMT 4.
+  const std::vector<uint8_t> nack = {0x81, 205, 0, 3, 0, 0, 0, 9, 0, 0, 0, 2, 0, 5, 0, 0};  // RTPFB FMT 1.
+  const std::vector<uint8_t> tcc = {0x8f, 205, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2};         // RTPFB FMT 15.
+  auto cat = [](std::initializer_list<std::vector<uint8_t>> parts) {
+    std::vector<uint8_t> out;
+    for (const auto& b : parts) out.insert(out.end(), b.begin(), b.end());
+    return out;
+  };
+  SM_EXPECT_EQ(RtcpFeedbackMask(rr), 0);
+  SM_EXPECT_EQ(RtcpFeedbackMask(tcc), 0);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, pli})), 1);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, fir})), 2);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, nack, pli})), 5);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, tcc, nack, fir})), 6);
+  SM_EXPECT_EQ(RtcpFeedbackMask(std::vector<uint8_t>{0x80, 96, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2}), -1);  // RTP.
+}
+
 // The trace's rtx_room column (#555): RtxPacketOverhead's window opens at the first report block for the
 // media SSRC and closes at the first one for the RTX SSRC, in an SR or an RR of a compound packet.
 SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {

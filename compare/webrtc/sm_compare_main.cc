@@ -23,7 +23,8 @@
 // per-second video decisions (issue #131; "sm_video", "webrtc_video") and the
 // GoogCC estimates per update (issue #149; "sm_bwe", "webrtc_bwe") and the
 // audio send path per frame and report block (issue #477; "sm_audiosend",
-// "webrtc_audiosend"; tools/audio_send.py).
+// "webrtc_audiosend"; tools/audio_send.py) and the reverse (feedback) link,
+// with PLI/FIR/NACK in its `key` column (issue #842; "sm_reverse", "webrtc_reverse").
 // tools/bwe_trace.py lays the two side by side.
 //
 // --trace-all-dir=DIR traces the first seed of every scenario the same way and
@@ -285,6 +286,9 @@ int main(int argc, char** argv) {
         // The audio send path per frame and report block (issue #477), same scenario and seed.
         const std::string sm_audio_send = sm::testbench::AudioSendCsv(ours.back().audio_send_trace);
         const std::string rtc_audio_send = sm::testbench::AudioSendCsv(theirs.back().audio_send_trace);
+        // The reverse (feedback) link (issue #507), with each RTCP packet's PLI/FIR/NACK in `key` (#842).
+        const std::string sm_rev = sm::testbench::LinkTraceCsv(ours.back().reverse_trace);
+        const std::string rtc_rev = sm::testbench::LinkTraceCsv(theirs.back().reverse_trace);
         if (named) {
           traces_json += std::string(traces_json.empty() ? "\n" : ",\n") + "    {\"scenario\": \"" + base.name +
                          "\", \"seed\": " + std::to_string(s.seed) + ", \"sm\": " + JsonString(sm_csv) +
@@ -292,7 +296,8 @@ int main(int argc, char** argv) {
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
                          ", \"webrtc_audio\": " + JsonString(rtc_audio) + ", \"sm_audiosend\": " +
-                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) + "}";
+                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
+                         ", \"sm_reverse\": " + JsonString(sm_rev) + ", \"webrtc_reverse\": " + JsonString(rtc_rev) + "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -300,8 +305,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".sm.trace.csv") << sm_csv;
           std::ofstream(stem + ".webrtc.trace.csv") << rtc_csv;
           // The reverse (feedback) link, same columns (issue #507).
-          std::ofstream(stem + ".sm.reverse.csv") << sm::testbench::LinkTraceCsv(ours.back().reverse_trace);
-          std::ofstream(stem + ".webrtc.reverse.csv") << sm::testbench::LinkTraceCsv(theirs.back().reverse_trace);
+          std::ofstream(stem + ".sm.reverse.csv") << sm_rev;
+          std::ofstream(stem + ".webrtc.reverse.csv") << rtc_rev;
           std::ofstream(stem + ".sm.video.csv") << sm_video;
           std::ofstream(stem + ".webrtc.video.csv") << rtc_video;
           std::ofstream(stem + ".sm.bwe.csv") << sm_bwe;
