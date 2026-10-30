@@ -76,8 +76,13 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   if (window) cwnd_.UpdatePacingQueue(pacer_.QueueSizeData());
   if (window) cwnd_.UpdateWindow(window_target_);
-  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
+  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum, and
+  // the reduce ratio is taken from that clamped target (goog_cc_network_control.cc:596-608). Once the
+  // pushback reaches the minimum, the ratio stops changing and no new update re-applies it (issue #738).
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+  pushback_reduce_ratio_ = cfg_.cwnd.enabled && target_.bps() > 0
+                               ? static_cast<double>(target_.bps() - pushback_target_.bps()) / static_cast<double>(target_.bps())
+                               : 0;
   window_target_ = target_;
 }
 
@@ -88,7 +93,7 @@ void SendSideController::PostTargetRate(Timestamp now) {
   if (!cfg_.control_handler) return;
   cc::TargetTransferRate msg;
   msg.target_rate = target_;
-  msg.cwnd_reduce_ratio = cwnd_.reduce_ratio();
+  msg.cwnd_reduce_ratio = pushback_reduce_ratio_;
   msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
   msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
   control_handler_.SetTargetRate(msg);

@@ -283,7 +283,7 @@ class SendSideController : public MetricsSource {
   // BitrateAllocationUpdate it got (VideoStreamEncoder::OnBitrateUpdated), which
   // an AddObserver reallocation (an encoder reconfiguration) resets to 0.
   double reduce_ratio() const {
-    if (!cfg_.control_handler) return cwnd_.reduce_ratio();
+    if (!cfg_.control_handler) return pushback_reduce_ratio_;
     return allocation_configured_ ? allocator_.cwnd_reduce_ratio("video") : reported_reduce_ratio_;
   }
   void ApplyPushback(SendRates& out) const;
@@ -336,6 +336,8 @@ class SendSideController : public MetricsSource {
   cc::AllocationLimits notified_limits_;
   uint64_t video_timeouts_ = 0;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
+  // MaybeTriggerOnNetworkChanged's cwnd_reduce_ratio: from pushback_target_, after the minimum clamp (issue #738).
+  double pushback_reduce_ratio_ = 0;
   DataRate window_target_;    // GoogCC last_loss_based_target_rate_: the target at the last pushback update.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
