@@ -47,10 +47,13 @@ ALGORITHMS = [
                "retransmitted-flush settings are off as in the libwebrtc default. With `pacer v2` the history also gives payload "
                "padding (`GetPayloadPaddingPacket` in `PaddingMode::kRecentLargePacket`: the most recent large payload, "
                "kept after it has left the history), see docs/fixes/120-rtx-payload-padding.md. The NackTracker is libwebrtc's NackRequester (issue #23; the v1 policy was deleted in #167): "
-               "it retries on libwebrtc's 20 ms process tick, gives up after kMaxNackRetries (100) without a keyframe request, and a list that would pass 1000 "
+               "it retries on libwebrtc's 20 ms process tick, gives up with the kMaxNackRetries-th (100th) request, which erases the entry as it is sent, "
+               "without a keyframe request, and a list that would pass 1000 "
                "entries is cleared and asks for a keyframe. The first request for a gap leaves with the packet that revealed it "
                "(`NackRequester::OnReceivedPacket`'s `GetNackBatch(kSeqNumOnly)`, sent before the packet buffer runs), so a packet "
-               "reordered within the same millisecond is NACKed too, as in libwebrtc (issue #411, `issue_411_nack_on_reorder`).",
+               "reordered within the same millisecond is NACKed too, as in libwebrtc (issue #411, `issue_411_nack_on_reorder`). "
+               "There is no reorder wait: M157's `NackRequester::OnReceivedPacket` sets `is_retransmitted = true` for every packet, "
+               "so its reordering histogram stays empty and `WaitNumberOfPackets(0.5)` is 0 (issue #867).",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`. "
@@ -59,7 +62,11 @@ ALGORITHMS = [
                       "reports the next tick (unit `NackTracker.RetryTicksKeepTheGridOfTheFirstAndReportTheNext`). "
                       "Issue #846: `recovered_list_` and no retry floor, as `nack_requester.cc` (units "
                       "`NackTracker.RecoveredPacketAheadIsNeverNacked`, `RecoveredPacketBehindLeavesTheList`, "
-                      "`RecoveredListIsClearedAndAged`, `RetryHasNoFloorBelowTheRtt`; libwebrtc's `nack_requester_unittest.cc` is not in `reference/`)."),
+                      "`RecoveredListIsClearedAndAged`, `RetryHasNoFloorBelowTheRtt`; libwebrtc's `nack_requester_unittest.cc` is not in `reference/`). "
+                      "Issue #867: the 100th request erases its entry, and reordering never delays a first request (units "
+                      "`NackTracker.HundredthRequestErasesTheEntryAsItIsSent`, `ReorderingNeverDelaysTheFirstRequest`); "
+                      "`issue_867_nack_reorder_loss` (3% loss, 60 ms jitter with reordering) is compared with libwebrtc on 40 seeds. "
+                      "Its freezes each follow a video packet whose first retransmission was lost too."),
     dict(id="3.2", slug="fec", title="Forward error correction (ULPFEC over RED, as libwebrtc)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/ulpfec.h"], unit=["Ulpfec"], e2e=["E2E_Fec"],
