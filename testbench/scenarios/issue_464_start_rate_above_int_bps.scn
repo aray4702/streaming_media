@@ -10,6 +10,10 @@ describe The host configures a 20 Gbps start rate and a 9 Ebps max; the call set
 duration 10s
 max_rate 9000000000000mbps
 start_rate 20000mbps
+# compare_seeds 40 (#777): video.longest_freeze_ms reads 561 vs libwebrtc 441 (band 100) after #775,
+# behind on 2/10 seeds; ours spans to 1140-1205 ms on seeds 11-40 and libwebrtc's seeds 1-10 to 627.
+# Ten seeds can't tell spread from a gap; 40 seeds on both stacks settle it.
+compare_seeds 40
 at 0s capacity=2500kbps delay=30ms queue=400ms
 expect cc.unsettled == 0
 expect cc.max_settle_ms <= 2000
