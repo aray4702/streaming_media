@@ -107,8 +107,10 @@ if(SM_WITH_VIDEO)
     video/codec_fallback.cc
     video/orientation.cc
     video/content_policy.cc
+    video/frame_cadence_adapter.cc
     video/frame_scheduler.cc
     video/render_frames.cc
+    video/quality_convergence.cc
     video/quality_scaler.cc
     video/video_stream_adapter.cc
     video/resource_adaptation_processor.cc)

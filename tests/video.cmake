@@ -1,5 +1,6 @@
 sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
   SOURCES
+    unit/video/frame_cadence_adapter_test.cc
     unit/video/resource_adaptation_processor_test.cc
     unit/video/video_test.cc
   SUITES
@@ -7,9 +8,11 @@ sm_add_test_exe(sm_unit_video LABEL unit DEPS sm::video
     CodecFallback
     ContentPolicy
     DecoderFallback
+    FrameCadenceAdapter
     FrameScheduler
     FreezeDetector
     Orientation
+    QualityConvergence
     QualityScaler
     RenderFrames
     ResourceAdaptationProcessor

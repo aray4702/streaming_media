@@ -563,19 +563,6 @@ SM_TEST(ContentPolicy, HintsMapToPolicies) {
   static_assert(sizeof(ContentSettings) == sizeof(Degradation));
 }
 
-SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {
-  FrameChangeDetector cd(TimeDelta::Seconds(1));
-  I420Frame slide = MakeTestFrame(320, 240, 0);
-  SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(0)));
-  SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(100)));
-  slide.Y(100, 100) ^= 0xff;  // One pixel changes (cursor blink).
-  auto r = cd.Analyze(slide);
-  SM_EXPECT_TRUE(r.changed);
-  SM_EXPECT_EQ(r.dirty_blocks, 1);
-  SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(200)));  // Already absorbed by Analyze.
-  SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(1300)));  // Keep-alive.
-}
-
 SM_TEST(FrameScheduler, RendersOnTimeDropsLateWhenNewerWaiting) {
   FrameScheduler s;
   s.Insert({1, Ms(100)});

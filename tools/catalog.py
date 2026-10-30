@@ -1489,10 +1489,13 @@ ALGORITHMS = [
     dict(id="7.4", slug="content-policy", title="Content hints and screen-content variable frame rate",
          problems=["Screen sharing (text must stay sharp) -> content hint, screen-content coding tools, variable framerate",
                    "Talking head vs. motion -> content-type-aware rate control"],
-         headers=["video/content_policy.h"], unit=["ContentPolicy"], e2e=["E2E_ContentPolicy"],
-         bench=["video/FrameChangeDetector_1080p", "video/Q_ScreenShare_encode_ratio"],
-         scenario="60 s of screen sharing at 15 fps: a new slide every 10 s and a blinking cursor; every content "
-                  "change must be encoded immediately, while static frames are skipped.",
+         headers=["video/content_policy.h", "video/frame_cadence_adapter.h", "video/quality_convergence.h"],
+         unit=["ContentPolicy", "FrameCadenceAdapter", "QualityConvergence"], e2e=["E2E_ContentPolicy"],
+         bench=["video/FrameCadenceAdapter_frame", "video/Q_ScreenShare_encode_ratio"],
+         scenario="60 s of screen sharing at max 15 fps (VP8, a QP model fed to QualityConvergenceController): a "
+                  "new slide every 10 s and a blinking cursor, delivered by a zero-hertz capturer only when the "
+                  "screen changes. Every change is encoded one frame period after it arrives; a static screen is "
+                  "repeated at the frame period until the QP converges, then once per second.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#7-video-quality-and-processing) for the differences from libwebrtc. "
                "Screen-content coding tools (AV1 palette/intra-BC, HEVC SCC) are encoder features; the policy does not set them.",
          verification="No defects found. Issue #581: with no hint, camera video maps to maintain-framerate (the "
@@ -1502,7 +1505,14 @@ ALGORITHMS = [
                       "`SettingsFor` and `ContentSettings` carry only the degradation preference; the QP ceilings "
                       "(40 detail, 32 text), frame-rate floors (15, 2, 1), the screencast frame-rate cap and the "
                       "variable-frame-rate and screen-tools flags are removed, as libwebrtc derives none of them "
-                      "from the hint. Nothing in the call read them, so no test bench metric moves."),
+                      "from the hint. Nothing in the call read them, so no test bench metric moves. "
+                      "Issue #878: the block-hash `FrameChangeDetector` (which skipped unchanged frames and sent a "
+                      "1/s keep-alive) is replaced by a port of libwebrtc's `FrameCadenceAdapter` "
+                      "(`video/frame_cadence_adapter.cc`: passthrough and `ZeroHertzAdapterMode`) and "
+                      "`QualityConvergenceController`/`Monitor` (`video/quality_convergence_*.cc`), with their "
+                      "constants: one frame period of delay, short repeats until quality converges, idle repeats "
+                      "every 1000 ms, refresh-frame requests after 3 periods. Not ported: `queue_overload` (no "
+                      "encoder queue here) and the VSync metronome mode (only with an encode metronome)."),
     dict(id="7.7", slug="frame-scheduler", title="Render timing and late-frame dropping",
          problems=["Frames arriving too late to render -> render timing and late-frame dropping"],
          headers=["video/frame_scheduler.h", "timing/frame_release.h", "video/render_frames.h"],
