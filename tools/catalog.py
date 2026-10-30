@@ -763,7 +763,13 @@ ALGORITHMS = [
                       "int bps (`ConvertConstraints`, rtp_transport_controller_send.cc:68-83), so `cc::ConvertConstraints` "
                       "saturates a finite min, start or max rate at INT_MAX bps (about 2.1 Gbps) in `GccController`, "
                       "`rtp::SendSideController` and `rtp::Session`; an infinite max stays infinite. A start rate of 1 Tbps "
-                      "or more had made the pacer build padding for probes at 3x and 6x that rate until it ran out of memory."),
+                      "or more had made the pacer build padding for probes at 3x and 6x that rate until it ran out of memory. "
+                      "Issue #848: with the pushback on, `GoogCcNetworkController::OnSentPacket` runs "
+                      "`MaybeTriggerOnNetworkChanged` for every sent packet (goog_cc_network_control.cc:263-287, "
+                      "`RtpTransportControllerSend::ProcessSentPacket`), so a target that a receiver report, an RTT update or "
+                      "an ALR change moved reaches the pacer, the probe controller and the allocator with the next sent packet; "
+                      "ours now does the same (`GccController::MaybeTriggerOnSentPacket`), where it waited for the next "
+                      "feedback or process interval."),
     dict(id="5.5", slug="pacer", title="Pacer with priority queues",
          problems=["Bursts filling router queues (bufferbloat) -> Pacer: smooths packet sends, with priority queues",
                    "Protecting audio over video -> audio prioritized in the pacer; video degrades first"],

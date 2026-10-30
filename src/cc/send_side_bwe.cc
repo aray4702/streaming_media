@@ -164,6 +164,12 @@ void GccController::OnPacketSent(uint16_t seq, Timestamp t, DataSize size, int p
   ssbe_.OnSentPacket(t);
 }
 
+NetworkControlUpdate GccController::MaybeTriggerOnSentPacket(Timestamp now) {
+  last_now_ = now;
+  target_ = ssbe_.target_rate();
+  return MakeUpdate(now, {});
+}
+
 void GccController::OnRttUpdate(TimeDelta rtt) {
   // RtpTransportControllerSend::OnRttUpdate: `rtt.RoundTo(1 ms)`, and a zero RTT is not passed on.
   // libwebrtc's RoundTo requires a finite RTT (RTC_DCHECK); an infinite one is dropped here like a zero.
@@ -383,6 +389,7 @@ NetworkControlUpdate GccController::MakeUpdate(Timestamp now, std::vector<ProbeC
   const TimeDelta round_trip_time = ssbe_.round_trip_time();
   if (u.changed || loss_based_state != last_loss_based_state_ || fraction_loss != last_fraction_loss_ ||
       round_trip_time != last_round_trip_time_ || is_bandwidth_limited != last_is_bandwidth_limited_) {
+    u.triggered = true;
     last_is_bandwidth_limited_ = is_bandwidth_limited;
     last_loss_based_state_ = loss_based_state;
     last_fraction_loss_ = fraction_loss;

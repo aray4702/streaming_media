@@ -78,6 +78,9 @@ struct NetworkControlUpdate {
   DataRate pacing_rate;
   std::vector<ProbeCluster> probes;
   bool changed = false;
+  // MaybeTriggerOnNetworkChanged's change check fired: libwebrtc's update then carries the
+  // target and the pacer config (goog_cc_network_control.cc:610-648).
+  bool triggered = false;
 };
 
 // libwebrtc's BitrateConstraints carry int bps (call/rtp_transport_controller_send.cc:68-83,
@@ -91,6 +94,11 @@ class GccController : public MetricsSource {
   explicit GccController(GccConfig cfg = {});
   NetworkControlUpdate Start(Timestamp now);
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
+  // GoogCcNetworkController::OnSentPacket with the congestion-window pushback on (its default,
+  // goog_cc_network_control.cc:263-287): MaybeTriggerOnNetworkChanged runs for every sent packet, so a
+  // target that a loss report, an RTT update or an ALR change moved goes out with the next packet.
+  // Call after OnPacketSent; `triggered` says whether the update carries anything.
+  NetworkControlUpdate MaybeTriggerOnSentPacket(Timestamp now);
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
   // The RTT the controller last took (rounded to whole ms).
@@ -99,8 +107,8 @@ class GccController : public MetricsSource {
   // GoogCcNetworkController::OnTransportLossReport. The loss and packet
   // counts are the deltas between two receiver reports (summed over the report
   // blocks). Used for the loss rate until LossBasedBweV2 has three observations.
-  // Returns no update, as libwebrtc's: the target follows at the next feedback
-  // or process interval.
+  // Returns no update, as libwebrtc's: the target follows at the next sent packet (with the
+  // pushback on), feedback or process interval.
   void OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
   // StreamsConfig::max_total_allocated_bitrate, the sum of the maximum bitrates
   // the allocator hands out: a rise probes up to twice that rate, and it caps
