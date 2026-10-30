@@ -62,7 +62,10 @@ namespace sm::rtp {
 
 struct SessionConfig {
   uint32_t local_ssrc = 1;  // RTCP sender SSRC of reports and feedback.
-  std::string cname;        // SDES CNAME; empty = none.
+  // SDES CNAME of the send streams, in every SR (empty: an empty CNAME). A
+  // session that sends no media reports in RRs without SDES, as libwebrtc's
+  // receive-only modules, which have no CNAME (issue #820).
+  std::string cname;
   std::string mid_audio, mid_video;  // BUNDLE MIDs (RFC 8843); empty = no MID.
   // MID is written on this many first packets of each stream, or until the
   // peer's first packet carrying a MID acknowledges it.

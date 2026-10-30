@@ -455,17 +455,99 @@ SM_TEST(RtcpEngine, MalformedDatagramsAreCountedAndHarmless) {
   SM_EXPECT_EQ(e.stats().datagrams_received, 5003u);
 }
 
-SM_TEST(RtcpEngine, ByeIsSentAsFeedbackCompound) {
-  RtcpEngine tx, rx;
+// A BYE goes out as RTCPSender's SendRTCP(kRtcpBye): PrepareReport adds the
+// full report and SDES, and ComputeCompoundRTCPPacket appends the BYE after
+// every other packet, the XR included (rtcp_sender.cc:631-650; issue #820).
+SM_TEST(RtcpEngine, ByeGoesLastInACompoundWithTheFullReport) {
+  timing::ReceiveStatistics stats(0x1234, 90000);
+  stats.OnPacket(1, 0, Timestamp::Millis(0));
+  stats.OnPacket(3, 3000, Timestamp::Millis(40));
+  RtcpConfig c;
+  c.local_ssrc = 100;
+  c.cname = "user@host";
+  c.xr_rrtr = true;
+  c.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine tx(c), rx;
+  tx.AddReceiveStatistics(&stats);
   tx.Process(Timestamp::Millis(0));
-  std::vector<uint32_t> ssrcs = {1, 2};
-  tx.QueueBye(ssrcs, "done");
-  auto out = tx.Process(Timestamp::Millis(1));
+  std::vector<uint32_t> ssrcs = {100};
+  tx.QueueBye(ssrcs);
+  const std::vector<uint16_t> seqs = {2};
+  tx.QueueNack(0x1234, seqs);
+  auto out = tx.Process(Timestamp::Millis(100));
   SM_ASSERT_EQ(out.size(), 1u);
-  auto in = rx.OnRtcp(out[0].bytes, Timestamp::Millis(2));
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kSdes, T::kNack, T::kXr, T::kBye}));
+  auto in = rx.OnRtcp(out[0].bytes, Timestamp::Millis(101));
+  SM_ASSERT_EQ(in.byes.size(), 1u);
+  SM_EXPECT_TRUE(in.byes[0].ssrcs == ssrcs);
+  SM_EXPECT_TRUE(in.byes[0].reason.empty());
+  SM_ASSERT_EQ(in.report_blocks.size(), 1u);
+
+  // Alone, it still opens with the report and SDES.
+  RtcpEngine alone(c);
+  alone.AddReceiveStatistics(&stats);
+  alone.Process(Timestamp::Millis(0));
+  alone.QueueBye(ssrcs, "done");
+  out = alone.Process(Timestamp::Millis(1));
+  SM_ASSERT_EQ(out.size(), 1u);
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kSdes, T::kXr, T::kBye}));
+  in = rx.OnRtcp(out[0].bytes, Timestamp::Millis(2));
   SM_ASSERT_EQ(in.byes.size(), 1u);
   SM_EXPECT_TRUE(in.byes[0].reason == "done");
-  SM_EXPECT_EQ(in.byes[0].ssrcs.size(), 2u);
+}
+
+// RTCPSender::PrepareReport (rtcp_sender.cc:713): SDES goes with every SR,
+// with an empty CNAME when none was set (issue #820).
+SM_TEST(RtcpEngine, SenderReportCarriesSdesEvenWithoutACname) {
+  RtcpConfig c;
+  c.first_report_delay = TimeDelta::Millis(500);
+  RtcpEngine tx(c);
+  tx.SetSenderState({.ssrc = 0x3333, .packet_count = 1, .octet_count = 100, .rtp_timestamp = 0});
+  tx.Process(Timestamp::Millis(0));
+  auto out = tx.Process(Timestamp::Millis(500));
+  SM_ASSERT_EQ(out.size(), 1u);
+  using T = loss::RtcpType;
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kSenderReport, T::kSdes}));
+  auto split = loss::SplitCompoundRtcp(out[0].bytes);
+  auto sdes = ParseSdes((*split)[1].data);
+  SM_ASSERT_TRUE(sdes.has_value());
+  SM_ASSERT_EQ(sdes->size(), 1u);
+  SM_EXPECT_EQ((*sdes)[0].ssrc, 0x3333u);
+  SM_ASSERT_EQ((*sdes)[0].items.size(), 1u);
+  SM_EXPECT_EQ((*sdes)[0].items[0].type, kSdesCname);
+  SM_EXPECT_TRUE((*sdes)[0].items[0].text.empty());
+}
+
+// An RR carries SDES only when the module has a CNAME (rtcp_sender.cc:713).
+// libwebrtc's video receive module has none (CreateRtpRtcpModule), which
+// cname_in_receiver_report = false stands for (issue #820).
+SM_TEST(RtcpEngine, ReceiverReportCarriesSdesOnlyWithACname) {
+  timing::ReceiveStatistics stats(0x1234, 90000);
+  stats.OnPacket(1, 0, Timestamp::Millis(0));
+  stats.OnPacket(3, 3000, Timestamp::Millis(40));
+  using T = loss::RtcpType;
+  for (int variant = 0; variant < 2; ++variant) {
+    RtcpConfig c;
+    c.local_ssrc = 100;
+    if (variant == 0) {
+      c.cname = "user@host";
+      c.cname_in_receiver_report = false;
+    }
+    c.first_report_delay = TimeDelta::Millis(500);
+    RtcpEngine rx(c);
+    rx.AddReceiveStatistics(&stats);
+    rx.Process(Timestamp::Millis(0));
+    const std::vector<uint16_t> seqs = {2};
+    rx.QueueNack(0x1234, seqs);
+    auto out = rx.Process(Timestamp::Millis(100));
+    SM_ASSERT_EQ(out.size(), 1u);
+    SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kNack}));
+    std::vector<RtcpOutgoing> report;
+    for (int64_t t = 101; t <= 2000 && report.empty(); ++t) report = rx.Process(Timestamp::Millis(t));
+    SM_ASSERT_EQ(report.size(), 1u);
+    SM_EXPECT_TRUE((Types(report[0].bytes) == std::vector<T>{T::kReceiverReport}));
+  }
 }
 
 SM_TEST(RtcpEngine, ExportsMetrics) {
@@ -591,9 +673,10 @@ SM_TEST(RtcpEngine, ReceiveOnlyRttFromRrtrAndDlrr) {
   // The sender's report at 600 ms echoes it, 80 ms after it arrived.
   auto sr = sender.Process(Timestamp::Millis(600));
   SM_ASSERT_EQ(sr.size(), 1u);
-  SM_EXPECT_TRUE((Types(sr[0].bytes) == std::vector<T>{T::kSenderReport, T::kXr}));
+  // Every SR carries SDES, with an empty CNAME here (rtcp_sender.cc:713, issue #820).
+  SM_EXPECT_TRUE((Types(sr[0].bytes) == std::vector<T>{T::kSenderReport, T::kSdes, T::kXr}));
   auto split = loss::SplitCompoundRtcp(sr[0].bytes);
-  auto xr = timing::ParseExtendedReports((*split)[1].data);
+  auto xr = timing::ParseExtendedReports((*split)[2].data);
   SM_ASSERT_TRUE(xr.has_value());
   SM_EXPECT_FALSE(xr->rrtr.has_value());  // A media sender sends no RRTR.
   SM_ASSERT_EQ(xr->dlrr.size(), 1u);
@@ -610,7 +693,7 @@ SM_TEST(RtcpEngine, ReceiveOnlyRttFromRrtrAndDlrr) {
   std::vector<RtcpOutgoing> next;
   for (int64_t t = 601; t <= 3000 && next.empty(); ++t) next = sender.Process(Timestamp::Millis(t));
   SM_ASSERT_EQ(next.size(), 1u);
-  SM_EXPECT_TRUE((Types(next[0].bytes) == std::vector<T>{T::kSenderReport}));
+  SM_EXPECT_TRUE((Types(next[0].bytes) == std::vector<T>{T::kSenderReport, T::kSdes}));
   SM_EXPECT_EQ(sender.stats().dlrr_items_sent, 1u);
   SM_EXPECT_EQ(receiver.stats().rrtr_sent, 1u);
 }
