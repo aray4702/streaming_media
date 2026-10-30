@@ -221,6 +221,33 @@ class FirstAudioMeter {
   Timestamp first_ = Timestamp::MinusInfinity();
 };
 
+// audio.net_delay_p95_ms, the same way for both stacks: the delay from the
+// capture of an audio packet's first sample, (ts - ts0) / clock rate, to its
+// arrival on the forward link. Only packets that carry audio count. A
+// padding-only packet on the audio SSRC (libwebrtc pads there in an
+// audio-only call) keeps the last frame's timestamp, so counting it measured
+// its time in the pacer as network delay (#783).
+class AudioNetDelayMeter {
+ public:
+  // ts0: the RTP timestamp of the call's first audio sample.
+  void Start(uint32_t ts0, int clock_hz) {
+    ts0_ = ts0;
+    clock_hz_ = clock_hz;
+  }
+  bool started() const { return clock_hz_ > 0; }
+  void OnArrival(uint32_t rtp_ts, bool carries_audio, Timestamp at) {
+    if (!started() || !carries_audio) return;
+    const double capture_ms = static_cast<double>(static_cast<uint32_t>(rtp_ts - ts0_)) * 1000.0 / clock_hz_;
+    samples_.push_back(static_cast<double>(at.us()) / 1000.0 - capture_ms);
+  }
+  const std::vector<double>& samples() const { return samples_; }
+
+ private:
+  uint32_t ts0_ = 0;
+  int clock_hz_ = 0;
+  std::vector<double> samples_;
+};
+
 // Times of one video frame on its way from capture to render (issue #60).
 // An unset time is infinite or minus infinity and the frame is not counted.
 struct VideoFrameTimes {

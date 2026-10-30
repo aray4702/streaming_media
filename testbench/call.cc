@@ -821,7 +821,9 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
-  std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
+  std::vector<double> video_e2e, rtt_samples, queue_samples;
+  AudioNetDelayMeter audio_net_delay;
+  audio_net_delay.Start(audio_ts_offset, sr);
   bool audio_started = false;
   FirstAudioMeter audio_first;  // Issue #510: as sm_compare's libwebrtc side.
   Timestamp video_first = Timestamp::MinusInfinity();
@@ -1075,8 +1077,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       switch (w.kind) {
         case Kind::kAudio: {
           if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
-          int64_t capture_ms = static_cast<int64_t>(static_cast<uint32_t>(RtpTimestamp(w.bytes) - audio_ts_offset)) * 1000 / sr;
-          audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
+          // Kind::kAudio is a media packet: padding on the audio SSRC is Kind::kPadding.
+          audio_net_delay.OnArrival(RtpTimestamp(w.bytes), /*carries_audio=*/true, at);
           audio_started = true;
           break;
         }
@@ -1394,7 +1396,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
-    m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);
+    m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay.samples(), 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
     m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(jbs.packets_discarded_late);

@@ -903,7 +903,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   std::unique_ptr<w::UlpfecReceiver> fec_tap;
   if (s.video && s.fec) fec_tap = std::make_unique<w::UlpfecReceiver>(kVideoSsrc, kUlpfecPt, &fec_tap_sink, sim.clock());
   std::optional<uint32_t> audio_ts0;
-  std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
+  std::vector<double> video_e2e, rtt_samples, queue_samples, jb_delay;
+  testbench::AudioNetDelayMeter audio_net_delay;
   testbench::FirstAudioMeter audio_first;  // Issue #510: as testbench/call.cc.
   sm::Timestamp video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
@@ -1260,14 +1261,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (first) w_good += wire;
       }
       if (r.ssrc == kAudioSsrc) {
-        if (audio_ts0) {
-          // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
-          // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
-          // at t, so the first packet holds the blocks of 0 and 10 ms and completes at 10 ms, and a packet's first
-          // sample was captured at (ts - first ts) / 48 ms. Both stacks put audio on the link at 10 ms mod 20.
-          double capture_ms = static_cast<double>(static_cast<uint32_t>(r.ts - *audio_ts0)) / 48.0;
-          audio_net_delay.push_back(static_cast<double>(at.us()) / 1000.0 - capture_ms);
-        }
+        // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
+        // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
+        // at t, so the first packet holds the blocks of 0 and 10 ms and completes at 10 ms, and a packet's first
+        // sample was captured at (ts - first ts) / 48 ms. Both stacks put audio on the link at 10 ms mod 20.
+        // Padding on the audio SSRC carries no audio and gives no sample (#783).
+        if (audio_ts0 && !audio_net_delay.started()) audio_net_delay.Start(*audio_ts0, kAudioRate);
+        audio_net_delay.OnArrival(r.ts, /*carries_audio=*/r.payload_len > 0, at);
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
         if (!fec) {
@@ -1501,7 +1501,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = testbench::Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = testbench::Percentile(jb_delay, 95);
-    m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay, 95);
+    m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay.samples(), 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
     m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(late_discards);
