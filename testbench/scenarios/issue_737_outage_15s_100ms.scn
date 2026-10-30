@@ -1,0 +1,9 @@
+# #737 (#411 D8 step 2): the Tester's third outage variant from #471's probe.
+name issue_737_outage_15s_100ms
+describe 15 s outage at 5 s on a 2 Mbps link with 100 ms one-way delay: video.e2e_delay_p95_ms about 0.95 s after #471 (0.35 s before) (issue #737, libwebrtc column for D8 step 2)
+duration 40s
+seed 1
+compare_seeds 20
+at 0s capacity=2Mbps delay=100ms
+at 5s down
+at 20s up
