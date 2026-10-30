@@ -101,6 +101,31 @@ SM_TEST(OpusEncoder, SpeechIsVbrAroundTheTargetAndSilenceIsSmall) {
   }
 }
 
+// Comfort noise is unreachable on libwebrtc's defaults (issue #827), so NetEq's
+// CNG paths are not ported. Codec-internal CNG (NetEq kCodecInternalCng) needs
+// an Opus payload of 1 or 2 bytes (opus_interface.cc DetermineAudioType), which
+// only DTX produces, and DTX is off unless the SDP says usedtx=1
+// (audio_encoder_opus.cc:257). RFC 3389 CN (kRfc3389Cng) needs a CN payload
+// type, which Opus never gets (AudioEncoderOpusImpl's allow_comfort_noise is
+// false, audio_encoder_opus.cc:240; WebRtcVoiceSendChannel takes CN at 8 kHz
+// only, webrtc_voice_engine.cc:1538-1553). The bench's encoder must never
+// send a DTX-sized payload, on speech with pauses or on digital silence.
+SM_TEST(OpusEncoder, DefaultsSendNoDtxPayloads) {
+  for (const bool fec : {false, true}) {
+    OpusSendEncoder e(OpusDefaults::kBitrateBps, fec);
+    const auto pcm = Pcm48k(20.0, 8);
+    for (size_t k = 0; k < 1000; ++k) SM_EXPECT_TRUE(e.Encode(Frame(pcm, k)).size() > 2);
+    const std::vector<int16_t> zeros(OpusSendEncoder::kFrameSamples, 0);
+    for (int i = 0; i < 250; ++i) SM_EXPECT_TRUE(e.Encode(zeros).size() > 2);
+    SM_EXPECT_TRUE(e.ok());
+  }
+  // At the encoder's lowest rate too (the allocator's floor at very low capacity).
+  OpusSendEncoder low(OpusDefaults::kMinBitrateBps, true);
+  const std::vector<int16_t> zeros(OpusSendEncoder::kFrameSamples, 0);
+  for (int i = 0; i < 250; ++i) SM_EXPECT_TRUE(low.Encode(zeros).size() > 2);
+  SM_EXPECT_TRUE(low.ok());
+}
+
 SM_TEST(OpusEncoder, IsDeterministic) {
   OpusSendEncoder a(32000, true), b(32000, true);
   const auto pcm = Pcm48k(4.0, 9);
