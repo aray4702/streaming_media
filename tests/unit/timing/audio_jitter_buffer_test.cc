@@ -286,9 +286,8 @@ SM_TEST(AudioJitterBufferNetEqV2, SampleUnderrunMutesAndKeepsTheSyncBuffer) {
 // NetEqImpl::GetAudioInternal's muted state (neteq_impl.cc:682-698, #574),
 // ported from libwebrtc's NetEqDecodingTestWithMutedState and
 // CompareMutedStateOnOff (neteq_unittest.cc): 10 ms packets at 16 kHz.
-// MutedStateOldPacket is left out: it inserts packets 10 s older than
-// playout, which NetEq's DiscardOldPackets horizon treats as wrapped (new)
-// and InsertPacket here discards as late, with or without muted state.
+// MutedStateOldPacket inserts packets 10 s older than playout, which NetEq's
+// DiscardOldPackets horizon keeps and plays as future packets (#783).
 // The CNG cases went with RFC 3389 comfort noise (#591).
 namespace {
 constexpr uint32_t kMutedTestSamples = 160;
@@ -423,4 +422,65 @@ SM_TEST(AudioJitterBufferNetEqV2, CompareMutedStateOnOff) {
   SM_EXPECT_LT(counter, 1000);
   SM_EXPECT_FALSE(muted);
   SM_EXPECT_EQ(mismatches, 0);
+}
+
+// MutedStateOldPacket: packets 10 s older than playout end muted state.
+// NetEq keeps them (PacketBuffer::DiscardOldPackets only drops packets less
+// than 5 s old, packet_buffer.h IsObsoleteTimestamp) and DecisionLogic plays
+// them as future packets.
+SM_TEST(AudioJitterBufferNetEqV2, MutedStateOldPacket) {
+  MutedStateCall c(true);
+  c.Insert(0);
+  SM_EXPECT_FALSE(c.Pull());
+  SM_ASSERT_TRUE(c.PullUntilMuted());
+  SM_EXPECT_TRUE(c.op == AudioOperation::kExpand);
+  for (int i = 0; i < 5; ++i) c.Insert(kMutedTestSamples * static_cast<uint32_t>(i - 1000));
+  SM_EXPECT_TRUE(c.PullUntilNormal());
+}
+
+// A packet more than 5 s older than playout, arriving mid-call (issue #783,
+// issue_533 seed 1 at 6790 ms): DecisionLogic::GetDecision takes it as a
+// future packet (not IsObsoleteTimestamp), and its uint32 timestamp leap
+// makes it too early, so NetEq expands although the expected packet is
+// there, then merges back to the old packet (FuturePacketAvailable). A packet
+// less than 5 s old is discarded (DiscardOldPackets) and changes nothing.
+namespace {
+struct OldPacketRun {
+  std::vector<AudioOperation> ops;
+  uint64_t discarded_late = 0;
+};
+OldPacketRun PlayWithOldPacket(int age_packets) {
+  MutedStateCall c(false);
+  OldPacketRun run;
+  uint32_t next = 0;
+  for (int i = 0; i < 4; ++i) c.Insert(kMutedTestSamples * next++);
+  for (int t = 0; t < 800; ++t) {
+    c.Insert(kMutedTestSamples * next++);
+    c.Pull();
+  }
+  const uint32_t played = *c.jb.PlayoutTimestamp();
+  c.Insert(played - kMutedTestSamples * static_cast<uint32_t>(age_packets));
+  for (int t = 0; t < 4; ++t) {
+    c.Insert(kMutedTestSamples * next++);
+    c.Pull();
+    run.ops.push_back(c.op);
+  }
+  run.discarded_late = c.jb.stats().packets_discarded_late;
+  return run;
+}
+}  // namespace
+
+SM_TEST(AudioJitterBufferNetEqV2, PacketOlderThanFiveSecondsIsPlayedAsAFuturePacket) {
+  const OldPacketRun run = PlayWithOldPacket(600);  // 6 s.
+  SM_EXPECT_TRUE(run.ops[0] == AudioOperation::kExpand);
+  SM_EXPECT_TRUE(run.ops[1] == AudioOperation::kMerge);
+  // The old packet played, the next one is 6 s ahead: expand again.
+  SM_EXPECT_TRUE(run.ops[2] == AudioOperation::kExpand);
+  SM_EXPECT_EQ(run.discarded_late, 0u);
+}
+
+SM_TEST(AudioJitterBufferNetEqV2, PacketLessThanFiveSecondsOldIsDiscarded) {
+  const OldPacketRun run = PlayWithOldPacket(400);  // 4 s.
+  for (AudioOperation op : run.ops) SM_EXPECT_TRUE(op == AudioOperation::kNormal);
+  SM_EXPECT_EQ(run.discarded_late, 1u);
 }

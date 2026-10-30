@@ -99,7 +99,10 @@ void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
   } else {
     delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
   }
-  if (started_ && ts < next_ts_) {
+  // Version 2 keeps a late packet: PacketBuffer::InsertPacket has no playout
+  // check, and NetEqImpl::GetDecision's DiscardOldPackets drops it (or, more
+  // than 5 s old, plays it as a future packet).
+  if (cfg_.version < 2 && started_ && ts < next_ts_) {
     if (priority.codec_level > 0) return;
     ++stats_.packets_discarded_late;
     SM_EVENT(cfg_.events, arrival, "neteq", "late", static_cast<double>(next_ts_ - ts), ts);
@@ -166,6 +169,24 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   std::vector<float>& to = dst ? *dst : sync_;
   to.insert(to.end(), pkt.pcm.begin(), pkt.pcm.end());
   return op;
+}
+
+void AudioJitterBuffer::DiscardOldPackets(int64_t limit, int64_t horizon_samples, Timestamp now) {
+  // PacketBuffer::IsObsoleteTimestamp: older than `limit`, and newer than
+  // `limit - horizon_samples` unless the horizon is 0.
+  auto it = queue_.begin();
+  while (it != queue_.end() && it->first < limit) {
+    if (horizon_samples != 0 && it->first <= limit - horizon_samples) {
+      ++it;
+      continue;
+    }
+    // PacketBuffer::LogPacketDiscarded: secondary (FEC) packets apart.
+    if (it->second.priority.codec_level == 0) {
+      ++stats_.packets_discarded_late;
+      SM_EVENT(cfg_.events, now, "neteq", "late", static_cast<double>(limit - it->first), it->first);
+    }
+    it = queue_.erase(it);
+  }
 }
 
 bool AudioJitterBuffer::NextPacketReady() const {
@@ -326,11 +347,10 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     return AudioOperation::kExpand;
   }
   muted_ = false;
-  // PacketBuffer::DiscardOldPackets.
-  while (!queue_.empty() && queue_.begin()->first < next_ts_) {
-    queue_.erase(queue_.begin());
-    ++stats_.packets_discarded_late;
-  }
+  // PacketBuffer::DiscardOldPackets(end_timestamp, 5 s): only packets less
+  // than 5 s older than the sync buffer's end (IsObsoleteTimestamp); older
+  // ones stay and are played as future packets.
+  DiscardOldPackets(next_ts_, int64_t{5} * cfg_.sample_rate, now);
   // The sync buffer always keeps Expand's overlap as lookahead.
   const int64_t future = static_cast<int64_t>(sync_.size());
   const int64_t samples_left = future - static_cast<int64_t>(expand_.overlap_length());
@@ -399,18 +419,24 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   decoded_.clear();
   if (extract && !queue_.empty()) {
     // The sync buffer's end timestamp jumps to the packet (a merge after an
-    // expand that covered the gap).
+    // expand that covered the gap), backwards for a packet more than 5 s old.
     const int64_t jump = queue_.begin()->first - next_ts_;
     if (jump > 0) {
       stats_.packets_lost += static_cast<uint64_t>(jump / std::max<int64_t>(1, cfg_.sample_rate * cfg_.packet_ms / 1000));
+    }
+    if (jump != 0) {
       SM_EVENT(cfg_.events, now, "neteq", "merge_jump", static_cast<double>(jump), next_ts_);
       next_ts_ = queue_.begin()->first;
     }
     // NetEqImpl::ExtractPackets: consecutive packets until `required` samples.
+    int64_t last_extracted = next_ts_;
     while (extracted < required && NextPacketReady()) {
+      last_extracted = next_ts_;
       DecodeNext(now, &decoded_);
       extracted = static_cast<int64_t>(decoded_.size());
     }
+    // PacketBuffer::DiscardAllOldPackets(timestamp_): no horizon.
+    if (extracted > 0) DiscardOldPackets(last_extracted, 0, now);
   }
   // NetEqImpl::DoNormal / DoMerge: the first decode after an expand.
   if (!decoded_.empty() && last_mode_ == NetEqMode::kExpand && op == NetEqOperation::kMerge) {
