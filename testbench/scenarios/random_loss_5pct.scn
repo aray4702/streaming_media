@@ -1,5 +1,7 @@
 name random_loss_5pct
 describe 5% random loss on a 2 Mbps link with 40 ms one-way delay
+# Yardstick for #730 (#411): 80 seeds on both stacks; not for merge.
+compare_seeds 80
 duration 30s
 at 0s capacity=2000kbps delay=40ms jitter=3ms loss=5% queue=300ms
 expect audio.concealed_pct < 3

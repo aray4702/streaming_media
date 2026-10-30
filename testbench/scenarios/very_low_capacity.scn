@@ -1,5 +1,7 @@
 name very_low_capacity
 describe 100 kbps link (audio 32 kbps + video): the stage-1 checkpoint for very low capacity
+# Yardstick for #730 (#411): 80 seeds on both stacks; not for merge.
+compare_seeds 80
 duration 40s
 at 0s capacity=100kbps delay=30ms queue=300ms
 # Checkpoint for issue #74 (roadmap #64). The expect lines lock in what main does

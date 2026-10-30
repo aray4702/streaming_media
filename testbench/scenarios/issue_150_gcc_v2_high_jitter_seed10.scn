@@ -8,6 +8,8 @@ describe issue_150_gcc_v2_high_jitter with seed 10: the seed where our target ra
 # Seed 10: before 64-65 % utilization, after 42.6 % (libwebrtc 42.9 %).
 duration 30s
 at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+# Yardstick for #730 (#411): 80 seeds on both stacks; not for merge.
+compare_seeds 80
 seed 10
 expect cc.utilization_pct < 55
 # PR #381 (#365, feedback receive times rounded down to 1 ms, as libwebrtc's TransportFeedbackAdapter; program.md 0.2, Owner sign-off 2026-10-25 7:50 PM PT): was >= 25. Ours 23.84 on seed 10 (22.65 with #345 merged; #345 alone set >= 20.9, this line is the tighter);
