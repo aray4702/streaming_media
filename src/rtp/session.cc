@@ -289,6 +289,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.receive_statistics_v2 = cfg_.receive_statistics_v2;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
+  r->defer_receive_statistics_ = true;  // Counted after the RTCP the packet triggers (issue #777).
   rtcp_.AddReceiveStatistics(r->receive_statistics());
   rtcp_.AddReceiveStatistics(r->rtx_receive_statistics());
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
@@ -849,6 +850,8 @@ void Session::Process(Timestamp now) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
   }
+  // The last packet's RTCP is out: it counts in the next report (RtpVideoStreamReceiver2::OnRtpPacket).
+  for (auto& v : video_recv_) v.receiver->CommitReceiveStatistics();
   if (audio_rtcp_) {
     audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
