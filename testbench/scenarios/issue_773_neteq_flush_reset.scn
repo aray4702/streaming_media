@@ -1,0 +1,14 @@
+name issue_773_neteq_flush_reset
+describe Audio-only call: 20 s of 2.5 s jitter without reordering fills NetEq's 200-packet buffer, then the link calms (issue #773)
+# A packet held back by the jitter holds back the ones behind it (reorder=off), so they arrive together and fill
+# PacketBuffer (200 packets): kFlushed. libwebrtc then sets NetEqImpl::new_codec_ (neteq_impl.cc:369-372): the packets
+# up to the next decision skip the controller's statistics (:387-389), and that decision restarts the timestamp and
+# soft-resets the controller (:1034-1061; DecisionLogic::SoftReset, decision_logic.cc:88-98: target back to 80 ms).
+# Ours kept the delay manager's histograms and target across the flush, so the audio stayed seconds behind after the
+# link calmed. Seeds 1-5 audio.jb_delay_p50_ms before -> after: 2020 -> 580, 1750 -> 300, 710 -> 70, 1190 -> 70,
+# 390 -> 130 (main 695dc71).
+duration 60s
+video off
+at 0s capacity=500kbps delay=40ms jitter=2500ms reorder=off
+at 20s jitter=10ms
+expect audio.jb_delay_p50_ms < 1000

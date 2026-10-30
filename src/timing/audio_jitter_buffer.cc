@@ -89,16 +89,7 @@ void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
   }
   int64_t ts = unwrapper_.Unwrap(rtp_ts);
   ++stats_.packets_received;
-  if (cfg_.version >= 2) {
-    // NetEqImpl::InsertPacketInternal: the packets that arrive before the
-    // first GetAudio are dropped from the statistics by the SoftReset that
-    // the new codec triggers there.
-    if (neteq_reset_done_) {
-      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pkt.samples), cfg_.sample_rate, ticks_ * kMsPerTick);
-    }
-  } else {
-    delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
-  }
+  if (cfg_.version < 2) delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
   // Version 2 keeps a late packet: PacketBuffer::InsertPacket has no playout
   // check, and NetEqImpl::GetDecision's DiscardOldPackets drops it (or, more
   // than 5 s old, plays it as a future packet).
@@ -108,22 +99,35 @@ void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
     SM_EVENT(cfg_.events, arrival, "neteq", "late", static_cast<double>(next_ts_ - ts), ts);
     return;
   }
+  if (cfg_.version >= 2 && queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
+    // PacketBuffer::InsertPacket (packet_buffer.cc:162-177): a full buffer
+    // (NetEq::Config::max_packets_in_buffer, the capacity DelayConstraints
+    // assumes) is flushed completely before the new packet goes in (issue
+    // #331), and returns kFlushed. NetEqImpl::InsertPacketInternal then sets
+    // new_codec_ (neteq_impl.cc:369-372): the sync buffer and its timestamp
+    // stay (no FlushBuffers at the same rate) until the next decision
+    // restarts the timestamp at the next packet and soft-resets the
+    // controller (#773).
+    queue_.clear();
+    neteq_flush_pending_ = true;
+    ++stats_.buffer_flushes;
+    decision_.NotifyBufferFlush();
+    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
+  }
+  if (cfg_.version >= 2) {
+    // NetEqImpl::InsertPacketInternal (neteq_impl.cc:387-389): the controller
+    // sees the packet only while new_codec_ is clear. The packets before the
+    // first GetAudio, and those between a flush and the next decision, are
+    // dropped from the statistics by the SoftReset that new_codec_ triggers.
+    if (neteq_reset_done_ && !neteq_flush_pending_) {
+      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pkt.samples), cfg_.sample_rate, ticks_ * kMsPerTick);
+    }
+  }
   if (auto it = queue_.find(ts); it != queue_.end()) {
     ++stats_.packets_duplicate;
     // PacketBuffer::InsertPacket: one packet per timestamp, the higher priority.
     if (cfg_.version >= 2 && priority < it->second.priority) it->second = std::move(pkt);
     return;
-  }
-  if (cfg_.version >= 2 && queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
-    // PacketBuffer::InsertPacket (packet_buffer.cc): a full buffer (NetEq::
-    // Config::max_packets_in_buffer, the capacity DelayConstraints assumes)
-    // is flushed completely before the new packet goes in (issue #331).
-    queue_.clear();
-    next_ts_ = ts;
-    sync_.assign(expand_.overlap_length(), 0.0f);  // NetEqImpl::FlushBuffers.
-    ++stats_.buffer_flushes;
-    decision_.NotifyBufferFlush();
-    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
   }
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
@@ -227,6 +231,7 @@ AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) 
     neteq_delay_.SoftReset();
     decision_.SoftReset(ticks_);
     neteq_reset_done_ = true;
+    neteq_flush_pending_ = false;  // The same new_codec_ flag.
   }
   const AudioOperation op = cfg_.version >= 2 ? GetAudioV2(out, now) : GetAudioV1(out, now);
   // NetEqImpl::GetAudioInternal: after an expand the playout timestamp moves on
@@ -350,7 +355,8 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   // PacketBuffer::DiscardOldPackets(end_timestamp, 5 s): only packets less
   // than 5 s older than the sync buffer's end (IsObsoleteTimestamp); older
   // ones stay and are played as future packets.
-  DiscardOldPackets(next_ts_, int64_t{5} * cfg_.sample_rate, now);
+  // Not while new_codec_ is set (NetEqImpl::GetDecision, neteq_impl.cc:915).
+  if (!neteq_flush_pending_) DiscardOldPackets(next_ts_, int64_t{5} * cfg_.sample_rate, now);
   // The sync buffer always keeps Expand's overlap as lookahead.
   const int64_t future = static_cast<int64_t>(sync_.size());
   const int64_t samples_left = future - static_cast<int64_t>(expand_.overlap_length());
@@ -384,6 +390,19 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     op = NetEqOperation::kNormal;  // Enough decoded audio already.
     extract = false;
   } else {
+    if (neteq_flush_pending_ && !queue_.empty()) {
+      // NetEqImpl::GetDecision's reset for new_codec_ (neteq_impl.cc:1034-1061),
+      // after the early return above: the sync buffer's end timestamp restarts
+      // at the next packet, the operation becomes a normal decode, and the
+      // controller is soft-reset (DecisionLogic::SoftReset, decision_logic.cc:88-98).
+      SM_EVENT(cfg_.events, now, "neteq", "flush_reset", static_cast<double>(queue_.begin()->first - next_ts_),
+               queue_.begin()->first);
+      next_ts_ = queue_.begin()->first;
+      op = NetEqOperation::kNormal;
+      neteq_flush_pending_ = false;
+      neteq_delay_.SoftReset();
+      decision_.SoftReset(ticks_);
+    }
     switch (op) {
       case NetEqOperation::kExpand:
         extract = false;
