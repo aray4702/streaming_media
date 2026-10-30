@@ -1,0 +1,12 @@
+name issue_464_start_rate_above_int_bps_seed7
+describe issue_464_start_rate_above_int_bps with seed 7: our longest freeze is 1141 ms against libwebrtc's 450 ms (#777)
+# Yardstick (#777): on 40 seeds ours has a 1.1-1.2 s single freeze on 6 seeds where libwebrtc
+# has none above 776 ms. Seed 7: video seq 28629 is queue-dropped at 0.633 s, its first RTX
+# (1.10 s) is queue-dropped too, and the next RTX goes out only at 1.95 s. Traced on both
+# stacks (kDefaultTraced) to find where libwebrtc's timeline differs.
+duration 10s
+max_rate 9000000000000mbps
+start_rate 20000mbps
+seed 7
+at 0s capacity=2500kbps delay=30ms queue=400ms
+expect cc.unsettled == 0
