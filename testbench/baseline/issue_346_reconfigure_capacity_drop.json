@@ -6,7 +6,7 @@
   "audio.interruptions": 1,
   "audio.jb_delay_p50_ms": 330,
   "audio.jb_delay_p95_ms": 520,
-  "audio.late_discards": 0,
+  "audio.late_discards": 50,
   "audio.longest_interruption_ms": 192,
   "audio.mouth_to_ear_p95_ms": 842.2,
   "audio.net_delay_p95_ms": 322.2,

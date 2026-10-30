@@ -158,6 +158,7 @@ class AudioJitterBuffer : public MetricsSource {
   // Version 1 gives its own filtered level.
   int FilteredCurrentDelayMs() const;
   const AudioJitterBufferStats& stats() const { return stats_; }
+  const NetEqDelayManager& neteq_delay() const { return neteq_delay_; }  // Version 2's DelayManager.
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

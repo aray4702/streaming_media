@@ -543,6 +543,7 @@ SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
   c.video = false;
   c.red = true;
   c.decoder = &dec;
+  c.jitter_buffer.version = 1;  // Version 2 splits RED as NetEq: RedBlocksReachNetEqAsSplitRedOrders.
   RtpReceiver r(c);
   loss::RedEncoder red(1);
   for (uint16_t i = 0; i < 6; ++i) {
@@ -561,6 +562,49 @@ SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
   SM_EXPECT_EQ(dec.calls, 6);  // Five received plus the one recovered from RED.
   SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 6u);
+}
+
+// NetEqImpl::InsertPacketInternal with RedPayloadSplitter::SplitRed (issue
+// #722): the primary goes in first, then the redundant block, and every block
+// reaches NetEq. Packet 2 is lost, so packet 3's redundant copy of frame 2
+// arrives after frame 3 and is reordered. So is packet 1's copy of frame 0:
+// the first pull's SoftReset cleared frame 0's arrival (#721's t = 50 row).
+// The copies of frames that arrived are inserted too: frame 0's is late, the
+// copies of frames 3 and 4 are duplicates.
+SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
+  FakeDecoder dec;
+  RtpReceiverConfig c;
+  c.ssrc = 7;
+  c.payload_type = 63;
+  c.clock_rate = 8000;
+  c.video = false;
+  c.red = true;
+  c.decoder = &dec;
+  c.jitter_buffer.version = 2;
+  RtpReceiver r(c);
+  loss::RedEncoder red(1);
+  std::vector<float> out(80);
+  for (uint16_t i = 0; i < 6; ++i) {
+    if (i == 2) {
+      red.Encode(111, 160u * i, Bytes(40, 99));
+      continue;
+    }
+    RtpPacket p;
+    p.ssrc = 7;
+    p.payload_type = 63;
+    p.seq = i;
+    p.timestamp = 160u * i;
+    p.payload = red.Encode(111, p.timestamp, Bytes(40, static_cast<uint8_t>(10 + i)));
+    r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
+    if (i == 0) r.GetAudio(out, Timestamp::Millis(6));  // The first pull's SoftReset, as NetEq's new codec.
+    if (i == 3) SM_EXPECT_EQ(dec.last_ts, 320u);  // Frame 2 (redundant) after frame 3 (primary).
+  }
+  SM_EXPECT_EQ(dec.calls, 9);  // Five primaries and four redundant blocks.
+  SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 9u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 2u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 1u);
+  SM_EXPECT_EQ(CollectMetrics(r.jitter_buffer().neteq_delay()).at("reordered"), 2.0);
 }
 
 namespace {
