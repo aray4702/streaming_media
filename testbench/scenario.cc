@@ -267,6 +267,9 @@ ParseResult ParseScenario(const std::string& text) {
       const long long v = need(2) ? std::atoll(tok[1].c_str()) : 0;
       if (v < 1 || v > 1000000) return fail("usage: compare_clock_start <1..1000000 seconds> (the RTCP interval seed)");
       s.compare_clock_start_s = v;
+    } else if (key == "call") {
+      if (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way")) return fail("usage: call one-way|two-way");
+      s.two_way = tok[1] == "two-way";
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: " + key + " on|off");
@@ -456,6 +459,7 @@ std::string FormatScenario(const Scenario& s) {
   if (!s.description.empty()) o += "describe " + s.description + "\n";
   o += "duration " + FormatTime(s.duration) + "\n";
   o += "seed " + std::to_string(s.seed) + "\n";
+  if (s.two_way != d.two_way) o += std::string("call ") + (s.two_way ? "two-way" : "one-way") + "\n";
   auto onoff = [&](const char* k, bool v, bool def) {
     if (v != def) o += std::string(k) + (v ? " on\n" : " off\n");
   };
@@ -512,6 +516,11 @@ std::string FormatScenario(const Scenario& s) {
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
   return o;
+}
+
+std::string UnsupportedReason(const Scenario& s) {
+  if (s.two_way) return "call two-way is not supported yet: the test bench runs one-way calls only (#743; #746 adds two-way)";
+  return "";
 }
 
 }  // namespace sm::testbench
