@@ -208,6 +208,9 @@ class AudioJitterBuffer : public MetricsSource {
   static constexpr int64_t kMsPerTick = 10;
   int64_t ticks_ = 0;
   bool neteq_reset_done_ = false;
+  // NetEqImpl::new_codec_ after PacketBuffer::kFlushed (version 2): set by a
+  // full-buffer flush, cleared by the soft reset at the next decision.
+  bool neteq_flush_pending_ = false;
   TimeStretcher stretcher_;
   loss::PacketLossConcealer plc_;  // Version 1's concealment.
   NetEqExpand expand_;

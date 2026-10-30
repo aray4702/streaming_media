@@ -142,6 +142,52 @@ SM_TEST(AudioJitterBuffer, V2HoldsTwoHundredPacketsThenFlushesThemAll) {
   SM_EXPECT_GE(*jb.PlayoutTimestamp(), 200u * 320u);
 }
 
+// Issue #773: PacketBuffer::kFlushed sets NetEqImpl::new_codec_, so the next
+// decision restarts the timestamp at the next packet and soft-resets the
+// controller (DelayManager::Reset: target back to kStartDelayMs, 80 ms), and
+// the packets in between skip the statistics (neteq_impl.cc:369-389, 1034-1061).
+SM_TEST(AudioJitterBuffer, V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDecision) {
+  AudioJitterBufferConfig cfg;
+  cfg.version = 2;
+  AudioJitterBuffer jb(cfg);
+  std::vector<float> out(160);
+  const auto pcm = [](int i) { return std::vector<float>(320, i % 2 ? 0.25f : -0.25f); };
+  // 4 s of audio arriving in bursts of 10 packets every 200 ms: the target rises.
+  int pkt = 0;
+  int t = 0;
+  for (; t < 4000; t += 10) {
+    if (t % 200 == 0) {
+      for (int k = 0; k < 10; ++k, ++pkt) jb.InsertPacket(static_cast<uint32_t>(pkt * 320), pcm(pkt), Timestamp::Millis(t));
+    }
+    jb.GetAudio(out, Timestamp::Millis(t));
+  }
+  const int raised = jb.TargetDelayMs();
+  SM_EXPECT_GT(raised, 80);
+  // 4 s more at once, without a pull: the buffer fills and is flushed.
+  const int first_after = pkt + 210;
+  for (int k = 0; k < 220; ++k, ++pkt) jb.InsertPacket(static_cast<uint32_t>(pkt * 320), pcm(pkt), Timestamp::Millis(t));
+  SM_EXPECT_EQ(jb.stats().buffer_flushes, 1u);
+  // Nothing is reset before the next decision.
+  SM_EXPECT_EQ(jb.TargetDelayMs(), raised);
+  // The pulls that still play decoded audio from the sync buffer return before
+  // the reset (neteq_impl.cc:1019-1025); the first decision after them resets.
+  int pulls = 0;
+  while (jb.TargetDelayMs() != 80 && pulls < 50) {
+    jb.GetAudio(out, Timestamp::Millis(t));
+    t += 10;
+    ++pulls;
+  }
+  SM_EXPECT_EQ(jb.TargetDelayMs(), 80);
+  SM_EXPECT_LE(pulls, 30);  // The sync buffer holds at most the old target's audio.
+  // Playout restarts at the packets kept after the flush.
+  SM_ASSERT_TRUE(jb.PlayoutTimestamp().has_value());
+  SM_EXPECT_GE(*jb.PlayoutTimestamp(), static_cast<uint32_t>((first_after - 10) * 320));
+  // The packets that came after the flush, before the pull, left no history:
+  // the next on-time packets keep the target at the start value.
+  for (int k = 0; k < 5; ++k, t += 10) jb.GetAudio(out, Timestamp::Millis(t));
+  SM_EXPECT_EQ(jb.TargetDelayMs(), 80);
+}
+
 SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
   AudioJitterBuffer jb(V1());
   jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
