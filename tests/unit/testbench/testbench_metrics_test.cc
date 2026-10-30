@@ -428,6 +428,21 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
   SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
 }
 
+// audio.net_delay_p95_ms on both stacks (#783): a padding-only packet on the
+// audio SSRC keeps the last frame's timestamp and was counted as audio that
+// spent its pacer time on the network.
+SM_TEST(TestbenchMetrics, AudioNetDelayCountsOnlyPacketsThatCarryAudio) {
+  AudioNetDelayMeter m;
+  m.OnArrival(1000, true, Timestamp::Millis(50));  // Before Start: no sample.
+  m.Start(1000, 48000);
+  m.OnArrival(1000, true, Timestamp::Millis(59));          // Captured at 0 ms.
+  m.OnArrival(1000 + 960, true, Timestamp::Millis(81));    // Captured at 20 ms.
+  m.OnArrival(1000 + 960, false, Timestamp::Millis(140));  // Padding with frame 1's timestamp.
+  SM_EXPECT_EQ(m.samples().size(), size_t{2});
+  SM_EXPECT_EQ(m.samples()[0], 59.0);
+  SM_EXPECT_EQ(m.samples()[1], 61.0);
+}
+
 // The jitter buffer per 10 ms audio pull (issue #62).
 SM_TEST(TestbenchMetrics, AudioTraceCsvWritesOneLinePerPullAndLeavesJbDelayEmptyWithoutAPacket) {
   std::vector<AudioTraceRow> trace(2);
