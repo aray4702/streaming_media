@@ -138,12 +138,14 @@ class Owners(unittest.TestCase):
     def test_session_layer_repair_cell_belongs_to_the_reordering_cluster(self):
         # #420: on 80 seeds (#424) issue_76_session_layer_v2's repair overhead is ahead (38.2 vs 40.3 %),
         # the jittery reordering link of #411's D5/D6 cluster, not the closed repair items.
+        # #735: D6 is in band on 80 seeds since #435 (39.4 vs 39.7 %); #735 owns the cell with a note.
         d = data(scn("issue_76_session_layer_v2", {"repair.overhead_pct": ([38] * 5, [40.5] * 5)}))
         d["shown"] = dict(SHOWN, **{"repair.overhead_pct": {"better": "lower", "floor": 1}})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
         g = pr.report(d, owners)
         self.assertEqual(len(g), 1)
-        self.assertIn(411, g[0]["owners"])
+        self.assertIn(735, g[0]["owners"])
+        self.assertNotIn(411, g[0]["owners"])
 
     def test_audio_delay_cells_belong_to_the_send_side_items(self):
         # #62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266), so the
