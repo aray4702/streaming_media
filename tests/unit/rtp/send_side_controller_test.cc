@@ -207,6 +207,32 @@ SM_TEST(SendSideController, SilentFeedbackDoesNothingUnderGccV2) {
   }
 }
 
+SM_TEST(SendSideController, OutageMonitorFollowsTheLinkAndTakesNoAction) {
+  // Issue #849: the monitor only observes. Process() runs it, so its state, outage count and outage
+  // length follow the feedback, but nothing it decides reaches the encoder, the pacer or the estimate.
+  SendSideController c(SendSideConfig{});
+  c.Start(Timestamp::Millis(0));
+  c.gcc().OnRttUpdate(TimeDelta::Millis(50));
+  const auto state = [&] { return static_cast<int>(c.outage().state()); };
+  for (int t = 0; t <= 8000; t += 10) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t <= 1000 || t >= 7000) c.outage().OnFeedback(now);
+    c.Process(now);
+    ControllerActions a = c.TakeActions();
+    SM_EXPECT_FALSE(a.pause_encoder);
+    SM_EXPECT_FALSE(a.resume_encoder);
+    SM_EXPECT_FALSE(a.request_keyframe);
+    if (t == 1500) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kUp));
+    if (t == 2000) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kDegraded));
+    if (t == 6990) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kDown));
+    if (t == 7000) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kUp));
+  }
+  MapMetricsWriter w;
+  c.outage().ExportMetrics(w);
+  SM_EXPECT_EQ(w.Get("outages", -1), 1.0);
+  SM_EXPECT_EQ(w.Get("ice_restarts", -1), 1.0);  // Counted, not acted on: ICE belongs to the host stack.
+}
+
 // PacketSequencer::PopulatePaddingFields (packet_sequencer.cc:120-137): empty RTX padding carries the
 // last released media packet's timestamp advanced at 90 ticks per ms since, and 0 before any media
 // (the probe's first packet goes before the frame); payload padding keeps the resent packet's.
