@@ -5,10 +5,13 @@
 // of consecutive sequence numbers with the same RTP timestamp that starts
 // with a frame-start packet and ends with the marker bit. (A frame may open
 // with several start packets, e.g. H.264 parameter sets before the IDR slice:
-// it starts at the first of the contiguous packets that share its timestamp.) Complete frames are
-// returned immediately (possibly out of order; the frame scheduler orders
-// them by decodability). Duplicates and packets older than the window are
-// rejected and counted.
+// it starts at the first of the contiguous packets that share its timestamp,
+// as libwebrtc's `PacketBuffer::FindFrames` walks back for H.264 without a
+// generic descriptor, packet_buffer.cc. A start whose predecessor of the same
+// frame is missing opens the frame there, as libwebrtc does; issue #847.)
+// Complete frames are returned immediately (possibly out of order; the frame
+// scheduler orders them by decodability). Duplicates and packets older than
+// the window are rejected and counted.
 #pragma once
 
 #include <cstdint>
@@ -74,19 +77,13 @@ struct PacketBufferStats {
 class PacketBuffer : public MetricsSource {
  public:
   explicit PacketBuffer(PacketBufferConfig cfg = {});
-  // frame_start: the packetizer's "first packet of frame" flag (e.g. VP8 S
-  // bit, H.264 FU-A start); the end is the RTP marker bit.
-  //
-  // `may_continue_frame`: the packet looks like a start but could follow
-  // earlier packets of the same frame (an H.264 IDR slice after its SPS and
-  // PPS). It then opens the frame only if the packet before it is known to
-  // belong to the previous frame; if that one is missing, the buffer waits
-  // for it (NACK recovers it) rather than hand over a frame without it.
+  // frame_start: the depacketizer's `is_first_packet_in_frame` (e.g. VP8 S
+  // bit; H.264: a parameter set, AUD, SEI, or a slice or FU-A start with
+  // first_mb_in_slice 0); the end is the RTP marker bit.
   //
   // `idr`: the packet carries an IDR slice (or its first FU-A fragment), so a
   // frame with it is an H.264 keyframe for the `missing_packets` rule.
-  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame = false,
-                      bool idr = false);
+  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool idr = false);
   // A padding-only packet occupied `seq`: it is received, there is nothing
   // to assemble, and it must not look like a hole (or a duplicate later).
   void NotePadding(uint16_t seq);
@@ -113,7 +110,6 @@ class PacketBuffer : public MetricsSource {
   struct Entry {
     RtpPacket packet;
     bool frame_start;
-    bool may_continue_frame;
     bool idr;
     Timestamp arrival;
   };
@@ -134,7 +130,6 @@ class PacketBuffer : public MetricsSource {
   size_t size_ = 0;                      // Current slot count.
   bool cleared_to_first_seq_ = false;    // ClearTo moved first_seq_; older packets are ignored.
   int64_t first_seq_ = INT64_MIN;        // Lowest sequence number seen since the last clear.
-  int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;
   PacketBufferStats stats_;
 };

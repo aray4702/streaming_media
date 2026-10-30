@@ -269,10 +269,18 @@ ALGORITHMS = [
                "(packet_buffer.cc): the sequence numbers not yet received below the newest one (at most 1000 behind it) are kept, "
                "a complete frame without an IDR slice is held while one of them is at or before its first packet, a released "
                "frame forgets the holes up to its last packet, padding fills a hole, ClearTo forgets the holes below it, and a "
-               "packet that arrives later releases the held frames it makes contiguous (FindFrames' walk forward).",
+               "packet that arrives later releases the held frames it makes contiguous (FindFrames' walk forward). "
+               "Frame start (issue #847): a frame opens at the first of the contiguous packets that share its timestamp, "
+               "if that one is a start, even when an earlier packet of the frame is missing, as libwebrtc's H.264 walk back in "
+               "FindFrames (an IDR slice whose parameter-set packet is lost is handed out alone, as a keyframe). libwebrtc M157 "
+               "uses `h26x_packet_buffer.cc` for H.264 only under a field trial that is off by default.",
          verification="No defects found. Issue #453: with `sps_pps_tracker on` and `h264_missing_packets on`, `high_jitter` "
                       "seeds 1-10 keyframe requests 1.8 -> 1.2, the same as libwebrtc on 10 of 10 seeds. Made the session default "
-                      "for H.264 by the #453 flip (see docs/design/libwebrtc-parity.md)."),
+                      "for H.264 by the #453 flip (see docs/design/libwebrtc-parity.md). Issue #847: the H.264 assembly "
+                      "rules compared with packet_buffer.cc and h26x_packet_buffer.cc; the wait for a missing packet before "
+                      "an IDR start (`may_continue_frame`) removed as libwebrtc has none (unit tests "
+                      "`PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing` and "
+                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
