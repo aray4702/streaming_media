@@ -353,7 +353,11 @@ void Session::Start(Timestamp now) {
   }
   send_.ConfigureAllocation(audio, !video_send_.empty());
   send_.Start(now);
-  send_.OnRtt(rtt_);
+  // GoogCC takes an RTT only once one is known: RtpTransportControllerSend::OnRttUpdate
+  // runs on a measured RTT (or here, one the host set), never on a default. Until then
+  // AimdRateControl keeps its own 200 ms (kDefaultRtt, aimd_rate_control.cc:34) and
+  // SendSideBandwidthEstimation none (issue #869).
+  if (have_rtt_ || host_rtt_) send_.OnRtt(rtt_);
   last_target_ = send_.target();
 }
 
@@ -512,6 +516,7 @@ void Session::MaybeUpdateFecRates(Timestamp now) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
+  host_rtt_ = true;
   // With RRTR on, the XR measurement is what goes to CallStats.
   if (!cfg_.rtcp.xr_rrtr) pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);

@@ -845,6 +845,23 @@ SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
   SM_EXPECT_TRUE(p.b.TakeEvents().empty());
 }
 
+// GoogCC gets an RTT only once one is known (issue #869): RtpTransportControllerSend::OnRttUpdate runs on a
+// measured RTT, so until then AimdRateControl keeps its 200 ms default (aimd_rate_control.cc:34). The
+// session's own 100 ms placeholder must not reach it. An RTT the host sets does, also when set before
+// the session starts.
+SM_TEST(Session, TheCongestionControllerGetsNoRttBeforeOneIsKnown) {
+  Pair p;
+  Pump(p.a, 0, 100);
+  SM_EXPECT_EQ(p.a.send_side().gcc().last_rtt().ms(), 0);
+  p.a.SetRtt(TimeDelta::Millis(250));
+  SM_EXPECT_EQ(p.a.send_side().gcc().last_rtt().ms(), 250);
+
+  Pair q;
+  q.a.SetRtt(TimeDelta::Millis(250));
+  Pump(q.a, 0, 100);
+  SM_EXPECT_EQ(q.a.send_side().gcc().last_rtt().ms(), 250);
+}
+
 // A receive-only video stream takes its NACK RTT from CallStats, as
 // VideoReceiveStream2::OnRttUpdate does: a measurement reaches it at the next
 // 1 s periodic update (ModuleRtpRtcpImpl2::PeriodicUpdate), and the largest
