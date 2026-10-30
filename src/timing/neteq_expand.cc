@@ -988,7 +988,7 @@ void NetEqExpand::AnalyzeSignal(std::span<const float> sync, int16_t* random_vec
   // stable (and left as it was if the signal is zero).
   int32_t auto_correlation[kUnvoicedLpcOrder + 1];
   std::vector<int16_t> temp_signal(lpc_len + kUnvoicedLpcOrder, 0);
-  std::copy(&h[signal_length - lpc_len], &h[signal_length], temp_signal.begin() + kUnvoicedLpcOrder);
+  std::copy(h.end() - static_cast<std::ptrdiff_t>(lpc_len), h.end(), temp_signal.begin() + kUnvoicedLpcOrder);
   CrossCorrelationWithAutoShift(&temp_signal[kUnvoicedLpcOrder], &temp_signal[kUnvoicedLpcOrder], lpc_len,
                                 kUnvoicedLpcOrder + 1, -1, auto_correlation);
   if (auto_correlation[0] > 0) {
@@ -1013,7 +1013,7 @@ void NetEqExpand::AnalyzeSignal(std::span<const float> sync, int16_t* random_vec
 
   // Filter state and gain of the unvoiced part, from the residual of the
   // last 128 samples: ar_gain = sqrt(residual energy / 128) in Q(ar_gain_scale - 13).
-  std::copy(&h[signal_length - kUnvoicedLpcOrder], &h[signal_length], ar_filter_state_.begin());
+  std::copy(h.end() - static_cast<std::ptrdiff_t>(kUnvoicedLpcOrder), h.end(), ar_filter_state_.begin());
   int16_t unvoiced[128];
   FilterMAFastQ12(&h[signal_length - 128], unvoiced, ar_filter_.data(), kUnvoicedLpcOrder + 1, 128);
   int unvoiced_max_abs = MaxAbsValueW16(unvoiced, 128);
