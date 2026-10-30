@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "sm/core/audio_frame_operations.h"
+
 namespace sm::rtp {
 
 std::vector<size_t> SplitEvenly(size_t bytes, size_t max_payload) {
@@ -209,6 +211,12 @@ void RtpSender::AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted) 
     }
   }
   previous_frame_muted_ = muted;
+}
+
+void RtpSender::ProcessAudioCapture(std::span<int16_t> frame, size_t num_channels, bool muted) {
+  // channel_send.cc:909-911: AudioFrameOperations::Mute with the previous frame's state, before the level.
+  dsp::MuteAudioFrame(frame, num_channels, previous_frame_muted_, muted);
+  AnalyzeAudioCapture(frame, muted);
 }
 
 void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,

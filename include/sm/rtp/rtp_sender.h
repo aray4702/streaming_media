@@ -125,6 +125,13 @@ class RtpSender : public MetricsSource {
   // mapped it feeds the stream's RmsLevel: `AnalyzeMuted` for a muted frame
   // after a muted one, `Analyze` otherwise. Without it, it does nothing.
   void AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted);
+  // The same frame before muting, as ChannelSend::ProcessAndEncodeAudio
+  // (channel_send.cc:909-924): mutes it in place with libwebrtc's fade
+  // (`dsp::MuteAudioFrame`, AudioFrameOperations::Mute, #879: the last 128
+  // samples ramp down on the frame where mute starts, the first 128 ramp up
+  // on the frame where it ends, zeros in between), then analyzes it as
+  // AnalyzeAudioCapture. The app encodes the frame as this leaves it.
+  void ProcessAudioCapture(std::span<int16_t> frame, size_t num_channels, bool muted);
   // Audio: one frame becomes one packet (RED-wrapped when configured).
   // The marker bit is RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128,
   // 243, 262): set on the first packet of the stream, on a change of payload

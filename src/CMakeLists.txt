@@ -3,6 +3,7 @@ sm_add_library(core SOURCES
   core/event_log.cc
   core/fft.cc
   core/rms_level.cc
+  core/audio_frame_operations.cc
   core/dsp.cc
   core/rtp_packet.cc)
 
