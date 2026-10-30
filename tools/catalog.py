@@ -28,10 +28,11 @@ ALGORITHMS = [
                   "RtxSender answers with RTX packets. A packet counts as on time if it is available within a 250 ms "
                   "playout budget. A second run at 150 ms one-way delay shows retransmissions arriving too late.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "Retry spacing is max(RTT x factor, 20 ms) so a request is not repeated before its answer could "
-               "arrive; the sender also refuses to resend the same packet twice within one RTT, which protects "
-               "against duplicate NACKs. Overflow handling drops gaps older than the next keyframe instead of "
-               "the whole list, so a burst does not force an unnecessary keyframe. The request is the standard generic "
+               "A request is repeated once one RTT has passed since it was sent, with no floor below the RTT (`GetNackBatch`'s "
+               "`nack_on_rtt_passed`; the 20 ms `min_retry_interval` was removed in issue #846); the sender also refuses to resend the same packet twice within one RTT, which protects "
+               "against duplicate NACKs. A packet recovered (restored from RTX or by FEC) ahead of the newest received one goes to "
+               "NackRequester's `recovered_list_`: it does not move the newest, and the gap revealed by the next packet received as "
+               "sent skips it, so it is never NACKed (issue #846). The request is the standard generic "
                "NACK (RFC 4585 6.2.1, PID+BLP items) from loss/rtcp_feedback.h, byte-compatible with libwebrtc's "
                "rtcp_packet::Nack (interop check in compare/webrtc/rtcp_interop.cc). "
                "The RTX history is libwebrtc's RtpPacketHistory (issue #76 group 2; the v1 ring was deleted in #167): a packet enters when "
@@ -55,7 +56,10 @@ ALGORITHMS = [
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`. "
                       "Issue #518: the 20 ms retry ticks keep the grid of the first, as `NackPeriodicProcessor`'s "
                       "RepeatingTask (`repeating_task.cc:87`), when the receiver runs between them, and `NextProcessTime` "
-                      "reports the next tick (unit `NackTracker.RetryTicksKeepTheGridOfTheFirstAndReportTheNext`)."),
+                      "reports the next tick (unit `NackTracker.RetryTicksKeepTheGridOfTheFirstAndReportTheNext`). "
+                      "Issue #846: `recovered_list_` and no retry floor, as `nack_requester.cc` (units "
+                      "`NackTracker.RecoveredPacketAheadIsNeverNacked`, `RecoveredPacketBehindLeavesTheList`, "
+                      "`RecoveredListIsClearedAndAged`, `RetryHasNoFloorBelowTheRtt`; libwebrtc's `nack_requester_unittest.cc` is not in `reference/`)."),
     dict(id="3.2", slug="fec", title="Forward error correction (ULPFEC over RED, as libwebrtc)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/ulpfec.h"], unit=["Ulpfec"], e2e=["E2E_Fec"],

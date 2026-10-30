@@ -4,6 +4,8 @@
 // RTT-based retry spacing and retires requests that exceed their retry budget,
 // as libwebrtc's NackRequester (issue #23): giving up asks for no keyframe,
 // and a list that would pass `max_nack_list` is cleared and asks for one.
+// A packet recovered (by FEC or RTX) ahead of the newest received one is kept
+// in a recovered list and never NACKed, as NackRequester's recovered_list_ (issue #846).
 #pragma once
 
 #include <cstdint>
@@ -22,8 +24,7 @@ struct NackConfig {
   int max_packet_age = 10000;       // Forget gaps older than newest - age.
   size_t max_nack_list = 1000;      // Overflow -> clear the list and ask for a keyframe.
   int max_retries = 100;            // nack_requester.cc kMaxNackRetries.
-  TimeDelta min_retry_interval = TimeDelta::Millis(20);
-  double retry_rtt_factor = 1.0;    // Retry after max(rtt * factor, min).
+  double retry_rtt_factor = 1.0;    // Retry after rtt * factor (GetNackBatch's nack_on_rtt_passed, no floor).
   TimeDelta reorder_wait = TimeDelta::Zero();  // Delay before the first NACK.
   TimeDelta initial_rtt = TimeDelta::Millis(100);
   EventSink* events = nullptr;
@@ -39,6 +40,7 @@ struct NackStats {
   uint64_t abandoned = 0;           // Gave up after max_retries or age.
   uint64_t cleared = 0;             // Requests dropped by ClearUpTo.
   uint64_t keyframe_requests = 0;
+  uint64_t recovered_ahead = 0;     // Recovered (FEC/RTX) ahead of the newest packet: never NACKed.
   Histogram recovery_time_ms;       // Gap detected -> packet arrived.
   Histogram retries_per_recovery;
 };
@@ -48,7 +50,10 @@ class NackTracker : public MetricsSource {
   explicit NackTracker(NackConfig cfg = {});
 
   // Returns how many times the packet was NACKed before it arrived (0 if never), as NackRequester::OnReceivedPacket.
-  int OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now);
+  // `is_recovered` is RtpPacketReceived::recovered() (restored from RTX or recovered by FEC): such a packet
+  // ahead of the newest one goes to the recovered list and does not move the newest, so the gap before it is
+  // found by the next packet received as sent, which skips it.
+  int OnReceivedPacket(uint16_t seq, bool is_keyframe, Timestamp now, bool is_recovered = false);
   void UpdateRtt(TimeDelta rtt) { rtt_ = rtt; }
   TimeDelta rtt() const { return rtt_; }
   // Sequence numbers to put in a NACK now (NackRequester::ProcessNacks, kTimeOnly): first requests and retries.
@@ -62,7 +67,7 @@ class NackTracker : public MetricsSource {
   // When GetNackBatch has work next: the next 20 ms tick while requests are outstanding, or a first request's
   // reorder wait. PlusInfinity when nothing is missing.
   Timestamp NextProcessTime() const;
-  // NackRequester::ClearUpTo: forgets the requests for every sequence number before `seq`. The
+  // NackRequester::ClearUpTo: forgets the requests (and recovered packets) for every sequence number before `seq`. The
   // receiver calls it for each continuous frame (RtpVideoStreamReceiver2::FrameContinuous), so a keyframe
   // that follows an outage ends the repair of the packets lost during it.
   void ClearUpTo(uint16_t seq);
@@ -89,6 +94,7 @@ class NackTracker : public MetricsSource {
   bool initialized_ = false;
   int64_t newest_ = 0;
   std::map<int64_t, Info> missing_;
+  std::set<int64_t> recovered_;  // NackRequester::recovered_list_.
   bool keyframe_needed_ = false;
   NackStats stats_;
 };

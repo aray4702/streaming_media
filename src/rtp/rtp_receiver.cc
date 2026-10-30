@@ -394,7 +394,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& wire, Timestamp now, bool recove
   // The NACK tracker wants to know where keyframes start: the packet that
   // opens a keyframe access unit carries the parameter sets or the IDR slice.
   if (cfg_.nack) {
-    const int times_nacked = nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now);
+    // rtp_video_stream_receiver2.cc:1438: OnReceivedPacket(seq, rtp_packet.recovered()).
+    const int times_nacked =
+        nack_.OnReceivedPacket(p.seq, (info.idr || info.sps || info.pps) && info.frame_start, now, recovered);
     SendSeqNumNacks(now);
     // RtpFrameObject::delayed_by_retransmission: a packet of the frame had been NACKed.
     if (times_nacked > 0 && cfg_.timing.version >= 2) {
