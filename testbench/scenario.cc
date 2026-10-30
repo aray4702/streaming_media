@@ -333,8 +333,8 @@ ParseResult ParseScenario(const std::string& text) {
       if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: timing v1|v2");
       s.timing_v2 = tok[1] == "v2";
     } else if (key == "neteq") {
-      if (!need(2) || (tok[1] != "v1" && tok[1] != "v2")) return fail("usage: neteq v1|v2");
-      s.neteq_v2 = tok[1] == "v2";
+      // `neteq v1` (the library's own buffer) was removed in #817; v2 is the only one.
+      if (!need(2) || tok[1] != "v2") return fail("usage: neteq v2 (v1 was removed in #817)");
     } else if (key == "av_sync") {
       if (!need(2) || (tok[1] != "on" && tok[1] != "off")) return fail("usage: av_sync on|off");
       s.av_sync = tok[1] == "on";
@@ -506,7 +506,6 @@ std::string FormatScenario(const Scenario& s) {
   if (s.link_headroom != d.link_headroom) o += std::string("link_headroom ") + (s.link_headroom ? "on" : "off") + "\n";
   if (s.quality_scaling != d.quality_scaling) o += std::string("quality_scaling ") + (s.quality_scaling ? "on" : "off") + "\n";
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
-  if (s.neteq_v2 != d.neteq_v2) o += std::string("neteq ") + (s.neteq_v2 ? "v2" : "v1") + "\n";
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";

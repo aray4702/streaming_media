@@ -134,7 +134,6 @@ class AudioDecoder {
   // (modules/audio_coding/codecs/opus/audio_decoder_opus.cc): the RTP
   // timestamp units of the redundant copy of the previous frame that `frame`
   // carries, 0 when it carries none (PacketHasFec / PacketDurationRedundant).
-  // Used only with the jitter buffer's version 2 (`neteq v2`).
   virtual uint32_t FecDuration(std::span<const uint8_t> /*frame*/) const { return 0; }
   // DecodeRedundantInternal: that copy to samples, for `rtp_timestamp` (the
   // frame's own timestamp less FecDuration). Nullopt drops it.
@@ -143,7 +142,7 @@ class AudioDecoder {
   }
   // AudioDecoder::PacketDuration: the frame's samples at the jitter buffer's
   // rate without decoding it, 0 if unknown. A decoder that knows it is called
-  // when the jitter buffer (version 2) plays the frame, not when it arrives,
+  // when the jitter buffer plays the frame, not when it arrives,
   // as NetEq decodes (#783); one that returns 0 decodes on arrival.
   virtual uint32_t PacketDuration(std::span<const uint8_t> /*frame*/) const { return 0; }
 };

@@ -14,7 +14,6 @@
 #include "sm/loss/keyframe_request.h"
 #include "sm/loss/fec_controller.h"
 #include "sm/loss/nack_tracker.h"
-#include "sm/loss/plc.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/loss/ulpfec.h"
@@ -230,57 +229,6 @@ inline RedSimResult RunRedSim(int distance, const sim::LinkConfig& link_cfg, int
   r.raw_frame_loss = static_cast<double>(link.stats().lost) / frames;
   r.residual_frame_loss = static_cast<double>(std::count(got.begin(), got.end(), false)) / frames;
   r.overhead = static_cast<double>(enc.stats().redundant_bytes) / static_cast<double>(enc.stats().primary_bytes);
-  return r;
-}
-
-// --- Audio: PLC ---------------------------------------------------------------
-
-struct PlcSimResult {
-  double snr_plc_db = 0;        // Whole signal.
-  double snr_zero_db = 0;
-  double lost_snr_plc_db = 0;   // Lost frames only.
-  double lost_snr_zero_db = 0;  // Always 0 dB by definition.
-  double lost_level_ratio = 0;  // RMS(concealed)/RMS(original) on lost frames.
-  double loss = 0;
-};
-
-inline PlcSimResult RunPlcSim(const sim::LinkConfig& link_cfg, double seconds, uint64_t seed) {
-  const int fs = 16000, frame = 160;
-  auto x = sim::SpeechLike(fs, seconds, seed, false);
-  size_t frames = x.size() / frame;
-  sim::NetworkLink<size_t> link(link_cfg, seed + 7);
-  for (size_t f = 0; f < frames; ++f) link.Send(Timestamp::Millis(static_cast<int64_t>(f * 10)), f, DataSize::Bytes(40));
-  std::vector<bool> got(frames, false);
-  for (size_t f : link.Receive(Timestamp::Seconds(3600))) got[f] = true;
-
-  loss::PacketLossConcealer plc;
-  std::vector<float> out_plc(frames * frame), out_zero(frames * frame, 0.0f);
-  std::vector<float> lost_ref, lost_plc;
-  std::vector<float> buf(frame);
-  size_t lost = 0;
-  for (size_t f = 0; f < frames; ++f) {
-    auto src = x.begin() + static_cast<std::ptrdiff_t>(f * frame);
-    if (got[f]) {
-      std::copy(src, src + frame, buf.begin());
-      plc.OnGoodFrame(buf);
-      std::copy(src, src + frame, out_zero.begin() + static_cast<std::ptrdiff_t>(f * frame));
-    } else {
-      ++lost;
-      plc.Conceal(buf);
-      lost_ref.insert(lost_ref.end(), src, src + frame);
-      lost_plc.insert(lost_plc.end(), buf.begin(), buf.end());
-    }
-    std::copy(buf.begin(), buf.end(), out_plc.begin() + static_cast<std::ptrdiff_t>(f * frame));
-  }
-  std::span<const float> ref(x.data(), frames * frame);
-  PlcSimResult r;
-  r.loss = static_cast<double>(lost) / static_cast<double>(frames);
-  r.snr_plc_db = dsp::SnrDb(ref, out_plc);
-  r.snr_zero_db = dsp::SnrDb(ref, out_zero);
-  r.lost_snr_plc_db = dsp::SnrDb(lost_ref, lost_plc);
-  r.lost_snr_zero_db = 0.0;
-  double rr = dsp::Rms(lost_ref);
-  r.lost_level_ratio = rr > 0 ? dsp::Rms(lost_plc) / rr : 0;
   return r;
 }
 

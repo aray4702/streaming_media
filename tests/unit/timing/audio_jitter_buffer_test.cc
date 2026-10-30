@@ -9,17 +9,10 @@ namespace {
 std::vector<float> Chunk(const std::vector<float>& x, int i, int n = 320) {
   return std::vector<float>(x.begin() + i * n, x.begin() + (i + 1) * n);
 }
-
-// The library's own buffer (version 1); the default is NetEq (version 2, #579).
-AudioJitterBufferConfig V1() {
-  AudioJitterBufferConfig c;
-  c.version = 1;
-  return c;
-}
 }  // namespace
 
 SM_TEST(AudioJitterBuffer, PerfectNetworkPlaysNormally) {
-  AudioJitterBuffer jb(V1());
+  AudioJitterBuffer jb;
   auto x = sim::SpeechLike(16000, 3.0, 1, false);
   std::vector<float> out(160);
   int expands = 0;
@@ -34,7 +27,7 @@ SM_TEST(AudioJitterBuffer, PerfectNetworkPlaysNormally) {
 }
 
 SM_TEST(AudioJitterBuffer, LostPacketIsConcealedThenSkipped) {
-  AudioJitterBuffer jb(V1());
+  AudioJitterBuffer jb;
   auto x = sim::SpeechLike(16000, 2.0, 2, false);
   std::vector<float> out(160);
   for (int t = 0; t < 1900; t += 10) {
@@ -48,25 +41,8 @@ SM_TEST(AudioJitterBuffer, LostPacketIsConcealedThenSkipped) {
   SM_EXPECT_NEAR(static_cast<double>(jb.stats().concealed_samples), 320, 160);
 }
 
-SM_TEST(AudioJitterBuffer, LatePacketMergesInsteadOfLoss) {
-  AudioJitterBuffer jb(V1());
-  auto x = sim::Sine(200, 16000, 2.0, 0.3f);
-  std::vector<float> out(160);
-  for (int t = 0; t < 1900; t += 10) {
-    int pkt = t / 20;
-    if (t % 20 == 0 && pkt != 40) jb.InsertPacket(static_cast<uint32_t>(pkt * 320), Chunk(x, pkt), Timestamp::Millis(t));
-    // 10 ms late: arrives while the buffer is concealing its slot, so it is
-    // merged rather than lost. (Later than the concealed duration -> lost.)
-    if (t == 810) jb.InsertPacket(40 * 320, Chunk(x, 40), Timestamp::Millis(t));
-    jb.GetAudio(out, Timestamp::Millis(t));
-  }
-  SM_EXPECT_EQ(jb.stats().packets_lost, 0u);
-  SM_EXPECT_EQ(jb.stats().packets_discarded_late, 0u);
-  SM_EXPECT_GE(jb.stats().ops[static_cast<int>(AudioOperation::kMerge)], 1u);
-}
-
 SM_TEST(AudioJitterBuffer, BurstArrivalTriggersAccelerate) {
-  AudioJitterBuffer jb(V1());
+  AudioJitterBuffer jb;
   auto x = sim::Sine(180, 16000, 12.0, 0.3f);
   std::vector<float> out(160);
   int pkt = 0;
@@ -87,7 +63,7 @@ SM_TEST(AudioJitterBuffer, BurstArrivalTriggersAccelerate) {
 }
 
 SM_TEST(AudioJitterBuffer, MinimumDelayHonoured) {
-  AudioJitterBuffer jb(V1());
+  AudioJitterBuffer jb;
   jb.SetMinimumDelayMs(120);
   SM_EXPECT_EQ(jb.TargetDelayMs(), 120);
 }
@@ -96,7 +72,6 @@ SM_TEST(AudioJitterBuffer, MinimumDelayHonoured) {
 // (neteq/packet.h): one packet per timestamp, the higher priority kept.
 SM_TEST(AudioJitterBuffer, V2KeepsTheHigherPriorityPacketPerTimestamp) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   const std::vector<float> fec(320, 0.25f), primary(320, 0.5f), red(320, 0.75f);
   jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
@@ -124,7 +99,6 @@ SM_TEST(AudioJitterBuffer, V2KeepsTheHigherPriorityPacketPerTimestamp) {
 // A/V sync on a slow link raises the audio delay past 2 s without a flush.
 SM_TEST(AudioJitterBuffer, V2HoldsTwoHundredPacketsThenFlushesThemAll) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   for (int i = 0; i < 200; ++i) {
     jb.InsertPacket(static_cast<uint32_t>(i * 320), std::vector<float>(320, 0.1f), Timestamp::Millis(i));
@@ -148,7 +122,6 @@ SM_TEST(AudioJitterBuffer, V2HoldsTwoHundredPacketsThenFlushesThemAll) {
 // the packets in between skip the statistics (neteq_impl.cc:369-389, 1034-1061).
 SM_TEST(AudioJitterBuffer, V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDecision) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   std::vector<float> out(160);
   const auto pcm = [](int i) { return std::vector<float>(320, i % 2 ? 0.25f : -0.25f); };
@@ -188,28 +161,11 @@ SM_TEST(AudioJitterBuffer, V2FullBufferFlushSoftResetsTheDelayManagerAtTheNextDe
   SM_EXPECT_EQ(jb.TargetDelayMs(), 80);
 }
 
-SM_TEST(AudioJitterBuffer, V1KeepsTheFirstPacketAndLateFecIsNotALateDiscard) {
-  AudioJitterBuffer jb(V1());
-  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(0));
-  jb.InsertPacket(320, std::vector<float>(320, 0.25f), Timestamp::Millis(5), {1, 0});
-  jb.InsertPacket(320, std::vector<float>(320, 0.5f), Timestamp::Millis(20), {0, 0});
-  SM_EXPECT_EQ(jb.stats().packets_duplicate, 1u);
-  std::vector<float> out(160);
-  for (int t = 0; t < 10; ++t) jb.GetAudio(out, Timestamp::Millis(40 + 10 * t));
-  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(150), {1, 0});
-  SM_EXPECT_EQ(jb.stats().packets_discarded_late, 0u);
-  jb.InsertPacket(0, std::vector<float>(320, 0.1f), Timestamp::Millis(150));
-  SM_EXPECT_EQ(jb.stats().packets_discarded_late, 1u);
-}
-
 // NetEq::GetPlayoutTimestamp (issue #63): unset until playout starts, then the
 // RTP time of the next sample to play, moving on by one output block per pull
 // (dead reckoning through an expand) and never backwards.
-namespace {
-void CheckPlayoutTimestamp(int version) {
-  AudioJitterBufferConfig cfg;
-  cfg.version = version;
-  AudioJitterBuffer jb(cfg);
+SM_TEST(AudioJitterBufferNetEqV2, PlayoutTimestampFollowsPlayout) {
+  AudioJitterBuffer jb;
   auto x = sim::SpeechLike(16000, 3.0, 3, false);
   std::vector<float> out(160);
   SM_EXPECT_FALSE(jb.PlayoutTimestamp().has_value());
@@ -241,17 +197,12 @@ void CheckPlayoutTimestamp(int version) {
   SM_EXPECT_LE(static_cast<int64_t>(*prev), 2900 * 16);
   SM_EXPECT_GE(static_cast<int64_t>(*prev), (2900 - 200) * 16);
 }
-}  // namespace
-
-SM_TEST(AudioJitterBuffer, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(1); }
-SM_TEST(AudioJitterBufferNetEqV2, PlayoutTimestampFollowsPlayout) { CheckPlayoutTimestamp(2); }
 
 // StatisticsCalculator::JitterBufferDelay: a packet counts the whole 10 ms
 // ticks it waited in the packet buffer, weighted by its samples; the decoded
 // audio waiting in the sync buffer is not counted.
 SM_TEST(AudioJitterBuffer, JitterBufferDelayCountsPacketWaitingTicks) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   cfg.time_stretch = false;
   AudioJitterBuffer jb(cfg);
   auto x = sim::SpeechLike(16000, 1.0, 3, false);
@@ -270,12 +221,11 @@ SM_TEST(AudioJitterBuffer, JitterBufferDelayCountsPacketWaitingTicks) {
 }
 
 // #256: NetEq's expand indexed past its history at rates other than 8, 16, 32
-// and 48 kHz. As libwebrtc, where no decoder exists at such a rate, version 2
-// discards those packets and plays silence; version 1 runs at any rate.
+// and 48 kHz. As libwebrtc, where no decoder exists at such a rate, the buffer
+// discards those packets and plays silence.
 SM_TEST(AudioJitterBuffer, NetEqDiscardsPacketsAtUnsupportedRates) {
   for (int rate : {4000, 11025, 12000, 22050, 24000, 44100, 8000, 16000, 32000, 48000}) {
     AudioJitterBufferConfig c;
-    c.version = 2;
     c.sample_rate = rate;
     AudioJitterBuffer jb(c);
     std::vector<float> out(static_cast<size_t>(rate / 100));
@@ -299,11 +249,10 @@ SM_TEST(AudioJitterBuffer, NetEqDiscardsPacketsAtUnsupportedRates) {
 // #568: when the sync buffer can't fill the output (packets under 10 ms),
 // NetEqImpl::GetAudioInternal reads nothing from it, mutes the frame and
 // returns kSampleUnderrun (neteq_impl.cc, "treatment of under-run"); NetEq's
-// statistics don't count the frame. Version 2 plays silence there and keeps
+// statistics don't count the frame. The buffer plays silence there and keeps
 // the decoded audio for the next pull, instead of concealing the remainder.
 SM_TEST(AudioJitterBufferNetEqV2, SampleUnderrunMutesAndKeepsTheSyncBuffer) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   cfg.packet_ms = 5;
   cfg.time_stretch = false;
   AudioJitterBuffer jb(cfg);
@@ -342,7 +291,6 @@ struct MutedStateCall {
   explicit MutedStateCall(bool muted_state, bool silent_payload = false)
       : jb([&] {
           AudioJitterBufferConfig cfg;
-          cfg.version = 2;
           cfg.packet_ms = 10;
           cfg.enable_muted_state = muted_state;
           return cfg;

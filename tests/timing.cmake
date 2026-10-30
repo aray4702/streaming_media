@@ -41,6 +41,7 @@ sm_add_test_exe(sm_e2e_timing LABEL e2e DEPS sm::timing
     E2E_AudioJitterBuffer
     E2E_DelayManager
     E2E_PacketBuffer
+    E2E_Plc
     E2E_RtcpStats
     E2E_TimeStretch
     E2E_VideoJitter
