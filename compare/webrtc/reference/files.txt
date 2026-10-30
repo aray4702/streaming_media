@@ -276,3 +276,8 @@ api/neteq/tick_timer.h
 api/neteq/tick_timer.cc
 api/neteq/neteq_controller_factory.h
 api/neteq/neteq_factory.h
+
+# Added for #879: AudioFrameOperations::Mute, the fade ChannelSend applies on mute changes.
+audio/utility/audio_frame_operations.h
+audio/utility/audio_frame_operations.cc
+audio/utility/audio_frame_operations_unittest.cc
