@@ -262,11 +262,11 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               502          495  =
-  audio.jb_delay_p95_ms                   300          296  =
+  audio.mouth_to_ear_p95_ms               502          494  =
+  audio.jb_delay_p95_ms                   300          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                13.6         15.7  =
+  video.longest_freeze_ms                13.7         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -1072,8 +1072,8 @@ issue_12_lossbwe_random_loss - 5% random loss on a 2 Mbps link with 40 ms one-wa
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          28.7           32  =
-  audio.mouth_to_ear_p95_ms               214          228  sm
-  audio.jb_delay_p95_ms                   132          144  sm
+  audio.mouth_to_ear_p95_ms               215          228  sm
+  audio.jb_delay_p95_ms                   133          144  sm
   video.freeze_count                      1.3          2.1  sm
   video.freeze_total_ms                   331          479  sm
   video.longest_freeze_ms                 234          228  =
@@ -1084,7 +1084,7 @@ issue_12_lossbwe_random_loss - 5% random loss on a 2 Mbps link with 40 ms one-wa
   video.time_to_first_frame_ms            206          206  =
   video.avg_kbps                         1314         1329  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  83.6         86.1  =
+  sync.av_offset_p95_ms                  83.7         86.1  =
   cc.utilization_pct                     71.4         72.2  =
   cc.queue_p95_ms                        28.7         30.2  =
   cc.max_settle_ms                        300          300  =
@@ -2008,8 +2008,8 @@ issue_18_random_loss_keyframes - 5% random loss: NACK repairs it, so the receive
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          28.7           32  =
-  audio.mouth_to_ear_p95_ms               214          228  sm
-  audio.jb_delay_p95_ms                   132          144  sm
+  audio.mouth_to_ear_p95_ms               215          228  sm
+  audio.jb_delay_p95_ms                   133          144  sm
   video.freeze_count                      1.3          2.1  sm
   video.freeze_total_ms                   331          479  sm
   video.longest_freeze_ms                 234          228  =
@@ -2020,7 +2020,7 @@ issue_18_random_loss_keyframes - 5% random loss: NACK repairs it, so the receive
   video.time_to_first_frame_ms            206          206  =
   video.avg_kbps                         1314         1329  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  83.6         86.1  =
+  sync.av_offset_p95_ms                  83.7         86.1  =
   cc.utilization_pct                     71.4         72.2  =
   cc.queue_p95_ms                        28.7         30.2  =
   cc.max_settle_ms                        300          300  =
@@ -3136,8 +3136,8 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           221          221  =
-  audio.mouth_to_ear_p95_ms              2152         2200  =
-  audio.jb_delay_p95_ms                  1670         1742  =
+  audio.mouth_to_ear_p95_ms              2151         2200  =
+  audio.jb_delay_p95_ms                  1669         1742  =
   video.freeze_count                      3.1          3.5  =
   video.freeze_total_ms                  2769         1877  webrtc
   video.longest_freeze_ms                1329          757  webrtc
@@ -3298,8 +3298,8 @@ issue_346_reconfigure_cross_join - issue_204_cross_traffic_join with quality sca
   audio.concealed_pct                     0.7          0.7  =
   audio.interruptions                     0.1          0.1  =
   audio.longest_interruption_ms          75.2         73.8  =
-  audio.mouth_to_ear_p95_ms               687          687  =
-  audio.jb_delay_p95_ms                   376          382  =
+  audio.mouth_to_ear_p95_ms               688          687  =
+  audio.jb_delay_p95_ms                   377          382  =
   video.freeze_count                      2.3          2.7  =
   video.freeze_total_ms                  1324         1460  sm
   video.longest_freeze_ms                 856          743  webrtc
@@ -4239,8 +4239,8 @@ issue_437_default_flip_very_low_capacity - very_low_capacity with the defaults: 
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           222          225  =
-  audio.mouth_to_ear_p95_ms              2094         2174  =
-  audio.jb_delay_p95_ms                  1761         1841  =
+  audio.mouth_to_ear_p95_ms              2093         2174  =
+  audio.jb_delay_p95_ms                  1760         1841  =
   video.freeze_count                     21.6         20.3  webrtc
   video.freeze_total_ms                 28405        25917  webrtc
   video.longest_freeze_ms                4075         4366  sm
@@ -4881,8 +4881,8 @@ issue_466_scene_change_very_low_capacity - 100 kbps link (as very_low_capacity),
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           222          225  =
-  audio.mouth_to_ear_p95_ms              1959         1920  =
-  audio.jb_delay_p95_ms                  1627         1588  =
+  audio.mouth_to_ear_p95_ms              1960         1920  =
+  audio.jb_delay_p95_ms                  1628         1588  =
   video.freeze_count                     20.6         18.7  webrtc
   video.freeze_total_ms                 26785        21417  webrtc
   video.longest_freeze_ms                4641         4253  webrtc
@@ -5179,8 +5179,8 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2122         2150  =
-  audio.jb_delay_p95_ms                  1694         1733  =
+  audio.mouth_to_ear_p95_ms              2121         2150  =
+  audio.jb_delay_p95_ms                  1693         1733  =
   video.freeze_count                      2.4          2.6  =
   video.freeze_total_ms                  2069         1434  webrtc
   video.longest_freeze_ms                 873          597  webrtc
@@ -5487,7 +5487,7 @@ issue_524_av_sync_off - clean_link with lip sync off (issue
 
 issue_533_opus_decoder_frame_older_than_window - Audio call over a link whose jitter is a 2 s standard deviation: some packets arrive more than 5 s late
   metric                                   sm       webrtc  better
-  audio.concealed_pct                    28.9         28.9  =
+  audio.concealed_pct                    29.0         28.9  =
   audio.interruptions                     6.6          6.6  =
   audio.longest_interruption_ms           389          389  =
   audio.mouth_to_ear_p95_ms              4785         4791  =
@@ -7019,8 +7019,8 @@ issue_7_no_fec_beside_nack - 5% random loss, H.264 with NACK: libwebrtc (ShouldD
   audio.concealed_pct                     0.3          0.3  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          28.7           32  =
-  audio.mouth_to_ear_p95_ms               214          228  sm
-  audio.jb_delay_p95_ms                   132          144  sm
+  audio.mouth_to_ear_p95_ms               215          228  sm
+  audio.jb_delay_p95_ms                   133          144  sm
   video.freeze_count                      1.3          2.1  sm
   video.freeze_total_ms                   331          479  sm
   video.longest_freeze_ms                 234          228  =
@@ -7031,7 +7031,7 @@ issue_7_no_fec_beside_nack - 5% random loss, H.264 with NACK: libwebrtc (ShouldD
   video.time_to_first_frame_ms            206          206  =
   video.avg_kbps                         1314         1329  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  83.6         86.1  =
+  sync.av_offset_p95_ms                  83.7         86.1  =
   cc.utilization_pct                     71.4         72.2  =
   cc.queue_p95_ms                        28.7         30.2  =
   cc.max_settle_ms                        300          300  =
@@ -7433,6 +7433,60 @@ issue_85_video_pause - 10 s outage (tunnel) at 10 s: no video for 10 s. libwebrt
   video.encoder_dropped                   150          150
   video.encoder_target_avg_kbps          1327         1319
 
+issue_867_nack_reorder_loss - Issue
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.2          0.2  =
+  audio.interruptions                       0            0  =
+  audio.longest_interruption_ms          31.3           30  =
+  audio.mouth_to_ear_p95_ms               412          410  =
+  audio.jb_delay_p95_ms                   243          241  =
+  video.freeze_count                      0.8          1.3  =
+  video.freeze_total_ms                   196          331  sm
+  video.longest_freeze_ms                 135          207  =
+  video.pause_count                         0            0  =
+  video.pause_total_ms                      0            0  =
+  video.render_fps                       29.6         29.6  =
+  video.e2e_delay_p95_ms                  311          302  =
+  video.time_to_first_frame_ms            372          372  =
+  video.avg_kbps                          261          255  =
+  video.keyframe_requests                 0.8          0.7  =
+  sync.av_offset_p95_ms                   107         97.1  webrtc
+  cc.utilization_pct                     13.2         12.9  =
+  cc.queue_p95_ms                         2.1          2.1  =
+  cc.max_settle_ms                      40000        40000  =
+  cc.rtt_p50_ms                           123          123  =
+  net.loss_pct                            2.9          2.9  =
+  repair.overhead_pct                    35.4         34.6  =
+  rtcp.audio_report_blocks                8.2          8.2  =
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         69.7         69.8
+  net.video_kbps                          274          267
+  net.rtx_kbps                            118          114
+  net.padding_kbps                        3.5          3.9
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                      2.8          2.8
+  net.video_loss_pct                      3.1          2.8
+  net.rtx_loss_pct                        3.0          3.3
+  net.padding_loss_pct                    2.9          3.1
+  net.audio_size_p50_b                    194          194
+  net.audio_size_p90_b                    218          218
+  net.audio_size_max_b                    312          312
+  net.audio_queue_drops                     0            0
+  net.video_size_p50_b                    973          992
+  net.video_size_p90_b                   1337         1331
+  net.video_size_max_b                   1485         1478
+  net.video_queue_drops                     0            0
+  net.rtx_size_p50_b                      962          983
+  net.rtx_size_p90_b                     1326         1334
+  net.rtx_size_max_b                     1484         1478
+  net.rtx_queue_drops                       0            0
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                   0            0
+  video.encoder_dropped                     4            4
+  video.encoder_target_avg_kbps           262          255
+
 lossy_feedback - Clean media path but 10% loss on the feedback path
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.4          0.4  =
@@ -7492,8 +7546,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2122         2150  =
-  audio.jb_delay_p95_ms                  1694         1733  =
+  audio.mouth_to_ear_p95_ms              2121         2150  =
+  audio.jb_delay_p95_ms                  1693         1733  =
   video.freeze_count                      2.4          2.6  =
   video.freeze_total_ms                  2069         1434  webrtc
   video.longest_freeze_ms                 873          597  webrtc
@@ -7816,11 +7870,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               502          495  =
-  audio.jb_delay_p95_ms                   300          296  =
+  audio.mouth_to_ear_p95_ms               502          494  =
+  audio.jb_delay_p95_ms                   300          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                13.6         15.7  =
+  video.longest_freeze_ms                13.7         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -7978,8 +8032,8 @@ very_low_capacity - 100 kbps link (audio 32 kbps + video): the stage-1 checkpoin
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           222          225  =
-  audio.mouth_to_ear_p95_ms              2094         2174  =
-  audio.jb_delay_p95_ms                  1761         1841  =
+  audio.mouth_to_ear_p95_ms              2093         2174  =
+  audio.jb_delay_p95_ms                  1760         1841  =
   video.freeze_count                     21.6         20.3  webrtc
   video.freeze_total_ms                 28405        25917  webrtc
   video.longest_freeze_ms                4075         4366  sm
@@ -8032,8 +8086,8 @@ very_low_capacity_allocator_v2 - 100 kbps link with libwebrtc's BitrateAllocator
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           222          225  =
-  audio.mouth_to_ear_p95_ms              2093         2174  =
-  audio.jb_delay_p95_ms                  1760         1841  =
+  audio.mouth_to_ear_p95_ms              2094         2174  =
+  audio.jb_delay_p95_ms                  1761         1841  =
   video.freeze_count                     21.6         20.3  webrtc
   video.freeze_total_ms                 28405        25917  webrtc
   video.longest_freeze_ms                4075         4366  sm
@@ -8135,7 +8189,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                  57.1         47.9
   video.encoder_target_avg_kbps          1178         1205
 
-better: sm 125, webrtc 157, tie 3074 (of the metrics shown)
+better: sm 126, webrtc 158, tie 3095 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own

@@ -1,42 +1,12 @@
 ## Parity with libwebrtc M157.8103@{#0}
 
-155 scenarios, mean of 10 seeds. **32 gaps**: 21 behind libwebrtc, 11 ahead of it; 0 without an owner.
+156 scenarios, mean of 10 seeds. **32 gaps**: 21 behind libwebrtc, 11 ahead of it; 0 without an owner.
 
 A gap is a metric whose means differ by more than the band, in either direction: the larger of the `sm_compare` tie floor, 5% of the larger mean, and one standard deviation of libwebrtc's per-seed values. `seeds` is on how many seeds the single-seed difference is also outside the floor and 5%, in the gap's direction. An owner is an open issue, or a closed one whose rule carries a note (an explained difference); closed issues without a note are listed but own nothing.
 
 ### Against `main`
 
-42 gaps on `main`, 32 here: **12 closed, 2 opened**, 0 changed direction.
-
-Closed:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_123_v2_allocation_min | `video.pause_total_ms` | 1744 | 6505 | ±4365 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_150_gcc_v2_high_jitter_seed5 | `audio.mouth_to_ear_p95_ms` | 245 | 232 | ±12.2 | behind | 4/10 | #783 (closed, no note: #63, #476) |
-| issue_154_shallow_drop_repair_v2 | `cc.max_settle_ms` | 4000 | 6020 | ±1849 | ahead | 8/10 | #842 (closed, no note: #15, #48, #61, #20) |
-| issue_21_shallow_drop_repair | `cc.max_settle_ms` | 4000 | 6020 | ±1849 | ahead | 8/10 | #842 (closed, no note: #15, #48, #61, #20) |
-| issue_437_default_flip_very_low_capacity | `video.pause_total_ms` | 1744 | 6505 | ±4365 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_437_render_smoothing_very_low_capacity | `video.pause_total_ms` | 1744 | 6505 | ±4365 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| issue_466_overshoot_very_low_capacity | `net.loss_pct` | 17.8 | 14.7 | ±2.5 | behind | 8/10 | #466 (closed, no note: #854, #21, #61, #12) |
-| issue_466_overshoot_very_low_capacity | `repair.overhead_pct` | 37.4 | 31.4 | ±5.6 | behind | 7/10 | #466 (closed, no note: #854, #21, #7, #29) |
-| issue_466_undershoot_very_low_capacity | `video.keyframe_requests` | 5.3 | 4.4 | ±0.8 | behind | 8/10 | #466, #479 (closed, no note: #854, #23) |
-| issue_466_undershoot_very_low_capacity | `sync.av_offset_p95_ms` | 6703 | 7576 | ±787 | ahead | 6/10 | #466 |
-| very_low_capacity | `video.pause_total_ms` | 1744 | 6505 | ±4365 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-| very_low_capacity_allocator_v2 | `video.pause_total_ms` | 1744 | 6505 | ±4365 | ahead | 7/10 | **none** (closed, no note: #5, #37, #24) |
-
-Opened:
-
-| scenario | metric | ours | libwebrtc | band | vs libwebrtc | seeds | owner |
-|---|---|---|---|---|---|---|---|
-| issue_466_overshoot_very_low_capacity | `video.pause_total_ms` | 3659 | 561 | ±1774 | behind | 5/10 | #466 (closed, no note: #5, #37, #24) |
-| issue_466_undershoot_very_low_capacity | `video.freeze_count` | 23.8 | 20.7 | ±2.9 | behind | 6/10 | #466 (closed, no note: #5, #37, #24) |
-
-Still gaps, distance to libwebrtc changed by more than 10%:
-
-| scenario | metric | distance on main | distance here |
-|---|---|---|---|
-| issue_466_scene_change_very_low_capacity | `video.pause_total_ms` | 5080 | 5682 (further) |
+32 gaps on `main`, 32 here: **0 closed, 0 opened**, 0 changed direction.
 
 ### Gaps
 

@@ -59,7 +59,8 @@
   "842": "closed",
   "854": "closed",
   "860": "open",
-  "861": "open"
+  "861": "open",
+  "867": "open"
  },
  "gaps": [
   {
@@ -83,7 +84,7 @@
   {
    "scenario": "issue_12_lossbwe_congestive",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 230.447,
+   "sm": 230.448,
    "webrtc": 180.503,
    "band": 42.56628993307576,
    "direction": "behind",
@@ -584,7 +585,7 @@
   {
    "scenario": "issue_61_googcc_glue_congestive",
    "metric": "sync.av_offset_p95_ms",
-   "sm": 230.447,
+   "sm": 230.448,
    "webrtc": 180.503,
    "band": 42.56628993307576,
    "direction": "behind",
