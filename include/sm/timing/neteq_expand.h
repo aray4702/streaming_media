@@ -23,9 +23,14 @@
 // falling after the 4th call goes to 0 (Muted()). DecisionLogic reads the
 // mute factor: decoding is postponed after an expand below 0.5.
 //
-// The signal arithmetic is float on the int16 scale; the factors that drive
-// decisions (mute factor and voice mix factor in Q14, mute slope in Q20,
-// lags) keep libwebrtc's integer arithmetic.
+// All of it is libwebrtc's fixed-point arithmetic on the int16 samples
+// (#783): the 4 kHz correlation normalized to 14 bits, DspHelper's
+// PeakDetection and MinDistortion, WebRtcSpl_LevinsonDurbin for the AR
+// filter (Q12), the residual gain from WebRtcSpl_FilterMAFastQ12, the
+// unvoiced part through WebRtcSpl_FilterARFastQ12, and the Q14 crossfade
+// and muting. On int16 input it is bit-exact with libwebrtc's expand.cc
+// (the unit test's golden hashes come from the reference sources compiled
+// unchanged).
 //
 // NetEqBackgroundNoise ports background_noise.cc (one channel). After every
 // GetAudio whose operation wrote decoded audio unchanged (normal, failed
@@ -168,8 +173,9 @@ class NetEqExpand {
   void AnalyzeSignal(std::span<const float> sync, int16_t* random_vector);
   void InitializeForAnExpandPeriod();
   void UpdateLagIndex();
-  // Expand::Correlation: 54 lags of the 4 kHz signal from lag 10.
-  void Correlation(std::span<const float> history, float* output) const;
+  // Expand::Correlation: 54 lags of the 4 kHz signal from lag 10, from the
+  // end of `input`, normalized to 14 bits.
+  void Correlation(const int16_t* input, size_t input_length, int16_t* output) const;
   void GenerateRandomVector(int16_t seed_increment, size_t length, int16_t* random_vector);
 
   int fs_hz_;
@@ -187,12 +193,13 @@ class NetEqExpand {
   size_t expand_duration_samples_ = 0;
   size_t last_outage_duration_samples_ = 0;
   // Expand::ChannelParameters (one channel).
-  std::vector<float> expand_vector0_;
-  std::vector<float> expand_vector1_;
+  std::vector<int16_t> expand_vector0_;
+  std::vector<int16_t> expand_vector1_;
   int16_t mute_factor_ = 16384;
-  std::array<float, kUnvoicedLpcOrder + 1> ar_filter_{1, 0, 0, 0, 0, 0, 0};
-  std::array<float, kUnvoicedLpcOrder> ar_filter_state_{};
-  float ar_gain_ = 0;  // Scale of the random vector: residual rms / 8192.
+  std::array<int16_t, kUnvoicedLpcOrder + 1> ar_filter_{};  // Q12; all zero until the first stable estimate.
+  std::array<int16_t, kUnvoicedLpcOrder> ar_filter_state_{};
+  int16_t ar_gain_ = 0;  // The random vector's scale: residual rms in Q(ar_gain_scale_ - 13).
+  int ar_gain_scale_ = 0;
   int16_t voice_mix_factor_ = 0;
   int16_t current_voice_mix_factor_ = 0;
   bool onset_ = false;

@@ -246,7 +246,9 @@ SM_TEST(NetEqMerge, UnmutesOverTheFrame) {
     prev = last = gain;
   }
   SM_EXPECT_TRUE(rising);
-  SM_EXPECT_LT(first, 0.2);
+  // It starts at the merge's mute factor (Expand's after 20 periods, below
+  // 0.5 as checked above), as merge.cc's RampSignal.
+  SM_EXPECT_NEAR(first, merge.mute_factor() / 16384.0, 0.01);
   SM_EXPECT_GT(last, 0.95);
   SM_EXPECT_LE(last, 1.0 + 1e-6);
 }
