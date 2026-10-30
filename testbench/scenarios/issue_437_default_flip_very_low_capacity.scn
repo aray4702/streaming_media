@@ -1,0 +1,20 @@
+name issue_437_default_flip_very_low_capacity
+describe very_low_capacity with the defaults: libwebrtc's pre-render queue and keyframe padding flush are on
+# 80 seeds in compare-webrtc (#739): render fps is in band there (yardstick #798).
+compare_seeds 80
+duration 40s
+at 0s capacity=100kbps delay=30ms queue=300ms
+# Issue #437: libwebrtc renders through IncomingVideoStream / VideoRenderFrames by
+# default (enable_prerenderer_smoothing = true, call/video_receive_stream.h:291 at
+# M157; video/video_receive_stream2.cc:400-403), and a keyframe's pacer flush also
+# clears the padding queued on the RTX SSRC (modules/pacing/pacing_controller.cc:227-231).
+# This scenario sets neither switch, so it runs the library's defaults. Before the
+# flip (both off) seed 1 rendered at 12.55 fps; seeds 1-5 off -> on:
+# 12.55/13.57/12.68/10.05/12.32 -> 10.75/11.05/11.25/5.25/11.10.
+# Seeds 1-10 render fps 11.07 -> 9.66 against libwebrtc's 8.30 (band +-1.25), longest
+# freeze 3864 -> 4138 ms against 4431 (band +-465): in band.
+# Target (issue #437): libwebrtc's rendered frames on this link (8.3 fps, 10 seeds).
+expect video.render_fps < 12
+expect audio.concealed_pct < 20
+expect net.loss_pct < 45
+expect video.keyframe_requests < 300

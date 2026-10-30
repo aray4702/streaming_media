@@ -367,7 +367,6 @@ SM_TEST(NetEqTimeStretch, PreemptiveExpandOldData) {
 // not an arbitrary length, and nothing is concealed.
 SM_TEST(AudioJitterBufferNetEqV2, TimeStretchMovesWholePitchPeriods) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   std::vector<float> out(160);
   const std::vector<float> voice = Voiced(16000, 125, 320 * 300, 0.4);

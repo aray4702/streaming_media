@@ -106,6 +106,59 @@ SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) 
   SM_EXPECT_LT(c.target().bps(), before.bps());
 }
 
+// GoogCC's cwnd_reduce_ratio comes from the pushback target after it is clamped to the estimator's
+// minimum (goog_cc_network_control.cc:596-608). Once the pushback reaches that minimum the ratio stops
+// changing, so no new update undoes an AddObserver reallocation's reset to 0 (issue #738).
+SM_TEST(SendSideController, CwndReduceRatioStopsAtTheMinimumBitrate) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  cfg.video_min = DataRate::KilobitsPerSec(60);
+  SendSideController c(cfg, &map);
+  SendSideController::AudioAllocation audio;
+  audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+  c.ConfigureAllocation(audio, true);
+  c.Start(Timestamp::Millis(0));
+  const DataRate min = c.gcc().min_rate();
+  SM_EXPECT_EQ(min.bps(), 100000);  // The minimum allocatable rate: 40 + 60 kbps.
+  // Feedback for the first second sizes the congestion window. Then none comes back (an outage), so the
+  // outstanding data fills the window and the pushback ratio steps down with every sent packet until
+  // the pushback target reaches the minimum.
+  uint16_t seq = 0;
+  double max_ratio = 0;
+  std::vector<uint16_t> unacked;
+  for (int t = 0; t <= 2500; ++t) {
+    if (t % 30 == 0) c.OnVideoFrameEncoded(Timestamp::Millis(t));  // Keeps the stream active.
+    if (t % 10 == 0)
+      for (int i = 0; i < 2; ++i) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), Timestamp::Millis(t));
+    for (const auto& r : c.Process(Timestamp::Millis(t))) unacked.push_back(static_cast<uint16_t>(r.transport_seq));
+    if (t < 1000 && t % 50 == 49 && !unacked.empty()) {
+      cc::TransportFeedback fb;
+      fb.base_seq = unacked.front();
+      fb.reference_time = t / 64;
+      for (uint16_t s : unacked) fb.packets.push_back({s, true, 4});
+      unacked.clear();
+      c.OnTransportFeedback(fb, Timestamp::Millis(t));
+    }
+    max_ratio = std::max(max_ratio, c.allocator().cwnd_reduce_ratio("video"));
+  }
+  const double floor = static_cast<double>(c.target().bps() - min.bps()) / static_cast<double>(c.target().bps());
+  SM_EXPECT_GT(c.allocator().cwnd_reduce_ratio("video"), floor - 1e-9);
+  SM_EXPECT_LT(max_ratio, floor + 1e-9);  // Not the pushback controller's own 30 kbps floor.
+  // An encoder reconfiguration re-adds the stream (AddObserver), which resets the ratio to 0; with the
+  // pushback at the minimum, later sent packets hand on no new ratio.
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(2501));
+  SM_EXPECT_EQ(c.allocator().cwnd_reduce_ratio("video"), 0.0);
+  for (int t = 2501; t <= 2700; ++t) {
+    if (t % 30 == 0) c.OnVideoFrameEncoded(Timestamp::Millis(t));
+    if (t % 10 == 0)
+      for (int i = 0; i < 2; ++i) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+  }
+  SM_EXPECT_EQ(c.allocator().cwnd_reduce_ratio("video"), 0.0);
+}
+
 SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
   SendSideController c;
   c.Start(Timestamp::Millis(0));

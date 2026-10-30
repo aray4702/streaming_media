@@ -4,7 +4,7 @@
 // on start/request or periodically) + audio (50 pps) -> [frame dropper] -> pacer -> transport-wide
 // sequence numbers -> bottleneck link (capacity schedule, drop-tail queue,
 // loss, outages). Receiver: transport feedback every 50 ms over the reverse
-// link -> GCC -> target rate -> [allocator] -> [degradation controller] ->
+// link -> GCC -> target rate -> [allocator] ->
 // encoder. Optional outage monitor.
 #pragma once
 
@@ -19,7 +19,6 @@
 #include "sm/cc/pacer.h"
 #include "sm/cc/send_side_bwe.h"
 #include "sm/cc/transport_feedback.h"
-#include "sm/cc/video_adaptation.h"
 #include "sm/core/random.h"
 #include "sm/sim/network_link.h"
 
@@ -40,8 +39,6 @@ struct CcSimParams {
   DataRate max_rate = DataRate::KilobitsPerSec(8000);
   double overshoot = 1.0;
   bool frame_dropper = false;
-  bool adaptation = false;
-  cc::DegradationPreference preference = cc::DegradationPreference::kBalanced;
   bool allocator = false;  // audio + camera + screen share
   bool outage_monitor = false;
   // Periodic keyframes (0 = only the first one and on request, which is the
@@ -55,7 +52,6 @@ struct PhaseStats {
   double throughput_kbps = 0;  // Delivered, second half of the phase.
   double target_kbps = 0;      // Mean target, second half of the phase.
   double queue_p95_ms = 0;     // Second half of the phase.
-  cc::VideoFormat format;
   std::map<std::string, double> alloc_kbps;
 };
 
@@ -113,9 +109,6 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
   Pacer pacer;
   TransportFeedbackBuilder fb_builder;
   FrameDropper dropper;
-  DegradationConfig dcfg;
-  dcfg.preference = p.preference;
-  DegradationController degradation(dcfg);
   BitrateAllocator alloc;
   alloc.AddStream({"audio", DataRate::KilobitsPerSec(20), DataRate::KilobitsPerSec(40), 1.0, true});
   alloc.AddStream({"camera", DataRate::KilobitsPerSec(150), DataRate::KilobitsPerSec(2500), 1.0, false});
@@ -146,7 +139,6 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
     } else {
       video_target = std::max(DataRate::KilobitsPerSec(30), target - audio_rate);
     }
-    if (p.adaptation) degradation.OnTargetBitrate(video_target, now);
   };
   apply(gcc.Start(Timestamp::Millis(0)), Timestamp::Millis(0));
 
@@ -166,14 +158,12 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
   for (size_t i = 0; i < p.capacity_kbps.size(); ++i) {
     phase_end.push_back(i + 1 < p.capacity_kbps.size() ? p.capacity_kbps[i + 1].first : end_ms);
   }
-  std::vector<cc::VideoFormat> phase_format(phase_end.size());
   std::vector<std::map<std::string, double>> phase_alloc(phase_end.size());
 
   for (int64_t t = 0; t < end_ms; ++t) {
     Timestamp now = Timestamp::Millis(t);
     for (size_t i = 0; i < phase_end.size(); ++i) {
       if (t + 1 == phase_end[i]) {
-        phase_format[i] = degradation.current();
         for (auto& [k, v] : allocation) phase_alloc[i][k] = v.kbps();
       }
     }
@@ -340,7 +330,6 @@ inline CcSimResult RunCcSim(const CcSimParams& p) {
       if (tt >= mid && tt < ph.end_ms) bytes += b;
     }
     ph.throughput_kbps = ph.end_ms > mid ? bytes * 8.0 / static_cast<double>(ph.end_ms - mid) : 0;
-    ph.format = phase_format[i];
     ph.alloc_kbps = phase_alloc[i];
     r.phases.push_back(ph);
   }

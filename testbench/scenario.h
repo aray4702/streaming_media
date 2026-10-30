@@ -125,12 +125,12 @@ struct Scenario {
   bool sps_pps_tracker = true;
   // `render_smoothing on|off`: decoded frames pass libwebrtc's pre-render queue (IncomingVideoStream,
   // VideoRenderFrames) before they render, as sm_compare's libwebrtc side does by default
-  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). Off by default until it is judged.
-  bool render_smoothing = false;
+  // (rtp::RtpReceiverConfig::render_smoothing; issue #437). On by default, as libwebrtc.
+  bool render_smoothing = true;
   // `keyframe_flush_padding on|off`: a keyframe's pacer flush also removes queued padding, which
   // libwebrtc sends on the video stream's RTX SSRC and flushes with it
-  // (cc::PacingControllerConfig::keyframe_flush_padding; issue #437). Off by default until it is judged.
-  bool keyframe_flush_padding = false;
+  // (cc::PacingControllerConfig::keyframe_flush_padding; issue #437). On by default, as libwebrtc.
+  bool keyframe_flush_padding = true;
   // `h264_missing_packets on|off`: the receiver's packet buffer holds a complete H.264 delta frame
   // while a sequence number before it is missing, as libwebrtc's PacketBuffer `missing_packets_`
   // (timing::PacketBufferConfig::missing_packets; issue #453). On by default, as libwebrtc.
@@ -145,7 +145,6 @@ struct Scenario {
   bool audio_receive_rtcp = true;  // `audio_receive_rtcp on|off` (default on, as libwebrtc): the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
-  bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
 
   // `host_rtt_inf <time>`: at that time the host hands both sessions an infinite RTT
   // (Session::SetRtt(TimeDelta::PlusInfinity())), a host bug the library must absorb (issue #441).

@@ -138,12 +138,14 @@ class Owners(unittest.TestCase):
     def test_session_layer_repair_cell_belongs_to_the_reordering_cluster(self):
         # #420: on 80 seeds (#424) issue_76_session_layer_v2's repair overhead is ahead (38.2 vs 40.3 %),
         # the jittery reordering link of #411's D5/D6 cluster, not the closed repair items.
+        # #735: D6 is in band on 80 seeds since #435 (39.4 vs 39.7 %); #735 owns the cell with a note.
         d = data(scn("issue_76_session_layer_v2", {"repair.overhead_pct": ([38] * 5, [40.5] * 5)}))
         d["shown"] = dict(SHOWN, **{"repair.overhead_pct": {"better": "lower", "floor": 1}})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
         g = pr.report(d, owners)
         self.assertEqual(len(g), 1)
-        self.assertIn(411, g[0]["owners"])
+        self.assertIn(735, g[0]["owners"])
+        self.assertNotIn(411, g[0]["owners"])
 
     def test_audio_delay_cells_belong_to_the_send_side_items(self):
         # #62 closed (Owner 2026-10-22): NetEq matches libwebrtc's per 10 ms (yardstick #266), so the
@@ -169,8 +171,10 @@ class Owners(unittest.TestCase):
         # #365 closed: its lossy_feedback cell and the issue_84 low-rate cells went to #360 (Owner 2026-10-25).
         # #406: #360 closed; the shallow and low-bandwidth cells still on main went to #411 as well.
         # #409: #63 closed; the session-layer cell #416 opened again went to #420 as well.
-        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 411],
-                 "issue_12_lossbwe_shallow": [24, 37, 411], "issue_331_low_bandwidth_av_offset_seed4": [360, 411],
+        # #732: #411's D3 shallow cells close as explained, with a note under #732.
+        # #733: #411's D4 low-bandwidth rules are retired (in band since #460), so issue_331 keeps #360 alone.
+        cells = {"lossy_feedback": [360], "issue_12_lossbwe_shallow_step": [24, 37, 732],
+                 "issue_12_lossbwe_shallow": [24, 37, 732], "issue_331_low_bandwidth_av_offset_seed4": [360],
                  "issue_76_session_layer_v2": [63, 420],
                  "issue_152_alr_request_probe_v2": [360],
                  "issue_84_encoder_qp_360p_low_rate": [360], "issue_84_encoder_qp_720p_low_rate": [360]}
@@ -189,6 +193,10 @@ class Owners(unittest.TestCase):
         # items #406 filed: #408 and #409 (behind on 7/10 seeds), #410 (behind by sign), #411 (ahead).
         # #408 and #409 close as explained (seed spread, #413 and #428 on 80 seeds) and stay the owners.
         # The high_jitter D1 cells (#411, split to #453) close with #453's default flip and lose their rules.
+        # The shallow-queue D3 cells (#411, split to #732) close as explained under #732, with a note.
+        # The low-bandwidth D4 cells (#733) are in band since #460 (#479's re-measure) and lose their rules.
+        # The keyframe-flush D7 cells (#736) are in band on 80 seeds since #460; #479's notes own them.
+        # The outage D8 cell (#738) is ported (cwnd_reduce_ratio after the minimum clamp); #738's note owns it.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -196,12 +204,11 @@ class Owners(unittest.TestCase):
                  ("issue_5_burst15_freeze", "cc.queue_p95_ms"): 410,
                  ("burst_loss", "audio.jb_delay_p95_ms"): 410,
                  ("issue_29_ulpfec_over_red", "video.freeze_total_ms"): 410,
-                 ("issue_21_shallow_drop_repair", "video.freeze_count"): 411,
-                 ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 411,
-                 ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 411,
-                 ("low_bandwidth", "cc.rtt_p50_ms"): 411,
-                 ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 411,
-                 ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
+                 ("issue_21_shallow_drop_repair", "video.freeze_count"): 732,
+                 ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 732,
+                 ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 732,
+                 ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 479,
+                 ("issue_372_outage_interruption_count", "net.loss_pct"): 738}
         d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
@@ -237,14 +244,18 @@ class Owners(unittest.TestCase):
         # #479 (step 2, main b48b3d8): the 11 gaps left without an owner go to step-4 items. Ahead cells
         # join #411's clusters (D2 very low capacity, D4 low bandwidth, D8 outage, D9 policer); behind
         # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
-        cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 411,
-                 ("issue_12_lossbwe_policer", "net.loss_pct"): 411,
-                 ("issue_12_lossbwe_policer", "repair.overhead_pct"): 411,
-                 ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 411,
-                 ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
-                 ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
-                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 411,
-                 ("issue_457_libopus_audio_rate", "video.render_fps"): 411,
+        # #733: D4 is retired; issue_457's render fps is seed noise (in band on 80 seeds), #479's note.
+        # #741: D9's policer cells are in band on 80 seeds; #479's notes own them.
+        # #739: D2's render fps is seed noise too (in band on 80 seeds, yardstick #798), #739's note.
+        # #738: D8 is ported (cwnd_reduce_ratio after the minimum clamp); its rules become #738's notes.
+        cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 479,
+                 ("issue_12_lossbwe_policer", "net.loss_pct"): 479,
+                 ("issue_12_lossbwe_policer", "repair.overhead_pct"): 479,
+                 ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 738,
+                 ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 738,
+                 ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 738,
+                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 739,
+                 ("issue_457_libopus_audio_rate", "video.render_fps"): 479,
                  ("issue_430_av_outage_6s", "video.e2e_delay_p95_ms"): 474,
                  ("issue_29_ulpfec_over_red", "video.avg_kbps"): 492,
                  ("issue_464_start_rate_above_int_bps", "repair.overhead_pct"): 514}
@@ -256,31 +267,49 @@ class Owners(unittest.TestCase):
         for cell, issue in cells.items():
             self.assertIn(issue, g[cell], cell)
 
-    def test_504_owns_only_issue_533_audio_cells(self):
+    def test_783_owns_only_issue_533_audio_cells(self):
         # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
-        # through StreamSynchronization, so they go to the scenario's video/CC owner with a note; #504
-        # keeps issue_533's NetEq cells and the receive-side cells below; issue_451 keeps #451's not-comparable note.
-        cells = {"issue_12_lossbwe_policer": 411, "issue_12_lossbwe_shallow": 411,
+        # through StreamSynchronization, so they go to the scenario's video/CC owner with a note;
+        # issue_451 keeps #451's not-comparable note. #723 closed #504 and moved its issue_533 NetEq
+        # cells and the receive-side cells below to #783. #741 gives the policer audio rule #719's number.
+        cells = {"issue_12_lossbwe_policer": 719, "issue_12_lossbwe_shallow": 411,
                  "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
-                 "issue_533_opus_decoder_frame_older_than_window": 504,
+                 "issue_533_opus_decoder_frame_older_than_window": 783,
                  # On #716's run these were owned only through the catch-all's #504: NetEq on audio-only
-                 # calls, the post-handover backlog and high_jitter seed 5's target split stay with #504.
-                 "audio_only_lossy": 504, "issue_476_libopus_decode": 504, "issue_514_audio_padding": 504,
-                 "issue_62_neteq_default": 504, "issue_62_neteq_v2_audio_only_lossy": 504,
-                 "issue_120_rtx_payload_padding": 504, "issue_23_handover": 504, "issue_76_rtx_v2_handover": 504,
-                 "wifi_to_lte_handover": 504, "issue_150_gcc_v2_high_jitter_seed5": 504}
+                 # calls, the post-handover backlog and high_jitter seed 5's target split, now with #783.
+                 "audio_only_lossy": 783, "issue_476_libopus_decode": 783, "issue_514_audio_padding": 783,
+                 "issue_62_neteq_default": 783, "issue_62_neteq_v2_audio_only_lossy": 783,
+                 "issue_120_rtx_payload_padding": 783, "issue_23_handover": 783, "issue_76_rtx_v2_handover": 783,
+                 "wifi_to_lte_handover": 783, "issue_150_gcc_v2_high_jitter_seed5": 783}
         metrics = {"audio.jb_delay_p95_ms": ([300] * 5, [400] * 5), "audio.mouth_to_ear_p95_ms": ([300] * 5, [400] * 5)}
         d = data(*[scn(n, metrics) for n in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
-        # Only #504 open: every other cell must be owned through a rule with a note.
-        states = {i: "open" if i == 504 else "closed" for i in pr.owner_issues(owners)}
+        # Only #783 open: every other cell must be owned through a rule with a note.
+        states = {i: "open" if i == 783 else "closed" for i in pr.owner_issues(owners)}
         g = {(x["scenario"], x["metric"]): x["owners"] for x in pr.report(d, owners, states=states)}
         self.assertEqual(len(g), 2 * len(cells))
         for (name, metric), o in g.items():
             self.assertIn(cells[name], o, (name, metric))
-            self.assertEqual(504 in o, cells[name] == 504, (name, metric))
+            self.assertEqual(783 in o, cells[name] == 783, (name, metric))
 
+
+    def test_741_no_policer_cell_is_owned_only_by_411(self):
+        # #741 (#411 D9): the policer's e2e, loss and overhead cells are in band on 80 seeds (#479's notes),
+        # its A/V offset is seed noise with #741's note, and its audio cells keep #719's A/V sync note.
+        metrics = ["video.e2e_delay_p95_ms", "net.loss_pct", "repair.overhead_pct", "sync.av_offset_p95_ms",
+                   "audio.jb_delay_p95_ms", "audio.mouth_to_ear_p95_ms", "audio.concealed_pct"]
+        d = data(scn("issue_12_lossbwe_policer", {m: ([300] * 5, [100] * 5) for m in metrics}))
+        d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for m in metrics})
+        owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
+        # Everything closed: a cell is owned only through a rule with a note.
+        states = {i: "closed" for i in pr.owner_issues(owners)}
+        g = {x["metric"]: x["owners"] for x in pr.report(d, owners, states=states)}
+        self.assertEqual(sorted(g), sorted(metrics))
+        for m, o in g.items():
+            self.assertTrue(o, m)
+            self.assertNotIn(411, o, m)
+        self.assertEqual(g["sync.av_offset_p95_ms"], [741])
 
 class Delta(unittest.TestCase):
     def test_closed_opened_and_moved(self):

@@ -41,11 +41,19 @@ constexpr size_t kMaxPaddingLength = 255;
 constexpr size_t kRtxHeaderSize = 2;
 // rtp_video_header.h / video_codec_constants: every video payload type runs at 90 kHz.
 constexpr int kVideoPayloadTypeFrequency = 90000;
+// RTPSender::BuildPaddingPacket (rtp_sender.cc:497-502): padding on the RTX SSRC takes
+// rtx_payload_type_map_.begin()->second, the RTX payload type of the lowest associated one. The
+// map holds the media type and, with RED configured, RED's (ConfigureRtx, call/rtp_video_sender.cc:
+// 245-252).
+uint8_t RtxPaddingPayloadType(const RtpSenderConfig& c, const loss::RtxConfig& r) {
+  return r.red_payload_type && *r.red_payload_type < c.payload_type ? r.rtx_red_payload_type : c.rtx_payload_type;
+}
 }  // namespace
 
 RtpSender::RtpSender(RtpSenderConfig cfg)
     : cfg_(ClampPacketSize(std::move(cfg))),
       rtx_(MakeRtxConfig(cfg_)),
+      rtx_padding_payload_type_(RtxPaddingPayloadType(cfg_, MakeRtxConfig(cfg_))),
       red_(std::max(1, cfg_.red_distance)),
       next_seq_(cfg_.initial_seq),
       mid_remaining_(cfg_.mid_packets) {
@@ -129,6 +137,12 @@ bool RtpSender::SupportsRtxPayloadPadding() const {
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
   send_rates_[static_cast<size_t>(p.kind)].Update(static_cast<int64_t>(p.packet.size()), now.ms());
+  // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:332-336, 467-493): every packet sent on
+  // the media or the RTX SSRC (media, retransmission, FEC, padding) adds one packet and its payload
+  // octets (RtpPacketCounter: padding is counted apart) to `transmitted`, which the SR reports
+  // (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:251-254).
+  sr_packets_ += 1;
+  sr_octets_ += static_cast<uint32_t>(p.packet.payload.size());
   if (ulpfec_ && p.kind == PacketKind::kVideo) {
     // RtpSenderEgress::SendPacket: the media packet without its RED header (media PT
     // restored), then the FEC that it completes.
@@ -156,8 +170,6 @@ void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
 void RtpSender::StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe, bool first) {
   ++stats_.media_packets;
   stats_.media_payload_bytes += static_cast<int64_t>(p.payload.size());
-  sr_packets_ += 1;
-  sr_octets_ += static_cast<uint32_t>(p.payload.size());
   last_rtp_timestamp_ = p.timestamp;
   last_media_time_ = now;
   Queue(std::move(p), cfg_.video ? PacketKind::kVideo : PacketKind::kAudio,
@@ -373,7 +385,7 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
   p.timestamp = rtp_timestamp;
   if (cfg_.rtx_ssrc) {
     p.ssrc = *cfg_.rtx_ssrc;
-    p.payload_type = cfg_.rtx_payload_type;
+    p.payload_type = rtx_padding_payload_type_;
     p.seq = rtx_.AllocateSeq();
   } else {
     p.ssrc = cfg_.ssrc;
@@ -427,7 +439,7 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, Timest
     RtpPacket p;
     if (rtx) {
       p.ssrc = *cfg_.rtx_ssrc;
-      p.payload_type = cfg_.rtx_payload_type;
+      p.payload_type = rtx_padding_payload_type_;
       p.seq = rtx_.AllocateSeq();
     } else {
       p.ssrc = cfg_.ssrc;

@@ -20,11 +20,23 @@ struct RedBlock {
   uint32_t timestamp = 0;
   std::vector<uint8_t> payload;
   bool primary = false;
+  int red_level = 0;  // SplitRed: 0 for the primary, 1 for the newest redundant block, and so on.
 };
 
 // Parses a RED payload. `rtp_timestamp` is the RTP timestamp of the carrying
 // packet (= timestamp of the primary block). Blocks are returned oldest first.
 std::optional<std::vector<RedBlock>> ParseRed(std::span<const uint8_t> payload, uint32_t rtp_timestamp);
+
+// libwebrtc's RedPayloadSplitter::SplitRed followed by CheckRedPayloads
+// (modules/audio_coding/neteq/red_payload_splitter.cc), the split NetEq
+// inserts: the primary first, then the redundant blocks newest to oldest,
+// each with its red_level. Empty blocks are skipped, and a block whose payload
+// type differs from the first block's (or is `red_payload_type`) is removed.
+// Nullopt where NetEqImpl::InsertPacketInternal fails the packet: a header
+// that is too short, block lengths past the payload, more than 32 blocks, or
+// nothing left.
+std::optional<std::vector<RedBlock>> SplitRed(std::span<const uint8_t> payload, uint32_t rtp_timestamp,
+                                              uint8_t red_payload_type);
 
 struct RedStats {
   uint64_t packets = 0;
@@ -56,6 +68,11 @@ class RedReceiver : public MetricsSource {
  public:
   explicit RedReceiver(size_t memory = 64) : memory_(memory) {}
   std::vector<RedBlock> OnPacket(std::span<const uint8_t> payload, uint32_t rtp_timestamp);
+  // NetEq's split (SplitRed above): every block, in the order NetEq inserts
+  // them, with no deduplication (NetEq's packet buffer and arrival history
+  // handle copies). The statistics count as OnPacket does.
+  std::vector<RedBlock> SplitForNetEq(std::span<const uint8_t> payload, uint32_t rtp_timestamp,
+                                      uint8_t red_payload_type);
   const RedStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -64,6 +81,8 @@ class RedReceiver : public MetricsSource {
   SeqNumUnwrapper<uint32_t> unwrapper_;
   std::deque<int64_t> seen_;  // Recently delivered timestamps.
   RedStats stats_;
+
+  void Count(const RedBlock& b);
 };
 
 }  // namespace sm::loss

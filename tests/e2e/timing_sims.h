@@ -6,6 +6,7 @@
 #include <deque>
 #include <vector>
 
+#include "sm/core/dsp.h"
 #include "sm/core/random.h"
 #include "sm/sim/network_link.h"
 #include "sm/sim/signals.h"
@@ -24,7 +25,7 @@ struct AudioJbSimParams {
   TimeDelta jitter_second_half = TimeDelta::MinusInfinity();  // Optional step.
   double loss = 0.02;
   bool time_stretch = true;
-  int fixed_delay_ms = 0;  // > 0: fixed-size buffer (no adaptation).
+  int fixed_delay_ms = 0;  // > 0: the target pinned there (no adaptation).
   TimeDelta stall_at = TimeDelta::MinusInfinity();   // Optional network stall.
   TimeDelta stall_for = TimeDelta::Zero();
   double seconds = 60;
@@ -52,15 +53,14 @@ inline AudioJbSimResult RunAudioJbSim(const AudioJbSimParams& p) {
   lc.loss_rate = p.loss;
   sim::NetworkLink<std::pair<uint32_t, std::vector<float>>> link(lc, p.seed + 3);
   AudioJitterBufferConfig cfg;
-  cfg.version = 1;  // The library's own buffer and DelayManager; the default is NetEq (#579).
   cfg.sample_rate = fs;
-  cfg.time_stretch = p.time_stretch && p.fixed_delay_ms == 0;
-  if (p.fixed_delay_ms > 0) {
-    cfg.delay.min_delay_ms = p.fixed_delay_ms;
-    cfg.delay.max_delay_ms = p.fixed_delay_ms;
-    cfg.delay.initial_target_ms = p.fixed_delay_ms;
-  }
+  cfg.time_stretch = p.time_stretch;
   AudioJitterBuffer jb(cfg);
+  if (p.fixed_delay_ms > 0) {
+    // NetEq's target pinned by its minimum and maximum delay (NetEq::SetMinimumDelay, SetMaximumDelay).
+    jb.SetMaximumDelayMs(p.fixed_delay_ms);
+    jb.SetMinimumDelayMs(p.fixed_delay_ms);
+  }
   std::vector<float> out(160);
   AudioJbSimResult r;
   const int64_t total_ms = static_cast<int64_t>(p.seconds * 1000);
@@ -164,6 +164,64 @@ inline VideoJitterSimResult RunVideoJitterSim(bool use_estimator, TimeDelta jitt
   r.late_ratio = static_cast<double>(late) / static_cast<double>(frames);
   r.mean_delay_ms = delay_sum / static_cast<double>(frames);
   r.mean_jitter_ms = jitter_sum / static_cast<double>(frames);
+  return r;
+}
+
+// --- Audio: PLC ---------------------------------------------------------------
+// Concealment as the call runs it: NetEq's Expand, Merge and Normal inside the
+// audio jitter buffer (loss::PacketLossConcealer was removed in #817). 20 ms
+// packets of voiced speech arrive at a constant delay (no jitter, time
+// stretch off, so the buffer level stays put) over a lossy link; the device
+// pulls 10 ms at a time.
+
+struct PlcSimResult {
+  double loss = 0;              // Packets lost on the link.
+  double concealed = 0;         // Concealed samples / samples played.
+  uint64_t events = 0;          // Concealment events (expands started).
+  double expand_level_ratio = 0;  // RMS(blocks played by an expand) / RMS(normal blocks).
+  double normal_level_ratio = 0;  // RMS(normal blocks) / RMS(the speech sent).
+};
+
+inline PlcSimResult RunPlcSim(const sim::LinkConfig& link_cfg, double seconds, uint64_t seed) {
+  using namespace sm::timing;
+  const int fs = 16000, packet = 320, block = 160;
+  auto x = sim::SpeechLike(fs, seconds + 1, seed, false);
+  size_t packets = static_cast<size_t>(seconds * 50);
+  sim::NetworkLink<size_t> link(link_cfg, seed + 7);
+  AudioJitterBufferConfig cfg;
+  cfg.sample_rate = fs;
+  cfg.time_stretch = false;
+  AudioJitterBuffer jb(cfg);
+  std::vector<float> out(block);
+  double expand_sq = 0, normal_sq = 0;
+  size_t expand_n = 0, normal_n = 0;
+  for (int64_t t = 0; t < static_cast<int64_t>(seconds * 1000); t += 10) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) link.Send(now, static_cast<size_t>(t / 20), DataSize::Bytes(80));
+    for (size_t p : link.Receive(now)) {
+      auto src = x.begin() + static_cast<std::ptrdiff_t>(p * packet);
+      jb.InsertPacket(static_cast<uint32_t>(p * packet), std::vector<float>(src, src + packet), now);
+    }
+    const AudioOperation op = jb.GetAudio(out, now);
+    double sq = 0;
+    for (float v : out) sq += static_cast<double>(v) * v;
+    if (op == AudioOperation::kExpand) {
+      expand_sq += sq;
+      expand_n += out.size();
+    } else if (op == AudioOperation::kNormal) {
+      normal_sq += sq;
+      normal_n += out.size();
+    }
+  }
+  PlcSimResult r;
+  r.loss = static_cast<double>(link.stats().lost) / static_cast<double>(packets);
+  const auto& st = jb.stats();
+  r.concealed = st.total_samples_received ? static_cast<double>(st.concealed_samples) / st.total_samples_received : 0;
+  r.events = st.concealment_events;
+  const double normal_rms = normal_n ? std::sqrt(normal_sq / normal_n) : 0;
+  r.expand_level_ratio = expand_n && normal_rms > 0 ? std::sqrt(expand_sq / expand_n) / normal_rms : 0;
+  const double sent_rms = dsp::Rms(std::span<const float>(x.data(), packets * packet));
+  r.normal_level_ratio = sent_rms > 0 ? normal_rms / sent_rms : 0;
   return r;
 }
 

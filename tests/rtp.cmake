@@ -32,11 +32,13 @@ sm_add_test_exe(sm_e2e_rtp LABEL e2e DEPS sm::rtp
     e2e/rtp_receiver_e2e_test.cc
     e2e/rtp_sender_e2e_test.cc
     e2e/rtp_session_e2e_test.cc
+    e2e/video_adaptation_e2e_test.cc
     e2e/video_send_controller_e2e_test.cc
   SUITES
     E2E_CongestionWindowPushback
     E2E_RtpReceiver
     E2E_RtpSender
     E2E_RtpSession
+    E2E_VideoAdaptation
     E2E_VideoSendController
 )

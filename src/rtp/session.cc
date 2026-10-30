@@ -19,6 +19,8 @@ RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   RtcpConfig r = c.rtcp;
   r.local_ssrc = c.local_ssrc;
   r.cname = c.cname;
+  // The session's RR is the video receive module's, which has no CNAME (issue #820).
+  r.cname_in_receiver_report = false;
   r.seed = c.seed;
   if (!r.events) r.events = c.events;
   return r;
@@ -145,6 +147,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
   c.rtx.initial_seq = rtx_initial_seq;
+  // ConfigureRtx (call/rtp_video_sender.cc:245-252): RED's RTX payload type is in the RTX map
+  // whenever RED is configured, also when ShouldDisableRedAndUlpfec turns FEC off beside NACK.
+  if (v.fec && v.rtx_ssrc) {
+    c.rtx.red_payload_type = v.ulpfec.red_payload_type;
+    c.rtx.rtx_red_payload_type = v.ulpfec.red_rtx_payload_type;
+  }
   c.fec = VideoFecEnabled(v);
   c.ulpfec = v.ulpfec;
   // RtpVideoSender's constructor: FecControllerDefault with the method the stream has on,
@@ -262,6 +270,8 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   // tracker for kVideoCodecH264, and FindFrames keeps missing_packets_ for an H.264 descriptor.
   const bool h264 = v.codec == VideoCodecType::kH264;
   c.sps_pps_tracker = v.sps_pps_tracker && h264;
+  // UnwrapSequenceNumberOrRecover returns before its discontinuity rule for H.264 and H.265.
+  c.seq_num_discontinuity = !h264;
   c.render_smoothing = v.render_smoothing;
   c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;

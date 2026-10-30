@@ -46,13 +46,23 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
 }
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
+  ApplyTarget(u, now);
+  ApplyPacer(u);
+}
+
+void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
   if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(target_, now);
-  // GetPacingRates: the padding rate never exceeds the pushback target.
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
+  outage_.SetCurrentRate(target_);
+}
+
+// RtpTransportControllerSend::PostUpdates: the pacer config, then the probe clusters. GetPacingRates runs at the
+// end of MaybeTriggerOnNetworkChanged, after the pushback target of the same update, and the padding rate never
+// exceeds that pushback target (goog_cc_network_control.cc:596-650, 675-679; issue #813).
+void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u) {
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
-  outage_.SetCurrentRate(target_);
 }
 
 // libwebrtc runs UpdateTargetBitrate() whenever the network state may have
@@ -66,8 +76,13 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   if (window) cwnd_.UpdatePacingQueue(pacer_.QueueSizeData());
   if (window) cwnd_.UpdateWindow(window_target_);
-  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
+  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum, and
+  // the reduce ratio is taken from that clamped target (goog_cc_network_control.cc:596-608). Once the
+  // pushback reaches the minimum, the ratio stops changing and no new update re-applies it (issue #738).
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+  pushback_reduce_ratio_ = cfg_.cwnd.enabled && target_.bps() > 0
+                               ? static_cast<double>(target_.bps() - pushback_target_.bps()) / static_cast<double>(target_.bps())
+                               : 0;
   window_target_ = target_;
 }
 
@@ -78,7 +93,7 @@ void SendSideController::PostTargetRate(Timestamp now) {
   if (!cfg_.control_handler) return;
   cc::TargetTransferRate msg;
   msg.target_rate = target_;
-  msg.cwnd_reduce_ratio = cwnd_.reduce_ratio();
+  msg.cwnd_reduce_ratio = pushback_reduce_ratio_;
   msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
   msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
   control_handler_.SetTargetRate(msg);
@@ -404,8 +419,10 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     // and before it): the encoder pauses while the pacer's expected queue time is above 2 s.
     if (cfg_.control_handler) control_handler_.SetPacerQueue(pacer_.QueueSizeData() == DataSize::Zero() ? TimeDelta::Zero() : pacer_.ExpectedQueueTime());
     if (cfg_.control_handler) UpdateControlState(now);
-    Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
+    const cc::NetworkControlUpdate u = gcc_.OnProcessInterval(now, send_rate(now));
+    ApplyTarget(u, now);
     UpdatePushback(now, true);
+    ApplyPacer(u);
     PostTargetRate(now);
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
@@ -454,13 +471,14 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     outage_.OnFeedback(now);
     return;
   }
-  Apply(u, now);
+  ApplyTarget(u, now);
   // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
   // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
   // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
   // before this feedback. After an outage the first feedback clears the lost packets from flight;
   // against the grown window that fill would fall under 0.1 and end the pushback at once (#446).
   if (gcc_.last_feedback_delay_updated()) UpdatePushback(now, false);
+  ApplyPacer(u);
   if (auto rtt = gcc_.last_feedback_max_rtt()) {
     cwnd_.OnFeedbackRtt(*rtt);
     cwnd_.UpdateWindow(window_target_);

@@ -83,9 +83,12 @@ ALGORITHMS = [
                "separate FEC SSRC) is removed. "
                "The FEC a packet completes joins the queue the pacer's send loop is draining, as libwebrtc's "
                "`ProcessPackets` does after each `SendPacket` (#771). "
-               "Remaining differences: one RTX payload type per stream plus "
-               "the RED one, where libwebrtc maps each associated payload type; FEC packets are not in the sender "
-               "report's packet count (libwebrtc counts every packet sent on the SSRC). The FEC amount is "
+               "The RTX payload types are `ConfigureRtx`'s map (`call/rtp_video_sender.cc`): the stream's payload "
+               "type and, whenever RED is configured with an RTX type, RED's, also while FEC is off beside NACK; "
+               "RTX padding takes the RTX type of the lowest associated one (`rtx_payload_type_map_.begin()`, "
+               "`RTPSender::BuildPaddingPacket`). The sender report's packet and octet counts are libwebrtc's "
+               "`transmitted` counters of the media and RTX SSRCs: every packet as it is sent, FEC, retransmissions "
+               "and padding included (`RtpSenderEgress::UpdateRtpStats`, #816). The FEC amount is "
                "`FecControllerDefault` (3.7).",
          verification="ULPFEC (#29, first PR): unit tests check the RFC 5109 byte layout, the L bit, recovery of every "
                       "RTP header field across the sequence-number wrap, zero columns for sequence gaps, malformed input, "
@@ -100,6 +103,10 @@ ALGORITHMS = [
                       "protection keeps 99.0% of frames on time at 5% loss (67.4% without); on Gilbert-Elliott bursts the "
                       "bursty masks recover 150 packets against 143 for the random ones. No stage-1 scenario sends video "
                       "FEC (H.264 with NACK, `ShouldDisableRedAndUlpfec`), so the suite's metrics are unchanged. "
+                      "#816: `PacingController.FecFromThePacketSenderLeavesInTheSameProcessCall`, "
+                      "`RtpSender.RtxPaddingTakesTheRtxTypeOfTheLowestAssociatedPayloadType` and "
+                      "`RtpSender.SenderReportCountsEveryPacketSentOnTheMediaAndRtxSsrcs` fail before the port and pass "
+                      "after it. "
                       "Interop (#29, last PR): `compare/webrtc/rtcp_interop.cc` (CI job compare-webrtc) has libwebrtc's "
                       "`UlpfecReceiver` recover, byte for byte, the packets this library's `UlpfecGenerator` protected, "
                       "and this library's `UlpfecReceiver` recover those libwebrtc's `UlpfecGenerator` protected, on an "
@@ -123,22 +130,37 @@ ALGORITHMS = [
                       "revision libwebrtc M157 builds, set up as `AudioEncoderOpusImpl` sets it up (`testbench/opus_encoder.h`: "
                       "48 kHz mono VOIP, 20 ms, 32 kbps VBR, complexity 9, DTX off, in-band FEC on, max bandwidth fullband). "
                       "It replaced the frame-size model fitted to libwebrtc's traces (#126, #375), which was an approved deviation "
-                      "(Owner's decision C on #452)."),
+                      "(Owner's decision C on #452). Receive side (#722): with `neteq v2` the receiver splits RED as NetEq's "
+                      "`RedPayloadSplitter::SplitRed` and `CheckRedPayloads` (`SplitRed`), primary first, then the redundant "
+                      "blocks newest to oldest, every block to the jitter buffer; on `issue_533_opus_decoder_frame_older_than_window` "
+                      "seed 1 the DelayManager's 923 updates (arrival delay, reordered flag, target) are then the same as "
+                      "libwebrtc's (yardstick #779), where the header-order, deduplicated split differed from the first one."),
     dict(id="3.4", slug="plc", title="Packet loss concealment (PCM domain)",
          problems=["Lost audio frames -> PLC in NetEq (Opus in-band FEC / DRED are codec features, see notes)"],
-         headers=["loss/plc.h"], unit=["Plc"], e2e=["E2E_Plc"],
-         bench=["loss/Plc_Conceal10ms_16k", "loss/Q_Plc_10pct_speech"],
-         scenario="20 s of synthetic voiced speech, 10 ms frames, 10% random loss. Compares the whole-signal SNR "
-                  "of the concealed output against zero insertion, and the SNR/level inside the lost frames.",
+         headers=["timing/neteq_expand.h"], unit=["NetEqExpand", "NetEqMerge", "NetEqBackgroundNoise", "NetEqRandomVector"],
+         e2e=["E2E_Plc"],
+         bench=["timing/Q_Plc_10pct_speech"],
+         scenario="20 s of synthetic voiced speech in 20 ms packets over a link with 10% random loss and a constant "
+                  "40 ms delay, played 10 ms at a time through the audio jitter buffer (4.5) with time stretch off. "
+                  "Every lost packet must be concealed, and the concealed audio must keep the speech's level "
+                  "(RMS of the expand blocks against the normal blocks).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
-               "Opus LBRR (in-band FEC) and DRED live inside the Opus codec and are used automatically when the "
-               "codec is Opus; they are not reimplemented here. This module is the codec-agnostic fallback and "
-               "the 'expand' operation of the audio jitter buffer's version 1 (4.5). Version 2 (`neteq v2`, the "
-               "session's and bench's NetEq) conceals only with NetEq's Expand; where its sync buffer can't fill "
-               "the output it plays silence as NetEq's `kSampleUnderrun` (#568), so this module isn't used there.",
-         verification="No defects found. #568 removed it from the jitter buffer's version 2, where it concealed "
-                      "the remainder of an output frame the sync buffer couldn't fill; NetEq mutes that frame "
-                      "(`neteq_impl.cc` GetAudioInternal). No scenario in the suite reaches that case on seed 1."),
+               "Concealment is libwebrtc M157's NetEq: `Expand` (with `RandomVector`), `BackgroundNoise`, `Merge` "
+               "and `Normal`'s first decode after an expand (modules/audio_coding/neteq/expand.cc, "
+               "background_noise.cc, random_vector.cc, merge.cc, normal.cc), ported as `NetEqExpand`, "
+               "`NetEqBackgroundNoise` and `NetEqMerge` (`timing/neteq_expand.h`, #62) and bit-exact with them on "
+               "int16 input (#789, #796). The audio jitter buffer (4.5) runs them; where its sync buffer can't "
+               "fill the output it plays silence as NetEq's `kSampleUnderrun` (#568). Opus LBRR (in-band FEC) and "
+               "DRED live inside the Opus codec; in-band FEC goes into the buffer as NetEq's ParsePayload puts it "
+               "(see 4.5). The library's own codec-agnostic concealer, `loss::PacketLossConcealer` (pitch repeat "
+               "with its own fades, the jitter buffer's version 1), was not libwebrtc's and was removed with "
+               "version 1 in #817.",
+         verification="NetEq's Expand, Merge and BackgroundNoise unit tests (golden hashes from the reference "
+                      "sources compiled unchanged) pass. #568 removed PacketLossConcealer from version 2, and "
+                      "#817 removed it and version 1. `E2E_Plc` and `Q_Plc_10pct_speech` measure NetEq's "
+                      "concealment (they measured PacketLossConcealer's before #817): seed 11, 11.2% packet loss, "
+                      "11.2% of the samples concealed in 98 expands, the expand blocks at 0.90 of the normal "
+                      "blocks' level."),
     dict(id="3.5", slug="keyframe-requests", title="Keyframe requests (PLI/FIR) and loss notification",
          problems=["Lost or undecodable video frame -> PLI / FIR keyframe request; LNTF (loss notification)",
                    "Lost frame (decode impossible) -> keyframe request; freeze the last frame until recovery"],
@@ -149,8 +171,15 @@ ALGORITHMS = [
                   "the longest freeze and the number of PLIs (no request storms).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#3-packet-loss) for the differences from libwebrtc. "
                "The receiver asks on libwebrtc's RtpVideoStreamReceiver2 triggers (issue #23): the first assembled frame is "
-               "not a keyframe, a decoder error, a NACK list or packet buffer overflow, and the decode time-out "
+               "not a keyframe, a decoder error, a NACK list or packet buffer overflow, an H.264 IDR without its "
+               "parameter sets, and the decode time-out "
                "(200 ms before the first frame, 3 s after; not while a keyframe is arriving or the stream is idle). "
+               "For codecs other than H.264, a sequence-number discontinuity (a media packet more than 2048 behind "
+               "the newest with a newer RTP timestamp) drops packets and asks again every 200 ms until a newer "
+               "keyframe re-anchors the receiver (UnwrapSequenceNumberOrRecover, issue #818). The missing-video-"
+               "structure trigger needs the dependency descriptor extension, which the library does not carry, so it "
+               "cannot fire. Every request is the configured method, PLI by default as libwebrtc's "
+               "`rtp.keyframe_method` (KeyframeRequestConfig::method; FIR sequence numbers start at 1, issue #818). "
                "A keyframe is arriving while a packet came within 200 ms whose depacketized frame type is key (every "
                "FU-A fragment of an IDR slice, an SPS or IDR NAL unit) or that has the last keyframe's RTP timestamp, "
                "counting packets received as sent only (RtpVideoStreamReceiver2::UpdatePacketReceiveTimestamps, "
@@ -170,7 +199,12 @@ ALGORITHMS = [
                       "requests). The v1 repair window gave 83% and 0.5 s until #167 deleted it. "
                       "[#335](../../fixes/335-keyframe-packets.md): a 1 fps keyframe that took 0.5 s to arrive was asked "
                       "for again at 400 ms because only its first packet counted as a keyframe packet; with every packet "
-                      "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms)."),
+                      "counted, the 1 fps repro matches libwebrtc (no keyframe requests, mouth-to-ear p95 about 860 ms). "
+                      "#818: the discontinuity trigger, the keyframe method and the FIR sequence number are pinned by "
+                      "RtpReceiver.ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors, "
+                      "KeyframeRequest.EveryRequestUsesTheConfiguredMethod, RtcpEngine.FirSequenceNumbersStartAtOne and "
+                      "LibwebrtcDefaults.TheSequenceDiscontinuityRuleRunsForCodecsOtherThanH264 / KeyframeRequestsArePli; "
+                      "the bench's H.264 stream sends PLI only, as libwebrtc's, so no metric moves."),
     dict(id="3.7", slug="protection-selection", title="NACK/FEC protection selection",
          problems=["Picking a protection level -> loss-rate-driven trade-off between FEC and NACK, based on RTT"],
          headers=["loss/fec_controller.h"], unit=["FecController"], e2e=["E2E_Protection"],
@@ -276,7 +310,8 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "A histogram with forgetting factor 0.983 per packet: rising jitter is learned within a few "
                "packets, while falling jitter takes several seconds, so the buffer does not oscillate. "
-               "NetEq v2 (issue #62, `AudioJitterBufferConfig::version = 2`, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to v2 since #62, and `AudioJitterBufferConfig` on its own since #579): "
+               "That `DelayManager` was the v1 jitter buffer's; since #817 removed version 1 it has no caller in the library. "
+               "NetEq v2 (issue #62, the test bench's `neteq v2`; the session's `AudioStreamConfig` and the test bench default to it since #62, `AudioJitterBufferConfig` on its own since #579, and it is the only jitter buffer since #817 removed version 1): "
                "`NetEqDelayManager` ports libwebrtc M157's modules/audio_coding/neteq/ histogram.cc (Q30 buckets, "
                "Q15 forget factor from 0 with start_forget_weight 2), underrun_optimizer.cc (95th percentile of the "
                "largest relative delay of each 500 ms interval, 100 buckets of 20 ms, forget factor 0.983), "
@@ -304,7 +339,8 @@ ALGORITHMS = [
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Accelerate removes one pitch period by cross-fading segment A into B; preemptive expand inserts "
                "one. Both are refused on unvoiced, non-silent audio (correlation < 0.75), where they would be "
-               "audible. This is the v1 jitter buffer's DSP; `neteq v2` uses NetEq's (NetEqTimeStretch, see 4.5).",
+               "audible. This was the v1 jitter buffer's DSP; the jitter buffer uses NetEq's (NetEqTimeStretch, see 4.5), "
+               "and since #817 removed version 1 `TimeStretcher` has no caller in the library.",
          verification="Defect found in integration: the jitter buffer only decoded audio until it had 10 ms "
                       "ready, but WSOLA needs 30 ms, so stretching never ran and latency stayed at 600 ms after "
                       "a stall. Fixed by decoding ahead only when a stretch is wanted (AudioJitterBuffer::"
@@ -319,8 +355,13 @@ ALGORITHMS = [
          scenario="60 s of speech, 20 ms packets, 25 ms Gaussian jitter (with reordering), 2% loss. The adaptive "
                   "buffer is compared with a fixed 20 ms and a fixed 200 ms buffer.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
-               "Decoded PCM is inserted (decode-on-insert); a decoder interface that decodes at pull time (to use "
-               "Opus FEC from the next packet) is a natural extension. Statistics use WebRTC getStats names. "
+               "Decoded PCM can be inserted (decode-on-insert, for decoders without a duration); with "
+               "a decoder that gives the frame's duration (rtp::AudioDecoder::PacketDuration, "
+               "AudioDecoder::PacketDuration in libwebrtc) the frame is inserted encoded and decoded when it is "
+               "played, in timestamp order, as NetEqImpl::DecodeLoop decodes (#783): a stateful decoder (Opus) "
+               "then sees NetEq's sequence, and copies replaced by a higher priority or discarded as late are "
+               "never decoded. On issue_533 seed 1 that makes the first expand's input, and so its voiced/unvoiced "
+               "split and mute slope, the same as libwebrtc's. Statistics use WebRTC getStats names. "
                "NetEq v2 (issue #62, `neteq v2`; the session and test bench default since #62) chooses the operation as libwebrtc M157's "
                "modules/audio_coding/neteq/decision_logic.cc and NetEqImpl::GetDecision/GetAudioInternal "
                "(neteq_impl.cc) do, in `NetEqDecisionLogic` (timing/neteq_delay.h): playout starts with the first "
@@ -339,7 +380,11 @@ ALGORITHMS = [
                "ported and exported as `filtered_buffer_level_samples`; M157 uses it for no decision. "
                "The packet buffer holds NetEq::Config::max_packets_in_buffer (200) packets and is flushed "
                "completely when a packet arrives to a full buffer, as PacketBuffer::InsertPacket without the "
-               "smart-flushing field trial (issue #331; version 1 keeps its own 100-packet limit). "
+               "smart-flushing field trial (issue #331). The flush takes "
+               "NetEqImpl's new_codec_ path (issue #773, docs/fixes/773-neteq-flush-reset.md): the packets up to the "
+               "next decision skip the controller's statistics and DiscardOldPackets, the sync buffer is kept, and "
+               "that decision (after the early return for a full output block) restarts the timestamp at the next "
+               "packet and soft-resets the controller (target back to 80 ms). "
                "Muted state (issue #574) is NetEqImpl::GetAudioInternal's (neteq_impl.cc:682-698): once the expand "
                "has faded to silence and no packet is waiting, a muted frame is played without the decision logic or "
                "the expand, the playout timestamp moves on by the frame and the samples count as concealed noise "
@@ -360,9 +405,10 @@ ALGORITHMS = [
                "5/8 ms overlap), the overlap kept back as lookahead (FlushBuffers, GetAudioInternal) and Normal's "
                "first decode after an expand (one more expansion, 1 ms crossfade, unmute by at least 0.64 per "
                "20 ms) are ported, and Expand is reset after a merge, accelerate, preemptive expand or that "
-               "decode. The signal arithmetic is float on the int16 scale, so samples are not bit-exact with "
-               "libwebrtc's fixed point; the factors that make decisions (mute factor, voice mix factor, mute "
-               "slope, lags) keep its integer arithmetic. BackgroundNoise is ported as NetEqBackgroundNoise "
+               "decode. All of Expand is libwebrtc's fixed-point arithmetic on int16 samples, bit-exact with "
+               "expand.cc (#783): the 4 kHz correlation normalized to 14 bits with the fixed-point peak search, "
+               "the distortion search, WebRtcSpl_LevinsonDurbin for the Q12 AR filter, the residual gain, the "
+               "unvoiced part through WebRtcSpl_FilterARFastQ12 and the Q14 crossfade and muting. BackgroundNoise is ported as NetEqBackgroundNoise "
                "(background_noise.cc): after each GetAudio that left decoded audio unchanged (normal, failed "
                "accelerate or preemptive expand) it reads the last 256 samples of the sync buffer, and when "
                "their energy is under the update threshold (500000 at start, then the lowest seen, rising 4x in "
@@ -381,9 +427,10 @@ ALGORITHMS = [
                "decoded energy) over 8 ms (integer arithmetic), unmutes by at least 4194 / (fs/8000) in Q20 per "
                "sample or to full gain within the frame, and is crossfaded in linearly over up to 60 * fs/8000 "
                "samples. The samples a merge adds or removes are a concealed-samples correction "
-               "(StatisticsCalculator, a negative one held against later additions). The 4 kHz correlation and "
-               "peak search are float (the WebRtcSpl helpers it calls, in common_audio/signal_processing, are "
-               "not in compare/webrtc/reference/, #57). Accelerate and PreemptiveExpand are ported as NetEqTimeStretch "
+               "(StatisticsCalculator, a negative one held against later additions). After the expansion it is "
+               "libwebrtc's fixed-point arithmetic on int16 samples, bit-exact with merge.cc (#783): the Q12 "
+               "downsampling, the 4 kHz correlation normalized to 14 bits with the fixed-point peak search, and "
+               "the Q14 ramp, unmute and crossfade. Accelerate and PreemptiveExpand are ported as NetEqTimeStretch "
                "(time_stretch.cc, accelerate.cc, preemptive_expand.cc, one channel): the input is downsampled to "
                "4 kHz with the filter delay compensated, the strongest autocorrelation peak between lags 10 and "
                "59 gives the pitch period, and the periods either side of 15 ms are compared. A VAD calls the "
@@ -405,12 +452,25 @@ ALGORITHMS = [
                "frame carries LBRR (`FecDuration`, AudioDecoderOpusImpl::ParsePayload in audio_decoder_opus.cc) "
                "and inserts the decoded copy at the previous frame's timestamp with codec level 1; the buffer "
                "keeps one packet per timestamp, the higher Packet::Priority (codec level, then RED level), as "
-               "PacketBuffer::InsertPacket, and a late FEC frame is not a late discard. Which frames carry LBRR "
+               "PacketBuffer::InsertPacket, and a late FEC frame is not a late discard. A late packet goes into the "
+               "buffer as in PacketBuffer::InsertPacket; GetDecision drops it with DiscardOldPackets' 5 s horizon "
+               "(IsObsoleteTimestamp), and a packet more than 5 s older than playout stays and is played as a "
+               "future packet: DecisionLogic's uint32 timestamp leap makes it too early, so NetEq expands and "
+               "then merges back to it; after each extraction all older packets go (DiscardAllOldPackets) (#783). "
+               "Which frames carry LBRR "
                "is libopus's own decision in the test bench (libopus 55513e81, #457; `testbench/opus_encoder.h`), "
                "and the bench's decoder finds it with WebRtcOpus_PacketHasFec's parse: the encoder's loss input is ported "
                "(ChannelSend::OnReportBlockDataUpdated, PacketLossFractionSmoother, SetProjectedPacketLossRate). "
                "Verified by `issue_62_opus_fec_low_rate` (no LBRR at 12 kbps, 10% loss) and the "
-               "OpusEncoder unit tests.",
+               "OpusEncoder unit tests. "
+               "Comfort noise (comfort_noise.cc, NetEq's kRfc3389Cng and kCodecInternalCng) is not ported: it is "
+               "unreachable on libwebrtc's defaults (issue #827). RFC 3389 CN needs a CN payload type, which Opus "
+               "never gets (allow_comfort_noise false, audio_encoder_opus.cc:240; CN at 8 kHz only, "
+               "webrtc_voice_engine.cc:1538-1553), and codec-internal CNG needs a 1-2 byte Opus payload "
+               "(opus_interface.cc DetermineAudioType), which only DTX sends, off unless the SDP has usedtx=1 "
+               "(audio_encoder_opus.cc:257). The session registers no CN payload type and the test bench's "
+               "encoder never sends a DTX-sized payload (`OpusEncoder, DefaultsSendNoDtxPayloads`); an app that "
+               "turns DTX on gets those frames decoded as normal frames. Recorded in the parity inventory (4.4).",
          verification="Issue #256 (fix record docs/fixes/256-neteq-unsupported-rate.md): at a rate other than "
                       "8, 16, 32 or 48 kHz NetEq v2's expand and time stretch indexed outside their buffers "
                       "(ASan); version 2 now discards those packets and plays silence, as libwebrtc, where no "
@@ -628,6 +688,9 @@ ALGORITHMS = [
                "(VideoStreamEncoder::OnFrame before MaybeEncodeVideoFrame), and an encoder reconfiguration's "
                "reallocation (OnEncoderConfigurationChanged -> BitrateAllocator::AddObserver, posted, so from the frame "
                "after the reconfiguring one) carries no reduce ratio, which ends the drops until the next network update. "
+               "The reduce ratio is taken from the pushback target after it is clamped to GoogCC's minimum bitrate "
+               "(goog_cc_network_control.cc:596-608), so once the pushback reaches that minimum the ratio stops "
+               "changing, no further update re-applies it, and a reconfiguration's reset holds (#738). "
                "`SendSideConfig::control_handler` (scenario `control_handler on|off`, default on since #224/#204) adds libwebrtc's "
                "`CongestionControlHandler` (cc/control_handler.h, control_handler.cc) between GoogCC and the allocator: "
                "the allocation, and with it the encoder target and its protection share, changes only when the target, the "
@@ -656,8 +719,8 @@ ALGORITHMS = [
                "Guard rails changed with the `cc v1` deletion (program.md 0.2, #167, Owner sign-off pending): the "
                "closed-loop simulation's 800 kbps phase queue p95 (`E2E_DelayBwe`, `Q_Gcc_capacity_steps`) 200 -> 600 ms, "
                "its clean 2.5 Mbps audio delay p95 (`E2E_Pacer`, `Q_Pacer_audio_delay`) 60 -> 130 ms, and the "
-               "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`) "
-               "1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
+               "resolution 20 s after a rise from 400 kbps (`E2E_VideoAdaptation`, `Q_Adaptation_bandwidth_drop`, both "
+               "removed with the bits-per-pixel ladder in #819) 1280 -> 960; libwebrtc on the bench's `capacity_drop` has queue p95 279 ms and settles in 14.3 s, and "
                "on `clean_link` queue p95 74 ms. "
                "`timing` and `neteq` v2 were not in this flip: `timing` v2 joined with #24 (4.6), `neteq` v2 with #62. "
                "The test bench's Opus frame-size model, an approved deviation until #457, is replaced by libopus "
@@ -708,8 +771,8 @@ ALGORITHMS = [
                "`PacingController::EnqueuePacket` does (the sender marks keyframes and first-of-frame packets; "
                "#5). libwebrtc's flush also clears the RTX SSRC (`RemovePacketsForSsrc(rtx_ssrc)`, "
                "pacing_controller.cc:227-231), where `RTPSender::GeneratePadding` puts padding (the media SSRC without "
-               "RTX), so queued padding goes too; ours keeps it unless `keyframe_flush_padding` is on (off by default "
-               "until the default flip is judged, #437). Padding is made by `RtpSender::GeneratePadding` (`PacketRouter::GeneratePadding`, video streams asked before audio): RTX payload "
+               "RTX), so queued padding goes too; ours does the same with `keyframe_flush_padding` (on by default "
+               "as libwebrtc since #437's flip). Padding is made by `RtpSender::GeneratePadding` (`PacketRouter::GeneratePadding`, video streams asked before audio): RTX payload "
                "padding from the history first, then 255-byte empty padding packets on the RTX SSRC, each with its real size "
                "in the pacer queue; the keep-alive and the first packet of a probe ask for 1 byte (#120). Without RTX it goes on "
                "the media SSRC while `PacketSequencer::CanSendPaddingOnMediaSsrc` allows (video: after a frame's marker), audio "
@@ -722,10 +785,13 @@ ALGORITHMS = [
                "burst (padding fills it when there is no media), times the next burst by the bytes sent at the "
                "cluster rate and drops a cluster whose burst is more than 10 ms late (at most 5 pending, 5 s "
                "old). The pacer is also scheduled as `TaskQueuePacedSender` does (`Pacer::ProcessScheduled`, #123): a "
-               "pass runs only when a packet, a rate or the pause state changed or the timer of the last pass is due, "
-               "and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
+               "pass runs only when a packet was enqueued, a probe cluster was added, a rate or the congestion state changed or "
+               "the pacer resumed while packets are queued (`PostMaybeProcessPackets`, #813), or the timer of the last "
+               "pass is due, and only while `NextSendTime()` has come, with 5 ms (3 packets) between timer passes. Polling a bare "
                "`PacingController` every millisecond lets the early-return branch of `ProcessPackets` re-base its "
-               "debt every call and sends queued packets between the audio packets instead of with them.",
+               "debt every call and sends queued packets between the audio packets instead of with them. The rates reach "
+               "the pacer as `PacerConfig` carries them, whole bytes per 40 ms window (#813), and after the pushback "
+               "target of the same GoogCC update (`GetPacingRates` in `MaybeTriggerOnNetworkChanged`).",
          verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
                       "congestion keep-alives). `PrioritizedPacketQueue` (#166) ports prioritized_packet_queue_unittest.cc: "
@@ -919,14 +985,19 @@ ALGORITHMS = [
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
-         headers=["cc/video_adaptation.h"], unit=["VideoAdaptation", "OveruseFrameDetector"], e2e=["E2E_VideoAdaptation"],
-         bench=["cc/Degradation_and_CpuDetector", "cc/Q_Adaptation_bandwidth_drop"],
-         scenario="(a) Closed loop with capacity 3000 -> 400 -> 3000 kbps under maintain-framerate: the resolution "
-                  "must drop and recover. (b) A slow device (40 ms of encode per megapixel): the CPU detector must "
-                  "settle on a sustainable resolution without oscillating.",
+         headers=["cc/video_adaptation.h"], unit=["OveruseFrameDetector", "BitrateConstraint"], e2e=["E2E_VideoAdaptation"],
+         bench=["cc/CpuOveruseDetector_PerFrame"],
+         scenario="(a) A slow device (40 ms of encode per megapixel) through libwebrtc's chain (OveruseFrameDetector, "
+                  "ResourceAdaptationProcessor, VideoStreamAdapter, VideoAdapter): the CPU detector must settle on a "
+                  "sustainable resolution without oscillating. (b) With the encoder's resolution bitrate limits, the "
+                  "step back up to 720p waits until the encoder target reaches 720p's min_start_bitrate "
+                  "(BitrateConstraint); without them it does not wait.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#5-congestion-control) for the differences from libwebrtc. "
-               "The resolution ladder alternates 3/4 and 2/3 linear scale steps (as libwebrtc's VideoAdapter); "
-               "bpp_down/bpp_up hysteresis is 0.04/0.06 bits per pixel.",
+               "The adaptation itself is libwebrtc's, in `video::VideoStreamAdapter` and "
+               "`video::ResourceAdaptationProcessor` (7.8), driven by `rtp::VideoSendController`. "
+               "Issue #819 removed the library's own bits-per-pixel ladder (`DegradationController`, "
+               "0.04/0.06 bpp hysteresis) and the exponentially filtered v1 CPU detector "
+               "(`CpuOveruseConfig::version = 1`): neither has a libwebrtc counterpart, and no call path used them.",
          verification="No defects found after the 5.2 fixes. `CpuOveruseConfig::version = 2` (issue #84 step 3; the default since #579) "
                       "is libwebrtc M157's `OveruseFrameDetector` (`video/adaptation/overuse_frame_detector.cc`) "
                       "with its default estimator `SendProcessingUsage1` and the `CpuOveruseOptions` a software "
@@ -942,9 +1013,17 @@ ALGORITHMS = [
                       "target frame rate is the codec maximum. Scenario key `encode_delay on` makes the encode "
                       "time real on both stacks (the test bench delays the frame; `sm_compare`'s model encoder "
                       "posts its encoded callback that much later). `issue_84_cpu_overuse_slow_encoder` locks in "
-                      "the behaviour. Issue #581: `DegradationConfig::preference` defaults to maintain-framerate, "
-                      "libwebrtc's camera default (`media/engine/webrtc_video_engine.cc:2032-2064`), where it was "
-                      "balanced; the send path already ran maintain-framerate, so no scenario moves."),
+                      "the behaviour. Issue #819: `BitrateConstraint` (`video/adaptation/bitrate_constraint.cc`) is ported into "
+                      "`video::VideoStreamAdapter::GetAdaptationUp` with `EncoderInfo::GetEncoderBitrateLimitsForResolution`; "
+                      "`rtp::VideoSendController` gives it the start bitrate and every nonzero encoder target "
+                      "(`VideoStreamEncoderResourceManager::SetStartBitrate` / `SetTargetBitrate`) and "
+                      "`VideoSendControllerConfig::resolution_bitrate_limits`, empty by default as libwebrtc's software "
+                      "encoders and both stacks' encoder model in `sm_compare` report, so it allows every step and no "
+                      "scenario moves. Unit tests `BitrateConstraint.*` port `bitrate_constraint_unittest.cc`'s "
+                      "singlecast cases (simulcast and SVC are not ported). The bits-per-pixel `DegradationController` "
+                      "and CPU detector v1 were removed, with their tests (`VideoAdaptation.*`, the closed-loop "
+                      "`E2E_VideoAdaptation.ResolutionFollowsBandwidth`, `Q_Adaptation_bandwidth_drop`); "
+                      "`E2E_VideoAdaptation` now runs libwebrtc's chain (`tests/e2e/video_adaptation_e2e_test.cc`)."),
     dict(id="5.11", slug="outage", title="Link outage detection and recovery",
          problems=["Link outage, then recovery -> encoder pause, then keyframe on recovery; ICE restart if needed"],
          headers=["cc/outage_monitor.h"], unit=["Outage"], e2e=["E2E_Outage"],
@@ -1410,7 +1489,7 @@ ALGORITHMS = [
                                 "`issue_24_timing_v2_render_fps` locks it in. "
                                 "Issue #437 (partial): `video::RenderFrames` ports libwebrtc's pre-render queue "
                                 "(video/render/incoming_video_stream.cc, video_render_frames.cc), behind "
-                                "`render_smoothing` (off by default). With it on, `very_low_capacity` seeds 1-10 render "
+                                "`render_smoothing` (on by default since #437's flip, as libwebrtc). With it on, `very_low_capacity` seeds 1-10 render "
                                 "466 -> 421 frames and freeze 25.3 -> 24.6 times (libwebrtc 369 and 21.3); "
                                 "`issue_437_render_smoothing_very_low_capacity` locks it in "
                                 "([fix record](../../fixes/437-render-smoothing.md)). "
@@ -1524,7 +1603,7 @@ ALGORITHMS = [
                       "does for one `sync_group`, the receivers give `Syncable::Info` (the last SR and media packet; video's current delay is "
                       "`VCMTiming::TargetVideoDelay`, audio's NetEq's `FilteredCurrentDelayMs`), and `SessionConfig::audio_rtcp` sends the "
                       "audio stream's own SR, as libwebrtc's audio RtpRtcp module, which the audio side needs. On `issue_77_av_sync_clean_link` "
-                      "the A/V offset median goes from -53 to -16 ms (seed 1); `sm_compare` sets libwebrtc's `sync_group` for the same scenario. #77 step 3 makes `av_sync` the test bench default on both stacks (scenario `av_sync off` keeps the old behaviour); the receive streams' `Syncable` glue was checked against `audio/channel_receive.cc` and `audio/audio_receive_stream.cc` (parity inventory 8.2a). Packets restored from RTX or recovered by FEC no longer move the video stream's latest received packet, as `RtpVideoStreamReceiver2` skips `recovered()` packets; before, a late retransmission looked like a 300 ms video delay and sync over-delayed audio (`issue_127_all_v2_no_stall` audio jitter buffer p95 350 -> 230 ms, libwebrtc 235)."),
+                      "the A/V offset median goes from -53 to -16 ms (seed 1); `sm_compare` sets libwebrtc's `sync_group` for the same scenario. #77 step 3 makes `av_sync` the test bench default on both stacks (scenario `av_sync off` keeps the old behaviour); the receive streams' `Syncable` glue was checked against `audio/channel_receive.cc` and `audio/audio_receive_stream.cc` (parity inventory 8.2a). Packets restored from RTX or recovered by FEC no longer move the video stream's latest received packet, as `RtpVideoStreamReceiver2` skips `recovered()` packets; before, a late retransmission looked like a 300 ms video delay and sync over-delayed audio (`issue_127_all_v2_no_stall` audio jitter buffer p95 350 -> 230 ms, libwebrtc 235). #821 checked the pairing against `Call::ConfigureSync` (`call/call.cc`): the session's pairing is the same for its one `av_sync` group, and `MediaSyncGroups` now pairs by sync group as `ConfigureSync` does (first audio with the first video only, none for an empty group, re-paired on removal) instead of the lowest SSRC of each kind per CNAME; `StreamSync.GroupPairsTheFirstAudioWithTheFirstVideoOnly`, `StreamSync.EmptySyncGroupIsNeverPaired`, `StreamSync.RemovingOrMovingAStreamReconfiguresItsGroups` and `Session.AvSyncPairsTheFirstAudioAndVideoReceiveStreams` pin it."),
     dict(id="8.3", slug="capture-time", title="Absolute capture time and glass-to-glass latency",
          problems=["Capture-to-render latency measurement -> absolute capture time extension, timing extensions"],
          headers=["sync/capture_time.h"], unit=["CaptureTime"], e2e=["E2E_CaptureTime"],
@@ -1590,7 +1669,11 @@ ALGORITHMS = [
                   "requests reach the module that acts on them.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#9-rtp-session-layer) for the differences from libwebrtc. Follows libwebrtc's RTCPSender and RTCPReceiver for the report interval (1 s with video, 5 s "
                "without, randomization 0.5 to 1.5x, first report at half the nominal interval with no random draw, #360) and for the compound layout "
-               "(SR or RR first, SDES CNAME after it). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
+               "(SR or RR first, SDES CNAME after it: every SR carries SDES, with an empty CNAME if none was set, and an RR carries it "
+               "only when the module has a CNAME, RTCPSender::PrepareReport, rtcp_sender.cc:713; rtp::Session's RR stands for libwebrtc's "
+               "receive-only module, which has no CNAME, so it carries no SDES, issue #820). A BYE goes out with the full report and last "
+               "in its compound (rtcp_sender.cc:631-650); like libwebrtc M157, which never sets kRtcpBye, the session never sends one "
+               "(issue #820). Reports are timed as (issue #76 group 3; the fixed-grid v1 and "
                "the `rtcp` switch were deleted in #167) "
                "RTCPSender::ComputeTimeUntilNextReport: whole milliseconds drawn from [0.5, 1.5] x the minimum with libwebrtc's `webrtc::Random` (xorshift64*, `XorshiftRandom`; rtc_base/random.cc) seeded as `RTCPSender::random_` is, with the clock in microseconds when the engine is built (the caller passes it in; the test bench passes sm_compare's clock start to every engine, so both stacks draw the same intervals, issue #517), at least "
                "1 ms, and min(360 s / kbit/s, interval) for a video sender above 72 kbit/s; the rate is the sender's egress rate over 1 s, every packet type with its RTP header, as `RtpSenderEgress::GetSendRates(now).Sum()` (issue #217). A report due within 100 ms is sent ahead of a video keyframe (RTCPSender::TimeToSendRTCPReport, issue #101). NACK, PLI, FIR and loss notification carry the full SR/RR (report blocks) and SDES and restart the report timer, as RTCPSender::PrepareReport does in compound mode; transport-cc and REMB keep an empty leading RR where libwebrtc's SendCombinedRtcpPacket sends none (issue #201). With `xr_rrtr` (libwebrtc's `rtcp_xr.receiver_reference_time_report`) a receive-only engine adds an RFC 3611 RRTR to every report and takes the RTT from the sender's DLRR echo (RTCPSender::BuildExtendedReports, RTCPReceiver::HandleXrDlrrReportBlock); every engine echoes the RRTRs it received in a DLRR on its next report, and the XR goes last in the compound (issue #356). Differs in having one engine per session where libwebrtc has "
@@ -1605,6 +1688,10 @@ ALGORITHMS = [
                       "block alone every 5 s, no SDES, and the video compounds carry only the video and RTX blocks; on seed 1 the "
                       "sender's audio report blocks match libwebrtc's in number and time on high_jitter, random_loss_5pct and "
                       "clean_link (6 of 6; [fix record](../../fixes/484-audio-report-blocks.md)). "
+                      "#820: the SDES CNAME, BYE and FIR sequence-number send rules compared with rtcp_sender.cc; SDES ported "
+                      "(unit.RtcpEngine.SenderReportCarriesSdesEvenWithoutACname, ReceiverReportCarriesSdesOnlyWithACname, "
+                      "ByeGoesLastInACompoundWithTheFullReport, unit.Session.SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes) "
+                      "and checked both ways in sm_rtcp_interop. "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

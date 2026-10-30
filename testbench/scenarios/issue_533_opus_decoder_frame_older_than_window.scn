@@ -11,3 +11,7 @@ duration 20s
 video off
 at 0s jitter=2s
 expect audio.concealed_pct < 100
+# Issue #783: NetEq keeps a packet more than 5 s late and plays it as a future packet
+# (expand, then merge back to it), as DiscardOldPackets' 5 s horizon and DecisionLogic do.
+# libwebrtc conceals 24.9-32.5% on seeds 1-10 (28.3 on seed 1); before #783 we concealed 35.0.
+expect audio.concealed_pct < 33

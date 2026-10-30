@@ -228,7 +228,11 @@ ReceivedKind RtpReceiver::OnVideoRtp(const RtpPacket& p, Timestamp now, bool rec
   return is_fec ? ReceivedKind::kFec : ReceivedKind::kMedia;
 }
 
-void RtpReceiver::OnEmptyPacket(uint16_t seq, Timestamp now) {
+void RtpReceiver::OnEmptyPacket(uint16_t wire_seq, Timestamp now) {
+  // ReceivePacket / ParseAndHandleEncapsulatingHeader: an empty packet goes through
+  // UnwrapSequenceNumberOrRecover without a video header before NotifyReceiverOfEmptyPacket.
+  if (!UnwrapSequenceNumberOrRecover(wire_seq, 0, nullptr, now)) return;
+  const uint16_t seq = static_cast<uint16_t>(wire_seq + seq_shift_);
   TrackSequence(seq);
   if (cfg_.nack) {
     nack_.OnReceivedPacket(seq, false, now);
@@ -241,8 +245,73 @@ void RtpReceiver::OnEmptyPacket(uint16_t seq, Timestamp now) {
 // (RtpVideoStreamReceiver2's RtcpFeedbackBuffer sends them once the packet is handled), not at the next
 // 20 ms process tick.
 void RtpReceiver::SendSeqNumNacks(Timestamp now) {
-  auto batch = nack_.GetSeqNumNackBatch(now);
-  feedback_.nacks.insert(feedback_.nacks.end(), batch.begin(), batch.end());
+  AppendNacks(nack_.GetSeqNumNackBatch(now));
+}
+
+void RtpReceiver::AppendNacks(const std::vector<uint16_t>& batch) {
+  for (uint16_t seq : batch) feedback_.nacks.push_back(static_cast<uint16_t>(seq - seq_shift_));
+}
+
+bool RtpReceiver::UnwrapSequenceNumberOrRecover(uint16_t seq, uint32_t timestamp, const VideoPayloadInfo* info,
+                                                Timestamp now) {
+  if (!cfg_.seq_num_discontinuity) return true;
+  // kPacketBufferMaxSize (rtp_video_stream_receiver2.cc:103): PacketBuffer cannot recover dependencies
+  // across more packets than it can retain.
+  constexpr int64_t kPacketBufferMaxSize = 2048;
+  const bool is_media = info != nullptr;
+  const bool starts_frame = is_media && info->frame_start;
+  const bool is_keyframe = is_media && info->keyframe;
+  const bool large_backward_jump =
+      newest_media_seq_.has_value() && *newest_media_seq_ - rtp_seq_unwrap_.PeekUnwrap(seq) > kPacketBufferMaxSize;
+  // An RTP timestamp newer than any received media corroborates that this is resumed media, rather
+  // than a severely reordered packet from an old frame.
+  const bool timestamp_is_newer = newest_media_timestamp_.has_value() && AheadOf(timestamp, *newest_media_timestamp_);
+  if (is_media && large_backward_jump && timestamp_is_newer && !waiting_for_keyframe_after_discontinuity_) {
+    waiting_for_keyframe_after_discontinuity_ = true;
+    ++stats_.seq_num_discontinuities;
+    SM_EVENT(cfg_.events, now, "rtp_receiver", "seq_num_discontinuity", seq, *newest_media_seq_);
+  }
+  if (waiting_for_keyframe_after_discontinuity_) {
+    // Re-anchor only at a frame boundary. Earlier reordered packets can be recovered by NACK. A
+    // non-boundary packet that starts recovery also requests a keyframe.
+    if (!(starts_frame && is_keyframe && timestamp_is_newer)) {
+      if (next_discontinuity_request_ < now) {
+        keyframes_.OnExternalRequest(now, "trigger_seq_num_discontinuity");
+        next_discontinuity_request_ = now + cfg_.keyframe.max_wait_for_keyframe;
+      }
+      ++stats_.seq_num_discontinuity_dropped;
+      return false;
+    }
+    // Drop state from the previous epoch and anchor at the recovery keyframe. The packet buffer and the
+    // NACK list start again; the frame ids continue (see seq_shift_).
+    packet_buffer_.Clear();
+    nack_ = loss::NackTracker(NackCfg(cfg_));
+    nacked_seqs_.clear();
+    keyframes_.ResetPacketReceiveTimes();
+    last_received_rtp_time_ = Timestamp::MinusInfinity();
+    waiting_for_keyframe_after_discontinuity_ = false;
+    next_discontinuity_request_ = Timestamp::MinusInfinity();
+    rtp_seq_unwrap_.Reset();
+    newest_media_seq_ = rtp_seq_unwrap_.Unwrap(seq);
+    newest_media_timestamp_ = timestamp;
+    if (highest_seq_ >= 0) seq_shift_ = static_cast<uint16_t>(highest_seq_ + 1 - seq);
+    ++stats_.seq_num_reanchors;
+    SM_EVENT(cfg_.events, now, "rtp_receiver", "seq_num_reanchor", seq, seq_shift_);
+    return true;
+  }
+  // Do not let padding, FEC, or old media move the unwrapper to an ambiguous epoch. A later media
+  // packet can corroborate the discontinuity.
+  if (large_backward_jump) {
+    ++stats_.seq_num_discontinuity_dropped;
+    return false;
+  }
+  const int64_t unwrapped = rtp_seq_unwrap_.Unwrap(seq);
+  if (is_media) {
+    // UpdateNewestMediaSeqNumAndTimestamp.
+    if (!newest_media_seq_ || unwrapped > *newest_media_seq_) newest_media_seq_ = unwrapped;
+    if (!newest_media_timestamp_ || AheadOf(timestamp, *newest_media_timestamp_)) newest_media_timestamp_ = timestamp;
+  }
+  return true;
 }
 
 void RtpReceiver::TrackSequence(uint16_t seq) {
@@ -289,14 +358,23 @@ H264SpsPpsTracker::Action H264SpsPpsTracker::CopyAndFixBitstream(std::span<const
   return Action::kInsert;
 }
 
-void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered) {
-  VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(p) : VideoPayloadInfo{};
+void RtpReceiver::OnVideoMedia(const RtpPacket& wire, Timestamp now, bool recovered) {
+  VideoPayloadInfo info = cfg_.parser ? cfg_.parser->Parse(wire) : VideoPayloadInfo{};
   if (!info.valid) {
     ++stats_.invalid_payload;
-    SM_EVENT(cfg_.events, now, "rtp_receiver", "invalid_payload", p.seq, p.payload.size());
+    SM_EVENT(cfg_.events, now, "rtp_receiver", "invalid_payload", wire.seq, wire.payload.size());
     return;
   }
-  if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(p.seq, now);
+  // ReceivePacket: UnwrapSequenceNumberOrRecover after the depacketizer, before NACK and the packet buffer.
+  if (!UnwrapSequenceNumberOrRecover(wire.seq, wire.timestamp, &info, now)) return;
+  if (cfg_.media_observer) cfg_.media_observer->OnVideoMediaPacket(wire.seq, now);
+  // From here on, sequence numbers are the receiver's (seq_shift_ after a re-anchor).
+  std::optional<RtpPacket> shifted;
+  if (seq_shift_ != 0) {
+    shifted = wire;
+    shifted->seq = static_cast<uint16_t>(wire.seq + seq_shift_);
+  }
+  const RtpPacket& p = shifted ? *shifted : wire;
   // OnReceivedPayloadData: "Try to extrapolate absolute capture time if it is missing", at
   // kVideoPayloadTypeFrequency for every video packet (rtp_video_stream_receiver2.cc:780-795).
   packet_capture_times_[p.seq % packet_capture_times_.size()] =
@@ -348,6 +426,9 @@ void RtpReceiver::OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered
   // the parameter-set packet of the same access unit.
   if (packet_buffer_.Insert(p, info.frame_start, now, info.frame_start && info.idr && !info.sps && !info.pps,
                             info.idr) == timing::InsertResult::kBufferCleared) {
+    // OnInsertedPacket's buffer_cleared (rtp_video_stream_receiver2.cc:1117-1123).
+    keyframes_.ResetPacketReceiveTimes();
+    last_received_rtp_time_ = Timestamp::MinusInfinity();
     keyframes_.OnExternalRequest(now, "trigger_packet_buffer_cleared");
   }
 }
@@ -369,20 +450,39 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
   if (!cfg_.decoder) return;
   // NetEqImpl::InsertPacketInternal: each RED block (red level 0 for the
   // primary, 1 for the redundant one) goes through the decoder's ParsePayload.
-  // With version 2, AudioDecoderOpusImpl::ParsePayload puts the frame's
-  // in-band FEC first, at the previous frame's timestamp and codec level 1;
-  // the jitter buffer keeps the higher priority of two at one timestamp.
-  const bool neteq_v2 = cfg_.jitter_buffer.version >= 2;
+  // AudioDecoderOpusImpl::ParsePayload puts the frame's in-band FEC first,
+  // at the previous frame's timestamp and codec level 1; the jitter buffer
+  // keeps the higher priority of two at one timestamp. With a decoder that
+  // gives a frame's duration (AudioDecoder::PacketDuration), the jitter
+  // buffer gets the frame still encoded, and it is decoded when NetEq's
+  // DecodeLoop would decode it: at playout, in timestamp order (#783).
+  AudioDecoder* decoder = cfg_.decoder;
   auto decode = [&](std::span<const uint8_t> frame, uint32_t ts, int red_level) {
-    if (neteq_v2) {
-      if (const uint32_t d = cfg_.decoder->FecDuration(frame); d > 0) {
-        if (auto fec = cfg_.decoder->DecodeFec(frame, ts - d)) {
-          ++stats_.audio_fec_frames;
-          jitter_buffer_.InsertPacket(ts - d, std::move(*fec), now, {1, red_level});
-        }
+    if (const uint32_t d = decoder->FecDuration(frame); d > 0) {
+      if (decoder->PacketDuration(frame) > 0) {
+        ++stats_.audio_fec_frames;
+        jitter_buffer_.InsertPacket(
+            ts - d, d,
+            [decoder, payload = std::vector<uint8_t>(frame.begin(), frame.end()), fec_ts = ts - d] {
+              return decoder->DecodeFec(payload, fec_ts).value_or(std::vector<float>{});
+            },
+            now, {1, red_level});
+      } else if (auto fec = decoder->DecodeFec(frame, ts - d)) {
+        ++stats_.audio_fec_frames;
+        jitter_buffer_.InsertPacket(ts - d, std::move(*fec), now, {1, red_level});
       }
     }
-    auto pcm = cfg_.decoder->Decode(frame, ts);
+    if (const uint32_t samples = decoder->PacketDuration(frame); samples > 0) {
+      ++stats_.audio_frames;
+      jitter_buffer_.InsertPacket(
+          ts, samples,
+          [decoder, payload = std::vector<uint8_t>(frame.begin(), frame.end()), ts] {
+            return decoder->Decode(payload, ts).value_or(std::vector<float>{});
+          },
+          now, {0, red_level});
+      return;
+    }
+    auto pcm = decoder->Decode(frame, ts);
     if (!pcm) {
       ++stats_.audio_decode_failures;
       return;
@@ -391,7 +491,14 @@ void RtpReceiver::OnAudioMedia(const RtpPacket& p, Timestamp now) {
     jitter_buffer_.InsertPacket(ts, std::move(*pcm), now, {0, red_level});
   };
   if (cfg_.red) {
-    for (const auto& b : red_.OnPacket(p.payload, p.timestamp)) decode(b.payload, b.timestamp, b.primary ? 0 : 1);
+    // NetEqImpl::InsertPacketInternal: RedPayloadSplitter::SplitRed puts the
+    // primary first, then the redundant blocks newest to oldest, and every
+    // block goes on, copies included (the packet buffer and the arrival
+    // history drop them). A redundant block that NetEq has not seen yet so
+    // arrives after a newer timestamp, and PacketArrived counts it as
+    // reordered (issue #722).
+    for (const auto& b : red_.SplitForNetEq(p.payload, p.timestamp, p.payload_type))
+      decode(b.payload, b.timestamp, b.red_level);
   } else {
     decode(p.payload, p.timestamp, 0);
   }
@@ -491,7 +598,7 @@ void RtpReceiver::ClearFrameBuffer(Timestamp now, const char* reason, int64_t id
 }
 
 std::optional<sync::Syncable::Info> RtpReceiver::SyncInfo() const {
-  if (!last_sr_ || !last_received_rtp_timestamp_) return std::nullopt;
+  if (!last_sr_ || !last_received_rtp_timestamp_ || !last_received_rtp_time_.IsFinite()) return std::nullopt;
   if (cfg_.video && cfg_.timing.version < 2) return std::nullopt;  // FrameScheduler has no VCMTiming.
   sync::Syncable::Info info;
   info.capture_time_ntp = last_sr_->ntp;
@@ -601,8 +708,7 @@ void RtpReceiver::Process(Timestamp now) {
     render_pending_.erase(it);
   }
   if (cfg_.nack) {
-    auto batch = nack_.GetNackBatch(now);
-    if (!batch.empty()) feedback_.nacks.insert(feedback_.nacks.end(), batch.begin(), batch.end());
+    AppendNacks(nack_.GetNackBatch(now));
   }
 }
 
@@ -644,6 +750,9 @@ void RtpReceiver::ExportMetrics(MetricsWriter& w) const {
   w.Counter("frame_buffer_clears", stats_.frame_buffer_clears);
   w.Counter("reassembly_failures", stats_.reassembly_failures);
   w.Counter("idr_without_parameter_sets", stats_.idr_without_parameter_sets);
+  w.Counter("seq_num_discontinuities", stats_.seq_num_discontinuities);
+  w.Counter("seq_num_discontinuity_dropped", stats_.seq_num_discontinuity_dropped);
+  w.Counter("seq_num_reanchors", stats_.seq_num_reanchors);
   w.Counter("parameter_sets_without_ids", stats_.parameter_sets_without_ids);
   w.Counter("gaps", stats_.gaps);
   w.Counter("missing", stats_.missing);

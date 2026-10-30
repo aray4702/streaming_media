@@ -2,8 +2,24 @@
 // sync buffer pre-loaded with a synthetic voiced signal instead of
 // testfile32kHz.pcm, plus tests of the ported decisions (lags, mute factor,
 // mute slope floors, onset) and of the jitter buffer's use of them.
+//
+// `NetEqExpand, BitExactWithLibwebrtc` (#783): the golden hashes come from
+// libwebrtc itself: compare/webrtc/reference/modules/audio_coding/neteq/
+// expand.cc, background_noise.cc, random_vector.cc, dsp_helper.cc,
+// cross_correlation.cc, sync_buffer.cc, audio_multi_vector.cc and
+// audio_vector.cc with the signal processing library's C files (and
+// spl_sqrt_floor.c), compiled unchanged against the prebuilt's headers
+// (stubs for rtc_base/checks.h, DCHECKs off as in a release build, and for
+// StatisticsCalculator), driven with ForEachExpandCase() below on a SyncBuffer
+// of the case's samples. Each case runs 6 expands, SetParametersForMerge-
+// AfterExpand and one more (Merge's), then Reset and 9 more on the sync
+// buffer they extended. Each expand hashes (FNV-1a step h = (h ^ v) * prime)
+// its length, every output sample and the sync buffer's last overlap samples
+// as uint16, the mute factor and Muted(). Expand is integer only, so the
+// hashes hold on every platform.
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "sm/timing/audio_jitter_buffer.h"
@@ -35,6 +51,68 @@ size_t ProcessInto(NetEqExpand& expand, std::vector<float>& sync) {
   sync.insert(sync.end(), out.begin(), out.end());
   return n;
 }
+
+// Integer-only test signals (the time stretch test's GoldenSignal).
+std::vector<int16_t> GoldenSignal(int kind, size_t n, int64_t p, int64_t a, uint32_t seed) {
+  std::vector<int16_t> x(n);
+  uint32_t s = seed;
+  for (size_t i = 0; i < n; ++i) {
+    s = s * 1664525u + 1013904223u;
+    const int64_t noise = (static_cast<int64_t>(s >> 16) - 32768) * a / 32768;
+    const int64_t pp = kind == 3 ? p + static_cast<int64_t>(i / 64) : p;
+    const int64_t ph = static_cast<int64_t>(i + seed) % pp;
+    const int64_t tri = ph < pp / 2 ? (4 * a * ph) / pp - a : 3 * a - (4 * a * ph) / pp;
+    const int64_t pp3 = pp / 3 > 1 ? pp / 3 : 2;
+    const int64_t ph3 = static_cast<int64_t>(i + seed) % pp3;
+    const int64_t tri3 = (ph3 < pp3 / 2 ? (4 * a * ph3) / pp3 - a : 3 * a - (4 * a * ph3) / pp3) / 3;
+    int64_t v = 0;
+    switch (kind) {
+      case 0: v = tri + tri3; break;
+      case 1: v = noise; break;
+      case 2: v = tri + tri3 + noise / 4; break;
+      default:
+        v = (tri + tri3) * 2;
+        if (i % 211 < 2) v = (i & 1) ? 32767 : -32768;
+        break;
+    }
+    x[i] = static_cast<int16_t>(std::clamp<int64_t>(v, -32768, 32767));
+  }
+  return x;
+}
+
+// The sync buffer of every expand case at `fs_hz`: 4 signal kinds x 6
+// pitch periods x 3 amplitudes x 4 envelopes (flat; an onset, the last 10 ms
+// 3x louder; a decay, the last 10 ms at 1/3; silence before the last 4 ms),
+// plus an all-zero buffer.
+template <class F>
+void ForEachExpandCase(int fs_hz, F f) {
+  const size_t m = static_cast<size_t>(fs_hz / 8000);
+  const size_t pitches[] = {20, 33, 47, 64, 97, 118};
+  const int64_t amps[] = {300, 4000, 14000};
+  uint32_t seed = 1;
+  for (int kind = 0; kind < 4; ++kind) {
+    for (size_t p : pitches) {
+      for (int64_t a : amps) {
+        for (int envelope = 0; envelope < 4; ++envelope) {
+          ++seed;
+          std::vector<int16_t> sync = GoldenSignal(kind, 600 * m, static_cast<int64_t>(p * m), a, seed);
+          const size_t n = sync.size();
+          for (size_t i = 0; i < n; ++i) {
+            int32_t v = sync[i];
+            if (envelope == 1 && i >= n - 80 * m) v = std::clamp(v * 3, -32768, 32767);
+            if (envelope == 2 && i >= n - 80 * m) v = v / 3;
+            if (envelope == 3 && i < n - 32 * m) v = 0;
+            sync[i] = static_cast<int16_t>(v);
+          }
+          f(sync);
+        }
+      }
+    }
+  }
+  f(std::vector<int16_t>(600 * m, 0));
+}
+
+uint64_t Mix(uint64_t h, uint64_t v) { return (h ^ v) * 1099511628211ull; }
 
 }  // namespace
 
@@ -187,7 +265,6 @@ SM_TEST(NetEqExpand, UnvoicedMutesFast) {
 // overlap as lookahead: every 10 ms of a gap is an expand.
 SM_TEST(AudioJitterBufferNetEqV2, ExpandCoversEveryTickOfAGap) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   std::vector<float> out(160);
   const std::vector<float> tone = Voiced(16000, 200, 320 * 400);
@@ -211,7 +288,11 @@ SM_TEST(AudioJitterBufferNetEqV2, ExpandCoversEveryTickOfAGap) {
   }
   SM_EXPECT_EQ(expands, longest);
   SM_EXPECT_GT(expands, 80);
-  SM_EXPECT_GE(jb.stats().concealed_samples, static_cast<uint64_t>(expands) * 160);
+  // Every tick after the first is wholly expanded audio, all of it counted
+  // as concealed; the first may still play decoded audio left in the sync
+  // buffer, which libwebrtc doesn't count either (StatisticsCalculator::
+  // ExpandedVoiceSamples counts what Expand generates).
+  SM_EXPECT_GE(jb.stats().concealed_samples, static_cast<uint64_t>(expands - 1) * 160);
   SM_EXPECT_EQ(jb.stats().concealment_events, 1u);
   // Playout resumes after it.
   for (int i = 100; i < 120; ++i) {
@@ -221,4 +302,48 @@ SM_TEST(AudioJitterBufferNetEqV2, ExpandCoversEveryTickOfAGap) {
   }
   SM_EXPECT_GT(jb.stats().ops[static_cast<int>(AudioOperation::kNormal)] + jb.stats().ops[static_cast<int>(AudioOperation::kMerge)],
                100u);
+}
+
+// Expand::Process bit for bit with libwebrtc's expand.cc (see the top of this
+// file): AnalyzeSignal's correlation, peak and distortion search, Levinson-
+// Durbin, residual gain and mute slope, and Process's voiced/unvoiced mix,
+// overlap-add and muting.
+SM_TEST(NetEqExpand, BitExactWithLibwebrtc) {
+  const struct {
+    int fs_hz;
+    uint64_t hash;
+  } golden[] = {{8000, 0xcd6aa40582f22af5ull},
+                {16000, 0x7c7e4d711c484cafull},
+                {32000, 0xfa17381805bed086ull},
+                {48000, 0x03fa4dd22028126eull}};
+  for (const auto& g : golden) {
+    uint64_t h = 1469598103934665603ull;
+    size_t n = 0;
+    ForEachExpandCase(g.fs_hz, [&](const std::vector<int16_t>& signal) {
+      std::vector<float> sync(signal.size());
+      for (size_t i = 0; i < signal.size(); ++i) sync[i] = static_cast<float>(signal[i]) / 32768.0f;
+      NetEqExpand expand(g.fs_hz);
+      const size_t overlap = expand.overlap_length();
+      auto step = [&] {
+        std::vector<float> out;
+        expand.Process(sync, out);
+        h = Mix(h, out.size());
+        for (float v : out) h = Mix(h, static_cast<uint16_t>(static_cast<int16_t>(std::lround(v * 32768.0f))));
+        for (size_t i = sync.size() - overlap; i < sync.size(); ++i) {
+          h = Mix(h, static_cast<uint16_t>(static_cast<int16_t>(std::lround(sync[i] * 32768.0f))));
+        }
+        h = Mix(h, static_cast<uint16_t>(expand.MuteFactor()));
+        h = Mix(h, expand.Muted() ? 1 : 0);
+        sync.insert(sync.end(), out.begin(), out.end());
+      };
+      for (int i = 0; i < 6; ++i) step();
+      expand.SetParametersForMergeAfterExpand();
+      step();
+      expand.Reset();
+      for (int i = 0; i < 9; ++i) step();
+      ++n;
+    });
+    SM_EXPECT_EQ(n, 289u);
+    SM_EXPECT_EQ(h, g.hash);
+  }
 }

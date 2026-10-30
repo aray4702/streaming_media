@@ -185,7 +185,6 @@ SM_TEST(NetEqBackgroundNoise, NormalMuteFactor) {
 SM_TEST(AudioJitterBufferNetEqV2, NormalAfterExpandUnmutesFromTheNoiseLevel) {
   auto first_output_energy = [](const std::vector<float>& preface) {
     AudioJitterBufferConfig cfg;
-    cfg.version = 2;
     AudioJitterBuffer jb(cfg);
     std::vector<float> out(160);
     const std::vector<float> voice = Voiced(16000, 200, 320 * 80, 0.3);

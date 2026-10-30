@@ -23,9 +23,14 @@
 // falling after the 4th call goes to 0 (Muted()). DecisionLogic reads the
 // mute factor: decoding is postponed after an expand below 0.5.
 //
-// The signal arithmetic is float on the int16 scale; the factors that drive
-// decisions (mute factor and voice mix factor in Q14, mute slope in Q20,
-// lags) keep libwebrtc's integer arithmetic.
+// All of it is libwebrtc's fixed-point arithmetic on the int16 samples
+// (#783): the 4 kHz correlation normalized to 14 bits, DspHelper's
+// PeakDetection and MinDistortion, WebRtcSpl_LevinsonDurbin for the AR
+// filter (Q12), the residual gain from WebRtcSpl_FilterMAFastQ12, the
+// unvoiced part through WebRtcSpl_FilterARFastQ12, and the Q14 crossfade
+// and muting. On int16 input it is bit-exact with libwebrtc's expand.cc
+// (the unit test's golden hashes come from the reference sources compiled
+// unchanged).
 //
 // NetEqBackgroundNoise ports background_noise.cc (one channel). After every
 // GetAudio whose operation wrote decoded audio unchanged (normal, failed
@@ -168,8 +173,9 @@ class NetEqExpand {
   void AnalyzeSignal(std::span<const float> sync, int16_t* random_vector);
   void InitializeForAnExpandPeriod();
   void UpdateLagIndex();
-  // Expand::Correlation: 54 lags of the 4 kHz signal from lag 10.
-  void Correlation(std::span<const float> history, float* output) const;
+  // Expand::Correlation: 54 lags of the 4 kHz signal from lag 10, from the
+  // end of `input`, normalized to 14 bits.
+  void Correlation(const int16_t* input, size_t input_length, int16_t* output) const;
   void GenerateRandomVector(int16_t seed_increment, size_t length, int16_t* random_vector);
 
   int fs_hz_;
@@ -187,12 +193,13 @@ class NetEqExpand {
   size_t expand_duration_samples_ = 0;
   size_t last_outage_duration_samples_ = 0;
   // Expand::ChannelParameters (one channel).
-  std::vector<float> expand_vector0_;
-  std::vector<float> expand_vector1_;
+  std::vector<int16_t> expand_vector0_;
+  std::vector<int16_t> expand_vector1_;
   int16_t mute_factor_ = 16384;
-  std::array<float, kUnvoicedLpcOrder + 1> ar_filter_{1, 0, 0, 0, 0, 0, 0};
-  std::array<float, kUnvoicedLpcOrder> ar_filter_state_{};
-  float ar_gain_ = 0;  // Scale of the random vector: residual rms / 8192.
+  std::array<int16_t, kUnvoicedLpcOrder + 1> ar_filter_{};  // Q12; all zero until the first stable estimate.
+  std::array<int16_t, kUnvoicedLpcOrder> ar_filter_state_{};
+  int16_t ar_gain_ = 0;  // The random vector's scale: residual rms in Q(ar_gain_scale_ - 13).
+  int ar_gain_scale_ = 0;
   int16_t voice_mix_factor_ = 0;
   int16_t current_voice_mix_factor_ = 0;
   bool onset_ = false;
@@ -211,6 +218,14 @@ class NetEqExpand {
 // the first 8 ms, unmuting by at least 4194 / (fs/8000) in Q20 per sample, and
 // is crossfaded in linearly over min(60 * fs/8000 samples, what is left of
 // the expansion, the decoded length).
+//
+// After GetExpandedSignal (MergeExpanded) it is libwebrtc's fixed-point
+// arithmetic on the int16 samples (#783): Downsample's Q12 filter rounded and
+// saturated, CrossCorrelationWithAutoShift normalized to 14 bits for
+// DspHelper::PeakDetection, and RampSignal, UnmuteSignal and CrossFade
+// rounded in Q14. On int16 input it is bit-exact with libwebrtc's merge.cc
+// (the unit test's golden hashes come from the reference sources compiled
+// unchanged).
 class NetEqMerge {
  public:
   static constexpr size_t kMaxSampleRate = 48000;
@@ -237,22 +252,33 @@ class NetEqMerge {
   // when the expansion is the louder.
   static int16_t SignalScaling(const int16_t* input, size_t input_length, const int16_t* expanded, int fs_mult);
 
+  // The int16 part of Merge::Process, after GetExpandedSignal: `expanded`
+  // is the sync buffer's `old_length` unplayed samples followed by the
+  // expansion (period `expand_period`) repeated to at least 202 * fs/8000
+  // samples, and the other arguments are Expand's state. Returns the merged
+  // length (merged()); its first `old_length` samples replace the unplayed
+  // ones.
+  size_t MergeExpanded(std::span<const int16_t> input, std::span<const int16_t> expanded, size_t old_length,
+                       size_t expand_period, int16_t expand_mute_factor, size_t max_lag, size_t overlap_length);
+  const std::vector<int16_t>& merged() const { return temp_data_; }
+
   size_t old_length() const { return old_length_; }
   size_t best_correlation_index() const { return best_correlation_index_; }
   int16_t mute_factor() const { return mute_factor_; }  // Q14, where the decoded audio started.
 
  private:
-  // Merge::Downsample: both signals to 4 kHz (int16 scale).
-  void Downsample(const float* input, size_t input_length, const float* expanded, size_t expanded_length);
-  size_t CorrelateAndPeakSearch(size_t start_position, size_t input_length, size_t expand_period,
-                                const NetEqExpand& expand) const;
+  // Merge::Downsample: both signals to 4 kHz.
+  void Downsample(const int16_t* input, size_t input_length, const int16_t* expanded, size_t expanded_length);
+  size_t CorrelateAndPeakSearch(size_t start_position, size_t input_length, size_t expand_period, size_t max_lag,
+                                size_t overlap_length) const;
 
   int fs_hz_;
   int fs_mult_;
   size_t timestamps_per_call_;
-  float expanded_downsampled_[kExpandDownsampLength] = {};
-  float input_downsampled_[kInputDownsampLength] = {};
-  std::vector<float> expanded_, expanded_temp_, temp_data_;
+  int16_t expanded_downsampled_[kExpandDownsampLength] = {};
+  int16_t input_downsampled_[kInputDownsampLength] = {};
+  std::vector<float> expanded_, expanded_temp_;
+  std::vector<int16_t> temp_data_;
   size_t old_length_ = 0;
   size_t best_correlation_index_ = 0;
   int16_t mute_factor_ = 16384;

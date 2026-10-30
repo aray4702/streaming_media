@@ -19,9 +19,16 @@ Pacer::Pacer(PacerConfig cfg)
       hold_back_packets_(cfg.hold_back_packets),
       pc_(std::make_unique<PacingController>(ControllerConfig(cfg))) {}
 
+// TaskQueuePacedSender::PostMaybeProcessPackets (task_queue_paced_sender.cc:217-225): SetConfig, Resume and
+// SetCongested post a pass only if the queue holds packets. A padding rate set on an empty queue waits for the
+// next enqueue or the pending timer (issue #813).
+void Pacer::PostMaybeProcessPackets() {
+  if (pc_->QueuePackets() > 0) kick_ = true;
+}
+
 void Pacer::SetPacingRates(DataRate pacing, DataRate padding) {
   pc_->SetPacingRates(pacing, padding);
-  kick_ = true;
+  PostMaybeProcessPackets();
 }
 void Pacer::Enqueue(PacedPacket p) {
   // TaskQueuePacedSender::EnqueuePackets: ExpFilter(0.95).Apply(1, size), then MaybeProcessPackets.
@@ -81,18 +88,16 @@ Timestamp Pacer::NextSendTime(Timestamp now) const {
   return next_process_time_.IsFinite() ? std::max(now, next_process_time_) : pc_->NextSendTime(now);
 }
 std::vector<PacedPacket> Pacer::TakeFlushed() { return pc_->TakeFlushed(); }
-void Pacer::Pause() {
-  pc_->Pause();
-  kick_ = true;
-}
+// TaskQueuePacedSender::Pause posts nothing; Resume posts as SetConfig does.
+void Pacer::Pause() { pc_->Pause(); }
 void Pacer::Resume() {
   pc_->Resume();
-  kick_ = true;
+  PostMaybeProcessPackets();
 }
 bool Pacer::paused() const { return pc_->paused(); }
 void Pacer::SetCongested(bool congested) {
   pc_->SetCongested(congested);
-  kick_ = true;
+  PostMaybeProcessPackets();
 }
 DataSize Pacer::QueueSize() const { return pc_->QueueSize(); }
 DataSize Pacer::QueueSizeData() const { return pc_->QueueSizeData(); }

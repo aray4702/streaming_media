@@ -16,47 +16,28 @@ const char* ToString(AudioOperation op) {
   return "?";
 }
 
-namespace {
-loss::PlcConfig PlcFor(int rate) {
-  loss::PlcConfig c;
-  c.sample_rate = rate;
-  return c;
-}
-TimeStretchConfig StretchFor(int rate) {
-  TimeStretchConfig c;
-  c.sample_rate = rate;
-  return c;
-}
-}  // namespace
-
 AudioJitterBuffer::AudioJitterBuffer(AudioJitterBufferConfig cfg)
     : cfg_(cfg),
-      delay_(cfg.delay),
       neteq_delay_(cfg.neteq_delay),
-      stretcher_(StretchFor(cfg.sample_rate)),
-      plc_(PlcFor(cfg.sample_rate)),
       expand_(cfg.sample_rate),
       merge_(cfg.sample_rate),
       time_stretch_(cfg.sample_rate) {
-  delay_.SetPacketDurationMs(cfg_.packet_ms);
   neteq_delay_.SetSampleRate(cfg_.sample_rate);
   decision_.SetSampleRate(cfg_.sample_rate);
 }
 
 int AudioJitterBuffer::TargetDelayMs() const {
   // DecisionLogic::TargetLevelMs applies the minimum delay itself.
-  if (cfg_.version >= 2) return neteq_delay_.TargetLevelMs();
-  return std::max(delay_.TargetDelayMs(), min_delay_ms_);
+  return neteq_delay_.TargetLevelMs();
 }
 
 int64_t AudioJitterBuffer::SpanSamples() const {
   if (queue_.empty()) return 0;
   const auto& last = *queue_.rbegin();
-  return last.first + static_cast<int64_t>(last.second.pcm.size()) - next_ts_;
+  return last.first + static_cast<int64_t>(last.second.samples) - next_ts_;
 }
 
 int AudioJitterBuffer::FilteredCurrentDelayMs() const {
-  if (cfg_.version < 2) return static_cast<int>(filtered_level_ms_);
   const int64_t delay_samples = decision_.GetFilteredBufferLevel() + static_cast<int64_t>(sync_.size());
   return static_cast<int>(delay_samples / (cfg_.sample_rate / 1000));
 }
@@ -68,7 +49,19 @@ double AudioJitterBuffer::CurrentLevelMs() const {
 
 void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Timestamp arrival,
                                      AudioPacketPriority priority) {
-  if (cfg_.version >= 2 && !NetEqSupportsSampleRate(cfg_.sample_rate)) {
+  const size_t samples = pcm.size();
+  Insert(rtp_ts, Packet{std::move(pcm), arrival, ticks_, priority, samples, {}});
+}
+
+void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, size_t samples, FrameDecoder decode, Timestamp arrival,
+                                     AudioPacketPriority priority) {
+  Insert(rtp_ts, Packet{{}, arrival, ticks_, priority, samples, std::move(decode)});
+}
+
+void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
+  const Timestamp arrival = pkt.arrival;
+  const AudioPacketPriority priority = pkt.priority;
+  if (!NetEqSupportsSampleRate(cfg_.sample_rate)) {
     // As libwebrtc, where no decoder exists for such a rate (#256): NetEq's
     // expand, merge and time stretch assume one of the four rates.
     ++stats_.packets_discarded_unsupported_rate;
@@ -77,51 +70,40 @@ void AudioJitterBuffer::InsertPacket(uint32_t rtp_ts, std::vector<float> pcm, Ti
   }
   int64_t ts = unwrapper_.Unwrap(rtp_ts);
   ++stats_.packets_received;
-  if (cfg_.version >= 2) {
-    // NetEqImpl::InsertPacketInternal: the packets that arrive before the
-    // first GetAudio are dropped from the statistics by the SoftReset that
-    // the new codec triggers there.
-    if (neteq_reset_done_) {
-      neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pcm.size()), cfg_.sample_rate, ticks_ * kMsPerTick);
-    }
-  } else {
-    delay_.Update(rtp_ts, cfg_.sample_rate, arrival);
+  // A late packet is kept: PacketBuffer::InsertPacket has no playout check,
+  // and NetEqImpl::GetDecision's DiscardOldPackets drops it (or, more than
+  // 5 s old, plays it as a future packet).
+  if (queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
+    // PacketBuffer::InsertPacket (packet_buffer.cc:162-177): a full buffer
+    // (NetEq::Config::max_packets_in_buffer, the capacity DelayConstraints
+    // assumes) is flushed completely before the new packet goes in (issue
+    // #331), and returns kFlushed. NetEqImpl::InsertPacketInternal then sets
+    // new_codec_ (neteq_impl.cc:369-372): the sync buffer and its timestamp
+    // stay (no FlushBuffers at the same rate) until the next decision
+    // restarts the timestamp at the next packet and soft-resets the
+    // controller (#773).
+    queue_.clear();
+    neteq_flush_pending_ = true;
+    ++stats_.buffer_flushes;
+    decision_.NotifyBufferFlush();
+    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
   }
-  if (started_ && ts < next_ts_) {
-    if (priority.codec_level > 0) return;
-    ++stats_.packets_discarded_late;
-    SM_EVENT(cfg_.events, arrival, "neteq", "late", static_cast<double>(next_ts_ - ts), ts);
-    return;
+  // NetEqImpl::InsertPacketInternal (neteq_impl.cc:387-389): the controller
+  // sees the packet only while new_codec_ is clear. The packets before the
+  // first GetAudio, and those between a flush and the next decision, are
+  // dropped from the statistics by the SoftReset that new_codec_ triggers.
+  if (neteq_reset_done_ && !neteq_flush_pending_) {
+    neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pkt.samples), cfg_.sample_rate, ticks_ * kMsPerTick);
   }
   if (auto it = queue_.find(ts); it != queue_.end()) {
     ++stats_.packets_duplicate;
     // PacketBuffer::InsertPacket: one packet per timestamp, the higher priority.
-    if (cfg_.version >= 2 && priority < it->second.priority) it->second = Packet{std::move(pcm), arrival, ticks_, priority};
+    if (priority < it->second.priority) it->second = std::move(pkt);
     return;
-  }
-  if (cfg_.version >= 2 && queue_.size() >= static_cast<size_t>(cfg_.neteq_delay.max_packets_in_buffer)) {
-    // PacketBuffer::InsertPacket (packet_buffer.cc): a full buffer (NetEq::
-    // Config::max_packets_in_buffer, the capacity DelayConstraints assumes)
-    // is flushed completely before the new packet goes in (issue #331).
-    queue_.clear();
-    next_ts_ = ts;
-    sync_.assign(expand_.overlap_length(), 0.0f);  // NetEqImpl::FlushBuffers.
-    ++stats_.buffer_flushes;
-    decision_.NotifyBufferFlush();
-    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
   }
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
-  queue_.emplace(ts, Packet{std::move(pcm), arrival, ticks_, priority});
-  if (cfg_.version < 2 && queue_.size() > cfg_.max_packets) {
-    // Far too much audio: drop everything but the newest few packets.
-    while (queue_.size() > 3) queue_.erase(queue_.begin());
-    next_ts_ = queue_.begin()->first;
-    sync_.clear();
-    ++stats_.buffer_flushes;
-    decision_.NotifyBufferFlush();
-    SM_EVENT(cfg_.events, arrival, "neteq", "flush", 0, ts);
-  }
+  queue_.emplace(ts, std::move(pkt));
 }
 
 AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* dst) {
@@ -129,6 +111,10 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   const int64_t ts = it->first;
   Packet pkt = std::move(it->second);
   queue_.erase(it);
+  if (pkt.decode) {
+    pkt.pcm = pkt.decode();
+    if (pkt.pcm.empty()) pkt.pcm.assign(pkt.samples, 0.0f);
+  }
   // NetEqImpl::DecodeLoop: the packet's RtpPacketInfo, which only the primary payload carries
   // (neteq_impl.cc:316-318, 1352-1354).
   if (pkt.priority.codec_level == 0 && pkt.priority.red_level == 0) {
@@ -140,7 +126,6 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   const uint64_t samples = pkt.pcm.size();
   stats_.jitter_buffer_delay_ms_samples += static_cast<uint64_t>((ticks_ - pkt.insert_tick) * kMsPerTick) * samples;
   stats_.jitter_buffer_emitted_count += samples;
-  if (cfg_.version < 2) plc_.OnGoodFrame(pkt.pcm);  // Keeps PLC history; crossfades after an expand.
   AudioOperation op = AudioOperation::kNormal;
   if (expanding_) {
     expanding_ = false;
@@ -152,46 +137,38 @@ AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* 
   return op;
 }
 
-bool AudioJitterBuffer::NextPacketReady() const {
-  return !queue_.empty() && queue_.begin()->first == next_ts_;
+void AudioJitterBuffer::DiscardOldPackets(int64_t limit, int64_t horizon_samples, Timestamp now) {
+  // PacketBuffer::IsObsoleteTimestamp: older than `limit`, and newer than
+  // `limit - horizon_samples` unless the horizon is 0.
+  auto it = queue_.begin();
+  while (it != queue_.end() && it->first < limit) {
+    if (horizon_samples != 0 && it->first <= limit - horizon_samples) {
+      ++it;
+      continue;
+    }
+    // PacketBuffer::LogPacketDiscarded: secondary (FEC) packets apart.
+    if (it->second.priority.codec_level == 0) {
+      ++stats_.packets_discarded_late;
+      SM_EVENT(cfg_.events, now, "neteq", "late", static_cast<double>(limit - it->first), it->first);
+    }
+    it = queue_.erase(it);
+  }
 }
 
-AudioOperation AudioJitterBuffer::MaybeStretch(Timestamp now) {
-  double level = CurrentLevelMs();
-  filtered_level_ms_ = 0.8 * filtered_level_ms_ + 0.2 * level;
-  if (!cfg_.time_stretch) return AudioOperation::kNormal;
-  const double target = TargetDelayMs();
-  const double low = target * 0.75;
-  const double high = std::max(target, low + cfg_.packet_ms);
-  const bool accelerate = filtered_level_ms_ > high;
-  const bool expand = filtered_level_ms_ < low;
-  if (!accelerate && !expand) return AudioOperation::kNormal;
-  // WSOLA needs 30 ms of decoded audio: decode ahead when packets allow.
-  while (sync_.size() < stretcher_.min_input() && NextPacketReady()) DecodeNext(now);
-  if (sync_.size() < stretcher_.min_input()) return AudioOperation::kNormal;
-  size_t changed = accelerate ? stretcher_.Accelerate(sync_, scratch_) : stretcher_.PreemptiveExpand(sync_, scratch_);
-  if (!changed) return AudioOperation::kNormal;
-  sync_.swap(scratch_);
-  double ms = changed * 1000.0 / cfg_.sample_rate;
-  if (accelerate) {
-    stats_.removed_samples_for_acceleration += changed;
-    filtered_level_ms_ -= ms;
-    return AudioOperation::kAccelerate;
-  }
-  stats_.inserted_samples_for_deceleration += changed;
-  filtered_level_ms_ += ms;
-  return AudioOperation::kPreemptiveExpand;
+bool AudioJitterBuffer::NextPacketReady() const {
+  return !queue_.empty() && queue_.begin()->first == next_ts_;
 }
 
 AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) {
   ++ticks_;  // NetEqImpl::GetAudioInternal: tick_timer_->Increment().
   last_decoded_timestamps_.clear();  // NetEqImpl::GetAudioInternal (neteq_impl.cc:674).
-  if (cfg_.version >= 2 && !neteq_reset_done_ && stats_.packets_received > 0) {
+  if (!neteq_reset_done_ && stats_.packets_received > 0) {
     neteq_delay_.SoftReset();
     decision_.SoftReset(ticks_);
     neteq_reset_done_ = true;
+    neteq_flush_pending_ = false;  // The same new_codec_ flag.
   }
-  const AudioOperation op = cfg_.version >= 2 ? GetAudioV2(out, now) : GetAudioV1(out, now);
+  const AudioOperation op = GetAudioInternal(out, now);
   // NetEqImpl::GetAudioInternal: after an expand the playout timestamp moves on
   // by the output (dead reckoning); otherwise it is the sync buffer's end minus
   // its future length, never moved backwards.
@@ -207,58 +184,6 @@ AudioOperation AudioJitterBuffer::GetAudio(std::span<float> out, Timestamp now) 
   return op;
 }
 
-AudioOperation AudioJitterBuffer::GetAudioV1(std::span<float> out, Timestamp now) {
-  const size_t need = out.size();
-  if (!started_) {
-    if (!queue_.empty() && CurrentLevelMs() >= TargetDelayMs()) {
-      started_ = true;
-    } else {
-      std::fill(out.begin(), out.end(), 0.0f);
-      ++stats_.ops[static_cast<int>(AudioOperation::kSilence)];
-      return AudioOperation::kSilence;
-    }
-  }
-  AudioOperation result = AudioOperation::kNormal;
-  bool decoded = false;
-  while (sync_.size() < need) {
-    while (!queue_.empty() && queue_.begin()->first < next_ts_) {
-      queue_.erase(queue_.begin());
-      ++stats_.packets_discarded_late;
-    }
-    if (NextPacketReady()) {
-      if (DecodeNext(now) == AudioOperation::kMerge) result = AudioOperation::kMerge;
-      decoded = true;
-      continue;
-    }
-    if (!queue_.empty() && expanded_samples_ >= queue_.begin()->first - next_ts_) {
-      // The gap has been concealed for its full duration: the missing
-      // packet(s) are treated as lost and playout jumps ahead.
-      stats_.packets_lost += static_cast<uint64_t>((queue_.begin()->first - next_ts_) /
-                                                   std::max<int64_t>(1, cfg_.sample_rate * cfg_.packet_ms / 1000));
-      next_ts_ = queue_.begin()->first;
-      continue;
-    }
-    // Expand: conceal one output block.
-    if (!expanding_) {
-      ++stats_.concealment_events;
-      SM_EVENT(cfg_.events, now, "neteq", "expand", CurrentLevelMs(), next_ts_);
-    }
-    scratch_.assign(need, 0.0f);
-    plc_.Conceal(scratch_);
-    expanding_ = true;
-    expanded_samples_ += static_cast<int64_t>(need);
-    stats_.concealed_samples += need;
-    sync_.insert(sync_.end(), scratch_.begin(), scratch_.end());
-    result = AudioOperation::kExpand;
-  }
-  if (decoded && result == AudioOperation::kNormal) result = MaybeStretch(now);
-  std::copy(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need), out.begin());
-  sync_.erase(sync_.begin(), sync_.begin() + static_cast<std::ptrdiff_t>(need));
-  stats_.total_samples_received += need;
-  ++stats_.ops[static_cast<int>(result)];
-  return result;
-}
-
 int64_t AudioJitterBuffer::PacketSpanSamples(bool count_waiting_time) const {
   if (queue_.empty()) return 0;
   const auto& front = *queue_.begin();
@@ -267,12 +192,12 @@ int64_t AudioJitterBuffer::PacketSpanSamples(bool count_waiting_time) const {
   if (count_waiting_time) {
     span += (ticks_ - back.second.insert_tick) * kMsPerTick * (cfg_.sample_rate / 1000);
   } else {
-    span += static_cast<int64_t>(back.second.pcm.size());
+    span += static_cast<int64_t>(back.second.samples);
   }
   return span;
 }
 
-AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now) {
+AudioOperation AudioJitterBuffer::GetAudioInternal(std::span<float> out, Timestamp now) {
   const int64_t need = static_cast<int64_t>(out.size());
   const int64_t samples_10_ms = cfg_.sample_rate / 100;
   const int64_t samples_20_ms = 2 * samples_10_ms;
@@ -310,11 +235,11 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     return AudioOperation::kExpand;
   }
   muted_ = false;
-  // PacketBuffer::DiscardOldPackets.
-  while (!queue_.empty() && queue_.begin()->first < next_ts_) {
-    queue_.erase(queue_.begin());
-    ++stats_.packets_discarded_late;
-  }
+  // PacketBuffer::DiscardOldPackets(end_timestamp, 5 s): only packets less
+  // than 5 s older than the sync buffer's end (IsObsoleteTimestamp); older
+  // ones stay and are played as future packets.
+  // Not while new_codec_ is set (NetEqImpl::GetDecision, neteq_impl.cc:915).
+  if (!neteq_flush_pending_) DiscardOldPackets(next_ts_, int64_t{5} * cfg_.sample_rate, now);
   // The sync buffer always keeps Expand's overlap as lookahead.
   const int64_t future = static_cast<int64_t>(sync_.size());
   const int64_t samples_left = future - static_cast<int64_t>(expand_.overlap_length());
@@ -348,6 +273,19 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
     op = NetEqOperation::kNormal;  // Enough decoded audio already.
     extract = false;
   } else {
+    if (neteq_flush_pending_ && !queue_.empty()) {
+      // NetEqImpl::GetDecision's reset for new_codec_ (neteq_impl.cc:1034-1061),
+      // after the early return above: the sync buffer's end timestamp restarts
+      // at the next packet, the operation becomes a normal decode, and the
+      // controller is soft-reset (DecisionLogic::SoftReset, decision_logic.cc:88-98).
+      SM_EVENT(cfg_.events, now, "neteq", "flush_reset", static_cast<double>(queue_.begin()->first - next_ts_),
+               queue_.begin()->first);
+      next_ts_ = queue_.begin()->first;
+      op = NetEqOperation::kNormal;
+      neteq_flush_pending_ = false;
+      neteq_delay_.SoftReset();
+      decision_.SoftReset(ticks_);
+    }
     switch (op) {
       case NetEqOperation::kExpand:
         extract = false;
@@ -383,18 +321,24 @@ AudioOperation AudioJitterBuffer::GetAudioV2(std::span<float> out, Timestamp now
   decoded_.clear();
   if (extract && !queue_.empty()) {
     // The sync buffer's end timestamp jumps to the packet (a merge after an
-    // expand that covered the gap).
+    // expand that covered the gap), backwards for a packet more than 5 s old.
     const int64_t jump = queue_.begin()->first - next_ts_;
     if (jump > 0) {
       stats_.packets_lost += static_cast<uint64_t>(jump / std::max<int64_t>(1, cfg_.sample_rate * cfg_.packet_ms / 1000));
+    }
+    if (jump != 0) {
       SM_EVENT(cfg_.events, now, "neteq", "merge_jump", static_cast<double>(jump), next_ts_);
       next_ts_ = queue_.begin()->first;
     }
     // NetEqImpl::ExtractPackets: consecutive packets until `required` samples.
+    int64_t last_extracted = next_ts_;
     while (extracted < required && NextPacketReady()) {
+      last_extracted = next_ts_;
       DecodeNext(now, &decoded_);
       extracted = static_cast<int64_t>(decoded_.size());
     }
+    // PacketBuffer::DiscardAllOldPackets(timestamp_): no horizon.
+    if (extracted > 0) DiscardOldPackets(last_extracted, 0, now);
   }
   // NetEqImpl::DoNormal / DoMerge: the first decode after an expand.
   if (!decoded_.empty() && last_mode_ == NetEqMode::kExpand && op == NetEqOperation::kMerge) {
@@ -634,7 +578,7 @@ void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
   }
   w.Gauge("target_delay_ms", TargetDelayMs());
   w.Gauge("current_level_ms", CurrentLevelMs());
-  if (cfg_.version >= 2) w.Gauge("filtered_buffer_level_samples", decision_.GetFilteredBufferLevel());
+  w.Gauge("filtered_buffer_level_samples", decision_.GetFilteredBufferLevel());
   w.Hist("jitter_buffer_delay_ms", stats_.jitter_buffer_delay_ms);
   w.Counter("jitter_buffer_delay_ms_samples", stats_.jitter_buffer_delay_ms_samples);
   w.Counter("jitter_buffer_emitted_count", stats_.jitter_buffer_emitted_count);

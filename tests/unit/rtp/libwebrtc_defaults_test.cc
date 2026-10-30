@@ -84,3 +84,37 @@ SM_TEST(LibwebrtcDefaults, TheEncoderAllocationHasNoMaximumOfItsOwn) {
 SM_TEST(LibwebrtcDefaults, TheBitrateAdjusterRunsOnAllocationUpdates) {
   SM_EXPECT_TRUE(VideoSendControllerConfig{}.adjuster_on_update);
 }
+
+// enable_prerenderer_smoothing defaults to true (call/video_receive_stream.h:291,
+// media/base/media_config.h:62 at M157), so decoded frames pass IncomingVideoStream /
+// VideoRenderFrames (video/video_receive_stream2.cc:400-403). Issue #437.
+SM_TEST(LibwebrtcDefaults, DecodedFramesPassThePreRenderQueue) {
+  SM_EXPECT_TRUE(RtpReceiverConfig{}.render_smoothing);
+  SM_EXPECT_TRUE(VideoStreamConfig{}.render_smoothing);
+}
+
+// A keyframe's flush clears the RTX SSRC too, where padding is queued
+// (RemovePacketsForSsrc(rtx_ssrc), modules/pacing/pacing_controller.cc:227-231). Issue #437.
+SM_TEST(LibwebrtcDefaults, AKeyframeFlushAlsoDropsQueuedPadding) {
+  SM_EXPECT_TRUE(cc::PacingControllerConfig{}.keyframe_flush_padding);
+  SM_EXPECT_TRUE(SessionConfig{}.send_side.pacer.controller.keyframe_flush_padding);
+}
+
+// UnwrapSequenceNumberOrRecover's discontinuity rule is skipped for H.264 and H.265
+// (video/rtp_video_stream_receiver2.cc:656-665) and runs for every other codec (#818).
+SM_TEST(LibwebrtcDefaults, TheSequenceDiscontinuityRuleRunsForCodecsOtherThanH264) {
+  SM_EXPECT_TRUE(!RtpReceiverConfig{}.seq_num_discontinuity);
+  for (VideoCodecType codec : {VideoCodecType::kH264, VideoCodecType::kVP8, VideoCodecType::kVP9, VideoCodecType::kGeneric}) {
+    Session session;
+    VideoStreamConfig v;
+    v.codec = codec;
+    const VideoRecvId id = session.AddVideoReceive(v);
+    SM_EXPECT_EQ(session.video_receiver(id).config().seq_num_discontinuity, codec != VideoCodecType::kH264);
+  }
+}
+
+// rtp.keyframe_method is kPliRtcp by default (call/video_receive_stream.h): every request is a PLI (#818).
+SM_TEST(LibwebrtcDefaults, KeyframeRequestsArePli) {
+  SM_EXPECT_TRUE(loss::KeyframeRequestConfig{}.method == loss::KeyframeMethod::kPli);
+  SM_EXPECT_TRUE(VideoStreamConfig{}.keyframe.method == loss::KeyframeMethod::kPli);
+}

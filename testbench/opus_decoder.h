@@ -85,6 +85,18 @@ class OpusReceiveDecoder {
     }
   }
 
+  // WebRtcOpus_DurationEst at 48 kHz for a non-empty payload
+  // (AudioDecoderOpusImpl::PacketDuration): 0 for an invalid packet or more
+  // than 120 ms.
+  static int Duration(std::span<const uint8_t> payload) {
+    if (payload.empty()) return 0;
+    const int frames = opus_packet_get_nb_frames(payload.data(), static_cast<opus_int32>(payload.size()));
+    if (frames < 0) return 0;
+    const int samples = frames * opus_packet_get_samples_per_frame(payload.data(), kSampleRateHz);
+    if (samples > 120 * kSampleRateHz / 1000) return 0;
+    return samples;
+  }
+
   // WebRtcOpus_FecDurationEst at 48 kHz: the samples of the LBRR copy, 0 if
   // there is none or its duration is out of range.
   static int FecDuration(std::span<const uint8_t> payload) {
@@ -114,10 +126,11 @@ class OpusReceiveDecoder {
 // #476), so the jitter buffer gets the decoded samples libwebrtc's NetEq gets,
 // LBRR copies at their own lower quality.
 //
-// Our jitter buffer stores samples, so the receiver decodes each frame when it
-// arrives, while NetEq decodes at playout, in timestamp order, one copy of each
-// frame. libopus keeps state from frame to frame, so this keeps the sequence
-// libopus sees to NetEq's:
+// With `neteq v2` the jitter buffer decodes each frame when it plays it, as
+// NetEq does (PacketDuration, #783), so the calls come in timestamp order, one
+// copy of each frame. A jitter buffer that stores samples (version 1) has the
+// receiver decode each frame when it arrives; libopus keeps state from frame
+// to frame, so this keeps the sequence libopus sees close to NetEq's:
 // - a frame (RTP timestamp) is decoded once: a duplicate, the RED copy of a
 //   frame already decoded, or the LBRR copy of a frame that already arrived
 //   gets the samples decoded before (NetEq drops the extra copy unplayed);
@@ -146,6 +159,13 @@ class OpusAudioDecoder : public rtp::AudioDecoder {
     const int64_t ts = unwrap_.Unwrap(rtp_timestamp);
     if (auto it = frames_.find(ts); it != frames_.end() && it->second.primary) return it->second.samples;
     return Insert(ts, frame, true);
+  }
+  // NetEq decodes at playout (#783): the jitter buffer calls Decode and
+  // DecodeFec when it plays the frame, in timestamp order, so the frames
+  // arrive here in the order NetEq's decoder sees them.
+  uint32_t PacketDuration(std::span<const uint8_t> frame) const override {
+    return static_cast<uint32_t>(static_cast<int64_t>(OpusReceiveDecoder::Duration(frame)) * sample_rate_hz_ /
+                                 OpusReceiveDecoder::kSampleRateHz);
   }
   uint32_t FecDuration(std::span<const uint8_t> frame) const override {
     return static_cast<uint32_t>(static_cast<int64_t>(OpusReceiveDecoder::FecDuration(frame)) * sample_rate_hz_ /
