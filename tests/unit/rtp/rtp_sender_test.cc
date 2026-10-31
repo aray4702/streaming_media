@@ -1234,3 +1234,61 @@ SM_TEST(RtpSender, RtxPaddingTakesTheRtxTypeOfTheLowestAssociatedPayloadType) {
   SM_ASSERT_FALSE(out.empty());
   SM_EXPECT_EQ(out[0].packet.payload_type, 97);
 }
+
+// Issue #895: ModuleRtpRtcpImpl2::GetFeedbackState reads GetSendRates(now) only when an RTCP packet is
+// built, and RateStatistics::Rate erases the expired buckets. SenderState(now, false) keeps the last
+// read rate and erases nothing, so an audio stream that resumes within 1.5 windows keeps its window;
+// a read in the gap empties the tracker, and the window restarts at the next packet.
+namespace {
+int64_t AudioRateAfterGap(bool read_in_gap) {
+  RtpSenderConfig c;
+  c.ssrc = 5;
+  c.payload_type = 111;
+  c.video = false;
+  c.clock_rate = 48000;
+  RtpSender s(c);
+  const Bytes frame(88, 0x11);  // 100 bytes with the 12-byte header.
+  auto send = [&](uint32_t ts, int ms) {
+    s.SendAudio(frame, ts, false, Timestamp::Millis(ms));
+    Release(s, Timestamp::Millis(ms));
+  };
+  send(960, 0);
+  send(1920, 10);
+  SM_EXPECT_GT(s.SenderState(Timestamp::Millis(20)).send_bitrate->bps(), 0);
+  const DataRate before = *s.SenderState(Timestamp::Millis(1100), read_in_gap).send_bitrate;
+  if (!read_in_gap) SM_EXPECT_EQ(before.bps(), s.SenderState(Timestamp::Millis(20), false).send_bitrate->bps());
+  send(2880, 1200);
+  send(3840, 1210);
+  return s.SendRate(Timestamp::Millis(1210)).bps();
+}
+}  // namespace
+
+SM_TEST(RtpSender, SenderStateReadsTheSendRatesOnlyWhenAsked) {
+  // Kept window: the two new packets over the full second.
+  SM_EXPECT_EQ(AudioRateAfterGap(false), 1600);
+  // Restarted at 1200 ms: 200 bytes over 11 ms.
+  SM_EXPECT_EQ(AudioRateAfterGap(true), 145455);
+}
+
+// Issue #895: a video module reads its send rates for every packet it sends (UpdateRtpStats calls
+// GetSendRates(now) for the stream's SendStatisticsProxy, rtp_sender_egress.cc:495-498), so a packet
+// type that paused for over a window restarts its window when it resumes, even within 1.5 windows.
+SM_TEST(RtpSender, VideoModuleRestartsAPausedTypeAtItsNextPacket) {
+  RtpSender s(VideoCfg());
+  uint32_t ts = 1;
+  for (int t = 0; t <= 1200; t += 10) {
+    s.SendVideoFrame(Chunks({100}), ts += 3000, Timestamp::Millis(t));
+    auto media = Release(s, Timestamp::Millis(t));
+    if (t == 0 || t == 1200) {
+      // Two resends: the first at 0 ms, the next 1.2 s later.
+      s.OnNack(std::vector<uint16_t>{media[0].packet.seq}, Timestamp::Millis(t), TimeDelta::Millis(10));
+      Release(s, Timestamp::Millis(t));
+      s.OnNack(std::vector<uint16_t>{media[0].packet.seq}, Timestamp::Millis(t + 1), TimeDelta::Zero());
+      Release(s, Timestamp::Millis(t + 1));
+    }
+  }
+  // Video: 100 packets in the window (210-1200 ms) at 112 bytes. RTX restarted at 1200 ms: two
+  // 114-byte packets over 2 ms. Without the per-packet read RTX would count over the whole second.
+  const int64_t video = 100 * 112 * 8;
+  SM_EXPECT_EQ(s.SendRate(Timestamp::Millis(1201)).bps(), video + 2 * 114 * 8000 / 2);
+}
