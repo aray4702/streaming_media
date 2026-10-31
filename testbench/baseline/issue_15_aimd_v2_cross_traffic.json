@@ -70,7 +70,7 @@
   "video.delay_network_p95_ms": 239,
   "video.delay_pacer_p95_ms": 0,
   "video.e2e_delay_p50_ms": 218,
-  "video.e2e_delay_p95_ms": 253.1,
+  "video.e2e_delay_p95_ms": 253.2,
   "video.encode_height_mean": 590.4,
   "video.encoder_dropped": 4,
   "video.encoder_target_avg_kbps": 1863,

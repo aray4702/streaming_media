@@ -1641,3 +1641,47 @@ SM_TEST(Session, TheNackForAGapCarriesReportBlocksWithoutThePacketThatRevealedIt
   SM_EXPECT_GE((first_nack + 1)->video.extended_highest_seq & 0xffff, revealing);
   SM_EXPECT_EQ((first_nack + 1)->video.cumulative_lost, lost);
 }
+
+// Issue #893: Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands every RTCP packet to the audio send
+// stream too, and its RTCPReceiver keeps the receiver's RRTR whatever its sender
+// (RTCPReceiver::HandleXrReceiveReferenceTime, rtcp_receiver.cc:687-707), so the audio channel's next
+// SR carries a DLRR for it (RTCPSender::BuildExtendedReports via GetFeedbackState's last_xr_rtis).
+SM_TEST(Session, TheAudioSendStreamsReportEchoesTheReceiversRrtr) {
+  SessionConfig cb = Cfg(2);
+  cb.rtcp.xr_rrtr = true;
+  Session a(Cfg(1)), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  const AudioSendId as = a.AddAudioSend(au);
+  a.AddVideoSend(Video());
+  NullDecoder dec;
+  b.AddAudioReceive(au, &dec);
+  b.AddVideoReceive(Video());
+  const Bytes frame(60, 7);
+  int audio_reports = 0, audio_reports_with_dlrr = 0;
+  for (int64_t t = 0; t < 16000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) a.SendAudio(as, {960, frame, false}, now);
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp && o.bytes.size() >= 8 && o.bytes[1] == 200) {
+        const uint32_t ssrc = (uint32_t{o.bytes[4]} << 24) | (uint32_t{o.bytes[5]} << 16) |
+                              (uint32_t{o.bytes[6]} << 8) | o.bytes[7];
+        if (ssrc == au.ssrc) {
+          ++audio_reports;
+          bool dlrr = false;
+          for (size_t i = 0; i + 4 <= o.bytes.size();) {
+            if (o.bytes[i + 1] == 207 && i + 8 < o.bytes.size() && o.bytes[i + 8] == 5) dlrr = true;  // XR, block type 5.
+            i += 4 * (static_cast<size_t>((o.bytes[i + 2] << 8) | o.bytes[i + 3]) + 1);
+          }
+          if (dlrr) ++audio_reports_with_dlrr;
+        }
+      }
+      b.OnPacket(o.bytes, now);
+    }
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+  }
+  SM_EXPECT_GE(audio_reports, 2);
+  SM_EXPECT_GE(audio_reports_with_dlrr, 1);
+}

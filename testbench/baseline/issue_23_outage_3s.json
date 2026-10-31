@@ -67,7 +67,7 @@
   "video.avg_kbps": 1110,
   "video.delay_encode_ms": 0,
   "video.delay_jitter_buffer_p95_ms": 52.41,
-  "video.delay_network_p95_ms": 90.49,
+  "video.delay_network_p95_ms": 90.62,
   "video.delay_pacer_p95_ms": 0,
   "video.e2e_delay_p50_ms": 101.1,
   "video.e2e_delay_p95_ms": 108.9,
