@@ -115,7 +115,11 @@ void RtpStreamsSynchronizer::ConfigureSync(Syncable* syncable_audio, Timestamp n
 void RtpStreamsSynchronizer::Process(Timestamp now) {
   if (!next_run_ || now < *next_run_) return;
   UpdateDelay(now);
-  next_run_ = now + kSyncInterval;
+  // RepeatingTask::operator() (repeating_task.cc:86-89): the next run is
+  // kSyncInterval after the scheduled time, not after `now`; the lateness is
+  // taken off the delay, at least zero, so a run more than an interval late
+  // is due again at once and the schedule stays on its 1 s grid.
+  *next_run_ += kSyncInterval;
 }
 
 void RtpStreamsSynchronizer::UpdateDelay(Timestamp now) {

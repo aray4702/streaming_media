@@ -487,6 +487,8 @@ class Session : public MetricsSource {
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
   void EnqueueSenderPackets(RtpSender& s, Timestamp now);
+  // Enqueues the resends held while an RTCP packet was handled (TaskQueuePacedSender's posted task).
+  void FlushResends(Timestamp now);
   // SendVideoChunks with the encoded frame's size, for FecControllerDefault::UpdateWithEncodedData.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now, bool keyframe, size_t encoded_size,

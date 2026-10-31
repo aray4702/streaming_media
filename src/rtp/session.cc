@@ -598,6 +598,8 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     ++stats_.malformed;
     return;
   }
+  // Resends (NACK and early loss) wait until the whole packet is handled; see FlushResends.
+  send_.HoldResends(true);
   // Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands the packet to the audio send stream too,
   // whose RTCPReceiver keeps every RRTR it sees, whatever its sender
   // (RTCPReceiver::HandleXrReceiveReferenceTime, rtcp_receiver.cc:687-707): the audio channel's
@@ -739,8 +741,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
         }
         s->SetRtt(TimeDelta::Millis(5 + rtt_ms), now);
       }
+      // RTPSender::ReSendPacket builds the RTX packet now, but hands it to the pacer through
+      // TaskQueuePacedSender::EnqueuePackets, which posts a task (task_queue_paced_sender.cc:133-155;
+      // rtp_sender.cc:362): it joins the queue after this packet's transport feedback (below).
       s->OnNack(n.seqs, now, rtt_);
-      EnqueueSenderPackets(*s, now);
     } else {
       ++stats_.nacks_unmatched;
     }
@@ -757,6 +761,20 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   // trains its RemoteNtpTimeEstimator from the SR (DeliverRtcp, ReceivedRTCPPacket).
   for (auto& v : video_recv_) v.receiver->OnRtcpPacket(now);
   for (auto& a : audio_recv_) a.receiver->OnRtcpPacket(now);
+  FlushResends(now);
+}
+
+// RTPSender::ReSendPacket (NACK, rtp_sender.cc:362) and the early-loss resends of
+// RtpVideoSender::OnPacketFeedbackVector hand their RTX packets to TaskQueuePacedSender::EnqueuePackets,
+// which posts a task to the pacer's queue (task_queue_paced_sender.cc:133-155). That task runs after the
+// RTCP packet is handled: after RtpTransportControllerSend::OnTransportFeedback has set the new pacing
+// rate (PostUpdates -> SetConfig, rtp_transport_controller_send.cc:838-839). So the RTX packet's
+// EnqueuePacket, which drains the debt of an empty queue at the current rate (pacing_controller.cc:
+// 237-249), uses the new rate (issue #893, overshoot seed 1 at 680 ms).
+void Session::FlushResends(Timestamp now) {
+  send_.HoldResends(false);
+  for (auto& v : video_send_) EnqueueSenderPackets(*v.sender, now);
+  for (auto& a : audio_send_) EnqueueSenderPackets(*a.sender, now);
 }
 
 void Session::UpdateSenderState(Timestamp now, bool read_send_rates) {
