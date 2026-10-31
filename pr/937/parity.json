@@ -66,43 +66,5 @@
   "913": "open",
   "921": "closed"
  },
- "gaps": [
-  {
-   "scenario": "issue_466_overshoot_very_low_capacity",
-   "metric": "video.pause_total_ms",
-   "sm": 2468.21,
-   "webrtc": 561.068,
-   "band": 1774.2528022353524,
-   "direction": "behind",
-   "seeds_agree": 3,
-   "seeds": 10,
-   "owners": [
-    466
-   ],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  },
-  {
-   "scenario": "issue_466_undershoot_very_low_capacity",
-   "metric": "video.pause_total_ms",
-   "sm": 4076.81,
-   "webrtc": 1245.44,
-   "band": 2660.8612037534012,
-   "direction": "behind",
-   "seeds_agree": 4,
-   "seeds": 10,
-   "owners": [
-    466,
-    479
-   ],
-   "stale_owners": [
-    5,
-    37,
-    24
-   ]
-  }
- ]
+ "gaps": []
 }
