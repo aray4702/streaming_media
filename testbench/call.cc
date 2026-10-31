@@ -241,7 +241,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming", "pacer"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
@@ -368,6 +368,14 @@ void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_
     }
     off += len;
   }
+}
+
+std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows) {
+  std::string out = "capture_ms,render_time_ms,out_ms,rendered\n";
+  for (const auto& r : rows)
+    out += std::to_string(r.capture_ms) + "," + std::to_string(r.render_time_ms) + "," + std::to_string(r.out_ms) +
+           "," + std::to_string(r.rendered) + "\n";
+  return out;
 }
 
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
@@ -810,6 +818,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   bool held_frame = false;  // The video controller holds the last dropped frame (EncodeDecision::hold).
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  std::optional<cc::BweTraceRow> last_rx_timing;  // Last receiver timing written to rep.bwe_trace (issue #893).
   std::array<uint64_t, 3> vt_rx_prev{};  // Frame release counters at the last row (issue #437).
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
@@ -936,6 +945,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   auto render = [&](Timestamp at) {
     if (!s.video) return;
     for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+      if (opt.video_trace) {
+        auto cap = frame_capture.find(f.rtp_timestamp);
+        rep.frame_trace.push_back({cap != frame_capture.end() ? cap->second.ms() : -1,
+                                   f.render_time.IsFinite() ? f.render_time.ms() : -1, at.ms(), f.render ? 1 : 0});
+      }
       if (!f.render) continue;
       freezes.OnFrameRendered(at);
       ++vt_row.rendered;
@@ -1326,6 +1340,25 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // --- Measurement ----------------------------------------------------------
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && s.video && s.timing_v2 && t % 5 == 4) {
+      // The receiver's VCMTiming every 5 ms when it changed, as sm_compare samples libwebrtc's
+      // VideoReceiveStreamInterface::Stats (issue #893).
+      const timing::VcmTiming& vt = receiver.video_receiver(video_recv).vcm_timing();
+      cc::BweTraceRow r;
+      r.time_us = static_cast<int64_t>(t + 1) * 1000;
+      r.kind = cc::BweTraceRow::Kind::kRxTiming;
+      r.bitrate_bps = vt.TargetDelay().ms();
+      r.packets = static_cast<int>(vt.minimum_delay().ms());
+      r.fraction_loss = static_cast<int>(vt.current_delay().ms());
+      r.loss_limit_bps = vt.min_playout_delay().ms();
+      r.instant_ub_bps = vt.render_delay().ms();
+      if (!last_rx_timing || r.bitrate_bps != last_rx_timing->bitrate_bps || r.packets != last_rx_timing->packets ||
+          r.fraction_loss != last_rx_timing->fraction_loss || r.loss_limit_bps != last_rx_timing->loss_limit_bps ||
+          r.instant_ub_bps != last_rx_timing->instant_ub_bps) {
+        rep.bwe_trace.push_back(r);
+        last_rx_timing = r;
+      }
+    }
     if (opt.video_trace && t % 1000 == 999) {
       vt_row.t_ms = t + 1;
       vt_row.alloc_target_bps = sender.rates().video_target.bps();

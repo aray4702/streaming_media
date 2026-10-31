@@ -230,6 +230,9 @@ class SendSideController : public MetricsSource {
 
   // Feedback from the peer.
   void OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now);
+  // While held, OnTransportFeedback leaves its early-loss resends in the sender for the caller to
+  // enqueue once the whole RTCP packet is handled (TaskQueuePacedSender::EnqueuePackets posts a task).
+  void HoldResends(bool hold) { hold_resends_ = hold; }
   void OnRtt(TimeDelta rtt) { gcc_.OnRttUpdate(rtt); }
   void OnRemb(DataRate remb) { gcc_.OnRemb(remb); }
   // Loss between two receiver reports (GoogCC OnTransportLossReport).
@@ -329,6 +332,7 @@ class SendSideController : public MetricsSource {
   cc::StreamAllocationConfig video_alloc_cfg_;
   cc::BitrateAllocatorV2::Observer video_observer_;
   bool video_registered_ = false;
+  bool hold_resends_ = false;
   bool video_activity_ = false;    // activity_
   bool video_timed_out_ = false;   // timed_out_
   bool video_disable_padding_ = true;  // disable_padding_

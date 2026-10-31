@@ -9,6 +9,9 @@
 // side adapts to the minimum of the last 100 frames (vad_sp.c), a
 // log-likelihood ratio test with the aggressiveness mode's thresholds, and
 // a hangover after speech (vad_core.c `kOverHangMax*`).
+// At 48 kHz (#901) it runs `WebRtcVad_CalcVad48khz` with SPL's 48-to-8 kHz
+// resampler, including libwebrtc's reuse of the frame's first 10 ms for every
+// 10 ms block of a 20 or 30 ms frame (see `agc1_vad.h`).
 //
 // Where libwebrtc M157 runs a VAD in a call: its `AudioProcessingImpl`
 // reports no VAD decision (`VoiceDetection` was removed; the statistics it
@@ -22,8 +25,6 @@
 // pitch-based probability instead, so a broadband click is not speech.
 //
 // Differences from libwebrtc (scope, not behaviour):
-//  - 48 kHz returns kError: `WebRtcVad` here runs at 8, 16 and 32 kHz
-//    (the 48-to-8 kHz resampler is not ported, see `agc1_vad.h`).
 //  - A constructor in place of `CreateVad`; `Reset()` re-initializes the
 //    instance as `VadImpl::Reset` (free, create, init, set mode).
 //  - A float overload for frames in [-1, 1), scaled to S16 by rounding
@@ -53,8 +54,8 @@ class Vad : public MetricsSource {
 
   explicit Vad(Aggressiveness aggressiveness = kVadNormal);
 
-  // A VAD decision for one frame. Valid sample rates are 8000, 16000 and
-  // 32000 Hz, and the frame must be 10, 20 or 30 ms long.
+  // A VAD decision for one frame. Valid sample rates are 8000, 16000,
+  // 32000 and 48000 Hz, and the frame must be 10, 20 or 30 ms long.
   Activity VoiceActivity(const int16_t* audio, size_t num_samples, int sample_rate_hz);
   // The same for a float frame in [-1, 1).
   Activity VoiceActivity(std::span<const float> frame, int sample_rate_hz);

@@ -13,17 +13,17 @@ using namespace sm;
 using namespace sm::audio;
 
 // libwebrtc's `webrtc::Vad` (common_audio/vad/vad.cc, #671): a decision per
-// 10, 20 or 30 ms frame at 8, 16 or 32 kHz, kError otherwise (as
+// 10, 20 or 30 ms frame at 8, 16, 32 or 48 kHz (#901), kError otherwise (as
 // vad_unittest.cc's ApiTest on `WebRtcVad_Process`, which `Vad` wraps).
 SM_TEST(Vad, ApiAsLibwebrtc) {
   constexpr size_t kMaxFrameLength = 1440;
   int16_t zeros[kMaxFrameLength] = {0};
   int16_t speech[kMaxFrameLength];
   for (size_t i = 0; i < kMaxFrameLength; i++) speech[i] = static_cast<int16_t>(i * i);
-  const int kRates[] = {8000, 12000, 16000, 24000, 32000};
+  const int kRates[] = {8000, 12000, 16000, 24000, 32000, 48000};
   const size_t kFrameLengths[] = {80, 120, 160, 240, 320, 480, 640, 960, kMaxFrameLength};
   auto valid = [](int rate, size_t len) {
-    return (rate == 8000 || rate == 16000 || rate == 32000) && (len * 100 == static_cast<size_t>(rate) ||
+    return (rate == 8000 || rate == 16000 || rate == 32000 || rate == 48000) && (len * 100 == static_cast<size_t>(rate) ||
                                                                 len * 50 == static_cast<size_t>(rate) ||
                                                                 len * 100 == static_cast<size_t>(rate) * 3);
   };
@@ -38,7 +38,6 @@ SM_TEST(Vad, ApiAsLibwebrtc) {
         SM_EXPECT_EQ(vad.VoiceActivity(speech, len, rate), valid(rate, len) ? Vad::kActive : Vad::kError);
       }
     }
-    SM_EXPECT_EQ(vad.VoiceActivity(speech, 480, 48000), Vad::kError);  // 48 kHz not ported (see the header).
   }
 }
 

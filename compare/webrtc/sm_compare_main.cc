@@ -114,7 +114,7 @@ const char* const kDefaultTraced =
     "very_low_capacity,very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
     "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window,"
-    "issue_522_outage_to_500kbps";
+    "issue_522_outage_to_500kbps,issue_466_undershoot_very_low_capacity,issue_466_overshoot_very_low_capacity";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -298,7 +298,10 @@ int main(int argc, char** argv) {
                          ", \"webrtc_video\": " + JsonString(rtc_video) + ", \"sm_bwe\": " + JsonString(sm_bwe) +
                          ", \"webrtc_bwe\": " + JsonString(rtc_bwe) + ", \"sm_audio\": " + JsonString(sm_audio) +
                          ", \"webrtc_audio\": " + JsonString(rtc_audio) + ", \"sm_audiosend\": " +
-                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) + "}";
+                         JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
+                         ", \"sm_frames\": " + JsonString(sm::testbench::FrameTraceCsv(ours.back().frame_trace)) +
+                         ", \"webrtc_frames\": " + JsonString(sm::testbench::FrameTraceCsv(theirs.back().frame_trace)) +
+                         "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
           if (dir.empty()) continue;
@@ -314,6 +317,8 @@ int main(int argc, char** argv) {
           std::ofstream(stem + ".webrtc.bwe.csv") << rtc_bwe;
           std::ofstream(stem + ".sm.audio.csv") << sm_audio;
           std::ofstream(stem + ".webrtc.audio.csv") << rtc_audio;
+          std::ofstream(stem + ".sm.frames.csv") << sm::testbench::FrameTraceCsv(ours.back().frame_trace);
+          std::ofstream(stem + ".webrtc.frames.csv") << sm::testbench::FrameTraceCsv(theirs.back().frame_trace);
           std::ofstream(stem + ".sm.audiosend.csv") << sm_audio_send;
           std::ofstream(stem + ".webrtc.audiosend.csv") << rtc_audio_send;
         }

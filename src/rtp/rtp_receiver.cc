@@ -660,6 +660,13 @@ void RtpReceiver::Process(Timestamp now) {
   for (const auto& msg : keyframes_.Process(now)) feedback_.keyframe.push_back(msg);
   // IncomingVideoStream's delayed Dequeue task, if due, before this step's decoded frames.
   if (cfg_.render_smoothing) render_frames_.Process(now);
+  if (cfg_.timing.version >= 2 && have_rtt_ &&
+      (!last_rtt_update_.IsFinite() || now - last_rtt_update_ >= kRttUpdateInterval)) {
+    vcm_timing_.OnNetworkUpdate(rtt_);
+    last_rtt_update_ = now;
+  }
+  // Drops and releases made while frames are inserted (timing v2), emitted before Process's.
+  std::vector<timing::ReleaseAction> inserted;
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
     auto it = frames_.find(id);
     if (it == frames_.end()) continue;
@@ -668,6 +675,9 @@ void RtpReceiver::Process(Timestamp now) {
       const FrameMeta& m = it->second;
       release_.Insert({id, m.rtp_timestamp, m.keyframe, DataSize::Bytes(static_cast<int64_t>(m.size_bytes)),
                        m.receive_time, m.retransmitted});
+      // VideoStreamBufferController::InsertFrame schedules as each frame goes in, so the first frame of a
+      // batch gets its render time from the timestamps inserted before it (video_stream_buffer_controller.cc:172).
+      for (const auto& a : release_.MaybeSchedule(now, cfg_.decode_time)) inserted.push_back(a);
       continue;
     }
     video_timing_.SetJitterDelay(video_jitter_.JitterDelay());
@@ -711,10 +721,7 @@ void RtpReceiver::Process(Timestamp now) {
     packet_buffer_.ClearTo(id);
   };
   if (cfg_.timing.version >= 2) {
-    if (have_rtt_ && (!last_rtt_update_.IsFinite() || now - last_rtt_update_ >= kRttUpdateInterval)) {
-      vcm_timing_.OnNetworkUpdate(rtt_);
-      last_rtt_update_ = now;
-    }
+    for (const auto& a : inserted) emit(a.id, a.decode, a.render_time, a.lateness);
     for (const auto& a : release_.Process(now, cfg_.decode_time)) emit(a.id, a.decode, a.render_time, a.lateness);
   } else {
     for (const auto& a : scheduler_.Process(now)) emit(a.id, a.render, a.render_time, a.lateness);

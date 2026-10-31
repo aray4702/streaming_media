@@ -1388,8 +1388,9 @@ ALGORITHMS = [
                "`WebRtcVad` port in `agc1_vad.h` (issue #671); aggressiveness kVadNormal by default, as `sm_apm_compare` "
                "runs libwebrtc's. M157's `AudioProcessingImpl` reports no VAD decision, so the capture chain's per-frame "
                "VAD output is this `Vad`; the opt-in transient suppressor reads libwebrtc's pitch-based "
-               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. 48 kHz is not "
-               "ported (kError). ",
+               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. At 48 kHz "
+               "it runs `WebRtcVad_CalcVad48khz` over SPL's 48-to-8 kHz resampler (issue #901), as libwebrtc, "
+               "including its reuse of the frame's first 10 ms for every 10 ms block of a 20 or 30 ms frame. ",
          verification="Issue #671 retired the library's own energy/spectral-flatness detector (v1) for libwebrtc's: "
                       "`Vad.ApiAsLibwebrtc` (vad_unittest.cc's rates, frame lengths and modes on the wrapper), "
                       "`Vad.IsWebRtcVadAndResets` (decisions equal `WebRtcVad`'s in every mode, and Reset() restarts "
@@ -1398,7 +1399,11 @@ ALGORITHMS = [
                       "`kMaximumNoise`; v1 learned the new floor). E2E_Vad recall 99.7 %, false positives 0 % "
                       "(libwebrtc kVadNormal in `sm_apm_compare`: 99.9 % and 0.0 % on the same talker behind the "
                       "high-pass filter). The v1 detector's history: musical noise after NS and a slow noise-floor "
-                      "rise were fixed before #671."),
+                      "rise were fixed before #671. #901 ported the 48 kHz path: "
+                      "`Agc1VoiceActivity.WebRtcVadMatchesLibwebrtc` (48 kHz in modes 0 and 3 with 10, 20 and 30 ms "
+                      "frames) and `Agc1VoiceActivity.Resample48khzTo8khzMatchesLibwebrtc` are bit-exact with the "
+                      "prebuilt M157 library's `WebRtcVad_Process` and `WebRtcSpl_Resample48khzTo8khz`, and "
+                      "vad_unittest.cc's and vad_core_unittest.cc's 48 kHz cases pass."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
          headers=["audio/audio_level.h", "core/rms_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
@@ -1661,7 +1666,11 @@ ALGORITHMS = [
                   "at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after settling and "
                   "after the route change.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
-         verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
+         verification="Issue #902: the next run is timed from the scheduled time, as `RepeatingTask::operator()` "
+                      "(`rtc_base/task_utils/repeating_task.cc:86-89`), not from `now`, so a late `Process` keeps the 1 s grid "
+                      "(unit test `StreamSync.SynchronizerKeepsItsScheduleWhenProcessRunsLate`); suite bit-identical, as the "
+                      "bench runs at `NextProcessTime`. "
+                      "The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
                       "(40 ms offset). #77 ported libwebrtc M157's `StreamSynchronization` and `RtpStreamsSynchronizer` "
                       "(`video/stream_synchronization.cc`, `video/rtp_streams_synchronizer2.cc`, `call/syncable.h`). The filter "
                       "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
@@ -1790,7 +1799,10 @@ ALGORITHMS = [
                "drop, instead of over a second. Each packet counts in those rates as the pacer sends it "
                "(RtpSenderEgress::SendPacket, UpdateRtpStats), before the sent-packet notification that posts a "
                "target runs after the pacer's loop, and an allocation reads them at the current time "
-               "(GetSendRates(now)), so the share it takes counts every packet of the loop (issue #875). An allocation between two "
+               "(GetSendRates(now)), so the share it takes counts every packet of the loop (issue #875). As UpdateRtpStats calls "
+               "GetSendRates(now) after every packet the video module sends (rtp_sender_egress.cc:495-498, its stats callback), "
+               "each of those packets erases the buckets that left the window, so RTX after a second without any restarts "
+               "its window even when its last sample was under 1.5 s ago (issue #893). An allocation between two "
                "Process() calls (transport feedback, a video stream (re)registration) reads the rates and the post-encode "
                "overhead at its own time too (ModuleRtpRtcpImpl2::GetSendRates, RTPSenderVideo::PostEncodeOverhead), and "
                "the encoder target is truncated to whole bit/s as UpdateFecRates' uint32_t return does (issue #896). There is no "
@@ -1804,7 +1816,11 @@ ALGORITHMS = [
                       "(unit test SendSideController.AllocationPostedBySentPacketCountsTheWholeSendLoop; issue_12_lossbwe_policer seed 1 "
                       "with #865 matches libwebrtc's forward link through 1.21 s instead of 0.69 s). Issue #896 reads them at each allocation's own time (unit test "
                       "SendSideController.AllocationReadsTheSendRatesAtItsOwnTime; issue_76_rtx_v2_keyframe_flush seed 1's "
-                      "encoder target at 1 s is libwebrtc's to the bit/s, 1774198, from 1774179). Review notes from PR 3 (padding timestamp, padding size "
+                      "encoder target at 1 s is libwebrtc's to the bit/s, 1774198, from 1774179). Issue #893 erases the send rates after each "
+                      "video-module packet (unit tests SendSideController.RateStatisticsRestartTheWindowOnceSentVideoHasEmptiedIt and "
+                      "SendSideController.RateStatisticsKeepTheWindowWhenNothingEmptiedIt; issue_466_scene_change_very_low_capacity "
+                      "seed 1's allocation is libwebrtc's at every update, 31472 at 3.63 s from 38081, and its forward link matches "
+                      "through 11.61 s instead of 5.27 s). Review notes from PR 3 (padding timestamp, padding size "
                       "accounting, zero-byte frames) were fixed in PR 5. Issue #577 ported RTPSender::"
                       "ExpectedPerPacketOverhead (RtpSender::ExpectedPerPacketOverhead; unit tests "
                       "RtpSender.ExpectedPerPacketOverhead* and Session.ExpectedPacketOverheadIsTheVideoSendersHeader) "
