@@ -10,7 +10,8 @@ stay in the deviation inventory, [libwebrtc-parity.md](libwebrtc-parity.md).
 Paths `ref/` are `compare/webrtc/reference/`; `harness` is
 `compare/webrtc/webrtc_call.cc`; `bench` is `testbench/call.cc` and
 `testbench/scenario.h`. Every `ref/` line was opened at M157. A value whose
-defining header is not in `ref/` is marked *unverified* (list at the end).
+defining header is not in `ref/` is marked *unverified* (section 3; none
+are left since #900).
 
 **Verdicts.** `same`; `different`; `missing` (libwebrtc has it, we don't);
 `off` (ported, off by default); `bench-only` (the library's own default
@@ -37,7 +38,7 @@ Every row that is not `same`. Each has an open item, or is an approved
 deviation with its decision. Audit #891 (on `main` 2d9445a) re-checked each
 row against the code: rows 3 and 16 are now `same`, row 17 is an approved
 deviation, and the rest were confirmed. Sections 2 and 3 were checked the
-same way; what is still not `same` is the list in section 3 (#900).
+same way; the defaults section 3 listed were verified `same` by #900.
 
 | # | Area | Feature or default | libwebrtc M157 | Ours | Verdict | Item |
 |---|---|---|---|---|---|---|
@@ -168,25 +169,21 @@ The library runs no codec; the bench encodes with libopus
 
 ## 3. Unverified
 
-These defaults are defined in headers that are not in `ref/`; #900 asks for
-them (#57, which took such requests, is closed). The harness sets none of
-them except where noted, so libwebrtc runs with the header defaults. Verdict
-for each: `file needed (#900)` (audit #891).
+None. The headers this section listed were added to `ref/` by #900, and each
+default was checked against them: all are **same**. The harness sets none of
+them, so libwebrtc runs with these header defaults.
 
-- `VideoReceiveStreamInterface::Config` (`call/video_receive_stream.h`) and
-  `media/base/media_config.h`: `enable_prerenderer_smoothing` (true),
-  `render_delay_ms` (10), `rtp.lntf.enabled` (false),
-  `rtp.keyframe_method` (PLI), `rtcp_mode` (compound).
-- `IP_PACKET_SIZE` (1500), the GoogCC process interval (ours 25 ms;
-  `GetProcessInterval`, `goog_cc_factory.cc`),
-  `BweSettings::allow_probe_without_media` (read at
-  `ref/call/rtp_transport_controller_send.cc:179`, `:199`, `:271`), the
-  default of `WebRTC-RetransmitFlushedPackets` (read at
-  `ref/modules/pacing/pacing_controller.cc:101`, `:219`), the default ALR
-  experiment string (ours 0.80 / 0.40 / -0.60, matched to the prebuilt
-  library's rows, #152), and the build flag
-  `WEBRTC_OPUS_VARIABLE_COMPLEXITY` (off upstream, so the low-rate
-  complexity is 9, as ours).
+| Feature or default | libwebrtc M157 | Ours | Verdict |
+|---|---|---|---|
+| `enable_prerenderer_smoothing` true | `ref/call/video_receive_stream.h:291`, `ref/media/base/media_config.h:62` | `render_smoothing` on (row 1) | same |
+| `render_delay_ms` 10 | `ref/call/video_receive_stream.h:115`, `:287` | `include/sm/video/render_frames.h:35`, `include/sm/timing/vcm_timing.h:192` | same |
+| `rtp.lntf.enabled` false; `rtp.keyframe_method` PLI; `rtcp_mode` compound | `ref/call/video_receive_stream.h:238`, `:249`, `:252`; `LntfConfig::enabled` false (`ref/call/rtp_config.h:35-39`) | `include/sm/loss/keyframe_request.h:55`, `:57`; `RtcpConfig::reduced_size` false (`include/sm/rtp/rtcp_engine.h:62`) | same |
+| `IP_PACKET_SIZE` 1500 | `ref/modules/rtp_rtcp/include/rtp_rtcp_defines.h:36` | `kPathMtu` 1500 (`src/rtp/session.cc:171`; row 6) | same |
+| GoogCC process interval 25 ms (`GetProcessInterval`, `kUpdateIntervalMs`) | `ref/api/transport/goog_cc_factory.cc:82-85` | `SendSideConfig::gcc_interval` 25 ms (`include/sm/rtp/send_side_controller.h:57`) | same |
+| `BweSettings::allow_probe_without_media` false, so no probing before media and no repeated initial probing | `ref/api/transport/bandwidth_estimation_settings.h:23`; read at `ref/call/rtp_transport_controller_send.cc:270-274`; `ref/modules/pacing/bitrate_prober.cc:62-65` | `BitrateProberConfig::allow_start_probing_immediately` false (`include/sm/cc/bitrate_prober.h:35`); repeated initial probing off (`include/sm/cc/probing.h:110`) | same |
+| `WebRTC-RetransmitFlushedPackets` off (`enabled_` false, `rtt_multiplier` 2.0), so packets a keyframe flushes are dropped, not handed to the history | `ref/rtc_base/experiments/retransmit_flushed_packets_settings.h:28-29`, `.cc:24-35`; `ref/modules/pacing/pacing_controller.cc:219-225` | flushed packets dropped (`src/rtp/send_side_controller.cc:334-337`) | same |
+| Default ALR experiment `1.0,2875,80,40,-60,3` (`WebRTC-ProbingScreenshareBwe`, default-on) | `ref/rtc_base/experiments/alr_experiment.cc:25-26`, `:52-56`; `ref/modules/congestion_controller/goog_cc/alr_detector.cc:30-46` | 0.80 / 0.40 / -0.60 (`include/sm/cc/alr_detector.h:13`, #152) | same |
+| `WEBRTC_OPUS_VARIABLE_COMPLEXITY` off, so the low-rate complexity is the default 9 | `ref/webrtc.gni:100-101` (`rtc_opus_variable_complexity = false`), `ref/api/audio_codecs/opus/BUILD.gn:28-32`; `ref/api/audio_codecs/opus/audio_encoder_opus_config.cc:17-18` | `testbench/opus_encoder.h:66` (section 2, Opus) | same |
 
 Verified by audit #891 and moved out of this list: the `NetEq::Config`
 defaults, now in `ref/api/neteq/neteq.h:135-141` (`max_packets_in_buffer`

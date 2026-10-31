@@ -44,5 +44,6 @@ webrtc.googlesource.com.
 | Video render stage (used when `enable_prerenderer_smoothing` is on) | `video/render/video_render_frames.*`, `video/render/incoming_video_stream.*` | none yet (#437) |
 | Retransmission rate limiter | `rtc_base/rate_limiter.*`, `modules/rtp_rtcp/source/rtp_rtcp_interface.h` (`Configuration::retransmission_rate_limiter`), `rtc_base/units/unit_base.h`. In M157 only tests set `retransmission_rate_limiter`; the default call leaves it null, so `RTPSender::ReSendPacket` never calls `TryUseRate`. | none (#443) |
 | H.264 SPS/PPS tracker | `modules/video_coding/h264_sps_pps_tracker.*` | `src/rtp/rtp_receiver.cc` (#453, PR #454) |
+| Call defaults (#900) | `call/video_receive_stream.h`, `call/rtp_config.h` (`LntfConfig`), `media/base/media_config.h`, `modules/rtp_rtcp/include/rtp_rtcp_defines.h` (`IP_PACKET_SIZE`), `api/transport/goog_cc_factory.*` (`GetProcessInterval`), `api/transport/bandwidth_estimation_settings.h` (`BweSettings`), `rtc_base/experiments/retransmit_flushed_packets_settings.*`, `rtc_base/experiments/alr_experiment.*`, `webrtc.gni` and `api/audio_codecs/opus/BUILD.gn` (`WEBRTC_OPUS_VARIABLE_COMPLEXITY`) | `docs/design/config-inventory.md` section 3 |
 
 Not here, on purpose: `modules/audio_coding/audio_network_adaptor/`. libwebrtc only turns it on when the application passes an ANA config, so the default call never uses it.
