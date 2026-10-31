@@ -262,11 +262,11 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               495          494  =
+  audio.jb_delay_p95_ms                   296          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                16.9         15.7  =
+  video.longest_freeze_ms                16.9         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -3136,8 +3136,8 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           221          221  =
-  audio.mouth_to_ear_p95_ms              2181         2200  =
-  audio.jb_delay_p95_ms                  1723         1742  =
+  audio.mouth_to_ear_p95_ms              2180         2200  =
+  audio.jb_delay_p95_ms                  1722         1742  =
   video.freeze_count                      2.7          3.5  sm
   video.freeze_total_ms                  1818         1877  =
   video.longest_freeze_ms                 584          757  sm
@@ -5127,8 +5127,8 @@ issue_48_prober_low_bandwidth - 150 kbps link with `cc v2` and `pacer v2`: start
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2118         2150  =
-  audio.jb_delay_p95_ms                  1704         1733  =
+  audio.mouth_to_ear_p95_ms              2117         2150  =
+  audio.jb_delay_p95_ms                  1703         1733  =
   video.freeze_count                      1.8          2.6  sm
   video.freeze_total_ms                  1441         1434  =
   video.longest_freeze_ms                 460          597  sm
@@ -5435,7 +5435,7 @@ issue_524_av_sync_off - clean_link with lip sync off (issue
 
 issue_533_opus_decoder_frame_older_than_window - Audio call over a link whose jitter is a 2 s standard deviation: some packets arrive more than 5 s late
   metric                                   sm       webrtc  better
-  audio.concealed_pct                    28.9         28.9  =
+  audio.concealed_pct                    29.0         28.9  =
   audio.interruptions                     6.6          6.6  =
   audio.longest_interruption_ms           389          389  =
   audio.mouth_to_ear_p95_ms              4785         4791  =
