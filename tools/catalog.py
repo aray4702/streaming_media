@@ -291,7 +291,13 @@ ALGORITHMS = [
                       "rules compared with packet_buffer.cc and h26x_packet_buffer.cc; the wait for a missing packet before "
                       "an IDR start (`may_continue_frame`) removed as libwebrtc has none (unit tests "
                       "`PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing` and "
-                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged."),
+                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged. "
+                      "Issue #899: FindFrames' walk forward ported (PotentialNewFrame continuity, received_padding_, stops at "
+                      "a packet already handed out and at a held frame) and the marker-bit stop removed from the walk back "
+                      "(unit tests `PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne`, "
+                      "`PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered`); suite unchanged on seed 1. "
+                      "A copy arriving after its frame is assembled is still rejected as a duplicate (libwebrtc takes it "
+                      "again), pending a ruling on #899."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
