@@ -187,6 +187,27 @@ SM_TEST(TestbenchMetrics, TraceHeaderBytesCountsEverythingButTheCodecPayload) {
   SM_EXPECT_EQ(TraceHeaderBytes(std::vector<uint8_t>{0x80, 200, 0, 1}, 32, 118), -1);  // Not RTP.
 }
 
+// The reverse trace's key column (#842): PLI, FIR and NACK found anywhere in a compound RTCP packet.
+SM_TEST(TestbenchMetrics, RtcpFeedbackMaskFindsPliFirAndNackInACompoundPacket) {
+  const std::vector<uint8_t> rr = {0x80, 201, 0, 1, 0, 0, 0, 9};                      // RR, no blocks.
+  const std::vector<uint8_t> pli = {0x81, 206, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2};         // PSFB FMT 1.
+  const std::vector<uint8_t> fir = {0x84, 206, 0, 4, 0, 0, 0, 9, 0, 0, 0, 0, 0, 0, 0, 2, 7, 0, 0, 0};  // PSFB FMT 4.
+  const std::vector<uint8_t> nack = {0x81, 205, 0, 3, 0, 0, 0, 9, 0, 0, 0, 2, 0, 5, 0, 0};  // RTPFB FMT 1.
+  const std::vector<uint8_t> tcc = {0x8f, 205, 0, 2, 0, 0, 0, 9, 0, 0, 0, 2};         // RTPFB FMT 15.
+  auto cat = [](std::initializer_list<std::vector<uint8_t>> parts) {
+    std::vector<uint8_t> out;
+    for (const auto& b : parts) out.insert(out.end(), b.begin(), b.end());
+    return out;
+  };
+  SM_EXPECT_EQ(RtcpFeedbackMask(rr), 0);
+  SM_EXPECT_EQ(RtcpFeedbackMask(tcc), 0);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, pli})), 1);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, fir})), 2);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, nack, pli})), 5);
+  SM_EXPECT_EQ(RtcpFeedbackMask(cat({rr, tcc, nack, fir})), 6);
+  SM_EXPECT_EQ(RtcpFeedbackMask(std::vector<uint8_t>{0x80, 96, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2}), -1);  // RTP.
+}
+
 // The trace's rtx_room column (#555): RtxPacketOverhead's window opens at the first report block for the
 // media SSRC and closes at the first one for the RTX SSRC, in an SR or an RR of a compound packet.
 SM_TEST(TestbenchMetrics, RtxAckPhaseIsOpenFromTheMediaAckToTheRtxAck) {
@@ -513,7 +534,7 @@ SM_TEST(TestbenchMetrics, CompareSeedsIsParsedForSmCompareAndRangeChecked) {
 // The GoogCC estimate trace (issue #149).
 SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumnsEmpty) {
   using Kind = cc::BweTraceRow::Kind;
-  std::vector<cc::BweTraceRow> trace(4);
+  std::vector<cc::BweTraceRow> trace(5);
   trace[0].time_us = 150000;
   trace[0].kind = Kind::kDelayBased;
   trace[0].bitrate_bps = 924666;
@@ -538,13 +559,18 @@ SM_TEST(TestbenchMetrics, BweTraceCsvWritesOneLinePerEventAndLeavesMissingColumn
   trace[3].recv_delta_ms = 7.75;
   trace[3].send_ms = 3592;
   trace[3].arrival_ms = 3659;
+  trace[4].time_us = 210000;  // Issue #738.
+  trace[4].kind = Kind::kCwnd;
+  trace[4].bitrate_bps = 900000;
+  trace[4].cwnd_reduce_ratio = 0.25;
   SM_EXPECT_EQ(BweTraceCsv(trace),
                "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,"
-               "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms\n"
-               "150000,delay_based,924666,overusing,,,,,,,,,,,\n"
-               "150000,loss_based,900000,,13,40,decreasing,880000,5000000,,,,,,\n"
-               "200000,target,900000,,,,,,,,,,,,\n"
-               "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,3659\n");
+               "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms,cwnd_reduce_ratio\n"
+               "150000,delay_based,924666,overusing,,,,,,,,,,,,\n"
+               "150000,loss_based,900000,,13,40,decreasing,880000,5000000,,,,,,,\n"
+               "200000,target,900000,,,,,,,,,,,,,\n"
+               "200000,detector,0,normal,,91,,,,-0.25,6.19079,5,7.75,3592,3659,\n"
+               "210000,cwnd,900000,,,,,,,,,,,,,0.25\n");
 }
 
 SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
@@ -559,7 +585,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
     opt.bwe_trace = true;
     const Report rep = RunCall(*parsed.scenario, opt);
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0, detector = 0;
+    int delay = 0, loss = 0, target = 0, detector = 0, cwnd = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -573,9 +599,13 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
           SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2 && r.packets > 0);
           SM_EXPECT_TRUE(std::isfinite(r.modified_trend) && r.threshold > 0 && std::isfinite(r.send_delta_ms));
           break;
+        case cc::BweTraceRow::Kind::kCwnd:  // Issue #738.
+          ++cwnd;
+          SM_EXPECT_TRUE(r.bitrate_bps > 0 && r.cwnd_reduce_ratio >= 0 && r.cwnd_reduce_ratio < 1);
+          break;
       }
     }
-    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0);
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0 && cwnd > 0);
   }
 }
 

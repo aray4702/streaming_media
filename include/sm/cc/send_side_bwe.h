@@ -33,7 +33,10 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kCwnd: one TargetTransferRate GoogCC hands on (MaybeTriggerOnNetworkChanged) whose target or
+  // cwnd_reduce_ratio differs from the last one logged (issue #738): bitrate_bps = the loss-based
+  // target, cwnd_reduce_ratio = the congestion-window pushback's reduce ratio.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kCwnd };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -51,6 +54,7 @@ struct BweTraceRow {
   double recv_delta_ms = std::numeric_limits<double>::quiet_NaN();
   double send_ms = std::numeric_limits<double>::quiet_NaN();
   double arrival_ms = std::numeric_limits<double>::quiet_NaN();
+  double cwnd_reduce_ratio = std::numeric_limits<double>::quiet_NaN();  // kCwnd rows only.
 };
 
 struct GccConfig {

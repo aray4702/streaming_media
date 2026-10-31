@@ -241,12 +241,12 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "cwnd"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
       "time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps,"
-      "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms\n";
+      "modified_trend,threshold,send_delta_ms,recv_delta_ms,send_ms,arrival_ms,cwnd_reduce_ratio\n";
   auto num = [](int64_t v) { return v < 0 ? std::string() : std::to_string(v); };
   auto real = [](double v) {
     if (std::isnan(v)) return std::string();
@@ -259,7 +259,7 @@ std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
            (r.detector < 0 ? "" : kDetector[r.detector]) + "," + num(r.fraction_loss) + "," + num(r.packets) + "," +
            (r.loss_state < 0 ? "" : kLossState[r.loss_state]) + "," + num(r.loss_limit_bps) + "," + num(r.instant_ub_bps) + "," +
            real(r.modified_trend) + "," + real(r.threshold) + "," + real(r.send_delta_ms) + "," + real(r.recv_delta_ms) + "," +
-           real(r.send_ms) + "," + real(r.arrival_ms) + "\n";
+           real(r.send_ms) + "," + real(r.arrival_ms) + "," + real(r.cwnd_reduce_ratio) + "\n";
   }
   return out;
 }
@@ -277,6 +277,19 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace) {
            real(r.concealed_ms) + "," + real(r.accelerate_ms) + "," + real(r.decelerate_ms) + "\n";
   }
   return out;
+}
+
+int32_t RtcpFeedbackMask(std::span<const uint8_t> p) {
+  if (p.size() < 4 || (p[0] >> 6) != 2 || p[1] < 192 || p[1] > 223) return -1;
+  int32_t mask = 0;
+  for (size_t off = 0; off + 4 <= p.size();) {
+    const uint8_t fmt = p[off] & 0x1f, pt = p[off + 1];
+    if (pt == 206 && fmt == 1) mask |= 1;
+    if (pt == 206 && fmt == 4) mask |= 2;
+    if (pt == 205 && fmt == 1) mask |= 4;
+    off += 4 * (static_cast<size_t>((p[off + 2] << 8) | p[off + 3]) + 1);
+  }
+  return mask;
 }
 
 int32_t TraceHeaderBytes(std::span<const uint8_t> p, int64_t wire_bytes, uint8_t red_pt) {
@@ -920,6 +933,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           }
         }
       }
+      if (opt.link_trace && !is_forward) key = RtcpFeedbackMask(p.bytes);
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
       link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
     }

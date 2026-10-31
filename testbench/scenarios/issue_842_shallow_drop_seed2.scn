@@ -1,0 +1,9 @@
+name issue_842_shallow_drop_seed2
+describe issue_21_shallow_drop_repair with seed 2, traced on both stacks: what holds libwebrtc's settle after the capacity rise at 25 s (issue #842)
+# Yardstick for #842 (not for merge). libwebrtc's cc.max_settle_ms on this seed: 9800 ms (#837's compare run), ours 3900 ms.
+duration 40s
+at 0s  capacity=1500kbps delay=30ms queue=20ms
+at 10s capacity=500kbps
+at 25s capacity=1500kbps
+seed 2
+expect audio.interruptions <= 1

@@ -140,6 +140,11 @@ inline uint32_t PcmHash(std::span<const int16_t> pcm, uint32_t h = 2166136261u) 
 // block and 1 for the primary). -1 when `packet` is not RTP. Both implementations call it on the bytes they send, so
 // a packet's codec payload is `size - header` on either side.
 int32_t TraceHeaderBytes(std::span<const uint8_t> packet, int64_t wire_bytes, uint8_t red_pt);
+// The reverse trace's `key` column (#842): which feedback messages RTCP packet `packet` carries, as a bit mask. 1 is a
+// PLI (PT 206, FMT 1), 2 a FIR (PT 206, FMT 4), 4 a generic NACK (PT 205, FMT 1), walking every block of the compound
+// packet by its length field (RFC 3550 6.4, RFC 4585 6.1, RFC 5104 4.3.1). 0 for RTCP without any of them, -1 when
+// `packet` is not RTCP. Both implementations call it on the bytes they put on the reverse link.
+int32_t RtcpFeedbackMask(std::span<const uint8_t> packet);
 // The forward trace's `rtx_room` column (#555's drift check): whether the sender's RTPSender::RtxPacketOverhead
 // (rtp_sender.cc:564-595) reserves its MID/RID room for a frame. That is while a report block for the video's media
 // SSRC has reached the sender and none yet for its RTX SSRC (ModuleRtpRtcpImpl2::OnReceivedRtcpReportBlocks,
