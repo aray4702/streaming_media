@@ -262,11 +262,11 @@ cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 10 s and 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          494  =
-  audio.jb_delay_p95_ms                   296          295  =
+  audio.mouth_to_ear_p95_ms               495          495  =
+  audio.jb_delay_p95_ms                   296          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                16.9         13.4  =
+  video.longest_freeze_ms                16.9         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -1738,15 +1738,15 @@ issue_152_alr_request_probe_v2 - probe_v2_cross_traffic on seed 4: with libwebrt
   audio.concealed_pct                     0.4          0.4  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          44.8         44.8  =
-  audio.mouth_to_ear_p95_ms               490          489  =
-  audio.jb_delay_p95_ms                   293          292  =
+  audio.mouth_to_ear_p95_ms               490          490  =
+  audio.jb_delay_p95_ms                   293          293  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                20.3         13.9  =
+  video.longest_freeze_ms                20.3         16.2  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
-  video.e2e_delay_p95_ms                  230          225  =
+  video.e2e_delay_p95_ms                  230          224  =
   video.time_to_first_frame_ms            184          184  =
   video.avg_kbps                         1708         1713  =
   video.keyframe_requests                   0            0  =
@@ -2386,8 +2386,8 @@ issue_23_low_bandwidth - 150 kbps link: audio must stay clean, video degrades gr
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2117         2150  =
-  audio.jb_delay_p95_ms                  1703         1733  =
+  audio.mouth_to_ear_p95_ms              2118         2150  =
+  audio.jb_delay_p95_ms                  1704         1733  =
   video.freeze_count                      1.8          2.6  sm
   video.freeze_total_ms                  1441         1434  =
   video.longest_freeze_ms                 460          597  sm
@@ -3136,8 +3136,8 @@ issue_331_low_bandwidth_av_offset_seed4 - low_bandwidth with seed 4: lip sync ra
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           221          221  =
-  audio.mouth_to_ear_p95_ms              2180         2200  =
-  audio.jb_delay_p95_ms                  1722         1742  =
+  audio.mouth_to_ear_p95_ms              2181         2200  =
+  audio.jb_delay_p95_ms                  1723         1742  =
   video.freeze_count                      2.7          3.5  sm
   video.freeze_total_ms                  1818         1877  =
   video.longest_freeze_ms                 584          757  sm
@@ -3352,11 +3352,11 @@ issue_346_reconfigure_cross_traffic - cross_traffic with quality scaling on: eac
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          494  =
-  audio.jb_delay_p95_ms                   296          295  =
+  audio.mouth_to_ear_p95_ms               495          495  =
+  audio.jb_delay_p95_ms                   296          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                16.9         13.4  =
+  video.longest_freeze_ms                16.9         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -4559,8 +4559,8 @@ issue_457_libopus_audio_rate - low_bandwidth with libopus 55513e81 (issue
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2117         2150  =
-  audio.jb_delay_p95_ms                  1703         1733  =
+  audio.mouth_to_ear_p95_ms              2118         2150  =
+  audio.jb_delay_p95_ms                  1704         1733  =
   video.freeze_count                      1.8          2.6  sm
   video.freeze_total_ms                  1441         1434  =
   video.longest_freeze_ms                 460          597  sm
@@ -7656,8 +7656,8 @@ low_bandwidth - 150 kbps link: audio must stay clean, video degrades gracefully
   audio.concealed_pct                     1.2          1.2  =
   audio.interruptions                     1.4          1.4  =
   audio.longest_interruption_ms           222          222  =
-  audio.mouth_to_ear_p95_ms              2117         2150  =
-  audio.jb_delay_p95_ms                  1703         1733  =
+  audio.mouth_to_ear_p95_ms              2118         2150  =
+  audio.jb_delay_p95_ms                  1704         1733  =
   video.freeze_count                      1.8          2.6  sm
   video.freeze_total_ms                  1441         1434  =
   video.longest_freeze_ms                 460          597  sm
@@ -7980,11 +7980,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          494  =
-  audio.jb_delay_p95_ms                   296          295  =
+  audio.mouth_to_ear_p95_ms               495          495  =
+  audio.jb_delay_p95_ms                   296          296  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                16.9         13.4  =
+  video.longest_freeze_ms                16.9         15.7  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
