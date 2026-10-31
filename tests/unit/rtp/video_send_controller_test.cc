@@ -496,6 +496,37 @@ SM_TEST(VideoSendController, BitrateAdjusterRunsOnAllocationUpdatesAndEverySecon
   SM_EXPECT_TRUE(d.target == c.bitrate_adjuster().adjusted());
 }
 
+// Issue #894: VideoStreamEncoder::OnBitrateUpdated runs SetEncoderRates(UpdateBitrateAllocation(...)) when
+// the allocation arrives, so EncoderBitrateAdjuster::AdjustRateAllocation, and the overshoot detector's
+// SetTargetRate with its leak at the old rate, run at the update's time, not at the next captured frame.
+SM_TEST(VideoSendController, BitrateAdjusterRunsWhenTheAllocationUpdateArrives) {
+  SessionConfig sc = Cfg();
+  sc.send_side.max_packet_size = 1200;
+  Session s(sc);
+  s.AddVideoSend(VideoStreamConfig{});
+  VideoSendControllerConfig cfg;
+  cfg.quality_scaling = false;
+  cfg.adjuster_on_update = true;
+  VideoSendController c(cfg, s);
+  // The encoder produces 1.5 times the rate it is given, so the adjuster's factor keeps moving.
+  DataRate last;
+  int t = 0;
+  for (; t < 3500; t += 33) {
+    const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
+    last = d.target;
+    if (d.encode) c.OnEncoded({DataSize::Bytes(d.target.bps() * 3 / 2 / 8 / 30), false}, At(t));
+  }
+  SM_EXPECT_TRUE(c.bitrate_adjuster().adjusted() == last);
+  // An allocation update between two frames, polled after the session ran.
+  s.send_side().OnVideoEncoderReconfigured(At(t - 10));
+  SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(t - 10)).has_value());
+  const DataRate at_update = c.bitrate_adjuster().adjusted();
+  SM_EXPECT_TRUE(at_update != last);
+  // The next frame keeps the rate set at the update.
+  const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
+  SM_EXPECT_TRUE(d.target == at_update);
+}
+
 // VideoStreamEncoder's pending_frame_ (video_stream_encoder.cc MaybeEncodeVideoFrame and
 // OnBitrateUpdated): a frame dropped while the encoder is paused is held, and the resume encodes it at
 // once, before the next frame is captured, with its own capture time.
