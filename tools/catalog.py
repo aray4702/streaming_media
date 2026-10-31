@@ -635,7 +635,12 @@ ALGORITHMS = [
                       "rtc::SentPacket::send_time_ms (transport_feedback_adapter.cc:184), so its estimators see whole "
                       "milliseconds; on `issue_150_gcc_v2_high_jitter_seed10` seed 10 the acked rate differed from "
                       "libwebrtc's at 1280 ms (470925 vs 471029 bps, yardstick #915) and matches it with the port; unit "
-                      "test `TransportFeedbackAdapter.SendTimeIsWholeMilliseconds`."),
+                      "test `TransportFeedbackAdapter.SendTimeIsWholeMilliseconds`. The milliseconds are the "
+                      "transport's Timestamp::ms(), rounded to the nearest (api/units/timestamp.h:56-58; sm_compare's "
+                      "transport passes now.ms(), webrtc_call.cc:996), not rounded down: with rounding down the acked "
+                      "rate still differed at 2530, 3330 and 4380 ms (497269/550081/496731 vs libwebrtc's "
+                      "496773/549522/496232), and rounded to the nearest it matches there (#897); unit test "
+                      "`TransportFeedbackAdapter.SendTimeIsRoundedToTheNearestMillisecond`."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
