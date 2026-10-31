@@ -380,6 +380,16 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
         .Update(static_cast<int64_t>(r.bytes.size()), now.ms());
   }
+  // UpdateRtpStats then reads GetSendRates(now) for the stream's bitrate observer (the video stream's
+  // SendStatisticsProxy, rtp_sender_egress.cc:495-498, rtp_video_sender.cc:307) on every packet the video
+  // module sends, and RateStatistics::Rate erases the expired buckets. So an RTX stream that paused for
+  // over a window restarts its window when it resumes, and the next allocation counts it at its rate
+  // since then (issue #895).
+  if (sp.sender && sp.sender->config().video) {
+    video_rate_.Rate(now.ms());
+    rtx_rate_.Rate(now.ms());
+    fec_rate_.Rate(now.ms());
+  }
   r.wire_size = sent.size;
   r.probe_cluster = sent.probe_cluster;
   r.send_time = now;

@@ -212,6 +212,16 @@ bool RtcpEngine::ReportDue(Timestamp now, bool keyframe_before_rtp) const {
   return now >= next_report_;
 }
 
+bool RtcpEngine::BuildsReport(Timestamp now) const {
+  if (!started_) return false;
+  if (now >= next_report_) return true;
+  if (cfg_.reduced_size) return false;
+  for (const auto& q : queue_) {
+    if (CarriesReport(q.tag)) return true;
+  }
+  return false;
+}
+
 std::vector<RtcpOutgoing> RtcpEngine::SendReport(Timestamp now) {
   std::vector<RtcpOutgoing> out;
   if (!started_) return out;
