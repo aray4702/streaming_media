@@ -11,6 +11,10 @@ describe From 8 s the host reports an RTT 75.8 ms short of the int64 limit, then
 # gives 2-4 freezes on seeds 1-5 with or without host_rtt, and with libopus (#460) one
 # audio interruption on seed 3 (170 ms without host_rtt, 200 ms with it).
 # fix-record-base-cmake: -DSM_SANITIZE=ON
+# Not in the libwebrtc comparison (#921): libwebrtc's unit arithmetic overflows on this RTT (signed-overflow
+# UB, #904, explained in #912), so it has no defined value to match. issue_911_host_rtt_10s is the comparable
+# copy with a defined 10 s host RTT, and matches libwebrtc (#916).
+compare off
 duration 30s
 at 0s capacity=2500kbps delay=30ms queue=400ms
 host_rtt 8s 9223372036854700000us
