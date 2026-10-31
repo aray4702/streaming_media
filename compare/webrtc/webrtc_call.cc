@@ -652,13 +652,17 @@ class ModelEncoder final : public w::VideoEncoder {
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
 };
 
+// Called with each frame the decoder decodes, its RTP timestamp and render time (#931's frame trace).
+using DecodeHook = std::function<void(uint32_t rtp_ts, int64_t render_time_ms)>;
+
 class ModelDecoder final : public w::VideoDecoder {
  public:
-  ModelDecoder() : buffer_(w::I420Buffer::Create(320, 180)) {
+  explicit ModelDecoder(DecodeHook hook) : hook_(std::move(hook)), buffer_(w::I420Buffer::Create(320, 180)) {
     w::I420Buffer::SetBlack(buffer_.get());
   }
   bool Configure(const Settings&) override { return true; }
   int32_t Decode(const w::EncodedImage& img, int64_t render_time_ms) override {
+    if (hook_) hook_(img.RtpTimestamp(), render_time_ms);
     w::VideoFrame f = w::VideoFrame::Builder()
                           .set_video_frame_buffer(buffer_)
                           .set_rtp_timestamp(img.RtpTimestamp())
@@ -674,6 +678,7 @@ class ModelDecoder final : public w::VideoDecoder {
   int32_t Release() override { return WEBRTC_VIDEO_CODEC_OK; }
 
  private:
+  DecodeHook hook_;
   w::scoped_refptr<w::I420Buffer> buffer_;
   w::DecodedImageCallback* cb_ = nullptr;
 };
@@ -698,10 +703,14 @@ class ModelEncoderFactory final : public w::VideoEncoderFactory {
 
 class ModelDecoderFactory final : public w::VideoDecoderFactory {
  public:
+  explicit ModelDecoderFactory(DecodeHook hook) : hook_(std::move(hook)) {}
   std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
   std::unique_ptr<w::VideoDecoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
-    return std::make_unique<ModelDecoder>();
+    return std::make_unique<ModelDecoder>(hook_);
   }
+
+ private:
+  DecodeHook hook_;
 };
 
 // A camera that delivers frames when told to. Like libwebrtc's
@@ -1060,7 +1069,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
   // --- Streams ----------------------------------------------------------------
   ModelEncoderFactory encoder_factory(&model);
-  ModelDecoderFactory decoder_factory;
+  // #931's frame trace: a row per decoded frame, found again by its RTP timestamp when it renders.
+  std::unordered_map<uint32_t, size_t> frame_row;
+  ModelDecoderFactory decoder_factory([&](uint32_t rtp_ts, int64_t render_time_ms) {
+    if (!opt.video_trace) return;
+    testbench::FrameRenderRow r;
+    if (model.rtp_ts_offset) {
+      auto ft = model.frame_times.find(rtp_ts - *model.rtp_ts_offset);
+      if (ft != model.frame_times.end()) r.capture_ms = ft->second.capture.ms();
+    }
+    r.render_time_ms = rel(w::Timestamp::Millis(render_time_ms)).ms();
+    r.out_ms = rel(sim.Now()).ms();
+    frame_row[rtp_ts] = rep.frame_trace.size();
+    rep.frame_trace.push_back(r);
+  });
   auto allocator_factory = w::CreateBuiltinVideoBitrateAllocatorFactory();
   ModelSource source(s.video_width, s.video_height);
   RenderSink renderer([&](const w::VideoFrame& f) {
@@ -1073,6 +1095,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (last_render.IsFinite())
         render_by_second[sec].max_gap_ms =
             std::max(render_by_second[sec].max_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
+    }
+    if (auto fr = frame_row.find(f.rtp_timestamp()); fr != frame_row.end()) {
+      rep.frame_trace[fr->second].out_ms = now.ms();
+      rep.frame_trace[fr->second].rendered = 1;
+      frame_row.erase(fr);
     }
     ++frames_rendered;
     ++w_frames;

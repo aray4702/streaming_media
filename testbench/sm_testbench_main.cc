@@ -112,6 +112,10 @@ int main(int argc, char** argv) {
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.video.csv",
                     std::ios::binary)
           << sm::testbench::VideoTraceCsv(report.video_trace);
+      // The receive side's frames: render time and render or drop (#931).
+      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.frames.csv",
+                    std::ios::binary)
+          << sm::testbench::FrameTraceCsv(report.frame_trace);
       // The GoogCC estimates per update (issue #149), `cc v2` only.
       std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.bwe.csv",
                     std::ios::binary)

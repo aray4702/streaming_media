@@ -370,6 +370,14 @@ void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_
   }
 }
 
+std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows) {
+  std::string out = "capture_ms,render_time_ms,out_ms,rendered\n";
+  for (const auto& r : rows)
+    out += std::to_string(r.capture_ms) + "," + std::to_string(r.render_time_ms) + "," + std::to_string(r.out_ms) +
+           "," + std::to_string(r.rendered) + "\n";
+  return out;
+}
+
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
   std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost,bitrate_bps,allocation_bps,"
                     "overhead_bytes\n";
@@ -936,6 +944,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   auto render = [&](Timestamp at) {
     if (!s.video) return;
     for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+      if (opt.video_trace) {
+        auto cap = frame_capture.find(f.rtp_timestamp);
+        rep.frame_trace.push_back({cap != frame_capture.end() ? cap->second.ms() : -1,
+                                   f.render_time.IsFinite() ? f.render_time.ms() : -1, at.ms(), f.render ? 1 : 0});
+      }
       if (!f.render) continue;
       freezes.OnFrameRendered(at);
       ++vt_row.rendered;
