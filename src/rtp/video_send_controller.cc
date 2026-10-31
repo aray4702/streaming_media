@@ -382,6 +382,10 @@ std::optional<EncodeDecision> VideoSendController::MaybeEncodePendingFrame(Times
   if (start_bitrate_set_ && rates.video_allocation_updates != 0 && rates.video_allocation_updates != target_updates_seen_) {
     target_updates_seen_ = rates.video_allocation_updates;
     OnTargetBitrate(target, now);
+    // SetEncoderRates(UpdateBitrateAllocation(...)) in the same OnBitrateUpdated: the adjuster runs
+    // AdjustRateAllocation when the allocation arrives, and its overshoot detector's SetTargetRate leaks the
+    // virtual buffer at the old rate up to now, not up to the next captured frame (issue #894).
+    if (cfg_.bitrate_adjuster && cfg_.adjuster_on_update) EncoderRate(rates, input_fps(), false, false, now);
   }
   const bool paused = paused_ || rates.encoder_paused;
   const bool resumed = encoder_paused_seen_ && !paused;

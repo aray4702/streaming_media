@@ -977,8 +977,9 @@ ALGORITHMS = [
                "issue #569; on by default as libwebrtc since #637) the adjusted rate is "
                "recomputed when VideoStreamEncoder's UpdateBitrateAllocation runs: on each allocation update "
                "(OnBitrateUpdated), on a reconfiguration and every 1 s (kParameterUpdateIntervalMs), and held in "
-               "between; there an update is applied at the next captured frame, the last of several between two "
-               "frames only. Remaining differences: one stream with one temporal layer. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "between. An update runs it when it arrives (MaybeEncodePendingFrame, polled after the session ran, "
+               "as OnBitrateUpdated; issue #894), so the overshoot detector's SetTargetRate leaks its buffers up to "
+               "the update's time. Remaining differences: one stream with one temporal layer. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -1006,7 +1007,14 @@ ALGORITHMS = [
                       "and scene-cut (`scene_change`) modes, off by default, so these ports meet a real rate miss on "
                       "both stacks of `sm_compare` (scenarios issue_466_*; `video.encoder_target_avg_kbps` and "
                       "`video.encoder_dropped` are shown next to libwebrtc's). At 1.3x on a 1 Mbps link the adjuster "
-                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3)."),
+                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3). "
+                      "Issue #894: an allocation update reached the adjuster at the next captured frame (BWE updates at "
+                      "130/180/230/280/430 ms applied at 133/200/233/300/433 ms), so the detector leaked 3-20 ms at the "
+                      "old rate; at the first detector-based update (1133 ms) the link factor was 1.2381 and the encoder "
+                      "got 1839899 bps where libwebrtc's frame implies about 1842 kbps. Run when the update arrives, "
+                      "issue_24_timing_v2_default seed 1 matches libwebrtc's forward link through row 570 (2.5 s) "
+                      "instead of row 229 (1.133 s); unit test "
+                      "`VideoSendController.BitrateAdjusterRunsWhenTheAllocationUpdateArrives`."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
