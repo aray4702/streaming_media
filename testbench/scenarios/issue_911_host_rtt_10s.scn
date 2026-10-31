@@ -1,0 +1,18 @@
+name issue_911_host_rtt_10s
+describe issue_451_host_rtt_near_limit's call with a large but defined host RTT: from 8 s the host reports 10 s, then the link drops and recovers; both stacks' GoogCC take the same RTT
+# Issue #911 (window decision on #892 / #904): issue_451_host_rtt_near_limit can't be compared,
+# because its near-limit host RTT makes libwebrtc's unit arithmetic overflow
+# (rtc_base/units/unit_base.h:209-219). This copy hands both stacks a 10 s RTT instead, which
+# every sum stays defined for: ours through Session::SetRtt (testbench/call.cc, the host_rtt
+# block), libwebrtc's at its GoogCC RTT input (compare/webrtc/webrtc_call.cc,
+# DetectorTraceController::HostRtt). With a 10 s RTT AimdRateControl's near-max increase sits at
+# its 4 kbps/s floor (aimd_rate_control.cc:200-206) after the 12 s drop, as with the near-limit one.
+# The expect lines are issue_451's: the same call must still carry on.
+duration 30s
+at 0s capacity=2500kbps delay=30ms queue=400ms
+host_rtt 8s 10s
+at 12s capacity=1000kbps
+at 18s capacity=2500kbps
+expect audio.interruptions <= 1
+expect video.freeze_count <= 4
+expect video.render_fps >= 24
