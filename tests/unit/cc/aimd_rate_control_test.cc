@@ -37,6 +37,37 @@ SM_TEST(AimdRateControl, NearMaxIncreaseRateIs5kbpsOn60kbpsAnd100msRtt) {
   SM_EXPECT_EQ(c.GetNearMaxIncreaseRateBpsPerSecond(), 5'000);
 }
 
+// Issue #893: libwebrtc computes the near-max increase in whole bytes (aimd_rate_control.cc:191-206):
+// a 442 B frame at 106177 bps, 442 B / 600 ms = 5893 bps/s (5898.7 in doubles).
+SM_TEST(AimdRateControl, NearMaxIncreaseRateInWholeBytes) {
+  AimdRateControl c;
+  c.SetEstimate(Bps(106'177), kInitialTime);
+  SM_EXPECT_EQ(c.GetNearMaxIncreaseRateBpsPerSecond(), 5'893);
+}
+
+// Issue #893: at the 4000 bps/s minimum, 50 ms is 0.049999999999999996 s in libwebrtc's
+// TimeDelta::seconds<double>(), so the additive increase truncates to 199 bps, not 200
+// (issue_466_undershoot_very_low_capacity seed 1: 101200 -> 101399 at 1830 ms on both stacks).
+SM_TEST(AimdRateControl, AdditiveIncreaseOver50msAtTheMinimumRate) {
+  AimdRateControl c;
+  c.SetRtt(TimeDelta::Millis(400));
+  Timestamp now = kInitialTime;
+  c.SetEstimate(Bps(130'000), now);
+  now += TimeDelta::Millis(100);
+  c.Update(BandwidthUsage::kOverusing, Bps(125'000), now);
+  const DataRate after_drop = c.LatestEstimate();
+  SM_EXPECT_EQ(after_drop.bps(), 101'250);
+  SM_EXPECT_EQ(c.GetNearMaxIncreaseRateBpsPerSecond(), 4'000);
+  now += TimeDelta::Millis(200);
+  c.Update(BandwidthUsage::kNormal, Bps(125'000), now);  // hold -> increase
+  SM_EXPECT_EQ(c.LatestEstimate().bps(), after_drop.bps());
+  for (int i = 1; i <= 3; ++i) {
+    now += TimeDelta::Millis(50);
+    c.Update(BandwidthUsage::kNormal, Bps(125'000), now);
+    SM_EXPECT_EQ(c.LatestEstimate().bps(), after_drop.bps() + 199 * i);
+  }
+}
+
 SM_TEST(AimdRateControl, GetIncreaseRate) {
   AimdRateControl c;
   c.SetEstimate(Bps(300'000), kInitialTime);

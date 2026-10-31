@@ -23,7 +23,11 @@ duration 60s
 at 0s capacity=1000kbps delay=20ms queue=300ms
 at 20s cross=800kbps
 expect video.freeze_total_ms < 31500
-expect video.freeze_count <= 49
+# Moved from <= 49 with #893 (program.md 0.2, needs-human: window's call): libwebrtc's TimeDelta::seconds<double>()
+# and GetNearMaxIncreaseRateBpsPerSecond arithmetic (unit_base.h:157-161, aimd_rate_control.cc:191-206) move seed 1
+# from 38 to 53 freezes. This scenario's trace splits from libwebrtc's at 1.13 s (video packet sizes), so seed 1 is
+# chaotic. Seeds 1-40, freeze count: ours main 38.4 (max 49), with #893 38.9 (max 53), libwebrtc 37.5 (max 49, parity-data).
+expect video.freeze_count <= 53
 # Moved to < 3750 with #655 part 2 (#669; window, 2026-10-29, program.md 0.2): the frame dropper's post-rewrite
 # keyframe size moves seed 1 to 3701. libwebrtc on 40 seeds (yardstick #689, run 40885055886): mean 1923, worst 3778;
 # ours on main mean 1900, worst 3612. The line stays below libwebrtc's worst seed.

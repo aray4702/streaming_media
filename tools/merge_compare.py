@@ -4,7 +4,8 @@
 CI runs the comparison in N shards (.github/workflows/ci.yml, compare-webrtc):
 shard k of N runs scenario files k, k + N, k + 2N, ... of the sorted list, so
 scenario p of the full run is scenario p // N of shard p % N. This puts the
-scenarios back in that order.
+scenarios back in that order. A scenario with `compare off` (#921) has a
+"skipped" text block and no JSON entry; it keeps its place in the order.
 
   tools/merge_compare.py --shards N --out-json compare-webrtc.json \\
       --out-txt compare-webrtc.txt shard-0 shard-1 ... shard-(N-1)
@@ -22,6 +23,7 @@ import re
 import sys
 
 BETTER = re.compile(r"^better: sm (\d+), webrtc (\d+), tie (\d+) \(of the metrics shown\)$", re.M)
+SKIPPED = re.compile(r"^\S+: skipped \(compare off")
 
 
 def interleave(parts):
@@ -53,16 +55,21 @@ def merge(jsons, txts):
         for k in ("webrtc_version", "seeds", "shown"):
             if j.get(k) != first.get(k):
                 raise SystemExit("shards disagree on %r" % k)
+    parts = [split_txt(t) for t in txts]
+    entries = []  # per shard: (text block, JSON scenario or None for a skipped one), in the shard's order
+    for (_, blocks, _, _), j in zip(parts, jsons):
+        compared = [b for b in blocks if not SKIPPED.match(b)]
+        if len(compared) != len(j["scenarios"]):
+            raise SystemExit("a shard's text has %d scenario blocks for %d scenarios" % (len(compared), len(j["scenarios"])))
+        it = iter(j["scenarios"])
+        entries.append([(b, None if SKIPPED.match(b) else next(it)) for b in blocks])
+    ordered = interleave(entries)
     merged = {"webrtc_version": first["webrtc_version"], "seeds": first["seeds"], "shown": first["shown"],
-              "scenarios": interleave([j["scenarios"] for j in jsons])}
+              "scenarios": [s for _, s in ordered if s is not None]}
     traces = [t for j in jsons for t in j.get("traces", [])]
     if traces:
         merged["traces"] = traces
-    parts = [split_txt(t) for t in txts]
-    for (_, blocks, _, _), j in zip(parts, jsons):
-        if len(blocks) != len(j["scenarios"]):
-            raise SystemExit("a shard's text has %d scenario blocks for %d scenarios" % (len(blocks), len(j["scenarios"])))
-    blocks = interleave([p[1] for p in parts])
+    blocks = [b for b, _ in ordered]
     wins = [sum(p[2][i] for p in parts) for i in range(3)]
     tail = BETTER.sub("better: sm %d, webrtc %d, tie %d (of the metrics shown)" % tuple(wins), parts[0][3], count=1)
     text = parts[0][0] + "\n" + "".join("\n" + b + "\n" for b in blocks) + "\n" + tail
