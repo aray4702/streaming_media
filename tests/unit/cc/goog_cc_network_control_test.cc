@@ -294,3 +294,51 @@ SM_TEST(GccController, RatesAboveIntBpsSaturateAsLibwebrtcConstraints) {
   SM_ASSERT_EQ(update.probes.size(), 2u);
   for (const ProbeCluster& p : update.probes) SM_EXPECT_EQ(p.rate, int_max);  // 3x and 6x, capped at max.
 }
+
+// #893: GoogCcNetworkController::OnTransportPacketsFeedback runs MaybeTriggerOnNetworkChanged only when
+// the delay-based estimate updated (goog_cc_network_control.cc:517-521). While the detector overuses
+// and it is not yet time to reduce further, a feedback that moves the loss-based target returns an
+// update without a target or a pacer config; the new target goes out with the next sent packet
+// (OnSentPacket, pushback on) or process interval. Here every packet arrives 10 ms later than the one
+// before and every third is lost, so the delay-based estimate overuses and the loss-based one falls.
+SM_TEST(GoogCcNetworkController, FeedbackWithoutDelayBasedUpdateCarriesNoNewTarget) {
+  GccController g(InitialConfig(DataRate::KilobitsPerSec(2000)));
+  Timestamp now = Timestamp::Millis(123456);
+  uint16_t seq = 0;
+  NetworkControlUpdate start = g.Start(now);
+  DataRate reported = start.target_rate;
+  PacketTransmissionAndFeedbackBlock(g, 5000, 0, now, seq);
+  reported = g.OnProcessInterval(now, DataRate::Zero()).target_rate;
+  int held = 0;
+  int64_t delay_buildup = 0;
+  for (int i = 0; i < 200; ++i) {
+    for (int k = 0; k < 4; ++k) {
+      g.OnPacketSent(seq, now, DataSize::Bytes(1000));
+      TransportFeedback fb = OnePacketFeedback(seq, now + TimeDelta::Millis(delay_buildup));
+      fb.packets[0].received = (seq % 3) != 0;
+      delay_buildup += 10;
+      ++seq;
+      now += TimeDelta::Millis(10);
+      const NetworkControlUpdate u = g.OnTransportFeedback(fb, now + TimeDelta::Millis(delay_buildup));
+      if (!g.last_feedback_used()) continue;
+      if (!g.last_feedback_delay_updated()) {
+        SM_EXPECT_FALSE(u.triggered);
+        SM_EXPECT_TRUE(u.target_rate == reported);
+        if (g.target() != reported) {
+          ++held;
+          // The next sent packet's MaybeTriggerOnNetworkChanged sends it.
+          g.OnPacketSent(seq, now, DataSize::Bytes(1000));
+          const NetworkControlUpdate sent = g.MaybeTriggerOnSentPacket(now);
+          SM_EXPECT_TRUE(sent.triggered);
+          SM_EXPECT_TRUE(sent.target_rate == g.target());
+          ++seq;
+        }
+      } else if (u.triggered) {
+        SM_EXPECT_TRUE(u.target_rate == g.target());
+      }
+      reported = g.MaybeTriggerOnSentPacket(now).target_rate;
+    }
+    reported = g.OnProcessInterval(now, DataRate::Zero()).target_rate;
+  }
+  SM_EXPECT_TRUE(held > 0);
+}

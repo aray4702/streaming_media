@@ -47,7 +47,7 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
   ApplyTarget(u, now);
-  ApplyPacer(u);
+  ApplyPacer(u, now);
 }
 
 void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now) {
@@ -61,8 +61,8 @@ void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestam
 // RtpTransportControllerSend::PostUpdates: the pacer config, then the probe clusters. GetPacingRates runs at the
 // end of MaybeTriggerOnNetworkChanged, after the pushback target of the same update, and the padding rate never
 // exceeds that pushback target (goog_cc_network_control.cc:596-650, 675-679; issue #813).
-void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u) {
-  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now) {
+  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
 }
 
@@ -190,7 +190,7 @@ void SendSideController::NotifyAllocationLimits(Timestamp now) {
   if (min_changed) gcc_.UpdateMinAllocatable(l.min_allocatable);
   if (min_changed || padding_changed) {
     gcc_.SetPacingLimits(l.min_allocatable, l.max_padding);
-    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
   }
 }
 
@@ -449,7 +449,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
       const cc::NetworkControlUpdate u = gcc_.MaybeTriggerOnSentPacket(now);
       if (u.triggered) ApplyTarget(u, now);
       UpdatePushback(now, false);
-      if (u.triggered || pushback_target_ != last_pushback) ApplyPacer(u);
+      if (u.triggered || pushback_target_ != last_pushback) ApplyPacer(u, now);
       PostTargetRate(now);
     } else {
       UpdatePushback(now, false);
@@ -475,8 +475,16 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     if (cfg_.control_handler) UpdateControlState(now);
     const cc::NetworkControlUpdate u = gcc_.OnProcessInterval(now, send_rate(now));
     ApplyTarget(u, now);
+    const DataRate last_pushback = pushback_target_;
     UpdatePushback(now, true);
-    ApplyPacer(u);
+    // OnProcessInterval's update carries a pacer config only when MaybeTriggerOnNetworkChanged fires
+    // (goog_cc_network_control.cc:241, 610-652), and SetPacerConfig re-reads the queue at that time
+    // (issue #893). The probe clusters go to the pacer either way.
+    if (u.triggered || pushback_target_ != last_pushback) {
+      ApplyPacer(u, now);
+    } else {
+      for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
+    }
     PostTargetRate(now);
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
@@ -529,19 +537,27 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     outage_.OnFeedback(now);
     return;
   }
-  ApplyTarget(u, now);
+  // RtpTransportControllerSend::PostUpdates: the update carries the target and the pacer config only
+  // when MaybeTriggerOnNetworkChanged ran and its change check fired, which on feedback needs an
+  // updated delay-based estimate (goog_cc_network_control.cc:517-521, 610-652; issue #893). The probe
+  // clusters go to the pacer either way.
+  if (u.triggered) ApplyTarget(u, now);
   // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
   // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
   // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
   // before this feedback. After an outage the first feedback clears the lost packets from flight;
   // against the grown window that fill would fall under 0.1 and end the pushback at once (#446).
   if (gcc_.last_feedback_delay_updated()) UpdatePushback(now, false);
-  ApplyPacer(u);
+  if (u.triggered) {
+    ApplyPacer(u, now);
+  } else {
+    for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
+  }
   if (auto rtt = gcc_.last_feedback_max_rtt()) {
     cwnd_.OnFeedbackRtt(*rtt);
     cwnd_.UpdateWindow(window_target_);
   }
-  PostTargetRate(now);
+  if (u.triggered) PostTargetRate(now);
   outage_.OnFeedback(now);
 }
 
