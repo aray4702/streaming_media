@@ -43,6 +43,11 @@ constexpr double ToDouble(int64_t v) {
        : v == kMinusInf ? -std::numeric_limits<double>::infinity()
                         : static_cast<double>(v);
 }
+// UnitBase::ToFraction<Denominator, double> (unit_base.h:157-161): the value times the reciprocal of
+// the denominator, not divided by it, so 50 ms reads 0.049999999999999996 s as in libwebrtc (#893).
+constexpr double ToFractionF(int64_t v, int64_t denominator) {
+  return ToDouble(v) * (1 / static_cast<double>(denominator));
+}
 // RelativeUnit::operator+ and operator- (unit_base.h:218-241).
 constexpr int64_t Add(int64_t a, int64_t b) {
   if (a == kPlusInf || b == kPlusInf) return kPlusInf;
@@ -124,8 +129,9 @@ class TimeDelta {
   constexpr int64_t us() const { return us_; }
   // TimeDelta::ms() (api/units/time_delta.h:64-66): ToFraction<1000>, rounded to the nearest (#461).
   constexpr int64_t ms() const { return units_impl::DivideRoundToNearest(us_, 1000); }
-  constexpr double ms_f() const { return static_cast<double>(us_) / 1e3; }
-  constexpr double seconds() const { return static_cast<double>(us_) / 1e6; }
+  // TimeDelta::ms<double>() and seconds<double>() (api/units/time_delta.h:58-66): ToFraction.
+  constexpr double ms_f() const { return units_impl::ToFractionF(us_, 1000); }
+  constexpr double seconds() const { return units_impl::ToFractionF(us_, 1000000); }
   constexpr bool IsFinite() const {
     return us_ != std::numeric_limits<int64_t>::max() && us_ != std::numeric_limits<int64_t>::min();
   }
@@ -173,7 +179,8 @@ class Timestamp {
   constexpr int64_t us() const { return us_; }
   // Timestamp::ms() (api/units/timestamp.h:56-58): ToFraction<1000>, rounded to the nearest (#461).
   constexpr int64_t ms() const { return units_impl::DivideRoundToNearest(us_, 1000); }
-  constexpr double seconds() const { return static_cast<double>(us_) / 1e6; }
+  // Timestamp::seconds<double>() (api/units/timestamp.h:52-54): ToFraction.
+  constexpr double seconds() const { return units_impl::ToFractionF(us_, 1000000); }
   constexpr bool IsFinite() const {
     return us_ != std::numeric_limits<int64_t>::max() && us_ != std::numeric_limits<int64_t>::min();
   }
@@ -216,6 +223,11 @@ class DataSize {
   constexpr DataSize operator*(size_t f) const { return DataSize(units_impl::MulInt(bytes_, units_impl::ToInt64(f))); }
   constexpr DataSize operator/(int64_t d) const { return DataSize(units_impl::Div(bytes_, d)); }
   constexpr DataSize operator/(int32_t d) const { return DataSize(units_impl::Div(bytes_, d)); }
+  // RelativeUnit::operator/ by a floating point scalar (unit_base.h:245-249): std::llround(value / scalar).
+  constexpr DataSize operator/(double d) const {
+    if (units_impl::IsInf(bytes_)) return d < 0 ? DataSize(units_impl::Neg(bytes_)) : *this;
+    return DataSize(units_impl::RoundDouble(static_cast<double>(bytes_) / d));
+  }
   constexpr double operator/(DataSize o) const { return units_impl::ToDouble(bytes_) / units_impl::ToDouble(o.bytes_); }
   constexpr DataSize& operator+=(DataSize o) { return *this = *this + o; }
   constexpr DataSize& operator-=(DataSize o) { return *this = *this - o; }
@@ -235,7 +247,8 @@ class DataRate {
   static constexpr DataRate PlusInfinity() { return DataRate(units_impl::kPlusInf); }
   static constexpr DataRate MinusInfinity() { return DataRate(units_impl::kMinusInf); }
   constexpr int64_t bps() const { return bps_; }
-  constexpr double kbps() const { return static_cast<double>(bps_) / 1e3; }
+  // DataRate::kbps<double>() (api/units/data_rate.h:62-64): ToFraction.
+  constexpr double kbps() const { return units_impl::ToFractionF(bps_, 1000); }
   constexpr bool IsFinite() const { return !units_impl::IsInf(bps_); }
   constexpr bool IsPlusInfinity() const { return bps_ == units_impl::kPlusInf; }
   constexpr bool IsMinusInfinity() const { return bps_ == units_impl::kMinusInf; }

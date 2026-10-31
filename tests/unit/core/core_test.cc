@@ -108,6 +108,24 @@ SM_TEST(Units, GettersRoundToNearest) {
   SM_EXPECT_EQ(DataRate::FromSizeAndTime(DataSize::Bytes(3), TimeDelta::Micros(7)).bps(), 3428571);
 }
 
+// Issue #893: the floating point getters are UnitBase::ToFraction<D, double> (unit_base.h:157-161),
+// the value times 1 / D, so 50 ms reads 0.049999999999999996 s (not 0.05), and an infinity reads
+// as one. DataSize / double rounds to the nearest byte (unit_base.h:245-249).
+SM_TEST(Units, FloatingPointGettersMultiplyByTheReciprocal) {
+  SM_EXPECT_EQ(TimeDelta::Millis(50).seconds(), 50000 * (1 / 1e6));
+  SM_EXPECT_TRUE(TimeDelta::Millis(50).seconds() < 0.05);
+  SM_EXPECT_EQ(static_cast<int64_t>(4000 * TimeDelta::Millis(50).seconds()), 199);
+  SM_EXPECT_EQ(Timestamp::Millis(1830).seconds(), 1830000 * (1 / 1e6));
+  SM_EXPECT_EQ(TimeDelta::Micros(1234).ms_f(), 1234 * (1 / 1e3));
+  SM_EXPECT_EQ(DataRate::BitsPerSec(101399).kbps(), 101399 * (1 / 1e3));
+  SM_EXPECT_EQ(TimeDelta::PlusInfinity().seconds(), std::numeric_limits<double>::infinity());
+  SM_EXPECT_EQ(TimeDelta::MinusInfinity().ms_f(), -std::numeric_limits<double>::infinity());
+  SM_EXPECT_EQ((DataSize::Bytes(442) / 1.0).bytes(), 442);
+  SM_EXPECT_EQ((DataSize::Bytes(1501) / 2.0).bytes(), 751);
+  SM_EXPECT_EQ((DataSize::Bytes(1499) / 2.0).bytes(), 750);
+  SM_EXPECT_TRUE((DataSize::PlusInfinity() / 2.0).IsPlusInfinity());
+}
+
 // Issue #451: the remaining operators and constructors keep infinity and saturate out-of-range
 // results instead of overflowing (UB), as libwebrtc's RelativeUnit (rtc_base/units/unit_base.h).
 // The four cases of the issue first, then libwebrtc's time_delta_unittest.cc / data_rate_unittest.cc.
