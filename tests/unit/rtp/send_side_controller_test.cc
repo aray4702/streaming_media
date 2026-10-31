@@ -661,6 +661,39 @@ SM_TEST(SendSideController, TrailingLostVideoIsResentFromTransportFeedback) {
   SM_EXPECT_EQ(first->seq, seqs[0]);
 }
 
+// Issue #893: RtpVideoSender's early-loss resend reaches the pacer through
+// TaskQueuePacedSender::EnqueuePackets, a posted task (task_queue_paced_sender.cc:133-155) that runs
+// after the RTCP packet is handled, so after the feedback's new pacing rate. While the session handles
+// an RTCP packet (HoldResends), the resend stays with the sender for it to enqueue at the end.
+SM_TEST(SendSideController, HeldEarlyLossResendsStayWithTheSenderUntilTheRtcpPacketIsHandled) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideController c(SendSideConfig{}, &map);
+  c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  RtpSender sender(sc);
+  const std::vector<uint8_t> chunk(300, 1);
+  sender.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000, Timestamp::Millis(0));
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  std::vector<uint16_t> transport;
+  for (int t = 0; t < 100; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) transport.push_back(static_cast<uint16_t>(r.transport_seq));
+  }
+  SM_ASSERT_EQ(transport.size(), 1u);
+  cc::TransportFeedback fb;
+  fb.base_seq = transport[0];
+  fb.packets = {{transport[0], false, 0}};
+  c.HoldResends(true);
+  c.OnTransportFeedback(fb, Timestamp::Millis(150));
+  SM_EXPECT_EQ(c.pacer().QueuePackets(), 0u);  // Not handed to the pacer yet.
+  c.HoldResends(false);
+  auto held = sender.TakePackets();
+  SM_ASSERT_EQ(held.size(), 1u);
+  SM_EXPECT_EQ(held[0].kind, PacketKind::kRtx);
+}
+
 // Issue #104: the sum of the enforced minimums (audio + video) is the lower bound
 // of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
 // not run below what it must send.
