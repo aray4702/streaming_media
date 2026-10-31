@@ -144,6 +144,44 @@ SM_TEST(SendSideController, LossReportReachesTheTargetWithTheNextSentPacket) {
   }
 }
 
+// Issue #875: RtpSenderEgress::SendPacket counts a packet in its send rates as the pacer sends it
+// (UpdateRtpStats, rtp_sender_egress.cc:335, 495), and the sent-packet notification that posts a new
+// target runs after the pacer's loop (RtpTransportControllerSend::OnSentPacket). The allocation the
+// first packet of a loop posts reads a protection share (RtpVideoSender::ProtectionRequest) that
+// counts the RTX the same loop sent after it.
+SM_TEST(SendSideController, AllocationPostedBySentPacketCountsTheWholeSendLoop) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  SendSideController c(cfg, &map);
+  SendSideController::AudioAllocation audio;
+  audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+  c.ConfigureAllocation(audio, true);
+  c.Start(Timestamp::Millis(0));
+  uint16_t seq = 0;
+  for (int t = 0; t <= 1000; ++t) {
+    if (t % 20 == 0) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+    if (t == 1000) c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+  }
+  // One RTX sample: RateStatistics has no rate for it yet, so the share is still 0.
+  SM_EXPECT_EQ(c.repair_share(), 0.0);
+  c.OnLossReport(50, 100, Timestamp::Millis(1010));  // Moves GoogCC's target; posted with the next sent packet.
+  c.Enqueue(Media(seq++, PacketKind::kAudio, cc::PacketPriority::kAudio, 100), Timestamp::Millis(1012));
+  c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(1012));
+  const std::vector<ReleasedPacket> sent = c.Process(Timestamp::Millis(1012));
+  SM_ASSERT_EQ(sent.size(), 2u);
+  SM_EXPECT_EQ(static_cast<int>(sent[0].kind), static_cast<int>(PacketKind::kAudio));
+  SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());  // The audio packet posted the target.
+  SM_EXPECT_GT(c.repair_share(), 0.5);
+  // The allocation took the share the loop's RTX made (capped at 0.5), not the share before the loop.
+  const DataRate alloc = c.allocator().allocation("video");
+  const DataRate video = c.ComputeMeasuredRates(DataRate::Zero()).video_target;
+  SM_EXPECT_LT(video.bps(), alloc.bps() * 0.55);
+  SM_EXPECT_GT(video.bps(), alloc.bps() * 0.4);
+}
+
 // GoogCC's cwnd_reduce_ratio comes from the pushback target after it is clamped to the estimator's
 // minimum (goog_cc_network_control.cc:596-608). Once the pushback reaches that minimum the ratio stops
 // changing, so no new update undoes an AddObserver reallocation's reset to 0 (issue #738).

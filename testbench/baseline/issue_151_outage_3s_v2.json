@@ -54,7 +54,7 @@
   "net.video_loss_pct": 4.139,
   "net.video_queue_drops": 0,
   "net.video_size_max_b": 1486,
-  "net.video_size_p50_b": 1312,
+  "net.video_size_p50_b": 1313,
   "net.video_size_p90_b": 1439,
   "net.video_start_seq": 6666,
   "repair.fec_recovered": 0,

@@ -21,7 +21,7 @@
   "cc.send_over_target_ms": 2500,
   "cc.send_over_target_p95_pct": 59.98,
   "cc.target_avg_kbps": 1925,
-  "cc.target_max_drop_pct": 89.75,
+  "cc.target_max_drop_pct": 89.74,
   "cc.unsettled": 0,
   "cc.utilization_pct": 96.95,
   "net.audio_first_marker": 1,

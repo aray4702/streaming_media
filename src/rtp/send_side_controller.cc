@@ -367,6 +367,15 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
   WriteSendExtensions(sp.packet, r.transport_seq, now);
   r.bytes = sp.packet.Serialize();
   r.kind = sp.kind;
+  // RtpSenderEgress::SendPacket counts the packet in its send rates (UpdateRtpStats, rtp_sender_egress.cc:335,
+  // 495: the RTP packet size, by media type) as it sends it, inside the pacer's loop. The sent-packet
+  // notification that can post a new target is posted from the transport and runs after the loop
+  // (RtpTransportControllerSend::OnSentPacket), so the protection share an allocation reads then
+  // (RtpVideoSender::ProtectionRequest, GetSendRates) counts every packet of the loop (issue #875).
+  if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
+    (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
+        .Update(static_cast<int64_t>(r.bytes.size()), now.ms());
+  }
   r.wire_size = sent.size;
   r.probe_cluster = sent.probe_cluster;
   r.send_time = now;
@@ -386,10 +395,13 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
 std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   std::vector<ReleasedPacket> out;
   pacer_.Process(now);  // Each packet goes through SendPacket() as the pacer sends it.
-  // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator, the
-  // congestion window and the rate statistics see the packets once the loop is done.
+  // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator and the
+  // congestion window see the packets once the loop is done (the send rates counted them in SendPacket).
   std::vector<Egress> egress;
   egress.swap(egress_);
+  // An allocation a sent packet posts reads the send rates at the current time
+  // (RtpVideoSender::ProtectionRequest, RtpSenderEgress::GetSendRates(now); issue #875).
+  last_process_ = now;
   for (Egress& e : egress) {
     const cc::PacedPacket& sent = e.sent;
     ReleasedPacket& r = e.released;
@@ -414,10 +426,6 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
       (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();
-      // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:495): the RTP packet size, by media type.
-      const int64_t rtp_bytes = static_cast<int64_t>(r.bytes.size());
-      (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
-          .Update(rtp_bytes, now.ms());
     }
     window_.emplace_back(now, sent.size.bytes());
     window_bytes_ += sent.size.bytes();
@@ -426,7 +434,6 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     out.push_back(std::move(r));
   }
   ExpireRepair(now);
-  last_process_ = now;
   RunDueVideoActivityChecks(now);
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
