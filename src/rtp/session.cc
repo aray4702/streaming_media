@@ -362,8 +362,23 @@ void Session::Start(Timestamp now) {
   last_target_ = send_.target();
 }
 
+// Each EnqueuePackets call is one task on the pacer's queue (TaskQueuePacedSender::EnqueuePackets,
+// task_queue_paced_sender.cc:133-155) that ends with its own pass. A frame's packets go in one call
+// (RTPSenderVideo::LogAndSendToNetwork), but every retransmission in its own: RTPSender::OnReceivedNack calls
+// ReSendPacket per sequence number, and each enqueues its one packet (rtp_sender.cc:319-362; issue #893, overshoot
+// seed 9 at 33.43 s, where the pass between two resends sends the RTX the second one's enqueue would hold).
 void Session::EnqueueSenderPackets(RtpSender& s, Timestamp now) {
-  for (SenderPacket& p : s.TakePackets()) send_.Enqueue(std::move(p), now);
+  std::vector<SenderPacket> packets = s.TakePackets();
+  size_t i = 0;
+  while (i < packets.size()) {
+    size_t j = i + 1;
+    if (packets[i].priority != cc::PacketPriority::kRetransmission) {
+      while (j < packets.size() && packets[j].priority != cc::PacketPriority::kRetransmission) ++j;
+    }
+    send_.BeginEnqueueBatch(now);
+    for (size_t k = i; k < j; ++k) send_.Enqueue(std::move(packets[k]), now);
+    i = j;
+  }
 }
 
 void Session::AnalyzeAudioCapture(AudioSendId id, std::span<const int16_t> frame, bool muted) {
