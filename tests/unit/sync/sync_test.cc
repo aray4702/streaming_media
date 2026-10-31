@@ -258,6 +258,28 @@ SM_TEST(StreamSync, SynchronizerRunsEverySecondOnNewPackets) {
   SM_EXPECT_FALSE(sync.NextProcessTime().has_value());
 }
 
+SM_TEST(StreamSync, SynchronizerKeepsItsScheduleWhenProcessRunsLate) {
+  // RepeatingTask::operator() (repeating_task.cc:86-89): next_run_time_ += delay
+  // and the lateness is taken off the delay (at least zero), so the task keeps
+  // its 1 s grid from DelayedStart, and a run over an interval late is posted
+  // again at once (issue #902).
+  FakeSyncable audio, video;
+  audio.ssrc = 1;
+  video.ssrc = 2;
+  RtpStreamsSynchronizer sync(&video);
+  sync.ConfigureSync(&audio, Timestamp::Millis(0));
+  sync.Process(Timestamp::Millis(1300));  // 300 ms late.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 2000);
+  sync.Process(Timestamp::Millis(1999));  // Not due.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 2000);
+  sync.Process(Timestamp::Millis(3500));  // 1500 ms late: the next run is already due.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 3000);
+  sync.Process(Timestamp::Millis(3500));
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 4000);
+  sync.Process(Timestamp::Millis(4000));  // On time.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 5000);
+}
+
 SM_TEST(StreamSync, StreamSyncOffset) {
   FakeSyncable audio, video;
   audio.ssrc = 1;

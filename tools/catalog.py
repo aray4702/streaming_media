@@ -1655,7 +1655,11 @@ ALGORITHMS = [
                   "at 40 s the video path gains 120 ms. Measures the true A/V offset before sync, after settling and "
                   "after the route change.",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#8-synchronization) for the differences from libwebrtc. The 30 ms dead band sits inside the ITU-R BT.1359 detectability window (+45/-125 ms).",
-         verification="The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
+         verification="Issue #902: the next run is timed from the scheduled time, as `RepeatingTask::operator()` "
+                      "(`rtc_base/task_utils/repeating_task.cc:86-89`), not from `now`, so a late `Process` keeps the 1 s grid "
+                      "(unit test `StreamSync.SynchronizerKeepsItsScheduleWhenProcessRunsLate`); suite bit-identical, as the "
+                      "bench runs at `NextProcessTime`. "
+                      "The test's 'before' sample was taken after the first corrections; it is now taken at t=0 "
                       "(40 ms offset). #77 ported libwebrtc M157's `StreamSynchronization` and `RtpStreamsSynchronizer` "
                       "(`video/stream_synchronization.cc`, `video/rtp_streams_synchronizer2.cc`, `call/syncable.h`). The filter "
                       "starts at 0 and resets after each move, one stream changes at a time, the outputs are minimum playout delays "
