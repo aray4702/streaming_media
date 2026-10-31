@@ -270,10 +270,10 @@ class Owners(unittest.TestCase):
     def test_783_owns_only_issue_533_audio_cells(self):
         # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
         # through StreamSynchronization, so they go to the scenario's video/CC owner with a note;
-        # issue_451 keeps #451's not-comparable note. #723 closed #504 and moved its issue_533 NetEq
+        # issue_451 goes to #892 with a note (#892's harness fix gives libwebrtc the host RTT). #723 closed #504 and moved its issue_533 NetEq
         # cells and the receive-side cells below to #783. #741 gives the policer audio rule #719's number.
         cells = {"issue_12_lossbwe_policer": 719, "issue_12_lossbwe_shallow": 411,
-                 "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
+                 "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 892,
                  "issue_533_opus_decoder_frame_older_than_window": 783,
                  # On #716's run these were owned only through the catch-all's #504: NetEq on audio-only
                  # calls, the post-handover backlog and high_jitter seed 5's target split, now with #783.
