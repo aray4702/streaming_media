@@ -887,11 +887,15 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   // its arithmetic on the RTT stays defined. Its unit operators are plain int64 adds and multiplies
   // (`RelativeUnit::operator+`, rtc_base/units/unit_base.h:209-219), and GoogCC adds to the RTT and doubles the
   // sum (`(rtt_ + 100 ms) * 2`, aimd_rate_control.cc:200-202; `kBweDecreaseInterval + last_round_trip_time_`,
-  // send_side_bandwidth_estimation.cc:500), so a host RTT above a quarter of the int64 range is signed-overflow
-  // UB there. Such an RTT (issue_451_host_rtt_near_limit, which checks our overflow guards) is not given to
-  // libwebrtc: comparing against undefined behaviour measures nothing (window decision on #904).
+  // send_side_bandwidth_estimation.cc:500). The tightest is the doubled sum, defined up to
+  // rtt = INT64_MAX / 2 - 100 ms (issue #921's audit), after the RTT is rounded to 1 ms (HostRttValue, as
+  // rtp_transport_controller_send.cc:571; up to 500 us more). A larger host RTT is signed-overflow UB there. Such
+  // an RTT (issue_451_host_rtt_near_limit, which checks our overflow guards) is not given to libwebrtc: comparing
+  // against undefined behaviour measures nothing (window decision on #904). issue_921_host_rtt_under_limit feeds
+  // one 100 ms under the limit.
+  constexpr int64_t kMaxDefinedHostRttUs = std::numeric_limits<int64_t>::max() / 2 - 100'000 - 500;
   std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt;
-  if (s.host_rtt && s.host_rtt->second.us() <= std::numeric_limits<int64_t>::max() / 4) {
+  if (s.host_rtt && s.host_rtt->second.us() <= kMaxDefinedHostRttUs) {
     host_rtt.emplace(t0 + w::TimeDelta::Micros(s.host_rtt->first.us()), w::TimeDelta::Micros(s.host_rtt->second.us()));
   }
   // Without --bwe-trace the factory only carries the host RTT: no detector replay, no rows.
