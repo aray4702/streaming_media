@@ -84,6 +84,8 @@ class StreamSynchronization {
   void ReduceVideoDelay();
   uint32_t audio_stream_id() const { return audio_stream_id_; }
   uint32_t video_stream_id() const { return video_stream_id_; }
+  // The filtered diff of the last ComputeDelays, before a move resets it (trace only, #895).
+  int last_avg_diff_ms() const { return last_avg_diff_ms_; }
 
  private:
   struct SynchronizationDelays {
@@ -96,6 +98,7 @@ class StreamSynchronization {
   SynchronizationDelays video_delay_;
   int base_target_delay_ms_ = 0;
   int avg_diff_ms_ = 0;
+  int last_avg_diff_ms_ = 0;
 };
 
 // call/syncable.h: what a receive stream gives the synchronizer.
@@ -144,6 +147,9 @@ class RtpStreamsSynchronizer : public MetricsSource {
                                                           Timestamp now) const;
   uint64_t updates() const { return updates_; }  // Runs that computed new delay targets.
   const StreamSynchronization::DelayTargets& last_targets() const { return last_targets_; }
+  // The last run's relative delay and filtered diff (trace only, #895).
+  int last_relative_delay_ms() const { return last_relative_delay_ms_; }
+  int last_avg_diff_ms() const { return sync_ ? sync_->last_avg_diff_ms() : 0; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:

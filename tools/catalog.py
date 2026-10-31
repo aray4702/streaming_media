@@ -1760,6 +1760,12 @@ ALGORITHMS = [
                       "unit.Session.TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime); on seed 1 of "
                       "issue_12_lossbwe_policer the forward link now matches libwebrtc's packet for packet through 690 ms "
                       "(104 rows), where it matched through 410 ms (60 rows) before. "
+                      "#895: the sender report's RTP timestamp is extrapolated as RTCPSender::BuildSR does, in whole "
+                      "milliseconds at the rate registered for the last frame's payload type, which for audio sent as "
+                      "RED is kBogusRtpRateForAudioRtcp, 8 kHz (unit.RtcpEngine.SenderReportExtrapolatesInWholeMilliseconds, "
+                      "unit.RtpSender.SenderReportRateIsTheLastPayloadTypesRegisteredRate); on seed 1 of "
+                      "issue_12_lossbwe_shallow the A/V sync's relative delay now equals libwebrtc's at every 1 s run "
+                      "and the audio trace matches libwebrtc's through 34.96 s ([fix record](../../fixes/895-red-sender-report-sync.md)). "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

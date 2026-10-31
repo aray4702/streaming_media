@@ -153,6 +153,30 @@ SM_TEST(RtcpEngine, SenderReportExtrapolatesTheRtpTimestamp) {
   SM_EXPECT_EQ(tx.stats().sr_sent, 1u);
 }
 
+// RTCPSender::BuildSR (rtcp_sender.cc:362-366): the last frame's RTP timestamp plus
+// (report time rounded to the ms - the frame's time in ms) * the rate in kHz, so
+// sub-millisecond times don't count (issue #895).
+SM_TEST(RtcpEngine, SenderReportExtrapolatesInWholeMilliseconds) {
+  RtcpConfig c;
+  c.first_report_delay = TimeDelta::Micros(500600);
+  RtcpEngine tx(c);
+  RtcpSenderState s;
+  s.ssrc = 42;
+  s.rtp_timestamp = 1000;
+  s.reference_time = Timestamp::Micros(10400);  // Rounds to 10 ms.
+  s.clock_rate = 8000;                          // kBogusRtpRateForAudioRtcp.
+  tx.SetSenderState(s);
+  tx.Process(Timestamp::Millis(0));
+  auto out = tx.Process(Timestamp::Micros(500600));  // Rounds to 501 ms.
+  SM_ASSERT_EQ(out.size(), 1u);
+  auto split = loss::SplitCompoundRtcp(out[0].bytes);
+  SM_ASSERT_TRUE(split.has_value());
+  auto sr = timing::ParseSenderReport((*split)[0].data);
+  SM_ASSERT_TRUE(sr.has_value());
+  // (501 - 10) ms at 8 kHz; the microsecond span would give 3921.
+  SM_EXPECT_EQ(sr->rtp_timestamp, 1000u + 491u * 8u);
+}
+
 SM_TEST(RtcpEngine, EarlyFeedbackSharesOneCompoundWithALeadingRr) {
   RtcpConfig c;
   c.local_ssrc = 9;
