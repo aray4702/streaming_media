@@ -1,5 +1,7 @@
 #include <algorithm>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "sm/loss/rtx.h"
@@ -180,6 +182,45 @@ SM_TEST(SendSideController, AllocationPostedBySentPacketCountsTheWholeSendLoop) 
   const DataRate video = c.ComputeMeasuredRates(DataRate::Zero()).video_target;
   SM_EXPECT_LT(video.bps(), alloc.bps() * 0.55);
   SM_EXPECT_GT(video.bps(), alloc.bps() * 0.4);
+}
+
+// Issue #896: RtpVideoSender::OnBitrateUpdated reads the send rates (ModuleRtpRtcpImpl2::GetSendRates,
+// rtp_rtcp_impl2.cc:667-670) and the post-encode overhead (RTPSenderVideo::PostEncodeOverhead,
+// rtp_sender_video.cc:943-947) at the clock's current time. An allocation that runs between two
+// Process() calls (transport feedback, an encoder reconfiguration) reads them at its own time, not
+// at the last Process().
+SM_TEST(SendSideController, AllocationReadsTheSendRatesAtItsOwnTime) {
+  auto run = [](bool process_first) {
+    sync::ExtensionMap map;
+    map.Register(3, sync::uri::kTransportCc);
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+    auto c = std::make_unique<SendSideController>(cfg, &map);
+    SendSideController::AudioAllocation audio;
+    audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+    c->ConfigureAllocation(audio, true);
+    c->Start(Timestamp::Millis(0));
+    uint16_t seq = 0;
+    for (int t = 0; t <= 500; ++t) {
+      if (t % 20 == 0) {
+        c->OnVideoFrameEncoded(Timestamp::Millis(t));
+        c->Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+      }
+      // RTX from 200 ms: its rate's window (from its first sample) is shorter than video's, so the
+      // share moves from one millisecond to the next.
+      if (t == 200 || t == 210)
+        c->Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+      c->Process(Timestamp::Millis(t));
+    }
+    if (process_first) c->Process(Timestamp::Millis(501));
+    c->OnVideoEncoderReconfigured(Timestamp::Millis(501));  // Re-adds the stream: an allocation at 501 ms.
+    return std::make_pair(c->ComputeMeasuredRates(DataRate::Zero()).video_target, c->target());
+  };
+  const auto [video, target] = run(false);
+  const auto [video_after_process, target_after_process] = run(true);
+  SM_ASSERT_EQ(target.bps(), target_after_process.bps());
+  SM_EXPECT_GT(video.bps(), 0);
+  SM_EXPECT_EQ(video.bps(), video_after_process.bps());
 }
 
 // GoogCC's cwnd_reduce_ratio comes from the pushback target after it is clamped to the estimator's

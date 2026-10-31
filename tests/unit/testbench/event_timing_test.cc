@@ -71,10 +71,12 @@ SM_TEST(TestbenchEventTiming, RetransmissionsLeaveAtTheNackArrivalAndNacksAtTheP
   // Most retransmissions leave the moment the NACK arrives (libwebrtc: 60 % of its RTX packets off the grid on
   // seed 1 of random_loss_5pct, high_jitter and burst_loss); the rest wait in the pacer.
   SM_EXPECT_GE(rtx_off_grid * 2, rtx);
-  // At least 70 % leave at a NACK arrival. The bar was 75 % (ours) and moved with the loss-report port (#716): the
-  // target and pacer rates now follow a receiver report at the next process interval, as libwebrtc's. libwebrtc's
-  // own at-NACK share isn't published (parity-data has no reverse-link trace).
-  SM_EXPECT_GE(rtx_at_nack * 10, rtx * 7);
+  // At least 57 % leave at a NACK arrival: libwebrtc's lowest share on seed 1 of random_loss_5pct, high_jitter and
+  // burst_loss (parity-data traces/*.webrtc.{trace,reverse}.csv: 301/406 = 74 %, 634/747 = 85 %, 96/169 = 57 %).
+  // The bar was 75 % (ours), then 70 % with the loss-report port (#716). With the send rates read at each
+  // allocation's own time (#896) this link gives 141/217 = 65 % on seed 1 (seeds 2-6: 78-86 %), and
+  // random_loss_5pct gives 302/406 = 74 %, libwebrtc's 301/406.
+  SM_EXPECT_GE(rtx_at_nack * 100, rtx * 57);
 }
 
 SM_TEST(TestbenchEventTiming, AnEncodeDelayFrameLeavesWhenItsEncodeIsDone) {
