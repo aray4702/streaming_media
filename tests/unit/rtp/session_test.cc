@@ -1171,6 +1171,44 @@ SM_TEST(Session, SendsADueSenderReportAheadOfAKeyframe) {
   SM_EXPECT_EQ(run(false), 0u);
 }
 
+// ModuleRtpRtcpImpl2 posts the report's task on the worker queue when the last report goes out
+// (rtp_rtcp_impl2.cc:797-808), and TaskQueuePacedSender runs on the same queue
+// (rtp_transport_controller_send.cc:100-105). When both are due at once the report's task is the
+// older one and runs first, so the SR leaves ahead of the paced packets and doesn't count them
+// (issue #895: issue_12_lossbwe_shallow seed 1, the SR and RTX 916 at 1063 ms).
+SM_TEST(Session, ADueSenderReportLeavesAheadOfThePacketsPacedAtTheSameTime) {
+  SessionConfig c = Cfg(1);
+  c.rtcp.first_report_delay = TimeDelta::Millis(1000);
+  Session s(c);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioSend(au);
+  VideoSendId v = s.AddVideoSend(Video());
+  for (int64_t t = 0; t < 1000; ++t) {
+    s.Process(Timestamp::Millis(t));
+    s.TakeOutgoing();
+  }
+  const Timestamp now = Timestamp::Millis(1000);
+  auto chunks = test::MakeTestFrameChunks(false, 3000, 1188);
+  s.SendVideoChunks(v, chunks, 0, now);
+  s.Process(now);
+  std::vector<OutgoingKind> kinds;
+  Bytes sr;
+  for (auto& o : s.TakeOutgoing()) {
+    kinds.push_back(o.kind);
+    if (o.kind == OutgoingKind::kRtcp && sr.empty()) sr = o.bytes;
+  }
+  SM_ASSERT_GE(kinds.size(), 2u);
+  // The report, then what the pacer sends at that time (the first frame starts a probe: padding).
+  SM_EXPECT_TRUE(kinds[0] == OutgoingKind::kRtcp);
+  SM_EXPECT_EQ(std::count(kinds.begin(), kinds.end(), OutgoingKind::kRtcp), 1);
+  // The SR's sender packet count (RFC 3550 6.4.1, bytes 20-23) has none of the paced packets in it.
+  SM_ASSERT_GE(sr.size(), 28u);
+  SM_EXPECT_EQ(sr[1], 200);
+  const uint32_t packets = (uint32_t{sr[20]} << 24) | (uint32_t{sr[21]} << 16) | (uint32_t{sr[22]} << 8) | sr[23];
+  SM_EXPECT_EQ(packets, 0u);
+}
+
 // VideoSendStreamImpl (#187): a video stream with the transport-cc extension
 // sets StreamsConfig::pacing_factor to 1.1 (kStrictPacingMultiplier), so GoogCC
 // paces at 1.1 x the target from the start, not 2.5 x until the first feedback.

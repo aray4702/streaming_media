@@ -837,22 +837,12 @@ void Session::Process(Timestamp now) {
   }
   // RtpStreamsSynchronizer's 1 s task.
   if (av_sync_) av_sync_->Process(now);
-  // Paced media.
-  if (HasSendStreams()) {
-    for (ReleasedPacket& r : send_.Process(now)) {
-      out_.push_back({std::move(r.bytes), ToOutgoing(r.kind), r.wire_size});
-    }
-  }
-  ControllerActions act = send_.TakeActions();
-  if (act.pause_encoder) Emit({SessionEventType::kEncoderPause, now, 0, DataRate::Zero(), TimeDelta::Zero()});
-  if (act.resume_encoder) Emit({SessionEventType::kEncoderResume, now, 0, DataRate::Zero(), TimeDelta::Zero()});
-  if (act.request_keyframe) Emit({SessionEventType::kKeyframeRequested, now, 0, DataRate::Zero(), TimeDelta::Zero()});
-  if (send_.target() != last_target_) {
-    last_target_ = send_.target();
-    Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
-  }
-  if (HasSendStreams()) MaybeUpdateFecRates(now);
-  // RTCP: reports and queued feedback.
+  // RTCP: reports and queued feedback, before the paced media due at the same time. libwebrtc runs both
+  // as delayed tasks on the worker queue (ModuleRtpRtcpImpl2::ScheduleMaybeSendRtcpAtOrAfterTimestamp,
+  // rtp_rtcp_impl2.cc:797-808; TaskQueuePacedSender on worker_thread_, rtp_transport_controller_send.cc:100-105),
+  // and tasks due at the same time run in the order they were posted. The report's task is posted when the
+  // last report went out, hundreds of ms earlier, and the pacer's at its last run, so the report leaves
+  // first and its sender info doesn't count the packets the pacer sends at that time (issue #895).
   UpdateSenderState(now);
   for (RtcpOutgoing& o : rtcp_.Process(now)) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
@@ -873,6 +863,21 @@ void Session::Process(Timestamp now) {
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
     }
   }
+  // Paced media.
+  if (HasSendStreams()) {
+    for (ReleasedPacket& r : send_.Process(now)) {
+      out_.push_back({std::move(r.bytes), ToOutgoing(r.kind), r.wire_size});
+    }
+  }
+  ControllerActions act = send_.TakeActions();
+  if (act.pause_encoder) Emit({SessionEventType::kEncoderPause, now, 0, DataRate::Zero(), TimeDelta::Zero()});
+  if (act.resume_encoder) Emit({SessionEventType::kEncoderResume, now, 0, DataRate::Zero(), TimeDelta::Zero()});
+  if (act.request_keyframe) Emit({SessionEventType::kKeyframeRequested, now, 0, DataRate::Zero(), TimeDelta::Zero()});
+  if (send_.target() != last_target_) {
+    last_target_ = send_.target();
+    Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
+  }
+  if (HasSendStreams()) MaybeUpdateFecRates(now);
 }
 
 // libwebrtc: the generator's interval follows this endpoint's own
