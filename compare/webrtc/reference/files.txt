@@ -281,3 +281,19 @@ api/neteq/neteq_factory.h
 audio/utility/audio_frame_operations.h
 audio/utility/audio_frame_operations.cc
 audio/utility/audio_frame_operations_unittest.cc
+
+# Added for #900: the call defaults config-inventory section 3 and the parity inventory read (video receive config, media config,
+# IP_PACKET_SIZE, GoogCC process interval, BweSettings, RetransmitFlushedPackets, the default ALR experiment, Opus variable complexity).
+api/audio_codecs/opus/BUILD.gn
+api/transport/bandwidth_estimation_settings.h
+api/transport/goog_cc_factory.cc
+api/transport/goog_cc_factory.h
+call/video_receive_stream.h
+call/rtp_config.h
+media/base/media_config.h
+modules/rtp_rtcp/include/rtp_rtcp_defines.h
+rtc_base/experiments/alr_experiment.cc
+rtc_base/experiments/alr_experiment.h
+rtc_base/experiments/retransmit_flushed_packets_settings.cc
+rtc_base/experiments/retransmit_flushed_packets_settings.h
+webrtc.gni
