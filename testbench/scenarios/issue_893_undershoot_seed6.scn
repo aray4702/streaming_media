@@ -1,0 +1,8 @@
+name issue_893_undershoot_seed6
+describe issue_466_undershoot_very_low_capacity with seed 6, traced on both stacks: where PR #937 gains a video pause that libwebrtc doesn't have (issue #893)
+# Yardstick for #893 (not for merge). video.pause_total_ms on this seed: libwebrtc 0, #937 7494 ms.
+duration 40s
+encoder_overshoot 0.7
+at 0s capacity=100kbps delay=30ms queue=300ms
+seed 6
+expect video.encoder_target_avg_kbps > 45
