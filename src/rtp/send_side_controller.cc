@@ -362,6 +362,24 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     return;
   }
   if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
+  if (cfg_.gcc.bwe_trace) {
+    // The pacer as this packet leaves it, before OnPacketSent charges it; sm_compare reads libwebrtc's
+    // PacingController at the same point, from its send transport (issue #893).
+    const cc::PacingController::TraceState ps = pacer_.trace_state();
+    cc::BweTraceRow row;
+    row.time_us = now.us();
+    row.kind = cc::BweTraceRow::Kind::kPacer;
+    row.bitrate_bps = ps.adjusted_media_rate.bps();
+    row.loss_limit_bps = ps.pacing_rate.bps();
+    row.instant_ub_bps = ps.media_debt.bytes();
+    row.packets = static_cast<int>(ps.queue_packets);
+    row.fraction_loss = static_cast<int>(ps.queue_data.bytes());
+    row.modified_trend = ps.average_queue_time.ms_f();
+    row.threshold = static_cast<double>(static_cast<int>(sp.kind));
+    row.send_delta_ms = static_cast<double>(sp.packet.seq);
+    row.send_ms = ps.last_process_time.IsFinite() ? static_cast<double>(ps.last_process_time.us()) / 1000.0 : -1;
+    cfg_.gcc.bwe_trace->push_back(row);
+  }
   ReleasedPacket r;
   // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
   // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
@@ -497,7 +515,10 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     }
     for (auto& [sender, seqs] : early_loss) {
       sender->OnEarlyLoss(seqs, now);
-      for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      // While an RTCP packet is handled, the resends wait for its end (Session::FlushResends).
+      if (!hold_resends_) {
+        for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      }
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }

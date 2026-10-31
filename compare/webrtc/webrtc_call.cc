@@ -51,6 +51,7 @@
 #include "call/audio_state.h"
 #include "call/call.h"
 #include "call/call_config.h"
+#include "call/rtp_transport_controller_send.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -64,6 +65,9 @@
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
+#include "modules/pacing/pacing_controller.h"
+#include "modules/pacing/prioritized_packet_queue.h"
+#include "modules/pacing/task_queue_paced_sender.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -95,6 +99,36 @@ class GoogCcStatePrinter {
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
 };
 }  // namespace webrtc
+
+namespace sm::compare::pacer_access {
+// Read access to the sender's PacingController, for the pacer trace rows (issue #893). Neither
+// RtpTransportControllerSend, TaskQueuePacedSender nor PacingController declares a friend for it, so the member
+// pointers come from explicit instantiations, which are exempt from access checking ([temp.spec.general]/6).
+template <typename Tag, typename Tag::type M>
+struct Member {
+  friend typename Tag::type Get(Tag) { return M; }
+};
+#define SM_PACER_MEMBER(TagName, Class, Type, Field)                                              \
+  struct TagName {                                                                                \
+    using type = Type Class::*;                                                                   \
+    friend type Get(TagName);                                                                     \
+  };                                                                                              \
+  template struct Member<TagName, &Class::Field>;
+SM_PACER_MEMBER(PacerTag, webrtc::RtpTransportControllerSend, webrtc::TaskQueuePacedSender, pacer_)
+SM_PACER_MEMBER(ControllerTag, webrtc::TaskQueuePacedSender, webrtc::PacingController, pacing_controller_)
+SM_PACER_MEMBER(MediaDebtTag, webrtc::PacingController, webrtc::DataSize, media_debt_)
+SM_PACER_MEMBER(PacingRateTag, webrtc::PacingController, webrtc::DataRate, pacing_rate_)
+SM_PACER_MEMBER(AdjustedRateTag, webrtc::PacingController, webrtc::DataRate, adjusted_media_rate_)
+SM_PACER_MEMBER(LastProcessTag, webrtc::PacingController, webrtc::Timestamp, last_process_time_)
+SM_PACER_MEMBER(QueueTag, webrtc::PacingController, webrtc::PrioritizedPacketQueue, packet_queue_)
+#undef SM_PACER_MEMBER
+
+// The sender call's PacingController (Call::GetTransportControllerSend is RtpTransportControllerSend's).
+inline const webrtc::PacingController& Of(webrtc::Call& call) {
+  auto* transport = static_cast<webrtc::RtpTransportControllerSend*>(call.GetTransportControllerSend());
+  return (transport->*Get(PacerTag{})).*Get(ControllerTag{});
+}
+}  // namespace sm::compare::pacer_access
 
 namespace sm::compare {
 namespace {
@@ -652,13 +686,17 @@ class ModelEncoder final : public w::VideoEncoder {
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
 };
 
+// Called with each frame the decoder decodes, its RTP timestamp and render time (#931's frame trace).
+using DecodeHook = std::function<void(uint32_t rtp_ts, int64_t render_time_ms)>;
+
 class ModelDecoder final : public w::VideoDecoder {
  public:
-  ModelDecoder() : buffer_(w::I420Buffer::Create(320, 180)) {
+  explicit ModelDecoder(DecodeHook hook) : hook_(std::move(hook)), buffer_(w::I420Buffer::Create(320, 180)) {
     w::I420Buffer::SetBlack(buffer_.get());
   }
   bool Configure(const Settings&) override { return true; }
   int32_t Decode(const w::EncodedImage& img, int64_t render_time_ms) override {
+    if (hook_) hook_(img.RtpTimestamp(), render_time_ms);
     w::VideoFrame f = w::VideoFrame::Builder()
                           .set_video_frame_buffer(buffer_)
                           .set_rtp_timestamp(img.RtpTimestamp())
@@ -674,6 +712,7 @@ class ModelDecoder final : public w::VideoDecoder {
   int32_t Release() override { return WEBRTC_VIDEO_CODEC_OK; }
 
  private:
+  DecodeHook hook_;
   w::scoped_refptr<w::I420Buffer> buffer_;
   w::DecodedImageCallback* cb_ = nullptr;
 };
@@ -698,10 +737,14 @@ class ModelEncoderFactory final : public w::VideoEncoderFactory {
 
 class ModelDecoderFactory final : public w::VideoDecoderFactory {
  public:
+  explicit ModelDecoderFactory(DecodeHook hook) : hook_(std::move(hook)) {}
   std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
   std::unique_ptr<w::VideoDecoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
-    return std::make_unique<ModelDecoder>();
+    return std::make_unique<ModelDecoder>(hook_);
   }
+
+ private:
+  DecodeHook hook_;
 };
 
 // A camera that delivers frames when told to. Like libwebrtc's
@@ -1029,6 +1072,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
       }
     }
+    if (opt.bwe_trace && trace_seq >= 0 && link_kind != sm::sim::LinkKind::kOther) {
+      // The pacer as this packet leaves it: the transport runs inside PacingController::ProcessPackets'
+      // SendPacket, before OnPacketSent charges the packet. As SendSideController::SendPacket writes ours
+      // (issue #893).
+      namespace pa = pacer_access;
+      const w::PacingController& pc = pa::Of(*send_call);
+      cc::BweTraceRow row;
+      row.time_us = rel(now).us();
+      row.kind = cc::BweTraceRow::Kind::kPacer;
+      row.bitrate_bps = (pc.*Get(pa::AdjustedRateTag{})).bps();
+      row.loss_limit_bps = (pc.*Get(pa::PacingRateTag{})).bps();
+      row.instant_ub_bps = (pc.*Get(pa::MediaDebtTag{})).bytes();
+      row.packets = static_cast<int>(pc.QueueSizePackets());
+      row.fraction_loss = static_cast<int>(pc.QueueSizeData().bytes());
+      row.modified_trend = (pc.*Get(pa::QueueTag{})).AverageQueueTime().ms<double>();
+      const sm::sim::LinkKind k = link_kind;
+      row.threshold = k == sm::sim::LinkKind::kAudio ? 0 : k == sm::sim::LinkKind::kVideo ? 1
+                    : k == sm::sim::LinkKind::kRtx   ? 2 : k == sm::sim::LinkKind::kFec   ? 3 : 4;
+      row.send_delta_ms = trace_seq;
+      const w::Timestamp lpt = pc.*Get(pa::LastProcessTag{});
+      row.send_ms = lpt.IsFinite() ? (lpt - t0).us<double>() / 1000.0 : -1;
+      rep.bwe_trace.push_back(row);
+    }
     // The frame trace's RTP fields (issue #437), as the test bench writes them.
     int64_t trace_ts = -1;
     int32_t trace_marker = -1, trace_osn = -1, trace_key = -1, trace_header = -1, trace_rtx_room = -1;
@@ -1064,7 +1130,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
   // --- Streams ----------------------------------------------------------------
   ModelEncoderFactory encoder_factory(&model);
-  ModelDecoderFactory decoder_factory;
+  // #931's frame trace: a row per decoded frame, found again by its RTP timestamp when it renders.
+  std::unordered_map<uint32_t, size_t> frame_row;
+  ModelDecoderFactory decoder_factory([&](uint32_t rtp_ts, int64_t render_time_ms) {
+    if (!opt.video_trace) return;
+    testbench::FrameRenderRow r;
+    if (model.rtp_ts_offset) {
+      auto ft = model.frame_times.find(rtp_ts - *model.rtp_ts_offset);
+      if (ft != model.frame_times.end()) r.capture_ms = ft->second.capture.ms();
+    }
+    r.render_time_ms = rel(w::Timestamp::Millis(render_time_ms)).ms();
+    r.out_ms = rel(sim.Now()).ms();
+    frame_row[rtp_ts] = rep.frame_trace.size();
+    rep.frame_trace.push_back(r);
+  });
   auto allocator_factory = w::CreateBuiltinVideoBitrateAllocatorFactory();
   ModelSource source(s.video_width, s.video_height);
   RenderSink renderer([&](const w::VideoFrame& f) {
@@ -1077,6 +1156,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (last_render.IsFinite())
         render_by_second[sec].max_gap_ms =
             std::max(render_by_second[sec].max_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
+    }
+    if (auto fr = frame_row.find(f.rtp_timestamp()); fr != frame_row.end()) {
+      rep.frame_trace[fr->second].out_ms = now.ms();
+      rep.frame_trace[fr->second].rendered = 1;
+      frame_row.erase(fr);
     }
     ++frames_rendered;
     ++w_frames;
@@ -1235,6 +1319,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   double cross_debt = 0;
   bool stopping = false;
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
+  std::optional<cc::BweTraceRow> last_rx_timing;  // Last receiver timing written to rep.bwe_trace (issue #893).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
@@ -1435,6 +1520,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && video_recv && t % 5 == 4) {
+      // The receiver's VCMTiming::GetTimings every 5 ms when it changed (VideoReceiveStream2::GetStats), as
+      // testbench/call.cc samples ours (issue #893).
+      const int64_t rx_time_us = (t + 1) * 1000;
+      receiver_q->PostTask([&, rx_time_us] {
+        const w::VideoReceiveStreamInterface::Stats st = video_recv->GetStats();
+        cc::BweTraceRow r;
+        r.time_us = rx_time_us;
+        r.kind = cc::BweTraceRow::Kind::kRxTiming;
+        r.bitrate_bps = st.target_delay_ms;
+        r.packets = st.jitter_buffer_ms;
+        r.fraction_loss = st.current_delay_ms;
+        r.loss_limit_bps = st.min_playout_delay_ms;
+        r.instant_ub_bps = st.render_delay_ms;
+        if (last_rx_timing && r.bitrate_bps == last_rx_timing->bitrate_bps && r.packets == last_rx_timing->packets &&
+            r.fraction_loss == last_rx_timing->fraction_loss && r.loss_limit_bps == last_rx_timing->loss_limit_bps &&
+            r.instant_ub_bps == last_rx_timing->instant_ub_bps) {
+          return;
+        }
+        rep.bwe_trace.push_back(r);
+        last_rx_timing = r;
+      });
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;

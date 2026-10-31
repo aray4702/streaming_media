@@ -68,6 +68,8 @@ class Pacer : public MetricsSource {
   // PacingController::ExpectedQueueTime: the queue at the adjusted media rate.
   TimeDelta ExpectedQueueTime() const;
   size_t QueuePackets() const;
+  // PacingController::trace_state, for the pacer trace rows (issue #893).
+  PacingController::TraceState trace_state() const { return pc_->trace_state(); }
   TimeDelta OldestQueueTime(Timestamp now) const;
   const PacerStats& stats() const;
   void ExportMetrics(MetricsWriter& w) const override;

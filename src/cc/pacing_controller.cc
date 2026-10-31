@@ -470,9 +470,11 @@ std::vector<PacedPacket> PacingController::Process(Timestamp now_in) {
       }
       break;
     }
+    // PacingController::ProcessPackets: SendPacket (and the FEC it completes joining the queue)
+    // before OnPacketSent charges the packet.
     data_sent += p.size;
-    OnPacketSent(p.priority, p.size, now);
     Account(p, now, is_probing ? pacing_info : ProbeSendInfo{}, sent);
+    OnPacketSent(p.priority, p.size, now);
 
     if (is_probing) {
       pacing_info.bytes_sent += p.size.bytes();
