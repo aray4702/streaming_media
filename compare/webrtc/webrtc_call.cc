@@ -340,7 +340,8 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
     HostRtt(m.feedback_time);
-    if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
+    // GoogCC returns early on empty feedback; without a trace (rows_ null) only the host RTT is added.
+    if (m.packet_feedbacks.empty() || !rows_) return inner_->OnTransportPacketsFeedback(std::move(m));
     const size_t first_row = rows_->size();
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
@@ -844,7 +845,9 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   if (s.host_rtt) {
     host_rtt.emplace(t0 + w::TimeDelta::Micros(s.host_rtt->first.us()), w::TimeDelta::Micros(s.host_rtt->second.us()));
   }
-  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0, host_rtt);
+  // Without --bwe-trace the factory only carries the host RTT: no detector replay, no rows.
+  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, opt.bwe_trace ? &rep.bwe_trace : nullptr,
+                                      t0, host_rtt);
   const w::Environment sender_env = sender_env_factory.Create();
   QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
   if (opt.video_trace && s.video && s.quality_scaling) qs_log.Start();
@@ -904,8 +907,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     c.bitrate_config.start_bitrate_bps = int_bps(s.start_rate);
     c.bitrate_config.max_bitrate_bps = int_bps(s.max_rate);
     c.audio_state = audio_state;
-    // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
-    if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
+    // The sender's GoogCC behind the detector trace (issue #152), and behind the host RTT whenever the scenario has
+    // one, traced or not (issue #892: the metric runs don't trace, and before this the host RTT reached libwebrtc
+    // only on traced runs). The receiver's controller sends nothing that matters.
+    if ((opt.bwe_trace || host_rtt) && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
     return w::Call::Create(std::move(c));
   };
   run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
