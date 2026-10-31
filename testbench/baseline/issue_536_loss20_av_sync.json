@@ -76,7 +76,7 @@
   "video.encoder_target_avg_kbps": 176.4,
   "video.frames_rendered": 823,
   "video.freeze_count": 28,
-  "video.freeze_total_ms": 9077,
+  "video.freeze_total_ms": 9078,
   "video.keyframe_requests": 0,
   "video.keyframes": 1,
   "video.longest_freeze_ms": 760,

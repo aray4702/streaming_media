@@ -515,7 +515,10 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     }
     for (auto& [sender, seqs] : early_loss) {
       sender->OnEarlyLoss(seqs, now);
-      for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      // While an RTCP packet is handled, the resends wait for its end (Session::FlushResends).
+      if (!hold_resends_) {
+        for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      }
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }
