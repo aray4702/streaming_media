@@ -742,6 +742,8 @@ int VadInitCore(VadInst& self) {
   self.over_hang = 0;
   self.num_of_speech = 0;
   std::memset(self.downsampling_filter_states, 0, sizeof(self.downsampling_filter_states));
+  // Initialization of 48 to 8 kHz downsampling.
+  SplResetResample48khzTo8khz(&self.state_48_to_8);
   for (int i = 0; i < kTableSize; i++) {
     self.noise_means[i] = kNoiseDataMeans[i];
     self.speech_means[i] = kSpeechDataMeans[i];
@@ -788,6 +790,22 @@ int VadSetModeCore(VadInst& self, int mode) {
   std::memcpy(self.individual, local, sizeof(self.individual));
   std::memcpy(self.total, global, sizeof(self.total));
   return 0;
+}
+
+int VadCalcVad48khz(VadInst& self, const int16_t* speech_frame, size_t frame_length) {
+  int16_t speech_nb[240];  // 30 ms in 8 kHz.
+  // `tmp_mem` is a temporary memory used by resample function, length is
+  // frame length in 10 ms (480 samples) + 256 extra.
+  int32_t tmp_mem[480 + 256] = {0};
+  const size_t kFrameLen10ms48khz = 480;
+  const size_t kFrameLen10ms8khz = 80;
+  const size_t num_10ms_frames = frame_length / kFrameLen10ms48khz;
+  for (size_t i = 0; i < num_10ms_frames; i++) {
+    // `speech_frame`, not `speech_frame + i * 480`: as libwebrtc M157.
+    SplResample48khzTo8khz(speech_frame, &speech_nb[i * kFrameLen10ms8khz], &self.state_48_to_8, tmp_mem);
+  }
+  // Do VAD on an 8 kHz signal
+  return VadCalcVad8khz(self, speech_nb, frame_length / 6);
 }
 
 int VadCalcVad32khz(VadInst& self, const int16_t* speech_frame, size_t frame_length) {
@@ -839,13 +857,15 @@ int WebRtcVad::Process(int fs, const int16_t* audio_frame, size_t frame_length) 
     return -1;
   }
   int vad = -1;
-  if (fs == 32000) {
+  if (fs == 48000) {
+    vad = VadCalcVad48khz(inst_, audio_frame, frame_length);
+  } else if (fs == 32000) {
     vad = VadCalcVad32khz(inst_, audio_frame, frame_length);
   } else if (fs == 16000) {
     vad = VadCalcVad16khz(inst_, audio_frame, frame_length);
   } else if (fs == 8000) {
     vad = VadCalcVad8khz(inst_, audio_frame, frame_length);
-  }  // 48 kHz is not ported (see the header).
+  }
   if (vad > 0) {
     vad = 1;
   }

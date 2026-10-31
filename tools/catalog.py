@@ -1377,8 +1377,9 @@ ALGORITHMS = [
                "`WebRtcVad` port in `agc1_vad.h` (issue #671); aggressiveness kVadNormal by default, as `sm_apm_compare` "
                "runs libwebrtc's. M157's `AudioProcessingImpl` reports no VAD decision, so the capture chain's per-frame "
                "VAD output is this `Vad`; the opt-in transient suppressor reads libwebrtc's pitch-based "
-               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. 48 kHz is not "
-               "ported (kError). ",
+               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. At 48 kHz "
+               "it runs `WebRtcVad_CalcVad48khz` over SPL's 48-to-8 kHz resampler (issue #901), as libwebrtc, "
+               "including its reuse of the frame's first 10 ms for every 10 ms block of a 20 or 30 ms frame. ",
          verification="Issue #671 retired the library's own energy/spectral-flatness detector (v1) for libwebrtc's: "
                       "`Vad.ApiAsLibwebrtc` (vad_unittest.cc's rates, frame lengths and modes on the wrapper), "
                       "`Vad.IsWebRtcVadAndResets` (decisions equal `WebRtcVad`'s in every mode, and Reset() restarts "
@@ -1387,7 +1388,11 @@ ALGORITHMS = [
                       "`kMaximumNoise`; v1 learned the new floor). E2E_Vad recall 99.7 %, false positives 0 % "
                       "(libwebrtc kVadNormal in `sm_apm_compare`: 99.9 % and 0.0 % on the same talker behind the "
                       "high-pass filter). The v1 detector's history: musical noise after NS and a slow noise-floor "
-                      "rise were fixed before #671."),
+                      "rise were fixed before #671. #901 ported the 48 kHz path: "
+                      "`Agc1VoiceActivity.WebRtcVadMatchesLibwebrtc` (48 kHz in modes 0 and 3 with 10, 20 and 30 ms "
+                      "frames) and `Agc1VoiceActivity.Resample48khzTo8khzMatchesLibwebrtc` are bit-exact with the "
+                      "prebuilt M157 library's `WebRtcVad_Process` and `WebRtcSpl_Resample48khzTo8khz`, and "
+                      "vad_unittest.cc's and vad_core_unittest.cc's 48 kHz cases pass."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
          headers=["audio/audio_level.h", "core/rms_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
