@@ -17,7 +17,9 @@
 // unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated. With
 // `adjuster_on_update`, as in VideoStreamEncoder, the adjusted rate is
 // recomputed only on an allocation update from the session's allocator
-// (OnBitrateUpdated), on an encoder reconfiguration and every 1 s
+// (OnBitrateUpdated, when MaybeEncodePendingFrame polls it after the session
+// ran, so the overshoot detector leaks to the update's time; issue #894),
+// on an encoder reconfiguration and every 1 s
 // (MaybeEncodeVideoFrame's kParameterUpdateIntervalMs), and held in between
 // (issue #569; on by default since #637, as libwebrtc); off, on every captured frame.
 //
