@@ -93,6 +93,23 @@ class GoogCcStatePrinter {
   static double ModifiedTrend(const TrendlineEstimator* t) { return t->prev_modified_trend_; }
   static double Threshold(const TrendlineEstimator* t) { return t->threshold_; }
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
+  // Issue #897: the acknowledged bitrate GoogCC fed SendSideBandwidthEstimation and LossBasedBweV2, and the
+  // loss-based state and result after the feedback, through SendSideBandwidthEstimation (which also declares this
+  // friend), for the acked rows.
+  static std::optional<DataRate> Acked(const NetworkControllerInterface* c) {
+    const auto& e = static_cast<const GoogCcNetworkController*>(c)->acknowledged_bitrate_estimator_;
+    return e ? e->bitrate() : std::nullopt;
+  }
+  static const SendSideBandwidthEstimation& Ssbe(const NetworkControllerInterface* c) {
+    return static_cast<const GoogCcNetworkController*>(c)->bandwidth_estimation_;
+  }
+  static int LossState(const NetworkControllerInterface* c) { return static_cast<int>(Ssbe(c).loss_based_state()); }
+  static int64_t LossResultBps(const NetworkControllerInterface* c) {
+    const auto& v2 = Ssbe(c).loss_based_bandwidth_estimator_v2_;
+    if (!v2) return -1;
+    const DataRate r = v2->GetLossBasedResult().bandwidth_estimate;
+    return r.IsFinite() ? r.bps() : -1;
+  }
 };
 }  // namespace webrtc
 
@@ -337,6 +354,15 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
                        P::Threshold(live) == P::Threshold(detector_.get()) &&
                        P::NumDeltas(live) == P::NumDeltas(detector_.get()) && live->State() == detector_->State();
     for (size_t i = first_row; i < rows_->size(); ++i) (*rows_)[i].fraction_loss = match ? 0 : 1;
+    // Issue #897: the acked rate and LossBasedBweV2's result after this feedback, as ours writes them.
+    cc::BweTraceRow r;
+    r.time_us = now_us_();
+    r.kind = cc::BweTraceRow::Kind::kAcked;
+    const std::optional<w::DataRate> acked = P::Acked(inner_.get());
+    r.bitrate_bps = acked && acked->IsFinite() ? acked->bps() : -1;
+    r.loss_state = P::LossState(inner_.get());
+    r.loss_limit_bps = P::LossResultBps(inner_.get());
+    rows_->push_back(r);
     return u;
   }
 

@@ -261,6 +261,17 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   ssbe_.UpdateLossBasedEstimator(results, alr_start_time.has_value(), now);
   target_ = ssbe_.target_rate();
   TraceLossBased(now);
+  if (cfg_.bwe_trace) {
+    // Issue #897: the acked rate and LossBasedBweV2's result after each feedback.
+    BweTraceRow r;
+    r.time_us = now.us();
+    r.kind = BweTraceRow::Kind::kAcked;
+    r.bitrate_bps = acked ? acked->bps() : -1;
+    r.loss_state = static_cast<int>(ssbe_.loss_based_state());
+    const DataRate loss_result = ssbe_.loss_based().GetLossBasedResult().bandwidth_estimate;
+    r.loss_limit_bps = loss_result.IsFinite() ? loss_result.bps() : -1;
+    cfg_.bwe_trace->push_back(r);
+  }
   std::vector<ProbeCluster> probes;
   NetworkControlUpdate u = MakeUpdate(now, {});
   probes = std::move(u.probes);

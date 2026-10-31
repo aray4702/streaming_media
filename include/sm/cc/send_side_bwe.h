@@ -33,7 +33,11 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kAcked (issue #897): one row per transport feedback GoogCC used, after it: bitrate_bps = the
+  // acknowledged bitrate (RobustThroughputEstimator; -1 before it has one), loss_state = the send-side
+  // LossBasedState, loss_limit_bps = LossBasedBweV2's result (GetLossBasedResult().bandwidth_estimate).
+  // libwebrtc's rows read the same three values from its GoogCC.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kAcked };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

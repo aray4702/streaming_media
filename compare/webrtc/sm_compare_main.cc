@@ -113,7 +113,7 @@ const char* const kDefaultTraced =
     "very_low_capacity,very_low_capacity_allocator_v2,issue_124_clean_link_v2,issue_124_bufferbloat_v2,"
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
     "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window,"
-    "issue_522_outage_to_500kbps";
+    "issue_522_outage_to_500kbps,issue_150_gcc_v2_high_jitter_seed10,issue_466_undershoot_very_low_capacity";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
