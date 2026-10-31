@@ -660,7 +660,10 @@ ALGORITHMS = [
                "`AcknowledgedBitrateEstimatorInterface::Create`), and since #150 GoogCC feeds it with the receive-sorted "
                "feedback instead of the `BitrateEstimator` (the ALR marks are no-ops there, as in libwebrtc). Not ported, because we use "
                "transport-cc with send-side estimation: the receive-side `remote_bitrate_estimator_*`, `inter_arrival`, "
-               "`overuse_detector` and `congestion_control_feedback_*` tests. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
+               "`overuse_detector` and `congestion_control_feedback_*` tests. #893 ports the unit arithmetic the increase runs on: "
+               "`GetNearMaxIncreaseRateBpsPerSecond` in whole-byte `DataSize` and truncated `DataRate` (`aimd_rate_control.cc:191-206`), "
+               "and `seconds<double>()` / `ms<double>()` / `kbps<double>()` as `ToFraction` (the value times 1 / D, `unit_base.h:157-161`), "
+               "so 50 ms at the 4000 bps/s minimum adds 199 bps as in libwebrtc, not 200. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "

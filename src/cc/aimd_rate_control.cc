@@ -174,13 +174,18 @@ void AimdRateControl::SetEstimate(DataRate bitrate, Timestamp at_time) {
 }
 
 double AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond() const {
-  const double frame_size_bits = current_bitrate_.bps() / 30.0;  // 1/30 s of data.
-  const double kPacketSizeBits = 1200 * 8;
-  double packets_per_frame = std::ceil(frame_size_bits / kPacketSizeBits);
-  double avg_packet_size_bits = frame_size_bits / packets_per_frame;
+  // In libwebrtc's units (aimd_rate_control.cc:191-206): the frame size is a whole number of bytes,
+  // the average packet size is rounded to a byte and the rate is truncated to a bps (#893).
+  const TimeDelta kFrameInterval = TimeDelta::Seconds(1) / 30;
+  DataSize frame_size = current_bitrate_ * kFrameInterval;
+  const DataSize kPacketSize = DataSize::Bytes(1200);
+  double packets_per_frame = std::ceil(frame_size / kPacketSize);
+  DataSize avg_packet_size = frame_size / packets_per_frame;
   // Approximate the over-use estimator delay to 100 ms.
-  TimeDelta response_time = (rtt_ + TimeDelta::Millis(100)) * 2.0;
-  double increase_rate_bps_per_second = avg_packet_size_bits / response_time.seconds();
+  TimeDelta response_time = rtt_ + TimeDelta::Millis(100);
+  response_time = response_time * 2;
+  double increase_rate_bps_per_second =
+      units_impl::ToDouble(DataRate::FromSizeAndTime(avg_packet_size, response_time).bps());
   const double kMinIncreaseRateBpsPerSecond = 4000;
   return std::max(kMinIncreaseRateBpsPerSecond, increase_rate_bps_per_second);
 }
