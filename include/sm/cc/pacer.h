@@ -15,6 +15,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "sm/cc/pacer_types.h"
 #include "sm/cc/pacing_controller.h"
@@ -73,6 +74,7 @@ class Pacer : public MetricsSource {
 
  private:
   std::vector<PacedPacket> ProcessScheduled(Timestamp now);
+  void MaybeProcessPackets(Timestamp now, Timestamp scheduled_process_time, std::vector<PacedPacket>& out);
   void PostMaybeProcessPackets();
 
   bool task_queue_;
@@ -83,7 +85,15 @@ class Pacer : public MetricsSource {
   std::unique_ptr<PacingController> pc_;
   // TaskQueuePacedSender state.
   bool kick_ = true;                                          // A MaybeProcessPackets(-inf) is pending.
-  Timestamp next_process_time_ = Timestamp::MinusInfinity();  // The scheduled timer.
+  // The last scheduled process time, unrounded (TaskQueuePacedSender::next_process_time_).
+  Timestamp next_process_time_ = Timestamp::MinusInfinity();
+  // The delayed tasks in flight: when each fires (the delay rounded up to 1 ms) and the process time
+  // it carries. A task whose time is no longer next_process_time_ is retired but still processes.
+  struct Timer {
+    Timestamp fire;
+    Timestamp scheduled;
+  };
+  std::vector<Timer> timers_;  // In the order they fire.
   double packet_size_ = -1;                                   // ExpFilter(0.95) of the enqueued sizes.
 };
 

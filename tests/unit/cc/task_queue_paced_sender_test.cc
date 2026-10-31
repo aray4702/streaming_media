@@ -448,3 +448,21 @@ SM_TEST(TaskQueuePacedSender, PauseRunsNoPass) {
   pacer.Pause();
   SM_EXPECT_EQ(pacer.NextSendTime(sim.now).us(), next.us());
 }
+
+// MaybeProcessPackets keeps the unrounded process time in next_process_time_ and posts the task with
+// the delay rounded up to 1 ms (task_queue_paced_sender.cc:297-310). A packet enqueued between timers
+// whose send time is the one already scheduled posts no new task: it leaves when the pending task fires,
+// at the rounded time (issue #914: wifi_to_lte_handover seed 1, RTX 896 at 373.000 ms, not 372.753).
+SM_TEST(TaskQueuePacedSender, AnEnqueueBetweenTimersKeepsThePendingRoundedTimer) {
+  const DataRate kRate = DataRate::BitsPerSec(1000000);  // 1234 B every 9.872 ms.
+  Pacer pacer(Config(TimeDelta::Zero(), -1, TimeDelta::Zero()));
+  pacer.SetPacingRates(kRate, DataRate::Zero());
+  Sim sim(pacer);
+  sim.Enqueue(PacketPriority::kVideo, 2);
+  // The first leaves at once; the second is due at +9.872 ms, the task fires at +10 ms.
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Micros(9500)), 1u);
+  sim.Enqueue(PacketPriority::kVideo, 1);
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Millis(30)), 2u);
+  SM_ASSERT_EQ(sim.sent.size(), 3u);
+  SM_EXPECT_EQ((sim.sent[1].t - kStart).us(), 10000);
+}
