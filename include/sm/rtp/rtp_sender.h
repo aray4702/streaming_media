@@ -302,8 +302,10 @@ class RtpSender : public MetricsSource {
   // Counters of the media stream for the RTCP sender report, and the send rate for its interval.
   // The packet and octet counts are libwebrtc's `transmitted` counters of the media and RTX SSRCs:
   // every packet released (OnPacketReleased), FEC, retransmissions and padding included, with
-  // its payload octets.
-  RtcpSenderState SenderState(Timestamp now) const;
+  // its payload octets. With `read_send_rates` false the send rate is the one read last: libwebrtc reads
+  // GetSendRates(now) for RTCP only when it builds a packet (ModuleRtpRtcpImpl2::GetFeedbackState), and the
+  // read erases the trackers' expired buckets (issue #895).
+  RtcpSenderState SenderState(Timestamp now, bool read_send_rates = true) const;
   // RtpSenderEgress::GetSendRates(now).Sum(): one BitrateTracker (1 s window) per packet kind,
   // fed with each released packet's RTP size (rtp_sender_egress.cc:49, 129, 495).
   DataRate SendRate(Timestamp now) const;
@@ -361,6 +363,7 @@ class RtpSender : public MetricsSource {
   mutable std::array<RateStatistics, 5> send_rates_{RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
                                                     RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
                                                     RateStatistics(1000, 8000.0f)};
+  mutable DataRate last_send_rate_ = DataRate::Zero();  // SenderState's last read of SendRate.
   std::vector<SenderPacket> out_;
   RtpSenderStats stats_;
 };
