@@ -44,7 +44,7 @@
   "net.padding_size_max_b": 303,
   "net.padding_size_p50_b": 303,
   "net.padding_size_p90_b": 303,
-  "net.rtx_kbps": 86.75,
+  "net.rtx_kbps": 86.76,
   "net.rtx_loss_pct": 0,
   "net.rtx_queue_drops": 0,
   "net.rtx_size_max_b": 1484,
