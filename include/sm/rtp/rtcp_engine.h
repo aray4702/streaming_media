@@ -85,7 +85,9 @@ struct RtcpSenderState {
   uint32_t packet_count = 0;
   uint32_t octet_count = 0;
   // The RTP timestamp that corresponded to `reference_time`; the SR carries
-  // this extrapolated to the report time with `clock_rate`.
+  // this extrapolated to the report time with `clock_rate`, in whole ms and
+  // kHz as RTCPSender::BuildSR. `clock_rate` is the rate registered for the
+  // last frame's payload type (RtpSender::SenderState).
   uint32_t rtp_timestamp = 0;
   Timestamp reference_time = Timestamp::Millis(0);
   int clock_rate = 90000;

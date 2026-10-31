@@ -240,8 +240,37 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   return out;
 }
 
+// One kSync row (issue #895): both receive streams' Syncable::GetInfo, as RtpStreamsSynchronizer::UpdateDelay
+// reads them, and the synchronizer's last relative delay and filtered diff. `ts0` keeps the first RTP timestamp
+// of each stream, so the rows show RTP time from the stream's start.
+void AppendSyncTraceRow(const rtp::Session& receiver, Timestamp now, SyncTs0& ts0,
+                        std::vector<cc::BweTraceRow>& out) {
+  const sync::Syncable* a = receiver.sync_audio();
+  const sync::Syncable* v = receiver.sync_video();
+  if (!a || !v) return;
+  const std::optional<sync::Syncable::Info> ai = a->GetInfo();
+  const std::optional<sync::Syncable::Info> vi = v->GetInfo();
+  if (!ai || !vi) return;
+  if (!ts0.audio) ts0.audio = ai->latest_received_capture_rtp_timestamp;
+  if (!ts0.video) ts0.video = vi->latest_received_capture_rtp_timestamp;
+  cc::BweTraceRow r;
+  r.time_us = now.us();
+  r.kind = cc::BweTraceRow::Kind::kSync;
+  r.bitrate_bps = ai->current_delay.ms();
+  r.packets = static_cast<int>(vi->current_delay.ms());
+  r.loss_limit_bps = ai->latest_receive_time.ms();
+  r.instant_ub_bps = vi->latest_receive_time.ms();
+  r.send_ms = static_cast<uint32_t>(ai->latest_received_capture_rtp_timestamp - *ts0.audio) / 48.0;  // Opus, 48 kHz.
+  r.arrival_ms = static_cast<uint32_t>(vi->latest_received_capture_rtp_timestamp - *ts0.video) / 90.0;
+  if (const sync::RtpStreamsSynchronizer* sy = receiver.av_sync()) {
+    r.modified_trend = sy->last_relative_delay_ms();
+    r.threshold = sy->last_avg_diff_ms();
+  }
+  out.push_back(r);
+}
+
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming", "pacer"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming", "pacer", "sync"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
@@ -837,6 +866,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   Timestamp video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
   AvSyncMeter av_sync;  // Issue #63.
+  SyncTs0 sync_ts0;     // Issue #895.
   StretchMeter stretch;  // Issue #510: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   ConcealmentMeter concealment(sr);  // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
@@ -1289,6 +1319,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     receiver_ran = now;
     render(now);
     receiver.TakeEvents();
+
+    // The A/V sync inputs at each whole second, after the synchronizer's run at this time and before this time's
+    // audio pull, as sm_compare reads libwebrtc's (issue #895).
+    if (opt.bwe_trace && t % 1000 == 0) AppendSyncTraceRow(receiver, now, sync_ts0, rep.bwe_trace);
 
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {

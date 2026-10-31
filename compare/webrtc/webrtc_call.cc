@@ -46,6 +46,8 @@
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "audio/audio_receive_stream.h"
+#include "video/stream_synchronization.h"
+#include "video/video_receive_stream2.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/audio_state.h"
@@ -1185,6 +1187,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::VideoSendStream* video_send = nullptr;
   w::AudioReceiveStreamInterface* audio_recv = nullptr;
   w::VideoReceiveStreamInterface* video_recv = nullptr;
+  testbench::SyncTs0 sync_ts0;  // Issue #895.
+  // libwebrtc's own measurements, updated from the same GetInfo once a second as UpdateDelay updates its own, so
+  // the sync rows carry the relative delay it computes (issue #895).
+  w::StreamSynchronization::Measurements sync_audio_m, sync_video_m;
 
   run_on(sender_q.get(), [&] {
     if (s.audio) {
@@ -1458,6 +1464,44 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         const int64_t complete = st.received_frame_counts.key_frames + st.received_frame_counts.delta_frames;
         rx_by_second.push_back(
             {t_ms, complete, static_cast<int64_t>(st.frames_decoded), static_cast<int64_t>(st.frames_dropped)});
+      });
+    }
+
+    // The A/V sync inputs at each whole second (issue #895), as the test bench's kSync rows: posted at this tick,
+    // so the task runs after RtpStreamsSynchronizer's repeating task due now (a timer posted earlier runs first on
+    // the receiver's queue, the Call's worker) and before this time's audio pull. Both streams' Syncable::GetInfo,
+    // which UpdateDelay reads (rtp_streams_synchronizer2.cc).
+    if (opt.bwe_trace && t % 1000 == 0 && audio_recv && video_recv) {
+      receiver_q->PostTask([&, t_ms = t] {
+        const w::Syncable* a = static_cast<const w::AudioReceiveStreamImpl*>(audio_recv);
+        const w::Syncable* v = static_cast<const w::internal::VideoReceiveStream2*>(video_recv);
+        const std::optional<w::Syncable::Info> ai = a->GetInfo();
+        const std::optional<w::Syncable::Info> vi = v->GetInfo();
+        if (!ai || !vi) return;
+        if (!sync_ts0.audio) sync_ts0.audio = ai->latest_received_capture_rtp_timestamp;
+        if (!sync_ts0.video) sync_ts0.video = vi->latest_received_capture_rtp_timestamp;
+        cc::BweTraceRow r;
+        r.time_us = static_cast<int64_t>(t_ms) * 1000;
+        r.kind = cc::BweTraceRow::Kind::kSync;
+        r.bitrate_bps = ai->current_delay.ms();
+        r.packets = static_cast<int>(vi->current_delay.ms());
+        r.loss_limit_bps = rel(ai->latest_receive_time).ms();
+        r.instant_ub_bps = rel(vi->latest_receive_time).ms();
+        r.send_ms = static_cast<uint32_t>(ai->latest_received_capture_rtp_timestamp - *sync_ts0.audio) / 48.0;
+        r.arrival_ms = static_cast<uint32_t>(vi->latest_received_capture_rtp_timestamp - *sync_ts0.video) / 90.0;
+        // rtp_streams_synchronizer2.cc UpdateMeasurements, then StreamSynchronization::ComputeRelativeDelay.
+        auto update = [](w::StreamSynchronization::Measurements& m, const w::Syncable::Info& i) {
+          m.latest_timestamp = i.latest_received_capture_rtp_timestamp;
+          m.latest_receive_time_ms = i.latest_receive_time.ms();
+          return m.rtp_to_ntp.UpdateMeasurements(i.capture_time_ntp, i.capture_time_rtp) !=
+                 w::RtpToNtpEstimator::kInvalidMeasurement;
+        };
+        int relative_ms = 0;
+        if (update(sync_audio_m, *ai) && update(sync_video_m, *vi) &&
+            w::StreamSynchronization::ComputeRelativeDelay(sync_audio_m, sync_video_m, &relative_ms)) {
+          r.modified_trend = relative_ms;
+        }
+        rep.bwe_trace.push_back(r);
       });
     }
 

@@ -145,7 +145,29 @@ SM_TEST(RtpSender, AudioRedCarriesThePreviousFrame) {
   SM_EXPECT_TRUE((*blocks)[0].payload == f1);
   SM_EXPECT_TRUE((*blocks)[1].primary);
   SM_EXPECT_TRUE((*blocks)[1].payload == f2);
-  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
+  // Every frame carries RED's payload type, which has no registered rate: the
+  // sender report extrapolates at kBogusRtpRateForAudioRtcp (issue #895).
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 8000);
+}
+
+// RTCPSender::BuildSR reads the rate registered for the last frame's payload type
+// (rtcp_sender.cc:355-360). ChannelSend::SetEncoder registers only the codec's
+// (channel_send.cc:645), so audio sent as RED reports at kBogusRtpRateForAudioRtcp,
+// 8 kHz, and audio without RED at the codec's 48 kHz (issue #895).
+SM_TEST(RtpSender, SenderReportRateIsTheLastPayloadTypesRegisteredRate) {
+  RtpSenderConfig c;
+  c.ssrc = 5;
+  c.payload_type = 111;
+  c.video = false;
+  c.clock_rate = 48000;
+  RtpSender plain(c);
+  plain.SendAudio(Bytes(30, 0xA1), 960, false, Timestamp::Millis(0));
+  SM_EXPECT_EQ(plain.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
+  c.red_payload_type = 63;
+  RtpSender red(c);
+  red.SendAudio(Bytes(30, 0xA1), 960, false, Timestamp::Millis(0));
+  SM_EXPECT_EQ(red.SenderState(Timestamp::Millis(0)).clock_rate, RtpSender::kBogusRtpRateForAudioRtcp);
+  SM_EXPECT_EQ(RtpSender::kBogusRtpRateForAudioRtcp, 8000);
 }
 
 // RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128): the marker goes on the stream's first

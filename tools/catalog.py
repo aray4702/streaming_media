@@ -291,7 +291,13 @@ ALGORITHMS = [
                       "rules compared with packet_buffer.cc and h26x_packet_buffer.cc; the wait for a missing packet before "
                       "an IDR start (`may_continue_frame`) removed as libwebrtc has none (unit tests "
                       "`PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing` and "
-                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged."),
+                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged. "
+                      "Issue #899: FindFrames' walk forward ported (PotentialNewFrame continuity, received_padding_, stops at "
+                      "a packet already handed out and at a held frame) and the marker-bit stop removed from the walk back "
+                      "(unit tests `PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne`, "
+                      "`PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered`); suite unchanged on seed 1. "
+                      "A copy arriving after its frame is assembled is still rejected as a duplicate (libwebrtc takes it "
+                      "again), pending a ruling on #899."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
@@ -1769,6 +1775,12 @@ ALGORITHMS = [
                       "unit.Session.TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime); on seed 1 of "
                       "issue_12_lossbwe_policer the forward link now matches libwebrtc's packet for packet through 690 ms "
                       "(104 rows), where it matched through 410 ms (60 rows) before. "
+                      "#895: the sender report's RTP timestamp is extrapolated as RTCPSender::BuildSR does, in whole "
+                      "milliseconds at the rate registered for the last frame's payload type, which for audio sent as "
+                      "RED is kBogusRtpRateForAudioRtcp, 8 kHz (unit.RtcpEngine.SenderReportExtrapolatesInWholeMilliseconds, "
+                      "unit.RtpSender.SenderReportRateIsTheLastPayloadTypesRegisteredRate); on seed 1 of "
+                      "issue_12_lossbwe_shallow the A/V sync's relative delay now equals libwebrtc's at every 1 s run "
+                      "and the audio trace matches libwebrtc's through 34.96 s ([fix record](../../fixes/895-red-sender-report-sync.md)). "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

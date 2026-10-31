@@ -1,7 +1,7 @@
 {
  "description": "20% random loss on a clean 2 Mbps / 50 ms link: video pacer queue grows to seconds and A/V sync drags audio with it",
  "metrics": {
-  "audio.concealed_pct": 1.572,
+  "audio.concealed_pct": 1.554,
   "audio.interruption_ms": 0,
   "audio.interruptions": 0,
   "audio.jb_delay_p50_ms": 60,
@@ -10,7 +10,7 @@
   "audio.longest_interruption_ms": 62,
   "audio.mouth_to_ear_p95_ms": 1043,
   "audio.net_delay_p95_ms": 63.16,
-  "audio.stretch_pct": 6.047,
+  "audio.stretch_pct": 5.981,
   "audio.time_to_first_ms": 60,
   "cc.goodput_kbps": 238.7,
   "cc.max_settle_ms": 30000,

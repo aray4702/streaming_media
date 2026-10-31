@@ -274,6 +274,11 @@ std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
+
+// The first RTP timestamp of each stream a sync trace row has seen (issue #895), shared by both stacks' harnesses.
+struct SyncTs0 {
+  std::optional<uint32_t> audio, video;
+};
 // Report::audio_trace as CSV: t_ms,buffer_ms,target_ms,jb_delay_ms,received_ms,
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
