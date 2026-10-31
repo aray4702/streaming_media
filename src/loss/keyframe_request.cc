@@ -44,6 +44,7 @@ void KeyframeRequester::OnFrame(const FrameInfo& f, Timestamp now) {
     ready_.push_back(f.frame_id);
     ++stats_.frames_decodable;
     last_decodable_ = std::max(last_decodable_, f.frame_id);
+    last_continuous_ = std::max(last_continuous_.value_or(f.frame_id), f.frame_id);
     Propagate(now);
   } else {
     waiting_.emplace(f.frame_id, std::make_pair(f, now));
@@ -67,6 +68,7 @@ void KeyframeRequester::Propagate(Timestamp now) {
         ready_.push_back(id);
         ++stats_.frames_decodable;
         last_decodable_ = std::max(last_decodable_, id);
+        last_continuous_ = std::max(last_continuous_.value_or(id), id);
         waiting_.erase(it);
         progress = true;
         break;
@@ -180,6 +182,7 @@ void KeyframeRequester::ClearFrames() {
   waiting_.clear();
   decodable_.clear();
   ready_.clear();
+  last_continuous_.reset();
 }
 
 std::vector<int64_t> KeyframeRequester::TakeDecodableFrames() {
