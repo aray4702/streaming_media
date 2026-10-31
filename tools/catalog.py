@@ -662,7 +662,7 @@ ALGORITHMS = [
                "`overuse_detector` and `congestion_control_feedback_*` tests. #893 ports the unit arithmetic the increase runs on: "
                "`GetNearMaxIncreaseRateBpsPerSecond` in whole-byte `DataSize` and truncated `DataRate` (`aimd_rate_control.cc:191-206`), "
                "and `seconds<double>()` / `ms<double>()` / `kbps<double>()` as `ToFraction` (the value times 1 / D, `unit_base.h:157-161`), "
-               "so 50 ms at the 4000 bps/s minimum adds 199 bps as in libwebrtc, not 200. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
+               "so 50 ms at the 4000 bps/s minimum adds 199 bps as in libwebrtc, not 200. #893 also ports the feedback's trigger rule: `OnTransportPacketsFeedback` runs `MaybeTriggerOnNetworkChanged` only when the delay-based result updated (`goog_cc_network_control.cc:517-521`), so a loss-based change at a feedback during overuse reaches the pacer and the allocator with the next sent packet or process interval, not at once. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "

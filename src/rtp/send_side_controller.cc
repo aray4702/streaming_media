@@ -529,19 +529,27 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     outage_.OnFeedback(now);
     return;
   }
-  ApplyTarget(u, now);
+  // RtpTransportControllerSend::PostUpdates: the update carries the target and the pacer config only
+  // when MaybeTriggerOnNetworkChanged ran and its change check fired, which on feedback needs an
+  // updated delay-based estimate (goog_cc_network_control.cc:517-521, 610-652; issue #893). The probe
+  // clusters go to the pacer either way.
+  if (u.triggered) ApplyTarget(u, now);
   // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
   // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
   // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
   // before this feedback. After an outage the first feedback clears the lost packets from flight;
   // against the grown window that fill would fall under 0.1 and end the pushback at once (#446).
   if (gcc_.last_feedback_delay_updated()) UpdatePushback(now, false);
-  ApplyPacer(u);
+  if (u.triggered) {
+    ApplyPacer(u);
+  } else {
+    for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
+  }
   if (auto rtt = gcc_.last_feedback_max_rtt()) {
     cwnd_.OnFeedbackRtt(*rtt);
     cwnd_.UpdateWindow(window_target_);
   }
-  PostTargetRate(now);
+  if (u.triggered) PostTargetRate(now);
   outage_.OnFeedback(now);
 }
 

@@ -262,7 +262,17 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
   target_ = ssbe_.target_rate();
   TraceLossBased(now);
   std::vector<ProbeCluster> probes;
-  NetworkControlUpdate u = MakeUpdate(now, {});
+  // MaybeTriggerOnNetworkChanged runs here only when the delay-based estimate updated
+  // (goog_cc_network_control.cc:517-521). Otherwise the update carries no target and no pacer
+  // config: a loss-based change goes out with the next sent packet (pushback on) or process
+  // interval, which see it against the last target that went out (issue #893).
+  NetworkControlUpdate u;
+  if (result.updated) {
+    u = MakeUpdate(now, {});
+  } else {
+    u.target_rate = last_reported_;
+    u.pacing_rate = PacingRate();
+  }
   probes = std::move(u.probes);
   if (cfg_.enable_probing && result.recovered_from_overuse) {
     probe2_.SetAlrStartTime(alr_start_time);
