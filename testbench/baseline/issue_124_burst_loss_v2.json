@@ -1,7 +1,7 @@
 {
  "description": "3% loss in bursts of ~6 packets, 2 Mbps, every v2 switch on: the flip's burst_loss cell next to libwebrtc (issue",
  "metrics": {
-  "audio.concealed_pct": 0.8186,
+  "audio.concealed_pct": 0.7935,
   "audio.interruption_ms": 0,
   "audio.interruptions": 0,
   "audio.jb_delay_p50_ms": 110,
@@ -10,7 +10,7 @@
   "audio.longest_interruption_ms": 64,
   "audio.mouth_to_ear_p95_ms": 317.4,
   "audio.net_delay_p95_ms": 117.4,
-  "audio.stretch_pct": 1.604,
+  "audio.stretch_pct": 1.737,
   "audio.time_to_first_ms": 60,
   "cc.goodput_kbps": 1629,
   "cc.max_settle_ms": 400,

@@ -311,6 +311,9 @@ class RtpSender : public MetricsSource {
   DataRate SendRate(Timestamp now) const;
   // RTP timestamp of the last media packet; padding carries it, like libwebrtc.
   uint32_t last_rtp_timestamp() const { return last_rtp_timestamp_; }
+  // rtp_rtcp_defines.h: the rate an audio sender report extrapolates with when the
+  // last frame's payload type has no registered rate (RED's; SenderState).
+  static constexpr int kBogusRtpRateForAudioRtcp = 8000;
   // ModuleRtpRtcpImpl2::StartTimestamp (rtp_rtcp_impl2.cc:194-196).
   uint32_t StartTimestamp() const { return cfg_.timestamp_offset; }
   const RtpSenderConfig& config() const { return cfg_; }

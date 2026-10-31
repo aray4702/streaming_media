@@ -1002,4 +1002,7 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   }
 }
 
+const sync::Syncable* Session::sync_audio() const { return sync_audio_.get(); }
+const sync::Syncable* Session::sync_video() const { return sync_video_.get(); }
+
 }  // namespace sm::rtp

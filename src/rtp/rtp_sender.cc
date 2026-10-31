@@ -562,7 +562,12 @@ RtcpSenderState RtpSender::SenderState(Timestamp now, bool read_send_rates) cons
   s.octet_count = sr_octets_;
   s.rtp_timestamp = last_rtp_timestamp_;
   s.reference_time = last_media_time_.IsFinite() ? last_media_time_ : Timestamp::Millis(0);
-  s.clock_rate = cfg_.clock_rate;
+  // RTCPSender::BuildSR reads rtp_clock_rates_khz_[last_payload_type_], the rate registered for the payload
+  // type of the last frame (OnSendingRtpFrame). ChannelSend::SetEncoder registers only the codec's payload type
+  // (channel_send.cc:645), so with RED, whose payload type every audio frame carries, there is no rate and the
+  // report falls back to kBogusRtpRateForAudioRtcp, 8 kHz (rtcp_sender.cc:355-360, rtp_rtcp_defines.h:51).
+  // RtpVideoSender registers the video payload type at 90 kHz, the same as the fallback (issue #895).
+  s.clock_rate = !cfg_.video && cfg_.red_payload_type ? kBogusRtpRateForAudioRtcp : cfg_.clock_rate;
   return s;
 }
 
