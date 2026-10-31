@@ -16,7 +16,7 @@
   "cc.max_settle_ms": 300,
   "cc.queue_max_ms": 65.45,
   "cc.queue_over_200ms_pct": 0,
-  "cc.queue_p95_ms": 27.26,
+  "cc.queue_p95_ms": 27.27,
   "cc.rtt_p50_ms": 90.5,
   "cc.send_over_target_ms": 0,
   "cc.send_over_target_p95_pct": 13.32,

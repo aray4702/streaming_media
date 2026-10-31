@@ -598,6 +598,12 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     ++stats_.malformed;
     return;
   }
+  // Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands the packet to the audio send stream too,
+  // whose RTCPReceiver keeps every RRTR it sees, whatever its sender
+  // (RTCPReceiver::HandleXrReceiveReferenceTime, rtcp_receiver.cc:687-707): the audio channel's
+  // next report echoes it in a DLRR (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:268;
+  // RTCPSender::BuildExtendedReports). Issue #893.
+  if (audio_rtcp_) audio_rtcp_->OnRtcp(bytes, now);
   for (const auto& sr : in.sender_reports) {
     for (auto& v : video_recv_) {
       if (v.ssrc == sr.ssrc) v.receiver->OnSenderReport(sr, now);
