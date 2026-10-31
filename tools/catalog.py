@@ -624,7 +624,12 @@ ALGORITHMS = [
                       "history ported as libwebrtc's TransportFeedbackAdapter (60 s window by creation time instead of "
                       "an 8192-packet cap, in-flight data above the last acknowledged sequence number, the local "
                       "receive-time base, no update for a feedback that finds no packet); unit tests "
-                      "`TransportFeedbackAdapter.*`; the scenario suite is unchanged, metric for metric."),
+                      "`TransportFeedbackAdapter.*`; the scenario suite is unchanged, metric for metric. Issue #897: "
+                      "the send time in each result kept the pacer's microseconds, where libwebrtc's adapter takes "
+                      "rtc::SentPacket::send_time_ms (transport_feedback_adapter.cc:184), so its estimators see whole "
+                      "milliseconds; on `issue_150_gcc_v2_high_jitter_seed10` seed 10 the acked rate differed from "
+                      "libwebrtc's at 1280 ms (470925 vs 471029 bps, yardstick #915) and matches it with the port; unit "
+                      "test `TransportFeedbackAdapter.SendTimeIsWholeMilliseconds`."),
     dict(id="5.2", slug="delay-based-bwe", title="Delay-based bandwidth estimation (GCC)",
          problems=["Unknown or changing available bandwidth -> GCC: delay-based estimation"],
          headers=["cc/delay_based_bwe.h", "cc/aimd_rate_control.h"], unit=["DelayBwe", "DelayBweV2", "DelayBweLibwebrtc", "RobustThroughputEstimator", "AcknowledgedBitrateEstimator", "AimdRateControl", "BitrateEstimatorV2"], e2e=["E2E_DelayBwe"],
