@@ -544,7 +544,15 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       for (const RtpPacket& pkt : f.packets) retransmitted = nacked_seqs_.erase(pkt.seq) > 0 || retransmitted;
       if (!FrameBufferAccepts(fi.frame_id, keyframe, f.timestamp, now)) continue;
     }
+    const uint64_t decodable_before = keyframes_.stats().frames_decodable;
     keyframes_.OnFrame(fi, now);
+    // VideoReceiveStream2::OnCompleteFrame -> RtpVideoStreamReceiver2::FrameContinuous: each frame the reference
+    // finder passes on clears the NACK list and the recovered list up to the last continuous frame's last packet
+    // (NackRequester::ClearUpTo). A delta frame whose predecessor is missing waits in RtpSeqNumOnlyRefFinder's
+    // stash and reaches OnCompleteFrame only when it can follow, as ours waits in KeyframeRequester.
+    if (cfg_.nack && keyframes_.stats().frames_decodable > decodable_before) {
+      nack_.ClearUpTo(static_cast<uint16_t>(*keyframes_.LastContinuousFrameId()));
+    }
     if (cfg_.timing.version < 2) {
       video_jitter_.OnFrame(f.timestamp, f.last_arrival, DataSize::Bytes(static_cast<int64_t>(f.size_bytes())));
       video_timing_.IncomingTimestamp(f.timestamp, f.last_arrival);
@@ -654,10 +662,6 @@ void RtpReceiver::Process(Timestamp now) {
   if (cfg_.render_smoothing) render_frames_.Process(now);
   for (int64_t id : keyframes_.TakeDecodableFrames()) {
     auto it = frames_.find(id);
-    // RtpVideoStreamReceiver2::FrameContinuous: a continuous frame ends the repair of everything before its
-    // last packet. Only a keyframe is continuous here whatever came before it; for a
-    // delta frame our decodable test is looser than FrameBuffer's continuity, so it clears nothing.
-    if (cfg_.nack && it != frames_.end() && it->second.keyframe) nack_.ClearUpTo(static_cast<uint16_t>(id));
     if (it == frames_.end()) continue;
     ++stats_.frames_scheduled;
     if (cfg_.timing.version >= 2) {
