@@ -241,7 +241,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming", "pacer"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =

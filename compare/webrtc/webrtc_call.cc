@@ -51,6 +51,7 @@
 #include "call/audio_state.h"
 #include "call/call.h"
 #include "call/call_config.h"
+#include "call/rtp_transport_controller_send.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -64,6 +65,9 @@
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
+#include "modules/pacing/pacing_controller.h"
+#include "modules/pacing/prioritized_packet_queue.h"
+#include "modules/pacing/task_queue_paced_sender.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -95,6 +99,36 @@ class GoogCcStatePrinter {
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
 };
 }  // namespace webrtc
+
+namespace sm::compare::pacer_access {
+// Read access to the sender's PacingController, for the pacer trace rows (issue #893). Neither
+// RtpTransportControllerSend, TaskQueuePacedSender nor PacingController declares a friend for it, so the member
+// pointers come from explicit instantiations, which are exempt from access checking ([temp.spec.general]/6).
+template <typename Tag, typename Tag::type M>
+struct Member {
+  friend typename Tag::type Get(Tag) { return M; }
+};
+#define SM_PACER_MEMBER(TagName, Class, Type, Field)                                              \
+  struct TagName {                                                                                \
+    using type = Type Class::*;                                                                   \
+    friend type Get(TagName);                                                                     \
+  };                                                                                              \
+  template struct Member<TagName, &Class::Field>;
+SM_PACER_MEMBER(PacerTag, webrtc::RtpTransportControllerSend, webrtc::TaskQueuePacedSender, pacer_)
+SM_PACER_MEMBER(ControllerTag, webrtc::TaskQueuePacedSender, webrtc::PacingController, pacing_controller_)
+SM_PACER_MEMBER(MediaDebtTag, webrtc::PacingController, webrtc::DataSize, media_debt_)
+SM_PACER_MEMBER(PacingRateTag, webrtc::PacingController, webrtc::DataRate, pacing_rate_)
+SM_PACER_MEMBER(AdjustedRateTag, webrtc::PacingController, webrtc::DataRate, adjusted_media_rate_)
+SM_PACER_MEMBER(LastProcessTag, webrtc::PacingController, webrtc::Timestamp, last_process_time_)
+SM_PACER_MEMBER(QueueTag, webrtc::PacingController, webrtc::PrioritizedPacketQueue, packet_queue_)
+#undef SM_PACER_MEMBER
+
+// The sender call's PacingController (Call::GetTransportControllerSend is RtpTransportControllerSend's).
+inline const webrtc::PacingController& Of(webrtc::Call& call) {
+  auto* transport = static_cast<webrtc::RtpTransportControllerSend*>(call.GetTransportControllerSend());
+  return (transport->*Get(PacerTag{})).*Get(ControllerTag{});
+}
+}  // namespace sm::compare::pacer_access
 
 namespace sm::compare {
 namespace {
@@ -1033,6 +1067,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
           link_kind = sm::sim::LinkKind::kPadding;  // RTX header only (no retransmitted payload).
         }
       }
+    }
+    if (opt.bwe_trace && trace_seq >= 0 && link_kind != sm::sim::LinkKind::kOther) {
+      // The pacer as this packet leaves it: the transport runs inside PacingController::ProcessPackets'
+      // SendPacket, before OnPacketSent charges the packet. As SendSideController::SendPacket writes ours
+      // (issue #893).
+      namespace pa = pacer_access;
+      const w::PacingController& pc = pa::Of(*send_call);
+      cc::BweTraceRow row;
+      row.time_us = rel(now).us();
+      row.kind = cc::BweTraceRow::Kind::kPacer;
+      row.bitrate_bps = (pc.*Get(pa::AdjustedRateTag{})).bps();
+      row.loss_limit_bps = (pc.*Get(pa::PacingRateTag{})).bps();
+      row.instant_ub_bps = (pc.*Get(pa::MediaDebtTag{})).bytes();
+      row.packets = static_cast<int>(pc.QueueSizePackets());
+      row.fraction_loss = static_cast<int>(pc.QueueSizeData().bytes());
+      row.modified_trend = (pc.*Get(pa::QueueTag{})).AverageQueueTime().ms<double>();
+      const sm::sim::LinkKind k = link_kind;
+      row.threshold = k == sm::sim::LinkKind::kAudio ? 0 : k == sm::sim::LinkKind::kVideo ? 1
+                    : k == sm::sim::LinkKind::kRtx   ? 2 : k == sm::sim::LinkKind::kFec   ? 3 : 4;
+      row.send_delta_ms = trace_seq;
+      const w::Timestamp lpt = pc.*Get(pa::LastProcessTag{});
+      row.send_ms = lpt.IsFinite() ? (lpt - t0).us<double>() / 1000.0 : -1;
+      rep.bwe_trace.push_back(row);
     }
     // The frame trace's RTP fields (issue #437), as the test bench writes them.
     int64_t trace_ts = -1;
