@@ -438,6 +438,7 @@ class RtpReceiver : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  void MaybeStart(Timestamp now);  // The first time this receiver is given (issue #897).
   // A video packet on the media SSRC, received or restored from RTX: RED goes to the ULPFEC
   // receiver (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader). kFec for an FEC packet.
   ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered);
@@ -481,6 +482,7 @@ class RtpReceiver : public MetricsSource {
   timing::VideoTiming video_timing_;
   video::FrameScheduler scheduler_;
   timing::VcmTiming vcm_timing_;            // timing v2.
+  bool started_ = false;                    // MaybeStart ran (issue #897).
   timing::FrameReleaseController release_;  // timing v2.
   video::RenderFrames render_frames_;       // render_smoothing.
   std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.

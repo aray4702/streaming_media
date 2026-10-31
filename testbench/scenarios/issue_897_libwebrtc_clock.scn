@@ -1,0 +1,19 @@
+name issue_897_libwebrtc_clock
+describe issue_150_gcc_v2_high_jitter seed 10 with both sessions on libwebrtc's clock: sm_compare's starts at CallClockStartSeconds (171271 s for seed 10), so the receiver's transport-cc reference times sit on that clock's 64 ms grid (issue #897)
+# Root cause (#897): the test bench ran both sessions on a clock that starts at 0, while libwebrtc's simulated clock in
+# sm_compare starts at 100000 + 7919 (seed - 1) s. rtcp::TransportFeedback::SetBase puts each feedback's reference time
+# on a 64 ms grid of the receiver's clock (transport_feedback.cc:305-311), and the sender's TransportFeedbackAdapter
+# rounds each packet's time since that base down to 1 ms (transport_feedback_adapter.cc:270). 171271 s is 24 ms off a
+# 64 ms boundary, so ours rounded some receive times on another grid: at the 1930 ms feedback a packet whose time
+# since base was negative on our grid (-5.6 ms, rounded toward zero) was positive on libwebrtc's, and the acked-rate
+# window spanned 995 ms against libwebrtc's 994 (475320 vs 475798 bps). With the clock, the forward-link trace of
+# seed 10 is identical to libwebrtc's for the whole 30 s (5252 packets), and every metric below is libwebrtc's.
+# Seed 10 on main: audio.jb_delay_p95_ms 100, repair.overhead_pct 47.48, sync.av_offset_p95_ms 61.65.
+# libwebrtc (parity-data traces, seed 10): 110, 51.68, 69.17; this library with the fix: 110, 51.68, 69.17.
+duration 30s
+at 0s capacity=3000kbps delay=30ms jitter=40ms reorder=on queue=300ms
+seed 10
+expect audio.jb_delay_p95_ms >= 105
+expect repair.overhead_pct > 50
+expect sync.av_offset_p95_ms > 65
+expect cc.utilization_pct < 55
