@@ -68,59 +68,6 @@
  },
  "gaps": [
   {
-   "scenario": "issue_127_all_v2_no_stall",
-   "metric": "audio.jb_delay_p95_ms",
-   "sm": 228,
-   "webrtc": 244,
-   "band": 12.649110640673518,
-   "direction": "ahead",
-   "seeds_agree": 5,
-   "seeds": 10,
-   "owners": [
-    479
-   ],
-   "stale_owners": [
-    63,
-    476
-   ]
-  },
-  {
-   "scenario": "issue_12_lossbwe_shallow",
-   "metric": "audio.mouth_to_ear_p95_ms",
-   "sm": 135.032,
-   "webrtc": 150.984,
-   "band": 10,
-   "direction": "ahead",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    411,
-    479
-   ],
-   "stale_owners": [
-    63,
-    476
-   ]
-  },
-  {
-   "scenario": "issue_12_lossbwe_shallow",
-   "metric": "audio.jb_delay_p95_ms",
-   "sm": 80,
-   "webrtc": 96,
-   "band": 10,
-   "direction": "ahead",
-   "seeds_agree": 6,
-   "seeds": 10,
-   "owners": [
-    411,
-    479
-   ],
-   "stale_owners": [
-    63,
-    476
-   ]
-  },
-  {
    "scenario": "issue_466_overshoot_very_low_capacity",
    "metric": "video.pause_total_ms",
    "sm": 2468.21,
