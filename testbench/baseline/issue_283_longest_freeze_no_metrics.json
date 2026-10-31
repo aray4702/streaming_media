@@ -23,7 +23,7 @@
   "cc.target_avg_kbps": 2306,
   "cc.target_max_drop_pct": 27.24,
   "cc.unsettled": 0,
-  "cc.utilization_pct": 82.01,
+  "cc.utilization_pct": 82,
   "net.audio_first_marker": 1,
   "net.audio_kbps": 68.83,
   "net.audio_loss_pct": 10,
