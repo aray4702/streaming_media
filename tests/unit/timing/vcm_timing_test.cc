@@ -545,3 +545,33 @@ SM_TEST(VcmTiming, ReleaseWaitsUntilRenderTimeMinusDecodeAndRenderDelay) {
   SM_EXPECT_TRUE(out[0].decode);
   SM_EXPECT_EQ((out[0].render_time - due).ms(), 10);
 }
+
+SM_TEST(VcmTiming, ReleaseSchedulesEachFrameAsItIsInserted) {
+  // VideoStreamBufferController::InsertFrame calls MaybeScheduleFrameForRelease
+  // for each frame, so of frames that arrive together the first is scheduled
+  // with the render time of the timestamps up to it, and keeps it (#931:
+  // on issue_466_undershoot seed 1 libwebrtc's first frame after a stall gets a
+  // render time 2.2 s later than when the whole batch is inserted first).
+  ReleaseHarness each, batch, first_only;
+  for (ReleaseHarness* h : {&each, &batch, &first_only}) {
+    WarmUp(*h);
+    h->now += TimeDelta::Millis(500);
+  }
+  std::vector<ReleaseAction> out_each;
+  for (int i = 0; i < 3; ++i) {
+    each.release.Insert(each.Make(false, each.now));
+    for (const auto& a : each.release.MaybeSchedule(each.now, TimeDelta::Zero())) out_each.push_back(a);
+    batch.release.Insert(batch.Make(false, batch.now));
+  }
+  for (const auto& a : each.release.Process(each.now, TimeDelta::Zero())) out_each.push_back(a);
+  const auto out_batch = batch.release.Process(batch.now, TimeDelta::Zero());
+  const ReleaseFrame f = first_only.Make(false, first_only.now);
+  first_only.release.Insert(f);
+  const Timestamp expected = first_only.timing.RenderTime(f.rtp_timestamp, first_only.now);
+  SM_ASSERT_EQ(out_each.size(), 3u);
+  SM_ASSERT_EQ(out_batch.size(), 3u);
+  SM_EXPECT_EQ(out_each[0].render_time.us(), expected.us());
+  SM_EXPECT_NE(out_each[0].render_time.us(), out_batch[0].render_time.us());
+  // The frames after it are scheduled once it is released, as before.
+  SM_EXPECT_EQ(out_each[2].render_time.us(), out_batch[2].render_time.us());
+}

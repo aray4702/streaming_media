@@ -446,7 +446,9 @@ SM_TEST(SendSideController, AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc) {
 // any counts at its rate since it started; with the switch off it is averaged
 // over the whole second.
 namespace {
-double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms) {
+// Video every 10 ms (none between 1000 ms and `rtx_start` unless `video_in_gap`), a burst of RTX at
+// 1000 ms, and RTX every 10 ms for 100 ms from `rtx_start`, the same size as the video.
+double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms, bool video_in_gap = true) {
   SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(5000);
   cfg.send_rate_stats = send_rate_stats;
@@ -455,9 +457,8 @@ double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms) {
   uint16_t seq = 0;
   const int rtx_start = 1000 + rtx_gap_ms;
   for (int t = 0; t <= rtx_start + 100; ++t) {
-    // Video every 10 ms the whole time; a burst of RTX at 1000 ms, and RTX every
-    // 10 ms from `rtx_start`, the same size as the video.
-    if (t % 10 == 0) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+    const bool video = t % 10 == 0 && (video_in_gap || t <= 1000 || t >= rtx_start);
+    if (video) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
     if ((t == 1000 || (t >= rtx_start && t % 10 == 0)) && t < rtx_start + 100) {
       c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
     }
@@ -475,10 +476,24 @@ SM_TEST(SendSideController, RateStatisticsCountRepairThatJustStartedAtItsRateSin
   SM_EXPECT_NEAR(ShareAfterRtxStarts(false, 2000), 1.0 / 11.0, 0.02);
 }
 
-SM_TEST(SendSideController, RateStatisticsKeepTheWindowWhenTheLastRepairWasRecent) {
-  // The last RTX was 1.2 s before (under 1.5 windows): RateStatistics keeps the
-  // window start, so the new RTX is averaged over the whole second.
-  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), 1.0 / 11.0, 0.02);
+// Issue #893: RtpSenderEgress::UpdateRtpStats calls GetSendRates(now) for every packet the video module
+// sends (rtp_sender_egress.cc:495-498), and each RateStatistics::Rate() erases the buckets that left the
+// window. The video sent 1.2 s after the last RTX has emptied the RTX tracker, so the next RTX restarts its
+// window even though its last sample was under 1.5 windows ago. libwebrtc does this on
+// issue_466_scene_change_very_low_capacity seed 1: RTX at 1.77 s, then 3.13 s, and its 3.63 s allocation
+// (31472 bps) rates the RTX over 496 ms (yardstick #929).
+SM_TEST(SendSideController, RateStatisticsRestartTheWindowOnceSentVideoHasEmptiedIt) {
+  // RTX 1.2 s after the last one counts as RTX after 2 s does: at its rate since it started (capped at 0.5).
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), 0.5, 0.03);
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), ShareAfterRtxStarts(true, 2000), 1e-9);
+}
+
+SM_TEST(SendSideController, RateStatisticsKeepTheWindowWhenNothingEmptiedIt) {
+  // Nothing sent in the 1.2 s gap: no Rate() runs, the last RTX bucket is still there and recent (under 1.5
+  // windows), so RateStatistics keeps the window start and the new RTX is averaged over the whole second.
+  SM_EXPECT_LT(ShareAfterRtxStarts(true, 1200, false), 0.12);
+  // After 2 s the last RTX is no longer recent and the window restarts.
+  SM_EXPECT_GT(ShareAfterRtxStarts(true, 2000, false), 0.4);
 }
 
 // Issues #224 and #204: libwebrtc's send-side rates (RtpSenderEgress::GetSendRates) and its

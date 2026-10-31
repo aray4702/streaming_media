@@ -101,7 +101,30 @@ std::vector<ReleaseAction> FrameReleaseController::Process(Timestamp now, TimeDe
       Release(scheduled_->render_time, now, decode_time, &out);
       continue;
     }
-    // MaybeScheduleFrameForRelease + FrameDecodeTiming::OnFrameBufferUpdated.
+    ScheduleNext(now, &out);
+  }
+  return out;
+}
+
+std::vector<ReleaseAction> FrameReleaseController::MaybeSchedule(Timestamp now, TimeDelta decode_time) {
+  std::vector<ReleaseAction> out;
+  // Before the first StartNextDecode there is no time-out yet; Process arms it.
+  if (queue_.empty() || !timeout_) return out;
+  if (keyframe_required_) {
+    // ForceKeyFrameReleaseImmediately: drop to the keyframe and release it.
+    while (!queue_.empty() && !queue_.front().keyframe) Drop(now, false, &out);
+    if (!queue_.empty()) Release(timing_->RenderTime(queue_.front().rtp_timestamp, now), now, decode_time, &out);
+    return out;
+  }
+  // "If already scheduled then abort": the scheduled frame keeps its render time.
+  if (scheduled_ && scheduled_->id == queue_.front().id) return out;
+  ScheduleNext(now, &out);
+  return out;
+}
+
+void FrameReleaseController::ScheduleNext(Timestamp now, std::vector<ReleaseAction>* out) {
+  // MaybeScheduleFrameForRelease + FrameDecodeTiming::OnFrameBufferUpdated.
+  while (!queue_.empty()) {
     const ReleaseFrame& next = queue_.front();
     const Timestamp render_time = timing_->RenderTime(next.rtp_timestamp, now);
     TimeDelta max_wait =
@@ -109,16 +132,16 @@ std::vector<ReleaseAction> FrameReleaseController::Process(Timestamp now, TimeDe
     if (max_wait <= -kMaxAllowedFrameDelay && next.id != LastDecodableId()) {
       // DropNextDecodableTemporalUnit; the delta frames after it are not
       // decodable until the next keyframe, which becomes the next decodable unit.
-      Drop(now, true, &out);
-      while (!queue_.empty() && !queue_.front().keyframe) Drop(now, true, &out);
+      Drop(now, true, out);
+      while (!queue_.empty() && !queue_.front().keyframe) Drop(now, true, out);
       continue;
     }
     TimeDelta max_wait_for_frame = std::max(*timeout_ - now, TimeDelta::Zero());
     max_wait_for_frame = std::max(max_wait_for_frame - TimeDelta::Millis(1), TimeDelta::Zero());
     max_wait = Clamp(max_wait, TimeDelta::Zero(), max_wait_for_frame);
     scheduled_ = Schedule{next.id, now + max_wait, render_time};
+    return;
   }
-  return out;
 }
 
 void FrameReleaseController::Clear() {

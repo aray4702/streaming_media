@@ -362,6 +362,24 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     return;
   }
   if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
+  if (cfg_.gcc.bwe_trace) {
+    // The pacer as this packet leaves it, before OnPacketSent charges it; sm_compare reads libwebrtc's
+    // PacingController at the same point, from its send transport (issue #893).
+    const cc::PacingController::TraceState ps = pacer_.trace_state();
+    cc::BweTraceRow row;
+    row.time_us = now.us();
+    row.kind = cc::BweTraceRow::Kind::kPacer;
+    row.bitrate_bps = ps.adjusted_media_rate.bps();
+    row.loss_limit_bps = ps.pacing_rate.bps();
+    row.instant_ub_bps = ps.media_debt.bytes();
+    row.packets = static_cast<int>(ps.queue_packets);
+    row.fraction_loss = static_cast<int>(ps.queue_data.bytes());
+    row.modified_trend = ps.average_queue_time.ms_f();
+    row.threshold = static_cast<double>(static_cast<int>(sp.kind));
+    row.send_delta_ms = static_cast<double>(sp.packet.seq);
+    row.send_ms = ps.last_process_time.IsFinite() ? static_cast<double>(ps.last_process_time.us()) / 1000.0 : -1;
+    cfg_.gcc.bwe_trace->push_back(row);
+  }
   ReleasedPacket r;
   // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
   // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
@@ -379,6 +397,16 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
   if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
     (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
         .Update(static_cast<int64_t>(r.bytes.size()), now.ms());
+  }
+  // UpdateRtpStats then calls GetSendRates(now) for its bitrate callback (the stats proxy, rtp_sender_egress.cc:
+  // 495-498), for every packet the video module sends, padding too. Each Rate() erases the buckets that left the
+  // window, so a type with no recent packet empties, and its next packet restarts its active window
+  // (RateStatistics::Update): an RTX burst after a quiet second is rated over the time since it started (#893).
+  if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo ||
+      (r.kind == PacketKind::kPadding && sp.sender && sp.sender->config().video)) {
+    (void)video_rate_.Rate(now.ms());
+    (void)rtx_rate_.Rate(now.ms());
+    (void)fec_rate_.Rate(now.ms());
   }
   r.wire_size = sent.size;
   r.probe_cluster = sent.probe_cluster;
