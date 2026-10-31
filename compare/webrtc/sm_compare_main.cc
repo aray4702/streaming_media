@@ -8,7 +8,8 @@
 // DIR/<scenario>.<seed>.<sm|webrtc>.json (sm_testbench --json format).
 //
 // Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3, or the
-// scenario's own `compare_seeds N` directive);
+// scenario's own `compare_seeds N` directive). A scenario with `compare off` is
+// skipped (#921);
 // the table shows the mean over seeds. The JSON has the means ("sm", "webrtc"),
 // every seed's values for the shown metrics ("per_seed"), and each shown
 // metric's direction and tie floor ("shown"), which tools/parity_report.py
@@ -249,6 +250,11 @@ int main(int argc, char** argv) {
       return 2;
     }
     const Scenario base = *parsed.scenario;
+    if (!base.compare) {
+      // `compare off` (#921): a test of this library only, with no defined libwebrtc counterpart.
+      std::printf("\n%s: skipped (compare off: not comparable with libwebrtc)\n", base.name.c_str());
+      continue;
+    }
     std::vector<Report> ours, theirs;
     sm::testbench::RunOptions opt;
     opt.timeseries = !dump_dir.empty();

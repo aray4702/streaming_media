@@ -43,13 +43,26 @@ void Pacer::AddProbeCluster(const ProbeCluster& c) {
 }
 std::vector<PacedPacket> Pacer::Process(Timestamp now) { return task_queue_ ? ProcessScheduled(now) : pc_->Process(now); }
 
-// TaskQueuePacedSender::MaybeProcessPackets (modules/pacing/task_queue_paced_sender.cc), called with
-// -inf for a change (`kick_`) and with the scheduled time for the timer.
+// TaskQueuePacedSender (modules/pacing/task_queue_paced_sender.cc): every delayed task it posted runs
+// MaybeProcessPackets(its scheduled time) when it fires, retired or not, and a change posts
+// MaybeProcessPackets(-inf). Timers due by `now` run first, in the order they fire (SimTime runs the
+// sender queue's due tasks before the tick that enqueues the frames captured then), then the change.
 std::vector<PacedPacket> Pacer::ProcessScheduled(Timestamp now) {
-  const bool timer_due = !next_process_time_.IsFinite() || now >= next_process_time_;
-  if (!kick_ && !timer_due) return {};
-  kick_ = false;
   std::vector<PacedPacket> out;
+  while (!timers_.empty() && timers_.front().fire <= now) {
+    const Timestamp scheduled = timers_.front().scheduled;
+    timers_.erase(timers_.begin());
+    MaybeProcessPackets(now, scheduled, out);
+  }
+  if (kick_) {
+    kick_ = false;
+    MaybeProcessPackets(now, Timestamp::MinusInfinity(), out);
+  }
+  return out;
+}
+
+// TaskQueuePacedSender::MaybeProcessPackets (task_queue_paced_sender.cc:233-311).
+void Pacer::MaybeProcessPackets(Timestamp now, Timestamp scheduled_process_time, std::vector<PacedPacket>& out) {
   auto margin = [&] { return pc_->probing() ? TimeDelta::Millis(1) : TimeDelta::Zero(); };
   TimeDelta early_execute_margin = margin();
   Timestamp next_send_time = pc_->NextSendTime(now);
@@ -58,7 +71,11 @@ std::vector<PacedPacket> Pacer::ProcessScheduled(Timestamp now) {
     next_send_time = pc_->NextSendTime(now);
     early_execute_margin = margin();
   }
-  if (timer_due) next_process_time_ = Timestamp::MinusInfinity();  // This call is the timer: it is spent.
+  // Ignore a retired scheduled task (it still processed packets above), otherwise reset next_process_time_.
+  if (scheduled_process_time.IsFinite()) {
+    if (scheduled_process_time != next_process_time_) return;
+    next_process_time_ = Timestamp::MinusInfinity();
+  }
 
   // Do not hold back in probing.
   TimeDelta hold_back = TimeDelta::Zero();
@@ -75,17 +92,23 @@ std::vector<PacedPacket> Pacer::ProcessScheduled(Timestamp now) {
   const TimeDelta wait = next_send_time.IsFinite() ? next_send_time - now - early_execute_margin : TimeDelta::Seconds(1);
   const TimeDelta time_to_next_process = std::max(hold_back, wait);
   const Timestamp next = now + time_to_next_process;
-  // If no timer is set or the one set is later, schedule a new one.
+  // If no task is in flight or the one in flight is later than `next`, post a new one; the old one is
+  // retired. next_process_time_ keeps the unrounded time; the task fires at the delay rounded up to
+  // 1 ms (PostDelayedHighPrecisionTask(..., time_to_next_process.RoundUpTo(TimeDelta::Millis(1)))).
   if (!next_process_time_.IsFinite() || next_process_time_ > next) {
     const int64_t us = time_to_next_process.us();
-    next_process_time_ = now + TimeDelta::Micros((us + 999) / 1000 * 1000);
+    const Timer t{now + TimeDelta::Micros((us + 999) / 1000 * 1000), next};
+    // Tasks due at the same time run in the order they were posted.
+    auto it = std::upper_bound(timers_.begin(), timers_.end(), t,
+                               [](const Timer& a, const Timer& b) { return a.fire < b.fire; });
+    timers_.insert(it, t);
+    next_process_time_ = next;
   }
-  return out;
 }
 Timestamp Pacer::NextSendTime(Timestamp now) const {
   if (!task_queue_) return pc_->NextSendTime(now);
   if (kick_) return now;
-  return next_process_time_.IsFinite() ? std::max(now, next_process_time_) : pc_->NextSendTime(now);
+  return !timers_.empty() ? std::max(now, timers_.front().fire) : pc_->NextSendTime(now);
 }
 std::vector<PacedPacket> Pacer::TakeFlushed() { return pc_->TakeFlushed(); }
 // TaskQueuePacedSender::Pause posts nothing; Resume posts as SetConfig does.
