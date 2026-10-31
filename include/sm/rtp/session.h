@@ -497,7 +497,7 @@ class Session : public MetricsSource {
   void MaybeUpdateFecRates(Timestamp now);
   // SendStatisticsProxy::GetSendFrameRate: frames sent in the last second.
   static int SentFrameRate(SendStream& v, Timestamp now);
-  void UpdateSenderState(Timestamp now);
+  void UpdateSenderState(Timestamp now, bool read_send_rates = true);
   void Emit(SessionEvent e) { events_.push_back(e); }
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;

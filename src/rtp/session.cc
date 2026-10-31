@@ -777,10 +777,10 @@ void Session::FlushResends(Timestamp now) {
   for (auto& a : audio_send_) EnqueueSenderPackets(*a.sender, now);
 }
 
-void Session::UpdateSenderState(Timestamp now) {
+void Session::UpdateSenderState(Timestamp now, bool read_send_rates) {
   RtpSender* s = !video_send_.empty() ? video_send_.front().sender.get()
                                       : (!audio_send_.empty() ? audio_send_.front().sender.get() : nullptr);
-  if (s) rtcp_.SetSenderState(s->SenderState(now));
+  if (s) rtcp_.SetSenderState(s->SenderState(now, read_send_rates));
 }
 
 // ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s; rtp_rtcp_impl2.cc:740-751),
@@ -867,7 +867,8 @@ void Session::Process(Timestamp now) {
   // and tasks due at the same time run in the order they were posted. The report's task is posted when the
   // last report went out, hundreds of ms earlier, and the pacer's at its last run, so the report leaves
   // first and its sender info doesn't count the packets the pacer sends at that time (issue #895).
-  UpdateSenderState(now);
+  // The send rates are read only when a report is built (GetFeedbackState in SendRTCP; issue #895).
+  UpdateSenderState(now, rtcp_.BuildsReport(now));
   for (RtcpOutgoing& o : rtcp_.Process(now)) {
     const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
     out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
@@ -875,7 +876,7 @@ void Session::Process(Timestamp now) {
   // The last packet's RTCP is out: it counts in the next report (RtpVideoStreamReceiver2::OnRtpPacket).
   for (auto& v : video_recv_) v.receiver->CommitReceiveStatistics();
   if (audio_rtcp_) {
-    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now));
+    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now, audio_rtcp_->BuildsReport(now)));
     for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
       const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
       out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});

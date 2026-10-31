@@ -398,15 +398,15 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
         .Update(static_cast<int64_t>(r.bytes.size()), now.ms());
   }
-  // UpdateRtpStats then calls GetSendRates(now) for its bitrate callback (the stats proxy, rtp_sender_egress.cc:
-  // 495-498), for every packet the video module sends, padding too. Each Rate() erases the buckets that left the
-  // window, so a type with no recent packet empties, and its next packet restarts its active window
-  // (RateStatistics::Update): an RTX burst after a quiet second is rated over the time since it started (#893).
-  if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo ||
-      (r.kind == PacketKind::kPadding && sp.sender && sp.sender->config().video)) {
-    (void)video_rate_.Rate(now.ms());
-    (void)rtx_rate_.Rate(now.ms());
-    (void)fec_rate_.Rate(now.ms());
+  // UpdateRtpStats then reads GetSendRates(now) for the stream's bitrate observer (the video stream's
+  // SendStatisticsProxy, rtp_sender_egress.cc:495-498, rtp_video_sender.cc:307) on every packet the video
+  // module sends, and RateStatistics::Rate erases the expired buckets. So an RTX stream that paused for
+  // over a window restarts its window when it resumes, and the next allocation counts it at its rate
+  // since then (issue #895).
+  if (sp.sender && sp.sender->config().video) {
+    video_rate_.Rate(now.ms());
+    rtx_rate_.Rate(now.ms());
+    fec_rate_.Rate(now.ms());
   }
   r.wire_size = sent.size;
   r.probe_cluster = sent.probe_cluster;

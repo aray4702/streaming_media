@@ -190,6 +190,46 @@ SM_TEST(RtpReceiver, AGapIsNackedWhenItIsSeenEvenIfThePacketArrivesInTheSameTick
   SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
 }
 
+// VideoReceiveStream2::OnCompleteFrame -> RtpVideoStreamReceiver2::FrameContinuous -> NackRequester::ClearUpTo:
+// every frame that becomes continuous clears the recovered list up to its last packet, delta frames included.
+// So a packet that RTX recovered ahead of the newest is forgotten once a later recovered frame is continuous,
+// and the gap that a later packet reveals asks for it again (issue_466_scene_change_very_low_capacity seed 1,
+// libwebrtc's second RTX of 6807 at 11.61 s, #893).
+SM_TEST(RtpReceiver, AContinuousDeltaFrameClearsTheRecoveredListBeforeIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  std::vector<std::vector<Bytes>> f;
+  for (int64_t i = 0; i < 5; ++i) f.push_back(SendFrame(s, i, i == 0, 300, Timestamp::Millis(33 * i)));
+  std::vector<uint16_t> seq;
+  for (const auto& frame : f) {
+    SM_ASSERT_EQ(frame.size(), 1u);
+    seq.push_back(RtpPacket::Parse(frame[0])->seq);
+  }
+  r.OnPacket(f[0][0], Timestamp::Millis(20));
+  r.Process(Timestamp::Millis(20));
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  // Frames 1, 2 and 3 are lost. RTX recovers 1 and 2 before any later packet shows the gap.
+  const uint16_t early[] = {seq[1], seq[2]};
+  s.OnNack(early, Timestamp::Millis(100), TimeDelta::Millis(40));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 2u);
+  for (size_t i = 0; i < rtx.size(); ++i) {
+    const Timestamp at = Timestamp::Millis(120 + 10 * static_cast<int64_t>(i));
+    SM_EXPECT_TRUE(r.OnPacket(rtx[i].packet.Serialize(), at) == ReceivedKind::kRtx);
+    r.Process(at);
+  }
+  SM_EXPECT_EQ(r.stats().frames_scheduled, 3u);
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  // Frame 4 reveals the gap from frame 0: frame 2's continuity cleared frame 1 from the recovered list.
+  r.OnPacket(f[4][0], Timestamp::Millis(160));
+  r.Process(Timestamp::Millis(160));
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 2u);
+  SM_EXPECT_EQ(fb.nacks[0], seq[1]);
+  SM_EXPECT_EQ(fb.nacks[1], seq[3]);
+}
+
 SM_TEST(RtpReceiver, MissingFrameReferenceIsLeftToNack) {
   // libwebrtc keeps NACKing and asks for no keyframe until the decode time-out.
   RtpSender s(SenderCfg());

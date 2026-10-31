@@ -127,6 +127,8 @@ class KeyframeRequester : public MetricsSource {
   // The receiver's frame buffer was cleared (FrameBuffer::Clear): the blocked
   // frames are dropped and the decodable history is forgotten.
   void ClearFrames();
+  // FrameBuffer::LastContinuousFrameId: the newest frame that became decodable since the last ClearFrames, or none.
+  std::optional<int64_t> LastContinuousFrameId() const { return last_continuous_; }
 
   bool waiting_for_keyframe() const { return request_pending_; }
   const KeyframeRequestStats& stats() const { return stats_; }
@@ -143,6 +145,7 @@ class KeyframeRequester : public MetricsSource {
   std::vector<int64_t> ready_;
   int64_t last_received_ = -1;
   int64_t last_decodable_ = -1;
+  std::optional<int64_t> last_continuous_;  // FrameBuffer::last_continuous_frame_id_; reset by ClearFrames.
   bool has_received_frame_ = false;
   bool decoded_any_ = false;
   Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last frame released, or the first Process().
