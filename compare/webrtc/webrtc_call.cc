@@ -1258,6 +1258,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   double cross_debt = 0;
   bool stopping = false;
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
+  std::optional<cc::BweTraceRow> last_rx_timing;  // Last receiver timing written to rep.bwe_trace (issue #893).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
@@ -1458,6 +1459,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && video_recv && t % 5 == 4) {
+      // The receiver's VCMTiming::GetTimings every 5 ms when it changed (VideoReceiveStream2::GetStats), as
+      // testbench/call.cc samples ours (issue #893).
+      const int64_t rx_time_us = (t + 1) * 1000;
+      receiver_q->PostTask([&, rx_time_us] {
+        const w::VideoReceiveStreamInterface::Stats st = video_recv->GetStats();
+        cc::BweTraceRow r;
+        r.time_us = rx_time_us;
+        r.kind = cc::BweTraceRow::Kind::kRxTiming;
+        r.bitrate_bps = st.target_delay_ms;
+        r.packets = st.jitter_buffer_ms;
+        r.fraction_loss = st.current_delay_ms;
+        r.loss_limit_bps = st.min_playout_delay_ms;
+        r.instant_ub_bps = st.render_delay_ms;
+        if (last_rx_timing && r.bitrate_bps == last_rx_timing->bitrate_bps && r.packets == last_rx_timing->packets &&
+            r.fraction_loss == last_rx_timing->fraction_loss && r.loss_limit_bps == last_rx_timing->loss_limit_bps &&
+            r.instant_ub_bps == last_rx_timing->instant_ub_bps) {
+          return;
+        }
+        rep.bwe_trace.push_back(r);
+        last_rx_timing = r;
+      });
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;

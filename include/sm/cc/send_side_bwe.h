@@ -33,7 +33,11 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kRxTiming: the video receiver's VCMTiming::GetTimings (VideoReceiveStreamInterface::Stats on libwebrtc's
+  // side, VcmTiming on ours), sampled every 5 ms by the test bench when it changed (issue #893). It reuses
+  // columns, all in ms: bitrate_bps = target delay, packets = jitter delay, fraction_loss = current delay,
+  // loss_limit_bps = minimum playout delay, instant_ub_bps = render delay.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kRxTiming };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

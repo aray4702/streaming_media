@@ -568,6 +568,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
         case cc::BweTraceRow::Kind::kDelayBased: ++delay; SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2); break;
         case cc::BweTraceRow::Kind::kLossBased: ++loss; SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.loss_state >= 0); break;
         case cc::BweTraceRow::Kind::kTarget: ++target; break;
+        case cc::BweTraceRow::Kind::kRxTiming: SM_EXPECT_GE(r.bitrate_bps, 0); break;
         case cc::BweTraceRow::Kind::kDetector:
           ++detector;
           SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2 && r.packets > 0);
