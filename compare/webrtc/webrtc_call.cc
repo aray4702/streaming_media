@@ -346,6 +346,19 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
     if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
     const size_t first_row = rows_->size();
+    // Issue #897: the acked-rate estimator's input (GoogCC passes it SortedByReceiveTime), packet by packet,
+    // with the times from the call start as ours writes them.
+    for (const w::PacketResult& p : m.SortedByReceiveTime()) {
+      cc::BweTraceRow r;
+      r.time_us = now_us_();
+      r.kind = cc::BweTraceRow::Kind::kFeedback;
+      r.bitrate_bps = p.sent_packet.sequence_number;
+      r.packets = static_cast<int>(p.sent_packet.size.bytes());
+      r.instant_ub_bps = (p.sent_packet.send_time - t0_).us();
+      r.loss_limit_bps = (p.receive_time - t0_).us();
+      r.fraction_loss = static_cast<int>(p.sent_packet.prior_unacked_data.bytes());
+      rows_->push_back(r);
+    }
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
     using P = w::GoogCcStatePrinter;

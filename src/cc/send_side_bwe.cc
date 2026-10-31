@@ -235,6 +235,20 @@ NetworkControlUpdate GccController::OnTransportFeedback(const TransportFeedback&
     probe2_.SetAlrEndedTime(now);
   }
   previously_in_alr_ = alr_start_time.has_value();
+  if (cfg_.bwe_trace) {
+    // Issue #897: the acked-rate estimator's input, packet by packet.
+    for (const auto& p : SortedByReceiveTime(results)) {
+      BweTraceRow r;
+      r.time_us = now.us();
+      r.kind = BweTraceRow::Kind::kFeedback;
+      r.bitrate_bps = p.seq;
+      r.packets = static_cast<int>(p.size.bytes());
+      r.instant_ub_bps = p.send_time.us();
+      r.loss_limit_bps = p.receive_time.us();
+      r.fraction_loss = 0;  // libwebrtc's rows: SentPacket::prior_unacked_data (none here).
+      cfg_.bwe_trace->push_back(r);
+    }
+  }
   acked_v2_.OnPacketResults(SortedByReceiveTime(results));
   std::optional<DataRate> acked = acked_v2_.bitrate();
   ssbe_.SetAcknowledgedRate(acked, now);

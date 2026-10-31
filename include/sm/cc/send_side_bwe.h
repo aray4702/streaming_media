@@ -37,7 +37,12 @@ struct BweTraceRow {
   // acknowledged bitrate (RobustThroughputEstimator; -1 before it has one), loss_state = the send-side
   // LossBasedState, loss_limit_bps = LossBasedBweV2's result (GetLossBasedResult().bandwidth_estimate).
   // libwebrtc's rows read the same three values from its GoogCC.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kAcked };
+  // kFeedback (issue #897): one row per received packet of a feedback GoogCC used, in the order
+  // the acked-rate estimator takes them (SortedByReceiveTime): bitrate_bps = the transport sequence
+  // number, packets = the size in bytes, instant_ub_bps = the send time and loss_limit_bps = the
+  // receive time, both in us from the call start; fraction_loss = libwebrtc's prior_unacked_data
+  // in bytes (0 on ours, which has none).
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kAcked, kFeedback };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
