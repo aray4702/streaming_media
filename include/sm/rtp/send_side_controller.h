@@ -372,11 +372,14 @@ class SendSideController : public MetricsSource {
   std::deque<Released> repair_window_;
   int64_t repair_bytes_ = 0, video_bytes_ = 0;
   // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
-  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
+  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read at `rates_time_`.
   RateStatistics video_rate_, rtx_rate_, fec_rate_;
-  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read as of the last Process().
+  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read at `rates_time_`.
   RateStatistics post_encode_overhead_rate_{1000, 8000.0f};
-  Timestamp last_process_ = Timestamp::MinusInfinity();
+  // The time of the call that may reallocate (Process, a target update, a video (un)registration):
+  // libwebrtc reads the rates above at the clock's current time (ModuleRtpRtcpImpl2::GetSendRates,
+  // RTPSenderVideo::PostEncodeOverhead; issue #896).
+  Timestamp rates_time_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
   std::deque<std::pair<Timestamp, int64_t>> window_;
