@@ -135,7 +135,9 @@ class RtpStreamsSynchronizer : public MetricsSource {
   // Pairs the video stream with `syncable_audio` (nullptr stops syncing).
   // The first update runs kSyncInterval after `now`.
   void ConfigureSync(Syncable* syncable_audio, Timestamp now);
-  // Runs UpdateDelay when the 1 s repeating task is due.
+  // Runs UpdateDelay when the 1 s repeating task is due. The next run is
+  // timed from the scheduled time, as RepeatingTaskHandle does (#902), so
+  // NextProcessTime can be at or before `now` after a late call.
   void Process(Timestamp now);
   std::optional<Timestamp> NextProcessTime() const { return next_run_; }
   // libwebrtc's UpdateDelay (one run of the repeating task).
