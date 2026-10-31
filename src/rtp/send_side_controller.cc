@@ -52,6 +52,7 @@ void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now)
 
 void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
+  rates_time_ = now;
   if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(target_, now);
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
   outage_.SetCurrentRate(target_);
@@ -106,6 +107,7 @@ void SendSideController::UpdateControlState(Timestamp now) {
   const std::optional<cc::TargetTransferRate> update = control_handler_.GetUpdate();
   if (!update) return;
   reported_reduce_ratio_ = update->cwnd_reduce_ratio;
+  rates_time_ = now;
   if (allocation_configured_) allocator_.OnTargetChanged(update->target_rate, now, update->cwnd_reduce_ratio);
 }
 
@@ -165,12 +167,14 @@ void SendSideController::Start(Timestamp now) {
 }
 
 void SendSideController::RegisterVideo(Timestamp now) {
+  rates_time_ = now;
   allocator_.AddObserver("video", video_alloc_cfg_, video_observer_);
   video_registered_ = true;
   NotifyAllocationLimits(now);
 }
 
 void SendSideController::UnregisterVideo(Timestamp now) {
+  rates_time_ = now;
   allocator_.RemoveObserver("video");
   video_registered_ = false;
   NotifyAllocationLimits(now);
@@ -401,7 +405,7 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   egress.swap(egress_);
   // An allocation a sent packet posts reads the send rates at the current time
   // (RtpVideoSender::ProtectionRequest, RtpSenderEgress::GetSendRates(now); issue #875).
-  last_process_ = now;
+  rates_time_ = now;
   for (Egress& e : egress) {
     const cc::PacedPacket& sent = e.sent;
     ReleasedPacket& r = e.released;
@@ -572,10 +576,10 @@ double SendSideController::repair_share() const {
     const int64_t total = video_bytes_ + repair_bytes_;
     return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
   }
-  if (!last_process_.IsFinite()) return 0.0;
+  if (!rates_time_.IsFinite()) return 0.0;
   // RtpVideoSender::ProtectionRequest reads RtpSenderEgress::GetSendRates (rtp_video_sender.cc:973,
   // rtp_sender_egress.cc:340): each type's rate, or zero when its tracker has none.
-  const int64_t now_ms = last_process_.ms();
+  const int64_t now_ms = rates_time_.ms();
   const int64_t video = video_rate_.Rate(now_ms).value_or(0);
   const int64_t nack = rtx_rate_.Rate(now_ms).value_or(0);
   const int64_t fec = fec_rate_.Rate(now_ms).value_or(0);
@@ -599,12 +603,14 @@ SendSideController::VideoAllocationSplit SendSideController::SplitVideoAllocatio
   const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
   const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
   const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, pkt));
-  DataRate encoder = payload * keep;  // encoder_target_rate_bps_, not yet capped at the encoder maximum.
+  // encoder_target_rate_bps_, not yet capped at the encoder maximum. UpdateFecRates returns
+  // `estimated_bitrate_bps * (1.0 - protection_overhead_rate)` as a uint32_t, so the product is truncated.
+  DataRate encoder = DataRate::BitsPerSec(static_cast<int64_t>(static_cast<double>(payload.bps()) * keep));
   // rtp_video_sender.cc:913-915: less the post-encode overhead (RtpVideoSender::GetPostEncodeOverhead),
   // at most half the target.
   const DataRate post_encode =
-      std::min(last_process_.IsFinite()
-                   ? DataRate::BitsPerSec(post_encode_overhead_rate_.Rate(last_process_.ms()).value_or(0))
+      std::min(rates_time_.IsFinite()
+                   ? DataRate::BitsPerSec(post_encode_overhead_rate_.Rate(rates_time_.ms()).value_or(0))
                    : DataRate::Zero(),
                encoder / 2);
   encoder -= post_encode;

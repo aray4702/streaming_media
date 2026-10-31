@@ -980,8 +980,9 @@ ALGORITHMS = [
                "issue #569; on by default as libwebrtc since #637) the adjusted rate is "
                "recomputed when VideoStreamEncoder's UpdateBitrateAllocation runs: on each allocation update "
                "(OnBitrateUpdated), on a reconfiguration and every 1 s (kParameterUpdateIntervalMs), and held in "
-               "between; there an update is applied at the next captured frame, the last of several between two "
-               "frames only. Remaining differences: one stream with one temporal layer. A new frame size (quality scaling or CPU adaptation) resets both, as "
+               "between. An update runs it when it arrives (MaybeEncodePendingFrame, polled after the session ran, "
+               "as OnBitrateUpdated; issue #894), so the overshoot detector's SetTargetRate leaks its buffers up to "
+               "the update's time. Remaining differences: one stream with one temporal layer. A new frame size (quality scaling or CPU adaptation) resets both, as "
                "VideoStreamEncoder::ReconfigureEncoder (issue #346): FrameDropper::Reset and SetRates with the encoder "
                "target, and the adjuster starts again at kDefaultUtilizationFactor 1.2 for kMinFramesSinceLayoutChange "
                "30 frames. The VideoStreamEncoder has no keyframe budget of its own: a keyframe "
@@ -1009,7 +1010,14 @@ ALGORITHMS = [
                       "and scene-cut (`scene_change`) modes, off by default, so these ports meet a real rate miss on "
                       "both stacks of `sm_compare` (scenarios issue_466_*; `video.encoder_target_avg_kbps` and "
                       "`video.encoder_dropped` are shown next to libwebrtc's). At 1.3x on a 1 Mbps link the adjuster "
-                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3)."),
+                      "lowers the encoder target from 788-800 to 625-637 kbps (seeds 1-3). "
+                      "Issue #894: an allocation update reached the adjuster at the next captured frame (BWE updates at "
+                      "130/180/230/280/430 ms applied at 133/200/233/300/433 ms), so the detector leaked 3-20 ms at the "
+                      "old rate; at the first detector-based update (1133 ms) the link factor was 1.2381 and the encoder "
+                      "got 1839899 bps where libwebrtc's frame implies about 1842 kbps. Run when the update arrives, "
+                      "issue_24_timing_v2_default seed 1 matches libwebrtc's forward link through row 570 (2.5 s) "
+                      "instead of row 229 (1.133 s); unit test "
+                      "`VideoSendController.BitrateAdjusterRunsWhenTheAllocationUpdateArrives`."),
     dict(id="5.9", slug="video-adaptation", title="Resolution/frame-rate adaptation and CPU overuse detection",
          problems=["Low bandwidth -> adaptive resolution / framerate degradation (degradationPreference)",
                    "CPU too slow to encode -> CPU overuse detector, which lowers resolution or fps"],
@@ -1771,7 +1779,10 @@ ALGORITHMS = [
                "drop, instead of over a second. Each packet counts in those rates as the pacer sends it "
                "(RtpSenderEgress::SendPacket, UpdateRtpStats), before the sent-packet notification that posts a "
                "target runs after the pacer's loop, and an allocation reads them at the current time "
-               "(GetSendRates(now)), so the share it takes counts every packet of the loop (issue #875). There is no "
+               "(GetSendRates(now)), so the share it takes counts every packet of the loop (issue #875). An allocation between two "
+               "Process() calls (transport feedback, a video stream (re)registration) reads the rates and the post-encode "
+               "overhead at its own time too (ModuleRtpRtcpImpl2::GetSendRates, RTPSenderVideo::PostEncodeOverhead), and "
+               "the encoder target is truncated to whole bit/s as UpdateFecRates' uint32_t return does (issue #896). There is no "
                "retransmission rate cap, as in M157. Differences that remain: the FEC amount (#7, "
                "FecControllerDefault's media_opt_util choice) and keyframe requests (#23); the encoder floor of 30 kbps "
                "applies even when the audio alone exceeds the target (#37).",
@@ -1780,7 +1791,9 @@ ALGORITHMS = [
                       "unit tests RateStatistics.* and SendSideController.RateStatistics*), off until it is judged with "
                       "the allocation-time encoder target of #204's `control_handler`. Issue #875 counts each packet in the send rates in the pacer's loop and reads them at the current time "
                       "(unit test SendSideController.AllocationPostedBySentPacketCountsTheWholeSendLoop; issue_12_lossbwe_policer seed 1 "
-                      "with #865 matches libwebrtc's forward link through 1.21 s instead of 0.69 s). Review notes from PR 3 (padding timestamp, padding size "
+                      "with #865 matches libwebrtc's forward link through 1.21 s instead of 0.69 s). Issue #896 reads them at each allocation's own time (unit test "
+                      "SendSideController.AllocationReadsTheSendRatesAtItsOwnTime; issue_76_rtx_v2_keyframe_flush seed 1's "
+                      "encoder target at 1 s is libwebrtc's to the bit/s, 1774198, from 1774179). Review notes from PR 3 (padding timestamp, padding size "
                       "accounting, zero-byte frames) were fixed in PR 5. Issue #577 ported RTPSender::"
                       "ExpectedPerPacketOverhead (RtpSender::ExpectedPerPacketOverhead; unit tests "
                       "RtpSender.ExpectedPerPacketOverhead* and Session.ExpectedPacketOverheadIsTheVideoSendersHeader) "

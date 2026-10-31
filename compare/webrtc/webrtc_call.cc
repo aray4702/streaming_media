@@ -307,27 +307,41 @@ class QualityScalerLog final : public w::LogSink {
 class DetectorTraceController final : public w::NetworkControllerInterface {
  public:
   DetectorTraceController(std::unique_ptr<w::NetworkControllerInterface> inner, const w::Environment& env,
-                          std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
-      : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
+                          std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0,
+                          std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt)
+      : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0), host_rtt_(host_rtt) {}
   w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return inner_->OnNetworkAvailability(m); }
   w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
-  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override {
+    HostRtt(m.at_time);
+    return inner_->OnProcessInterval(m);
+  }
   w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override {
+    // From the scenario's `host_rtt` time on, the host's RTT stands over the one the call measured, as ours: there
+    // Session::SetRtt runs at every step and overwrites what the report blocks gave GccController::OnRttUpdate.
+    if (HostRttActive(m.receive_time)) m.round_trip_time = HostRttValue();
+    return inner_->OnRoundTripTimeUpdate(m);
+  }
   w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
   w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
   w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
   w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
     return inner_->OnTargetRateConstraints(m);
   }
-  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return inner_->OnTransportLossReport(m); }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override {
+    HostRtt(m.receive_time);
+    return inner_->OnTransportLossReport(m);
+  }
   w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override {
     return inner_->OnNetworkStateEstimate(m);
   }
   bool SupportsEcnAdaptation() const override { return inner_->SupportsEcnAdaptation(); }
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
-    if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
+    HostRtt(m.feedback_time);
+    // GoogCC returns early on empty feedback; without a trace (rows_ null) only the host RTT is added.
+    if (m.packet_feedbacks.empty() || !rows_) return inner_->OnTransportPacketsFeedback(std::move(m));
     const size_t first_row = rows_->size();
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
@@ -341,6 +355,24 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   }
 
  private:
+  // The scenario's `host_rtt <time> <rtt>` (issue #892): our test bench hands Session::SetRtt the host's RTT at
+  // every step from that time on, and the session passes it to GoogCC (GccController::OnRttUpdate, a port of
+  // RtpTransportControllerSend::OnRttUpdate, rtp_transport_controller_send.cc:566-575). libwebrtc's call has no
+  // host input for the RTT, so the same value goes in at the controller's RTT input, as that function builds it
+  // (rounded to 1 ms, not smoothed), before every call that can move the target. GoogCC's OnRoundTripTimeUpdate
+  // only stores it and returns an empty update (goog_cc_network_control.cc:251-261), so nothing is lost by
+  // dropping that update.
+  bool HostRttActive(w::Timestamp at) const { return host_rtt_ && at >= host_rtt_->first; }
+  w::TimeDelta HostRttValue() const { return host_rtt_->second.RoundTo(w::TimeDelta::Millis(1)); }
+  void HostRtt(w::Timestamp at) {
+    if (!HostRttActive(at)) return;
+    w::RoundTripTimeUpdate u;
+    u.receive_time = at;
+    u.round_trip_time = HostRttValue();
+    u.smoothed = false;
+    (void)inner_->OnRoundTripTimeUpdate(u);  // Always empty (above).
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
@@ -387,15 +419,18 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   std::unique_ptr<w::InterArrivalDelta> inter_arrival_;
   std::unique_ptr<w::TrendlineEstimator> detector_;
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt_;  // From when, and the host's RTT.
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
  public:
-  DetectorTraceFactory(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
-      : now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
+  DetectorTraceFactory(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0,
+                       std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt)
+      : now_us_(std::move(now_us)), rows_(rows), t0_(t0), host_rtt_(host_rtt) {}
   std::unique_ptr<w::NetworkControllerInterface> Create(w::NetworkControllerConfig config) override {
     const w::Environment env = config.env;
-    return std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_);
+    return std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_,
+                                                     host_rtt_);
   }
   w::TimeDelta GetProcessInterval() const override { return inner_.GetProcessInterval(); }
 
@@ -404,6 +439,7 @@ class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
   std::function<int64_t()> now_us_;
   std::vector<cc::BweTraceRow>* rows_;
   w::Timestamp t0_;
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt_;
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
@@ -804,7 +840,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     sender_env_factory.Set(std::make_unique<w::FieldTrials>(
         "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
   }
-  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
+  // `host_rtt` (issues #892, #911): libwebrtc's GoogCC takes the same host RTT from the same time as ours, when
+  // its arithmetic on the RTT stays defined. Its unit operators are plain int64 adds and multiplies
+  // (`RelativeUnit::operator+`, rtc_base/units/unit_base.h:209-219), and GoogCC adds to the RTT and doubles the
+  // sum (`(rtt_ + 100 ms) * 2`, aimd_rate_control.cc:200-202; `kBweDecreaseInterval + last_round_trip_time_`,
+  // send_side_bandwidth_estimation.cc:500), so a host RTT above a quarter of the int64 range is signed-overflow
+  // UB there. Such an RTT (issue_451_host_rtt_near_limit, which checks our overflow guards) is not given to
+  // libwebrtc: comparing against undefined behaviour measures nothing (window decision on #904).
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt;
+  if (s.host_rtt && s.host_rtt->second.us() <= std::numeric_limits<int64_t>::max() / 4) {
+    host_rtt.emplace(t0 + w::TimeDelta::Micros(s.host_rtt->first.us()), w::TimeDelta::Micros(s.host_rtt->second.us()));
+  }
+  // Without --bwe-trace the factory only carries the host RTT: no detector replay, no rows.
+  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, opt.bwe_trace ? &rep.bwe_trace : nullptr,
+                                      t0, host_rtt);
   const w::Environment sender_env = sender_env_factory.Create();
   QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
   if (opt.video_trace && s.video && s.quality_scaling) qs_log.Start();
@@ -864,8 +913,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     c.bitrate_config.start_bitrate_bps = int_bps(s.start_rate);
     c.bitrate_config.max_bitrate_bps = int_bps(s.max_rate);
     c.audio_state = audio_state;
-    // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
-    if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
+    // The sender's GoogCC behind the detector trace (issue #152), and behind the host RTT whenever the scenario has
+    // one, traced or not (issue #892: the metric runs don't trace, and before this the host RTT reached libwebrtc
+    // only on traced runs). The receiver's controller sends nothing that matters.
+    if ((opt.bwe_trace || host_rtt) && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
     return w::Call::Create(std::move(c));
   };
   run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
