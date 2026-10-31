@@ -125,8 +125,11 @@ std::vector<uint8_t> RtcpEngine::BuildReport(Timestamp now) {
     timing::SenderReport sr;
     sr.ssrc = sender_->ssrc ? sender_->ssrc : cfg_.local_ssrc;
     sr.ntp = timing::NtpTime::FromTimestamp(now);
-    int64_t elapsed_ticks = (now - sender_->reference_time).us() * sender_->clock_rate / 1000000;
-    sr.rtp_timestamp = sender_->rtp_timestamp + static_cast<uint32_t>(elapsed_ticks);
+    // RTCPSender::BuildSR (rtcp_sender.cc:350-366): the last frame's RTP timestamp plus the whole milliseconds
+    // since it (the report time rounded to the ms, less the frame's time in ms), at the clock rate in kHz that
+    // the sender registered for the last frame's payload type (issue #895).
+    const int64_t elapsed_ms = (now.us() + 500) / 1000 - sender_->reference_time.ms();
+    sr.rtp_timestamp = sender_->rtp_timestamp + static_cast<uint32_t>(elapsed_ms * (sender_->clock_rate / 1000));
     sr.packet_count = sender_->packet_count;
     sr.octet_count = sender_->octet_count;
     sr.blocks = std::move(blocks);

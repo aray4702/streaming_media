@@ -291,7 +291,13 @@ ALGORITHMS = [
                       "rules compared with packet_buffer.cc and h26x_packet_buffer.cc; the wait for a missing packet before "
                       "an IDR start (`may_continue_frame`) removed as libwebrtc has none (unit tests "
                       "`PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing` and "
-                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged."),
+                      "`RtpReceiver.AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr`); suite unchanged. "
+                      "Issue #899: FindFrames' walk forward ported (PotentialNewFrame continuity, received_padding_, stops at "
+                      "a packet already handed out and at a held frame) and the marker-bit stop removed from the walk back "
+                      "(unit tests `PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne`, "
+                      "`PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered`); suite unchanged on seed 1. "
+                      "A copy arriving after its frame is assembled is still rejected as a duplicate (libwebrtc takes it "
+                      "again), pending a ruling on #899."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],
@@ -1387,8 +1393,9 @@ ALGORITHMS = [
                "`WebRtcVad` port in `agc1_vad.h` (issue #671); aggressiveness kVadNormal by default, as `sm_apm_compare` "
                "runs libwebrtc's. M157's `AudioProcessingImpl` reports no VAD decision, so the capture chain's per-frame "
                "VAD output is this `Vad`; the opt-in transient suppressor reads libwebrtc's pitch-based "
-               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. 48 kHz is not "
-               "ported (kError). ",
+               "`VoiceActivityDetector` (the probability AGC1 reports), so a click is not taken for speech. At 48 kHz "
+               "it runs `WebRtcVad_CalcVad48khz` over SPL's 48-to-8 kHz resampler (issue #901), as libwebrtc, "
+               "including its reuse of the frame's first 10 ms for every 10 ms block of a 20 or 30 ms frame. ",
          verification="Issue #671 retired the library's own energy/spectral-flatness detector (v1) for libwebrtc's: "
                       "`Vad.ApiAsLibwebrtc` (vad_unittest.cc's rates, frame lengths and modes on the wrapper), "
                       "`Vad.IsWebRtcVadAndResets` (decisions equal `WebRtcVad`'s in every mode, and Reset() restarts "
@@ -1397,7 +1404,11 @@ ALGORITHMS = [
                       "`kMaximumNoise`; v1 learned the new floor). E2E_Vad recall 99.7 %, false positives 0 % "
                       "(libwebrtc kVadNormal in `sm_apm_compare`: 99.9 % and 0.0 % on the same talker behind the "
                       "high-pass filter). The v1 detector's history: musical noise after NS and a slow noise-floor "
-                      "rise were fixed before #671."),
+                      "rise were fixed before #671. #901 ported the 48 kHz path: "
+                      "`Agc1VoiceActivity.WebRtcVadMatchesLibwebrtc` (48 kHz in modes 0 and 3 with 10, 20 and 30 ms "
+                      "frames) and `Agc1VoiceActivity.Resample48khzTo8khzMatchesLibwebrtc` are bit-exact with the "
+                      "prebuilt M157 library's `WebRtcVad_Process` and `WebRtcSpl_Resample48khzTo8khz`, and "
+                      "vad_unittest.cc's and vad_core_unittest.cc's 48 kHz cases pass."),
     dict(id="6.9", slug="audio-level", title="Audio level (RFC 6464)",
          problems=["Showing who is talking, and voice activity without decoding -> audio level header extension (RFC 6464)"],
          headers=["audio/audio_level.h", "core/rms_level.h"], unit=["AudioLevel", "RmsLevel"], e2e=["E2E_AudioLevel"],
@@ -1769,6 +1780,12 @@ ALGORITHMS = [
                       "unit.Session.TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime); on seed 1 of "
                       "issue_12_lossbwe_policer the forward link now matches libwebrtc's packet for packet through 690 ms "
                       "(104 rows), where it matched through 410 ms (60 rows) before. "
+                      "#895: the sender report's RTP timestamp is extrapolated as RTCPSender::BuildSR does, in whole "
+                      "milliseconds at the rate registered for the last frame's payload type, which for audio sent as "
+                      "RED is kBogusRtpRateForAudioRtcp, 8 kHz (unit.RtcpEngine.SenderReportExtrapolatesInWholeMilliseconds, "
+                      "unit.RtpSender.SenderReportRateIsTheLastPayloadTypesRegisteredRate); on seed 1 of "
+                      "issue_12_lossbwe_shallow the A/V sync's relative delay now equals libwebrtc's at every 1 s run "
+                      "and the audio trace matches libwebrtc's through 34.96 s ([fix record](../../fixes/895-red-sender-report-sync.md)). "
                       "Per-suite results are recorded by ctest and CI; tools/run_all.sh does not run these suites yet."),
     dict(id="9.2", slug="rtp-sender", title="RTP sender and send-side controller",
          problems=["Packetization, sequence numbers, RTX history and RED -> RtpSender",

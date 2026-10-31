@@ -199,7 +199,7 @@ void ExpectUpdates(const AgcRun& r, std::span<const AgcUpdate> golden, uint64_t 
 // ---- Golden values: libwebrtc's files on the same signals ----------------
 
 // WebRtcVad as StandaloneVad uses it (mode 3, 16 kHz; 10 ms and the 30 ms
-// buffers), the quality mode, and the 8 and 32 kHz paths. Integer only.
+// buffers), the quality mode, and the 8, 32 and 48 kHz paths. Integer only.
 SM_TEST(Agc1VoiceActivity, WebRtcVadMatchesLibwebrtc) {
   struct Case {
     int fs, mode, ms, frames, active;
@@ -209,6 +209,11 @@ SM_TEST(Agc1VoiceActivity, WebRtcVadMatchesLibwebrtc) {
       {16000, 3, 10, 3000, 1494, 3100468529113804529ull},  {16000, 0, 10, 3000, 2312, 14567716683287713683ull},
       {16000, 3, 30, 1000, 503, 1669540966902688216ull},   {8000, 3, 10, 3000, 1497, 5213465524202215364ull},
       {32000, 3, 20, 1500, 762, 15202838126158406213ull},
+      // 48 kHz (#901): `WebRtcVad_CalcVad48khz` and the 48-to-8 kHz resampler.
+      // The 20 and 30 ms frames pin libwebrtc's reuse of the frame's first
+      // 10 ms for every 10 ms block (vad_core.c:612-616).
+      {48000, 3, 10, 3000, 1490, 1937148076186483693ull},  {48000, 0, 10, 3000, 2299, 275420483432275232ull},
+      {48000, 3, 20, 1500, 766, 13121258337156703337ull},  {48000, 3, 30, 1000, 516, 14337740209010904861ull},
   };
   for (const Case& c : kCases) {
     const VadRun r = RunVad(c.fs, c.mode, c.ms);
@@ -216,6 +221,24 @@ SM_TEST(Agc1VoiceActivity, WebRtcVadMatchesLibwebrtc) {
     SM_EXPECT_EQ(r.active, c.active);
     SM_EXPECT_EQ(r.hash, c.hash);
   }
+}
+
+// `WebRtcSpl_Resample48khzTo8khz` (resample_48khz.c), which the 48 kHz VAD
+// path runs: 480 samples in, 80 out per call, state carried across calls.
+// Hash (h ^= uint16(sample); h *= prime) of every output sample of the 30 s
+// signal at 48 kHz, from the prebuilt libwebrtc's symbol (#901).
+SM_TEST(Agc1VoiceActivity, Resample48khzTo8khzMatchesLibwebrtc) {
+  const auto s = S16(Agc1TestSignal(48000, 30));
+  sm::audio::SplState48khzTo8khz state;
+  sm::audio::SplResetResample48khzTo8khz(&state);
+  int32_t tmp_mem[480 + 256];
+  int16_t out[80];
+  uint64_t h = kFnvBasis;
+  for (size_t f = 0; f + 480 <= s.size(); f += 480) {
+    sm::audio::SplResample48khzTo8khz(s.data() + f, out, &state, tmp_mem);
+    for (int16_t v : out) Mix(h, static_cast<uint16_t>(v));
+  }
+  SM_EXPECT_EQ(h, 1963300144330739577ull);
 }
 
 // VoiceActivityDetector: 3000 probabilities and RMS values (three every
@@ -348,6 +371,7 @@ SM_TEST(Agc1VoiceActivity, VadCore) {
     if (ValidRatesAndFrameLengths(8000, len)) SM_EXPECT_EQ(VadCalcVad8khz(self, speech, len), 0);
     if (ValidRatesAndFrameLengths(16000, len)) SM_EXPECT_EQ(VadCalcVad16khz(self, speech, len), 0);
     if (ValidRatesAndFrameLengths(32000, len)) SM_EXPECT_EQ(VadCalcVad32khz(self, speech, len), 0);
+    if (ValidRatesAndFrameLengths(48000, len)) SM_EXPECT_EQ(VadCalcVad48khz(self, speech, len), 0);
   }
   // A signal that triggers the VAD in all modes ((i * i) wraps around).
   for (size_t i = 0; i < kMaxFrameLength; ++i) speech[i] = static_cast<int16_t>(i * i);
@@ -355,6 +379,7 @@ SM_TEST(Agc1VoiceActivity, VadCore) {
     if (ValidRatesAndFrameLengths(8000, len)) SM_EXPECT_EQ(VadCalcVad8khz(self, speech, len), 1);
     if (ValidRatesAndFrameLengths(16000, len)) SM_EXPECT_EQ(VadCalcVad16khz(self, speech, len), 1);
     if (ValidRatesAndFrameLengths(32000, len)) SM_EXPECT_EQ(VadCalcVad32khz(self, speech, len), 1);
+    if (ValidRatesAndFrameLengths(48000, len)) SM_EXPECT_EQ(VadCalcVad48khz(self, speech, len), 1);
   }
 }
 
@@ -455,13 +480,12 @@ SM_TEST(Agc1VoiceActivity, VadSp) {
   }
 }
 
-// vad_unittest.cc: ApiTest (without 48 kHz, not ported) and
-// ValidRatesFrameLengths.
+// vad_unittest.cc: ApiTest and ValidRatesFrameLengths.
 SM_TEST(Agc1VoiceActivity, WebRtcVadApi) {
   int16_t zeros[kMaxFrameLength] = {0};
   int16_t speech[kMaxFrameLength];
   for (size_t i = 0; i < kMaxFrameLength; i++) speech[i] = static_cast<int16_t>(i * i);
-  const int kRates[] = {8000, 12000, 16000, 24000, 32000};
+  const int kRates[] = {8000, 12000, 16000, 24000, 32000, 48000};
   WebRtcVad vad;
   SM_EXPECT_EQ(vad.set_mode(-1), -1);
   SM_EXPECT_EQ(vad.set_mode(4), -1);
@@ -476,7 +500,6 @@ SM_TEST(Agc1VoiceActivity, WebRtcVadApi) {
       }
     }
   }
-  SM_EXPECT_EQ(vad.Process(48000, speech, 480), -1);  // Not ported.
 
   const int kInvalidRates[] = {-8000, -4000, 0, 4000, 8000, 8001, 15999, 16000, 32000, 48000, 48001, 96000};
   const size_t kInvalidFrameLengths[] = {0, 80, 81, 159, 160, 240, 320, 480, 640, 960, 1440, 2000};

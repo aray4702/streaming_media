@@ -44,7 +44,13 @@ struct BweTraceRow {
   // data (QueueSizeData, bytes), modified_trend = AverageQueueTime (ms), threshold = the packet's media type
   // (0 audio, 1 video, 2 RTX, 3 FEC, 4 padding), send_delta_ms = the packet's RTP sequence number, send_ms =
   // last process time (ms).
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kRxTiming, kPacer };
+  // kSync (issue #895): the A/V sync inputs at each 1 s RtpStreamsSynchronizer run, read
+  // from both receive streams' Syncable::GetInfo by the harness: bitrate_bps = audio
+  // current_delay ms, packets = video current_delay ms (TargetVideoDelay), loss_limit_bps
+  // and instant_ub_bps = audio and video latest_receive_time ms, send_ms and arrival_ms =
+  // audio and video latest RTP timestamps less the first one seen, in ms; on this library only,
+  // modified_trend = the run's relative delay and threshold = its filtered diff.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kRxTiming, kPacer, kSync };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;

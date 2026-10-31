@@ -16,8 +16,8 @@
 // two's-complement overflow under RTC_NO_SANITIZE, bugs.webrtc.org/5486), so
 // the output is the same, bit for bit, without undefined behaviour. The
 // ARMv7 and MIPS assembly variants are not ported; the portable C ones are.
-// Only the library functions this resampler calls are ported (not the
-// 48 <-> 8 kHz ones, which only other modules use).
+// Only the library functions this resampler calls are ported, plus the
+// 48 -> 8 kHz one that `WebRtcVad` uses at 48 kHz (#901); not 8 -> 48 kHz.
 #pragma once
 
 #include <cstddef>
@@ -26,6 +26,18 @@
 #include <vector>
 
 namespace sm::audio {
+
+// signal_processing_library.h: `WebRtcSpl_State48khzTo8khz`,
+// `WebRtcSpl_Resample48khzTo8khz` (480 samples in, 80 out; `tmpmem` holds
+// 736 words) and `WebRtcSpl_ResetResample48khzTo8khz` (resample_48khz.c).
+struct SplState48khzTo8khz {
+  int32_t S_48_24[8];
+  int32_t S_24_24[16];
+  int32_t S_24_16[8];
+  int32_t S_16_8[8];
+};
+void SplResample48khzTo8khz(const int16_t* in, int16_t* out, SplState48khzTo8khz* state, int32_t* tmpmem);
+void SplResetResample48khzTo8khz(SplState48khzTo8khz* state);
 
 class SplResampler {
  public:

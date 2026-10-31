@@ -118,6 +118,74 @@ SM_TEST(PacketBuffer, MarkerEndsTheWalkBackAtThePreviousFrame) {
   SM_EXPECT_EQ(f[1].first_seq, 2);
 }
 
+SM_TEST(PacketBuffer, TwoFramesWithOneTimestampGoOutAsOne) {
+  // libwebrtc's H.264 walk back in FindFrames checks only the RTP timestamp, not
+  // the marker bit (packet_buffer.cc), so a packet with the marker bit and the
+  // frame after it at the same timestamp are handed out together (issue #899).
+  PacketBuffer pb(NoHoldCfg());
+  pb.Insert(Pkt(12, 7, true), false, T0());  // Not a start: it waits.
+  pb.Insert(Pkt(13, 7, false), true, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  pb.Insert(Pkt(14, 7, true), false, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, 12);
+  SM_EXPECT_EQ(f[0].packets.size(), 3u);
+  SM_EXPECT_EQ(pb.buffered_packets(), 0u);
+}
+
+SM_TEST(PacketBuffer, PacketThatIsNotContinuousDoesNotCompleteAFrame) {
+  // PotentialNewFrame: a packet that is not a start continues a frame only
+  // after a continuous packet of the same timestamp. 21 follows 20, which no
+  // walk reached (its start, 19, is missing), so the marker at 21 waits.
+  PacketBuffer pb(NoHoldCfg());
+  pb.Insert(Pkt(10, 5, true), true, T0());
+  pb.Insert(Pkt(20, 7, false), false, T0());
+  pb.Insert(Pkt(21, 7, true), false, T0());
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);  // Only frame 5.
+  pb.Insert(Pkt(19, 7, false), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, 19);
+  SM_EXPECT_EQ(f[0].packets.size(), 3u);
+}
+
+SM_TEST(PacketBuffer, ForwardWalkStopsWherePaddingIsNoLongerRemembered) {
+  // FindFrames skips only the padding still in received_padding_; an older
+  // padding sequence number is an empty slot, and the walk stops there, as it
+  // stops at a packet already handed out in a frame (issue #899). Frame 300
+  // (seq 13) is held behind hole 11; the padding at 12 is forgotten once seq
+  // 200 is inserted (more than a quarter of the buffer ahead), so filling 11
+  // releases frame 150 and the walk ends at 12.
+  PacketBuffer pb;
+  pb.Insert(Pkt(10, 100, true), true, T0(), true);  // Keyframe.
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.NotePadding(12);
+  pb.Insert(Pkt(13, 300, true), true, T0());
+  pb.Insert(Pkt(200, 900, true), true, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  pb.Insert(Pkt(11, 150, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].timestamp, 150u);
+  SM_EXPECT_EQ(pb.buffered_packets(), 2u);
+}
+
+SM_TEST(PacketBuffer, ForwardWalkSkipsRememberedPaddingToAHeldFrame) {
+  // The same with the padding still remembered: the walk goes over it and
+  // releases frame 300.
+  PacketBuffer pb;
+  pb.Insert(Pkt(10, 100, true), true, T0(), true);
+  SM_EXPECT_EQ(pb.PopCompleteFrames().size(), 1u);
+  pb.NotePadding(12);
+  pb.Insert(Pkt(13, 300, true), true, T0());
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  pb.Insert(Pkt(11, 150, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 2u);
+  SM_EXPECT_EQ(f[1].timestamp, 300u);
+}
+
 SM_TEST(PacketBuffer, PrecedingMediaSeqSkipsPadding) {
   PacketBuffer pb;
   pb.Insert(Pkt(1, 7, true), true, T0());
