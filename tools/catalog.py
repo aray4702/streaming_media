@@ -816,7 +816,7 @@ ALGORITHMS = [
                "in the pacer queue; the keep-alive and the first packet of a probe ask for 1 byte (#120). Without RTX it goes on "
                "the media SSRC while `PacketSequencer::CanSendPaddingOnMediaSsrc` allows (video: after a frame's marker), audio "
                "padding sized to the request in [50, 255] B, with the padding fields set at release as `PacketSequencer` does "
-               "(docs/fixes/514-padding.md). Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
+               "(docs/fixes/514-padding.md). #893: `SetPacerConfig` re-reads the queue for the long-queue boost at the current time (`MaybeUpdateMediaRateDueToLongQueue(CurrentTime())`, `pacing_controller.cc:155-197`), and a pacer config arrives only with an update whose `MaybeTriggerOnNetworkChanged` fired, at a feedback, sent packet or process interval. Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
                "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
                "congestion window (pushback stays on the encoder). `BitrateProber` (#48, `bitrate_prober.h`) times "
                "the probe bursts: a cluster starts when a media packet of at least min(`rate x min_probe_delta`, "

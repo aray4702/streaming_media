@@ -42,6 +42,7 @@ class Pacer : public MetricsSource {
  public:
   explicit Pacer(PacerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  void SetPacingRates(DataRate pacing, DataRate padding, Timestamp now);
   void Enqueue(PacedPacket p);
   // See PacingController::SetPaddingGenerator.
   void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }

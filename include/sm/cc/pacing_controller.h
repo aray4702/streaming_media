@@ -133,6 +133,9 @@ class PacingController : public MetricsSource {
  public:
   explicit PacingController(PacingControllerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  // SetPacerConfig at `now`: the long-queue boost reads the queue at the current time, CurrentTime()
+  // (pacing_controller.cc:155-166, 193), not at the last process time (issue #893).
+  void SetPacingRates(DataRate pacing, DataRate padding, Timestamp now);
   // A rate as it comes out of a PacerConfig with this time window: whole bytes per window.
   static DataRate ThroughPacerConfig(DataRate rate, TimeDelta time_window);
   // Where padding comes from (PacketRouter::GeneratePadding): keep-alives, the first packet of

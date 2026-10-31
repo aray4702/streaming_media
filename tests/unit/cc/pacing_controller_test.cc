@@ -620,3 +620,22 @@ SM_TEST(PacingController, FecFromThePacketSenderLeavesInTheSameProcessCall) {
   SM_EXPECT_TRUE(ids == want);
   SM_EXPECT_EQ(pacer.QueuePackets(), 0u);
 }
+
+// #893: SetPacerConfig runs MaybeUpdateMediaRateDueToLongQueue(CurrentTime()) (pacing_controller.cc:155-166,
+// 179-197), so a new config reads the queue's average wait at the time it arrives, not at the last process
+// time. 1 s of data at 200 kbps that has waited 500 ms of a 1 s limit needs 400 kbps.
+SM_TEST(PacingController, SetPacingRatesReadsTheQueueAtTheCurrentTime) {
+  PacingControllerConfig cfg;
+  cfg.queue_time_limit = TimeDelta::Millis(1000);
+  PacingController p(cfg);
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  const Timestamp t0 = Timestamp::Millis(1000);
+  for (int i = 0; i < 250; ++i) p.Enqueue(Pkt(i, PacketPriority::kVideo, 100, t0));
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  // Without a time the queue is read at the last time the pacer saw: no wait yet, no boost.
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero(), t0 + TimeDelta::Millis(500));
+  SM_EXPECT_NEAR(static_cast<double>(p.pacing_rate().bps()), 400000.0, 1000.0);
+  SM_EXPECT_NEAR(p.trace_state().average_queue_time.ms_f(), 500.0, 1.0);
+}

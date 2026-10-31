@@ -30,6 +30,11 @@ void Pacer::SetPacingRates(DataRate pacing, DataRate padding) {
   pc_->SetPacingRates(pacing, padding);
   PostMaybeProcessPackets();
 }
+
+void Pacer::SetPacingRates(DataRate pacing, DataRate padding, Timestamp now) {
+  pc_->SetPacingRates(pacing, padding, now);
+  PostMaybeProcessPackets();
+}
 void Pacer::Enqueue(PacedPacket p) {
   // TaskQueuePacedSender::EnqueuePackets: ExpFilter(0.95).Apply(1, size), then MaybeProcessPackets.
   const double size = static_cast<double>(p.size.bytes());
