@@ -58,6 +58,9 @@ struct Scenario {
   TimeDelta duration = TimeDelta::Seconds(30);
   uint64_t seed = 1;
   int compare_seeds = 0;  // `compare_seeds N`: read only by sm_compare, overrides its --seeds for this scenario (0 = use --seeds).
+  // `compare off`: read only by sm_compare, which skips the scenario (#921). For a scenario that tests only this
+  // library and has no defined libwebrtc counterpart (issue_451_host_rtt_near_limit: libwebrtc overflows, #904).
+  bool compare = true;
   // `compare_clock_start S`: the libwebrtc side's simulated clock at the call's start in sm_compare, in seconds, for
   // every seed (0 = derived from the seed). RTCPSender seeds its report-interval draws from that clock (#390, #399),
   // and the test bench seeds its RTCP engines with the same time (#517).
