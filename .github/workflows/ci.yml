@@ -82,7 +82,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {os: macos-14, cc: clang, cxx: clang++}
+          - {os: macos-15, cc: clang, cxx: clang++}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     env: {CC: "${{ matrix.cc }}", CXX: "${{ matrix.cxx }}", SM_BENCH_BUDGET_SCALE: "4"}

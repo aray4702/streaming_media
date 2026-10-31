@@ -149,6 +149,11 @@ bool RtpSender::SupportsRtxPayloadPadding() const {
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
   send_rates_[static_cast<size_t>(p.kind)].Update(static_cast<int64_t>(p.packet.size()), now.ms());
+  // UpdateRtpStats then reads GetSendRates(now) when the module has a bitrate observer, which only the
+  // video stream sets (its SendStatisticsProxy; rtp_sender_egress.cc:495-498, rtp_video_sender.cc:307), and
+  // RateStatistics::Rate erases each tracker's expired buckets. A type that paused for over a window then
+  // restarts its window when it resumes (issue #895).
+  if (cfg_.video) SendRate(now);
   // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:332-336, 467-493): every packet sent on
   // the media or the RTX SSRC (media, retransmission, FEC, padding) adds one packet and its payload
   // octets (RtpPacketCounter: padding is counted apart) to `transmitted`, which the SR reports
@@ -548,9 +553,10 @@ DataRate RtpSender::SendRate(Timestamp now) const {
   return DataRate::BitsPerSec(bps);
 }
 
-RtcpSenderState RtpSender::SenderState(Timestamp now) const {
+RtcpSenderState RtpSender::SenderState(Timestamp now, bool read_send_rates) const {
   RtcpSenderState s;
-  s.send_bitrate = SendRate(now);
+  if (read_send_rates) last_send_rate_ = SendRate(now);
+  s.send_bitrate = last_send_rate_;
   s.ssrc = cfg_.ssrc;
   s.packet_count = sr_packets_;
   s.octet_count = sr_octets_;
