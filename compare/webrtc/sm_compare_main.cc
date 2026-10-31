@@ -115,7 +115,7 @@ const char* const kDefaultTraced =
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
     "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window,"
     "issue_522_outage_to_500kbps,issue_466_undershoot_very_low_capacity,issue_466_overshoot_very_low_capacity,"
-    "issue_12_lossbwe_shallow";
+    "issue_12_lossbwe_shallow,issue_893_overshoot_seed3,issue_893_overshoot_seed9";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";

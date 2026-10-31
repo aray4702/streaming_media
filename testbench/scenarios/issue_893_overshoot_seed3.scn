@@ -1,0 +1,8 @@
+name issue_893_overshoot_seed3
+describe issue_466_overshoot_very_low_capacity with seed 3, traced on both stacks: where main (with #937) pauses video ~6.4 s and libwebrtc doesn't (issue #893)
+# Yardstick for #893 (not for merge). video.pause_total_ms on this seed: libwebrtc 0, main 63b80da 6435 ms.
+duration 40s
+encoder_overshoot 1.3
+at 0s capacity=100kbps delay=30ms queue=300ms
+seed 3
+expect video.encoder_dropped > 520

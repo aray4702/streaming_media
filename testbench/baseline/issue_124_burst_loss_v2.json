@@ -89,6 +89,6 @@
   "video.time_to_first_frame_ms": 211,
   "video.undecodable_frames": 0
  },
- "passed": false,
+ "passed": true,
  "scenario": "issue_124_burst_loss_v2"
 }
