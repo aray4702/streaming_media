@@ -241,7 +241,7 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
 }
 
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "alloc"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
@@ -810,6 +810,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   bool held_frame = false;  // The video controller holds the last dropped frame (EncodeDecision::hold).
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  int64_t last_alloc_trace_bps = -1;  // Last video target written to rep.bwe_trace as an alloc row (issue #893).
   std::array<uint64_t, 3> vt_rx_prev{};  // Frame release counters at the last row (issue #437).
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
@@ -1326,6 +1327,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // --- Measurement ----------------------------------------------------------
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && t % 5 == 4 && sender.rates().video_target.bps() != last_alloc_trace_bps) {
+      // The video encoder target every 5 ms when it changed, as sm_compare samples libwebrtc's (issue #893).
+      cc::BweTraceRow r;
+      r.time_us = static_cast<int64_t>(t + 1) * 1000;
+      r.kind = cc::BweTraceRow::Kind::kAlloc;
+      r.bitrate_bps = sender.rates().video_target.bps();
+      rep.bwe_trace.push_back(r);
+      last_alloc_trace_bps = r.bitrate_bps;
+    }
     if (opt.video_trace && t % 1000 == 999) {
       vt_row.t_ms = t + 1;
       vt_row.alloc_target_bps = sender.rates().video_target.bps();

@@ -1231,6 +1231,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   double cross_debt = 0;
   bool stopping = false;
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
+  int64_t last_alloc_trace_bps = -1;  // Last video target written to rep.bwe_trace as an alloc row (issue #893).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
@@ -1431,6 +1432,21 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && video_send && t % 5 == 4) {
+      // The video encoder target every 5 ms when it changed (VideoSendStreamImpl::OnBitrateUpdated sets it
+      // through SendStatisticsProxy::OnSetEncoderTargetRate), as testbench/call.cc samples ours (issue #893).
+      const int64_t alloc_time_us = (t + 1) * 1000;
+      sender_q->PostTask([&, alloc_time_us] {
+        const int64_t bps = video_send->GetStats().target_media_bitrate_bps;
+        if (bps == last_alloc_trace_bps) return;
+        cc::BweTraceRow r;
+        r.time_us = alloc_time_us;
+        r.kind = cc::BweTraceRow::Kind::kAlloc;
+        r.bitrate_bps = bps;
+        rep.bwe_trace.push_back(r);
+        last_alloc_trace_bps = bps;
+      });
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;

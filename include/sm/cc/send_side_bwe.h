@@ -33,7 +33,10 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kAlloc: the video stream's encoder target (VideoSendStream::Stats::target_media_bitrate_bps on
+  // libwebrtc's side, the controller's video target on ours), sampled every 5 ms by the test bench when it
+  // changed (issue #893), so the allocation updates of both stacks can be lined up.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kAlloc };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
