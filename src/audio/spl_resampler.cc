@@ -162,6 +162,17 @@ void UpBy2IntToShort(const int32_t* in, int32_t len, int16_t* out, int32_t* stat
   for (int32_t i = 0; i < len; i++) out[i << 1] = ClampW16(Allpass(in[i], &state[0], kResampleAllpass[1]) >> 15);
 }
 
+// decimator; input int16; output int32 (Q15 + offset, len/2).
+void DownBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* state) {
+  len >>= 1;
+  // lower allpass filter (operates on even input samples)
+  for (int32_t i = 0; i < len; i++) out[i] = Allpass(ShortToQ15(in[i << 1]), &state[0], kResampleAllpass[1]) >> 1;
+  ++in;
+  // upper allpass filter (operates on odd input samples)
+  for (int32_t i = 0; i < len; i++)
+    out[i] = Add(out[i], Allpass(ShortToQ15(in[i << 1]), &state[4], kResampleAllpass[0]) >> 1);
+}
+
 // lowpass filter; input int16; output int32 (normalized). State 16.
 void LPBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* state) {
   len >>= 1;
@@ -184,6 +195,30 @@ void LPBy2ShortToInt(const int16_t* in, int32_t len, int32_t* out, int32_t* stat
   ++in;
   for (int32_t i = 0; i < len; i++)
     out[i << 1] = Add(out[i << 1], Allpass(ShortToQ15(in[i << 1]), &state[12], kResampleAllpass[0]) >> 1) >> 15;
+}
+
+// lowpass filter; input int32 (Q15 + offset); output int32 (normalized). State 16.
+void LPBy2IntToInt(const int32_t* in, int32_t len, int32_t* out, int32_t* state) {
+  len >>= 1;
+  // lower allpass filter: odd input -> even output samples
+  ++in;
+  int32_t tmp0 = state[12];  // initial state of polyphase delay element
+  for (int32_t i = 0; i < len; i++) {
+    out[i << 1] = Allpass(tmp0, &state[0], kResampleAllpass[1]) >> 1;
+    tmp0 = in[i << 1];
+  }
+  --in;
+  // upper allpass filter: even input -> even output samples
+  for (int32_t i = 0; i < len; i++)
+    out[i << 1] = Add(out[i << 1], Allpass(in[i << 1], &state[4], kResampleAllpass[0]) >> 1) >> 15;
+  // switch to odd output samples
+  ++out;
+  // lower allpass filter: even input -> odd output samples
+  for (int32_t i = 0; i < len; i++) out[i << 1] = Allpass(in[i << 1], &state[8], kResampleAllpass[1]) >> 1;
+  // upper allpass filter: odd input -> odd output samples
+  ++in;
+  for (int32_t i = 0; i < len; i++)
+    out[i << 1] = Add(out[i << 1], Allpass(in[i << 1], &state[12], kResampleAllpass[0]) >> 1) >> 15;
 }
 
 // ---- resample_fractional.c ----
@@ -376,6 +411,19 @@ void Resample8khzTo22khz(const int16_t* in, int16_t* out, State8To22* state, int
 }
 
 }  // namespace
+
+// resample_48khz.c: 48 -> 24 -> 24 (LP) -> 16 -> 8 kHz, 480 in -> 80 out.
+void SplResample48khzTo8khz(const int16_t* in, int16_t* out, SplState48khzTo8khz* state, int32_t* tmpmem) {
+  DownBy2ShortToInt(in, 480, tmpmem + 256, state->S_48_24);
+  LPBy2IntToInt(tmpmem + 256, 240, tmpmem + 16, state->S_24_24);
+  // copy state to and from input array
+  std::memcpy(tmpmem + 8, state->S_24_16, 8 * sizeof(int32_t));
+  std::memcpy(state->S_24_16, tmpmem + 248, 8 * sizeof(int32_t));
+  Resample48khzTo32khz(tmpmem + 8, tmpmem, 80);
+  DownBy2IntToShort(tmpmem, 160, out, state->S_16_8);
+}
+
+void SplResetResample48khzTo8khz(SplState48khzTo8khz* state) { *state = SplState48khzTo8khz{}; }
 
 SplResampler::SplResampler(int in_freq, int out_freq, size_t num_channels) {
   Reset(in_freq, out_freq, num_channels);
