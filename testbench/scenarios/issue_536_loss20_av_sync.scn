@@ -23,7 +23,11 @@ expect audio.longest_interruption_ms <= 90
 # libwebrtc: 2522 910 2519 2441 508 2468 633 442 2744 2570 (worst 2744). Ours seed 1: 2515.
 expect video.e2e_delay_p95_ms < 2744
 # libwebrtc: 1764 670 1581 1751 348 1474 391 318 1603 1828 (worst 1828). Ours seed 1: 1570.
-expect sync.av_offset_p95_ms < 1829
+# needs-human (#897, guard rail during a port, program.md 0.2): was < 1829. Send times rounded to the nearest ms
+# as the transport's Timestamp::ms() (#897) move ours seed 1 to 1861, past libwebrtc's worst seed; seeds 1-10
+# 1861 674 1581 270 348 1474 616 318 1603 1788, mean 1053 (libwebrtc mean 1173; main 8d21ac1 merged). Window
+# ruling on #935, 2026-10-31 1:38 PM PT: < 1862.
+expect sync.av_offset_p95_ms < 1862
 # libwebrtc: freezes 35 24 33 28 17 28 24 27 29 29 (worst 35); total 10016 6909 10278 7519 4593 8464 7549 7690 9193
 # 8820 (worst 10278); longest 540 659 634 404 502 747 680 460 795 811 (worst 811). Ours seed 1: 35, 9874, 640.
 # Since #873 (no RTT to GoogCC before one is measured, as libwebrtc's aimd_rate_control.cc kDefaultRtt) ours seed 1
