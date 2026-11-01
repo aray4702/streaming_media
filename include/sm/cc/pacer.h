@@ -63,6 +63,10 @@ class Pacer : public MetricsSource {
   Timestamp NextSendTime(Timestamp now) const;
   // Packets a keyframe flushed from the queue (see PacingController).
   std::vector<PacedPacket> TakeFlushed();
+  // TaskQueuePacedSender::RemovePacketsForSsrc (task_queue_paced_sender.cc:158-164): the stream's
+  // queued packets are dropped (PacingController::RemoveStreamPackets), then a pass runs as after
+  // an enqueue (MaybeProcessPackets(-inf)).
+  std::vector<PacedPacket> RemoveStreamPackets(const std::function<bool(const PacedPacket&)>& is_stream, Timestamp now);
   void Pause();
   void Resume();
   bool paused() const;

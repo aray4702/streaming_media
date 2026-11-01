@@ -144,6 +144,7 @@ struct SendSideStats {
   uint64_t padding_dropped = 0;  // Media-SSRC padding preempted by media (CanSendPacket).
   uint64_t unknown_ids = 0;
   uint64_t flushed = 0;  // Packets a keyframe flushed from the pacer queue.
+  uint64_t removed = 0;  // Packets RemovePacketsForSsrc dropped from the pacer queue.
   int64_t released_bytes = 0;
 };
 
@@ -226,6 +227,11 @@ class SendSideController : public MetricsSource {
   void EnablePeriodicAlrProbing(bool enable);
 
   void Enqueue(SenderPacket p, Timestamp now);
+  // PacingController::RemovePacketsForSsrc, as ChannelSend::StopSend calls it for an audio stream
+  // (channel_send.cc:633; pacing_controller.cc:147-149, prioritized_packet_queue.cc:337-380): the
+  // queued packets on `ssrc`, at every priority, are dropped and never sent. Their sequence numbers
+  // are assigned at send (issue #127), so the stream's sequence has no gap. Returns how many.
+  size_t RemovePacketsForSsrc(uint32_t ssrc, Timestamp now);
   // Releases due packets, and runs the GCC timer.
   std::vector<ReleasedPacket> Process(Timestamp now);
   Timestamp NextProcessTime(Timestamp now) const;

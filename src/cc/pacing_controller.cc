@@ -195,6 +195,32 @@ std::vector<PacedPacket> PrioritizedPacketQueue::RemoveVideoStreamPackets(bool i
   return removed;
 }
 
+std::vector<PacedPacket> PrioritizedPacketQueue::RemoveStreamPackets(
+    const std::function<bool(const PacedPacket&)>& is_stream) {
+  std::vector<PacedPacket> removed;
+  for (auto& level : levels_) {
+    std::deque<Queued> kept;
+    for (Queued& q : level) {
+      if (is_stream(q.p)) {
+        DequeueInternal(q);
+        removed.push_back(q.p);
+      } else {
+        kept.push_back(std::move(q));
+      }
+    }
+    level.swap(kept);
+  }
+  return removed;
+}
+
+std::vector<PacedPacket> PacingController::RemoveStreamPackets(
+    const std::function<bool(const PacedPacket&)>& is_stream, Timestamp now) {
+  std::vector<PacedPacket> removed = queue_.RemoveStreamPackets(is_stream);
+  stats_.removed_packets += removed.size();
+  SM_EVENT(cfg_.events, now, "pacer", "remove_stream", static_cast<double>(removed.size()), 0);
+  return removed;
+}
+
 std::vector<PacedPacket> PacingController::TakeFlushed() {
   std::vector<PacedPacket> out;
   out.swap(flushed_);
@@ -522,6 +548,7 @@ void PacingController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("circuit_breaks", stats_.circuit_breaks);
   w.Counter("keyframe_flushes", stats_.keyframe_flushes);
   w.Counter("flushed_packets", stats_.flushed_packets);
+  w.Counter("removed_packets", stats_.removed_packets);
   w.Gauge("queue_bytes", static_cast<double>(queue_.SizeInBytes().bytes()));
   w.Gauge("media_debt_bytes", static_cast<double>(media_debt_.bytes()));
   w.Gauge("avg_queue_ms", queue_.AverageQueueTime().ms_f());

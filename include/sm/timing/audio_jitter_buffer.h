@@ -88,6 +88,7 @@ struct AudioJitterBufferStats {
   uint64_t packets_discarded_unsupported_rate = 0;
   uint64_t packets_lost = 0;                 // Skipped after concealment.
   uint64_t buffer_flushes = 0;
+  uint64_t flush_buffers_calls = 0;  // FlushBuffers calls (the app's flush, e.g. on barge-in).
   uint64_t total_samples_received = 0;       // Samples output.
   uint64_t concealed_samples = 0;
   uint64_t concealment_events = 0;
@@ -136,12 +137,21 @@ class AudioJitterBuffer : public MetricsSource {
                     AudioPacketPriority priority = {});
   // Fills `out` (typically 10 ms) and reports the operation performed.
   AudioOperation GetAudio(std::span<float> out, Timestamp now);
+  // NetEq::FlushBuffers (api/neteq/neteq.h:327-328; NetEqImpl::FlushBuffers,
+  // neteq_impl.cc:616-626): drops the queued packets (PacketBuffer::Flush,
+  // counted as a packet buffer flush) and the decoded audio not yet played
+  // (SyncBuffer::Flush: history and future zeroed, Expand's overlap of zeros
+  // left as lookahead), and waits for a new first packet. Until it arrives
+  // GetAudio expands the zeroed history (silence) and there is no playout
+  // timestamp; that packet then restarts playout at its own timestamp, as
+  // after a full-buffer flush (new_codec_ at the next decision).
+  void FlushBuffers(Timestamp now);
 
   // NetEq::GetPlayoutTimestamp: the RTP timestamp of the audio the last
   // GetAudio played out, unset until playout starts. A/V synchronization reads
   // it (libwebrtc's ChannelReceive::UpdatePlayoutTimestamp).
   std::optional<uint32_t> PlayoutTimestamp() const {
-    if (!playout_ts_) return std::nullopt;
+    if (!playout_ts_ || first_packet_) return std::nullopt;
     return static_cast<uint32_t>(*playout_ts_);
   }
   // The RTP timestamps of the primary packets (not FEC or RED redundancy) the
@@ -197,6 +207,10 @@ class AudioJitterBuffer : public MetricsSource {
   // NetEqImpl::new_codec_ after PacketBuffer::kFlushed: set by a
   // full-buffer flush, cleared by the soft reset at the next decision.
   bool neteq_flush_pending_ = false;
+  // NetEqImpl::first_packet_ after FlushBuffers: the next inserted packet sets
+  // new_codec_ (neteq_impl.cc:395-398). Not set at construction here: the
+  // first packet of the call is handled by `started_` and the initial reset.
+  bool first_packet_ = false;
   NetEqExpand expand_;
   NetEqMerge merge_;
   NetEqTimeStretch time_stretch_;  // Accelerate and preemptive expand.

@@ -109,6 +109,10 @@ class PrioritizedPacketQueue {
   // retransmission, video and FEC levels, and with `include_padding` the
   // padding level too (padding goes out on the video stream's RTX SSRC).
   std::vector<PacedPacket> RemoveVideoStreamPackets(bool include_padding = false);
+  // PrioritizedPacketQueue::RemovePacketsForSsrc (prioritized_packet_queue.cc:337-380): every
+  // queued packet of one stream, at every level, in queue order. The queue does not know SSRCs,
+  // so the caller says which packets are the stream's (`is_stream`).
+  std::vector<PacedPacket> RemoveStreamPackets(const std::function<bool(const PacedPacket&)>& is_stream);
   bool HasKeyframePackets() const { return num_keyframe_packets_ > 0; }
 
   static int Level(PacketPriority p);
@@ -163,6 +167,10 @@ class PacingController : public MetricsSource {
   // (PacingController::EnqueuePacket), so the keyframe leaves as soon as it can.
   // The caller drops whatever it kept for them; they are never sent.
   std::vector<PacedPacket> TakeFlushed();
+  // PacingController::RemovePacketsForSsrc (pacing_controller.cc:147-149), as ChannelSend::StopSend
+  // calls it for an audio stream (channel_send.cc:633): drops one stream's queued packets, which
+  // are never sent. Returns them; the caller drops what it holds for them.
+  std::vector<PacedPacket> RemoveStreamPackets(const std::function<bool(const PacedPacket&)>& is_stream, Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
   void Pause();
   void Resume();

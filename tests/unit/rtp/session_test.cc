@@ -1686,6 +1686,96 @@ SM_TEST(Session, TheAudioSendStreamsReportEchoesTheReceiversRrtr) {
   SM_EXPECT_GE(audio_reports_with_dlrr, 1);
 }
 
+// Issue #764: CancelAudio drops the audio stream's packets still in the pacer,
+// as ChannelSend::StopSend's PacingController::RemovePacketsForSsrc (channel_send.cc:633).
+// They are never sent, the video stream's packets stay, and the next audio
+// packet takes the next sequence number (sequence numbers are assigned at send).
+SM_TEST(Session, CancelAudioDropsTheQueuedAudioOnlyAndLeavesNoSequenceGap) {
+  Pair p;
+  const Bytes opus(60, 1);
+  p.a.Process(Timestamp::Millis(0));
+  p.a.SendAudio(p.a_audio, {0, opus, true}, Timestamp::Millis(0));
+  std::vector<uint16_t> seqs;
+  const auto audio_seqs = [&](const std::vector<OutgoingPacket>& out) {
+    int n = 0;
+    for (const auto& o : out) {
+      if (o.kind != OutgoingKind::kAudio) continue;
+      seqs.push_back(RtpPacket::Parse(o.bytes)->seq);
+      ++n;
+    }
+    return n;
+  };
+  SM_EXPECT_EQ(audio_seqs(Pump(p.a, 0, 20)), 1);
+  // Audio waits in the pacer only while it is paused (or with WebRTC-Pacer-BlockAudio); otherwise
+  // each enqueue sends it at once, as in libwebrtc. A reply sent ahead while it is paused: 10
+  // frames queued, with a video frame behind them.
+  p.a.send_side().pacer().Pause();
+  for (int i = 1; i <= 10; ++i) p.a.SendAudio(p.a_audio, {static_cast<uint32_t>(960 * i), opus, false}, Timestamp::Millis(20));
+  const auto chunks = test::MakeTestFrameChunks(true, 300, 1188);
+  p.a.SendVideoChunks(p.a_video, chunks, 9000, Timestamp::Millis(20), true);
+  const size_t removed = p.a.CancelAudio(p.a_audio, Timestamp::Millis(20));
+  SM_EXPECT_EQ(removed, 10u);
+  SM_EXPECT_EQ(p.a.stats().audio_cancels, 1u);
+  SM_EXPECT_EQ(p.a.stats().audio_cancelled_packets, 10u);
+  p.a.send_side().pacer().Resume();
+  int video = 0;
+  const auto out = Pump(p.a, 20, 100);
+  for (const auto& o : out) video += o.kind == OutgoingKind::kVideo;
+  SM_EXPECT_EQ(audio_seqs(out), 0);
+  SM_EXPECT_EQ(video, 1);
+  // The next reply starts a talk spurt right after the last packet sent.
+  p.a.SendAudio(p.a_audio, {960 * 100, opus, true}, Timestamp::Millis(120));
+  SM_EXPECT_EQ(audio_seqs(Pump(p.a, 120, 20)), 1);
+  SM_ASSERT_EQ(seqs.size(), 2u);
+  SM_EXPECT_EQ(static_cast<uint16_t>(seqs[1] - seqs[0]), 1);
+  // A cancel with nothing queued, and unknown ids, change nothing.
+  SM_EXPECT_EQ(p.a.CancelAudio(p.a_audio, Timestamp::Millis(140)), 0u);
+  SM_EXPECT_EQ(p.a.CancelAudio(AudioSendId{}, Timestamp::Millis(140)), 0u);
+  SM_EXPECT_EQ(p.a.CancelAudio(AudioSendId{5}, Timestamp::Millis(140)), 0u);
+  SM_EXPECT_EQ(p.a.stats().audio_cancels, 2u);
+  MapMetricsWriter w;
+  p.a.ExportMetrics(w);
+  SM_EXPECT_NEAR(w.values().at("audio_cancelled_packets"), 10.0, 1e-9);
+}
+
+// Issue #764: FlushAudio is NetEq::FlushBuffers on the stream's jitter buffer:
+// the queued audio is dropped and playout waits for the next packet.
+SM_TEST(Session, FlushAudioFlushesTheStreamsJitterBuffer) {
+  Pair p;
+  const Bytes opus(60, 1);
+  std::vector<float> pcm(480);
+  p.a.Process(Timestamp::Millis(0));
+  p.b.Process(Timestamp::Millis(0));
+  // 200 ms of audio delivered at once after 1 s of real-time playout.
+  int64_t t = 0;
+  for (int i = 0; i < 60; ++i) {
+    p.a.SendAudio(p.a_audio, {static_cast<uint32_t>(960 * i), opus, i == 0}, Timestamp::Millis(t));
+    const int64_t until = i < 50 ? t + 20 : t;
+    for (int64_t u = t; u <= until; ++u) {
+      p.a.Process(Timestamp::Millis(u));
+      for (auto& o : p.a.TakeOutgoing()) p.b.OnPacket(o.bytes, Timestamp::Millis(u));
+      p.b.Process(Timestamp::Millis(u));
+      if (u % 10 == 0 && i < 50) p.b.GetAudio(p.b_audio, pcm, Timestamp::Millis(u));
+    }
+    if (i < 50) t += 20;
+  }
+  const auto& jb = p.b.audio_receiver(p.b_audio).jitter_buffer();
+  SM_EXPECT_GT(jb.CurrentLevelMs(), 100.0);
+  p.b.FlushAudio(p.b_audio, Timestamp::Millis(t));
+  SM_EXPECT_EQ(jb.stats().flush_buffers_calls, 1u);
+  SM_EXPECT_LT(jb.CurrentLevelMs(), 1.0);
+  SM_EXPECT_FALSE(jb.PlayoutTimestamp().has_value());
+  SM_EXPECT_EQ(p.b.stats().audio_flushes, 1u);
+  SM_EXPECT_TRUE(p.b.GetAudio(p.b_audio, pcm, Timestamp::Millis(t + 10)) == timing::AudioOperation::kExpand);
+  // Unknown ids are ignored.
+  p.b.FlushAudio(AudioRecvId{}, Timestamp::Millis(t));
+  p.b.FlushAudio(AudioRecvId{3}, Timestamp::Millis(t));
+  SM_EXPECT_EQ(p.b.stats().audio_flushes, 1u);
+  MapMetricsWriter w;
+  p.b.ExportMetrics(w);
+  SM_EXPECT_NEAR(w.values().at("audio_flushes"), 1.0, 1e-9);
+}
+
 // #762: with `send_ahead`, audio handed over before its due time goes out up to `send_ahead` early, in order, within
 // the budget the target leaves; without it (or without a due time) every frame goes out when it is handed over.
 SM_TEST(Session, AudioAheadOfRealTimeIsSentWithinItsLead) {
@@ -1733,4 +1823,31 @@ SM_TEST(Session, AudioAheadOfRealTimeIsSentWithinItsLead) {
   SM_EXPECT_TRUE(metrics.at("audio_ahead_max_lead_ms") <= 500);
   // Without send-ahead the export has no new names.
   SM_EXPECT_TRUE(run(TimeDelta::Zero(), true).second.count("audio_ahead_frames") == 0);
+}
+
+// #764 with #762: CancelAudio also drops the frames still held for send-ahead.
+SM_TEST(Session, CancelAudioDropsTheFramesHeldForSendAhead) {
+  Session s(Cfg(1));
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  acfg.nominal_rate = DataRate::KilobitsPerSec(40);
+  acfg.send_ahead = TimeDelta::Millis(200);
+  const AudioSendId au = s.AddAudioSend(acfg);
+  const Bytes opus(80, 1);
+  const Timestamp t0 = Timestamp::Seconds(100);
+  for (int k = 0; k < 50; ++k) {
+    EncodedAudioFrame f;
+    f.rtp_timestamp = static_cast<uint32_t>(960 * k);
+    f.data = opus;
+    f.due_time = t0 + TimeDelta::Millis(20 * k);
+    s.SendAudio(au, f, t0);
+  }
+  s.TakeOutgoing();
+  SM_EXPECT_TRUE(s.CancelAudio(au, t0) >= 30);  // At most the first ~11 (200 ms) could have been released.
+  int sent = 0;
+  for (int ms = 1; ms <= 2000; ++ms) {
+    s.Process(t0 + TimeDelta::Millis(ms));
+    for (const auto& p : s.TakeOutgoing()) sent += p.kind == OutgoingKind::kAudio ? 1 : 0;
+  }
+  SM_EXPECT_EQ(sent, 0);
 }

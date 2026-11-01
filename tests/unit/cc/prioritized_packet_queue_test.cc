@@ -324,3 +324,35 @@ SM_TEST(PrioritizedPacketQueue, ReportsKeyframePackets) {
   queue.RemoveVideoStreamPackets();
   SM_EXPECT_TRUE(!queue.HasKeyframePackets());
 }
+
+// RemovePacketsForSsrc for the audio stream (ChannelSend::StopSend; Session::CancelAudio, #764):
+// the stream's packets at every level go, level by level, the other stream's stay, and the sizes
+// and the queue time count only what is left.
+SM_TEST(PrioritizedPacketQueue, RemoveStreamPacketsTakesOneStreamAtEveryLevel) {
+  PrioritizedPacketQueue queue;
+  // Ids 1-3 are the audio stream (two media packets and a retransmission), 4-5 the video stream.
+  queue.Push(Timestamp::Millis(0), CreatePacket(PacketPriority::kVideo, 4));
+  queue.Push(Timestamp::Millis(0), CreatePacket(PacketPriority::kAudio, 1));
+  queue.Push(Timestamp::Millis(10), CreatePacket(PacketPriority::kRetransmission, 3));
+  queue.Push(Timestamp::Millis(10), CreatePacket(PacketPriority::kAudio, 2));
+  queue.Push(Timestamp::Millis(20), CreatePacket(PacketPriority::kVideo, 5));
+  queue.UpdateAverageQueueTime(Timestamp::Millis(30));
+
+  std::vector<PacedPacket> removed = queue.RemoveStreamPackets([](const PacedPacket& p) { return p.id <= 3; });
+  SM_ASSERT_EQ(removed.size(), 3u);
+  SM_EXPECT_EQ(removed[0].id, 1u);  // Audio level first, in queue order, then retransmission.
+  SM_EXPECT_EQ(removed[1].id, 2u);
+  SM_EXPECT_EQ(removed[2].id, 3u);
+  SM_EXPECT_EQ(queue.SizeInPackets(), 2u);
+  SM_EXPECT_EQ(queue.SizeInBytes().bytes(), 2 * kDefaultPayloadSize);
+  SM_EXPECT_EQ(queue.SizeInPacketsPerPriority()[static_cast<size_t>(PacketPriority::kAudio)], 0u);
+  SM_EXPECT_EQ(queue.SizeInPacketsPerPriority()[static_cast<size_t>(PacketPriority::kRetransmission)], 0u);
+  // The video packets waited 30 and 10 ms.
+  SM_EXPECT_EQ(queue.AverageQueueTime().ms(), 20);
+  SM_EXPECT_EQ(queue.OldestEnqueueTime().ms(), 0);
+  SM_EXPECT_EQ(PopId(queue), 4u);
+  SM_EXPECT_EQ(PopId(queue), 5u);
+  SM_EXPECT_TRUE(queue.Empty());
+  // Nothing more to remove.
+  SM_EXPECT_TRUE(queue.RemoveStreamPackets([](const PacedPacket&) { return true; }).empty());
+}

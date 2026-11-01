@@ -478,3 +478,71 @@ SM_TEST(AudioJitterBufferNetEqV2, PacketLessThanFiveSecondsOldIsDiscarded) {
   for (AudioOperation op : run.ops) SM_EXPECT_TRUE(op == AudioOperation::kNormal);
   SM_EXPECT_EQ(run.discarded_late, 1u);
 }
+
+// Issue #764: NetEq::FlushBuffers (NetEqImpl::FlushBuffers, neteq_impl.cc:616-626)
+// drops the packet buffer and the decoded audio not yet played. Until the next
+// packet the pulls expand the zeroed sync buffer (silence) and there is no
+// playout timestamp (first_packet_); that packet restarts playout at its own
+// timestamp, as new_codec_ does.
+SM_TEST(AudioJitterBuffer, FlushBuffersDropsQueuedAudioAndRestartsAtTheNextPacket) {
+  AudioJitterBuffer jb;
+  std::vector<float> out(160);
+  const auto tone = [](float a) { return std::vector<float>(320, a); };
+  int t = 0;
+  // 1 s of a reply played in real time, then 1 s more of it delivered at once
+  // (sent ahead): it waits in the packet buffer.
+  for (; t < 1000; t += 10) {
+    if (t % 20 == 0) jb.InsertPacket(static_cast<uint32_t>(t / 20 * 320), tone(0.3f), Timestamp::Millis(t));
+    jb.GetAudio(out, Timestamp::Millis(t));
+  }
+  for (int k = 50; k < 100; ++k) jb.InsertPacket(static_cast<uint32_t>(k * 320), tone(0.3f), Timestamp::Millis(t));
+  SM_EXPECT_GT(jb.CurrentLevelMs(), 500.0);
+  const uint64_t flushes_before = jb.stats().buffer_flushes;
+  jb.FlushBuffers(Timestamp::Millis(t));
+  SM_EXPECT_EQ(jb.stats().flush_buffers_calls, 1u);
+  SM_EXPECT_EQ(jb.stats().buffer_flushes, flushes_before + 1);
+  SM_EXPECT_LT(jb.CurrentLevelMs(), 1.0);  // Expand's overlap of zeros stays as lookahead.
+  SM_EXPECT_FALSE(jb.PlayoutTimestamp().has_value());
+  // Nothing of the flushed reply plays: the pulls before the next packet are silent.
+  for (int k = 0; k < 20; ++k, t += 10) {
+    const AudioOperation op = jb.GetAudio(out, Timestamp::Millis(t));
+    SM_EXPECT_TRUE(op == AudioOperation::kExpand);
+    float peak = 0;
+    for (float s : out) peak = std::max(peak, std::abs(s));
+    SM_EXPECT_LT(peak, 1e-6f);
+    SM_EXPECT_FALSE(jb.PlayoutTimestamp().has_value());
+  }
+  // The next reply: a new talk spurt, its timestamps 10 s on.
+  const uint32_t next_ts = 500 * 320;
+  int played = 0;
+  for (int k = 0; k < 50; ++k) {
+    for (int sub = 0; sub < 2; ++sub, t += 10) {
+      if (sub == 0) jb.InsertPacket(next_ts + static_cast<uint32_t>(k * 320), tone(-0.2f), Timestamp::Millis(t));
+      jb.GetAudio(out, Timestamp::Millis(t));
+      for (float s : out) {
+        SM_EXPECT_FALSE(s > 0.25f);  // Never the flushed reply's samples.
+        if (s < -0.1f) ++played;
+      }
+    }
+  }
+  SM_EXPECT_GT(played, 40 * 160);
+  SM_ASSERT_TRUE(jb.PlayoutTimestamp().has_value());
+  SM_EXPECT_GE(*jb.PlayoutTimestamp(), next_ts);
+  SM_EXPECT_LE(*jb.PlayoutTimestamp(), next_ts + 50u * 320u);
+  // No packet of the new reply counts as lost across the restart.
+  SM_EXPECT_EQ(jb.stats().packets_lost, 0u);
+}
+
+// A flush before playout has started only empties the packet buffer: the next
+// packet starts playout as the first one would.
+SM_TEST(AudioJitterBuffer, FlushBuffersBeforePlayoutStartsOnlyDropsPackets) {
+  AudioJitterBuffer jb;
+  std::vector<float> out(160);
+  for (int k = 0; k < 5; ++k) jb.InsertPacket(static_cast<uint32_t>(k * 320), std::vector<float>(320, 0.3f), Timestamp::Millis(0));
+  jb.FlushBuffers(Timestamp::Millis(0));
+  SM_EXPECT_TRUE(jb.GetAudio(out, Timestamp::Millis(10)) == AudioOperation::kSilence);
+  jb.InsertPacket(100 * 320, std::vector<float>(320, -0.2f), Timestamp::Millis(20));
+  SM_EXPECT_TRUE(jb.GetAudio(out, Timestamp::Millis(20)) == AudioOperation::kNormal);
+  SM_ASSERT_TRUE(jb.PlayoutTimestamp().has_value());
+  SM_EXPECT_GE(*jb.PlayoutTimestamp(), 100u * 320u);
+}
