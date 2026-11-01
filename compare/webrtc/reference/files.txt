@@ -297,3 +297,6 @@ rtc_base/experiments/alr_experiment.h
 rtc_base/experiments/retransmit_flushed_packets_settings.cc
 rtc_base/experiments/retransmit_flushed_packets_settings.h
 webrtc.gni
+audio/nack_tracker.h
+audio/nack_tracker.cc
+audio/nack_tracker_unittest.cc
