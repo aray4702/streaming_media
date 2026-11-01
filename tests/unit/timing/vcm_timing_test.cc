@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include "sm/timing/frame_release.h"
 #include "sm/timing/vcm_timing.h"
@@ -445,6 +446,34 @@ SM_TEST(VcmTiming, RenderTimeIsExtrapolatedLocalTimePlusClampedCurrentDelay) {
   // A retransmitted frame does not update the extrapolator.
   t.OnCompleteFrame(200000, now + TimeDelta::Seconds(5), true);
   SM_EXPECT_NEAR(static_cast<double>((t.RenderTime(96000, now) - now).us()) / 1000.0, 300.0, 1.0);
+}
+
+// Issue #897: libwebrtc builds the TimestampExtrapolator with the clock's time when the stream is created
+// (default_video_jitter_timing.cc:30), so its render times do not depend on where the clock starts. Start(now)
+// gives ours that time; without it a clock that starts at 171271 s (sm_compare's for seed 10) hard-resets the
+// extrapolator at the first frame and counts its Kalman time from there.
+SM_TEST(VcmTiming, RenderTimeDoesNotDependOnTheClockOriginOnceStarted) {
+  const TimeDelta origin = TimeDelta::Seconds(171271);
+  auto run = [&](TimeDelta clock0, bool start) {
+    VcmTiming t;
+    if (start) t.Start(Timestamp::Micros(0) + clock0);
+    std::vector<int64_t> out;
+    uint64_t lcg = 1;
+    for (int i = 0; i < 300; ++i) {
+      lcg = lcg * 6364136223846793005ULL + 1442695040888963407ULL;
+      // 30 fps with up to 20 ms of arrival jitter, from 200 ms after the stream's creation.
+      const int64_t jitter_us = static_cast<int64_t>((lcg >> 33) % 20000);
+      const Timestamp now = Timestamp::Micros(0) + clock0 + TimeDelta::Micros(200'000 + i * 33'333 + jitter_us);
+      const uint32_t rtp = 90000 + static_cast<uint32_t>(i * 3000);
+      t.OnCompleteFrame(rtp, now, false);
+      out.push_back((t.RenderTime(rtp, now) - clock0).us());
+    }
+    return out;
+  };
+  const std::vector<int64_t> at_zero = run(TimeDelta::Zero(), true);
+  SM_EXPECT_TRUE(run(origin, true) == at_zero);
+  SM_EXPECT_TRUE(run(TimeDelta::Zero(), false) == at_zero);  // Created at 0: the default start is right.
+  SM_EXPECT_TRUE(run(origin, false) != at_zero);             // The difference Start removes.
 }
 
 // --- FrameReleaseController ---

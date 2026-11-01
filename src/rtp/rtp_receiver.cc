@@ -152,6 +152,7 @@ PacketCaptureTime RtpReceiver::OnPacketCaptureTime(const RtpPacket& p, int clock
 }
 
 ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
+  MaybeStart(now);
   auto parsed = RtpPacket::Parse(datagram);
   if (!parsed) {
     ++stats_.malformed;
@@ -651,7 +652,18 @@ std::optional<sync::Syncable::PlayoutInfo> RtpReceiver::PlayoutRtpTimestamp() co
   return sync::Syncable::PlayoutInfo{last_playout_time_, *ts};
 }
 
+void RtpReceiver::MaybeStart(Timestamp now) {
+  if (started_) return;
+  started_ = true;
+  // VideoReceiveStream2 builds its timing with the clock's time at creation (default_video_jitter_timing.cc:30):
+  // the TimestampExtrapolator's start, from which its Kalman filter counts time. The first time this receiver is
+  // given stands for that, so a host clock that does not start at 0 (libwebrtc's in sm_compare starts at
+  // CallClockStartSeconds) does not hard-reset the extrapolator at the first frame (issue #897).
+  vcm_timing_.Start(now);
+}
+
 void RtpReceiver::Process(Timestamp now) {
+  MaybeStart(now);
   if (!cfg_.video) return;
   AssembleFrames(now);
   if (cfg_.nack && nack_.TakeKeyframeRequest()) {
