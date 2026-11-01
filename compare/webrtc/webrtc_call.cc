@@ -592,7 +592,11 @@ class ModelEncoder final : public w::VideoEncoder {
   void SetRates(const RateControlParameters& p) override {
     rate_bps_ = p.bitrate.get_sum_bps();
     m_->encoder_rate_bps = rate_bps_;
-    if (m_->now) m_->encode_rates.push_back({m_->now().us(), rate_bps_, -1});
+    if (m_->now) {
+      m_->encode_rates.push_back({m_->now().us(), rate_bps_, -1});
+      // The link allocation the rate came with (RateControlParameters::bandwidth_allocation), bytes -2.
+      m_->encode_rates.push_back({m_->now().us(), p.bandwidth_allocation.bps(), -2});
+    }
   }
   int32_t Encode(const w::VideoFrame& frame, const std::vector<w::VideoFrameType>* types) override {
     if (!cb_) return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
