@@ -42,6 +42,7 @@ class Pacer : public MetricsSource {
  public:
   explicit Pacer(PacerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  void SetPacingRates(DataRate pacing, DataRate padding, Timestamp now);
   void Enqueue(PacedPacket p);
   // See PacingController::SetPaddingGenerator.
   void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }
@@ -53,6 +54,12 @@ class Pacer : public MetricsSource {
   // Sends everything that is due by `now`. Call every few ms or at
   // NextSendTime(). With task_queue_scheduling it runs a pass only when TaskQueuePacedSender would.
   std::vector<PacedPacket> Process(Timestamp now);
+  // A new EnqueuePackets call (TaskQueuePacedSender::EnqueuePackets, task_queue_paced_sender.cc:133-155) at
+  // `now`. With task-queue scheduling each call is its own task that ends with MaybeProcessPackets(-inf), so
+  // the pass the previous call at `now` still owes runs first, after the delayed tasks due by then: a second
+  // call sees what the first one's pass sent (issue #893). That pass sends through the packet sender, as
+  // Process does.
+  void BeginBatch(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
   // Packets a keyframe flushed from the queue (see PacingController).
   std::vector<PacedPacket> TakeFlushed();
@@ -97,6 +104,7 @@ class Pacer : public MetricsSource {
   };
   std::vector<Timer> timers_;  // In the order they fire.
   double packet_size_ = -1;                                   // ExpFilter(0.95) of the enqueued sizes.
+  Timestamp last_batch_ = Timestamp::MinusInfinity();         // The last BeginBatch time.
 };
 
 }  // namespace sm::cc

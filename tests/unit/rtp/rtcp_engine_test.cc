@@ -177,7 +177,10 @@ SM_TEST(RtcpEngine, SenderReportExtrapolatesInWholeMilliseconds) {
   SM_EXPECT_EQ(sr->rtp_timestamp, 1000u + 491u * 8u);
 }
 
-SM_TEST(RtcpEngine, EarlyFeedbackSharesOneCompoundWithALeadingRr) {
+// Issue #893: each NACK, PLI and FIR is one RTCPSender::SendRTCP call (RtcpFeedbackBuffer::
+// SendBufferedRtcpFeedback sends the key frame request and the NACK apart), so each is its own compound with a
+// leading RR; a buffered loss notification goes in the next compound.
+SM_TEST(RtcpEngine, EachEarlyRequestIsItsOwnCompoundWithALeadingRr) {
   RtcpConfig c;
   c.local_ssrc = 9;
   RtcpEngine e(c);
@@ -192,14 +195,15 @@ SM_TEST(RtcpEngine, EarlyFeedbackSharesOneCompoundWithALeadingRr) {
   e.QueueLossNotification(l);
   SM_EXPECT_EQ(e.NextProcessTime(Timestamp::Millis(1)), Timestamp::Millis(1));
   auto out = e.Process(Timestamp::Millis(1));
-  SM_ASSERT_EQ(out.size(), 1u);
+  SM_ASSERT_EQ(out.size(), 3u);
   SM_EXPECT_TRUE(out[0].kind == RtcpOutKind::kFeedback);
   using T = loss::RtcpType;
-  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kNack, T::kPli, T::kFir,
-                                                         T::kLossNotification}));
+  SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kNack}));
+  SM_EXPECT_TRUE((Types(out[1].bytes) == std::vector<T>{T::kReceiverReport, T::kPli}));
+  SM_EXPECT_TRUE((Types(out[2].bytes) == std::vector<T>{T::kReceiverReport, T::kFir, T::kLossNotification}));
   SM_EXPECT_EQ(e.stats().nack_seqs_sent, 3u);
   SM_EXPECT_EQ(e.stats().pli_sent, 1u);
-  SM_EXPECT_EQ(e.stats().feedback_datagrams, 1u);
+  SM_EXPECT_EQ(e.stats().feedback_datagrams, 3u);
   SM_EXPECT_TRUE(e.Process(Timestamp::Millis(2)).empty());  // Queue was drained.
   // The sender SSRC is the engine's.
   auto split = loss::SplitCompoundRtcp(out[0].bytes);
@@ -285,7 +289,10 @@ SM_TEST(RtcpEngine, FeedbackUpTo1460BytesIsOneDatagram) {
   SM_EXPECT_EQ(RtcpConfig{}.max_datagram_bytes, 1460u);
   RtcpEngine e;
   e.Process(Timestamp::Millis(0));
-  for (int i = 0; i < 100; ++i) e.QueuePli(static_cast<uint32_t>(i));  // 1200 bytes of PLIs.
+  // One NACK of 300 sequence numbers 17 apart: one FCI each, 1200 bytes in one SendRTCP call.
+  std::vector<uint16_t> seqs;
+  for (int i = 0; i < 300; ++i) seqs.push_back(static_cast<uint16_t>(i * 17));
+  e.QueueNack(0xAA, seqs);
   auto out = e.Process(Timestamp::Millis(1));
   SM_ASSERT_EQ(out.size(), 1u);
   SM_EXPECT_GT(out[0].bytes.size(), 1200u);
@@ -305,11 +312,12 @@ SM_TEST(RtcpEngine, TransportFeedbackNeverSharesADatagramWithACompound) {
   e.QueueRemb(DataRate::KilobitsPerSec(300), std::vector<uint32_t>{0x1234});
   auto out = e.Process(Timestamp::Millis(1));
   using T = loss::RtcpType;
-  SM_ASSERT_EQ(out.size(), 4u);
+  SM_ASSERT_EQ(out.size(), 5u);
   SM_EXPECT_TRUE((Types(out[0].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
-  SM_EXPECT_TRUE((Types(out[1].bytes) == std::vector<T>{T::kReceiverReport, T::kNack, T::kPli}));
-  SM_EXPECT_TRUE((Types(out[2].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
-  SM_EXPECT_TRUE((Types(out[3].bytes) == std::vector<T>{T::kReceiverReport, T::kRemb}));
+  SM_EXPECT_TRUE((Types(out[1].bytes) == std::vector<T>{T::kReceiverReport, T::kNack}));
+  SM_EXPECT_TRUE((Types(out[2].bytes) == std::vector<T>{T::kReceiverReport, T::kPli}));
+  SM_EXPECT_TRUE((Types(out[3].bytes) == std::vector<T>{T::kReceiverReport, T::kTransportCc}));
+  SM_EXPECT_TRUE((Types(out[4].bytes) == std::vector<T>{T::kReceiverReport, T::kRemb}));
 }
 
 SM_TEST(RtcpEngine, TransportFeedbackAndRembSurviveARoundTrip) {

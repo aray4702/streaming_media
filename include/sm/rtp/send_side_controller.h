@@ -268,6 +268,8 @@ class SendSideController : public MetricsSource {
   const cc::BitrateAllocatorV2& allocator() const { return allocator_; }
   cc::GccController& gcc() { return gcc_; }
   cc::Pacer& pacer() { return pacer_; }
+  // One sender's packets handed over together: one EnqueuePackets call (cc::Pacer::BeginBatch).
+  void BeginEnqueueBatch(Timestamp now) { pacer_.BeginBatch(now); }
   cc::OutageMonitor& outage() { return outage_; }
   const cc::CongestionWindowPushback& congestion_window() const { return cwnd_; }
   const SendSideStats& stats() const { return stats_; }
@@ -276,7 +278,7 @@ class SendSideController : public MetricsSource {
  private:
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
   void ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now);
-  void ApplyPacer(const cc::NetworkControlUpdate& u);
+  void ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
   void PostTargetRate(Timestamp now);

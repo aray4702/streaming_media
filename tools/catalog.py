@@ -322,7 +322,11 @@ ALGORITHMS = [
                "follows it the stream restarted and the gap is no loss (UpdateOutOfOrder); fraction lost is "
                "255 * lost / expected, and a negative cumulative loss reports 0 (MaybeAppendReportBlockAndReset).",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured. Issue #575: libwebrtc's "
-                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on."),
+                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on. "
+                      "Issue #942 ([fix record](../../fixes/942-dlsr-compact-ntp.md)): the report block's DLSR is "
+                      "CompactNtp(now) - CompactNtp(last SR arrival), as RTCPSender::CreateReportBlocks, not the interval "
+                      "truncated once; the sender's RTT samples no longer flip by 15 us where libwebrtc's don't "
+                      "(unit test `RtcpStats.DelaySinceLastSrIsTheDifferenceOfCompactNtpTimes`)."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
          headers=["timing/delay_manager.h", "timing/neteq_delay.h"],
@@ -673,7 +677,7 @@ ALGORITHMS = [
                "`overuse_detector` and `congestion_control_feedback_*` tests. #893 ports the unit arithmetic the increase runs on: "
                "`GetNearMaxIncreaseRateBpsPerSecond` in whole-byte `DataSize` and truncated `DataRate` (`aimd_rate_control.cc:191-206`), "
                "and `seconds<double>()` / `ms<double>()` / `kbps<double>()` as `ToFraction` (the value times 1 / D, `unit_base.h:157-161`), "
-               "so 50 ms at the 4000 bps/s minimum adds 199 bps as in libwebrtc, not 200. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
+               "so 50 ms at the 4000 bps/s minimum adds 199 bps as in libwebrtc, not 200. #893 also ports the feedback's trigger rule: `OnTransportPacketsFeedback` runs `MaybeTriggerOnNetworkChanged` only when the delay-based result updated (`goog_cc_network_control.cc:517-521`), so a loss-based change at a feedback during overuse reaches the pacer and the allocator with the next sent packet or process interval, not at once. Remaining differences: `prior_unacked_data` is zero, no `NetworkStateEstimate`.",
          verification="Defects found. (1) The AIMD controller reduced the rate on every feedback while overuse "
                       "lasted (4 cuts in 500 ms); a libwebrtc-style guard now allows one decrease per RTT unless "
                       "throughput collapses. (2) The simulator's periodic 3x keyframes every 3 s triggered "
@@ -821,7 +825,7 @@ ALGORITHMS = [
                "in the pacer queue; the keep-alive and the first packet of a probe ask for 1 byte (#120). Without RTX it goes on "
                "the media SSRC while `PacketSequencer::CanSendPaddingOnMediaSsrc` allows (video: after a frame's marker), audio "
                "padding sized to the request in [50, 255] B, with the padding fields set at release as `PacketSequencer` does "
-               "(docs/fixes/514-padding.md). Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
+               "(docs/fixes/514-padding.md). #893: `SetPacerConfig` re-reads the queue for the long-queue boost at the current time (`MaybeUpdateMediaRateDueToLongQueue(CurrentTime())`, `pacing_controller.cc:155-197`), and a pacer config arrives only with an update whose `MaybeTriggerOnNetworkChanged` fired, at a feedback, sent packet or process interval. Remaining differences: round-robin between SSRCs of one level (one stream per kind in a "
                "one-to-one call), the packet TTLs (off by default), `SetCongested` is not driven by the "
                "congestion window (pushback stays on the encoder). `BitrateProber` (#48, `bitrate_prober.h`) times "
                "the probe bursts: a cluster starts when a media packet of at least min(`rate x min_probe_delta`, "

@@ -30,6 +30,11 @@ void Pacer::SetPacingRates(DataRate pacing, DataRate padding) {
   pc_->SetPacingRates(pacing, padding);
   PostMaybeProcessPackets();
 }
+
+void Pacer::SetPacingRates(DataRate pacing, DataRate padding, Timestamp now) {
+  pc_->SetPacingRates(pacing, padding, now);
+  PostMaybeProcessPackets();
+}
 void Pacer::Enqueue(PacedPacket p) {
   // TaskQueuePacedSender::EnqueuePackets: ExpFilter(0.95).Apply(1, size), then MaybeProcessPackets.
   const double size = static_cast<double>(p.size.bytes());
@@ -40,6 +45,11 @@ void Pacer::Enqueue(PacedPacket p) {
 void Pacer::AddProbeCluster(const ProbeCluster& c) {
   pc_->AddProbeCluster(c);
   kick_ = true;
+}
+void Pacer::BeginBatch(Timestamp now) {
+  if (!task_queue_) return;
+  if (last_batch_ == now && kick_) (void)ProcessScheduled(now);
+  last_batch_ = now;
 }
 std::vector<PacedPacket> Pacer::Process(Timestamp now) { return task_queue_ ? ProcessScheduled(now) : pc_->Process(now); }
 

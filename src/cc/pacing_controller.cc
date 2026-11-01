@@ -73,6 +73,11 @@ void PacingController::SetPacingRates(DataRate pacing, DataRate padding) {
   else adjusted_media_rate_ = pacing_rate_;
 }
 
+void PacingController::SetPacingRates(DataRate pacing, DataRate padding, Timestamp now) {
+  SetPacingRates(pacing, padding);
+  if (started_) MaybeUpdateMediaRateDueToLongQueue(Cur(now));
+}
+
 void PacingController::Pause() {
   paused_ = true;
   queue_.SetPauseState(paused_ || congested_, last_timestamp_);
