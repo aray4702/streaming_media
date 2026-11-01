@@ -1,0 +1,16 @@
+name conversation_jitter_50ms
+describe User <-> AI conversation, audio, 100 ms RTT, 50 ms jitter each way (#757)
+call two-way
+video off
+duration 30s
+at 0s capacity=2500kbps delay=50ms jitter=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms jitter=50ms queue=300ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=800ms len=4s
+turn user 19s-22s
+turn ai after=800ms len=4s
+# program.md 6.3, conversation rows: every reply heard (sev:1), at most 500 ms added on a 100 ms RTT link (sev:2).
+expect conv.responses == 3
+expect conv.response_delay_p95_ms < 500
