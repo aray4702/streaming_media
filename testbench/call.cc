@@ -204,6 +204,8 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"ai.turns", "Two-way call with `ai_source`: AI replies the source generated (#758)"},
       {"ai.queue_ahead_max_ms", "Two-way call with `ai_source`: most media generated but not yet sent, i.e. how far the AI's app-side queue got ahead of real time (#758)"},
       {"ai.first_frame_delay_max_ms", "Two-way call with `ai_source`: longest time from an AI turn's start to its first frame handed to the sender (#758)"},
+      {"conv.user_speech_lost_pct", "Two-way call with user turns: share of the user's speech (its turns and barge-ins, "
+                                    "by capture time) the AI side concealed or never played, in percent (#755)"},
       {"ai.underruns", "Two-way call with `ai_source`: frames sent late because generation fell behind real time (#758)"},
   };
   return k;
@@ -1216,8 +1218,10 @@ class ReceiveSide {
     if (!(s_.audio && t % 10 == 0 && audio_started_)) return;
     session_.GetAudio(audio_recv_, audio_out_, now + rx0_);
     // Audio RTP timestamps, less the stream's offset, count samples from the call start (capture at t = 0).
+    std::optional<int64_t> playout_samples;
     if (auto ts = session_.audio_receiver(audio_recv_).jitter_buffer().PlayoutTimestamp()) {
       const uint32_t samples = static_cast<uint32_t>(*ts - audio_ts_offset_);
+      playout_samples = samples;
       av_sync_.OnAudioPlayout(now, Timestamp::Micros(static_cast<int64_t>(samples) * 1000000 / sr_));
     }
     const auto& jb = session_.audio_receiver(audio_recv_).jitter_buffer();
@@ -1254,8 +1258,12 @@ class ReceiveSide {
       concealment_.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
       d_.w_played += concealment_.pull_total();
       d_.w_conceal += concealment_.pull_concealed();
+      if (speech_loss_) speech_loss_->OnPull(playout_samples, concealment_.pull_total(), concealment_.pull_concealed());
     }
   }
+
+  // Measures the share of the sender's speech this side lost or concealed (#755); the meter outlives the call loop.
+  void SetSpeechLoss(SpeechLossMeter* meter) { speech_loss_ = meter; }
 
   // The receiver's VCMTiming every 5 ms when it changed, as sm_compare samples libwebrtc's
   // VideoReceiveStreamInterface::Stats (issue #893).
@@ -1401,6 +1409,7 @@ class ReceiveSide {
   Timestamp last_render_ = Timestamp::MinusInfinity();
   AvSyncMeter av_sync_;  // Issue #63.
   SyncTs0 sync_ts0_;     // Issue #895.
+  SpeechLossMeter* speech_loss_ = nullptr;  // Issue #755: the AI side's view of the user's speech, if measured.
   StretchMeter stretch_;           // Issue #510: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   ConcealmentMeter concealment_;   // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
@@ -1512,6 +1521,14 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     }
     return false;
   };
+  // The user's speech reaching the AI (#755): what the AI side's jitter buffer played of it from received audio.
+  std::optional<SpeechLossMeter> user_speech_loss;
+  if (s.audio && !user_speech.empty()) {
+    std::vector<SpeechLossMeter::Window> windows;
+    for (const Window& w : user_speech) windows.push_back({w.start.us() * sr / 1000000, w.end.us() * sr / 1000000});
+    user_speech_loss.emplace(std::move(windows));
+    up_rx.SetSpeechLoss(&*user_speech_loss);
+  }
   std::optional<AiMediaSource> ai_source;
   if (s.ai_source) ai_source.emplace(*s.ai_source);
   size_t next_ai_turn = 0;
@@ -1853,6 +1870,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
         ai_first_frame_ms.empty() ? 0 : *std::max_element(ai_first_frame_ms.begin(), ai_first_frame_ms.end());
     rep.metrics["ai.underruns"] = static_cast<double>(st.underruns);
   }
+
+  if (user_speech_loss) rep.metrics["conv.user_speech_lost_pct"] = user_speech_loss->lost_pct();
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

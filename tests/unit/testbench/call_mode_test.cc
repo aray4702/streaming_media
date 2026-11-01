@@ -204,3 +204,43 @@ SM_TEST(TestbenchCallMode, AiSourceDrivesTheAisTurns) {
   SM_EXPECT_TRUE(r.metrics.at("ai.underruns") == 0);
   SM_EXPECT_TRUE(r.metrics.at("down.audio.concealed_pct") < 1);
 }
+
+// Issue #755: conv.user_speech_lost_pct is the share of the user's speech the AI side concealed or never played. It is
+// 0 on a clean link, follows an outage that falls inside the user's turn (500 ms of a 3 s turn) and ignores one
+// outside it, and is reported only with user turns.
+SM_TEST(TestbenchCallMode, UserSpeechLostPct) {
+  const std::string script = "turn user 1s-4s\nturn ai after=800ms len=3s\n";
+  const Report clean = RunTurns(script);
+  SM_ASSERT_TRUE(clean.metrics.count("conv.user_speech_lost_pct") == 1);
+  SM_EXPECT_TRUE(clean.metrics.at("conv.user_speech_lost_pct") == 0);
+  SM_EXPECT_TRUE(RunTurns("").metrics.count("conv.user_speech_lost_pct") == 0);
+  const double in_turn = RunTurns(script + "at 2s down\nat 2500ms up\n").metrics.at("conv.user_speech_lost_pct");
+  SM_EXPECT_TRUE(in_turn > 15 && in_turn < 22);  // 500 ms of 3 s is 16.7%, plus the recovery after the outage.
+  SM_EXPECT_TRUE(RunTurns(script + "at 6s down\nat 6500ms up\n").metrics.at("conv.user_speech_lost_pct") == 0);
+  SM_EXPECT_TRUE(RunTurns(script + "at 0s loss=10%\n").metrics.at("conv.user_speech_lost_pct") > 0);
+}
+
+// Issue #755: the meter on a known pull pattern, 10 ms pulls at 48 kHz over a 100 ms speech window.
+SM_TEST(TestbenchCallMode, SpeechLossMeterPattern) {
+  using W = SpeechLossMeter::Window;
+  {  // Every pull plays received audio: nothing lost.
+    SpeechLossMeter m({W{480, 5280}});
+    for (int64_t p = 480; p <= 9600; p += 480) m.OnPull(p, 480, 0);
+    SM_EXPECT_TRUE(m.lost_pct() == 0);
+  }
+  {  // Two pulls in the window concealed (one Expand period of 960 samples, spread over them): 20%.
+    SpeechLossMeter m({W{480, 5280}});
+    for (int64_t p = 480; p <= 9600; p += 480) m.OnPull(p, 480, p == 2400 ? 960 : 0);
+    SM_EXPECT_TRUE(std::abs(m.lost_pct() - 20) < 1e-9);
+  }
+  {  // 30 ms of the window never played (the playout position jumps past it): 30%.
+    SpeechLossMeter m({W{480, 5280}});
+    for (int64_t p = 480; p <= 9600; p += 480) m.OnPull(p >= 2400 ? p + 1440 : p, 480, 0);
+    SM_EXPECT_TRUE(std::abs(m.lost_pct() - 30) < 1e-9);
+  }
+  {  // Speech after the last playout position is still in flight, not lost.
+    SpeechLossMeter m({W{480, 5280}});
+    for (int64_t p = 480; p <= 2880; p += 480) m.OnPull(p, 480, 0);
+    SM_EXPECT_TRUE(m.lost_pct() == 0);
+  }
+}

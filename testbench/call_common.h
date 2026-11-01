@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <utility>
 #include <vector>
@@ -173,6 +174,63 @@ class ConcealmentMeter {
   bool in_event_ = false;
   uint64_t event_samples_ = 0;
   int64_t interruptions_ = 0, interruption_ms_ = 0, longest_event_ms_ = 0;
+};
+
+// conv.user_speech_lost_pct (#755): the share of the user's speech, inside its scripted speech windows (turns and
+// barge-ins), that the AI side's jitter buffer did not play from received audio: concealed, or never played. It maps
+// each 10 ms pull to the capture time of the audio it played with NetEq's playout timestamp (as A/V sync reads it),
+// so the windows are not shifted by an assumed delay. A pull plays capture samples
+// [previous playout position, playout position), at most a small acceleration more than it output; a longer jump
+// skipped audio that never played. Its played share is its output less its concealed samples. Concealed samples
+// are spread over the pulls that play them, because NetEq's DoExpand adds whole Expand periods that later pulls
+// play out without adding concealed samples (see ConcealmentMeter). Speech is counted up to the last playout
+// position, so audio still in flight at the end of the call is not lost.
+class SpeechLossMeter {
+ public:
+  // A window of the user's speech, in capture samples from the call start: [start, end).
+  struct Window {
+    int64_t start, end;
+  };
+  // A pull may play this many times its output in capture samples (NetEq's Accelerate) and still count as
+  // continuous; a longer jump is audio that was never played.
+  static constexpr int64_t kMaxStretch = 3;
+
+  explicit SpeechLossMeter(std::vector<Window> windows) : windows_(std::move(windows)) {}
+
+  // After a pull that output `total` samples, `concealed` of them concealment (the ConcealmentMeter's pull
+  // counters), with the playout position in capture samples (unset before playout starts).
+  void OnPull(std::optional<int64_t> playout, uint64_t total, uint64_t concealed) {
+    conceal_debt_ += concealed;
+    const uint64_t conceal_now = std::min(conceal_debt_, total);
+    conceal_debt_ -= conceal_now;
+    if (!playout) return;
+    const int64_t b = *playout;
+    const int64_t n = static_cast<int64_t>(total);
+    const int64_t a = played_to_ && b - *played_to_ <= kMaxStretch * n ? *played_to_ : b - n;
+    if (total > 0 && b > a) {
+      heard_ += Overlap(a, b) * static_cast<double>(total - conceal_now) / static_cast<double>(total);
+    }
+    played_to_ = played_to_ ? std::max(*played_to_, b) : b;
+  }
+
+  // The lost share in percent, 0 without speech up to the last playout position.
+  double lost_pct() const {
+    const double speech = played_to_ ? Overlap(0, *played_to_) : 0;
+    if (speech <= 0) return 0;
+    return std::clamp(100.0 * (speech - heard_) / speech, 0.0, 100.0);
+  }
+
+ private:
+  double Overlap(int64_t a, int64_t b) const {
+    int64_t sum = 0;
+    for (const Window& w : windows_) sum += std::max<int64_t>(0, std::min(b, w.end) - std::max(a, w.start));
+    return static_cast<double>(sum);
+  }
+
+  std::vector<Window> windows_;
+  std::optional<int64_t> played_to_;
+  uint64_t conceal_debt_ = 0;
+  double heard_ = 0;
 };
 
 // audio.stretch_pct from the jitter buffer's lifetime counters after every
