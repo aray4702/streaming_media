@@ -142,6 +142,15 @@ class ConcealmentMeter {
     }
     if (in_event_) event_samples_ += pull_concealed_;
   }
+  // A pull the listener's app muted on purpose (#961: the user's device after a barge-in): what it played is not
+  // counted, and a concealment event open then ends.
+  void OnMutedPull(uint64_t total_samples, uint64_t concealed_samples, uint64_t concealment_events) {
+    EndEvent();
+    pull_total_ = pull_concealed_ = 0;
+    prev_total_ = total_samples;
+    prev_concealed_ = concealed_samples;
+    prev_events_ = concealment_events;
+  }
   // Ends the open event at the end of the call.
   void Finish() { EndEvent(); }
 
