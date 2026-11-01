@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "sm/audio/vad.h"
 #include "sm/core/units.h"
@@ -126,5 +127,27 @@ class TurnDetector {
   Timestamp speech_start_ = Timestamp::Micros(0);
   Timestamp last_speech_ = Timestamp::Micros(0);
 };
+
+}  // namespace sm::testbench
+
+namespace sm::testbench {
+
+// The AI detector's decisions against the script (issue #756). `user` are the scripted user speech windows (turns
+// and barge-ins) and `ai` the windows the AI actually spoke in (a reply cut by a barge-in ends there), both on the
+// call's clock. A window expects an end of turn whose utterance's last speech (TurnEvent::last_speech) is within
+// `tolerance` after the window's end; a window that starts while the AI speaks also expects a barge-in whose
+// utterance started (TurnEvent::speech_start) within `tolerance` after the window's start. An expected decision with
+// no such event is missed; an event that matches no expectation (or a second one for the same expectation) is false.
+// The tolerance absorbs the network and jitter-buffer delay on the way to the AI.
+struct TurnWindow {
+  Timestamp start, end;
+};
+struct TurnDetectErrors {
+  int missed_end_of_turn = 0, false_end_of_turn = 0;
+  int missed_barge_in = 0, false_barge_in = 0;
+  int total() const { return missed_end_of_turn + false_end_of_turn + missed_barge_in + false_barge_in; }
+};
+TurnDetectErrors CountTurnDetectErrors(const std::vector<TurnWindow>& user, const std::vector<TurnWindow>& ai,
+                                       const std::vector<TurnEvent>& events, TimeDelta tolerance);
 
 }  // namespace sm::testbench

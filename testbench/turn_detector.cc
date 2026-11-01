@@ -99,3 +99,46 @@ std::optional<TurnEvent> TurnDetector::Process(std::span<const float> frame, Tim
 }
 
 }  // namespace sm::testbench
+
+namespace sm::testbench {
+
+TurnDetectErrors CountTurnDetectErrors(const std::vector<TurnWindow>& user, const std::vector<TurnWindow>& ai,
+                                       const std::vector<TurnEvent>& events, TimeDelta tolerance) {
+  TurnDetectErrors e;
+  auto ai_speaking = [&](Timestamp t) {
+    for (const TurnWindow& w : ai) {
+      if (t >= w.start && t < w.end) return true;
+    }
+    return false;
+  };
+  std::vector<bool> eot_used(events.size(), false), barge_used(events.size(), false);
+  for (const TurnWindow& u : user) {
+    // The end of turn: the first unused one whose last speech lands within the tolerance after the window's end.
+    bool found = false;
+    for (size_t i = 0; i < events.size() && !found; ++i) {
+      const TurnEvent& ev = events[i];
+      if (ev.type == TurnEventType::kEndOfTurn && !eot_used[i] && ev.last_speech >= u.end &&
+          ev.last_speech <= u.end + tolerance) {
+        eot_used[i] = found = true;
+      }
+    }
+    if (!found) ++e.missed_end_of_turn;
+    if (!ai_speaking(u.start)) continue;
+    found = false;
+    for (size_t i = 0; i < events.size() && !found; ++i) {
+      const TurnEvent& ev = events[i];
+      if (ev.type == TurnEventType::kBargeIn && !barge_used[i] && ev.speech_start >= u.start &&
+          ev.speech_start <= u.start + tolerance) {
+        barge_used[i] = found = true;
+      }
+    }
+    if (!found) ++e.missed_barge_in;
+  }
+  for (size_t i = 0; i < events.size(); ++i) {
+    if (events[i].type == TurnEventType::kEndOfTurn && !eot_used[i]) ++e.false_end_of_turn;
+    if (events[i].type == TurnEventType::kBargeIn && !barge_used[i]) ++e.false_barge_in;
+  }
+  return e;
+}
+
+}  // namespace sm::testbench
