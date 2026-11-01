@@ -7489,6 +7489,60 @@ issue_867_nack_reorder_loss - Issue
   video.encoder_dropped                     4            4
   video.encoder_target_avg_kbps           241          255
 
+issue_893_overshoot_seed2 - issue_466_overshoot_very_low_capacity with seed 2, traced on both stacks: where main (with
+  metric                                   sm       webrtc  better
+  audio.concealed_pct                     0.8          0.8  =
+  audio.interruptions                       1            1  =
+  audio.longest_interruption_ms           226          229  =
+  audio.mouth_to_ear_p95_ms              2239         2312  =
+  audio.jb_delay_p95_ms                  1907         1980  =
+  video.freeze_count                     20.8         21.6  =
+  video.freeze_total_ms                 28373        30172  sm
+  video.longest_freeze_ms                4248         4318  =
+  video.pause_count                       0.4          0.2  =
+  video.pause_total_ms                   2489         1205  webrtc
+  video.render_fps                        7.7          7.8  =
+  video.e2e_delay_p95_ms                 7588         7879  =
+  video.time_to_first_frame_ms           1050         1050  =
+  video.avg_kbps                         34.3         33.9  =
+  video.keyframe_requests                 5.5          5.3  =
+  sync.av_offset_p95_ms                  6287         6511  =
+  cc.utilization_pct                     98.1         98.0  =
+  cc.queue_p95_ms                         284          284  =
+  cc.max_settle_ms                      40000        40000  =
+  cc.rtt_p50_ms                           332          333  =
+  net.loss_pct                           14.7         14.6  =
+  repair.overhead_pct                    30.9         31.3  =
+  rtcp.audio_report_blocks                7.9          7.9  =
+  forward link per kind and encoder (information only)
+  net.audio_kbps                         69.7         69.7
+  net.video_kbps                         30.6         30.3
+  net.rtx_kbps                           29.0         29.4
+  net.padding_kbps                        0.3          0.3
+  net.fec_kbps                              0            0
+  net.audio_loss_pct                      0.2          0.2
+  net.video_loss_pct                     41.0         40.9
+  net.rtx_loss_pct                       56.3         56.0
+  net.padding_loss_pct                   38.3         38.3
+  net.audio_size_p50_b                    187          187
+  net.audio_size_p90_b                    215          215
+  net.audio_size_max_b                    303          303
+  net.audio_queue_drops                   4.1            4
+  net.video_size_p50_b                    314          314
+  net.video_size_p90_b                    360          359
+  net.video_size_max_b                   1264         1264
+  net.video_queue_drops                   190          188
+  net.rtx_size_p50_b                      332          332
+  net.rtx_size_p90_b                      366          367
+  net.rtx_size_max_b                     1261         1261
+  net.rtx_queue_drops                     236          237
+  net.padding_size_p50_b                  303          303
+  net.padding_size_p90_b                  303          303
+  net.padding_size_max_b                  303          303
+  net.padding_queue_drops                 1.8          1.8
+  video.encoder_dropped                   611          617
+  video.encoder_target_avg_kbps          51.6         51.5
+
 issue_893_overshoot_seed3 - issue_466_overshoot_very_low_capacity with seed 3, traced on both stacks: where main (with
   metric                                   sm       webrtc  better
   audio.concealed_pct                     0.8          0.8  =
@@ -8142,11 +8196,11 @@ probe_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottleneck at 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               495          494  =
+  audio.jb_delay_p95_ms                   296          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  16         15.7  =
+  video.longest_freeze_ms                  16         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -8461,7 +8515,7 @@ wifi_to_lte_handover - Wi-Fi to LTE handover: 1.5 s outage, then a slower, lossi
   video.encoder_dropped                  45.4         47.9
   video.encoder_target_avg_kbps          1212         1205
 
-better: sm 50, webrtc 39, tie 3405 (of the metrics shown)
+better: sm 51, webrtc 40, tie 3426 (of the metrics shown)
 
 Metrics measured differently for libwebrtc:
   audio.jb_delay_p50_ms / p95: Percentiles of the jitter buffer delay averaged over each 10 ms of playout (jitterBufferDelay / jitterBufferEmittedCount), as the test bench reads its own
