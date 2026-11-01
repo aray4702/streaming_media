@@ -1,0 +1,14 @@
+name issue_942_dlsr_compact_ntp
+describe issue_466_overshoot_very_low_capacity on seed 3: the receiver's DLSR as libwebrtc's, a difference of compact NTP times, keeps the extra allocation at 4.05 s and the 6.4 s video pause away (issue #942)
+duration 40s
+encoder_overshoot 1.3
+at 0s capacity=100kbps delay=30ms queue=300ms
+seed 3
+# Issue #942 (split from #893). On main, our receive side computed the report block's DLSR as the
+# interval since the SR truncated to 1/65536 s; libwebrtc's RTCPSender::CreateReportBlocks takes
+# CompactNtp(now) - CompactNtp(last_rr). The RR at 4.031 s then gave an RTT 15 us longer (345.505 ms
+# against 345.490 ms), GoogCC's RTT-change trigger sent an allocation at 4.05 s that libwebrtc doesn't
+# send, the frame dropper encoded the 4233 ms frame where libwebrtc encodes 4200, and from 17.2 s an
+# RTX storm paused video for 6435 ms. libwebrtc doesn't pause on this seed (yardstick #940).
+expect video.pause_total_ms < 1
+expect video.encoder_dropped > 520

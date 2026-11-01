@@ -322,7 +322,11 @@ ALGORITHMS = [
                "follows it the stream restarted and the gap is no loss (UpdateOutOfOrder); fraction lost is "
                "255 * lost / expected, and a negative cumulative loss reports 0 (MaybeAppendReportBlockAndReset).",
          verification="No defects found; RTT min 60.6 ms against 60 ms configured. Issue #575: libwebrtc's "
-                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on."),
+                      "StreamRestartDoesntCountAsLoss and reordering cases pass as RtcpStats unit tests with v2 on. "
+                      "Issue #942 ([fix record](../../fixes/942-dlsr-compact-ntp.md)): the report block's DLSR is "
+                      "CompactNtp(now) - CompactNtp(last SR arrival), as RTCPSender::CreateReportBlocks, not the interval "
+                      "truncated once; the sender's RTT samples no longer flip by 15 us where libwebrtc's don't "
+                      "(unit test `RtcpStats.DelaySinceLastSrIsTheDifferenceOfCompactNtpTimes`)."),
     dict(id="4.3", slug="delay-manager", title="Audio target delay estimation (DelayManager)",
          problems=["Variable packet arrival (audio) -> NetEq adaptive jitter buffer"],
          headers=["timing/delay_manager.h", "timing/neteq_delay.h"],
