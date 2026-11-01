@@ -1041,8 +1041,12 @@ std::vector<SessionEvent> Session::TakeEvents() {
 
 size_t Session::CancelAudio(AudioSendId id, Timestamp now) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return 0;
-  const uint32_t ssrc = audio_send_[static_cast<size_t>(id.index)].sender->config().ssrc;
-  const size_t removed = send_.RemovePacketsForSsrc(ssrc, now);
+  SendStream& st = audio_send_[static_cast<size_t>(id.index)];
+  const uint32_t ssrc = st.sender->config().ssrc;
+  // Frames still held for send-ahead (#762) never reach the pacer: they go too, counted as packets.
+  const size_t held = st.held.size();
+  st.held.clear();
+  const size_t removed = send_.RemovePacketsForSsrc(ssrc, now) + held;
   ++stats_.audio_cancels;
   stats_.audio_cancelled_packets += removed;
   SM_EVENT(cfg_.events, now, "rtp_session", "audio_cancel", static_cast<double>(removed), ssrc);

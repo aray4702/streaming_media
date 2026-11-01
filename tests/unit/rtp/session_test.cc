@@ -1824,3 +1824,30 @@ SM_TEST(Session, AudioAheadOfRealTimeIsSentWithinItsLead) {
   // Without send-ahead the export has no new names.
   SM_EXPECT_TRUE(run(TimeDelta::Zero(), true).second.count("audio_ahead_frames") == 0);
 }
+
+// #764 with #762: CancelAudio also drops the frames still held for send-ahead.
+SM_TEST(Session, CancelAudioDropsTheFramesHeldForSendAhead) {
+  Session s(Cfg(1));
+  AudioStreamConfig acfg;
+  acfg.ssrc = 0x100;
+  acfg.nominal_rate = DataRate::KilobitsPerSec(40);
+  acfg.send_ahead = TimeDelta::Millis(200);
+  const AudioSendId au = s.AddAudioSend(acfg);
+  const Bytes opus(80, 1);
+  const Timestamp t0 = Timestamp::Seconds(100);
+  for (int k = 0; k < 50; ++k) {
+    EncodedAudioFrame f;
+    f.rtp_timestamp = static_cast<uint32_t>(960 * k);
+    f.data = opus;
+    f.due_time = t0 + TimeDelta::Millis(20 * k);
+    s.SendAudio(au, f, t0);
+  }
+  s.TakeOutgoing();
+  SM_EXPECT_TRUE(s.CancelAudio(au, t0) >= 30);  // At most the first ~11 (200 ms) could have been released.
+  int sent = 0;
+  for (int ms = 1; ms <= 2000; ++ms) {
+    s.Process(t0 + TimeDelta::Millis(ms));
+    for (const auto& p : s.TakeOutgoing()) sent += p.kind == OutgoingKind::kAudio ? 1 : 0;
+  }
+  SM_EXPECT_EQ(sent, 0);
+}
