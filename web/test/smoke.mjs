@@ -1,10 +1,10 @@
 // Node smoke test for the browser build: loads the ES module, runs a
 // scenario end to end and drives each bound component once.
-//   node web/test/smoke.mjs <path/to/sm_web.js> <scenario.scn>
+//   node web/test/smoke.mjs <path/to/sm_web.js> <scenario.scn> [<two-way scenario.scn>]
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-const [modPath, scnPath] = process.argv.slice(2);
+const [modPath, scnPath, twoWayPath] = process.argv.slice(2);
 const { default: createSmModule } = await import(pathToFileURL(modPath).href);
 const sm = await createSmModule();
 let failures = 0;
@@ -23,6 +23,20 @@ check(report.timeseries.rows.length > 10, 'timeseries present');
 check(report.metrics['video.render_fps'] > 20, `video renders (${report.metrics['video.render_fps']} fps)`);
 check(Object.keys(report.library).length > 50, 'library metrics exported');
 check(sm.metricCatalog().length >= 30, 'metric catalog');
+
+// A two-way call, user <-> AI (#746-#750): each direction's metrics and time series.
+if (twoWayPath) {
+  const tw = JSON.parse(sm.runScenario(readFileSync(twoWayPath, 'utf8'), true));
+  check(tw.error === undefined, `two-way scenario runs${tw.error ? ': ' + tw.error : ''}`);
+  check(tw.passed === true, `two-way scenario ${tw.scenario} passes`);
+  for (const d of ['up', 'down']) {
+    check(tw.metrics[`${d}.audio.concealed_pct`] !== undefined, `${d}.audio.* reported`);
+    check(tw[`${d}.timeseries`] && tw[`${d}.timeseries`].rows.length > 10, `${d}.timeseries present`);
+    check(Object.keys(tw.library).some((k) => k.startsWith(`${d}.sender.gcc.`)), `${d}.sender.* library metrics`);
+  }
+  check(tw.timeseries === undefined && tw.metrics['audio.concealed_pct'] === undefined, 'no one-way names in a two-way call');
+  check(sm.metricCatalog().some((m) => m.name === 'up.audio.concealed_pct'), 'catalog lists per-direction names');
+}
 
 // Audio jitter buffer: 1 s of 20 ms frames at 16 kHz, played 10 ms at a time.
 const jb = new sm.AudioJitterBuffer(16000);

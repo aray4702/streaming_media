@@ -17,7 +17,8 @@ if(SM_BUILD_TESTS)
   find_program(NODE_EXE NAMES node nodejs)
   if(NODE_EXE)
     add_test(NAME web.smoke COMMAND ${NODE_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/test/smoke.mjs
-             $<TARGET_FILE:sm_web> ${PROJECT_SOURCE_DIR}/testbench/scenarios/clean_link.scn)
+             $<TARGET_FILE:sm_web> ${PROJECT_SOURCE_DIR}/testbench/scenarios/clean_link.scn
+             ${PROJECT_SOURCE_DIR}/testbench/scenarios/two_way_clean.scn)
     set_tests_properties(web.smoke PROPERTIES LABELS web)
   endif()
 endif()

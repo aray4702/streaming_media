@@ -134,7 +134,9 @@ function draw(canvas, legend, cols, rows, series) {
 let last = null;
 function render(report) {
   last = report;
-  const cols = report.timeseries.columns, rows = report.timeseries.rows;
+  // A two-way call (#749) has up.timeseries and down.timeseries: the charts show the up direction (user to AI).
+  const ts = report.timeseries || report['up.timeseries'];
+  const cols = ts.columns, rows = ts.rows;
   CHARTS.forEach((s, k) => draw($('c' + k), $('lg' + k), cols, rows, s));
   $('verdict').innerHTML = `<span class="verdict ${report.passed ? 'pass' : 'fail'}">${report.passed ? 'PASS' : 'FAIL'}</span>
     <span>${report.description || report.scenario}</span>`;
@@ -160,7 +162,7 @@ async function run() {
   await new Promise((r) => setTimeout(r, 10));
   const t0 = performance.now();
   const report = JSON.parse(sm.runScenario($('scn').value, true));
-  $('status').textContent = `Simulated ${report.timeseries.rows.length / 10} s in ${(performance.now() - t0).toFixed(0)} ms`;
+  $('status').textContent = `Simulated ${(report.timeseries || report['up.timeseries']).rows.length / 10} s in ${(performance.now() - t0).toFixed(0)} ms`;
   $('run').disabled = false;
   render(report);
 }

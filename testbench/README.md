@@ -123,7 +123,7 @@ One directive per line, and `#` starts a comment.
 | `compare on\|off` | `on` | Read only by `sm_compare`: `off` leaves the scenario out of the libwebrtc comparison (and so the parity report), for a test of this library that has no defined libwebrtc counterpart (#921: `issue_451_host_rtt_near_limit`, where libwebrtc's unit arithmetic overflows). `sm_testbench` and ctest still run it |
 | `compare_clock_start <s>` | from the seed | The libwebrtc side's simulated clock at the call's start in `sm_compare`, in seconds, for every seed. `RTCPSender` seeds its report intervals from it in microseconds (#390), and every test bench `RtcpEngine` takes the same seed, so both stacks draw the same RTCP schedule (#517). By default seed `n` starts at 100000 + 7919 (n - 1) s, so each seed draws its own schedule (#399) |
 | `seed <n>` | `1` | Seed for every random process |
-| `call one-way\|two-way` | `one-way` | The call's shape. `one-way` is a sender and a receiver, the call every scenario runs. `two-way` (#2, #746) is a call between a user and an AI: each endpoint is one session that sends its own audio and receives the other's, bundled on one transport. The forward link carries the user's audio and RTCP to the AI (the **up** direction), the reverse link the AI's audio and RTCP to the user (**down**), so each direction's feedback competes with the other direction's media; give the reverse link its own `reverse at ...` capacity. Each direction reports the one-way call's metrics as `up.*` and `down.*` (`sm_testbench --metrics` lists them; one-way names are not reported). Video goes both ways unless `two_way_video up` or `two_way_video down` sends it in one direction only (#747); each direction then also reports `video.*` and `sync.*`. `--timeseries` gives the up direction only until #749. `sm_compare` skips two-way scenarios: libwebrtc's side runs one-way calls only, so the parity report never sees them (#743) |
+| `call one-way\|two-way` | `one-way` | The call's shape. `one-way` is a sender and a receiver, the call every scenario runs. `two-way` (#2, #746) is a call between a user and an AI: each endpoint is one session that sends its own audio and receives the other's, bundled on one transport. The forward link carries the user's audio and RTCP to the AI (the **up** direction), the reverse link the AI's audio and RTCP to the user (**down**), so each direction's feedback competes with the other direction's media; give the reverse link its own `reverse at ...` capacity. Each direction reports the one-way call's metrics as `up.*` and `down.*` (`sm_testbench --metrics` lists them; one-way names are not reported). Video goes both ways unless `two_way_video up` or `two_way_video down` sends it in one direction only (#747); each direction then also reports `video.*` and `sync.*`. In `--json`, `--timeseries` gives `up.timeseries` and `down.timeseries`, and `--library` names each direction's modules `up.sender.*`, `up.receiver.*`, `down.sender.*` and `down.receiver.*`. `--link-trace` writes each direction's files as `<name>.<seed>.up.sm.*.csv` and `.down.sm.*.csv`: its `trace.csv` is the link that direction's media crosses, which also carries the other direction's RTCP, so there is no `reverse.csv` (#749). `tools/link_trace.py` and `tools/bwe_trace.py` read them as they read one-way files. `sm_compare` skips two-way scenarios: libwebrtc's side runs one-way calls only, so the parity report never sees them (#743) |
 | `two_way_video both\|up\|down` | `both` | With `call two-way` and video on: the directions that send video, user to AI (`up`), AI to user (`down`) or both (#747). A one-way call refuses it |
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
@@ -179,6 +179,31 @@ Link keys (any subset; unset keys keep their previous value):
 | `queue=` | Bottleneck buffer as time at the current capacity (`0` = unlimited) |
 | `cross=` | Competing constant-rate traffic sharing the bottleneck |
 | `down` / `up` | Link outage: everything sent is lost |
+
+
+## Two-way calls (user <-> AI)
+
+`call two-way` runs a conversation between a user and an AI (#2): each end both talks and listens.
+
+```
+          user endpoint                                        AI endpoint
+   +---------------------------+   forward link (up)   +---------------------------+
+   | rtp::Session              |  user's audio, video  | rtp::Session              |
+   |   send side  (up)    ---------------------------------->  receive side (up)    |
+   |                           |  user's RTCP          |                           |
+   |   receive side (down) <----------------------------------  send side  (down)   |
+   +---------------------------+  reverse link (down)  +---------------------------+
+                                  AI's audio, video, RTCP
+```
+
+- Each endpoint is one `rtp::Session`, bundled with RTCP multiplexed. The user sends on SSRCs 1-3, the AI on 11-13.
+- Each direction's feedback crosses the other direction's link and competes with its media. Give the reverse link its own `reverse at ...` capacity.
+- `two_way_video both|up|down` picks the directions that send video. `video off` makes the call audio only.
+- Each direction reports the one-way call's metrics with its prefix: `up.*` (user to AI) and `down.*` (AI to user), for example `up.audio.concealed_pct` or `down.video.longest_freeze_ms`. `sm_testbench --metrics` lists them. The one-way names are not reported.
+- `--timeseries` gives `up.timeseries` and `down.timeseries`. `--library` names the modules `up.sender.*`, `up.receiver.*`, `down.sender.*` and `down.receiver.*`. `--link-trace` writes `<name>.<seed>.up.sm.*.csv` and `.down.sm.*.csv`.
+- The browser build's `runScenario` returns the same JSON; the demo page charts the up direction.
+- `sm_compare` skips two-way scenarios: libwebrtc's side runs one-way calls only.
+- Scenarios: `two_way_clean`, `two_way_video_clean`, `two_way_loss_5pct`, `two_way_asymmetric`, `two_way_outage_up`. Their `expect` lines are program.md 6.3's rows for each direction.
 
 ## Metrics
 
