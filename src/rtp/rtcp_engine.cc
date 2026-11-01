@@ -276,12 +276,21 @@ std::vector<RtcpOutgoing> RtcpEngine::Process(Timestamp now) {
   // SendCombinedRtcpPacket (rtcp_sender.cc), apart from the compound that SendRTCP builds for NACK,
   // PLI, FIR or loss notification, so a sender handles them one datagram at a time (issue #860).
   std::optional<Tag> combined;  // The tag of the open SendCombinedRtcpPacket datagram, if one is open.
+  // A NACK, PLI or FIR is one RTCPSender::SendRTCP call each (RtcpFeedbackBuffer::SendBufferedRtcpFeedback sends
+  // the key frame request and the NACK apart, rtp_video_stream_receiver2.cc:251-280; NackRequester sends its
+  // own), so each is its own compound with its own report, XR and report-timer restart. A buffered loss
+  // notification waits for the next of them and goes in its compound (issue #893, overshoot seed 2 at 0.6 s).
+  bool has_request = false;
+  auto is_request = [](Tag t) { return t == Tag::kNack || t == Tag::kPli || t == Tag::kFir; };
   for (auto& q : queue_) {
     const std::optional<Tag> q_combined = CarriesReport(q.tag) ? std::nullopt : std::optional<Tag>(q.tag);
-    if (!packets.empty() && (bytes + q.bytes.size() > cfg_.max_datagram_bytes || q_combined != combined)) {
+    if (!packets.empty() && (bytes + q.bytes.size() > cfg_.max_datagram_bytes || q_combined != combined ||
+                             (has_request && is_request(q.tag)))) {
       flush();
       bytes = 0;
+      has_request = false;
     }
+    if (is_request(q.tag)) has_request = true;
     combined = q_combined;
     if (packets.empty() && !cfg_.reduced_size) {
       if (CarriesReport(q.tag)) {
