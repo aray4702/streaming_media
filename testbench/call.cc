@@ -719,7 +719,7 @@ struct StreamConfigs {
 };
 
 StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_rate, DirectionMeters& d,
-                                uint32_t ssrc_base = 0) {
+                                uint32_t ssrc_base = 0, int red_distance = 1) {
   StreamConfigs c;
   c.audio_ssrc = kAudioSsrc + ssrc_base;
   c.video_ssrc = kVideoSsrc + ssrc_base;
@@ -728,6 +728,7 @@ StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_r
   audio_cfg.ssrc = c.audio_ssrc;
   audio_cfg.payload_type = kAudioPt;
   if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
+  audio_cfg.red_distance = red_distance;
   audio_cfg.clock_rate = sr;
   audio_cfg.nominal_rate = audio_wire_rate;
   // sm_compare's AudioSendStream::Config: min = max = the codec rate, 20 ms Opus frames. The session
@@ -1548,7 +1549,12 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   // Up: the user's send side and the AI's receive side. Down: the AI's send side and the user's receive side, on
   // SSRCs 11-13, so each session sends on one set and receives the other.
   DirectionMeters up_m, down_m;
-  const StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, audio_wire_rate, up_m);
+  // `up_red <n>` (#965): the user's audio repeats n frames, so its nominal wire rate carries n copies.
+  const DataRate up_audio_wire_rate =
+      s.audio && s.red && s.up_red_distance != 1
+          ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (1 + s.up_red_distance) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
+          : audio_wire_rate;
+  const StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, up_audio_wire_rate, up_m, 0, s.up_red_distance);
   const StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
   SendSide up_tx(up_s, opt, user, up_streams, up_m, sr, clock0);
   ReceiveSide up_rx(up_s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());

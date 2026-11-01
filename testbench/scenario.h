@@ -78,6 +78,11 @@ struct Scenario {
   bool audio = true;
   bool video = true;
   bool red = true;                  // Audio redundancy (RFC 2198).
+  // `up_red <n>` (issue #965): in a two-way call, the user-to-AI direction's audio RED repeats the n previous frames,
+  // as libwebrtc's AudioEncoderCopyRed does with the field trial `WebRTC-Audio-Red-For-Opus/Enabled-<n>/`
+  // (audio_encoder_copy_red.cc:53-61, 1..9). Default 1, libwebrtc's kRedNumberOfRedundantEncodings. Off by default:
+  // a deviation from libwebrtc's default, for the AI's side of the call only (Owner, 2026-11-01).
+  int up_red_distance = 1;
   bool nack = true;                 // Video NACK/RTX.
   bool fec = true;                  // Adaptive video FEC (protection controller).
   int audio_sample_rate = 16000;

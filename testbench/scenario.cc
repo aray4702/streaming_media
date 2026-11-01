@@ -327,6 +327,11 @@ ParseResult ParseScenario(const std::string& text) {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: " + key + " on|off");
       (key == "audio" ? s.audio : key == "video" ? s.video : key == "red" ? s.red : key == "nack" ? s.nack : s.fec) = b;
+    } else if (key == "up_red") {
+      int v = need(2) ? std::atoi(tok[1].c_str()) : 0;
+      // GetMaxRedundancyFromFieldTrial accepts 0..9; 0 sends no redundancy, which `red off` already says.
+      if (v < 1 || v > 9) return fail("usage: up_red <1..9> (redundant frames on the user-to-AI audio)");
+      s.up_red_distance = v;
     } else if (key == "audio_rate") {
       DataRate r;
       if (!need(2) || !ParseRate(tok[1], &r) || !r.IsFinite() || r.bps() < 6000) return fail("usage: audio_rate <rate >= 6kbps>");
@@ -564,6 +569,7 @@ std::string FormatScenario(const Scenario& s) {
   onoff("red", s.red, d.red);
   onoff("nack", s.nack, d.nack);
   onoff("fec", s.fec, d.fec);
+  if (s.up_red_distance != d.up_red_distance) o += "up_red " + std::to_string(s.up_red_distance) + "\n";
   auto rate = [&](const char* k, DataRate v, DataRate def) {
     if (v != def) o += std::string(k) + " " + FormatRate(v) + "\n";
   };
@@ -626,6 +632,8 @@ std::string FormatScenario(const Scenario& s) {
 
 std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
+  if (!s.two_way && s.up_red_distance != 1) return "up_red needs call two-way: it sets the user-to-AI direction";
+  if (!s.red && s.up_red_distance != 1) return "up_red needs red on";
   if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
   if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
   if (s.ai_source && s.ai_source->frame != TimeDelta::Millis(20)) return "ai_source: frame must be 20ms, the bench's audio frame";
