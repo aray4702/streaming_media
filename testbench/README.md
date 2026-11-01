@@ -263,6 +263,33 @@ Link keys (any subset; unset keys keep their previous value):
   `_size_p90_b`, `_size_max_b` (wire size of the packets offered to the
   link, nearest rank) and `net.<kind>_queue_drops`.
 
+## The AI side's turn detector
+
+`turn_detector.{h,cc}` (issue #752, part 2 of #3) models how an AI voice
+agent decides, from the audio its receiver plays out, that the user has
+finished speaking (end of turn) or is talking over it (barge-in). It runs
+the library's VAD (`sm::audio::Vad`, libwebrtc's `webrtc::Vad`) on each
+10 ms frame after concealment and jitter buffering, so loss and delay move
+its decisions as they would in a deployment: a long concealed gap or a late
+burst can end a turn early and split it in two. It is a model of the AI
+side, not a library component (libwebrtc has none). It is not wired into
+the call yet: #753 and #754 use it for the response delay and barge-in
+metrics.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `aggressiveness` | `kVadNormal` | The VAD's mode (libwebrtc's `webrtc::Vad` default) |
+| `speech_onset` | 100 ms | Consecutive active frames that start an utterance; the start is recorded at the first of them |
+| `end_of_turn_silence` | 600 ms | Consecutive passive frames after speech that end the turn, after the VAD's own hangover (up to 140 ms in `kVadNormal`) |
+| `barge_in_min_speech` | 200 ms | Active frames in an utterance, while the AI speaks, that make a barge-in (one per utterance) |
+
+The defaults are the test bench's model of a voice agent's endpointing
+(an end-of-turn silence of about 0.5-1 s and a barge-in minimum of about
+0.2-0.3 s are typical). The result depends only on the frames, their times
+and whether the AI is speaking, so it is deterministic. Its tests
+(`tests/unit/testbench/turn_detector_test.cc`, suite `TurnDetector`) cover
+clean speech, concealed gaps, late bursts and barge-in.
+
 ## The suite and the baseline
 
 - `scenarios/*.scn` is the regression suite. Every scenario runs in CI
