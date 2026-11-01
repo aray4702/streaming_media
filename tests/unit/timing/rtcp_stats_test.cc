@@ -92,6 +92,32 @@ SM_TEST(RtcpStats, RttFromLsrDlsr) {
   SM_EXPECT_FALSE(rtt.OnReportBlock(ReportBlock{}, Timestamp::Millis(0)).has_value());
 }
 
+// RTCPSender::CreateReportBlocks (rtcp_sender.cc:739-748): DLSR is CompactNtp(now) - CompactNtp(last_rr),
+// the difference of two truncated compact NTP times, not the interval truncated once (issue #942). An SR
+// that arrives at 1040.007 ms and a report 200 ms later: 13108 units, where the truncated interval is 13107.
+SM_TEST(RtcpStats, DelaySinceLastSrIsTheDifferenceOfCompactNtpTimes) {
+  const Timestamp sr_arrival = Timestamp::Micros(1040007);
+  const Timestamp now = sr_arrival + TimeDelta::Millis(200);
+  SenderReport sr;
+  sr.ntp = NtpTime::FromTimestamp(Timestamp::Millis(1000));
+  ReceiveStatistics rs(1, 90000);
+  rs.OnPacket(0, 0, Timestamp::Millis(1000));
+  rs.OnSenderReport(sr, sr_arrival);
+  const ReportBlock rb = rs.MakeReportBlock(now);
+  SM_EXPECT_EQ(rb.delay_since_last_sr, NtpTime::FromTimestamp(now).Compact() - NtpTime::FromTimestamp(sr_arrival).Compact());
+  SM_EXPECT_EQ(rb.delay_since_last_sr, 13108u);
+  // At every arrival phase within a millisecond the two agree with libwebrtc's formula.
+  for (int us = 0; us < 1000; ++us) {
+    const Timestamp at = Timestamp::Micros(2000000 + us);
+    ReceiveStatistics r(1, 90000);
+    r.OnPacket(0, 0, Timestamp::Millis(1000));
+    r.OnSenderReport(sr, at);
+    const Timestamp later = at + TimeDelta::Micros(123457);
+    SM_EXPECT_EQ(r.MakeReportBlock(later).delay_since_last_sr,
+                 NtpTime::FromTimestamp(later).Compact() - NtpTime::FromTimestamp(at).Compact());
+  }
+}
+
 // CompactNtpRttToTimeDelta (ntp_time_util.cc): 1 ms floor, a negative compact
 // interval counts as 1 ms.
 SM_TEST(RtcpStats, RttFloorsAtOneMillisecond) {
