@@ -258,3 +258,66 @@ SM_TEST(TurnDetector, WrongFrameLengthIsPassiveAndCounted) {
   SM_EXPECT_EQ(d.stats().active_frames, uint64_t{0});
   SM_EXPECT_EQ(std::string(TurnEventName(TurnEventType::kEndOfTurn)), std::string("end_of_turn"));
 }
+
+// Issue #756: the AI's detections scored against the script. One user turn the
+// AI never calls over (missed), one turn split by a concealed gap (a false end
+// of turn mid-turn, then the right one), and a barge-in heard in time.
+namespace {
+TurnEvent Ev(TurnEventType type, int64_t speech_start_ms, int64_t last_speech_ms) {
+  return TurnEvent{type, Timestamp::Millis(last_speech_ms + 600), Timestamp::Millis(speech_start_ms),
+                   Timestamp::Millis(last_speech_ms)};
+}
+}  // namespace
+
+SM_TEST(TurnDetectErrors, OneMissedAndOneFalse) {
+  const std::vector<ScriptedSpeech> script = {
+      {Timestamp::Millis(1000), Timestamp::Millis(4000), false},   // Split: false end at 2.5 s, then the right one.
+      {Timestamp::Millis(10000), Timestamp::Millis(13000), false},  // Never called over: missed.
+      {Timestamp::Millis(16000), Timestamp::Millis(17000), true},   // Barge-in, detected and ended in time.
+  };
+  const std::vector<TurnEvent> events = {
+      Ev(TurnEventType::kSpeechStart, 1150, 1250),  // Not scored.
+      Ev(TurnEventType::kEndOfTurn, 1150, 2500),
+      Ev(TurnEventType::kEndOfTurn, 3300, 4120),
+      Ev(TurnEventType::kBargeIn, 16080, 16300),
+      Ev(TurnEventType::kEndOfTurn, 16080, 17090),
+  };
+  const TurnDetectErrors e = CountTurnDetectErrors(script, events);
+  SM_EXPECT_EQ(e.missed_end_of_turn, 1);
+  SM_EXPECT_EQ(e.false_end_of_turn, 1);
+  SM_EXPECT_EQ(e.missed_barge_in, 0);
+  SM_EXPECT_EQ(e.false_barge_in, 0);
+  SM_EXPECT_EQ(e.missed(), 1);
+  SM_EXPECT_EQ(e.false_detections(), 1);
+  SM_EXPECT_EQ(e.total(), 2);
+}
+
+SM_TEST(TurnDetectErrors, BargeInsAndTolerance) {
+  const std::vector<ScriptedSpeech> script = {
+      {Timestamp::Millis(1000), Timestamp::Millis(3000), false},
+      {Timestamp::Millis(6000), Timestamp::Millis(7000), true},
+  };
+  // All correct, at the edges of the window: 200 ms early, 1 s late.
+  {
+    const std::vector<TurnEvent> ok = {Ev(TurnEventType::kEndOfTurn, 1000, 4000), Ev(TurnEventType::kBargeIn, 5800, 6000),
+                                       Ev(TurnEventType::kEndOfTurn, 5800, 6800)};
+    SM_EXPECT_EQ(CountTurnDetectErrors(script, ok).total(), 0);
+  }
+  // A user turn taken for a barge-in is false; the scripted barge-in heard 1.2 s late is both missed and false;
+  // a second end of turn for the same window is false.
+  {
+    const std::vector<TurnEvent> bad = {Ev(TurnEventType::kBargeIn, 1100, 1400), Ev(TurnEventType::kEndOfTurn, 1100, 3100),
+                                        Ev(TurnEventType::kEndOfTurn, 1100, 3150), Ev(TurnEventType::kBargeIn, 7200, 7500),
+                                        Ev(TurnEventType::kEndOfTurn, 7200, 7900)};
+    const TurnDetectErrors e = CountTurnDetectErrors(script, bad);
+    SM_EXPECT_EQ(e.false_barge_in, 2);
+    SM_EXPECT_EQ(e.missed_barge_in, 1);
+    SM_EXPECT_EQ(e.false_end_of_turn, 1);
+    SM_EXPECT_EQ(e.missed_end_of_turn, 0);
+  }
+  // Nothing detected: every window's end of turn and every barge-in missed.
+  const TurnDetectErrors none = CountTurnDetectErrors(script, {});
+  SM_EXPECT_EQ(none.missed_end_of_turn, 2);
+  SM_EXPECT_EQ(none.missed_barge_in, 1);
+  SM_EXPECT_EQ(none.false_detections(), 0);
+}

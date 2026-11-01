@@ -12,6 +12,7 @@ turn ai after=800ms len=4s
 turn user 19s-22s
 turn ai after=800ms len=4s
 # program.md 6.3, conversation rows: the user hears every reply (sev:1), and on a 100 ms RTT link the transport adds
-# at most 500 ms to the response delay (sev:2).
+# at most 500 ms to the response delay (sev:2). On a clean link the AI detects each end of turn once and in time (#756).
 expect conv.responses == 3
+expect conv.turn_detect_errors == 0
 expect conv.response_delay_p95_ms < 500

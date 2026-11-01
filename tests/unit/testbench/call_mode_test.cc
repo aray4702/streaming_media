@@ -235,3 +235,23 @@ SM_TEST(TestbenchCallMode, BargeInStopsTheAi) {
   SM_EXPECT_TRUE(cut.metrics.at("down.net.audio_kbps") < full.metrics.at("down.net.audio_kbps"));
   SM_EXPECT_TRUE(RunTurns(base + "barge-in at 5s len=1s\n").metrics == cut.metrics);
 }
+
+// Issue #756: the AI's end-of-turn and barge-in detections scored against the script. None wrong on a clean link;
+// a 1 s outage inside the user's turn splits it (a false end of turn, then the user's own speech taken as a
+// barge-in over the reply the AI started); a link 1.2 s long one way makes every detection late (missed and false).
+SM_TEST(TestbenchCallMode, TurnDetectErrorsAgainstTheScript) {
+  const Report clean =
+      RunTurns("turn user 1s-3s\nturn ai after=500ms len=6s\nbarge-in at 5s len=1s\nturn ai after=500ms len=1s\n");
+  SM_EXPECT_TRUE(clean.metrics.at("conv.barge_ins") == 1);
+  SM_EXPECT_TRUE(clean.metrics.at("conv.turn_detect_errors") == 0);
+  const std::string script = "turn user 1s-4s\nturn ai after=800ms len=2s\nturn user 8s-10s\nturn ai after=500ms len=1s\n";
+  SM_EXPECT_TRUE(RunTurns(script).metrics.at("conv.turn_detect_errors") == 0);
+  const Report outage = RunTurns(script + "at 2s down\nat 3s up\n");
+  SM_EXPECT_TRUE(outage.metrics.at("conv.turn_detect_false") >= 1);
+  SM_EXPECT_TRUE(outage.metrics.at("conv.turn_detect_missed") == 0);
+  const Report late = RunTurns(script + "at 0s delay=1200ms\n");
+  SM_EXPECT_TRUE(late.metrics.at("conv.turn_detect_missed") == 2);
+  SM_EXPECT_TRUE(late.metrics.at("conv.turn_detect_errors") ==
+                 late.metrics.at("conv.turn_detect_missed") + late.metrics.at("conv.turn_detect_false"));
+  SM_EXPECT_TRUE(RunTwoWay(1).metrics.count("conv.turn_detect_errors") == 0);  // No turns, no score.
+}

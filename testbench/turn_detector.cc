@@ -98,4 +98,34 @@ std::optional<TurnEvent> TurnDetector::Process(std::span<const float> frame, Tim
   return out;
 }
 
+TurnDetectErrors CountTurnDetectErrors(std::span<const ScriptedSpeech> script, std::span<const TurnEvent> events,
+                                       TurnDetectErrorConfig config) {
+  TurnDetectErrors out;
+  std::vector<bool> ended(script.size(), false), barged(script.size(), false);
+  // The first window not yet credited whose [edge - early, edge + late] holds `t`.
+  auto match = [&](Timestamp t, bool barge_ins_only, std::vector<bool>& credited) -> bool {
+    for (size_t i = 0; i < script.size(); ++i) {
+      if (credited[i] || (barge_ins_only && !script[i].barge_in)) continue;
+      const Timestamp edge = barge_ins_only ? script[i].start : script[i].end;
+      if (t >= edge - config.early && t <= edge + config.late) {
+        credited[i] = true;
+        return true;
+      }
+    }
+    return false;
+  };
+  for (const TurnEvent& e : events) {
+    if (e.type == TurnEventType::kEndOfTurn) {
+      if (!match(e.last_speech, false, ended)) ++out.false_end_of_turn;
+    } else if (e.type == TurnEventType::kBargeIn) {
+      if (!match(e.speech_start, true, barged)) ++out.false_barge_in;
+    }
+  }
+  for (size_t i = 0; i < script.size(); ++i) {
+    if (!ended[i]) ++out.missed_end_of_turn;
+    if (script[i].barge_in && !barged[i]) ++out.missed_barge_in;
+  }
+  return out;
+}
+
 }  // namespace sm::testbench

@@ -50,6 +50,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <vector>
 
 #include "sm/audio/vad.h"
 #include "sm/core/units.h"
@@ -126,5 +127,64 @@ class TurnDetector {
   Timestamp speech_start_ = Timestamp::Micros(0);
   Timestamp last_speech_ = Timestamp::Micros(0);
 };
+
+// Detection errors against the script (#756, part 6 of #3): how often the
+// AI's end-of-turn and barge-in decisions disagree with what the user did.
+//
+// The script is what the user said: each window is a user turn or a
+// barge-in, in the call's capture time. The AI hears each window a transport
+// delay later (the network, the jitter buffer, concealment), so a detection
+// is judged on the speech it describes, in the AI's playout time:
+//
+//  - **End of turn:** every user window (turn or barge-in) ends a turn the
+//    AI should detect once. A detected end of turn is correct when its
+//    `last_speech` falls in [end - early, end + late] of a window that has
+//    no correct one yet. One that ends the speech early (a concealed gap or
+//    an underrun split the turn) or late is false; a window without a
+//    correct one is missed.
+//  - **Barge-in:** every barge-in window should be detected once. A detected
+//    barge-in is correct when its `speech_start` falls in
+//    [start - early, start + late] of a barge-in window without one yet;
+//    otherwise it is false (the AI took a user turn, or a split one, as an
+//    interruption). A barge-in window without one is missed (the AI talked
+//    on, or had already stopped because its reply started late).
+//
+// A detection the transport delays by more than `late` is both a miss and a
+// false detection: the AI acted on it, too late to be the right one.
+// Speech-start events are not scored.
+struct ScriptedSpeech {
+  Timestamp start = Timestamp::Micros(0);
+  Timestamp end = Timestamp::Micros(0);
+  bool barge_in = false;  // A scripted barge-in rather than a user turn.
+};
+
+struct TurnDetectErrorConfig {
+  // How much earlier than the script a detection's speech may start or end:
+  // the VAD's 10 ms frames and quiet speech edges it calls passive. The
+  // transport only ever makes the AI hear later.
+  TimeDelta early = TimeDelta::Millis(200);
+  // How much later: the transport delay (one way, plus the jitter buffer)
+  // up to which a detection still counts as the right one, and the VAD's
+  // hangover (up to 140 ms in kVadNormal) inside an end of turn's
+  // `last_speech`. A conversation whose AI hears the user more than about
+  // 1 s late has failed that turn (program.md 6.3: 500 ms of added delay
+  // is sev:2).
+  TimeDelta late = TimeDelta::Millis(1000);
+};
+
+struct TurnDetectErrors {
+  int missed_end_of_turn = 0;
+  int false_end_of_turn = 0;
+  int missed_barge_in = 0;
+  int false_barge_in = 0;
+  int missed() const { return missed_end_of_turn + missed_barge_in; }
+  int false_detections() const { return false_end_of_turn + false_barge_in; }
+  int total() const { return missed() + false_detections(); }
+};
+
+// Scores the detector's `events` (in the order it reported them) against
+// the user's scripted speech.
+TurnDetectErrors CountTurnDetectErrors(std::span<const ScriptedSpeech> script, std::span<const TurnEvent> events,
+                                       TurnDetectErrorConfig config = {});
 
 }  // namespace sm::testbench

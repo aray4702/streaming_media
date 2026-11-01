@@ -212,6 +212,13 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"conv.barge_ins", "Two-way call with turns: barge-ins the AI detected while speaking and stopped for (#754)"},
       {"conv.barge_in_stop_ms", "Two-way call with turns: longest time from the user starting to talk over the AI (the scripted barge-in) to "
                                 "the AI's audio stopping at the user's ear (#754); audio already in the AI-to-user path keeps playing"},
+      {"conv.turn_detect_errors", "Two-way call with turns: the AI's missed and false end-of-turn and barge-in detections against the "
+                                  "script (#756): each user turn or barge-in should end one detected turn, each barge-in start one "
+                                  "detected barge-in, within 200 ms before to 1 s after the scripted speech as the AI hears it "
+                                  "(testbench/turn_detector.h CountTurnDetectErrors)"},
+      {"conv.turn_detect_missed", "Two-way call with turns: scripted ends of turn and barge-ins the AI did not detect in time (#756)"},
+      {"conv.turn_detect_false", "Two-way call with turns: ends of turn and barge-ins the AI detected that match nothing in the script, "
+                                 "e.g. a turn split by a concealed gap (#756)"},
       {"ai.turns", "Two-way call with `ai_source`: AI replies the source generated (#758)"},
       {"ai.queue_ahead_max_ms", "Two-way call with `ai_source`: most media generated but not yet sent, i.e. how far the AI's app-side queue got ahead of real time (#758)"},
       {"ai.first_frame_delay_max_ms", "Two-way call with `ai_source`: longest time from an AI turn's start to its first frame handed to the sender (#758)"},
@@ -1562,6 +1569,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     std::optional<Timestamp> last_capture, at_ear;
   };
   std::vector<Stop> stops;
+  std::vector<TurnEvent> detected;  // Every decision the AI's detector made, scored against the script (#756).
   std::optional<Timestamp> ai_last_speech_capture;
   auto in_any = [](const std::vector<Window>& ws, Timestamp t) {
     for (const Window& w : ws) {
@@ -1802,6 +1810,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       if (up_rx.last_pull_time() == now) {
         const bool ai_speaking = in_any(ai_turns, now);
         if (const std::optional<TurnEvent> ev = ai_detector.Process(up_rx.last_pull(), now, ai_speaking)) {
+          detected.push_back(*ev);
           if (ev->type == TurnEventType::kEndOfTurn && !ai_speaking && next_reply < ai_script.size()) {
             const AiReply& r = ai_script[next_reply++];
             ai_turns.push_back({ev->at + r.after, ev->at + r.after + r.len});
@@ -1955,6 +1964,19 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["conv.response_delay_p95_ms"] = Percentile(delays, 95);
     rep.metrics["conv.barge_ins"] = static_cast<double>(stop_ms.size());
     if (!stop_ms.empty()) rep.metrics["conv.barge_in_stop_ms"] = *std::max_element(stop_ms.begin(), stop_ms.end());
+    // The AI's end-of-turn and barge-in decisions against what the user did (#756): missed and false detections.
+    if (s.audio) {
+      std::vector<ScriptedSpeech> script;
+      for (const Scenario::Turn& tr : s.turns) {
+        if (tr.who == Scenario::Turn::Who::kAi) continue;
+        script.push_back({Timestamp::Micros(0) + tr.start, Timestamp::Micros(0) + tr.end,
+                          tr.who == Scenario::Turn::Who::kBargeIn});
+      }
+      const TurnDetectErrors err = CountTurnDetectErrors(script, detected);
+      rep.metrics["conv.turn_detect_errors"] = err.total();
+      rep.metrics["conv.turn_detect_missed"] = err.missed();
+      rep.metrics["conv.turn_detect_false"] = err.false_detections();
+    }
   }
 
   // The AI's source (#758): how far ahead of real time its queue got, the time from a turn's start to its first frame

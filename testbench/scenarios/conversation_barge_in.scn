@@ -12,8 +12,10 @@ turn ai after=800ms len=3s
 turn user 16s-19s
 turn ai after=800ms len=4s
 # program.md 6.3, conversation rows: barge-in stops the AI's audio (sev:1), within 500 ms at the user's ear on a
-# 100 ms RTT link (sev:2), and the user hears every reply.
+# 100 ms RTT link (sev:2), and the user hears every reply. On a clean link the AI detects each end of turn and the
+# barge-in once and in time (#756).
 expect conv.barge_ins == 1
 expect conv.barge_in_stop_ms < 500
 expect conv.responses == 3
+expect conv.turn_detect_errors == 0
 expect conv.response_delay_p95_ms < 500
