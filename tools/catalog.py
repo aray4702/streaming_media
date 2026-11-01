@@ -289,7 +289,8 @@ ALGORITHMS = [
                "uses `h26x_packet_buffer.cc` for H.264 only under a field trial that is off by default.",
          verification="No defects found. Issue #453: with `sps_pps_tracker on` and `h264_missing_packets on`, `high_jitter` "
                       "seeds 1-10 keyframe requests 1.8 -> 1.2, the same as libwebrtc on 10 of 10 seeds. Made the session default "
-                      "for H.264 by the #453 flip (see docs/design/libwebrtc-parity.md). Issue #847: the H.264 assembly "
+                      "for H.264 by the #453 flip (see docs/design/libwebrtc-parity.md); kept on by the #472 trial "
+                      "(docs/results/472-h264-receive-switches-trial.md: off, undecodable frames 41 -> 2343 over the suite). Issue #847: the H.264 assembly "
                       "rules compared with packet_buffer.cc and h26x_packet_buffer.cc; the wait for a missing packet before "
                       "an IDR start (`may_continue_frame`) removed as libwebrtc has none (unit tests "
                       "`PacketBuffer.IdrStartOpensTheFrameWhenItsParameterSetPacketIsMissing` and "
@@ -1879,7 +1880,11 @@ ALGORITHMS = [
                       "requests 0.4 -> 1.8 (libwebrtc 1.2); the same value as libwebrtc on 5 of 10 seeds. With "
                       "`h264_missing_packets on` as well, keyframe requests 1.2, the same as libwebrtc on 10 of 10 "
                       "seeds (and on every seed of the other high_jitter copies). With both on by default, `high_jitter` seeds 1-10 "
-                      "time to first frame 228 -> 454 ms (libwebrtc 453) and keyframe requests 0.4 -> 1.2 (libwebrtc 1.2)."),
+                      "time to first frame 228 -> 454 ms (libwebrtc 453) and keyframe requests 0.4 -> 1.2 (libwebrtc 1.2). "
+                      "Issue #472 (stage-1 exit trial): both switches off again on the full suite (164 scenarios) give "
+                      "301 regressed and 222 improved metrics against the baseline and fail two scenarios; each off alone "
+                      "regresses too (tracker off 115, missing_packets off 186), so both stay on "
+                      "(docs/results/472-h264-receive-switches-trial.md)."),
     dict(id="9.4", slug="session", title="RTP session facade",
          problems=["Wiring the building blocks by hand -> one rtp::Session per endpoint of a one-to-one call"],
          headers=["rtp/session.h", "rtp/call_stats.h"], unit=["Session", "CallStats"], e2e=["E2E_RtpSession"], bench=[],
