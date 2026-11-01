@@ -882,6 +882,17 @@ class SendSide {
   // Whether the endpoint speaks in the audio frame captured at a time (#751): it sends silence when not. Unset (a
   // one-way call, or a two-way call without turns): it speaks the whole call.
   void SetSpeech(std::function<bool(Timestamp)> speaking) { speaking_ = std::move(speaking); }
+  // With SetSpeech: the PCM audio frame k (20 ms from 20k ms) carried, speech or silence, as a listener that decodes
+  // it gets it back (the bench takes Opus as transparent here). Empty for a frame not yet captured.
+  std::span<const int16_t> FramePcm(int64_t k) const {
+    static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
+    if (k < 0 || k >= static_cast<int64_t>(frame_speech_.size())) return {};
+    if (!frame_speech_[static_cast<size_t>(k)]) return kSilence;
+    const size_t off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
+    return std::span<const int16_t>(opus_pcm_).subspan(std::min(off, opus_pcm_.size()),
+                                                       std::min(opus_pcm_.size() - std::min(off, opus_pcm_.size()),
+                                                                OpusSendEncoder::kFrameSamples));
+  }
 
   // The session's events since the last call.
   void OnEvents(Timestamp at) {
@@ -982,14 +993,24 @@ class SendSide {
       r.bitrate_bps = opus_encoder_.bitrate_bps();  // Built once from the configured rate: no allocation, no overhead.
       opus_encode_rows_.push_back(r);
     }
+    if (speaking_) frame_speech_.push_back(opus_in.data() != kSilence.data());
     const std::vector<uint8_t> frame = opus_encoder_.Encode(opus_in);
     session_.SendAudio(audio_send_, {static_cast<uint32_t>(k * 20 * sr_ / 1000), frame, false}, now + clock0_);
   }
 
+  // Whether the app holds its video back at a time (#961: the AI after a barge-in): the camera's frames are not handed
+  // to the library. Unset: never.
+  void SetVideoHeld(std::function<bool(Timestamp)> held) { video_held_ = std::move(held); }
+
   void CaptureVideo(int64_t t, Timestamp now) {
     if (!(s_.video && t >= next_frame_ms_)) return;
+    if (video_held_ && video_held_(now)) {
+      ++frames_held_;
+      next_frame_ms_ = (frames_encoded_ + frames_skipped_ + frames_held_ + 1) * 1000 / s_.video_fps;
+      return;
+    }
     VideoTraceRow& vt_row = d_.vt_row;
-    int64_t k = frames_encoded_ + frames_skipped_ + 1;
+    int64_t k = frames_encoded_ + frames_skipped_ + frames_held_ + 1;
     next_frame_ms_ = k * 1000 / s_.video_fps;
     // The library decides: encode or drop, keyframe or not, and the rate.
     const rtp::EncodeDecision dec = video_ctl().OnCapturedFrame({s_.video_width, s_.video_height}, now + clock0_);
@@ -1128,6 +1149,9 @@ class SendSide {
   std::deque<PendingFrame> encoding_;
   std::optional<TimeDelta> new_rtt_;
   std::function<bool(Timestamp)> speaking_;
+  std::vector<bool> frame_speech_;  // Per audio frame with SetSpeech: speech (true) or silence.
+  std::function<bool(Timestamp)> video_held_;
+  int64_t frames_held_ = 0;  // Camera frames the app held back (SetVideoHeld).
 };
 
 // The receive side of one direction (issue #745): the 10 ms audio device pull and playout, video frame handling,
@@ -1158,8 +1182,12 @@ class ReceiveSide {
   rtp::VideoRecvId video_recv() const { return video_recv_; }
   const video::FreezeDetector& freezes() const { return freezes_; }
 
+  // Called with each audio packet's RTP timestamp as it arrives, before the jitter buffer (#960).
+  void SetAudioArrivalTap(std::function<void(uint32_t rtp_timestamp, Timestamp at)> tap) { audio_tap_ = std::move(tap); }
+
   // A packet that arrived on the forward link, before the receiver takes it.
   void OnPacket(const Fwd& w, Timestamp at) {
+    if (audio_tap_ && w.kind == Kind::kAudio) audio_tap_(RtpTimestamp(w.bytes), at);
     int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
     switch (w.kind) {
       case Kind::kAudio: {
@@ -1452,6 +1480,7 @@ class ReceiveSide {
   std::optional<Timestamp> last_pull_capture_;
   FirstDelivery first_delivery_;  // goodput counts each media sequence number once (#329)
   double last_video_delay_ = 0;
+  std::function<void(uint32_t, Timestamp)> audio_tap_;
 };
 
 // A two-way call (issue #746): the user's endpoint and the AI's, each one rtp::Session that sends its own streams and
@@ -1598,7 +1627,63 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   if (s.ai_source) ai_source.emplace(*s.ai_source);
   size_t next_ai_turn = 0;
   std::vector<double> ai_first_frame_ms;
+  std::optional<Timestamp> ai_video_held_since;  // From a barge-in to the AI's next reply (#961).
+  // The AI's decisions (#753, #754): an end of turn starts its next reply, a barge-in during its reply stops it.
+  auto on_turn_event = [&](const TurnEvent& ev, bool ai_speaking) {
+    if (ev.type != TurnEventType::kSpeechStart) ai_decisions.push_back(ev);
+    if (ev.type == TurnEventType::kEndOfTurn && !ai_speaking && next_reply < ai_script.size()) {
+      const AiReply& r = ai_script[next_reply++];
+      ai_turns.push_back({ev.at + r.after, ev.at + r.after + r.len});
+      const Window* u = user_window_of(ev.last_speech);
+      responses.push_back({u ? u->end : ev.last_speech, r.after, std::nullopt, std::nullopt});
+    } else if (ev.type == TurnEventType::kBargeIn && ai_speaking) {
+      // The AI stops its speech at once: the rest of the reply is not sent, and its source stops generating and
+      // drops what it had queued (#760).
+      ai_turns.back().end = ev.at;
+      if (ai_source) ai_source->Cancel(ev.at);
+      // ...and holds its video back until its next reply (#961, Owner decision), so the link the user's audio and the
+      // AI's remaining audio share is not filled with video it would only drop.
+      ai_video_held_since = ev.at;
+      const Window* u = user_window_of(ev.speech_start);
+      stops.push_back({u ? u->start : ev.speech_start, ev.at, ai_last_speech_capture, std::nullopt});
+    }
+  };
+  // The AI listens to the user's audio as it arrives, decoded ahead of its jitter buffer (#960, Owner decision): a
+  // server needn't wait for playout timing to hear the user stop. Each packet's frame goes to the detector at its
+  // arrival; frames that never arrived (lost, or overtaken) count as silence; a late frame is dropped, as a decoder
+  // that has moved on would. The bench takes Opus as transparent here (SendSide::FramePcm).
+  int64_t ai_heard_frames = 0;  // Frames the AI's detector has had, in capture order.
+  std::vector<float> ai_half(static_cast<size_t>(sr / 100));
+  auto ai_hear = [&](std::span<const int16_t> pcm20, Timestamp at) {
+    const bool ai_speaking = in_any(ai_turns, at);
+    for (size_t h = 0; h < 2; ++h) {
+      for (size_t i = 0; i < ai_half.size(); ++i) {
+        const size_t j = h * ai_half.size() + i;
+        ai_half[i] = j < pcm20.size() ? static_cast<float>(pcm20[j]) / 32768.0f : 0.0f;
+      }
+      if (const std::optional<TurnEvent> ev = ai_detector.Process(ai_half, at, ai_speaking)) on_turn_event(*ev, ai_speaking);
+    }
+  };
+  if (!s.turns.empty() && s.audio) {
+    up_rx.SetAudioArrivalTap([&](uint32_t rtp_ts, Timestamp at) {
+      const int64_t samples_per_frame = static_cast<int64_t>(sr) / 50;
+      const int64_t k = static_cast<int64_t>(static_cast<uint32_t>(rtp_ts - up_tx.audio_ts_offset())) / samples_per_frame;
+      if (k < ai_heard_frames) return;  // Late: the AI has moved past it.
+      static const std::vector<int16_t> kNothing;
+      for (; ai_heard_frames < k; ++ai_heard_frames) ai_hear(kNothing, at);  // Never arrived: silence.
+      ai_hear(up_tx.FramePcm(k), at);
+      ai_heard_frames = k + 1;
+    });
+  }
+
   if (!s.turns.empty()) {
+    down_tx.SetVideoHeld([&](Timestamp t) {
+      if (!ai_video_held_since || t < *ai_video_held_since) return false;
+      for (const Window& w : ai_turns) {
+        if (w.start > *ai_video_held_since && w.start <= t) return false;  // Its next reply has started.
+      }
+      return true;
+    });
     up_tx.SetSpeech([&](Timestamp t) { return in_any(user_speech, t); });
     down_tx.SetSpeech([&](Timestamp t) {
       bool speaking = in_any(ai_turns, t);
@@ -1822,27 +1907,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       e.tx.PollPendingFrame(now);
     }
 
-    // --- The AI listens (#753, #754), and what the user hears of it ----------
+    // --- What the user hears of the AI (#753, #754) --------------------------
     if (!s.turns.empty() && s.audio) {
-      if (up_rx.last_pull_time() == now) {
-        const bool ai_speaking = in_any(ai_turns, now);
-        if (const std::optional<TurnEvent> ev = ai_detector.Process(up_rx.last_pull(), now, ai_speaking)) {
-          if (ev->type != TurnEventType::kSpeechStart) ai_decisions.push_back(*ev);
-          if (ev->type == TurnEventType::kEndOfTurn && !ai_speaking && next_reply < ai_script.size()) {
-            const AiReply& r = ai_script[next_reply++];
-            ai_turns.push_back({ev->at + r.after, ev->at + r.after + r.len});
-            const Window* u = user_window_of(ev->last_speech);
-            responses.push_back({u ? u->end : ev->last_speech, r.after, std::nullopt, std::nullopt});
-          } else if (ev->type == TurnEventType::kBargeIn && ai_speaking) {
-            // The AI stops its speech at once: the rest of the reply is not sent, and its source stops generating
-            // and drops what it had queued (#760).
-            ai_turns.back().end = ev->at;
-            if (ai_source) ai_source->Cancel(ev->at);
-            const Window* u = user_window_of(ev->speech_start);
-            stops.push_back({u ? u->start : ev->speech_start, ev->at, ai_last_speech_capture, std::nullopt});
-          }
-        }
-      }
       if (down_rx.last_pull_time() == now) {
         if (const std::optional<Timestamp> heard = down_rx.last_pull_capture()) {
           for (Response& r : responses) {
