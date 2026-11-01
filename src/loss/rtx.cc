@@ -159,7 +159,8 @@ RtxSender::ResendResult RtxSender::GetPacketAndMarkAsPending(uint16_t seq, Times
   if (!s) return ResendResult::kNotFound;
   if (s->pending || !VerifyRtt(*s, now)) return ResendResult::kThrottled;
   s->pending = true;
-  *out = MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, RtxPayloadType(*s->packet), rtx_seq_++);
+  *out = cfg_.encapsulate ? MakeRtxPacket(*s->packet, cfg_.rtx_ssrc, RtxPayloadType(*s->packet), rtx_seq_++)
+                          : *s->packet;
   ++stats_.retransmitted;
   stats_.bytes_retransmitted += static_cast<int64_t>((*out)->size());
   return ResendResult::kResent;

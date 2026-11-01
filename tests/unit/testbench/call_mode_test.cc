@@ -330,3 +330,23 @@ SM_TEST(TestbenchCallMode, AiSendAheadBuildsACushion) {
   SM_EXPECT_TRUE(ahead.metrics.at("ai.turns") == 1);
   SM_EXPECT_TRUE(RunTurns(script + "ai_send_ahead 500ms\n").metrics == ahead.metrics);
 }
+
+// Issue #971: `up_audio_nack on` turns on audio NACK for the user-to-AI audio only: the AI NACKs the lost packets,
+// the user resends them on the audio SSRC (repair on the up link), and the AI-to-user audio sends none. Off by
+// default, and a one-way call refuses it.
+SM_TEST(TestbenchCallMode, UpAudioNackResendsTheUsersLostAudio) {
+  auto p = ParseScenario("call two-way\nup_audio_nack on\n");
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_EXPECT_TRUE(p.scenario->up_audio_nack);
+  SM_EXPECT_FALSE(ParseScenario("call two-way\n").scenario->up_audio_nack);
+  SM_EXPECT_TRUE(FormatScenario(*p.scenario).find("up_audio_nack on\n") != std::string::npos);
+  SM_EXPECT_TRUE(UnsupportedReason(*p.scenario).empty());
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("up_audio_nack on\n").scenario).empty());
+  const std::string script = "at 0s loss=5% burst=3\nturn user 1s-4s\nturn ai after=800ms len=3s\n";
+  const Report off = RunTurns(script);
+  const Report on = RunTurns(script + "up_audio_nack on\n");
+  SM_EXPECT_TRUE(off.metrics.at("up.net.rtx_kbps") == 0);
+  SM_EXPECT_TRUE(on.metrics.at("up.net.rtx_kbps") > 0);
+  SM_EXPECT_TRUE(on.metrics.at("down.net.rtx_kbps") == 0);
+  SM_EXPECT_TRUE(on.metrics.at("up.repair.overhead_pct") > 0);
+}

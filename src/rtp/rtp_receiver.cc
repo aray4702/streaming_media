@@ -81,12 +81,21 @@ RtpReceiver::RtpReceiver(RtpReceiverConfig cfg)
       // keep kDefaultMaxReorderingThreshold (ChannelReceive::SetNACKStatus gives audio
       // its NACK history / 20 ms, 50 for the bench's 1000 ms, channel_receive.cc:931-943).
       stats_rtp_(cfg_.ssrc, cfg_.clock_rate, cfg_.receive_statistics_v2,
-                 cfg_.video && cfg_.nack ? timing::kMaxPacketAgeToNack : timing::kDefaultMaxReorderingThreshold) {
+                 cfg_.video && cfg_.nack                         ? timing::kMaxPacketAgeToNack
+                 : !cfg_.video && cfg_.audio_nack_max_packets > 0 ? static_cast<int>(cfg_.audio_nack_max_packets)
+                                                                  : timing::kDefaultMaxReorderingThreshold) {
+  if (!cfg_.video && cfg_.audio_nack_max_packets > 0) audio_nack_.emplace(cfg_.audio_nack_max_packets);
   if (cfg_.video && cfg_.rtx_ssrc) stats_rtx_.emplace(*cfg_.rtx_ssrc, cfg_.clock_rate, cfg_.receive_statistics_v2);
   if (cfg_.video && cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecReceiver>(cfg_.ssrc, cfg_.ulpfec.ulpfec_payload_type);
   }
   if (cfg_.video) packet_capture_times_.resize(std::max<size_t>(cfg_.packet_buffer.max_size, 1));
+}
+
+std::vector<uint16_t> RtpReceiver::TakeAudioNackList(std::optional<TimeDelta> rtt) {
+  if (!audio_nack_ || !audio_nack_updated_) return {};
+  audio_nack_updated_ = false;
+  return audio_nack_->GetNackList(rtt);
 }
 
 void RtpReceiver::OnRtt(TimeDelta rtt) {
@@ -193,6 +202,13 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
     ++stats_.unknown_ssrc;
     SM_EVENT(cfg_.events, now, "rtp_receiver", "unknown_ssrc", p.ssrc, p.payload_type);
     return ReceivedKind::kUnknown;
+  }
+  if (audio_nack_) {
+    // ChannelReceive::OnRtpPacket (channel_receive.cc:731-739): every packet of the stream, at its
+    // payload type's frequency (Opus and its RED: 48 kHz).
+    audio_nack_->UpdateSampleRate(cfg_.clock_rate);
+    audio_nack_->UpdateLastReceivedPacket(p.seq, p.timestamp);
+    audio_nack_updated_ = true;
   }
   if (PaddingOnly(p)) {
     // Padding on the media SSRC (no RTX configured) holds a media sequence

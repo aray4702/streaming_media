@@ -37,6 +37,7 @@
 #include "sm/core/rtp_packet.h"
 #include "sm/core/seq_num.h"
 #include "sm/core/units.h"
+#include "sm/loss/audio_nack_tracker.h"
 #include "sm/loss/keyframe_request.h"
 #include "sm/loss/nack_tracker.h"
 #include "sm/loss/red.h"
@@ -221,6 +222,12 @@ struct RtpReceiverConfig {
   AudioDecoder* decoder = nullptr;  // Required for audio. Not owned.
   bool red = false;                 // The stream is wrapped in RED (audio/red).
   timing::AudioJitterBufferConfig jitter_buffer;  // sample_rate is overwritten with clock_rate.
+  // Audio NACK (#971): above zero, libwebrtc's NackTracker with this list size, as
+  // ChannelReceive::SetNACKStatus(true, max_packets) sets it (channel_receive.cc:931-943), and the
+  // receive statistics' max reordering threshold set to it too. Every received packet updates the
+  // tracker and leaves the NACK list for TakeAudioNackList (channel_receive.cc:731-739). Zero (the
+  // default): no audio NACK, as libwebrtc without `rtp.nack.rtp_history_ms`.
+  size_t audio_nack_max_packets = 0;
 
   EventSink* events = nullptr;
 };
@@ -408,6 +415,11 @@ class RtpReceiver : public MetricsSource {
 
   std::vector<ReceivedFrame> TakeFrames();
   ReceiverFeedback TakeFeedback();
+  // Audio NACK (RtpReceiverConfig::audio_nack_max_packets): the NackTracker's list after the last
+  // packet OnPacket took, once (empty when there was none since the last call). ChannelReceive
+  // asks GetNackList with its receive module's LastRtt, which a receive-only module has only with
+  // non-sender RTT on (off by default); `rtt` is that, nullopt for the tracker's 100 ms default.
+  std::vector<uint16_t> TakeAudioNackList(std::optional<TimeDelta> rtt);
   // Audio: the device pulls 10 ms.
   timing::AudioOperation GetAudio(std::span<float> out, Timestamp now);
   // The packets whose audio the last GetAudio decoded, in decoding order.
@@ -488,6 +500,8 @@ class RtpReceiver : public MetricsSource {
   std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
+  std::optional<loss::AudioNackTracker> audio_nack_;
+  bool audio_nack_updated_ = false;  // A packet updated the tracker since the last TakeAudioNackList.
   std::optional<timing::ReceiveStatistics> stats_rtx_;
   bool defer_receive_statistics_ = false;
   struct PendingCount {

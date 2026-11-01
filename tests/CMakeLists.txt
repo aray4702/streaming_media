@@ -25,6 +25,7 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
 if(SM_WITH_LOSS)
   sm_add_test_exe(sm_unit_loss LABEL unit DEPS sm::loss
     SOURCES
+      unit/loss/audio_nack_tracker_test.cc
       unit/loss/fec_controller_test.cc
       unit/loss/keyframe_test.cc
       unit/loss/nack_rtx_test.cc
@@ -32,6 +33,7 @@ if(SM_WITH_LOSS)
       unit/loss/rtcp_feedback_test.cc
       unit/loss/ulpfec_test.cc
     SUITES
+      AudioNackTracker
       FecController
       KeyframeRequest
       NackTracker

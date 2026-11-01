@@ -21,7 +21,7 @@ ALGORITHMS = [
     # ------------------------------------------------------------------ 3
     dict(id="3.1", slug="nack-rtx", title="NACK + RTX retransmission",
          problems=["Lost video packets -> NACK + RTX: selective retransmission on a separate SSRC"],
-         headers=["loss/nack_tracker.h", "loss/rtx.h", "loss/rtcp_feedback.h"], unit=["NackTracker", "Rtx", "RtcpFeedback"], e2e=["E2E_NackRtx"],
+         headers=["loss/nack_tracker.h", "loss/audio_nack_tracker.h", "loss/rtx.h", "loss/rtcp_feedback.h"], unit=["NackTracker", "AudioNackTracker", "Rtx", "RtcpFeedback"], e2e=["E2E_NackRtx"],
          bench=["loss/NackTracker_PacketWith5PctLoss", "loss/RtxSender_StoreAndResend", "loss/Q_NackRtx_5pct_rtt80"],
          scenario="30 fps video (8 x 1000 B packets per frame) over a link with 5% random loss in both directions and "
                   "40 ms one-way delay. The receiver's NackTracker sends NACKs over the lossy reverse link, the "
@@ -53,7 +53,13 @@ ALGORITHMS = [
                "(`NackRequester::OnReceivedPacket`'s `GetNackBatch(kSeqNumOnly)`, sent before the packet buffer runs), so a packet "
                "reordered within the same millisecond is NACKed too, as in libwebrtc (issue #411, `issue_411_nack_on_reorder`). "
                "There is no reorder wait: M157's `NackRequester::OnReceivedPacket` sets `is_retransmitted = true` for every packet, "
-               "so its reordering histogram stays empty and `WaitNumberOfPackets(0.5)` is 0 (issue #867).",
+               "so its reordering histogram stays empty and `WaitNumberOfPackets(0.5)` is 0 (issue #867). "
+               "Audio NACK (issue #971, `AudioStreamConfig::nack`, off by default as in libwebrtc, where it is on only when negotiated): "
+               "the receive side is NetEq's `NackTracker` (`audio/nack_tracker.cc`, `loss/audio_nack_tracker.h`) with the voice engine's "
+               "5000 ms history / 20 ms = 250 packets, asked after every packet with the receive-only module's RTT (none: 100 ms), and "
+               "`ModuleRtpRtcpImpl2::SendNACK`'s throttle (the full list once per 100 ms, otherwise only new numbers); the send side keeps "
+               "the 600-packet history and resends the stored packet on the audio SSRC (`RTPSender::ReSendPacket` without RTX). The test "
+               "bench turns it on for the user-to-AI audio with `up_audio_nack on`.",
          verification="No defects found. Measured overhead (~5.4%) tracks the loss rate, as expected for "
                       "selective retransmission. `issue_151_outage_3s_v2` holds the freeze total at < 3300 ms "
                       "(libwebrtc 3221 ms on seed 1) since #151 turned the outage monitor off under `cc v2`. "
@@ -66,7 +72,11 @@ ALGORITHMS = [
                       "Issue #867: the 100th request erases its entry, and reordering never delays a first request (units "
                       "`NackTracker.HundredthRequestErasesTheEntryAsItIsSent`, `ReorderingNeverDelaysTheFirstRequest`); "
                       "`issue_867_nack_reorder_loss` (3% loss, 60 ms jitter with reordering) is compared with libwebrtc on 40 seeds. "
-                      "Its freezes each follow a video packet whose first retransmission was lost too."),
+                      "Its freezes each follow a video packet whose first retransmission was lost too. "
+                      "Issue #971: `AudioNackTracker` passes every case of libwebrtc's `nack_tracker_unittest.cc`; "
+                      "`E2E_RtpSession.AudioNackResendsLostAudioAndItIsPlayed` shows lost audio NACKed, resent and played. On "
+                      "`conversation_burst_loss` with `up_audio_nack on` most resends arrive after NetEq has played past them "
+                      "(its 60 ms target is under the 100 ms round trip), so the user's speech lost is unchanged (#971's report)."),
     dict(id="3.2", slug="fec", title="Forward error correction (ULPFEC over RED, as libwebrtc)",
          problems=["Loss where a retransmit would arrive too late (high RTT) -> FEC: ULPFEC, FlexFEC"],
          headers=["loss/ulpfec.h"], unit=["Ulpfec"], e2e=["E2E_Fec"],

@@ -78,6 +78,11 @@ struct Scenario {
   bool audio = true;
   bool video = true;
   bool red = true;                  // Audio redundancy (RFC 2198).
+  // `up_audio_nack on` (issue #971): in a two-way call, audio NACK on the user-to-AI audio stream, as libwebrtc's
+  // voice engine sets it when NACK is negotiated for audio (rtp.nack.rtp_history_ms = 5000 ms; NetEq's NackTracker
+  // on the AI's receive side, resends from the user's packet history). Off by default, as libwebrtc, which turns
+  // audio NACK on only when it is negotiated (Owner, 2026-11-01: for the AI's side of the call).
+  bool up_audio_nack = false;
   bool nack = true;                 // Video NACK/RTX.
   bool fec = true;                  // Adaptive video FEC (protection controller).
   int audio_sample_rate = 16000;
