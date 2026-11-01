@@ -1685,3 +1685,52 @@ SM_TEST(Session, TheAudioSendStreamsReportEchoesTheReceiversRrtr) {
   SM_EXPECT_GE(audio_reports, 2);
   SM_EXPECT_GE(audio_reports_with_dlrr, 1);
 }
+
+// #762: with `send_ahead`, audio handed over before its due time goes out up to `send_ahead` early, in order, within
+// the budget the target leaves; without it (or without a due time) every frame goes out when it is handed over.
+SM_TEST(Session, AudioAheadOfRealTimeIsSentWithinItsLead) {
+  auto run = [](TimeDelta send_ahead, bool with_due) {
+    Session s(Cfg(1));
+    AudioStreamConfig acfg;
+    acfg.ssrc = 0x100;
+    acfg.nominal_rate = DataRate::KilobitsPerSec(40);
+    acfg.send_ahead = send_ahead;
+    const AudioSendId au = s.AddAudioSend(acfg);
+    const Bytes opus(80, 1);
+    const Timestamp t0 = Timestamp::Seconds(100);
+    // A reply of 100 frames (2 s), all generated at once at t0, each due at real-time pace.
+    for (int k = 0; k < 100; ++k) {
+      EncodedAudioFrame f;
+      f.rtp_timestamp = static_cast<uint32_t>(960 * k);
+      f.data = opus;
+      if (with_due) f.due_time = t0 + TimeDelta::Millis(20 * k);
+      s.SendAudio(au, f, t0);
+    }
+    // Packets out by time, over 2 s in 1 ms steps.
+    std::vector<int> sent_by_ms;
+    int sent = 0;
+    for (int ms = 0; ms <= 2000; ++ms) {
+      const Timestamp now = t0 + TimeDelta::Millis(ms);
+      s.Process(now);
+      for (const auto& p : s.TakeOutgoing()) sent += p.kind == OutgoingKind::kAudio ? 1 : 0;
+      sent_by_ms.push_back(sent);
+    }
+    return std::make_pair(sent_by_ms, std::map<std::string, double>(CollectMetrics(s)));
+  };
+  // No lead: handed over means sent, due time or not.
+  SM_EXPECT_EQ(run(TimeDelta::Zero(), true).first[1], 100);
+  SM_EXPECT_EQ(run(TimeDelta::Millis(500), false).first[1], 100);
+  // 500 ms lead: at most the frames due by t + 500 ms are out at t, and they go out within the budget, ahead of the
+  // real-time 1 per 20 ms.
+  const auto [ahead, metrics] = run(TimeDelta::Millis(500), true);
+  for (int ms = 0; ms <= 2000; ms += 10) {
+    SM_EXPECT_TRUE(ahead[static_cast<size_t>(ms)] <= std::min(100, (ms + 500) / 20 + 1));
+    SM_EXPECT_TRUE(ahead[static_cast<size_t>(ms)] >= std::min(100, ms / 20 + 1));  // Never behind real time.
+  }
+  SM_EXPECT_TRUE(ahead[400] > 400 / 20 + 5);  // A cushion builds.
+  SM_EXPECT_EQ(ahead[2000], 100);
+  SM_EXPECT_TRUE(metrics.at("audio_ahead_frames") > 0);
+  SM_EXPECT_TRUE(metrics.at("audio_ahead_max_lead_ms") <= 500);
+  // Without send-ahead the export has no new names.
+  SM_EXPECT_TRUE(run(TimeDelta::Zero(), true).second.count("audio_ahead_frames") == 0);
+}
