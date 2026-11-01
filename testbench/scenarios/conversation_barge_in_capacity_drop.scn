@@ -1,0 +1,18 @@
+name conversation_barge_in_capacity_drop
+describe User <-> AI conversation, audio and video, 100 ms RTT; the AI-to-user link drops from 2.5 Mbps to 300 kbps at 6 s and the user barges in at 8 s (#757)
+call two-way
+duration 30s
+at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 6s capacity=300kbps
+turn user 1s-4s
+turn ai after=800ms len=6s
+barge-in at 8s len=2s
+turn ai after=800ms len=3s
+turn user 18s-21s
+turn ai after=800ms len=4s
+# program.md 6.3, conversation rows: barge-in stops the AI's audio (sev:1) within 500 ms at the user's ear on a
+# 100 ms RTT link (sev:2), and every reply is heard (sev:1).
+expect conv.barge_ins == 1
+expect conv.barge_in_stop_ms < 500
+expect conv.responses == 3

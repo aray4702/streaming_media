@@ -215,6 +215,8 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"conv.barge_ins", "Two-way call with turns: barge-ins the AI detected while speaking and stopped for (#754)"},
       {"conv.barge_in_stop_ms", "Two-way call with turns: longest time from the user starting to talk over the AI (the scripted barge-in) to "
                                 "the AI's audio stopping at the user's ear (#754); audio already in the AI-to-user path keeps playing"},
+      {"conv.user_flushes", "Two-way call with turns: times the user's device heard its user talk over the AI and flushed the AI audio it "
+                            "held (#961)"},
       {"conv.barge_in_tail_ms", "Two-way call with turns: longest time the AI's audio kept playing at the user after the AI stopped "
                                 "for a barge-in: what was already in the AI-to-user path (#760)"},
       {"conv.turn_detect_errors", "Two-way call with turns: the AI detector's missed and false end-of-turn and barge-in decisions against "
@@ -1201,6 +1203,9 @@ class ReceiveSide {
   rtp::VideoRecvId video_recv() const { return video_recv_; }
   const video::FreezeDetector& freezes() const { return freezes_; }
 
+  // Whether the app has muted this audio (#961): its pulls then count neither as played nor as concealed.
+  void SetMuted(bool muted) { muted_ = muted; }
+
   // Called with each audio packet's RTP timestamp as it arrives, before the jitter buffer (#960).
   void SetAudioArrivalTap(std::function<void(uint32_t rtp_timestamp, Timestamp at)> tap) { audio_tap_ = std::move(tap); }
 
@@ -1334,7 +1339,11 @@ class ReceiveSide {
       }
       prev_jb_delay_ = jst.jitter_buffer_delay_ms_samples;
       prev_jb_emitted_ = jst.jitter_buffer_emitted_count;
-      concealment_.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+      if (muted_) {
+        concealment_.OnMutedPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+      } else {
+        concealment_.OnPull(jst.total_samples_received, jst.concealed_samples, jst.concealment_events);
+      }
       d_.w_played += concealment_.pull_total();
       d_.w_conceal += concealment_.pull_concealed();
       if (speech_loss_) speech_loss_->OnPull(playout_samples, concealment_.pull_total(), concealment_.pull_concealed());
@@ -1509,6 +1518,7 @@ class ReceiveSide {
   double last_video_delay_ = 0;
   std::function<void(uint32_t, Timestamp)> audio_tap_;
   uint32_t audio_ssrc_ = 0;
+  bool muted_ = false;
 };
 
 // A two-way call (issue #746): the user's endpoint and the AI's, each one rtp::Session that sends its own streams and
@@ -1662,6 +1672,12 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   std::vector<double> ai_first_frame_ms;
   std::optional<Timestamp> ai_video_held_since;  // From a barge-in to the AI's next reply (#961).
   std::vector<int64_t> ai_ahead_pending;  // Send-ahead (#762): frames to hand over after this tick's frame.
+  // The user's device listens to its own microphone (#961, Owner decision): when its user starts talking over the AI
+  // it hears, it flushes the AI audio it holds (Session::FlushAudio) and keeps it muted until the AI's next reply, so
+  // the AI's voice stops at the user's ear without waiting for the AI to hear the barge-in.
+  TurnDetector user_detector(det_cfg);
+  std::optional<Timestamp> user_muted_since;
+  std::vector<Timestamp> user_flushes;
   // The AI's decisions (#753, #754): an end of turn starts its next reply, a barge-in during its reply stops it.
   auto on_turn_event = [&](const TurnEvent& ev, bool ai_speaking) {
     if (ev.type != TurnEventType::kSpeechStart) ai_decisions.push_back(ev);
@@ -1951,6 +1967,30 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       ai.SetRtt(s.host_rtt->second);
     }
 
+    // The user's device hears its user (#961): its own microphone frame, against whether it is playing the AI now.
+    if (!s.turns.empty() && s.audio && t % 20 == 10) {
+      const std::optional<Timestamp> heard = down_rx.last_pull_capture();
+      const bool ai_audible = !user_muted_since && heard && in_any(ai_turns, *heard);
+      const std::span<const int16_t> mic = up_tx.FramePcm(t / 20);
+      for (size_t h = 0; h < 2 && !mic.empty(); ++h) {
+        for (size_t i = 0; i < ai_half.size(); ++i) ai_half[i] = static_cast<float>(mic[h * ai_half.size() + i]) / 32768.0f;
+        const std::optional<TurnEvent> ev = user_detector.Process(ai_half, now, ai_audible);
+        if (ev && ev->type == TurnEventType::kBargeIn) {
+          user.FlushAudio(down_rx.audio_recv(), now + clock0);
+          user_muted_since = now;
+          user_flushes.push_back(now);
+        }
+      }
+    }
+    // Muted until the AI's next reply starts (a new talk spurt): what still arrives of the old one is dropped.
+    if (user_muted_since) {
+      for (const Window& w : ai_turns) {
+        if (w.start > *user_muted_since && w.start <= now) user_muted_since.reset();
+      }
+      if (user_muted_since && t % 10 == 0) user.FlushAudio(down_rx.audio_recv(), now + clock0);
+    }
+    if (!s.turns.empty()) down_rx.SetMuted(user_muted_since.has_value());
+
     // --- Each endpoint: its timers, render, the audio device's 10 ms pull, then its packets go out ---
     for (Endpoint& e : ep) {
       e.session.Process(now + clock0);
@@ -2101,14 +2141,19 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
           ai_source && r.first_capture && *r.first_capture > r.turn_start ? *r.first_capture - r.turn_start : TimeDelta::Zero();
       if (r.played) delays.push_back((*r.played - r.user_end - r.after - det_cfg.end_of_turn_silence - generation).us() / 1000.0);
     }
-    for (const Stop& st : stops) {
+    for (Stop& st : stops) {
+      // The user's own flush (#961) stops the AI's audio at the ear if it came first.
+      for (const Timestamp f : user_flushes) {
+        if (f >= st.user_start && (!st.at_ear || f < *st.at_ear)) st.at_ear = f;
+      }
       if (st.at_ear) stop_ms.push_back((*st.at_ear - st.user_start).us() / 1000.0);
-      if (st.at_ear) tail_ms.push_back((*st.at_ear - st.cut).us() / 1000.0);
+      if (st.at_ear) tail_ms.push_back(std::max(0.0, (*st.at_ear - st.cut).us() / 1000.0));
     }
     rep.metrics["conv.responses"] = static_cast<double>(delays.size());
     rep.metrics["conv.response_delay_p50_ms"] = Percentile(delays, 50);
     rep.metrics["conv.response_delay_p95_ms"] = Percentile(delays, 95);
     rep.metrics["conv.barge_ins"] = static_cast<double>(stop_ms.size());
+    rep.metrics["conv.user_flushes"] = static_cast<double>(user_flushes.size());
     // The AI's decisions against the script (#756), within 500 ms of the scripted times: room for the network and
     // jitter-buffer delay on the way to the AI, short of the 600 ms an endpointer waits.
     std::vector<TurnWindow> user_w, ai_w;

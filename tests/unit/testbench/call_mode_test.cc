@@ -270,8 +270,10 @@ SM_TEST(TestbenchCallMode, BargeInStopsTheAi) {
   const Report cut = RunTurns(base + "barge-in at 5s len=1s\n");
   SM_EXPECT_TRUE(full.metrics.count("conv.barge_in_stop_ms") == 0);
   SM_EXPECT_TRUE(cut.metrics.at("conv.barge_ins") == 1);
-  // Onset 100 ms, barge-in after 200 ms of speech, 50 ms each way, and the user's jitter buffer.
-  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_in_stop_ms") > 300 && cut.metrics.at("conv.barge_in_stop_ms") < 500);
+  // The user's device hears its user first (#961): 200 ms of speech over the AI, then it flushes and mutes the AI.
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_in_stop_ms") > 150 && cut.metrics.at("conv.barge_in_stop_ms") < 300);
+  SM_EXPECT_TRUE(cut.metrics.at("conv.user_flushes") == 1);
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_in_tail_ms") == 0);
   // The rest of the reply is not sent.
   SM_EXPECT_TRUE(cut.metrics.at("down.net.audio_kbps") < full.metrics.at("down.net.audio_kbps"));
   SM_EXPECT_TRUE(RunTurns(base + "barge-in at 5s len=1s\n").metrics == cut.metrics);
