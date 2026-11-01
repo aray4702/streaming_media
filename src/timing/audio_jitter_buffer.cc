@@ -95,6 +95,14 @@ void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
   if (neteq_reset_done_ && !neteq_flush_pending_) {
     neteq_delay_.PacketArrived(rtp_ts, static_cast<int>(pkt.samples), cfg_.sample_rate, ticks_ * kMsPerTick);
   }
+  if (first_packet_) {
+    // NetEqImpl::InsertPacketInternal (neteq_impl.cc:395-398): the first packet
+    // after FlushBuffers updates the codec on the next GetAudio (new_codec_),
+    // after the controller has seen it (should_update_stats was still true).
+    first_packet_ = false;
+    neteq_flush_pending_ = true;
+    SM_EVENT(cfg_.events, arrival, "neteq", "first_packet_after_flush", 0, ts);
+  }
   if (auto it = queue_.find(ts); it != queue_.end()) {
     ++stats_.packets_duplicate;
     // PacketBuffer::InsertPacket: one packet per timestamp, the higher priority.
@@ -104,6 +112,24 @@ void AudioJitterBuffer::Insert(uint32_t rtp_ts, Packet pkt) {
   if (!started_ && queue_.empty()) next_ts_ = ts;
   if (!started_) next_ts_ = std::min(next_ts_, ts);
   queue_.emplace(ts, std::move(pkt));
+}
+
+void AudioJitterBuffer::FlushBuffers(Timestamp now) {
+  ++stats_.flush_buffers_calls;
+  SM_EVENT(cfg_.events, now, "neteq", "flush_buffers", static_cast<double>(queue_.size()),
+           static_cast<double>(sync_.size()));
+  // PacketBuffer::Flush (packet_buffer.cc:96-102): every packet discarded,
+  // and StatisticsCalculator::FlushedPacketBuffer counts it.
+  queue_.clear();
+  ++stats_.buffer_flushes;
+  if (!started_) return;  // Nothing decoded yet: the next packet starts playout as the first one did.
+  // SyncBuffer::Flush and set_next_index(next_index - overlap): the history
+  // (what Expand and preemptive expand read) and the future are zeroed, and
+  // Expand's overlap of zeros stays as lookahead.
+  std::fill(played_.begin(), played_.end(), 0.0f);
+  sync_.assign(expand_.overlap_length(), 0.0f);
+  // NetEqImpl::first_packet_ = true: wait for a new codec.
+  first_packet_ = true;
 }
 
 AudioOperation AudioJitterBuffer::DecodeNext(Timestamp now, std::vector<float>* dst) {
@@ -567,6 +593,7 @@ void AudioJitterBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("packets_discarded_unsupported_rate", stats_.packets_discarded_unsupported_rate);
   w.Counter("packets_lost", stats_.packets_lost);
   w.Counter("buffer_flushes", stats_.buffer_flushes);
+  w.Counter("flush_buffers_calls", stats_.flush_buffers_calls);
   w.Counter("total_samples_received", stats_.total_samples_received);
   w.Counter("concealed_samples", stats_.concealed_samples);
   w.Counter("concealment_events", stats_.concealment_events);

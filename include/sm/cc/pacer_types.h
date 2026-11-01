@@ -51,6 +51,7 @@ struct PacerStats {
   uint64_t circuit_breaks = 0;
   uint64_t keyframe_flushes = 0;  // Keyframes that flushed the video queue.
   uint64_t flushed_packets = 0;   // Packets discarded by those flushes.
+  uint64_t removed_packets = 0;   // Packets RemoveStreamPackets dropped (a cancelled stream).
   std::array<Histogram, 5> queue_delay_ms;
 };
 

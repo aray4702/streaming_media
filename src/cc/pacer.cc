@@ -121,6 +121,12 @@ Timestamp Pacer::NextSendTime(Timestamp now) const {
   return !timers_.empty() ? std::max(now, timers_.front().fire) : pc_->NextSendTime(now);
 }
 std::vector<PacedPacket> Pacer::TakeFlushed() { return pc_->TakeFlushed(); }
+std::vector<PacedPacket> Pacer::RemoveStreamPackets(const std::function<bool(const PacedPacket&)>& is_stream,
+                                                    Timestamp now) {
+  std::vector<PacedPacket> removed = pc_->RemoveStreamPackets(is_stream, now);
+  kick_ = true;  // The posted task ends with MaybeProcessPackets(Timestamp::MinusInfinity()).
+  return removed;
+}
 // TaskQueuePacedSender::Pause posts nothing; Resume posts as SetConfig does.
 void Pacer::Pause() { pc_->Pause(); }
 void Pacer::Resume() {

@@ -351,6 +351,18 @@ void SendSideController::Enqueue(SenderPacket p, Timestamp now) {
   }
 }
 
+size_t SendSideController::RemovePacketsForSsrc(uint32_t ssrc, Timestamp now) {
+  const std::vector<cc::PacedPacket> removed = pacer_.RemoveStreamPackets(
+      [this, ssrc](const cc::PacedPacket& p) {
+        auto it = queued_.find(p.id);
+        return it != queued_.end() && it->second.packet.ssrc == ssrc;
+      },
+      now);
+  for (const cc::PacedPacket& r : removed) queued_.erase(r.id);
+  stats_.removed += removed.size();
+  return removed.size();
+}
+
 void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) {
   // PacketRouter::SendPacket and RtpSenderEgress::SendPacket, inside the pacer's send loop
   // (PacingController::ProcessPackets, pacing_controller.cc:523-527): the packet gets its sequence
@@ -728,6 +740,7 @@ void SendSideController::ExportMetrics(MetricsWriter& w) const {
   w.Counter("padding_dropped", stats_.padding_dropped);
   w.Counter("unknown_ids", stats_.unknown_ids);
   w.Counter("flushed", stats_.flushed);
+  w.Counter("removed", stats_.removed);
   w.Counter("released_bytes", static_cast<uint64_t>(stats_.released_bytes));
   w.Gauge("target_kbps", target_.kbps());
   w.Counter("cwnd_frames_dropped", cwnd_frames_dropped_);

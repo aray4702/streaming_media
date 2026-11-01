@@ -985,6 +985,24 @@ std::vector<SessionEvent> Session::TakeEvents() {
   return out;
 }
 
+size_t Session::CancelAudio(AudioSendId id, Timestamp now) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return 0;
+  const uint32_t ssrc = audio_send_[static_cast<size_t>(id.index)].sender->config().ssrc;
+  const size_t removed = send_.RemovePacketsForSsrc(ssrc, now);
+  ++stats_.audio_cancels;
+  stats_.audio_cancelled_packets += removed;
+  SM_EVENT(cfg_.events, now, "rtp_session", "audio_cancel", static_cast<double>(removed), ssrc);
+  return removed;
+}
+
+void Session::FlushAudio(AudioRecvId id, Timestamp now) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_recv_.size()) return;
+  RecvStream& r = audio_recv_[static_cast<size_t>(id.index)];
+  r.receiver->jitter_buffer().FlushBuffers(now);
+  ++stats_.audio_flushes;
+  SM_EVENT(cfg_.events, now, "rtp_session", "audio_flush", 0, r.ssrc);
+}
+
 timing::AudioOperation Session::GetAudio(AudioRecvId id, std::span<float> out, Timestamp now) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_recv_.size()) return timing::AudioOperation::kSilence;
   return audio_recv_[static_cast<size_t>(id.index)].receiver->GetAudio(out, now);
@@ -1005,6 +1023,9 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("unroutable", stats_.unroutable);
   w.Counter("empty_video_frames", stats_.empty_video_frames);
   w.Counter("nacks_unmatched", stats_.nacks_unmatched);
+  w.Counter("audio_cancels", stats_.audio_cancels);
+  w.Counter("audio_cancelled_packets", stats_.audio_cancelled_packets);
+  w.Counter("audio_flushes", stats_.audio_flushes);
   w.Counter("sps_vui_rewritten", stats_.sps.rewritten);
   w.Counter("sps_vui_ok", stats_.sps.vui_ok);
   w.Counter("sps_parse_failures", stats_.sps.parse_failures);
