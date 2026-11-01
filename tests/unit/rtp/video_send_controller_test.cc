@@ -489,6 +489,7 @@ SM_TEST(VideoSendController, BitrateAdjusterRunsOnAllocationUpdatesAndEverySecon
   const uint64_t updates = s.rates().video_allocation_updates;
   SM_EXPECT_GT(updates, uint64_t{0});
   s.send_side().OnVideoEncoderReconfigured(At(t));
+  s.send_side().RunPendingReconfigure(At(t));  // Its posted reallocation (issue #945).
   SM_EXPECT_EQ(s.rates().video_allocation_updates, updates + 1);
   const EncodeDecision d = c.OnCapturedFrame({640, 360}, At(t));
   SM_EXPECT_TRUE(t - change_ms.back() < 1000);
@@ -519,6 +520,7 @@ SM_TEST(VideoSendController, BitrateAdjusterRunsWhenTheAllocationUpdateArrives) 
   SM_EXPECT_TRUE(c.bitrate_adjuster().adjusted() == last);
   // An allocation update between two frames, polled after the session ran.
   s.send_side().OnVideoEncoderReconfigured(At(t - 10));
+  s.send_side().RunPendingReconfigure(At(t - 10));  // Its posted reallocation (issue #945).
   SM_EXPECT_FALSE(c.MaybeEncodePendingFrame(At(t - 10)).has_value());
   const DataRate at_update = c.bitrate_adjuster().adjusted();
   SM_EXPECT_TRUE(at_update != last);

@@ -214,7 +214,8 @@ SM_TEST(SendSideController, AllocationReadsTheSendRatesAtItsOwnTime) {
       c->Process(Timestamp::Millis(t));
     }
     if (process_first) c->Process(Timestamp::Millis(501));
-    c->OnVideoEncoderReconfigured(Timestamp::Millis(501));  // Re-adds the stream: an allocation at 501 ms.
+    c->OnVideoEncoderReconfigured(Timestamp::Millis(501));
+    c->RunPendingReconfigure(Timestamp::Millis(501));  // Its posted reallocation (issue #945): re-adds the stream at 501 ms.
     return std::make_pair(c->ComputeMeasuredRates(DataRate::Zero()).video_target, c->target());
   };
   const auto [video, target] = run(false);
@@ -267,6 +268,7 @@ SM_TEST(SendSideController, CwndReduceRatioStopsAtTheMinimumBitrate) {
   // An encoder reconfiguration re-adds the stream (AddObserver), which resets the ratio to 0; with the
   // pushback at the minimum, later sent packets hand on no new ratio.
   c.OnVideoEncoderReconfigured(Timestamp::Millis(2501));
+  c.RunPendingReconfigure(Timestamp::Millis(2501));  // The posted OnEncoderConfigurationChanged (issue #945).
   SM_EXPECT_EQ(c.allocator().cwnd_reduce_ratio("video"), 0.0);
   for (int t = 2501; t <= 2700; ++t) {
     if (t % 30 == 0) c.OnVideoFrameEncoded(Timestamp::Millis(t));
@@ -838,6 +840,30 @@ SM_TEST(SendSideController, PostEncodeOverheadComesOffTheEncoderTargetAsLibwebrt
   SM_EXPECT_EQ(r.video_target.bps(), 1197256 - 10000);
 }
 
+// Issue #945: VideoStreamEncoder::ReconfigureEncoder posts OnEncoderConfigurationChanged to the worker
+// queue, which runs after the encoder task that reconfigured has encoded and packetized the frame
+// (RTPSenderVideo::SendVideo updates post_encode_overhead_bitrate_, rtp_sender_video.cc:248-258). So the
+// reallocation's RtpVideoSender::OnBitrateUpdated takes that frame's overhead off the encoder target:
+// at t = 1 s the 1 s window holds the frames from 100 to 1000 ms, 10 x 125 bytes = 10000 bps, not 9000.
+SM_TEST(SendSideController, TheReallocationAfterAReconfigurationCountsTheReconfiguringFrame) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t < 1000; t += 100) c.OnVideoPacketized(5000, 5125, Timestamp::Millis(t));
+  c.Process(Timestamp::Millis(1000));
+  const DataRate before = c.ComputeMeasuredRates(DataRate::Zero()).video_target;
+  // The reconfiguring frame: the reallocation waits until it is packetized.
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), before.bps());
+  c.OnVideoPacketized(5000, 5125, Timestamp::Millis(1000));
+  c.RunPendingReconfigure(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256 - 10000);
+}
+
 // rtp_sender_video.cc:252-257: a frame whose packets carry fewer bytes than the encoder produced
 // (H.264 start codes are not sent) adds nothing; it is not a negative overhead.
 SM_TEST(SendSideController, PacketizationThatSavesBytesAddsNoPostEncodeOverhead) {
@@ -892,6 +918,7 @@ SM_TEST(SendSideController, VideoLeavesTheAllocatorAfterTwoSecondsWithoutAnEncod
   SM_EXPECT_GT(c.VideoPayloadRate().bps(), 0);
   // A new frame size reconfigures the encoder: the running stream registers again.
   c.OnVideoEncoderReconfigured(Timestamp::Millis(3000));
+  c.RunPendingReconfigure(Timestamp::Millis(3000));  // The posted OnEncoderConfigurationChanged (issue #945).
   SM_EXPECT_TRUE(c.video_registered());
   SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
   SM_EXPECT_GT(c.allocator().allocation("video").bps(), 0);
@@ -912,6 +939,7 @@ SM_TEST(SendSideController, ActivityCheckDueAtAReconfigurationRunsFirst) {
   c.Start(Timestamp::Millis(0));
   for (int t = 0; t < 2000; ++t) c.Process(Timestamp::Millis(t));
   c.OnVideoEncoderReconfigured(Timestamp::Millis(2000));
+  c.RunPendingReconfigure(Timestamp::Millis(2000));  // The posted OnEncoderConfigurationChanged (issue #945).
   SM_EXPECT_TRUE(c.video_registered());
   SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
   // The 2 s check already ran: the Process call at 2 s does not remove it again.

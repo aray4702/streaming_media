@@ -197,6 +197,8 @@ class SendSideController : public MetricsSource {
   // overhead, tracked over 1 s and taken off the encoder target (issue #619).
   void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
+  // The reallocation OnVideoEncoderReconfigured queued, once the reconfiguring frame is packetized.
+  void RunPendingReconfigure(Timestamp now);
   bool video_registered() const { return video_registered_; }
 
   // The only stream that pads and probes (none when null). Not owned.
@@ -318,6 +320,7 @@ class SendSideController : public MetricsSource {
   SendSideConfig cfg_;
   const sync::ExtensionMap* extensions_;
   cc::GccController gcc_;
+  bool pending_reconfigure_ = false;  // OnEncoderConfigurationChanged posted, not run yet (issue #945).
   cc::Pacer pacer_;
   cc::OutageMonitor outage_;
   cc::CongestionWindowPushback cwnd_;
