@@ -1900,11 +1900,11 @@ issue_15_aimd_v2_cross_traffic - A 1.5 Mbps competing flow joins a 3 Mbps bottle
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               495          494  =
+  audio.jb_delay_p95_ms                   296          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  16         15.7  =
+  video.longest_freeze_ms                  16         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -3190,8 +3190,8 @@ issue_335_fps1_keyframe_packets - 1 fps video next to audio on a clean 2 Mbps li
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                     0.1          0.1  =
   audio.longest_interruption_ms          77.7         77.9  =
-  audio.mouth_to_ear_p95_ms               965          979  =
-  audio.jb_delay_p95_ms                   795          802  =
+  audio.mouth_to_ear_p95_ms               964          979  =
+  audio.jb_delay_p95_ms                   794          802  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
   video.longest_freeze_ms                 236          237  =
@@ -3508,11 +3508,11 @@ issue_355_cross_traffic_no_alr_probe - issue_346_reconfigure_cross_traffic with 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               495          494  =
+  audio.jb_delay_p95_ms                   296          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  16         15.7  =
+  video.longest_freeze_ms                  16         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -4721,8 +4721,8 @@ issue_466_overshoot_very_low_capacity - 100 kbps link (as very_low_capacity), an
   audio.concealed_pct                     0.7          0.7  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           225          228  =
-  audio.mouth_to_ear_p95_ms              2238         2311  =
-  audio.jb_delay_p95_ms                  1906         1979  =
+  audio.mouth_to_ear_p95_ms              2239         2311  =
+  audio.jb_delay_p95_ms                  1907         1979  =
   video.freeze_count                     20.2           21  =
   video.freeze_total_ms                 28396        30195  sm
   video.longest_freeze_ms                4234         4304  =
@@ -5638,11 +5638,11 @@ issue_53_cwnd_pushback - Capacity falls 5x (2.5 Mbps to 500 kbps) behind a shall
 
 issue_547_opus_output_buffer - Audio call over a 2 s jitter link, cut before either stack's loss input changes again: libopus codes the same frames as libwebrtc's
   metric                                   sm       webrtc  better
-  audio.concealed_pct                    47.6         47.6  =
+  audio.concealed_pct                    47.7         47.7  =
   audio.interruptions                     4.7          4.7  =
   audio.longest_interruption_ms           389          389  =
-  audio.mouth_to_ear_p95_ms              3973         3973  =
-  audio.jb_delay_p95_ms                   743          743  =
+  audio.mouth_to_ear_p95_ms              3972         3972  =
+  audio.jb_delay_p95_ms                   742          742  =
   cc.utilization_pct                        0            0  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                          0            0  =
@@ -6237,11 +6237,11 @@ issue_62_neteq_v2_cross_traffic - cross_traffic with NetEq's Expand (neteq v2, i
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               495          494  =
+  audio.jb_delay_p95_ms                   296          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                  16         15.7  =
+  video.longest_freeze_ms                  16         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -6872,8 +6872,8 @@ issue_773_neteq_flush_reset - Audio-only call: 20 s of 2.5 s jitter without reor
   audio.concealed_pct                    13.0         13.0  =
   audio.interruptions                     6.5          6.5  =
   audio.longest_interruption_ms          2486         2488  =
-  audio.mouth_to_ear_p95_ms              9482         9481  =
-  audio.jb_delay_p95_ms                  2288         2287  =
+  audio.mouth_to_ear_p95_ms              9482         9480  =
+  audio.jb_delay_p95_ms                  2288         2286  =
   cc.utilization_pct                     86.1         86.1  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                        100          100  =
@@ -7494,8 +7494,8 @@ issue_893_overshoot_seed2 - issue_466_overshoot_very_low_capacity with seed 2, t
   audio.concealed_pct                     0.8          0.8  =
   audio.interruptions                       1            1  =
   audio.longest_interruption_ms           226          229  =
-  audio.mouth_to_ear_p95_ms              2239         2312  =
-  audio.jb_delay_p95_ms                  1907         1980  =
+  audio.mouth_to_ear_p95_ms              2240         2312  =
+  audio.jb_delay_p95_ms                  1908         1980  =
   video.freeze_count                     20.8         21.6  =
   video.freeze_total_ms                 28373        30172  sm
   video.longest_freeze_ms                4248         4318  =
