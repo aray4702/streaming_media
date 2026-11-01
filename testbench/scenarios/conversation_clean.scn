@@ -1,0 +1,17 @@
+name conversation_clean
+describe User <-> AI conversation, audio, on a clean 100 ms RTT link: the AI answers when its endpointer hears the user's turn end (#753)
+duration 30s
+call two-way
+video off
+at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=800ms len=4s
+turn user 19s-22s
+turn ai after=800ms len=4s
+# program.md 6.3, conversation rows: the user hears every reply (sev:1), and on a 100 ms RTT link the transport adds
+# at most 500 ms to the response delay (sev:2).
+expect conv.responses == 3
+expect conv.response_delay_p95_ms < 500
