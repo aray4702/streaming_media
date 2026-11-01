@@ -302,6 +302,9 @@ int main(int argc, char** argv) {
                          JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
                          ", \"sm_frames\": " + JsonString(sm::testbench::FrameTraceCsv(ours.back().frame_trace)) +
                          ", \"webrtc_frames\": " + JsonString(sm::testbench::FrameTraceCsv(theirs.back().frame_trace)) +
+                         // The reverse (feedback) link, as the trace files' *.reverse.csv (issue #893 yardstick).
+                         ", \"sm_reverse\": " + JsonString(sm::testbench::LinkTraceCsv(ours.back().reverse_trace)) +
+                         ", \"webrtc_reverse\": " + JsonString(sm::testbench::LinkTraceCsv(theirs.back().reverse_trace)) +
                          "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {
