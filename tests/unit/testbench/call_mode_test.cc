@@ -314,3 +314,19 @@ SM_TEST(TestbenchCallMode, OutageMidTurnIsAFalseEndOfTurn) {
   const Report r = RunTurns(script + "at 2s down\nat 3s up\n");
   SM_EXPECT_TRUE(r.metrics.at("conv.false_end_of_turn") >= 1);
 }
+
+// Issue #762: `ai_send_ahead` hands the source's frames to the library early, which sends them ahead within the
+// target, so the user's jitter buffer holds a cushion; without it the AI is paced at real time as before.
+SM_TEST(TestbenchCallMode, AiSendAheadBuildsACushion) {
+  auto p = ParseScenario("call two-way\nai_source speed=3x\nai_send_ahead 500ms\n");
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_EXPECT_TRUE(p.scenario->ai_send_ahead == sm::TimeDelta::Millis(500));
+  SM_EXPECT_TRUE(FormatScenario(*p.scenario).find("ai_send_ahead 500ms\n") != std::string::npos);
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("call two-way\nai_send_ahead 500ms\n").scenario).empty());
+  const std::string script = "ai_source speed=3x\nturn user 1s-3s\nturn ai after=500ms len=4s\n";
+  const Report rt = RunTurns(script);
+  const Report ahead = RunTurns(script + "ai_send_ahead 500ms\n");
+  SM_EXPECT_TRUE(ahead.metrics.at("down.audio.jb_delay_p95_ms") > rt.metrics.at("down.audio.jb_delay_p95_ms") + 200);
+  SM_EXPECT_TRUE(ahead.metrics.at("ai.turns") == 1);
+  SM_EXPECT_TRUE(RunTurns(script + "ai_send_ahead 500ms\n").metrics == ahead.metrics);
+}

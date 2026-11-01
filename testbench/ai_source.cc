@@ -62,22 +62,36 @@ void AiMediaSource::Cancel(Timestamp now) {
   if (generated_ > next_) generated_ = next_;
 }
 
-std::vector<AiFrame> AiMediaSource::Poll(Timestamp now) {
+void AiMediaSource::CountGenerated(Timestamp now) {
   // The queue is deepest just as a frame is generated, so its maximum is read at each generation time.
   while (generated_ < frames_.size() && frames_[generated_].generated <= now) {
     ++stats_.frames_generated;
     stats_.max_queue_ahead = std::max(stats_.max_queue_ahead, QueueAhead(frames_[generated_].generated));
     ++generated_;
   }
+}
+
+void AiMediaSource::TakeNext(std::vector<AiFrame>& out, Timestamp now) {
+  AiFrame& f = frames_[next_];
+  f.handed = now;
+  if (f.index == 0) stats_.first_frame_delay = f.send - turn_start_;
+  ++stats_.frames_sent;
+  if (f.late) ++stats_.underruns;
+  out.push_back(f);
+  ++next_;
+}
+
+std::vector<AiFrame> AiMediaSource::Poll(Timestamp now) {
+  CountGenerated(now);
   std::vector<AiFrame> out;
-  while (next_ < frames_.size() && frames_[next_].send <= now) {
-    const AiFrame& f = frames_[next_];
-    if (f.index == 0) stats_.first_frame_delay = f.send - turn_start_;
-    ++stats_.frames_sent;
-    if (f.late) ++stats_.underruns;
-    out.push_back(f);
-    ++next_;
-  }
+  while (next_ < frames_.size() && frames_[next_].send <= now) TakeNext(out, now);
+  return out;
+}
+
+std::vector<AiFrame> AiMediaSource::TakeAhead(Timestamp now, TimeDelta lead) {
+  CountGenerated(now);
+  std::vector<AiFrame> out;
+  while (next_ < frames_.size() && frames_[next_].generated <= now && frames_[next_].send <= now + lead) TakeNext(out, now);
   return out;
 }
 
@@ -85,6 +99,7 @@ TimeDelta AiMediaSource::QueueAhead(Timestamp now) const {
   TimeDelta ahead = TimeDelta::Zero();
   for (const AiFrame& f : frames_) {
     if (f.generated > now) break;  // Generation times only increase.
+    if (f.handed <= now) continue;  // Already handed to the sender (early, with TakeAhead).
     if (f.send > now) ahead += f.length;
   }
   return ahead;

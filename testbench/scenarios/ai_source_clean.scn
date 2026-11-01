@@ -29,3 +29,6 @@ expect ai.turns == 3
 expect ai.underruns == 0
 expect conv.responses == 3
 expect conv.user_speech_lost_pct <= 2
+# program.md 6.3 sev:2 conversation: on a 100 ms RTT link the transport adds at most 500 ms to the response; the
+# source's first-chunk generation is the AI's own time, not the transport's (Owner, on #3).
+expect conv.response_delay_p95_ms < 500
