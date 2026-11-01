@@ -1,0 +1,25 @@
+name ai_source_clean
+describe Two-way audio call (user <-> AI), the AI's replies from #4's example source (3x real time, 1 s bursts, 300 ms gaps, first chunk after 400 ms) sent at real time, on a clean 100 ms RTT link (#759)
+duration 30s
+call two-way
+video off
+ai_source speed=3x burst=1s gap=300ms first_chunk=400ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=700ms len=5s
+turn user 20s-22s
+turn ai after=600ms len=5s
+at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+# program.md 6.3 sev:2, for each direction: no audio interruptions in moderate loss (<= 5%), mouth-to-ear delay
+# under 400 ms on a 100 ms RTT link, and no bottleneck queue held over 200 ms. The AI source never falls behind
+# real time at 3x (no underruns). conv.response_delay_* (#753) gets its expect lines once it exists.
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect down.audio.mouth_to_ear_p95_ms < 400
+expect up.cc.queue_over_200ms_pct == 0
+expect down.cc.queue_over_200ms_pct == 0
+expect ai.turns == 3
+expect ai.underruns == 0
