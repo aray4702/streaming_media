@@ -84,6 +84,10 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "%s: %s\n", files[i].c_str(), parsed.error.c_str());
       return 2;
     }
+    if (const std::string why = sm::testbench::UnsupportedReason(*parsed.scenario); !why.empty()) {
+      std::fprintf(stderr, "%s: %s\n", files[i].c_str(), why.c_str());
+      return 2;
+    }
     if (check_only) {
       std::printf("%s: ok (%s)\n", files[i].c_str(), parsed.scenario->name.c_str());
       continue;
