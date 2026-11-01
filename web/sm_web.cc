@@ -44,6 +44,8 @@ std::string MetricsJson(const sm::MetricsSource& s) {
 std::string RunScenario(const std::string& text, bool timeseries) {
   auto parsed = sm::testbench::ParseScenario(text);
   if (!parsed.scenario) return "{\"error\": \"" + parsed.error + "\"}";
+  if (const std::string why = sm::testbench::UnsupportedReason(*parsed.scenario); !why.empty())
+    return "{\"error\": \"" + why + "\"}";
   sm::testbench::RunOptions opt;
   opt.timeseries = timeseries;
   opt.library_metrics = true;

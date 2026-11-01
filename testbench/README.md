@@ -123,6 +123,7 @@ One directive per line, and `#` starts a comment.
 | `compare on\|off` | `on` | Read only by `sm_compare`: `off` leaves the scenario out of the libwebrtc comparison (and so the parity report), for a test of this library that has no defined libwebrtc counterpart (#921: `issue_451_host_rtt_near_limit`, where libwebrtc's unit arithmetic overflows). `sm_testbench` and ctest still run it |
 | `compare_clock_start <s>` | from the seed | The libwebrtc side's simulated clock at the call's start in `sm_compare`, in seconds, for every seed. `RTCPSender` seeds its report intervals from it in microseconds (#390), and every test bench `RtcpEngine` takes the same seed, so both stacks draw the same RTCP schedule (#517). By default seed `n` starts at 100000 + 7919 (n - 1) s, so each seed draws its own schedule (#399) |
 | `seed <n>` | `1` | Seed for every random process |
+| `call one-way\|two-way` | `one-way` | The call's shape. `one-way` is a sender and a receiver, the call every scenario runs. `two-way` has both endpoints send and receive (#2): it parses and round-trips, but `sm_testbench` (and the browser's `runScenario`) refuse it with an error until #746 runs it, and `sm_compare` skips it, because libwebrtc's side runs one-way calls only, so the parity report never sees it (#743) |
 | `audio on\|off`, `video on\|off` | on | Media types |
 | `red on\|off`, `nack on\|off`, `fec on\|off` | on | Repair mechanisms |
 | `audio_rate <rate>` | `32kbps` | Audio codec bitrate (libopus 55513e81, as libwebrtc sets it up: `testbench/opus_encoder.h`, #457) |

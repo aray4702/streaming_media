@@ -65,6 +65,10 @@ struct Scenario {
   // every seed (0 = derived from the seed). RTCPSender seeds its report-interval draws from that clock (#390, #399),
   // and the test bench seeds its RTCP engines with the same time (#517).
   int64_t compare_clock_start_s = 0;
+  // `call one-way|two-way`: one-way (the default) is the sender -> receiver call every scenario runs today; two-way
+  // has both endpoints send and receive (#2). It parses, but sm_testbench rejects it until #746 runs it, and
+  // sm_compare skips it: libwebrtc's side has no two-way call (issue #743).
+  bool two_way = false;
 
   // Media.
   bool audio = true;
@@ -182,6 +186,9 @@ ParseResult ParseScenario(const std::string& text);
 
 // Canonical text form (round-trips through ParseScenario).
 std::string FormatScenario(const Scenario& s);
+
+// "" when RunCall can run the scenario, else why not, for the caller to report (issue #743: `call two-way`).
+std::string UnsupportedReason(const Scenario& s);
 
 const char* ToString(CompareOp op);
 bool Evaluate(CompareOp op, double lhs, double rhs);
