@@ -1,6 +1,6 @@
 // The `call one-way|two-way` directive (issue #743, part 1 of #2): one-way is
-// the default; two-way parses and round-trips, and since #746 runs an audio call
-// both ways (video in a two-way call is reported as unsupported until #747).
+// the default; two-way parses and round-trips, and runs a user <-> AI call with
+// audio (#746) and video (#747) in each direction.
 #include <string>
 
 #include "call.h"
@@ -50,15 +50,25 @@ SM_TEST(TestbenchCallMode, TwoWayRoundTrips) {
   SM_EXPECT_TRUE(FormatScenario(*again.scenario) == text);
 }
 
-SM_TEST(TestbenchCallMode, TwoWayWithVideoIsUnsupportedUntil747) {
-  auto parsed = ParseScenario("call two-way\n");
-  SM_ASSERT_TRUE(parsed.scenario.has_value());
-  const std::string why = UnsupportedReason(*parsed.scenario);
-  SM_EXPECT_FALSE(why.empty());
-  SM_EXPECT_TRUE(why.find("two-way") != std::string::npos);
-  auto audio_only = ParseScenario("call two-way\nvideo off\n");
-  SM_ASSERT_TRUE(audio_only.scenario.has_value());
-  SM_EXPECT_TRUE(UnsupportedReason(*audio_only.scenario).empty());
+// Issue #747: `two_way_video both|up|down` picks the directions that send video; a one-way call can't use it.
+SM_TEST(TestbenchCallMode, TwoWayVideoDirections) {
+  auto both = ParseScenario("call two-way\n");
+  SM_ASSERT_TRUE(both.scenario.has_value());
+  SM_EXPECT_TRUE(both.scenario->video_up && both.scenario->video_down);
+  SM_EXPECT_TRUE(UnsupportedReason(*both.scenario).empty());
+  SM_EXPECT_TRUE(FormatScenario(*both.scenario).find("two_way_video") == std::string::npos);
+  for (const char* dir : {"up", "down"}) {
+    const std::string text = std::string("call two-way\ntwo_way_video ") + dir + "\n";
+    auto p = ParseScenario(text);
+    SM_ASSERT_TRUE(p.scenario.has_value());
+    SM_EXPECT_TRUE(p.scenario->video_up == (std::string(dir) == "up"));
+    SM_EXPECT_TRUE(p.scenario->video_down == (std::string(dir) == "down"));
+    SM_EXPECT_TRUE(FormatScenario(*p.scenario).find(std::string("two_way_video ") + dir + "\n") != std::string::npos);
+  }
+  SM_EXPECT_FALSE(ParseScenario("two_way_video sideways\n").scenario.has_value());
+  auto one_way = ParseScenario("two_way_video up\n");
+  SM_ASSERT_TRUE(one_way.scenario.has_value());
+  SM_EXPECT_TRUE(UnsupportedReason(*one_way.scenario).find("call two-way") != std::string::npos);
 }
 
 namespace {
@@ -99,6 +109,29 @@ SM_TEST(TestbenchCallMode, TwoWayIsDeterministic) {
   SM_EXPECT_TRUE(a.metrics == b.metrics);
   const Report c = RunTwoWay(4);
   SM_EXPECT_FALSE(a.metrics == c.metrics);
+}
+
+// Issue #747: video both ways, each direction measured on its own; deterministic for a fixed seed.
+SM_TEST(TestbenchCallMode, TwoWayVideoFlowsBothWays) {
+  auto run = [](const char* dir) {
+    auto parsed = ParseScenario(std::string("name tv\ncall two-way\ntwo_way_video ") + dir +
+                                "\nduration 6s\nat 0s capacity=2500kbps delay=25ms\nreverse at 0s capacity=2500kbps delay=25ms\n");
+    RunOptions opt;
+    opt.timeseries = false;
+    opt.library_metrics = false;
+    return RunCall(*parsed.scenario, opt);
+  };
+  const Report both = run("both");
+  for (const char* d : {"up.", "down."}) {
+    SM_ASSERT_TRUE(both.metrics.count(std::string(d) + "video.frames_rendered") == 1);
+    SM_EXPECT_TRUE(both.metrics.at(std::string(d) + "video.frames_rendered") > 100);
+    SM_EXPECT_TRUE(both.metrics.count(std::string(d) + "sync.av_offset_p95_ms") == 1);
+  }
+  SM_EXPECT_TRUE(run("both").metrics == both.metrics);
+  const Report up = run("up");
+  SM_EXPECT_TRUE(up.metrics.count("up.video.frames_rendered") == 1);
+  SM_EXPECT_TRUE(up.metrics.count("down.video.frames_rendered") == 0);
+  SM_EXPECT_TRUE(up.metrics.count("down.audio.concealed_pct") == 1);
 }
 
 // Issue #746: --metrics lists the per-direction names.

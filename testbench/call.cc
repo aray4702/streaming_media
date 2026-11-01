@@ -205,13 +205,13 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
 }  // namespace
 
 const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
-  // A two-way call (#746) reports each direction's audio, cc, net, rtcp and repair metrics as up.* (user to AI) and
+  // A two-way call (#746, #747) reports each direction's metrics as up.* (user to AI) and
   // down.* (AI to user); its forward link is the up direction's, its reverse link the down direction's.
   static const std::vector<std::pair<std::string, std::string>> k = [] {
     std::vector<std::pair<std::string, std::string>> all = OneWayMetricCatalog();
     for (const char* dir : {"up.", "down."}) {
       for (const auto& [name, meaning] : OneWayMetricCatalog()) {
-        for (const char* group : {"audio.", "cc.", "net.", "rtcp.", "repair."}) {
+        for (const char* group : {"audio.", "video.", "sync.", "cc.", "net.", "rtcp.", "repair."}) {
           if (name.rfind(group, 0) == 0) {
             all.emplace_back(dir + name, std::string(dir[0] == 'u' ? "Two-way call, user to AI: " : "Two-way call, AI to user: ") + meaning);
           }
@@ -1446,20 +1446,26 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   rtp::Session user(user_cfg), ai(ai_cfg);
   const TimeDelta clock0 = TimeDelta::Seconds(CallClockStartSeconds(s));
 
+  // Each direction's view of the scenario: video only in the directions `two_way_video` sends it (#747).
+  Scenario up_s = s;
+  up_s.video = s.video && s.video_up;
+  Scenario down_s = s;
+  down_s.video = s.video && s.video_down;
   // The AI speaks its own signal and draws its own encoder sizes: its sources take another seed, on the same clock.
-  Scenario ai_s = s;
+  Scenario ai_s = down_s;
   ai_s.compare_clock_start_s = CallClockStartSeconds(s);
   ai_s.seed = s.seed + 50021;
+  const Scenario* dir_s[2] = {&up_s, &down_s};
 
   // Up: the user's send side and the AI's receive side. Down: the AI's send side and the user's receive side, on
   // SSRCs 11-13, so each session sends on one set and receives the other.
   DirectionMeters up_m, down_m;
-  const StreamConfigs up_streams = MakeStreamConfigs(s, sr, audio_wire_rate, up_m);
-  const StreamConfigs down_streams = MakeStreamConfigs(s, sr, audio_wire_rate, down_m, 10);
-  SendSide up_tx(s, opt, user, up_streams, up_m, sr, clock0);
-  ReceiveSide up_rx(s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
+  const StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, audio_wire_rate, up_m);
+  const StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
+  SendSide up_tx(up_s, opt, user, up_streams, up_m, sr, clock0);
+  ReceiveSide up_rx(up_s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
   SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
-  ReceiveSide down_rx(s, opt, user, down_streams, down_m, events, sr, clock0, down_tx.audio_ts_offset());
+  ReceiveSide down_rx(down_s, opt, user, down_streams, down_m, events, sr, clock0, down_tx.audio_ts_offset());
 
   struct Endpoint {
     rtp::Session& session;
@@ -1649,7 +1655,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       smp.audio_concealed_pct = dm.w_played ? 100.0 * static_cast<double>(dm.w_conceal) / static_cast<double>(dm.w_played) : 0;
       smp.video_fps = static_cast<double>(dm.w_frames) * 10;
       smp.video_delay_ms = to.last_video_delay();
-      smp.fec_pct = s.video ? from.session.video_sender(from.tx.video_send()).fec_params().fec_rate * 100.0 / 256 : 0;
+      smp.fec_pct = dir_s[i]->video ? from.session.video_sender(from.tx.video_send()).fec_params().fec_rate * 100.0 / 256 : 0;
       samples[i].push_back(smp);
       dm.w_send = dm.w_good = dm.w_frames = dm.w_conceal = dm.w_played = 0;
     }
@@ -1675,8 +1681,9 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     d.scenario = s;
     d.timeseries = samples[i];
     auto& m = d.metrics;
+    const bool video = dir_s[i]->video;
     rx.AddMetrics(end_ms, tx.frames_encoded(), d);
-    if (s.video) {
+    if (video) {
       m["video.avg_kbps"] = static_cast<double>(tx.video_bytes_encoded()) * 8 / s.duration.seconds() / 1000;
       m["video.qp_mean"] = tx.frames_encoded() ? static_cast<double>(tx.qp_sum()) / static_cast<double>(tx.frames_encoded()) : 0;
       m["video.encode_height_mean"] =
@@ -1684,8 +1691,12 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       m["video.keyframes"] = static_cast<double>(tx.keyframes_sent());
       m["video.keyframe_requests"] = static_cast<double>(tx.keyframe_requests());
       m["video.encoder_dropped"] = static_cast<double>(tx.frames_skipped());
+      m["video.encoder_target_avg_kbps"] =
+          tx.frames_encoded() + tx.frames_skipped()
+              ? static_cast<double>(tx.encoder_target_bps_sum()) / static_cast<double>(tx.frames_encoded() + tx.frames_skipped()) / 1000
+              : 0;
     }
-    const double demand_kbps = (s.video ? s.video_max.kbps() : 0) + audio_wire_rate.kbps();
+    const double demand_kbps = (video ? s.video_max.kbps() : 0) + audio_wire_rate.kbps();
     AddCcMetrics(s, *changes_of[i], demand_kbps, d);
     m["cc.queue_p95_ms"] = Percentile(queue_samples[i], 95);
     m["cc.queue_max_ms"] = queue_samples[i].empty() ? 0 : *std::max_element(queue_samples[i].begin(), queue_samples[i].end());
@@ -1705,7 +1716,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
                         (static_cast<double>((dm.audio_ts_last->second - dm.audio_ts_first->second).us()) / 1e6);
       m["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
     }
-    dm.repair.AddMetrics(m, s.video, end_ms);
+    if (dm.video_start_seq) m["net.video_start_seq"] = *dm.video_start_seq;
+    dm.repair.AddMetrics(m, video, end_ms);
     for (const auto& [name, value] : m) rep.metrics[prefix[i] + name] = value;
   }
   if (opt.link_trace) {
