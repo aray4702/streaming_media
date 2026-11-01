@@ -212,6 +212,8 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"conv.barge_ins", "Two-way call with turns: barge-ins the AI detected while speaking and stopped for (#754)"},
       {"conv.barge_in_stop_ms", "Two-way call with turns: longest time from the user starting to talk over the AI (the scripted barge-in) to "
                                 "the AI's audio stopping at the user's ear (#754); audio already in the AI-to-user path keeps playing"},
+      {"conv.barge_in_tail_ms", "Two-way call with turns: longest time the AI's audio kept playing at the user after the AI stopped "
+                                "for a barge-in: what was already in the AI-to-user path (#760)"},
       {"conv.turn_detect_errors", "Two-way call with turns: the AI detector's missed and false end-of-turn and barge-in decisions against "
                                   "the script, within 500 ms of the scripted times (#756); the four counts are also reported as "
                                   "conv.missed_end_of_turn, conv.false_end_of_turn, conv.missed_barge_in and conv.false_barge_in"},
@@ -219,6 +221,8 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"ai.queue_ahead_max_ms", "Two-way call with `ai_source`: most media generated but not yet sent, i.e. how far the AI's app-side queue got ahead of real time (#758)"},
       {"ai.first_frame_delay_max_ms", "Two-way call with `ai_source`: longest time from an AI turn's start to its first frame handed to the sender (#758)"},
       {"ai.underruns", "Two-way call with `ai_source`: frames sent late because generation fell behind real time (#758)"},
+      {"ai.cancels", "Two-way call with `ai_source`: replies cut short by a barge-in (#760)"},
+      {"ai.cancelled_ms", "Two-way call with `ai_source`: reply media dropped by those cancels before it reached the sender (#760)"},
   };
   return k;
 }
@@ -1813,8 +1817,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
             const Window* u = user_window_of(ev->last_speech);
             responses.push_back({u ? u->end : ev->last_speech, r.after, std::nullopt, std::nullopt});
           } else if (ev->type == TurnEventType::kBargeIn && ai_speaking) {
-            // The AI stops its speech at once: the rest of the reply is not sent.
+            // The AI stops its speech at once: the rest of the reply is not sent, and its source stops generating
+            // and drops what it had queued (#760).
             ai_turns.back().end = ev->at;
+            if (ai_source) ai_source->Cancel(ev->at);
             const Window* u = user_window_of(ev->speech_start);
             stops.push_back({u ? u->start : ev->speech_start, ev->at, ai_last_speech_capture, std::nullopt});
           }
@@ -1945,7 +1951,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   // captured to the AI's first sample played at the user, less the thinking time; and from the user starting to talk
   // over the AI to the AI's audio stopping at the user's ear.
   if (!s.turns.empty()) {
-    std::vector<double> delays, stop_ms;
+    std::vector<double> delays, stop_ms, tail_ms;
     for (const Response& r : responses) {
       // The AI's own decision time is not the transport's: its thinking time and the silence its endpointer waits for
       // before it calls the turn over (TurnDetectorConfig::end_of_turn_silence, 600 ms). A detection the transport
@@ -1954,6 +1960,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     }
     for (const Stop& st : stops) {
       if (st.at_ear) stop_ms.push_back((*st.at_ear - st.user_start).us() / 1000.0);
+      if (st.at_ear) tail_ms.push_back((*st.at_ear - st.cut).us() / 1000.0);
     }
     rep.metrics["conv.responses"] = static_cast<double>(delays.size());
     rep.metrics["conv.response_delay_p50_ms"] = Percentile(delays, 50);
@@ -1971,6 +1978,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["conv.missed_barge_in"] = de.missed_barge_in;
     rep.metrics["conv.false_barge_in"] = de.false_barge_in;
     if (!stop_ms.empty()) rep.metrics["conv.barge_in_stop_ms"] = *std::max_element(stop_ms.begin(), stop_ms.end());
+    if (!tail_ms.empty()) rep.metrics["conv.barge_in_tail_ms"] = *std::max_element(tail_ms.begin(), tail_ms.end());
   }
 
   // The AI's source (#758): how far ahead of real time its queue got, the time from a turn's start to its first frame
@@ -1983,6 +1991,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["ai.first_frame_delay_max_ms"] =
         ai_first_frame_ms.empty() ? 0 : *std::max_element(ai_first_frame_ms.begin(), ai_first_frame_ms.end());
     rep.metrics["ai.underruns"] = static_cast<double>(st.underruns);
+    rep.metrics["ai.cancels"] = static_cast<double>(st.cancels);
+    rep.metrics["ai.cancelled_ms"] = st.cancelled.us() / 1000.0;
   }
 
   EvaluateExpectations(rep);

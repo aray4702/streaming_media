@@ -53,6 +53,15 @@ void AiMediaSource::StartTurn(Timestamp now, TimeDelta length) {
   }
 }
 
+void AiMediaSource::Cancel(Timestamp now) {
+  (void)now;
+  if (next_ >= frames_.size()) return;
+  ++stats_.cancels;
+  for (size_t i = next_; i < frames_.size(); ++i) stats_.cancelled += frames_[i].length;
+  frames_.resize(next_);
+  if (generated_ > next_) generated_ = next_;
+}
+
 std::vector<AiFrame> AiMediaSource::Poll(Timestamp now) {
   // The queue is deepest just as a frame is generated, so its maximum is read at each generation time.
   while (generated_ < frames_.size() && frames_[generated_].generated <= now) {

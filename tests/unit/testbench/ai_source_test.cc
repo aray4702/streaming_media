@@ -191,3 +191,26 @@ SM_TEST(TestbenchAiSource, ScenarioDirectiveRejectsBadValues) {
     SM_EXPECT_TRUE(r.error.find("ai_source") != std::string::npos);
   }
 }
+
+// Issue #760: a barge-in cancels the reply: no more frames, the unsent media dropped and counted, the sent ones kept.
+SM_TEST(TestbenchAiSource, CancelDropsTheUnsentFrames) {
+  AiSourceConfig c;
+  c.speed = 3;
+  AiMediaSource src(c);
+  src.StartTurn(Timestamp::Millis(0), TimeDelta::Seconds(2));  // 100 frames of 20 ms.
+  const size_t sent = src.Poll(Timestamp::Millis(500)).size();
+  SM_EXPECT_TRUE(sent > 0 && sent < 100);
+  src.Cancel(Timestamp::Millis(500));
+  SM_EXPECT_FALSE(src.active());
+  SM_EXPECT_FALSE(src.NextSendTime().has_value());
+  SM_EXPECT_TRUE(src.Poll(Timestamp::Seconds(10)).empty());
+  SM_EXPECT_TRUE(src.QueueAhead(Timestamp::Seconds(10)) == TimeDelta::Zero());
+  SM_EXPECT_TRUE(src.stats().cancels == 1);
+  SM_EXPECT_TRUE(src.stats().cancelled == TimeDelta::Millis(20) * static_cast<int64_t>(100 - sent));
+  SM_EXPECT_TRUE(src.stats().frames_sent == static_cast<int64_t>(sent));
+  src.Cancel(Timestamp::Millis(600));  // Nothing left: unchanged.
+  SM_EXPECT_TRUE(src.stats().cancels == 1);
+  // The next turn starts afresh.
+  src.StartTurn(Timestamp::Seconds(1), TimeDelta::Millis(100));
+  SM_EXPECT_TRUE(src.active());
+}
