@@ -184,6 +184,53 @@ bool ParseChange(const std::vector<std::string>& tok, size_t i, LinkChange* c, s
   return true;
 }
 
+// Parses "ai_source key=value..." from tokens[1].
+bool ParseAiSource(const std::vector<std::string>& tok, AiSourceConfig* c, std::string* err) {
+  const TimeDelta kMaxTime = TimeDelta::Seconds(3600);
+  for (size_t k = 1; k < tok.size(); ++k) {
+    const size_t eq = tok[k].find('=');
+    if (eq == std::string::npos) {
+      *err = "ai_source: expected key=value, got '" + tok[k] + "'";
+      return false;
+    }
+    const std::string key = Lower(tok[k].substr(0, eq));
+    const std::string val = tok[k].substr(eq + 1);
+    bool ok = true;
+    if (key == "speed") {
+      double v;
+      std::string u;
+      ok = SplitNumber(val, &v, &u) && (u.empty() || u == "x") && v >= 0.1 && v <= 100;
+      c->speed = v;
+    } else if (key == "burst" || key == "gap" || key == "first_chunk") {
+      TimeDelta t;
+      ok = ParseTime(val, &t) && t <= kMaxTime;
+      (key == "burst" ? c->burst : key == "gap" ? c->gap : c->first_chunk) = t;
+    } else if (key == "frame") {
+      TimeDelta t;
+      ok = ParseTime(val, &t) && t >= TimeDelta::Millis(1) && t <= TimeDelta::Seconds(1);
+      c->frame = t;
+    } else {
+      *err = "ai_source: unknown key '" + key + "' (speed, burst, gap, first_chunk, frame)";
+      return false;
+    }
+    if (!ok) {
+      *err = "ai_source: bad value for " + key + ": '" + val + "'";
+      return false;
+    }
+  }
+  return true;
+}
+
+std::string FormatAiSource(const AiSourceConfig& c) {
+  const AiSourceConfig d;
+  std::string s = "ai_source speed=" + FormatNumber(c.speed) + "x";
+  if (c.burst != d.burst) s += " burst=" + FormatTime(c.burst);
+  if (c.gap != d.gap) s += " gap=" + FormatTime(c.gap);
+  if (c.first_chunk != d.first_chunk) s += " first_chunk=" + FormatTime(c.first_chunk);
+  if (c.frame != d.frame) s += " frame=" + FormatTime(c.frame);
+  return s;
+}
+
 std::string FormatChange(const LinkChange& c) {
   std::string s = "at " + FormatTime(c.at);
   if (c.down) s += *c.down ? " down" : " up";
@@ -404,6 +451,12 @@ ParseResult ParseScenario(const std::string& text) {
       const long v = need(2) ? std::strtol(tok[1].c_str(), &end, 10) : 0;
       if (!need(2) || *end != '\0' || v < -384000 || v > 384000) return fail("usage: apm_rate <hz>");
       s.apm_rate = static_cast<int>(v);
+    } else if (key == "ai_source") {
+      if (s.ai_source) return fail("ai_source given twice");
+      AiSourceConfig c;
+      std::string err;
+      if (!ParseAiSource(tok, &c, &err)) return fail(err);
+      s.ai_source = c;
     } else if (key == "host_rtt") {
       TimeDelta t, rtt;
       if (!need(3) || !ParseTime(tok[1], &t) || !ParseTime(tok[2], &rtt)) return fail("usage: host_rtt <time> <rtt>");
@@ -521,6 +574,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.timing_v2 != d.timing_v2) o += std::string("timing ") + (s.timing_v2 ? "v2" : "v1") + "\n";
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
+  if (s.ai_source) o += FormatAiSource(*s.ai_source) + "\n";
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
