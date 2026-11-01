@@ -10,6 +10,7 @@
   "conv.response_delay_p95_ms": 310,
   "conv.responses": 3,
   "conv.turn_detect_errors": 0,
+  "conv.user_flushes": 0,
   "conv.user_speech_lost_pct": 5.696,
   "down.audio.concealed_pct": 5.579,
   "down.audio.interruption_ms": 997,
