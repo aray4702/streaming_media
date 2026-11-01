@@ -7,11 +7,13 @@
 #include <cmath>
 #include <cstdio>
 #include <deque>
+#include <functional>
 #include <optional>
 #include <set>
 #include <string_view>
 #include <unordered_map>
 
+#include "ai_source.h"
 #include "encoder_model.h"
 #include "opus_decoder.h"
 #include "opus_encoder.h"
@@ -199,6 +201,10 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"repair.fec_recovered", "Packets recovered by FEC (the ULPFEC receiver's counter)"},
       {"rtcp.audio_report_blocks", "Report blocks about the audio SSRC in the RTCP the sender received (SRs and RRs; "
                                    "libwebrtc's audio channel reports every 5 s, about 6 in 30 s; issue #484)"},
+      {"ai.turns", "Two-way call with `ai_source`: AI replies the source generated (#758)"},
+      {"ai.queue_ahead_max_ms", "Two-way call with `ai_source`: most media generated but not yet sent, i.e. how far the AI's app-side queue got ahead of real time (#758)"},
+      {"ai.first_frame_delay_max_ms", "Two-way call with `ai_source`: longest time from an AI turn's start to its first frame handed to the sender (#758)"},
+      {"ai.underruns", "Two-way call with `ai_source`: frames sent late because generation fell behind real time (#758)"},
   };
   return k;
 }
@@ -850,6 +856,10 @@ class SendSide {
   // The RTT sample the session measured during this tick, for the receiver; cleared at each tick's start.
   std::optional<TimeDelta>& new_rtt() { return new_rtt_; }
 
+  // Whether the endpoint speaks in the audio frame captured at a time (#751): it sends silence when not. Unset (a
+  // one-way call, or a two-way call without turns): it speaks the whole call.
+  void SetSpeech(std::function<bool(Timestamp)> speaking) { speaking_ = std::move(speaking); }
+
   // The session's events since the last call.
   void OnEvents(Timestamp at) {
     for (const auto& e : session_.TakeEvents()) {
@@ -933,7 +943,10 @@ class SendSide {
     const int64_t k = t / 20;
     opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
     const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
-    const std::span<const int16_t> opus_in = std::span<const int16_t>(opus_pcm_).subspan(std::min(opus_off, opus_pcm_.size()));
+    static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
+    const std::span<const int16_t> opus_in = !speaking_ || speaking_(now)
+                                                 ? std::span<const int16_t>(opus_pcm_).subspan(std::min(opus_off, opus_pcm_.size()))
+                                                 : std::span<const int16_t>(kSilence);
     if (opt_.link_trace) {
       // What libopus encodes: the frame, zero-padded past the end of the signal (OpusSendEncoder::Encode).
       std::vector<int16_t> in(OpusSendEncoder::kFrameSamples, 0);
@@ -1091,6 +1104,7 @@ class SendSide {
   int64_t next_frame_ms_ = 0;
   std::deque<PendingFrame> encoding_;
   std::optional<TimeDelta> new_rtt_;
+  std::function<bool(Timestamp)> speaking_;
 };
 
 // The receive side of one direction (issue #745): the 10 ms audio device pull and playout, video frame handling,
@@ -1472,6 +1486,44 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
   ReceiveSide down_rx(down_s, opt, user, down_streams, down_m, events, sr, clock0, down_tx.audio_ts_offset());
 
+  // --- Turns (#751) and the AI's source (#758) -------------------------------
+  // The user speaks in its scripted windows (turns and barge-ins). The AI speaks `after` past the end of the user
+  // turn before each of its turns, for `len`; with `ai_source` its reply is generated and drained by the source and
+  // it speaks while frames come out of it. Without any turn both speak the whole call (#746).
+  struct Window {
+    Timestamp start, end;
+  };
+  std::vector<Window> user_speech, ai_turns;
+  {
+    Timestamp last_user_end = Timestamp::Micros(0);
+    for (const Scenario::Turn& tr : s.turns) {
+      if (tr.who == Scenario::Turn::Who::kAi) {
+        const Timestamp start = last_user_end + tr.after;
+        ai_turns.push_back({start, start + tr.len});
+      } else {
+        user_speech.push_back({Timestamp::Micros(0) + tr.start, Timestamp::Micros(0) + tr.end});
+        if (tr.who == Scenario::Turn::Who::kUser) last_user_end = Timestamp::Micros(0) + tr.end;
+      }
+    }
+  }
+  auto in_any = [](const std::vector<Window>& ws, Timestamp t) {
+    for (const Window& w : ws) {
+      if (t >= w.start && t < w.end) return true;
+    }
+    return false;
+  };
+  std::optional<AiMediaSource> ai_source;
+  if (s.ai_source) ai_source.emplace(*s.ai_source);
+  size_t next_ai_turn = 0;
+  std::vector<double> ai_first_frame_ms;
+  if (!s.turns.empty()) {
+    up_tx.SetSpeech([&](Timestamp t) { return in_any(user_speech, t); });
+    down_tx.SetSpeech([&](Timestamp t) {
+      if (!ai_source) return in_any(ai_turns, t);
+      return !ai_source->Poll(t).empty();  // A frame the real-time drain hands over now.
+    });
+  }
+
   struct Endpoint {
     rtp::Session& session;
     SendSide& tx;                       // The direction it sends.
@@ -1631,6 +1683,16 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     advance_links(now);
     for (Endpoint& e : ep) e.tx.OnEvents(now);
 
+    // An AI turn starts: its source begins generating the reply (#758).
+    while (next_ai_turn < ai_turns.size() && ai_turns[next_ai_turn].start <= now) {
+      if (ai_source) {
+        const AiSourceStats before = ai_source->stats();
+        if (before.turns > 0 && before.first_frame_delay) ai_first_frame_ms.push_back(before.first_frame_delay->us() / 1000.0);
+        ai_source->StartTurn(ai_turns[next_ai_turn].start, ai_turns[next_ai_turn].end - ai_turns[next_ai_turn].start);
+      }
+      ++next_ai_turn;
+    }
+
     // --- Capture: each endpoint's audio, then video ---------------------------
     for (Endpoint& e : ep) {
       e.tx.CaptureAudio(t, now);
@@ -1779,6 +1841,18 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   }
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), up_tx.opus_encode_rows().begin(), up_tx.opus_encode_rows().end());
   down.audio_send_trace.insert(down.audio_send_trace.end(), down_tx.opus_encode_rows().begin(), down_tx.opus_encode_rows().end());
+
+  // The AI's source (#758): how far ahead of real time its queue got, the time from a turn's start to its first frame
+  // sent, and the frames sent late because generation fell behind.
+  if (ai_source) {
+    const AiSourceStats& st = ai_source->stats();
+    if (st.turns > 0 && st.first_frame_delay) ai_first_frame_ms.push_back(st.first_frame_delay->us() / 1000.0);
+    rep.metrics["ai.turns"] = static_cast<double>(st.turns);
+    rep.metrics["ai.queue_ahead_max_ms"] = st.max_queue_ahead.us() / 1000.0;
+    rep.metrics["ai.first_frame_delay_max_ms"] =
+        ai_first_frame_ms.empty() ? 0 : *std::max_element(ai_first_frame_ms.begin(), ai_first_frame_ms.end());
+    rep.metrics["ai.underruns"] = static_cast<double>(st.underruns);
+  }
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

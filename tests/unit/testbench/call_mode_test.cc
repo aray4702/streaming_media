@@ -1,6 +1,7 @@
 // The `call one-way|two-way` directive (issue #743, part 1 of #2): one-way is
 // the default; two-way parses and round-trips, and runs a user <-> AI call with
 // audio (#746) and video (#747) in each direction.
+#include <cmath>
 #include <string>
 
 #include "call.h"
@@ -143,4 +144,63 @@ SM_TEST(TestbenchCallMode, CatalogListsPerDirectionNames) {
   }
   SM_EXPECT_TRUE(up);
   SM_EXPECT_TRUE(down);
+}
+
+// Issue #751: scripted turns parse, round-trip and need a two-way call.
+SM_TEST(TestbenchCallMode, TurnsParseAndRoundTrip) {
+  const std::string text =
+      "call two-way\nturn user 1s-4s\nturn ai after=800ms len=4s\nturn user 10s-12s\nturn ai after=500ms len=3s\n"
+      "barge-in at 14s\nbarge-in at 16s len=500ms\n";
+  auto p = ParseScenario(text);
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_ASSERT_TRUE(p.scenario->turns.size() == 6);
+  SM_EXPECT_TRUE(p.scenario->turns[1].who == Scenario::Turn::Who::kAi);
+  SM_EXPECT_TRUE(p.scenario->turns[1].after == sm::TimeDelta::Millis(800));
+  SM_EXPECT_TRUE(p.scenario->turns[4].end == sm::TimeDelta::Seconds(15));  // A barge-in lasts 1 s by default.
+  auto again = ParseScenario(FormatScenario(*p.scenario));
+  SM_ASSERT_TRUE(again.scenario.has_value());
+  SM_EXPECT_TRUE(again.scenario->turns == p.scenario->turns);
+  SM_EXPECT_TRUE(UnsupportedReason(*p.scenario).empty());
+  for (const char* bad : {"turn user 4s-1s\n", "turn user 1s\n", "turn ai after=1s len=2s\n", "turn user 0s-1s\nturn ai len=2s\n",
+                          "barge-in 3s\n", "barge-in at 3s len=0s\n", "turn bot 0s-1s\n"}) {
+    SM_EXPECT_FALSE(ParseScenario(std::string("call two-way\n") + bad).scenario.has_value());
+  }
+  auto one_way = ParseScenario("turn user 0s-1s\n");
+  SM_ASSERT_TRUE(one_way.scenario.has_value());
+  SM_EXPECT_FALSE(UnsupportedReason(*one_way.scenario).empty());
+}
+
+namespace {
+Report RunTurns(const std::string& extra, uint64_t seed = 1) {
+  auto parsed = ParseScenario("name turns\ncall two-way\nvideo off\nduration 12s\nseed " + std::to_string(seed) +
+                              "\nat 0s capacity=2500kbps delay=50ms\nreverse at 0s capacity=2500kbps delay=50ms\n" + extra);
+  RunOptions opt;
+  opt.timeseries = false;
+  opt.library_metrics = false;
+  return RunCall(*parsed.scenario, opt);
+}
+}  // namespace
+
+// Issue #751: an endpoint sends silence outside its turns, so its audio costs less than talking the whole call;
+// the call is deterministic for a fixed seed.
+SM_TEST(TestbenchCallMode, TurnsGateEachEndpointsSpeech) {
+  const Report talk = RunTurns("");
+  const std::string script = "turn user 1s-4s\nturn ai after=800ms len=3s\n";
+  const Report turns = RunTurns(script);
+  SM_EXPECT_TRUE(turns.metrics.at("up.net.audio_kbps") < talk.metrics.at("up.net.audio_kbps"));
+  SM_EXPECT_TRUE(turns.metrics.at("down.net.audio_kbps") < talk.metrics.at("down.net.audio_kbps"));
+  SM_EXPECT_TRUE(RunTurns(script).metrics == turns.metrics);
+  SM_EXPECT_TRUE(turns.metrics.count("ai.turns") == 0);  // No ai_source: no source metrics.
+}
+
+// Issue #758 part 2: with `ai_source`, each AI turn's reply comes from the source, drained at real time.
+SM_TEST(TestbenchCallMode, AiSourceDrivesTheAisTurns) {
+  const Report r = RunTurns("ai_source speed=3x burst=1s gap=300ms first_chunk=400ms\nturn user 1s-3s\n"
+                            "turn ai after=800ms len=2s\nturn user 6s-7s\nturn ai after=500ms len=2s\n");
+  SM_EXPECT_TRUE(r.metrics.at("ai.turns") == 2);
+  // The first frame of 20 ms at 3x is generated 6.667 ms after the first chunk's 400 ms.
+  SM_EXPECT_TRUE(std::abs(r.metrics.at("ai.first_frame_delay_max_ms") - 406.667) < 0.01);
+  SM_EXPECT_TRUE(r.metrics.at("ai.queue_ahead_max_ms") > 500);
+  SM_EXPECT_TRUE(r.metrics.at("ai.underruns") == 0);
+  SM_EXPECT_TRUE(r.metrics.at("down.audio.concealed_pct") < 1);
 }
