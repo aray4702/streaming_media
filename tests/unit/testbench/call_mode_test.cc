@@ -204,3 +204,34 @@ SM_TEST(TestbenchCallMode, AiSourceDrivesTheAisTurns) {
   SM_EXPECT_TRUE(r.metrics.at("ai.underruns") == 0);
   SM_EXPECT_TRUE(r.metrics.at("down.audio.concealed_pct") < 1);
 }
+
+// Issue #753: the AI answers its detected end of the user's turn, and the response delay is what the transport added.
+SM_TEST(TestbenchCallMode, AiAnswersTheDetectedEndOfTurn) {
+  const std::string script = "turn user 1s-3s\nturn ai after=800ms len=2s\nturn user 7s-9s\nturn ai after=500ms len=2s\n";
+  const Report r = RunTurns(script);
+  SM_EXPECT_TRUE(r.metrics.at("conv.responses") == 2);
+  // 100 ms RTT, 20 ms frames and the jitter buffers on both sides: a few hundred ms, never negative.
+  SM_EXPECT_TRUE(r.metrics.at("conv.response_delay_p50_ms") > 100);
+  SM_EXPECT_TRUE(r.metrics.at("conv.response_delay_p95_ms") < 500);
+  // More delay on the links adds about as much to the response.
+  const Report slow = RunTurns(script + "at 0s delay=150ms\nreverse at 0s delay=150ms\n");
+  const double added = slow.metrics.at("conv.response_delay_p50_ms") - r.metrics.at("conv.response_delay_p50_ms");
+  SM_EXPECT_TRUE(added > 150 && added < 260);
+  SM_EXPECT_TRUE(RunTurns(script).metrics == r.metrics);
+  SM_EXPECT_TRUE(RunTwoWay(1).metrics.count("conv.responses") == 0);  // No turns, no conversation metrics.
+}
+
+// Issue #754: when the AI hears the user over its reply it stops sending its speech; its audio stops at the user's
+// ear once what is already in the path has played.
+SM_TEST(TestbenchCallMode, BargeInStopsTheAi) {
+  const std::string base = "turn user 1s-3s\nturn ai after=500ms len=6s\n";
+  const Report full = RunTurns(base);
+  const Report cut = RunTurns(base + "barge-in at 5s len=1s\n");
+  SM_EXPECT_TRUE(full.metrics.count("conv.barge_in_stop_ms") == 0);
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_ins") == 1);
+  // Onset 100 ms, barge-in after 200 ms of speech, 50 ms each way, and the user's jitter buffer.
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_in_stop_ms") > 300 && cut.metrics.at("conv.barge_in_stop_ms") < 500);
+  // The rest of the reply is not sent.
+  SM_EXPECT_TRUE(cut.metrics.at("down.net.audio_kbps") < full.metrics.at("down.net.audio_kbps"));
+  SM_EXPECT_TRUE(RunTurns(base + "barge-in at 5s len=1s\n").metrics == cut.metrics);
+}
