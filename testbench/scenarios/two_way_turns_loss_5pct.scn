@@ -1,0 +1,16 @@
+name two_way_turns_loss_5pct
+describe Two-way call with scripted turns, 5% random loss each way on a 100 ms RTT link: the user's speech reaching the AI (#755)
+duration 30s
+call two-way
+turn user 1s-5s
+turn ai after=800ms len=4s
+turn user 11s-15s
+turn ai after=600ms len=4s
+turn user 20s-23s
+barge-in at 25s len=1500ms
+at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+# program.md 6.3 sev:2 (conversation): on a 100 ms RTT link with <= 5% loss, at most 2% of the user's speech lost
+# or concealed on the way to the AI.
+expect conv.user_speech_lost_pct <= 2
+expect up.audio.interruptions == 0
