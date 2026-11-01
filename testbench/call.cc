@@ -12,6 +12,7 @@
 #include <string_view>
 #include <unordered_map>
 
+#include "ai_source.h"
 #include "encoder_model.h"
 #include "opus_decoder.h"
 #include "opus_encoder.h"
@@ -218,6 +219,12 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
         }
       }
     }
+    // The AI endpoint's media source, with `ai_source` (#758, testbench/ai_source.h).
+    all.emplace_back("down.ai.first_audio_ms", "Two-way call, `ai_source`: the AI's turn start -> its first frame of media handed to the sender (first_chunk, generation and the 20 ms audio grid)");
+    all.emplace_back("down.ai.queue_ahead_max_ms", "Two-way call, `ai_source`: most media generated and not yet sent (the app-side queue's lead over real time)");
+    all.emplace_back("down.ai.queue_ahead_mean_ms", "Two-way call, `ai_source`: mean of the queue's lead over real time, sampled every 100 ms");
+    all.emplace_back("down.ai.frames_sent", "Two-way call, `ai_source`: 20 ms frames of the AI's media handed to the sender");
+    all.emplace_back("down.ai.underruns", "Two-way call, `ai_source`: frames that left late because generation fell behind real time (a gap the user hears)");
     return all;
   }();
   return k;
@@ -933,7 +940,8 @@ class SendSide {
     const int64_t k = t / 20;
     opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
     const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
-    const std::span<const int16_t> opus_in = std::span<const int16_t>(opus_pcm_).subspan(std::min(opus_off, opus_pcm_.size()));
+    std::span<const int16_t> opus_in = std::span<const int16_t>(opus_pcm_).subspan(std::min(opus_off, opus_pcm_.size()));
+    if (ai_) opus_in = AiSourceFrame(now);
     if (opt_.link_trace) {
       // What libopus encodes: the frame, zero-padded past the end of the signal (OpusSendEncoder::Encode).
       std::vector<int16_t> in(OpusSendEncoder::kFrameSamples, 0);
@@ -949,6 +957,20 @@ class SendSide {
     const std::vector<uint8_t> frame = opus_encoder_.Encode(opus_in);
     session_.SendAudio(audio_send_, {static_cast<uint32_t>(k * 20 * sr_ / 1000), frame, false}, now + clock0_);
   }
+
+  // The AI endpoint's media source (issue #758, testbench/ai_source.h): its reply starts at `turn_start` and
+  // lasts `length`. The audio device keeps its 20 ms grid, so the RTP timestamps and the send times are those
+  // of a microphone; what each grid frame carries is the source's next frame handed over by its real-time
+  // drain, or silence when it has none (before the first chunk, in an underrun, after the reply).
+  void SetAiSource(const AiSourceConfig& config, Timestamp turn_start, TimeDelta length) {
+    ai_.emplace(config);
+    ai_->StartTurn(turn_start, length);
+    ai_turn_start_ = turn_start;
+  }
+  const AiMediaSource* ai_source() const { return ai_ ? &*ai_ : nullptr; }
+  // The turn's start to its first frame of media handed to the sender, once one was.
+  std::optional<TimeDelta> ai_first_audio() const { return ai_first_audio_; }
+  int64_t ai_frames_sent() const { return ai_frames_sent_; }
 
   void CaptureVideo(int64_t t, Timestamp now) {
     if (!(s_.video && t >= next_frame_ms_)) return;
@@ -1010,6 +1032,19 @@ class SendSide {
   int64_t height_sum() const { return height_sum_; }
 
  private:
+  // The PCM the 20 ms grid frame at `now` carries with an AI source: the frame the drain hands over by `now`
+  // (at most one, since its frames are 20 ms and leave at least 20 ms apart), or silence.
+  std::span<const int16_t> AiSourceFrame(Timestamp now) {
+    static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
+    const std::vector<AiFrame> out = ai_->Poll(now);
+    if (out.empty()) return kSilence;
+    const AiFrame& f = out.front();
+    if (!ai_first_audio_) ai_first_audio_ = now - ai_turn_start_;
+    ++ai_frames_sent_;
+    const size_t off = static_cast<size_t>(f.index) * OpusSendEncoder::kFrameSamples;
+    return std::span<const int16_t>(opus_pcm_).subspan(std::min(off, opus_pcm_.size()));
+  }
+
   // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
   // that encodes a held frame).
   void EncodeVideo(const rtp::EncodeDecision& dec, Timestamp capture, Timestamp at) {
@@ -1069,6 +1104,10 @@ class SendSide {
 
   Random enc_rng_;
   std::vector<int16_t> opus_pcm_;
+  std::optional<AiMediaSource> ai_;  // The AI's TTS source (#758), if the scenario has `ai_source`.
+  Timestamp ai_turn_start_ = Timestamp::Micros(0);
+  std::optional<TimeDelta> ai_first_audio_;
+  int64_t ai_frames_sent_ = 0;
   OpusSendEncoder opus_encoder_;
   OpusPacketLossRate opus_loss_;  // The in-band FEC input (issue #62).
   int32_t opus_loss_given_ = -1;  // The last fraction it was given, times 256 (issue #547).
@@ -1471,6 +1510,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   ReceiveSide up_rx(up_s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
   SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
   ReceiveSide down_rx(down_s, opt, user, down_streams, down_m, events, sr, clock0, down_tx.audio_ts_offset());
+  // `ai_source` (#758): the AI's audio comes from its TTS source. Until scripted turns (#751), its one reply starts
+  // with the call and lasts the call.
+  if (s.ai_source && s.audio) down_tx.SetAiSource(*s.ai_source, Timestamp::Millis(0), s.duration);
+  std::vector<double> ai_queue_ahead_ms;  // The AI source's queue ahead of real time, every 100 ms.
 
   struct Endpoint {
     rtp::Session& session;
@@ -1672,6 +1715,9 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     }
 
     // --- Measurement, per direction (0 up, 1 down) ----------------------------
+    if (const AiMediaSource* ai_src = down_tx.ai_source(); ai_src && t % 100 == 99) {
+      ai_queue_ahead_ms.push_back(static_cast<double>(ai_src->QueueAhead(now).us()) / 1000.0);
+    }
     for (int i = 0; i < 2; ++i) {
       if (t % 10 == 0) queue_samples[i].push_back(queue_ms[i]);
       ep[1 - i].rx.TraceRxTiming(t, ep[i].tx_trace);
@@ -1772,6 +1818,20 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     if (dm.video_start_seq) m["net.video_start_seq"] = *dm.video_start_seq;
     dm.repair.AddMetrics(m, video, end_ms);
     for (const auto& [name, value] : m) rep.metrics[prefix[i] + name] = value;
+  }
+  // The AI source's schedule (#758): how far ahead of real time it ran, and how soon its reply started.
+  if (const AiMediaSource* ai_src = down_tx.ai_source()) {
+    const AiSourceStats& st = ai_src->stats();
+    auto& m = rep.metrics;
+    if (const std::optional<TimeDelta> first = down_tx.ai_first_audio()) {
+      m["down.ai.first_audio_ms"] = static_cast<double>(first->us()) / 1000.0;
+    }
+    m["down.ai.queue_ahead_max_ms"] = static_cast<double>(st.max_queue_ahead.us()) / 1000.0;
+    double sum = 0;
+    for (double q : ai_queue_ahead_ms) sum += q;
+    m["down.ai.queue_ahead_mean_ms"] = ai_queue_ahead_ms.empty() ? 0 : sum / static_cast<double>(ai_queue_ahead_ms.size());
+    m["down.ai.frames_sent"] = static_cast<double>(down_tx.ai_frames_sent());
+    m["down.ai.underruns"] = static_cast<double>(st.underruns);
   }
   if (opt.link_trace) {
     rep.link_trace = forward.trace();

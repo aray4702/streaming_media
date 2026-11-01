@@ -172,8 +172,8 @@ struct Scenario {
   std::optional<int> apm_rate;
   // `ai_source [speed=<x>] [burst=<time>] [gap=<time>] [first_chunk=<time>] [frame=<time>]`: the AI
   // endpoint's media source in a two-way call, generated ahead of real time and sent at real time
-  // (testbench/ai_source.h; issue #4, #758). Parsed only for now: the call reads it once the two-way
-  // call exists (#758 part 2, after #746), so a one-way scenario runs as before.
+  // (testbench/ai_source.h; issue #4, #758). Needs `call two-way` and a 20 ms frame (UnsupportedReason); the
+  // AI's audio then comes from it, and the call reports down.ai.* (#758 part 2).
   std::optional<AiSourceConfig> ai_source;
 
   // Congestion control.

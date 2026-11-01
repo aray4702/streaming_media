@@ -26,9 +26,11 @@
 // yet sent), the time from the turn's start to its first frame sent, and the
 // underruns. Deterministic: there is no randomness.
 //
-// Not wired into the call yet: part 2 of #758 does that once the two-way call
-// exists (#746). `testbench/call.cc` does not read it, so one-way scenarios are
-// unchanged.
+// In a two-way call (`call two-way` with `ai_source`, #758 part 2) it is the AI
+// endpoint's audio: the audio device keeps its 20 ms grid, and each grid frame
+// carries the frame the drain hands over by then, or silence. Until scripted
+// turns (#751) the AI's one reply starts with the call and lasts the call. The
+// call reports down.ai.* (first audio, queue ahead, frames sent, underruns).
 #pragma once
 
 #include <cstdint>
