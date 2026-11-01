@@ -15,3 +15,5 @@ turn ai after=800ms len=4s
 # at most 500 ms to the response delay (sev:2).
 expect conv.responses == 3
 expect conv.response_delay_p95_ms < 500
+# program.md 6.3 sev:2 conversation: at most 2% of the user's speech lost or concealed on the way to the AI (#755).
+expect conv.user_speech_lost_pct <= 2
