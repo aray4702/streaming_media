@@ -115,7 +115,7 @@ const char* const kDefaultTraced =
     "issue_124_burst_loss_v2,issue_61_googcc_glue_congestive,probe_v2_cross_traffic,low_bandwidth,audio_only_lossy,"
     "issue_29_ulpfec_over_red,issue_257_zero_max_payload,issue_533_opus_decoder_frame_older_than_window,"
     "issue_522_outage_to_500kbps,issue_466_undershoot_very_low_capacity,issue_466_overshoot_very_low_capacity,"
-    "issue_12_lossbwe_shallow";
+    "issue_12_lossbwe_shallow,issue_24_timing_v2_default,issue_893_overshoot_seed2";
 
 std::string JsonString(const std::string& s) {
   std::string o = "\"";
@@ -302,6 +302,9 @@ int main(int argc, char** argv) {
                          JsonString(sm_audio_send) + ", \"webrtc_audiosend\": " + JsonString(rtc_audio_send) +
                          ", \"sm_frames\": " + JsonString(sm::testbench::FrameTraceCsv(ours.back().frame_trace)) +
                          ", \"webrtc_frames\": " + JsonString(sm::testbench::FrameTraceCsv(theirs.back().frame_trace)) +
+                         // The encoder model's rate per frame and libwebrtc's SetRates (issue #945 yardstick).
+                         ", \"sm_encrates\": " + JsonString(sm::testbench::EncodeRateCsv(ours.back().encode_rate_trace)) +
+                         ", \"webrtc_encrates\": " + JsonString(sm::testbench::EncodeRateCsv(theirs.back().encode_rate_trace)) +
                          "}";
         }
         for (const std::string& dir : {named ? trace_dir : std::string(), trace_all_dir}) {

@@ -93,6 +93,14 @@ struct VideoTraceRow {
 // hands out (decoded or dropped, before or after the decoder); libwebrtc's are
 // the frames its decoder decoded (ModelDecoder::Decode), with out_ms the decode
 // time for those its render queue dropped (IncomingVideoStream keeps no record).
+// One row per encoded frame (the rate the encoder model sized it from and its size), and on libwebrtc's side
+// also one per SetRates (bytes -1), when RunOptions::video_trace is set (issue #945 yardstick).
+struct EncodeRateRow {
+  int64_t time_us = 0;  // Capture time (frames) or SetRates time, since the call started.
+  int64_t rate_bps = 0;
+  int64_t bytes = -1;
+};
+
 struct FrameRenderRow {
   int64_t capture_ms = -1;
   int64_t render_time_ms = -1;
@@ -206,6 +214,7 @@ struct Report {
   std::vector<AudioSendRow> audio_send_trace;
   // The receive side's frames, when RunOptions::video_trace is set (#931).
   std::vector<FrameRenderRow> frame_trace;
+  std::vector<EncodeRateRow> encode_rate_trace;  // Issue #945 yardstick.
 };
 
 struct RunOptions {
@@ -286,6 +295,8 @@ std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
 // Report::frame_trace as CSV: capture_ms,render_time_ms,out_ms,rendered (#931).
 std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows);
+// Report::encode_rate_trace as CSV: time_us,rate_bps,bytes (issue #945).
+std::string EncodeRateCsv(const std::vector<EncodeRateRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

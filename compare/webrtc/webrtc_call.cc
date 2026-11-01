@@ -568,6 +568,7 @@ struct VideoModel {
   // the arrival of its last media or RTX packet, and the renderer the render time.
   std::unordered_map<uint32_t, testbench::VideoFrameTimes> frame_times;
   std::function<sm::Timestamp()> now;  // Time since the call started.
+  std::vector<testbench::EncodeRateRow> encode_rates;  // Issue #945 yardstick.
 };
 
 // Frame sizes follow the allocated rate with +-20% variation and keyframes
@@ -591,6 +592,7 @@ class ModelEncoder final : public w::VideoEncoder {
   void SetRates(const RateControlParameters& p) override {
     rate_bps_ = p.bitrate.get_sum_bps();
     m_->encoder_rate_bps = rate_bps_;
+    if (m_->now) m_->encode_rates.push_back({m_->now().us(), rate_bps_, -1});
   }
   int32_t Encode(const w::VideoFrame& frame, const std::vector<w::VideoFrameType>* types) override {
     if (!cb_) return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
@@ -604,6 +606,7 @@ class ModelEncoder final : public w::VideoEncoder {
         testbench::EncoderModel::DeltaSizeFactor(behaviour, (capture_us - m_->start_us) / 1000, m_->s->video_fps);
     int64_t bytes = static_cast<int64_t>(key ? per_frame * 4 : per_frame * m_->rng.Uniform(0.8, 1.2) * factor);
     bytes = std::max<int64_t>(bytes, 200);
+    m_->encode_rates.push_back({capture_us - m_->start_us, rate_bps_, bytes});  // Issue #945 yardstick.
     const std::vector<uint8_t> au = ModelAccessUnit(key, static_cast<size_t>(bytes));
     auto buf = w::EncodedImageBuffer::Create(au.data(), au.size());
     m_->capture_us_by_rtp[frame.rtp_timestamp()] = capture_us;
@@ -1785,6 +1788,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     }
     if (s.audio) av_sync.AddMetrics(m);
     testbench::AddAvSyncToVideoTrace(av_sync, rep.video_trace);
+    rep.encode_rate_trace = model.encode_rates;  // Issue #945 yardstick.
     m["video.avg_kbps"] = static_cast<double>(model.bytes) * 8 / s.duration.seconds() / 1000;
     m["video.qp_mean"] =
         model.frames_encoded ? static_cast<double>(model.qp_sum) / static_cast<double>(model.frames_encoded) : 0;

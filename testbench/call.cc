@@ -407,6 +407,12 @@ std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows) {
   return out;
 }
 
+std::string EncodeRateCsv(const std::vector<EncodeRateRow>& rows) {
+  std::string out = "time_us,rate_bps,bytes\n";
+  for (const auto& r : rows) out += std::to_string(r.time_us) + "," + std::to_string(r.rate_bps) + "," + std::to_string(r.bytes) + "\n";
+  return out;
+}
+
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
   std::string out = "kind,time_us,seq,rtp_ts,pt,payload_bytes,payload_hash,fraction_lost,bitrate_bps,allocation_bps,"
                     "overhead_bytes\n";
@@ -1074,6 +1080,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       int64_t bytes = static_cast<int64_t>(
           key ? per_frame * 4 : per_frame * enc_rng.Uniform(0.8, 1.2) * EncoderModel::DeltaSizeFactor(enc_behaviour, capture.ms(), s.video_fps));
       bytes = std::max<int64_t>(bytes, 200);
+      rep.encode_rate_trace.push_back({capture.us(), vr.bps(), bytes});  // Issue #945 yardstick.
       vt_row.encoded_bytes += bytes;
       const int qp = EncoderModel::Qp(bytes, key, enc_w, enc_h, s.video_complexity);
       vt_row.qp_sum += qp;
