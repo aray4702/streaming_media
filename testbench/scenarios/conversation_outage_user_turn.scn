@@ -1,0 +1,18 @@
+name conversation_outage_user_turn
+describe User <-> AI conversation, audio, 100 ms RTT; the user-to-AI link is down for 2 s during the user's second turn (#757)
+call two-way
+video off
+duration 30s
+at 0s capacity=2500kbps delay=50ms queue=300ms
+at 10.5s down
+at 12.5s up
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=800ms len=4s
+turn user 19s-22s
+turn ai after=800ms len=4s
+# program.md 6.3, conversation sev:1: the AI hears the user and the user hears the AI's replies, through and after the
+# outage. The outage is beyond the sev:2 conditions (<= 5% loss), so no delay line.
+expect conv.responses >= 3

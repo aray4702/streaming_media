@@ -6,6 +6,7 @@
 
 #include "call.h"
 #include "scenario.h"
+#include "turn_detector.h"
 #include "sm_test.h"
 
 using namespace sm::testbench;
@@ -243,4 +244,72 @@ SM_TEST(TestbenchCallMode, SpeechLossMeterPattern) {
     for (int64_t p = 480; p <= 2880; p += 480) m.OnPull(p, 480, 0);
     SM_EXPECT_TRUE(m.lost_pct() == 0);
   }
+
+// Issue #753: the AI answers its detected end of the user's turn, and the response delay is what the transport added.
+SM_TEST(TestbenchCallMode, AiAnswersTheDetectedEndOfTurn) {
+  const std::string script = "turn user 1s-3s\nturn ai after=800ms len=2s\nturn user 7s-9s\nturn ai after=500ms len=2s\n";
+  const Report r = RunTurns(script);
+  SM_EXPECT_TRUE(r.metrics.at("conv.responses") == 2);
+  // 100 ms RTT, 20 ms frames and the jitter buffers on both sides: a few hundred ms, never negative.
+  SM_EXPECT_TRUE(r.metrics.at("conv.response_delay_p50_ms") > 100);
+  SM_EXPECT_TRUE(r.metrics.at("conv.response_delay_p95_ms") < 500);
+  // More delay on the links adds about as much to the response.
+  const Report slow = RunTurns(script + "at 0s delay=150ms\nreverse at 0s delay=150ms\n");
+  const double added = slow.metrics.at("conv.response_delay_p50_ms") - r.metrics.at("conv.response_delay_p50_ms");
+  SM_EXPECT_TRUE(added > 150 && added < 260);
+  SM_EXPECT_TRUE(RunTurns(script).metrics == r.metrics);
+  SM_EXPECT_TRUE(RunTwoWay(1).metrics.count("conv.responses") == 0);  // No turns, no conversation metrics.
+}
+
+// Issue #754: when the AI hears the user over its reply it stops sending its speech; its audio stops at the user's
+// ear once what is already in the path has played.
+SM_TEST(TestbenchCallMode, BargeInStopsTheAi) {
+  const std::string base = "turn user 1s-3s\nturn ai after=500ms len=6s\n";
+  const Report full = RunTurns(base);
+  const Report cut = RunTurns(base + "barge-in at 5s len=1s\n");
+  SM_EXPECT_TRUE(full.metrics.count("conv.barge_in_stop_ms") == 0);
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_ins") == 1);
+  // Onset 100 ms, barge-in after 200 ms of speech, 50 ms each way, and the user's jitter buffer.
+  SM_EXPECT_TRUE(cut.metrics.at("conv.barge_in_stop_ms") > 300 && cut.metrics.at("conv.barge_in_stop_ms") < 500);
+  // The rest of the reply is not sent.
+  SM_EXPECT_TRUE(cut.metrics.at("down.net.audio_kbps") < full.metrics.at("down.net.audio_kbps"));
+  SM_EXPECT_TRUE(RunTurns(base + "barge-in at 5s len=1s\n").metrics == cut.metrics);
+}
+
+// Issue #756: the AI's decisions against the script, one missed and one false.
+SM_TEST(TestbenchCallMode, TurnDetectErrorsCountMissedAndFalse) {
+  auto ms = [](int64_t v) { return sm::Timestamp::Millis(v); };
+  auto event = [&](TurnEventType type, int64_t start, int64_t last) {
+    TurnEvent e;
+    e.type = type;
+    e.speech_start = ms(start);
+    e.last_speech = ms(last);
+    e.at = ms(last + 600);
+    return e;
+  };
+  // User turns 1-4 s and 10-12 s; a barge-in at 6 s while the AI speaks 5-8 s.
+  const std::vector<TurnWindow> user = {{ms(1000), ms(4000)}, {ms(6000), ms(7000)}, {ms(10000), ms(12000)}};
+  const std::vector<TurnWindow> ai = {{ms(5000), ms(6300)}};
+  std::vector<TurnEvent> ev = {event(TurnEventType::kEndOfTurn, 1060, 4070),   // turn 1 ends: matched
+                               event(TurnEventType::kBargeIn, 6060, 6260),     // barge-in: matched
+                               event(TurnEventType::kEndOfTurn, 6060, 7080),   // barge-in utterance ends: matched
+                               event(TurnEventType::kEndOfTurn, 10060, 10900)};  // a gap mid-turn: false
+  // Turn 3's real end is never detected: missed.
+  const TurnDetectErrors e = CountTurnDetectErrors(user, ai, ev, sm::TimeDelta::Millis(500));
+  SM_EXPECT_TRUE(e.missed_end_of_turn == 1);
+  SM_EXPECT_TRUE(e.false_end_of_turn == 1);
+  SM_EXPECT_TRUE(e.missed_barge_in == 0 && e.false_barge_in == 0);
+  SM_EXPECT_TRUE(e.total() == 2);
+  // No barge-in event for the barge-in: missed; one barge-in while the AI is silent: false.
+  ev[1].speech_start = ms(2000);
+  const TurnDetectErrors b = CountTurnDetectErrors(user, ai, ev, sm::TimeDelta::Millis(500));
+  SM_EXPECT_TRUE(b.missed_barge_in == 1 && b.false_barge_in == 1);
+}
+
+// Issue #756: an up-link outage in the middle of the user's turn makes the AI call the turn over early.
+SM_TEST(TestbenchCallMode, OutageMidTurnIsAFalseEndOfTurn) {
+  const std::string script = "turn user 1s-5s\nturn ai after=500ms len=2s\nturn ai after=500ms len=2s\n";
+  SM_EXPECT_TRUE(RunTurns(script).metrics.at("conv.turn_detect_errors") == 0);
+  const Report r = RunTurns(script + "at 2s down\nat 3s up\n");
+  SM_EXPECT_TRUE(r.metrics.at("conv.false_end_of_turn") >= 1);
 }

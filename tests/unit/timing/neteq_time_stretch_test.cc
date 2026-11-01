@@ -203,6 +203,31 @@ SM_TEST(NetEqTimeStretch, AccelerateVoicedRemovesOnePeriod) {
   }
 }
 
+// #951: DspHelper::DownsampleTo4kHz (here and in Expand/Merge's
+// DownsampleFast) filters backwards from `num_coefficients - 1` samples into
+// the signal, so the first outputs read samples before that pointer. The read
+// is in bounds, but `in[i - j]` with unsigned i < j wrapped the pointer
+// arithmetic, which Apple clang's UBSan reports (pointer-overflow) and
+// GCC's doesn't instrument. Runs the path at every rate on the shortest
+// inputs; under `native-asan` on macOS, or a clang build with
+// `-fsanitize=pointer-overflow -fsanitize-trap=pointer-overflow`, the old
+// indexing traps here. BitExactWithLibwebrtc pins the values.
+SM_TEST(NetEqTimeStretch, DownsamplingReadsTheFilterHistoryWithoutOverflow) {
+  for (int rate : {8000, 16000, 32000, 48000}) {
+    const size_t fs_mult = static_cast<size_t>(rate / 8000);
+    const std::vector<float> in = Voiced(rate, 125, 240 * fs_mult, 0.4);
+    NetEqBackgroundNoise bgn;
+    std::vector<float> out;
+    size_t change = 0;
+    NetEqTimeStretch accelerate(rate);
+    SM_EXPECT_TRUE(accelerate.Accelerate(in, false, bgn, out, &change) == Result::kSuccess);
+    out.clear();
+    NetEqTimeStretch preemptive(rate);
+    SM_EXPECT_TRUE(preemptive.PreemptiveExpand(in, 0, 5 * fs_mult, bgn, out, &change) == Result::kSuccess);
+    SM_EXPECT_EQ(accelerate.peak_index(), preemptive.peak_index());
+  }
+}
+
 // AudioVector::CrossFade: the period before 15 ms fades into the one after
 // it with weights falling by 16384 / (L + 1) in Q14, on the int16 samples
 // and rounded as libwebrtc's ((a * x + (16384 - a) * y + 8192) >> 14, #644).

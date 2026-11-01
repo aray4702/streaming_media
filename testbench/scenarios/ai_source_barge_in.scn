@@ -1,0 +1,20 @@
+name ai_source_barge_in
+describe User <-> AI conversation with a bursty TTS source (3x, 1 s bursts, 300 ms gaps, 400 ms first chunk) sent at real time; the user talks over a reply (#760)
+duration 30s
+call two-way
+video off
+at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+ai_source speed=3x burst=1s gap=300ms first_chunk=400ms
+turn user 1s-4s
+turn ai after=800ms len=8s
+barge-in at 8s len=2s
+turn ai after=800ms len=3s
+turn user 17s-20s
+turn ai after=800ms len=4s
+# program.md 6.3, conversation rows: barge-in stops the AI's audio (sev:1) within 500 ms at the user's ear on a
+# 100 ms RTT link (sev:2). The audio still playing after the AI stops is part of that time, so under 500 ms too.
+expect conv.barge_ins == 1
+expect conv.barge_in_stop_ms < 500
+expect conv.barge_in_tail_ms < 500
+expect ai.cancels == 1
