@@ -14,7 +14,11 @@ at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
 reverse at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
 # program.md 6.3 sev:2, for each direction: no audio interruptions in moderate loss (<= 5%), mouth-to-ear delay
 # under 400 ms on a 100 ms RTT link, and no bottleneck queue held over 200 ms. The AI source never falls behind
-# real time at 3x (no underruns). conv.response_delay_* (#753) gets its expect lines once it exists.
+# real time at 3x (no underruns). Conversation rows: the user hears every reply (sev:1), and at most 2% of the user's
+# speech is lost or concealed on the way to the AI (sev:2).
+# Target (program.md 6.3 sev:2 conversation): conv.response_delay_p95_ms < 500. Missed today (746-818 ms on seeds 1-5)
+# because the metric counts the source's 400 ms first chunk; follow-up #969. No expect line until it is decided; the
+# baseline holds today's value.
 expect up.audio.interruptions == 0
 expect down.audio.interruptions == 0
 expect up.audio.mouth_to_ear_p95_ms < 400
@@ -23,3 +27,5 @@ expect up.cc.queue_over_200ms_pct == 0
 expect down.cc.queue_over_200ms_pct == 0
 expect ai.turns == 3
 expect ai.underruns == 0
+expect conv.responses == 3
+expect conv.user_speech_lost_pct <= 2

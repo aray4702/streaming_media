@@ -2,6 +2,7 @@
  "description": "User <-> AI conversation, audio, 100 ms RTT; the user-to-AI link is down for 2 s during the user's second turn (",
  "metrics": {
   "conv.barge_in_stop_ms": 2850,
+  "conv.barge_in_tail_ms": 80,
   "conv.barge_ins": 1,
   "conv.false_barge_in": 1,
   "conv.false_end_of_turn": 1,
@@ -11,6 +12,7 @@
   "conv.response_delay_p95_ms": 362,
   "conv.responses": 3,
   "conv.turn_detect_errors": 2,
+  "conv.user_speech_lost_pct": 22.03,
   "down.audio.concealed_pct": 0,
   "down.audio.interruption_ms": 0,
   "down.audio.interruptions": 0,
