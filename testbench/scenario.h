@@ -70,6 +70,9 @@ struct Scenario {
   // has both endpoints send and receive (#2). It parses, but sm_testbench rejects it until #746 runs it, and
   // sm_compare skips it: libwebrtc's side has no two-way call (issue #743).
   bool two_way = false;
+  // `two_way_video both|up|down` (issue #747): in a two-way call with video, which directions send it: both (the
+  // default), up (user to AI) or down (AI to user). Only for `call two-way`.
+  bool video_up = true, video_down = true;
 
   // Media.
   bool audio = true;

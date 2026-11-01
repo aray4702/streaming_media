@@ -1,0 +1,15 @@
+name two_way_outage_up
+describe Two-way call (user <-> AI), audio and video both ways, 2.5 Mbps each way, 100 ms RTT; the user-to-AI link is down from 10 to 13 s (#748)
+duration 40s
+call two-way
+at 0s capacity=2500kbps delay=50ms queue=300ms
+at 10s down
+at 13s up
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+# program.md 6.3, for each direction. The outage direction: the call recovers (sev:1: video does not stop for good,
+# a pause is a gap of 5 s or more) and the target settles within 10 s of the link coming back (sev:2). The other
+# direction carries on: no audio interruptions or freezes > 1 s (sev:2), although its feedback crosses the dead link.
+expect up.video.pause_count == 0
+expect up.cc.max_settle_ms < 10000
+expect down.audio.interruptions == 0
+expect down.video.longest_freeze_ms < 1000

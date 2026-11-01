@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -206,6 +207,10 @@ struct Report {
   std::vector<AudioSendRow> audio_send_trace;
   // The receive side's frames, when RunOptions::video_trace is set (#931).
   std::vector<FrameRenderRow> frame_trace;
+  // A two-way call's down direction (AI to user, issue #749): its time series and traces, with link_trace its media
+  // link (the reverse link). The fields above are then the up direction's, link_trace the forward link and
+  // reverse_trace empty; the metrics above hold both directions as up.* and down.*.
+  std::shared_ptr<Report> down;
 };
 
 struct RunOptions {
@@ -232,6 +237,8 @@ int AudioCodecRate(int capture_rate);
 // cc.max_settle_ms and cc.unsettled from rep.timeseries. `demand_kbps` is
 // the media's maximum wire rate (what the call would send on an unlimited link).
 void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep);
+// The same for one link of a call: `changes` are that link's (a two-way call's down direction runs on the reverse link).
+void AddCcMetrics(const Scenario& s, const std::vector<LinkChange>& changes, double demand_kbps, Report& rep);
 // Also adds cc.target_max_drop_pct and cc.send_over_target_p95_pct.
 // Adds the forward link's per-kind counters (issue #117): net.<kind>_kbps
 // (wire rate sent over the call) for audio, video, rtx, padding and fec, and

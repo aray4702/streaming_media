@@ -319,6 +319,10 @@ ParseResult ParseScenario(const std::string& text) {
     } else if (key == "call") {
       if (!need(2) || (tok[1] != "one-way" && tok[1] != "two-way")) return fail("usage: call one-way|two-way");
       s.two_way = tok[1] == "two-way";
+    } else if (key == "two_way_video") {
+      if (!need(2) || (tok[1] != "both" && tok[1] != "up" && tok[1] != "down")) return fail("usage: two_way_video both|up|down");
+      s.video_up = tok[1] != "down";
+      s.video_down = tok[1] != "up";
     } else if (key == "audio" || key == "video" || key == "red" || key == "nack" || key == "fec") {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: " + key + " on|off");
@@ -515,6 +519,9 @@ std::string FormatScenario(const Scenario& s) {
   o += "duration " + FormatTime(s.duration) + "\n";
   o += "seed " + std::to_string(s.seed) + "\n";
   if (s.two_way != d.two_way) o += std::string("call ") + (s.two_way ? "two-way" : "one-way") + "\n";
+  if (s.video_up != d.video_up || s.video_down != d.video_down) {
+    o += std::string("two_way_video ") + (s.video_up && s.video_down ? "both" : s.video_up ? "up" : "down") + "\n";
+  }
   auto onoff = [&](const char* k, bool v, bool def) {
     if (v != def) o += std::string(k) + (v ? " on\n" : " off\n");
   };
@@ -575,7 +582,7 @@ std::string FormatScenario(const Scenario& s) {
 }
 
 std::string UnsupportedReason(const Scenario& s) {
-  if (s.two_way) return "call two-way is not supported yet: the test bench runs one-way calls only (#743; #746 adds two-way)";
+  if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
   return "";
 }
 
