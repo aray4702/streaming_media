@@ -99,6 +99,9 @@ Kind ToKind(rtp::OutgoingKind k) {
 // RTP fixed header fields (RFC 3550 section 5.1), read from the bytes of a
 // datagram that is known to be RTP.
 uint16_t RtpSeq(const std::vector<uint8_t>& b) { return static_cast<uint16_t>((b[2] << 8) | b[3]); }
+uint32_t RtpSsrc(const std::vector<uint8_t>& b) {
+  return (static_cast<uint32_t>(b[8]) << 24) | (static_cast<uint32_t>(b[9]) << 16) | (static_cast<uint32_t>(b[10]) << 8) | b[11];
+}
 uint32_t RtpTimestamp(const std::vector<uint8_t>& b) {
   return (static_cast<uint32_t>(b[4]) << 24) | (static_cast<uint32_t>(b[5]) << 16) | (static_cast<uint32_t>(b[6]) << 8) | b[7];
 }
@@ -1189,6 +1192,7 @@ class ReceiveSide {
         concealment_(sr),
         audio_out_(static_cast<size_t>(sr / 100)) {
     if (s.audio) audio_recv_ = session.AddAudioReceive(cfg.audio, &decoder_);
+    audio_ssrc_ = cfg.audio.ssrc;
     if (s.video) video_recv_ = session.AddVideoReceive(cfg.video);
     audio_net_delay_.Start(audio_ts_offset, sr);
   }
@@ -1207,8 +1211,16 @@ class ReceiveSide {
 
   // A packet that arrived on the forward link, before the receiver takes it.
   void OnPacket(const Fwd& w, Timestamp at) {
-    if (audio_tap_ && w.kind == Kind::kAudio) audio_tap_(RtpTimestamp(w.bytes), at);
+    // Audio NACK (`up_audio_nack`, #971): a resend is the audio packet itself on the audio SSRC, sent as a
+    // retransmission (Kind::kRtx). It is a first delivery of that audio packet, and the AI hears it on arrival.
+    const bool audio_resend = w.kind == Kind::kRtx && RtpSsrc(w.bytes) == audio_ssrc_;
+    if (audio_tap_ && (w.kind == Kind::kAudio || audio_resend)) audio_tap_(RtpTimestamp(w.bytes), at);
     int64_t wire = static_cast<int64_t>(w.bytes.size()) + kUdpIpOverhead;
+    if (audio_resend) {
+      if (first_delivery_.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) d_.w_good += wire;
+      session_.OnPacket(w.bytes, at + rx0_);
+      return;
+    }
     switch (w.kind) {
       case Kind::kAudio: {
         if (first_delivery_.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) d_.w_good += wire;
@@ -1505,6 +1517,7 @@ class ReceiveSide {
   FirstDelivery first_delivery_;  // goodput counts each media sequence number once (#329)
   double last_video_delay_ = 0;
   std::function<void(uint32_t, Timestamp)> audio_tap_;
+  uint32_t audio_ssrc_ = 0;
   bool muted_ = false;
 };
 
@@ -1573,7 +1586,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   // Up: the user's send side and the AI's receive side. Down: the AI's send side and the user's receive side, on
   // SSRCs 11-13, so each session sends on one set and receives the other.
   DirectionMeters up_m, down_m;
-  const StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, audio_wire_rate, up_m);
+  StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, audio_wire_rate, up_m);
+  // `up_audio_nack on` (#971): audio NACK on the user-to-AI audio stream, both its ends (the user's sender keeps
+  // the history and resends, the AI's receiver NACKs). The AI-to-user stream keeps libwebrtc's default, off.
+  up_streams.audio.nack = s.up_audio_nack;
   StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
   down_streams.audio.send_ahead = s.ai_send_ahead;  // The AI's send side (#762); zero: real time.
   SendSide up_tx(up_s, opt, user, up_streams, up_m, sr, clock0);

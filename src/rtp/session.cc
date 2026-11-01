@@ -117,6 +117,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   RtpSenderConfig c = SenderConfig(a.ssrc, a.payload_type, a.clock_rate, false, cfg_.mid_audio);
   c.red_payload_type = a.red_payload_type;
   c.red_distance = a.red_distance;
+  c.resend_on_media_ssrc = a.nack;  // Audio NACK (#971): no RTX for audio, resends on the media SSRC.
   SendStream as;
   as.sender = std::make_unique<RtpSender>(c);
   as.send_ahead = std::max(a.send_ahead, TimeDelta::Zero());
@@ -223,6 +224,10 @@ AudioRecvId Session::AddAudioReceive(const AudioStreamConfig& a, AudioDecoder* d
   c.decoder = decoder;
   c.red = a.red_payload_type.has_value();
   c.jitter_buffer = a.jitter_buffer;
+  // AudioReceiveStreamImpl: SetNACKStatus(rtp_history_ms != 0, rtp_history_ms / 20) with the voice
+  // engine's kNackRtpHistoryMs (audio_receive_stream.cc:140-141, webrtc_voice_engine.cc:126).
+  constexpr int kNackRtpHistoryMs = 5000;
+  c.audio_nack_max_packets = a.nack ? static_cast<size_t>(kNackRtpHistoryMs / 20) : 0;
   c.receive_statistics_v2 = cfg_.receive_statistics_v2;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
@@ -659,6 +664,46 @@ void Session::HandleRtp(std::span<const uint8_t> bytes, Timestamp now) {
   const auto [video, index] = sinks_[static_cast<size_t>(*sink)];
   RtpReceiver& r = video ? *video_recv_[static_cast<size_t>(index)].receiver : *audio_recv_[static_cast<size_t>(index)].receiver;
   if (r.OnPacket(bytes, now) == ReceivedKind::kMalformed) ++stats_.malformed;
+  if (!video) {
+    // ChannelReceive::OnRtpPacket asks the tracker right after the packet, with its receive-only
+    // module's LastRtt: none, as that module has no report block about a stream of its own and
+    // non-sender RTT is off (enable_non_sender_rtt), so the tracker takes its 100 ms default.
+    RecvStream& rs = audio_recv_[static_cast<size_t>(index)];
+    const std::vector<uint16_t> nack_list = r.TakeAudioNackList(std::nullopt);
+    if (!nack_list.empty()) SendAudioNack(rs, nack_list, now);
+  }
+}
+
+// ModuleRtpRtcpImpl2::SendNACK and TimeToSendFullNackList (rtp_rtcp_impl2.cc:573-631) of the audio
+// receive stream's module. Its rtt_ms() is 0 and RTCPReceiver::AverageRtt has no sample (see
+// HandleRtp), so the full list goes once per kStartUpRttMs, 100 ms; in between, only the numbers
+// after the last one sent, and nothing when that is still the list's last. At most kRtcpMaxNackFields
+// (253) numbers per packet.
+void Session::SendAudioNack(RecvStream& r, const std::vector<uint16_t>& nack_list, Timestamp now) {
+  constexpr int64_t kStartUpRttMs = 100;
+  constexpr size_t kRtcpMaxNackFields = 253;
+  size_t nack_length = nack_list.size();
+  size_t start_id = 0;
+  const bool full = !r.nack_last_time_sent_full.IsFinite() || now.ms() - r.nack_last_time_sent_full.ms() > kStartUpRttMs;
+  if (full) {
+    r.nack_last_time_sent_full = Timestamp::Millis(now.ms());
+  } else {
+    if (r.nack_last_seq_number_sent == nack_list.back()) return;
+    for (size_t i = 0; i < nack_list.size(); ++i) {
+      if (r.nack_last_seq_number_sent == nack_list[i]) {
+        start_id = i + 1;
+        break;
+      }
+    }
+    nack_length = nack_list.size() - start_id;
+  }
+  nack_length = std::min(nack_length, kRtcpMaxNackFields);
+  r.nack_last_seq_number_sent = nack_list[start_id + nack_length - 1];
+  const std::span<const uint16_t> seqs(nack_list.data() + start_id, nack_length);
+  (audio_recv_rtcp_ ? *audio_recv_rtcp_ : rtcp_).QueueNack(r.ssrc, seqs);
+  ++stats_.audio_nacks_sent;
+  stats_.audio_nack_seqs_sent += nack_length;
+  SM_EVENT(cfg_.events, now, "rtp_session", "audio_nack", static_cast<int64_t>(nack_length), r.ssrc);
 }
 
 void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
@@ -1081,6 +1126,10 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("unroutable", stats_.unroutable);
   w.Counter("empty_video_frames", stats_.empty_video_frames);
   w.Counter("nacks_unmatched", stats_.nacks_unmatched);
+  if (stats_.audio_nacks_sent > 0) {
+    w.Counter("audio_nacks_sent", stats_.audio_nacks_sent);
+    w.Counter("audio_nack_seqs_sent", stats_.audio_nack_seqs_sent);
+  }
   w.Counter("audio_cancels", stats_.audio_cancels);
   w.Counter("audio_cancelled_packets", stats_.audio_cancelled_packets);
   w.Counter("audio_flushes", stats_.audio_flushes);

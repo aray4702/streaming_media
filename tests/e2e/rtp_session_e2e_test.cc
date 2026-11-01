@@ -28,10 +28,11 @@ class FakeDecoder : public AudioDecoder {
 
 struct Endpoint {
   explicit Endpoint(SessionConfig c, const test::TestVideoParser* parser, FakeDecoder* dec, bool red,
-                    TimeDelta video_min_playout = TimeDelta::Zero())
+                    TimeDelta video_min_playout = TimeDelta::Zero(), bool audio_nack = false)
       : session(std::move(c)) {
     AudioStreamConfig a;
     a.ssrc = kAudioSsrc;
+    a.nack = audio_nack;
     a.nominal_rate = DataRate::KilobitsPerSec(40);
     if (red) a.red_payload_type = 63;
     VideoStreamConfig v;
@@ -72,6 +73,7 @@ struct Options {
   bool mid = true;
   bool red = false;
   bool av_sync = false;
+  bool audio_nack = false;  // AudioStreamConfig::nack on both endpoints (#971).
   int64_t duration_ms = 10000;
   TimeDelta video_min_playout = TimeDelta::Zero();  // Bob's configured video minimum playout delay.
   uint64_t seed = 1;
@@ -82,6 +84,8 @@ struct Result {
   uint64_t keyframe_events = 0, rtt_events = 0, malformed_a = 0, malformed_b = 0, unroutable = 0;
   uint64_t rtx_received = 0, nack_seqs = 0, rtcp_a_to_b = 0, rtcp_b_to_a = 0;
   uint64_t padding_out = 0, audio_decoded = 0;
+  uint64_t concealed_samples = 0;
+  uint64_t audio_nack_seqs = 0, audio_resent = 0, audio_resends_out = 0, audio_without_rtx = 0;
   int64_t longest_gap_ms = 0;
   double rtt_ms = 0;
   double target_kbps = 0;
@@ -97,8 +101,8 @@ Result Run(const Options& o) {
   SessionConfig ca = MakeConfig(10, "alice", o.mid), cb = MakeConfig(20, "bob", o.mid);
   ca.audio_rtcp = cb.audio_rtcp = o.av_sync;
   ca.av_sync = cb.av_sync = o.av_sync;
-  Endpoint a(ca, &parser, &dec_a, o.red);
-  Endpoint b(cb, &parser, &dec_b, o.red, o.video_min_playout);
+  Endpoint a(ca, &parser, &dec_a, o.red, TimeDelta::Zero(), o.audio_nack);
+  Endpoint b(cb, &parser, &dec_b, o.red, o.video_min_playout, o.audio_nack);
 
   sim::LinkConfig lc;
   lc.base_delay = TimeDelta::Millis(25);
@@ -135,6 +139,9 @@ Result Run(const Options& o) {
     b.session.Process(now);
     for (auto& p : a.session.TakeOutgoing()) {
       res.padding_out += p.kind == OutgoingKind::kPadding;
+      if (p.kind == OutgoingKind::kRtx) {
+        if (auto rp = RtpPacket::Parse(p.bytes); rp && rp->ssrc == kAudioSsrc) ++res.audio_resends_out;
+      }
       res.rtcp_a_to_b += p.kind == OutgoingKind::kRtcp;
       ab.Send(now, std::move(p.bytes), p.wire_size);
     }
@@ -174,6 +181,10 @@ Result Run(const Options& o) {
   res.rtx_received = b.session.video_receiver(b.video_recv).stats().rtx;
   res.nack_seqs = b.session.video_receiver(b.video_recv).nack().stats().nack_requests;
   res.audio_decoded = static_cast<uint64_t>(dec_b.decoded);
+  res.concealed_samples = b.session.audio_receiver(b.audio_recv).jitter_buffer().stats().concealed_samples;
+  res.audio_nack_seqs = b.session.stats().audio_nack_seqs_sent;
+  res.audio_resent = a.session.audio_sender(a.audio_send).rtx().stats().retransmitted;
+  res.audio_without_rtx = a.session.audio_sender(a.audio_send).stats().nacks_without_rtx;
   res.rtt_ms = static_cast<double>(a.session.rtt().us()) / 1000.0;
   res.target_kbps = a.session.rates().target.kbps();
   if (const sync::RtpStreamsSynchronizer* s = b.session.av_sync()) {
@@ -257,6 +268,29 @@ SM_TEST(E2E_RtpSession, AudioRedIsUnwrappedThroughTheSession) {
   // RED repeats the previous frame, so more frames reach the decoder than
   // packets survive.
   SM_EXPECT_GT(r.audio_decoded, 400u);
+}
+
+// #971: with audio NACK on, the receiver NACKs the lost audio packets (NetEq's NackTracker), the
+// sender resends them on the audio SSRC from its history, and they are played: fewer concealed
+// pulls than the same seed without audio NACK. Off (the default) nothing is NACKed.
+SM_TEST(E2E_RtpSession, AudioNackResendsLostAudioAndItIsPlayed) {
+  for (uint64_t seed : {1, 2, 3}) {
+    Options o;
+    o.loss = 0.05;
+    o.seed = seed;
+    const Result off = Run(o);
+    o.audio_nack = true;
+    const Result on = Run(o);
+    SM_EXPECT_EQ(off.audio_nack_seqs, 0u);
+    SM_EXPECT_EQ(off.audio_resent, 0u);
+    SM_EXPECT_GT(on.audio_nack_seqs, 0u);
+    SM_EXPECT_GT(on.audio_resent, 0u);
+    SM_EXPECT_GT(on.audio_resends_out, 0u);  // On the audio SSRC, as OutgoingKind::kRtx.
+    SM_EXPECT_EQ(on.audio_without_rtx, 0u);
+    SM_EXPECT_EQ(on.malformed_b, 0u);
+    SM_EXPECT_GT(on.audio_decoded, off.audio_decoded);
+    SM_EXPECT_LT(on.concealed_samples, off.concealed_samples);
+  }
 }
 
 SM_TEST(E2E_RtpSession, NackAndRtxRecoverLossThroughTheSession) {

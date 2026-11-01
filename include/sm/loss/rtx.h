@@ -41,6 +41,9 @@ struct RtxConfig {
   // queue as a resend is not resent again; a repeat request within one RTT of the last send
   // is ignored. (The v1 ring, filled when a packet was queued, was deleted in #167.)
   size_t number_to_store = 600;  // kMinSendSidePacketHistorySize (call/rtp_video_sender.cc).
+  // RTPSender::ReSendPacket without an RTX SSRC (rtp_sender.cc:319-362; audio NACK, #971): a resend
+  // is the stored packet itself, on the media SSRC with its own sequence number, not RTX-wrapped.
+  bool encapsulate = true;
   EventSink* events = nullptr;
 };
 

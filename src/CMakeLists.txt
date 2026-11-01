@@ -12,6 +12,7 @@ set(SM_SECTIONS core)
 if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES
     loss/nack_tracker.cc
+    loss/audio_nack_tracker.cc
     loss/rtx.cc
     loss/red.cc
     loss/keyframe_request.cc

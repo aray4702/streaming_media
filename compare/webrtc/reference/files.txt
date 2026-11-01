@@ -194,6 +194,9 @@ audio/channel_receive.h
 audio/channel_receive.cc
 audio/audio_receive_stream.h
 audio/audio_receive_stream.cc
+audio/nack_tracker.h
+audio/nack_tracker.cc
+audio/nack_tracker_unittest.cc
 api/video/video_adapter.h
 api/video/video_adapter.cc
 api/video/adapted_video_track_source.h

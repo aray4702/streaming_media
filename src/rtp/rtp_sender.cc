@@ -28,6 +28,7 @@ loss::RtxConfig MakeRtxConfig(const RtpSenderConfig& c) {
   loss::RtxConfig r = c.rtx;
   r.rtx_ssrc = c.rtx_ssrc.value_or(0);
   r.rtx_payload_type = c.rtx_payload_type;
+  r.encapsulate = c.rtx_ssrc.has_value();
   if (c.fec) {
     r.red_payload_type = c.ulpfec.red_payload_type;
     r.rtx_red_payload_type = c.ulpfec.red_rtx_payload_type;
@@ -94,7 +95,8 @@ void RtpSender::AssignSequenceNumber(SenderPacket& p, Timestamp now) {
   // number here, at release, as libwebrtc does (packet_sequencer.cc:71-75), so a resend or padding
   // packet the pacer never sends uses no number (issue #854).
   if (p.kind == PacketKind::kRtx) {
-    p.packet.seq = next_rtx_seq_++;
+    // A resend on the media SSRC (resend_on_media_ssrc) keeps the stored packet's number.
+    if (p.packet.ssrc != cfg_.ssrc) p.packet.seq = next_rtx_seq_++;
     return;
   }
   if (p.kind == PacketKind::kPadding) {
@@ -176,9 +178,11 @@ void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
       fec_out_.back().sender = this;
     }
   }
-  if (!cfg_.rtx_ssrc) return;
+  if (!cfg_.rtx_ssrc && !cfg_.resend_on_media_ssrc) return;
   if (p.kind == PacketKind::kAudio || p.kind == PacketKind::kVideo) {
     rtx_.OnPacketSent(p.packet, now);
+  } else if (p.kind == PacketKind::kRtx && p.packet.ssrc == cfg_.ssrc) {
+    rtx_.MarkPacketAsSent(p.packet.seq, now);  // RtpSenderEgress: MarkPacketAsSent(retransmitted_sequence_number).
   } else if (p.kind == PacketKind::kRtx && p.packet.payload.size() >= 2) {
     rtx_.MarkPacketAsSent(static_cast<uint16_t>((p.packet.payload[0] << 8) | p.packet.payload[1]), now);
   }
@@ -381,7 +385,7 @@ size_t RtpSender::SendVideoFrame(std::span<const std::vector<uint8_t>> chunks, u
 }
 
 void RtpSender::OnNack(std::span<const uint16_t> seqs, Timestamp now, TimeDelta rtt) {
-  if (!cfg_.rtx_ssrc) {
+  if (!cfg_.rtx_ssrc && !cfg_.resend_on_media_ssrc) {
     stats_.nacks_without_rtx += seqs.size();
     return;
   }

@@ -155,6 +155,14 @@ struct AudioStreamConfig {
   TimeDelta send_ahead = TimeDelta::Zero();
   // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
   DataRate priority_bitrate = DataRate::Zero();
+  // Audio NACK (#971), as libwebrtc's voice engine sets it with `use_nack`: rtp.nack.rtp_history_ms
+  // of kNackRtpHistoryMs, 5000 ms (webrtc_voice_engine.cc:126, 323). Receive side: NetEq's
+  // NackTracker (audio/nack_tracker.cc) with history / 20 ms = 250 packets (audio_receive_stream.cc:
+  // 140-141), each list sent as RTCP NACK through ModuleRtpRtcpImpl2::SendNACK's throttle. Send side:
+  // the stream keeps a 600-packet history (channel_send.cc:788) and resends a NACKed packet on its
+  // own SSRC (RTPSender::ReSendPacket without RTX). Off by default, as libwebrtc, where audio NACK
+  // is on only when negotiated; off, calls are unchanged.
+  bool nack = false;
   // Receive side: libwebrtc's NetEq (#62), with muted state on as ChannelReceive sets it
   // (channel_receive.cc:107, #574).
   timing::AudioJitterBufferConfig jitter_buffer = [] {
@@ -318,6 +326,8 @@ struct SessionStats {
   uint64_t audio_cancels = 0;            // CancelAudio calls.
   uint64_t audio_cancelled_packets = 0;  // Audio packets they dropped from the pacer queue.
   uint64_t audio_flushes = 0;            // FlushAudio calls.
+  uint64_t audio_nacks_sent = 0;         // Audio NACK packets queued (SendNACK calls that sent).
+  uint64_t audio_nack_seqs_sent = 0;     // Sequence numbers in them.
   SpsRewriteStats sps;  // Keyframe SPS units: VUI rewritten, already fine, or not parsed (#342).
 };
 
@@ -511,7 +521,14 @@ class Session : public MetricsSource {
     std::unique_ptr<RtpReceiver> receiver;
     uint32_t ssrc = 0;
     uint32_t rtx_ssrc = 0;
+    // Audio NACK: the receive module's ModuleRtpRtcpImpl2::SendNACK state (rtp_rtcp_impl2.cc:573-631).
+    // libwebrtc starts nack_last_time_sent_full_ms_ at 0 on a wall clock far from 0, so the first
+    // list is always sent in full; minus infinity does that on a clock that starts at 0.
+    Timestamp nack_last_time_sent_full = Timestamp::MinusInfinity();
+    uint16_t nack_last_seq_number_sent = 0;
   };
+  // ChannelReceive::OnRtpPacket's rtp_rtcp_->SendNACK for an audio receive stream.
+  void SendAudioNack(RecvStream& r, const std::vector<uint16_t>& nack_list, Timestamp now);
   // A receive stream as call/syncable.h's Syncable.
   class SyncableStream : public sync::Syncable {
    public:
