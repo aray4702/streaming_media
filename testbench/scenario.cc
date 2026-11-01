@@ -457,6 +457,40 @@ ParseResult ParseScenario(const std::string& text) {
       std::string err;
       if (!ParseAiSource(tok, &c, &err)) return fail(err);
       s.ai_source = c;
+    } else if (key == "turn") {
+      Scenario::Turn tr;
+      if (need(3) && tok[1] == "user") {
+        const size_t dash = tok[2].find('-');
+        if (dash == std::string::npos || !ParseTime(tok[2].substr(0, dash), &tr.start) ||
+            !ParseTime(tok[2].substr(dash + 1), &tr.end) || tr.end <= tr.start || tok.size() != 3) {
+          return fail("usage: turn user <start>-<end>");
+        }
+      } else if (need(4) && tok[1] == "ai" && tok.size() == 4) {
+        tr.who = Scenario::Turn::Who::kAi;
+        bool after = false, len = false;
+        for (size_t k = 2; k < 4; ++k) {
+          if (tok[k].rfind("after=", 0) == 0) after = ParseTime(tok[k].substr(6), &tr.after);
+          if (tok[k].rfind("len=", 0) == 0) len = ParseTime(tok[k].substr(4), &tr.len);
+        }
+        if (!after || !len || tr.len <= TimeDelta::Zero()) return fail("usage: turn ai after=<time> len=<time>");
+        bool user_before = false;
+        for (const auto& u : s.turns) user_before = user_before || u.who != Scenario::Turn::Who::kAi;
+        if (!user_before) return fail("turn ai: needs a user turn before it");
+      } else {
+        return fail("usage: turn user <start>-<end> | turn ai after=<time> len=<time>");
+      }
+      s.turns.push_back(tr);
+    } else if (key == "barge-in") {
+      Scenario::Turn tr;
+      tr.who = Scenario::Turn::Who::kBargeIn;
+      TimeDelta len = TimeDelta::Seconds(1);
+      if ((tok.size() != 3 && tok.size() != 4) || tok[1] != "at" || !ParseTime(tok[2], &tr.start) ||
+          (tok.size() == 4 && (tok[3].rfind("len=", 0) != 0 || !ParseTime(tok[3].substr(4), &len))) ||
+          len <= TimeDelta::Zero()) {
+        return fail("usage: barge-in at <time> [len=<time>]");
+      }
+      tr.end = tr.start + len;
+      s.turns.push_back(tr);
     } else if (key == "host_rtt") {
       TimeDelta t, rtt;
       if (!need(3) || !ParseTime(tok[1], &t) || !ParseTime(tok[2], &rtt)) return fail("usage: host_rtt <time> <rtt>");
@@ -575,6 +609,15 @@ std::string FormatScenario(const Scenario& s) {
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
   if (s.ai_source) o += FormatAiSource(*s.ai_source) + "\n";
+  for (const Scenario::Turn& tr : s.turns) {
+    switch (tr.who) {
+      case Scenario::Turn::Who::kUser: o += "turn user " + FormatTime(tr.start) + "-" + FormatTime(tr.end) + "\n"; break;
+      case Scenario::Turn::Who::kAi: o += "turn ai after=" + FormatTime(tr.after) + " len=" + FormatTime(tr.len) + "\n"; break;
+      case Scenario::Turn::Who::kBargeIn:
+        o += "barge-in at " + FormatTime(tr.start) + (tr.end - tr.start == TimeDelta::Seconds(1) ? "" : " len=" + FormatTime(tr.end - tr.start)) + "\n";
+        break;
+    }
+  }
   for (const auto& c : s.forward) o += FormatChange(c) + "\n";
   for (const auto& c : s.reverse) o += "reverse " + FormatChange(c) + "\n";
   for (const auto& e : s.expectations) o += "expect " + e.metric + " " + ToString(e.op) + " " + FormatNumber(e.value) + "\n";
@@ -583,6 +626,8 @@ std::string FormatScenario(const Scenario& s) {
 
 std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
+  if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
+  if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
   return "";
 }
 

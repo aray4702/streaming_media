@@ -172,9 +172,25 @@ struct Scenario {
   std::optional<int> apm_rate;
   // `ai_source [speed=<x>] [burst=<time>] [gap=<time>] [first_chunk=<time>] [frame=<time>]`: the AI
   // endpoint's media source in a two-way call, generated ahead of real time and sent at real time
-  // (testbench/ai_source.h; issue #4, #758). Parsed only for now: the call reads it once the two-way
-  // call exists (#758 part 2, after #746), so a one-way scenario runs as before.
+  // (testbench/ai_source.h; issue #4, #758): it produces the AI's replies to scripted `turn ai` turns
+  // (#758 part 2). A one-way call doesn't read it.
   std::optional<AiSourceConfig> ai_source;
+
+  // Scripted turns of a two-way call (issue #751, #3), in file order:
+  //   turn user <start>-<end>        the user speaks in [start, end)
+  //   turn ai after=<t> len=<t>      the AI speaks `len` of reply, `after` (its thinking time) past the end of the
+  //                                  user turn before it; with `ai_source` the reply is generated and drained by it
+  //   barge-in at <t> [len=<t>]      the user starts speaking at t (1 s by default), whether or not the AI is
+  // With any turn, each endpoint sends silence outside its own speech; without, both talk the whole call (#746).
+  struct Turn {
+    enum class Who { kUser, kAi, kBargeIn } who = Who::kUser;
+    TimeDelta start = TimeDelta::Zero();  // User and barge-in turns.
+    TimeDelta end = TimeDelta::Zero();
+    TimeDelta after = TimeDelta::Zero();  // AI turns.
+    TimeDelta len = TimeDelta::Zero();
+    bool operator==(const Turn&) const = default;
+  };
+  std::vector<Turn> turns;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);
