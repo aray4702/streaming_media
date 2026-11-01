@@ -104,35 +104,32 @@ int main(int argc, char** argv) {
     double wall_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     if (!report.passed) ++failed;
     if (opt.link_trace) {
-      // Every packet offered to the forward link, as CSV (see tools/link_trace.py).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.trace.csv",
-                    std::ios::binary)
-          << sm::testbench::LinkTraceCsv(report.link_trace);
-      // Every packet offered to the reverse (feedback) link, same columns (issue #507).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.reverse.csv",
-                    std::ios::binary)
-          << sm::testbench::LinkTraceCsv(report.reverse_trace);
-      // The per-second video send decisions (issue #131).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.video.csv",
-                    std::ios::binary)
-          << sm::testbench::VideoTraceCsv(report.video_trace);
-      // The receive side's frames: render time and render or drop (#931).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.frames.csv",
-                    std::ios::binary)
-          << sm::testbench::FrameTraceCsv(report.frame_trace);
-      // The GoogCC estimates per update (issue #149), `cc v2` only.
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.bwe.csv",
-                    std::ios::binary)
-          << sm::testbench::BweTraceCsv(report.bwe_trace);
-      // The jitter buffer per 10 ms audio pull (issue #62).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + ".sm.audio.csv",
-                    std::ios::binary)
-          << sm::testbench::AudioTraceCsv(report.audio_trace);
-      // The audio send path per frame and report block (issue #477; tools/audio_send.py).
-      std::ofstream(trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) +
-                        ".sm.audiosend.csv",
-                    std::ios::binary)
-          << sm::testbench::AudioSendCsv(report.audio_send_trace);
+      // `infix` is "" for a one-way call; a two-way call writes each direction's files as <name>.<seed>.up.sm.* and
+      // <name>.<seed>.down.sm.*, its trace.csv the link that direction's media crosses (issue #749).
+      auto write = [&](const sm::testbench::Report& r, const std::string& infix) {
+        const std::string base = trace_dir + "/" + report.scenario.name + "." + std::to_string(report.scenario.seed) + infix;
+        // Every packet offered to the forward link, as CSV (see tools/link_trace.py).
+        std::ofstream(base + ".sm.trace.csv", std::ios::binary) << sm::testbench::LinkTraceCsv(r.link_trace);
+        // Every packet offered to the reverse (feedback) link, same columns (issue #507); a two-way call has none:
+        // each direction's feedback is on the other direction's trace.
+        if (!report.down) std::ofstream(base + ".sm.reverse.csv", std::ios::binary) << sm::testbench::LinkTraceCsv(r.reverse_trace);
+        // The per-second video send decisions (issue #131).
+        std::ofstream(base + ".sm.video.csv", std::ios::binary) << sm::testbench::VideoTraceCsv(r.video_trace);
+        // The receive side's frames: render time and render or drop (#931).
+        std::ofstream(base + ".sm.frames.csv", std::ios::binary) << sm::testbench::FrameTraceCsv(r.frame_trace);
+        // The GoogCC estimates per update (issue #149), `cc v2` only.
+        std::ofstream(base + ".sm.bwe.csv", std::ios::binary) << sm::testbench::BweTraceCsv(r.bwe_trace);
+        // The jitter buffer per 10 ms audio pull (issue #62).
+        std::ofstream(base + ".sm.audio.csv", std::ios::binary) << sm::testbench::AudioTraceCsv(r.audio_trace);
+        // The audio send path per frame and report block (issue #477; tools/audio_send.py).
+        std::ofstream(base + ".sm.audiosend.csv", std::ios::binary) << sm::testbench::AudioSendCsv(r.audio_send_trace);
+      };
+      if (report.down) {
+        write(report, ".up");
+        write(*report.down, ".down");
+      } else {
+        write(report, "");
+      }
     }
     if (!quiet) {
       std::printf("%s", sm::testbench::ToText(report).c_str());

@@ -51,6 +51,11 @@ if(SM_BUILD_TESTS)
     add_test(NAME unit.tools.testbench_compare
       COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/tools/testbench_compare_test.py)
     set_tests_properties(unit.tools.testbench_compare PROPERTIES LABELS unit)
+    # A two-way call writes each direction's traces and time series, and the tools read them (issue #749).
+    add_test(NAME unit.tools.two_way_traces
+      COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tests/tools/two_way_traces_test.py
+              $<TARGET_FILE:sm_testbench> ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/two_way_video_clean.scn)
+    set_tests_properties(unit.tools.two_way_traces PROPERTIES LABELS unit)
   endif()
 endif()
 

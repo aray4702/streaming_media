@@ -1408,7 +1408,11 @@ class ReceiveSide {
 Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   Report rep;
   rep.scenario = s;
-  Report scratch;  // The down direction's traces until #749 reports them per direction.
+  // The down direction's time series and traces (#749); the up direction's go in `rep`.
+  rep.down = std::make_shared<Report>();
+  Report& down = *rep.down;
+  down.scenario = s;
+  MetricsRegistry registry;
 
   EventLog events(64);
   events.SetCallback([&](const Event& e) { ++rep.events[std::string(e.module) + "/" + e.name]; });
@@ -1443,6 +1447,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   rtp::SessionConfig user_cfg = endpoint_config(kSenderRtcpSsrc, "user@testbench");
   if (opt.bwe_trace) user_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
   rtp::SessionConfig ai_cfg = endpoint_config(kReceiverRtcpSsrc, "ai@testbench");
+  if (opt.bwe_trace) ai_cfg.send_side.gcc.bwe_trace = &down.bwe_trace;
   rtp::Session user(user_cfg), ai(ai_cfg);
   const TimeDelta clock0 = TimeDelta::Seconds(CallClockStartSeconds(s));
 
@@ -1478,8 +1483,41 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     Report& rx_trace;                   // Where its receive direction's traces go.
     Timestamp ran = Timestamp::MinusInfinity();
   };
-  Endpoint ep[2] = {{user, up_tx, down_rx, forward, up_m, up_streams, rep, scratch},
-                    {ai, down_tx, up_rx, reverse, down_m, down_streams, scratch, rep}};
+  Endpoint ep[2] = {{user, up_tx, down_rx, forward, up_m, up_streams, rep, down},
+                    {ai, down_tx, up_rx, reverse, down_m, down_streams, down, rep}};
+
+  // Each direction's modules (#749): up.sender.* is the user's session and send side, up.receiver.* the AI's receive
+  // streams; down.sender.* the AI's session and send side, down.receiver.* the user's receive streams.
+  for (int i = 0; i < 2; ++i) {
+    const std::string d = i == 0 ? "up." : "down.";
+    const Endpoint& from = ep[i];
+    rtp::Session& to = ep[1 - i].session;
+    const ReceiveSide& rx = ep[1 - i].rx;
+    const Scenario& ds = *dir_s[i];
+    registry.Register(d + "sender.session", &from.session);
+    registry.Register(d + "sender.send_side", &from.session.send_side());
+    registry.Register(d + "sender.gcc", &from.session.send_side().gcc());
+    registry.Register(d + "sender.pacer", &from.session.send_side().pacer());
+    registry.Register(d + "sender.outage", &from.session.send_side().outage());
+    registry.Register(d + "sender.rtcp", &from.session.rtcp());
+    registry.Register(d + "receiver.freezes", &rx.freezes());
+    if (to.av_sync()) registry.Register(d + "receiver.av_sync", to.av_sync());
+    if (s.audio) {
+      registry.Register(d + "sender.audio", &from.session.audio_sender(from.tx.audio_send()));
+      registry.Register(d + "receiver.audio", &to.audio_receiver(rx.audio_recv()));
+      registry.Register(d + "receiver.neteq", &to.audio_receiver(rx.audio_recv()).jitter_buffer());
+    }
+    if (ds.video) {
+      registry.Register(d + "sender.frame_dropper", &from.tx.video_ctl().frame_dropper());
+      registry.Register(d + "sender.bitrate_adjuster", &from.tx.video_ctl().bitrate_adjuster());
+      registry.Register(d + "sender.video", &from.session.video_sender(from.tx.video_send()));
+      const rtp::RtpReceiver& vr = to.video_receiver(rx.video_recv());
+      registry.Register(d + "receiver.video", &vr);
+      registry.Register(d + "receiver.nack", &vr.nack());
+      registry.Register(d + "receiver.packet_buffer", &vr.packet_buffer());
+      registry.Register(d + "receiver.keyframes", &vr.keyframes());
+    }
+  }
 
   // Sends what an endpoint has ready onto its link, with the send direction's accounting.
   auto put_on_link = [&](Endpoint& e, Timestamp now) {
@@ -1626,6 +1664,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       e.session.Process(now + clock0);
       e.ran = now;
       e.rx.Render(now, e.rx_trace);
+      e.rx.TraceSync(t, now, e.rx_trace);
       e.rx.PullAudio(t, now, e.rx_trace);
       put_on_link(e, now);
       e.tx.OnEvents(now);
@@ -1635,6 +1674,15 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     // --- Measurement, per direction (0 up, 1 down) ----------------------------
     for (int i = 0; i < 2; ++i) {
       if (t % 10 == 0) queue_samples[i].push_back(queue_ms[i]);
+      ep[1 - i].rx.TraceRxTiming(t, ep[i].tx_trace);
+      if (opt.video_trace && t % 1000 == 999) {
+        DirectionMeters& vm = ep[i].out_m;
+        vm.vt_row.t_ms = t + 1;
+        ep[i].tx.FillTraceRow(now);
+        ep[1 - i].rx.FillTraceRow();
+        ep[i].tx_trace.video_trace.push_back(vm.vt_row);
+        vm.vt_row = VideoTraceRow{};
+      }
       if (t % 100 != 99) continue;
       const Endpoint& from = ep[i];
       const ReceiveSide& to = ep[1 - i].rx;
@@ -1661,11 +1709,13 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     }
   }
 
-  for (cc::BweTraceRow& r : rep.bwe_trace) {
-    using K = cc::BweTraceRow::Kind;
-    if (r.kind == K::kRxTiming || r.kind == K::kSync) continue;
-    r.time_us -= clock0.us();
-    if ((r.kind == K::kDetector || r.kind == K::kPacer) && r.send_ms >= 0) r.send_ms -= static_cast<double>(clock0.ms());
+  for (Report* dr : {&rep, &down}) {
+    for (cc::BweTraceRow& r : dr->bwe_trace) {
+      using K = cc::BweTraceRow::Kind;
+      if (r.kind == K::kRxTiming || r.kind == K::kSync) continue;
+      r.time_us -= clock0.us();
+      if ((r.kind == K::kDetector || r.kind == K::kPacer) && r.send_ms >= 0) r.send_ms -= static_cast<double>(clock0.ms());
+    }
   }
 
   // --- Summary, per direction -------------------------------------------------
@@ -1682,7 +1732,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     d.timeseries = samples[i];
     auto& m = d.metrics;
     const bool video = dir_s[i]->video;
+    // The receive side adds the A/V offsets to the direction's video trace, as in a one-way call (AddAvSyncToVideoTrace).
+    d.video_trace = std::move(ep[i].tx_trace.video_trace);
     rx.AddMetrics(end_ms, tx.frames_encoded(), d);
+    ep[i].tx_trace.video_trace = std::move(d.video_trace);
     if (video) {
       m["video.avg_kbps"] = static_cast<double>(tx.video_bytes_encoded()) * 8 / s.duration.seconds() / 1000;
       m["video.qp_mean"] = tx.frames_encoded() ? static_cast<double>(tx.qp_sum()) / static_cast<double>(tx.frames_encoded()) : 0;
@@ -1722,13 +1775,21 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   }
   if (opt.link_trace) {
     rep.link_trace = forward.trace();
-    rep.reverse_trace = reverse.trace();
+    down.link_trace = reverse.trace();
   }
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), up_tx.opus_encode_rows().begin(), up_tx.opus_encode_rows().end());
+  down.audio_send_trace.insert(down.audio_send_trace.end(), down_tx.opus_encode_rows().begin(), down_tx.opus_encode_rows().end());
 
   EvaluateExpectations(rep);
-  // The up direction's samples; #749 reports both directions' time series and library metrics.
-  if (opt.timeseries) rep.timeseries = samples[0];
+  if (opt.library_metrics) {
+    MapMetricsWriter w;
+    registry.Export(w);
+    rep.library = w.values();
+  }
+  if (opt.timeseries) {
+    rep.timeseries = samples[0];
+    down.timeseries = samples[1];
+  }
   return rep;
 }
 
@@ -2222,19 +2283,26 @@ std::string ToJson(const Report& r, bool include_timeseries, bool include_librar
     }
     o += "\n  }";
   }
-  if (include_timeseries) {
-    o += ",\n  \"timeseries\": {\n    \"columns\": [\"t_s\", \"capacity_kbps\", \"target_kbps\", \"send_kbps\", "
+  // The 100 ms samples: "timeseries", or "up.timeseries" and "down.timeseries" for a two-way call (#749).
+  auto timeseries = [&](const std::string& key, const std::vector<Sample>& rows) {
+    o += ",\n  " + Str(key) + ": {\n    \"columns\": [\"t_s\", \"capacity_kbps\", \"target_kbps\", \"send_kbps\", "
          "\"goodput_kbps\", \"queue_ms\", \"rtt_ms\", \"audio_buffer_ms\", \"audio_concealed_pct\", \"video_fps\", "
          "\"video_delay_ms\", \"fec_pct\"],\n    \"rows\": [";
-    first = true;
-    for (const auto& x : r.timeseries) {
-      o += std::string(first ? "\n" : ",\n") + "      [" + Num(x.t_s) + "," + Num(x.capacity_kbps) + "," +
+    bool first_row = true;
+    for (const auto& x : rows) {
+      o += std::string(first_row ? "\n" : ",\n") + "      [" + Num(x.t_s) + "," + Num(x.capacity_kbps) + "," +
            Num(x.target_kbps) + "," + Num(x.send_kbps) + "," + Num(x.goodput_kbps) + "," + Num(x.queue_ms) + "," +
            Num(x.rtt_ms) + "," + Num(x.audio_buffer_ms) + "," + Num(x.audio_concealed_pct) + "," + Num(x.video_fps) +
            "," + Num(x.video_delay_ms) + "," + Num(x.fec_pct) + "]";
-      first = false;
+      first_row = false;
     }
     o += "\n    ]\n  }";
+  };
+  if (include_timeseries && r.down) {
+    timeseries("up.timeseries", r.timeseries);
+    timeseries("down.timeseries", r.down->timeseries);
+  } else if (include_timeseries) {
+    timeseries("timeseries", r.timeseries);
   }
   o += "\n}\n";
   return o;

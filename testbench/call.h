@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -206,6 +207,10 @@ struct Report {
   std::vector<AudioSendRow> audio_send_trace;
   // The receive side's frames, when RunOptions::video_trace is set (#931).
   std::vector<FrameRenderRow> frame_trace;
+  // A two-way call's down direction (AI to user, issue #749): its time series and traces, with link_trace its media
+  // link (the reverse link). The fields above are then the up direction's, link_trace the forward link and
+  // reverse_trace empty; the metrics above hold both directions as up.* and down.*.
+  std::shared_ptr<Report> down;
 };
 
 struct RunOptions {
