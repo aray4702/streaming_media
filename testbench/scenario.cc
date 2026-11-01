@@ -521,7 +521,7 @@ std::string FormatScenario(const Scenario& s) {
 }
 
 std::string UnsupportedReason(const Scenario& s) {
-  if (s.two_way) return "call two-way is not supported yet: the test bench runs one-way calls only (#743; #746 adds two-way)";
+  if (s.two_way && s.video) return "call two-way with video is not supported yet: two-way calls are audio only until #747 (add `video off`)";
   return "";
 }
 

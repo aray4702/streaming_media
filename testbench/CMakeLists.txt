@@ -31,12 +31,12 @@ if(SM_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/call_mode_test.cc
     SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp TestbenchEventTiming
            TestbenchCallMode)
-  # sm_testbench refuses a `call two-way` scenario with a clear error until #746 runs it (issue #743).
+  # sm_testbench refuses a `call two-way` scenario with video with a clear error until #747 runs it (issues #743, #746).
   file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/two_way_rejected.scn "name two_way_rejected\ncall two-way\nduration 2s\n")
   add_test(NAME unit.testbench.two_way_rejected
     COMMAND sm_testbench --quiet ${CMAKE_CURRENT_BINARY_DIR}/two_way_rejected.scn)
   set_tests_properties(unit.testbench.two_way_rejected PROPERTIES LABELS unit
-    PASS_REGULAR_EXPRESSION "call two-way is not supported yet")
+    PASS_REGULAR_EXPRESSION "call two-way with video is not supported yet")
   # One CTest entry per scenario; a failed expectation fails the test.
   file(GLOB SM_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scn)
   foreach(scn ${SM_SCENARIOS})

@@ -112,7 +112,8 @@ class FecRecoveredSeqs : public rtp::VideoMediaObserver {
 
 }  // namespace
 
-const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
+namespace {
+const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
   static const std::vector<std::pair<std::string, std::string>> k = {
       {"audio.concealed_pct", "Concealed samples in percent of the samples played (concealedSamples / "
                               "totalSamplesReceived, after the first packet)"},
@@ -199,6 +200,26 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
       {"rtcp.audio_report_blocks", "Report blocks about the audio SSRC in the RTCP the sender received (SRs and RRs; "
                                    "libwebrtc's audio channel reports every 5 s, about 6 in 30 s; issue #484)"},
   };
+  return k;
+}
+}  // namespace
+
+const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
+  // A two-way call (#746) reports each direction's audio, cc, net, rtcp and repair metrics as up.* (user to AI) and
+  // down.* (AI to user); its forward link is the up direction's, its reverse link the down direction's.
+  static const std::vector<std::pair<std::string, std::string>> k = [] {
+    std::vector<std::pair<std::string, std::string>> all = OneWayMetricCatalog();
+    for (const char* dir : {"up.", "down."}) {
+      for (const auto& [name, meaning] : OneWayMetricCatalog()) {
+        for (const char* group : {"audio.", "cc.", "net.", "rtcp.", "repair."}) {
+          if (name.rfind(group, 0) == 0) {
+            all.emplace_back(dir + name, std::string(dir[0] == 'u' ? "Two-way call, user to AI: " : "Two-way call, AI to user: ") + meaning);
+          }
+        }
+      }
+    }
+    return all;
+  }();
   return k;
 }
 
@@ -475,7 +496,9 @@ void AddLinkKindMetrics(const sim::LinkStats& stats, const Scenario& s, Report& 
   }
 }
 
-void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
+void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) { AddCcMetrics(s, s.forward, demand_kbps, rep); }
+
+void AddCcMetrics(const Scenario& s, const std::vector<LinkChange>& changes, double demand_kbps, Report& rep) {
   auto& m = rep.metrics;
   std::vector<double> targets;
   double good_sum = 0, usable_sum = 0;
@@ -509,7 +532,7 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
     for (size_t i = 0; i < rep.timeseries.size(); ++i) {
       const double t = rep.timeseries[i].t_s;
       bool excluded = t < 5.0;
-      for (const auto& c : s.forward) excluded = excluded || (t >= c.at.seconds() && t < c.at.seconds() + 5.0);
+      for (const auto& c : changes) excluded = excluded || (t >= c.at.seconds() && t < c.at.seconds() + 5.0);
       if (excluded) continue;
       double peak = 0;
       for (size_t j = i + 1; j-- > 0 && rep.timeseries[j].t_s > t - 5.0;) peak = std::max(peak, rep.timeseries[j].target_kbps);
@@ -528,7 +551,7 @@ void AddCcMetrics(const Scenario& s, double demand_kbps, Report& rep) {
   int unsettled = 0;
   std::vector<std::pair<double, LinkState>> segs;
   segs.emplace_back(0.0, st);
-  for (const auto& c : s.forward) {
+  for (const auto& c : changes) {
     st.Apply(c);
     double at = c.at.seconds();
     if (!segs.empty() && segs.back().first == at) segs.back().second = st;
@@ -664,12 +687,19 @@ struct DirectionMeters {
 struct StreamConfigs {
   rtp::AudioStreamConfig audio;
   rtp::VideoStreamConfig video;
+  // The direction's SSRCs: 1, 2 and 3 for a one-way call and a two-way call's up direction, 11, 12 and 13 for its down
+  // direction (each endpoint's session sends on one set and receives the other).
+  uint32_t audio_ssrc = kAudioSsrc, video_ssrc = kVideoSsrc, rtx_ssrc = kRtxSsrc;
 };
 
-StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_rate, DirectionMeters& d) {
+StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_rate, DirectionMeters& d,
+                                uint32_t ssrc_base = 0) {
   StreamConfigs c;
+  c.audio_ssrc = kAudioSsrc + ssrc_base;
+  c.video_ssrc = kVideoSsrc + ssrc_base;
+  c.rtx_ssrc = kRtxSsrc + ssrc_base;
   rtp::AudioStreamConfig& audio_cfg = c.audio;
-  audio_cfg.ssrc = kAudioSsrc;
+  audio_cfg.ssrc = c.audio_ssrc;
   audio_cfg.payload_type = kAudioPt;
   if (s.red) audio_cfg.red_payload_type = kAudioRedPt;
   audio_cfg.clock_rate = sr;
@@ -678,12 +708,12 @@ StreamConfigs MakeStreamConfigs(const Scenario& s, int sr, DataRate audio_wire_r
   // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
   audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
   rtp::VideoStreamConfig& video_cfg = c.video;
-  video_cfg.ssrc = kVideoSsrc;
+  video_cfg.ssrc = c.video_ssrc;
   video_cfg.payload_type = kVideoPt;
   // RTX only with NACK, as sm_compare configures libwebrtc's send and receive streams
   // (compare/webrtc/webrtc_call.cc, `if (s.nack)`; issue #514).
   if (s.nack) {
-    video_cfg.rtx_ssrc = kRtxSsrc;
+    video_cfg.rtx_ssrc = c.rtx_ssrc;
     video_cfg.rtx_payload_type = kRtxPt;
   }
   video_cfg.fec = s.fec;
@@ -730,6 +760,40 @@ rtp::VideoSendControllerConfig MakeVideoSendControllerConfig(const Scenario& s) 
   return vsc_cfg;
 }
 
+// The session configuration both ends of a call share (each with its own RTCP SSRC and CNAME).
+rtp::SessionConfig MakeSessionConfig(const Scenario& s, EventLog& events, uint32_t rtcp_ssrc, const char* cname) {
+  rtp::SessionConfig c;
+  c.local_ssrc = rtcp_ssrc;
+  c.cname = cname;
+  c.extensions.Register(1, sync::uri::kTransportCc);
+  c.rtcp.has_video = s.video;
+  c.send_side.gcc.min_rate = s.min_rate;
+  c.send_side.gcc.start_rate = s.start_rate;
+  c.send_side.gcc.max_rate = s.max_rate;
+  c.send_side.transport_overhead_bytes = kUdpIpOverhead;
+  c.send_side.video_min = s.video_min;
+  c.send_side.video_max = s.video_max;
+  c.send_side.send_rate_stats = s.send_rate_stats;
+  c.send_side.link_headroom = s.link_headroom;
+  c.send_side.control_handler = s.control_handler;
+  c.send_side.expected_packet_overhead = s.expected_packet_overhead;  // Issue #577.
+  c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
+  // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
+  // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
+  // the bench's packets are that size, so the overhead is too (issue #151): the packetizer's
+  // whole-packet limit, `video_max_payload` plus the 12-byte fixed header clamped to 100-1500 as
+  // rtp::RtpSender does, as in sm_compare's libwebrtc call (#379); 1460 by default (#513).
+  c.send_side.max_packet_size = static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500));
+  // libwebrtc's RTCPSender seeds its report-interval draws with the clock in microseconds when it is built
+  // (rtcp_sender.cc:130), and sm_compare builds every one at the call's start: every engine here takes that same
+  // time, so both stacks draw the same RTCP schedule (#517; per seed since #399).
+  c.seed = RtcpRandomSeed(s);
+  c.per_stream_rtt = s.per_stream_rtt;  // Issue #568.
+  c.receive_statistics_v2 = s.receive_statistics_v2;  // Issue #575.
+  c.events = &events;
+  return c;
+}
+
 // The send side of one direction (issue #744): the audio and video sources, the Opus encoder and the video encoder
 // model, the frame dropper (rtp::VideoSendController) and the frames still in the encoder, on one session's send
 // streams.
@@ -750,10 +814,11 @@ class SendSide {
         d_(d),
         sr_(sr),
         clock0_(clock0),
+        audio_ssrc_(cfg.audio_ssrc),
         enc_rng_(s.seed + 13),
         opus_encoder_(OpusBitrateBps(static_cast<int>(s.audio_bitrate.bps()), 0), /*fec_enabled=*/true),
         opus_loss_(Timestamp::Millis(0)),
-        rtx_ack_(kVideoSsrc, kRtxSsrc, s.nack),
+        rtx_ack_(cfg.video_ssrc, cfg.rtx_ssrc, s.nack),
         enc_behaviour_{s.encoder_overshoot, s.scene_change_interval.ms(), s.scene_change_frames, s.scene_change_factor} {
     // libopus encodes what sm_compare gives libwebrtc: the 48 kHz signal as 16-bit PCM (testbench/opus_encoder.h).
     if (s.audio) {
@@ -801,7 +866,7 @@ class SendSide {
           break;
         case rtp::SessionEventType::kReportBlock:
           // ChannelSend::OnReportBlockDataUpdated: the audio stream's fraction lost goes to the encoder.
-          if (e.ssrc == kAudioSsrc) {
+          if (e.ssrc == audio_ssrc_) {
             opus_loss_.OnReceivedUplinkPacketLossFraction(static_cast<float>(e.loss_fraction), at);
             opus_loss_given_ = static_cast<int32_t>(std::lround(static_cast<float>(e.loss_fraction) * 256));
           }
@@ -813,8 +878,8 @@ class SendSide {
 
   // RTCP from the other end, before the session takes it.
   void OnFeedback(const std::vector<uint8_t>& bytes, Timestamp at, Report& rep) {
-    if (opt_.link_trace) TraceAudioRtcp(bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
-    TraceAudioRtcp(bytes, at.us(), kAudioSsrc, audio_reports_);  // rtcp.audio_report_blocks (issue #484).
+    if (opt_.link_trace) TraceAudioRtcp(bytes, at.us(), audio_ssrc_, rep.audio_send_trace);
+    TraceAudioRtcp(bytes, at.us(), audio_ssrc_, audio_reports_);  // rtcp.audio_report_blocks (issue #484).
     if (opt_.link_trace) rtx_ack_.OnRtcp(bytes);
     session_.OnPacket(bytes, at + clock0_);
   }
@@ -1000,6 +1065,7 @@ class SendSide {
   DirectionMeters& d_;
   const int sr_;
   const TimeDelta clock0_;
+  const uint32_t audio_ssrc_;
 
   Random enc_rng_;
   std::vector<int16_t> opus_pcm_;
@@ -1334,9 +1400,330 @@ class ReceiveSide {
   double last_video_delay_ = 0;
 };
 
+// A two-way call (issue #746): the user's endpoint and the AI's, each one rtp::Session that sends its own streams and
+// receives the other's, bundled on one transport with RTCP multiplexed (program.md 0.1). The forward link carries the
+// user's media and RTCP to the AI (the up direction), the reverse link the AI's media and RTCP to the user (down), so
+// each direction's feedback shares a link with, and competes with, the other direction's media. Each direction is a
+// SendSide and a ReceiveSide (#744, #745), measured as in a one-way call and reported as up.* and down.*.
+Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
+  Report rep;
+  rep.scenario = s;
+  Report scratch;  // The down direction's traces until #749 reports them per direction.
+
+  EventLog events(64);
+  events.SetCallback([&](const Event& e) { ++rep.events[std::string(e.module) + "/" + e.name]; });
+
+  // --- Links ----------------------------------------------------------------
+  LinkTimeline links(s);
+  const LinkState& fwd_state = links.forward();
+  const LinkState& rev_state = links.reverse();
+  sim::NetworkLink<Fwd> forward(fwd_state.cfg, s.seed);
+  sim::NetworkLink<Fwd> reverse(rev_state.cfg, s.seed + 1000003);
+  if (opt.link_trace) {
+    forward.EnableTrace();
+    reverse.EnableTrace();
+  }
+
+  // --- Media ----------------------------------------------------------------
+  const int sr = AudioCodecRate(s.audio_sample_rate);
+  const size_t audio_frame_bytes = static_cast<size_t>(std::max<int64_t>(10, s.audio_bitrate.bps() / 8 / 50));
+  const DataRate audio_wire_rate =
+      s.audio ? DataRate::BitsPerSec((static_cast<int64_t>(audio_frame_bytes) * (s.red ? 2 : 1) + 12 + 4 + kUdpIpOverhead) * 8 * 50)
+              : DataRate::Zero();
+
+  // --- The two endpoints ----------------------------------------------------
+  // Each endpoint both sends and receives: the one-way sender's settings and the one-way receiver's.
+  auto endpoint_config = [&](uint32_t rtcp_ssrc, const char* cname) {
+    rtp::SessionConfig c = MakeSessionConfig(s, events, rtcp_ssrc, cname);
+    c.audio_rtcp = true;
+    c.av_sync = s.av_sync;
+    c.audio_receive_rtcp = s.audio_receive_rtcp;
+    return c;
+  };
+  rtp::SessionConfig user_cfg = endpoint_config(kSenderRtcpSsrc, "user@testbench");
+  if (opt.bwe_trace) user_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
+  rtp::SessionConfig ai_cfg = endpoint_config(kReceiverRtcpSsrc, "ai@testbench");
+  rtp::Session user(user_cfg), ai(ai_cfg);
+  const TimeDelta clock0 = TimeDelta::Seconds(CallClockStartSeconds(s));
+
+  // The AI speaks its own signal and draws its own encoder sizes: its sources take another seed, on the same clock.
+  Scenario ai_s = s;
+  ai_s.compare_clock_start_s = CallClockStartSeconds(s);
+  ai_s.seed = s.seed + 50021;
+
+  // Up: the user's send side and the AI's receive side. Down: the AI's send side and the user's receive side, on
+  // SSRCs 11-13, so each session sends on one set and receives the other.
+  DirectionMeters up_m, down_m;
+  const StreamConfigs up_streams = MakeStreamConfigs(s, sr, audio_wire_rate, up_m);
+  const StreamConfigs down_streams = MakeStreamConfigs(s, sr, audio_wire_rate, down_m, 10);
+  SendSide up_tx(s, opt, user, up_streams, up_m, sr, clock0);
+  ReceiveSide up_rx(s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
+  SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
+  ReceiveSide down_rx(s, opt, user, down_streams, down_m, events, sr, clock0, down_tx.audio_ts_offset());
+
+  struct Endpoint {
+    rtp::Session& session;
+    SendSide& tx;                       // The direction it sends.
+    ReceiveSide& rx;                    // The direction it receives.
+    sim::NetworkLink<Fwd>& out;         // The link it sends on.
+    DirectionMeters& out_m;             // Its send direction's meters.
+    const StreamConfigs& out_streams;   // Its send direction's streams.
+    Report& tx_trace;                   // Where its send direction's traces go.
+    Report& rx_trace;                   // Where its receive direction's traces go.
+    Timestamp ran = Timestamp::MinusInfinity();
+  };
+  Endpoint ep[2] = {{user, up_tx, down_rx, forward, up_m, up_streams, rep, scratch},
+                    {ai, down_tx, up_rx, reverse, down_m, down_streams, scratch, rep}};
+
+  // Sends what an endpoint has ready onto its link, with the send direction's accounting.
+  auto put_on_link = [&](Endpoint& e, Timestamp now) {
+    DirectionMeters& dm = e.out_m;
+    const StreamConfigs& st = e.out_streams;
+    for (auto& p : e.session.TakeOutgoing()) {
+      Kind kind = ToKind(p.kind);
+      if (kind == Kind::kPadding) {
+        if (auto q = RtpPacket::Parse(p.bytes); q && q->ssrc == st.rtx_ssrc && q->payload.size() > 2) kind = Kind::kRtx;
+      }
+      dm.repair.OnSent(LinkKindOf(kind), p.bytes.size(), kind == Kind::kVideo ? RtpSeq(p.bytes) : 0, now.ms());
+      if (kind != Kind::kRtcp) dm.w_send += p.wire_size.bytes();
+      if (kind == Kind::kAudio) {
+        if (!dm.audio_ts_first) {
+          dm.audio_ts_first = std::make_pair(RtpTimestamp(p.bytes), now);
+          dm.audio_start_seq = RtpSeq(p.bytes);
+          dm.audio_first_marker = (p.bytes[1] & 0x80) != 0;
+        }
+        dm.audio_ts_last = std::make_pair(RtpTimestamp(p.bytes), now);
+      }
+      if (kind == Kind::kPadding) {
+        if (auto q = RtpPacket::Parse(p.bytes)) (q->ssrc == st.rtx_ssrc ? dm.padding_rtx_ssrc : dm.padding_media_ssrc)++;
+        dm.padding_sizes.insert(p.wire_size.bytes());
+      }
+      if (kind == Kind::kVideo) {
+        if (!dm.video_start_seq) dm.video_start_seq = RtpSeq(p.bytes);
+        auto ft = dm.frame_times.find(RtpTimestamp(p.bytes));
+        if (ft != dm.frame_times.end()) ft->second.last_sent = now;
+      }
+      const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      if (opt.link_trace && kind == Kind::kAudio) TraceAudioRtp(p.bytes, now.us(), st.audio_ssrc, e.tx_trace.audio_send_trace);
+      e.out.Send(now, Fwd{kind, std::move(p.bytes)}, p.wire_size, LinkKindOf(kind), seq);
+    }
+  };
+
+  auto advance_links = [&](Timestamp at) {
+    auto [fwd_changed, rev_changed] = links.Advance(at - Timestamp::Micros(0));
+    if (fwd_changed) forward.SetConfig(fwd_state.cfg);
+    if (rev_changed) reverse.SetConfig(rev_state.cfg);
+  };
+
+  // --- State ----------------------------------------------------------------
+  const int64_t end_ms = s.duration.ms();
+  double cross_debt[2] = {0, 0};
+  std::vector<double> queue_samples[2], rtt_samples[2];
+  std::vector<Sample> samples[2];
+
+  for (int64_t t = 0; t < end_ms; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    const Timestamp prev = now - TimeDelta::Millis(1);
+    for (Endpoint& e : ep) e.tx.new_rtt().reset();
+
+    // --- The last millisecond's events, each at its own time (as RunCall) ----
+    // Packets for the user arrive on the reverse link, for the AI on the forward link. At one time: the user's
+    // timers, arrivals and finished frames, then the AI's, as a one-way call runs the sender's before the receiver's.
+    std::vector<std::pair<Timestamp, Fwd>> in[2];
+    reverse.ReceiveEach(now, [&](Fwd w, Timestamp at) {
+      if (w.kind != Kind::kCross) in[0].emplace_back(at, std::move(w));
+    });
+    forward.ReceiveEach(now, [&](Fwd w, Timestamp at) {
+      if (w.kind != Kind::kCross) in[1].emplace_back(at, std::move(w));
+    });
+    auto timer_due = [&](const Endpoint& e) {
+      const Timestamp from = std::max(e.ran, prev);
+      const Timestamp due = e.session.NextProcessTime(from + clock0) - clock0;
+      return due > from && due <= now ? due : Timestamp::PlusInfinity();
+    };
+    auto run = [&](Endpoint& e, Timestamp at) {
+      e.session.Process(at + clock0);
+      e.ran = at;
+      put_on_link(e, at);
+      e.tx.OnEvents(at);
+      e.tx.PollPendingFrame(at);
+      e.rx.Render(at, e.rx_trace);
+    };
+    size_t next[2] = {0, 0};
+    for (;;) {
+      Timestamp due[2][3];
+      Timestamp at = Timestamp::PlusInfinity();
+      for (int i = 0; i < 2; ++i) {
+        due[i][0] = timer_due(ep[i]);
+        due[i][1] = next[i] < in[i].size() ? in[i][next[i]].first : Timestamp::PlusInfinity();
+        due[i][2] = ep[i].tx.EncodedDue(now);
+        for (const Timestamp d : due[i]) at = std::min(at, d);
+      }
+      if (!at.IsFinite()) break;
+      advance_links(at);
+      for (int i = 0; i < 2; ++i) {
+        Endpoint& e = ep[i];
+        if (due[i][0] == at) {
+          run(e, at);
+        } else if (due[i][1] == at) {
+          const Fwd& w = in[i][next[i]++].second;
+          // RTCP goes to the send side (report blocks, the RTX phase), media to the receive side.
+          if (w.kind == Kind::kRtcp) {
+            e.tx.OnFeedback(w.bytes, at, e.tx_trace);
+          } else {
+            e.rx.OnPacket(w, at);
+          }
+          run(e, at);
+        } else if (due[i][2] == at) {
+          e.tx.FinishOldestEncode();
+          run(e, at);
+        } else {
+          continue;
+        }
+        break;
+      }
+    }
+
+    advance_links(now);
+    for (Endpoint& e : ep) e.tx.OnEvents(now);
+
+    // --- Capture: each endpoint's audio, then video ---------------------------
+    for (Endpoint& e : ep) {
+      e.tx.CaptureAudio(t, now);
+      e.tx.CaptureVideo(t, now);
+    }
+
+    // --- Cross traffic on both links, then the queues are sampled (as RunCall) ---
+    const LinkState* states[2] = {&fwd_state, &rev_state};
+    for (int i = 0; i < 2; ++i) {
+      if (states[i]->cross.bps() <= 0) continue;
+      cross_debt[i] += static_cast<double>(states[i]->cross.bps()) / 8 / 1000;
+      while (cross_debt[i] >= 1200) {
+        cross_debt[i] -= 1200;
+        ep[i].out.Send(now, Fwd{}, DataSize::Bytes(1200));
+      }
+    }
+    const double queue_ms[2] = {QueueDelayMs(forward, fwd_state, now), QueueDelayMs(reverse, rev_state, now)};
+
+    // A host bug or a host-measured RTT, handed to both sessions (issues #441, #451).
+    if (s.host_rtt_inf && t == s.host_rtt_inf->ms()) {
+      user.SetRtt(TimeDelta::PlusInfinity());
+      ai.SetRtt(TimeDelta::PlusInfinity());
+    }
+    if (s.host_rtt && t >= s.host_rtt->first.ms()) {
+      user.SetRtt(s.host_rtt->second);
+      ai.SetRtt(s.host_rtt->second);
+    }
+
+    // --- Each endpoint: its timers, render, the audio device's 10 ms pull, then its packets go out ---
+    for (Endpoint& e : ep) {
+      e.session.Process(now + clock0);
+      e.ran = now;
+      e.rx.Render(now, e.rx_trace);
+      e.rx.PullAudio(t, now, e.rx_trace);
+      put_on_link(e, now);
+      e.tx.OnEvents(now);
+      e.tx.PollPendingFrame(now);
+    }
+
+    // --- Measurement, per direction (0 up, 1 down) ----------------------------
+    for (int i = 0; i < 2; ++i) {
+      if (t % 10 == 0) queue_samples[i].push_back(queue_ms[i]);
+      if (t % 100 != 99) continue;
+      const Endpoint& from = ep[i];
+      const ReceiveSide& to = ep[1 - i].rx;
+      DirectionMeters& dm = from.out_m;
+      const LinkState& st = *states[i];
+      Sample smp;
+      smp.t_s = static_cast<double>(t + 1) / 1000.0;
+      smp.capacity_kbps = st.cfg.down ? 0 : st.cfg.capacity.IsFinite() ? st.cfg.capacity.kbps() : -1;
+      smp.target_kbps = from.session.rates().target.kbps();
+      smp.send_kbps = static_cast<double>(dm.w_send) * 8 / 100;
+      smp.goodput_kbps = static_cast<double>(dm.w_good) * 8 / 100;
+      smp.queue_ms = queue_ms[i];
+      // The sending session's CallStats RTT, as the one-way call samples its sender's (issue #370).
+      const double call_rtt_ms = SessionGauge(from.session, "call_stats_rtt_ms");
+      smp.rtt_ms = call_rtt_ms > 0 ? call_rtt_ms : 0;
+      if (call_rtt_ms > 0) rtt_samples[i].push_back(call_rtt_ms);
+      smp.audio_buffer_ms = to.audio_buffer_ms();
+      smp.audio_concealed_pct = dm.w_played ? 100.0 * static_cast<double>(dm.w_conceal) / static_cast<double>(dm.w_played) : 0;
+      smp.video_fps = static_cast<double>(dm.w_frames) * 10;
+      smp.video_delay_ms = to.last_video_delay();
+      smp.fec_pct = s.video ? from.session.video_sender(from.tx.video_send()).fec_params().fec_rate * 100.0 / 256 : 0;
+      samples[i].push_back(smp);
+      dm.w_send = dm.w_good = dm.w_frames = dm.w_conceal = dm.w_played = 0;
+    }
+  }
+
+  for (cc::BweTraceRow& r : rep.bwe_trace) {
+    using K = cc::BweTraceRow::Kind;
+    if (r.kind == K::kRxTiming || r.kind == K::kSync) continue;
+    r.time_us -= clock0.us();
+    if ((r.kind == K::kDetector || r.kind == K::kPacer) && r.send_ms >= 0) r.send_ms -= static_cast<double>(clock0.ms());
+  }
+
+  // --- Summary, per direction -------------------------------------------------
+  // The one-way call's metrics for each direction, prefixed: up.* (user to AI) and down.* (AI to user).
+  const sim::NetworkLink<Fwd>* link_of[2] = {&forward, &reverse};
+  const std::vector<LinkChange>* changes_of[2] = {&s.forward, &s.reverse};
+  const char* prefix[2] = {"up.", "down."};
+  for (int i = 0; i < 2; ++i) {
+    SendSide& tx = ep[i].tx;
+    ReceiveSide& rx = ep[1 - i].rx;
+    DirectionMeters& dm = ep[i].out_m;
+    Report d;
+    d.scenario = s;
+    d.timeseries = samples[i];
+    auto& m = d.metrics;
+    rx.AddMetrics(end_ms, tx.frames_encoded(), d);
+    if (s.video) {
+      m["video.avg_kbps"] = static_cast<double>(tx.video_bytes_encoded()) * 8 / s.duration.seconds() / 1000;
+      m["video.qp_mean"] = tx.frames_encoded() ? static_cast<double>(tx.qp_sum()) / static_cast<double>(tx.frames_encoded()) : 0;
+      m["video.encode_height_mean"] =
+          tx.frames_encoded() ? static_cast<double>(tx.height_sum()) / static_cast<double>(tx.frames_encoded()) : 0;
+      m["video.keyframes"] = static_cast<double>(tx.keyframes_sent());
+      m["video.keyframe_requests"] = static_cast<double>(tx.keyframe_requests());
+      m["video.encoder_dropped"] = static_cast<double>(tx.frames_skipped());
+    }
+    const double demand_kbps = (s.video ? s.video_max.kbps() : 0) + audio_wire_rate.kbps();
+    AddCcMetrics(s, *changes_of[i], demand_kbps, d);
+    m["cc.queue_p95_ms"] = Percentile(queue_samples[i], 95);
+    m["cc.queue_max_ms"] = queue_samples[i].empty() ? 0 : *std::max_element(queue_samples[i].begin(), queue_samples[i].end());
+    {
+      size_t over = 0;
+      for (double q : queue_samples[i]) over += q > 200;
+      m["cc.queue_over_200ms_pct"] =
+          queue_samples[i].empty() ? 0 : 100.0 * static_cast<double>(over) / static_cast<double>(queue_samples[i].size());
+    }
+    m["cc.rtt_p50_ms"] = Percentile(rtt_samples[i], 50);
+    m["rtcp.audio_report_blocks"] = static_cast<double>(tx.audio_reports().size());
+    const auto& ls = link_of[i]->stats();
+    m["net.loss_pct"] = ls.sent ? 100.0 * static_cast<double>(ls.lost + ls.queue_dropped) / static_cast<double>(ls.sent) : 0;
+    AddLinkKindMetrics(ls, s, d);
+    if (dm.audio_ts_first && dm.audio_ts_last->second - dm.audio_ts_first->second >= TimeDelta::Seconds(1)) {
+      const double hz = static_cast<double>(static_cast<uint32_t>(dm.audio_ts_last->first - dm.audio_ts_first->first)) /
+                        (static_cast<double>((dm.audio_ts_last->second - dm.audio_ts_first->second).us()) / 1e6);
+      m["net.audio_rtp_clock_hz"] = std::round(hz / 1000) * 1000;
+    }
+    dm.repair.AddMetrics(m, s.video, end_ms);
+    for (const auto& [name, value] : m) rep.metrics[prefix[i] + name] = value;
+  }
+  if (opt.link_trace) {
+    rep.link_trace = forward.trace();
+    rep.reverse_trace = reverse.trace();
+  }
+  rep.audio_send_trace.insert(rep.audio_send_trace.end(), up_tx.opus_encode_rows().begin(), up_tx.opus_encode_rows().end());
+
+  EvaluateExpectations(rep);
+  // The up direction's samples; #749 reports both directions' time series and library metrics.
+  if (opt.timeseries) rep.timeseries = samples[0];
+  return rep;
+}
+
 }  // namespace
 
 Report RunCall(const Scenario& s, const RunOptions& opt) {
+  if (s.two_way) return RunTwoWayCall(s, opt);
   Report rep;
   rep.scenario = s;
 
@@ -1365,38 +1752,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
               : DataRate::Zero();
 
   // --- The two ends of the call ---------------------------------------------
-  auto session_config = [&](uint32_t rtcp_ssrc, const char* cname) {
-    rtp::SessionConfig c;
-    c.local_ssrc = rtcp_ssrc;
-    c.cname = cname;
-    c.extensions.Register(1, sync::uri::kTransportCc);
-    c.rtcp.has_video = s.video;
-    c.send_side.gcc.min_rate = s.min_rate;
-    c.send_side.gcc.start_rate = s.start_rate;
-    c.send_side.gcc.max_rate = s.max_rate;
-    c.send_side.transport_overhead_bytes = kUdpIpOverhead;
-    c.send_side.video_min = s.video_min;
-    c.send_side.video_max = s.video_max;
-    c.send_side.send_rate_stats = s.send_rate_stats;
-    c.send_side.link_headroom = s.link_headroom;
-    c.send_side.control_handler = s.control_handler;
-    c.send_side.expected_packet_overhead = s.expected_packet_overhead;  // Issue #577.
-    c.send_side.pacer.controller.keyframe_flush_padding = s.keyframe_flush_padding;
-    // RtpVideoSender::OnBitrateUpdated computes the overhead rate for rtp_config_.max_packet_size, the same
-    // limit its packetizer uses (libwebrtc's default 1460, rtp_rtcp_impl2.cc:149):
-    // the bench's packets are that size, so the overhead is too (issue #151): the packetizer's
-    // whole-packet limit, `video_max_payload` plus the 12-byte fixed header clamped to 100-1500 as
-    // rtp::RtpSender does, as in sm_compare's libwebrtc call (#379); 1460 by default (#513).
-    c.send_side.max_packet_size = static_cast<int64_t>(std::clamp<size_t>(s.video_max_payload + 12, 100, 1500));
-    // libwebrtc's RTCPSender seeds its report-interval draws with the clock in microseconds when it is built
-    // (rtcp_sender.cc:130), and sm_compare builds every one at the call's start: every engine here takes that same
-    // time, so both stacks draw the same RTCP schedule (#517; per seed since #399).
-    c.seed = RtcpRandomSeed(s);
-    c.per_stream_rtt = s.per_stream_rtt;  // Issue #568.
-    c.receive_statistics_v2 = s.receive_statistics_v2;  // Issue #575.
-    c.events = &events;
-    return c;
-  };
+  auto session_config = [&](uint32_t rtcp_ssrc, const char* cname) { return MakeSessionConfig(s, events, rtcp_ssrc, cname); };
   rtp::SessionConfig sender_cfg = session_config(kSenderRtcpSsrc, "sender@testbench");
   if (opt.bwe_trace) sender_cfg.send_side.gcc.bwe_trace = &rep.bwe_trace;
   // The audio send stream always sends its own RTCP, as libwebrtc's audio channel runs RtcpMode::kCompound whatever
