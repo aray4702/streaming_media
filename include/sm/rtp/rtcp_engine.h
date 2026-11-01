@@ -36,7 +36,16 @@ namespace sm::rtp {
 
 struct RtcpConfig {
   uint32_t local_ssrc = 1;  // RTCP sender SSRC of reports and feedback.
-  std::string cname;        // SDES CNAME; empty = no SDES.
+  // SDES CNAME. Every SR carries SDES, with an empty CNAME if this is empty;
+  // an RR carries it when this is set (RTCPSender::PrepareReport,
+  // rtcp_sender.cc:713).
+  std::string cname;
+  // Whether an RR carries the CNAME. rtp::Session turns it off: its RR stands
+  // for the video receive stream's receiver-only RtpRtcp module, which gets no
+  // CNAME (CreateRtpRtcpModule, video/rtp_video_stream_receiver2.cc:124-158;
+  // only call/rtp_video_sender.cc:271 and audio/channel_send.cc:804 call
+  // SetCNAME), so libwebrtc's receiver sends no SDES (issue #820).
+  bool cname_in_receiver_report = true;
   bool has_video = true;    // Picks the default report interval.
   // Nominal interval between reports; zero = 1 s with video, 5 s audio only
   // (libwebrtc's rtcp_report_interval_ms).
@@ -76,7 +85,9 @@ struct RtcpSenderState {
   uint32_t packet_count = 0;
   uint32_t octet_count = 0;
   // The RTP timestamp that corresponded to `reference_time`; the SR carries
-  // this extrapolated to the report time with `clock_rate`.
+  // this extrapolated to the report time with `clock_rate`, in whole ms and
+  // kHz as RTCPSender::BuildSR. `clock_rate` is the rate registered for the
+  // last frame's payload type (RtpSender::SenderState).
   uint32_t rtp_timestamp = 0;
   Timestamp reference_time = Timestamp::Millis(0);
   int clock_rate = 90000;
@@ -172,13 +183,22 @@ class RtcpEngine : public MetricsSource {
   void QueueLossNotification(loss::LossNotification l);
   void QueueTransportFeedback(cc::TransportFeedback fb);
   void QueueRemb(DataRate bitrate, std::span<const uint32_t> ssrcs);
-  // Announces that the local sources leave the session (RFC 3550 6.6).
+  // Announces that the local sources leave the session (RFC 3550 6.6). It goes
+  // out with the full report and last in its compound, as RTCPSender's BYE
+  // (rtcp_sender.cc:525-530, 631-650), which carries the local SSRC and the
+  // CSRCs and no reason. libwebrtc M157 never sends one: nothing sets
+  // kRtcpBye, and RTCPSender::SetSendingStatus(false) only clears the sending
+  // flag (rtcp_sender.cc:199-204) despite the comments in rtp_rtcp_impl2.cc
+  // and channel_send.cc. rtp::Session doesn't call it either (issue #820).
   void QueueBye(std::span<const uint32_t> ssrcs, std::string reason = {});
 
   // `RTCPSender::TimeToSendRTCPReport(send_keyframe_before_rtp)`: a report is
   // due. With a keyframe about to be sent on a video stream a
   // report due within 100 ms counts, so it goes out before the large frame.
   bool ReportDue(Timestamp now, bool keyframe_before_rtp = false) const;
+  // Process(now) builds a report: the regular one is due, or queued feedback goes out in a
+  // compound with one (SendRTCP, which reads ModuleRtpRtcpImpl2::GetFeedbackState).
+  bool BuildsReport(Timestamp now) const;
   // Sends the report now (`SendRTCP(kRtcpReport)`) and schedules the next one
   // an interval from `now`. Returns nothing before the first Process.
   std::vector<RtcpOutgoing> SendReport(Timestamp now);
@@ -225,7 +245,7 @@ class RtcpEngine : public MetricsSource {
     std::vector<uint8_t> bytes;
   };
   std::vector<Queued> queue_;
-  std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> next seq_nr
+  std::map<uint32_t, uint8_t> fir_seq_out_;                       // media ssrc -> last seq_nr sent
   std::map<std::pair<uint32_t, uint32_t>, uint8_t> fir_seq_in_;   // (sender, media) -> last seq_nr
   void UpdateSendRate(Timestamp now);
   std::deque<std::pair<Timestamp, uint32_t>> rate_samples_;

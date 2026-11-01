@@ -247,54 +247,6 @@ SM_TEST(E2E_FrameDropper, ContainsEncoderOvershoot) {
   SM_EXPECT_GT(ratio_without, 1.4);
 }
 
-SM_TEST(E2E_VideoAdaptation, ResolutionFollowsBandwidth) {
-  CcSimParams p;
-  p.capacity_kbps = {{0, 3000}, {20000, 400}, {40000, 3000}};
-  p.adaptation = true;
-  p.preference = DegradationPreference::kMaintainFramerate;
-  auto r = RunCcSim(p);
-  SM_RECORD("phase0_width", r.phases[0].format.width);
-  SM_RECORD("phase1_width", r.phases[1].format.width);
-  SM_RECORD("phase2_width", r.phases[2].format.width);
-  SM_EXPECT_EQ(r.phases[0].format.width, 1280);
-  SM_EXPECT_LE(r.phases[1].format.width, 640);
-  SM_EXPECT_EQ(r.phases[1].format.fps, 30.0);
-  // GoogCC climbs back from 400 kbps more slowly than v1's AIMD did, so 20 s
-  // after the rise the resolution is one step below the start (program.md 0.2,
-  // #167: was 1280; GoogCC here 960). libwebrtc takes 14.3 s to settle after
-  // the bench's capacity_drop recovers (parity-data; ours 14.3 s).
-  SM_EXPECT_GE(r.phases[2].format.width, 960);
-}
-
-SM_TEST(E2E_VideoAdaptation, CpuOveruseConvergesToSustainableResolution) {
-  // A slow device: 40 ms of encode per megapixel per frame.
-  DegradationConfig dc;
-  dc.preference = DegradationPreference::kMaintainFramerate;
-  DegradationController deg(dc);
-  CpuOveruseConfig v1;
-  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
-  CpuOveruseDetector cpu(v1);
-  deg.OnTargetBitrate(DataRate::KilobitsPerSec(5000));
-  int changes = 0;
-  VideoFormat prev = deg.current();
-  for (int64_t t = 0; t < 120000; t += 33) {
-    VideoFormat f = deg.current();
-    double enc_ms = static_cast<double>(f.pixels()) / 1e6 * 40.0;
-    cpu.OnFrameEncoded(TimeDelta::MillisF(enc_ms), TimeDelta::Millis(33));
-    auto sig = cpu.Check(Timestamp::Millis(t));
-    if (sig == CpuOveruseDetector::Signal::kOveruse) deg.OnResourceOveruse();
-    if (sig == CpuOveruseDetector::Signal::kUnderuse) deg.OnResourceUnderuse();
-    if (!(deg.current() == prev)) ++changes;
-    prev = deg.current();
-  }
-  SM_RECORD("cpu_final_width", deg.current().width);
-  SM_RECORD("cpu_final_usage", cpu.usage());
-  SM_RECORD("cpu_format_changes", changes);
-  SM_EXPECT_LT(deg.current().width, 1280);
-  SM_EXPECT_LT(cpu.usage(), 0.85);
-  SM_EXPECT_LE(changes, 6);
-}
-
 SM_TEST(E2E_Outage, PausesDuringOutageAndRecovers) {
   CcSimParams p;
   p.capacity_kbps = {{0, 2000}};

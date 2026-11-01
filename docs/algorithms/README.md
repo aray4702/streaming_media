@@ -9,7 +9,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 3.1 | [NACK + RTX retransmission](3-loss/3.1-nack-rtx.md) | 9 | 2 | 3 | not recorded | not recorded | not recorded | not recorded |
 | 3.2 | [Forward error correction (ULPFEC over RED, as libwebrtc)](3-loss/3.2-fec.md) | 0 | 2 | 3 | not recorded | not recorded | not recorded | not recorded |
 | 3.3 | [RED audio redundancy (RFC 2198)](3-loss/3.3-red.md) | 4 | 1 | 2 | pass | pass | pass | pass |
-| 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 4 | 1 | 2 | pass | pass | pass | pass |
+| 3.4 | [Packet loss concealment (PCM domain)](3-loss/3.4-plc.md) | 0 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 3.5 | [Keyframe requests (PLI/FIR) and loss notification](3-loss/3.5-keyframe-requests.md) | 4 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 3.7 | [NACK/FEC protection selection](3-loss/3.7-protection-selection.md) | 0 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 
@@ -36,7 +36,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 5.6 | [Bandwidth probing](5-cc/5.6-probing.md) | 3 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 5.7 | [Bitrate allocation among streams](5-cc/5.7-bitrate-allocator.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 5.8 | [Encoder overshoot control (frame dropper)](5-cc/5.8-frame-dropper.md) | 3 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
-| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 3 | 2 | 2 | not recorded | not recorded | not recorded | not recorded |
+| 5.9 | [Resolution/frame-rate adaptation and CPU overuse detection](5-cc/5.9-video-adaptation.md) | 0 | 2 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 5.11 | [Link outage detection and recovery](5-cc/5.11-outage.md) | 1 | 1 | 1 | pass | pass | pass | pass |
 
 ## 6. Audio quality (APM)
@@ -61,7 +61,7 @@ One document per algorithm: problem, the issue it solves, design, implementation
 | 7.1 | [Freeze detection](7-video/7.1-freeze-detector.md) | 2 | 1 | 1 | pass | pass | pass | pass |
 | 7.2 | [Hardware -> software codec fallback](7-video/7.2-codec-fallback.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.3 | [Video orientation (CVO)](7-video/7.3-orientation.md) | 2 | 1 | 1 | pass | pass | pass | pass |
-| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | pass | pass | pass | pass |
+| 7.4 | [Content hints and screen-content variable frame rate](7-video/7.4-content-policy.md) | 2 | 1 | 2 | not recorded | not recorded | not recorded | not recorded |
 | 7.7 | [Render timing and late-frame dropping](7-video/7.7-frame-scheduler.md) | 2 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 | 7.8 | [QP-based quality scaler](7-video/7.8-quality-scaler.md) | 1 | 1 | 1 | not recorded | not recorded | not recorded | not recorded |
 

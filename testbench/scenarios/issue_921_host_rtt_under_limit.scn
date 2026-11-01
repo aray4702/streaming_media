@@ -1,0 +1,19 @@
+name issue_921_host_rtt_under_limit
+describe issue_451_host_rtt_near_limit's call with the largest host RTT libwebrtc's arithmetic stays defined for, less 100 ms: from 8 s the host reports it, then the link drops and recovers; both stacks' GoogCC take the same RTT
+# Issue #921 (Owner, 9:35 PM PT 2026-10-30: "near limit doesn't mean over limit. Use an input under and near
+# the limit."). issue_451_host_rtt_near_limit's RTT is past libwebrtc's limit, so it stays out of the comparison
+# (compare off) as our overflow-safety test. This copy feeds an RTT just under it. libwebrtc M157's tightest sum on
+# the host RTT is AimdRateControl::GetNearMaxIncreaseRateBpsPerSecond's (rtt_ + 100 ms) * 2
+# (modules/remote_bitrate_estimator/aimd_rate_control.cc:200-202, plain int64 adds and multiplies in
+# rtc_base/units/unit_base.h:209-219, 258-263), defined up to rtt = INT64_MAX / 2 - 100 ms
+# = 4611686018427287903 us. The input is that limit rounded down to whole milliseconds (the RTT is rounded to 1 ms
+# on the way in, rtp_transport_controller_send.cc:571) and less 100 ms. Every other libwebrtc reader of the host
+# RTT allows a larger one (the audit on #921). The expect lines are issue_451's: the same call must still carry on.
+duration 30s
+at 0s capacity=2500kbps delay=30ms queue=400ms
+host_rtt 8s 4611686018427187000us
+at 12s capacity=1000kbps
+at 18s capacity=2500kbps
+expect audio.interruptions <= 1
+expect video.freeze_count <= 4
+expect video.render_fps >= 24

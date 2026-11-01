@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <vector>
 
 #include "sm/timing/frame_release.h"
 #include "sm/timing/vcm_timing.h"
@@ -447,6 +448,34 @@ SM_TEST(VcmTiming, RenderTimeIsExtrapolatedLocalTimePlusClampedCurrentDelay) {
   SM_EXPECT_NEAR(static_cast<double>((t.RenderTime(96000, now) - now).us()) / 1000.0, 300.0, 1.0);
 }
 
+// Issue #897: libwebrtc builds the TimestampExtrapolator with the clock's time when the stream is created
+// (default_video_jitter_timing.cc:30), so its render times do not depend on where the clock starts. Start(now)
+// gives ours that time; without it a clock that starts at 171271 s (sm_compare's for seed 10) hard-resets the
+// extrapolator at the first frame and counts its Kalman time from there.
+SM_TEST(VcmTiming, RenderTimeDoesNotDependOnTheClockOriginOnceStarted) {
+  const TimeDelta origin = TimeDelta::Seconds(171271);
+  auto run = [&](TimeDelta clock0, bool start) {
+    VcmTiming t;
+    if (start) t.Start(Timestamp::Micros(0) + clock0);
+    std::vector<int64_t> out;
+    uint64_t lcg = 1;
+    for (int i = 0; i < 300; ++i) {
+      lcg = lcg * 6364136223846793005ULL + 1442695040888963407ULL;
+      // 30 fps with up to 20 ms of arrival jitter, from 200 ms after the stream's creation.
+      const int64_t jitter_us = static_cast<int64_t>((lcg >> 33) % 20000);
+      const Timestamp now = Timestamp::Micros(0) + clock0 + TimeDelta::Micros(200'000 + i * 33'333 + jitter_us);
+      const uint32_t rtp = 90000 + static_cast<uint32_t>(i * 3000);
+      t.OnCompleteFrame(rtp, now, false);
+      out.push_back((t.RenderTime(rtp, now) - clock0).us());
+    }
+    return out;
+  };
+  const std::vector<int64_t> at_zero = run(TimeDelta::Zero(), true);
+  SM_EXPECT_TRUE(run(origin, true) == at_zero);
+  SM_EXPECT_TRUE(run(TimeDelta::Zero(), false) == at_zero);  // Created at 0: the default start is right.
+  SM_EXPECT_TRUE(run(origin, false) != at_zero);             // The difference Start removes.
+}
+
 // --- FrameReleaseController ---
 
 namespace {
@@ -544,4 +573,34 @@ SM_TEST(VcmTiming, ReleaseWaitsUntilRenderTimeMinusDecodeAndRenderDelay) {
   SM_ASSERT_EQ(out.size(), 1u);
   SM_EXPECT_TRUE(out[0].decode);
   SM_EXPECT_EQ((out[0].render_time - due).ms(), 10);
+}
+
+SM_TEST(VcmTiming, ReleaseSchedulesEachFrameAsItIsInserted) {
+  // VideoStreamBufferController::InsertFrame calls MaybeScheduleFrameForRelease
+  // for each frame, so of frames that arrive together the first is scheduled
+  // with the render time of the timestamps up to it, and keeps it (#931:
+  // on issue_466_undershoot seed 1 libwebrtc's first frame after a stall gets a
+  // render time 2.2 s later than when the whole batch is inserted first).
+  ReleaseHarness each, batch, first_only;
+  for (ReleaseHarness* h : {&each, &batch, &first_only}) {
+    WarmUp(*h);
+    h->now += TimeDelta::Millis(500);
+  }
+  std::vector<ReleaseAction> out_each;
+  for (int i = 0; i < 3; ++i) {
+    each.release.Insert(each.Make(false, each.now));
+    for (const auto& a : each.release.MaybeSchedule(each.now, TimeDelta::Zero())) out_each.push_back(a);
+    batch.release.Insert(batch.Make(false, batch.now));
+  }
+  for (const auto& a : each.release.Process(each.now, TimeDelta::Zero())) out_each.push_back(a);
+  const auto out_batch = batch.release.Process(batch.now, TimeDelta::Zero());
+  const ReleaseFrame f = first_only.Make(false, first_only.now);
+  first_only.release.Insert(f);
+  const Timestamp expected = first_only.timing.RenderTime(f.rtp_timestamp, first_only.now);
+  SM_ASSERT_EQ(out_each.size(), 3u);
+  SM_ASSERT_EQ(out_batch.size(), 3u);
+  SM_EXPECT_EQ(out_each[0].render_time.us(), expected.us());
+  SM_EXPECT_NE(out_each[0].render_time.us(), out_batch[0].render_time.us());
+  // The frames after it are scheduled once it is released, as before.
+  SM_EXPECT_EQ(out_each[2].render_time.us(), out_batch[2].render_time.us());
 }

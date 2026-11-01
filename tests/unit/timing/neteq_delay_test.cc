@@ -268,7 +268,6 @@ SM_TEST(NetEqDelayManager, MinimumDelayAndBufferCap) {
 // arrival times are on the 10 ms tick of GetAudio.
 SM_TEST(AudioJitterBufferNetEqV2, TargetFromNetEqDelayManager) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   SM_EXPECT_EQ(jb.TargetDelayMs(), 80);
   std::vector<float> out(160);
@@ -452,7 +451,6 @@ SM_TEST(NetEqDecisionLogic, MinTimescaleInterval) {
 // new codec) and reaches the 80 ms start target by preemptive expand.
 SM_TEST(AudioJitterBufferNetEqV2, StartsAtFirstPacketAndExpandsToTarget) {
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   AudioJitterBuffer jb(cfg);
   std::vector<float> out(160);
   auto tone = [](int i) {

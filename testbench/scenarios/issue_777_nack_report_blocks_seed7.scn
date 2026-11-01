@@ -1,0 +1,17 @@
+name issue_777_nack_report_blocks_seed7
+describe issue_464_start_rate_above_int_bps on seed 7: one late retransmission froze video 1.1 s, against libwebrtc's 450 ms (#777)
+# The NACK that the 0.47 s gap triggers carried report blocks that already counted the packet that
+# revealed the gap, so the sender never saw the start-up loss in one report (libwebrtc: fraction 54
+# at 0.61 s, then target updates at 0.7 and 0.8 s that re-rate the encoder). From 1.0 s the frames
+# differed, and on this seed video seq 28629's first RTX was queue-dropped at 1.10 s, the next one
+# went out only at 1.95 s. RtpVideoStreamReceiver2::OnRtpPacket counts a packet after ReceivePacket
+# (rtp_video_stream_receiver2.cc:983-990). Ours 1141 ms before, 450 after; libwebrtc 450 ms here, and
+# 776 ms on its worst of 40 seeds (yardstick #780), which is the line.
+duration 10s
+max_rate 9000000000000mbps
+start_rate 20000mbps
+seed 7
+at 0s capacity=2500kbps delay=30ms queue=400ms
+expect cc.unsettled == 0
+expect video.freeze_count <= 1
+expect video.longest_freeze_ms <= 776

@@ -27,8 +27,18 @@
 // 10%. GetStreamSyncOffsetInMs is libwebrtc's A/V offset stat. The library
 // reads no clock: the caller passes `now` and calls Process.
 //
-// MediaSyncGroups pairs streams for synchronization: only streams of the
-// same CNAME (same participant/capture clock) are synchronized.
+// MediaSyncGroups pairs receive streams for synchronization as libwebrtc's
+// Call::ConfigureSync (call/call.cc:1300-1341): only streams of the same
+// sync group (the MediaStream id; one participant's capture clock) are
+// synchronized, and a stream with an empty sync group never is. In a group
+// the first audio stream (FindAudioStreamForSyncGroup) is paired with the
+// first video stream; further video streams of the group get no audio
+// (bugs.webrtc.org/4762: one A/V pair per group). libwebrtc walks its
+// std::set of stream pointers, whose order is the allocator's; here the
+// order is the order the streams were added. The pairs are recomputed on
+// every change, so removing the paired audio or video stream pairs the next
+// one of the group, and moving an audio stream to another group
+// (Call::OnUpdateSyncGroup, AddStream again) re-pairs both groups.
 #pragma once
 
 #include <cstdint>
@@ -74,6 +84,8 @@ class StreamSynchronization {
   void ReduceVideoDelay();
   uint32_t audio_stream_id() const { return audio_stream_id_; }
   uint32_t video_stream_id() const { return video_stream_id_; }
+  // The filtered diff of the last ComputeDelays, before a move resets it (trace only, #895).
+  int last_avg_diff_ms() const { return last_avg_diff_ms_; }
 
  private:
   struct SynchronizationDelays {
@@ -86,6 +98,7 @@ class StreamSynchronization {
   SynchronizationDelays video_delay_;
   int base_target_delay_ms_ = 0;
   int avg_diff_ms_ = 0;
+  int last_avg_diff_ms_ = 0;
 };
 
 // call/syncable.h: what a receive stream gives the synchronizer.
@@ -125,7 +138,9 @@ class RtpStreamsSynchronizer : public MetricsSource {
   // Pairs the video stream with `syncable_audio` (nullptr stops syncing).
   // The first update runs kSyncInterval after `now`.
   void ConfigureSync(Syncable* syncable_audio, Timestamp now);
-  // Runs UpdateDelay when the 1 s repeating task is due.
+  // Runs UpdateDelay when the 1 s repeating task is due. The next run is
+  // timed from the scheduled time, as RepeatingTaskHandle does (#902), so
+  // NextProcessTime can be at or before `now` after a late call.
   void Process(Timestamp now);
   std::optional<Timestamp> NextProcessTime() const { return next_run_; }
   // libwebrtc's UpdateDelay (one run of the repeating task).
@@ -134,6 +149,9 @@ class RtpStreamsSynchronizer : public MetricsSource {
                                                           Timestamp now) const;
   uint64_t updates() const { return updates_; }  // Runs that computed new delay targets.
   const StreamSynchronization::DelayTargets& last_targets() const { return last_targets_; }
+  // The last run's relative delay and filtered diff (trace only, #895).
+  int last_relative_delay_ms() const { return last_relative_delay_ms_; }
+  int last_avg_diff_ms() const { return sync_ ? sync_->last_avg_diff_ms() : 0; }
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
@@ -152,17 +170,19 @@ class RtpStreamsSynchronizer : public MetricsSource {
 class MediaSyncGroups {
  public:
   enum class Kind { kAudio, kVideo };
-  void AddStream(uint32_t ssrc, const std::string& cname, Kind kind);
+  // Adds a receive stream, or moves an added one to `sync_group` (it keeps its place in the order).
+  void AddStream(uint32_t ssrc, const std::string& sync_group, Kind kind);
   void RemoveStream(uint32_t ssrc);
-  // (audio ssrc, video ssrc) per CNAME that has both.
+  // (audio ssrc, video ssrc) per sync group that has both, in the order of the groups' first video streams.
   std::vector<std::pair<uint32_t, uint32_t>> SyncPairs() const;
 
  private:
-  struct Info {
-    std::string cname;
+  struct Stream {
+    uint32_t ssrc;
+    std::string sync_group;
     Kind kind;
   };
-  std::map<uint32_t, Info> streams_;
+  std::vector<Stream> streams_;  // In the order they were added.
 };
 
 }  // namespace sm::sync

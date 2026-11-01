@@ -17,7 +17,9 @@
 // unadjusted target, as in VideoStreamEncoder::OnBitrateUpdated. With
 // `adjuster_on_update`, as in VideoStreamEncoder, the adjusted rate is
 // recomputed only on an allocation update from the session's allocator
-// (OnBitrateUpdated), on an encoder reconfiguration and every 1 s
+// (OnBitrateUpdated, when MaybeEncodePendingFrame polls it after the session
+// ran, so the overshoot detector leaks to the update's time; issue #894),
+// on an encoder reconfiguration and every 1 s
 // (MaybeEncodeVideoFrame's kParameterUpdateIntervalMs), and held in between
 // (issue #569; on by default since #637, as libwebrtc); off, on every captured frame.
 //
@@ -144,6 +146,10 @@ struct VideoSendControllerConfig {
   // default 24/37) and kDefaultMinPixelsPerFrame.
   video::QpThresholds qp_thresholds;
   int min_pixels_per_frame = 320 * 180;
+  // EncoderInfo::resolution_bitrate_limits, for BitrateConstraint (issue #819;
+  // video::VideoStreamAdapter). Empty, as libwebrtc's software encoders report
+  // by default: no step up is held back for the bitrate.
+  std::vector<video::ResolutionBitrateLimits> resolution_bitrate_limits;
   // QualityScalerSettings' WebRTC-Video-QualityScalerSettings `initial_bitrate_interval_ms` and
   // `initial_bitrate_factor` (rtc_base/experiments/quality_scaler_settings.cc), unset by default as in
   // M157: with both, a target below `factor` times the start bitrate within `interval` of it restarts the

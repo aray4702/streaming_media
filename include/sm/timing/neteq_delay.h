@@ -180,6 +180,7 @@ class NetEqDelayManager : public MetricsSource {
   int GetDelayMs(uint32_t rtp_timestamp, int64_t now_ms) const { return arrival_history_.GetDelayMs(rtp_timestamp, now_ms); }
   int GetMaxDelayMs() const { return arrival_history_.GetMaxDelayMs(); }
   bool SetMinimumDelay(int delay_ms) { return constraints_.SetMinimumDelay(delay_ms); }
+  bool SetMaximumDelay(int delay_ms) { return constraints_.SetMaximumDelay(delay_ms); }
   // DecisionLogic::SoftReset (the delay part).
   void SoftReset();
   void ExportMetrics(MetricsWriter& w) const override;

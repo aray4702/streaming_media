@@ -1,8 +1,11 @@
 #include <algorithm>
+#include <memory>
 #include <optional>
+#include <utility>
 #include <vector>
 
 #include "sm/loss/rtx.h"
+#include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
 #include "sm_test.h"
 
@@ -87,8 +90,8 @@ SM_TEST(SendSideController, PushbackTakesThePacerQueueOnTheProcessInterval) {
 }
 
 // GoogCcNetworkController::OnTransportLossReport returns an empty update (goog_cc_network_control.cc:380-387):
-// the estimator takes the loss at once, and the transport's target, pacer and allocator follow at the
-// next process interval.
+// the estimator takes the loss at once, and with no packet sent the transport's target, pacer and allocator
+// follow at the next process interval.
 SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) {
   SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
@@ -104,6 +107,176 @@ SM_TEST(SendSideController, LossReportReachesTheTargetAtTheNextProcessInterval) 
   c.Process(Timestamp::Millis(1025));
   SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());
   SM_EXPECT_LT(c.target().bps(), before.bps());
+}
+
+// With the congestion-window pushback on (its default), GoogCcNetworkController::OnSentPacket runs
+// MaybeTriggerOnNetworkChanged (goog_cc_network_control.cc:263-287) and RtpTransportControllerSend::
+// ProcessSentPacket posts its update (rtp_transport_controller_send.cc:456-485): a target a loss report
+// moved reaches the transport, the pacer and the allocator with the next packet that carries the
+// transport-wide number, before the process interval. With the pushback off, OnSentPacket returns nothing.
+SM_TEST(SendSideController, LossReportReachesTheTargetWithTheNextSentPacket) {
+  for (const bool pushback : {true, false}) {
+    sync::ExtensionMap map;
+    map.Register(3, sync::uri::kTransportCc);
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+    cfg.cwnd.enabled = pushback;
+    SendSideController c(cfg, &map);
+    SendSideController::AudioAllocation audio;
+    audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+    c.ConfigureAllocation(audio, true);
+    c.Start(Timestamp::Millis(0));
+    for (int t = 0; t <= 1000; ++t) c.Process(Timestamp::Millis(t));
+    const DataRate before = c.target();
+    c.OnLossReport(50, 100, Timestamp::Millis(1010));
+    SM_EXPECT_LT(c.gcc().target().bps(), before.bps());
+    c.Process(Timestamp::Millis(1011));
+    SM_EXPECT_EQ(c.target().bps(), before.bps());  // No packet sent yet.
+    c.Enqueue(Media(1, PacketKind::kAudio, cc::PacketPriority::kAudio, 100), Timestamp::Millis(1012));
+    SM_ASSERT_EQ(c.Process(Timestamp::Millis(1012)).size(), 1u);
+    const SendRates rates = c.ComputeMeasuredRates(DataRate::Zero());
+    const DataRate allocated = rates.video_target + rates.audio_rate;
+    if (pushback) {
+      SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());
+      SM_EXPECT_LT(allocated.bps(), before.bps());
+    } else {
+      SM_EXPECT_EQ(c.target().bps(), before.bps());
+    }
+    for (int t = 1013; t <= 1025; ++t) c.Process(Timestamp::Millis(t));
+    SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());  // The process interval, either way.
+  }
+}
+
+// Issue #875: RtpSenderEgress::SendPacket counts a packet in its send rates as the pacer sends it
+// (UpdateRtpStats, rtp_sender_egress.cc:335, 495), and the sent-packet notification that posts a new
+// target runs after the pacer's loop (RtpTransportControllerSend::OnSentPacket). The allocation the
+// first packet of a loop posts reads a protection share (RtpVideoSender::ProtectionRequest) that
+// counts the RTX the same loop sent after it.
+SM_TEST(SendSideController, AllocationPostedBySentPacketCountsTheWholeSendLoop) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  SendSideController c(cfg, &map);
+  SendSideController::AudioAllocation audio;
+  audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+  c.ConfigureAllocation(audio, true);
+  c.Start(Timestamp::Millis(0));
+  uint16_t seq = 0;
+  for (int t = 0; t <= 1000; ++t) {
+    if (t % 20 == 0) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+    if (t == 1000) c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+  }
+  // One RTX sample: RateStatistics has no rate for it yet, so the share is still 0.
+  SM_EXPECT_EQ(c.repair_share(), 0.0);
+  c.OnLossReport(50, 100, Timestamp::Millis(1010));  // Moves GoogCC's target; posted with the next sent packet.
+  c.Enqueue(Media(seq++, PacketKind::kAudio, cc::PacketPriority::kAudio, 100), Timestamp::Millis(1012));
+  c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(1012));
+  const std::vector<ReleasedPacket> sent = c.Process(Timestamp::Millis(1012));
+  SM_ASSERT_EQ(sent.size(), 2u);
+  SM_EXPECT_EQ(static_cast<int>(sent[0].kind), static_cast<int>(PacketKind::kAudio));
+  SM_EXPECT_EQ(c.target().bps(), c.gcc().target().bps());  // The audio packet posted the target.
+  SM_EXPECT_GT(c.repair_share(), 0.5);
+  // The allocation took the share the loop's RTX made (capped at 0.5), not the share before the loop.
+  const DataRate alloc = c.allocator().allocation("video");
+  const DataRate video = c.ComputeMeasuredRates(DataRate::Zero()).video_target;
+  SM_EXPECT_LT(video.bps(), alloc.bps() * 0.55);
+  SM_EXPECT_GT(video.bps(), alloc.bps() * 0.4);
+}
+
+// Issue #896: RtpVideoSender::OnBitrateUpdated reads the send rates (ModuleRtpRtcpImpl2::GetSendRates,
+// rtp_rtcp_impl2.cc:667-670) and the post-encode overhead (RTPSenderVideo::PostEncodeOverhead,
+// rtp_sender_video.cc:943-947) at the clock's current time. An allocation that runs between two
+// Process() calls (transport feedback, an encoder reconfiguration) reads them at its own time, not
+// at the last Process().
+SM_TEST(SendSideController, AllocationReadsTheSendRatesAtItsOwnTime) {
+  auto run = [](bool process_first) {
+    sync::ExtensionMap map;
+    map.Register(3, sync::uri::kTransportCc);
+    SendSideConfig cfg;
+    cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+    auto c = std::make_unique<SendSideController>(cfg, &map);
+    SendSideController::AudioAllocation audio;
+    audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+    c->ConfigureAllocation(audio, true);
+    c->Start(Timestamp::Millis(0));
+    uint16_t seq = 0;
+    for (int t = 0; t <= 500; ++t) {
+      if (t % 20 == 0) {
+        c->OnVideoFrameEncoded(Timestamp::Millis(t));
+        c->Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+      }
+      // RTX from 200 ms: its rate's window (from its first sample) is shorter than video's, so the
+      // share moves from one millisecond to the next.
+      if (t == 200 || t == 210)
+        c->Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+      c->Process(Timestamp::Millis(t));
+    }
+    if (process_first) c->Process(Timestamp::Millis(501));
+    c->OnVideoEncoderReconfigured(Timestamp::Millis(501));
+    c->RunPendingReconfigure(Timestamp::Millis(501));  // Its posted reallocation (issue #945): re-adds the stream at 501 ms.
+    return std::make_pair(c->ComputeMeasuredRates(DataRate::Zero()).video_target, c->target());
+  };
+  const auto [video, target] = run(false);
+  const auto [video_after_process, target_after_process] = run(true);
+  SM_ASSERT_EQ(target.bps(), target_after_process.bps());
+  SM_EXPECT_GT(video.bps(), 0);
+  SM_EXPECT_EQ(video.bps(), video_after_process.bps());
+}
+
+// GoogCC's cwnd_reduce_ratio comes from the pushback target after it is clamped to the estimator's
+// minimum (goog_cc_network_control.cc:596-608). Once the pushback reaches that minimum the ratio stops
+// changing, so no new update undoes an AddObserver reallocation's reset to 0 (issue #738).
+SM_TEST(SendSideController, CwndReduceRatioStopsAtTheMinimumBitrate) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::KilobitsPerSec(1000);
+  cfg.video_min = DataRate::KilobitsPerSec(60);
+  SendSideController c(cfg, &map);
+  SendSideController::AudioAllocation audio;
+  audio.min = audio.max = audio.priority_rate = DataRate::KilobitsPerSec(40);
+  c.ConfigureAllocation(audio, true);
+  c.Start(Timestamp::Millis(0));
+  const DataRate min = c.gcc().min_rate();
+  SM_EXPECT_EQ(min.bps(), 100000);  // The minimum allocatable rate: 40 + 60 kbps.
+  // Feedback for the first second sizes the congestion window. Then none comes back (an outage), so the
+  // outstanding data fills the window and the pushback ratio steps down with every sent packet until
+  // the pushback target reaches the minimum.
+  uint16_t seq = 0;
+  double max_ratio = 0;
+  std::vector<uint16_t> unacked;
+  for (int t = 0; t <= 2500; ++t) {
+    if (t % 30 == 0) c.OnVideoFrameEncoded(Timestamp::Millis(t));  // Keeps the stream active.
+    if (t % 10 == 0)
+      for (int i = 0; i < 2; ++i) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), Timestamp::Millis(t));
+    for (const auto& r : c.Process(Timestamp::Millis(t))) unacked.push_back(static_cast<uint16_t>(r.transport_seq));
+    if (t < 1000 && t % 50 == 49 && !unacked.empty()) {
+      cc::TransportFeedback fb;
+      fb.base_seq = unacked.front();
+      fb.reference_time = t / 64;
+      for (uint16_t s : unacked) fb.packets.push_back({s, true, 4});
+      unacked.clear();
+      c.OnTransportFeedback(fb, Timestamp::Millis(t));
+    }
+    max_ratio = std::max(max_ratio, c.allocator().cwnd_reduce_ratio("video"));
+  }
+  const double floor = static_cast<double>(c.target().bps() - min.bps()) / static_cast<double>(c.target().bps());
+  SM_EXPECT_GT(c.allocator().cwnd_reduce_ratio("video"), floor - 1e-9);
+  SM_EXPECT_LT(max_ratio, floor + 1e-9);  // Not the pushback controller's own 30 kbps floor.
+  // An encoder reconfiguration re-adds the stream (AddObserver), which resets the ratio to 0; with the
+  // pushback at the minimum, later sent packets hand on no new ratio.
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(2501));
+  c.RunPendingReconfigure(Timestamp::Millis(2501));  // The posted OnEncoderConfigurationChanged (issue #945).
+  SM_EXPECT_EQ(c.allocator().cwnd_reduce_ratio("video"), 0.0);
+  for (int t = 2501; t <= 2700; ++t) {
+    if (t % 30 == 0) c.OnVideoFrameEncoded(Timestamp::Millis(t));
+    if (t % 10 == 0)
+      for (int i = 0; i < 2; ++i) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1100), Timestamp::Millis(t));
+    c.Process(Timestamp::Millis(t));
+  }
+  SM_EXPECT_EQ(c.allocator().cwnd_reduce_ratio("video"), 0.0);
 }
 
 SM_TEST(SendSideController, PacingSpreadsAFrameOverTime) {
@@ -152,6 +325,32 @@ SM_TEST(SendSideController, SilentFeedbackDoesNothingUnderGccV2) {
     SM_EXPECT_FALSE(a.resume_encoder);
     SM_EXPECT_FALSE(a.request_keyframe);
   }
+}
+
+SM_TEST(SendSideController, OutageMonitorFollowsTheLinkAndTakesNoAction) {
+  // Issue #849: the monitor only observes. Process() runs it, so its state, outage count and outage
+  // length follow the feedback, but nothing it decides reaches the encoder, the pacer or the estimate.
+  SendSideController c(SendSideConfig{});
+  c.Start(Timestamp::Millis(0));
+  c.gcc().OnRttUpdate(TimeDelta::Millis(50));
+  const auto state = [&] { return static_cast<int>(c.outage().state()); };
+  for (int t = 0; t <= 8000; t += 10) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t <= 1000 || t >= 7000) c.outage().OnFeedback(now);
+    c.Process(now);
+    ControllerActions a = c.TakeActions();
+    SM_EXPECT_FALSE(a.pause_encoder);
+    SM_EXPECT_FALSE(a.resume_encoder);
+    SM_EXPECT_FALSE(a.request_keyframe);
+    if (t == 1500) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kUp));
+    if (t == 2000) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kDegraded));
+    if (t == 6990) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kDown));
+    if (t == 7000) SM_EXPECT_EQ(state(), static_cast<int>(cc::LinkState::kUp));
+  }
+  MapMetricsWriter w;
+  c.outage().ExportMetrics(w);
+  SM_EXPECT_EQ(w.Get("outages", -1), 1.0);
+  SM_EXPECT_EQ(w.Get("ice_restarts", -1), 1.0);  // Counted, not acted on: ICE belongs to the host stack.
 }
 
 // PacketSequencer::PopulatePaddingFields (packet_sequencer.cc:120-137): empty RTX padding carries the
@@ -250,20 +449,31 @@ SM_TEST(SendSideController, AWindowWithRepairButNoVideoIsCappedLikeLibwebrtc) {
 // any counts at its rate since it started; with the switch off it is averaged
 // over the whole second.
 namespace {
-double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms) {
+// With `video_module`, the packets come from a video RtpSender, whose send rates libwebrtc reads for
+// every packet (issue #895).
+double ShareAfterRtxStarts(bool send_rate_stats, int rtx_gap_ms, bool video_module = false) {
   SendSideConfig cfg;
   cfg.gcc.start_rate = DataRate::KilobitsPerSec(5000);
   cfg.send_rate_stats = send_rate_stats;
   SendSideController c(cfg);
   c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 1;
+  sc.payload_type = 96;
+  RtpSender sender(sc);
+  auto media = [&](uint16_t seq, PacketKind kind, cc::PacketPriority prio) {
+    SenderPacket p = Media(seq, kind, prio, 1000);
+    if (video_module) p.sender = &sender;
+    return p;
+  };
   uint16_t seq = 0;
   const int rtx_start = 1000 + rtx_gap_ms;
   for (int t = 0; t <= rtx_start + 100; ++t) {
     // Video every 10 ms the whole time; a burst of RTX at 1000 ms, and RTX every
     // 10 ms from `rtx_start`, the same size as the video.
-    if (t % 10 == 0) c.Enqueue(Media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo, 1000), Timestamp::Millis(t));
+    if (t % 10 == 0) c.Enqueue(media(seq++, PacketKind::kVideo, cc::PacketPriority::kVideo), Timestamp::Millis(t));
     if ((t == 1000 || (t >= rtx_start && t % 10 == 0)) && t < rtx_start + 100) {
-      c.Enqueue(Media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission, 1000), Timestamp::Millis(t));
+      c.Enqueue(media(seq++, PacketKind::kRtx, cc::PacketPriority::kRetransmission), Timestamp::Millis(t));
     }
     c.Process(Timestamp::Millis(t));
   }
@@ -283,6 +493,14 @@ SM_TEST(SendSideController, RateStatisticsKeepTheWindowWhenTheLastRepairWasRecen
   // The last RTX was 1.2 s before (under 1.5 windows): RateStatistics keeps the
   // window start, so the new RTX is averaged over the whole second.
   SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200), 1.0 / 11.0, 0.02);
+}
+
+SM_TEST(SendSideController, RateStatisticsOfAVideoModuleRestartARepairStreamThatPausedForAWindow) {
+  // Issue #895: the video packets sent in the gap read the rates (UpdateRtpStats, GetSendRates(now)),
+  // which empties the RTX tracker 1 s after its last packet, so RTX that resumes 1.2 s later counts at
+  // its rate since it resumed, as after a 2 s gap.
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 1200, true), 0.5, 0.03);
+  SM_EXPECT_NEAR(ShareAfterRtxStarts(true, 2000, true), 0.5, 0.03);
 }
 
 // Issues #224 and #204: libwebrtc's send-side rates (RtpSenderEgress::GetSendRates) and its
@@ -450,6 +668,39 @@ SM_TEST(SendSideController, TrailingLostVideoIsResentFromTransportFeedback) {
   SM_EXPECT_EQ(first->seq, seqs[0]);
 }
 
+// Issue #893: RtpVideoSender's early-loss resend reaches the pacer through
+// TaskQueuePacedSender::EnqueuePackets, a posted task (task_queue_paced_sender.cc:133-155) that runs
+// after the RTCP packet is handled, so after the feedback's new pacing rate. While the session handles
+// an RTCP packet (HoldResends), the resend stays with the sender for it to enqueue at the end.
+SM_TEST(SendSideController, HeldEarlyLossResendsStayWithTheSenderUntilTheRtcpPacketIsHandled) {
+  sync::ExtensionMap map;
+  map.Register(3, sync::uri::kTransportCc);
+  SendSideController c(SendSideConfig{}, &map);
+  c.Start(Timestamp::Millis(0));
+  RtpSenderConfig sc;
+  sc.ssrc = 0x10;
+  sc.rtx_ssrc = 0x20;
+  RtpSender sender(sc);
+  const std::vector<uint8_t> chunk(300, 1);
+  sender.SendVideoFrame(std::span<const std::vector<uint8_t>>(&chunk, 1), 9000, Timestamp::Millis(0));
+  for (auto& p : sender.TakePackets()) c.Enqueue(std::move(p), Timestamp::Millis(0));
+  std::vector<uint16_t> transport;
+  for (int t = 0; t < 100; ++t) {
+    for (auto& r : c.Process(Timestamp::Millis(t))) transport.push_back(static_cast<uint16_t>(r.transport_seq));
+  }
+  SM_ASSERT_EQ(transport.size(), 1u);
+  cc::TransportFeedback fb;
+  fb.base_seq = transport[0];
+  fb.packets = {{transport[0], false, 0}};
+  c.HoldResends(true);
+  c.OnTransportFeedback(fb, Timestamp::Millis(150));
+  SM_EXPECT_EQ(c.pacer().QueuePackets(), 0u);  // Not handed to the pacer yet.
+  c.HoldResends(false);
+  auto held = sender.TakePackets();
+  SM_ASSERT_EQ(held.size(), 1u);
+  SM_EXPECT_EQ(held[0].kind, PacketKind::kRtx);
+}
+
 // Issue #104: the sum of the enforced minimums (audio + video) is the lower bound
 // of the target, as GoogCC's min_total_allocated_bitrate is, so the sender does
 // not run below what it must send.
@@ -589,6 +840,30 @@ SM_TEST(SendSideController, PostEncodeOverheadComesOffTheEncoderTargetAsLibwebrt
   SM_EXPECT_EQ(r.video_target.bps(), 1197256 - 10000);
 }
 
+// Issue #945: VideoStreamEncoder::ReconfigureEncoder posts OnEncoderConfigurationChanged to the worker
+// queue, which runs after the encoder task that reconfigured has encoded and packetized the frame
+// (RTPSenderVideo::SendVideo updates post_encode_overhead_bitrate_, rtp_sender_video.cc:248-258). So the
+// reallocation's RtpVideoSender::OnBitrateUpdated takes that frame's overhead off the encoder target:
+// at t = 1 s the 1 s window holds the frames from 100 to 1000 ms, 10 x 125 bytes = 10000 bps, not 9000.
+SM_TEST(SendSideController, TheReallocationAfterAReconfigurationCountsTheReconfiguringFrame) {
+  SendSideConfig cfg;
+  cfg.gcc.start_rate = DataRate::BitsPerSec(1240936);
+  cfg.max_packet_size = 1460;
+  SendSideController c(cfg);
+  c.ConfigureAllocation(DataRate::Zero(), true);
+  c.Start(Timestamp::Millis(0));
+  for (int t = 0; t < 1000; t += 100) c.OnVideoPacketized(5000, 5125, Timestamp::Millis(t));
+  c.Process(Timestamp::Millis(1000));
+  const DataRate before = c.ComputeMeasuredRates(DataRate::Zero()).video_target;
+  // The reconfiguring frame: the reallocation waits until it is packetized.
+  c.OnVideoEncoderReconfigured(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), before.bps());
+  c.OnVideoPacketized(5000, 5125, Timestamp::Millis(1000));
+  c.RunPendingReconfigure(Timestamp::Millis(1000));
+  SM_EXPECT_EQ(c.allocator().allocation("video").bps(), 1240936);
+  SM_EXPECT_EQ(c.ComputeMeasuredRates(DataRate::Zero()).video_target.bps(), 1197256 - 10000);
+}
+
 // rtp_sender_video.cc:252-257: a frame whose packets carry fewer bytes than the encoder produced
 // (H.264 start codes are not sent) adds nothing; it is not a negative overhead.
 SM_TEST(SendSideController, PacketizationThatSavesBytesAddsNoPostEncodeOverhead) {
@@ -643,6 +918,7 @@ SM_TEST(SendSideController, VideoLeavesTheAllocatorAfterTwoSecondsWithoutAnEncod
   SM_EXPECT_GT(c.VideoPayloadRate().bps(), 0);
   // A new frame size reconfigures the encoder: the running stream registers again.
   c.OnVideoEncoderReconfigured(Timestamp::Millis(3000));
+  c.RunPendingReconfigure(Timestamp::Millis(3000));  // The posted OnEncoderConfigurationChanged (issue #945).
   SM_EXPECT_TRUE(c.video_registered());
   SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
   SM_EXPECT_GT(c.allocator().allocation("video").bps(), 0);
@@ -663,6 +939,7 @@ SM_TEST(SendSideController, ActivityCheckDueAtAReconfigurationRunsFirst) {
   c.Start(Timestamp::Millis(0));
   for (int t = 0; t < 2000; ++t) c.Process(Timestamp::Millis(t));
   c.OnVideoEncoderReconfigured(Timestamp::Millis(2000));
+  c.RunPendingReconfigure(Timestamp::Millis(2000));  // The posted OnEncoderConfigurationChanged (issue #945).
   SM_EXPECT_TRUE(c.video_registered());
   SM_EXPECT_EQ(c.allocator().limits().max_allocatable.bps(), both);
   // The 2 s check already ran: the Process call at 2 s does not remove it again.

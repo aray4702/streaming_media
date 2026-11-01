@@ -10,7 +10,8 @@ stay in the deviation inventory, [libwebrtc-parity.md](libwebrtc-parity.md).
 Paths `ref/` are `compare/webrtc/reference/`; `harness` is
 `compare/webrtc/webrtc_call.cc`; `bench` is `testbench/call.cc` and
 `testbench/scenario.h`. Every `ref/` line was opened at M157. A value whose
-defining header is not in `ref/` is marked *unverified* (list at the end).
+defining header is not in `ref/` is marked *unverified* (section 3; none
+are left since #900).
 
 **Verdicts.** `same`; `different`; `missing` (libwebrtc has it, we don't);
 `off` (ported, off by default); `bench-only` (the library's own default
@@ -34,13 +35,16 @@ both.
 ## 1. Differences
 
 Every row that is not `same`. Each has an open item, or is an approved
-deviation with its decision (none yet).
+deviation with its decision. Audit #891 (on `main` 2d9445a) re-checked each
+row against the code: rows 3 and 16 are now `same`, row 17 is an approved
+deviation, and the rest were confirmed. Sections 2 and 3 were checked the
+same way; the defaults section 3 listed were verified `same` by #900.
 
 | # | Area | Feature or default | libwebrtc M157 | Ours | Verdict | Item |
 |---|---|---|---|---|---|---|
 | 1 | Render smoothing | Pre-render queue | `enable_prerenderer_smoothing` on: `bool enable_prerenderer_smoothing = true;` in M157's `call/video_receive_stream.h:291` and `media/base/media_config.h:62` (the prebuilt's headers; not in `ref/`), which the harness leaves at its default; `ref/video/video_receive_stream2.cc:400-403` | `render_smoothing` on (`include/sm/rtp/rtp_receiver.h`, `session.h`, bench `scenario.h`), flipped by #437 | same | #437 |
 | 2 | Pacer | Keyframe flush also drops padding queued on RTX | `ref/modules/pacing/pacing_controller.cc:227-231` | `keyframe_flush_padding` on (`include/sm/cc/pacing_controller.h`, bench `scenario.h`), flipped by #437 | same | #437 |
-| 3 | Audio processing | AEC3, NS, AGC1, HPF, VAD, resampler | `ref/modules/audio_processing/` | `apm v2` off | off, **flip** | #565 |
+| 3 | Audio processing | AEC3, NS, AGC1, HPF, VAD, resampler | `ref/modules/audio_processing/` | the ported modules are the only ones: `apm v1` and its switch were retired by #565 (the chain is the default since #585) | same (audit #891) | #565 |
 | 4 | NetEq | Muted state | `enable_muted_state = true` (`ref/audio/channel_receive.cc:107`); `ref/modules/audio_coding/neteq/neteq_impl.cc:682-698` | `AudioJitterBufferConfig::enable_muted_state`, on in `AudioStreamConfig` (`include/sm/rtp/session.h`) as `ChannelReceive`, off on its own as `NetEq::Config`; the muted branch in `AudioJitterBuffer::GetAudioV2` (`src/timing/audio_jitter_buffer.cc`) | same | #574 |
 | 5 | RTCP statistics | Max reordering threshold, stream restart | 450 with NACK (`ref/video/rtp_video_stream_receiver2.cc:106`, `:365-367`); `ref/modules/rtp_rtcp/source/receive_statistics_impl.cc:95-110` | ported (`SessionConfig::receive_statistics_v2`, on by default as libwebrtc), with libwebrtc's 50 default and 255-scaled fraction lost (#575) | same | #575 |
 | 6 | RTCP | Max datagram (compound split) | 1460 (`ref/modules/rtp_rtcp/source/rtp_rtcp_impl2.cc:146-150`, `:463`) | 1460 (`RtcpConfig::max_datagram_bytes`, `include/sm/rtp/rtcp_engine.h`); a video-sending `rtp::Session` sets min(`max_packet_size`, 1500 - transport overhead) as `ref/call/rtp_video_sender.cc:272`, `:860-865` (#576) | same | #576 |
@@ -49,11 +53,11 @@ deviation with its decision (none yet).
 | 9 | Audio min/max allocation | `GetMinMaxBitrateConstraints` | `ref/audio/audio_send_stream.cc:855-901` | `AudioStreamConfig::min_bitrate`/`max_bitrate` + overhead / frame length range (`src/rtp/session.cc` `AudioAllocationOf`, #569); overhead from the header the next packet carries; `ExpectedPerPacketOverhead` (audio level, max-size MID) with `expected_packet_overhead` (on by default, #577) | same in the bench (51.2 kbps both) | #569 |
 | 10 | RTCP | Audio report block | the audio channel's own RTCP, 5 s (`ref/audio/channel_receive.cc:122-131`) | the audio receive streams' own RTCP, 5 s (`SessionConfig::audio_receive_rtcp`, on by default, #484) | same | #484 |
 | 11 | RTP | Padding on the media SSRC without RTX, audio-only padding | `ref/modules/rtp_rtcp/source/rtp_sender.cc` | ported: media-SSRC padding without RTX, audio padding counts and sizes, pre-media padding timestamp (#707); random start sequence number and timestamp, first audio marker (#704) | same | #514 (closed) |
-| 12 | RTP | Header extensions other than transport-cc | RFC 8285 map and demuxer, abs-capture-time, CVO, audio level | ported (#567, #677). One difference: the fade on mute (`AudioFrameOperations::Mute`, not in reference/) is left to the app | same, except the mute fade: deviation proposed, awaiting the Owner | #567 (closed) |
+| 12 | RTP | Header extensions other than transport-cc; the fade on mute | RFC 8285 map and demuxer, abs-capture-time, CVO, audio level; `AudioFrameOperations::Mute` on every capture frame (`ref/audio/channel_send.cc:909-911`, `ref/audio/utility/audio_frame_operations.cc:146-198`) | ported (#567, #677); the mute fade ported by #879: `Session::ProcessAudioCapture` / `RtpSender::ProcessAudioCapture` mute the capture frame in place with `dsp::MuteAudioFrame` (`include/sm/core/audio_frame_operations.h`), 128-sample ramp, before the level | same | #879 |
 | 14 | Library defaults | `SessionConfig::audio_rtcp`; `send_lntf`; `min_keyframe_request_interval`; `RtpReceiverConfig::sps_pps_tracker`; `PacketBufferConfig::missing_packets`; `GccConfig::max_rate`; max packet; `allocation_max_bitrate` | always on (`ref/audio/channel_send.cc:551`); LNTF off for H.264 (`ref/video/rtp_video_stream_receiver2.cc:373`); 300 ms (`ref/video/encoder_rtcp_feedback.cc:37`); tracker on; hold on; unbounded (`ref/call/rtp_transport_controller_send.cc:68-83`); 1460; the app's max | the same as libwebrtc since #580: `audio_rtcp` on (still built only beside video, `src/rtp/session.cc` `Start`), `send_lntf` off, 300 ms, tracker on, hold on (Session: H.264 only), `max_rate` unbounded, 1460 (`SendSideConfig::max_packet_size`, `VideoStreamConfig` / `RtpSenderConfig::max_payload_size` 1448), `allocation_max_bitrate` unbounded (the session's video allocation bounds it); `tests/unit/rtp/libwebrtc_defaults_test.cc` | same | #580 |
-| 15 | Adaptation | Camera degradation preference | MAINTAIN_FRAMERATE (`ref/media/engine/webrtc_video_engine.cc:2032-2064`) | MAINTAIN_FRAMERATE: `DegradationConfig` and `ContentSettings` default to it, `SettingsFor` camera with no hint maps to it (#581); the send path hard-codes it | same (the QP ceilings and fps floors `SettingsFor` adds stay with #566) | #581 |
-| 16 | Adaptation | `BalancedDegradationSettings` | read only under BALANCED (`ref/rtc_base/experiments/balanced_degradation_settings.cc:29`) | not ported | missing (unused by the call) | #566 |
-| 17 | Library defaults | `VideoStreamConfig::decode_time` 5 ms (`session.h:149`) | measured by the decoder | the bench sets 0, as the harness's model decoder | bench-only (a model input for an app without a decoder clock) | #580 (note) |
+| 15 | Adaptation | Camera degradation preference | MAINTAIN_FRAMERATE (`ref/media/engine/webrtc_video_engine.cc:2032-2064`) | MAINTAIN_FRAMERATE: `DegradationConfig` and `ContentSettings` default to it, `SettingsFor` camera with no hint maps to it (#581); the send path hard-codes it | same (`SettingsFor` sets only the preference since #877; its QP ceilings and fps floors are removed) | #581, #877 |
+| 16 | Adaptation | `BalancedDegradationSettings` | read only under BALANCED (`ref/rtc_base/experiments/balanced_degradation_settings.cc:29`) | ported: `BalancedDegradationSettings` (`include/sm/video/video_stream_adapter.h:117`), read under kBalanced by `VideoStreamAdapter` (`src/video/video_stream_adapter.cc:317`, `:347`) (#646) | same (audit #891) | #646 |
+| 17 | Library defaults | `VideoStreamConfig::decode_time` 5 ms (`session.h:149`) | measured by the decoder | the bench sets 0, as the harness's model decoder | approved deviation: a model input, kept by the Coordinator's decision on #580 ([comment](https://github.com/aray4702/streaming_media/issues/580#issuecomment-6489011729)) (audit #891) | #580 |
 | 18 | Video receive | Frame buffer cap | 800 frames; a keyframe clears a full buffer, a delta frame is refused; an older-id keyframe with a newer timestamp clears it (`ref/video/video_stream_buffer_controller.cc:46`, `ref/api/video/frame_buffer.cc:84-106`) | timing v2: the same rules on the receiver's frame buffer (`RtpReceiver::FrameBufferAccepts`, `kMaxFramesBuffered` 800 in `src/rtp/rtp_receiver.cc`); a decoded or dropped frame takes the frames before it out of the buffer, as `ExtractNextDecodableTemporalUnit` / `DropNextDecodableTemporalUnit` (timing v1 keeps its 1024-entry metadata bound) | same | #583 |
 
 ## 2. Same as libwebrtc
@@ -165,20 +169,26 @@ The library runs no codec; the bench encodes with libopus
 
 ## 3. Unverified
 
-These defaults are defined in headers that are not in `ref/` (#57 adds
-files on request). The harness sets none of them except where noted, so
-libwebrtc runs with the header defaults:
+None. The headers this section listed were added to `ref/` by #900, and each
+default was checked against them: all are **same**. The harness sets none of
+them, so libwebrtc runs with these header defaults.
 
-- `VideoReceiveStreamInterface::Config`: `enable_prerenderer_smoothing`
-  (true), `render_delay_ms` (10), `rtp.lntf.enabled` (false),
-  `rtp.keyframe_method` (PLI), `rtcp_mode` (compound).
-- `NetEq::Config` and `AudioReceiveStreamInterface::Config`:
-  `max_packets_in_buffer` 200, `max_delay_ms` 0, `min_delay_ms` 0,
-  `enable_fast_accelerate`, `enable_rtx_handling`,
-  `for_test_no_time_stretching` false.
-- `IP_PACKET_SIZE` (1500), the GoogCC process interval (ours 25 ms),
-  `BweSettings::allow_probe_without_media`, the default of
-  `WebRTC-RetransmitFlushedPackets`, the default ALR experiment string
-  (ours 0.80 / 0.40 / -0.60, matched to the prebuilt library's rows, #152),
-  and the build flag `WEBRTC_OPUS_VARIABLE_COMPLEXITY` (off upstream, so the
-  low-rate complexity is 9, as ours).
+| Feature or default | libwebrtc M157 | Ours | Verdict |
+|---|---|---|---|
+| `enable_prerenderer_smoothing` true | `ref/call/video_receive_stream.h:291`, `ref/media/base/media_config.h:62` | `render_smoothing` on (row 1) | same |
+| `render_delay_ms` 10 | `ref/call/video_receive_stream.h:115`, `:287` | `include/sm/video/render_frames.h:35`, `include/sm/timing/vcm_timing.h:192` | same |
+| `rtp.lntf.enabled` false; `rtp.keyframe_method` PLI; `rtcp_mode` compound | `ref/call/video_receive_stream.h:238`, `:249`, `:252`; `LntfConfig::enabled` false (`ref/call/rtp_config.h:35-39`) | `include/sm/loss/keyframe_request.h:55`, `:57`; `RtcpConfig::reduced_size` false (`include/sm/rtp/rtcp_engine.h:62`) | same |
+| `IP_PACKET_SIZE` 1500 | `ref/modules/rtp_rtcp/include/rtp_rtcp_defines.h:36` | `kPathMtu` 1500 (`src/rtp/session.cc:171`; row 6) | same |
+| GoogCC process interval 25 ms (`GetProcessInterval`, `kUpdateIntervalMs`) | `ref/api/transport/goog_cc_factory.cc:82-85` | `SendSideConfig::gcc_interval` 25 ms (`include/sm/rtp/send_side_controller.h:57`) | same |
+| `BweSettings::allow_probe_without_media` false, so no probing before media and no repeated initial probing | `ref/api/transport/bandwidth_estimation_settings.h:23`; read at `ref/call/rtp_transport_controller_send.cc:270-274`; `ref/modules/pacing/bitrate_prober.cc:62-65` | `BitrateProberConfig::allow_start_probing_immediately` false (`include/sm/cc/bitrate_prober.h:35`); repeated initial probing off (`include/sm/cc/probing.h:110`) | same |
+| `WebRTC-RetransmitFlushedPackets` off (`enabled_` false, `rtt_multiplier` 2.0), so packets a keyframe flushes are dropped, not handed to the history | `ref/rtc_base/experiments/retransmit_flushed_packets_settings.h:28-29`, `.cc:24-35`; `ref/modules/pacing/pacing_controller.cc:219-225` | flushed packets dropped (`src/rtp/send_side_controller.cc:334-337`) | same |
+| Default ALR experiment `1.0,2875,80,40,-60,3` (`WebRTC-ProbingScreenshareBwe`, default-on) | `ref/rtc_base/experiments/alr_experiment.cc:25-26`, `:52-56`; `ref/modules/congestion_controller/goog_cc/alr_detector.cc:30-46` | 0.80 / 0.40 / -0.60 (`include/sm/cc/alr_detector.h:13`, #152) | same |
+| `WEBRTC_OPUS_VARIABLE_COMPLEXITY` off, so the low-rate complexity is the default 9 | `ref/webrtc.gni:100-101` (`rtc_opus_variable_complexity = false`), `ref/api/audio_codecs/opus/BUILD.gn:28-32`; `ref/api/audio_codecs/opus/audio_encoder_opus_config.cc:17-18` | `testbench/opus_encoder.h:66` (section 2, Opus) | same |
+
+Verified by audit #891 and moved out of this list: the `NetEq::Config`
+defaults, now in `ref/api/neteq/neteq.h:135-141` (`max_packets_in_buffer`
+200, `max_delay_ms` 0, `min_delay_ms` 0, `enable_fast_accelerate` false,
+`enable_muted_state` false, `enable_rtx_handling` false,
+`for_test_no_time_stretching` false). `ChannelReceive` takes the buffer size
+and fast accelerate from the stream config (`ref/audio/channel_receive.cc:105-106`;
+200 and off, section 2, NetEq) and turns muted state on (`:107`, row 4): **same**.

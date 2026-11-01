@@ -258,6 +258,28 @@ SM_TEST(StreamSync, SynchronizerRunsEverySecondOnNewPackets) {
   SM_EXPECT_FALSE(sync.NextProcessTime().has_value());
 }
 
+SM_TEST(StreamSync, SynchronizerKeepsItsScheduleWhenProcessRunsLate) {
+  // RepeatingTask::operator() (repeating_task.cc:86-89): next_run_time_ += delay
+  // and the lateness is taken off the delay (at least zero), so the task keeps
+  // its 1 s grid from DelayedStart, and a run over an interval late is posted
+  // again at once (issue #902).
+  FakeSyncable audio, video;
+  audio.ssrc = 1;
+  video.ssrc = 2;
+  RtpStreamsSynchronizer sync(&video);
+  sync.ConfigureSync(&audio, Timestamp::Millis(0));
+  sync.Process(Timestamp::Millis(1300));  // 300 ms late.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 2000);
+  sync.Process(Timestamp::Millis(1999));  // Not due.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 2000);
+  sync.Process(Timestamp::Millis(3500));  // 1500 ms late: the next run is already due.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 3000);
+  sync.Process(Timestamp::Millis(3500));
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 4000);
+  sync.Process(Timestamp::Millis(4000));  // On time.
+  SM_EXPECT_EQ(sync.NextProcessTime()->ms(), 5000);
+}
+
 SM_TEST(StreamSync, StreamSyncOffset) {
   FakeSyncable audio, video;
   audio.ssrc = 1;
@@ -292,6 +314,55 @@ SM_TEST(StreamSync, GroupsByCname) {
   SM_EXPECT_EQ(p[0].second, 11u);
   g.AddStream(21, "bob", MediaSyncGroups::Kind::kVideo);
   SM_EXPECT_EQ(g.SyncPairs().size(), 2u);
+}
+
+// Issue #821: the pairing rule of Call::ConfigureSync (call/call.cc:1300-1341).
+SM_TEST(StreamSync, GroupPairsTheFirstAudioWithTheFirstVideoOnly) {
+  MediaSyncGroups g;
+  // Added before any audio stream: no pair yet (SetSync(nullptr)).
+  g.AddStream(40, "s", MediaSyncGroups::Kind::kVideo);
+  SM_EXPECT_EQ(g.SyncPairs().size(), 0u);
+  // The order streams were added decides, not the SSRC.
+  g.AddStream(30, "s", MediaSyncGroups::Kind::kVideo);
+  g.AddStream(20, "s", MediaSyncGroups::Kind::kAudio);
+  g.AddStream(10, "s", MediaSyncGroups::Kind::kAudio);
+  auto p = g.SyncPairs();
+  SM_ASSERT_EQ(p.size(), 1u);  // One A/V pair per group (bugs.webrtc.org/4762).
+  SM_EXPECT_EQ(p[0].first, 20u);
+  SM_EXPECT_EQ(p[0].second, 40u);
+}
+
+SM_TEST(StreamSync, EmptySyncGroupIsNeverPaired) {
+  MediaSyncGroups g;
+  g.AddStream(1, "", MediaSyncGroups::Kind::kAudio);
+  g.AddStream(2, "", MediaSyncGroups::Kind::kVideo);
+  SM_EXPECT_EQ(g.SyncPairs().size(), 0u);  // FindAudioStreamForSyncGroup returns null for "".
+}
+
+SM_TEST(StreamSync, RemovingOrMovingAStreamReconfiguresItsGroups) {
+  MediaSyncGroups g;
+  g.AddStream(1, "s", MediaSyncGroups::Kind::kAudio);
+  g.AddStream(2, "s", MediaSyncGroups::Kind::kAudio);
+  g.AddStream(3, "s", MediaSyncGroups::Kind::kVideo);
+  g.AddStream(4, "s", MediaSyncGroups::Kind::kVideo);
+  // DestroyVideoReceiveStream: the group's next video stream gets the audio.
+  g.RemoveStream(3);
+  auto p = g.SyncPairs();
+  SM_ASSERT_EQ(p.size(), 1u);
+  SM_EXPECT_EQ(p[0], std::make_pair(1u, 4u));
+  // DestroyAudioReceiveStream: the video stream is paired with the group's next audio stream.
+  g.RemoveStream(1);
+  p = g.SyncPairs();
+  SM_ASSERT_EQ(p.size(), 1u);
+  SM_EXPECT_EQ(p[0], std::make_pair(2u, 4u));
+  // OnUpdateSyncGroup: the audio stream leaves "s", which is left with no audio, and pairs in "t".
+  g.AddStream(5, "t", MediaSyncGroups::Kind::kVideo);
+  g.AddStream(2, "t", MediaSyncGroups::Kind::kAudio);
+  p = g.SyncPairs();
+  SM_ASSERT_EQ(p.size(), 1u);
+  SM_EXPECT_EQ(p[0], std::make_pair(2u, 5u));
+  g.RemoveStream(2);
+  SM_EXPECT_EQ(g.SyncPairs().size(), 0u);
 }
 
 SM_TEST(CaptureTime, WireFormatAndInterpolation) {

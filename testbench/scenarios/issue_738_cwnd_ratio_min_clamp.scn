@@ -1,0 +1,17 @@
+# #738 (#411 D8): GoogCC's cwnd_reduce_ratio is taken from the pushback target after the clamp to the
+# estimator's minimum (goog_cc_network_control.cc:596-608). Once the pushback reaches that minimum the ratio
+# stops changing, so the reset to 0 that the 270p reconfiguration's AddObserver makes at 6.07 s holds and
+# the encoder keeps sending into the outage. Before the fix our ratio kept moving toward the pushback's own
+# 30 kbps floor, every sent packet re-applied the frame drop, and the call came back in the ~1 s video
+# delay mode. Seed 2 is where the two stacks split on main (#806): libwebrtc 205 ms e2e p95, 113 ms A/V
+# offset, 22.4 % loss; main 951 ms, 711 ms, 19.2 %. The mode is seed-dependent on both stacks (libwebrtc
+# is in the slow mode on 14/40 seeds of issue_737_outage_15s_100ms), so this scenario holds seed 2.
+name issue_738_cwnd_ratio_min_clamp
+describe 15 s outage at 5 s on a 2 Mbps / 100 ms link, seed 2: the cwnd frame drop stays reset after the 270p keyframe, video comes back in the fast mode as libwebrtc's (issue #738)
+duration 40s
+seed 2
+at 0s capacity=2Mbps delay=100ms
+at 5s down
+at 20s up
+expect video.e2e_delay_p95_ms < 400
+expect sync.av_offset_p95_ms < 300

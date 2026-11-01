@@ -391,9 +391,15 @@ NetEqOperation NetEqDecisionLogic::GetDecision(const NetEqStatus& s, int64_t tic
   if (!s.next_packet_timestamp) return NoPacket(s);
   if (PostponeDecode(s)) return NoPacket(s);
   if (s.target_timestamp == *s.next_packet_timestamp) return ExpectedPacketAvailable(s, tick);
-  // PacketBuffer::IsObsoleteTimestamp within 5 s: an older packet means a
-  // new stream, which NetEq handles with a reset.
-  if (*s.next_packet_timestamp > s.target_timestamp) return FuturePacketAvailable(s);
+  // !PacketBuffer::IsObsoleteTimestamp(next, target, 5 s): a newer packet, or
+  // one more than 5 s older (DiscardOldPackets keeps those), is a future
+  // packet. One less than 5 s older means a new stream, which NetEq handles
+  // with a reset.
+  const int64_t five_seconds_samples = int64_t{5000} * sample_rate_khz_;
+  if (*s.next_packet_timestamp > s.target_timestamp ||
+      *s.next_packet_timestamp <= s.target_timestamp - five_seconds_samples) {
+    return FuturePacketAvailable(s);
+  }
   return NetEqOperation::kUndefined;
 }
 
@@ -432,8 +438,9 @@ NetEqOperation NetEqDecisionLogic::FuturePacketAvailable(const NetEqStatus& s) {
   const int64_t high_limit = s.target_level_ms + kTargetLevelWindowMs / 2;
   const bool above_target_delay = buffer_delay_ms > high_limit;
   if (PacketTooEarly(s) && !above_target_delay) return NoPacket(s);
-  const int64_t timestamp_leap = *s.next_packet_timestamp - s.target_timestamp;
-  if (timestamp_leap != s.generated_noise_samples) {
+  // uint32_t in libwebrtc: a packet older than the target leaps ~2^32.
+  const uint32_t timestamp_leap = static_cast<uint32_t>(*s.next_packet_timestamp - s.target_timestamp);
+  if (timestamp_leap != static_cast<uint64_t>(s.generated_noise_samples)) {
     // The delay was adjusted: reinitialize the buffer level filter.
     buffer_level_filter_.SetFilteredBufferLevel(static_cast<int>(buffer_delay_samples));
   }
@@ -453,7 +460,8 @@ bool NetEqDecisionLogic::PostponeDecode(const NetEqStatus& s) const {
 }
 
 bool NetEqDecisionLogic::PacketTooEarly(const NetEqStatus& s) const {
-  return *s.next_packet_timestamp - s.target_timestamp > s.generated_noise_samples;
+  const uint32_t timestamp_leap = static_cast<uint32_t>(*s.next_packet_timestamp - s.target_timestamp);
+  return timestamp_leap > static_cast<uint64_t>(s.generated_noise_samples);
 }
 
 }  // namespace sm::timing

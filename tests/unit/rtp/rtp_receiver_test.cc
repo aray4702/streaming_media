@@ -190,6 +190,46 @@ SM_TEST(RtpReceiver, AGapIsNackedWhenItIsSeenEvenIfThePacketArrivesInTheSameTick
   SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
 }
 
+// VideoReceiveStream2::OnCompleteFrame -> RtpVideoStreamReceiver2::FrameContinuous -> NackRequester::ClearUpTo:
+// every frame that becomes continuous clears the recovered list up to its last packet, delta frames included.
+// So a packet that RTX recovered ahead of the newest is forgotten once a later recovered frame is continuous,
+// and the gap that a later packet reveals asks for it again (issue_466_scene_change_very_low_capacity seed 1,
+// libwebrtc's second RTX of 6807 at 11.61 s, #893).
+SM_TEST(RtpReceiver, AContinuousDeltaFrameClearsTheRecoveredListBeforeIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(ReceiverCfg());
+  r.Start(Timestamp::Millis(0));
+  std::vector<std::vector<Bytes>> f;
+  for (int64_t i = 0; i < 5; ++i) f.push_back(SendFrame(s, i, i == 0, 300, Timestamp::Millis(33 * i)));
+  std::vector<uint16_t> seq;
+  for (const auto& frame : f) {
+    SM_ASSERT_EQ(frame.size(), 1u);
+    seq.push_back(RtpPacket::Parse(frame[0])->seq);
+  }
+  r.OnPacket(f[0][0], Timestamp::Millis(20));
+  r.Process(Timestamp::Millis(20));
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  // Frames 1, 2 and 3 are lost. RTX recovers 1 and 2 before any later packet shows the gap.
+  const uint16_t early[] = {seq[1], seq[2]};
+  s.OnNack(early, Timestamp::Millis(100), TimeDelta::Millis(40));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 2u);
+  for (size_t i = 0; i < rtx.size(); ++i) {
+    const Timestamp at = Timestamp::Millis(120 + 10 * static_cast<int64_t>(i));
+    SM_EXPECT_TRUE(r.OnPacket(rtx[i].packet.Serialize(), at) == ReceivedKind::kRtx);
+    r.Process(at);
+  }
+  SM_EXPECT_EQ(r.stats().frames_scheduled, 3u);
+  SM_EXPECT_TRUE(r.TakeFeedback().nacks.empty());
+  // Frame 4 reveals the gap from frame 0: frame 2's continuity cleared frame 1 from the recovered list.
+  r.OnPacket(f[4][0], Timestamp::Millis(160));
+  r.Process(Timestamp::Millis(160));
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 2u);
+  SM_EXPECT_EQ(fb.nacks[0], seq[1]);
+  SM_EXPECT_EQ(fb.nacks[1], seq[3]);
+}
+
 SM_TEST(RtpReceiver, MissingFrameReferenceIsLeftToNack) {
   // libwebrtc keeps NACKing and asks for no keyframe until the decode time-out.
   RtpSender s(SenderCfg());
@@ -279,7 +319,14 @@ SM_TEST(RtpReceiver, FrameIdsAndReferencesComeFromSequenceNumbers) {
   }
 }
 
-SM_TEST(RtpReceiver, ALostParameterSetPacketIsNackedAndNoKeyframeWithoutItIsDelivered) {
+// libwebrtc's default H.264 path (PacketBuffer::FindFrames, packet_buffer.cc;
+// H26xPacketBuffer is behind a trial that is off in M157): the IDR start is a
+// first packet, so the frame is handed out from it when the parameter-set
+// packet before it is lost, and it is a keyframe because it has an IDR slice
+// (WebRTC-SpsPpsIdrIsH264Keyframe off). The parameter sets are known from the
+// first keyframe, so H264SpsPpsTracker lets the IDR through. The lost packet
+// is still NACKed, and its retransmission makes no second frame.
+SM_TEST(RtpReceiver, AKeyframeWhoseParameterSetPacketIsLostIsDeliveredFromItsIdr) {
   RtpSender s(SenderCfg());
   RtpReceiver r(ReceiverCfg());
   r.Start(Timestamp::Millis(0));
@@ -298,15 +345,15 @@ SM_TEST(RtpReceiver, ALostParameterSetPacketIsNackedAndNoKeyframeWithoutItIsDeli
     for (uint16_t n : r.TakeFeedback().nacks) nacked = nacked || n == lost->seq;
   }
   SM_EXPECT_TRUE(nacked);
-  SM_ASSERT_EQ(frames.size(), 1u);  // Only the first keyframe: the IDR alone is not handed over.
-  // The retransmission completes it.
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[1].keyframe);
+  // The retransmission of the parameter-set packet completes no frame.
   r.OnPacket(key2[0], Timestamp::Millis(400));
   for (int64_t t = 400; t < 700; ++t) {
     r.Process(Timestamp::Millis(t));
     for (auto& f : r.TakeFrames()) frames.push_back(f);
   }
-  SM_ASSERT_EQ(frames.size(), 2u);
-  SM_EXPECT_TRUE(frames[1].keyframe);
+  SM_EXPECT_EQ(frames.size(), 2u);
 }
 
 SM_TEST(RtpReceiver, PaddingOnlyPacketsAreNotMedia) {
@@ -534,42 +581,13 @@ SM_TEST(RtpReceiver, AudioFramesAreDecodedIntoTheJitterBuffer) {
   r.GetAudio(out, Timestamp::Millis(120));  // Playout does not crash.
 }
 
-SM_TEST(RtpReceiver, RedBlocksAreUnwrappedAndEachFrameDecodedOnce) {
-  FakeDecoder dec;
-  RtpReceiverConfig c;
-  c.ssrc = 7;
-  c.payload_type = 63;
-  c.clock_rate = 8000;
-  c.video = false;
-  c.red = true;
-  c.decoder = &dec;
-  c.jitter_buffer.version = 1;  // Version 2 splits RED as NetEq: RedBlocksReachNetEqAsSplitRedOrders.
-  RtpReceiver r(c);
-  loss::RedEncoder red(1);
-  for (uint16_t i = 0; i < 6; ++i) {
-    if (i == 2) {  // Packet 2 is lost; packet 3 repeats its frame.
-      red.Encode(111, 160u * i, Bytes(40, 99));
-      continue;
-    }
-    RtpPacket p;
-    p.ssrc = 7;
-    p.payload_type = 63;
-    p.seq = i;
-    p.timestamp = 160u * i;
-    p.payload = red.Encode(111, p.timestamp, Bytes(40, static_cast<uint8_t>(10 + i)));
-    r.OnPacket(p.Serialize(), Timestamp::Millis(i * 20 + 5));
-  }
-  SM_EXPECT_EQ(dec.calls, 6);  // Five received plus the one recovered from RED.
-  SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 6u);
-}
-
 // NetEqImpl::InsertPacketInternal with RedPayloadSplitter::SplitRed (issue
 // #722): the primary goes in first, then the redundant block, and every block
 // reaches NetEq. Packet 2 is lost, so packet 3's redundant copy of frame 2
 // arrives after frame 3 and is reordered. So is packet 1's copy of frame 0:
 // the first pull's SoftReset cleared frame 0's arrival (#721's t = 50 row).
-// The copies of frames that arrived are inserted too: frame 0's is late, the
+// The copies of frames that arrived are inserted too: frame 0's is late and
+// waits in the buffer until the next pull's DiscardOldPackets (#783), the
 // copies of frames 3 and 4 are duplicates.
 SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   FakeDecoder dec;
@@ -580,7 +598,6 @@ SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   c.video = false;
   c.red = true;
   c.decoder = &dec;
-  c.jitter_buffer.version = 2;
   RtpReceiver r(c);
   loss::RedEncoder red(1);
   std::vector<float> out(80);
@@ -603,8 +620,10 @@ SM_TEST(RtpReceiver, RedBlocksReachNetEqAsSplitRedOrders) {
   SM_EXPECT_EQ(r.red().stats().recovered_frames, 1u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 9u);
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 2u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 1u);
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 0u);
   SM_EXPECT_EQ(CollectMetrics(r.jitter_buffer().neteq_delay()).at("reordered"), 2.0);
+  r.GetAudio(out, Timestamp::Millis(126));
+  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_discarded_late, 1u);
 }
 
 namespace {
@@ -620,14 +639,13 @@ class FecDecoder : public FakeDecoder {
   std::vector<uint32_t> fec_ts;
 };
 
-RtpReceiverConfig FecAudioCfg(AudioDecoder* dec, int jitter_buffer_version) {
+RtpReceiverConfig FecAudioCfg(AudioDecoder* dec) {
   RtpReceiverConfig c;
   c.ssrc = 7;
   c.payload_type = 111;
   c.clock_rate = 8000;
   c.video = false;
   c.decoder = dec;
-  c.jitter_buffer.version = jitter_buffer_version;
   return c;
 }
 
@@ -645,10 +663,10 @@ void SendFecAudio(RtpReceiver& r, uint16_t i, bool fec) {
 
 // AudioDecoderOpusImpl::ParsePayload (audio_decoder_opus.cc): a packet with
 // in-band FEC gives NetEq a second frame at its timestamp less the FEC's
-// duration, which fills a lost packet's slot (neteq v2 only).
+// duration, which fills a lost packet's slot.
 SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
   FecDecoder dec;
-  RtpReceiver r(FecAudioCfg(&dec, 2));
+  RtpReceiver r(FecAudioCfg(&dec));
   for (uint16_t i = 0; i < 6; ++i) {
     if (i != 2) SendFecAudio(r, i, i > 0);  // Packet 2 is lost; packet 3 carries it.
   }
@@ -663,7 +681,7 @@ SM_TEST(RtpReceiver, InBandFecFillsTheLostFrameWithNetEqV2) {
   SM_EXPECT_EQ(r.jitter_buffer().stats().packets_duplicate, 3u);
   // Playout conceals exactly as much as a receiver that got every packet.
   FecDecoder all_dec;
-  RtpReceiver all(FecAudioCfg(&all_dec, 2));
+  RtpReceiver all(FecAudioCfg(&all_dec));
   for (uint16_t i = 0; i < 6; ++i) SendFecAudio(all, i, false);
   std::vector<float> out(80);
   for (int t = 0; t < 200; t += 10) {
@@ -695,7 +713,7 @@ class PlayoutDecoder : public FecDecoder {
 // NetEq's sequence. A copy that a higher priority replaced is never decoded.
 SM_TEST(RtpReceiver, NetEqV2DecodesFramesAtPlayoutInTimestampOrder) {
   PlayoutDecoder dec;
-  RtpReceiverConfig c = FecAudioCfg(&dec, 2);
+  RtpReceiverConfig c = FecAudioCfg(&dec);
   c.payload_type = 63;
   c.red = true;
   RtpReceiver r(c);
@@ -719,17 +737,6 @@ SM_TEST(RtpReceiver, NetEqV2DecodesFramesAtPlayoutInTimestampOrder) {
   SM_EXPECT_EQ(dec.order.size(), 4u);
   for (size_t i = 0; i < dec.order.size(); ++i) SM_EXPECT_EQ(dec.order[i], 160u * i);
   SM_EXPECT_TRUE(dec.fec_ts.empty());
-}
-
-SM_TEST(RtpReceiver, InBandFecIsIgnoredWithNetEqV1) {
-  FecDecoder dec;
-  RtpReceiver r(FecAudioCfg(&dec, 1));
-  for (uint16_t i = 0; i < 6; ++i) {
-    if (i != 2) SendFecAudio(r, i, i > 0);
-  }
-  SM_EXPECT_TRUE(dec.fec_ts.empty());
-  SM_EXPECT_EQ(r.stats().audio_fec_frames, 0u);
-  SM_EXPECT_EQ(r.jitter_buffer().stats().packets_received, 5u);
 }
 
 SM_TEST(RtpReceiver, StatisticsFeedReportBlocksAndFrameMetadataIsBounded) {
@@ -1276,4 +1283,150 @@ SM_TEST(RtpReceiver, DecodedAudioCarriesThePacketInfosOfItsPackets) {
   // A GetAudio that decodes nothing has no packet infos.
   r.GetAudio(out, Timestamp::Millis(3300));
   SM_EXPECT_TRUE(r.audio_packet_infos().empty());
+}
+
+// RtpVideoStreamReceiver2::UnwrapSequenceNumberOrRecover (video/rtp_video_stream_receiver2.cc:651-753,
+// issue #818): a sender that restarts its sequence numbers more than 2048 behind, with newer RTP
+// timestamps, is a discontinuity. Its packets are dropped and a keyframe is requested at most every
+// max_wait_for_keyframe (200 ms) until a keyframe starts; there the receiver re-anchors, and NACKs go
+// out on the restarted sender's sequence numbers. libwebrtc runs this for codecs other than H.264 and
+// H.265 (rtp::Session's switch); the H.264 test payload stands in for one here.
+SM_TEST(RtpReceiver, ASequenceNumberDiscontinuityRequestsKeyframesUntilANewerKeyframeReanchors) {
+  RtpReceiverConfig cfg = NoHoldCfg();
+  cfg.seq_num_discontinuity = true;
+  RtpSender s(SenderCfg());
+  RtpReceiver r(cfg);
+  for (auto& b : SendFrame(s, 0, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+  for (auto& b : SendFrame(s, 1, false, 800, Timestamp::Millis(33))) r.OnPacket(b, Timestamp::Millis(43));
+  SM_ASSERT_EQ(Run(r, 10, 300).size(), 2u);
+  SM_ASSERT_TRUE(r.TakeFeedback().keyframe.empty());
+
+  RtpSenderConfig restarted = SenderCfg();
+  restarted.initial_seq = static_cast<uint16_t>(65530 - 5000);
+  RtpSender s2(restarted);
+  const auto count_requests = [&](int64_t t) {
+    r.Process(Timestamp::Millis(t));
+    return r.TakeFeedback().keyframe.size();
+  };
+  for (auto& b : SendFrame(s2, 10, false, 800, Timestamp::Millis(300))) r.OnPacket(b, Timestamp::Millis(310));
+  SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 1u);
+  SM_EXPECT_GT(r.stats().seq_num_discontinuity_dropped, 0u);
+  SM_EXPECT_EQ(count_requests(310), 1u);
+  // Within max_wait_for_keyframe of the request: dropped, no new request.
+  for (auto& b : SendFrame(s2, 11, false, 800, Timestamp::Millis(400))) r.OnPacket(b, Timestamp::Millis(410));
+  SM_EXPECT_EQ(count_requests(410), 0u);
+  // After it: requested again.
+  for (auto& b : SendFrame(s2, 12, false, 800, Timestamp::Millis(520))) r.OnPacket(b, Timestamp::Millis(520));
+  SM_EXPECT_EQ(count_requests(520), 1u);
+  SM_EXPECT_EQ(r.stats().seq_num_reanchors, 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 2u);
+
+  // The keyframe re-anchors, and frames after it are decoded.
+  for (auto& b : SendFrame(s2, 13, true, 800, Timestamp::Millis(600))) r.OnPacket(b, Timestamp::Millis(610));
+  SM_EXPECT_EQ(r.stats().seq_num_reanchors, 1u);
+  SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 1u);
+  // A lost packet after the re-anchor is NACKed with the restarted sender's sequence number, and its RTX
+  // copy completes the frame.
+  auto f14 = SendFrame(s2, 14, false, 3000, Timestamp::Millis(633));
+  SM_ASSERT_GE(f14.size(), 3u);
+  auto lost = RtpPacket::Parse(f14[1]);
+  SM_ASSERT_TRUE(lost.has_value());
+  for (size_t i = 0; i < f14.size(); ++i)
+    if (i != 1) r.OnPacket(f14[i], Timestamp::Millis(643));
+  r.Process(Timestamp::Millis(643));
+  ReceiverFeedback fb = r.TakeFeedback();
+  SM_ASSERT_EQ(fb.nacks.size(), 1u);
+  SM_EXPECT_EQ(fb.nacks[0], lost->seq);
+  SM_EXPECT_TRUE(fb.keyframe.empty());
+  s2.OnNack(fb.nacks, Timestamp::Millis(650), TimeDelta::Millis(40));
+  auto rtx = s2.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  r.OnPacket(rtx[0].packet.Serialize(), Timestamp::Millis(660));
+  auto frames = Run(r, 610, 1500);
+  SM_ASSERT_EQ(frames.size(), 2u);
+  SM_EXPECT_TRUE(frames[0].keyframe && frames[0].render);
+  SM_EXPECT_EQ(frames[0].rtp_timestamp, 13u * 3000u);
+  SM_EXPECT_EQ(frames[1].rtp_timestamp, 14u * 3000u);
+  SM_EXPECT_TRUE(frames[1].frame_id > frames[0].frame_id);
+  SM_EXPECT_EQ(r.stats().gaps, 1u);  // The lost packet; the restart is no gap.
+  SM_EXPECT_TRUE(r.TakeFeedback().keyframe.empty());
+}
+
+// Outside a discontinuity, a packet more than 2048 behind the newest media packet with an older RTP timestamp
+// (a severely reordered old one) is dropped and starts nothing. With the switch off (H.264, the receiver's
+// default) the restarted sender's packets go to the packet buffer.
+SM_TEST(RtpReceiver, AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule) {
+  for (bool on : {true, false}) {
+    RtpReceiverConfig cfg = NoHoldCfg();
+    cfg.seq_num_discontinuity = on;
+    RtpSender s(SenderCfg());
+    RtpReceiver r(cfg);
+    for (auto& b : SendFrame(s, 100, true, 800, Timestamp::Millis(0))) r.OnPacket(b, Timestamp::Millis(10));
+    SM_ASSERT_EQ(Run(r, 10, 300).size(), 1u);
+    RtpSenderConfig old = SenderCfg();
+    old.initial_seq = static_cast<uint16_t>(65530 - 5000);
+    RtpSender s2(old);
+    for (auto& b : SendFrame(s2, 1, false, 800, Timestamp::Millis(300))) r.OnPacket(b, Timestamp::Millis(310));
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuities, 0u);
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuity_dropped > 0, on);
+    for (auto& b : SendFrame(s2, 101, false, 800, Timestamp::Millis(310))) r.OnPacket(b, Timestamp::Millis(320));
+    SM_EXPECT_EQ(r.stats().seq_num_discontinuities, on ? 1u : 0u);
+  }
+}
+
+// Issue #899: a copy of a one-packet frame's packet that arrives after the
+// frame was assembled (a spurious RTX, a duplicating link) is taken again by
+// the packet buffer, as libwebrtc's empty slot takes it, and the frame is
+// assembled a second time. With `timing v2` the frame buffer drops the repeat
+// (FrameBuffer::InsertFrame: already inserted), so every frame is counted
+// (ReceiveStatisticsProxy::OnCompleteFrame) and rendered once.
+SM_TEST(RtpReceiver, ACopyAfterAssemblyIsAssembledAgainAndTheFrameBufferDropsIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(NoHoldCfg());
+  r.Start(Timestamp::Millis(0));
+  for (int64_t i = 0; i < 3; ++i) {
+    Timestamp at = Timestamp::Millis(i * 33);
+    auto pkts = SendFrame(s, i, i == 0, 300, at);
+    SM_ASSERT_EQ(pkts.size(), 1u);
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(21));  // The copy, after the frame was assembled.
+    r.Process(at + TimeDelta::Millis(21));
+  }
+  auto frames = Run(r, 100, 800);
+  // A copy is taken again while its frame waits in the frame buffer; one that lands after its frame
+  // was decoded is behind ClearTo and old (RtpVideoStreamReceiver2::FrameDecoded).
+  const auto& pb = r.packet_buffer().stats();
+  SM_EXPECT_EQ(pb.reinserted + pb.too_old, 3u);
+  SM_EXPECT_GT(pb.reinserted, 0u);
+  SM_EXPECT_EQ(pb.frames_assembled, 3u + pb.reinserted);
+  SM_EXPECT_EQ(r.stats().frames_refused, pb.reinserted);
+  SM_EXPECT_EQ(r.stats().frames_received, 3u);
+  SM_ASSERT_EQ(frames.size(), 3u);
+  for (size_t i = 0; i + 1 < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].frame_id < frames[i + 1].frame_id);
+}
+
+// `timing v1` has no frame buffer behind the packet buffer, so the packet
+// buffer keeps rejecting a copy of a packet already handed out (a recorded
+// deviation of the non-default path, issue #899).
+SM_TEST(RtpReceiver, TimingV1DropsACopyAfterAssemblyInThePacketBuffer) {
+  RtpSender s(SenderCfg());
+  RtpReceiverConfig c = NoHoldCfg();
+  c.timing.version = 1;
+  RtpReceiver r(c);
+  r.Start(Timestamp::Millis(0));
+  for (int64_t i = 0; i < 3; ++i) {
+    Timestamp at = Timestamp::Millis(i * 33);
+    auto pkts = SendFrame(s, i, i == 0, 300, at);
+    SM_ASSERT_EQ(pkts.size(), 1u);
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(21));
+    r.Process(at + TimeDelta::Millis(21));
+  }
+  auto frames = Run(r, 100, 800);
+  SM_EXPECT_EQ(r.packet_buffer().stats().duplicates, 3u);
+  SM_EXPECT_EQ(r.packet_buffer().stats().reinserted, 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 3u);
+  SM_EXPECT_EQ(frames.size(), 3u);
 }

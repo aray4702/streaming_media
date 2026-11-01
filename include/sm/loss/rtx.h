@@ -85,9 +85,6 @@ class RtxSender : public MetricsSource {
   // sequence number.
   std::optional<RtpPacket> GetPayloadPaddingPacket(const std::function<bool(const RtpPacket&)>& accept);
   size_t history_size() const { return history_.size(); }
-  // Next sequence number of the RTX stream. Padding sent on the RTX SSRC
-  // (rtp::RtpSender) takes its numbers here so they never collide with resends.
-  uint16_t AllocateSeq() { return rtx_seq_++; }
   const RtxStats& stats() const { return stats_; }
   void ExportMetrics(MetricsWriter& w) const override;
 

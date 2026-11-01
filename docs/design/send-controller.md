@@ -20,7 +20,7 @@ libwebrtc sources are cited from `compare/webrtc/reference/` (M157).
 | Frame dropper | `cc::FrameDropper`, driven from `testbench/call.cc` (`SetRates`, `ShouldDrop`, `OnEncodedFrame`) | **app glue** |
 | Keyframe on request or periodically | `keyframe_needed`, `periodic` in `call.cc` | **app glue** |
 | Encoder overshoot correction | `cc::EncoderBitrateAdjuster` + `cc::EncoderOvershootDetector`, inside `VideoSendController` (on by default as in M157; #5) | library |
-| Quality scaler, CPU overuse, degradation ladder | `video::QualityScaler`, `cc::CpuOveruseDetector`, `cc::DegradationController` (unused by `call.cc`) | library, unwired |
+| Quality scaler, CPU overuse, adaptation | `video::QualityScaler`, `cc::CpuOveruseDetector`, `video::VideoStreamAdapter` (the bits-per-pixel `cc::DegradationController` was removed in #819) | library |
 | Audio vs video allocation | `cc::BitrateAllocator` (unused by the session) | library, unwired |
 
 ## 2. libwebrtc mapping
@@ -34,7 +34,7 @@ libwebrtc sources are cited from `compare/webrtc/reference/` (M157).
 | `OnBitrateUpdated`: `frame_dropper_.SetRates`, `UpdateBitrateAllocation`, `SetEncoderRates` | `video/video_stream_encoder.cc` ~2459 | `OnRates()` |
 | `EncoderBitrateAdjuster` and `EncoderOvershootDetector` | `video/encoder_bitrate_adjuster.*`, `video/encoder_overshoot_detector.*` | the rate in `EncodeDecision::target` |
 | `RunPostEncode`: `frame_dropper_.Fill`, resource manager, adjuster | `video/video_stream_encoder.cc` ~2613 | `OnEncoded()` |
-| `QualityScalerResource`, `EncodeUsageResource` (`OveruseFrameDetector`), `VideoStreamEncoderResourceManager`, `BalancedConstraint`, `BitrateConstraint` | `video/adaptation/*` | `video::QualityScaler`, `cc::CpuOveruseDetector`, `cc::DegradationController`, driven from `OnEncoded()` |
+| `QualityScalerResource`, `EncodeUsageResource` (`OveruseFrameDetector`), `VideoStreamEncoderResourceManager`, `BalancedConstraint`, `BitrateConstraint` | `video/adaptation/*` | `video::QualityScaler`, `cc::CpuOveruseDetector`, `video::VideoStreamAdapter` (with `BalancedConstraint` and `BitrateConstraint`, #819), driven from `OnEncoded()` |
 | `SendKeyFrame` / `next_frame_types_` | `video/video_stream_encoder.cc` ~2204 | `EncodeDecision::keyframe` |
 | `RtpVideoSender::OnBitrateUpdated` (`FecControllerDefault::UpdateFecRates`, post-encode overhead) | `call/rtp_video_sender.cc` ~853 | `SendRates` (existing, #21) |
 | `BitrateAllocator` (`call/bitrate_allocator.cc`) | **not in `compare/webrtc/reference/`** | `cc::BitrateAllocator`; see section 7 |

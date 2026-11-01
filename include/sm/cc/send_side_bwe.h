@@ -33,7 +33,24 @@ struct BweTraceRow {
   // packets = the deltas seen so far (num_of_deltas_), and the trend columns below.
   // time_us is the feedback time. libwebrtc's rows come from its own
   // InterArrivalDelta and TrendlineEstimator fed with the feedback its GoogCC got.
-  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector };
+  // kRxTiming: the video receiver's VCMTiming::GetTimings (VideoReceiveStreamInterface::Stats on libwebrtc's
+  // side, VcmTiming on ours), sampled every 5 ms by the test bench when it changed (issue #893). It reuses
+  // columns, all in ms: bitrate_bps = target delay, packets = jitter delay, fraction_loss = current delay,
+  // loss_limit_bps = minimum playout delay, instant_ub_bps = render delay.
+  // kPacer: the sender's PacingController at each packet its send loop hands to the packet sender, before
+  // OnPacketSent charges the packet (PacingController::ProcessPackets, pacing_controller.cc; issue #893).
+  // time_us is the send time. It reuses columns: bitrate_bps = adjusted media rate (bps), loss_limit_bps =
+  // pacing rate (bps), instant_ub_bps = media debt (bytes), packets = queued packets, fraction_loss = queued
+  // data (QueueSizeData, bytes), modified_trend = AverageQueueTime (ms), threshold = the packet's media type
+  // (0 audio, 1 video, 2 RTX, 3 FEC, 4 padding), send_delta_ms = the packet's RTP sequence number, send_ms =
+  // last process time (ms).
+  // kSync (issue #895): the A/V sync inputs at each 1 s RtpStreamsSynchronizer run, read
+  // from both receive streams' Syncable::GetInfo by the harness: bitrate_bps = audio
+  // current_delay ms, packets = video current_delay ms (TargetVideoDelay), loss_limit_bps
+  // and instant_ub_bps = audio and video latest_receive_time ms, send_ms and arrival_ms =
+  // audio and video latest RTP timestamps less the first one seen, in ms; on this library only,
+  // modified_trend = the run's relative delay and threshold = its filtered diff.
+  enum class Kind { kDelayBased, kLossBased, kTarget, kDetector, kRxTiming, kPacer, kSync };
   int64_t time_us = 0;
   Kind kind = Kind::kTarget;
   int64_t bitrate_bps = 0;
@@ -78,6 +95,9 @@ struct NetworkControlUpdate {
   DataRate pacing_rate;
   std::vector<ProbeCluster> probes;
   bool changed = false;
+  // MaybeTriggerOnNetworkChanged's change check fired: libwebrtc's update then carries the
+  // target and the pacer config (goog_cc_network_control.cc:610-648).
+  bool triggered = false;
 };
 
 // libwebrtc's BitrateConstraints carry int bps (call/rtp_transport_controller_send.cc:68-83,
@@ -91,6 +111,11 @@ class GccController : public MetricsSource {
   explicit GccController(GccConfig cfg = {});
   NetworkControlUpdate Start(Timestamp now);
   void OnPacketSent(uint16_t transport_seq, Timestamp send_time, DataSize size, int probe_cluster = -1);
+  // GoogCcNetworkController::OnSentPacket with the congestion-window pushback on (its default,
+  // goog_cc_network_control.cc:263-287): MaybeTriggerOnNetworkChanged runs for every sent packet, so a
+  // target that a loss report, an RTT update or an ALR change moved goes out with the next packet.
+  // Call after OnPacketSent; `triggered` says whether the update carries anything.
+  NetworkControlUpdate MaybeTriggerOnSentPacket(Timestamp now);
   NetworkControlUpdate OnTransportFeedback(const TransportFeedback& fb, Timestamp now);
   void OnRttUpdate(TimeDelta rtt);
   // The RTT the controller last took (rounded to whole ms).
@@ -99,8 +124,8 @@ class GccController : public MetricsSource {
   // GoogCcNetworkController::OnTransportLossReport. The loss and packet
   // counts are the deltas between two receiver reports (summed over the report
   // blocks). Used for the loss rate until LossBasedBweV2 has three observations.
-  // Returns no update, as libwebrtc's: the target follows at the next feedback
-  // or process interval.
+  // Returns no update, as libwebrtc's: the target follows at the next sent packet (with the
+  // pushback on), feedback or process interval.
   void OnTransportLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now);
   // StreamsConfig::max_total_allocated_bitrate, the sum of the maximum bitrates
   // the allocator hands out: a rise probes up to twice that rate, and it caps

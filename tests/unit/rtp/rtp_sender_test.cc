@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "sm/audio/audio_level.h"
+#include "sm/core/audio_frame_operations.h"
 #include "sm/loss/red.h"
 #include "sm/loss/rtx.h"
 #include "sm/rtp/rtp_sender.h"
@@ -144,7 +145,29 @@ SM_TEST(RtpSender, AudioRedCarriesThePreviousFrame) {
   SM_EXPECT_TRUE((*blocks)[0].payload == f1);
   SM_EXPECT_TRUE((*blocks)[1].primary);
   SM_EXPECT_TRUE((*blocks)[1].payload == f2);
-  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
+  // Every frame carries RED's payload type, which has no registered rate: the
+  // sender report extrapolates at kBogusRtpRateForAudioRtcp (issue #895).
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).clock_rate, 8000);
+}
+
+// RTCPSender::BuildSR reads the rate registered for the last frame's payload type
+// (rtcp_sender.cc:355-360). ChannelSend::SetEncoder registers only the codec's
+// (channel_send.cc:645), so audio sent as RED reports at kBogusRtpRateForAudioRtcp,
+// 8 kHz, and audio without RED at the codec's 48 kHz (issue #895).
+SM_TEST(RtpSender, SenderReportRateIsTheLastPayloadTypesRegisteredRate) {
+  RtpSenderConfig c;
+  c.ssrc = 5;
+  c.payload_type = 111;
+  c.video = false;
+  c.clock_rate = 48000;
+  RtpSender plain(c);
+  plain.SendAudio(Bytes(30, 0xA1), 960, false, Timestamp::Millis(0));
+  SM_EXPECT_EQ(plain.SenderState(Timestamp::Millis(0)).clock_rate, 48000);
+  c.red_payload_type = 63;
+  RtpSender red(c);
+  red.SendAudio(Bytes(30, 0xA1), 960, false, Timestamp::Millis(0));
+  SM_EXPECT_EQ(red.SenderState(Timestamp::Millis(0)).clock_rate, RtpSender::kBogusRtpRateForAudioRtcp);
+  SM_EXPECT_EQ(RtpSender::kBogusRtpRateForAudioRtcp, 8000);
 }
 
 // RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128): the marker goes on the stream's first
@@ -228,8 +251,9 @@ SM_TEST(RtpSender, UlpfecOverRedOnTheMediaSsrc) {
   }
   SM_EXPECT_TRUE(s.TakeFecPackets().empty());
   SM_EXPECT_EQ(s.stats().fec_packets, 2u);
-  // FEC packets are not in the sender report counts.
-  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 4u);
+  // The FEC packets are in the sender report count, as RtpSenderEgress::UpdateRtpStats adds every
+  // packet sent on the SSRC to `transmitted` (rtp_sender_egress.cc:488-493; issue #816).
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 6u);
   // The FEC packets are not kept for retransmission.
   SM_EXPECT_EQ(s.rtx().history_size(), 4u);
 }
@@ -313,10 +337,11 @@ SM_TEST(RtpSender, PaddingUsesTheRtxStreamAndKeepsSequenceNumbersApart) {
   SM_EXPECT_EQ(pad.packet.payload_type, 97);
   SM_EXPECT_TRUE(pad.packet.payload.empty());
   SM_EXPECT_EQ(pad.packet.size(), 196u);
-  // A resend after the padding takes the next RTX sequence number.
+  // A resend after the padding takes the next RTX sequence number, at release.
+  s.AssignSequenceNumber(pad, Timestamp::Millis(1));
   uint16_t want[] = {65534};
   s.OnNack(want, Timestamp::Millis(50), TimeDelta::Millis(10));
-  auto rtx = s.TakePackets();
+  auto rtx = Release(s, Timestamp::Millis(50));
   SM_ASSERT_EQ(rtx.size(), 1u);
   SM_EXPECT_EQ(static_cast<uint16_t>(rtx[0].packet.seq - pad.packet.seq), 1u);
   // Sizes are clamped to what padding can express.
@@ -439,6 +464,59 @@ SM_TEST(RtpSender, AudioLevelIsTheRmsLevelOfTheCaptureFramesSinceTheLastPacket) 
   SM_EXPECT_EQ(s2.stats().audio_level_packets, 0u);
 }
 
+// #879: ProcessAudioCapture mutes as ChannelSend::ProcessAndEncodeAudio (channel_send.cc:909-924):
+// AudioFrameOperations::Mute with the stream's previous mute state, then the level. The frame
+// where mute starts fades out over its last 128 samples, muted frames after it are zeros, and
+// the frame where mute ends fades in over its first 128 samples.
+SM_TEST(RtpSender, ProcessAudioCaptureFadesOnMuteAsChannelSend) {
+  sync::ExtensionMap map;
+  map.Register(1, sync::uri::kAudioLevel);
+  RtpSenderConfig c;
+  c.video = false;
+  c.extensions = &map;
+  RtpSender s(c);
+  const std::vector<int16_t> loud(960, 1000);  // 10 ms of stereo at 48 kHz.
+  auto frame = loud;
+  s.ProcessAudioCapture(frame, 2, false);
+  SM_EXPECT_TRUE(frame == loud);
+  // Mute starts: kept up to sample 351, then 1000 * (1 - k/128) truncated, 0 on the last.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, true);
+  SM_EXPECT_EQ(frame[2 * 351], 1000);
+  SM_EXPECT_EQ(frame[2 * 352], 992);
+  SM_EXPECT_EQ(frame[2 * 352 + 1], 992);
+  SM_EXPECT_EQ(frame[2 * 478], 7);
+  SM_EXPECT_EQ(frame[2 * 479], 0);
+  SM_EXPECT_EQ(frame[2 * 479 + 1], 0);
+  // Muted throughout: zeros.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, true);
+  SM_EXPECT_TRUE(frame == std::vector<int16_t>(960, 0));
+  // Mute ends: ramps up over the first 128 samples per channel.
+  frame = loud;
+  s.ProcessAudioCapture(frame, 2, false);
+  SM_EXPECT_EQ(frame[0], 7);
+  SM_EXPECT_EQ(frame[1], 7);
+  SM_EXPECT_EQ(frame[2 * 127], 1000);
+  SM_EXPECT_EQ(frame[2 * 479], 1000);
+  // The level is analyzed after the fade, as ChannelSend: frames 1-4 above give the packet's level.
+  s.SendAudio(Bytes(60, 3), 960, false, Timestamp::Millis(40));
+  dsp::RmsLevel r;
+  r.Analyze(std::span<const int16_t>(loud));
+  auto faded = loud;
+  dsp::MuteAudioFrame(faded, 2, false, true);
+  r.Analyze(std::span<const int16_t>(faded));
+  r.AnalyzeMuted(loud.size());
+  auto rising = loud;
+  dsp::MuteAudioFrame(rising, 2, true, false);
+  r.Analyze(std::span<const int16_t>(rising));
+  const auto out = s.TakePackets();
+  SM_ASSERT_EQ(out.size(), 1u);
+  const auto raw = sync::ExtensionAccessor(map).GetRaw(out[0].packet, sync::uri::kAudioLevel);
+  SM_ASSERT_TRUE(raw.has_value());
+  SM_EXPECT_EQ(int{(*raw)[0]}, 0x80 | r.Average());
+}
+
 SM_TEST(RtpSender, MediaHeaderSizeCountsTheExtensionsTheNextPacketCarries) {
   sync::ExtensionMap map;
   map.Register(1, sync::uri::kTransportCc);
@@ -492,13 +570,14 @@ SM_TEST(RtpSender, GeneratePaddingEmptyPacketsAreFullOnTheRtxSsrc) {
   RtpSender s(PaddingCfg(&ext));
   auto out = s.GeneratePadding(600, Timestamp::Millis(5));
   SM_ASSERT_EQ(out.size(), 3u);  // 255 + 255 + 255 >= 600
+  for (auto& o : out) SM_EXPECT_EQ(o.packet.timestamp, 0u);  // Set at release (PacketSequencer).
+  for (auto& o : out) s.AssignSequenceNumber(o, Timestamp::Millis(5));
   uint16_t prev_seq = out[0].packet.seq;
   for (size_t i = 0; i < out.size(); ++i) {
     SM_EXPECT_EQ(out[i].packet.ssrc, 0x2222u);
     SM_EXPECT_EQ(out[i].packet.payload_type, 97);
     SM_EXPECT_EQ(out[i].packet.padding_size, 255);
     SM_EXPECT_TRUE(out[i].packet.payload.empty());
-    SM_EXPECT_EQ(out[i].packet.timestamp, 0u);  // Set at release (PacketSequencer).
     SM_EXPECT_TRUE(out[i].kind == PacketKind::kPadding);
     SM_EXPECT_TRUE(out[i].priority == cc::PacketPriority::kPadding);
     if (i > 0) SM_EXPECT_EQ(out[i].packet.seq, static_cast<uint16_t>(prev_seq + 1));
@@ -673,8 +752,40 @@ SM_TEST(RtpSender, GeneratePaddingResendsTheNewestLargePacketAsPayload) {
   SM_EXPECT_TRUE(out[0].kind == PacketKind::kPadding);
   SM_EXPECT_EQ(out[0].packet.timestamp, 9000u);
   SM_EXPECT_EQ(s.stats().payload_padding_packets, 2u);
-  // The RTX sequence numbers are used in order.
+  // The RTX sequence numbers are used in order, at release.
+  for (auto& o : out) s.AssignSequenceNumber(o, Timestamp::Millis(2));
   SM_EXPECT_EQ(out[1].packet.seq, static_cast<uint16_t>(out[0].packet.seq + 1));
+}
+
+// PacketSequencer::Sequence (packet_sequencer.cc:71-75) numbers a packet on the RTX SSRC when the
+// pacer releases it (PacketRouter::SendPacket). A resend or padding packet that is built but never
+// released takes no RTX sequence number, so the next one released follows the last one sent
+// without a gap (issue #854: on very_low_capacity ours used one more number than libwebrtc).
+SM_TEST(RtpSender, RtxSequenceNumbersAreAssignedAtReleaseOnly) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = PaddingCfg(&ext);
+  c.rtx.initial_seq = 893;
+  RtpSender s(c);
+  SendAndRelease(s, {900, 900, 900}, 9000, Timestamp::Millis(1));
+  const uint16_t first = 65534;
+  // Two resends built; the pacer releases only the second (the first is never sent).
+  uint16_t want[] = {first, static_cast<uint16_t>(first + 1)};
+  s.OnNack(want, Timestamp::Millis(10), TimeDelta::Millis(20));
+  auto rtx = s.TakePackets();
+  SM_ASSERT_EQ(rtx.size(), 2u);
+  // Empty padding built and dropped too.
+  auto dropped = s.GeneratePadding(100, Timestamp::Millis(11));
+  SM_ASSERT_FALSE(dropped.empty());
+  s.AssignSequenceNumber(rtx[1], Timestamp::Millis(12));
+  SM_EXPECT_EQ(rtx[1].packet.seq, 893);
+  auto pad = s.GeneratePadding(100, Timestamp::Millis(13));
+  SM_ASSERT_FALSE(pad.empty());
+  s.AssignSequenceNumber(pad[0], Timestamp::Millis(13));
+  SM_EXPECT_EQ(pad[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(pad[0].packet.seq, 894);
+  // The media sequence numbers are untouched.
+  s.SendVideoFrame(Chunks({10}), 9001, Timestamp::Millis(20));
+  SM_EXPECT_EQ(Release(s, Timestamp::Millis(20))[0].packet.seq, 1);
 }
 
 // kMaxPaddingSizeFactor: a packet that would take the total over 3 x the target is not used; the
@@ -1078,4 +1189,128 @@ SM_TEST(RtpSender, AudioAbsoluteCaptureTimeInFullPrecisionPerPacket) {
   s.SendAudio(frame, 960 * 60, false, Timestamp::Seconds(1010), std::nullopt);
   auto out = Release(s);
   SM_EXPECT_FALSE(AbsCapture(map, out[0]).has_value());
+}
+
+// Issue #816: the SR packet and octet counts are libwebrtc's `transmitted` counters of the media and
+// RTX SSRCs (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:251-254), which
+// RtpSenderEgress::UpdateRtpStats adds to as each packet is sent (rtp_sender_egress.cc:332-336,
+// 467-493): media, retransmissions and padding, with the payload octets (RtpPacketCounter keeps the
+// padding bytes apart). A packet still in the pacer queue is not counted.
+SM_TEST(RtpSender, SenderReportCountsEveryPacketSentOnTheMediaAndRtxSsrcs) {
+  const auto ext = TccExtensions();
+  RtpSender s(PaddingCfg(&ext));
+  s.SendVideoFrame(Chunks({100, 200}), 1, Timestamp::Millis(0));
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 0u);  // Queued, not sent.
+  auto media = Release(s);
+  SM_ASSERT_EQ(media.size(), 2u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).packet_count, 2u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(0)).octet_count, 300u);
+  // A resend: its payload is the original's plus the 2-byte original sequence number.
+  s.OnNack(std::vector<uint16_t>{media[1].packet.seq}, Timestamp::Millis(50), TimeDelta::Millis(10));
+  auto rtx = Release(s, Timestamp::Millis(50));
+  SM_ASSERT_EQ(rtx.size(), 1u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(50)).packet_count, 3u);
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(50)).octet_count, 502u);
+  // Empty padding: one packet each, no payload octets.
+  auto padding = s.GeneratePadding(60, Timestamp::Millis(60));
+  SM_ASSERT_FALSE(padding.empty());
+  for (auto& p : padding) {
+    SM_ASSERT_TRUE(p.packet.payload.empty());
+    s.AssignSequenceNumber(p, Timestamp::Millis(60));
+    s.OnPacketReleased(p, Timestamp::Millis(60));
+  }
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(60)).packet_count, 3u + padding.size());
+  SM_EXPECT_EQ(s.SenderState(Timestamp::Millis(60)).octet_count, 502u);
+}
+
+// Issue #816: padding on the RTX SSRC takes rtx_payload_type_map_.begin()->second
+// (RTPSender::BuildPaddingPacket, rtp_sender.cc:497-502), the RTX payload type of the lowest
+// associated payload type. With sm_compare's types (video 125, RED 118 -> RTX 99) that is RED's.
+SM_TEST(RtpSender, RtxPaddingTakesTheRtxTypeOfTheLowestAssociatedPayloadType) {
+  const auto ext = TccExtensions();
+  RtpSenderConfig c = PaddingCfg(&ext);
+  c.payload_type = 125;
+  c.rtx_payload_type = 98;
+  c.fec = true;
+  c.ulpfec.red_payload_type = 118;
+  c.ulpfec.red_rtx_payload_type = 99;
+  RtpSender lower_red(c);
+  auto out = lower_red.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.ssrc, 0x2222u);
+  SM_EXPECT_EQ(out[0].packet.payload_type, 99);
+  // RED in the RTX map without FEC running (ConfigureRtx maps it whenever RED is configured, also
+  // when ShouldDisableRedAndUlpfec turns FEC off beside NACK).
+  c.fec = false;
+  c.rtx.red_payload_type = 118;
+  c.rtx.rtx_red_payload_type = 99;
+  RtpSender red_mapped(c);
+  out = red_mapped.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.payload_type, 99);
+  // The media type is the lower one: its RTX type.
+  c.payload_type = 96;
+  c.rtx_payload_type = 97;
+  RtpSender lower_media(c);
+  out = lower_media.GeneratePadding(100, Timestamp::Millis(5));
+  SM_ASSERT_FALSE(out.empty());
+  SM_EXPECT_EQ(out[0].packet.payload_type, 97);
+}
+
+// Issue #895: ModuleRtpRtcpImpl2::GetFeedbackState reads GetSendRates(now) only when an RTCP packet is
+// built, and RateStatistics::Rate erases the expired buckets. SenderState(now, false) keeps the last
+// read rate and erases nothing, so an audio stream that resumes within 1.5 windows keeps its window;
+// a read in the gap empties the tracker, and the window restarts at the next packet.
+namespace {
+int64_t AudioRateAfterGap(bool read_in_gap) {
+  RtpSenderConfig c;
+  c.ssrc = 5;
+  c.payload_type = 111;
+  c.video = false;
+  c.clock_rate = 48000;
+  RtpSender s(c);
+  const Bytes frame(88, 0x11);  // 100 bytes with the 12-byte header.
+  auto send = [&](uint32_t ts, int ms) {
+    s.SendAudio(frame, ts, false, Timestamp::Millis(ms));
+    Release(s, Timestamp::Millis(ms));
+  };
+  send(960, 0);
+  send(1920, 10);
+  SM_EXPECT_GT(s.SenderState(Timestamp::Millis(20)).send_bitrate->bps(), 0);
+  const DataRate before = *s.SenderState(Timestamp::Millis(1100), read_in_gap).send_bitrate;
+  if (!read_in_gap) SM_EXPECT_EQ(before.bps(), s.SenderState(Timestamp::Millis(20), false).send_bitrate->bps());
+  send(2880, 1200);
+  send(3840, 1210);
+  return s.SendRate(Timestamp::Millis(1210)).bps();
+}
+}  // namespace
+
+SM_TEST(RtpSender, SenderStateReadsTheSendRatesOnlyWhenAsked) {
+  // Kept window: the two new packets over the full second.
+  SM_EXPECT_EQ(AudioRateAfterGap(false), 1600);
+  // Restarted at 1200 ms: 200 bytes over 11 ms.
+  SM_EXPECT_EQ(AudioRateAfterGap(true), 145455);
+}
+
+// Issue #895: a video module reads its send rates for every packet it sends (UpdateRtpStats calls
+// GetSendRates(now) for the stream's SendStatisticsProxy, rtp_sender_egress.cc:495-498), so a packet
+// type that paused for over a window restarts its window when it resumes, even within 1.5 windows.
+SM_TEST(RtpSender, VideoModuleRestartsAPausedTypeAtItsNextPacket) {
+  RtpSender s(VideoCfg());
+  uint32_t ts = 1;
+  for (int t = 0; t <= 1200; t += 10) {
+    s.SendVideoFrame(Chunks({100}), ts += 3000, Timestamp::Millis(t));
+    auto media = Release(s, Timestamp::Millis(t));
+    if (t == 0 || t == 1200) {
+      // Two resends: the first at 0 ms, the next 1.2 s later.
+      s.OnNack(std::vector<uint16_t>{media[0].packet.seq}, Timestamp::Millis(t), TimeDelta::Millis(10));
+      Release(s, Timestamp::Millis(t));
+      s.OnNack(std::vector<uint16_t>{media[0].packet.seq}, Timestamp::Millis(t + 1), TimeDelta::Zero());
+      Release(s, Timestamp::Millis(t + 1));
+    }
+  }
+  // Video: 100 packets in the window (210-1200 ms) at 112 bytes. RTX restarted at 1200 ms: two
+  // 114-byte packets over 2 ms. Without the per-packet read RTX would count over the whole second.
+  const int64_t video = 100 * 112 * 8;
+  SM_EXPECT_EQ(s.SendRate(Timestamp::Millis(1201)).bps(), video + 2 * 114 * 8000 / 2);
 }

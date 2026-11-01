@@ -92,6 +92,54 @@ SM_TEST(Session, MediaIsRoutedToTheMatchingReceiverAndRtcpGoesToTheEngine) {
   SM_EXPECT_GT(p.b.rtcp().stats().sr_received, 0u);
 }
 
+// Issue #820: the sending session's SRs carry its CNAME in SDES, as RTCPSender
+// with the CNAME RtpVideoSender and ChannelSend set (rtcp_sender.cc:713). The
+// receiving session's RRs carry no SDES, as libwebrtc's receive-only modules
+// have no CNAME (CreateRtpRtcpModule, video/rtp_video_stream_receiver2.cc:124-158).
+SM_TEST(Session, SenderReportsCarryTheCnameAndReceiveOnlyReportsCarryNoSdes) {
+  Pair p;
+  Bytes frame(60, 7);
+  size_t sr = 0, rr = 0;
+  bool sr_sdes = true, rr_sdes = false;
+  auto check = [&](const Bytes& d) {
+    auto split = loss::SplitCompoundRtcp(d);
+    if (!split || split->empty()) return;
+    bool has_sdes = false;
+    for (const auto& v : *split) {
+      if (v.type != loss::RtcpType::kSdes) continue;
+      has_sdes = true;
+      auto sdes = ParseSdes(v.data);
+      if (!sdes || sdes->empty() || (*sdes)[0].items.empty() || (*sdes)[0].items[0].text != "test") sr_sdes = false;
+    }
+    if ((*split)[0].type == loss::RtcpType::kSenderReport) {
+      ++sr;
+      sr_sdes = sr_sdes && has_sdes;
+    } else if ((*split)[0].type == loss::RtcpType::kReceiverReport) {
+      ++rr;
+      rr_sdes = rr_sdes || has_sdes;
+    }
+  };
+  for (int64_t t = 0; t < 6000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) p.a.SendAudio(p.a_audio, {960, frame, false}, now);
+    if (t % 100 == 0) p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(t == 0, 3000, 1188), static_cast<uint32_t>(t * 90), now);
+    p.a.Process(now);
+    p.b.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp) check(o.bytes);
+      p.b.OnPacket(o.bytes, now);
+    }
+    for (auto& o : p.b.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp) check(o.bytes);
+      p.a.OnPacket(o.bytes, now);
+    }
+  }
+  SM_EXPECT_GT(sr, 0u);
+  SM_EXPECT_GT(rr, 0u);
+  SM_EXPECT_TRUE(sr_sdes);
+  SM_EXPECT_FALSE(rr_sdes);
+}
+
 // Issue #518: a host that runs the session at NextProcessTime runs each timer at its due time, as
 // libwebrtc's delayed tasks run. With a video receiver that is no longer "at most 1 ms away": the
 // receiver reports its frame release, decode time-out and NACK tick, and a packet asks for a
@@ -115,6 +163,37 @@ SM_TEST(Session, NextProcessTimeWithAVideoReceiverIsItsEarliestTimer) {
   // The receiver's own timer is among them: with no frame after the keyframe, its 3 s decode
   // time-out (kMaxWaitForFrame) runs from the release.
   SM_EXPECT_LE(next, at + TimeDelta::Seconds(3));
+}
+
+// Issue #821: `av_sync` puts the session's receive streams in one sync group, paired as
+// Call::ConfigureSync (call/call.cc:1300-1341) pairs them: none without it (an empty sync group),
+// the first video stream with the first audio stream once both exist, whichever came first, and a
+// later stream changes nothing (RtpStreamsSynchronizer::ConfigureSync with the same audio is a no-op).
+SM_TEST(Session, AvSyncPairsTheFirstAudioAndVideoReceiveStreams) {
+  NullDecoder dec;
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  Session off(Cfg(2));
+  off.AddAudioReceive(au, &dec);
+  off.AddVideoReceive(Video());
+  SM_EXPECT_TRUE(off.av_sync() == nullptr);
+
+  SessionConfig c = Cfg(2);
+  c.av_sync = true;
+  Session s(c);
+  s.AddVideoReceive(Video());
+  SM_EXPECT_TRUE(s.av_sync() == nullptr);  // SetSync(nullptr): no audio in the group yet.
+  s.AddAudioReceive(au, &dec);
+  const sync::RtpStreamsSynchronizer* sync = s.av_sync();
+  SM_ASSERT_TRUE(sync != nullptr);
+  VideoStreamConfig second = Video();
+  second.ssrc = 0x400;
+  second.rtx_ssrc = 0x500;
+  s.AddVideoReceive(second);
+  AudioStreamConfig au2;
+  au2.ssrc = 0x600;
+  s.AddAudioReceive(au2, &dec);
+  SM_EXPECT_TRUE(s.av_sync() == sync);
 }
 
 SM_TEST(Session, ZeroByteVideoFrameSendsNothingAndIsCounted) {
@@ -396,6 +475,47 @@ SM_TEST(Session, NackFromThePeerIsAnsweredWithRtxOnTheRtxSsrc) {
     SM_EXPECT_EQ(RtpPacket::Parse(o.bytes)->ssrc, 0x300u);
   }
   SM_EXPECT_EQ(rtx, 1u);
+}
+
+// Issue #860: transport-cc goes out through SendCombinedRtcpPacket, a datagram of its own, and
+// ReceiveSideCongestionController's task runs before a NACK sent at the same time (it was posted
+// first), so the sender's early-loss resends come before the NACK's, as libwebrtc's.
+SM_TEST(Session, TransportFeedbackLeavesInItsOwnDatagramAheadOfANackDueAtTheSameTime) {
+  Pair p;
+  auto chunks = test::MakeTestFrameChunks(true, 3000, 1188);
+  p.a.SendVideoChunks(p.a_video, chunks, 0, Timestamp::Millis(0));
+  std::vector<Bytes> video;
+  for (auto& o : Pump(p.a, 0, 300)) {
+    if (o.kind == OutgoingKind::kVideo) video.push_back(std::move(o.bytes));
+  }
+  SM_ASSERT_GE(video.size(), 3u);
+  for (int64_t t = 0; t < 100; ++t) {
+    p.b.Process(Timestamp::Millis(t));
+    p.b.TakeOutgoing();
+  }
+  // The first transport feedback is due at 100 ms; the packet after a lost one arrives then too.
+  const Timestamp now = Timestamp::Millis(100);
+  for (size_t i = 0; i < video.size(); ++i) {
+    if (i != 1) p.b.OnPacket(video[i], now);
+  }
+  p.b.Process(now);
+  std::vector<std::vector<loss::RtcpType>> datagrams;
+  for (auto& o : p.b.TakeOutgoing()) {
+    if (o.kind != OutgoingKind::kRtcp) continue;
+    auto split = loss::SplitCompoundRtcp(o.bytes);
+    SM_ASSERT_TRUE(split.has_value());
+    std::vector<loss::RtcpType> types;
+    for (const auto& q : *split) types.push_back(q.type);
+    datagrams.push_back(types);
+  }
+  const auto has = [](const std::vector<loss::RtcpType>& t, loss::RtcpType x) {
+    return std::find(t.begin(), t.end(), x) != t.end();
+  };
+  SM_ASSERT_EQ(datagrams.size(), 2u);
+  SM_EXPECT_TRUE(has(datagrams[0], loss::RtcpType::kTransportCc));
+  SM_EXPECT_FALSE(has(datagrams[0], loss::RtcpType::kNack));
+  SM_EXPECT_TRUE(has(datagrams[1], loss::RtcpType::kNack));
+  SM_EXPECT_FALSE(has(datagrams[1], loss::RtcpType::kTransportCc));
 }
 
 // ModuleRtpRtcpImpl2 (rtp_rtcp_impl2.cc PeriodicUpdate, OnReceivedNack; issue #217):
@@ -766,6 +886,23 @@ SM_TEST(Session, SetRttFeedsTheSessionWithoutRaisingAnEvent) {
   SM_EXPECT_TRUE(p.b.TakeEvents().empty());
 }
 
+// GoogCC gets an RTT only once one is known (issue #869): RtpTransportControllerSend::OnRttUpdate runs on a
+// measured RTT, so until then AimdRateControl keeps its 200 ms default (aimd_rate_control.cc:34). The
+// session's own 100 ms placeholder must not reach it. An RTT the host sets does, also when set before
+// the session starts.
+SM_TEST(Session, TheCongestionControllerGetsNoRttBeforeOneIsKnown) {
+  Pair p;
+  Pump(p.a, 0, 100);
+  SM_EXPECT_EQ(p.a.send_side().gcc().last_rtt().ms(), 0);
+  p.a.SetRtt(TimeDelta::Millis(250));
+  SM_EXPECT_EQ(p.a.send_side().gcc().last_rtt().ms(), 250);
+
+  Pair q;
+  q.a.SetRtt(TimeDelta::Millis(250));
+  Pump(q.a, 0, 100);
+  SM_EXPECT_EQ(q.a.send_side().gcc().last_rtt().ms(), 250);
+}
+
 // A receive-only video stream takes its NACK RTT from CallStats, as
 // VideoReceiveStream2::OnRttUpdate does: a measurement reaches it at the next
 // 1 s periodic update (ModuleRtpRtcpImpl2::PeriodicUpdate), and the largest
@@ -1034,6 +1171,44 @@ SM_TEST(Session, SendsADueSenderReportAheadOfAKeyframe) {
   SM_EXPECT_EQ(run(false), 0u);
 }
 
+// ModuleRtpRtcpImpl2 posts the report's task on the worker queue when the last report goes out
+// (rtp_rtcp_impl2.cc:797-808), and TaskQueuePacedSender runs on the same queue
+// (rtp_transport_controller_send.cc:100-105). When both are due at once the report's task is the
+// older one and runs first, so the SR leaves ahead of the paced packets and doesn't count them
+// (issue #895: issue_12_lossbwe_shallow seed 1, the SR and RTX 916 at 1063 ms).
+SM_TEST(Session, ADueSenderReportLeavesAheadOfThePacketsPacedAtTheSameTime) {
+  SessionConfig c = Cfg(1);
+  c.rtcp.first_report_delay = TimeDelta::Millis(1000);
+  Session s(c);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  s.AddAudioSend(au);
+  VideoSendId v = s.AddVideoSend(Video());
+  for (int64_t t = 0; t < 1000; ++t) {
+    s.Process(Timestamp::Millis(t));
+    s.TakeOutgoing();
+  }
+  const Timestamp now = Timestamp::Millis(1000);
+  auto chunks = test::MakeTestFrameChunks(false, 3000, 1188);
+  s.SendVideoChunks(v, chunks, 0, now);
+  s.Process(now);
+  std::vector<OutgoingKind> kinds;
+  Bytes sr;
+  for (auto& o : s.TakeOutgoing()) {
+    kinds.push_back(o.kind);
+    if (o.kind == OutgoingKind::kRtcp && sr.empty()) sr = o.bytes;
+  }
+  SM_ASSERT_GE(kinds.size(), 2u);
+  // The report, then what the pacer sends at that time (the first frame starts a probe: padding).
+  SM_EXPECT_TRUE(kinds[0] == OutgoingKind::kRtcp);
+  SM_EXPECT_EQ(std::count(kinds.begin(), kinds.end(), OutgoingKind::kRtcp), 1);
+  // The SR's sender packet count (RFC 3550 6.4.1, bytes 20-23) has none of the paced packets in it.
+  SM_ASSERT_GE(sr.size(), 28u);
+  SM_EXPECT_EQ(sr[1], 200);
+  const uint32_t packets = (uint32_t{sr[20]} << 24) | (uint32_t{sr[21]} << 16) | (uint32_t{sr[22]} << 8) | sr[23];
+  SM_EXPECT_EQ(packets, 0u);
+}
+
 // VideoSendStreamImpl (#187): a video stream with the transport-cc extension
 // sets StreamsConfig::pacing_factor to 1.1 (kStrictPacingMultiplier), so GoogCC
 // paces at 1.1 x the target from the start, not 2.5 x until the first feedback.
@@ -1055,11 +1230,12 @@ SM_TEST(Session, AVideoStreamWithTransportCcPacesAtTheStrictFactorFromTheStart) 
   SM_EXPECT_EQ(pacing_bps(true, false), 750000);  // No transport-cc: no override.
 }
 
-// #62: an audio stream receives through libwebrtc's NetEq (jitter buffer version 2)
-// unless the config selects v1; AudioJitterBufferConfig on its own defaults to v2 too (#579).
+// #62: an audio stream receives through libwebrtc's NetEq, the only jitter buffer since
+// #817 removed version 1, with NetEq::Config's defaults (neteq.h: 200 packets, no minimum delay).
 SM_TEST(Session, AudioStreamDefaultsToLibwebrtcsNetEq) {
-  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.version, 2);
-  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.version, 2);
+  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.neteq_delay.max_packets_in_buffer, 200);
+  SM_EXPECT_EQ(AudioStreamConfig{}.jitter_buffer.neteq_delay.base_min_delay_ms, 0);
+  SM_EXPECT_EQ(timing::AudioJitterBufferConfig{}.neteq_delay.max_packets_in_buffer, 200);
 }
 
 // #574: ChannelReceive turns NetEq's muted state on (channel_receive.cc:107);
@@ -1396,4 +1572,116 @@ SM_TEST(Session, StreamsStartAtLibwebrtcsRandomSequenceNumberAndTimestamp) {
     SM_EXPECT_EQ(*video_ts, k.timestamp_offset + 90u);
     SM_EXPECT_TRUE(*audio_marker);  // RTPSenderAudio::MarkerBit: the stream's first packet.
   }
+}
+
+// Issue #777: RtpVideoStreamReceiver2::OnRtpPacket updates the receive statistics after
+// ReceivePacket (rtp_video_stream_receiver2.cc:983-990), so the NACK that a packet's gap triggers
+// goes out with report blocks that don't count that packet yet; the next report counts it.
+// libwebrtc's sender then sees the gap's loss in one report (fraction 54 at 610 ms on
+// issue_464_start_rate_above_int_bps, every seed).
+SM_TEST(Session, TheNackForAGapCarriesReportBlocksWithoutThePacketThatRevealedIt) {
+  Pair p;
+  struct Report {
+    bool nack = false;
+    timing::ReportBlock video;
+  };
+  std::vector<Report> reports;
+  auto read = [&](const Bytes& d) {
+    auto split = loss::SplitCompoundRtcp(d);
+    if (!split || split->empty() || (*split)[0].type != loss::RtcpType::kReceiverReport) return;
+    auto rr = timing::ParseReceiverReport((*split)[0].data);
+    if (!rr) return;
+    Report r;
+    for (const auto& b : rr->blocks) {
+      if (b.ssrc == 0x200) r.video = b;
+    }
+    if (r.video.ssrc == 0) return;
+    for (const auto& v : *split) r.nack = r.nack || v.type == loss::RtcpType::kNack;
+    reports.push_back(r);
+  };
+  auto deliver = [&](const Bytes& bytes, Timestamp now) {
+    // Each arriving packet is handled, and its RTCP sent, before the next one.
+    p.b.OnPacket(bytes, now);
+    p.b.Process(now);
+    for (auto& r : p.b.TakeOutgoing()) {
+      if (r.kind == OutgoingKind::kRtcp) read(r.bytes);
+    }
+  };
+  // Video sequence numbers per frame, in sending order (the RTP timestamps start at random).
+  std::vector<std::pair<uint32_t, std::vector<uint16_t>>> frames;
+  for (int64_t t = 0; t < 2000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 100 == 0) p.a.SendVideoChunks(p.a_video, test::MakeTestFrameChunks(t == 0, 3000, 1188), static_cast<uint32_t>(t * 90), now);
+    p.a.Process(now);
+    for (auto& o : p.a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kVideo) {
+        const auto rtp = RtpPacket::Parse(o.bytes);
+        if (frames.empty() || frames.back().first != rtp->timestamp) frames.push_back({rtp->timestamp, {}});
+        frames.back().second.push_back(rtp->seq);
+        if (frames.size() == 2) continue;  // The second frame is lost on the way.
+      }
+      deliver(o.bytes, now);
+    }
+    p.b.Process(now);
+    for (auto& r : p.b.TakeOutgoing()) {
+      if (r.kind == OutgoingKind::kRtcp) read(r.bytes);
+    }
+  }
+  SM_ASSERT_GE(frames.size(), 3u);
+  const uint16_t keyframe_last = frames[0].second.back();
+  const auto lost = static_cast<int32_t>(frames[1].second.size());
+  const uint16_t revealing = frames[2].second.front();
+  const auto first_nack = std::find_if(reports.begin(), reports.end(), [](const Report& r) { return r.nack; });
+  SM_ASSERT_TRUE(first_nack != reports.end());
+  // The third frame's first packet revealed the gap: the NACK's block ends at the keyframe, no loss yet.
+  SM_EXPECT_EQ(first_nack->video.extended_highest_seq & 0xffff, keyframe_last);
+  SM_EXPECT_EQ(first_nack->video.cumulative_lost, 0);
+  // The next report counts it, with the lost frame.
+  SM_ASSERT_TRUE(first_nack + 1 != reports.end());
+  SM_EXPECT_GE((first_nack + 1)->video.extended_highest_seq & 0xffff, revealing);
+  SM_EXPECT_EQ((first_nack + 1)->video.cumulative_lost, lost);
+}
+
+// Issue #893: Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands every RTCP packet to the audio send
+// stream too, and its RTCPReceiver keeps the receiver's RRTR whatever its sender
+// (RTCPReceiver::HandleXrReceiveReferenceTime, rtcp_receiver.cc:687-707), so the audio channel's next
+// SR carries a DLRR for it (RTCPSender::BuildExtendedReports via GetFeedbackState's last_xr_rtis).
+SM_TEST(Session, TheAudioSendStreamsReportEchoesTheReceiversRrtr) {
+  SessionConfig cb = Cfg(2);
+  cb.rtcp.xr_rrtr = true;
+  Session a(Cfg(1)), b(cb);
+  AudioStreamConfig au;
+  au.ssrc = 0x100;
+  const AudioSendId as = a.AddAudioSend(au);
+  a.AddVideoSend(Video());
+  NullDecoder dec;
+  b.AddAudioReceive(au, &dec);
+  b.AddVideoReceive(Video());
+  const Bytes frame(60, 7);
+  int audio_reports = 0, audio_reports_with_dlrr = 0;
+  for (int64_t t = 0; t < 16000; ++t) {
+    const Timestamp now = Timestamp::Millis(t);
+    if (t % 20 == 0) a.SendAudio(as, {960, frame, false}, now);
+    a.Process(now);
+    for (auto& o : a.TakeOutgoing()) {
+      if (o.kind == OutgoingKind::kRtcp && o.bytes.size() >= 8 && o.bytes[1] == 200) {
+        const uint32_t ssrc = (uint32_t{o.bytes[4]} << 24) | (uint32_t{o.bytes[5]} << 16) |
+                              (uint32_t{o.bytes[6]} << 8) | o.bytes[7];
+        if (ssrc == au.ssrc) {
+          ++audio_reports;
+          bool dlrr = false;
+          for (size_t i = 0; i + 4 <= o.bytes.size();) {
+            if (o.bytes[i + 1] == 207 && i + 8 < o.bytes.size() && o.bytes[i + 8] == 5) dlrr = true;  // XR, block type 5.
+            i += 4 * (static_cast<size_t>((o.bytes[i + 2] << 8) | o.bytes[i + 3]) + 1);
+          }
+          if (dlrr) ++audio_reports_with_dlrr;
+        }
+      }
+      b.OnPacket(o.bytes, now);
+    }
+    b.Process(now);
+    for (auto& o : b.TakeOutgoing()) a.OnPacket(o.bytes, now);
+  }
+  SM_EXPECT_GE(audio_reports, 2);
+  SM_EXPECT_GE(audio_reports_with_dlrr, 1);
 }

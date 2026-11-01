@@ -538,31 +538,29 @@ SM_TEST(Orientation, InverseRestoresAllEightCases) {
 }
 
 SM_TEST(ContentPolicy, HintsMapToPolicies) {
-  auto text = SettingsFor(ContentHint::kText, true);
-  SM_EXPECT_TRUE(text.degradation == Degradation::kMaintainResolution);
-  SM_EXPECT_TRUE(text.variable_framerate);
-  SM_EXPECT_LE(text.max_qp_h264, 32);
-  auto motion = SettingsFor(ContentHint::kMotion, false);
-  SM_EXPECT_TRUE(motion.degradation == Degradation::kMaintainFramerate);
-  SM_EXPECT_FALSE(motion.variable_framerate);
-  // No hint: camera keeps the frame rate, screencast the resolution, as
-  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064).
-  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, false).degradation == Degradation::kMaintainFramerate);
-  SM_EXPECT_TRUE(SettingsFor(ContentHint::kNone, true).degradation == Degradation::kMaintainResolution);
+  // libwebrtc's GetDegradationPreference (webrtc_video_engine.cc:2032-2064):
+  // kFluid keeps the frame rate; screencast, kDetailed and kText keep the
+  // resolution; otherwise MAINTAIN_FRAMERATE (BALANCED only with a trial).
+  struct Case {
+    ContentHint hint;
+    bool screencast;
+    Degradation want;
+  };
+  const Case cases[] = {
+      {ContentHint::kNone, false, Degradation::kMaintainFramerate},
+      {ContentHint::kNone, true, Degradation::kMaintainResolution},
+      {ContentHint::kMotion, false, Degradation::kMaintainFramerate},
+      {ContentHint::kMotion, true, Degradation::kMaintainFramerate},
+      {ContentHint::kDetail, false, Degradation::kMaintainResolution},
+      {ContentHint::kDetail, true, Degradation::kMaintainResolution},
+      {ContentHint::kText, false, Degradation::kMaintainResolution},
+      {ContentHint::kText, true, Degradation::kMaintainResolution},
+  };
+  for (const Case& c : cases) SM_EXPECT_TRUE(SettingsFor(c.hint, c.screencast).degradation == c.want);
   SM_EXPECT_TRUE(ContentSettings{}.degradation == Degradation::kMaintainFramerate);
-}
-
-SM_TEST(ContentPolicy, ChangeDetectorSkipsStaticFrames) {
-  FrameChangeDetector cd(TimeDelta::Seconds(1));
-  I420Frame slide = MakeTestFrame(320, 240, 0);
-  SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(0)));
-  SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(100)));
-  slide.Y(100, 100) ^= 0xff;  // One pixel changes (cursor blink).
-  auto r = cd.Analyze(slide);
-  SM_EXPECT_TRUE(r.changed);
-  SM_EXPECT_EQ(r.dirty_blocks, 1);
-  SM_EXPECT_FALSE(cd.ShouldEncode(slide, Ms(200)));  // Already absorbed by Analyze.
-  SM_EXPECT_TRUE(cd.ShouldEncode(slide, Ms(1300)));  // Keep-alive.
+  // The hint picks only the degradation preference (#877): no QP ceiling,
+  // frame-rate floor or cap, which libwebrtc does not derive from it.
+  static_assert(sizeof(ContentSettings) == sizeof(Degradation));
 }
 
 SM_TEST(FrameScheduler, RendersOnTimeDropsLateWhenNewerWaiting) {
@@ -1359,6 +1357,85 @@ SM_TEST(VideoStreamAdapter, BalancedConstraintRefusesUpBelowTheConfigsKbps) {
   SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kValid));
   a.OnEncoderTargetBitrateUpdated(std::nullopt);
   SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), S::kValid));
+}
+
+// BitrateConstraint (video/adaptation/bitrate_constraint_unittest.cc, issue
+// #819): the encoder's resolution bitrate limits of MakeEncoderInfo().
+namespace {
+constexpr int kStartBitrateBps360p = 500000;
+constexpr int kStartBitrateBps720p = 1000000;
+std::vector<ResolutionBitrateLimits> MakeResolutionBitrateLimits() {
+  return {{640 * 360, kStartBitrateBps360p, 0, 5000000},
+          {1280 * 720, kStartBitrateBps720p, 0, 5000000},
+          {1920 * 1080, 2000000, 0, 5000000}};
+}
+// An adapter at 360p after one resolution step down from 720p.
+VideoStreamAdapter AdapterAt360pAfterOneStepDown(std::vector<ResolutionBitrateLimits> limits) {
+  VideoStreamAdapter a;
+  a.SetResolutionBitrateLimits(std::move(limits));
+  a.OnFrameRateObserved(30);
+  a.OnFrameSizeObserved(1280 * 720);
+  a.ApplyAdaptation(a.GetAdaptationDown());
+  a.OnFrameSizeObserved(640 * 360);
+  return a;
+}
+}  // namespace
+
+SM_TEST(BitrateConstraint, AdaptUpAllowedAtSinglecastIfBitrateIsEnough) {
+  VideoStreamAdapter a = AdapterAt360pAfterOneStepDown(MakeResolutionBitrateLimits());
+  SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+  a.OnEncoderTargetBitrateUpdated(kStartBitrateBps720p);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+}
+
+SM_TEST(BitrateConstraint, AdaptUpDisallowedAtSinglecastIfBitrateIsNotEnough) {
+  VideoStreamAdapter a = AdapterAt360pAfterOneStepDown(MakeResolutionBitrateLimits());
+  // 1 bps less than needed for 720p (the limit at or above 5/3 of 360p).
+  a.OnEncoderTargetBitrateUpdated(kStartBitrateBps720p - 1);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), VideoStreamAdapter::Status::kRejectedByConstraint));
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), VideoStreamAdapter::Status::kRejectedByConstraint));
+  SM_EXPECT_TRUE(a.AdaptUp() == VideoStreamAdapter::Status::kRejectedByConstraint);
+  SM_EXPECT_EQ(a.resolution_adaptations(), 1);
+}
+
+SM_TEST(BitrateConstraint, AdaptUpAllowedWithoutLimitsOrTarget) {
+  // No limits (libwebrtc's software encoders by default), no target and a zero
+  // target all allow the step.
+  VideoStreamAdapter none = AdapterAt360pAfterOneStepDown({});
+  none.OnEncoderTargetBitrateUpdated(1);
+  SM_EXPECT_TRUE(IsStatus(none.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+  VideoStreamAdapter unknown = AdapterAt360pAfterOneStepDown(MakeResolutionBitrateLimits());
+  SM_EXPECT_TRUE(IsStatus(unknown.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+  unknown.OnEncoderTargetBitrateUpdated(0);
+  SM_EXPECT_TRUE(IsStatus(unknown.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+  // Above the largest limit's size there is no limit.
+  VideoStreamAdapter small = AdapterAt360pAfterOneStepDown({{320 * 180, kStartBitrateBps720p, 0, 5000000}});
+  small.OnEncoderTargetBitrateUpdated(1);
+  SM_EXPECT_TRUE(IsStatus(small.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+}
+
+SM_TEST(BitrateConstraint, OnlyResolutionIncreasesAreChecked) {
+  // MAINTAIN_RESOLUTION: a frame-rate step up is never held back.
+  VideoStreamAdapter a;
+  a.SetResolutionBitrateLimits(MakeResolutionBitrateLimits());
+  a.SetDegradationPreference(DegradationPreference::kMaintainResolution);
+  a.OnFrameRateObserved(30);
+  a.OnFrameSizeObserved(640 * 360);
+  a.ApplyAdaptation(a.GetAdaptationDown());
+  SM_EXPECT_EQ(a.fps_adaptations(), 1);
+  a.OnEncoderTargetBitrateUpdated(1);
+  SM_EXPECT_TRUE(IsStatus(a.GetAdaptationUp(), VideoStreamAdapter::Status::kValid));
+}
+
+SM_TEST(BitrateConstraint, GetEncoderBitrateLimitsForResolutionPicksTheSmallestAtOrAbove) {
+  // EncoderInfo::GetEncoderBitrateLimitsForResolution sorts by frame size.
+  std::vector<ResolutionBitrateLimits> l = MakeResolutionBitrateLimits();
+  std::swap(l[0], l[2]);
+  SM_EXPECT_EQ(GetEncoderBitrateLimitsForResolution(l, 1)->frame_size_pixels, 640 * 360);
+  SM_EXPECT_EQ(GetEncoderBitrateLimitsForResolution(l, 640 * 360)->frame_size_pixels, 640 * 360);
+  SM_EXPECT_EQ(GetEncoderBitrateLimitsForResolution(l, 640 * 360 + 1)->frame_size_pixels, 1280 * 720);
+  SM_EXPECT_FALSE(GetEncoderBitrateLimitsForResolution(l, 1920 * 1080 + 1).has_value());
+  SM_EXPECT_FALSE(GetEncoderBitrateLimitsForResolution({}, 1).has_value());
 }
 
 SM_TEST(VideoAdapter, ScalesThroughLibwebrtcsSeries) {

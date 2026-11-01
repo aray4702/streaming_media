@@ -292,7 +292,11 @@ ReportBlock ReceiveStatistics::MakeReportBlock(Timestamp now) {
   last_report_seq_max_ = received_seq_max_;
   if (last_sr_arrival_.IsFinite()) {
     rb.last_sr = last_sr_compact_;
-    rb.delay_since_last_sr = static_cast<uint32_t>(((now - last_sr_arrival_).us() << 16) / 1000000);
+    // RTCPSender::CreateReportBlocks (rtcp_sender.cc:739-748): the delay is the difference of the two
+    // times in compact NTP, CompactNtp(now) - CompactNtp(last_rr), each truncated to 1/65536 s, not the
+    // interval truncated once (issue #942). The two differ by one unit about half the time, which moves
+    // the sender's RTT by 15 us and, through GoogCC's RTT-change trigger, adds or removes an allocation.
+    rb.delay_since_last_sr = NtpTime::FromTimestamp(now).Compact() - NtpTime::FromTimestamp(last_sr_arrival_).Compact();
   }
   return rb;
 }

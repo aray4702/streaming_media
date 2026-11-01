@@ -11,7 +11,7 @@ NackTracker::NackTracker(NackConfig cfg) : cfg_(cfg), rtt_(cfg.initial_rtt) {}
 
 // `is_keyframe` is unused: M157's NackRequester keeps no keyframe list (nack_requester.cc AddPacketsToNack
 // clears a full list instead of dropping to a keyframe).
-int NackTracker::OnReceivedPacket(uint16_t seq, bool /*is_keyframe*/, Timestamp now) {
+int NackTracker::OnReceivedPacket(uint16_t seq, bool /*is_keyframe*/, Timestamp now, bool is_recovered) {
   int64_t s = unwrapper_.Unwrap(seq);
   ++stats_.packets_received;
   if (!initialized_) {
@@ -41,6 +41,15 @@ int NackTracker::OnReceivedPacket(uint16_t seq, bool /*is_keyframe*/, Timestamp 
     missing_.erase(it);
     return times_nacked;
   }
+  // NackRequester::OnReceivedPacket: a recovered packet ahead of the newest is remembered, so that
+  // AddPacketsToNack skips it, and the list keeps only the last kMaxPacketAge sequence numbers.
+  if (is_recovered) {
+    recovered_.insert(s);
+    recovered_.erase(recovered_.begin(), recovered_.lower_bound(s - cfg_.max_packet_age));
+    ++stats_.recovered_ahead;
+    SM_EVENT(cfg_.events, now, "nack", "recovered_ahead", static_cast<double>(s - newest_), seq);
+    return 0;
+  }
   // Newer packet: everything between newest_ and s is missing (NackRequester::AddPacketsToNack).
   if (s > newest_ + 1) AddMissing(newest_ + 1, s, now);
   newest_ = s;
@@ -49,8 +58,10 @@ int NackTracker::OnReceivedPacket(uint16_t seq, bool /*is_keyframe*/, Timestamp 
 
 void NackTracker::ClearUpTo(uint16_t seq) {
   if (!initialized_) return;
-  const auto end = missing_.lower_bound(unwrapper_.PeekUnwrap(seq));
+  const int64_t s = unwrapper_.PeekUnwrap(seq);
+  const auto end = missing_.lower_bound(s);
   for (auto it = missing_.begin(); it != end; it = missing_.erase(it)) ++stats_.cleared;
+  recovered_.erase(recovered_.begin(), recovered_.lower_bound(s));
 }
 
 // NackRequester::AddPacketsToNack: forget gaps older than the age limit; if the
@@ -69,6 +80,7 @@ void NackTracker::AddMissing(int64_t from, int64_t to, Timestamp now) {
     return;
   }
   for (int64_t i = from; i < to; ++i) {
+    if (recovered_.count(i)) continue;  // Recovered ahead of the gap: nothing to ask for.
     missing_.emplace(i, Info{now});
     ++stats_.missing_detected;
   }
@@ -77,7 +89,8 @@ void NackTracker::AddMissing(int64_t from, int64_t to, Timestamp now) {
 
 std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
   std::vector<uint16_t> out;
-  const TimeDelta retry = std::max(rtt_ * cfg_.retry_rtt_factor, cfg_.min_retry_interval);
+  // nack_on_rtt_passed: `now - sent_at_time >= rtt_`, with no floor below the RTT.
+  const TimeDelta retry = rtt_ * cfg_.retry_rtt_factor;
   // A retry is decided by NackPeriodicProcessor, every kUpdateInterval (20 ms), not at every call
   // (nack_requester.h). A retry therefore leaves up to 20 ms after the RTT has passed, which is what
   // keeps it from arriving just short of the sender's one-RTT repeat guard.
@@ -93,26 +106,21 @@ std::vector<uint16_t> NackTracker::GetNackBatch(Timestamp now) {
     Info& info = it->second;
     bool due = info.retries == 0 ? (now - info.detected >= cfg_.reorder_wait)
                                  : (tick && now - info.last_sent >= retry);
-    if (due && info.retries >= cfg_.max_retries) {
-      ++stats_.abandoned;
-      SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);
-      it = missing_.erase(it);  // libwebrtc gives up without a keyframe request.
-      continue;
-    }
-    if (due) Send(it->first, info, now, out);
-    ++it;
+    it = due ? Send(it, now, out) : std::next(it);
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
 }
 
 // nack_requester.cc GetNackBatch(kSeqNumOnly): every request not sent yet whose `send_at_seq_num` the newest
-// packet has reached. That is the gap's own sequence number, because the reordering histogram stays empty
-// (OnReceivedPacket treats every packet as retransmitted, so WaitNumberOfPackets is 0).
+// packet has reached. That is the gap's own sequence number, because the reordering histogram stays empty:
+// NackRequester::OnReceivedPacket sets `is_retransmitted = true` for every packet (its TODO), so
+// UpdateReorderingStatistics never runs and WaitNumberOfPackets(0.5) is 0 (issue #867).
 std::vector<uint16_t> NackTracker::GetSeqNumNackBatch(Timestamp now) {
   std::vector<uint16_t> out;
-  for (auto& [seq, info] : missing_) {
-    if (info.retries == 0 && now - info.detected >= cfg_.reorder_wait) Send(seq, info, now, out);
+  for (auto it = missing_.begin(); it != missing_.end();) {
+    const Info& info = it->second;
+    it = info.retries == 0 && now - info.detected >= cfg_.reorder_wait ? Send(it, now, out) : std::next(it);
   }
   if (!out.empty()) SM_EVENT(cfg_.events, now, "nack", "request", out.size(), out.front());
   return out;
@@ -127,11 +135,19 @@ Timestamp NackTracker::NextProcessTime() const {
   return next;
 }
 
-void NackTracker::Send(int64_t seq, Info& info, Timestamp now, std::vector<uint16_t>& out) {
-  out.push_back(static_cast<uint16_t>(seq));
+// nack_requester.cc GetNackBatch: the request that reaches kMaxNackRetries is sent, and the entry is erased
+// with it, without a keyframe request (issue #867).
+NackTracker::MissingMap::iterator NackTracker::Send(MissingMap::iterator it, Timestamp now,
+                                                    std::vector<uint16_t>& out) {
+  Info& info = it->second;
+  out.push_back(static_cast<uint16_t>(it->first));
   info.last_sent = now;
   ++info.retries;
   ++stats_.nack_requests;
+  if (info.retries < cfg_.max_retries) return std::next(it);
+  ++stats_.abandoned;
+  SM_EVENT(cfg_.events, now, "nack", "abandon", info.retries, it->first);
+  return missing_.erase(it);
 }
 
 bool NackTracker::TakeKeyframeRequest() {
@@ -151,6 +167,7 @@ void NackTracker::ExportMetrics(MetricsWriter& w) const {
   w.Counter("abandoned", stats_.abandoned);
   w.Counter("cleared", stats_.cleared);
   w.Counter("keyframe_requests", stats_.keyframe_requests);
+  w.Counter("recovered_ahead", stats_.recovered_ahead);
   w.Gauge("pending", static_cast<double>(missing_.size()));
   w.Gauge("rtt_ms", rtt_.ms_f());
   w.Hist("recovery_time_ms", stats_.recovery_time_ms);

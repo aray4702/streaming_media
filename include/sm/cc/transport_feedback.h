@@ -112,6 +112,10 @@ class TransportFeedbackBuilder : public MetricsSource {
 //   sequence number any feedback has named (last_ack_seq_num_), found or not:
 //   a packet below it that no feedback reported (its feedback was lost) is no
 //   longer in flight;
+// - the send time handed to the estimators is in whole milliseconds, as
+//   ProcessSentPacket reads it from rtc::SentPacket::send_time_ms, which the
+//   transport fills with Timestamp::ms(), rounded to the nearest (#897); the
+//   history is pruned by the creation time, the clock's;
 // - receive times are on a local base: the first feedback's receive time, then
 //   moved by each feedback's base-time delta (rounded down to 1 ms); each
 //   packet's time since its feedback's base time is rounded down to 1 ms (#365).

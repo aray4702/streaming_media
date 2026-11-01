@@ -428,6 +428,21 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheVideoTraceOnRequestAndItAgreesWithTheCo
   SM_EXPECT_TRUE(std::abs(static_cast<double>(bytes) * 8 / 1000.0 / 6.0 - rep.metrics.at("video.avg_kbps")) < 0.01);
 }
 
+// audio.net_delay_p95_ms on both stacks (#783): a padding-only packet on the
+// audio SSRC keeps the last frame's timestamp and was counted as audio that
+// spent its pacer time on the network.
+SM_TEST(TestbenchMetrics, AudioNetDelayCountsOnlyPacketsThatCarryAudio) {
+  AudioNetDelayMeter m;
+  m.OnArrival(1000, true, Timestamp::Millis(50));  // Before Start: no sample.
+  m.Start(1000, 48000);
+  m.OnArrival(1000, true, Timestamp::Millis(59));          // Captured at 0 ms.
+  m.OnArrival(1000 + 960, true, Timestamp::Millis(81));    // Captured at 20 ms.
+  m.OnArrival(1000 + 960, false, Timestamp::Millis(140));  // Padding with frame 1's timestamp.
+  SM_EXPECT_EQ(m.samples().size(), size_t{2});
+  SM_EXPECT_EQ(m.samples()[0], 59.0);
+  SM_EXPECT_EQ(m.samples()[1], 61.0);
+}
+
 // The jitter buffer per 10 ms audio pull (issue #62).
 SM_TEST(TestbenchMetrics, AudioTraceCsvWritesOneLinePerPullAndLeavesJbDelayEmptyWithoutAPacket) {
   std::vector<AudioTraceRow> trace(2);
@@ -544,7 +559,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
     opt.bwe_trace = true;
     const Report rep = RunCall(*parsed.scenario, opt);
     SM_ASSERT_TRUE(!rep.bwe_trace.empty());
-    int delay = 0, loss = 0, target = 0, detector = 0;
+    int delay = 0, loss = 0, target = 0, detector = 0, pacer = 0;
     int64_t prev = 0;
     for (const auto& r : rep.bwe_trace) {
       SM_EXPECT_GE(r.time_us, prev);
@@ -553,6 +568,14 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
         case cc::BweTraceRow::Kind::kDelayBased: ++delay; SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2); break;
         case cc::BweTraceRow::Kind::kLossBased: ++loss; SM_EXPECT_TRUE(r.fraction_loss >= 0 && r.loss_state >= 0); break;
         case cc::BweTraceRow::Kind::kTarget: ++target; break;
+        case cc::BweTraceRow::Kind::kRxTiming: SM_EXPECT_GE(r.bitrate_bps, 0); break;
+        case cc::BweTraceRow::Kind::kPacer:
+          // Issue #893: the adjusted rate is the pacing rate or the long-queue boost above it.
+          ++pacer;
+          SM_EXPECT_TRUE(r.bitrate_bps >= r.loss_limit_bps && r.loss_limit_bps > 0);
+          SM_EXPECT_TRUE(r.instant_ub_bps >= 0 && r.packets >= 0 && r.fraction_loss >= 0 && r.modified_trend >= 0);
+          SM_EXPECT_TRUE(r.threshold >= 0 && r.threshold <= 4 && std::isfinite(r.send_ms));
+          break;
         case cc::BweTraceRow::Kind::kDetector:
           ++detector;
           SM_EXPECT_TRUE(r.detector >= 0 && r.detector <= 2 && r.packets > 0);
@@ -560,7 +583,7 @@ SM_TEST(TestbenchMetrics, ACallRecordsTheBweTraceOnRequest) {
           break;
       }
     }
-    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0);
+    SM_EXPECT_TRUE(delay > 0 && loss > 0 && target > 0 && detector > 0 && pacer > 0);
   }
 }
 

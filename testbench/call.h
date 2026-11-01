@@ -84,6 +84,22 @@ struct VideoTraceRow {
   double av_offset_ms = 0, av_offset_abs_max_ms = 0, video_delay_ms = 0;
 };
 
+// One video frame leaving the receive side, for lining up the two stacks'
+// render decisions frame by frame (#931). capture_ms names the frame (its
+// capture time, the same on both stacks), render_time_ms is the render time the
+// receiver gave it (VCMTiming::RenderTime), out_ms is when it was rendered, or
+// when it left the receiver without being rendered, and rendered is 1 or 0.
+// Times are call-relative ms. This library's rows are every frame the receiver
+// hands out (decoded or dropped, before or after the decoder); libwebrtc's are
+// the frames its decoder decoded (ModelDecoder::Decode), with out_ms the decode
+// time for those its render queue dropped (IncomingVideoStream keeps no record).
+struct FrameRenderRow {
+  int64_t capture_ms = -1;
+  int64_t render_time_ms = -1;
+  int64_t out_ms = -1;
+  int rendered = 0;
+};
+
 // One 10 ms audio pull (issue #62), the same record for this library and for
 // libwebrtc, read after the pull as AudioReceiveStream::GetStats reports it.
 // Durations are in ms so the two stacks' sample rates compare; see AudioTraceCsv.
@@ -188,6 +204,8 @@ struct Report {
   std::vector<AudioTraceRow> audio_trace;
   // The audio send path, when RunOptions::link_trace is set (issue #477).
   std::vector<AudioSendRow> audio_send_trace;
+  // The receive side's frames, when RunOptions::video_trace is set (#931).
+  std::vector<FrameRenderRow> frame_trace;
 };
 
 struct RunOptions {
@@ -256,11 +274,18 @@ std::string LinkTraceCsv(const std::vector<sim::LinkTraceRecord>& trace);
 // time_us,event,bitrate_bps,detector,fraction_loss,packets,loss_state,loss_limit_bps,instant_ub_bps;
 // event is delay_based, loss_based or target; a column the event lacks is empty (tools/bwe_trace.py).
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace);
+
+// The first RTP timestamp of each stream a sync trace row has seen (issue #895), shared by both stacks' harnesses.
+struct SyncTs0 {
+  std::optional<uint32_t> audio, video;
+};
 // Report::audio_trace as CSV: t_ms,buffer_ms,target_ms,jb_delay_ms,received_ms,
 // concealed_ms,accelerate_ms,decelerate_ms (jb_delay_ms empty when no packet
 // was emitted in that pull).
 std::string AudioTraceCsv(const std::vector<AudioTraceRow>& trace);
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows);
+// Report::frame_trace as CSV: capture_ms,render_time_ms,out_ms,rendered (#931).
+std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows);
 // Checks rep.scenario's expectations against rep.metrics.
 void EvaluateExpectations(Report& rep);
 

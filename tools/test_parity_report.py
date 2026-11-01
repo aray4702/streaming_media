@@ -196,6 +196,7 @@ class Owners(unittest.TestCase):
         # The shallow-queue D3 cells (#411, split to #732) close as explained under #732, with a note.
         # The low-bandwidth D4 cells (#733) are in band since #460 (#479's re-measure) and lose their rules.
         # The keyframe-flush D7 cells (#736) are in band on 80 seeds since #460; #479's notes own them.
+        # The outage D8 cell (#738) is ported (cwnd_reduce_ratio after the minimum clamp); #738's note owns it.
         cells = {("issue_204_cross_traffic_join", "video.freeze_count"): 408,
                  ("issue_346_reconfigure_cross_join", "video.freeze_total_ms"): 408,
                  ("issue_53_cwnd_pushback", "video.freeze_total_ms"): 409,
@@ -207,7 +208,7 @@ class Owners(unittest.TestCase):
                  ("issue_154_shallow_drop_repair_v2", "video.freeze_count"): 732,
                  ("issue_12_lossbwe_shallow_step", "sync.av_offset_p95_ms"): 732,
                  ("issue_76_rtx_v2_keyframe_flush", "sync.av_offset_p95_ms"): 479,
-                 ("issue_372_outage_interruption_count", "net.loss_pct"): 411}
+                 ("issue_372_outage_interruption_count", "net.loss_pct"): 738}
         d = data(*[scn(s, {m: ([300] * 5, [100] * 5)}) for s, m in cells])
         d["shown"] = dict(SHOWN, **{m: {"better": "lower", "floor": 1} for _, m in cells})
         owners = os.path.join(os.path.dirname(os.path.abspath(__file__)), "parity_owners.json")
@@ -245,13 +246,15 @@ class Owners(unittest.TestCase):
         # cells go to #474 (outage e2e) and to #492/#514 (issue_29 media SSRC, padding).
         # #733: D4 is retired; issue_457's render fps is seed noise (in band on 80 seeds), #479's note.
         # #741: D9's policer cells are in band on 80 seeds; #479's notes own them.
+        # #739: D2's render fps is seed noise too (in band on 80 seeds, yardstick #798), #739's note.
+        # #738: D8 is ported (cwnd_reduce_ratio after the minimum clamp); its rules become #738's notes.
         cells = {("issue_12_lossbwe_policer", "video.e2e_delay_p95_ms"): 479,
                  ("issue_12_lossbwe_policer", "net.loss_pct"): 479,
                  ("issue_12_lossbwe_policer", "repair.overhead_pct"): 479,
-                 ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 411,
-                 ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 411,
-                 ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 411,
-                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 411,
+                 ("issue_283_longest_freeze_no_metrics", "video.freeze_total_ms"): 738,
+                 ("issue_372_outage_interruption_count", "cc.max_settle_ms"): 738,
+                 ("issue_411_reconfigure_clears_cwnd_drop", "cc.max_settle_ms"): 738,
+                 ("issue_437_render_smoothing_very_low_capacity", "video.render_fps"): 739,
                  ("issue_457_libopus_audio_rate", "video.render_fps"): 479,
                  ("issue_430_av_outage_6s", "video.e2e_delay_p95_ms"): 474,
                  ("issue_29_ulpfec_over_red", "video.avg_kbps"): 492,
@@ -267,10 +270,10 @@ class Owners(unittest.TestCase):
     def test_783_owns_only_issue_533_audio_cells(self):
         # #719 (Builder on #504): the policer, shallow and 466 audio cells follow each stack's video delay
         # through StreamSynchronization, so they go to the scenario's video/CC owner with a note;
-        # issue_451 keeps #451's not-comparable note. #723 closed #504 and moved its issue_533 NetEq
+        # issue_451 is no longer compared (`compare off`, #921), so it has no rule. #723 closed #504 and moved its issue_533 NetEq
         # cells and the receive-side cells below to #783. #741 gives the policer audio rule #719's number.
         cells = {"issue_12_lossbwe_policer": 719, "issue_12_lossbwe_shallow": 411,
-                 "issue_466_overshoot_very_low_capacity": 466, "issue_451_host_rtt_near_limit": 451,
+                 "issue_466_overshoot_very_low_capacity": 466,
                  "issue_533_opus_decoder_frame_older_than_window": 783,
                  # On #716's run these were owned only through the catch-all's #504: NetEq on audio-only
                  # calls, the post-handover backlog and high_jitter seed 5's target split, now with #783.

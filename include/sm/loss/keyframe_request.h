@@ -31,6 +31,12 @@ struct FrameInfo {
 
 enum class FeedbackType { kPli, kFir, kLntf };
 
+// KeyFrameReqMethod (api/rtp_parameters.h): the one RTCP message the receiver
+// sends for a keyframe request (RtpVideoStreamReceiver2::RequestKeyFrame,
+// video/rtp_video_stream_receiver2.cc:997-1008). PLI is libwebrtc's default
+// (VideoReceiveStreamInterface::Config::Rtp::keyframe_method).
+enum class KeyframeMethod { kPli, kFir };
+
 struct FeedbackMessage {
   FeedbackType type;
   uint8_t fir_seq = 0;            // FIR command sequence number.
@@ -47,6 +53,8 @@ struct KeyframeRequestConfig {
   // (video/rtp_video_stream_receiver2.cc:373), so they are off here too
   // (issue #580). On: an LNTF goes out with each keyframe request.
   bool send_lntf = false;
+  // rtp.keyframe_method: every request is a PLI, or every request is a FIR.
+  KeyframeMethod method = KeyframeMethod::kPli;
   // The decode time-out, from compare/webrtc/reference/video/
   // (added by PR #95):
   //  - video_receive_stream2.h kMaxWaitForKeyFrame 200 ms and kMaxWaitForFrame
@@ -94,7 +102,16 @@ class KeyframeRequester : public MetricsSource {
   // with the other triggers of the same Process(). `reason` is an event name.
   void OnExternalRequest(Timestamp now, const char* reason);
   // New receiver or stream switch: needs a FIR (full intra request).
+  // rtp::Session never calls it (libwebrtc requests nothing at stream start;
+  // the decode time-out asks for the first keyframe).
   void OnStreamStart(Timestamp now);
+  // RtpVideoStreamReceiver2 resets last_received_rtp_system_time_,
+  // last_received_keyframe_rtp_system_time_ and
+  // last_received_keyframe_rtp_timestamp_ when the packet buffer is cleared
+  // (OnInsertedPacket, rtp_video_stream_receiver2.cc:1117-1123) and when it
+  // re-anchors after a sequence-number discontinuity (:715-732): the decode
+  // time-out then sees no packet and no keyframe packet until the next one.
+  void ResetPacketReceiveTimes();
 
   // Feedback to send now.
   std::vector<FeedbackMessage> Process(Timestamp now);
@@ -110,6 +127,8 @@ class KeyframeRequester : public MetricsSource {
   // The receiver's frame buffer was cleared (FrameBuffer::Clear): the blocked
   // frames are dropped and the decodable history is forgotten.
   void ClearFrames();
+  // FrameBuffer::LastContinuousFrameId: the newest frame that became decodable since the last ClearFrames, or none.
+  std::optional<int64_t> LastContinuousFrameId() const { return last_continuous_; }
 
   bool waiting_for_keyframe() const { return request_pending_; }
   const KeyframeRequestStats& stats() const { return stats_; }
@@ -126,6 +145,7 @@ class KeyframeRequester : public MetricsSource {
   std::vector<int64_t> ready_;
   int64_t last_received_ = -1;
   int64_t last_decodable_ = -1;
+  std::optional<int64_t> last_continuous_;  // FrameBuffer::last_continuous_frame_id_; reset by ClearFrames.
   bool has_received_frame_ = false;
   bool decoded_any_ = false;
   Timestamp timeout_base_ = Timestamp::MinusInfinity();  // Last frame released, or the first Process().

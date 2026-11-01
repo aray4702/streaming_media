@@ -134,7 +134,6 @@ class AudioDecoder {
   // (modules/audio_coding/codecs/opus/audio_decoder_opus.cc): the RTP
   // timestamp units of the redundant copy of the previous frame that `frame`
   // carries, 0 when it carries none (PacketHasFec / PacketDurationRedundant).
-  // Used only with the jitter buffer's version 2 (`neteq v2`).
   virtual uint32_t FecDuration(std::span<const uint8_t> /*frame*/) const { return 0; }
   // DecodeRedundantInternal: that copy to samples, for `rtp_timestamp` (the
   // frame's own timestamp less FecDuration). Nullopt drops it.
@@ -143,7 +142,7 @@ class AudioDecoder {
   }
   // AudioDecoder::PacketDuration: the frame's samples at the jitter buffer's
   // rate without decoding it, 0 if unknown. A decoder that knows it is called
-  // when the jitter buffer (version 2) plays the frame, not when it arrives,
+  // when the jitter buffer plays the frame, not when it arrives,
   // as NetEq decodes (#783); one that returns 0 decodes on arrival.
   virtual uint32_t PacketDuration(std::span<const uint8_t> /*frame*/) const { return 0; }
 };
@@ -185,6 +184,20 @@ struct RtpReceiverConfig {
   // IDR, SPS and PPS flags an H.264 parser sets, and rtp::Session applies it to
   // H.264 streams only.
   bool sps_pps_tracker = true;
+  // RtpVideoStreamReceiver2::UnwrapSequenceNumberOrRecover
+  // (video/rtp_video_stream_receiver2.cc:651-753): a media packet more than
+  // 2048 (kPacketBufferMaxSize) sequence numbers behind the newest media
+  // packet, with a newer RTP timestamp, is a sequence-number discontinuity
+  // (the sender restarted its numbering). Every packet is then dropped, and a
+  // keyframe is requested at most every keyframe.max_wait_for_keyframe, until
+  // the first packet of a keyframe with a newer timestamp arrives; there the
+  // receiver re-anchors: the packet buffer and the NACK list are cleared and
+  // the sequence numbers continue from that packet. Outside a discontinuity, a
+  // packet that far behind is dropped (padding, FEC or old media). libwebrtc
+  // skips all of it for H.264 and H.265 (the H26x packet buffer has no reset).
+  // Off by default, as the receiver's defaults are H.264's; rtp::Session turns
+  // it on for streams that are not H.264.
+  bool seq_num_discontinuity = false;
   // libwebrtc's pre-render smoothing (IncomingVideoStream + VideoRenderFrames,
   // video::RenderFrames), which VideoReceiveStream2 runs between the decoder and
   // the renderer when `enable_prerenderer_smoothing` is on, its default: a decoded
@@ -289,7 +302,7 @@ struct RtpReceiverStats {
   uint64_t padding = 0;
   uint64_t unknown_ssrc = 0;
   uint64_t invalid_payload = 0;
-  uint64_t frames_received = 0;   // Assembled frames.
+  uint64_t frames_received = 0;   // Assembled frames the frame buffer took (timing v2), as ReceiveStatisticsProxy::OnCompleteFrame.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
   // timing v2, FrameBuffer::InsertFrame: assembled frames the frame buffer refused (full, or at or
@@ -299,6 +312,11 @@ struct RtpReceiverStats {
   uint64_t reassembly_failures = 0;  // Frames whose packets did not rebuild into a bitstream.
   uint64_t idr_without_parameter_sets = 0;  // sps_pps_tracker: IDR starts dropped before their SPS and PPS.
   uint64_t parameter_sets_without_ids = 0;  // sps_pps_tracker: SPS/PPS units without ids dropped (kDrop).
+  // seq_num_discontinuity: discontinuities detected, packets dropped while waiting for the recovery
+  // keyframe or as too far behind, and the times the receiver re-anchored at a keyframe.
+  uint64_t seq_num_discontinuities = 0;
+  uint64_t seq_num_discontinuity_dropped = 0;
+  uint64_t seq_num_reanchors = 0;
   // Gaps in the media sequence numbers as they arrive (recovered packets
   // included), for the protection controller (a real receiver reports this in
   // RTCP XR): runs of missing packets, and the packets in them.
@@ -420,6 +438,7 @@ class RtpReceiver : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  void MaybeStart(Timestamp now);  // The first time this receiver is given (issue #897).
   // A video packet on the media SSRC, received or restored from RTX: RED goes to the ULPFEC
   // receiver (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader). kFec for an FEC packet.
   ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered);
@@ -428,8 +447,21 @@ class RtpReceiver : public MetricsSource {
   void OnVideoMedia(const RtpPacket& p, Timestamp now, bool recovered);
   // A packet that holds a media sequence number but no media (padding, FEC):
   // RtpVideoStreamReceiver2::NotifyReceiverOfEmptyPacket.
-  void OnEmptyPacket(uint16_t seq, Timestamp now);
+  void OnEmptyPacket(uint16_t wire_seq, Timestamp now);
   void SendSeqNumNacks(Timestamp now);  // NackRequester::OnReceivedPacket's kSeqNumOnly batch.
+  void AppendNacks(const std::vector<uint16_t>& batch);  // To feedback_, on the sender's sequence numbers.
+  // UnwrapSequenceNumberOrRecover for a packet on the media SSRC, `info` null for one without media
+  // (padding, FEC). False: drop the packet. May re-anchor (seq_num_discontinuity).
+  bool UnwrapSequenceNumberOrRecover(uint16_t seq, uint32_t timestamp, const VideoPayloadInfo* info, Timestamp now);
+  friend class Session;
+  // RtpVideoStreamReceiver2::OnRtpPacket (rtp_video_stream_receiver2.cc:983-990) updates the receive
+  // statistics after ReceivePacket, so the RTCP that a packet's handling sends (a NACK for the gap it
+  // reveals, a PLI or loss notification) carries report blocks that don't count it yet (issue #777).
+  // Session builds that RTCP in the Process after OnPacket, so it sets `defer_receive_statistics_` on its
+  // video receivers: a media SSRC packet is counted when Session calls CommitReceiveStatistics() after
+  // that RTCP, or at the next OnPacket. A receiver used on its own counts it at once.
+  void CommitReceiveStatistics();
+  void CountReceived(uint16_t seq, uint32_t rtp_ts, Timestamp now);
   void TrackSequence(uint16_t seq);  // Gap bookkeeping for the protection controller.
   void OnAudioMedia(const RtpPacket& p, Timestamp now);
   // AbsoluteCaptureTimeInterpolator::OnReceivePacket on a media packet, then the
@@ -450,15 +482,34 @@ class RtpReceiver : public MetricsSource {
   timing::VideoTiming video_timing_;
   video::FrameScheduler scheduler_;
   timing::VcmTiming vcm_timing_;            // timing v2.
+  bool started_ = false;                    // MaybeStart ran (issue #897).
   timing::FrameReleaseController release_;  // timing v2.
   video::RenderFrames render_frames_;       // render_smoothing.
   std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.
   timing::AudioJitterBuffer jitter_buffer_;
   timing::ReceiveStatistics stats_rtp_;
   std::optional<timing::ReceiveStatistics> stats_rtx_;
+  bool defer_receive_statistics_ = false;
+  struct PendingCount {
+    uint16_t seq;
+    uint32_t rtp_ts;
+    Timestamp at;
+  };
+  std::optional<PendingCount> pending_count_;  // defer_receive_statistics_: the packet not counted yet.
   SeqNumUnwrapper<uint16_t> unwrap_;
   int64_t highest_seq_ = -1;
   H264SpsPpsTracker sps_pps_tracker_;  // sps_pps_tracker.
+  // seq_num_discontinuity: rtp_seq_num_unwrapper_, newest_media_seq_num_, newest_media_rtp_timestamp_,
+  // waiting_for_keyframe_after_seq_num_discontinuity_ and next_keyframe_request_for_seq_num_discontinuity_.
+  // After a re-anchor the sender's sequence numbers are moved by `seq_shift_` so that the NACK tracker,
+  // the packet buffer and the frame ids continue after the old ones (libwebrtc restarts its frame ids
+  // above the last completed picture id instead); NACKs go out on the sender's numbers.
+  SeqNumUnwrapper<uint16_t> rtp_seq_unwrap_;
+  std::optional<int64_t> newest_media_seq_;
+  std::optional<uint32_t> newest_media_timestamp_;
+  bool waiting_for_keyframe_after_discontinuity_ = false;
+  Timestamp next_discontinuity_request_ = Timestamp::MinusInfinity();
+  uint16_t seq_shift_ = 0;
   TimeDelta rtt_ = TimeDelta::Millis(100);
   bool have_rtt_ = false;
   Timestamp last_rtt_update_ = Timestamp::MinusInfinity();  // timing v2: CallStats' 1 s update.

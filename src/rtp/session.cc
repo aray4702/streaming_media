@@ -19,6 +19,8 @@ RtcpConfig MakeRtcpConfig(const SessionConfig& c) {
   RtcpConfig r = c.rtcp;
   r.local_ssrc = c.local_ssrc;
   r.cname = c.cname;
+  // The session's RR is the video receive module's, which has no CNAME (issue #820).
+  r.cname_in_receiver_report = false;
   r.seed = c.seed;
   if (!r.events) r.events = c.events;
   return r;
@@ -145,6 +147,12 @@ VideoSendId Session::AddVideoSend(const VideoStreamConfig& v) {
   const uint16_t rtx_initial_seq = c.rtx.initial_seq;
   c.rtx = v.rtx;
   c.rtx.initial_seq = rtx_initial_seq;
+  // ConfigureRtx (call/rtp_video_sender.cc:245-252): RED's RTX payload type is in the RTX map
+  // whenever RED is configured, also when ShouldDisableRedAndUlpfec turns FEC off beside NACK.
+  if (v.fec && v.rtx_ssrc) {
+    c.rtx.red_payload_type = v.ulpfec.red_payload_type;
+    c.rtx.rtx_red_payload_type = v.ulpfec.red_rtx_payload_type;
+  }
   c.fec = VideoFecEnabled(v);
   c.ulpfec = v.ulpfec;
   // RtpVideoSender's constructor: FecControllerDefault with the method the stream has on,
@@ -262,6 +270,8 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   // tracker for kVideoCodecH264, and FindFrames keeps missing_packets_ for an H.264 descriptor.
   const bool h264 = v.codec == VideoCodecType::kH264;
   c.sps_pps_tracker = v.sps_pps_tracker && h264;
+  // UnwrapSequenceNumberOrRecover returns before its discontinuity rule for H.264 and H.265.
+  c.seq_num_discontinuity = !h264;
   c.render_smoothing = v.render_smoothing;
   c.deliver_bitstream = v.deliver_bitstream;
   c.media_observer = v.media_observer;
@@ -279,6 +289,7 @@ VideoRecvId Session::AddVideoReceive(const VideoStreamConfig& v) {
   c.receive_statistics_v2 = cfg_.receive_statistics_v2;
   c.events = cfg_.events;
   auto r = std::make_unique<RtpReceiver>(c);
+  r->defer_receive_statistics_ = true;  // Counted after the RTCP the packet triggers (issue #777).
   rtcp_.AddReceiveStatistics(r->receive_statistics());
   rtcp_.AddReceiveStatistics(r->rtx_receive_statistics());
   video_recv_.push_back({std::move(r), v.ssrc, v.rtx_ssrc.value_or(0)});
@@ -343,17 +354,41 @@ void Session::Start(Timestamp now) {
   }
   send_.ConfigureAllocation(audio, !video_send_.empty());
   send_.Start(now);
-  send_.OnRtt(rtt_);
+  // GoogCC takes an RTT only once one is known: RtpTransportControllerSend::OnRttUpdate
+  // runs on a measured RTT (or here, one the host set), never on a default. Until then
+  // AimdRateControl keeps its own 200 ms (kDefaultRtt, aimd_rate_control.cc:34) and
+  // SendSideBandwidthEstimation none (issue #869).
+  if (have_rtt_ || host_rtt_) send_.OnRtt(rtt_);
   last_target_ = send_.target();
 }
 
+// Each EnqueuePackets call is one task on the pacer's queue (TaskQueuePacedSender::EnqueuePackets,
+// task_queue_paced_sender.cc:133-155) that ends with its own pass. A frame's packets go in one call
+// (RTPSenderVideo::LogAndSendToNetwork), but every retransmission in its own: RTPSender::OnReceivedNack calls
+// ReSendPacket per sequence number, and each enqueues its one packet (rtp_sender.cc:319-362; issue #893, overshoot
+// seed 9 at 33.43 s, where the pass between two resends sends the RTX the second one's enqueue would hold).
 void Session::EnqueueSenderPackets(RtpSender& s, Timestamp now) {
-  for (SenderPacket& p : s.TakePackets()) send_.Enqueue(std::move(p), now);
+  std::vector<SenderPacket> packets = s.TakePackets();
+  size_t i = 0;
+  while (i < packets.size()) {
+    size_t j = i + 1;
+    if (packets[i].priority != cc::PacketPriority::kRetransmission) {
+      while (j < packets.size() && packets[j].priority != cc::PacketPriority::kRetransmission) ++j;
+    }
+    send_.BeginEnqueueBatch(now);
+    for (size_t k = i; k < j; ++k) send_.Enqueue(std::move(packets[k]), now);
+    i = j;
+  }
 }
 
 void Session::AnalyzeAudioCapture(AudioSendId id, std::span<const int16_t> frame, bool muted) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
   audio_send_[static_cast<size_t>(id.index)].sender->AnalyzeAudioCapture(frame, muted);
+}
+
+void Session::ProcessAudioCapture(AudioSendId id, std::span<int16_t> frame, size_t num_channels, bool muted) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
+  audio_send_[static_cast<size_t>(id.index)].sender->ProcessAudioCapture(frame, num_channels, muted);
 }
 
 void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now) { SendAudio(id, f, std::nullopt, now); }
@@ -448,6 +483,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
     }
   }
   EnqueueSenderPackets(s, now);
+  // The worker queue's OnEncoderConfigurationChanged, posted when this frame reconfigured the encoder.
+  send_.RunPendingReconfigure(now);
 }
 
 void Session::SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p) {
@@ -502,6 +539,7 @@ void Session::MaybeUpdateFecRates(Timestamp now) {
 
 void Session::SetRtt(TimeDelta rtt) {
   rtt_ = rtt;
+  host_rtt_ = true;
   // With RRTR on, the XR measurement is what goes to CallStats.
   if (!cfg_.rtcp.xr_rrtr) pending_rr_rtt_ = rtt;
   send_.OnRtt(rtt_);
@@ -577,6 +615,14 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
     ++stats_.malformed;
     return;
   }
+  // Resends (NACK and early loss) wait until the whole packet is handled; see FlushResends.
+  send_.HoldResends(true);
+  // Call::DeliverRtcpPacket_w (call.cc:1357-1381) hands the packet to the audio send stream too,
+  // whose RTCPReceiver keeps every RRTR it sees, whatever its sender
+  // (RTCPReceiver::HandleXrReceiveReferenceTime, rtcp_receiver.cc:687-707): the audio channel's
+  // next report echoes it in a DLRR (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:268;
+  // RTCPSender::BuildExtendedReports). Issue #893.
+  if (audio_rtcp_) audio_rtcp_->OnRtcp(bytes, now);
   for (const auto& sr : in.sender_reports) {
     for (auto& v : video_recv_) {
       if (v.ssrc == sr.ssrc) v.receiver->OnSenderReport(sr, now);
@@ -712,8 +758,10 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
         }
         s->SetRtt(TimeDelta::Millis(5 + rtt_ms), now);
       }
+      // RTPSender::ReSendPacket builds the RTX packet now, but hands it to the pacer through
+      // TaskQueuePacedSender::EnqueuePackets, which posts a task (task_queue_paced_sender.cc:133-155;
+      // rtp_sender.cc:362): it joins the queue after this packet's transport feedback (below).
       s->OnNack(n.seqs, now, rtt_);
-      EnqueueSenderPackets(*s, now);
     } else {
       ++stats_.nacks_unmatched;
     }
@@ -730,12 +778,26 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   // trains its RemoteNtpTimeEstimator from the SR (DeliverRtcp, ReceivedRTCPPacket).
   for (auto& v : video_recv_) v.receiver->OnRtcpPacket(now);
   for (auto& a : audio_recv_) a.receiver->OnRtcpPacket(now);
+  FlushResends(now);
 }
 
-void Session::UpdateSenderState(Timestamp now) {
+// RTPSender::ReSendPacket (NACK, rtp_sender.cc:362) and the early-loss resends of
+// RtpVideoSender::OnPacketFeedbackVector hand their RTX packets to TaskQueuePacedSender::EnqueuePackets,
+// which posts a task to the pacer's queue (task_queue_paced_sender.cc:133-155). That task runs after the
+// RTCP packet is handled: after RtpTransportControllerSend::OnTransportFeedback has set the new pacing
+// rate (PostUpdates -> SetConfig, rtp_transport_controller_send.cc:838-839). So the RTX packet's
+// EnqueuePacket, which drains the debt of an empty queue at the current rate (pacing_controller.cc:
+// 237-249), uses the new rate (issue #893, overshoot seed 1 at 680 ms).
+void Session::FlushResends(Timestamp now) {
+  send_.HoldResends(false);
+  for (auto& v : video_send_) EnqueueSenderPackets(*v.sender, now);
+  for (auto& a : audio_send_) EnqueueSenderPackets(*a.sender, now);
+}
+
+void Session::UpdateSenderState(Timestamp now, bool read_send_rates) {
   RtpSender* s = !video_send_.empty() ? video_send_.front().sender.get()
                                       : (!audio_send_.empty() ? audio_send_.front().sender.get() : nullptr);
-  if (s) rtcp_.SetSenderState(s->SenderState(now));
+  if (s) rtcp_.SetSenderState(s->SenderState(now, read_send_rates));
 }
 
 // ModuleRtpRtcpImpl2::PeriodicUpdate (every kRttUpdateInterval, 1 s; rtp_rtcp_impl2.cc:740-751),
@@ -788,6 +850,11 @@ void Session::Process(Timestamp now) {
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
   OnCallStatsUpdate(call_stats_.Process(now));
+  // Transport-wide feedback covers every stream of the transport. It goes before the receivers'
+  // 20 ms NACK tick: when both are due at once, libwebrtc runs the task posted first, and
+  // ReceiveSideCongestionController's task (posted at least 50 ms earlier, at its last run) is older
+  // than NackPeriodicProcessor's (posted 20 ms earlier), so its datagram leaves first (issue #860).
+  ProcessTransportFeedback(now);
   // Receivers: frames, NACK and keyframe requests.
   for (auto& v : video_recv_) {
     RtpReceiver& r = *v.receiver;
@@ -811,8 +878,33 @@ void Session::Process(Timestamp now) {
   }
   // RtpStreamsSynchronizer's 1 s task.
   if (av_sync_) av_sync_->Process(now);
-  // Transport-wide feedback covers every stream of the transport.
-  ProcessTransportFeedback(now);
+  // RTCP: reports and queued feedback, before the paced media due at the same time. libwebrtc runs both
+  // as delayed tasks on the worker queue (ModuleRtpRtcpImpl2::ScheduleMaybeSendRtcpAtOrAfterTimestamp,
+  // rtp_rtcp_impl2.cc:797-808; TaskQueuePacedSender on worker_thread_, rtp_transport_controller_send.cc:100-105),
+  // and tasks due at the same time run in the order they were posted. The report's task is posted when the
+  // last report went out, hundreds of ms earlier, and the pacer's at its last run, so the report leaves
+  // first and its sender info doesn't count the packets the pacer sends at that time (issue #895).
+  // The send rates are read only when a report is built (GetFeedbackState in SendRTCP; issue #895).
+  UpdateSenderState(now, rtcp_.BuildsReport(now));
+  for (RtcpOutgoing& o : rtcp_.Process(now)) {
+    const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+    out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+  }
+  // The last packet's RTCP is out: it counts in the next report (RtpVideoStreamReceiver2::OnRtpPacket).
+  for (auto& v : video_recv_) v.receiver->CommitReceiveStatistics();
+  if (audio_rtcp_) {
+    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now, audio_rtcp_->BuildsReport(now)));
+    for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
+  if (audio_recv_rtcp_) {
+    for (RtcpOutgoing& o : audio_recv_rtcp_->Process(now)) {
+      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
+      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
+    }
+  }
   // Paced media.
   if (HasSendStreams()) {
     for (ReleasedPacket& r : send_.Process(now)) {
@@ -828,25 +920,6 @@ void Session::Process(Timestamp now) {
     Emit({SessionEventType::kTargetRateChanged, now, 0, last_target_, TimeDelta::Zero()});
   }
   if (HasSendStreams()) MaybeUpdateFecRates(now);
-  // RTCP: reports and queued feedback.
-  UpdateSenderState(now);
-  for (RtcpOutgoing& o : rtcp_.Process(now)) {
-    const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
-    out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
-  }
-  if (audio_rtcp_) {
-    audio_rtcp_->SetSenderState(audio_send_.front().sender->SenderState(now));
-    for (RtcpOutgoing& o : audio_rtcp_->Process(now)) {
-      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
-      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
-    }
-  }
-  if (audio_recv_rtcp_) {
-    for (RtcpOutgoing& o : audio_recv_rtcp_->Process(now)) {
-      const DataSize wire = DataSize::Bytes(static_cast<int64_t>(o.bytes.size()) + cfg_.send_side.transport_overhead_bytes);
-      out_.push_back({std::move(o.bytes), OutgoingKind::kRtcp, wire});
-    }
-  }
 }
 
 // libwebrtc: the generator's interval follows this endpoint's own
@@ -945,5 +1018,8 @@ void Session::ExportMetrics(MetricsWriter& w) const {
     w.Gauge("video_encode_frame_rate", std::round(video_send_.front().sent_frame_rate.Rate(last_process_.ms())));
   }
 }
+
+const sync::Syncable* Session::sync_audio() const { return sync_audio_.get(); }
+const sync::Syncable* Session::sync_video() const { return sync_video_.get(); }
 
 }  // namespace sm::rtp

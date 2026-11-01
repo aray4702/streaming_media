@@ -581,3 +581,61 @@ SM_TEST(PacingController, PollingEveryMsWithoutTheSchedulingSendsBetweenAudioPac
   SM_EXPECT_TRUE(off.non_audio > 50);
   SM_EXPECT_TRUE(off.with_audio < off.non_audio);
 }
+
+// SetPacingRates is SetPacerConfig(PacerConfig::Create(..., send_burst_interval_)): the rates travel as
+// whole bytes per time window (DataRate * TimeDelta rounds to the nearest byte) and are read back as
+// bytes / window (api/transport/network_types.{h,cc}; api/units/data_rate.h). Issue #813: GoogCC's
+// 304495 bps padding rate reaches libwebrtc's pacer as 304400 bps, which moves its padding timer.
+SM_TEST(PacingController, RatesArriveAsWholeBytesPerTimeWindow) {
+  const TimeDelta k40ms = TimeDelta::Millis(40);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(304495), k40ms).bps(), 304400);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(334945), k40ms).bps(), 335000);
+  // A zero window counts as 1 s (PacerConfig::rate_window).
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::BitsPerSec(304495), TimeDelta::Zero()).bps(), 304496);
+  SM_EXPECT_EQ(PacingController::ThroughPacerConfig(DataRate::Zero(), k40ms).bps(), 0);
+
+  PacingControllerConfig cfg;
+  cfg.send_burst_interval = k40ms;
+  PacingController pacer(cfg);
+  pacer.SetPacingRates(DataRate::BitsPerSec(334945), DataRate::BitsPerSec(304495));
+  SM_EXPECT_EQ(pacer.pacing_rate().bps(), 335000);
+}
+
+// SendsFecPackets (pacing_controller_unittest.cc:2276-2307) / issue #816: FEC that the packet sender
+// produces for a sent packet (PacketSender::FetchFec) is enqueued inside the send loop
+// (pacing_controller.cc:523-526), so with budget left it leaves in the same ProcessPackets() call.
+SM_TEST(PacingController, FecFromThePacketSenderLeavesInTheSameProcessCall) {
+  PacingController pacer;
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(2000), DataRate::Zero());
+  Timestamp now = Timestamp::Millis(1000);
+  pacer.SetPacketSender([&](const PacedPacket& p, Timestamp t) {
+    if (p.priority == PacketPriority::kVideo) pacer.Enqueue(Pkt(100 + p.id, PacketPriority::kFec, 300, t));
+  });
+  pacer.Enqueue(Pkt(1, PacketPriority::kVideo, 300, now));
+  pacer.Enqueue(Pkt(2, PacketPriority::kVideo, 300, now));
+  now = std::max(now, pacer.NextSendTime(now));
+  std::vector<uint64_t> ids;
+  for (auto& p : pacer.Process(now)) ids.push_back(p.id);
+  const std::vector<uint64_t> want = {1, 2, 101, 102};
+  SM_EXPECT_TRUE(ids == want);
+  SM_EXPECT_EQ(pacer.QueuePackets(), 0u);
+}
+
+// #893: SetPacerConfig runs MaybeUpdateMediaRateDueToLongQueue(CurrentTime()) (pacing_controller.cc:155-166,
+// 179-197), so a new config reads the queue's average wait at the time it arrives, not at the last process
+// time. 1 s of data at 200 kbps that has waited 500 ms of a 1 s limit needs 400 kbps.
+SM_TEST(PacingController, SetPacingRatesReadsTheQueueAtTheCurrentTime) {
+  PacingControllerConfig cfg;
+  cfg.queue_time_limit = TimeDelta::Millis(1000);
+  PacingController p(cfg);
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  const Timestamp t0 = Timestamp::Millis(1000);
+  for (int i = 0; i < 250; ++i) p.Enqueue(Pkt(i, PacketPriority::kVideo, 100, t0));
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  // Without a time the queue is read at the last time the pacer saw: no wait yet, no boost.
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  SM_EXPECT_EQ(p.pacing_rate().bps(), 200000);
+  p.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero(), t0 + TimeDelta::Millis(500));
+  SM_EXPECT_NEAR(static_cast<double>(p.pacing_rate().bps()), 400000.0, 1000.0);
+  SM_EXPECT_NEAR(p.trace_state().average_queue_time.ms_f(), 500.0, 1.0);
+}

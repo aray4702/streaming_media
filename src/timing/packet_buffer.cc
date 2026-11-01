@@ -27,17 +27,16 @@ void PacketBuffer::Clear() {
   packets_.clear();
   done_.clear();
   padding_.clear();
+  received_padding_.clear();
   missing_.clear();
   newest_inserted_ = INT64_MIN;
   cleared_to_first_seq_ = false;
   highest_ = INT64_MIN;
-  first_inserted_ = INT64_MIN;
   first_seq_ = INT64_MIN;
   size_ = cfg_.start_size;
 }
 
-InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame,
-                                  bool idr) {
+InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, bool idr) {
   int64_t s = unwrapper_.Unwrap(p.seq);
   if (first_seq_ == INT64_MIN) {
     first_seq_ = s;
@@ -51,7 +50,12 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
     first_seq_ = s;
   }
-  if (!packets_.count(s) && !done_.count(s)) {
+  // InsertPacket: `buffer_[index]->seq_num() == seq_num` is a duplicate only
+  // while the packet is buffered; after its frame is handed out the slot is
+  // empty and a copy is taken again (issue #899).
+  const bool copy_after_assembly = !packets_.count(s) && done_.count(s);
+  const bool reject_copy = copy_after_assembly && cfg_.drop_copies_after_assembly;
+  if (!packets_.count(s) && !reject_copy) {
     // The packet buffer is full: grow it, and clear it at the maximum.
     while (SlotTaken(s) && size_ < cfg_.max_size) {
       size_ = std::min(cfg_.max_size, 2 * size_);
@@ -68,24 +72,27 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     ++stats_.too_old;
     return InsertResult::kTooOld;
   }
-  if (packets_.count(s) || done_.count(s)) {
+  if (packets_.count(s) || reject_copy) {
     ++stats_.duplicates;
     return InsertResult::kDuplicate;
+  }
+  if (copy_after_assembly) {
+    ++stats_.reinserted;
+    SM_EVENT(cfg_.events, now, "packet_buffer", "reinserted", 0, s);
   }
   if (highest_ != INT64_MIN && s < highest_) {
     ++stats_.reordered;
     stats_.reorder_distance.Add(static_cast<double>(highest_ - s));
   }
-  if (first_inserted_ == INT64_MIN) first_inserted_ = s;
   highest_ = std::max(highest_, s);
   ++stats_.inserted;
-  packets_.emplace(s, Entry{std::move(p), frame_start, may_continue_frame, idr, now});
+  packets_.emplace(s, Entry{std::move(p), frame_start, idr, now});
   if (cfg_.missing_packets) UpdateMissingPackets(s);
   // received_padding_.erase(begin, lower_bound(seq - buffer_.size() / 4)): padding only matters
   // near the packets being inserted.
+  received_padding_.erase(received_padding_.begin(), received_padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
   padding_.erase(padding_.begin(), padding_.lower_bound(s - static_cast<int64_t>(size_ / 4)));
-  TryAssemble(s);
-  if (cfg_.missing_packets) ReleaseHeldFrames(s + 1);
+  FindFrames(s);
   Trim();
   return InsertResult::kInserted;
 }
@@ -95,6 +102,7 @@ void PacketBuffer::ClearTo(int64_t seq) {
   ++seq;
   packets_.erase(packets_.begin(), packets_.lower_bound(seq));
   padding_.erase(padding_.begin(), padding_.lower_bound(seq));
+  received_padding_.erase(received_padding_.begin(), received_padding_.lower_bound(seq));
   missing_.erase(missing_.begin(), missing_.lower_bound(seq));
   first_seq_ = seq;
   cleared_to_first_seq_ = true;
@@ -108,47 +116,62 @@ void PacketBuffer::NotePadding(uint16_t seq) {
   highest_ = std::max(highest_, s);
   done_.insert(s);
   padding_.insert(s);
+  received_padding_.insert(s);
   ++stats_.padding;
-  if (cfg_.missing_packets) ReleaseHeldFrames(s + 1);
+  FindFrames(s + 1);
   Trim();
 }
 
-void PacketBuffer::TryAssemble(int64_t seq) {
-  const uint32_t ts = packets_.at(seq).packet.timestamp;
-  // Walk back to the frame start. A frame can open with several packets that
-  // each look like a start (H.264: the parameter sets, then the IDR slice), so
-  // the walk goes on through contiguous packets of the same timestamp and
-  // stops where the previous packet is missing, belongs to another frame, or
-  // ended its frame with the marker bit.
-  int64_t first = seq;
-  for (;;) {
-    const Entry& e = packets_.at(first);
-    if (e.packet.timestamp != ts) return;
-    auto prev = packets_.find(first - 1);
-    if (prev != packets_.end() && prev->second.packet.timestamp == ts && !prev->second.packet.marker) {
-      first = first - 1;
+// PacketBuffer::PotentialNewFrame: the packet at `seq` is buffered, and it
+// starts a frame or follows a continuous packet of the same frame.
+bool PacketBuffer::PotentialNewFrame(int64_t seq) const {
+  auto it = packets_.find(seq);
+  if (it == packets_.end()) return false;
+  if (it->second.frame_start) return true;
+  auto prev = packets_.find(seq - 1);
+  if (prev == packets_.end()) return false;
+  if (prev->second.packet.timestamp != it->second.packet.timestamp) return false;
+  return prev->second.continuous;
+}
+
+// PacketBuffer::FindFrames: walk forward from `seq` (the packet just inserted,
+// or the one after a padding packet) for as long as the packets are
+// continuous, skipping received padding, and hand out each frame whose last
+// packet is reached. The walk stops at the first packet that is missing or not
+// continuous, which includes a packet already handed out in a frame (its slot
+// is empty in libwebrtc), and at a frame the `missing_packets` rule holds.
+void PacketBuffer::FindFrames(int64_t seq) {
+  const int64_t start = seq;
+  for (size_t i = 0; i < size_; ++i) {
+    if (received_padding_.count(seq)) {
+      ++seq;
       continue;
     }
-    if (!e.frame_start) return;
-    // A start that may continue a frame (the IDR slice after its parameter
-    // sets) opens it only if the packet before is known to belong to the
-    // previous frame. If that one is missing (lost or on its way) it may be
-    // the frame's own earlier packet, so wait for it: NACK recovers it, or the
-    // keyframe request follows if it never comes. The first packet ever
-    // inserted has nothing before it, and padding or a delivered frame ahead
-    // of it settles it too.
-    if (e.may_continue_frame && prev == packets_.end() && !done_.count(first - 1) && first != first_inserted_) return;
-    break;
+    if (!PotentialNewFrame(seq)) break;
+    Entry& e = packets_.at(seq);
+    e.continuous = true;
+    if (e.packet.marker && !AssembleFrame(start, seq)) return;
+    ++seq;
   }
-  // Walk forward to the marker.
-  int64_t last = seq;
+}
+
+// The frame that ends at `last`, a continuous packet with the marker bit. For
+// H.264 without a generic descriptor FindFrames walks back as long as the
+// previous packet is buffered and has the same RTP timestamp ("we don't have a
+// frame_begin bit ... this may cause the PacketBuffer to hand out incomplete
+// frames", packet_buffer.cc): it goes past start packets (a frame can open
+// with the parameter sets, then the IDR slice) and does not look at the marker
+// bit, so two frames with one RTP timestamp go out as one. The walk stops at
+// the first missing packet, so an IDR slice whose parameter-set packet was
+// lost is handed out from there (issue #847). Returns false when the
+// `missing_packets` rule holds the frame, which ends FindFrames' walk.
+bool PacketBuffer::AssembleFrame(int64_t start, int64_t last) {
+  const uint32_t ts = packets_.at(last).packet.timestamp;
+  int64_t first = last;
   for (;;) {
-    const Entry& e = packets_.at(last);
-    if (e.packet.timestamp != ts) return;
-    if (e.packet.marker) break;
-    auto next = packets_.find(last + 1);
-    if (next == packets_.end()) return;
-    last = last + 1;
+    auto prev = packets_.find(first - 1);
+    if (prev == packets_.end() || prev->second.packet.timestamp != ts) break;
+    --first;
   }
   // FindFrames: an H.264 frame without an IDR slice is handed out only when
   // no sequence number at or before its first packet is missing, so a delta
@@ -159,9 +182,9 @@ void PacketBuffer::TryAssemble(int64_t seq) {
     for (int64_t i = first; i <= last; ++i) idr = idr || packets_.at(i).idr;
     if (!idr && missing_.upper_bound(first) != missing_.begin()) {
       ++stats_.frames_held;
-      SM_EVENT(cfg_.events, packets_.at(seq).arrival, "packet_buffer", "frame_held", static_cast<double>(*missing_.begin()),
-               first);
-      return;
+      SM_EVENT(cfg_.events, packets_.at(last).arrival, "packet_buffer", "frame_held",
+               static_cast<double>(*missing_.begin()), first);
+      return false;
     }
     missing_.erase(missing_.begin(), missing_.upper_bound(last));
   }
@@ -177,25 +200,12 @@ void PacketBuffer::TryAssemble(int64_t seq) {
     packets_.erase(it);
     done_.insert(i);
   }
-  // A found frame drops the padding from the packet that completed it through its last packet.
-  padding_.erase(padding_.lower_bound(seq), padding_.upper_bound(last));
+  // A found frame drops the padding from where the walk started through its last packet.
+  received_padding_.erase(received_padding_.lower_bound(start), received_padding_.upper_bound(last));
   ++stats_.frames_assembled;
   SM_EVENT(cfg_.events, f.last_arrival, "packet_buffer", "frame", static_cast<double>(last - first + 1), first);
   ready_.push_back(std::move(f));
-}
-
-// FindFrames walks forward from the packet just inserted for as long as the
-// packets are contiguous, so a packet that fills a hole also releases the
-// complete frames held behind it.
-void PacketBuffer::ReleaseHeldFrames(int64_t seq) {
-  for (int64_t n = seq; n <= highest_; ++n) {
-    auto it = packets_.find(n);
-    if (it != packets_.end()) {
-      if (it->second.packet.marker) TryAssemble(n);
-      continue;
-    }
-    if (!done_.count(n)) break;
-  }
+  return true;
 }
 
 // PacketBuffer::UpdateMissingPackets, with its kMaxPaddingAge of 1000.
@@ -223,6 +233,8 @@ void PacketBuffer::Trim() {
   while (!packets_.empty() && packets_.begin()->first <= oldest) packets_.erase(packets_.begin());
   while (!done_.empty() && *done_.begin() <= oldest) done_.erase(done_.begin());
   while (!padding_.empty() && *padding_.begin() <= oldest) padding_.erase(padding_.begin());
+  while (!received_padding_.empty() && *received_padding_.begin() <= oldest)
+    received_padding_.erase(received_padding_.begin());
 }
 
 int64_t PacketBuffer::PrecedingMediaSeq(int64_t first_seq) const {
@@ -240,6 +252,7 @@ std::vector<AssembledFrame> PacketBuffer::PopCompleteFrames() {
 void PacketBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("inserted", stats_.inserted);
   w.Counter("duplicates", stats_.duplicates);
+  w.Counter("reinserted", stats_.reinserted);
   w.Counter("too_old", stats_.too_old);
   w.Counter("padding", stats_.padding);
   w.Counter("cleared", stats_.cleared);

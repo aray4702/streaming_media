@@ -1,0 +1,13 @@
+name issue_893_overshoot_seed2
+describe issue_466_overshoot_very_low_capacity with seed 2: the receiver's key frame request and NACK go out as separate RTCP compounds, as libwebrtc (issue #893)
+# With one EnqueuePackets call per resend (seed 9) but a single compound for the 0.6 s PLI and NACK, the receiver's
+# report timer drew once where libwebrtc's draws twice: its reports moved (1.40, 2.61 s), the 2.812 s SR carried a
+# DLRR libwebrtc's doesn't (108 vs 84 B), a video packet was dropped at 4.89 s and video paused 15412 ms
+# (libwebrtc 0). With separate compounds the reverse reports keep libwebrtc's times and the forward link matches
+# libwebrtc's through 15.51 s.
+duration 40s
+encoder_overshoot 1.3
+at 0s capacity=100kbps delay=30ms queue=300ms
+seed 2
+expect video.encoder_dropped > 520
+expect video.pause_total_ms < 100

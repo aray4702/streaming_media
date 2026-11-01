@@ -1,0 +1,15 @@
+name issue_895_red_sender_report_sync
+describe issue_12_lossbwe_shallow's link: the audio SR's RTP time as libwebrtc stamps it with RED, so A/V sync delays audio as libwebrtc's does (#895)
+duration 40s
+at 0s capacity=1500kbps delay=30ms queue=20ms
+# Issue #895: with RED (the default), libwebrtc's audio sender report extrapolates the RTP timestamp at
+# kBogusRtpRateForAudioRtcp, 8 kHz, in whole ms (RTCPSender::BuildSR; RED's payload type has no registered rate).
+# Ours used 48 kHz in microseconds, so the receiver's RTP-to-NTP mapping for audio, the relative delay and
+# RtpStreamsSynchronizer's filtered diff came out 5-9 ms lower than libwebrtc's, its +15 ms audio delay steps
+# (28 s and 34 s on seed 1) never happened, and the audio cells sat ahead of libwebrtc's.
+# Seed 1: main 70 ms / 125.0 ms, fixed 100 / 155.0, libwebrtc 100 / 155.2. Seeds 1-10, jb_delay_p95: main
+# 70 80 80 80 70 80 80 70 90 90 (mean 79), fixed 100 100 100 90 90 90 90 90 90 100 (94), libwebrtc 100 100 80
+# 100 100 90 100 90 110 90 (96); mouth_to_ear_p95: main mean 134.1, fixed 149.1, libwebrtc 151.0.
+expect audio.jb_delay_p95_ms >= 90
+expect audio.mouth_to_ear_p95_ms >= 144
+expect audio.interruptions <= 3

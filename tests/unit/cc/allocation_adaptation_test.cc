@@ -1,7 +1,6 @@
 #include "sm/cc/bitrate_allocator.h"
 #include "sm/cc/frame_dropper.h"
 #include "sm/cc/outage_monitor.h"
-#include "sm/cc/video_adaptation.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -91,95 +90,6 @@ SM_TEST(FrameDropper, KeyframeRunDoesNotStallDeltaFramesForSeconds) {
   }
   // Recovers within the 3 s cap (90 frames); uncapped it takes over 150 frames.
   SM_EXPECT_LT(dropped, 90);
-}
-
-SM_TEST(VideoAdaptation, LaddersFollowPreference) {
-  DegradationConfig fr;
-  fr.preference = DegradationPreference::kMaintainFramerate;
-  DegradationController a(fr);
-  for (const auto& f : a.ladder()) SM_EXPECT_EQ(f.fps, 30.0);
-  SM_EXPECT_LT(a.ladder().back().pixels(), a.ladder().front().pixels());
-  DegradationConfig rs;
-  rs.preference = DegradationPreference::kMaintainResolution;
-  DegradationController b(rs);
-  for (const auto& f : b.ladder()) SM_EXPECT_EQ(f.width, 1280);
-  SM_EXPECT_EQ(b.ladder().back().fps, 5.0);
-  DegradationConfig bal;
-  bal.preference = DegradationPreference::kBalanced;
-  DegradationController c(bal);  // Balanced: fps first.
-  SM_EXPECT_EQ(c.ladder()[1].width, 1280);
-  SM_EXPECT_LT(c.ladder()[1].fps, 30.0);
-}
-
-// libwebrtc's camera default is MAINTAIN_FRAMERATE: BALANCED only with the
-// WebRTC-Video-BalancedDegradation trial (webrtc_video_engine.cc:2032-2064).
-SM_TEST(VideoAdaptation, DefaultPreferenceIsMaintainFramerate) {
-  SM_EXPECT_TRUE(DegradationConfig{}.preference == DegradationPreference::kMaintainFramerate);
-  DegradationController d;
-  for (const auto& f : d.ladder()) SM_EXPECT_EQ(f.fps, 30.0);
-  SM_EXPECT_LT(d.ladder().back().pixels(), d.ladder().front().pixels());
-}
-
-// Issue #643: an unknown (0) or negative input frame rate hung the frame-rate
-// ladder. libwebrtc never adapts the frame rate of such input
-// (VideoStreamAdapter::HasSufficientInputForAdaptation needs >= kMinFrameRateFps
-// for MAINTAIN_RESOLUTION) and never steps below kMinFrameRateFps (2).
-SM_TEST(VideoAdaptation, NonPositiveInputFpsBuildsLadderForEveryPreference) {
-  for (double fps : {0.0, -1.0, -30.0, 1.0}) {
-    for (auto pref : {DegradationPreference::kDisabled, DegradationPreference::kMaintainFramerate,
-                      DegradationPreference::kMaintainResolution, DegradationPreference::kBalanced}) {
-      for (double min_fps : {5.0, 0.0, -1.0}) {
-        DegradationConfig c;
-        c.input = {1280, 720, fps};
-        c.preference = pref;
-        c.min_fps = min_fps;
-        DegradationController d(c);
-        SM_EXPECT_GE(d.ladder().size(), size_t{1});
-        SM_EXPECT_LT(d.ladder().size(), size_t{64});
-        // No frame-rate step raises the input rate.
-        for (const auto& f : d.ladder()) SM_EXPECT_LE(f.fps, fps);
-        d.OnTargetBitrate(DataRate::KilobitsPerSec(50), Timestamp::Millis(0));
-        d.OnResourceOveruse();
-      }
-    }
-  }
-  // A valid input keeps libwebrtc's 2 fps floor even when min_fps is lower.
-  DegradationConfig c;
-  c.preference = DegradationPreference::kMaintainResolution;
-  c.min_fps = 0;
-  DegradationController d(c);
-  SM_EXPECT_GE(d.ladder().back().fps, 2.0);
-}
-
-SM_TEST(VideoAdaptation, BitrateDrivesFormatWithHysteresis) {
-  DegradationConfig cfg;
-  cfg.preference = DegradationPreference::kMaintainFramerate;
-  DegradationController a(cfg);
-  // 720p30 needs 1280*720*30*0.04 = 1.1 Mbps.
-  SM_EXPECT_EQ(a.OnTargetBitrate(Kbps(2000)).width, 1280);
-  int w = a.OnTargetBitrate(Kbps(500)).width;
-  SM_EXPECT_LT(w, 1280);
-  // Slightly more than the down threshold: no immediate bounce back up.
-  SM_EXPECT_EQ(a.OnTargetBitrate(Kbps(1200)).width, a.ladder()[1].width);
-  SM_EXPECT_EQ(a.OnTargetBitrate(Kbps(1700)).width, 1280);
-}
-
-SM_TEST(VideoAdaptation, CpuOveruseSignalsAndResourceCap) {
-  CpuOveruseConfig v1;
-  v1.version = 1;  // The library's own filter; the default is libwebrtc's (#579).
-  CpuOveruseDetector cpu(v1);
-  for (int i = 0; i < 100; ++i) cpu.OnFrameEncoded(TimeDelta::Millis(30), TimeDelta::Millis(33));
-  SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(5)) == CpuOveruseDetector::Signal::kNone);  // 1st check.
-  SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(10)) == CpuOveruseDetector::Signal::kOveruse);
-  for (int i = 0; i < 100; ++i) cpu.OnFrameEncoded(TimeDelta::Millis(8), TimeDelta::Millis(33));
-  SM_EXPECT_TRUE(cpu.Check(Timestamp::Seconds(15)) == CpuOveruseDetector::Signal::kUnderuse);
-  DegradationController d;
-  d.OnTargetBitrate(Kbps(5000));
-  auto before = d.current();
-  d.OnResourceOveruse();
-  SM_EXPECT_FALSE(d.current() == before);
-  d.OnResourceUnderuse();
-  SM_EXPECT_TRUE(d.current() == before);
 }
 
 SM_TEST(Outage, StatesAndRecoveryActions) {

@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "sm/core/audio_frame_operations.h"
+
 namespace sm::rtp {
 
 std::vector<size_t> SplitEvenly(size_t bytes, size_t max_payload) {
@@ -41,13 +43,22 @@ constexpr size_t kMaxPaddingLength = 255;
 constexpr size_t kRtxHeaderSize = 2;
 // rtp_video_header.h / video_codec_constants: every video payload type runs at 90 kHz.
 constexpr int kVideoPayloadTypeFrequency = 90000;
+// RTPSender::BuildPaddingPacket (rtp_sender.cc:497-502): padding on the RTX SSRC takes
+// rtx_payload_type_map_.begin()->second, the RTX payload type of the lowest associated one. The
+// map holds the media type and, with RED configured, RED's (ConfigureRtx, call/rtp_video_sender.cc:
+// 245-252).
+uint8_t RtxPaddingPayloadType(const RtpSenderConfig& c, const loss::RtxConfig& r) {
+  return r.red_payload_type && *r.red_payload_type < c.payload_type ? r.rtx_red_payload_type : c.rtx_payload_type;
+}
 }  // namespace
 
 RtpSender::RtpSender(RtpSenderConfig cfg)
     : cfg_(ClampPacketSize(std::move(cfg))),
       rtx_(MakeRtxConfig(cfg_)),
+      rtx_padding_payload_type_(RtxPaddingPayloadType(cfg_, MakeRtxConfig(cfg_))),
       red_(std::max(1, cfg_.red_distance)),
       next_seq_(cfg_.initial_seq),
+      next_rtx_seq_(cfg_.rtx.initial_seq),
       mid_remaining_(cfg_.mid_packets) {
   if (cfg_.fec) {
     ulpfec_ = std::make_unique<loss::ulpfec::UlpfecGenerator>(cfg_.ulpfec.red_payload_type,
@@ -79,14 +90,23 @@ void RtpSender::Queue(RtpPacket p, PacketKind kind, cc::PacketPriority prio) {
 }
 
 void RtpSender::AssignSequenceNumber(SenderPacket& p, Timestamp now) {
-  // PacketSequencer::Sequence. RTX packets keep the number RtxSender gave them.
+  // PacketSequencer::Sequence. A packet on the RTX SSRC (a resend or padding) takes the next RTX
+  // number here, at release, as libwebrtc does (packet_sequencer.cc:71-75), so a resend or padding
+  // packet the pacer never sends uses no number (issue #854).
+  if (p.kind == PacketKind::kRtx) {
+    p.packet.seq = next_rtx_seq_++;
+    return;
+  }
   if (p.kind == PacketKind::kPadding) {
     if (p.packet.ssrc == cfg_.ssrc) {
       // PopulatePaddingFields on the media SSRC: the last media packet's timestamp and payload type.
       p.packet.timestamp = sequencer_last_rtp_timestamp_;
       p.packet.payload_type = static_cast<uint8_t>(sequencer_last_payload_type_);
       p.packet.seq = next_seq_++;
-    } else if (p.packet.payload.empty()) {
+      return;
+    }
+    p.packet.seq = next_rtx_seq_++;
+    if (p.packet.payload.empty()) {
       // On the RTX SSRC, empty padding only (payload padding keeps the resent packet's timestamp).
       // libwebrtc advances the timestamp once the clock is past zero, which in a call means once a
       // media packet has gone out; here time can start at 0, so that is what is checked.
@@ -129,6 +149,17 @@ bool RtpSender::SupportsRtxPayloadPadding() const {
 
 void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
   send_rates_[static_cast<size_t>(p.kind)].Update(static_cast<int64_t>(p.packet.size()), now.ms());
+  // UpdateRtpStats then reads GetSendRates(now) when the module has a bitrate observer, which only the
+  // video stream sets (its SendStatisticsProxy; rtp_sender_egress.cc:495-498, rtp_video_sender.cc:307), and
+  // RateStatistics::Rate erases each tracker's expired buckets. A type that paused for over a window then
+  // restarts its window when it resumes (issue #895).
+  if (cfg_.video) SendRate(now);
+  // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:332-336, 467-493): every packet sent on
+  // the media or the RTX SSRC (media, retransmission, FEC, padding) adds one packet and its payload
+  // octets (RtpPacketCounter: padding is counted apart) to `transmitted`, which the SR reports
+  // (ModuleRtpRtcpImpl2::GetFeedbackState, rtp_rtcp_impl2.cc:251-254).
+  sr_packets_ += 1;
+  sr_octets_ += static_cast<uint32_t>(p.packet.payload.size());
   if (ulpfec_ && p.kind == PacketKind::kVideo) {
     // RtpSenderEgress::SendPacket: the media packet without its RED header (media PT
     // restored), then the FEC that it completes.
@@ -156,8 +187,6 @@ void RtpSender::OnPacketReleased(const SenderPacket& p, Timestamp now) {
 void RtpSender::StoreAndQueueMedia(RtpPacket p, Timestamp now, bool keyframe, bool first) {
   ++stats_.media_packets;
   stats_.media_payload_bytes += static_cast<int64_t>(p.payload.size());
-  sr_packets_ += 1;
-  sr_octets_ += static_cast<uint32_t>(p.payload.size());
   last_rtp_timestamp_ = p.timestamp;
   last_media_time_ = now;
   Queue(std::move(p), cfg_.video ? PacketKind::kVideo : PacketKind::kAudio,
@@ -187,6 +216,12 @@ void RtpSender::AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted) 
     }
   }
   previous_frame_muted_ = muted;
+}
+
+void RtpSender::ProcessAudioCapture(std::span<int16_t> frame, size_t num_channels, bool muted) {
+  // channel_send.cc:909-911: AudioFrameOperations::Mute with the previous frame's state, before the level.
+  dsp::MuteAudioFrame(frame, num_channels, previous_frame_muted_, muted);
+  AnalyzeAudioCapture(frame, muted);
 }
 
 void RtpSender::SendAudio(std::span<const uint8_t> frame, uint32_t rtp_timestamp, bool marker, Timestamp now,
@@ -373,8 +408,7 @@ SenderPacket RtpSender::MakePadding(size_t total_bytes, uint32_t rtp_timestamp, 
   p.timestamp = rtp_timestamp;
   if (cfg_.rtx_ssrc) {
     p.ssrc = *cfg_.rtx_ssrc;
-    p.payload_type = cfg_.rtx_payload_type;
-    p.seq = rtx_.AllocateSeq();
+    p.payload_type = rtx_padding_payload_type_;
   } else {
     p.ssrc = cfg_.ssrc;
     p.payload_type = cfg_.payload_type;
@@ -427,8 +461,7 @@ std::vector<SenderPacket> RtpSender::GeneratePadding(size_t target_bytes, Timest
     RtpPacket p;
     if (rtx) {
       p.ssrc = *cfg_.rtx_ssrc;
-      p.payload_type = cfg_.rtx_payload_type;
-      p.seq = rtx_.AllocateSeq();
+      p.payload_type = rtx_padding_payload_type_;
     } else {
       p.ssrc = cfg_.ssrc;
     }
@@ -520,15 +553,21 @@ DataRate RtpSender::SendRate(Timestamp now) const {
   return DataRate::BitsPerSec(bps);
 }
 
-RtcpSenderState RtpSender::SenderState(Timestamp now) const {
+RtcpSenderState RtpSender::SenderState(Timestamp now, bool read_send_rates) const {
   RtcpSenderState s;
-  s.send_bitrate = SendRate(now);
+  if (read_send_rates) last_send_rate_ = SendRate(now);
+  s.send_bitrate = last_send_rate_;
   s.ssrc = cfg_.ssrc;
   s.packet_count = sr_packets_;
   s.octet_count = sr_octets_;
   s.rtp_timestamp = last_rtp_timestamp_;
   s.reference_time = last_media_time_.IsFinite() ? last_media_time_ : Timestamp::Millis(0);
-  s.clock_rate = cfg_.clock_rate;
+  // RTCPSender::BuildSR reads rtp_clock_rates_khz_[last_payload_type_], the rate registered for the payload
+  // type of the last frame (OnSendingRtpFrame). ChannelSend::SetEncoder registers only the codec's payload type
+  // (channel_send.cc:645), so with RED, whose payload type every audio frame carries, there is no rate and the
+  // report falls back to kBogusRtpRateForAudioRtcp, 8 kHz (rtcp_sender.cc:355-360, rtp_rtcp_defines.h:51).
+  // RtpVideoSender registers the video payload type at 90 kHz, the same as the fallback (issue #895).
+  s.clock_rate = !cfg_.video && cfg_.red_payload_type ? kBogusRtpRateForAudioRtcp : cfg_.clock_rate;
   return s;
 }
 

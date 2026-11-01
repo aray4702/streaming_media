@@ -338,6 +338,76 @@ void EngineToWebrtc() {
     ok = ok && sr.sender_ssrc() == 0x3333 && sr.sender_packet_count() == 77 && sr.sender_octet_count() == 9000 &&
          sr.rtp_timestamp() == 5000u + 500u * 90u && sr.report_blocks().size() == 1;
     Check(ok, "report compound: SR with counters and a block");
+    // RTCPSender::PrepareReport adds SDES to every SR, with an empty CNAME if none was set
+    // (rtcp_sender.cc:713, issue #820).
+    webrtc::rtcp::Sdes sdes;
+    ok = hs.size() == 2 && sdes.Parse(hs[1]) && sdes.chunks().size() == 1 && sdes.chunks()[0].ssrc == 0x3333 &&
+         sdes.chunks()[0].cname.empty();
+    Check(ok, "report compound: SR + SDES with an empty CNAME");
+  }
+  {
+    // The RR of a receive-only rtp::Session: libwebrtc's video receive module has no CNAME
+    // (CreateRtpRtcpModule), so its RR goes out without SDES (issue #820).
+    sm::rtp::RtcpConfig c;
+    c.local_ssrc = 0x1111;
+    c.cname = "engine@example";
+    c.cname_in_receiver_report = false;
+    c.first_report_delay = sm::TimeDelta::Millis(10);
+    sm::rtp::RtcpEngine e(c);
+    e.AddReceiveStatistics(&stats);
+    e.Process(sm::Timestamp::Millis(0));
+    auto out = e.Process(sm::Timestamp::Millis(10));
+    bool ok = out.size() == 1;
+    auto hs = ok ? WebrtcWalk(out[0].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
+    webrtc::rtcp::ReceiverReport rr;
+    ok = ok && hs.size() == 1 && rr.Parse(hs[0]) && rr.sender_ssrc() == 0x1111 && rr.report_blocks().size() == 1;
+    Check(ok, "report compound: receive-only RR without SDES");
+  }
+  {
+    // A BYE rides with the full report and goes last, as RTCPSender's (rtcp_sender.cc:525-530,
+    // 631-650): the local SSRC, no CSRCs and no reason (issue #820).
+    sm::rtp::RtcpConfig c;
+    c.local_ssrc = 0x1111;
+    c.cname = "engine@example";
+    c.first_report_delay = sm::TimeDelta::Millis(500);
+    sm::rtp::RtcpEngine e(c);
+    e.AddReceiveStatistics(&stats);
+    e.Process(sm::Timestamp::Millis(0));
+    std::vector<uint32_t> ssrcs = {0x1111};
+    e.QueueBye(ssrcs);
+    e.QueuePli(0x2000);
+    auto out = e.Process(sm::Timestamp::Millis(1));
+    bool ok = out.size() == 1;
+    auto hs = ok ? WebrtcWalk(out[0].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
+    webrtc::rtcp::ReceiverReport rr;
+    webrtc::rtcp::Sdes sdes;
+    webrtc::rtcp::Pli pli;
+    webrtc::rtcp::Bye bye;
+    ok = ok && hs.size() == 4 && rr.Parse(hs[0]) && rr.report_blocks().size() == 1 && sdes.Parse(hs[1]) &&
+         pli.Parse(hs[2]) && bye.Parse(hs[3]) && bye.sender_ssrc() == 0x1111 && bye.csrcs().empty() &&
+         bye.reason().empty();
+    Check(ok, "BYE compound: RR + SDES + PLI + BYE last");
+  }
+  {
+    // Each FIR carries the next request sequence number, which libwebrtc's receiver needs to tell a new
+    // request from a repeat (RTCPSender::BuildFIR, rtcp_sender.cc:405-414; RTCPReceiver::HandleFir).
+    sm::rtp::RtcpConfig c;
+    c.local_ssrc = 0x4444;
+    sm::rtp::RtcpEngine e(c);
+    e.Process(sm::Timestamp::Millis(0));
+    std::vector<uint8_t> seq;
+    for (int i = 1; i <= 2; ++i) {
+      e.QueueFir(0x5555);
+      auto out = e.Process(sm::Timestamp::Millis(i));
+      auto hs = out.size() == 1 ? WebrtcWalk(out[0].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
+      for (const auto& h : hs) {
+        webrtc::rtcp::Fir fir;
+        if (h.type() == 206 && h.fmt() == 4 &&
+            fir.Parse(h) && fir.requests().size() == 1 && fir.requests()[0].ssrc == 0x5555)
+          seq.push_back(fir.requests()[0].seq_nr);
+      }
+    }
+    Check(seq.size() == 2 && static_cast<uint8_t>(seq[0] + 1) == seq[1], "FIR: consecutive requests, next sequence number");
   }
   {
     sm::rtp::RtcpConfig c;
@@ -354,23 +424,29 @@ void EngineToWebrtc() {
     std::vector<uint32_t> ssrcs = {0x5555};
     e.QueueRemb(sm::DataRate::KilobitsPerSec(1200), ssrcs);
     auto out = e.Process(sm::Timestamp::Millis(1));
-    bool ok = out.size() == 1;
-    auto hs = ok ? WebrtcWalk(out[0].bytes) : std::vector<webrtc::rtcp::CommonHeader>{};
-    ok = ok && hs.size() == 6;
-    webrtc::rtcp::ReceiverReport lead;
+    // One datagram per RTCPSender call (issues #860, #893): SendRTCP's compounds for the NACK, the PLI and
+    // the FIR, each behind its report, then transport-cc and REMB, each a SendCombinedRtcpPacket datagram
+    // behind an empty RR.
+    bool ok = out.size() == 5;
+    std::vector<std::vector<webrtc::rtcp::CommonHeader>> hs;
+    for (size_t i = 0; ok && i < out.size(); ++i) hs.push_back(WebrtcWalk(out[i].bytes));
+    for (size_t i = 0; ok && i < hs.size(); ++i) ok = hs[i].size() == 2;
+    webrtc::rtcp::ReceiverReport lead[5];
+    for (size_t i = 0; ok && i < 5; ++i) {
+      ok = lead[i].Parse(hs[i][0]) && lead[i].sender_ssrc() == 0x4444 && lead[i].report_blocks().empty();
+    }
     webrtc::rtcp::Nack nack;
     webrtc::rtcp::Pli pli;
     webrtc::rtcp::Fir fir;
     webrtc::rtcp::TransportFeedback tcc;
     webrtc::rtcp::Remb remb;
-    ok = ok && lead.Parse(hs[0]) && lead.sender_ssrc() == 0x4444 && lead.report_blocks().empty() &&
-         nack.Parse(hs[1]) && nack.packet_ids() == std::vector<uint16_t>(seqs) && pli.Parse(hs[2]) &&
-         pli.media_ssrc() == 0x5555 && fir.Parse(hs[3]) && fir.requests().size() == 1 &&
-         fir.requests()[0].ssrc == 0x5555 && tcc.Parse(hs[4]) && tcc.sender_ssrc() == 0x4444 &&
-         tcc.media_ssrc() == 0x5555 && remb.Parse(hs[5]) && remb.sender_ssrc() == 0x4444 &&
+    ok = ok && nack.Parse(hs[0][1]) && nack.packet_ids() == std::vector<uint16_t>(seqs) && pli.Parse(hs[1][1]) &&
+         pli.media_ssrc() == 0x5555 && fir.Parse(hs[2][1]) && fir.requests().size() == 1 &&
+         fir.requests()[0].ssrc == 0x5555 && tcc.Parse(hs[3][1]) && tcc.sender_ssrc() == 0x4444 &&
+         tcc.media_ssrc() == 0x5555 && remb.Parse(hs[4][1]) && remb.sender_ssrc() == 0x4444 &&
          remb.ssrcs() == std::vector<uint32_t>{0x5555} && remb.bitrate_bps() > 1100000 &&
          remb.bitrate_bps() < 1300000;
-    Check(ok, "feedback compound: RR + NACK + PLI + FIR + transport-cc + REMB");
+    Check(ok, "feedback datagrams: RR + NACK, RR + PLI, RR + FIR, RR + transport-cc, RR + REMB");
   }
 }
 
@@ -409,6 +485,24 @@ void WebrtcToEngine() {
             in.nacks[0].seqs == kNackSeqs && in.keyframe_requests.size() == 1 &&
             in.keyframe_requests[0] == 0x7777 && e.stats().malformed == 0;
   Check(ok, "compound RR + SDES + NACK + PLI");
+  {
+    // RTCPSender's SR with an empty CNAME and its BYE (rtcp_sender.cc:713, 525-530; issue #820).
+    webrtc::rtcp::SenderReport sr;
+    sr.SetSenderSsrc(0x6666);
+    webrtc::rtcp::Sdes empty;
+    empty.AddCName(0x6666, "");
+    webrtc::rtcp::Bye bye;
+    bye.SetSenderSsrc(0x6666);
+    Bytes d;
+    for (const Bytes& part : {WebrtcBuild(sr), WebrtcBuild(empty), WebrtcBuild(bye)}) d.insert(d.end(), part.begin(), part.end());
+    sm::rtp::RtcpEngine e2;
+    auto in2 = e2.OnRtcp(d, sm::Timestamp::Millis(1000));
+    bool ok2 = in2.valid && in2.sdes.size() == 1 && in2.sdes[0].ssrc == 0x6666 && in2.sdes[0].items.size() == 1 &&
+               in2.sdes[0].items[0].type == sm::rtp::kSdesCname && in2.sdes[0].items[0].text.empty() &&
+               in2.byes.size() == 1 && in2.byes[0].ssrcs == std::vector<uint32_t>{0x6666} &&
+               in2.byes[0].reason.empty() && e2.stats().malformed == 0;
+    Check(ok2, "compound SR + SDES (empty CNAME) + BYE");
+  }
 }
 
 // Packets made by rtp::RtpSender and released by rtp::SendSideController are

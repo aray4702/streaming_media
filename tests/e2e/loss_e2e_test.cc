@@ -94,20 +94,6 @@ SM_TEST(E2E_Red, HalvesAudioLossAndMore) {
   SM_EXPECT_NEAR(d1.overhead, 1.0, 0.05);
 }
 
-SM_TEST(E2E_Plc, SpeechOverLossyLink) {
-  sim::LinkConfig cfg;
-  cfg.loss_rate = 0.10;
-  auto r = RunPlcSim(cfg, 20.0, 11);
-  SM_RECORD("plc_loss", r.loss);
-  SM_RECORD("plc_snr_db", r.snr_plc_db);
-  SM_RECORD("zero_fill_snr_db", r.snr_zero_db);
-  SM_RECORD("plc_lost_frames_snr_db", r.lost_snr_plc_db);
-  SM_RECORD("plc_lost_level_ratio", r.lost_level_ratio);
-  SM_EXPECT_GT(r.snr_plc_db, r.snr_zero_db + 1.0);
-  SM_EXPECT_GT(r.lost_snr_plc_db, 1.0);
-  SM_EXPECT_GT(r.lost_level_ratio, 0.6);
-}
-
 SM_TEST(E2E_Keyframe, RecoversFromUnrepairableLoss) {
   FrameSimParams p;
   p.frame_loss = 0.02;

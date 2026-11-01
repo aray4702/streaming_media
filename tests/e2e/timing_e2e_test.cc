@@ -1,4 +1,7 @@
 // Section 4 end-to-end tests.
+#include <map>
+#include <optional>
+
 #include "timing_sims.h"
 #include "sm_test.h"
 
@@ -6,15 +9,28 @@ using namespace sm;
 using namespace sm::e2e;
 using namespace sm::timing;
 
-SM_TEST(E2E_PacketBuffer, ReorderedDuplicatedStreamAssemblesEveryFrameOnce) {
+// F4.1 acceptance (3), libwebrtc's behaviour (issue #899): over a reordering,
+// duplicating link every frame reaches the frame buffer intact and is decoded
+// once. A copy that arrives while its packet is buffered is a duplicate; one
+// that arrives after the frame was handed out is taken again (the slot is
+// empty, packet_buffer.cc InsertPacket), so a one-packet frame can be
+// assembled twice, and the frame buffer drops the repeat as
+// FrameBuffer::InsertFrame does (already inserted, or at or below the last
+// decoded id). Frames are decoded in order, 60 ms after they are complete (a
+// jitter-buffer delay, so a late copy can still land before the decode), and
+// each decode calls ClearTo with the frame's last packet, as
+// RtpVideoStreamReceiver2::FrameDecoded does; a copy behind it is then old.
+SM_TEST(E2E_PacketBuffer, ReorderedDuplicatedStreamDecodesEveryFrameOnce) {
   sim::LinkConfig lc;
   lc.jitter_stddev = TimeDelta::Millis(8);
   lc.duplicate_rate = 0.03;
   sim::NetworkLink<std::pair<RtpPacket, bool>> link(lc, 3);
   PacketBuffer pb;
   uint16_t seq = 60000;  // Crosses the 16-bit wrap during the run.
-  const int frames = 1500, per = 6;
+  const int frames = 1500;
+  auto packets_of = [](int f) { return f % 3 == 0 ? 1 : 6; };  // One-packet frames too.
   for (int f = 0; f < frames; ++f) {
+    const int per = packets_of(f);
     for (int i = 0; i < per; ++i) {
       RtpPacket p;
       p.seq = seq++;
@@ -24,23 +40,57 @@ SM_TEST(E2E_PacketBuffer, ReorderedDuplicatedStreamAssemblesEveryFrameOnce) {
       link.Send(Timestamp::Millis(f * 33 + i), {p, i == 0}, DataSize::Bytes(1000));
     }
   }
-  std::vector<int> seen(frames, 0);
+  std::vector<int> assembled(frames, 0), decoded(frames, 0);
+  struct Buffered {
+    int64_t id;  // The frame's last sequence number.
+    Timestamp complete;
+  };
+  std::map<int, Buffered> frame_buffer;  // By frame index.
+  std::optional<int64_t> last_decoded_id;
+  int next = 0;  // The next frame to decode, in order.
   link.ReceiveEach(Timestamp::Seconds(1000), [&](std::pair<RtpPacket, bool> pk, Timestamp at) {
     pb.Insert(pk.first, pk.second, at);
     for (auto& fr : pb.PopCompleteFrames()) {
-      int f = static_cast<int>(fr.timestamp / 3000);
-      ++seen[static_cast<size_t>(f)];
-      for (int i = 0; i < per; ++i) SM_EXPECT_EQ(fr.packets[static_cast<size_t>(i)].payload[1], i);
+      const int f = static_cast<int>(fr.timestamp / 3000);
+      ++assembled[static_cast<size_t>(f)];
+      SM_ASSERT_EQ(static_cast<int>(fr.packets.size()), packets_of(f));
+      for (int i = 0; i < packets_of(f); ++i) SM_EXPECT_EQ(fr.packets[static_cast<size_t>(i)].payload[1], i);
+      // FrameBuffer::InsertFrame: at or below the last decoded id, or already inserted.
+      if (last_decoded_id && fr.last_seq <= *last_decoded_id) continue;
+      frame_buffer.emplace(f, Buffered{fr.last_seq, at});
+    }
+    for (auto it = frame_buffer.find(next); it != frame_buffer.end() && it->second.complete + TimeDelta::Millis(60) <= at;
+         it = frame_buffer.find(next)) {
+      ++decoded[static_cast<size_t>(next)];
+      last_decoded_id = it->second.id;
+      pb.ClearTo(it->second.id);
+      frame_buffer.erase(it);
+      ++next;
     }
   });
-  int once = 0;
-  for (int c : seen) once += c == 1;
-  SM_RECORD("frames_assembled_once_ratio", static_cast<double>(once) / frames);
+  for (auto it = frame_buffer.find(next); it != frame_buffer.end(); it = frame_buffer.find(next)) {
+    ++decoded[static_cast<size_t>(next)];
+    frame_buffer.erase(it);
+    ++next;
+  }
+  int once = 0, twice = 0;
+  for (int f = 0; f < frames; ++f) {
+    once += decoded[static_cast<size_t>(f)] == 1;
+    twice += assembled[static_cast<size_t>(f)] > 1;
+  }
+  SM_RECORD("frames_decoded_once_ratio", static_cast<double>(once) / frames);
+  SM_RECORD("frames_assembled_twice", twice);
   SM_RECORD("reordered_packets", pb.stats().reordered);
   SM_RECORD("duplicates_dropped", pb.stats().duplicates);
+  SM_RECORD("copies_reinserted", pb.stats().reinserted);
+  SM_RECORD("copies_too_old", pb.stats().too_old);
   SM_EXPECT_EQ(once, frames);
+  SM_EXPECT_GT(twice, 0);
+  SM_EXPECT_EQ(pb.stats().cleared, 0u);
   SM_EXPECT_GT(pb.stats().reordered, 100u);
-  SM_EXPECT_EQ(pb.stats().duplicates, link.stats().duplicated);
+  // Every copy the link made is a duplicate of a buffered packet, taken again, or behind ClearTo.
+  SM_EXPECT_EQ(pb.stats().duplicates + pb.stats().reinserted + pb.stats().too_old, link.stats().duplicated);
+  SM_EXPECT_GT(pb.stats().reinserted, 0u);
 }
 
 SM_TEST(E2E_RtcpStats, MeasuresRttLossAndJitter) {
@@ -149,6 +199,27 @@ SM_TEST(E2E_AudioJitterBuffer, AdaptiveBeatsFixedBuffers) {
   // A small buffer without acceleration waits for every late packet, so its
   // latency ratchets up after jitter spikes and cannot return to its target.
   SM_EXPECT_GE(small.final_level_ms, 3 * 20.0);
+}
+
+// Concealment through NetEq (Expand, Merge, Normal) at 10% packet loss: every
+// lost packet is concealed, and the concealed audio keeps the speech's level
+// instead of dropping to silence.
+SM_TEST(E2E_Plc, SpeechOverLossyLink) {
+  sim::LinkConfig cfg;
+  cfg.base_delay = TimeDelta::Millis(40);
+  cfg.loss_rate = 0.10;
+  auto r = RunPlcSim(cfg, 20.0, 11);
+  SM_RECORD("plc_loss", r.loss);
+  SM_RECORD("plc_concealed", r.concealed);
+  SM_RECORD("plc_events", static_cast<double>(r.events));
+  SM_RECORD("plc_expand_level_ratio", r.expand_level_ratio);
+  SM_RECORD("plc_normal_level_ratio", r.normal_level_ratio);
+  SM_EXPECT_GT(r.loss, 0.07);
+  SM_EXPECT_GT(r.concealed, r.loss * 0.5);
+  SM_EXPECT_LT(r.concealed, r.loss * 2.0);
+  SM_EXPECT_GT(r.events, 0u);
+  SM_EXPECT_GT(r.expand_level_ratio, 0.6);
+  SM_EXPECT_GT(r.normal_level_ratio, 0.8);
 }
 
 SM_TEST(E2E_VideoJitter, EstimatorPreventsLateFrames) {

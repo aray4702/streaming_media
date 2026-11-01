@@ -62,7 +62,10 @@ namespace sm::rtp {
 
 struct SessionConfig {
   uint32_t local_ssrc = 1;  // RTCP sender SSRC of reports and feedback.
-  std::string cname;        // SDES CNAME; empty = none.
+  // SDES CNAME of the send streams, in every SR (empty: an empty CNAME). A
+  // session that sends no media reports in RRs without SDES, as libwebrtc's
+  // receive-only modules, which have no CNAME (issue #820).
+  std::string cname;
   std::string mid_audio, mid_video;  // BUNDLE MIDs (RFC 8843); empty = no MID.
   // MID is written on this many first packets of each stream, or until the
   // peer's first packet carrying a MID acknowledges it.
@@ -149,11 +152,10 @@ struct AudioStreamConfig {
   TimeDelta max_frame_length = TimeDelta::Millis(20);
   // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
   DataRate priority_bitrate = DataRate::Zero();
-  // Receive side. libwebrtc's NetEq (jitter buffer version 2) is the session default (#62),
-  // with muted state on as ChannelReceive sets it (channel_receive.cc:107, #574).
+  // Receive side: libwebrtc's NetEq (#62), with muted state on as ChannelReceive sets it
+  // (channel_receive.cc:107, #574).
   timing::AudioJitterBufferConfig jitter_buffer = [] {
     timing::AudioJitterBufferConfig c;
-    c.version = 2;
     c.enable_muted_state = true;
     return c;
   }();
@@ -328,6 +330,11 @@ class Session : public MetricsSource {
   // (RtpSender::AnalyzeAudioCapture). Does nothing unless the session maps
   // the audio-level extension.
   void AnalyzeAudioCapture(AudioSendId id, std::span<const int16_t> frame, bool muted = false);
+  // The capture frame before muting (int16, `num_channels` interleaved): the
+  // session mutes it in place with libwebrtc's fade, as ChannelSend
+  // (AudioFrameOperations::Mute, #879; RtpSender::ProcessAudioCapture), then
+  // analyzes it as above. The app then encodes the frame as it is left.
+  void ProcessAudioCapture(AudioSendId id, std::span<int16_t> frame, size_t num_channels, bool muted);
   // When the session maps the audio-level extension, the packet carries the
   // level of the capture frames analyzed since the last packet.
   void SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp now);
@@ -412,6 +419,9 @@ class Session : public MetricsSource {
   const RtpReceiver& audio_receiver(AudioRecvId id) const { return *audio_recv_[static_cast<size_t>(id.index)].receiver; }
   // The A/V synchronizer; null unless SessionConfig::av_sync and both an audio and a video receive stream exist.
   const sync::RtpStreamsSynchronizer* av_sync() const { return av_sync_.get(); }
+  // The receive streams the synchronizer reads (nullptr until both exist), for the sync trace rows (#895).
+  const sync::Syncable* sync_audio() const;
+  const sync::Syncable* sync_video() const;
   const cc::TransportFeedbackBuilder& transport_feedback() const { return tcc_; }
   void ExportMetrics(MetricsWriter& w) const override;
 
@@ -477,6 +487,8 @@ class Session : public MetricsSource {
   void HandleRtcp(std::span<const uint8_t> bytes, Timestamp now);
   void HandleRtp(std::span<const uint8_t> bytes, Timestamp now);
   void EnqueueSenderPackets(RtpSender& s, Timestamp now);
+  // Enqueues the resends held while an RTCP packet was handled (TaskQueuePacedSender's posted task).
+  void FlushResends(Timestamp now);
   // SendVideoChunks with the encoded frame's size, for FecControllerDefault::UpdateWithEncodedData.
   void SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_t>> chunks, uint32_t rtp_timestamp,
                        Timestamp now, bool keyframe, size_t encoded_size,
@@ -488,7 +500,7 @@ class Session : public MetricsSource {
   void MaybeUpdateFecRates(Timestamp now);
   // SendStatisticsProxy::GetSendFrameRate: frames sent in the last second.
   static int SentFrameRate(SendStream& v, Timestamp now);
-  void UpdateSenderState(Timestamp now);
+  void UpdateSenderState(Timestamp now, bool read_send_rates = true);
   void Emit(SessionEvent e) { events_.push_back(e); }
   RtpSender* SenderForSsrc(uint32_t ssrc);
   RtpSenderConfig SenderConfig(uint32_t ssrc, uint8_t pt, int clock, bool video, const std::string& mid) const;
@@ -535,6 +547,7 @@ class Session : public MetricsSource {
   };
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).
+  bool host_rtt_ = false;  // Whether the host has set an RTT (SetRtt).
   // Each send stream's ModuleRtpRtcpImpl2::PeriodicUpdate (kRttUpdateInterval). The streams'
   // tasks are started together, so one schedule runs them all.
   static constexpr TimeDelta kRttUpdateInterval = TimeDelta::Millis(1000);

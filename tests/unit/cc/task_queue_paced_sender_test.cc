@@ -393,3 +393,76 @@ SM_TEST(TaskQueuePacedSender, HoldBackFollowsTheBoostedRate) {
   // 3 packets at the boosted rate (1.5 ms), rounded up to the 1 ms timer.
   SM_EXPECT_LE(max_gap.us(), 2000);
 }
+
+// SetConfig, Resume and SetCongested post MaybeProcessPackets through PostMaybeProcessPackets, which posts
+// nothing while the queue is empty (task_queue_paced_sender.cc:217-225). A padding rate set on an empty
+// queue therefore waits for the next enqueued packet (or the pending timer): it does not start padding at
+// once. Issue #813: audio-only calls padded from the GoogCC update itself, 15 ms before libwebrtc.
+SM_TEST(TaskQueuePacedSender, PaddingRateOnAnEmptyQueueWaitsForTheNextPacket) {
+  Pacer pacer(Config(TimeDelta::Millis(5), 3));  // RtpTransportControllerSend's hold back.
+  UseTestPadding(pacer);
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(335), DataRate::Zero());
+  Sim sim(pacer);
+  sim.Enqueue(PacketPriority::kAudio, 1);
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Millis(10)), 1u);
+
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(335), DataRate::KilobitsPerSec(300));
+  SM_EXPECT_GT(pacer.NextSendTime(sim.now), sim.now);
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Millis(10)), 0u);
+
+  // The next packet runs a pass: it goes first, and padding follows once its debt (1234 B at 335 kbps,
+  // 29.5 ms) has drained.
+  const Timestamp enqueued = sim.now;
+  const size_t from = sim.sent.size();
+  sim.Enqueue(PacketPriority::kAudio, 1);
+  SM_EXPECT_GT(sim.Advance(TimeDelta::Millis(50)), 1u);
+  SM_ASSERT_GT(sim.sent.size(), from + 1);
+  SM_EXPECT_TRUE(sim.sent[from].p.priority == PacketPriority::kAudio);
+  SM_EXPECT_EQ(sim.sent[from].t.us(), enqueued.us());
+  SM_EXPECT_TRUE(sim.sent[from + 1].p.is_padding);
+  SM_EXPECT_GE((sim.sent[from + 1].t - enqueued).us(), 29000);
+}
+
+// With packets queued, a rate change still runs a pass at once (PostMaybeProcessPackets posts it).
+SM_TEST(TaskQueuePacedSender, RateChangeWithPacketsQueuedRunsAPass) {
+  Pacer pacer(Config(TimeDelta::Millis(5), 3));
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(100), DataRate::Zero());
+  Sim sim(pacer);
+  sim.Enqueue(PacketPriority::kVideo, 3);
+  sim.Advance(TimeDelta::Zero());
+  SM_ASSERT_GT(pacer.QueuePackets(), 0u);
+  SM_EXPECT_GT(pacer.NextSendTime(sim.now), sim.now);
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(200), DataRate::Zero());
+  SM_EXPECT_EQ(pacer.NextSendTime(sim.now).us(), sim.now.us());
+}
+
+// TaskQueuePacedSender::Pause posts nothing.
+SM_TEST(TaskQueuePacedSender, PauseRunsNoPass) {
+  Pacer pacer(Config(TimeDelta::Millis(5), 3));
+  pacer.SetPacingRates(DataRate::KilobitsPerSec(100), DataRate::Zero());
+  Sim sim(pacer);
+  sim.Enqueue(PacketPriority::kVideo, 3);
+  sim.Advance(TimeDelta::Zero());
+  const Timestamp next = pacer.NextSendTime(sim.now);
+  SM_ASSERT_GT(next, sim.now);
+  pacer.Pause();
+  SM_EXPECT_EQ(pacer.NextSendTime(sim.now).us(), next.us());
+}
+
+// MaybeProcessPackets keeps the unrounded process time in next_process_time_ and posts the task with
+// the delay rounded up to 1 ms (task_queue_paced_sender.cc:297-310). A packet enqueued between timers
+// whose send time is the one already scheduled posts no new task: it leaves when the pending task fires,
+// at the rounded time (issue #914: wifi_to_lte_handover seed 1, RTX 896 at 373.000 ms, not 372.753).
+SM_TEST(TaskQueuePacedSender, AnEnqueueBetweenTimersKeepsThePendingRoundedTimer) {
+  const DataRate kRate = DataRate::BitsPerSec(1000000);  // 1234 B every 9.872 ms.
+  Pacer pacer(Config(TimeDelta::Zero(), -1, TimeDelta::Zero()));
+  pacer.SetPacingRates(kRate, DataRate::Zero());
+  Sim sim(pacer);
+  sim.Enqueue(PacketPriority::kVideo, 2);
+  // The first leaves at once; the second is due at +9.872 ms, the task fires at +10 ms.
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Micros(9500)), 1u);
+  sim.Enqueue(PacketPriority::kVideo, 1);
+  SM_EXPECT_EQ(sim.Advance(TimeDelta::Millis(30)), 2u);
+  SM_ASSERT_EQ(sim.sent.size(), 3u);
+  SM_EXPECT_EQ((sim.sent[1].t - kStart).us(), 10000);
+}

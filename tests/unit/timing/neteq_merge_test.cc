@@ -306,7 +306,6 @@ SM_TEST(NetEqMerge, LongFutureIsCut) {
 SM_TEST(AudioJitterBufferNetEqV2, MergeAfterALostPacketIsContinuous) {
   Recorder rec;
   AudioJitterBufferConfig cfg;
-  cfg.version = 2;
   cfg.events = &rec;
   AudioJitterBuffer jb(cfg);
   const std::vector<float> tone = Voiced(16000, 200, 320 * 200);

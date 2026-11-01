@@ -96,7 +96,7 @@ struct RtpSenderConfig {
 
 struct RtpSenderStats {
   uint64_t media_packets = 0;
-  int64_t media_payload_bytes = 0;  // Payload octets of media packets, what the SR counts.
+  int64_t media_payload_bytes = 0;  // Payload octets of media packets queued.
   uint64_t frames = 0;
   uint64_t fec_packets = 0;
   int64_t fec_payload_bytes = 0;
@@ -125,6 +125,13 @@ class RtpSender : public MetricsSource {
   // mapped it feeds the stream's RmsLevel: `AnalyzeMuted` for a muted frame
   // after a muted one, `Analyze` otherwise. Without it, it does nothing.
   void AnalyzeAudioCapture(std::span<const int16_t> frame, bool muted);
+  // The same frame before muting, as ChannelSend::ProcessAndEncodeAudio
+  // (channel_send.cc:909-924): mutes it in place with libwebrtc's fade
+  // (`dsp::MuteAudioFrame`, AudioFrameOperations::Mute, #879: the last 128
+  // samples ramp down on the frame where mute starts, the first 128 ramp up
+  // on the frame where it ends, zeros in between), then analyzes it as
+  // AnalyzeAudioCapture. The app encodes the frame as this leaves it.
+  void ProcessAudioCapture(std::span<int16_t> frame, size_t num_channels, bool muted);
   // Audio: one frame becomes one packet (RED-wrapped when configured).
   // The marker bit is RTPSenderAudio::MarkerBit (rtp_sender_audio.cc:88-128,
   // 243, 262): set on the first packet of the stream, on a change of payload
@@ -188,9 +195,11 @@ class RtpSender : public MetricsSource {
   size_t SinglePacketReduction(bool keyframe, video::Rotation rotation,
                                const std::optional<sync::AbsoluteCaptureTime>& abs_capture_time) const;
 
-  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media or
-  // FEC packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
-  // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then it carries 0.
+  // The pacer is releasing `p` (SendSideController::Process, before OnPacketReleased). A media,
+  // FEC, RTX or padding packet gets its RTP sequence number here, as libwebrtc's PacketRouter does
+  // (modules/pacing/packet_router.cc:217, rtp_rtcp_impl2.cc:352); until then a media packet carries
+  // 0. A packet on the RTX SSRC takes the next RTX number, whatever RtxSender gave it, so one the
+  // pacer never releases uses none (issue #854).
   // PacketSequencer::Sequence (packet_sequencer.cc:58-80): a padding packet takes its timestamp
   // (and on the media SSRC its payload type and number) from the last media packet released, and
   // empty RTX padding advances that timestamp by the time since, at 90 ticks per ms.
@@ -270,7 +279,7 @@ class RtpSender : public MetricsSource {
   // kMinAudioPaddingLength (50)): on the RTX SSRC, where it waits for a media packet unless
   // transport-cc or abs-send-time is registered; without RTX on the media SSRC, only while
   // CanSendPaddingOnMediaSsrc(). All of them are PacketKind::kPadding at padding priority; their
-  // timestamps are set at release (AssignSequenceNumber). Nothing is queued, the caller enqueues them.
+  // timestamps and sequence numbers are set at release (AssignSequenceNumber). Nothing is queued, the caller enqueues them.
   std::vector<SenderPacket> GeneratePadding(size_t target_bytes, Timestamp now);
 
   // The peer acknowledged the MID: stop repeating it.
@@ -291,12 +300,20 @@ class RtpSender : public MetricsSource {
   std::vector<SenderPacket> TakePackets();
 
   // Counters of the media stream for the RTCP sender report, and the send rate for its interval.
-  RtcpSenderState SenderState(Timestamp now) const;
+  // The packet and octet counts are libwebrtc's `transmitted` counters of the media and RTX SSRCs:
+  // every packet released (OnPacketReleased), FEC, retransmissions and padding included, with
+  // its payload octets. With `read_send_rates` false the send rate is the one read last: libwebrtc reads
+  // GetSendRates(now) for RTCP only when it builds a packet (ModuleRtpRtcpImpl2::GetFeedbackState), and the
+  // read erases the trackers' expired buckets (issue #895).
+  RtcpSenderState SenderState(Timestamp now, bool read_send_rates = true) const;
   // RtpSenderEgress::GetSendRates(now).Sum(): one BitrateTracker (1 s window) per packet kind,
   // fed with each released packet's RTP size (rtp_sender_egress.cc:49, 129, 495).
   DataRate SendRate(Timestamp now) const;
   // RTP timestamp of the last media packet; padding carries it, like libwebrtc.
   uint32_t last_rtp_timestamp() const { return last_rtp_timestamp_; }
+  // rtp_rtcp_defines.h: the rate an audio sender report extrapolates with when the
+  // last frame's payload type has no registered rate (RED's; SenderState).
+  static constexpr int kBogusRtpRateForAudioRtcp = 8000;
   // ModuleRtpRtcpImpl2::StartTimestamp (rtp_rtcp_impl2.cc:194-196).
   uint32_t StartTimestamp() const { return cfg_.timestamp_offset; }
   const RtpSenderConfig& config() const { return cfg_; }
@@ -319,12 +336,14 @@ class RtpSender : public MetricsSource {
 
   RtpSenderConfig cfg_;
   loss::RtxSender rtx_;
+  uint8_t rtx_padding_payload_type_;
   loss::RedEncoder red_;
   std::unique_ptr<loss::ulpfec::UlpfecGenerator> ulpfec_;
   loss::ulpfec::FecProtectionParams fec_params_;
   loss::ulpfec::FecProtectionParams key_fec_params_;
   std::vector<SenderPacket> fec_out_;
   uint16_t next_seq_;
+  uint16_t next_rtx_seq_;  // PacketSequencer::rtx_sequence_number_.
   int mid_remaining_;
   video::Rotation last_rotation_ = video::Rotation::k0;  // RTPSenderVideo::last_rotation_.
   sync::AbsoluteCaptureTimeSender abs_capture_time_sender_;
@@ -347,6 +366,7 @@ class RtpSender : public MetricsSource {
   mutable std::array<RateStatistics, 5> send_rates_{RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
                                                     RateStatistics(1000, 8000.0f), RateStatistics(1000, 8000.0f),
                                                     RateStatistics(1000, 8000.0f)};
+  mutable DataRate last_send_rate_ = DataRate::Zero();  // SenderState's last read of SendRate.
   std::vector<SenderPacket> out_;
   RtpSenderStats stats_;
 };

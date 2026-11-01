@@ -317,6 +317,33 @@ SM_TEST(TransportFeedbackAdapter, HistoryKeepsSixtySecondsNotACount) {
   SM_EXPECT_EQ(res.size(), 1u);
 }
 
+// ProcessSentPacket reads the send time from rtc::SentPacket::send_time_ms (transport_feedback_adapter.cc:184):
+// the results carry whole milliseconds (#897). The history is pruned by the creation time.
+SM_TEST(TransportFeedbackAdapter, SendTimeIsWholeMilliseconds) {
+  SendHistory h;
+  h.OnPacketSent(0, Timestamp::Micros(8376189), DataSize::Bytes(1033));
+  h.OnPacketSent(1, Timestamp::Micros(8377000), DataSize::Bytes(1033));
+  auto res = h.OnFeedback(Report(0, {true, true}), Timestamp::Millis(8480));
+  SM_ASSERT_EQ(res.size(), 2u);
+  SM_EXPECT_EQ(res[0].send_time.us(), 8376000);
+  SM_EXPECT_EQ(res[1].send_time.us(), 8377000);
+}
+
+// The transport fills send_time_ms with the clock's Timestamp::ms(), rounded to the nearest millisecond with
+// halves up (UnitBase::ToFraction, DivideRoundToNearest; sm_compare's transport passes now.ms(),
+// webrtc_call.cc:996), not rounded down (#897).
+SM_TEST(TransportFeedbackAdapter, SendTimeIsRoundedToTheNearestMillisecond) {
+  SendHistory h;
+  h.OnPacketSent(0, Timestamp::Micros(8376989), DataSize::Bytes(1033));
+  h.OnPacketSent(1, Timestamp::Micros(8377499), DataSize::Bytes(1033));
+  h.OnPacketSent(2, Timestamp::Micros(8378500), DataSize::Bytes(1033));
+  auto res = h.OnFeedback(Report(0, {true, true, true}), Timestamp::Millis(8480));
+  SM_ASSERT_EQ(res.size(), 3u);
+  SM_EXPECT_EQ(res[0].send_time.us(), 8377000);
+  SM_EXPECT_EQ(res[1].send_time.us(), 8377000);
+  SM_EXPECT_EQ(res[2].send_time.us(), 8379000);
+}
+
 // RetrievePacketFeedback: every sequence number a feedback names moves the acknowledged point,
 // even one the history no longer has; in-flight data is what was sent above it. A packet reported
 // lost stays in the history, and a later feedback that reports it received still finds it.

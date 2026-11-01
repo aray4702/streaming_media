@@ -1,0 +1,13 @@
+name issue_813_audio_padding_as_libwebrtc
+describe audio_only_lossy's padding on the audio SSRC as libwebrtc M157 sends it (issue #813): the pacer starts padding at the next packet, not at the GoogCC update, and takes its rates as whole bytes per 40 ms window
+duration 30s
+video off
+at 0s capacity=500kbps delay=40ms jitter=10ms loss=10%
+# libwebrtc M157 on audio_only_lossy seed 1 (parity-data traces): 851 padding packets, 49.1 kbps, sizes p50 238 B,
+# max 303 B. main before #813: 1795 packets, 121.8 kbps. With #813 the forward-link trace is libwebrtc's packet for
+# packet (2357 packets: send time, size, kind and outcome). The 10-seed spread is wide on both stacks (ours 5-141 kbps).
+expect net.padding_media_ssrc_packets <= 900
+expect net.padding_media_ssrc_packets >= 800
+expect net.padding_kbps < 60
+expect net.padding_size_max_b <= 303
+expect audio.interruptions == 0

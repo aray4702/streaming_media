@@ -15,7 +15,12 @@ at 0s capacity=1500kbps delay=30ms queue=5ms
 # PR #696 (#577's flip, expected_packet_overhead on, as libwebrtc; program.md 0.2, needs-human): was < 14.5. Ours 14.84 on
 # seed 1 (seeds 1-10 6.1-14.8, mean 10.6; off, as main: 7.2-15.3, mean 11.2); libwebrtc seeds 1-10 11.31 12.85 10.65 11.89
 # 15.10 11.39 14.41 10.93 16.53 11.76 on main's compare-webrtc (worst 16.53, mean 12.7). Just above our seed 1, below libwebrtc's worst.
-expect net.loss_pct < 15
+# Issue #846 (NackRequester's recovered_list_: an RTX copy that arrives ahead of the newest packet is not NACKed and
+# does not move the newest; program.md 0.2, needs the sign-off): was < 15. Ours seed 1 8.18 -> 15.97 (seeds 1-10
+# 15.97 11.85 6.22 15.57 18.02 11.79 12.45 12.56 7.44 10.58, mean 12.25; main seeds 1-5 8.18 11.85 8.94 15.57 16.58);
+# libwebrtc seeds 1-10 11.31 12.85 10.65 11.89 15.10 11.39 14.41 10.93 16.53 11.76 on main's compare-webrtc (worst
+# 16.53, mean 12.7). Just above our seed 1, below libwebrtc's worst.
+expect net.loss_pct < 16.5
 # Was < 1500, then < 2500 (Owner sign-off on PR #186, 18:37 UTC, with timing v1). Timing v2 shows the late frames
 # timing v1 dropped. Owner rule on PR #216 (2026-10-20 23:11 UTC): just above our seed-1 value, never above libwebrtc's
 # worst seed. Ours seed 1 4685; libwebrtc seeds 1-10: 14858 11261 10103 10185 5748 5319 14496 15854 9140 9666 (worst 15854).

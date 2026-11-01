@@ -58,6 +58,9 @@ struct Scenario {
   TimeDelta duration = TimeDelta::Seconds(30);
   uint64_t seed = 1;
   int compare_seeds = 0;  // `compare_seeds N`: read only by sm_compare, overrides its --seeds for this scenario (0 = use --seeds).
+  // `compare off`: read only by sm_compare, which skips the scenario (#921). For a scenario that tests only this
+  // library and has no defined libwebrtc counterpart (issue_451_host_rtt_near_limit: libwebrtc overflows, #904).
+  bool compare = true;
   // `compare_clock_start S`: the libwebrtc side's simulated clock at the call's start in sm_compare, in seconds, for
   // every seed (0 = derived from the seed). RTCPSender seeds its report-interval draws from that clock (#390, #399),
   // and the test bench seeds its RTCP engines with the same time (#517).
@@ -149,7 +152,6 @@ struct Scenario {
   bool audio_receive_rtcp = true;  // `audio_receive_rtcp on|off` (default on, as libwebrtc): the receiver's audio stream reports in its own RTCP (an RR with the audio block alone every 5 s), as libwebrtc's ChannelReceive (issue #484; rtp::SessionConfig::audio_receive_rtcp). Off: the audio block rides in every compound the receiver sends. Our side only: libwebrtc's side of sm_compare always reports per stream.
   bool send_rate_stats = true;  // `send_rate_stats on|off`: the repair share off the encoder rate from libwebrtc's per-type RateStatistics (issue #224; rtp::SendSideConfig::send_rate_stats; default on since #224/#204).
   bool link_headroom = true;  // `link_headroom on|off`: the encoder bitrate adjuster's bandwidth allocation before the encoder maximum, as VideoSendStreamImpl's link_allocation (issue #326; rtp::SendSideConfig::link_headroom).
-  bool neteq_v2 = true;  // `neteq v2`: libwebrtc's NetEq (DelayManager, DecisionLogic, Expand, Merge, time stretch, Opus in-band FEC; issue #62; default v2 since #62).
 
   // `host_rtt_inf <time>`: at that time the host hands both sessions an infinite RTT
   // (Session::SetRtt(TimeDelta::PlusInfinity())), a host bug the library must absorb (issue #441).

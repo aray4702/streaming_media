@@ -197,6 +197,8 @@ class SendSideController : public MetricsSource {
   // overhead, tracked over 1 s and taken off the encoder target (issue #619).
   void OnVideoPacketized(size_t encoder_output_size, size_t packetized_payload_size, Timestamp now);
   void OnVideoEncoderReconfigured(Timestamp now);
+  // The reallocation OnVideoEncoderReconfigured queued, once the reconfiguring frame is packetized.
+  void RunPendingReconfigure(Timestamp now);
   bool video_registered() const { return video_registered_; }
 
   // The only stream that pads and probes (none when null). Not owned.
@@ -230,6 +232,9 @@ class SendSideController : public MetricsSource {
 
   // Feedback from the peer.
   void OnTransportFeedback(const cc::TransportFeedback& fb, Timestamp now);
+  // While held, OnTransportFeedback leaves its early-loss resends in the sender for the caller to
+  // enqueue once the whole RTCP packet is handled (TaskQueuePacedSender::EnqueuePackets posts a task).
+  void HoldResends(bool hold) { hold_resends_ = hold; }
   void OnRtt(TimeDelta rtt) { gcc_.OnRttUpdate(rtt); }
   void OnRemb(DataRate remb) { gcc_.OnRemb(remb); }
   // Loss between two receiver reports (GoogCC OnTransportLossReport).
@@ -265,6 +270,8 @@ class SendSideController : public MetricsSource {
   const cc::BitrateAllocatorV2& allocator() const { return allocator_; }
   cc::GccController& gcc() { return gcc_; }
   cc::Pacer& pacer() { return pacer_; }
+  // One sender's packets handed over together: one EnqueuePackets call (cc::Pacer::BeginBatch).
+  void BeginEnqueueBatch(Timestamp now) { pacer_.BeginBatch(now); }
   cc::OutageMonitor& outage() { return outage_; }
   const cc::CongestionWindowPushback& congestion_window() const { return cwnd_; }
   const SendSideStats& stats() const { return stats_; }
@@ -272,6 +279,8 @@ class SendSideController : public MetricsSource {
 
  private:
   void Apply(const cc::NetworkControlUpdate& u, Timestamp now);
+  void ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now);
+  void ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now);
   SendRates AllocatedRates() const;
   void UpdatePushback(Timestamp now, bool window);
   void PostTargetRate(Timestamp now);
@@ -281,7 +290,7 @@ class SendSideController : public MetricsSource {
   // BitrateAllocationUpdate it got (VideoStreamEncoder::OnBitrateUpdated), which
   // an AddObserver reallocation (an encoder reconfiguration) resets to 0.
   double reduce_ratio() const {
-    if (!cfg_.control_handler) return cwnd_.reduce_ratio();
+    if (!cfg_.control_handler) return pushback_reduce_ratio_;
     return allocation_configured_ ? allocator_.cwnd_reduce_ratio("video") : reported_reduce_ratio_;
   }
   void ApplyPushback(SendRates& out) const;
@@ -311,6 +320,7 @@ class SendSideController : public MetricsSource {
   SendSideConfig cfg_;
   const sync::ExtensionMap* extensions_;
   cc::GccController gcc_;
+  bool pending_reconfigure_ = false;  // OnEncoderConfigurationChanged posted, not run yet (issue #945).
   cc::Pacer pacer_;
   cc::OutageMonitor outage_;
   cc::CongestionWindowPushback cwnd_;
@@ -327,6 +337,7 @@ class SendSideController : public MetricsSource {
   cc::StreamAllocationConfig video_alloc_cfg_;
   cc::BitrateAllocatorV2::Observer video_observer_;
   bool video_registered_ = false;
+  bool hold_resends_ = false;
   bool video_activity_ = false;    // activity_
   bool video_timed_out_ = false;   // timed_out_
   bool video_disable_padding_ = true;  // disable_padding_
@@ -334,6 +345,8 @@ class SendSideController : public MetricsSource {
   cc::AllocationLimits notified_limits_;
   uint64_t video_timeouts_ = 0;
   DataRate pushback_target_;  // GoogCC last_pushback_target_rate_.
+  // MaybeTriggerOnNetworkChanged's cwnd_reduce_ratio: from pushback_target_, after the minimum clamp (issue #738).
+  double pushback_reduce_ratio_ = 0;
   DataRate window_target_;    // GoogCC last_loss_based_target_rate_: the target at the last pushback update.
   uint64_t cwnd_frame_counter_ = 0;
   uint64_t cwnd_frames_dropped_ = 0;
@@ -368,11 +381,14 @@ class SendSideController : public MetricsSource {
   std::deque<Released> repair_window_;
   int64_t repair_bytes_ = 0, video_bytes_ = 0;
   // `send_rate_stats`: RtpSenderEgress::send_rates_, one BitrateTracker per media
-  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read as of the last Process().
+  // type over `repair_window` (kBitrateStatisticsWindow, 1 s), read at `rates_time_`.
   RateStatistics video_rate_, rtx_rate_, fec_rate_;
-  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read as of the last Process().
+  // RTPSenderVideo::post_encode_overhead_bitrate_ (a 1 s BitrateTracker), read at `rates_time_`.
   RateStatistics post_encode_overhead_rate_{1000, 8000.0f};
-  Timestamp last_process_ = Timestamp::MinusInfinity();
+  // The time of the call that may reallocate (Process, a target update, a video (un)registration):
+  // libwebrtc reads the rates above at the clock's current time (ModuleRtpRtcpImpl2::GetSendRates,
+  // RTPSenderVideo::PostEncodeOverhead; issue #896).
+  Timestamp rates_time_ = Timestamp::MinusInfinity();
   DataRate target_;
   Timestamp last_gcc_ = Timestamp::MinusInfinity();
   std::deque<std::pair<Timestamp, int64_t>> window_;

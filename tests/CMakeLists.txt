@@ -5,8 +5,10 @@ sm_configure_target(sm_test_framework)
 # One executable per section; one CTest entry per suite (= per algorithm).
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
+    unit/core/audio_frame_operations_test.cc
     unit/core/core_test.cc
   SUITES
+    AudioFrameOperations
     Dsp
     EventLog
     Fft
@@ -26,7 +28,6 @@ if(SM_WITH_LOSS)
       unit/loss/fec_controller_test.cc
       unit/loss/keyframe_test.cc
       unit/loss/nack_rtx_test.cc
-      unit/loss/plc_test.cc
       unit/loss/red_test.cc
       unit/loss/rtcp_feedback_test.cc
       unit/loss/ulpfec_test.cc
@@ -34,7 +35,6 @@ if(SM_WITH_LOSS)
       FecController
       KeyframeRequest
       NackTracker
-      Plc
       Red
       RtcpFeedback
       Rtx
@@ -47,7 +47,6 @@ if(SM_WITH_LOSS)
       E2E_Fec
       E2E_Keyframe
       E2E_NackRtx
-      E2E_Plc
       E2E_Protection
       E2E_Red
   )

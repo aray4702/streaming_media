@@ -52,3 +52,14 @@ SM_TEST(TestbenchRtcpSeed, CompareClockStartParses) {
   SM_EXPECT_TRUE(!ParseScenario("compare_clock_start 0\n").scenario.has_value());
   SM_EXPECT_TRUE(!ParseScenario("compare_clock_start 1000001\n").scenario.has_value());
 }
+
+// `compare off` (#921) leaves a scenario out of sm_compare only; sm_testbench still runs it.
+SM_TEST(TestbenchRtcpSeed, CompareOffParses) {
+  SM_EXPECT_TRUE(ParseScenario("duration 2s\n").scenario->compare);  // Compared by default.
+  auto parsed = ParseScenario("name not_compared\ncompare off\nduration 2s\n");
+  SM_ASSERT_TRUE(parsed.scenario.has_value());
+  SM_EXPECT_TRUE(!parsed.scenario->compare);
+  SM_EXPECT_TRUE(ParseScenario("compare on\n").scenario->compare);
+  SM_EXPECT_TRUE(!ParseScenario("compare maybe\n").scenario.has_value());
+  SM_EXPECT_TRUE(!ParseScenario("compare\n").scenario.has_value());
+}

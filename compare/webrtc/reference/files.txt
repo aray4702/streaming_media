@@ -64,6 +64,10 @@ video/rtp_video_stream_receiver2.h
 video/rtp_video_stream_receiver2.cc
 video/frame_cadence_adapter.h
 video/frame_cadence_adapter.cc
+video/quality_convergence_controller.h
+video/quality_convergence_controller.cc
+video/quality_convergence_monitor.h
+video/quality_convergence_monitor.cc
 call/rtp_transport_controller_send.h
 call/rtp_transport_controller_send.cc
 call/rtp_video_sender.h
@@ -272,3 +276,24 @@ api/neteq/tick_timer.h
 api/neteq/tick_timer.cc
 api/neteq/neteq_controller_factory.h
 api/neteq/neteq_factory.h
+
+# Added for #879: AudioFrameOperations::Mute, the fade ChannelSend applies on mute changes.
+audio/utility/audio_frame_operations.h
+audio/utility/audio_frame_operations.cc
+audio/utility/audio_frame_operations_unittest.cc
+
+# Added for #900: the call defaults config-inventory section 3 and the parity inventory read (video receive config, media config,
+# IP_PACKET_SIZE, GoogCC process interval, BweSettings, RetransmitFlushedPackets, the default ALR experiment, Opus variable complexity).
+api/audio_codecs/opus/BUILD.gn
+api/transport/bandwidth_estimation_settings.h
+api/transport/goog_cc_factory.cc
+api/transport/goog_cc_factory.h
+call/video_receive_stream.h
+call/rtp_config.h
+media/base/media_config.h
+modules/rtp_rtcp/include/rtp_rtcp_defines.h
+rtc_base/experiments/alr_experiment.cc
+rtc_base/experiments/alr_experiment.h
+rtc_base/experiments/retransmit_flushed_packets_settings.cc
+rtc_base/experiments/retransmit_flushed_packets_settings.h
+webrtc.gni

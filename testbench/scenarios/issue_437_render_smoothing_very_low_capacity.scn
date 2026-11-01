@@ -1,5 +1,7 @@
 name issue_437_render_smoothing_very_low_capacity
 describe very_low_capacity with libwebrtc's pre-render queue (render_smoothing on): fewer, steadier frames rendered, as libwebrtc
+# 80 seeds in compare-webrtc (#739): render fps is in band there (yardstick #798).
+compare_seeds 80
 duration 40s
 at 0s capacity=100kbps delay=30ms queue=300ms
 # Issue #437: libwebrtc renders through IncomingVideoStream / VideoRenderFrames

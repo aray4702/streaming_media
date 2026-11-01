@@ -15,6 +15,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include "sm/cc/pacer_types.h"
 #include "sm/cc/pacing_controller.h"
@@ -41,6 +42,7 @@ class Pacer : public MetricsSource {
  public:
   explicit Pacer(PacerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  void SetPacingRates(DataRate pacing, DataRate padding, Timestamp now);
   void Enqueue(PacedPacket p);
   // See PacingController::SetPaddingGenerator.
   void SetPaddingGenerator(PaddingGenerator g) { pc_->SetPaddingGenerator(std::move(g)); }
@@ -52,6 +54,12 @@ class Pacer : public MetricsSource {
   // Sends everything that is due by `now`. Call every few ms or at
   // NextSendTime(). With task_queue_scheduling it runs a pass only when TaskQueuePacedSender would.
   std::vector<PacedPacket> Process(Timestamp now);
+  // A new EnqueuePackets call (TaskQueuePacedSender::EnqueuePackets, task_queue_paced_sender.cc:133-155) at
+  // `now`. With task-queue scheduling each call is its own task that ends with MaybeProcessPackets(-inf), so
+  // the pass the previous call at `now` still owes runs first, after the delayed tasks due by then: a second
+  // call sees what the first one's pass sent (issue #893). That pass sends through the packet sender, as
+  // Process does.
+  void BeginBatch(Timestamp now);
   Timestamp NextSendTime(Timestamp now) const;
   // Packets a keyframe flushed from the queue (see PacingController).
   std::vector<PacedPacket> TakeFlushed();
@@ -67,12 +75,16 @@ class Pacer : public MetricsSource {
   // PacingController::ExpectedQueueTime: the queue at the adjusted media rate.
   TimeDelta ExpectedQueueTime() const;
   size_t QueuePackets() const;
+  // PacingController::trace_state, for the pacer trace rows (issue #893).
+  PacingController::TraceState trace_state() const { return pc_->trace_state(); }
   TimeDelta OldestQueueTime(Timestamp now) const;
   const PacerStats& stats() const;
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
   std::vector<PacedPacket> ProcessScheduled(Timestamp now);
+  void MaybeProcessPackets(Timestamp now, Timestamp scheduled_process_time, std::vector<PacedPacket>& out);
+  void PostMaybeProcessPackets();
 
   bool task_queue_;
   TimeDelta hold_back_window_;
@@ -82,8 +94,17 @@ class Pacer : public MetricsSource {
   std::unique_ptr<PacingController> pc_;
   // TaskQueuePacedSender state.
   bool kick_ = true;                                          // A MaybeProcessPackets(-inf) is pending.
-  Timestamp next_process_time_ = Timestamp::MinusInfinity();  // The scheduled timer.
+  // The last scheduled process time, unrounded (TaskQueuePacedSender::next_process_time_).
+  Timestamp next_process_time_ = Timestamp::MinusInfinity();
+  // The delayed tasks in flight: when each fires (the delay rounded up to 1 ms) and the process time
+  // it carries. A task whose time is no longer next_process_time_ is retired but still processes.
+  struct Timer {
+    Timestamp fire;
+    Timestamp scheduled;
+  };
+  std::vector<Timer> timers_;  // In the order they fire.
   double packet_size_ = -1;                                   // ExpFilter(0.95) of the enqueued sizes.
+  Timestamp last_batch_ = Timestamp::MinusInfinity();         // The last BeginBatch time.
 };
 
 }  // namespace sm::cc

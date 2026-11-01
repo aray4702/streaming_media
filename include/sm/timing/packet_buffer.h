@@ -1,14 +1,29 @@
 // 4.1 Packet buffer: reordering, de-duplication and frame assembly.
 //
 // Packets are stored by unwrapped sequence number in a bounded window. After
-// each insert the buffer checks whether the packet completed a frame: a run
-// of consecutive sequence numbers with the same RTP timestamp that starts
-// with a frame-start packet and ends with the marker bit. (A frame may open
+// each insert the buffer walks forward from the packet as libwebrtc's
+// `PacketBuffer::FindFrames` does (packet_buffer.cc): through packets that are
+// continuous (a frame start, or the next packet of the same RTP timestamp
+// after a continuous one), stopping at a missing packet or one already handed
+// out, and a continuous packet with the marker bit completes a frame: the run
+// of consecutive sequence numbers with its RTP timestamp. (A frame may open
 // with several start packets, e.g. H.264 parameter sets before the IDR slice:
-// it starts at the first of the contiguous packets that share its timestamp.) Complete frames are
-// returned immediately (possibly out of order; the frame scheduler orders
-// them by decodability). Duplicates and packets older than the window are
-// rejected and counted.
+// it starts at the first of the contiguous packets that share its timestamp,
+// as libwebrtc's `PacketBuffer::FindFrames` walks back for H.264 without a
+// generic descriptor, packet_buffer.cc. A start whose predecessor of the same
+// frame is missing opens the frame there, as libwebrtc does; issue #847. The
+// walk back does not stop at a marker bit, so two frames with one RTP
+// timestamp go out as one, as in libwebrtc; issue #899.)
+// Complete frames are returned immediately (possibly out of order; the frame
+// scheduler orders them by decodability). A copy of a packet still in the
+// buffer and packets older than the window are rejected and counted. A packet
+// leaves the buffer when its frame is handed out, so a copy that arrives after
+// that is taken again until `ClearTo`, as libwebrtc's empty slot takes it
+// (`InsertPacket`'s duplicate check compares only a buffered packet's sequence
+// number): a copy of a one-packet frame is assembled a second time, and the
+// frame buffer drops the repeat (`FrameBuffer::InsertFrame`); issue #899.
+// `drop_copies_after_assembly` keeps the old filter for a receiver that has no
+// frame buffer behind the packet buffer (`timing v1`).
 #pragma once
 
 #include <cstdint>
@@ -56,12 +71,19 @@ struct PacketBufferConfig {
   // frame (issues #453, #580). The buffer does not know the codec: turn it off
   // for another codec, as rtp::Session does for streams that are not H.264.
   bool missing_packets = true;
+  // Reject a copy of a packet whose frame was already handed out, as a
+  // duplicate. Off by default, as in libwebrtc, whose slot is empty after
+  // assembly (issue #899). A deviation for `timing v1` only, whose receive
+  // path has no frame buffer to drop a frame assembled twice: RtpReceiver
+  // turns it on there.
+  bool drop_copies_after_assembly = false;
   EventSink* events = nullptr;
 };
 
 struct PacketBufferStats {
   uint64_t inserted = 0;
-  uint64_t duplicates = 0;
+  uint64_t duplicates = 0;       // A copy of a packet still in the buffer (or, with drop_copies_after_assembly, already handed out).
+  uint64_t reinserted = 0;       // A copy of a packet already handed out in a frame, taken again (its slot is empty).
   uint64_t too_old = 0;
   uint64_t cleared = 0;          // The buffer was full at max_size and was cleared.
   uint64_t padding = 0;          // Padding-only packets that held a sequence number.
@@ -74,19 +96,13 @@ struct PacketBufferStats {
 class PacketBuffer : public MetricsSource {
  public:
   explicit PacketBuffer(PacketBufferConfig cfg = {});
-  // frame_start: the packetizer's "first packet of frame" flag (e.g. VP8 S
-  // bit, H.264 FU-A start); the end is the RTP marker bit.
-  //
-  // `may_continue_frame`: the packet looks like a start but could follow
-  // earlier packets of the same frame (an H.264 IDR slice after its SPS and
-  // PPS). It then opens the frame only if the packet before it is known to
-  // belong to the previous frame; if that one is missing, the buffer waits
-  // for it (NACK recovers it) rather than hand over a frame without it.
+  // frame_start: the depacketizer's `is_first_packet_in_frame` (e.g. VP8 S
+  // bit; H.264: a parameter set, AUD, SEI, or a slice or FU-A start with
+  // first_mb_in_slice 0); the end is the RTP marker bit.
   //
   // `idr`: the packet carries an IDR slice (or its first FU-A fragment), so a
   // frame with it is an H.264 keyframe for the `missing_packets` rule.
-  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool may_continue_frame = false,
-                      bool idr = false);
+  InsertResult Insert(RtpPacket p, bool frame_start, Timestamp now, bool idr = false);
   // A padding-only packet occupied `seq`: it is received, there is nothing
   // to assemble, and it must not look like a hole (or a duplicate later).
   void NotePadding(uint16_t seq);
@@ -98,6 +114,11 @@ class PacketBuffer : public MetricsSource {
   // moves past it, and a packet behind it that arrives later is ignored
   // (`kTooOld`) rather than treated as a backward jump.
   void ClearTo(int64_t seq);
+  // `PacketBuffer::Clear`: drops every packet and the sequence-number history
+  // of the window (the unwrapper keeps its state), as on a full buffer and as
+  // RtpVideoStreamReceiver2 does when it re-anchors after a sequence-number
+  // discontinuity.
+  void Clear();
   std::vector<AssembledFrame> PopCompleteFrames();
   size_t capacity() const { return size_; }
   size_t buffered_packets() const { return packets_.size(); }
@@ -108,29 +129,34 @@ class PacketBuffer : public MetricsSource {
   struct Entry {
     RtpPacket packet;
     bool frame_start;
-    bool may_continue_frame;
     bool idr;
     Timestamp arrival;
+    bool continuous = false;  // PacketBuffer::Packet::continuous: FindFrames reached it from a frame start.
   };
-  void TryAssemble(int64_t seq);
+  bool PotentialNewFrame(int64_t seq) const;
+  void FindFrames(int64_t seq);
+  bool AssembleFrame(int64_t start, int64_t last);
   void UpdateMissingPackets(int64_t seq);
-  void ReleaseHeldFrames(int64_t seq);
   void Trim();
   bool SlotTaken(int64_t seq) const;
-  void Clear();
 
   PacketBufferConfig cfg_;
   SeqNumUnwrapper<uint16_t> unwrapper_;
   std::map<int64_t, Entry> packets_;
-  std::set<int64_t> padding_;  // Padding-only sequence numbers within the window.
-  std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
+  // Padding-only sequence numbers within the window, for PrecedingMediaSeq.
+  std::set<int64_t> padding_;
+  // PacketBuffer::received_padding_: the padding FindFrames skips. A found
+  // frame forgets it from where the walk started through its last packet, so
+  // it is kept apart from `padding_`, which stands in for the reference
+  // finder's own padding record.
+  std::set<int64_t> received_padding_;
+  std::set<int64_t> done_;  // Sequence numbers already delivered in frames (or padding).
   std::set<int64_t> missing_;  // missing_packets: not received, below newest_inserted_.
   int64_t newest_inserted_ = INT64_MIN;
   int64_t highest_ = INT64_MIN;
   size_t size_ = 0;                      // Current slot count.
   bool cleared_to_first_seq_ = false;    // ClearTo moved first_seq_; older packets are ignored.
   int64_t first_seq_ = INT64_MIN;        // Lowest sequence number seen since the last clear.
-  int64_t first_inserted_ = INT64_MIN;  // The first packet ever inserted has no predecessor to wait for.
   std::vector<AssembledFrame> ready_;
   PacketBufferStats stats_;
 };

@@ -46,11 +46,14 @@
 #include "api/video_codecs/video_encoder.h"
 #include "api/video_codecs/video_encoder_factory.h"
 #include "audio/audio_receive_stream.h"
+#include "video/stream_synchronization.h"
+#include "video/video_receive_stream2.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/audio_state.h"
 #include "call/call.h"
 #include "call/call_config.h"
+#include "call/rtp_transport_controller_send.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -64,6 +67,9 @@
 #include "modules/congestion_controller/goog_cc/goog_cc_network_control.h"
 #include "modules/congestion_controller/goog_cc/inter_arrival_delta.h"
 #include "modules/congestion_controller/goog_cc/trendline_estimator.h"
+#include "modules/pacing/pacing_controller.h"
+#include "modules/pacing/prioritized_packet_queue.h"
+#include "modules/pacing/task_queue_paced_sender.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 #include "modules/rtp_rtcp/include/recovered_packet_receiver.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
@@ -95,6 +101,36 @@ class GoogCcStatePrinter {
   static int NumDeltas(const TrendlineEstimator* t) { return t->num_of_deltas_; }
 };
 }  // namespace webrtc
+
+namespace sm::compare::pacer_access {
+// Read access to the sender's PacingController, for the pacer trace rows (issue #893). Neither
+// RtpTransportControllerSend, TaskQueuePacedSender nor PacingController declares a friend for it, so the member
+// pointers come from explicit instantiations, which are exempt from access checking ([temp.spec.general]/6).
+template <typename Tag, typename Tag::type M>
+struct Member {
+  friend typename Tag::type Get(Tag) { return M; }
+};
+#define SM_PACER_MEMBER(TagName, Class, Type, Field)                                              \
+  struct TagName {                                                                                \
+    using type = Type Class::*;                                                                   \
+    friend type Get(TagName);                                                                     \
+  };                                                                                              \
+  template struct Member<TagName, &Class::Field>;
+SM_PACER_MEMBER(PacerTag, webrtc::RtpTransportControllerSend, webrtc::TaskQueuePacedSender, pacer_)
+SM_PACER_MEMBER(ControllerTag, webrtc::TaskQueuePacedSender, webrtc::PacingController, pacing_controller_)
+SM_PACER_MEMBER(MediaDebtTag, webrtc::PacingController, webrtc::DataSize, media_debt_)
+SM_PACER_MEMBER(PacingRateTag, webrtc::PacingController, webrtc::DataRate, pacing_rate_)
+SM_PACER_MEMBER(AdjustedRateTag, webrtc::PacingController, webrtc::DataRate, adjusted_media_rate_)
+SM_PACER_MEMBER(LastProcessTag, webrtc::PacingController, webrtc::Timestamp, last_process_time_)
+SM_PACER_MEMBER(QueueTag, webrtc::PacingController, webrtc::PrioritizedPacketQueue, packet_queue_)
+#undef SM_PACER_MEMBER
+
+// The sender call's PacingController (Call::GetTransportControllerSend is RtpTransportControllerSend's).
+inline const webrtc::PacingController& Of(webrtc::Call& call) {
+  auto* transport = static_cast<webrtc::RtpTransportControllerSend*>(call.GetTransportControllerSend());
+  return (transport->*Get(PacerTag{})).*Get(ControllerTag{});
+}
+}  // namespace sm::compare::pacer_access
 
 namespace sm::compare {
 namespace {
@@ -307,27 +343,41 @@ class QualityScalerLog final : public w::LogSink {
 class DetectorTraceController final : public w::NetworkControllerInterface {
  public:
   DetectorTraceController(std::unique_ptr<w::NetworkControllerInterface> inner, const w::Environment& env,
-                          std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
-      : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
+                          std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0,
+                          std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt)
+      : inner_(std::move(inner)), env_(env), now_us_(std::move(now_us)), rows_(rows), t0_(t0), host_rtt_(host_rtt) {}
   w::NetworkControlUpdate OnNetworkAvailability(w::NetworkAvailability m) override { return inner_->OnNetworkAvailability(m); }
   w::NetworkControlUpdate OnNetworkRouteChange(w::NetworkRouteChange m) override { return inner_->OnNetworkRouteChange(m); }
-  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override { return inner_->OnProcessInterval(m); }
+  w::NetworkControlUpdate OnProcessInterval(w::ProcessInterval m) override {
+    HostRtt(m.at_time);
+    return inner_->OnProcessInterval(m);
+  }
   w::NetworkControlUpdate OnRemoteBitrateReport(w::RemoteBitrateReport m) override { return inner_->OnRemoteBitrateReport(m); }
-  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override { return inner_->OnRoundTripTimeUpdate(m); }
+  w::NetworkControlUpdate OnRoundTripTimeUpdate(w::RoundTripTimeUpdate m) override {
+    // From the scenario's `host_rtt` time on, the host's RTT stands over the one the call measured, as ours: there
+    // Session::SetRtt runs at every step and overwrites what the report blocks gave GccController::OnRttUpdate.
+    if (HostRttActive(m.receive_time)) m.round_trip_time = HostRttValue();
+    return inner_->OnRoundTripTimeUpdate(m);
+  }
   w::NetworkControlUpdate OnSentPacket(w::SentPacket m) override { return inner_->OnSentPacket(m); }
   w::NetworkControlUpdate OnReceivedPacket(w::ReceivedPacket m) override { return inner_->OnReceivedPacket(m); }
   w::NetworkControlUpdate OnStreamsConfig(w::StreamsConfig m) override { return inner_->OnStreamsConfig(m); }
   w::NetworkControlUpdate OnTargetRateConstraints(w::TargetRateConstraints m) override {
     return inner_->OnTargetRateConstraints(m);
   }
-  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override { return inner_->OnTransportLossReport(m); }
+  w::NetworkControlUpdate OnTransportLossReport(w::TransportLossReport m) override {
+    HostRtt(m.receive_time);
+    return inner_->OnTransportLossReport(m);
+  }
   w::NetworkControlUpdate OnNetworkStateEstimate(w::NetworkStateEstimate m) override {
     return inner_->OnNetworkStateEstimate(m);
   }
   bool SupportsEcnAdaptation() const override { return inner_->SupportsEcnAdaptation(); }
 
   w::NetworkControlUpdate OnTransportPacketsFeedback(w::TransportPacketsFeedback m) override {
-    if (m.packet_feedbacks.empty()) return inner_->OnTransportPacketsFeedback(std::move(m));  // GoogCC returns early.
+    HostRtt(m.feedback_time);
+    // GoogCC returns early on empty feedback; without a trace (rows_ null) only the host RTT is added.
+    if (m.packet_feedbacks.empty() || !rows_) return inner_->OnTransportPacketsFeedback(std::move(m));
     const size_t first_row = rows_->size();
     Replay(m);
     w::NetworkControlUpdate u = inner_->OnTransportPacketsFeedback(std::move(m));
@@ -341,6 +391,24 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   }
 
  private:
+  // The scenario's `host_rtt <time> <rtt>` (issue #892): our test bench hands Session::SetRtt the host's RTT at
+  // every step from that time on, and the session passes it to GoogCC (GccController::OnRttUpdate, a port of
+  // RtpTransportControllerSend::OnRttUpdate, rtp_transport_controller_send.cc:566-575). libwebrtc's call has no
+  // host input for the RTT, so the same value goes in at the controller's RTT input, as that function builds it
+  // (rounded to 1 ms, not smoothed), before every call that can move the target. GoogCC's OnRoundTripTimeUpdate
+  // only stores it and returns an empty update (goog_cc_network_control.cc:251-261), so nothing is lost by
+  // dropping that update.
+  bool HostRttActive(w::Timestamp at) const { return host_rtt_ && at >= host_rtt_->first; }
+  w::TimeDelta HostRttValue() const { return host_rtt_->second.RoundTo(w::TimeDelta::Millis(1)); }
+  void HostRtt(w::Timestamp at) {
+    if (!HostRttActive(at)) return;
+    w::RoundTripTimeUpdate u;
+    u.receive_time = at;
+    u.round_trip_time = HostRttValue();
+    u.smoothed = false;
+    (void)inner_->OnRoundTripTimeUpdate(u);  // Always empty (above).
+  }
+
   void Replay(const w::TransportPacketsFeedback& m) {
     constexpr w::TimeDelta kStreamTimeOut = w::TimeDelta::Seconds(2);   // delay_based_bwe.cc
     constexpr w::TimeDelta kSendTimeGroupLength = w::TimeDelta::Millis(5);
@@ -387,15 +455,18 @@ class DetectorTraceController final : public w::NetworkControllerInterface {
   std::unique_ptr<w::InterArrivalDelta> inter_arrival_;
   std::unique_ptr<w::TrendlineEstimator> detector_;
   w::Timestamp t0_;  // Call start, so send_ms is call-relative like ours.
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt_;  // From when, and the host's RTT.
 };
 
 class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
  public:
-  DetectorTraceFactory(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0)
-      : now_us_(std::move(now_us)), rows_(rows), t0_(t0) {}
+  DetectorTraceFactory(std::function<int64_t()> now_us, std::vector<cc::BweTraceRow>* rows, w::Timestamp t0,
+                       std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt)
+      : now_us_(std::move(now_us)), rows_(rows), t0_(t0), host_rtt_(host_rtt) {}
   std::unique_ptr<w::NetworkControllerInterface> Create(w::NetworkControllerConfig config) override {
     const w::Environment env = config.env;
-    return std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_);
+    return std::make_unique<DetectorTraceController>(inner_.Create(std::move(config)), env, now_us_, rows_, t0_,
+                                                     host_rtt_);
   }
   w::TimeDelta GetProcessInterval() const override { return inner_.GetProcessInterval(); }
 
@@ -404,6 +475,7 @@ class DetectorTraceFactory final : public w::NetworkControllerFactoryInterface {
   std::function<int64_t()> now_us_;
   std::vector<cc::BweTraceRow>* rows_;
   w::Timestamp t0_;
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt_;
 };
 
 constexpr uint32_t kAudioSsrc = 0xDEADBEEF, kVideoSsrc = 0xC0FFED, kRtxSsrc = 0xBADCAFD;
@@ -616,13 +688,17 @@ class ModelEncoder final : public w::VideoEncoder {
   std::shared_ptr<bool> alive_ = std::make_shared<bool>(true);  // For delayed encoded callbacks.
 };
 
+// Called with each frame the decoder decodes, its RTP timestamp and render time (#931's frame trace).
+using DecodeHook = std::function<void(uint32_t rtp_ts, int64_t render_time_ms)>;
+
 class ModelDecoder final : public w::VideoDecoder {
  public:
-  ModelDecoder() : buffer_(w::I420Buffer::Create(320, 180)) {
+  explicit ModelDecoder(DecodeHook hook) : hook_(std::move(hook)), buffer_(w::I420Buffer::Create(320, 180)) {
     w::I420Buffer::SetBlack(buffer_.get());
   }
   bool Configure(const Settings&) override { return true; }
   int32_t Decode(const w::EncodedImage& img, int64_t render_time_ms) override {
+    if (hook_) hook_(img.RtpTimestamp(), render_time_ms);
     w::VideoFrame f = w::VideoFrame::Builder()
                           .set_video_frame_buffer(buffer_)
                           .set_rtp_timestamp(img.RtpTimestamp())
@@ -638,6 +714,7 @@ class ModelDecoder final : public w::VideoDecoder {
   int32_t Release() override { return WEBRTC_VIDEO_CODEC_OK; }
 
  private:
+  DecodeHook hook_;
   w::scoped_refptr<w::I420Buffer> buffer_;
   w::DecodedImageCallback* cb_ = nullptr;
 };
@@ -662,10 +739,14 @@ class ModelEncoderFactory final : public w::VideoEncoderFactory {
 
 class ModelDecoderFactory final : public w::VideoDecoderFactory {
  public:
+  explicit ModelDecoderFactory(DecodeHook hook) : hook_(std::move(hook)) {}
   std::vector<w::SdpVideoFormat> GetSupportedFormats() const override { return {ModelH264Format()}; }
   std::unique_ptr<w::VideoDecoder> Create(const w::Environment&, const w::SdpVideoFormat&) override {
-    return std::make_unique<ModelDecoder>();
+    return std::make_unique<ModelDecoder>(hook_);
   }
+
+ private:
+  DecodeHook hook_;
 };
 
 // A camera that delivers frames when told to. Like libwebrtc's
@@ -804,7 +885,24 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     sender_env_factory.Set(std::make_unique<w::FieldTrials>(
         "WebRTC-Video-QualityScaling/Enabled-29,95,149,205,24,37,24,37,0.9995,0.9999,1/"));
   }
-  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, &rep.bwe_trace, t0);
+  // `host_rtt` (issues #892, #911): libwebrtc's GoogCC takes the same host RTT from the same time as ours, when
+  // its arithmetic on the RTT stays defined. Its unit operators are plain int64 adds and multiplies
+  // (`RelativeUnit::operator+`, rtc_base/units/unit_base.h:209-219), and GoogCC adds to the RTT and doubles the
+  // sum (`(rtt_ + 100 ms) * 2`, aimd_rate_control.cc:200-202; `kBweDecreaseInterval + last_round_trip_time_`,
+  // send_side_bandwidth_estimation.cc:500). The tightest is the doubled sum, defined up to
+  // rtt = INT64_MAX / 2 - 100 ms (issue #921's audit), after the RTT is rounded to 1 ms (HostRttValue, as
+  // rtp_transport_controller_send.cc:571; up to 500 us more). A larger host RTT is signed-overflow UB there. Such
+  // an RTT (issue_451_host_rtt_near_limit, which checks our overflow guards) is not given to libwebrtc: comparing
+  // against undefined behaviour measures nothing (window decision on #904). issue_921_host_rtt_under_limit feeds
+  // one 100 ms under the limit.
+  constexpr int64_t kMaxDefinedHostRttUs = std::numeric_limits<int64_t>::max() / 2 - 100'000 - 500;
+  std::optional<std::pair<w::Timestamp, w::TimeDelta>> host_rtt;
+  if (s.host_rtt && s.host_rtt->second.us() <= kMaxDefinedHostRttUs) {
+    host_rtt.emplace(t0 + w::TimeDelta::Micros(s.host_rtt->first.us()), w::TimeDelta::Micros(s.host_rtt->second.us()));
+  }
+  // Without --bwe-trace the factory only carries the host RTT: no detector replay, no rows.
+  DetectorTraceFactory detector_trace([&] { return (sim.Now() - t0).us(); }, opt.bwe_trace ? &rep.bwe_trace : nullptr,
+                                      t0, host_rtt);
   const w::Environment sender_env = sender_env_factory.Create();
   QualityScalerLog qs_log([&] { return (sim.Now() - t0).us(); });
   if (opt.video_trace && s.video && s.quality_scaling) qs_log.Start();
@@ -864,8 +962,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     c.bitrate_config.start_bitrate_bps = int_bps(s.start_rate);
     c.bitrate_config.max_bitrate_bps = int_bps(s.max_rate);
     c.audio_state = audio_state;
-    // The sender's GoogCC behind the detector trace (issue #152); the receiver's controller sends nothing that matters.
-    if (opt.bwe_trace && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
+    // The sender's GoogCC behind the detector trace (issue #152), and behind the host RTT whenever the scenario has
+    // one, traced or not (issue #892: the metric runs don't trace, and before this the host RTT reached libwebrtc
+    // only on traced runs). The receiver's controller sends nothing that matters.
+    if ((opt.bwe_trace || host_rtt) && &call_env == &sender_env) c.network_controller_factory = &detector_trace;
     return w::Call::Create(std::move(c));
   };
   run_on(sender_q.get(), [&] { send_call = make_call(sender_env, send_audio_state); });
@@ -903,7 +1003,8 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   std::unique_ptr<w::UlpfecReceiver> fec_tap;
   if (s.video && s.fec) fec_tap = std::make_unique<w::UlpfecReceiver>(kVideoSsrc, kUlpfecPt, &fec_tap_sink, sim.clock());
   std::optional<uint32_t> audio_ts0;
-  std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples, jb_delay;
+  std::vector<double> video_e2e, rtt_samples, queue_samples, jb_delay;
+  testbench::AudioNetDelayMeter audio_net_delay;
   testbench::FirstAudioMeter audio_first;  // Issue #510: as testbench/call.cc.
   sm::Timestamp video_first = sm::Timestamp::MinusInfinity();
   sm::Timestamp last_render = sm::Timestamp::MinusInfinity();
@@ -973,6 +1074,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         }
       }
     }
+    if (opt.bwe_trace && trace_seq >= 0 && link_kind != sm::sim::LinkKind::kOther) {
+      // The pacer as this packet leaves it: the transport runs inside PacingController::ProcessPackets'
+      // SendPacket, before OnPacketSent charges the packet. As SendSideController::SendPacket writes ours
+      // (issue #893).
+      namespace pa = pacer_access;
+      const w::PacingController& pc = pa::Of(*send_call);
+      cc::BweTraceRow row;
+      row.time_us = rel(now).us();
+      row.kind = cc::BweTraceRow::Kind::kPacer;
+      row.bitrate_bps = (pc.*Get(pa::AdjustedRateTag{})).bps();
+      row.loss_limit_bps = (pc.*Get(pa::PacingRateTag{})).bps();
+      row.instant_ub_bps = (pc.*Get(pa::MediaDebtTag{})).bytes();
+      row.packets = static_cast<int>(pc.QueueSizePackets());
+      row.fraction_loss = static_cast<int>(pc.QueueSizeData().bytes());
+      row.modified_trend = (pc.*Get(pa::QueueTag{})).AverageQueueTime().ms<double>();
+      const sm::sim::LinkKind k = link_kind;
+      row.threshold = k == sm::sim::LinkKind::kAudio ? 0 : k == sm::sim::LinkKind::kVideo ? 1
+                    : k == sm::sim::LinkKind::kRtx   ? 2 : k == sm::sim::LinkKind::kFec   ? 3 : 4;
+      row.send_delta_ms = trace_seq;
+      const w::Timestamp lpt = pc.*Get(pa::LastProcessTag{});
+      row.send_ms = lpt.IsFinite() ? (lpt - t0).us<double>() / 1000.0 : -1;
+      rep.bwe_trace.push_back(row);
+    }
     // The frame trace's RTP fields (issue #437), as the test bench writes them.
     int64_t trace_ts = -1;
     int32_t trace_marker = -1, trace_osn = -1, trace_key = -1, trace_header = -1, trace_rtx_room = -1;
@@ -1008,7 +1132,20 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
 
   // --- Streams ----------------------------------------------------------------
   ModelEncoderFactory encoder_factory(&model);
-  ModelDecoderFactory decoder_factory;
+  // #931's frame trace: a row per decoded frame, found again by its RTP timestamp when it renders.
+  std::unordered_map<uint32_t, size_t> frame_row;
+  ModelDecoderFactory decoder_factory([&](uint32_t rtp_ts, int64_t render_time_ms) {
+    if (!opt.video_trace) return;
+    testbench::FrameRenderRow r;
+    if (model.rtp_ts_offset) {
+      auto ft = model.frame_times.find(rtp_ts - *model.rtp_ts_offset);
+      if (ft != model.frame_times.end()) r.capture_ms = ft->second.capture.ms();
+    }
+    r.render_time_ms = rel(w::Timestamp::Millis(render_time_ms)).ms();
+    r.out_ms = rel(sim.Now()).ms();
+    frame_row[rtp_ts] = rep.frame_trace.size();
+    rep.frame_trace.push_back(r);
+  });
   auto allocator_factory = w::CreateBuiltinVideoBitrateAllocatorFactory();
   ModelSource source(s.video_width, s.video_height);
   RenderSink renderer([&](const w::VideoFrame& f) {
@@ -1021,6 +1158,11 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
       if (last_render.IsFinite())
         render_by_second[sec].max_gap_ms =
             std::max(render_by_second[sec].max_gap_ms, static_cast<double>((now - last_render).us()) / 1000.0);
+    }
+    if (auto fr = frame_row.find(f.rtp_timestamp()); fr != frame_row.end()) {
+      rep.frame_trace[fr->second].out_ms = now.ms();
+      rep.frame_trace[fr->second].rendered = 1;
+      frame_row.erase(fr);
     }
     ++frames_rendered;
     ++w_frames;
@@ -1045,6 +1187,10 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   w::VideoSendStream* video_send = nullptr;
   w::AudioReceiveStreamInterface* audio_recv = nullptr;
   w::VideoReceiveStreamInterface* video_recv = nullptr;
+  testbench::SyncTs0 sync_ts0;  // Issue #895.
+  // libwebrtc's own measurements, updated from the same GetInfo once a second as UpdateDelay updates its own, so
+  // the sync rows carry the relative delay it computes (issue #895).
+  w::StreamSynchronization::Measurements sync_audio_m, sync_video_m;
 
   run_on(sender_q.get(), [&] {
     if (s.audio) {
@@ -1179,6 +1325,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
   double cross_debt = 0;
   bool stopping = false;
   int64_t last_bwe_target_bps = -1;  // Last target written to rep.bwe_trace (issue #149).
+  std::optional<cc::BweTraceRow> last_rx_timing;  // Last receiver timing written to rep.bwe_trace (issue #893).
   // Counters at the last per-second video trace row (issue #131).
   struct VideoTracePrev {
     int64_t captured = 0, encoded = 0;
@@ -1260,14 +1407,13 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         if (first) w_good += wire;
       }
       if (r.ssrc == kAudioSsrc) {
-        if (audio_ts0) {
-          // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
-          // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
-          // at t, so the first packet holds the blocks of 0 and 10 ms and completes at 10 ms, and a packet's first
-          // sample was captured at (ts - first ts) / 48 ms. Both stacks put audio on the link at 10 ms mod 20.
-          double capture_ms = static_cast<double>(static_cast<uint32_t>(r.ts - *audio_ts0)) / 48.0;
-          audio_net_delay.push_back(static_cast<double>(at.us()) / 1000.0 - capture_ms);
-        }
+        // From the capture time of the packet's first sample, as the test bench measures (its frame k has RTP
+        // time 20k ms and leaves the encoder at 20k + 10 ms). The capture loop hands the ADM speech[t, t + 10)
+        // at t, so the first packet holds the blocks of 0 and 10 ms and completes at 10 ms, and a packet's first
+        // sample was captured at (ts - first ts) / 48 ms. Both stacks put audio on the link at 10 ms mod 20.
+        // Padding on the audio SSRC carries no audio and gives no sample (#783).
+        if (audio_ts0 && !audio_net_delay.started()) audio_net_delay.Start(*audio_ts0, kAudioRate);
+        audio_net_delay.OnArrival(r.ts, /*carries_audio=*/r.payload_len > 0, at);
       } else if (r.ssrc == kVideoSsrc && r.payload_len > 0) {
         bool fec = r.pt == kRedPt && (p.data[r.payload_off] & 0x7f) == kUlpfecPt;
         if (!fec) {
@@ -1318,6 +1464,44 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
         const int64_t complete = st.received_frame_counts.key_frames + st.received_frame_counts.delta_frames;
         rx_by_second.push_back(
             {t_ms, complete, static_cast<int64_t>(st.frames_decoded), static_cast<int64_t>(st.frames_dropped)});
+      });
+    }
+
+    // The A/V sync inputs at each whole second (issue #895), as the test bench's kSync rows: posted at this tick,
+    // so the task runs after RtpStreamsSynchronizer's repeating task due now (a timer posted earlier runs first on
+    // the receiver's queue, the Call's worker) and before this time's audio pull. Both streams' Syncable::GetInfo,
+    // which UpdateDelay reads (rtp_streams_synchronizer2.cc).
+    if (opt.bwe_trace && t % 1000 == 0 && audio_recv && video_recv) {
+      receiver_q->PostTask([&, t_ms = t] {
+        const w::Syncable* a = static_cast<const w::AudioReceiveStreamImpl*>(audio_recv);
+        const w::Syncable* v = static_cast<const w::internal::VideoReceiveStream2*>(video_recv);
+        const std::optional<w::Syncable::Info> ai = a->GetInfo();
+        const std::optional<w::Syncable::Info> vi = v->GetInfo();
+        if (!ai || !vi) return;
+        if (!sync_ts0.audio) sync_ts0.audio = ai->latest_received_capture_rtp_timestamp;
+        if (!sync_ts0.video) sync_ts0.video = vi->latest_received_capture_rtp_timestamp;
+        cc::BweTraceRow r;
+        r.time_us = static_cast<int64_t>(t_ms) * 1000;
+        r.kind = cc::BweTraceRow::Kind::kSync;
+        r.bitrate_bps = ai->current_delay.ms();
+        r.packets = static_cast<int>(vi->current_delay.ms());
+        r.loss_limit_bps = rel(ai->latest_receive_time).ms();
+        r.instant_ub_bps = rel(vi->latest_receive_time).ms();
+        r.send_ms = static_cast<uint32_t>(ai->latest_received_capture_rtp_timestamp - *sync_ts0.audio) / 48.0;
+        r.arrival_ms = static_cast<uint32_t>(vi->latest_received_capture_rtp_timestamp - *sync_ts0.video) / 90.0;
+        // rtp_streams_synchronizer2.cc UpdateMeasurements, then StreamSynchronization::ComputeRelativeDelay.
+        auto update = [](w::StreamSynchronization::Measurements& m, const w::Syncable::Info& i) {
+          m.latest_timestamp = i.latest_received_capture_rtp_timestamp;
+          m.latest_receive_time_ms = i.latest_receive_time.ms();
+          return m.rtp_to_ntp.UpdateMeasurements(i.capture_time_ntp, i.capture_time_rtp) !=
+                 w::RtpToNtpEstimator::kInvalidMeasurement;
+        };
+        int relative_ms = 0;
+        if (update(sync_audio_m, *ai) && update(sync_video_m, *vi) &&
+            w::StreamSynchronization::ComputeRelativeDelay(sync_audio_m, sync_video_m, &relative_ms)) {
+          r.modified_trend = relative_ms;
+        }
+        rep.bwe_trace.push_back(r);
       });
     }
 
@@ -1380,6 +1564,29 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     // Measurement.
     double queue_ms = testbench::QueueDelayMs(forward, fwd_state, now);
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && video_recv && t % 5 == 4) {
+      // The receiver's VCMTiming::GetTimings every 5 ms when it changed (VideoReceiveStream2::GetStats), as
+      // testbench/call.cc samples ours (issue #893).
+      const int64_t rx_time_us = (t + 1) * 1000;
+      receiver_q->PostTask([&, rx_time_us] {
+        const w::VideoReceiveStreamInterface::Stats st = video_recv->GetStats();
+        cc::BweTraceRow r;
+        r.time_us = rx_time_us;
+        r.kind = cc::BweTraceRow::Kind::kRxTiming;
+        r.bitrate_bps = st.target_delay_ms;
+        r.packets = st.jitter_buffer_ms;
+        r.fraction_loss = st.current_delay_ms;
+        r.loss_limit_bps = st.min_playout_delay_ms;
+        r.instant_ub_bps = st.render_delay_ms;
+        if (last_rx_timing && r.bitrate_bps == last_rx_timing->bitrate_bps && r.packets == last_rx_timing->packets &&
+            r.fraction_loss == last_rx_timing->fraction_loss && r.loss_limit_bps == last_rx_timing->loss_limit_bps &&
+            r.instant_ub_bps == last_rx_timing->instant_ub_bps) {
+          return;
+        }
+        rep.bwe_trace.push_back(r);
+        last_rx_timing = r;
+      });
+    }
     if (t % 100 == 99) {
       Sample smp;
       smp.t_s = static_cast<double>(t + 1) / 1000.0;
@@ -1501,7 +1708,7 @@ Report RunWebrtcCall(const Scenario& s, const testbench::RunOptions& opt) {
     m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = testbench::Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = testbench::Percentile(jb_delay, 95);
-    m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay, 95);
+    m["audio.net_delay_p95_ms"] = testbench::Percentile(audio_net_delay.samples(), 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
     m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(late_discards);

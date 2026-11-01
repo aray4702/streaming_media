@@ -133,6 +133,11 @@ class PacingController : public MetricsSource {
  public:
   explicit PacingController(PacingControllerConfig cfg = {});
   void SetPacingRates(DataRate pacing, DataRate padding);
+  // SetPacerConfig at `now`: the long-queue boost reads the queue at the current time, CurrentTime()
+  // (pacing_controller.cc:155-166, 193), not at the last process time (issue #893).
+  void SetPacingRates(DataRate pacing, DataRate padding, Timestamp now);
+  // A rate as it comes out of a PacerConfig with this time window: whole bytes per window.
+  static DataRate ThroughPacerConfig(DataRate rate, TimeDelta time_window);
   // Where padding comes from (PacketRouter::GeneratePadding): keep-alives, the first packet of
   // a probe and the padding rate ask it for packets, and the pacer accounts their real sizes.
   // Unset: fixed-size placeholders. A generator that returns nothing for the padding rate
@@ -179,6 +184,21 @@ class PacingController : public MetricsSource {
   TimeDelta OldestQueueTime(Timestamp now) const;
   // QueueSizeData() / adjusted rate.
   TimeDelta ExpectedQueueTime() const;
+  // The state a send-loop packet sees, for the test bench's pacer trace rows (issue #893): the media
+  // debt before the packet is charged, the rates, the queue and its average queue time, and the time
+  // the budget was last brought up to.
+  struct TraceState {
+    DataSize media_debt;
+    DataRate adjusted_media_rate, pacing_rate;
+    size_t queue_packets = 0;
+    DataSize queue_data;
+    TimeDelta average_queue_time;
+    Timestamp last_process_time = Timestamp::MinusInfinity();
+  };
+  TraceState trace_state() const {
+    return {media_debt_, adjusted_media_rate_, pacing_rate_, queue_.SizeInPackets(), QueueSizeData(),
+            queue_.AverageQueueTime(), last_process_time_};
+  }
   // PacingController::pacing_rate(): the adjusted rate, after the long-queue boost.
   DataRate pacing_rate() const { return adjusted_media_rate_; }
   // The rate set by SetPacingRates, before the long-queue boost.

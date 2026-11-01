@@ -3,6 +3,7 @@ sm_add_library(core SOURCES
   core/event_log.cc
   core/fft.cc
   core/rms_level.cc
+  core/audio_frame_operations.cc
   core/dsp.cc
   core/rtp_packet.cc)
 
@@ -13,7 +14,6 @@ if(SM_WITH_LOSS)
     loss/nack_tracker.cc
     loss/rtx.cc
     loss/red.cc
-    loss/plc.cc
     loss/keyframe_request.cc
     loss/rtcp_feedback.cc
     loss/ulpfec.cc
@@ -108,8 +108,10 @@ if(SM_WITH_VIDEO)
     video/codec_fallback.cc
     video/orientation.cc
     video/content_policy.cc
+    video/frame_cadence_adapter.cc
     video/frame_scheduler.cc
     video/render_frames.cc
+    video/quality_convergence.cc
     video/quality_scaler.cc
     video/video_stream_adapter.cc
     video/resource_adaptation_processor.cc)

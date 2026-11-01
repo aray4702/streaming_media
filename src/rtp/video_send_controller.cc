@@ -8,7 +8,6 @@ namespace {
 video::QualityScalerConfig ScalerConfig(const VideoSendControllerConfig& cfg) {
   video::QualityScalerConfig c;
   c.thresholds = cfg.qp_thresholds;
-  c.version = 2;
   c.events = cfg.events;
   return c;
 }
@@ -17,7 +16,6 @@ video::QualityScalerConfig ScalerConfig(const VideoSendControllerConfig& cfg) {
 // encoder: CpuOveruseOptions' defaults.
 cc::CpuOveruseConfig OveruseConfig(const VideoSendControllerConfig& cfg) {
   cc::CpuOveruseConfig c;
-  c.version = 2;
   c.events = cfg.events;
   return c;
 }
@@ -48,6 +46,8 @@ VideoSendController::VideoSendController(VideoSendControllerConfig cfg, Session&
   // EncodeUsageResource::SetTargetFrameRate: the codec's maximum frame rate
   // (MaybeUpdateTargetFrameRate; MAINTAIN_FRAMERATE sets no frame-rate limit).
   overuse_.OnTargetFramerateUpdated(static_cast<int>(cfg.fps));
+  // BitrateConstraint::OnEncoderSettingsUpdated (ConfigureEncoder).
+  stream_adapter_.SetResolutionBitrateLimits(cfg.resolution_bitrate_limits);
   // ConfigureQualityScaler and ConfigureEncodeUsageResource with the encoder's
   // default info (trusted QP thresholds, CPU overuse detection on).
   if (cfg.quality_scaling) {
@@ -252,6 +252,9 @@ EncodeDecision VideoSendController::OnCapturedFrame(const CapturedFrame& frame, 
     // time in milliseconds, as here.
     start_bitrate_ = target;
     start_bitrate_time_ = now.us();
+    // VideoStreamEncoderResourceManager::SetStartBitrate: a nonzero rate goes to
+    // BitrateConstraint and BalancedConstraint.
+    if (!target.IsZero()) stream_adapter_.OnEncoderTargetBitrateUpdated(static_cast<uint32_t>(target.bps()));
   }
   if (rates.video_allocation_updates == 0 || rates.video_allocation_updates != target_updates_seen_) {
     target_updates_seen_ = rates.video_allocation_updates;
@@ -348,6 +351,9 @@ DataRate VideoSendController::EncoderRate(const SendRates& rates, double fps, bo
 }
 
 void VideoSendController::OnTargetBitrate(DataRate target, Timestamp now) {
+  // VideoStreamEncoderResourceManager::SetTargetBitrate: a nonzero target goes to
+  // BitrateConstraint and BalancedConstraint first.
+  if (!target.IsZero()) stream_adapter_.OnEncoderTargetBitrateUpdated(static_cast<uint32_t>(target.bps()));
   // InitialFrameDropper::SetTargetBitrate: once, within the interval after the start bitrate was set, a
   // target below `factor` times it restarts the initial frame drop (the estimate fell far below the start
   // rate, so the resolution may be too large again).
@@ -376,6 +382,10 @@ std::optional<EncodeDecision> VideoSendController::MaybeEncodePendingFrame(Times
   if (start_bitrate_set_ && rates.video_allocation_updates != 0 && rates.video_allocation_updates != target_updates_seen_) {
     target_updates_seen_ = rates.video_allocation_updates;
     OnTargetBitrate(target, now);
+    // SetEncoderRates(UpdateBitrateAllocation(...)) in the same OnBitrateUpdated: the adjuster runs
+    // AdjustRateAllocation when the allocation arrives, and its overshoot detector's SetTargetRate leaks the
+    // virtual buffer at the old rate up to now, not up to the next captured frame (issue #894).
+    if (cfg_.bitrate_adjuster && cfg_.adjuster_on_update) EncoderRate(rates, input_fps(), false, false, now);
   }
   const bool paused = paused_ || rates.encoder_paused;
   const bool resumed = encoder_paused_seen_ && !paused;

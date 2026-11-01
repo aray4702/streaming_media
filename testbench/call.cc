@@ -240,8 +240,37 @@ std::string VideoTraceCsv(const std::vector<VideoTraceRow>& trace) {
   return out;
 }
 
+// One kSync row (issue #895): both receive streams' Syncable::GetInfo, as RtpStreamsSynchronizer::UpdateDelay
+// reads them, and the synchronizer's last relative delay and filtered diff. `ts0` keeps the first RTP timestamp
+// of each stream, so the rows show RTP time from the stream's start.
+void AppendSyncTraceRow(const rtp::Session& receiver, Timestamp now, TimeDelta rx0, SyncTs0& ts0,
+                        std::vector<cc::BweTraceRow>& out) {
+  const sync::Syncable* a = receiver.sync_audio();
+  const sync::Syncable* v = receiver.sync_video();
+  if (!a || !v) return;
+  const std::optional<sync::Syncable::Info> ai = a->GetInfo();
+  const std::optional<sync::Syncable::Info> vi = v->GetInfo();
+  if (!ai || !vi) return;
+  if (!ts0.audio) ts0.audio = ai->latest_received_capture_rtp_timestamp;
+  if (!ts0.video) ts0.video = vi->latest_received_capture_rtp_timestamp;
+  cc::BweTraceRow r;
+  r.time_us = now.us();
+  r.kind = cc::BweTraceRow::Kind::kSync;
+  r.bitrate_bps = ai->current_delay.ms();
+  r.packets = static_cast<int>(vi->current_delay.ms());
+  r.loss_limit_bps = (ai->latest_receive_time - rx0).ms();  // In call time (issue #897).
+  r.instant_ub_bps = (vi->latest_receive_time - rx0).ms();
+  r.send_ms = static_cast<uint32_t>(ai->latest_received_capture_rtp_timestamp - *ts0.audio) / 48.0;  // Opus, 48 kHz.
+  r.arrival_ms = static_cast<uint32_t>(vi->latest_received_capture_rtp_timestamp - *ts0.video) / 90.0;
+  if (const sync::RtpStreamsSynchronizer* sy = receiver.av_sync()) {
+    r.modified_trend = sy->last_relative_delay_ms();
+    r.threshold = sy->last_avg_diff_ms();
+  }
+  out.push_back(r);
+}
+
 std::string BweTraceCsv(const std::vector<cc::BweTraceRow>& trace) {
-  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector"};
+  static const char* const kKinds[] = {"delay_based", "loss_based", "target", "detector", "rxtiming", "pacer", "sync"};
   static const char* const kDetector[] = {"normal", "underusing", "overusing"};
   static const char* const kLossState[] = {"increasing", "increase_using_padding", "decreasing", "delay_based_estimate"};
   std::string out =
@@ -368,6 +397,14 @@ void TraceAudioRtcp(std::span<const uint8_t> p, int64_t time_us, uint32_t audio_
     }
     off += len;
   }
+}
+
+std::string FrameTraceCsv(const std::vector<FrameRenderRow>& rows) {
+  std::string out = "capture_ms,render_time_ms,out_ms,rendered\n";
+  for (const auto& r : rows)
+    out += std::to_string(r.capture_ms) + "," + std::to_string(r.render_time_ms) + "," + std::to_string(r.out_ms) +
+           "," + std::to_string(r.rendered) + "\n";
+  return out;
 }
 
 std::string AudioSendCsv(const std::vector<AudioSendRow>& rows) {
@@ -692,7 +729,6 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   // sm_compare's AudioSendStream::Config: min = max = the codec rate, 20 ms Opus frames. The session
   // adds the headers of one packet per frame, not the redundancy (GetMinMaxBitrateConstraints, #569).
   audio_cfg.min_bitrate = audio_cfg.max_bitrate = s.audio ? s.audio_bitrate : DataRate::Zero();
-  audio_cfg.jitter_buffer.version = s.neteq_v2 ? 2 : 1;
   rtp::VideoStreamConfig video_cfg;
   video_cfg.ssrc = kVideoSsrc;
   video_cfg.payload_type = kVideoPt;
@@ -811,6 +847,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   int fec_width = 0, fec_height = 0;  // The resolution the session's FEC controller last took.
   bool held_frame = false;  // The video controller holds the last dropped frame (EncodeDecision::hold).
   VideoTraceRow vt_row;  // The second being accumulated (issue #131).
+  std::optional<cc::BweTraceRow> last_rx_timing;  // Last receiver timing written to rep.bwe_trace (issue #893).
   std::array<uint64_t, 3> vt_rx_prev{};  // Frame release counters at the last row (issue #437).
   uint64_t vt_qs_checks = 0;  // Quality scaler checks already in the trace (issue #347).
   std::unordered_map<uint32_t, Timestamp> frame_capture;  // RTP timestamp -> capture time.
@@ -821,12 +858,25 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   std::unordered_map<uint32_t, int32_t> frame_rtx_room;  // RTP timestamp -> rtx_room.
   double cross_debt = 0;
 
-  std::vector<double> audio_net_delay, video_e2e, rtt_samples, queue_samples;
+  std::vector<double> video_e2e, rtt_samples, queue_samples;
+  AudioNetDelayMeter audio_net_delay;
+  audio_net_delay.Start(audio_ts_offset, sr);
   bool audio_started = false;
   FirstAudioMeter audio_first;  // Issue #510: as sm_compare's libwebrtc side.
   Timestamp video_first = Timestamp::MinusInfinity();
   Timestamp last_render = Timestamp::MinusInfinity();
   AvSyncMeter av_sync;  // Issue #63.
+  SyncTs0 sync_ts0;     // Issue #895.
+  // Both sessions (and the send-side video controller) run on the clock libwebrtc runs on in sm_compare: its
+  // simulated clock starts at CallClockStartSeconds, not 0 (issue #897). The receive side's transport-cc feedback
+  // puts its reference time on a 64 ms grid of that clock (rtcp::TransportFeedback::SetBase,
+  // transport_feedback.cc:305-311) and culls old arrivals only once the clock passes 500 ms (MaybeCullOldPackets,
+  // transport_sequence_number_feedback_generator.cc:59-69), so a clock that starts at 0 rounds receive times on
+  // another grid than libwebrtc's; and the sender's NTP time (sender reports, capture times) is that clock's.
+  // Every time handed to the library is in its clock (call time + clock0); every time read back from it is taken
+  // back to call time, which the test bench measures in.
+  const TimeDelta clock0 = TimeDelta::Seconds(CallClockStartSeconds(s));
+  const TimeDelta rx0 = clock0;
   StretchMeter stretch;  // Issue #510: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   ConcealmentMeter concealment(sr);  // Issue #372: from the jitter buffer's counters, as sm_compare's libwebrtc side.
   // Jitter buffer delay per 10 ms of playout, as sm_compare reads libwebrtc's
@@ -935,6 +985,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   auto render = [&](Timestamp at) {
     if (!s.video) return;
     for (const auto& f : receiver.TakeVideoFrames(video_recv)) {
+      if (opt.video_trace) {
+        auto cap = frame_capture.find(f.rtp_timestamp);
+        rep.frame_trace.push_back({cap != frame_capture.end() ? cap->second.ms() : -1,
+                                   f.render_time.IsFinite() ? (f.render_time - rx0).ms() : -1, at.ms(), f.render ? 1 : 0});
+      }
       if (!f.render) continue;
       freezes.OnFrameRendered(at);
       ++vt_row.rendered;
@@ -1008,8 +1063,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (opt.link_trace) frame_rtx_room[wire_ts] = rtx_ack.Room();
       const auto frame = rtp::MakeFakeH264Frame(f.report.keyframe, static_cast<size_t>(f.report.size.bytes()));
       rtp::EncodedFrameReport sent = f.report;
-      sent.size = sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done);
-      video_ctl.OnEncoded(sent, f.done);
+      sent.size = sender.SendVideo(video_send, {f.rtp_ts, frame, f.report.keyframe}, f.done + clock0);
+      video_ctl.OnEncoded(sent, f.done + clock0);
     };
     // Encode a frame the library allowed, captured at `capture`, at `at` (the capture time, or the resume
     // that encodes a held frame).
@@ -1061,10 +1116,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // VideoStreamEncoder::OnBitrateUpdated after the session ran: a resume encodes the frame held during the
     // pause (pending_frame_), with its capture time, as libwebrtc's encoder does in sm_compare.
     auto poll_pending_frame = [&](Timestamp at) {
-      if (const std::optional<rtp::EncodeDecision> p = video_ctl.MaybeEncodePendingFrame(at)) {
+      if (const std::optional<rtp::EncodeDecision> p = video_ctl.MaybeEncodePendingFrame(at + clock0)) {
         held_frame = false;
         --frames_skipped;  // Counted when it was held.
-        encode_video(*p, p->capture_time, at);
+        encode_video(*p, p->capture_time - clock0, at);
       } else if (held_frame && !video_ctl.has_pending_frame()) {
         held_frame = false;  // Released after kPendingFrameTimeoutMs without ProcessDroppedFrame: not a drop there.
       }
@@ -1075,8 +1130,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       switch (w.kind) {
         case Kind::kAudio: {
           if (first_delivery.Deliver(FirstDelivery::kAudio, RtpSeq(w.bytes))) w_good += wire;
-          int64_t capture_ms = static_cast<int64_t>(static_cast<uint32_t>(RtpTimestamp(w.bytes) - audio_ts_offset)) * 1000 / sr;
-          audio_net_delay.push_back(static_cast<double>((at - Timestamp::Millis(capture_ms)).us()) / 1000.0);
+          // Kind::kAudio is a media packet: padding on the audio SSRC is Kind::kPadding.
+          audio_net_delay.OnArrival(RtpTimestamp(w.bytes), /*carries_audio=*/true, at);
           audio_started = true;
           break;
         }
@@ -1102,7 +1157,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         default:
           break;
       }
-      receiver.OnPacket(w.bytes, at);
+      receiver.OnPacket(w.bytes, at + rx0);
       // The first packet the jitter buffer takes: none when it refuses the stream (#256).
       if (w.kind == Kind::kAudio) {
         audio_first.OnAudioPacket(at, receiver.audio_receiver(audio_recv).jitter_buffer().stats().packets_received > 0);
@@ -1121,29 +1176,29 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // arriving at its due time runs first (PostDelayedTask keeps posting order). So at one time: the sender's
     // timers, its arriving feedback and finished frames, then the receiver's timers, then its arriving packets.
     const Timestamp prev = now - TimeDelta::Millis(1);
-    auto timer_due = [&](const rtp::Session& session, Timestamp ran) {
+    auto timer_due = [&](const rtp::Session& session, Timestamp ran, TimeDelta clock0) {
       const Timestamp from = std::max(ran, prev);
-      const Timestamp due = session.NextProcessTime(from);
+      const Timestamp due = session.NextProcessTime(from + clock0) - clock0;
       return due > from && due <= now ? due : Timestamp::PlusInfinity();
     };
     auto run_sender = [&](Timestamp at) {
-      sender.Process(at);
+      sender.Process(at + clock0);
       sender_ran = at;
       put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, at, true);
       sender_events(at);
       poll_pending_frame(at);
     };
     auto run_receiver = [&](Timestamp at) {
-      receiver.Process(at);
+      receiver.Process(at + rx0);
       receiver_ran = at;
       put_on_link(receiver, reverse, [](Kind, std::vector<uint8_t> b) { return Rev{std::move(b)}; }, at, false);
       render(at);
     };
     for (size_t ri = 0, fi = 0;;) {
-      const Timestamp ts = timer_due(sender, sender_ran);
+      const Timestamp ts = timer_due(sender, sender_ran, clock0);
       const Timestamp tr = ri < rev_in.size() ? rev_in[ri].first : Timestamp::PlusInfinity();
       const Timestamp te = !encoding.empty() && encoding.front().done <= now ? encoding.front().done : Timestamp::PlusInfinity();
-      const Timestamp tx = timer_due(receiver, receiver_ran);
+      const Timestamp tx = timer_due(receiver, receiver_ran, rx0);
       const Timestamp tf = fi < fwd_in.size() ? fwd_in[fi].first : Timestamp::PlusInfinity();
       const Timestamp at = std::min({ts, tr, te, tx, tf});
       if (!at.IsFinite()) break;
@@ -1155,7 +1210,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         if (opt.link_trace) TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, rep.audio_send_trace);
         TraceAudioRtcp(r.bytes, at.us(), kAudioSsrc, audio_reports);  // rtcp.audio_report_blocks (issue #484).
         if (opt.link_trace) rtx_ack.OnRtcp(r.bytes);
-        sender.OnPacket(r.bytes, at);
+        sender.OnPacket(r.bytes, at + clock0);
         run_sender(at);
       } else if (te == at) {
         frame_encoded(encoding.front());
@@ -1197,7 +1252,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         opus_encode_rows.push_back(r);
       }
       const std::vector<uint8_t> frame = opus_encoder.Encode(opus_in);
-      sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now);
+      sender.SendAudio(audio_send, {static_cast<uint32_t>(k * 20 * sr / 1000), frame, false}, now + clock0);
     }
 
     // --- Sender: video --------------------------------------------------------
@@ -1205,7 +1260,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       int64_t k = frames_encoded + frames_skipped + 1;
       next_frame_ms = k * 1000 / s.video_fps;
       // The library decides: encode or drop, keyframe or not, and the rate.
-      const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now);
+      const rtp::EncodeDecision dec = video_ctl.OnCapturedFrame({s.video_width, s.video_height}, now + clock0);
       // The size the library asks for (the captured size unless quality scaling adapts it) is dec.width x
       // dec.height; encode_video gives it to the FEC controller.
       const DataRate vr = dec.target;
@@ -1247,7 +1302,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // the same millisecond run (issue #410). Audio leaves on multiples of 10 ms and every third video frame on a
     // multiple of 100 ms, so sampling after them counted their own bytes in up to a tenth of the samples.
     const double queue_ms = QueueDelayMs(forward, fwd_state, now);
-    sender.Process(now);
+    sender.Process(now + clock0);
     sender_ran = now;
     put_on_link(sender, forward, [](Kind k, std::vector<uint8_t> b) { return Fwd{k, std::move(b)}; }, now, true);
     poll_pending_frame(now);
@@ -1270,14 +1325,18 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       sender.SetRtt(s.host_rtt->second);
       receiver.SetRtt(s.host_rtt->second);
     }
-    receiver.Process(now);
+    receiver.Process(now + rx0);
     receiver_ran = now;
     render(now);
     receiver.TakeEvents();
 
+    // The A/V sync inputs at each whole second, after the synchronizer's run at this time and before this time's
+    // audio pull, as sm_compare reads libwebrtc's (issue #895).
+    if (opt.bwe_trace && t % 1000 == 0) AppendSyncTraceRow(receiver, now, rx0, sync_ts0, rep.bwe_trace);
+
     // Audio playout: the device pulls 10 ms.
     if (s.audio && t % 10 == 0 && audio_started) {
-      receiver.GetAudio(audio_recv, audio_out, now);
+      receiver.GetAudio(audio_recv, audio_out, now + rx0);
       // Audio RTP timestamps, less the stream's offset, count samples from the call start (capture at t = 0).
       if (auto ts = receiver.audio_receiver(audio_recv).jitter_buffer().PlayoutTimestamp()) {
         const uint32_t samples = static_cast<uint32_t>(*ts - audio_ts_offset);
@@ -1325,11 +1384,30 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
 
     // --- Measurement ----------------------------------------------------------
     if (t % 10 == 0) queue_samples.push_back(queue_ms);
+    if (opt.bwe_trace && s.video && s.timing_v2 && t % 5 == 4) {
+      // The receiver's VCMTiming every 5 ms when it changed, as sm_compare samples libwebrtc's
+      // VideoReceiveStreamInterface::Stats (issue #893).
+      const timing::VcmTiming& vt = receiver.video_receiver(video_recv).vcm_timing();
+      cc::BweTraceRow r;
+      r.time_us = static_cast<int64_t>(t + 1) * 1000;
+      r.kind = cc::BweTraceRow::Kind::kRxTiming;
+      r.bitrate_bps = vt.TargetDelay().ms();
+      r.packets = static_cast<int>(vt.minimum_delay().ms());
+      r.fraction_loss = static_cast<int>(vt.current_delay().ms());
+      r.loss_limit_bps = vt.min_playout_delay().ms();
+      r.instant_ub_bps = vt.render_delay().ms();
+      if (!last_rx_timing || r.bitrate_bps != last_rx_timing->bitrate_bps || r.packets != last_rx_timing->packets ||
+          r.fraction_loss != last_rx_timing->fraction_loss || r.loss_limit_bps != last_rx_timing->loss_limit_bps ||
+          r.instant_ub_bps != last_rx_timing->instant_ub_bps) {
+        rep.bwe_trace.push_back(r);
+        last_rx_timing = r;
+      }
+    }
     if (opt.video_trace && t % 1000 == 999) {
       vt_row.t_ms = t + 1;
       vt_row.alloc_target_bps = sender.rates().video_target.bps();
       vt_row.paused = video_ctl.paused() ? 1 : 0;
-      vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now).us()) / 1000.0;
+      vt_row.pacer_queue_ms = static_cast<double>(sender.send_side().pacer().OldestQueueTime(now + clock0).us()) / 1000.0;
       const video::QualityScaler& qs = video_ctl.quality_scaler();
       if (qs.checks() > vt_qs_checks) {
         using Signal = video::QualityScaler::Signal;
@@ -1382,6 +1460,16 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     }
   }
 
+  // The rows the library wrote are in its clock: back to call time, as sm_compare writes libwebrtc's (time and send
+  // time call-relative; a detector row's arrival time is the feedback's receive time on the sender's clock, as
+  // libwebrtc's TransportFeedbackAdapter gives it, so it stays) (issue #897).
+  for (cc::BweTraceRow& r : rep.bwe_trace) {
+    using K = cc::BweTraceRow::Kind;
+    if (r.kind == K::kRxTiming || r.kind == K::kSync) continue;  // Written by the test bench, in call time.
+    r.time_us -= clock0.us();
+    if ((r.kind == K::kDetector || r.kind == K::kPacer) && r.send_ms >= 0) r.send_ms -= static_cast<double>(clock0.ms());
+  }
+
   // --- Summary ----------------------------------------------------------------
   const Timestamp end = Timestamp::Millis(end_ms);
   auto& m = rep.metrics;
@@ -1394,7 +1482,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     m["audio.longest_interruption_ms"] = static_cast<double>(concealment.longest_event_ms());
     m["audio.jb_delay_p50_ms"] = Percentile(jb_delay, 50);
     m["audio.jb_delay_p95_ms"] = Percentile(jb_delay, 95);
-    m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay, 95);
+    m["audio.net_delay_p95_ms"] = Percentile(audio_net_delay.samples(), 95);
     m["audio.mouth_to_ear_p95_ms"] = m["audio.net_delay_p95_ms"] + m["audio.jb_delay_p95_ms"];
     m["audio.stretch_pct"] = stretch.stretch_pct();
     m["audio.late_discards"] = static_cast<double>(jbs.packets_discarded_late);

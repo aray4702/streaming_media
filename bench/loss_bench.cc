@@ -102,20 +102,6 @@ SM_BENCH(loss, RedEncodeParse_d2) {
   st.BudgetNsPerItem(3000);
 }
 
-SM_BENCH(loss, Plc_Conceal10ms_16k) {
-  PacketLossConcealer plc;
-  auto x = sim::SpeechLike(16000, 1.0, 1, false);
-  std::vector<float> buf(160);
-  int f = 0;
-  for (auto _ : st) {
-    std::copy(x.begin() + (f % 90) * 160, x.begin() + (f % 90 + 1) * 160, buf.begin());
-    plc.OnGoodFrame(buf);
-    plc.Conceal(buf);  // Worst case: every other frame starts a concealment.
-    ++f;
-  }
-  st.RequireRealtimeFactor(0.010, 50);  // One concealment per 10 ms frame.
-}
-
 SM_BENCH(loss, KeyframeRequester_Frame) {
   KeyframeRequester k;
   int64_t id = 0;
@@ -175,16 +161,6 @@ SM_BENCH_QUALITY(loss, Q_Red_10pct) {
   st.Counter("raw_loss", r.raw_frame_loss);
   st.Counter("residual_loss", r.residual_frame_loss);
   st.Require("residual_loss", r.residual_frame_loss, "<=", 0.02);
-}
-
-SM_BENCH_QUALITY(loss, Q_Plc_10pct_speech) {
-  sim::LinkConfig cfg;
-  cfg.loss_rate = 0.10;
-  auto r = e2e::RunPlcSim(cfg, 20.0, 11);
-  st.Counter("snr_plc_db", r.snr_plc_db);
-  st.Counter("snr_zero_fill_db", r.snr_zero_db);
-  st.Counter("lost_frames_snr_db", r.lost_snr_plc_db);
-  st.Require("snr_gain_db", r.snr_plc_db - r.snr_zero_db, ">=", 1.0);
 }
 
 SM_BENCH_QUALITY(loss, Q_Keyframe_2pct_frame_loss) {

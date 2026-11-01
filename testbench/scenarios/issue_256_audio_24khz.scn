@@ -1,5 +1,8 @@
 name issue_256_audio_24khz
 describe Audio + video call with 24 kHz audio and 3% loss: NetEq v2 must not crash or corrupt memory (issue #256)
+# 40 seeds in compare-webrtc (#861): sync.av_offset_p95_ms spreads 45-122 ms per seed on ours (sm_testbench, main 6fc990f),
+# and the 10-seed mean sat at the parity band's edge (88.4 vs libwebrtc 78.6, band 11.05). audio_sample_rate is ignored on
+# both sides, so this is the default call at 2 Mbps with 3% loss.
 # Before the fix NetEq's expand, merge and time stretch indexed past their buffers at any rate but
 # 8/16/32/48 kHz (heap-buffer-overflow in NetEqExpand::Correlation under ASan), and the test bench did not
 # accept the rate. libwebrtc never runs NetEq at such a rate: Opus stamps a 48 kHz RTP clock whatever the
@@ -7,6 +10,7 @@ describe Audio + video call with 24 kHz audio and 3% loss: NetEq v2 must not cra
 # their packets. NetEq v2 does the same (unit and e2e tests, packets_discarded_unsupported_rate). Since #298
 # the bench, as libwebrtc, encodes a 24 kHz capture at Opus's 48 kHz clock, so this call has audio.
 seed 1
+compare_seeds 40
 duration 20s
 audio_sample_rate 24000
 at 0s capacity=2000kbps delay=40ms loss=3%

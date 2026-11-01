@@ -325,7 +325,11 @@ void SendHistory::OnPacketSent(uint16_t seq, Timestamp send_time, DataSize size,
     if (history_.begin()->first > last_ack_seq_num_) in_flight_ -= history_.begin()->second.size;
     history_.erase(history_.begin());
   }
-  history_[s] = Sent{send_time, send_time, size, probe_cluster};
+  // ProcessSentPacket takes the send time from rtc::SentPacket::send_time_ms, whole milliseconds
+  // (transport_feedback_adapter.cc:184), which the transport fills with the clock's Timestamp::ms(), rounded to
+  // the nearest (api/units/timestamp.h:56-58; sm_compare's transport passes now.ms(), webrtc_call.cc:996). The
+  // creation time that prunes the history keeps the clock's (#897).
+  history_[s] = Sent{send_time, Timestamp::Millis(send_time.ms()), size, probe_cluster};
   // ProcessSentPacket: a packet above the last acknowledged sequence number is in flight.
   if (s > last_ack_seq_num_) in_flight_ += size;
 }

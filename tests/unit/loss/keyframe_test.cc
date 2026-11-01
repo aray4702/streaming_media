@@ -191,3 +191,42 @@ SM_TEST(KeyframeRequest, NoRequestWhileALongKeyframeIsArriving) {
   k.OnMediaPacket(Ms(1150), false, 4000u);
   SM_EXPECT_EQ(CountType(k.Process(Ms(1150)), FeedbackType::kPli), 1u);
 }
+
+// RtpVideoStreamReceiver2::RequestKeyFrame sends the one method in rtp.keyframe_method
+// (video/rtp_video_stream_receiver2.cc:997-1008, issue #818): PLI by default, FIR when configured.
+SM_TEST(KeyframeRequest, EveryRequestUsesTheConfiguredMethod) {
+  for (KeyframeMethod method : {KeyframeMethod::kPli, KeyframeMethod::kFir}) {
+    KeyframeRequestConfig cfg;
+    cfg.method = method;
+    KeyframeRequester k(cfg);
+    k.OnFrame(Delta(5, 4), Ms(0));  // The first frame is not a keyframe.
+    auto fb = k.Process(Ms(0));
+    k.OnDecoderError(Ms(10));
+    auto fb2 = k.Process(Ms(10));
+    SM_ASSERT_EQ(fb.size(), 1u);
+    SM_ASSERT_EQ(fb2.size(), 1u);
+    const FeedbackType want = method == KeyframeMethod::kFir ? FeedbackType::kFir : FeedbackType::kPli;
+    SM_EXPECT_TRUE(fb[0].type == want);
+    SM_EXPECT_TRUE(fb2[0].type == want);
+    if (method == KeyframeMethod::kFir) {
+      SM_EXPECT_EQ(fb[0].fir_seq, 1);
+      SM_EXPECT_EQ(fb2[0].fir_seq, 2);
+      SM_EXPECT_EQ(k.stats().fir_sent, 2u);
+    } else {
+      SM_EXPECT_EQ(k.stats().pli_sent, 2u);
+    }
+  }
+}
+
+// The packet buffer cleared or a re-anchor after a sequence discontinuity resets the receive times
+// (rtp_video_stream_receiver2.cc:715-732, 1117-1123): until the next packet the stream looks inactive,
+// so the decode time-out asks for nothing.
+SM_TEST(KeyframeRequest, ResetPacketReceiveTimesMakesTheStreamLookInactive) {
+  for (bool reset : {false, true}) {
+    KeyframeRequester k;
+    k.Process(Ms(0));
+    k.OnMediaPacket(Ms(10), false);
+    if (reset) k.ResetPacketReceiveTimes();
+    SM_EXPECT_EQ(k.Process(Ms(250)).size(), reset ? 0u : 1u);
+  }
+}

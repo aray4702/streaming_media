@@ -46,13 +46,24 @@ SendSideController::SendSideController(SendSideConfig cfg, const sync::Extension
 }
 
 void SendSideController::Apply(const cc::NetworkControlUpdate& u, Timestamp now) {
+  ApplyTarget(u, now);
+  ApplyPacer(u, now);
+}
+
+void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestamp now) {
   target_ = u.target_rate;
+  rates_time_ = now;
   if (allocation_configured_ && !cfg_.control_handler) allocator_.OnTargetChanged(target_, now);
-  // GetPacingRates: the padding rate never exceeds the pushback target.
   if (allocation_configured_) gcc_.SetPacingLimits(allocator_.limits().min_allocatable, allocator_.limits().max_padding);
-  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
-  for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
   outage_.SetCurrentRate(target_);
+}
+
+// RtpTransportControllerSend::PostUpdates: the pacer config, then the probe clusters. GetPacingRates runs at the
+// end of MaybeTriggerOnNetworkChanged, after the pushback target of the same update, and the padding rate never
+// exceeds that pushback target (goog_cc_network_control.cc:596-650, 675-679; issue #813).
+void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now) {
+  pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
+  for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
 }
 
 // libwebrtc runs UpdateTargetBitrate() whenever the network state may have
@@ -66,8 +77,13 @@ void SendSideController::UpdatePushback(Timestamp now, bool window) {
   cwnd_.UpdateOutstandingData(gcc_.history().InFlight());
   if (window) cwnd_.UpdatePacingQueue(pacer_.QueueSizeData());
   if (window) cwnd_.UpdateWindow(window_target_);
-  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum.
+  // MaybeTriggerOnNetworkChanged: the pushback target is at least the bandwidth estimator's minimum, and
+  // the reduce ratio is taken from that clamped target (goog_cc_network_control.cc:596-608). Once the
+  // pushback reaches the minimum, the ratio stops changing and no new update re-applies it (issue #738).
   pushback_target_ = std::max(gcc_.min_rate(), cwnd_.UpdateTargetBitrate(target_, now));
+  pushback_reduce_ratio_ = cfg_.cwnd.enabled && target_.bps() > 0
+                               ? static_cast<double>(target_.bps() - pushback_target_.bps()) / static_cast<double>(target_.bps())
+                               : 0;
   window_target_ = target_;
 }
 
@@ -78,7 +94,7 @@ void SendSideController::PostTargetRate(Timestamp now) {
   if (!cfg_.control_handler) return;
   cc::TargetTransferRate msg;
   msg.target_rate = target_;
-  msg.cwnd_reduce_ratio = cwnd_.reduce_ratio();
+  msg.cwnd_reduce_ratio = pushback_reduce_ratio_;
   msg.fraction_loss = gcc_.send_side_bwe().fraction_loss();
   msg.round_trip_time = gcc_.send_side_bwe().round_trip_time();
   control_handler_.SetTargetRate(msg);
@@ -91,6 +107,7 @@ void SendSideController::UpdateControlState(Timestamp now) {
   const std::optional<cc::TargetTransferRate> update = control_handler_.GetUpdate();
   if (!update) return;
   reported_reduce_ratio_ = update->cwnd_reduce_ratio;
+  rates_time_ = now;
   if (allocation_configured_) allocator_.OnTargetChanged(update->target_rate, now, update->cwnd_reduce_ratio);
 }
 
@@ -150,12 +167,14 @@ void SendSideController::Start(Timestamp now) {
 }
 
 void SendSideController::RegisterVideo(Timestamp now) {
+  rates_time_ = now;
   allocator_.AddObserver("video", video_alloc_cfg_, video_observer_);
   video_registered_ = true;
   NotifyAllocationLimits(now);
 }
 
 void SendSideController::UnregisterVideo(Timestamp now) {
+  rates_time_ = now;
   allocator_.RemoveObserver("video");
   video_registered_ = false;
   NotifyAllocationLimits(now);
@@ -171,7 +190,7 @@ void SendSideController::NotifyAllocationLimits(Timestamp now) {
   if (min_changed) gcc_.UpdateMinAllocatable(l.min_allocatable);
   if (min_changed || padding_changed) {
     gcc_.SetPacingLimits(l.min_allocatable, l.max_padding);
-    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_));
+    pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
   }
 }
 
@@ -221,6 +240,16 @@ void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
   // The encoder queue posts OnEncoderConfigurationChanged to the worker queue, so
   // an activity task already due at `now` runs before it (issue #375).
   RunDueVideoActivityChecks(now);
+  // ... and the posted task runs after the encoder task that reconfigured: the frame is encoded and
+  // packetized first (RTPSenderVideo::SendVideo updates post_encode_overhead_bitrate_,
+  // rtp_sender_video.cc:248-258), so the reallocation's RtpVideoSender::OnBitrateUpdated reads its
+  // overhead (issue #945: issue_24_timing_v2_default seed 1 at 6.033 s, post-encode overhead 1640 vs 1880 bps).
+  pending_reconfigure_ = true;
+}
+
+void SendSideController::RunPendingReconfigure(Timestamp now) {
+  if (!pending_reconfigure_) return;
+  pending_reconfigure_ = false;
   // IsRunning(): the send stream is started, so the allocator gets the new limits.
   if (next_video_activity_check_.IsFinite()) RegisterVideo(now);
 }
@@ -241,7 +270,8 @@ void SendSideController::SetPacingFactor(double factor) {
 }
 
 // RtpTransportControllerSend::OnReport posts GoogCC's update, which is empty for a loss report: the
-// pacer, the pushback and the allocator get the new target with the next feedback or process interval.
+// pacer, the pushback and the allocator get the new target with the next sent packet (with the pushback
+// on, its default), feedback or process interval.
 void SendSideController::OnLossReport(int64_t packets_lost_delta, int64_t packets_delta, Timestamp now) {
   gcc_.OnTransportLossReport(packets_lost_delta, packets_delta, now);
 }
@@ -342,6 +372,24 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
     return;
   }
   if (sp.sender) sp.sender->AssignSequenceNumber(sp, now);
+  if (cfg_.gcc.bwe_trace) {
+    // The pacer as this packet leaves it, before OnPacketSent charges it; sm_compare reads libwebrtc's
+    // PacingController at the same point, from its send transport (issue #893).
+    const cc::PacingController::TraceState ps = pacer_.trace_state();
+    cc::BweTraceRow row;
+    row.time_us = now.us();
+    row.kind = cc::BweTraceRow::Kind::kPacer;
+    row.bitrate_bps = ps.adjusted_media_rate.bps();
+    row.loss_limit_bps = ps.pacing_rate.bps();
+    row.instant_ub_bps = ps.media_debt.bytes();
+    row.packets = static_cast<int>(ps.queue_packets);
+    row.fraction_loss = static_cast<int>(ps.queue_data.bytes());
+    row.modified_trend = ps.average_queue_time.ms_f();
+    row.threshold = static_cast<double>(static_cast<int>(sp.kind));
+    row.send_delta_ms = static_cast<double>(sp.packet.seq);
+    row.send_ms = ps.last_process_time.IsFinite() ? static_cast<double>(ps.last_process_time.us()) / 1000.0 : -1;
+    cfg_.gcc.bwe_trace->push_back(row);
+  }
   ReleasedPacket r;
   // PacketRouter::SendPacket (packet_router.cc:213-228): only a packet that carries the
   // transport-wide sequence number extension gets a number (from 1), and only a numbered packet is
@@ -351,6 +399,25 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
   WriteSendExtensions(sp.packet, r.transport_seq, now);
   r.bytes = sp.packet.Serialize();
   r.kind = sp.kind;
+  // RtpSenderEgress::SendPacket counts the packet in its send rates (UpdateRtpStats, rtp_sender_egress.cc:335,
+  // 495: the RTP packet size, by media type) as it sends it, inside the pacer's loop. The sent-packet
+  // notification that can post a new target is posted from the transport and runs after the loop
+  // (RtpTransportControllerSend::OnSentPacket), so the protection share an allocation reads then
+  // (RtpVideoSender::ProtectionRequest, GetSendRates) counts every packet of the loop (issue #875).
+  if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
+    (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
+        .Update(static_cast<int64_t>(r.bytes.size()), now.ms());
+  }
+  // UpdateRtpStats then reads GetSendRates(now) for the stream's bitrate observer (the video stream's
+  // SendStatisticsProxy, rtp_sender_egress.cc:495-498, rtp_video_sender.cc:307) on every packet the video
+  // module sends, and RateStatistics::Rate erases the expired buckets. So an RTX stream that paused for
+  // over a window restarts its window when it resumes, and the next allocation counts it at its rate
+  // since then (issue #895).
+  if (sp.sender && sp.sender->config().video) {
+    video_rate_.Rate(now.ms());
+    rtx_rate_.Rate(now.ms());
+    fec_rate_.Rate(now.ms());
+  }
   r.wire_size = sent.size;
   r.probe_cluster = sent.probe_cluster;
   r.send_time = now;
@@ -369,25 +436,39 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
 
 std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   std::vector<ReleasedPacket> out;
+  RunPendingReconfigure(now);  // A reconfiguring frame that was not sent (dropped or held).
   pacer_.Process(now);  // Each packet goes through SendPacket() as the pacer sends it.
-  // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator, the
-  // congestion window and the rate statistics see the packets once the loop is done.
+  // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator and the
+  // congestion window see the packets once the loop is done (the send rates counted them in SendPacket).
   std::vector<Egress> egress;
   egress.swap(egress_);
+  // An allocation a sent packet posts reads the send rates at the current time
+  // (RtpVideoSender::ProtectionRequest, RtpSenderEgress::GetSendRates(now); issue #875).
+  rates_time_ = now;
   for (Egress& e : egress) {
     const cc::PacedPacket& sent = e.sent;
     ReleasedPacket& r = e.released;
     const bool numbered = extensions_ && extensions_->IdOf(sync::uri::kTransportCc);
     if (numbered) gcc_.OnPacketSent(r.transport_seq, now, sent.size, sent.probe_cluster);
-    UpdatePushback(now, false);
-    if (cfg_.cwnd.enabled) PostTargetRate(now);
+    if (numbered && cfg_.cwnd.enabled) {
+      // RtpTransportControllerSend::ProcessSentPacket (rtp_transport_controller_send.cc:456-485): with the
+      // pushback on, GoogCC's OnSentPacket runs MaybeTriggerOnNetworkChanged, and PostUpdates hands its
+      // update to the pacer and the control handler. The update carries the target and the pacer config
+      // when the loss-based target, its state, the loss fraction, the RTT, the ALR state or the pushback
+      // target changed (goog_cc_network_control.cc:610-648).
+      const DataRate last_pushback = pushback_target_;
+      const cc::NetworkControlUpdate u = gcc_.MaybeTriggerOnSentPacket(now);
+      if (u.triggered) ApplyTarget(u, now);
+      UpdatePushback(now, false);
+      if (u.triggered || pushback_target_ != last_pushback) ApplyPacer(u, now);
+      PostTargetRate(now);
+    } else {
+      UpdatePushback(now, false);
+      if (cfg_.cwnd.enabled) PostTargetRate(now);
+    }
     if (r.kind == PacketKind::kRtx || r.kind == PacketKind::kFec || r.kind == PacketKind::kVideo) {
       repair_window_.push_back({now, sent.size.bytes(), r.kind});
       (r.kind == PacketKind::kVideo ? video_bytes_ : repair_bytes_) += sent.size.bytes();
-      // RtpSenderEgress::UpdateRtpStats (rtp_sender_egress.cc:495): the RTP packet size, by media type.
-      const int64_t rtp_bytes = static_cast<int64_t>(r.bytes.size());
-      (r.kind == PacketKind::kVideo ? video_rate_ : r.kind == PacketKind::kRtx ? rtx_rate_ : fec_rate_)
-          .Update(rtp_bytes, now.ms());
     }
     window_.emplace_back(now, sent.size.bytes());
     window_bytes_ += sent.size.bytes();
@@ -396,7 +477,6 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     out.push_back(std::move(r));
   }
   ExpireRepair(now);
-  last_process_ = now;
   RunDueVideoActivityChecks(now);
   if (!last_gcc_.IsFinite() || now - last_gcc_ >= cfg_.gcc_interval) {
     last_gcc_ = now;
@@ -404,13 +484,24 @@ std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
     // and before it): the encoder pauses while the pacer's expected queue time is above 2 s.
     if (cfg_.control_handler) control_handler_.SetPacerQueue(pacer_.QueueSizeData() == DataSize::Zero() ? TimeDelta::Zero() : pacer_.ExpectedQueueTime());
     if (cfg_.control_handler) UpdateControlState(now);
-    Apply(gcc_.OnProcessInterval(now, send_rate(now)), now);
+    const cc::NetworkControlUpdate u = gcc_.OnProcessInterval(now, send_rate(now));
+    ApplyTarget(u, now);
+    const DataRate last_pushback = pushback_target_;
     UpdatePushback(now, true);
+    // OnProcessInterval's update carries a pacer config only when MaybeTriggerOnNetworkChanged fires
+    // (goog_cc_network_control.cc:241, 610-652), and SetPacerConfig re-reads the queue at that time
+    // (issue #893). The probe clusters go to the pacer either way.
+    if (u.triggered || pushback_target_ != last_pushback) {
+      ApplyPacer(u, now);
+    } else {
+      for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
+    }
     PostTargetRate(now);
   }
   // libwebrtc has no outage monitor: its sender keeps sending (audio at full rate, video at the target the
   // feedback time-out backs off to) and GoogCC recovers from the feedback that comes back. So does this one;
-  // the monitor only follows the link (its metrics), and its decisions are not acted on.
+  // the monitor only follows the link (its state, metrics and events), and its decisions are not acted on.
+  (void)outage_.Process(now);
   return out;
 }
 
@@ -443,7 +534,10 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     }
     for (auto& [sender, seqs] : early_loss) {
       sender->OnEarlyLoss(seqs, now);
-      for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      // While an RTCP packet is handled, the resends wait for its end (Session::FlushResends).
+      if (!hold_resends_) {
+        for (SenderPacket& p : sender->TakePackets()) Enqueue(std::move(p), now);
+      }
     }
     for (auto& [sender, seqs] : acked) sender->OnAcknowledged(seqs);
   }
@@ -454,18 +548,27 @@ void SendSideController::OnTransportFeedback(const cc::TransportFeedback& fb, Ti
     outage_.OnFeedback(now);
     return;
   }
-  Apply(u, now);
+  // RtpTransportControllerSend::PostUpdates: the update carries the target and the pacer config only
+  // when MaybeTriggerOnNetworkChanged ran and its change check fired, which on feedback needs an
+  // updated delay-based estimate (goog_cc_network_control.cc:517-521, 610-652; issue #893). The probe
+  // clusters go to the pacer either way.
+  if (u.triggered) ApplyTarget(u, now);
   // GoogCcNetworkController::OnTransportPacketsFeedback (goog_cc_network_control.cc:421-541): the
   // pushback runs (MaybeTriggerOnNetworkChanged) only when the delay-based estimate updated, and
   // before UpdateCongestionWindowSize, so it weighs the outstanding data against the window from
   // before this feedback. After an outage the first feedback clears the lost packets from flight;
   // against the grown window that fill would fall under 0.1 and end the pushback at once (#446).
   if (gcc_.last_feedback_delay_updated()) UpdatePushback(now, false);
+  if (u.triggered) {
+    ApplyPacer(u, now);
+  } else {
+    for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
+  }
   if (auto rtt = gcc_.last_feedback_max_rtt()) {
     cwnd_.OnFeedbackRtt(*rtt);
     cwnd_.UpdateWindow(window_target_);
   }
-  PostTargetRate(now);
+  if (u.triggered) PostTargetRate(now);
   outage_.OnFeedback(now);
 }
 
@@ -531,10 +634,10 @@ double SendSideController::repair_share() const {
     const int64_t total = video_bytes_ + repair_bytes_;
     return total > 0 ? static_cast<double>(repair_bytes_) / static_cast<double>(total) : 0.0;
   }
-  if (!last_process_.IsFinite()) return 0.0;
+  if (!rates_time_.IsFinite()) return 0.0;
   // RtpVideoSender::ProtectionRequest reads RtpSenderEgress::GetSendRates (rtp_video_sender.cc:973,
   // rtp_sender_egress.cc:340): each type's rate, or zero when its tracker has none.
-  const int64_t now_ms = last_process_.ms();
+  const int64_t now_ms = rates_time_.ms();
   const int64_t video = video_rate_.Rate(now_ms).value_or(0);
   const int64_t nack = rtx_rate_.Rate(now_ms).value_or(0);
   const int64_t fec = fec_rate_.Rate(now_ms).value_or(0);
@@ -558,12 +661,14 @@ SendSideController::VideoAllocationSplit SendSideController::SplitVideoAllocatio
   const double keep = 1.0 - std::min(repair_share(), cfg_.max_repair_share);
   const int64_t pkt = cfg_.max_packet_size + cfg_.transport_overhead_bytes;
   const DataRate payload = std::max(DataRate::Zero(), alloc - OverheadRate(alloc, pkt));
-  DataRate encoder = payload * keep;  // encoder_target_rate_bps_, not yet capped at the encoder maximum.
+  // encoder_target_rate_bps_, not yet capped at the encoder maximum. UpdateFecRates returns
+  // `estimated_bitrate_bps * (1.0 - protection_overhead_rate)` as a uint32_t, so the product is truncated.
+  DataRate encoder = DataRate::BitsPerSec(static_cast<int64_t>(static_cast<double>(payload.bps()) * keep));
   // rtp_video_sender.cc:913-915: less the post-encode overhead (RtpVideoSender::GetPostEncodeOverhead),
   // at most half the target.
   const DataRate post_encode =
-      std::min(last_process_.IsFinite()
-                   ? DataRate::BitsPerSec(post_encode_overhead_rate_.Rate(last_process_.ms()).value_or(0))
+      std::min(rates_time_.IsFinite()
+                   ? DataRate::BitsPerSec(post_encode_overhead_rate_.Rate(rates_time_.ms()).value_or(0))
                    : DataRate::Zero(),
                encoder / 2);
   encoder -= post_encode;
