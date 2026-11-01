@@ -1,0 +1,16 @@
+name two_way_asymmetric
+describe Two-way call (user <-> AI), audio and video both ways, 500 kbps up (user to AI) and 2.5 Mbps down, 100 ms RTT (#748)
+duration 30s
+call two-way
+at 0s capacity=500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+# program.md 6.3 sev:2, for each direction: no audio interruptions or freezes > 1 s, mouth-to-ear under 400 ms on a
+# 100 ms RTT link, and no target overshoot that keeps the queue over 200 ms.
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.video.longest_freeze_ms < 1000
+expect down.video.longest_freeze_ms < 1000
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect down.audio.mouth_to_ear_p95_ms < 400
+expect up.cc.queue_p95_ms < 200
+expect down.cc.queue_p95_ms < 200

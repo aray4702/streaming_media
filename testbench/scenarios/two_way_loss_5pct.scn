@@ -1,0 +1,14 @@
+name two_way_loss_5pct
+describe Two-way call (user <-> AI), audio and video both ways, 5% random loss each way on a 100 ms RTT link (#748)
+duration 30s
+call two-way
+at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+# program.md 6.3 sev:2, for each direction: no freezes > 1 s or audio interruptions in moderate loss (<= 5%), and
+# mouth-to-ear delay under 400 ms on a 100 ms RTT link.
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.video.longest_freeze_ms < 1000
+expect down.video.longest_freeze_ms < 1000
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect down.audio.mouth_to_ear_p95_ms < 400
