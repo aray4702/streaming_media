@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <cstddef>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -127,7 +128,7 @@ int32_t DotProductWithScale(const int16_t* a, const int16_t* b, size_t n, int sc
 void DownsampleFast(const int16_t* in, int16_t* out, size_t out_length, const Downsample& d) {
   for (size_t k = 0; k < out_length; ++k) {
     int32_t s = 2048;  // 0.5 in Q12.
-    for (size_t j = 0; j < d.num_coefficients; ++j) s += d.coefficients[j] * in[k * d.factor - j];
+    for (size_t j = 0; j < d.num_coefficients; ++j) s += d.coefficients[j] * in[static_cast<ptrdiff_t>(k * d.factor) - static_cast<ptrdiff_t>(j)];
     out[k] = SaturateInt16(s >> 12);
   }
 }
@@ -1291,7 +1292,7 @@ void NetEqTimeStretch::Analyze(std::span<const float> input, const NetEqBackgrou
   for (size_t k = 0; k < kDownsampledLen; ++k) {
     const size_t i = filter_delay + k * d.factor;
     int32_t s = 2048;  // 0.5 in Q12.
-    for (size_t j = 0; j < d.num_coefficients; ++j) s += d.coefficients[j] * in[i - j];
+    for (size_t j = 0; j < d.num_coefficients; ++j) s += d.coefficients[j] * in[static_cast<ptrdiff_t>(i) - static_cast<ptrdiff_t>(j)];
     downsampled_input_[k] = SaturateInt16(s >> 12);
   }
   AutoCorrelation();
