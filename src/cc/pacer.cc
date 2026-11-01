@@ -46,6 +46,11 @@ void Pacer::AddProbeCluster(const ProbeCluster& c) {
   pc_->AddProbeCluster(c);
   kick_ = true;
 }
+void Pacer::BeginBatch(Timestamp now) {
+  if (!task_queue_) return;
+  if (last_batch_ == now && kick_) (void)ProcessScheduled(now);
+  last_batch_ = now;
+}
 std::vector<PacedPacket> Pacer::Process(Timestamp now) { return task_queue_ ? ProcessScheduled(now) : pc_->Process(now); }
 
 // TaskQueuePacedSender (modules/pacing/task_queue_paced_sender.cc): every delayed task it posted runs
