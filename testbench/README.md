@@ -180,6 +180,31 @@ Link keys (any subset; unset keys keep their previous value):
 | `cross=` | Competing constant-rate traffic sharing the bottleneck |
 | `down` / `up` | Link outage: everything sent is lost |
 
+
+## Two-way calls (user <-> AI)
+
+`call two-way` runs a conversation between a user and an AI (#2): each end both talks and listens.
+
+```
+          user endpoint                                        AI endpoint
+   +---------------------------+   forward link (up)   +---------------------------+
+   | rtp::Session              |  user's audio, video  | rtp::Session              |
+   |   send side  (up)    ---------------------------------->  receive side (up)    |
+   |                           |  user's RTCP          |                           |
+   |   receive side (down) <----------------------------------  send side  (down)   |
+   +---------------------------+  reverse link (down)  +---------------------------+
+                                  AI's audio, video, RTCP
+```
+
+- Each endpoint is one `rtp::Session`, bundled with RTCP multiplexed. The user sends on SSRCs 1-3, the AI on 11-13.
+- Each direction's feedback crosses the other direction's link and competes with its media. Give the reverse link its own `reverse at ...` capacity.
+- `two_way_video both|up|down` picks the directions that send video. `video off` makes the call audio only.
+- Each direction reports the one-way call's metrics with its prefix: `up.*` (user to AI) and `down.*` (AI to user), for example `up.audio.concealed_pct` or `down.video.longest_freeze_ms`. `sm_testbench --metrics` lists them. The one-way names are not reported.
+- `--timeseries` gives `up.timeseries` and `down.timeseries`. `--library` names the modules `up.sender.*`, `up.receiver.*`, `down.sender.*` and `down.receiver.*`. `--link-trace` writes `<name>.<seed>.up.sm.*.csv` and `.down.sm.*.csv`.
+- The browser build's `runScenario` returns the same JSON; the demo page charts the up direction.
+- `sm_compare` skips two-way scenarios: libwebrtc's side runs one-way calls only.
+- Scenarios: `two_way_clean`, `two_way_video_clean`, `two_way_loss_5pct`, `two_way_asymmetric`, `two_way_outage_up`. Their `expect` lines are program.md 6.3's rows for each direction.
+
 ## Metrics
 
 `sm_testbench --metrics` prints the authoritative list. In summary:
