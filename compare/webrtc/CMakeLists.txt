@@ -42,8 +42,9 @@ add_compile_definitions(
 
 # This library and the test bench, built with the same standard library.
 file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
+# Same test bench sources as sm_testbench_lib (testbench/CMakeLists.txt).
 add_library(sm_all STATIC ${SM_SOURCES} ${SM_ROOT}/testbench/scenario.cc ${SM_ROOT}/testbench/call.cc
-            ${SM_ROOT}/testbench/ai_source.cc)
+            ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc)
 target_include_directories(sm_all PUBLIC ${SM_ROOT}/include ${SM_ROOT}/testbench)
 # The test bench encodes its audio with libopus (issue #457). libwebrtc.a
 # carries the same revision (55513e81, compare/webrtc/reference/fetch.sh), so
