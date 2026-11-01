@@ -1373,3 +1373,60 @@ SM_TEST(RtpReceiver, AnOldPacketFarBehindIsDroppedAndH264HasNoDiscontinuityRule)
     SM_EXPECT_EQ(r.stats().seq_num_discontinuities, on ? 1u : 0u);
   }
 }
+
+// Issue #899: a copy of a one-packet frame's packet that arrives after the
+// frame was assembled (a spurious RTX, a duplicating link) is taken again by
+// the packet buffer, as libwebrtc's empty slot takes it, and the frame is
+// assembled a second time. With `timing v2` the frame buffer drops the repeat
+// (FrameBuffer::InsertFrame: already inserted), so every frame is counted
+// (ReceiveStatisticsProxy::OnCompleteFrame) and rendered once.
+SM_TEST(RtpReceiver, ACopyAfterAssemblyIsAssembledAgainAndTheFrameBufferDropsIt) {
+  RtpSender s(SenderCfg());
+  RtpReceiver r(NoHoldCfg());
+  r.Start(Timestamp::Millis(0));
+  for (int64_t i = 0; i < 3; ++i) {
+    Timestamp at = Timestamp::Millis(i * 33);
+    auto pkts = SendFrame(s, i, i == 0, 300, at);
+    SM_ASSERT_EQ(pkts.size(), 1u);
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(21));  // The copy, after the frame was assembled.
+    r.Process(at + TimeDelta::Millis(21));
+  }
+  auto frames = Run(r, 100, 800);
+  // A copy is taken again while its frame waits in the frame buffer; one that lands after its frame
+  // was decoded is behind ClearTo and old (RtpVideoStreamReceiver2::FrameDecoded).
+  const auto& pb = r.packet_buffer().stats();
+  SM_EXPECT_EQ(pb.reinserted + pb.too_old, 3u);
+  SM_EXPECT_GT(pb.reinserted, 0u);
+  SM_EXPECT_EQ(pb.frames_assembled, 3u + pb.reinserted);
+  SM_EXPECT_EQ(r.stats().frames_refused, pb.reinserted);
+  SM_EXPECT_EQ(r.stats().frames_received, 3u);
+  SM_ASSERT_EQ(frames.size(), 3u);
+  for (size_t i = 0; i + 1 < frames.size(); ++i) SM_EXPECT_TRUE(frames[i].frame_id < frames[i + 1].frame_id);
+}
+
+// `timing v1` has no frame buffer behind the packet buffer, so the packet
+// buffer keeps rejecting a copy of a packet already handed out (a recorded
+// deviation of the non-default path, issue #899).
+SM_TEST(RtpReceiver, TimingV1DropsACopyAfterAssemblyInThePacketBuffer) {
+  RtpSender s(SenderCfg());
+  RtpReceiverConfig c = NoHoldCfg();
+  c.timing.version = 1;
+  RtpReceiver r(c);
+  r.Start(Timestamp::Millis(0));
+  for (int64_t i = 0; i < 3; ++i) {
+    Timestamp at = Timestamp::Millis(i * 33);
+    auto pkts = SendFrame(s, i, i == 0, 300, at);
+    SM_ASSERT_EQ(pkts.size(), 1u);
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(20));
+    r.Process(at + TimeDelta::Millis(20));
+    r.OnPacket(pkts[0], at + TimeDelta::Millis(21));
+    r.Process(at + TimeDelta::Millis(21));
+  }
+  auto frames = Run(r, 100, 800);
+  SM_EXPECT_EQ(r.packet_buffer().stats().duplicates, 3u);
+  SM_EXPECT_EQ(r.packet_buffer().stats().reinserted, 0u);
+  SM_EXPECT_EQ(r.stats().frames_received, 3u);
+  SM_EXPECT_EQ(frames.size(), 3u);
+}

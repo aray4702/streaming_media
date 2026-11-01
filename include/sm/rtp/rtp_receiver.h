@@ -302,7 +302,7 @@ struct RtpReceiverStats {
   uint64_t padding = 0;
   uint64_t unknown_ssrc = 0;
   uint64_t invalid_payload = 0;
-  uint64_t frames_received = 0;   // Assembled frames.
+  uint64_t frames_received = 0;   // Assembled frames the frame buffer took (timing v2), as ReceiveStatisticsProxy::OnCompleteFrame.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
   // timing v2, FrameBuffer::InsertFrame: assembled frames the frame buffer refused (full, or at or
@@ -438,6 +438,7 @@ class RtpReceiver : public MetricsSource {
   void ExportMetrics(MetricsWriter& w) const override;
 
  private:
+  void MaybeStart(Timestamp now);  // The first time this receiver is given (issue #897).
   // A video packet on the media SSRC, received or restored from RTX: RED goes to the ULPFEC
   // receiver (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader). kFec for an FEC packet.
   ReceivedKind OnVideoRtp(const RtpPacket& p, Timestamp now, bool recovered);
@@ -481,6 +482,7 @@ class RtpReceiver : public MetricsSource {
   timing::VideoTiming video_timing_;
   video::FrameScheduler scheduler_;
   timing::VcmTiming vcm_timing_;            // timing v2.
+  bool started_ = false;                    // MaybeStart ran (issue #897).
   timing::FrameReleaseController release_;  // timing v2.
   video::RenderFrames render_frames_;       // render_smoothing.
   std::map<int64_t, ReceivedFrame> render_pending_;  // render_smoothing: decoded frames in render_frames_.

@@ -53,12 +53,11 @@ SM_TEST(PacketBuffer, DuplicatesAndTooOldRejected) {
   cfg.window = 100;
   PacketBuffer pb(cfg);
   SM_EXPECT_TRUE(pb.Insert(Pkt(5, 1, true), true, T0()) == InsertResult::kInserted);
-  SM_EXPECT_TRUE(pb.Insert(Pkt(5, 1, true), true, T0()) == InsertResult::kDuplicate);  // After delivery.
   pb.Insert(Pkt(6, 2, false), true, T0());
   SM_EXPECT_TRUE(pb.Insert(Pkt(6, 2, false), true, T0()) == InsertResult::kDuplicate);  // While buffered.
   pb.Insert(Pkt(300, 3, true), true, T0());
   SM_EXPECT_TRUE(pb.Insert(Pkt(7, 2, true), false, T0()) == InsertResult::kTooOld);
-  SM_EXPECT_EQ(pb.stats().duplicates, 2u);
+  SM_EXPECT_EQ(pb.stats().duplicates, 1u);
   SM_EXPECT_EQ(pb.stats().too_old, 1u);
 }
 
@@ -421,4 +420,81 @@ SM_TEST(PacketBuffer, MissingPacketsClearToForgetsHolesBelowIt) {
   auto f = pb.PopCompleteFrames();
   SM_ASSERT_EQ(f.size(), 1u);
   SM_EXPECT_EQ(f[0].timestamp, 400u);
+}
+
+// Issue #899, PacketBuffer::InsertPacket (packet_buffer.cc): a copy is a
+// duplicate only while its packet is in the buffer (`buffer_[index]->seq_num()
+// == seq_num`). FindFrames moves a found frame's packets out, so the slot is
+// empty and a later copy (a spurious RTX, a duplicating link) is taken again:
+// a one-packet frame is handed out a second time (the frame buffer drops it).
+SM_TEST(PacketBuffer, CopyOfAOnePacketFrameAfterAssemblyIsAssembledAgain) {
+  PacketBuffer pb(NoHoldCfg());
+  SM_EXPECT_EQ(pb.Insert(Pkt(5, 100, true), true, T0()), InsertResult::kInserted);
+  SM_ASSERT_EQ(pb.PopCompleteFrames().size(), 1u);
+  SM_EXPECT_EQ(pb.Insert(Pkt(5, 100, true), true, T0()), InsertResult::kInserted);
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, f[0].last_seq);
+  SM_EXPECT_EQ(f[0].timestamp, 100u);
+  SM_EXPECT_EQ(pb.stats().duplicates, 0u);
+  SM_EXPECT_EQ(pb.stats().reinserted, 1u);
+  SM_EXPECT_EQ(pb.stats().frames_assembled, 2u);
+}
+
+// A copy of one packet of an assembled multi-packet frame has no continuous
+// predecessor (PotentialNewFrame: the previous slot is empty), so it makes no
+// frame and stays in the buffer until ClearTo drops it, as in libwebrtc. While
+// it is buffered, a second copy is the duplicate.
+SM_TEST(PacketBuffer, CopyOfAPacketOfAnAssembledFrameStaysUntilClearTo) {
+  PacketBuffer pb(NoHoldCfg());
+  pb.Insert(Pkt(10, 100, false), true, T0());
+  pb.Insert(Pkt(11, 100, false), false, T0());
+  pb.Insert(Pkt(12, 100, true), false, T0());
+  SM_ASSERT_EQ(pb.PopCompleteFrames().size(), 1u);
+  SM_EXPECT_EQ(pb.Insert(Pkt(11, 100, false), false, T0()), InsertResult::kInserted);
+  SM_EXPECT_EQ(pb.Insert(Pkt(12, 100, true), false, T0()), InsertResult::kInserted);
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  SM_EXPECT_EQ(pb.buffered_packets(), 2u);
+  SM_EXPECT_EQ(pb.Insert(Pkt(12, 100, true), false, T0()), InsertResult::kDuplicate);
+  SM_EXPECT_EQ(pb.stats().reinserted, 2u);
+  SM_EXPECT_EQ(pb.stats().duplicates, 1u);
+  // The next frame is not affected by the copies behind it.
+  pb.Insert(Pkt(13, 200, true), true, T0());
+  auto f = pb.PopCompleteFrames();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].first_seq, 13);
+  pb.ClearTo(13);
+  SM_EXPECT_EQ(pb.buffered_packets(), 0u);
+  // Behind the cleared-to point a copy is old.
+  SM_EXPECT_EQ(pb.Insert(Pkt(10, 100, false), true, T0()), InsertResult::kTooOld);
+}
+
+// The copy of a frame's first packet does continue a frame when the rest is
+// copied too: every packet of the frame taken again in order makes it again.
+SM_TEST(PacketBuffer, CopiesOfAWholeFrameAfterAssemblyAssembleItAgain) {
+  PacketBuffer pb(NoHoldCfg());
+  for (int pass = 0; pass < 2; ++pass) {
+    pb.Insert(Pkt(20, 300, false), true, T0());
+    pb.Insert(Pkt(21, 300, true), false, T0());
+    auto f = pb.PopCompleteFrames();
+    SM_ASSERT_EQ(f.size(), 1u);
+    SM_EXPECT_EQ(f[0].first_seq, 20);
+    SM_EXPECT_EQ(f[0].last_seq, 21);
+  }
+  SM_EXPECT_EQ(pb.stats().reinserted, 2u);
+}
+
+// `drop_copies_after_assembly` (timing v1 only, a recorded deviation): a copy
+// of a packet already handed out is a duplicate, so a frame is never handed
+// out twice to a receiver without a frame buffer.
+SM_TEST(PacketBuffer, DropCopiesAfterAssemblyRejectsACopyOfAHandedOutPacket) {
+  PacketBufferConfig cfg = NoHoldCfg();
+  cfg.drop_copies_after_assembly = true;
+  PacketBuffer pb(cfg);
+  SM_EXPECT_EQ(pb.Insert(Pkt(5, 100, true), true, T0()), InsertResult::kInserted);
+  SM_ASSERT_EQ(pb.PopCompleteFrames().size(), 1u);
+  SM_EXPECT_EQ(pb.Insert(Pkt(5, 100, true), true, T0()), InsertResult::kDuplicate);
+  SM_EXPECT_TRUE(pb.PopCompleteFrames().empty());
+  SM_EXPECT_EQ(pb.stats().duplicates, 1u);
+  SM_EXPECT_EQ(pb.stats().reinserted, 0u);
 }

@@ -23,6 +23,11 @@ loss::NackConfig NackCfg(const RtpReceiverConfig& c) {
 timing::PacketBufferConfig PacketBufferCfg(const RtpReceiverConfig& c) {
   timing::PacketBufferConfig p = c.packet_buffer;
   if (!p.events) p.events = c.events;
+  // `timing v1` has no frame buffer (FrameBufferAccepts) behind the packet
+  // buffer, so a frame assembled twice from a late copy would be rendered
+  // twice: keep the copy filter there (a deviation of the non-default path,
+  // issue #899). `timing v2` takes the copy as libwebrtc's empty slot does.
+  if (c.timing.version < 2) p.drop_copies_after_assembly = true;
   return p;
 }
 loss::KeyframeRequestConfig KeyframeCfg(const RtpReceiverConfig& c) {
@@ -152,6 +157,7 @@ PacketCaptureTime RtpReceiver::OnPacketCaptureTime(const RtpPacket& p, int clock
 }
 
 ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
+  MaybeStart(now);
   auto parsed = RtpPacket::Parse(datagram);
   if (!parsed) {
     ++stats_.malformed;
@@ -530,7 +536,6 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       pps = pps || info.pps;
     }
     const bool keyframe = idr && (!cfg_.keyframe_needs_parameter_sets || (sps && pps));
-    ++stats_.frames_received;
     loss::FrameInfo fi;
     fi.frame_id = f.last_seq;
     fi.keyframe = keyframe;
@@ -544,6 +549,10 @@ void RtpReceiver::AssembleFrames(Timestamp now) {
       for (const RtpPacket& pkt : f.packets) retransmitted = nacked_seqs_.erase(pkt.seq) > 0 || retransmitted;
       if (!FrameBufferAccepts(fi.frame_id, keyframe, f.timestamp, now)) continue;
     }
+    // ReceiveStatisticsProxy::OnCompleteFrame counts a frame only once
+    // FrameBuffer::InsertFrame took it (video_stream_buffer_controller.cc:158-171),
+    // so a frame assembled again from a late copy is not counted twice (#899).
+    ++stats_.frames_received;
     const uint64_t decodable_before = keyframes_.stats().frames_decodable;
     keyframes_.OnFrame(fi, now);
     // VideoReceiveStream2::OnCompleteFrame -> RtpVideoStreamReceiver2::FrameContinuous: each frame the reference
@@ -651,7 +660,18 @@ std::optional<sync::Syncable::PlayoutInfo> RtpReceiver::PlayoutRtpTimestamp() co
   return sync::Syncable::PlayoutInfo{last_playout_time_, *ts};
 }
 
+void RtpReceiver::MaybeStart(Timestamp now) {
+  if (started_) return;
+  started_ = true;
+  // VideoReceiveStream2 builds its timing with the clock's time at creation (default_video_jitter_timing.cc:30):
+  // the TimestampExtrapolator's start, from which its Kalman filter counts time. The first time this receiver is
+  // given stands for that, so a host clock that does not start at 0 (libwebrtc's in sm_compare starts at
+  // CallClockStartSeconds) does not hard-reset the extrapolator at the first frame (issue #897).
+  vcm_timing_.Start(now);
+}
+
 void RtpReceiver::Process(Timestamp now) {
+  MaybeStart(now);
   if (!cfg_.video) return;
   AssembleFrames(now);
   if (cfg_.nack && nack_.TakeKeyframeRequest()) {

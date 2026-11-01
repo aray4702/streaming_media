@@ -15,8 +15,15 @@
 // walk back does not stop at a marker bit, so two frames with one RTP
 // timestamp go out as one, as in libwebrtc; issue #899.)
 // Complete frames are returned immediately (possibly out of order; the frame
-// scheduler orders them by decodability). Duplicates and packets older than
-// the window are rejected and counted.
+// scheduler orders them by decodability). A copy of a packet still in the
+// buffer and packets older than the window are rejected and counted. A packet
+// leaves the buffer when its frame is handed out, so a copy that arrives after
+// that is taken again until `ClearTo`, as libwebrtc's empty slot takes it
+// (`InsertPacket`'s duplicate check compares only a buffered packet's sequence
+// number): a copy of a one-packet frame is assembled a second time, and the
+// frame buffer drops the repeat (`FrameBuffer::InsertFrame`); issue #899.
+// `drop_copies_after_assembly` keeps the old filter for a receiver that has no
+// frame buffer behind the packet buffer (`timing v1`).
 #pragma once
 
 #include <cstdint>
@@ -64,12 +71,19 @@ struct PacketBufferConfig {
   // frame (issues #453, #580). The buffer does not know the codec: turn it off
   // for another codec, as rtp::Session does for streams that are not H.264.
   bool missing_packets = true;
+  // Reject a copy of a packet whose frame was already handed out, as a
+  // duplicate. Off by default, as in libwebrtc, whose slot is empty after
+  // assembly (issue #899). A deviation for `timing v1` only, whose receive
+  // path has no frame buffer to drop a frame assembled twice: RtpReceiver
+  // turns it on there.
+  bool drop_copies_after_assembly = false;
   EventSink* events = nullptr;
 };
 
 struct PacketBufferStats {
   uint64_t inserted = 0;
-  uint64_t duplicates = 0;
+  uint64_t duplicates = 0;       // A copy of a packet still in the buffer (or, with drop_copies_after_assembly, already handed out).
+  uint64_t reinserted = 0;       // A copy of a packet already handed out in a frame, taken again (its slot is empty).
   uint64_t too_old = 0;
   uint64_t cleared = 0;          // The buffer was full at max_size and was cleared.
   uint64_t padding = 0;          // Padding-only packets that held a sequence number.
@@ -136,7 +150,7 @@ class PacketBuffer : public MetricsSource {
   // it is kept apart from `padding_`, which stands in for the reference
   // finder's own padding record.
   std::set<int64_t> received_padding_;
-  std::set<int64_t> done_;  // Sequence numbers already delivered in frames.
+  std::set<int64_t> done_;  // Sequence numbers already delivered in frames (or padding).
   std::set<int64_t> missing_;  // missing_packets: not received, below newest_inserted_.
   int64_t newest_inserted_ = INT64_MIN;
   int64_t highest_ = INT64_MIN;
