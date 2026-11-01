@@ -628,6 +628,7 @@ std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
   if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
   if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
+  if (s.ai_source && s.ai_source->frame != TimeDelta::Millis(20)) return "ai_source: frame must be 20ms, the bench's audio frame";
   return "";
 }
 
