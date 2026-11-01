@@ -244,6 +244,7 @@ SM_TEST(TestbenchCallMode, SpeechLossMeterPattern) {
     for (int64_t p = 480; p <= 2880; p += 480) m.OnPull(p, 480, 0);
     SM_EXPECT_TRUE(m.lost_pct() == 0);
   }
+}
 
 // Issue #753: the AI answers its detected end of the user's turn, and the response delay is what the transport added.
 SM_TEST(TestbenchCallMode, AiAnswersTheDetectedEndOfTurn) {
