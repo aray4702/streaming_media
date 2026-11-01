@@ -5,7 +5,7 @@
 enable_language(C)
 include(${PROJECT_SOURCE_DIR}/cmake/SmOpus.cmake)
 sm_add_opus()
-add_library(sm_testbench_lib STATIC scenario.cc call.cc)
+add_library(sm_testbench_lib STATIC scenario.cc call.cc turn_detector.cc)
 target_include_directories(sm_testbench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::audio sm::video sm::rtp sm_opus)
 sm_configure_target(sm_testbench_lib)
@@ -29,8 +29,9 @@ if(SM_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/rtcp_seed_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/event_timing_test.cc
             ${PROJECT_SOURCE_DIR}/tests/unit/testbench/call_mode_test.cc
+            ${PROJECT_SOURCE_DIR}/tests/unit/testbench/turn_detector_test.cc
     SUITES TestbenchMetrics OpusEncoder OpusDecoder EncoderModel TestbenchRtcpSeed TestbenchAvSyncRtcp TestbenchEventTiming
-           TestbenchCallMode)
+           TestbenchCallMode TurnDetector)
   # sm_testbench refuses a `call two-way` scenario with video with a clear error until #747 runs it (issues #743, #746).
   file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/two_way_rejected.scn "name two_way_rejected\ncall two-way\nduration 2s\n")
   add_test(NAME unit.testbench.two_way_rejected
