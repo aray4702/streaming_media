@@ -240,6 +240,16 @@ void SendSideController::OnVideoEncoderReconfigured(Timestamp now) {
   // The encoder queue posts OnEncoderConfigurationChanged to the worker queue, so
   // an activity task already due at `now` runs before it (issue #375).
   RunDueVideoActivityChecks(now);
+  // ... and the posted task runs after the encoder task that reconfigured: the frame is encoded and
+  // packetized first (RTPSenderVideo::SendVideo updates post_encode_overhead_bitrate_,
+  // rtp_sender_video.cc:248-258), so the reallocation's RtpVideoSender::OnBitrateUpdated reads its
+  // overhead (issue #945: issue_24_timing_v2_default seed 1 at 6.033 s, post-encode overhead 1640 vs 1880 bps).
+  pending_reconfigure_ = true;
+}
+
+void SendSideController::RunPendingReconfigure(Timestamp now) {
+  if (!pending_reconfigure_) return;
+  pending_reconfigure_ = false;
   // IsRunning(): the send stream is started, so the allocator gets the new limits.
   if (next_video_activity_check_.IsFinite()) RegisterVideo(now);
 }
@@ -426,6 +436,7 @@ void SendSideController::SendPacket(const cc::PacedPacket& sent, Timestamp now) 
 
 std::vector<ReleasedPacket> SendSideController::Process(Timestamp now) {
   std::vector<ReleasedPacket> out;
+  RunPendingReconfigure(now);  // A reconfiguring frame that was not sent (dropped or held).
   pacer_.Process(now);  // Each packet goes through SendPacket() as the pacer sends it.
   // RtpTransportControllerSend::OnSentPacket, posted from the send loop: the estimator and the
   // congestion window see the packets once the loop is done (the send rates counted them in SendPacket).

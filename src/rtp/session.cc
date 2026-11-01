@@ -483,6 +483,8 @@ void Session::SendVideoChunks(VideoSendId id, std::span<const std::vector<uint8_
     }
   }
   EnqueueSenderPackets(s, now);
+  // The worker queue's OnEncoderConfigurationChanged, posted when this frame reconfigured the encoder.
+  send_.RunPendingReconfigure(now);
 }
 
 void Session::SetFecParams(VideoSendId id, const loss::ulpfec::FecProtectionParams& p) {
