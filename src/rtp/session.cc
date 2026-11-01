@@ -119,6 +119,7 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   c.red_distance = a.red_distance;
   SendStream as;
   as.sender = std::make_unique<RtpSender>(c);
+  as.send_ahead = std::max(a.send_ahead, TimeDelta::Zero());
   as.nominal_rate = a.nominal_rate;
   as.allocation_rate = a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate;
   if (a.allocation_rate <= DataRate::Zero() && a.max_bitrate > DataRate::Zero()) {
@@ -396,10 +397,61 @@ void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, Timestamp no
 void Session::SendAudio(AudioSendId id, const EncodedAudioFrame& f, std::optional<audio::AudioLevel> level, Timestamp now) {
   if (id.index < 0 || static_cast<size_t>(id.index) >= audio_send_.size()) return;
   Start(now);
-  RtpSender& s = *audio_send_[static_cast<size_t>(id.index)].sender;
+  SendStream& st = audio_send_[static_cast<size_t>(id.index)];
+  // Send-ahead (#762): a frame handed over before its due time waits in order with the others, and goes out up to
+  // `send_ahead` early within the budget; one handed over on time goes out after those held before it.
+  if (st.send_ahead > TimeDelta::Zero() && f.due_time && (*f.due_time > now || !st.held.empty())) {
+    st.held.push_back({std::vector<uint8_t>(f.data.begin(), f.data.end()), f.rtp_timestamp, f.start_of_talkspurt, level,
+                       f.capture_time, *f.due_time});
+    ReleaseHeldAudio(now);
+    return;
+  }
+  RtpSender& s = *st.sender;
   // ChannelSend::SendRtpAudio adds the module's StartTimestamp (channel_send.cc:406).
   s.SendAudio(f.data, f.rtp_timestamp + s.StartTimestamp(), f.start_of_talkspurt, now, level, f.capture_time);
   EnqueueSenderPackets(s, now);
+}
+
+void Session::ReleaseHeldAudio(Timestamp now) {
+  for (SendStream& st : audio_send_) {
+    if (st.held.empty()) continue;
+    // The room for early audio: what the target leaves after the video target, and at least the stream's nominal
+    // rate; at most 40 ms of it saved up, so a cushion is built at that rate, not in one burst.
+    const SendRates r = rates();
+    const DataRate room = std::max(r.target - r.video_target, st.nominal_rate);
+    if (st.ahead_budget_at.IsFinite() && now > st.ahead_budget_at) {
+      st.ahead_budget_bytes += static_cast<double>(room.bps()) / 8 * static_cast<double>((now - st.ahead_budget_at).us()) / 1e6;
+    }
+    st.ahead_budget_at = now;
+    st.ahead_budget_bytes = std::min(st.ahead_budget_bytes, static_cast<double>(room.bps()) / 8 * 0.04);
+    RtpSender& s = *st.sender;
+    while (!st.held.empty()) {
+      const SendStream::HeldAudio& h = st.held.front();
+      const bool due = h.due_time <= now;
+      if (!due) {
+        const double bytes = static_cast<double>(h.data.size() + RtpPacket::kFixedHeaderSize) + cfg_.send_side.transport_overhead_bytes;
+        if (now < h.due_time - st.send_ahead || st.ahead_budget_bytes < bytes) break;
+        st.ahead_budget_bytes -= bytes;
+        ++st.ahead_frames;
+        st.ahead_max_lead = std::max(st.ahead_max_lead, h.due_time - now);
+        SM_EVENT(cfg_.events, now, "audio_send", "ahead", (h.due_time - now).ms(), s.config().ssrc);
+      }
+      s.SendAudio(h.data, h.rtp_timestamp + s.StartTimestamp(), h.start_of_talkspurt, now, h.level, h.capture_time);
+      st.held.pop_front();
+    }
+    EnqueueSenderPackets(s, now);
+  }
+}
+
+Timestamp Session::NextHeldAudioTime(Timestamp now) const {
+  Timestamp next = Timestamp::PlusInfinity();
+  for (const SendStream& st : audio_send_) {
+    if (st.held.empty()) continue;
+    const Timestamp earliest = std::min(st.held.front().due_time, st.held.front().due_time - st.send_ahead);
+    // Allowed by time but waiting for budget: look again in 5 ms.
+    next = std::min(next, earliest > now ? earliest : now + TimeDelta::Millis(5));
+  }
+  return next;
 }
 
 DataSize Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now) {
@@ -850,6 +902,7 @@ void Session::Process(Timestamp now) {
   call_stats_.EnsureStarted(now);
   PeriodicRttUpdate(now);
   OnCallStatsUpdate(call_stats_.Process(now));
+  ReleaseHeldAudio(now);  // Send-ahead (#762); nothing when no frame is held.
   // Transport-wide feedback covers every stream of the transport. It goes before the receivers'
   // 20 ms NACK tick: when both are due at once, libwebrtc runs the task posted first, and
   // ReceiveSideCongestionController's task (posted at least 50 ms earlier, at its last run) is older
@@ -959,6 +1012,7 @@ Timestamp Session::NextProcessTime(Timestamp now) const {
   if (audio_recv_rtcp_) next = std::min(next, audio_recv_rtcp_->NextProcessTime(now));
   if (HasSendStreams()) next = std::min(next, send_.NextProcessTime(now));
   if (next_rtt_update_.IsFinite()) next = std::min(next, next_rtt_update_);
+  next = std::min(next, NextHeldAudioTime(now));
   next = std::min(next, call_stats_.NextProcessTime());
   if (packet_since_process_) return now;
   for (const auto& v : video_recv_) next = std::min(next, v.receiver->NextProcessTime(now));
@@ -1005,6 +1059,20 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("unroutable", stats_.unroutable);
   w.Counter("empty_video_frames", stats_.empty_video_frames);
   w.Counter("nacks_unmatched", stats_.nacks_unmatched);
+  {
+    uint64_t ahead = 0, held = 0;
+    TimeDelta lead = TimeDelta::Zero();
+    for (const SendStream& st : audio_send_) {
+      ahead += st.ahead_frames;
+      held += st.held.size();
+      lead = std::max(lead, st.ahead_max_lead);
+    }
+    if (ahead > 0 || held > 0) {  // Send-ahead in use (#762): absent otherwise, so existing exports are unchanged.
+      w.Counter("audio_ahead_frames", ahead);
+      w.Gauge("audio_ahead_held", static_cast<double>(held));
+      w.Gauge("audio_ahead_max_lead_ms", static_cast<double>(lead.us()) / 1000.0);
+    }
+  }
   w.Counter("sps_vui_rewritten", stats_.sps.rewritten);
   w.Counter("sps_vui_ok", stats_.sps.vui_ok);
   w.Counter("sps_parse_failures", stats_.sps.parse_failures);

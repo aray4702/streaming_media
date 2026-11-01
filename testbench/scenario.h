@@ -175,6 +175,10 @@ struct Scenario {
   // (testbench/ai_source.h; issue #4, #758): it produces the AI's replies to scripted `turn ai` turns
   // (#758 part 2). A one-way call doesn't read it.
   std::optional<AiSourceConfig> ai_source;
+  // `ai_send_ahead <time>` (#762, #4's option 2): with `ai_source`, the AI hands each generated frame to the library
+  // as soon as it is at most this far ahead of its real-time send time, and the library sends it early within the
+  // congestion target (AudioStreamConfig::send_ahead). Zero (the default): real-time pacing.
+  TimeDelta ai_send_ahead = TimeDelta::Zero();
 
   // Scripted turns of a two-way call (issue #751, #3), in file order:
   //   turn user <start>-<end>        the user speaks in [start, end)

@@ -206,8 +206,8 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"conv.responses", "Two-way call with turns: AI replies heard at the user (#753)"},
       {"conv.response_delay_p50_ms", "Two-way call with turns: median of what the transport added to the AI's response: the user's last "
                                      "speech sample captured (the end of the scripted turn) to the AI's first sample played at the user, less the "
-                                     "AI's own decision time: the thinking time (`after`) and the 600 ms of silence its endpointer waits for. "
-                                     "With `ai_source` it includes the source's first-frame delay (#753)"},
+                                     "AI's own time: the thinking time (`after`), the 600 ms of silence its endpointer waits for and, with "
+                                     "`ai_source`, the time the source took to produce the reply's first frame (#753)"},
       {"conv.response_delay_p95_ms", "95th percentile of the same (#753)"},
       {"conv.barge_ins", "Two-way call with turns: barge-ins the AI detected while speaking and stopped for (#754)"},
       {"conv.barge_in_stop_ms", "Two-way call with turns: longest time from the user starting to talk over the AI (the scripted barge-in) to "
@@ -972,9 +972,23 @@ class SendSide {
   // blocks from t = 0 and a 20 ms Opus packet completes on every second block
   // (10, 30, 50 ms). With 30 fps video captured from t = 0 it decides which
   // packets share a 5 ms send group in the delay-based detector (issue #124).
+  // Send-ahead (#762): the speech frame k (captured, on the bench's grid, at 20k ms) handed to the library now, ahead
+  // of its real-time send time `due`; CaptureAudio then skips it at its own tick.
+  void SendAheadFrame(int64_t k, Timestamp due, Timestamp now) {
+    const size_t off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
+    opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
+    const std::vector<uint8_t> frame =
+        opus_encoder_.Encode(std::span<const int16_t>(opus_pcm_).subspan(std::min(off, opus_pcm_.size())));
+    rtp::EncodedAudioFrame f{static_cast<uint32_t>(k * 20 * sr_ / 1000), frame, false};
+    f.due_time = due + clock0_;
+    session_.SendAudio(audio_send_, f, now + clock0_);
+    sent_ahead_.insert(k);
+  }
+
   void CaptureAudio(int64_t t, Timestamp now) {
     if (!(s_.audio && t % 20 == 10)) return;
     const int64_t k = t / 20;
+    if (sent_ahead_.erase(k)) return;  // Already handed over ahead of its time (#762).
     opus_encoder_.SetPacketLossPercent(opus_loss_.percent());
     const size_t opus_off = static_cast<size_t>(k) * OpusSendEncoder::kFrameSamples;
     static const std::vector<int16_t> kSilence(OpusSendEncoder::kFrameSamples, 0);
@@ -1150,6 +1164,7 @@ class SendSide {
   std::optional<TimeDelta> new_rtt_;
   std::function<bool(Timestamp)> speaking_;
   std::vector<bool> frame_speech_;  // Per audio frame with SetSpeech: speech (true) or silence.
+  std::set<int64_t> sent_ahead_;     // Audio frames handed over ahead of their tick (#762).
   std::function<bool(Timestamp)> video_held_;
   int64_t frames_held_ = 0;  // Camera frames the app held back (SetVideoHeld).
 };
@@ -1549,7 +1564,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   // SSRCs 11-13, so each session sends on one set and receives the other.
   DirectionMeters up_m, down_m;
   const StreamConfigs up_streams = MakeStreamConfigs(up_s, sr, audio_wire_rate, up_m);
-  const StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
+  StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
+  down_streams.audio.send_ahead = s.ai_send_ahead;  // The AI's send side (#762); zero: real time.
   SendSide up_tx(up_s, opt, user, up_streams, up_m, sr, clock0);
   ReceiveSide up_rx(up_s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
   SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
@@ -1597,6 +1613,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   struct Response {
     Timestamp user_end;
     TimeDelta after;
+    Timestamp turn_start;  // When the AI's reply started (its detection plus the thinking time).
     std::optional<Timestamp> first_capture, played;
   };
   std::vector<Response> responses;
@@ -1628,6 +1645,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   size_t next_ai_turn = 0;
   std::vector<double> ai_first_frame_ms;
   std::optional<Timestamp> ai_video_held_since;  // From a barge-in to the AI's next reply (#961).
+  std::vector<int64_t> ai_ahead_pending;  // Send-ahead (#762): frames to hand over after this tick's frame.
   // The AI's decisions (#753, #754): an end of turn starts its next reply, a barge-in during its reply stops it.
   auto on_turn_event = [&](const TurnEvent& ev, bool ai_speaking) {
     if (ev.type != TurnEventType::kSpeechStart) ai_decisions.push_back(ev);
@@ -1635,7 +1653,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       const AiReply& r = ai_script[next_reply++];
       ai_turns.push_back({ev.at + r.after, ev.at + r.after + r.len});
       const Window* u = user_window_of(ev.last_speech);
-      responses.push_back({u ? u->end : ev.last_speech, r.after, std::nullopt, std::nullopt});
+      responses.push_back({u ? u->end : ev.last_speech, r.after, ev.at + r.after, std::nullopt, std::nullopt});
     } else if (ev.type == TurnEventType::kBargeIn && ai_speaking) {
       // The AI stops its speech at once: the rest of the reply is not sent, and its source stops generating and
       // drops what it had queued (#760).
@@ -1687,7 +1705,20 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     up_tx.SetSpeech([&](Timestamp t) { return in_any(user_speech, t); });
     down_tx.SetSpeech([&](Timestamp t) {
       bool speaking = in_any(ai_turns, t);
-      if (speaking && ai_source) speaking = !ai_source->Poll(t).empty();  // A frame the real-time drain hands over now.
+      if (speaking && ai_source && s.ai_send_ahead > TimeDelta::Zero()) {
+        // Send-ahead (#762): the frames generated and due within the lead; the one due at this tick is spoken now,
+        // later ones are handed over after this tick's frame, in order.
+        const int64_t k = t.ms() / 20;
+        bool now_frame = false;
+        for (const AiFrame& f : ai_source->TakeAhead(t, s.ai_send_ahead)) {
+          const int64_t kk = std::max<int64_t>(k, (f.send.ms() - 10 + 19) / 20);  // Its tick: the first at or after it.
+          if (kk == k) now_frame = true;
+          else if (ai_ahead_pending.empty() || kk > ai_ahead_pending.back()) ai_ahead_pending.push_back(kk);
+        }
+        speaking = now_frame;
+      } else if (speaking && ai_source) {
+        speaking = !ai_source->Poll(t).empty();  // A frame the real-time drain hands over now.
+      }
       if (speaking) {
         // The frame captured at t starts at its 20 ms boundary (CaptureAudio: frame k is [20k, 20k + 20) ms).
         const Timestamp capture = Timestamp::Millis(t.ms() / 20 * 20);
@@ -1870,6 +1901,15 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     // --- Capture: each endpoint's audio, then video ---------------------------
     for (Endpoint& e : ep) {
       e.tx.CaptureAudio(t, now);
+      if (&e.tx == &down_tx && !ai_ahead_pending.empty()) {
+        for (const int64_t kk : ai_ahead_pending) {
+          const Timestamp capture = Timestamp::Millis(kk * 20);
+          down_tx.SendAheadFrame(kk, Timestamp::Millis(kk * 20 + 10), now);
+          ai_last_speech_capture = std::max(ai_last_speech_capture.value_or(capture), capture);
+          if (!responses.empty() && !responses.back().first_capture) responses.back().first_capture = capture;
+        }
+        ai_ahead_pending.clear();
+      }
       e.tx.CaptureVideo(t, now);
     }
 
@@ -2039,7 +2079,11 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       // The AI's own decision time is not the transport's: its thinking time and the silence its endpointer waits for
       // before it calls the turn over (TurnDetectorConfig::end_of_turn_silence, 600 ms). A detection the transport
       // delays (loss, jitter, an outage) still counts.
-      if (r.played) delays.push_back((*r.played - r.user_end - r.after - det_cfg.end_of_turn_silence).us() / 1000.0);
+      // With `ai_source`, the time the source took to produce the reply's first frame is the AI's too (generation,
+      // not transport): from the turn's start to that frame's capture (Owner, on #3: what remains is the transport's).
+      const TimeDelta generation =
+          ai_source && r.first_capture && *r.first_capture > r.turn_start ? *r.first_capture - r.turn_start : TimeDelta::Zero();
+      if (r.played) delays.push_back((*r.played - r.user_end - r.after - det_cfg.end_of_turn_silence - generation).us() / 1000.0);
     }
     for (const Stop& st : stops) {
       if (st.at_ear) stop_ms.push_back((*st.at_ear - st.user_start).us() / 1000.0);

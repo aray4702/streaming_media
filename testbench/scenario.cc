@@ -457,6 +457,11 @@ ParseResult ParseScenario(const std::string& text) {
       std::string err;
       if (!ParseAiSource(tok, &c, &err)) return fail(err);
       s.ai_source = c;
+    } else if (key == "ai_send_ahead") {
+      if (!need(2) || !ParseTime(tok[1], &s.ai_send_ahead) || s.ai_send_ahead < TimeDelta::Zero() ||
+          s.ai_send_ahead > TimeDelta::Seconds(30)) {
+        return fail("usage: ai_send_ahead <time> (0-30 s)");
+      }
     } else if (key == "turn") {
       Scenario::Turn tr;
       if (need(3) && tok[1] == "user") {
@@ -609,6 +614,7 @@ std::string FormatScenario(const Scenario& s) {
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
   if (s.ai_source) o += FormatAiSource(*s.ai_source) + "\n";
+  if (s.ai_send_ahead > TimeDelta::Zero()) o += "ai_send_ahead " + FormatTime(s.ai_send_ahead) + "\n";
   for (const Scenario::Turn& tr : s.turns) {
     switch (tr.who) {
       case Scenario::Turn::Who::kUser: o += "turn user " + FormatTime(tr.start) + "-" + FormatTime(tr.end) + "\n"; break;
@@ -629,6 +635,7 @@ std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
   if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
   if (s.ai_source && s.ai_source->frame != TimeDelta::Millis(20)) return "ai_source: frame must be 20ms, the bench's audio frame";
+  if (s.ai_send_ahead > TimeDelta::Zero() && !s.ai_source) return "ai_send_ahead needs ai_source: it sends the source's frames early";
   return "";
 }
 

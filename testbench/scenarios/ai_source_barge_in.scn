@@ -18,3 +18,6 @@ expect conv.barge_ins == 1
 expect conv.barge_in_stop_ms < 500
 expect conv.barge_in_tail_ms < 500
 expect ai.cancels == 1
+# program.md 6.3 sev:2 conversation: on a 100 ms RTT link the transport adds at most 500 ms to the response; the
+# source's first-chunk generation is the AI's own time, not the transport's (Owner, on #3).
+expect conv.response_delay_p95_ms < 500

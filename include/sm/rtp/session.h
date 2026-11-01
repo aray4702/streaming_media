@@ -150,6 +150,9 @@ struct AudioStreamConfig {
   DataRate max_bitrate = DataRate::Zero();
   TimeDelta min_frame_length = TimeDelta::Millis(20);
   TimeDelta max_frame_length = TimeDelta::Millis(20);
+  // Send side (#762): how far ahead of its `due_time` a frame may be sent. Zero (the default): every frame is sent
+  // when it is handed over, as libwebrtc does.
+  TimeDelta send_ahead = TimeDelta::Zero();
   // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
   DataRate priority_bitrate = DataRate::Zero();
   // Receive side: libwebrtc's NetEq (#62), with muted state on as ChannelReceive sets it
@@ -247,6 +250,11 @@ struct EncodedAudioFrame {  // One Opus packet.
   // capture time extension is sent when the session maps it
   // (RtpSender::SendAudio, as RTPSenderAudio).
   std::optional<Timestamp> capture_time = std::nullopt;
+  // AI media generated ahead of real time (#4, #762): when the frame would be sent at real-time pace. With the
+  // stream's `send_ahead` above zero, a frame handed over before this time is sent up to `send_ahead` early, within
+  // the room the congestion controller's target leaves (SendRates::target less the video target), so the receiver
+  // builds a cushion. Unset, or `send_ahead` zero: sent at once, as before.
+  std::optional<Timestamp> due_time = std::nullopt;
 };
 
 struct EncodedVideoFrame {
@@ -447,6 +455,21 @@ class Session : public MetricsSource {
     std::unique_ptr<loss::FecControllerDefault> fec;
     RateTracker sent_frame_rate{100, 10};
     bool nack = false;  // Video: VideoStreamConfig::nack, for the RTX reservation (SendVideo).
+    // Audio send-ahead (#762): frames handed over early, oldest first, and the byte budget they are sent within.
+    struct HeldAudio {
+      std::vector<uint8_t> data;
+      uint32_t rtp_timestamp = 0;
+      bool start_of_talkspurt = false;
+      std::optional<audio::AudioLevel> level;
+      std::optional<Timestamp> capture_time;
+      Timestamp due_time = Timestamp::Micros(0);
+    };
+    TimeDelta send_ahead = TimeDelta::Zero();
+    std::deque<HeldAudio> held;
+    double ahead_budget_bytes = 0;
+    Timestamp ahead_budget_at = Timestamp::MinusInfinity();
+    uint64_t ahead_frames = 0;      // Frames sent before their due time.
+    TimeDelta ahead_max_lead = TimeDelta::Zero();
     H264PacketizationMode h264_packetization_mode = H264PacketizationMode::kNonInterleaved;  // Video (SendVideo).
     // The stream's own ModuleRtpRtcpImpl2 and RTCPReceiver (one per send stream in libwebrtc):
     // RttStats (rtcp_receiver.cc:211-229), fed only by the report block for the local media SSRC
@@ -507,6 +530,10 @@ class Session : public MetricsSource {
   void Start(Timestamp now);
   void MaybeCreateSync();  // The synchronizer, once both an audio and a video receive stream exist.
   bool HasSendStreams() const { return !audio_send_.empty() || !video_send_.empty(); }
+  // Sends the held audio frames that are due, or may go ahead within the budget (#762).
+  void ReleaseHeldAudio(Timestamp now);
+  // The next time ReleaseHeldAudio has something to do, or +infinity.
+  Timestamp NextHeldAudioTime(Timestamp now) const;
 
   SessionConfig cfg_;
   RtcpEngine rtcp_;
