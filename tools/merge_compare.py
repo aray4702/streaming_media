@@ -4,7 +4,7 @@
 CI runs the comparison in N shards (.github/workflows/ci.yml, compare-webrtc):
 shard k of N runs scenario files k, k + N, k + 2N, ... of the sorted list, so
 scenario p of the full run is scenario p // N of shard p % N. This puts the
-scenarios back in that order. A scenario with `compare off` (#921) has a
+scenarios back in that order. A scenario with `compare off` (#921) or a two-way call (#743) has a
 "skipped" text block and no JSON entry; it keeps its place in the order.
 
   tools/merge_compare.py --shards N --out-json compare-webrtc.json \\
@@ -23,7 +23,7 @@ import re
 import sys
 
 BETTER = re.compile(r"^better: sm (\d+), webrtc (\d+), tie (\d+) \(of the metrics shown\)$", re.M)
-SKIPPED = re.compile(r"^\S+: skipped \(compare off")
+SKIPPED = re.compile(r"^\S+: skipped \((compare off|two-way call)")
 
 
 def interleave(parts):

@@ -11,13 +11,17 @@ SHOWN = {"video.freeze_total_ms": {"better": "lower", "floor": 100}}
 
 
 def full_run(names, skipped=()):
-    """What one sm_compare run over `names` writes: (json, text); `skipped` names say `compare off`."""
+    """What one sm_compare run over `names` writes: (json, text); `skipped` names say `compare off`,
+    or a two-way call when the name starts with `two_way`."""
     scenarios = [{"scenario": n, "sm": {"video.freeze_total_ms": i}, "webrtc": {"video.freeze_total_ms": 2 * i},
                   "per_seed": []} for i, n in enumerate(names) if n not in skipped]
     text = "streaming_media vs libwebrtc M157, mean of 10 seed(s)\n"
     for i, n in enumerate(names):
         if n in skipped:
-            text += "\n%s: skipped (compare off: not comparable with libwebrtc)\n" % n
+            if n.startswith("two_way"):
+                text += "\n%s: skipped (two-way call: sm_compare runs one-way calls only)\n" % n
+            else:
+                text += "\n%s: skipped (compare off: not comparable with libwebrtc)\n" % n
             continue
         text += "\n%s - scenario %d\n  %-30s %12s %12s  %s\n  video.freeze_total_ms %d %d  sm\n" % (
             n, i, "metric", "sm", "webrtc", "better", i, 2 * i)
@@ -34,6 +38,13 @@ class Merge(unittest.TestCase):
     def test_a_skipped_scenario_keeps_its_place(self):
         # #921: `compare off` leaves shard 0 one JSON entry short; the old merge failed on round-robin counts.
         self.check_shards(["s%02d" % i for i in range(13)], ("s04", "s09"))
+
+    def test_two_way_scenarios_keep_their_place(self):
+        # Two-way scenarios (#743) are skipped too, unevenly across shards (3 in one, 2 in another on
+        # #975's first run); with no text block they broke the round-robin merge.
+        names = ["s%02d" % i for i in range(13)]
+        names[0], names[4], names[8], names[5] = "two_way_a", "two_way_b", "two_way_c", "two_way_d"
+        self.check_shards(names, ("two_way_a", "two_way_b", "two_way_c", "two_way_d", "s09"))
 
     def check_shards(self, names, skipped):
         whole_json, whole_text = full_run(names, skipped)

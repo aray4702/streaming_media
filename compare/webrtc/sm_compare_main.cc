@@ -9,7 +9,7 @@
 //
 // Each scenario runs with seeds seed, seed+1, ..., seed+N-1 (default N=3, or the
 // scenario's own `compare_seeds N` directive). A scenario with `compare off` is
-// skipped (#921);
+// skipped (#921), and so is a two-way one (#743);
 // the table shows the mean over seeds. The JSON has the means ("sm", "webrtc"),
 // every seed's values for the shown metrics ("per_seed"), and each shown
 // metric's direction and tie floor ("shown"), which tools/parity_report.py
@@ -258,8 +258,9 @@ int main(int argc, char** argv) {
     }
     if (base.two_way) {
       // libwebrtc's side runs a one-way call only, so a two-way scenario has nothing to compare
-      // and stays out of the JSON and the parity report (issue #743).
-      std::fprintf(stderr, "%s: skipped, call two-way (sm_compare runs one-way calls only)\n", f.c_str());
+      // and stays out of the JSON and the parity report (issue #743). Its text block keeps its place
+      // in the round-robin order that tools/merge_compare.py rebuilds from the CI shards.
+      std::printf("\n%s: skipped (two-way call: sm_compare runs one-way calls only)\n", base.name.c_str());
       continue;
     }
     std::vector<Report> ours, theirs;
