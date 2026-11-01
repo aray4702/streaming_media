@@ -265,9 +265,11 @@ ALGORITHMS = [
                    "Duplicate packets -> dedup by sequence number"],
          headers=["timing/packet_buffer.h"], unit=["PacketBuffer"], e2e=["E2E_PacketBuffer"],
          bench=["timing/PacketBuffer_InsertAssemble"],
-         scenario="1 500 six-packet frames over a link with 8 ms Gaussian jitter (heavy reordering) and 3% "
-                  "duplication, with sequence numbers crossing the 16-bit wrap. Every frame must be assembled "
-                  "exactly once, with packets in order.",
+         scenario="1 500 frames (every third one packet, the others six) over a link with 8 ms Gaussian jitter "
+                  "(heavy reordering) and 3% duplication, with sequence numbers crossing the 16-bit wrap, decoded in "
+                  "order 60 ms after they complete with ClearTo on each decode. Every frame must reach the frame buffer "
+                  "with its packets in order and be decoded exactly once; a copy of a one-packet frame that lands after "
+                  "assembly is assembled again and dropped by the frame buffer's rule, as in libwebrtc (issue #899).",
          notes="See the [libwebrtc parity inventory](../../design/libwebrtc-parity.md#4-jitter-and-timing) for the differences from libwebrtc. "
                "Frame boundaries come from the packetizer's start flag and the RTP marker bit; frames may complete "
                "out of order and are ordered later by decodability (3.5) and the frame scheduler (7.7). "
@@ -296,8 +298,19 @@ ALGORITHMS = [
                       "a packet already handed out and at a held frame) and the marker-bit stop removed from the walk back "
                       "(unit tests `PacketBuffer.TwoFramesWithOneTimestampGoOutAsOne`, "
                       "`PacketBuffer.ForwardWalkStopsWherePaddingIsNoLongerRemembered`); suite unchanged on seed 1. "
-                      "A copy arriving after its frame is assembled is still rejected as a duplicate (libwebrtc takes it "
-                      "again), pending a ruling on #899."),
+                      "Issue #899 (window ruling, option (a)): a copy of a packet is a duplicate only while the packet is "
+                      "buffered, as InsertPacket's `buffer_[index]->seq_num() == seq_num`; after its frame is handed out "
+                      "the slot is empty and a copy is taken again (`reinserted`) until ClearTo, so a one-packet frame is "
+                      "assembled twice and the frame buffer drops the repeat (FrameBuffer::InsertFrame, already inserted); "
+                      "the receiver counts `frames_received` after the frame buffer takes a frame, as "
+                      "ReceiveStatisticsProxy::OnCompleteFrame (unit tests "
+                      "`PacketBuffer.CopyOfAOnePacketFrameAfterAssemblyIsAssembledAgain`, "
+                      "`PacketBuffer.CopyOfAPacketOfAnAssembledFrameStaysUntilClearTo`, "
+                      "`RtpReceiver.ACopyAfterAssemblyIsAssembledAgainAndTheFrameBufferDropsIt`; e2e "
+                      "`E2E_PacketBuffer.ReorderedDuplicatedStreamDecodesEveryFrameOnce`); suite bit-identical on seed 1. "
+                      "Deviation of the non-default path: `timing v1` has no frame buffer, so its receiver sets "
+                      "`drop_copies_after_assembly` and keeps rejecting such a copy, so a frame is never rendered twice "
+                      "(`RtpReceiver.TimingV1DropsACopyAfterAssemblyInThePacketBuffer`)."),
     dict(id="4.2", slug="rtcp-stats", title="RTCP statistics: loss, jitter and RTT",
          problems=["Measuring network delay -> RTCP SR/RR (RTT, jitter), transport-wide feedback, abs-send-time"],
          headers=["timing/rtcp_stats.h"], unit=["RtcpStats"], e2e=["E2E_RtcpStats"],

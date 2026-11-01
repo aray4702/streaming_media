@@ -50,7 +50,12 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     if (first_seq_ - s >= static_cast<int64_t>(cfg_.max_size / 2)) Clear();
     first_seq_ = s;
   }
-  if (!packets_.count(s) && !done_.count(s)) {
+  // InsertPacket: `buffer_[index]->seq_num() == seq_num` is a duplicate only
+  // while the packet is buffered; after its frame is handed out the slot is
+  // empty and a copy is taken again (issue #899).
+  const bool copy_after_assembly = !packets_.count(s) && done_.count(s);
+  const bool reject_copy = copy_after_assembly && cfg_.drop_copies_after_assembly;
+  if (!packets_.count(s) && !reject_copy) {
     // The packet buffer is full: grow it, and clear it at the maximum.
     while (SlotTaken(s) && size_ < cfg_.max_size) {
       size_ = std::min(cfg_.max_size, 2 * size_);
@@ -67,9 +72,13 @@ InsertResult PacketBuffer::Insert(RtpPacket p, bool frame_start, Timestamp now, 
     ++stats_.too_old;
     return InsertResult::kTooOld;
   }
-  if (packets_.count(s) || done_.count(s)) {
+  if (packets_.count(s) || reject_copy) {
     ++stats_.duplicates;
     return InsertResult::kDuplicate;
+  }
+  if (copy_after_assembly) {
+    ++stats_.reinserted;
+    SM_EVENT(cfg_.events, now, "packet_buffer", "reinserted", 0, s);
   }
   if (highest_ != INT64_MIN && s < highest_) {
     ++stats_.reordered;
@@ -243,6 +252,7 @@ std::vector<AssembledFrame> PacketBuffer::PopCompleteFrames() {
 void PacketBuffer::ExportMetrics(MetricsWriter& w) const {
   w.Counter("inserted", stats_.inserted);
   w.Counter("duplicates", stats_.duplicates);
+  w.Counter("reinserted", stats_.reinserted);
   w.Counter("too_old", stats_.too_old);
   w.Counter("padding", stats_.padding);
   w.Counter("cleared", stats_.cleared);

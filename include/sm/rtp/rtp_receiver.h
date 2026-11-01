@@ -302,7 +302,7 @@ struct RtpReceiverStats {
   uint64_t padding = 0;
   uint64_t unknown_ssrc = 0;
   uint64_t invalid_payload = 0;
-  uint64_t frames_received = 0;   // Assembled frames.
+  uint64_t frames_received = 0;   // Assembled frames the frame buffer took (timing v2), as ReceiveStatisticsProxy::OnCompleteFrame.
   uint64_t frames_scheduled = 0;  // Decodable frames handed to the scheduler.
   uint64_t frame_meta_evicted = 0;  // Assembled frames that never became decodable.
   // timing v2, FrameBuffer::InsertFrame: assembled frames the frame buffer refused (full, or at or
