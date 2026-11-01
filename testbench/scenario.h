@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "ai_source.h"
 #include "sm/core/units.h"
 
 namespace sm::testbench {
@@ -166,6 +167,11 @@ struct Scenario {
   // rejected module left its audio as it was). A rate libwebrtc doesn't run them at corrupted
   // memory before #594; the bench call itself runs no APM.
   std::optional<int> apm_rate;
+  // `ai_source [speed=<x>] [burst=<time>] [gap=<time>] [first_chunk=<time>] [frame=<time>]`: the AI
+  // endpoint's media source in a two-way call, generated ahead of real time and sent at real time
+  // (testbench/ai_source.h; issue #4, #758). Parsed only for now: the call reads it once the two-way
+  // call exists (#758 part 2, after #746), so a one-way scenario runs as before.
+  std::optional<AiSourceConfig> ai_source;
 
   // Congestion control.
   DataRate start_rate = DataRate::KilobitsPerSec(300);
