@@ -158,7 +158,8 @@ struct Fixture {
     allocator->set_step_delay(kMinimumStepDelay);
   }
 
-  void AddInterface(const IpAddress& ip, std::string name = "test", AdapterType type = ADAPTER_TYPE_UNKNOWN) {
+  void AddInterface(const IpAddress& ip) { network_manager.AddInterface(ip); }
+  void AddInterface(const IpAddress& ip, std::string name, AdapterType type = ADAPTER_TYPE_UNKNOWN) {
     network_manager.AddInterface(ip, std::move(name), type);
   }
 
@@ -1045,7 +1046,7 @@ SM_TEST(P2pBasicPortAllocator, PortsTakeSessionSettings) {
   SM_EXPECT_EQ(f.ports[0]->content_name(), std::string("test content"));
 }
 
-// RegatherOnFailedNetworks: without connections (#1000) every network has
+// RegatherOnFailedNetworks: a network whose ports have no connection has
 // failed: its ports are pruned and it is gathered on again.
 SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworks) {
   Fixture f(Fixture::kFake, /*with_stun_server=*/false);
@@ -1181,4 +1182,68 @@ SM_TEST(P2pBasicPortAllocator, NetworkChangeDuringGathering) {
   SM_EXPECT_EQ(g.ports.size(), size_t{2});
   SM_EXPECT_TRUE(g.HasCandidate(IceCandidateType::kHost, "udp", kClientIp2));
   SM_EXPECT_EQ(g.regathering, 1);
+}
+
+// RegatherOnFailedNetworks only regathers on networks whose ports have no
+// connection (GetFailedNetworks).
+SM_TEST(P2pBasicPortAllocator, NetworkWithConnectionIsNotFailed) {
+  Fixture f(Fixture::kFake, /*with_stun_server=*/false);
+  f.AddInterface(kClientIp, "eth0");
+  f.AddInterface(kClientIp2, "eth1");
+  f.CreateSession();
+  f.session->StartGettingPorts(f.now);
+  SM_ASSERT_TRUE(f.RunUntilDone());
+  SM_ASSERT_EQ(f.ports.size(), size_t{2});
+  Port* eth0 = f.ports[0]->network()->name() == "eth0" ? f.ports[0] : f.ports[1];
+  Port* eth1 = eth0 == f.ports[0] ? f.ports[1] : f.ports[0];
+  eth0->SetIceRole(ICEROLE_CONTROLLING);
+  Candidate remote(ICE_CANDIDATE_COMPONENT_RTP, "udp", SocketAddress(Ip("33.33.33.33"), 4000), 1, "rufrag",
+                   "rpasswordrpasswordrpass", IceCandidateType::kHost, 0, "f");
+  SM_ASSERT_TRUE(eth0->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE) != nullptr);
+  f.candidates.clear();
+  f.session->RegatherOnFailedNetworks(f.now);
+  // Only eth1's port is pruned and regathered.
+  SM_ASSERT_EQ(f.removed.size(), size_t{1});
+  SM_EXPECT_TRUE(f.removed[0].address().ipaddr() == kClientIp2);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
+  SM_EXPECT_TRUE(f.candidates[0].address().ipaddr() == kClientIp2);
+  SM_EXPECT_TRUE(std::find(f.ports.begin(), f.ports.end(), eth0) != f.ports.end());
+  SM_EXPECT_TRUE(std::find(f.ports.begin(), f.ports.end(), eth1) == f.ports.end());
+}
+
+// PeerConnection::InitializePortAllocator_n with RTCConfiguration's defaults,
+// and the settings that turn flags off or on.
+SM_TEST(P2pPortAllocator, ConfigureAsPeerConnection) {
+  Fixture f;
+  ConfigureAsPeerConnection(f.now, f.allocator.get(), {kStunAddr}, {});
+  SM_EXPECT_EQ(f.allocator->flags(), uint32_t{PORTALLOCATOR_ENABLE_SHARED_SOCKET | PORTALLOCATOR_ENABLE_IPV6 |
+                                              PORTALLOCATOR_ENABLE_IPV6_ON_WIFI});
+  SM_EXPECT_EQ(f.allocator->step_delay(), kMinimumStepDelay);
+  SM_EXPECT_EQ(f.allocator->candidate_filter(), uint32_t{CF_ALL});
+  SM_EXPECT_EQ(f.allocator->max_ipv6_networks(), kDefaultMaxIPv6Networks);
+  SM_EXPECT_EQ(f.allocator->candidate_pool_size(), 0);
+  SM_EXPECT_TRUE(f.allocator->turn_port_prune_policy() == NO_PRUNE);
+
+  Fixture g;
+  PeerConnectionAllocatorConfig config;
+  config.candidate_filter = CF_ALL & ~CF_HOST;  // kNoHost.
+  config.ice_candidate_pool_size = 1;
+  config.disable_ipv6_on_wifi = true;
+  config.tcp_candidates_enabled = false;
+  config.low_cost_networks_only = true;
+  config.disable_link_local_networks = true;
+  config.prune_turn_ports = true;
+  config.ipv6_default = false;
+  config.stun_candidate_keepalive_interval_ms = 123;
+  ConfigureAsPeerConnection(g.now, g.allocator.get(), {kStunAddr}, {}, config);
+  SM_EXPECT_EQ(g.allocator->flags(), uint32_t{PORTALLOCATOR_ENABLE_SHARED_SOCKET | PORTALLOCATOR_DISABLE_TCP |
+                                              PORTALLOCATOR_DISABLE_COSTLY_NETWORKS |
+                                              PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS});
+  SM_EXPECT_EQ(g.allocator->candidate_filter(), uint32_t{CF_REFLEXIVE | CF_RELAY});
+  SM_EXPECT_TRUE(g.allocator->turn_port_prune_policy() == PRUNE_BASED_ON_PRIORITY);
+  SM_EXPECT_TRUE(*g.allocator->stun_candidate_keepalive_interval() == TimeDelta::Millis(123));
+  // The pooled session was made after the flags were set.
+  const PortAllocatorSession* pooled = g.allocator->GetPooledSession();
+  SM_ASSERT_TRUE(pooled != nullptr);
+  SM_EXPECT_EQ(pooled->flags(), g.allocator->flags());
 }

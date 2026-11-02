@@ -18,9 +18,7 @@
 //   SanitizeCandidate only removes related addresses, as libwebrtc without an
 //   mDNS responder; no TurnCustomizer, TLS certificate verifier or TURN
 //   logging id (C4).
-// - api/transport/enums.h (PortPrunePolicy, VpnPreference) is not in
-//   reference/; the values are the ones port_allocator.h and
-//   basic_port_allocator.cc use.
+// - PortPrunePolicy and VpnPreference are api/transport/enums.h's.
 #pragma once
 
 #include <cstdint>
@@ -36,6 +34,7 @@
 #include "sm/p2p/candidate.h"
 #include "sm/p2p/port.h"
 #include "sm/p2p/socket_address.h"
+#include "sm/p2p/transport_description.h"
 
 namespace sm::p2p {
 
@@ -79,9 +78,10 @@ enum : uint32_t {
 
 // How TURN ports on one network are pruned (api/transport/enums.h).
 enum PortPrunePolicy { NO_PRUNE, PRUNE_BASED_ON_PRIORITY, KEEP_FIRST_READY };
-// Which networks a VPN preference keeps (api/transport/enums.h; the values
-// the allocator reads).
-enum class VpnPreference { kDefault, kOnlyUseVpn, kNeverUseVpn };
+// api/transport/enums.h. BasicPortAllocator acts on kOnlyUseVpn and
+// kNeverUseVpn; kPreferVpn and kAvoidVpn sort networks in a network manager
+// (an OS monitor's, C11, C12).
+enum class VpnPreference { kDefault, kOnlyUseVpn, kNeverUseVpn, kPreferVpn, kAvoidVpn };
 
 enum class TlsCertPolicy { TLS_CERT_POLICY_SECURE, TLS_CERT_POLICY_INSECURE_NO_CHECK };
 
@@ -126,16 +126,9 @@ struct RelayServerConfig {
   std::vector<std::string> tls_elliptic_curves;
 };
 
-// IceParameters' credentials (p2p/base/transport_description.h). Kept apart
-// from ice_transport_internal.h, whose IceRole clashes with port.h's until
-// #1002 joins them.
-struct IceCredentials {
-  std::string ufrag;
-  std::string pwd;
-};
 // IceCredentialsIterator::CreateRandomIceCredentials: a 4-character ufrag
 // and a 24-character password (ICE_UFRAG_LENGTH, ICE_PWD_LENGTH).
-IceCredentials CreateRandomIceCredentials();
+IceParameters CreateRandomIceCredentials();
 // rtc_base/crypto_random CreateRandomId64, from the STUN random hook (a
 // fixed-seed generator without it: tests only).
 uint64_t CreateRandomId64();
@@ -297,9 +290,9 @@ class PortAllocator {
   // restricted), given the transport's parameters. nullptr if none.
   std::unique_ptr<PortAllocatorSession> TakePooledSession(std::string_view content_name, int component,
                                                           std::string_view ice_ufrag, std::string_view ice_pwd);
-  const PortAllocatorSession* GetPooledSession(const IceCredentials* ice_credentials = nullptr) const;
+  const PortAllocatorSession* GetPooledSession(const IceParameters* ice_credentials = nullptr) const;
   virtual void DiscardCandidatePool() { pooled_sessions_.clear(); }
-  std::vector<IceCredentials> GetPooledIceCredentials() const;
+  std::vector<IceParameters> GetPooledIceCredentials() const;
   // Runs the pooled sessions.
   void ProcessPooledSessions(Timestamp now);
   Timestamp NextPooledSessionsProcessTime() const;
@@ -354,7 +347,7 @@ class PortAllocator {
 
  private:
   std::vector<std::unique_ptr<PortAllocatorSession>>::const_iterator FindPooledSession(
-      const IceCredentials* ice_credentials) const;
+      const IceParameters* ice_credentials) const;
 
   ServerAddresses stun_servers_;
   std::vector<RelayServerConfig> turn_servers_;
@@ -366,5 +359,34 @@ class PortAllocator {
   AllocatorCallbacks<uint32_t, uint32_t> candidate_filter_changed_;
   uint64_t tiebreaker_;
 };
+
+// What PeerConnection::InitializePortAllocator_n (pc/peer_connection.cc)
+// reads from the RTCConfiguration (api/peer_connection_interface.h), with its
+// defaults.
+struct PeerConnectionAllocatorConfig {
+  // IceTransportsType: kAll -> CF_ALL, kNoHost -> CF_ALL & ~CF_HOST,
+  // kRelay -> CF_RELAY, kNone -> CF_NONE.
+  uint32_t candidate_filter = CF_ALL;
+  int ice_candidate_pool_size = 0;
+  int max_ipv6_networks = kDefaultMaxIPv6Networks;
+  bool disable_ipv6_on_wifi = false;
+  bool disable_link_local_networks = false;
+  bool tcp_candidates_enabled = true;  // kTcpCandidatePolicyEnabled.
+  bool low_cost_networks_only = false;  // kCandidateNetworkPolicyLowCost.
+  bool prune_turn_ports = false;
+  PortPrunePolicy turn_port_prune_policy = NO_PRUNE;
+  std::optional<int> stun_candidate_keepalive_interval_ms;
+  // The WebRTC-IPv6Default field trial (enabled unless disabled).
+  bool ipv6_default = true;
+};
+
+// PeerConnection::InitializePortAllocator_n: adds the shared socket, IPv6 and
+// IPv6-on-Wi-Fi flags (less what the config turns off), the minimum step
+// delay (50 ms: "No step delay is used while allocating ports"), the
+// candidate filter and IPv6 network limit, then SetConfiguration last (it
+// may start pooled sessions with these settings).
+void ConfigureAsPeerConnection(Timestamp now, PortAllocator* allocator, const ServerAddresses& stun_servers,
+                               const std::vector<RelayServerConfig>& turn_servers,
+                               const PeerConnectionAllocatorConfig& config = {});
 
 }  // namespace sm::p2p
