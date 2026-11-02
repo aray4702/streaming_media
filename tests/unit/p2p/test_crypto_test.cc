@@ -1,10 +1,12 @@
 // Self-tests of test_crypto.{h,cc} against the standards' own vectors.
 #include <cstring>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
 
 #include "sm_test.h"
+#include "sm/p2p/stun.h"
 #include "test_crypto.h"
 
 namespace {
@@ -84,4 +86,18 @@ SM_TEST(StunTestCrypto, Sha256AndHmacVectors) {
   std::memset(key6, 0xaa, sizeof(key6));
   HmacSha256(key6, Bytes("Test Using Larger Than Block-Size Key - Hash Key First"), d);
   SM_EXPECT_EQ(Hex(d, 32), std::string("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54"));
+}
+
+// Issue #1048: STUN transaction ids (12 bytes, one of 64 characters per byte, stun.cc CreateRandomString) from
+// CounterBytes repeat after 64 ids, which drops checks in long ICE runs; UniqueBytes' ids don't repeat.
+SM_TEST(StunTestCrypto, UniqueIdsDontRepeat) {
+  sm::p2p::testing::InstallTestCrypto();
+  std::set<std::string> counter;
+  for (int i = 0; i < 65; ++i) counter.insert(sm::p2p::StunMessage::GenerateTransactionId());
+  SM_EXPECT_TRUE(counter.size() < 65u);
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  std::set<std::string> unique;
+  for (int i = 0; i < 100000; ++i) unique.insert(sm::p2p::StunMessage::GenerateTransactionId());
+  SM_EXPECT_EQ(unique.size(), 100000u);
+  sm::p2p::testing::InstallTestCrypto();
 }
