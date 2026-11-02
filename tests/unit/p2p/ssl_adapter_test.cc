@@ -119,7 +119,7 @@ struct Fixture {
   bool Connect(const p2p::PacketSocketTcpOptions& options, const p2p::SocketAddress& remote) {
     client = client_host.CreateClientTcpSocket(now, p2p::SocketAddress(client_host.ip(), 0), remote, options);
     if (!client) return false;
-    client->SubscribeConnect(this, [this](AsyncPacketSocket*) { ++connects; });
+    client->SubscribeConnect(this, [this](AsyncPacketSocket*, Timestamp) { ++connects; });
     client->SubscribeCloseEvent(this, [this](AsyncPacketSocket*, int err) {
       ++closes;
       close_error = err;

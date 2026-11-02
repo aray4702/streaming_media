@@ -39,7 +39,7 @@ AsyncTcpSocketBase::AsyncTcpSocketBase(std::unique_ptr<Socket> socket, size_t ma
     : socket_(std::move(socket)), max_insize_(max_packet_size), max_outsize_(max_packet_size) {
   assert(socket_);
   inbuf_.resize(kMinimumRecvSize);  // EnsureCapacity(kMinimumRecvSize).
-  socket_->SubscribeConnectEvent(this, [this](Socket*, Timestamp) { NotifyConnect(); });
+  socket_->SubscribeConnectEvent(this, [this](Socket*, Timestamp now) { NotifyConnect(now); });
   socket_->SubscribeReadEvent(this, [this](Socket* s, Timestamp now) { OnReadEvent(s, now); });
   socket_->SubscribeWriteEvent(this, [this](Socket* s, Timestamp now) { OnWriteEvent(s, now); });
   socket_->SubscribeCloseEvent(this, [this](Socket*, int error) { NotifyClosed(error); });

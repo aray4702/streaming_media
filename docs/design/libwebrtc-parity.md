@@ -847,11 +847,11 @@ release and graceful release, closing, the forged unauthenticated success) and a
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | Network thread; `PostTask` for the port error, refresh error, allocate mismatch, alternate server and close; `PostDelayedTask` for an entry's delete | The port queues them and runs them in `Process(now)` at `NextProcessTime()`; it keeps the latest `now`, which its destructor uses to send the release | The library's time model, as 10.3 |
-| TCP, TLS and DTLS to the server | `CreateClientTcpSocket`, `OnSocketConnect`, `PROTO_DTLS` | Not yet: a TCP or TLS server fails to create its socket | C4 parts 2-4 (10.x rows to come, #1034-#1036) |
+| TCP, TLS and DTLS to the server | `CreateClientTcpSocket`, `OnSocketConnect`, `PROTO_DTLS` | TCP and TLS as libwebrtc (10.14); no `PROTO_DTLS` | 10.14 (#1036) |
 | DNS | `ResolveTurnAddress` for a server given by name | None: the library's addresses are IP literals; the URL host is the IP | As 10.3 |
 | `TurnCustomizer`, local network access, mDNS candidates, ECN, `CopyPortInformationToPacketInfo`, `turn_overhead_bytes` | Present | None (no customizer; access granted; addresses carry no hostnames; no ECN or packet info in `PacketOptions`) | Host-stack features (C11, C12) and the library's socket types |
-| REST credentials | Beyond a username and password pair | Username and password only | C4 part 4 (#1036) |
-| `TurnServer` | `TaskQueueBase` timers, TCP listeners, `StunMessageObserver` | Timers in `Process(now)`, UDP only, an observer callback; external socket factory not owned | Test server on the emulated network |
+| REST credentials | Beyond a username and password pair | A helper builds them (10.14) | 10.14 (#1036) |
+| `TurnServer` | `TaskQueueBase` timers, TCP listeners, `StunMessageObserver` | Timers in `Process(now)`, an observer callback, TCP and TLS listeners since 10.14; external socket factory not owned | Test server on the emulated network |
 
 ### 10.11 Data channels: the SCTP packet layer (`src/dcsctp/`, C7 part 1, #1032)
 
@@ -935,6 +935,43 @@ in the emulated network). Differences:
 | Hostname on addresses | `SocketAddress::hostname()`, also in comparisons for an unresolved address | `SocketAddress::hostname()` / `SetHostname`; comparisons use the IP and port only | The library resolves nothing (10.3); the name is carried for TLS |
 | Mbed TLS backend | (BoringSSL only) | Its ECDHE suites of the list and its TLS 1.3 suites (no static RSA), no OCSP or SCT request, no extension permutation; the host name from its CN/SAN mismatch flag after the handshake | What Mbed TLS 3.6 has (as 10.2) |
 | Logging, `SSLInfoCallback` | `RTC_LOG` | `TlsStream::error()` names the step that failed | No logging in the library |
+
+### 10.14 TURN over TCP and TLS (`src/p2p/turn_port.cc`, `include/sm/sim/turn_server.h`, C4 part 4, #1036)
+
+The TCP and TLS half of `p2p/base/turn_port.cc`, on 10.8's TCP sockets and 10.13's TLS client socket. Same
+behaviour: `CreateTurnClientSocket` asks the factory for a client TCP socket from the network's best IP to the
+server with `OPT_STUN` (STUN and ChannelData framing, ChannelData padded to 4 bytes on the stream) and, for
+`PROTO_TLS`, `OPT_TLS` or, under `TLS_CERT_POLICY_INSECURE_NO_CHECK`, `OPT_TLS_INSECURE`, with the config's ALPN
+protocols and curves; the port stays `STATE_CONNECTING` until the connect event, and `OnSocketConnect` then
+checks the socket's local address against the network's IPs (loopback and a network whose best IP is the any
+address still allowed; otherwise 701 "Address not associated with the desired network interface.") and sends
+the Allocate; a 300 drops the connection and `PrepareAddress` connects to the alternate server; a connection
+that closes closes the port (701 "Failed to establish connection" before the allocation, the local address
+scrubbed for a private server); the relay candidate's relay protocol is `tcp` or `tls` with type preference
+`ICE_TYPE_PREFERENCE_RELAY_TCP` or `_TLS` and URL `turn:` or `turns:<ip>:<port>?transport=tcp`. The test server
+gets `AddInternalServerSocket` (`OnNewInternalConnection`: accept, wrap in a server-role TLS adapter for TLS,
+`AsyncStunTCPSocket`; `OnInternalSocketClose`; `DestroyAllocation` deleting a TCP or TLS allocation's
+connection). `CreateTurnRestCredentials` builds the TURN REST API's short-lived credentials (username
+`<expiry>:<user>`, password base64(HMAC-SHA1(secret, username))), which libwebrtc takes as plain long-term
+credentials. The TCP and TLS cases of `turn_port_unittest.cc` (allocate and the reconstructed URLs, allocate
+mismatch, the scrubbed and unscrubbed error address, the alternate server and the refused redirects: ping-pong,
+repetition, loopback, the any address; connection, send data, release, graceful release), plus a refused
+connection, a connection closed after the allocation, TLS on port 443, REST credentials against the server,
+and relay candidates over TCP and over TLS gathered by `BasicPortAllocator` with UDP blocked, are in
+`tests/unit/p2p/turn_port_tcp_test.cc` and `turn_port_tls_test.cc` (shared cases in `turn_stream_cases.h`).
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Connect event | `SubscribeConnect(tag, void(AsyncPacketSocket*))` | The callback also takes `now`, the time of the connect event | The library's time model: the Allocate is sent at `now` |
+| `TurnTcpAllocationDiscardedIfBoundAddressDoesNotMatchNetwork`, `...NotDiscardedIfNotBoundToBestIP`, `...WhenProxyChangesAddressToLocalHost` | Tested with `VirtualSocketServer::SetAlternativeLocalAddress` | The check is ported; those three tests are not | The emulated network binds where asked and has no alternative local address |
+| IPv6 cases (`TestTurnAlternateServerV4toV6TCP/TLS`, `...LoopbackTcpIpv6`, `TCPPortNotDiscardedIfBoundToTemporaryIP`) | Run | Not run | The emulated network is IPv4 (as 10.10) |
+| `TestTurnTcpOnAddressResolveFailure`, `TestTurnTlsOnAddressResolveFailure` | Run | Not run | No DNS (10.10) |
+| `TestTurnAlternateServerLocalNetworkAccess*TCP` | Run | Not run | No local network access permission (10.10) |
+| Test server connection gone | Allocation kept; packets for it go to the deleted socket | Allocation kept; packets for it are dropped | Test-server safety only |
+| `PROTO_DTLS`, `TurnCustomizer`, `tls_cert_verifier` from the port | Present | None (no `PROTO_DTLS`; no customizer; the factory's verifier option is there, the port passes none) | As 10.10; no call sets a verifier on a TURN server |
+| `P2PTransportChannelMultihomedTest.TestFailoverWithManyConnections` | Run with a TCP TURN server and IPv6 interfaces | Not run; the TCP TURN server it needs is here now | The emulated network is IPv4 only (10.9) |
+| UDP blocked | `FirewallSocketServer::AddRule(false, FP_UDP, ...)` | `ByteNetwork::SetFirewallRule` with a rule on the datagram's protocol | The emulated network's firewall (10.9) |
 
 ## Open questions for the Owner
 

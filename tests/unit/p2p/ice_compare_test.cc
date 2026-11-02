@@ -61,6 +61,31 @@ SM_TEST(P2pIceCompare, ScenariosRunAndAreDeterministic) {
   }
 }
 
+// Recovery after a network change (#1004 part 2): with continual gathering the call moves to the new interface on
+// either side (also from Wi-Fi to cellular), within the 30 s libwebrtc's P2PTransportChannelMultihomedTest failover
+// tests wait; when the Wi-Fi link dies with cellular up from the start, it fails over to cellular even when gathering
+// once, as TestFailoverControllingSide and TestFailoverControlledSide; when an interface is replaced with
+// PeerConnection's default gathering (once) there is no candidate on the new interface, so it does not recover without
+// an ICE restart. A run is the same for the same seed.
+SM_TEST(P2pIceCompare, RecoversAfterNetworkChange) {
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  for (const Scenario& s : ChangeScenarios()) {
+    const Result a = RunSm(s, 1);
+    const Result b = RunSm(s, 1);
+    SM_EXPECT_TRUE(a.connected);
+    const bool recovers = s.continual || s.dead;
+    SM_EXPECT_EQ(a.recovered, recovers);
+    if (recovers) {
+      SM_EXPECT_TRUE(a.recover_ms > 0 && a.recover_ms < kRecoveryTime.us() / 1000.0);
+      SM_EXPECT_EQ(a.pair_after, a.pair);  // The same NATs, so the same candidate types.
+    }
+    SM_EXPECT_EQ(a.recovered, b.recovered);
+    SM_EXPECT_EQ(a.recover_ms, b.recover_ms);
+    SM_EXPECT_EQ(a.pair_after, b.pair_after);
+    SM_EXPECT_EQ(a.checks_total, b.checks_total);
+  }
+}
+
 // Issue #1048: our side counted 16 checks in 10 s on the pairs that need a relay where libwebrtc counts 418, 32
 // against 50 after connecting behind NATs, and took 1067 ms against 501 ms to connect port-port at 20% loss. The ping
 // schedule was libwebrtc's; the comparison's test crypto was not: CounterBytes is an 8-bit counter, so its 12-byte

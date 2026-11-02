@@ -22,6 +22,7 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -118,10 +119,12 @@ class UdpSocket final : public w::AsyncPacketSocket {
 // UDP only, as the comparison runs with TCP candidates off (ice_scenarios.h).
 class SocketFactory final : public w::PacketSocketFactory {
  public:
-  SocketFactory(SimTime* sim, sm::sim::EmulatedSocketServer* host) : sim_(sim), host_(host) {}
+  // Endpoint i's sockets live on the host of the interface they bind to (Topology::HostFor), as ours.
+  SocketFactory(SimTime* sim, const Topology* topo, int i) : sim_(sim), topo_(topo), i_(i) {}
   std::unique_ptr<w::AsyncPacketSocket> CreateUdpSocket(const w::Environment&, const w::SocketAddress& address,
                                                         uint16_t min_port, uint16_t max_port) override {
-    auto socket = host_->CreateUdpSocket(FromW(address), min_port, max_port);
+    auto socket = topo_->HostFor(i_, address.ipaddr().v4AddressAsHostOrderInteger())
+                      ->CreateUdpSocket(FromW(address), min_port, max_port);
     if (!socket) return nullptr;
     return std::make_unique<UdpSocket>(sim_, std::move(socket));
   }
@@ -139,7 +142,8 @@ class SocketFactory final : public w::PacketSocketFactory {
 
  private:
   SimTime* sim_;
-  sm::sim::EmulatedSocketServer* host_;
+  const Topology* topo_;
+  int i_;
 };
 
 // rtc_base/fake_network.h's FakeNetworkManager, posting to a TaskQueueBase instead of a Thread.
@@ -147,8 +151,18 @@ class NetworkManager final : public w::NetworkManagerBase {
  public:
   explicit NetworkManager(w::TaskQueueBase* network_thread) : network_thread_(network_thread) {}
 
-  void AddInterface(uint32_t ip) {
-    ifaces_.push_back({w::IPAddress(ip), "test" + std::to_string(next_index_++)});
+  void AddInterface(uint32_t ip) { AddInterface(ip, "test" + std::to_string(next_index_++)); }
+  void AddInterface(uint32_t ip, std::string name, w::AdapterType type = w::ADAPTER_TYPE_UNKNOWN) {
+    ifaces_.push_back({w::IPAddress(ip), std::move(name), type});
+    DoUpdateNetworks();
+  }
+  void RemoveInterface(uint32_t ip) {
+    for (auto it = ifaces_.begin(); it != ifaces_.end(); ++it) {
+      if (it->ip == w::IPAddress(ip)) {
+        ifaces_.erase(it);
+        break;
+      }
+    }
     DoUpdateNetworks();
   }
   void StartUpdating() override {
@@ -166,6 +180,7 @@ class NetworkManager final : public w::NetworkManagerBase {
   struct Iface {
     w::IPAddress ip;
     std::string name;
+    w::AdapterType type;
   };
   void DoUpdateNetworks() {
     if (start_count_ == 0) return;
@@ -173,7 +188,7 @@ class NetworkManager final : public w::NetworkManagerBase {
     std::vector<std::unique_ptr<w::Network>> networks;
     for (const Iface& it : ifaces_) {
       auto net = std::make_unique<w::Network>(it.name, it.name, w::TruncateIP(it.ip, kFakeIPv4NetworkPrefixLength),
-                                              kFakeIPv4NetworkPrefixLength, w::ADAPTER_TYPE_UNKNOWN);
+                                              kFakeIPv4NetworkPrefixLength, it.type);
       net->set_default_local_address_provider(this);
       net->AddIP(it.ip);
       networks.push_back(std::move(net));
@@ -268,8 +283,17 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       Endpoint& e = ep[i];
       Stage("network manager");
       e.network_manager = std::make_unique<NetworkManager>(queue.get());
-      e.network_manager->AddInterface(topo.ip[i]);
-      e.socket_factory = std::make_unique<SocketFactory>(&sim, topo.host[i].get());
+      // As RunSm: the interfaces' names and types.
+      if (s.wifi_to_cellular && i == s.change) {
+        e.network_manager->AddInterface(topo.ip[i], "eth0", w::ADAPTER_TYPE_WIFI);
+      } else {
+        e.network_manager->AddInterface(topo.ip[i]);
+      }
+      if (s.dead && i == s.change) {
+        topo.AddAlternate(i);
+        e.network_manager->AddInterface(topo.alt_ip[i], "wlan0", w::ADAPTER_TYPE_CELLULAR);
+      }
+      e.socket_factory = std::make_unique<SocketFactory>(&sim, &topo, i);
       Stage("allocator");
       e.allocator = std::make_unique<w::BasicPortAllocator>(env, e.network_manager.get(), e.socket_factory.get());
       Stage("configure");
@@ -285,8 +309,10 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       });
       Stage("ice config");
       // IceConfig(RTCConfiguration()) leaves every optional unset and gathers once (p2p/base/ice_transport_internal.cc):
-      // the default IceConfig.
-      e.ch->SetIceConfig(w::IceConfig());
+      // the default IceConfig; continual_gathering_policy = GATHER_CONTINUALLY carries over.
+      w::IceConfig config;
+      if (s.continual) config.continual_gathering_policy = w::GATHER_CONTINUALLY;
+      e.ch->SetIceConfig(config);
       Stage("ice role");
       e.ch->SetIceRole(i == 0 ? w::ICEROLE_CONTROLLING : w::ICEROLE_CONTROLLED);
       Stage("ice parameters");
@@ -315,24 +341,62 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
     return true;
   };
 
+  auto pair = [&] {
+    const w::Connection* sel = ep[0].ch->selected_connection();
+    return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
+  };
+
   Result r;
-  const w::Timestamp until = start + w::TimeDelta::Micros(kRunTime.us());
+  const w::Timestamp until = start + w::TimeDelta::Micros(RunTime(s).us());
+  const w::Timestamp change_at =
+      s.change < 0 ? w::Timestamp::PlusInfinity() : start + w::TimeDelta::Micros(kChangeAt.us());
+  bool changed = false;
+  std::optional<w::SocketAddress> old_remote;  // As RunSm.
+  auto recovered = [&] {
+    if (!connected()) return false;
+    const w::Connection* own = ep[s.change].ch->selected_connection();
+    const w::Connection* other = ep[1 - s.change].ch->selected_connection();
+    return own->network()->GetBestIP() == w::IPAddress(topo.alt_ip[s.change]) &&
+           (!old_remote || other->remote_candidate().address() != *old_remote);
+  };
   for (int guard = 0; guard < 5000000; ++guard) {
     run_on_network([&] {
       if (!r.connected && connected()) {
         r.connected = true;
         r.connect_ms = (sim.Now() - start).us() / 1000.0;
-        const w::Connection* sel = ep[0].ch->selected_connection();
-        r.pair = std::string(sel->local_candidate().type_name()) + "/" +
-                 std::string(sel->remote_candidate().type_name());
+        r.pair = pair();
         r.checks_at_connect = checks();
+      }
+      if (changed && !r.recovered && recovered()) {
+        r.recovered = true;
+        r.recover_ms = (sim.Now() - change_at).us() / 1000.0;
+        r.pair_after = pair();
       }
     });
     w::Timestamp t = std::min(sim.NextRunTime(), ToW(topo.net.NextEvent()));
+    if (!changed) t = std::min(t, change_at);
     if (!signaling[0].empty() || !signaling[1].empty()) t = std::min(t, sim.Now());
     if (t > until) break;
     sim.RunUntil(t);
     run_on_network([&] {
+      if (!changed && sim.Now() >= change_at) {
+        // The network change, as RunSm.
+        changed = true;
+        if (const w::Connection* other = ep[1 - s.change].ch->selected_connection()) {
+          old_remote = other->remote_candidate().address();
+        }
+        if (s.dead) {
+          topo.KillPrimary(s.change);
+        } else {
+          topo.ChangeNetwork(s.change);
+          if (s.wifi_to_cellular) {
+            ep[s.change].network_manager->AddInterface(topo.alt_ip[s.change], "wlan0", w::ADAPTER_TYPE_CELLULAR);
+          } else {
+            ep[s.change].network_manager->AddInterface(topo.alt_ip[s.change]);
+          }
+          ep[s.change].network_manager->RemoveInterface(topo.ip[s.change]);
+        }
+      }
       topo.Deliver(ToSm(sim.Now()));
       for (int i = 0; i < 2; ++i) {
         while (!signaling[i].empty()) {
@@ -361,10 +425,18 @@ struct Summary {
   double checks_at_connect = 0;
   double checks_total = 0;  // Mean over all runs.
   std::map<std::string, int> pairs;
+  int recovered = 0;
+  double recover_ms = 0;  // Mean over the recovered runs.
+  std::map<std::string, int> pairs_after;
 
   void Add(const Result& r) {
     ++runs;
     checks_total += r.checks_total;
+    if (r.recovered) {
+      ++recovered;
+      recover_ms += r.recover_ms;
+      ++pairs_after[r.pair_after];
+    }
     if (!r.connected) return;
     ++connected;
     connect_ms += r.connect_ms;
@@ -376,24 +448,29 @@ struct Summary {
       connect_ms /= connected;
       checks_at_connect /= connected;
     }
+    if (recovered) recover_ms /= recovered;
     if (runs) checks_total /= runs;
   }
-  std::string Pairs() const {
-    if (pairs.empty()) return "-";
+  static std::string PairList(const std::map<std::string, int>& m, int count) {
+    if (m.empty()) return "-";
     std::string out;
-    for (const auto& [p, n] : pairs) {
+    for (const auto& [p, n] : m) {
       if (!out.empty()) out += " ";
       out += p;
-      if (n != connected) out += "x" + std::to_string(n);
+      if (n != count) out += "x" + std::to_string(n);
     }
     return out;
   }
-  std::string Ms() const {
-    if (!connected) return "-";
+  static std::string MsOf(int count, double ms) {
+    if (!count) return "-";
     char buf[32];
-    std::snprintf(buf, sizeof buf, "%.0f", connect_ms);
+    std::snprintf(buf, sizeof buf, "%.0f", ms);
     return buf;
   }
+  std::string Pairs() const { return PairList(pairs, connected); }
+  std::string PairsAfter() const { return PairList(pairs_after, recovered); }
+  std::string Ms() const { return MsOf(connected, connect_ms); }
+  std::string RecoverMs() const { return MsOf(recovered, recover_ms); }
 };
 
 // The metrics differ by more than the parity band (sm_compare's tie tolerance: 5% relative, with an absolute floor).
@@ -475,8 +552,46 @@ int main(int argc, char** argv) {
                 ours.Pairs().c_str(), theirs.Pairs().c_str(), ours.checks_at_connect, theirs.checks_at_connect,
                 ours.checks_total, theirs.checks_total, gap.empty() ? "" : gap.c_str() + 1);
   }
-  std::printf("\n%d of %zu scenarios differ. Not run yet: recovery after a network change (#1004 part 2, after "
-              "#1002 part 3's multi-interface fixture); TCP and relay candidates (C4).\n",
-              gaps, Scenarios().size());
+  std::printf("\n%d of %zu scenarios differ.\n", gaps, Scenarios().size());
+
+  // Network changes (#1004 part 2).
+  std::printf("\nRecovery after a network change: endpoint changeN's interface goes away and another appears %d s "
+              "after gathering starts; recovery within %d s. Ours / libwebrtc\n\n",
+              static_cast<int>(kChangeAt.us() / 1000000), static_cast<int>(kRecoveryTime.us() / 1000000));
+  std::printf("| scenario | connected | recovered | recover ms | pair after (local/remote) | checks in %d s | gap |\n",
+              static_cast<int>((kChangeAt + kRecoveryTime).us() / 1000000));
+  std::printf("|---|---|---|---|---|---|---|\n");
+  int change_gaps = 0;
+  for (const Scenario& s : ChangeScenarios()) {
+    Summary ours, theirs;
+    for (int seed = 1; seed <= seeds; ++seed) {
+      if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
+      const Result a = RunSm(s, seed);
+      if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
+      const Result b = RunWebrtc(s, seed);
+      ours.Add(a);
+      theirs.Add(b);
+      if (verbose) {
+        std::fprintf(stderr, "%s seed %d: ours %d %d %.1f ms %s %d; libwebrtc %d %d %.1f ms %s %d\n", s.name.c_str(),
+                     seed, a.connected, a.recovered, a.recover_ms, a.pair_after.c_str(), a.checks_total, b.connected,
+                     b.recovered, b.recover_ms, b.pair_after.c_str(), b.checks_total);
+      }
+    }
+    ours.Finish();
+    theirs.Finish();
+    std::string gap;
+    if (ours.connected != theirs.connected) gap += " connected";
+    if (ours.recovered != theirs.recovered) gap += " recovered";
+    if (ours.recovered && theirs.recovered && Differs(ours.recover_ms, theirs.recover_ms, 10)) gap += " recover_ms";
+    if (ours.PairsAfter() != theirs.PairsAfter()) gap += " pair_after";
+    if (Differs(ours.checks_total, theirs.checks_total, 1)) gap += " checks_total";
+    if (!gap.empty()) ++change_gaps;
+    std::printf("| %s | %d/%d / %d/%d | %d/%d / %d/%d | %s / %s | %s / %s | %.1f / %.1f | %s |\n", s.name.c_str(),
+                ours.connected, ours.runs, theirs.connected, theirs.runs, ours.recovered, ours.runs, theirs.recovered,
+                theirs.runs, ours.RecoverMs().c_str(), theirs.RecoverMs().c_str(), ours.PairsAfter().c_str(),
+                theirs.PairsAfter().c_str(), ours.checks_total, theirs.checks_total, gap.empty() ? "" : gap.c_str() + 1);
+  }
+  std::printf("\n%d of %zu network-change scenarios differ. Not run yet: TCP and relay candidates (C4).\n",
+              change_gaps, ChangeScenarios().size());
   return 0;
 }
