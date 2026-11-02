@@ -1,0 +1,35 @@
+name ai_source_adaptive_capacity_drop
+describe Two-way audio call (user <-> AI), the AI's replies from #4's example source sent with adaptive send-ahead (at most 500 ms) and audio NACK on the AI-to-user stream; both directions drop from 2.5 Mbps to 100 kbps at 8 s, on a 100 ms RTT link (#763)
+duration 30s
+call two-way
+video off
+ai_source speed=3x burst=1s gap=300ms first_chunk=400ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=700ms len=5s
+turn user 20s-22s
+turn ai after=600ms len=5s
+ai_send_ahead 500ms adaptive
+down_audio_nack on
+at 0s capacity=2500kbps delay=50ms queue=300ms
+at 8s capacity=100kbps
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 8s capacity=100kbps
+# #763 acceptance: queue delay no worse than #762's option 2. With a fixed 500 ms lead the AI's early audio queues at
+# the 100 kbps bottleneck (down queue p95 152-167 ms, seeds 1-5); the adaptive lead stays near zero on this lossless
+# link (16-17 ms p95, against 7-9 ms at real time in ai_source_capacity_drop).
+expect ai.ahead_lead_max_ms < 10
+expect down.cc.queue_p95_ms < 50
+# program.md 6.3 sev:2, for each direction, and the conversation rows, as ai_source_capacity_drop.
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect down.audio.mouth_to_ear_p95_ms < 400
+expect up.cc.queue_over_200ms_pct == 0
+expect down.cc.queue_over_200ms_pct == 0
+expect ai.turns == 3
+expect ai.underruns == 0
+expect conv.responses == 3
+expect conv.user_speech_lost_pct <= 2
+expect conv.response_delay_p95_ms < 500

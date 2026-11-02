@@ -59,9 +59,16 @@ struct SentPacketInfo {
 // ReceivedIpPacket: a datagram as the socket hands it up. `payload` is valid
 // only during the callback.
 struct ReceivedPacket {
+  // ReceivedIpPacket::DecryptionInfo: what the DTLS transport did with the packet (#1006).
+  enum DecryptionInfo {
+    kNotDecrypted,   // Not yet decrypted, or not encrypted at all.
+    kDtlsDecrypted,  // Application data that came out of DTLS.
+    kSrtpEncrypted,  // SRTP passed through DTLS untouched (bypass); SRTP decrypts it.
+  };
   std::span<const uint8_t> payload;
   SocketAddress source_address;
   Timestamp arrival_time = Timestamp::MinusInfinity();
+  DecryptionInfo decryption_info = kNotDecrypted;
 };
 
 // Socket::Option.

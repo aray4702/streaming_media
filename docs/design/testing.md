@@ -49,6 +49,9 @@ the host's access links and NATs. The ICE ports run on it in the bench;
 OS sockets implement the same interface on devices. Its tests are the
 `EmulatedSockets` suite, with the address types in `P2pIpAddress` and
 `P2pSocketAddress`.
+`include/sm/sim/stun_server.h` (#997) is libwebrtc's test STUN server on
+one of those sockets; the `StunServer` suite sends binding requests through
+each NAT type and through loss, with `StunRequestManager`'s retransmissions.
 
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,
