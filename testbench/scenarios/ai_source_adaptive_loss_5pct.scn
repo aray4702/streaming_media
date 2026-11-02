@@ -1,0 +1,38 @@
+name ai_source_adaptive_loss_5pct
+describe Two-way audio call (user <-> AI), the AI's replies from #4's example source sent with adaptive send-ahead (at most 500 ms) and audio NACK on the AI-to-user stream, 5% random loss each way on a 100 ms RTT link (#763)
+duration 30s
+call two-way
+video off
+ai_source speed=3x burst=1s gap=300ms first_chunk=400ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=700ms len=5s
+turn user 20s-22s
+turn ai after=600ms len=5s
+ai_send_ahead 500ms adaptive
+down_audio_nack on
+at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms loss=5%
+# #763 acceptance: the cushion follows the impairment. With loss reported and audio NACK on, the lead grows to about
+# one round trip plus a frame (100 ms + 20 ms, plus twice the reported jitter: 155-162 ms on seeds 1-5), so a resent
+# frame can arrive before its playout; it stays well under #762's fixed 500 ms (max lead 404-456 ms there).
+expect ai.ahead_lead_max_ms > 100
+expect ai.ahead_lead_max_ms < 250
+# Queue delay no worse than #762's option 2 on the same link (queue p95 0.19-0.40 ms there), and no interruptions
+# (option 2 had one on seed 2).
+expect down.cc.queue_p95_ms < 1
+expect down.cc.queue_over_200ms_pct == 0
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect up.cc.queue_over_200ms_pct == 0
+expect ai.turns == 3
+expect ai.underruns == 0
+expect conv.responses == 3
+expect conv.user_speech_lost_pct <= 2
+expect conv.response_delay_p95_ms < 500
+# Target (program.md 6.3 sev:2): down.audio.mouth_to_ear_p95_ms < 400. Missed with the cushion (380-411 ms on seeds
+# 1-5, against 101-131 ms at real time in ai_source_loss_5pct): the user's NetEq holds the cushion on top of its own
+# target and time-compresses part of it (2.1% stretch). This is why real-time pacing stays the default (#765); the
+# receive-side minimum delay (#761 item 4) is the remaining part of #4's option 3.
