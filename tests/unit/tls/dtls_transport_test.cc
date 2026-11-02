@@ -157,6 +157,7 @@ SM_TEST(TlsDtlsTransport, RetransmitsALostFlight) {
   SM_EXPECT_EQ(p.dropped, 1);
 }
 
+#if !SM_TLS_BACKEND_MBEDTLS  // DTLS 1.3 only; Mbed TLS 3.6 has DTLS 1.2 (#998).
 SM_TEST(TlsDtlsTransport, Dtls13ClientResendsItsLastFlightAfterConnecting) {
   // In DTLS 1.3 the client is connected once it sends its Finished, and keeps the flight until the server ACKs it.
   // If it is lost the client's timer resends it: the timer runs after the handshake too (#1006).
@@ -175,6 +176,7 @@ SM_TEST(TlsDtlsTransport, Dtls13ClientResendsItsLastFlightAfterConnecting) {
   SM_EXPECT_TRUE(p.server->state() == DtlsState::kConnected);
   SM_EXPECT_TRUE(p.client->retransmissions() >= 1);
 }
+#endif
 
 SM_TEST(TlsDtlsTransport, CapsAtDtls12AndPicksACommonProfile) {
   DtlsConfig c12;

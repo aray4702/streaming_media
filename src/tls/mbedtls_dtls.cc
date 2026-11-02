@@ -20,6 +20,7 @@
 #include <mbedtls/x509_crt.h>
 
 #include <cstring>
+#include <vector>
 
 #include "mbedtls_common.h"
 #include "sm/tls/dtls_transport.h"
@@ -64,6 +65,7 @@ struct DtlsTransport::Impl {
   std::vector<std::vector<uint8_t>> received;
   mbedtls_ssl_srtp_profile srtp_profiles[MBEDTLS_TLS_SRTP_MAX_PROFILE_LIST_LENGTH + 1] = {};
   // The DTLS timer (mbedtls_ssl_set_timer_cb): started at `timer_start`, intermediate and final delays.
+  std::vector<uint16_t> groups;  // mbedtls_ssl_conf_groups keeps the pointer.
   std::optional<Timestamp> timer_start;
   uint32_t int_ms = 0, fin_ms = 0;
   bool handshake_over = false;
@@ -184,6 +186,13 @@ bool DtlsTransport::Start(Timestamp now) {
   if (!config_.srtp_crypto_suites.empty() && n == 0) return false;  // Only profiles this backend lacks.
   if (n > 0 && mbedtls_ssl_conf_dtls_srtp_protection_profiles(&im.conf, im.srtp_profiles) != 0) return false;
   mbedtls_ssl_conf_handshake_timeout(&im.conf, static_cast<uint32_t>(config_.initial_timeout_ms), kMaxHandshakeTimeoutMs);
+  // CryptoOptions' ephemeral key-exchange groups (SSL_set1_group_ids on BoringSSL, #1006). The IANA ids are Mbed
+  // TLS's MBEDTLS_SSL_IANA_TLS_GROUP_* values; the list ends with NONE (0).
+  if (!config_.ssl_group_ids.empty()) {
+    im.groups.assign(config_.ssl_group_ids.begin(), config_.ssl_group_ids.end());
+    im.groups.push_back(MBEDTLS_SSL_IANA_TLS_GROUP_NONE);
+    mbedtls_ssl_conf_groups(&im.conf, im.groups.data());
+  }
   if (role_ == DtlsRole::kServer) mbedtls_ssl_conf_dtls_cookies(&im.conf, nullptr, nullptr, nullptr);
   mbedtls_ssl_conf_renegotiation(&im.conf, MBEDTLS_SSL_RENEGOTIATION_DISABLED);
   mbedtls_ssl_conf_session_tickets(&im.conf, MBEDTLS_SSL_SESSION_TICKETS_DISABLED);  // SSL_OP_NO_TICKET.
@@ -242,6 +251,11 @@ void DtlsTransport::Continue(Timestamp now) {
 bool DtlsTransport::SetPeerFingerprint(const SslFingerprint& fingerprint, Timestamp now) {
   peer_fingerprint_ = fingerprint;
   if (peer_cert_ && !VerifyPeerCertificate()) {
+    // A fatal bad_certificate alert, so the peer fails too (Error(..., SSL_AD_BAD_CERTIFICATE), #1006).
+    if (impl_->set_up && (state_ == DtlsState::kConnecting || state_ == DtlsState::kConnected)) {
+      impl_->now = now;
+      mbedtls_ssl_send_alert_message(&impl_->ssl, MBEDTLS_SSL_ALERT_LEVEL_FATAL, MBEDTLS_SSL_ALERT_MSG_BAD_CERT);
+    }
     state_ = DtlsState::kFailed;
     return false;
   }
@@ -266,6 +280,18 @@ void DtlsTransport::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
   Continue(now);
 }
 
+void DtlsTransport::SetInitialRetransmissionTimeout(int timeout_ms) {
+  config_.initial_timeout_ms = timeout_ms;
+  // The config is shared by pointer with the context, so this changes the next handshake flight's timer.
+  if (impl_->set_up) {
+    mbedtls_ssl_conf_handshake_timeout(&impl_->conf, static_cast<uint32_t>(timeout_ms), kMaxHandshakeTimeoutMs);
+  }
+}
+
+bool DtlsTransport::handshake_complete() const { return impl_->handshake_over; }
+
+// DTLS 1.2 only: no timer after the handshake. The last flight is resent when the peer's retransmitted flight
+// arrives (RFC 6347 4.2.4), which mbedtls_ssl_read does; DTLS 1.3's ACK timer (#1006) doesn't apply.
 std::optional<Timestamp> DtlsTransport::NextTimeout() const {
   const Impl& im = *impl_;
   if (!im.set_up || state_ != DtlsState::kConnecting || im.handshake_over || !im.timer_start) return std::nullopt;
