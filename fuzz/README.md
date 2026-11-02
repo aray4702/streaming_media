@@ -24,9 +24,9 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 
 Of libwebrtc's `test/fuzzers/`, the STUN fuzzers (#1019) and the TURN, SDP
 and SCTP ones (#1057) are in `compare/webrtc/reference/`
-(`net/dcsctp/fuzzers/` is too). `stun`, `dcsctp_socket` and `sdp_parser`
-follow their code; the other targets follow libwebrtc's file names and what
-each one feeds, not its code. libwebrtc M157 has no fuzzer for TCP framing or DTLS records, so
+(`net/dcsctp/fuzzers/` is too). `stun`, `dcsctp_socket` and `sdp_parser` follow their
+code; the other targets follow libwebrtc's file names and what each one feeds,
+not its code. libwebrtc M157 has no fuzzer for TCP framing or DTLS records, so
 `tcp_framing`, `dtls_record` and `dtls_transport` name the functions they
 feed instead. The multi-packet input formats are this
 library's own and are documented at the top of each target.
