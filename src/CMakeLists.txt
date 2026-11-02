@@ -98,6 +98,67 @@ if(SM_WITH_TLS)
     p2p/dtls_transport.cc)
 endif()
 
+if(SM_WITH_DATACHANNEL)
+  # Data channels (C7): libwebrtc M157's dcsctp, net/dcsctp/ (compare/webrtc/reference/net/dcsctp/). Part 1 (#1032):
+  # the packet layer (SCTP packets, chunks, parameters, error causes, CRC-32C) and common/. Plain C++ that reads and
+  # writes bytes; it needs nothing from ICE or DTLS. Not in the sm::sm umbrella yet, like sm::p2p (#944).
+  sm_add_library(dcsctp DEPS sm::core SOURCES
+    dcsctp/packet/chunk/abort_chunk.cc
+    dcsctp/packet/chunk/chunk.cc
+    dcsctp/packet/chunk/cookie_ack_chunk.cc
+    dcsctp/packet/chunk/cookie_echo_chunk.cc
+    dcsctp/packet/chunk/data_chunk.cc
+    dcsctp/packet/chunk/error_chunk.cc
+    dcsctp/packet/chunk/forward_tsn_chunk.cc
+    dcsctp/packet/chunk/heartbeat_ack_chunk.cc
+    dcsctp/packet/chunk/heartbeat_request_chunk.cc
+    dcsctp/packet/chunk/idata_chunk.cc
+    dcsctp/packet/chunk/iforward_tsn_chunk.cc
+    dcsctp/packet/chunk/init_ack_chunk.cc
+    dcsctp/packet/chunk/init_chunk.cc
+    dcsctp/packet/chunk/reconfig_chunk.cc
+    dcsctp/packet/chunk/sack_chunk.cc
+    dcsctp/packet/chunk/shutdown_ack_chunk.cc
+    dcsctp/packet/chunk/shutdown_chunk.cc
+    dcsctp/packet/chunk/shutdown_complete_chunk.cc
+    dcsctp/packet/chunk_validators.cc
+    dcsctp/packet/crc32c.cc
+    dcsctp/packet/error_cause/cookie_received_while_shutting_down_cause.cc
+    dcsctp/packet/error_cause/error_cause.cc
+    dcsctp/packet/error_cause/invalid_mandatory_parameter_cause.cc
+    dcsctp/packet/error_cause/invalid_stream_identifier_cause.cc
+    dcsctp/packet/error_cause/missing_mandatory_parameter_cause.cc
+    dcsctp/packet/error_cause/no_user_data_cause.cc
+    dcsctp/packet/error_cause/out_of_resource_error_cause.cc
+    dcsctp/packet/error_cause/protocol_violation_cause.cc
+    dcsctp/packet/error_cause/restart_of_an_association_with_new_address_cause.cc
+    dcsctp/packet/error_cause/stale_cookie_error_cause.cc
+    dcsctp/packet/error_cause/unrecognized_chunk_type_cause.cc
+    dcsctp/packet/error_cause/unrecognized_parameter_cause.cc
+    dcsctp/packet/error_cause/unresolvable_address_cause.cc
+    dcsctp/packet/error_cause/user_initiated_abort_cause.cc
+    dcsctp/packet/parameter/add_incoming_streams_request_parameter.cc
+    dcsctp/packet/parameter/add_outgoing_streams_request_parameter.cc
+    dcsctp/packet/parameter/forward_tsn_supported_parameter.cc
+    dcsctp/packet/parameter/heartbeat_info_parameter.cc
+    dcsctp/packet/parameter/incoming_ssn_reset_request_parameter.cc
+    dcsctp/packet/parameter/outgoing_ssn_reset_request_parameter.cc
+    dcsctp/packet/parameter/parameter.cc
+    dcsctp/packet/parameter/reconfiguration_response_parameter.cc
+    dcsctp/packet/parameter/ssn_tsn_reset_request_parameter.cc
+    dcsctp/packet/parameter/state_cookie_parameter.cc
+    dcsctp/packet/parameter/supported_extensions_parameter.cc
+    dcsctp/packet/parameter/zero_checksum_acceptable_chunk_parameter.cc
+    dcsctp/packet/sctp_packet.cc
+    dcsctp/packet/tlv_trait.cc)
+  target_compile_definitions(sm_dcsctp PUBLIC SM_WITH_DATACHANNEL=1)
+  # libwebrtc names constructor parameters after the members they set, and its RFC diagrams end lines with a
+  # backslash: dcsctp builds without -Wshadow and -Wcomment.
+  if(NOT MSVC)
+    target_compile_options(sm_dcsctp PRIVATE -Wno-shadow -Wno-comment)
+  endif()
+endif()
+
 if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES
     loss/nack_tracker.cc

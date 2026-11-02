@@ -117,6 +117,117 @@ if(SM_WITH_TLS)
   endif()
 endif()
 
+if(SM_WITH_DATACHANNEL)
+  # dcsctp's packet layer and common/ (C7 part 1, #1032): every *_test.cc under net/dcsctp/packet/ and common/ at
+  # M157, on sm_test.h with gmock_lite.h.
+  sm_add_test_exe(sm_unit_dcsctp LABEL unit DEPS sm::dcsctp
+    SOURCES
+      unit/dcsctp/common/math_test.cc
+      unit/dcsctp/common/sequence_numbers_test.cc
+      unit/dcsctp/packet/bounded_byte_reader_test.cc
+      unit/dcsctp/packet/bounded_byte_writer_test.cc
+      unit/dcsctp/packet/chunk/abort_chunk_test.cc
+      unit/dcsctp/packet/chunk/cookie_ack_chunk_test.cc
+      unit/dcsctp/packet/chunk/cookie_echo_chunk_test.cc
+      unit/dcsctp/packet/chunk/data_chunk_test.cc
+      unit/dcsctp/packet/chunk/error_chunk_test.cc
+      unit/dcsctp/packet/chunk/forward_tsn_chunk_test.cc
+      unit/dcsctp/packet/chunk/heartbeat_ack_chunk_test.cc
+      unit/dcsctp/packet/chunk/heartbeat_request_chunk_test.cc
+      unit/dcsctp/packet/chunk/idata_chunk_test.cc
+      unit/dcsctp/packet/chunk/iforward_tsn_chunk_test.cc
+      unit/dcsctp/packet/chunk/init_ack_chunk_test.cc
+      unit/dcsctp/packet/chunk/init_chunk_test.cc
+      unit/dcsctp/packet/chunk/reconfig_chunk_test.cc
+      unit/dcsctp/packet/chunk/sack_chunk_test.cc
+      unit/dcsctp/packet/chunk/shutdown_ack_chunk_test.cc
+      unit/dcsctp/packet/chunk/shutdown_chunk_test.cc
+      unit/dcsctp/packet/chunk/shutdown_complete_chunk_test.cc
+      unit/dcsctp/packet/chunk_validators_test.cc
+      unit/dcsctp/packet/crc32c_test.cc
+      unit/dcsctp/packet/error_cause/cookie_received_while_shutting_down_cause_test.cc
+      unit/dcsctp/packet/error_cause/invalid_mandatory_parameter_cause_test.cc
+      unit/dcsctp/packet/error_cause/invalid_stream_identifier_cause_test.cc
+      unit/dcsctp/packet/error_cause/missing_mandatory_parameter_cause_test.cc
+      unit/dcsctp/packet/error_cause/no_user_data_cause_test.cc
+      unit/dcsctp/packet/error_cause/out_of_resource_error_cause_test.cc
+      unit/dcsctp/packet/error_cause/protocol_violation_cause_test.cc
+      unit/dcsctp/packet/error_cause/restart_of_an_association_with_new_address_cause_test.cc
+      unit/dcsctp/packet/error_cause/stale_cookie_error_cause_test.cc
+      unit/dcsctp/packet/error_cause/unrecognized_chunk_type_cause_test.cc
+      unit/dcsctp/packet/error_cause/unrecognized_parameter_cause_test.cc
+      unit/dcsctp/packet/error_cause/unresolvable_address_cause_test.cc
+      unit/dcsctp/packet/error_cause/user_initiated_abort_cause_test.cc
+      unit/dcsctp/packet/parameter/add_incoming_streams_request_parameter_test.cc
+      unit/dcsctp/packet/parameter/add_outgoing_streams_request_parameter_test.cc
+      unit/dcsctp/packet/parameter/forward_tsn_supported_parameter_test.cc
+      unit/dcsctp/packet/parameter/incoming_ssn_reset_request_parameter_test.cc
+      unit/dcsctp/packet/parameter/outgoing_ssn_reset_request_parameter_test.cc
+      unit/dcsctp/packet/parameter/parameter_test.cc
+      unit/dcsctp/packet/parameter/reconfiguration_response_parameter_test.cc
+      unit/dcsctp/packet/parameter/ssn_tsn_reset_request_parameter_test.cc
+      unit/dcsctp/packet/parameter/state_cookie_parameter_test.cc
+      unit/dcsctp/packet/parameter/supported_extensions_parameter_test.cc
+      unit/dcsctp/packet/parameter/zero_checksum_acceptable_chunk_parameter_test.cc
+      unit/dcsctp/packet/sctp_packet_test.cc
+      unit/dcsctp/packet/tlv_trait_test.cc
+    SUITES
+      DcsctpAbortChunkTest
+      DcsctpAddIncomingStreamsRequestParameterTest
+      DcsctpAddOutgoingStreamsRequestParameterTest
+      DcsctpBoundedByteReaderTest
+      DcsctpBoundedByteWriterTest
+      DcsctpChunkValidatorsTest
+      DcsctpCookieAckChunkTest
+      DcsctpCookieEchoChunkTest
+      DcsctpCookieReceivedWhileShuttingDownCauseTest
+      DcsctpCrc32Test
+      DcsctpDataChunkTest
+      DcsctpErrorChunkTest
+      DcsctpForwardTsnChunkTest
+      DcsctpForwardTsnSupportedParameterTest
+      DcsctpHeartbeatAckChunkTest
+      DcsctpHeartbeatRequestChunkTest
+      DcsctpIDataChunkTest
+      DcsctpIForwardTsnChunkTest
+      DcsctpIncomingSSNResetRequestParameterTest
+      DcsctpInitAckChunkTest
+      DcsctpInitChunkTest
+      DcsctpInvalidMandatoryParameterCauseTest
+      DcsctpInvalidStreamIdentifierCauseTest
+      DcsctpMathUtilTest
+      DcsctpMissingMandatoryParameterCauseTest
+      DcsctpNoUserDataCauseTest
+      DcsctpOutOfResourceErrorCauseTest
+      DcsctpOutgoingSSNResetRequestParameterTest
+      DcsctpParameterTest
+      DcsctpProtocolViolationCauseTest
+      DcsctpReConfigChunkTest
+      DcsctpReconfigurationResponseParameterTest
+      DcsctpRestartOfAnAssociationWithNewAddressesCauseTest
+      DcsctpSSNTSNResetRequestParameterTest
+      DcsctpSackChunkTest
+      DcsctpSctpPacketTest
+      DcsctpSequenceNumbersTest
+      DcsctpShutdownAckChunkTest
+      DcsctpShutdownChunkTest
+      DcsctpShutdownCompleteChunkTest
+      DcsctpStaleCookieErrorCauseTest
+      DcsctpStateCookieParameterTest
+      DcsctpSupportedExtensionsParameterTest
+      DcsctpTlvDataTest
+      DcsctpUnrecognizedChunkTypeCauseTest
+      DcsctpUnrecognizedParametersCauseTest
+      DcsctpUnresolvableAddressCauseTest
+      DcsctpUserInitiatedAbortCauseTest
+      DcsctpZeroChecksumAcceptableChunkParameterTest
+  )
+  target_include_directories(sm_unit_dcsctp PRIVATE unit/dcsctp)
+  if(NOT MSVC)
+    target_compile_options(sm_unit_dcsctp PRIVATE -Wno-shadow)
+  endif()
+endif()
+
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc

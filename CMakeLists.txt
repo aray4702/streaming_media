@@ -29,6 +29,9 @@ if(NOT SM_TLS_BACKEND MATCHES "^(boringssl|mbedtls)$")
 endif()
 # With the tests: build the other backend too, run the TLS unit tests on it, and run a BoringSSL <-> mbedTLS DTLS-SRTP
 # handshake in one test binary (tests/unit/tls/cross_test.cc).
+# Data channels (C7, #944): libwebrtc's dcsctp (net/dcsctp/), from its packet layer up (#1032). Off by default:
+# with it off, no SCTP code is compiled. The native and native-asan presets turn it on, so its tests run there.
+option(SM_WITH_DATACHANNEL "Connectivity: data channels over SCTP, libwebrtc's dcsctp (sm::dcsctp)" OFF)
 option(SM_TLS_CROSS_TEST "Test both TLS backends and a BoringSSL <-> mbedTLS handshake" ON)
 option(SM_ENABLE_METRICS "Compile metrics export (off = no-op)"    ON)
 option(SM_ENABLE_EVENTS  "Compile the structured event log"        ON)

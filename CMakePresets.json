@@ -7,9 +7,11 @@
       "binaryDir": "${sourceDir}/out/${presetName}",
       "cacheVariables": {"CMAKE_BUILD_TYPE": "Release"}
     },
-    {"name": "native", "inherits": "base", "displayName": "Host (desktop/server), Release, tests + benchmarks"},
+    {"name": "native", "inherits": "base", "displayName": "Host (desktop/server), Release, tests + benchmarks",
+     "cacheVariables": {"SM_WITH_DATACHANNEL": "ON"}},
     {"name": "native-asan", "inherits": "base", "displayName": "Host, Debug, ASan + UBSan",
-     "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "SM_SANITIZE": "ON", "SM_BUILD_BENCH": "OFF"}},
+     "cacheVariables": {"CMAKE_BUILD_TYPE": "Debug", "SM_SANITIZE": "ON", "SM_BUILD_BENCH": "OFF",
+                        "SM_WITH_DATACHANNEL": "ON"}},
     {"name": "embedded", "inherits": "base", "displayName": "Size-optimized, no exceptions/RTTI, metrics and events compiled out",
      "cacheVariables": {"CMAKE_BUILD_TYPE": "MinSizeRel", "SM_NO_EXCEPTIONS": "ON", "SM_ENABLE_METRICS": "OFF",
                         "SM_ENABLE_EVENTS": "OFF", "SM_BUILD_TESTS": "OFF", "SM_BUILD_BENCH": "OFF", "SM_BUILD_EXAMPLES": "OFF"}},
