@@ -563,6 +563,31 @@ when GoogCC sees them. The Owner may want it in Phase 3 before #19.
 4. **Add to #57:** `modules/rtp_rtcp/source/rtp_sender.cc`, `rtp_packet.cc`, `rtp_header_extensions.cc`,
    `rtp_rtcp_interface.h`, `call/video_send_stream_config` (`kDefaultMaxPacketSize`), `video/video_receive_stream2.cc`.
 
+## 10. Connectivity (milestone 3, #944)
+
+Reference files: `api/transport/stun.{h,cc}`, `stun_unittest.cc`, `rtc_base/crypto_random.cc`,
+`rtc_base/message_digest.*`; the addresses are #996's port of `rtc_base/ip_address.*` and `socket_address.*`.
+**Not in `reference/`:** `rtc_base/crc32.*` and `rtc_base/byte_buffer.*`. The port's `sm/p2p/byte_buffer.h`
+keeps only what `stun.cc` uses (big-endian reads and writes that fail without consuming when too short); the
+CRC-32 is the standard ISO-HDLC one, pinned by the RFC 5769 fingerprints.
+
+### 10.1 STUN messages (`src/p2p/stun.cc`, C2, #986)
+
+Ported as a unit: every message, attribute and error type of M157, parsing (the 0x8000 RTP/RTCP check,
+RFC 3489 legacy ids, skipping unknown attributes outside the designated-expert ranges, which are read as
+byte strings), writing with libwebrtc's length limits, MESSAGE-INTEGRITY and GOOG-MESSAGE-INTEGRITY-32
+(adding and validating, including the length rewrite for attributes after it), FINGERPRINT, the
+long-term credential key, `Clone`, `EqualAttributes` and `CopyStunAttribute`. M157 has no
+MESSAGE-INTEGRITY-SHA256. Every `stun_unittest.cc` case is in `tests/unit/p2p/stun_test.cc` with its
+vectors unchanged. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| HMAC-SHA1, MD5, random bytes | BoringSSL through `MessageDigest`, `CreateRandomString` | Functions the application installs (`SetStunCrypto`); without them integrity fails and transaction ids come from a fixed-seed generator | No dependencies in the library; #984 brings BoringSSL and wires it |
+| Adding / removing attributes on a signed message | `RTC_CHECK` aborts | Refused (`AddAttribute` returns false, `RemoveAttribute` returns nullptr) | The library does not abort on caller errors |
+| Typed getters on an attribute of another value type | `static_cast` to the wrong class | nullptr | Avoids reading an attribute as the wrong class (an unknown designated-range attribute is a byte string) |
+| `WebRTC.Stun.Integrity.*` histograms | Recorded | Not kept | Observability belongs to #988 |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

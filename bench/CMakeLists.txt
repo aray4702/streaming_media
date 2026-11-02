@@ -24,9 +24,11 @@ endif()
 if(SM_WITH_RTP)
   list(APPEND SM_BENCH_SOURCES rtp_bench.cc)
 endif()
+# Connectivity (sm::p2p, not in the sm::sm umbrella yet): STUN (#986).
+list(APPEND SM_BENCH_SOURCES p2p_bench.cc)
 
 add_executable(sm_bench ${SM_BENCH_SOURCES})
-target_link_libraries(sm_bench PRIVATE sm_bench_framework sm::sm)
+target_link_libraries(sm_bench PRIVATE sm_bench_framework sm::sm sm::p2p)
 sm_configure_target(sm_bench)
 if(EMSCRIPTEN)
   # Let --json=<path> write to the real file system when run under Node.
@@ -36,7 +38,7 @@ endif()
 if(SM_BUILD_TESTS)
   # Benchmarks double as tests: each section's benchmarks must meet their
   # requirements. Short min-time keeps CI fast; scale budgets for slow targets.
-  foreach(s ${SM_SECTIONS})
+  foreach(s ${SM_SECTIONS} p2p)
     add_test(NAME bench.${s} COMMAND sm_bench --filter=${s}/ --min-time=0.05)
     # Speed budgets are meaningless under CPU contention: never run in parallel.
     set_tests_properties(bench.${s} PROPERTIES LABELS bench RUN_SERIAL TRUE)
