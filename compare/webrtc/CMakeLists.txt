@@ -42,14 +42,20 @@ add_compile_definitions(
 
 # This library and the test bench, built with the same standard library.
 file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
-# The connectivity layer's TLS module (sm::tls, #984) links BoringSSL, which this build (against libwebrtc's own
-# BoringSSL symbols) doesn't take; the comparison doesn't use it.
+# The connectivity layer's TLS module (sm::tls, #984) links BoringSSL. This build doesn't link a BoringSSL of its own:
+# libwebrtc.a carries the one libwebrtc M157 builds, at the revision cmake/SmBoringSSL.cmake pins, so the part of
+# sm::tls that TURN over TLS needs (#1055: TlsSslAdapter for our side's client and the TURN server) is compiled
+# against libwebrtc's BoringSSL headers and links its symbols. DTLS, SRTP and Mbed TLS are left out.
 list(FILTER SM_SOURCES EXCLUDE REGEX "/src/tls/")
 list(FILTER SM_SOURCES EXCLUDE REGEX "/src/p2p/(stun_crypto_tls|dtls_transport)\\.cc$")
+set(SM_COMPARE_TLS_SOURCES message_digest.cc crypto_random.cc ssl_fingerprint.cc boringssl_digest.cc
+    boringssl_identity.cc boringssl_tls.cc)
+list(TRANSFORM SM_COMPARE_TLS_SOURCES PREPEND ${SM_ROOT}/src/tls/)
 # Same test bench sources as sm_testbench_lib (testbench/CMakeLists.txt).
-add_library(sm_all STATIC ${SM_SOURCES} ${SM_ROOT}/testbench/scenario.cc ${SM_ROOT}/testbench/call.cc
-            ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc)
+add_library(sm_all STATIC ${SM_SOURCES} ${SM_COMPARE_TLS_SOURCES} ${SM_ROOT}/testbench/scenario.cc
+            ${SM_ROOT}/testbench/call.cc ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc)
 target_include_directories(sm_all PUBLIC ${SM_ROOT}/include ${SM_ROOT}/testbench)
+target_include_directories(sm_all SYSTEM PRIVATE ${WEBRTC_DIR}/include/third_party/boringssl/src/include)
 # The test bench encodes its audio with libopus (issue #457). libwebrtc.a
 # carries the same revision (55513e81, compare/webrtc/reference/fetch.sh), so
 # this library's side links libwebrtc's copy and needs only the headers.

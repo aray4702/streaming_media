@@ -102,7 +102,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
 if(SM_WITH_TLS)
   # The STUN crypto hooks on BoringSSL's crypto (sm::tls, #984).
   target_sources(sm_unit_p2p PRIVATE unit/p2p/stun_tls_test.cc unit/p2p/ssl_adapter_test.cc
-                                     unit/p2p/turn_port_tls_test.cc)
+                                     unit/p2p/turn_port_tls_test.cc unit/p2p/ice_compare_tls_test.cc)
   target_link_libraries(sm_unit_p2p PRIVATE sm::p2p_tls)
   add_test(NAME unit.StunTls COMMAND sm_unit_p2p --filter=StunTls.)
   set_tests_properties(unit.StunTls PROPERTIES LABELS unit)
@@ -112,6 +112,9 @@ if(SM_WITH_TLS)
   # TURN over TLS (C4 part 4, #1036).
   add_test(NAME unit.P2pTurnPortTls COMMAND sm_unit_p2p --filter=P2pTurnPortTls.)
   set_tests_properties(unit.P2pTurnPortTls PROPERTIES LABELS unit)
+  # The ICE comparison's TURN over TLS rows (#1055 part 2).
+  add_test(NAME unit.P2pIceCompareTls COMMAND sm_unit_p2p --filter=P2pIceCompareTls.)
+  set_tests_properties(unit.P2pIceCompareTls PROPERTIES LABELS unit)
   # The TURN client against a real coturn over OS sockets (C4 part 5, #1037); skipped without `turnserver`.
   if(NOT WIN32 AND NOT EMSCRIPTEN)
     add_executable(sm_interop_coturn interop/coturn_test.cc interop/os_sockets.cc)

@@ -10,8 +10,16 @@
 // role AsyncUDPSocket over a VirtualSocketServer plays in libwebrtc's p2p_transport_channel_unittest.cc, so both
 // stacks bind the same ports and cross the same NATs and links. Its NetworkManager is rtc_base/fake_network.h's
 // FakeNetworkManager on a TaskQueueBase (the prebuilt library leaves test code out).
+//
+// TURN over TCP and TLS (#1055 part 2): libwebrtc's TurnPort gets its TCP sockets from libwebrtc's own
+// BasicPacketSocketFactory (p2p/base/basic_packet_socket_factory.cc: bind, TCP_NODELAY, SSLAdapter for TLS, connect,
+// AsyncStunTCPSocket), over a webrtc::Socket that is this library's emulated TCP socket (TcpSocket below), in the role
+// of the VirtualSocketServer's stream socket in libwebrtc's tests. TLS is libwebrtc's OpenSSLAdapter on its BoringSSL.
+// The TURN server's TLS listener and our side's TLS client run sm::tls (TlsSslAdapter) on the same BoringSSL.
 #include <execinfo.h>
 #include <unistd.h>
+
+#include <sys/socket.h>
 
 #include <cerrno>
 #include <csignal>
@@ -36,6 +44,7 @@
 #include "api/units/timestamp.h"
 #include "ice_scenarios.h"
 #include "p2p/base/active_ice_controller_factory_interface.h"
+#include "p2p/base/basic_packet_socket_factory.h"
 #include "p2p/base/basic_ice_controller.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/ice_transport_internal.h"
@@ -51,7 +60,10 @@
 #include "rtc_base/network/sent_packet.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
+#include "rtc_base/socket_factory.h"
 #include "sim_time.h"
+#include "sm/p2p/ssl_adapter_tls.h"
+#include "sm/tls/ssl_identity.h"
 #include "test_crypto.h"
 
 namespace w = webrtc;
@@ -116,11 +128,139 @@ class UdpSocket final : public w::AsyncPacketSocket {
   int error_ = 0;
 };
 
-// UDP only, as the comparison runs with TCP candidates off and TURN over UDP (ice_scenarios.h).
+// This library's socket errors (POSIX numbers as macOS has them, sm/p2p/async_packet_socket.h) as this host's errno,
+// which libwebrtc's IsBlockingError and its socket users read.
+int ToErrno(int e) {
+  namespace p = sm::p2p;
+  switch (e) {
+    case p::kSocketEInval: return EINVAL;
+    case p::kSocketEWouldBlock: return EWOULDBLOCK;
+    case p::kSocketEMsgSize: return EMSGSIZE;
+    case p::kSocketEAddrInUse: return EADDRINUSE;
+    case p::kSocketEAddrNotAvail: return EADDRNOTAVAIL;
+    case p::kSocketENotConn: return ENOTCONN;
+    case p::kSocketEBadF: return EBADF;
+    case p::kSocketEInProgress: return EINPROGRESS;
+    case p::kSocketEConnReset: return ECONNRESET;
+    case p::kSocketEIsConn: return EISCONN;
+    case p::kSocketETimedOut: return ETIMEDOUT;
+    case p::kSocketEConnRefused: return ECONNREFUSED;
+    case p::kSocketEHostUnreach: return EHOSTUNREACH;
+  }
+  return e;
+}
+
+// An emulated TCP socket (sim::EmulatedTcpSocket) as a webrtc::Socket, for BasicPacketSocketFactory. Endpoint i's
+// socket lives on the host of the interface it binds to (Topology::HostFor), so the emulated socket is made at Bind,
+// or at Connect when not bound. Its events come while the emulated network delivers, on the network queue.
+class TcpSocket final : public w::Socket {
+ public:
+  TcpSocket(SimTime* sim, const Topology* topo, int i) : sim_(sim), topo_(topo), i_(i) {}
+
+  w::SocketAddress GetLocalAddress() const override {
+    return socket_ ? ToW(socket_->GetLocalAddress()) : w::SocketAddress(w::IPAddress(INADDR_ANY), 0);
+  }
+  w::SocketAddress GetRemoteAddress() const override {
+    return socket_ ? ToW(socket_->GetRemoteAddress()) : w::SocketAddress(w::IPAddress(INADDR_ANY), 0);
+  }
+  int Bind(const w::SocketAddress& addr) override {
+    Make(addr.ipaddr().v4AddressAsHostOrderInteger());
+    return Result(socket_->Bind(FromW(addr)));
+  }
+  int Connect(const w::SocketAddress& addr) override {
+    Make(0);
+    return Result(socket_->Connect(Now(), FromW(addr)));
+  }
+  int Send(const void* pv, size_t cb) override {
+    if (!socket_) return NotConnected();
+    return Result(socket_->Send(Now(), std::span(static_cast<const uint8_t*>(pv), cb)));
+  }
+  int SendTo(const void* pv, size_t cb, const w::SocketAddress&) override { return Send(pv, cb); }
+  int Recv(void* pv, size_t cb, int64_t* timestamp) override {
+    if (!socket_) return NotConnected();
+    if (timestamp) *timestamp = sim_->Now().us();
+    return Result(socket_->Recv(Now(), std::span(static_cast<uint8_t*>(pv), cb)));
+  }
+  int Listen(int) override {
+    error_ = EOPNOTSUPP;
+    return -1;
+  }
+  w::Socket* Accept(w::SocketAddress*) override {
+    error_ = EOPNOTSUPP;
+    return nullptr;
+  }
+  int Close() override { return socket_ ? Result(socket_->Close()) : 0; }
+  int GetError() const override { return error_; }
+  void SetError(int error) override { error_ = error; }
+  ConnState GetState() const override {
+    if (!socket_) return CS_CLOSED;
+    switch (socket_->GetState()) {
+      case sm::p2p::Socket::ConnState::kClosed: return CS_CLOSED;
+      case sm::p2p::Socket::ConnState::kConnecting: return CS_CONNECTING;
+      case sm::p2p::Socket::ConnState::kConnected: return CS_CONNECTED;
+    }
+    return CS_CLOSED;
+  }
+  int GetOption(Option opt, int* value) override {
+    auto it = options_.find(opt);
+    if (it == options_.end()) return -1;
+    *value = it->second;
+    return 0;
+  }
+  int SetOption(Option opt, int value) override {
+    options_[opt] = value;
+    return 0;
+  }
+
+ private:
+  sm::Timestamp Now() const { return ToSm(sim_->Now()); }
+  void Make(uint32_t ip) {
+    if (socket_) return;
+    socket_ = topo_->HostFor(i_, ip)->CreateStreamSocket(sm::p2p::IpFamily::kV4);
+    socket_->SubscribeReadEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyReadEvent(this); });
+    socket_->SubscribeWriteEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyWriteEvent(this); });
+    socket_->SubscribeConnectEvent(this, [this](sm::p2p::Socket*, sm::Timestamp) { NotifyConnectEvent(this); });
+    socket_->SubscribeCloseEvent(this, [this](sm::p2p::Socket*, int error) { NotifyCloseEvent(this, ToErrno(error)); });
+  }
+  int Result(int ret) {
+    if (ret < 0) error_ = ToErrno(socket_->GetError());
+    return ret;
+  }
+  int NotConnected() {
+    error_ = ENOTCONN;
+    return -1;
+  }
+
+  SimTime* sim_;
+  const Topology* topo_;
+  int i_;
+  std::unique_ptr<sm::p2p::Socket> socket_;
+  std::map<Option, int> options_;
+  int error_ = 0;
+};
+
+// The webrtc::SocketFactory under BasicPacketSocketFactory: stream sockets only (UDP goes through UdpSocket).
+class TcpSocketFactory final : public w::SocketFactory {
+ public:
+  TcpSocketFactory(SimTime* sim, const Topology* topo, int i) : sim_(sim), topo_(topo), i_(i) {}
+  w::Socket* CreateSocket(int family, int type) override {
+    if (family != AF_INET || type != SOCK_STREAM) return nullptr;
+    return new TcpSocket(sim_, topo_, i_);
+  }
+
+ private:
+  SimTime* sim_;
+  const Topology* topo_;
+  int i_;
+};
+
+// UDP as AsyncUDPSocket, as the comparison runs with TCP candidates off; client TCP (TURN over TCP and TLS) through
+// libwebrtc's BasicPacketSocketFactory on the emulated TCP.
 class SocketFactory final : public w::PacketSocketFactory {
  public:
   // Endpoint i's sockets live on the host of the interface they bind to (Topology::HostFor), as ours.
-  SocketFactory(SimTime* sim, const Topology* topo, int i) : sim_(sim), topo_(topo), i_(i) {}
+  SocketFactory(SimTime* sim, const Topology* topo, int i)
+      : sim_(sim), topo_(topo), i_(i), tcp_sockets_(sim, topo, i), tcp_(&tcp_sockets_) {}
   std::unique_ptr<w::AsyncPacketSocket> CreateUdpSocket(const w::Environment&, const w::SocketAddress& address,
                                                         uint16_t min_port, uint16_t max_port) override {
     auto socket = topo_->HostFor(i_, address.ipaddr().v4AddressAsHostOrderInteger())
@@ -132,11 +272,13 @@ class SocketFactory final : public w::PacketSocketFactory {
                                                               uint16_t, uint16_t, int) override {
     return nullptr;
   }
-  std::unique_ptr<w::AsyncPacketSocket> CreateClientTcpSocket(const w::Environment&, const w::SocketAddress&,
-                                                              const w::SocketAddress&,
-                                                              const w::revive::ProxyInfo&, const std::string&,
-                                                              const w::PacketSocketTcpOptions&) override {
-    return nullptr;
+  std::unique_ptr<w::AsyncPacketSocket> CreateClientTcpSocket(const w::Environment& env,
+                                                              const w::SocketAddress& local_address,
+                                                              const w::SocketAddress& remote_address,
+                                                              const w::revive::ProxyInfo& proxy_info,
+                                                              const std::string& user_agent,
+                                                              const w::PacketSocketTcpOptions& options) override {
+    return tcp_.CreateClientTcpSocket(env, local_address, remote_address, proxy_info, user_agent, options);
   }
   std::unique_ptr<w::AsyncDnsResolverInterface> CreateAsyncDnsResolver() override { return nullptr; }
 
@@ -144,6 +286,8 @@ class SocketFactory final : public w::PacketSocketFactory {
   SimTime* sim_;
   const Topology* topo_;
   int i_;
+  TcpSocketFactory tcp_sockets_;
+  w::BasicPacketSocketFactory tcp_;
 };
 
 // rtc_base/fake_network.h's FakeNetworkManager, posting to a TaskQueueBase instead of a Thread.
@@ -283,10 +427,13 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
 
   run_on_network([&] {
     w::ServerAddresses stun_servers = {ToW(Topology::StunAddress())};
-    // As RunSm: kRelayCredentials over UDP.
+    // As RunSm: kRelayCredentials over UDP, TCP or TLS, the insecure certificate policy for TLS.
     std::vector<w::RelayServerConfig> turn_servers;
-    if (s.turn == Turn::kUdp) {
-      turn_servers.emplace_back(ToW(Topology::TurnAddress()), kTurnUsername, kTurnPassword, w::PROTO_UDP);
+    if (s.turn != Turn::kNone) {
+      const w::ProtocolType proto =
+          s.turn == Turn::kTcp ? w::PROTO_TCP : s.turn == Turn::kTls ? w::PROTO_TLS : w::PROTO_UDP;
+      turn_servers.emplace_back(ToW(Topology::TurnAddress(s.turn)), kTurnUsername, kTurnPassword, proto);
+      if (s.turn == Turn::kTls) turn_servers.back().tls_cert_policy = w::TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK;
     }
     for (int i = 0; i < 2; ++i) {
       Endpoint& e = ep[i];
@@ -540,6 +687,19 @@ int main(int argc, char** argv) {
   std::signal(SIGTRAP, OnCrash);
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  // TURN over TLS (#1055 part 2): our side's TLS client (SslAdapter::Create), and the TURN server's TLS listener as
+  // TestTurnServer::AddInternalSocket sets it up for PROTO_TLS (tests/unit/p2p/turn_port_tls_test.cc does the same).
+  sm::p2p::InstallSslAdapterFromTls();
+  static const std::unique_ptr<sm::tls::SslIdentity> identity = sm::tls::SslIdentity::Create("turn.example.org");
+  TlsServerWrapper() = [](std::unique_ptr<sm::p2p::Socket> socket) -> std::unique_ptr<sm::p2p::Socket> {
+    auto adapter = std::make_unique<sm::p2p::TlsSslAdapter>(std::move(socket));
+    adapter->SetRole(sm::p2p::SslRole::kServer);
+    adapter->SetIdentity(identity->Clone());
+    adapter->SetIgnoreBadCert(true);
+    adapter->SetLoadSystemRoots(false);
+    if (adapter->StartSSL("") != 0) return nullptr;
+    return adapter;
+  };
   if (g_trace) {
     // libwebrtc.a's own sizes (operator new in P2PTransportChannel::Create, the stores of IceConfig::IceConfig()), to
     // check this build lays the classes out the same way.
@@ -626,58 +786,63 @@ int main(int argc, char** argv) {
   }
   std::printf("\n%d of %zu network-change scenarios differ.\n", change_gaps, ChangeScenarios().size());
 
-  // Relay (#1055).
-  std::printf("\nRelay through the emulated TURN server (TURN over UDP), %d s runs. turn: TURN requests both endpoints "
-              "sent, Allocate/CreatePermission/ChannelBind/Refresh. Ours / libwebrtc\n\n",
-              static_cast<int>(kRunTime.us() / 1000000));
-  std::printf("| scenario | connected | connect ms | pair (local/remote) | relay (ep0/ep1) | checks at connect | "
-              "checks in %d s | turn | gap |\n",
-              static_cast<int>(kRunTime.us() / 1000000));
-  std::printf("|---|---|---|---|---|---|---|---|---|\n");
-  int relay_gaps = 0;
-  for (const Scenario& s : RelayScenarios()) {
-    Summary ours, theirs;
-    for (int seed = 1; seed <= seeds; ++seed) {
-      if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
-      const Result a = RunSm(s, seed);
-      if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
-      const Result b = RunWebrtc(s, seed);
-      ours.Add(a);
-      theirs.Add(b);
-      if (verbose) {
-        std::fprintf(stderr, "%s seed %d: ours %d %.1f ms %s %s %d/%d turn %d/%d/%d/%d; libwebrtc %d %.1f ms %s %s "
-                     "%d/%d turn %d/%d/%d/%d\n",
-                     s.name.c_str(), seed, a.connected, a.connect_ms, a.pair.c_str(), a.relay.c_str(),
-                     a.checks_at_connect, a.checks_total, a.turn[0], a.turn[1], a.turn[2], a.turn[3], b.connected,
-                     b.connect_ms, b.pair.c_str(), b.relay.c_str(), b.checks_at_connect, b.checks_total, b.turn[0],
-                     b.turn[1], b.turn[2], b.turn[3]);
+  // Relay (#1055): TURN over UDP, then over TCP and TLS.
+  auto relay_table = [&](const std::vector<Scenario>& scenarios, const char* what) {
+    std::printf("\nRelay through the emulated TURN server (%s), %d s runs. turn: TURN requests both endpoints "
+                "sent, Allocate/CreatePermission/ChannelBind/Refresh. Ours / libwebrtc\n\n",
+                what, static_cast<int>(kRunTime.us() / 1000000));
+    std::printf("| scenario | connected | connect ms | pair (local/remote) | relay (ep0/ep1) | checks at connect | "
+                "checks in %d s | turn | gap |\n",
+                static_cast<int>(kRunTime.us() / 1000000));
+    std::printf("|---|---|---|---|---|---|---|---|---|\n");
+    int relay_gaps = 0;
+    for (const Scenario& s : scenarios) {
+      Summary ours, theirs;
+      for (int seed = 1; seed <= seeds; ++seed) {
+        if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
+        const Result a = RunSm(s, seed);
+        if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
+        const Result b = RunWebrtc(s, seed);
+        ours.Add(a);
+        theirs.Add(b);
+        if (verbose) {
+          std::fprintf(stderr, "%s seed %d: ours %d %.1f ms %s %s %d/%d turn %d/%d/%d/%d; libwebrtc %d %.1f ms %s %s "
+                       "%d/%d turn %d/%d/%d/%d\n",
+                       s.name.c_str(), seed, a.connected, a.connect_ms, a.pair.c_str(), a.relay.c_str(),
+                       a.checks_at_connect, a.checks_total, a.turn[0], a.turn[1], a.turn[2], a.turn[3], b.connected,
+                       b.connect_ms, b.pair.c_str(), b.relay.c_str(), b.checks_at_connect, b.checks_total, b.turn[0],
+                       b.turn[1], b.turn[2], b.turn[3]);
+        }
       }
-    }
-    ours.Finish();
-    theirs.Finish();
-    std::string gap;
-    if (ours.connected != theirs.connected) gap += " connected";
-    if (ours.connected && theirs.connected && Differs(ours.connect_ms, theirs.connect_ms, 10)) gap += " connect_ms";
-    if (ours.Pairs() != theirs.Pairs()) gap += " pair";
-    if (ours.Relays() != theirs.Relays()) gap += " relay";
-    if (ours.connected && theirs.connected && Differs(ours.checks_at_connect, theirs.checks_at_connect, 1)) {
-      gap += " checks_at_connect";
-    }
-    if (Differs(ours.checks_total, theirs.checks_total, 1)) gap += " checks_total";
-    for (int t = 0; t < kNumTurnRequests; ++t) {
-      if (Differs(ours.turn[t], theirs.turn[t], 1)) {
-        gap += " turn";
-        break;
+      ours.Finish();
+      theirs.Finish();
+      std::string gap;
+      if (ours.connected != theirs.connected) gap += " connected";
+      if (ours.connected && theirs.connected && Differs(ours.connect_ms, theirs.connect_ms, 10)) gap += " connect_ms";
+      if (ours.Pairs() != theirs.Pairs()) gap += " pair";
+      if (ours.Relays() != theirs.Relays()) gap += " relay";
+      if (ours.connected && theirs.connected && Differs(ours.checks_at_connect, theirs.checks_at_connect, 1)) {
+        gap += " checks_at_connect";
       }
+      if (Differs(ours.checks_total, theirs.checks_total, 1)) gap += " checks_total";
+      for (int t = 0; t < kNumTurnRequests; ++t) {
+        if (Differs(ours.turn[t], theirs.turn[t], 1)) {
+          gap += " turn";
+          break;
+        }
+      }
+      if (!gap.empty()) ++relay_gaps;
+      std::printf("| %s | %d/%d / %d/%d | %s / %s | %s / %s | %s / %s | %.1f / %.1f | %.1f / %.1f | %s / %s | %s |\n",
+                  s.name.c_str(), ours.connected, ours.runs, theirs.connected, theirs.runs, ours.Ms().c_str(),
+                  theirs.Ms().c_str(), ours.Pairs().c_str(), theirs.Pairs().c_str(), ours.Relays().c_str(),
+                  theirs.Relays().c_str(), ours.checks_at_connect, theirs.checks_at_connect, ours.checks_total,
+                  theirs.checks_total, ours.TurnCounts().c_str(), theirs.TurnCounts().c_str(),
+                  gap.empty() ? "" : gap.c_str() + 1);
     }
-    if (!gap.empty()) ++relay_gaps;
-    std::printf("| %s | %d/%d / %d/%d | %s / %s | %s / %s | %s / %s | %.1f / %.1f | %.1f / %.1f | %s / %s | %s |\n",
-                s.name.c_str(), ours.connected, ours.runs, theirs.connected, theirs.runs, ours.Ms().c_str(),
-                theirs.Ms().c_str(), ours.Pairs().c_str(), theirs.Pairs().c_str(), ours.Relays().c_str(),
-                theirs.Relays().c_str(), ours.checks_at_connect, theirs.checks_at_connect, ours.checks_total,
-                theirs.checks_total, ours.TurnCounts().c_str(), theirs.TurnCounts().c_str(), gap.empty() ? "" : gap.c_str() + 1);
-  }
-  std::printf("\n%d of %zu relay scenarios differ. Not run yet: TURN over TCP and TLS (#1055), TCP candidates.\n",
-              relay_gaps, RelayScenarios().size());
+    std::printf("\n%d of %zu relay scenarios (%s) differ.\n", relay_gaps, scenarios.size(), what);
+  };
+  relay_table(RelayScenarios(), "TURN over UDP");
+  relay_table(StreamRelayScenarios(), "TURN over TCP and TLS; turn counted as the server receives them");
+  std::printf("Not run yet: TCP candidates.\n");
   return 0;
 }
