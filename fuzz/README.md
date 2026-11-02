@@ -13,6 +13,7 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 | `packet_buffer` | `timing::PacketBuffer` with fuzzed sequence numbers, timestamps and bits | `packet_buffer_fuzzer.cc` |
 | `red` | `loss::ParseRed`, `loss::SplitRed` | `neteq_rtp_fuzzer.cc` (RED through NetEq) |
 | `ulpfec` | `loss::ulpfec::UlpfecReceiver`, `ForwardErrorCorrection::DecodeFec` | `ulpfec_receiver_fuzzer.cc`, `ulpfec_decoder_fuzzer.cc` |
+| `dcsctp_packet` | `dcsctp::SctpPacket::Parse` with and without the CRC-32C check, every chunk parser (`DebugConvertChunkToString`), SACK cleaning, parameter lists, a build/parse round trip; only with `SM_WITH_DATACHANNEL` (#1032) | `net/dcsctp/fuzzers/dcsctp_fuzzers.cc` (through the socket, C7 part 2) |
 | `stun` | `p2p::StunMessage::Read` as STUN, TURN and ICE messages, integrity and FINGERPRINT checks, a write/read round trip, `StunRequestManager::CheckResponse` | `stun_parser_fuzzer.cc`, `stun_validator_fuzzer.cc` |
 
 Of libwebrtc's `test/fuzzers/`, only the STUN fuzzers are in

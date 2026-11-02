@@ -1,0 +1,31 @@
+/*
+ *  Copyright (c) 2021 The WebRTC project authors. All Rights Reserved.
+ *
+ *  Use of this source code is governed by a BSD-style license
+ *  that can be found in the LICENSE file in the root of the source
+ *  tree. An additional intellectual property rights grant can be found
+ *  in the file PATENTS.  All contributing project authors may
+ *  be found in the AUTHORS file in the root of the source tree.
+ */
+// Ported from libwebrtc M157 net/dcsctp/testing/testing_macros.h (compare/webrtc/reference/net/dcsctp/testing/testing_macros.h) for #1032 (C7
+// part 1): namespace sm::dcsctp, rtc_base pieces from sm/dcsctp/rtc_compat.h, tests on sm_test.h with tests/unit/dcsctp/gmock_lite.h.
+#ifndef SM_DCSCTP_TESTING_TESTING_MACROS_H_
+#define SM_DCSCTP_TESTING_TESTING_MACROS_H_
+
+#include <utility>  // IWYU pragma: keep
+
+namespace sm::dcsctp {
+
+#define DCSCTP_CONCAT_INNER_(x, y) x##y
+#define DCSCTP_CONCAT_(x, y) DCSCTP_CONCAT_INNER_(x, y)
+
+// Similar to ASSERT_OK_AND_ASSIGN, this works with an std::optional<> instead
+// of an absl::StatusOr<>.
+#define ASSERT_HAS_VALUE_AND_ASSIGN(lhs, rexpr)                     \
+  auto DCSCTP_CONCAT_(tmp_opt_val__, __LINE__) = rexpr;             \
+  SM_ASSERT_TRUE(DCSCTP_CONCAT_(tmp_opt_val__, __LINE__).has_value()); \
+  lhs = *std::move(DCSCTP_CONCAT_(tmp_opt_val__, __LINE__));
+
+}  // namespace sm::dcsctp
+
+#endif  // SM_DCSCTP_TESTING_TESTING_MACROS_H_

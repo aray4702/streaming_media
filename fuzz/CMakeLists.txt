@@ -17,6 +17,11 @@ set(SM_FUZZ_TARGETS
   transport_feedback
   ulpfec
 )
+# dcsctp's packet layer (#1032), only when data channels are compiled in.
+if(SM_WITH_DATACHANNEL)
+  list(APPEND SM_FUZZ_TARGETS dcsctp_packet)
+  set(SM_FUZZ_DEPS_dcsctp_packet sm::dcsctp)
+endif()
 # The library each target links: sm::rtp (which brings the RTP, RTCP, loss
 # and timing parsers) unless set here.
 set(SM_FUZZ_DEPS_stun sm::p2p)

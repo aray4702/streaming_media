@@ -717,6 +717,29 @@ Differences:
 | `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
+### 10.8 Data channels: the SCTP packet layer (`src/dcsctp/`, C7 part 1, #1032)
+
+Ported as a unit from `net/dcsctp/packet/` and `net/dcsctp/common/` at M157 (`compare/webrtc/reference/net/dcsctp/`),
+file for file under `include/sm/dcsctp/` and `src/dcsctp/`, namespace `sm::dcsctp`: `SctpPacket` (its `Builder`,
+the common header, the chunk walk, the checksum rules: CRC-32C, or zero when `disable_checksum_verification` is set
+or the zero-checksum method is agreed), `crc32c`, `BoundedByteReader` and `BoundedByteWriter`, `TLVTrait`, the 17
+chunks under `chunk/` (with `DebugConvertChunkToString`), the 11 parameters under `parameter/`, the 13 error causes
+under `error_cause/`, `chunk_validators`, `data.h`, and `common/{math,sequence_numbers,internal_types}.h`, with
+`public/types.h` and `public/dcsctp_options.h` (headers only; their defaults unchanged). The library `sm_dcsctp`
+builds only with `SM_WITH_DATACHANNEL=ON` (default OFF: no SCTP code is compiled); the `native` and `native-asan`
+presets turn it on so its tests run. Every `*_test.cc` under `packet/` and `common/` (112 cases) is in
+`tests/unit/dcsctp/` with its vectors unchanged, and `fuzz/dcsctp_packet_fuzzer.cc` feeds the parsers network input
+(C10). Not here: the socket, the rx/tx queues and timers (C7 part 2), `media/sctp/dcsctp_transport` (part 3), DCEP
+(part 4), and `common/handover_testing` (it needs the socket's handover state). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| CRC-32C | `absl::ComputeCrc32c`, byte-swapped with `absl::byteswap` | A table-driven CRC-32C (Castagnoli, reflected 0x82F63B78), byte-swapped the same way; the same values (`crc32c_test.cc`'s vectors, among them RFC 3720 B.4's) | No absl; same output |
+| `rtc_base/strong_alias.h`, `strings/string_builder.h`, `str_join.h`, `string_format.h`, `checks.h`, `logging.h` | rtc_base | `sm/dcsctp/rtc_compat.h`: `StrongAlias`, `StringBuilder`, `StrJoin`, `StringFormat`, `SM_DCSCTP_CHECK`/`DCHECK` (abort; DCHECK only in debug builds) and `SM_DCSCTP_DLOG` (debug builds only, to the library's text log at WARNING) | These rtc_base files aren't in `reference/`; the shim gives what the dcsctp code uses, nothing more |
+| `SeqNumUnwrapper` (`common/sequence_numbers.h`) | `rtc_base/numerics/sequence_number_unwrapper.h` | `sm::SeqNumUnwrapper` (`sm/core/seq_num.h`) | The library's unwrapper; `sequence_numbers_test.cc` passes unchanged |
+| Tests | gtest and gmock | `sm_test.h` with `tests/unit/dcsctp/gmock_lite.h` (`EXPECT_THAT` with `ElementsAre`, `SizeIs`, `IsEmpty`, `Not`, or a value) | No gtest in the library |
+| Fuzzer | `dcsctp_fuzzers.cc`'s `FuzzSocket`, through the socket | A packet-layer target: `SctpPacket::Parse` with and without checksum checks, every chunk's parser, SACK cleaning, parameter lists, a build/parse round trip | The socket is part 2; its fuzzer comes with it |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).
