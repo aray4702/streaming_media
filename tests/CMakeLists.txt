@@ -46,6 +46,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     unit/p2p/connection_test.cc
     unit/p2p/ice_compare_test.cc
     unit/p2p/ice_controller_test.cc
+    unit/p2p/ice_lite_test.cc
     unit/p2p/p2p_transport_channel_ping_test.cc
     unit/p2p/p2p_transport_channel_test.cc
     unit/p2p/dtls_utils_test.cc
@@ -72,6 +73,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     P2pIceCompare
     P2pIceConfig
     P2pIceCredentialsIterator
+    P2pIceLite
     P2pIpAddress
     P2pNetwork
     P2pNetworkManager

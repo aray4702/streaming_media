@@ -869,6 +869,31 @@ presets turn it on so its tests run. Every `*_test.cc` under `packet/` and `comm
 | Tests | gtest and gmock | `sm_test.h` with `tests/unit/dcsctp/gmock_lite.h` (`EXPECT_THAT` with `ElementsAre`, `SizeIs`, `IsEmpty`, `Not`, or a value) | No gtest in the library |
 | Fuzzer | `dcsctp_fuzzers.cc`'s `FuzzSocket`, through the socket | A packet-layer target: `SctpPacket::Parse` with and without checksum checks, every chunk's parser, SACK cleaning, parameter lists, a build/parse round trip | The socket is part 2; its fuzzer comes with it |
 
+### 10.12 ICE-lite for the AI server (`src/p2p/ice_lite_agent.cc`, C3 part 7, #1003)
+
+libwebrtc has no ICE-lite agent outside its tests: its DTLS-over-ICE fixture (`p2p/dtls/dtls_ice_integration_fixture.h`)
+runs a `P2PTransportChannel` as one by passing `p2p/test/fake_ice_lite_agent.h`'s `FakeIceLiteAgent` as the
+active ICE controller, and `DtlsTransportInternalImpl::SetFakeIceLite` on top of it. That is what is ported:
+`sm::p2p::IceLiteAgent` (and `IceLiteAgentFactory`, for `P2PTransportChannel::Options::active_ice_controller_factory`)
+and `DtlsTransport::SetFakeIceLite`. The lite agent pings nothing (no pingable connection; a reported ping is a bug),
+never sets USE-CANDIDATE, makes a connection writable once a check from the peer arrived on it and it is receiving
+(`Connection::set_writable_for_fake_ice_lite`), switches only on the full agent's nomination or on data, and never
+sorts, switches or prunes otherwise. The rest is the owner's setup, as the fixture: the controlled role, host
+candidates only (no STUN or TURN server), and `SetRemoteIceMode(ICEMODE_LITE)` on the full agent, whose
+`BasicIceController` then nominates a writable pair (`GetUseCandidateAttr`, already ported in 10.6). Over an ICE-lite
+agent DTLS has no RTT estimate, so `SetFakeIceLite` starts the handshake's retransmissions at 2 x 200 ms. Tests:
+`tests/unit/p2p/ice_lite_test.cc` (a full agent through each NAT type of #985 and from a public address, the lite side
+never checking and selecting the nominated pair, and a client network change: a new interface appears and the old one
+goes away, after which the full agent nominates a pair on the new one and the lite server switches to it) and
+`P2pDtlsTransport.FakeIceLiteHandshakeTimeout`.
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Deferred update | `OnConnectionUpdated` posts a task to the network thread | Queued with the time of the last call that carried one (the channel's sort or switch request made just before), run in `Process(now)` at `NextProcessTime()` | The library's time model, as 10.9 |
+| A reported ping | `RTC_CHECK` fails | A debug `assert`; `pings_reported()` counts them | No CHECKs in release builds of the library |
+| Use | Test-only (`p2p/test/`) | In the library, for the AI server | The AI server is the lite agent milestone 3 asks for (#944); its behaviour is libwebrtc's test agent's, unchanged |
+| Lite state | The lite side prunes nothing, so with several pairs it stays CONNECTING (standard state connected) | The same | As libwebrtc |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).
