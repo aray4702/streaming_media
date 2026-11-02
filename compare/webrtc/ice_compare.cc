@@ -30,7 +30,6 @@
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/packet_socket_factory.h"
-#include "api/peer_connection_interface.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/timestamp.h"
 #include "ice_scenarios.h"
@@ -190,28 +189,34 @@ class NetworkManager final : public w::NetworkManagerBase {
   bool sent_first_update_ = false;
 };
 
-// PeerConnection::InitializePortAllocator_n (pc/peer_connection.cc) with RTCConfiguration's defaults, as
-// sm::p2p::ConfigureAsPeerConnection does on our side, and TCP candidates off (ice_scenarios.h).
+// Set by --trace: prints each setup step of libwebrtc's side to stderr, to find a crash.
+bool g_trace = false;
+void Stage(const char* what) {
+  if (g_trace) std::fprintf(stderr, "  libwebrtc: %s\n", what);
+}
+
+// PeerConnection::InitializePortAllocator_n (pc/peer_connection.cc) with RTCConfiguration's defaults
+// (api/peer_connection_interface.h), as sm::p2p::ConfigureAsPeerConnection does on our side, and TCP candidates off
+// (ice_scenarios.h). The defaults are written out rather than read from a default-constructed RTCConfiguration, whose
+// out-of-line constructor in libwebrtc.a this build would have to match field for field:
+// disable_ipv6_on_wifi = false, candidate_network_policy = kCandidateNetworkPolicyAll,
+// disable_link_local_networks = false, type = kAll (CF_ALL), max_ipv6_networks = kDefaultMaxIPv6Networks,
+// ice_candidate_pool_size = 0, prune_turn_ports = false and turn_port_prune_policy = NO_PRUNE (GetTurnPortPrunePolicy),
+// turn_customizer = nullptr, stun_candidate_keepalive_interval unset.
 void ConfigureAsPeerConnection(w::PortAllocator* allocator, const w::ServerAddresses& stun_servers) {
-  const w::PeerConnectionInterface::RTCConfiguration configuration;
+  Stage("initialize");
   allocator->Initialize();
   uint32_t flags = allocator->flags();
   flags |= w::PORTALLOCATOR_ENABLE_SHARED_SOCKET | w::PORTALLOCATOR_ENABLE_IPV6 | w::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
-  // WebRTC-IPv6Default is not disabled with the default field trials.
-  if (configuration.disable_ipv6_on_wifi) flags &= ~uint32_t{w::PORTALLOCATOR_ENABLE_IPV6_ON_WIFI};
+  // WebRTC-IPv6Default is not disabled with the default field trials; disable_ipv6_on_wifi is false.
   flags |= w::PORTALLOCATOR_DISABLE_TCP;  // kTcpCandidatePolicyDisabled; RTCConfiguration's default enables TCP.
-  if (configuration.candidate_network_policy == w::PeerConnectionInterface::kCandidateNetworkPolicyLowCost) {
-    flags |= w::PORTALLOCATOR_DISABLE_COSTLY_NETWORKS;
-  }
-  if (configuration.disable_link_local_networks) flags |= w::PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS;
   allocator->set_flags(flags);
   allocator->set_step_delay(w::kMinimumStepDelay);
-  // ConvertIceTransportTypeToCandidateFilter(kAll), RTCConfiguration's default type.
-  allocator->SetCandidateFilter(w::CF_ALL);
-  allocator->set_max_ipv6_networks(configuration.max_ipv6_networks);
-  allocator->SetConfiguration(stun_servers, {}, configuration.ice_candidate_pool_size,
-                              configuration.GetTurnPortPrunePolicy(), configuration.turn_customizer,
-                              configuration.stun_candidate_keepalive_interval);
+  allocator->SetCandidateFilter(w::CF_ALL);  // ConvertIceTransportTypeToCandidateFilter(kAll).
+  allocator->set_max_ipv6_networks(w::kDefaultMaxIPv6Networks);
+  Stage("set configuration");
+  allocator->SetConfiguration(stun_servers, {}, /*candidate_pool_size=*/0, w::NO_PRUNE, /*turn_customizer=*/nullptr,
+                              /*stun_candidate_keepalive_interval=*/std::nullopt);
 }
 
 Result RunWebrtc(const Scenario& s, uint64_t seed) {
@@ -223,6 +228,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
   env_factory.Set(sim.clock());
   env_factory.Set(static_cast<w::TaskQueueFactory*>(&sim));
   const w::Environment env = env_factory.Create();
+  Stage("environment");
   auto queue = sim.CreateTaskQueue("network", w::TaskQueueFactory::Priority::NORMAL);
   auto run_on_network = [&](auto f) {
     queue->PostTask(std::move(f));
@@ -242,21 +248,30 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
     w::ServerAddresses stun_servers = {ToW(Topology::StunAddress())};
     for (int i = 0; i < 2; ++i) {
       Endpoint& e = ep[i];
+      Stage("network manager");
       e.network_manager = std::make_unique<NetworkManager>(queue.get());
       e.network_manager->AddInterface(topo.ip[i]);
       e.socket_factory = std::make_unique<SocketFactory>(&sim, topo.host[i].get());
+      Stage("allocator");
       e.allocator = std::make_unique<w::BasicPortAllocator>(env, e.network_manager.get(), e.socket_factory.get());
+      Stage("configure");
       ConfigureAsPeerConnection(e.allocator.get(), stun_servers);
+      Stage("channel");
       e.ch = std::make_unique<w::P2PTransportChannel>(env, "audio", w::ICE_CANDIDATE_COMPONENT_RTP, e.allocator.get());
       e.ch->SubscribeCandidateGathered(&e, [&signaling, i](w::IceTransportInternal*, const w::Candidate& c) {
         signaling[1 - i].push_back(c);
       });
-      e.ch->SetIceConfig(w::IceConfig(w::PeerConnectionInterface::RTCConfiguration()));
+      Stage("ice config");
+      // IceConfig(RTCConfiguration()) leaves every optional unset and gathers once (p2p/base/ice_transport_internal.cc):
+      // the default IceConfig.
+      e.ch->SetIceConfig(w::IceConfig());
       e.ch->SetIceRole(i == 0 ? w::ICEROLE_CONTROLLING : w::ICEROLE_CONTROLLED);
       e.ch->SetIceParameters(w::IceParameters(kUfrag[i], kPwd[i], false));
       e.ch->SetRemoteIceParameters(w::IceParameters(kUfrag[1 - i], kPwd[1 - i], false));
     }
+    Stage("gathering");
     for (Endpoint& e : ep) e.ch->MaybeStartGathering();
+    Stage("started");
   });
 
   auto checks = [&] {
@@ -378,8 +393,9 @@ int main(int argc, char** argv) {
   for (int i = 1; i < argc; ++i) {
     if (std::strncmp(argv[i], "--seeds=", 8) == 0) seeds = std::atoi(argv[i] + 8);
     else if (std::strcmp(argv[i], "--verbose") == 0) verbose = true;
+    else if (std::strcmp(argv[i], "--trace") == 0) g_trace = verbose = true;
     else {
-      std::fprintf(stderr, "usage: %s [--seeds=N] [--verbose]\n", argv[0]);
+      std::fprintf(stderr, "usage: %s [--seeds=N] [--verbose] [--trace]\n", argv[0]);
       return 2;
     }
   }

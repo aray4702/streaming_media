@@ -102,7 +102,7 @@ target_include_directories(sm_ice_compare PRIVATE ${SM_ROOT}/tests/unit/p2p ${WE
 target_compile_definitions(sm_ice_compare PRIVATE WEBRTC_POSIX)
 target_link_libraries(sm_ice_compare PRIVATE sm_all ${WEBRTC_DIR}/lib/libwebrtc.a)
 target_link_options(sm_ice_compare PRIVATE -nostdlib++ -rdynamic)
-add_custom_command(TARGET sm_ice_compare POST_BUILD COMMAND sm_ice_compare --verbose VERBATIM)
+add_custom_command(TARGET sm_ice_compare POST_BUILD COMMAND sm_ice_compare --trace VERBATIM)
 if(APPLE)
   target_compile_definitions(sm_compare PRIVATE WEBRTC_MAC)
   target_compile_definitions(sm_rtcp_interop PRIVATE WEBRTC_MAC)
