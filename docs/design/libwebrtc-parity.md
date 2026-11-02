@@ -686,7 +686,7 @@ cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are
 |---|---|---|---|
 | Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
 | TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
-| TURN ports | `TurnPortFactory` by default | Only through a `RelayPortFactoryInterface` the caller gives; none by default. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
+| TURN ports | `TurnPortFactory` by default | `TurnPortFactory` by default too (10.7, #1031), or the `RelayPortFactoryInterface` the caller gives. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
 | mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
 | Field trials | `WebRTC-UseTurnServerAsStunServer`, `WebRTC-IPv6Default` | At their defaults (enabled); the second is `PeerConnectionAllocatorConfig::ipv6_default` | Defaults as libwebrtc |
 | PeerConnection's allocator settings | `PeerConnection::InitializePortAllocator_n` (`pc/peer_connection.cc`) | `ConfigureAsPeerConnection` (`port_allocator.h`) with `RTCConfiguration`'s defaults: shared socket, IPv6 and IPv6 on Wi-Fi, step delay 50 ms, `CF_ALL`, 5 IPv6 networks, `SetConfiguration` last | Same; the session layer (#1002 onwards) calls it |
@@ -716,6 +716,37 @@ Differences:
 | `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
 | `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
+
+### 10.7 TURN client over UDP (`src/p2p/turn_port.cc`, `include/sm/sim/turn_server.h`, C4 part 1, #1031)
+
+Ported as a unit from `p2p/base/turn_port.{h,cc}` and `p2p/client/turn_port_factory.{h,cc}`, with the test
+server from `p2p/test/turn_server.{h,cc}` (and `test_turn_server.h`'s auth: password = username) as
+`sim::TurnServer` on `sim::EmulatedSocketServer`, the way #1015 did `sim::StunServer`. Same constants and
+defaults: `TURN_DEFAULT_PORT` 3478, channels from 0x4000, `kTurnPermissionTimeout` 5 min (permissions and
+channel binds refreshed 1 min before), `MAX_ALLOCATE_MISMATCH_RETRIES` 2, the refresh 1 min before the
+lifetime (half the lifetime below 2 min, at most 59 min ahead), the allowed server ports (53, 80, 443,
+1024 and up), `kMaxTurnUsernameLength` 509, the 401/438 handling with the long-term key MD5(username:realm:
+password) through `StunCrypto`'s MD5 hook, the 300 redirect checks (seen before, family, loopback, the any
+address, port), 437 moving to a new socket, Send indications until the channel is bound, the entry deleted 5
+min after its last connection, the relay candidate (type preference `ICE_TYPE_PREFERENCE_RELAY_UDP`, the
+server's relative priority as relay preference, related address the server-reflexive one, URL
+`turn:<ip>:<port>?transport=udp`), and the server's 10 min allocation, 5 min permission, 10 min channel and
+60 min nonce lifetimes. `BasicPortAllocator` now makes TURN ports with a `TurnPortFactory` when the caller
+gives no factory, as libwebrtc. The UDP cases of `turn_port_unittest.cc` (allocate, logging id, bad and
+missing credentials, family mismatch, allocate mismatch with the nonce reset and on a shared socket, the
+alternate server and the refused redirects, dangerous ports, overlong username, connections with and without
+one-time nonces, destroying a connection, send data, the refresh and permission errors, channel bind error,
+release and graceful release, closing, the forged unauthenticated success) and a relay candidate gathered by
+`BasicPortAllocator` behind a symmetric NAT are in `tests/unit/p2p/turn_port_test.cc`. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread; `PostTask` for the port error, refresh error, allocate mismatch, alternate server and close; `PostDelayedTask` for an entry's delete | The port queues them and runs them in `Process(now)` at `NextProcessTime()`; it keeps the latest `now`, which its destructor uses to send the release | The library's time model, as 10.3 |
+| TCP, TLS and DTLS to the server | `CreateClientTcpSocket`, `OnSocketConnect`, `PROTO_DTLS` | Not yet: a TCP or TLS server fails to create its socket | C4 parts 2-4 (10.x rows to come, #1034-#1036) |
+| DNS | `ResolveTurnAddress` for a server given by name | None: the library's addresses are IP literals; the URL host is the IP | As 10.3 |
+| `TurnCustomizer`, local network access, mDNS candidates, ECN, `CopyPortInformationToPacketInfo`, `turn_overhead_bytes` | Present | None (no customizer; access granted; addresses carry no hostnames; no ECN or packet info in `PacketOptions`) | Host-stack features (C11, C12) and the library's socket types |
+| REST credentials | Beyond a username and password pair | Username and password only | C4 part 4 (#1036) |
+| `TurnServer` | `TaskQueueBase` timers, TCP listeners, `StunMessageObserver` | Timers in `Process(now)`, UDP only, an observer callback; external socket factory not owned | Test server on the emulated network |
 
 ## Open questions for the Owner
 
