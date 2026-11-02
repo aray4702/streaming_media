@@ -14,6 +14,7 @@ out/native/testbench/sm_testbench --json=r.json --timeseries a.scn       # machi
 out/native/testbench/sm_testbench --library a.scn --json=-               # plus every module's own metrics
 out/native/testbench/sm_testbench --metrics                               # metric names and meanings
 out/native/testbench/sm_testbench --link-trace=DIR a.scn                  # every packet offered to the forward link, as CSV (tools/link_trace.py); also the video send trace and the GoogCC estimate trace (tools/bwe_trace.py)
+out/native/testbench/sm_testbench --packet-dump=DIR a.scn                 # the first 64 datagrams of each kind offered to each link, as .bin files: the seeds of the fuzz corpus (fuzz/, tools/fuzz_corpus.py)
 ctest --preset native -L scenario                                         # the suite as CTest entries
 python3 tools/testbench_compare.py testbench/baseline r.json             # regressions against main
 python3 tools/testbench_compare.py testbench/baseline r.json --update    # regenerate the baseline

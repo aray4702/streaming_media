@@ -39,12 +39,22 @@ option(SM_BUILD_TESTBENCH "Build the call-level test bench"   ${PROJECT_IS_TOP_L
 option(SM_BUILD_EXAMPLES "Build examples (needs all sections)"     ${PROJECT_IS_TOP_LEVEL})
 option(SM_NO_EXCEPTIONS "Build with -fno-exceptions -fno-rtti"     OFF)
 option(SM_SANITIZE      "Build with ASan + UBSan"                  OFF)
+# libFuzzer targets for the network parsers (fuzz/, #989). Clang only; turns on
+# ASan + UBSan and coverage instrumentation for every sm target.
+option(SM_BUILD_FUZZERS "Build the libFuzzer targets in fuzz/ (clang)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
+if(SM_BUILD_FUZZERS AND NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  message(FATAL_ERROR "SM_BUILD_FUZZERS needs clang (libFuzzer); configure with -DCMAKE_CXX_COMPILER=clang++")
+endif()
+if(SM_BUILD_FUZZERS)
+  set(SM_SANITIZE ON CACHE BOOL "" FORCE)
 endif()
 
 include(cmake/SmHelpers.cmake)
@@ -72,6 +82,9 @@ if(SM_BUILD_BENCH)
 endif()
 if(SM_BUILD_EXAMPLES AND SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WITH_VIDEO AND SM_WITH_RTP)
   add_subdirectory(examples)
+endif()
+if(SM_WITH_RTP AND (SM_BUILD_TESTS OR SM_BUILD_FUZZERS))
+  add_subdirectory(fuzz)
 endif()
 if(SM_BUILD_TESTBENCH AND SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WITH_AUDIO AND SM_WITH_VIDEO AND SM_WITH_RTP)
   add_subdirectory(testbench)

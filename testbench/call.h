@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <span>
@@ -220,6 +221,10 @@ struct RunOptions {
   bool link_trace = false;  // Fill Report::link_trace, Report::reverse_trace and Report::audio_send_trace (memory grows with the call).
   bool bwe_trace = false;   // Fill Report::bwe_trace.
   bool audio_trace = false;  // Fill Report::audio_trace.
+  // Called with every datagram a one-way call offers to either link, before the link sees it (`kind`: audio, video,
+  // rtx, fec, padding, rtcp; `forward`: the media link). Observes only. sm_testbench --packet-dump uses it to seed the
+  // fuzz corpus (fuzz/, issue #989).
+  std::function<void(const char* kind, bool forward, std::span<const uint8_t> bytes)> packet_sink;
 };
 
 Report RunCall(const Scenario& s, const RunOptions& opt = {});
