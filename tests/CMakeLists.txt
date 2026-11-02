@@ -8,7 +8,9 @@ if(SM_WITH_TLS)
     SOURCES unit/tls/message_digest_test.cc
             unit/tls/ssl_identity_test.cc
             unit/tls/dtls_transport_test.cc
-    SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport)
+            unit/tls/srtp_session_test.cc
+    SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport TlsSrtpSession
+           TlsDtlsSrtp)
 endif()
 
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
