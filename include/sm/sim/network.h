@@ -63,7 +63,10 @@
 // interface over; `ClearBlockedAddresses()` is its `ClearRules()`. The check
 // runs when a host sends (FirewallSocket::SendTo) and when a datagram
 // reaches a host (FirewallSocket::RecvFrom drops what fails the rules), so
-// datagrams already in flight are dropped too. No rules by default.
+// datagrams already in flight are dropped too. `SetFirewallRule(drop)` adds
+// a rule on the whole datagram, such as one protocol to or from a host
+// (`fw()->AddRule(false, FP_UDP, FD_ANY, addr)`, #1036: TURN over TLS with
+// UDP blocked); it is checked at the same two points. No rules by default.
 //
 // Like every module, it takes `now`, reads no clock and starts no thread.
 // It is a test bench building block: `testbench/call.cc` does not use it, so
@@ -73,6 +76,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <optional>
 #include <set>
@@ -216,7 +220,12 @@ class Network {
       ++stats_.firewall_dropped;
       return;
     }
-    h.up.Send(now, Packet{Datagram<T>{{h.ip, src_port}, dst, std::move(payload)}, size, kind}, size, kind);
+    Datagram<T> d{{h.ip, src_port}, dst, std::move(payload)};
+    if (rule_ && rule_(d)) {
+      ++stats_.firewall_dropped;
+      return;
+    }
+    h.up.Send(now, Packet{std::move(d), size, kind}, size, kind);
   }
 
   // Routes every datagram that has left a host's uplink by `now`, in time
@@ -243,7 +252,7 @@ class Network {
     Process(now);
     std::vector<Datagram<T>> out;
     for (Packet& p : hosts_[host].down.Receive(now)) {
-      if (Blocked(p.d.src.ip) || Blocked(p.d.dst.ip)) {
+      if (Blocked(p.d.src.ip) || Blocked(p.d.dst.ip) || (rule_ && rule_(p.d))) {
         ++stats_.firewall_dropped;
         continue;
       }
@@ -256,6 +265,9 @@ class Network {
   void BlockAddress(uint32_t ip) { blocked_.insert(ip); }
   void UnblockAddress(uint32_t ip) { blocked_.erase(ip); }
   void ClearBlockedAddresses() { blocked_.clear(); }
+  // A firewall rule: datagrams for which `drop` holds are dropped; nullptr
+  // clears it.
+  void SetFirewallRule(std::function<bool(const Datagram<T>&)> drop) { rule_ = std::move(drop); }
   bool Blocked(uint32_t ip) const { return !blocked_.empty() && blocked_.count(ip) != 0; }
 
   // The earliest time anything moves: a datagram leaving an uplink or
@@ -418,6 +430,7 @@ class Network {
 
   uint64_t seed_;
   std::set<uint32_t> blocked_;
+  std::function<bool(const Datagram<T>&)> rule_;
   std::vector<Host> hosts_;
   std::vector<Nat> nats_;
   NetworkStats stats_;

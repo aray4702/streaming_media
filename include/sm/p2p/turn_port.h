@@ -1,6 +1,7 @@
-// TURN client port over UDP (issue #1031, C4 part 1, milestone 3): libwebrtc
-// M157's p2p/base/turn_port.{h,cc} and p2p/client/turn_port_factory.{h,cc}
-// (compare/webrtc/reference/p2p/base/ and p2p/client/).
+// TURN client port over UDP (issue #1031, C4 part 1, milestone 3), TCP and
+// TLS (issue #1036, C4 part 4): libwebrtc M157's p2p/base/turn_port.{h,cc}
+// and p2p/client/turn_port_factory.{h,cc} (compare/webrtc/reference/p2p/base/
+// and p2p/client/).
 //
 // A TurnPort allocates a relayed address on a TURN server (RFC 5766) and
 // gathers it as a relay candidate:
@@ -31,6 +32,20 @@
 //   relative priority as relay preference, the server-reflexive address as
 //   related address, URL "turn:<host>:<port>?transport=udp".
 //
+// Over TCP and TLS (PROTO_TCP, PROTO_TLS) the port opens a client TCP socket
+// to the server with OPT_STUN framing (STUN and ChannelData messages, the
+// latter padded to 4 bytes on the stream, RFC 5766 section 11.5) and, for
+// TLS, OPT_TLS, or OPT_TLS_INSECURE under TLS_CERT_POLICY_INSECURE_NO_CHECK,
+// with the ALPN protocols and curves of the server config. The Allocate goes
+// once the socket connects (OnSocketConnect), not when it is made; a socket
+// bound to an address that is not one of the network's (other than loopback,
+// or when the best IP is the any address) fails the port. A 300
+// redirect drops the connection and connects to the alternate server. A
+// closed connection closes the port. The relay candidate keeps protocol udp
+// (the relayed transport) with relay protocol tcp or tls, type preference
+// ICE_TYPE_PREFERENCE_RELAY_TCP or _TLS, and URL "turn:<host>:<port>?transport=tcp"
+// or "turns:<host>:<port>?transport=tcp".
+//
 // The library's time model replaces libwebrtc's network thread: nothing reads
 // a clock or posts a task. What libwebrtc posts (the port error after an
 // allocate failure, the refresh-error handling, the allocate-mismatch retry,
@@ -39,8 +54,8 @@
 // remembers the latest `now` it was given, which its destructor uses to send
 // the release (libwebrtc sends it from the destructor too).
 //
-// Not here (C4 parts 2-4, #1034-#1036): TCP, TLS and DTLS to the server,
-// DNS resolution of the server's name (addresses carry no hostnames), the
+// Not here: DTLS to the server (no PROTO_DTLS in ProtocolType yet), DNS
+// resolution of the server's name (addresses carry no hostnames), the
 // TurnCustomizer, the TURN logging id is kept but no factory field sets it,
 // and the local network access permission (granted, as with no permission
 // factory). Port options apply to the socket once it exists, as in libwebrtc.
@@ -148,6 +163,8 @@ class TurnPort : public Port {
   void HandleConnectionDestroyed(Connection* conn) override;
   // The socket closed: fatal for every protocol.
   void OnSocketClose(AsyncPacketSocket* socket, int error);
+  // TCP and TLS: the connection to the server is up; sends the Allocate.
+  void OnSocketConnect(AsyncPacketSocket* socket, Timestamp now);
   void CloseForTest(Timestamp now) { Close(now); }
 
   class CallbacksForTest {
@@ -182,7 +199,7 @@ class TurnPort : public Port {
 
   static bool AllowedTurnPort(int port);
   void OnLocalNetworkAccessPermissionGranted(Timestamp now);
-  bool CreateTurnClientSocket();
+  bool CreateTurnClientSocket(Timestamp now);
   void OnReadPacket(AsyncPacketSocket* socket, const ReceivedPacket& packet);
   void OnReadyToSend(AsyncPacketSocket* socket);
   void OnAllocateMismatch(Timestamp now);
@@ -246,6 +263,18 @@ class TurnPort : public Port {
   std::vector<std::function<void(Timestamp)>> posted_;
   Timestamp last_now_;
 };
+
+// Short-lived TURN credentials of the TURN REST API
+// (draft-uberti-behave-turn-rest-00), as coturn's `use-auth-secret` checks
+// them: username "<expiry>:<user>" (just "<expiry>" for an empty user), with
+// `expiry_unix_seconds` the Unix time the credential ends, and password
+// base64(HMAC-SHA1(shared_secret, username)) with padding. libwebrtc takes
+// them as plain long-term credentials (RelayCredentials) and has no such
+// helper; this one is for tests and for the AI server, which shares the
+// secret with its TURN server. HMAC-SHA1 is the installed STUN crypto's; the
+// password is empty without it.
+RelayCredentials CreateTurnRestCredentials(std::string_view shared_secret, std::string_view user,
+                                           int64_t expiry_unix_seconds);
 
 // p2p/client/turn_port_factory: the allocator's default relay port factory.
 class TurnPortFactory final : public RelayPortFactoryInterface {

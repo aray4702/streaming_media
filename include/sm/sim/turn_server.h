@@ -1,6 +1,8 @@
-// A TURN server for tests (issue #1031, C4 part 1): libwebrtc M157's
-// p2p/test/turn_server.{h,cc} (compare/webrtc/reference/p2p/test/), over UDP.
-// It listens on internal packet sockets, and gives each client (source
+// A TURN server for tests (issue #1031, C4 part 1; TCP and TLS, #1036):
+// libwebrtc M157's p2p/test/turn_server.{h,cc} (compare/webrtc/reference/
+// p2p/test/). It listens on internal packet sockets (UDP), and on listening
+// stream sockets whose accepted connections (wrapped in a TLS adapter in
+// server role for PROTO_TLS) become internal STUN-framed TCP sockets, and gives each client (source
 // address, socket, protocol) one allocation with an external socket from the
 // external socket factory:
 // - Requests need MESSAGE-INTEGRITY with the long-term key the auth hook
@@ -28,7 +30,12 @@
 // The library's time model replaces libwebrtc's task queue: the server takes
 // `now` from each packet's arrival time, and the timers it posts (allocation,
 // permission and channel lifetimes) run in Process(now) at NextProcessTime().
-// Not here: TCP and TLS listeners (C4 parts 2-4), ECN.
+// A TCP or TLS connection that closes stops serving its allocation, which
+// stays until its lifetime ends (libwebrtc's too); deleting a TCP or TLS
+// allocation closes its connection. Unlike libwebrtc's, packets for an
+// allocation whose connection is gone are dropped (libwebrtc would send on
+// the deleted socket). Deleted sockets are freed at the next Process, as
+// libwebrtc posts their deletion. Not here: ECN.
 #pragma once
 
 #include <algorithm>
@@ -47,8 +54,10 @@
 
 #include "sm/core/units.h"
 #include "sm/p2p/async_packet_socket.h"
+#include "sm/p2p/async_tcp_socket.h"
 #include "sm/p2p/byte_buffer.h"
 #include "sm/p2p/port.h"
+#include "sm/p2p/socket.h"
 #include "sm/p2p/stun.h"
 
 namespace sm::sim {
@@ -78,7 +87,11 @@ class TurnServer {
   TurnServer() : nonce_key_(p2p::CreateRandomString(kNonceKeySize)) {}
   ~TurnServer() {
     allocations_.clear();
-    for (auto& [socket, proto] : server_sockets_) socket->DeregisterReceivedPacketCallback();
+    for (auto& [socket, proto] : server_sockets_) {
+      socket->DeregisterReceivedPacketCallback();
+      socket->UnsubscribeCloseEvent(this);
+    }
+    for (auto& l : listen_sockets_) l.socket->UnsubscribeAll(this);
   }
   TurnServer(const TurnServer&) = delete;
   TurnServer& operator=(const TurnServer&) = delete;
@@ -101,6 +114,18 @@ class TurnServer {
     server_sockets_.emplace_back(std::move(socket), protocol);
     raw->RegisterReceivedPacketCallback(
         [this](p2p::AsyncPacketSocket* s, const p2p::ReceivedPacket& p) { OnInternalPacket(s, p); });
+  }
+  // Wraps an accepted connection for TLS (libwebrtc's SSLAdapterFactory:
+  // an adapter in server role, its handshake started); nullptr refuses it.
+  using SslWrapper = std::function<std::unique_ptr<p2p::Socket>(std::unique_ptr<p2p::Socket>)>;
+  // Accepts client connections on the listening stream socket `socket`
+  // (AddInternalServerSocket); each is framed as STUN/ChannelData
+  // (AsyncStunTcpSocket) and served as `protocol`, after `ssl` if given.
+  void AddInternalServerSocket(std::unique_ptr<p2p::Socket> socket, p2p::ProtocolType protocol,
+                               SslWrapper ssl = nullptr) {
+    p2p::Socket* raw = socket.get();
+    listen_sockets_.push_back(ListenSocket{std::move(socket), protocol, std::move(ssl)});
+    raw->SubscribeReadEvent(this, [this](p2p::Socket* s, Timestamp now) { OnNewInternalConnection(s, now); });
   }
   // External (relayed) sockets come from `factory`, bound to `address`. The
   // factory must outlive the server (libwebrtc takes ownership).
@@ -133,15 +158,17 @@ class TurnServer {
   // Runs the lifetimes that ended by `now`.
   void Process(Timestamp now) {
     now_ = std::max(now_, now);
+    deleted_sockets_.clear();
     std::vector<Key> expired;
     for (auto& [key, a] : allocations_) {
       a->ProcessTimers(now);
       if (a->expires_ <= now) expired.push_back(key);
     }
-    for (const Key& k : expired) allocations_.erase(k);
+    for (const Key& k : expired) DestroyAllocation(k);
   }
   Timestamp NextProcessTime() const {
     Timestamp next = Timestamp::PlusInfinity();
+    if (!deleted_sockets_.empty()) next = now_;
     for (const auto& [key, a] : allocations_) next = std::min(next, a->NextTimer());
     return next;
   }
@@ -361,6 +388,58 @@ class TurnServer {
     std::list<Permission> perms_;
     std::list<Channel> channels_;
   };
+
+  struct ListenSocket {
+    std::unique_ptr<p2p::Socket> socket;
+    p2p::ProtocolType proto;
+    SslWrapper ssl;
+  };
+
+  void OnNewInternalConnection(p2p::Socket* socket, Timestamp now) {
+    now_ = std::max(now_, now);
+    auto it = std::find_if(listen_sockets_.begin(), listen_sockets_.end(),
+                           [socket](const ListenSocket& l) { return l.socket.get() == socket; });
+    if (it == listen_sockets_.end()) return;
+    p2p::SocketAddress accept_addr;
+    std::unique_ptr<p2p::Socket> accepted = socket->Accept(now, &accept_addr);
+    if (!accepted) return;
+    if (it->ssl) {
+      accepted = it->ssl(std::move(accepted));
+      if (!accepted) return;
+    }
+    auto tcp_socket = std::make_unique<p2p::AsyncStunTcpSocket>(std::move(accepted));
+    tcp_socket->SubscribeCloseEvent(this, [this](p2p::AsyncPacketSocket* s, int) { OnInternalSocketClose(s); });
+    // Now the client can talk to the server over it.
+    AddInternalSocket(std::move(tcp_socket), it->proto);
+  }
+
+  void OnInternalSocketClose(p2p::AsyncPacketSocket* socket) {
+    auto it = std::find_if(server_sockets_.begin(), server_sockets_.end(),
+                           [socket](const auto& e) { return e.first.get() == socket; });
+    if (it != server_sockets_.end()) DestroyInternalSocket(it);
+  }
+
+  using ServerSockets = std::vector<std::pair<std::unique_ptr<p2p::AsyncPacketSocket>, p2p::ProtocolType>>;
+  void DestroyInternalSocket(ServerSockets::iterator it) {
+    std::unique_ptr<p2p::AsyncPacketSocket> socket = std::move(it->first);
+    server_sockets_.erase(it);
+    socket->UnsubscribeCloseEvent(this);
+    socket->DeregisterReceivedPacketCallback();
+    // Deleted later: this may run inside the socket's own callback.
+    deleted_sockets_.push_back(std::move(socket));
+  }
+
+  void DestroyAllocation(const Key& key) {
+    auto alloc = allocations_.find(key);
+    if (alloc == allocations_.end()) return;
+    // A TCP or TLS allocation's connection goes with it; the UDP socket is
+    // shared by every allocation. (A closed TCP socket is gone already.)
+    p2p::AsyncPacketSocket* socket = alloc->second->conn_.socket;
+    auto it = std::find_if(server_sockets_.begin(), server_sockets_.end(),
+                           [socket](const auto& e) { return e.first.get() == socket; });
+    if (it != server_sockets_.end() && it->second != p2p::PROTO_UDP) DestroyInternalSocket(it);
+    allocations_.erase(alloc);
+  }
 
   void OnInternalPacket(p2p::AsyncPacketSocket* socket, const p2p::ReceivedPacket& packet) {
     now_ = std::max(now_, packet.arrival_time);
@@ -603,6 +682,11 @@ class TurnServer {
     Send(now, conn, buf);
   }
   void Send(Timestamp now, const Conn& conn, const p2p::ByteBufferWriter& buf) {
+    // Not on a TCP or TLS connection that is gone.
+    if (std::none_of(server_sockets_.begin(), server_sockets_.end(),
+                     [&](const auto& e) { return e.first.get() == conn.socket; })) {
+      return;
+    }
     conn.socket->SendTo(now, buf.DataView(), conn.src, {});
   }
 
@@ -616,7 +700,9 @@ class TurnServer {
   bool reject_private_addresses_ = false;
   bool reject_bind_requests_ = false;
   bool enable_permission_checks_ = true;
-  std::vector<std::pair<std::unique_ptr<p2p::AsyncPacketSocket>, p2p::ProtocolType>> server_sockets_;
+  ServerSockets server_sockets_;
+  std::vector<ListenSocket> listen_sockets_;
+  std::vector<std::unique_ptr<p2p::AsyncPacketSocket>> deleted_sockets_;
   p2p::PacketSocketFactory* external_socket_factory_ = nullptr;
   p2p::SocketAddress external_addr_;
   std::map<Key, std::unique_ptr<Allocation>> allocations_;

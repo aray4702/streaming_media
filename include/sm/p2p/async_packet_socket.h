@@ -110,7 +110,9 @@ class AsyncPacketSocket {
   using SentCallback = std::function<void(AsyncPacketSocket*, const SentPacketInfo&)>;
   using CloseCallback = std::function<void(AsyncPacketSocket*, int)>;
   using ReadyToSendCallback = std::function<void(AsyncPacketSocket*)>;
-  using ConnectCallback = std::function<void(AsyncPacketSocket*)>;
+  // With the time of the connect event (the library passes `now` where
+  // libwebrtc reads its clock).
+  using ConnectCallback = std::function<void(AsyncPacketSocket*, Timestamp)>;
 
   AsyncPacketSocket() = default;
   AsyncPacketSocket(const AsyncPacketSocket&) = delete;
@@ -156,7 +158,7 @@ class AsyncPacketSocket {
 
   void NotifySentPacket(const SentPacketInfo& info);
   void NotifyReadyToSend();
-  void NotifyConnect();
+  void NotifyConnect(Timestamp now);
 
  protected:
   void NotifyPacketReceived(const ReceivedPacket& packet) {

@@ -279,6 +279,7 @@ TurnPort::~TurnPort() {
     socket_->UnsubscribeSentPacket(this);
     socket_->UnsubscribeReadyToSend(this);
     socket_->UnsubscribeCloseEvent(this);
+    socket_->UnsubscribeConnect(this);
     if (owned_socket_) owned_socket_->DeregisterReceivedPacketCallback();
   }
 }
@@ -319,22 +320,37 @@ void TurnPort::PrepareAddress(Timestamp now) {
 void TurnPort::OnLocalNetworkAccessPermissionGranted(Timestamp now) {
   // The current address, against redirection ping-pong.
   attempted_server_addresses_.insert(server_address_.address);
-  if (!CreateTurnClientSocket()) {
+  if (!CreateTurnClientSocket(now)) {
     OnAllocateError(STUN_ERROR_SERVER_NOT_REACHABLE, "Failed to create TURN client socket.");
     return;
   }
   if (server_address_.proto == PROTO_UDP) {
-    // UDP: allocate now (TCP and TLS would on connect, C4 part 4).
+    // UDP: allocate now; TCP and TLS allocate in OnSocketConnect.
     SendRequest(now, std::make_unique<TurnAllocateRequest>(this), 0);
   }
 }
 
-bool TurnPort::CreateTurnClientSocket() {
+bool TurnPort::CreateTurnClientSocket(Timestamp now) {
   if (server_address_.proto == PROTO_UDP && !SharedSocket()) {
     owned_socket_ = socket_factory()->CreateUdpSocket(SocketAddress(network()->GetBestIP(), 0), min_port(), max_port());
     socket_ = owned_socket_.get();
+  } else if (server_address_.proto == PROTO_TCP || server_address_.proto == PROTO_TLS) {
+    // Never on a shared socket (the allocator shares only UDP).
+    int opts = PacketSocketFactory::kOptStun;
+    // The server address's TLS and insecure bits.
+    if (server_address_.proto == PROTO_TLS) {
+      opts |= tls_cert_policy_ == TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK ? PacketSocketFactory::kOptTlsInsecure
+                                                                                  : PacketSocketFactory::kOptTls;
+    }
+    PacketSocketTcpOptions tcp_options;
+    tcp_options.opts = opts;
+    tcp_options.tls_alpn_protocols = tls_alpn_protocols_;
+    tcp_options.tls_elliptic_curves = tls_elliptic_curves_;
+    owned_socket_ = socket_factory()->CreateClientTcpSocket(now, SocketAddress(network()->GetBestIP(), 0),
+                                                            server_address_.address, tcp_options);
+    socket_ = owned_socket_.get();
   } else if (server_address_.proto != PROTO_UDP) {
-    // TCP and TLS to the server: C4 part 4 (#1036).
+    // PROTO_SSLTCP (and DTLS, which isn't ported): no socket.
     owned_socket_ = nullptr;
     socket_ = nullptr;
   }
@@ -353,9 +369,38 @@ bool TurnPort::CreateTurnClientSocket() {
                                [this](AsyncPacketSocket*, const SentPacketInfo& info) { NotifySentPacket(info); });
   // A closed socket is fatal for every protocol.
   socket_->SubscribeCloseEvent(this, [this](AsyncPacketSocket* s, int err) { OnSocketClose(s, err); });
-  // UDP is ready to send STUN requests once the socket exists.
-  state_ = STATE_CONNECTED;
+  // TCP and TLS are ready to send STUN requests once connected, UDP once
+  // the socket exists.
+  if (server_address_.proto == PROTO_TCP || server_address_.proto == PROTO_TLS) {
+    socket_->SubscribeConnect(this, [this](AsyncPacketSocket* s, Timestamp t) { OnSocketConnect(s, t); });
+  } else {
+    state_ = STATE_CONNECTED;
+  }
   return true;
+}
+
+void TurnPort::OnSocketConnect(AsyncPacketSocket* socket, Timestamp now) {
+  Touch(now);
+  // Not on a socket bound to an address outside the network (a platform that
+  // can't bind TCP picks the local address), except loopback (a proxy that
+  // binds to localhost, webrtc issue 3927) and the any address (multiple
+  // routes disabled, webrtc issue 4780). The same rule as TcpPort's.
+  const SocketAddress socket_address = socket->GetLocalAddress();
+  const auto& ips = network()->GetIps();
+  if (std::none_of(ips.begin(), ips.end(), [&](const IpAddress& ip) { return socket_address.ipaddr() == ip; })) {
+    if (socket_address.IsLoopbackIp()) {
+      // Still allowed: localhost.
+    } else if (IpIsAny(network()->GetBestIP())) {
+      // Still allowed: the any address.
+    } else {
+      OnAllocateError(STUN_ERROR_SERVER_NOT_REACHABLE, "Address not associated with the desired network interface.");
+      return;
+    }
+  }
+  state_ = STATE_CONNECTED;  // Ready to send STUN requests.
+  // (An unresolved server address takes the socket's remote address; the
+  // library's addresses are always resolved.)
+  SendRequest(now, std::make_unique<TurnAllocateRequest>(this), 0);
 }
 
 void TurnPort::OnSocketClose(AsyncPacketSocket* /*socket*/, int /*error*/) { Close(last_now_); }
@@ -368,6 +413,7 @@ void TurnPort::OnAllocateMismatch(Timestamp now) {
   socket_->UnsubscribeCloseEvent(this);
   socket_->UnsubscribeReadyToSend(this);
   socket_->UnsubscribeSentPacket(this);
+  socket_->UnsubscribeConnect(this);
   if (SharedSocket()) {
     ResetSharedSocket();
   } else if (owned_socket_) {
@@ -574,10 +620,26 @@ bool TurnPort::AllowedTurnPort(int port) {
 }
 
 void TurnPort::TryAlternateServer(Timestamp now) {
-  // UDP reuses the socket for the alternate server (PrepareAddress isn't
-  // called; the permission it would request is granted).
-  if (!connected()) return;  // The socket may have closed meanwhile.
-  SendRequest(now, std::make_unique<TurnAllocateRequest>(this), 0);
+  if (server_address_.proto == PROTO_UDP) {
+    // UDP reuses the socket for the alternate server (PrepareAddress isn't
+    // called; the permission it would request is granted).
+    if (!connected()) return;  // The socket may have closed meanwhile.
+    SendRequest(now, std::make_unique<TurnAllocateRequest>(this), 0);
+    return;
+  }
+  // TCP and TLS: drop the connection and connect to the alternate server;
+  // PrepareAddress sends the Allocate once the new socket connects. (Posted:
+  // the old socket's handler may still be running.)
+  if (socket_) {
+    socket_->UnsubscribeCloseEvent(this);
+    socket_->UnsubscribeReadyToSend(this);
+    socket_->UnsubscribeSentPacket(this);
+    socket_->UnsubscribeConnect(this);
+    if (owned_socket_) owned_socket_->DeregisterReceivedPacketCallback();
+  }
+  owned_socket_ = nullptr;
+  socket_ = nullptr;
+  PrepareAddress(now);
 }
 
 void TurnPort::OnAllocateRequestTimeout() {
@@ -951,6 +1013,52 @@ void TurnChannelBindRequest::OnErrorResponse(Timestamp now, StunMessage* respons
 
 void TurnChannelBindRequest::OnTimeout(Timestamp /*now*/) {
   if (entry_) entry_->OnChannelBindTimeout();
+}
+
+// ------------------------------------------------------ REST credentials
+
+namespace {
+// RFC 4648 base64 with padding.
+std::string Base64Encode(std::span<const uint8_t> in) {
+  static constexpr char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  std::string out;
+  out.reserve((in.size() + 2) / 3 * 4);
+  size_t i = 0;
+  for (; i + 3 <= in.size(); i += 3) {
+    const uint32_t v = (uint32_t{in[i]} << 16) | (uint32_t{in[i + 1]} << 8) | in[i + 2];
+    out.push_back(kAlphabet[(v >> 18) & 63]);
+    out.push_back(kAlphabet[(v >> 12) & 63]);
+    out.push_back(kAlphabet[(v >> 6) & 63]);
+    out.push_back(kAlphabet[v & 63]);
+  }
+  if (i < in.size()) {
+    const bool two = i + 1 < in.size();
+    const uint32_t v = (uint32_t{in[i]} << 16) | (two ? uint32_t{in[i + 1]} << 8 : 0u);
+    out.push_back(kAlphabet[(v >> 18) & 63]);
+    out.push_back(kAlphabet[(v >> 12) & 63]);
+    out.push_back(two ? kAlphabet[(v >> 6) & 63] : '=');
+    out.push_back('=');
+  }
+  return out;
+}
+}  // namespace
+
+RelayCredentials CreateTurnRestCredentials(std::string_view shared_secret, std::string_view user,
+                                           int64_t expiry_unix_seconds) {
+  std::string username = std::to_string(expiry_unix_seconds);
+  if (!user.empty()) {
+    username += ':';
+    username += user;
+  }
+  std::string password;
+  uint8_t mac[20] = {};
+  const auto hmac_sha1 = GetStunCrypto().hmac_sha1;
+  if (hmac_sha1 != nullptr &&
+      hmac_sha1(std::span(reinterpret_cast<const uint8_t*>(shared_secret.data()), shared_secret.size()),
+                std::span(reinterpret_cast<const uint8_t*>(username.data()), username.size()), mac)) {
+    password = Base64Encode(mac);
+  }
+  return RelayCredentials(username, password);
 }
 
 // --------------------------------------------------------- TurnPortFactory
