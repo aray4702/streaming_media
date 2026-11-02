@@ -1074,7 +1074,9 @@
    "evidence": "",
    "verification": "",
    "start": "2026-11-01",
-   "end": ""
+   "end": "",
+   "milestone": 4,
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
   },
   {
    "id": "C12",
@@ -1092,7 +1094,9 @@
    "evidence": "",
    "verification": "",
    "start": "2026-11-01",
-   "end": ""
+   "end": "",
+   "milestone": 4,
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
   }
  ]
 }
