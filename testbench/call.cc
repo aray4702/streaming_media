@@ -230,6 +230,10 @@ const std::vector<std::pair<std::string, std::string>>& OneWayMetricCatalog() {
       {"ai.underruns", "Two-way call with `ai_source`: frames sent late because generation fell behind real time (#758)"},
       {"ai.cancels", "Two-way call with `ai_source`: replies cut short by a barge-in (#760)"},
       {"ai.cancelled_ms", "Two-way call with `ai_source`: reply media dropped by those cancels before it reached the sender (#760)"},
+      {"ai.ahead_max_lead_ms", "Two-way call with `ai_send_ahead`: the most any AI audio frame was sent ahead of its real-time send "
+                               "time (#762)"},
+      {"ai.ahead_lead_max_ms", "Two-way call with `ai_send_ahead ... adaptive`: the largest lead the user's RTCP reports gave the AI's "
+                               "sender (#763)"},
   };
   return k;
 }
@@ -1592,6 +1596,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   up_streams.audio.nack = s.up_audio_nack;
   StreamConfigs down_streams = MakeStreamConfigs(down_s, sr, audio_wire_rate, down_m, 10);
   down_streams.audio.send_ahead = s.ai_send_ahead;  // The AI's send side (#762); zero: real time.
+  down_streams.audio.adaptive_send_ahead = s.ai_send_ahead_adaptive;  // Sized by the user's reports (#763).
+  down_streams.audio.nack = s.down_audio_nack;  // `down_audio_nack on` (#763): audio NACK on the AI-to-user stream.
   SendSide up_tx(up_s, opt, user, up_streams, up_m, sr, clock0);
   ReceiveSide up_rx(up_s, opt, ai, up_streams, up_m, events, sr, clock0, up_tx.audio_ts_offset());
   SendSide down_tx(ai_s, opt, ai, down_streams, down_m, sr, clock0);
@@ -2181,6 +2187,12 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     rep.metrics["ai.underruns"] = static_cast<double>(st.underruns);
     rep.metrics["ai.cancels"] = static_cast<double>(st.cancels);
     rep.metrics["ai.cancelled_ms"] = st.cancelled.us() / 1000.0;
+    if (s.ai_send_ahead > TimeDelta::Zero()) {
+      // Send-ahead (#762, #763): the most any frame went out ahead of real time and, adaptive, the largest lead the
+      // user's reports gave. Only with send-ahead, so other scenarios keep their metrics.
+      rep.metrics["ai.ahead_max_lead_ms"] = std::max(0.0, SessionGauge(ai, "audio_ahead_max_lead_ms"));
+      if (s.ai_send_ahead_adaptive) rep.metrics["ai.ahead_lead_max_ms"] = std::max(0.0, SessionGauge(ai, "audio_ahead_lead_max_ms"));
+    }
   }
 
   if (user_speech_loss) rep.metrics["conv.user_speech_lost_pct"] = user_speech_loss->lost_pct();

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 
 #include "sm/core/random.h"
@@ -121,6 +122,9 @@ AudioSendId Session::AddAudioSend(const AudioStreamConfig& a) {
   SendStream as;
   as.sender = std::make_unique<RtpSender>(c);
   as.send_ahead = std::max(a.send_ahead, TimeDelta::Zero());
+  as.adaptive_ahead = a.adaptive_send_ahead;
+  as.clock_rate = a.clock_rate > 0 ? a.clock_rate : 48000;
+  as.ahead_frame = std::max(a.max_frame_length, TimeDelta::Zero());
   as.nominal_rate = a.nominal_rate;
   as.allocation_rate = a.allocation_rate > DataRate::Zero() ? a.allocation_rate : a.nominal_rate;
   if (a.allocation_rate <= DataRate::Zero() && a.max_bitrate > DataRate::Zero()) {
@@ -430,12 +434,18 @@ void Session::ReleaseHeldAudio(Timestamp now) {
     st.ahead_budget_at = now;
     st.ahead_budget_bytes = std::min(st.ahead_budget_bytes, static_cast<double>(room.bps()) / 8 * 0.04);
     RtpSender& s = *st.sender;
+    const TimeDelta lead = AheadLead(st, now);
+    if (st.adaptive_ahead && std::llabs((lead - st.ahead_lead).us()) >= 1000) {
+      SM_EVENT(cfg_.events, now, "audio_send", "ahead_lead", lead.ms(), s.config().ssrc);
+      st.ahead_lead = lead;
+      st.ahead_lead_max = std::max(st.ahead_lead_max, lead);
+    }
     while (!st.held.empty()) {
       const SendStream::HeldAudio& h = st.held.front();
       const bool due = h.due_time <= now;
       if (!due) {
         const double bytes = static_cast<double>(h.data.size() + RtpPacket::kFixedHeaderSize) + cfg_.send_side.transport_overhead_bytes;
-        if (now < h.due_time - st.send_ahead || st.ahead_budget_bytes < bytes) break;
+        if (lead <= TimeDelta::Zero() || now < h.due_time - lead || st.ahead_budget_bytes < bytes) break;
         st.ahead_budget_bytes -= bytes;
         ++st.ahead_frames;
         st.ahead_max_lead = std::max(st.ahead_max_lead, h.due_time - now);
@@ -452,11 +462,33 @@ Timestamp Session::NextHeldAudioTime(Timestamp now) const {
   Timestamp next = Timestamp::PlusInfinity();
   for (const SendStream& st : audio_send_) {
     if (st.held.empty()) continue;
-    const Timestamp earliest = std::min(st.held.front().due_time, st.held.front().due_time - st.send_ahead);
+    const TimeDelta lead = AheadLead(st, now);
+    const Timestamp earliest = std::min(st.held.front().due_time, st.held.front().due_time - lead);
     // Allowed by time but waiting for budget: look again in 5 ms.
     next = std::min(next, earliest > now ? earliest : now + TimeDelta::Millis(5));
   }
   return next;
+}
+
+TimeDelta Session::AheadLead(const SendStream& st, Timestamp now) const {
+  if (!st.adaptive_ahead) return st.send_ahead;
+  if (!st.ahead_have_report) return TimeDelta::Zero();  // Nothing measured yet: real-time pacing.
+  // Twice the RFC 3550 interarrival jitter: about 1.8 standard deviations of the per-packet delay for Gaussian
+  // jitter (J is about 1.13 sigma), a cushion for the late tail without doubling the receiver's own buffer.
+  TimeDelta lead = st.ahead_jitter * 2;
+  // A resend comes back a round trip after NetEq's NackTracker sees the gap, which it sees one frame late (the next
+  // packet's arrival). Only with audio NACK: without resends a cushion recovers nothing (#4, #765).
+  constexpr TimeDelta kLossHold = TimeDelta::Seconds(10);  // Two audio report intervals (5 s, #484).
+  if (st.sender->config().resend_on_media_ssrc && now - st.ahead_loss_at <= kLossHold) {
+    TimeDelta rtt = TimeDelta::Zero();
+    if (st.num_rtts > 0) {
+      rtt = st.last_rtt;
+    } else if (have_rtt_ || host_rtt_) {
+      rtt = rtt_;
+    }
+    lead = lead + rtt + st.ahead_frame;
+  }
+  return std::min(lead, st.send_ahead);
 }
 
 DataSize Session::SendVideo(VideoSendId id, const EncodedVideoFrame& f, Timestamp now) {
@@ -833,6 +865,15 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   }
   // RTPSender::OnReceivedAckOnSsrc / OnReceivedAckOnRtxSsrc call UpdateHeaderSizes: MID may stop counting.
   if (!in.report_blocks.empty()) UpdateVideoPacketOverhead();
+  // Adaptive send-ahead (#763): the receiver's jitter and loss for each audio send stream.
+  for (const auto& rb : in.report_blocks) {
+    for (auto& a : audio_send_) {
+      if (!a.adaptive_ahead || rb.ssrc != a.sender->config().ssrc) continue;
+      a.ahead_have_report = true;
+      a.ahead_jitter = TimeDelta::Micros(static_cast<int64_t>(rb.jitter) * 1000000 / a.clock_rate);
+      if (rb.fraction_lost > 0) a.ahead_loss_at = now;
+    }
+  }
   for (const auto& rb : in.report_blocks) {
     SessionEvent e;
     e.type = SessionEventType::kReportBlock;
@@ -1135,11 +1176,21 @@ void Session::ExportMetrics(MetricsWriter& w) const {
   w.Counter("audio_flushes", stats_.audio_flushes);
   {
     uint64_t ahead = 0, held = 0;
-    TimeDelta lead = TimeDelta::Zero();
+    TimeDelta lead = TimeDelta::Zero(), adaptive_lead = TimeDelta::Zero(), adaptive_lead_max = TimeDelta::Zero();
+    bool adaptive = false;
     for (const SendStream& st : audio_send_) {
       ahead += st.ahead_frames;
       held += st.held.size();
       lead = std::max(lead, st.ahead_max_lead);
+      if (st.adaptive_ahead && st.send_ahead > TimeDelta::Zero()) {
+        adaptive = true;
+        adaptive_lead = std::max(adaptive_lead, st.ahead_lead);
+        adaptive_lead_max = std::max(adaptive_lead_max, st.ahead_lead_max);
+      }
+    }
+    if (adaptive) {  // Adaptive send-ahead (#763): the lead the reports gave, last and largest.
+      w.Gauge("audio_ahead_lead_ms", static_cast<double>(adaptive_lead.us()) / 1000.0);
+      w.Gauge("audio_ahead_lead_max_ms", static_cast<double>(adaptive_lead_max.us()) / 1000.0);
     }
     if (ahead > 0 || held > 0) {  // Send-ahead in use (#762): absent otherwise, so existing exports are unchanged.
       w.Counter("audio_ahead_frames", ahead);

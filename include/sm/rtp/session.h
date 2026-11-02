@@ -153,6 +153,12 @@ struct AudioStreamConfig {
   // Send side (#762): how far ahead of its `due_time` a frame may be sent. Zero (the default): every frame is sent
   // when it is handed over, as libwebrtc does.
   TimeDelta send_ahead = TimeDelta::Zero();
+  // Adaptive send-ahead (#763, #4's option 3 part 1): with `send_ahead` above zero, the lead is sized by what the
+  // receiver reports for this stream in its RTCP report blocks, instead of always `send_ahead`: twice the
+  // interarrival jitter (RFC 3550 6.4.1), plus, when `nack` is on and the receiver reported loss in the last 10 s,
+  // one round trip and one frame, so a resent frame can still arrive before its playout. At most `send_ahead`;
+  // zero (real-time pacing) until the first report block. Off by default: the lead is `send_ahead`, as #762.
+  bool adaptive_send_ahead = false;
   // AudioAllocationConfig::priority_bitrate (WebRTC-Audio-Allocation): 0 by default.
   DataRate priority_bitrate = DataRate::Zero();
   // Audio NACK (#971), as libwebrtc's voice engine sets it with `use_nack`: rtp.nack.rtp_history_ms
@@ -495,6 +501,15 @@ class Session : public MetricsSource {
       Timestamp due_time = Timestamp::Micros(0);
     };
     TimeDelta send_ahead = TimeDelta::Zero();
+    // Adaptive send-ahead (#763): what the receiver's report blocks for this stream say, and the lead they give.
+    bool adaptive_ahead = false;
+    bool ahead_have_report = false;
+    int clock_rate = 48000;
+    TimeDelta ahead_frame = TimeDelta::Millis(20);               // AudioStreamConfig::max_frame_length.
+    TimeDelta ahead_jitter = TimeDelta::Zero();                  // The last report block's interarrival jitter.
+    Timestamp ahead_loss_at = Timestamp::MinusInfinity();        // The last report block with loss.
+    TimeDelta ahead_lead = TimeDelta::Zero();                    // The lead last used (adaptive).
+    TimeDelta ahead_lead_max = TimeDelta::Zero();                // The largest lead used (adaptive).
     std::deque<HeldAudio> held;
     double ahead_budget_bytes = 0;
     Timestamp ahead_budget_at = Timestamp::MinusInfinity();
@@ -571,6 +586,8 @@ class Session : public MetricsSource {
   void ReleaseHeldAudio(Timestamp now);
   // The next time ReleaseHeldAudio has something to do, or +infinity.
   Timestamp NextHeldAudioTime(Timestamp now) const;
+  // How far ahead of its due time the stream may send now: `send_ahead`, or the adaptive lead (#763).
+  TimeDelta AheadLead(const SendStream& st, Timestamp now) const;
 
   SessionConfig cfg_;
   RtcpEngine rtcp_;

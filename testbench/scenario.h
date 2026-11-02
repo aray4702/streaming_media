@@ -83,6 +83,9 @@ struct Scenario {
   // on the AI's receive side, resends from the user's packet history). Off by default, as libwebrtc, which turns
   // audio NACK on only when it is negotiated (Owner, 2026-11-01: for the AI's side of the call).
   bool up_audio_nack = false;
+  // `down_audio_nack on` (#763): the same on the AI-to-user audio stream (the AI's sender keeps the history and
+  // resends, the user's NetEq NACKs), so adaptive send-ahead can size its cushion for resends. Off by default.
+  bool down_audio_nack = false;
   bool nack = true;                 // Video NACK/RTX.
   bool fec = true;                  // Adaptive video FEC (protection controller).
   int audio_sample_rate = 16000;
@@ -184,6 +187,10 @@ struct Scenario {
   // as soon as it is at most this far ahead of its real-time send time, and the library sends it early within the
   // congestion target (AudioStreamConfig::send_ahead). Zero (the default): real-time pacing.
   TimeDelta ai_send_ahead = TimeDelta::Zero();
+  // `ai_send_ahead <time> adaptive` (#763, #4's option 3 part 1): the library sizes the lead from the user's RTCP
+  // reports for the AI's audio (jitter, and a round trip while loss is reported with audio NACK), at most <time>
+  // (AudioStreamConfig::adaptive_send_ahead).
+  bool ai_send_ahead_adaptive = false;
 
   // Scripted turns of a two-way call (issue #751, #3), in file order:
   //   turn user <start>-<end>        the user speaks in [start, end)

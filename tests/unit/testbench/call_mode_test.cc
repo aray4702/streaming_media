@@ -333,6 +333,32 @@ SM_TEST(TestbenchCallMode, AiSendAheadBuildsACushion) {
   SM_EXPECT_TRUE(RunTurns(script + "ai_send_ahead 500ms\n").metrics == ahead.metrics);
 }
 
+// Issue #763: `ai_send_ahead <time> adaptive` sizes the lead from the user's reports, and `down_audio_nack on` turns
+// on audio NACK for the AI-to-user audio. On a clean link the adaptive lead stays near zero, so the user's jitter
+// buffer holds no 500 ms cushion; with loss and audio NACK the lead grows to about a round trip.
+SM_TEST(TestbenchCallMode, AdaptiveSendAheadFollowsTheImpairment) {
+  auto p = ParseScenario("call two-way\nai_source speed=3x\nai_send_ahead 500ms adaptive\ndown_audio_nack on\n");
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_EXPECT_TRUE(p.scenario->ai_send_ahead_adaptive);
+  SM_EXPECT_TRUE(p.scenario->down_audio_nack);
+  SM_EXPECT_TRUE(FormatScenario(*p.scenario).find("ai_send_ahead 500ms adaptive\n") != std::string::npos);
+  SM_EXPECT_TRUE(FormatScenario(*p.scenario).find("down_audio_nack on\n") != std::string::npos);
+  SM_EXPECT_TRUE(UnsupportedReason(*p.scenario).empty());
+  SM_EXPECT_FALSE(ParseScenario("call two-way\nai_send_ahead 500ms fast\n").scenario.has_value());
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("down_audio_nack on\n").scenario).empty());
+  SM_EXPECT_FALSE(ParseScenario("call two-way\n").scenario->ai_send_ahead_adaptive);
+  const std::string script = "ai_source speed=3x\nturn user 1s-3s\nturn ai after=500ms len=4s\n";
+  const Report fixed = RunTurns(script + "ai_send_ahead 500ms\n");
+  const Report clean = RunTurns(script + "ai_send_ahead 500ms adaptive\ndown_audio_nack on\n");
+  SM_EXPECT_TRUE(clean.metrics.at("ai.ahead_lead_max_ms") < 20);
+  SM_EXPECT_TRUE(clean.metrics.at("down.audio.jb_delay_p95_ms") + 200 < fixed.metrics.at("down.audio.jb_delay_p95_ms"));
+  SM_EXPECT_TRUE(fixed.metrics.count("ai.ahead_lead_max_ms") == 0);
+  const Report lossy = RunTurns("reverse at 0s loss=5%\n" + script + "ai_send_ahead 500ms adaptive\ndown_audio_nack on\n");
+  SM_EXPECT_TRUE(lossy.metrics.at("ai.ahead_lead_max_ms") > 100);
+  SM_EXPECT_TRUE(lossy.metrics.at("ai.ahead_lead_max_ms") <= 500);
+  SM_EXPECT_TRUE(lossy.metrics.at("down.net.rtx_kbps") > 0);
+}
+
 // Issue #971: `up_audio_nack on` turns on audio NACK for the user-to-AI audio only: the AI NACKs the lost packets,
 // the user resends them on the audio SSRC (repair on the up link), and the AI-to-user audio sends none. Off by
 // default, and a one-way call refuses it.
