@@ -4,6 +4,8 @@
 // and the peer checks the DTLS certificate against it.
 #pragma once
 
+#include "sm/tls/backend.h"
+
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -12,6 +14,7 @@
 #include <vector>
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 // KeyType: libwebrtc's default is ECDSA (P-256), which browsers use too.
 enum class KeyType { kRsa, kEcdsa };
@@ -63,7 +66,7 @@ class SslIdentity {
   virtual std::string PrivateKeyToPem() const = 0;
   virtual std::string PublicKeyToPem() const = 0;
   virtual std::unique_ptr<SslIdentity> Clone() const = 0;
-  // The backend's key (an EVP_PKEY* for BoringSSL), for the DTLS adapter (#984 part 2).
+  // The backend's key (an EVP_PKEY* for BoringSSL, an mbedtls_pk_context* for mbedTLS), for the DTLS adapter (#984 part 2).
   virtual void* native_key() const = 0;
 };
 
@@ -73,4 +76,5 @@ bool operator==(const SslIdentity& a, const SslIdentity& b);
 bool PemToDer(std::string_view type, std::string_view pem, std::vector<uint8_t>& der);
 std::string DerToPem(std::string_view type, std::span<const uint8_t> der);
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

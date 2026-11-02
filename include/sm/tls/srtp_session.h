@@ -16,6 +16,8 @@
 //   init count is process-wide and takes a lock, as libwebrtc's does.
 #pragma once
 
+#include "sm/tls/backend.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -24,6 +26,7 @@
 struct srtp_ctx_t_;  // libsrtp's session; the trailing _ is libsrtp's.
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 class DtlsTransport;
 
@@ -121,4 +124,5 @@ struct SrtpKeys {
 // False if the transport isn't connected, no SRTP profile was negotiated, or the export fails.
 bool ExtractSrtpKeys(const DtlsTransport& dtls, SrtpKeys& keys);
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

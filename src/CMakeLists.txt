@@ -11,24 +11,59 @@ sm_add_library(core SOURCES
 set(SM_SECTIONS core)
 
 if(SM_WITH_TLS)
-  # Connectivity (milestone 3): crypto and TLS through BoringSSL, libwebrtc's rtc_base/ interfaces (#984).
+  # Connectivity (milestone 3): crypto and TLS, libwebrtc's rtc_base/ interfaces (#984), on BoringSSL as libwebrtc
+  # M157 builds, or on Mbed TLS for microcontrollers (SM_TLS_BACKEND=mbedtls, C1 part 3, #998).
+  # sm_add_tls_backend(<name> <boringssl|mbedtls> [SRTP]) builds sm_<name> on that backend; SRTP adds SrtpSession on
+  # libsrtp (C5 part 1, #995), which only one sm::tls build per binary can carry (libsrtp's C symbols).
+  # The modules are included here, not in the function: enable_language(C) must run at directory scope.
   include(${PROJECT_SOURCE_DIR}/cmake/SmBoringSSL.cmake)
-  sm_add_boringssl()
-  # SRTP (C5 part 1, #995): libsrtp 2.8.0 on BoringSSL, as libwebrtc M157 builds it.
+  include(${PROJECT_SOURCE_DIR}/cmake/SmMbedTLS.cmake)
   include(${PROJECT_SOURCE_DIR}/cmake/SmLibsrtp.cmake)
-  sm_add_libsrtp()
-  sm_add_library(tls DEPS sm::core SOURCES
-    tls/message_digest.cc
-    tls/boringssl_digest.cc
-    tls/crypto_random.cc
-    tls/boringssl_identity.cc
-    tls/ssl_fingerprint.cc
-    tls/boringssl_dtls.cc
-    tls/srtp_session.cc)
-  target_link_libraries(sm_tls PRIVATE sm_boringssl_ssl sm_libsrtp)
-  target_compile_definitions(sm_tls PUBLIC SM_WITH_TLS=1)
-  # Not in the sm::sm umbrella or the install export yet: it links BoringSSL's targets, which the export
-  # set doesn't carry. Connectivity code links sm::tls itself until the package exports BoringSSL (#984).
+  function(sm_add_tls_backend name backend)
+    cmake_parse_arguments(ARG "SRTP" "" "" ${ARGN})
+    set(srcs tls/message_digest.cc tls/crypto_random.cc tls/ssl_fingerprint.cc)
+    if(backend STREQUAL "boringssl")
+      sm_add_boringssl()
+      list(APPEND srcs tls/boringssl_digest.cc tls/boringssl_identity.cc tls/boringssl_dtls.cc)
+    else()
+      sm_add_mbedtls()
+      list(APPEND srcs tls/mbedtls_digest.cc tls/mbedtls_identity.cc tls/mbedtls_dtls.cc)
+    endif()
+    if(ARG_SRTP)
+      if(backend STREQUAL "boringssl")
+        sm_add_libsrtp()
+      else()
+        sm_add_libsrtp(MBEDTLS)
+      endif()
+      list(APPEND srcs tls/srtp_session.cc)
+    endif()
+    sm_add_library(${name} DEPS sm::core SOURCES ${srcs})
+    if(backend STREQUAL "boringssl")
+      target_link_libraries(sm_${name} PRIVATE sm_boringssl_ssl)
+    else()
+      target_link_libraries(sm_${name} PRIVATE sm_mbedtls)
+      target_compile_definitions(sm_${name} PUBLIC SM_TLS_BACKEND_MBEDTLS=1)
+    endif()
+    if(ARG_SRTP)
+      target_link_libraries(sm_${name} PRIVATE sm_libsrtp)
+    endif()
+    target_compile_definitions(sm_${name} PUBLIC SM_WITH_TLS=1)
+  endfunction()
+
+  sm_add_tls_backend(tls ${SM_TLS_BACKEND} SRTP)
+  # Not in the sm::sm umbrella or the install export yet: it links the TLS library's targets, which the export
+  # set doesn't carry. Connectivity code links sm::tls itself until the package exports them (#984).
+  if(SM_BUILD_TESTS AND SM_TLS_CROSS_TEST)
+    # The other backend, for its own unit tests and the BoringSSL <-> mbedTLS cross test (#998): sm::tls_mbedtls
+    # (or sm::tls_boringssl when sm::tls is on mbedTLS), without SrtpSession.
+    if(SM_TLS_BACKEND STREQUAL "boringssl")
+      set(SM_TLS_OTHER_BACKEND mbedtls)
+    else()
+      set(SM_TLS_OTHER_BACKEND boringssl)
+    endif()
+    set(SM_TLS_OTHER_BACKEND ${SM_TLS_OTHER_BACKEND} PARENT_SCOPE)
+    sm_add_tls_backend(tls_${SM_TLS_OTHER_BACKEND} ${SM_TLS_OTHER_BACKEND})
+  endif()
 endif()
 
 # Connectivity (milestone 3): addresses and packet sockets for ICE, libwebrtc's p2p/ and rtc_base/ socket

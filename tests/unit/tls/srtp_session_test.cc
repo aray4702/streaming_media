@@ -425,7 +425,12 @@ SM_TEST(TlsDtlsSrtp, ExtractedKeysPairUpByRole) {
 }
 
 SM_TEST(TlsDtlsSrtp, RtpAndRtcpBothWaysAfterTheHandshake) {
+#if SM_TLS_BACKEND_MBEDTLS
+  // Mbed TLS's use_srtp has no AEAD-GCM profiles (mbedtls_dtls.cc, #998); SrtpSession itself does GCM on it.
+  for (int suite : {kSrtpAes128CmSha1_80, kSrtpAes128CmSha1_32}) {
+#else
   for (int suite : {kSrtpAes128CmSha1_80, kSrtpAeadAes128Gcm, kSrtpAeadAes256Gcm}) {
+#endif
     DtlsConfig cfg;
     cfg.srtp_crypto_suites = {suite};
     DtlsPair p(cfg);

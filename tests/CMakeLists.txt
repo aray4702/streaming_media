@@ -11,6 +11,34 @@ if(SM_WITH_TLS)
             unit/tls/srtp_session_test.cc
     SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport TlsSrtpSession
            TlsDtlsSrtp)
+  if(SM_TLS_CROSS_TEST)
+    # The same unit tests on the other backend (sm::tls_mbedtls, or sm::tls_boringssl when sm::tls is on mbedTLS;
+    # without SrtpSession), and the BoringSSL <-> mbedTLS cross test (#998).
+    add_executable(sm_unit_tls_${SM_TLS_OTHER_BACKEND} unit/tls/message_digest_test.cc unit/tls/ssl_identity_test.cc
+                   unit/tls/dtls_transport_test.cc)
+    target_link_libraries(sm_unit_tls_${SM_TLS_OTHER_BACKEND} PRIVATE sm_test_framework sm::tls_${SM_TLS_OTHER_BACKEND})
+    sm_configure_target(sm_unit_tls_${SM_TLS_OTHER_BACKEND})
+    foreach(suite TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport)
+      add_test(NAME unit.${suite}.${SM_TLS_OTHER_BACKEND}
+               COMMAND sm_unit_tls_${SM_TLS_OTHER_BACKEND} --filter=${suite}.)
+      set_tests_properties(unit.${suite}.${SM_TLS_OTHER_BACKEND} PROPERTIES LABELS unit)
+    endforeach()
+    # One tls_cross::Peer per backend: cross_peer.cc compiled against each sm::tls build.
+    foreach(backend boringssl mbedtls)
+      if(backend STREQUAL SM_TLS_OTHER_BACKEND)
+        set(lib sm::tls_${backend})
+      else()
+        set(lib sm::tls)
+      endif()
+      add_library(sm_tls_cross_peer_${backend} STATIC unit/tls/cross_peer.cc)
+      target_link_libraries(sm_tls_cross_peer_${backend} PRIVATE ${lib})
+      target_include_directories(sm_tls_cross_peer_${backend} PUBLIC ${PROJECT_SOURCE_DIR}/include)
+      sm_configure_target(sm_tls_cross_peer_${backend})
+    endforeach()
+    sm_add_test_exe(sm_unit_tls_cross LABEL unit DEPS sm_tls_cross_peer_boringssl sm_tls_cross_peer_mbedtls sm::core
+      SOURCES unit/tls/cross_test.cc
+      SUITES TlsCrossBackend)
+  endif()
 endif()
 
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p

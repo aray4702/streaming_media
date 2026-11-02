@@ -1,9 +1,11 @@
 // DTLS for WebRTC: libwebrtc's rtc_base/openssl_stream_adapter.cc in DTLS mode (M157), ported for milestone 3
 // (#984 part 2). It runs the handshake over datagrams the caller moves (from ICE, or the test bench's emulated
 // link), checks the peer's certificate against the fingerprint from SDP, negotiates DTLS-SRTP (RFC 5764) and exports
-// the SRTP keys. Time is the caller's: BoringSSL's clock is set from it (SSL_CTX_set_current_time_cb), so runs are
-// deterministic on a simulated clock.
+// the SRTP keys. Time is the caller's: BoringSSL's clock is set from it (SSL_CTX_set_current_time_cb), and mbedTLS's
+// DTLS timer callbacks read it (#998), so runs are deterministic on a simulated clock.
 #pragma once
+
+#include "sm/tls/backend.h"
 
 #include <cstdint>
 #include <deque>
@@ -17,6 +19,7 @@
 #include "sm/tls/ssl_identity.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 // SRTP protection profiles (RFC 5764, RFC 7714 ids; ssl_stream_adapter.h).
 inline constexpr int kSrtpAes128CmSha1_80 = 0x0001;
@@ -99,4 +102,5 @@ class DtlsTransport {
 // The SRTP key and salt lengths of a profile, in bytes (SrtpCryptoSuiteToKeyAndSaltLength); false if unknown.
 bool SrtpKeyAndSaltLength(int crypto_suite, int& key_len, int& salt_len);
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

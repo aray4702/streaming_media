@@ -11,6 +11,7 @@
 #include "sm/tls/dtls_transport.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 namespace {
 constexpr char kDtlsSrtpExporterLabel[] = "EXTRACTOR-dtls_srtp";
@@ -290,4 +291,5 @@ bool SrtpKeyAndSaltLength(int suite, int& key_len, int& salt_len) {
   return false;
 }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls
