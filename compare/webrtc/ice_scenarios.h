@@ -36,7 +36,17 @@
 // - turn: the TURN requests both endpoints sent in the run (Allocate/CreatePermission/ChannelBind/Refresh, with
 //   retransmissions), counted on the emulated network as each host sends them (sim::Network::SetSendObserver), so the
 //   same code counts both stacks.
-// TURN over TCP and TLS come in a later part of #1055.
+// TURN over TCP and TLS (#1055 part 2): StreamRelayScenarios() give the same server's stream listeners instead, as
+// RTCConfiguration.servers gives a "turn:...?transport=tcp" or "turns:" URL (RelayServerConfig with PROTO_TCP or
+// PROTO_TLS): TCP on kTurnTcpIntAddr (99.99.99.4:3479, P2PTransportChannelTest's), TLS on the same host at 443, the
+// server's own host because TCP and UDP share a host's port table in the emulated network (tests/unit/p2p/
+// turn_fixture.h). TLS is TestTurnServer's: the server presents a self-signed certificate and the client takes the
+// insecure policy (RelayServerConfig::tls_cert_policy = TLS_CERT_POLICY_INSECURE_NO_CHECK, as libwebrtc's tests).
+// The server's TLS adapter is the one the binary installs (TlsServerWrapper(); sim::TurnServer serves both stacks);
+// each stack's client runs its own TLS (ours sm::tls's TlsSslAdapter, libwebrtc's OpenSSLAdapter, both on BoringSSL
+// at the revision M157 pins). The scenarios: port-sym, sym-port, sym-sym and open-open relay only, over TCP, then TLS.
+// Their TURN requests are counted as the server receives them (sim::TurnServer::SetStunMessageObserver), because a
+// stream's segments don't carry one message each and TLS hides them; without loss TCP delivers every request sent.
 //
 // Metrics per run (both endpoints together unless named):
 // - connected: both endpoints writable and receiving with a selected connection (the unit test's CheckConnected);
@@ -75,6 +85,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "sm/core/units.h"
@@ -104,7 +115,7 @@ inline const char* NatName(Nat n) {
 }
 
 // The TURN server an endpoint is given (RTCConfiguration.servers), if any.
-enum class Turn { kNone, kUdp };
+enum class Turn { kNone, kUdp, kTcp, kTls };
 
 struct Scenario {
   std::string name;
@@ -227,6 +238,28 @@ inline std::vector<Scenario> RelayScenarios() {
   return out;
 }
 
+// Relay over a stream (#1055 part 2): the NAT pairs that need a relay and an open pair with relay only, with TURN over
+// TCP, then TLS.
+inline std::vector<Scenario> StreamRelayScenarios() {
+  std::vector<Scenario> out;
+  for (Turn turn : {Turn::kTcp, Turn::kTls}) {
+    const char* proto = turn == Turn::kTcp ? "tcp" : "tls";
+    for (auto [a, b, relay_only] : {std::tuple{Nat::kPortRestricted, Nat::kSymmetric, false},
+                                    std::tuple{Nat::kSymmetric, Nat::kPortRestricted, false},
+                                    std::tuple{Nat::kSymmetric, Nat::kSymmetric, false},
+                                    std::tuple{Nat::kOpen, Nat::kOpen, true}}) {
+      Scenario s;
+      s.nat[0] = a;
+      s.nat[1] = b;
+      s.turn = turn;
+      s.relay_only = relay_only;
+      s.name = std::string(NatName(a)) + "-" + NatName(b) + "-turn" + proto + (relay_only ? "-relayonly" : "");
+      out.push_back(s);
+    }
+  }
+  return out;
+}
+
 struct Result {
   bool connected = false;
   double connect_ms = -1;
@@ -268,6 +301,10 @@ inline constexpr uint16_t kStunPort = 3478;
 inline constexpr uint32_t kTurnIntIp = sim::SocketAddress::Ip(99, 99, 99, 3);
 inline constexpr uint32_t kTurnExtIp = sim::SocketAddress::Ip(99, 99, 99, 5);
 inline constexpr uint16_t kTurnPort = 3478;
+// The stream listeners (#1055 part 2): kTurnTcpIntAddr, and TLS on the same host at 443.
+inline constexpr uint32_t kTurnTcpIp = sim::SocketAddress::Ip(99, 99, 99, 4);
+inline constexpr uint16_t kTurnTcpPort = 3479;
+inline constexpr uint16_t kTurnTlsPort = 443;
 inline const char kTurnUsername[] = "test";
 inline const char kTurnPassword[] = "test";
 inline const char kTurnRealm[] = "example.org";
@@ -279,6 +316,24 @@ class TurnAuth final : public sim::TurnAuthInterface {
     return p2p::ComputeStunCredentialHash(std::string(username), std::string(realm), std::string(username), key);
   }
 };
+
+// The server side of TURN over TLS (TestTurnServer's SSL adapter in server role with a self-signed certificate), set
+// by the binary that runs the TLS scenarios; without it the server has no TLS listener.
+inline sim::TurnServer::SslWrapper& TlsServerWrapper() {
+  static sim::TurnServer::SslWrapper wrapper;
+  return wrapper;
+}
+
+// The TURN request a STUN message type is, if any.
+inline std::optional<TurnRequest> TurnRequestOfType(int type) {
+  switch (type) {
+    case p2p::STUN_ALLOCATE_REQUEST: return kAllocate;
+    case p2p::TURN_REFRESH_REQUEST: return kRefresh;
+    case p2p::TURN_CREATE_PERMISSION_REQUEST: return kCreatePermission;
+    case p2p::TURN_CHANNEL_BIND_REQUEST: return kChannelBind;
+  }
+  return std::nullopt;
+}
 
 // The TURN request a datagram carries, if any: a STUN request (RFC 5389 header with the magic cookie) of a TURN
 // method.
@@ -313,6 +368,7 @@ struct Topology {
   TurnAuth turn_auth;
   std::unique_ptr<sim::EmulatedSocketServer> turn_int_host;
   std::unique_ptr<sim::EmulatedSocketServer> turn_ext_host;
+  std::unique_ptr<sim::EmulatedSocketServer> turn_tcp_host;  // The stream listeners' host (TCP and TLS scenarios).
   std::unique_ptr<sim::TurnServer> turn;
   int turn_requests[kNumTurnRequests] = {0, 0, 0, 0};
 
@@ -333,10 +389,27 @@ struct Topology {
       turn->set_auth_hook(&turn_auth);
       turn->AddInternalSocket(turn_int_host->CreateUdpSocket(TurnAddress(), 0, 0), p2p::PROTO_UDP);
       turn->SetExternalSocketFactory(turn_ext_host.get(), p2p::SocketAddress(p2p::IpAddress(kTurnExtIp), 0));
-      net.SetSendObserver([this](const sim::Datagram<sim::Wire>& d) {
-        if (d.dst.ip != kTurnIntIp || d.dst.port != kTurnPort || d.payload.proto != sim::Wire::Proto::kUdp) return;
-        if (std::optional<TurnRequest> r = TurnRequestOf(d.payload.data)) ++turn_requests[*r];
-      });
+      if (s.turn == Turn::kUdp) {
+        net.SetSendObserver([this](const sim::Datagram<sim::Wire>& d) {
+          if (d.dst.ip != kTurnIntIp || d.dst.port != kTurnPort || d.payload.proto != sim::Wire::Proto::kUdp) return;
+          if (std::optional<TurnRequest> r = TurnRequestOf(d.payload.data)) ++turn_requests[*r];
+        });
+      } else {
+        // TestTurnServer::AddInternalSocket for PROTO_TCP and PROTO_TLS: a listening stream socket, its accepted
+        // connections wrapped by the TLS adapter for TLS.
+        turn_tcp_host = std::make_unique<sim::EmulatedSocketServer>(
+            net, net.AddHost(kTurnTcpIp, sim::ByteNetwork::kPublicRealm, stun_link, stun_link));
+        auto listen = [&](uint16_t port, p2p::ProtocolType proto, sim::TurnServer::SslWrapper ssl) {
+          std::unique_ptr<p2p::Socket> socket = turn_tcp_host->CreateStreamSocket(p2p::IpFamily::kV4);
+          if (socket->Bind(p2p::SocketAddress(p2p::IpAddress(kTurnTcpIp), port)) != 0 || socket->Listen(5) != 0) return;
+          turn->AddInternalServerSocket(std::move(socket), proto, std::move(ssl));
+        };
+        listen(kTurnTcpPort, p2p::PROTO_TCP, nullptr);
+        if (TlsServerWrapper()) listen(kTurnTlsPort, p2p::PROTO_TLS, TlsServerWrapper());
+        turn->SetStunMessageObserver([this](const p2p::TurnMessage& m) {
+          if (std::optional<TurnRequest> r = TurnRequestOfType(m.type())) ++turn_requests[*r];
+        });
+      }
     }
     for (int i = 0; i < 2; ++i) {
       int realm = sim::ByteNetwork::kPublicRealm;
@@ -386,6 +459,17 @@ struct Topology {
 
   static p2p::SocketAddress StunAddress() { return p2p::SocketAddress(p2p::IpAddress(kStunIp), kStunPort); }
   static p2p::SocketAddress TurnAddress() { return p2p::SocketAddress(p2p::IpAddress(kTurnIntIp), kTurnPort); }
+  // The TURN server address and protocol an endpoint is given for scenario `s` (RTCConfiguration.servers).
+  static p2p::SocketAddress TurnAddress(Turn t) {
+    switch (t) {
+      case Turn::kTcp: return p2p::SocketAddress(p2p::IpAddress(kTurnTcpIp), kTurnTcpPort);
+      case Turn::kTls: return p2p::SocketAddress(p2p::IpAddress(kTurnTcpIp), kTurnTlsPort);
+      default: return TurnAddress();
+    }
+  }
+  static p2p::ProtocolType TurnProtocol(Turn t) {
+    return t == Turn::kTcp ? p2p::PROTO_TCP : t == Turn::kTls ? p2p::PROTO_TLS : p2p::PROTO_UDP;
+  }
 
   // The earliest time anything on the network moves or the TURN server has a timer.
   Timestamp NextEvent() const {
@@ -405,6 +489,7 @@ struct Topology {
     if (turn) {
       turn_int_host->Deliver(now);
       turn_ext_host->Deliver(now);
+      if (turn_tcp_host) turn_tcp_host->Deliver(now);
       turn->Process(now);
     }
   }
@@ -417,6 +502,13 @@ class EndpointSocketFactory final : public p2p::PacketSocketFactory {
   std::unique_ptr<p2p::AsyncPacketSocket> CreateUdpSocket(const p2p::SocketAddress& address, uint16_t min_port,
                                                           uint16_t max_port) override {
     return topo_->HostFor(i_, address.ipaddr().v4())->CreateUdpSocket(address, min_port, max_port);
+  }
+  // TURN over TCP and TLS (BasicPacketSocketFactory::CreateClientTcpSocket on the emulated TCP).
+  std::unique_ptr<p2p::AsyncPacketSocket> CreateClientTcpSocket(Timestamp now, const p2p::SocketAddress& local_address,
+                                                                const p2p::SocketAddress& remote_address,
+                                                                const p2p::PacketSocketTcpOptions& options) override {
+    return topo_->HostFor(i_, local_address.ipaddr().v4())
+        ->CreateClientTcpSocket(now, local_address, remote_address, options);
   }
 
  private:
@@ -443,7 +535,12 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   pc_config.tcp_candidates_enabled = false;  // See the file comment.
   if (s.relay_only) pc_config.candidate_filter = CF_RELAY;
   std::vector<RelayServerConfig> turn_servers;
-  if (s.turn == Turn::kUdp) turn_servers.emplace_back(Topology::TurnAddress(), kTurnUsername, kTurnPassword, PROTO_UDP);
+  if (s.turn != Turn::kNone) {
+    turn_servers.emplace_back(Topology::TurnAddress(s.turn), kTurnUsername, kTurnPassword,
+                              Topology::TurnProtocol(s.turn));
+    // The test server's certificate is self-signed (see the file comment).
+    if (s.turn == Turn::kTls) turn_servers.back().tls_cert_policy = TlsCertPolicy::TLS_CERT_POLICY_INSECURE_NO_CHECK;
+  }
   // The interfaces' names and types (see the file comment).
   const bool typed = s.wifi_to_cellular;
   auto add_primary = [&](int i) {

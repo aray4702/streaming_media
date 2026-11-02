@@ -5,6 +5,7 @@
 #include <string>
 
 #include "../../../compare/webrtc/ice_scenarios.h"
+#include "ice_compare_relay.h"
 #include "sm_test.h"
 #include "test_crypto.h"
 
@@ -227,4 +228,20 @@ SM_TEST(P2pIceCompare, RelayMatchesLibwebrtc) {
     for (int t = 0; t < kNumTurnRequests; ++t) SM_EXPECT_NEAR(turn[t] / 5, row.turn[t], 0.05);
     if (!*row.pair) SM_EXPECT_EQ(relay_on_ep1, 3);
   }
+}
+
+// Relay over TCP (#1055 part 2): libwebrtc M157's column of the TURN over TCP rows (sm_ice_compare; the same on
+// every seed, and our side gave the same values on every seed). The requests are counted as the TURN server receives
+// them. The NAT pairs connect when the UDP ones do (the relayed remote candidate is in place before the first check
+// succeeds); relay only connects 30 ms later than over UDP, the TCP connect to the server (one round trip).
+SM_TEST(P2pIceCompare, TcpRelayMatchesLibwebrtc) {
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  const ice_compare_relay::Row kLibwebrtc[] = {
+      {"port-sym-turntcp", 252, 12.0, 68.0, {4.0, 7.0, 0, 0}, "srflx/relay", "-/tcp"},
+      {"sym-port-turntcp", 252, 12.0, 63.0, {4.0, 7.0, 0, 0}, "prflx/relay", "-/tcp"},
+      {"sym-sym-turntcp", 252, 12.0, 63.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/tcp"},
+      {"open-open-turntcp-relayonly", 220, 4.0, 16.0, {4.0, 2.0, 0, 0}, "relay/relay", "tcp/tcp"},
+  };
+  const std::vector<Scenario> scenarios = StreamRelayScenarios();
+  for (const ice_compare_relay::Row& row : kLibwebrtc) ice_compare_relay::ExpectMatches(scenarios, row);
 }
