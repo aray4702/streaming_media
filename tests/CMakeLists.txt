@@ -7,6 +7,7 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc
     unit/core/core_test.cc
+    unit/core/network_test.cc
   SUITES
     AudioFrameOperations
     Dsp
@@ -14,11 +15,13 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
     Fft
     Histogram
     Metrics
+    Nat
     NetworkLink
     RateStatistics
     RateTracker
     RtpPacket
     SeqNum
+    SimNetwork
     Units
 )
 
