@@ -2,8 +2,8 @@
 // for samples that arrive at irregular times, decaying by elapsed time with a configurable half time, with the
 // sample variance and a 95 % confidence interval. The connection's RTT estimate uses it (#1000).
 //
-// Not in compare/webrtc/reference/ yet (asked for on #1000); written from libwebrtc's code and checked against
-// connection_unittest.cc's expectations. Recheck against the file once it is added.
+// Checked line by line against compare/webrtc/reference/rtc_base/numerics/event_based_exponential_moving_average.cc
+// (window, #1000): the same arithmetic; std::log(2.0) for std::numbers::ln2.
 #pragma once
 
 #include <cmath>
