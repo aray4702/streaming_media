@@ -34,11 +34,14 @@
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/timestamp.h"
 #include "ice_scenarios.h"
+#include "p2p/base/active_ice_controller_factory_interface.h"
+#include "p2p/base/basic_ice_controller.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_transport_channel.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/transport_description.h"
+#include "p2p/base/wrapping_active_ice_controller.h"
 #include "p2p/client/basic_port_allocator.h"
 #include "rtc_base/async_packet_socket.h"
 #include "rtc_base/ip_address.h"
@@ -190,6 +193,19 @@ class NetworkManager final : public w::NetworkManagerBase {
   bool sent_first_update_ = false;
 };
 
+// The ICE controller P2PTransportChannel makes without a factory: a BasicIceController wrapped by
+// WrappingActiveIceController. Made here through the constructor that takes the network thread from
+// TaskQueueBase::Current(), because the one the channel uses reads Thread::Current()
+// (p2p/base/wrapping_active_ice_controller.cc), which is null on SimTime's queues; the controller is otherwise the
+// same.
+class IceControllerFactory final : public w::ActiveIceControllerFactoryInterface {
+ public:
+  std::unique_ptr<w::ActiveIceControllerInterface> Create(const w::ActiveIceControllerFactoryArgs& args) override {
+    return std::make_unique<w::WrappingActiveIceController>(
+        args.ice_agent, std::make_unique<w::BasicIceController>(args.legacy_args));
+  }
+};
+
 // Set by --trace: prints each setup step of libwebrtc's side to stderr, to find a crash.
 bool g_trace = false;
 void Stage(const char* what) {
@@ -244,6 +260,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
   };
   Endpoint ep[2];
   std::deque<w::Candidate> signaling[2];  // Candidates for endpoint i.
+  IceControllerFactory ice_controller_factory;
 
   run_on_network([&] {
     w::ServerAddresses stun_servers = {ToW(Topology::StunAddress())};
@@ -261,6 +278,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       // Create allocates the channel inside libwebrtc.a, at the library's own sizeof.
       w::IceTransportInit init(env);
       init.set_port_allocator(e.allocator.get());
+      init.set_active_ice_controller_factory(&ice_controller_factory);
       e.ch = w::P2PTransportChannel::Create("audio", w::ICE_CANDIDATE_COMPONENT_RTP, std::move(init));
       e.ch->SubscribeCandidateGathered(&e, [&signaling, i](w::IceTransportInternal*, const w::Candidate& c) {
         signaling[1 - i].push_back(c);
