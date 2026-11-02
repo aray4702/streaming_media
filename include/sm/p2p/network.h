@@ -4,9 +4,10 @@
 // Port reads: the adapter type and its network cost, the preference the
 // network manager gives it, its id, its addresses and the best one to bind.
 //
-// Enumerating the host's interfaces (NetworkManager) is the host stack's job
-// (C11, C12) and comes with BasicPortAllocator (#1001); a test or the emulated
-// network builds a Network directly. Field trials are at libwebrtc's defaults
+// The network list a port allocator reads is NetworkManager's
+// (sm/p2p/network_manager.h, #1001); enumerating the host's interfaces is an
+// OS network monitor's job (C11, C12). A test or the emulated network builds a
+// Network directly or through StaticNetworkManager. Field trials are at libwebrtc's defaults
 // (all off): WebRTC-UseDifferentiatedCellularCosts, WebRTC-AddNetworkCostToVpn
 // and WebRTC-UnifiedCommunications (network slices) are not ported.
 #pragma once
@@ -78,7 +79,18 @@ class Network {
   // temporary IPv6 flags of InterfaceAddress are not modelled.)
   IpAddress GetBestIP() const;
 
+  // "name%prefix/len", as MakeNetworkKey: what NetworkManagerBase merges by.
+  std::string key() const;
+  // False once the network manager no longer lists it (NetworkManagerBase).
+  bool active() const { return active_; }
+  void set_active(bool active) { active_ = active; }
+
   AdapterType type() const { return type_; }
+  bool IsCellular() const { return IsCellular(type_); }
+  static bool IsCellular(AdapterType type) {
+    return type == ADAPTER_TYPE_CELLULAR || type == ADAPTER_TYPE_CELLULAR_2G || type == ADAPTER_TYPE_CELLULAR_3G ||
+           type == ADAPTER_TYPE_CELLULAR_4G || type == ADAPTER_TYPE_CELLULAR_5G;
+  }
   void set_type(AdapterType type) { type_ = type; }
   AdapterType underlying_type_for_vpn() const { return underlying_type_for_vpn_; }
   void set_underlying_type_for_vpn(AdapterType type) { underlying_type_for_vpn_ = type; }
@@ -113,6 +125,7 @@ class Network {
   AdapterType underlying_type_for_vpn_ = ADAPTER_TYPE_UNKNOWN;
   std::vector<IpAddress> ips_;
   int preference_ = 0;
+  bool active_ = true;
   uint16_t id_ = 0;
   std::optional<IpAddress> default_local_address_;
 };
