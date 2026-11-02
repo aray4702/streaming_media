@@ -50,25 +50,9 @@ sim::LinkConfig Link(int delay_ms) {
   return c;
 }
 
-// Bytes that don't repeat (a 64-bit xorshift): test_crypto's CounterBytes
-// is an 8-bit counter, so its 12-byte transaction ids repeat after 64
-// requests, which a TURN port with refreshes and permissions reaches.
-bool UniqueBytes(std::span<uint8_t> out) {
-  static uint64_t state = 0x9E3779B97F4A7C15ull;
-  for (auto& b : out) {
-    state ^= state << 13;
-    state ^= state >> 7;
-    state ^= state << 17;
-    b = static_cast<uint8_t>(state >> 32);
-  }
-  return true;
-}
-void InstallTurnTestCrypto() {
-  testing::InstallTestCrypto();
-  StunCrypto c = GetStunCrypto();
-  c.random_bytes = &UniqueBytes;
-  SetStunCrypto(c);
-}
+// test_crypto's CounterBytes repeats its 12-byte transaction ids after 64 requests, which a TURN port with refreshes
+// and permissions reaches, so these tests use the non-repeating ids.
+void InstallTurnTestCrypto() { testing::InstallTestCryptoWithUniqueIds(); }
 
 // test_turn_server.h's auth: the password is the username.
 class TestAuth final : public sim::TurnAuthInterface {

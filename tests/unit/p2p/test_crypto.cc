@@ -156,6 +156,17 @@ bool CounterBytes(std::span<uint8_t> out) {
   return true;
 }
 
+bool UniqueBytes(std::span<uint8_t> out) {
+  static uint64_t state = 0x9E3779B97F4A7C15ull;
+  for (auto& b : out) {
+    state ^= state << 13;
+    state ^= state >> 7;
+    state ^= state << 17;
+    b = static_cast<uint8_t>(state >> 32);
+  }
+  return true;
+}
+
 void Sha256(std::span<const uint8_t> data, uint8_t out[32]) {
   static const uint32_t k[64] = {
       0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -232,6 +243,13 @@ void InstallTestCrypto() {
   c.md5 = &Md5;
   c.random_bytes = &CounterBytes;
   c.hmac_sha256 = &HmacSha256;
+  SetStunCrypto(c);
+}
+
+void InstallTestCryptoWithUniqueIds() {
+  InstallTestCrypto();
+  StunCrypto c = GetStunCrypto();
+  c.random_bytes = &UniqueBytes;
   SetStunCrypto(c);
 }
 
