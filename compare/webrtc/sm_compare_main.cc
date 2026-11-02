@@ -256,6 +256,13 @@ int main(int argc, char** argv) {
       std::printf("\n%s: skipped (compare off: not comparable with libwebrtc)\n", base.name.c_str());
       continue;
     }
+    if (base.mesh > 0) {
+      // A mesh call (#1072) is made of two-way calls, so it is skipped the same way (and with the same wording,
+      // which tools/merge_compare.py reads).
+      std::printf("\n%s: skipped (two-way call: a mesh of %d; sm_compare runs one-way calls only)\n", base.name.c_str(),
+                  base.mesh);
+      continue;
+    }
     if (base.two_way) {
       // libwebrtc's side runs a one-way call only, so a two-way scenario has nothing to compare
       // and stays out of the JSON and the parity report (issue #743). Its text block keeps its place
