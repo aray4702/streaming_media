@@ -10,8 +10,9 @@
 // an OS socket's event loop will, C11 and C12). Callbacks run on the caller's
 // thread, inside the call that caused them.
 //
-// UDP only for now. TCP sockets (TURN over TCP and TLS, TCP candidates) come
-// with C4 and keep this interface.
+// TCP packet sockets (AsyncTCPSocket, AsyncStunTCPSocket, the listen socket)
+// came with C4 part 2 (#1034, sm/p2p/async_tcp_socket.h) and keep this
+// interface; `AsyncListenSocket` and the factory's TCP methods are here.
 #pragma once
 
 #include <cstddef>
@@ -19,6 +20,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -93,6 +95,12 @@ inline constexpr int kSocketEAddrInUse = 48;
 inline constexpr int kSocketEAddrNotAvail = 49;
 inline constexpr int kSocketENotConn = 57;
 inline constexpr int kSocketEBadF = 9;
+inline constexpr int kSocketEInProgress = 36;
+inline constexpr int kSocketEConnReset = 54;
+inline constexpr int kSocketEIsConn = 56;
+inline constexpr int kSocketETimedOut = 60;
+inline constexpr int kSocketEConnRefused = 61;
+inline constexpr int kSocketEHostUnreach = 65;
 
 class AsyncPacketSocket {
  public:
@@ -102,6 +110,7 @@ class AsyncPacketSocket {
   using SentCallback = std::function<void(AsyncPacketSocket*, const SentPacketInfo&)>;
   using CloseCallback = std::function<void(AsyncPacketSocket*, int)>;
   using ReadyToSendCallback = std::function<void(AsyncPacketSocket*)>;
+  using ConnectCallback = std::function<void(AsyncPacketSocket*)>;
 
   AsyncPacketSocket() = default;
   AsyncPacketSocket(const AsyncPacketSocket&) = delete;
@@ -141,9 +150,13 @@ class AsyncPacketSocket {
   void UnsubscribeCloseEvent(const void* tag) { Remove(closed_, tag); }
   void SubscribeReadyToSend(const void* tag, ReadyToSendCallback cb) { ready_.emplace_back(tag, std::move(cb)); }
   void UnsubscribeReadyToSend(const void* tag) { Remove(ready_, tag); }
+  // A TCP socket's connection completed (SubscribeConnect).
+  void SubscribeConnect(const void* tag, ConnectCallback cb) { connect_.emplace_back(tag, std::move(cb)); }
+  void UnsubscribeConnect(const void* tag) { Remove(connect_, tag); }
 
   void NotifySentPacket(const SentPacketInfo& info);
   void NotifyReadyToSend();
+  void NotifyConnect();
 
  protected:
   void NotifyPacketReceived(const ReceivedPacket& packet) {
@@ -161,10 +174,50 @@ class AsyncPacketSocket {
   std::vector<std::pair<const void*, SentCallback>> sent_;
   std::vector<std::pair<const void*, CloseCallback>> closed_;
   std::vector<std::pair<const void*, ReadyToSendCallback>> ready_;
+  std::vector<std::pair<const void*, ConnectCallback>> connect_;
 };
 
-// api/packet_socket_factory.h: where the ports get their sockets. UDP only
-// until C4 adds TCP.
+// AsyncListenSocket: a listening TCP socket that hands out a packet socket
+// for each peer that connects. libwebrtc passes the new socket as a raw
+// pointer the subscriber takes; here the subscriber takes it by moving the
+// `std::unique_ptr` out, and a socket nobody takes is closed.
+class AsyncListenSocket {
+ public:
+  enum class State { kClosed, kBound };
+  using NewConnectionCallback = std::function<void(AsyncListenSocket*, std::unique_ptr<AsyncPacketSocket>&)>;
+
+  AsyncListenSocket() = default;
+  AsyncListenSocket(const AsyncListenSocket&) = delete;
+  AsyncListenSocket& operator=(const AsyncListenSocket&) = delete;
+  virtual ~AsyncListenSocket() = default;
+
+  virtual State GetState() const = 0;
+  virtual SocketAddress GetLocalAddress() const = 0;
+
+  void SubscribeNewConnection(const void* tag, NewConnectionCallback cb) {
+    new_connection_.emplace_back(tag, std::move(cb));
+  }
+  void UnsubscribeNewConnection(const void* tag) {
+    std::erase_if(new_connection_, [tag](const auto& e) { return e.first == tag; });
+  }
+  void NotifyNewConnection(std::unique_ptr<AsyncPacketSocket>& socket) {
+    auto subscribers = new_connection_;
+    for (auto& [tag, cb] : subscribers) cb(this, socket);
+  }
+
+ private:
+  std::vector<std::pair<const void*, NewConnectionCallback>> new_connection_;
+};
+
+// api/packet_socket_factory.h's PacketSocketTcpOptions, without the
+// certificate verifier hook (TLS comes with C4 part 3, #1035).
+struct PacketSocketTcpOptions {
+  int opts = 0;
+  std::vector<std::string> tls_alpn_protocols;
+  std::vector<std::string> tls_elliptic_curves;
+};
+
+// api/packet_socket_factory.h: where the ports get their sockets.
 class PacketSocketFactory {
  public:
   enum Options {
@@ -187,6 +240,26 @@ class PacketSocketFactory {
   // (BasicPacketSocketFactory::BindSocket). nullptr when it can't bind.
   virtual std::unique_ptr<AsyncPacketSocket> CreateUdpSocket(const SocketAddress& address, uint16_t min_port,
                                                              uint16_t max_port) = 0;
+
+  // A TCP listen socket bound to `address`'s IP, the port picked as for UDP;
+  // nullptr when it can't bind or `opts` asks for TLS
+  // (BasicPacketSocketFactory::CreateServerTcpSocket). libwebrtc's methods
+  // are pure virtual; here a factory without TCP (the tests' fakes) returns
+  // nullptr.
+  virtual std::unique_ptr<AsyncListenSocket> CreateServerTcpSocket(const SocketAddress& /*address*/,
+                                                                   uint16_t /*min_port*/, uint16_t /*max_port*/,
+                                                                   int /*opts*/) {
+    return nullptr;
+  }
+  // A TCP socket connecting from `local_address` to `remote_address`
+  // (CreateClientTcpSocket); framed as STUN/ChannelData with kOptStun,
+  // otherwise with the 2-byte length prefix. The connect starts at `now`.
+  virtual std::unique_ptr<AsyncPacketSocket> CreateClientTcpSocket(Timestamp /*now*/,
+                                                                   const SocketAddress& /*local_address*/,
+                                                                   const SocketAddress& /*remote_address*/,
+                                                                   const PacketSocketTcpOptions& /*options*/) {
+    return nullptr;
+  }
 };
 
 }  // namespace sm::p2p
