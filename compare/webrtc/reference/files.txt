@@ -390,3 +390,26 @@ rtc_base/ssl_stream_adapter.cc
 rtc_base/ssl_stream_adapter.h
 rtc_base/ssl_stream_adapter_unittest.cc
 api/transport/stun_unittest.cc
+# Socket layer for p2p (#996)
+rtc_base/async_packet_socket.h
+rtc_base/async_packet_socket.cc
+rtc_base/async_udp_socket.h
+rtc_base/async_udp_socket.cc
+api/packet_socket_factory.h
+rtc_base/network/received_packet.h
+rtc_base/network/received_packet.cc
+rtc_base/network/sent_packet.h
+rtc_base/socket.h
+rtc_base/socket_address.h
+rtc_base/socket_address.cc
+rtc_base/network.h
+rtc_base/network.cc
+rtc_base/network_constants.h
+rtc_base/async_packet_socket_unittest.cc
+rtc_base/async_udp_socket_unittest.cc
+rtc_base/ip_address.h
+rtc_base/ip_address.cc
+rtc_base/socket_address_unittest.cc
+rtc_base/ip_address_unittest.cc
+rtc_base/virtual_socket_server.cc
+rtc_base/virtual_socket_server.h

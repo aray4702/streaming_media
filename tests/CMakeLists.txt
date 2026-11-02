@@ -11,6 +11,15 @@ if(SM_WITH_TLS)
     SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport)
 endif()
 
+sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
+  SOURCES
+    unit/p2p/packet_socket_test.cc
+  SUITES
+    EmulatedSockets
+    P2pIpAddress
+    P2pSocketAddress
+)
+
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc

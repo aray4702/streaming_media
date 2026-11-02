@@ -26,6 +26,13 @@ if(SM_WITH_TLS)
   # set doesn't carry. Connectivity code links sm::tls itself until the package exports BoringSSL (#984).
 endif()
 
+# Connectivity (milestone 3): addresses and packet sockets for ICE, libwebrtc's p2p/ and rtc_base/ socket
+# layer (#996). Plain C++ with no OS socket calls, so it builds everywhere; OS sockets come with C11/C12.
+# Not in the sm::sm umbrella yet, like sm::tls: it joins when the connectivity API settles (#944).
+sm_add_library(p2p DEPS sm::core SOURCES
+  p2p/socket_address.cc
+  p2p/async_packet_socket.cc)
+
 if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES
     loss/nack_tracker.cc
