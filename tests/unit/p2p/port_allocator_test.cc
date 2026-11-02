@@ -289,9 +289,13 @@ SM_TEST(P2pPortAllocator, SetConfigurationUpdatesIceServersAndPool) {
     SM_EXPECT_EQ(f.allocator->GetPooledIceCredentials().size(), static_cast<size_t>(size));
   }
   // SetConfigurationRecreatesPooledSessionsWhenIceServersChange.
-  const PortAllocatorSession* before = f.allocator->GetPooledSession();
+  // The recreated sessions have new ICE credentials. (Comparing session pointers is not enough: the new session can
+  // be allocated at the freed one's address, as macOS malloc does.)
+  const std::vector<IceCredentials> before = f.allocator->GetPooledIceCredentials();
   f.allocator->SetConfiguration(f.now, stun1, turn1, 4, NO_PRUNE);
-  SM_EXPECT_TRUE(f.allocator->GetPooledSession() != before || before == nullptr);
+  for (const IceCredentials& now_pooled : f.allocator->GetPooledIceCredentials()) {
+    for (const IceCredentials& old : before) SM_EXPECT_TRUE(now_pooled.ufrag != old.ufrag || now_pooled.pwd != old.pwd);
+  }
   SM_EXPECT_EQ(f.allocator->GetPooledIceCredentials().size(), size_t{4});
   // DiscardCandidatePool.
   f.allocator->DiscardCandidatePool();
