@@ -204,9 +204,11 @@ class PortAllocatorSession {
     ice_regathering_.Add(tag, std::move(cb));
   }
 
+  // Public as in libwebrtc (P2PTransportChannelPingTest.TestIceRoleUpdatedOnRemovedPort raises it).
+  void NotifyPortsPruned(const std::vector<Port*>& ports) { ports_pruned_.Send(this, ports); }
+
  protected:
   void NotifyPortReady(Port* port) { port_ready_.Send(this, port); }
-  void NotifyPortsPruned(const std::vector<Port*>& ports) { ports_pruned_.Send(this, ports); }
   void NotifyCandidatesReady(const std::vector<Candidate>& c) { candidates_ready_.Send(this, c); }
   void NotifyCandidateError(const IceCandidateErrorEvent& e) { candidate_error_.Send(this, e); }
   void NotifyCandidatesRemoved(const std::vector<Candidate>& c) { candidates_removed_.Send(this, c); }
