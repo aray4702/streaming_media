@@ -108,6 +108,17 @@ std::string CreateRandomString(size_t len) {
   return str;
 }
 
+uint32_t CreateRandomId() {
+  uint8_t bytes[4] = {};
+  bool ok = g_crypto.random_bytes != nullptr && g_crypto.random_bytes(std::span<uint8_t>(bytes));
+  if (!ok) {
+    static Random fallback(0x1du);
+    for (auto& b : bytes) b = static_cast<uint8_t>(fallback.Next());
+  }
+  return static_cast<uint32_t>(bytes[0]) << 24 | static_cast<uint32_t>(bytes[1]) << 16 |
+         static_cast<uint32_t>(bytes[2]) << 8 | bytes[3];
+}
+
 void SetStunCrypto(const StunCrypto& crypto) { g_crypto = crypto; }
 const StunCrypto& GetStunCrypto() { return g_crypto; }
 

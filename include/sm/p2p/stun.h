@@ -64,6 +64,9 @@ uint32_t ComputeCrc32(std::span<const uint8_t> data);
 // GetStunCrypto().random_bytes picks one of 64 characters. Without that hook,
 // a fixed-seed generator (tests only, as for transaction ids).
 std::string CreateRandomString(size_t len);
+// rtc_base/crypto_random's CreateRandomId(): 32 random bits, from the same
+// source (the fixed-seed fallback without the hook).
+uint32_t CreateRandomId();
 
 // ---------------------------------------------------------------- constants
 // These are the types of STUN messages defined in RFC 5389.

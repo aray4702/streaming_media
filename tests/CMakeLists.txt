@@ -43,6 +43,7 @@ endif()
 
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SOURCES
+    unit/p2p/connection_test.cc
     unit/p2p/dtls_utils_test.cc
     unit/p2p/packet_socket_test.cc
     unit/p2p/port_allocator_test.cc
@@ -50,11 +51,14 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     unit/p2p/stun_request_test.cc
     unit/p2p/stun_test.cc
     unit/p2p/test_crypto.cc
+    unit/p2p/test_crypto_test.cc
   SUITES
     DtlsUtils
     EmulatedSockets
     P2pBasicPortAllocator
     P2pCandidate
+    P2pConnection
+    P2pConnectionCall
     P2pIpAddress
     P2pNetwork
     P2pNetworkManager
@@ -89,11 +93,13 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc
     unit/core/core_test.cc
+    unit/core/event_based_exponential_moving_average_test.cc
     unit/core/logging_test.cc
     unit/core/network_test.cc
   SUITES
     AudioFrameOperations
     Dsp
+    EventBasedExponentialMovingAverage
     EventLog
     Fft
     Histogram

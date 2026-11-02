@@ -1,6 +1,7 @@
 // sm/p2p/port.h: libwebrtc M157's p2p/base/port.cc.
 #include "sm/p2p/port.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include "sm/p2p/byte_buffer.h"
@@ -41,7 +42,67 @@ Port::Port(const Parameters& args, IceCandidateType type, uint16_t min_port, uin
   PostDestroyIfDead(now, /*delayed=*/true);
 }
 
-Port::~Port() = default;
+Port::~Port() {
+  DestroyAllConnections();
+  CancelPendingTasks();
+}
+
+Connection* Port::GetConnection(const SocketAddress& remote_addr) {
+  auto iter = connections_.find(remote_addr);
+  return iter != connections_.end() ? iter->second.get() : nullptr;
+}
+
+void Port::AddOrReplaceConnection(std::unique_ptr<Connection> conn) {
+  auto [iter, inserted] = connections_.try_emplace(conn->remote_candidate().address(), nullptr);
+  if (inserted) {
+    // New address: the map takes ownership.
+    iter->second = std::move(conn);
+    return;
+  }
+  // Same address, different connection: replace the old one (libwebrtc logs a warning).
+  std::unique_ptr<Connection> old_conn = std::move(iter->second);
+  iter->second = std::move(conn);
+  HandleConnectionDestroyed(old_conn.get());
+  old_conn->Shutdown();
+}
+
+void Port::OnReadyToSend() {
+  // A receiver may destroy connections asynchronously; that only moves them.
+  for (auto& [unused, connection] : connections_) connection->OnReadyToSend();
+}
+
+void Port::DestroyAllConnections() {
+  for (auto& [unused, connection] : connections_) connection->Shutdown();
+  connections_.clear();
+}
+
+void Port::DestroyConnectionInternal(Timestamp now, Connection* conn, bool async) {
+  auto iter = connections_.find(conn->remote_candidate().address());
+  if (iter == connections_.end() || iter->second.get() != conn) {
+    // libwebrtc DCHECKs ("Calling Destroy recursively?") and returns.
+    return;
+  }
+  std::unique_ptr<Connection> owned_conn = std::move(iter->second);
+  connections_.erase(iter);
+
+  HandleConnectionDestroyed(owned_conn.get());
+  owned_conn->Shutdown();
+
+  if (async) {
+    // Unwind the stack before deleting the object in case upstream callers need to refer to the Connection's state
+    // as part of teardown: the next Process deletes it.
+    pending_delete_.push_back(std::move(owned_conn));
+    pending_delete_since_ = std::min(pending_delete_since_, now);
+  }
+
+  // Ports time out after all connections fail if it is not marked as "keep alive until pruned." Note: If a new
+  // connection is added after this check is posted, but it fails and is removed before kPortTimeoutDelay, then this
+  // check will not cause the Port to be destroyed.
+  if (connections_.empty()) {
+    last_time_all_connections_removed_ = now;
+    PostDestroyIfDead(now, /*delayed=*/true);
+  }
+}
 
 void Port::SetIceParameters(int component, std::string_view username_fragment, std::string_view password) {
   component_ = component;
@@ -52,7 +113,10 @@ void Port::SetIceParameters(int component, std::string_view username_fragment, s
     c.set_username(username_fragment);
     c.set_password(password);
   }
-  // Connections get them too (#1000).
+  // In case any connections exist make sure we update them too.
+  for (auto& [unused, connection] : connections_) {
+    connection->UpdateLocalIceParameters(component, username_fragment, password);
+  }
 }
 
 void Port::AddAddress(const SocketAddress& address, const SocketAddress& base_address,
@@ -311,6 +375,25 @@ void Port::PostDestroyIfDead(Timestamp now, bool delayed) {
 }
 
 void Port::Process(Timestamp now) {
+  // The connections destroyed asynchronously.
+  pending_delete_.clear();
+  pending_delete_since_ = Timestamp::PlusInfinity();
+  // The connections' STUN transactions. A callback may destroy connections
+  // (asynchronously, so none is deleted here) or add some: each round looks
+  // the next due one up again.
+  for (;;) {
+    Connection* due = nullptr;
+    Timestamp due_at = Timestamp::PlusInfinity();
+    for (auto& [unused, connection] : connections_) {
+      const Timestamp t = connection->NextRequestTime();
+      if (t <= now && t < due_at) {
+        due = connection.get();
+        due_at = t;
+      }
+    }
+    if (due == nullptr) break;
+    due->ProcessRequests(due_at);
+  }
   while (!dead_ && !destroy_checks_.empty() && *destroy_checks_.begin() <= now) {
     const Timestamp at = *destroy_checks_.begin();
     destroy_checks_.erase(destroy_checks_.begin());
@@ -319,18 +402,21 @@ void Port::Process(Timestamp now) {
 }
 
 Timestamp Port::NextProcessTime() const {
-  if (dead_ || destroy_checks_.empty()) return Timestamp::PlusInfinity();
-  return *destroy_checks_.begin();
+  if (dead_) return Timestamp::PlusInfinity();
+  Timestamp t = pending_delete_since_;
+  if (!destroy_checks_.empty()) t = std::min(t, *destroy_checks_.begin());
+  for (const auto& [unused, connection] : connections_) t = std::min(t, connection->NextRequestTime());
+  return t;
 }
 
 void Port::DestroyIfDead(Timestamp now) {
-  // No connections until #1000, so only the state and the timer decide.
-  const bool dead = (state_ == State::kInit || state_ == State::kPruned) &&
+  const bool dead = (state_ == State::kInit || state_ == State::kPruned) && connections_.empty() &&
                     now - last_time_all_connections_removed_ >= TimeDelta::Millis(timeout_delay_);
   if (dead) Destroy();
 }
 
 void Port::Destroy() {
+  // libwebrtc DCHECKs there are no connections left.
   dead_ = true;
   CancelPendingTasks();
   port_destroyed_.Send(this);
@@ -341,6 +427,9 @@ void Port::UpdateNetworkCost() {
   if (network_cost_ == new_cost) return;
   network_cost_ = new_cost;
   for (Candidate& candidate : candidates_) candidate.set_network_cost(static_cast<uint16_t>(network_cost_));
+  for (auto& [unused, connection] : connections_) {
+    connection->SetLocalCandidateNetworkCost(static_cast<uint16_t>(network_cost_));
+  }
 }
 
 std::string Port::ToString() const {

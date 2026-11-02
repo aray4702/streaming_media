@@ -416,3 +416,16 @@ rtc_base/virtual_socket_server.h
 # STUN fuzzers (#1017)
 test/fuzzers/stun_parser_fuzzer.cc
 test/fuzzers/stun_validator_fuzzer.cc
+# Connection's RTT EMA and bitrate tracker (#1000)
+rtc_base/numerics/event_based_exponential_moving_average.h
+rtc_base/numerics/event_based_exponential_moving_average.cc
+rtc_base/numerics/event_based_exponential_moving_average_unittest.cc
+rtc_base/bitrate_tracker.h
+rtc_base/bitrate_tracker.cc
+# PeerConnection's allocator setup, fake network, enums (#1001, #1002)
+pc/peer_connection.cc
+pc/peer_connection.h
+rtc_base/fake_network.h
+api/transport/enums.h
+api/peer_connection_interface.h
+api/peer_connection_interface.cc
