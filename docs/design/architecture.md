@@ -3,11 +3,14 @@
 `streaming_media` is a C++20 library of the resilience algorithms from
 sections 3-8 of [Problems WebRTC solves](../02-webrtc-problems-solved.md):
 packet-loss recovery, jitter and timing, congestion control, audio
-processing, video adaptation and synchronization. It deliberately
-contains no transport (ICE/DTLS/SRTP/SCTP), no codecs and no platform
-I/O. Those come from a light stack such as libdatachannel or libpeer, the
-SoC's hardware codecs and the OS, as recommended in the
-[library survey](../01-library-survey.md) and the
+processing, video adaptation and synchronization. Since milestone 3
+([#944](https://github.com/aray4702/streaming_media/issues/944)) it also has a connectivity layer, ported from libwebrtc:
+ICE, STUN and TURN (`p2p`), TLS/DTLS and SRTP (`tls`, `pc`) and SCTP data
+channels (`dcsctp`), with SDP (`pc`) in progress. It contains no codecs
+and no platform I/O. Those come from the SoC's hardware codecs and the OS.
+Sockets are passed in, and an app can still use a light stack such as
+libdatachannel or libpeer instead of the connectivity layer, as recommended
+in the [library survey](../01-library-survey.md) and the
 [footprint analysis](../03-webrtc-footprint.md).
 
 ## Layers
@@ -18,6 +21,10 @@ SoC's hardware codecs and the OS, as recommended in the
             +-----------------------------------------------------------+
  session    |  rtp: Session  RtcpEngine  RtpSender  RtpReceiver         |
             |       SendSideController   (SM_WITH_RTP)                  |
+            +-----------------------------------------------------------+
+ connectivity|  p2p: ICE, STUN, TURN   tls: TLS/DTLS, crypto           |
+            |  pc: SRTP, DTLS-SRTP, SDP   dcsctp: data channels         |
+            |  (SM_WITH_TLS, SM_WITH_DATACHANNEL)                       |
             +-----------------------------------------------------------+
  core       |  units  seq_num  metrics  event_log  fft  dsp  rtp_packet  |
             +-----------------------------------------------------------+
@@ -39,6 +46,10 @@ are minimal and explicit:
 | `sm::video` | core | render times come in as plain `Timestamp`s |
 | `sm::sync` | timing | RTCP NTP time types |
 | `sm::rtp` | loss, timing, cc, sync, video | the session layer composes the sections into one endpoint of a call |
+| `sm::tls` | core | one TLS interface over BoringSSL (default) or mbedTLS 3.6 (`SM_TLS_BACKEND`) |
+| `sm::p2p` | core (`p2p_tls`, `p2p_dtls`: tls) | STUN, ICE agent (controller and ICE-lite), TURN over UDP, TCP and TLS |
+| `sm::pc` | p2p (DTLS), tls, sync | SRTP (libsrtp 2.8.0), DTLS-SRTP; the SDP model is in `pc_sdp` |
+| `sm::dcsctp` | core | libwebrtc's dcsctp: SCTP packet and socket layer (`SM_WITH_DATACHANNEL`) |
 
 Any section can be compiled out with `-DSM_WITH_<SECTION>=OFF`. The
 section tests build and pass on their own (verified for cc-only,
@@ -51,7 +62,8 @@ time takes `Timestamp now`. The library has no clock, timer, thread or
 sleep, so the same code runs in real time on a device and in simulated
 time in the tests (60 s of a congested call simulates in about 10 ms).
 The application decides how to schedule: one network thread, a task
-queue, or an RTOS task.
+queue, or an RTOS task. The connectivity modules follow the same model:
+`now` is passed in, and the app calls `Process(now)` at `NextProcessTime()`.
 
 **Strong units.** `Timestamp`, `TimeDelta`, `DataRate` and `DataSize`
 (int64 microseconds, bits per second and bytes) make unit mistakes
@@ -158,9 +170,12 @@ for (auto& e : session.TakeEvents()) ctl.OnSessionEvent(e);   // pause, resume, 
 
 ## What is out of scope
 
-- Transport, security and session setup (sections 1-2 of the problems
-  document), data channels (section 9) and the signaling, SFU topology
-  and recording items WebRTC itself leaves to applications.
+- Signaling transport (the app carries the SDP), SFU topology and
+  recording, which WebRTC itself leaves to applications. Connectivity,
+  security and data channels are in the library now (milestone 3); what
+  is not merged yet is in progress under [#944](https://github.com/aray4702/streaming_media/issues/944): SDP offer/answer
+  (#1063, #1064), data channel transport and DCEP (#1069, #1070) and
+  connection stats (#1059).
 - Codec internals: Opus LBRR/DRED, encoder rate control, intra refresh,
   LTR frames, screen-content tools. The algorithms here drive codecs
   through configuration (target rate, resolution, keyframe requests,

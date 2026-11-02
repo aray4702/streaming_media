@@ -64,19 +64,30 @@ The library grows in two stages, both measured on the same test bench
    user's speech reaches the AI, and AI media sent in faster-than-real-time
    bursts and cancelled on barge-in. These issues are labelled `stage:ai`.
 
-Baseline work comes before AI work. Connectivity, security, data channels
-and observability APIs (sections 1, 2, 9 and 10 of that document) are left
-to the stack that hosts the library.
+Baseline work comes before AI work. **Milestone 3
+([#944](https://github.com/aray4702/streaming_media/issues/944)) ports sections 1, 2, 9 and 10** (connectivity,
+security, data channels and observability) from libwebrtc too, so the
+library no longer leaves them to a host stack. The Owner chose standard
+WebRTC on the wire for both topologies: the AI server (client-server) and
+P2P calls on web, Android and iOS, with 1:1 calls and small-group mesh, no
+SFU. What is ported and how it differs:
+[libwebrtc parity, section 10](docs/design/libwebrtc-parity.md#10-connectivity-milestone-3-944).
 
 ## The library
 
-The library implements, in portable C++20 with no dependencies, the
+The library implements, in portable C++20, the
 resilience algorithms from sections 3-8 of
 [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): 46 algorithms
 covering packet loss, jitter and timing, congestion control, audio
 processing, video adaptation and synchronization. Each one has unit tests,
 an end-to-end test over a simulated network, speed and quality benchmarks,
 metrics and structured events, and a design and results document.
+
+Sections 1-8 have no dependencies. The connectivity layer (milestone 3)
+needs two libraries, both fetched by CMake at configure time (see
+`cmake/`): a TLS library behind one interface, BoringSSL (default) or
+mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and libsrtp 2.8.0. Build with
+`-DSM_WITH_TLS=OFF` to leave both out.
 
 ## Documents
 
@@ -87,7 +98,7 @@ Background research:
    recommended starting point.
 2. [Problems WebRTC solves](docs/02-webrtc-problems-solved.md): every problem
    area mapped to the mechanism that handles it, plus what WebRTC leaves to
-   the application. Sections 3-8 are implemented here.
+   the application. Sections 3-8, and since milestone 3 sections 1, 2, 9 and 10, are implemented here.
 3. [WebRTC footprint](docs/03-webrtc-footprint.md): binary and RAM size of
    libwebrtc and lighter alternatives.
 4. [Call data flow](docs/04-webrtc-call-data-flow.md): how media moves through
@@ -122,6 +133,13 @@ The library:
 - [Comparison with libwebrtc](docs/results/compare-webrtc.md): every test
   bench scenario run through this library and a prebuilt libwebrtc over
   the same links ([how](compare/README.md)).
+- [libwebrtc parity](docs/design/libwebrtc-parity.md): what is ported from
+  libwebrtc M157 and how it differs, area by area; section 10 covers the
+  connectivity ports of milestone 3.
+- [Self-hosted TURN server](docs/deploy/turn-server.md): coturn on Amazon
+  Lightsail, for tests on real networks and production.
+- [Fuzz targets](fuzz/README.md): libFuzzer targets for the parsers that
+  read network input.
 
 ## Status
 
@@ -133,10 +151,17 @@ The library:
 | 6. Audio (APM) | echo canceller, echo delay estimation, noise suppression, AGC + limiter, high-pass filter, transient suppression, VAD, audio level (RFC 6464), resampler |
 | 7. Video | freeze detection, HW->SW codec fallback, orientation (CVO), content hints + screen VFR, render scheduling, quality scaler |
 | 8. Synchronization | RTP->NTP mapping, A/V lip sync with CNAME groups, absolute capture time / latency, header extensions + BUNDLE demux |
+| 1. Connectivity (milestone 3) | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS. SDP in progress: model and parser merged (#1062), offer/answer in progress (#1063, #1064) |
+| 2. Security (milestone 3) | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
+| 9. Data channels (milestone 3) | dcSCTP packet and socket layer merged; transport and DCEP in progress (#1069, #1070) |
+| 10. Observability (milestone 3) | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); connection stats in progress (#1059) |
 
-Verified locally on macOS arm64 (native), WebAssembly (Node), ASan+UBSan
-and `-fno-exceptions -fno-rtti`: 213/213 test cases and 79/79 benchmarks
-pass ([details](docs/results/README.md)). iOS, Android and embedded Linux
+The native build registers 551 ctest tests (`ctest --preset native -N`,
+2026-11-02, default options including both TLS backends' tests; this count
+was not run to completion for this update). The last recorded full runs on
+macOS arm64 (native), WebAssembly (Node), ASan+UBSan and
+`-fno-exceptions -fno-rtti` are older and cover sections 3-8 only
+([details](docs/results/README.md)). iOS, Android and embedded Linux
 ARM are cross-built in CI. All six sections plus core compile to about
 350 KiB of code.
 
@@ -206,8 +231,12 @@ complete sender/receiver over an emulated unstable link.
 
 ```
 include/sm/{core,loss,timing,cc,audio,video,sync,sim}/   public headers
-src/{core,loss,timing,cc,audio,video,sync}/              implementation
+include/sm/{rtp,p2p,tls,pc,dcsctp}/                      session and connectivity headers
+src/{core,loss,timing,cc,audio,video,sync,rtp}/          implementation
+src/{p2p,tls,pc,dcsctp}/                                 connectivity (milestone 3)
 tests/{framework,unit,e2e}/                              tests and e2e simulations
+tests/interop/                                           tests against real sockets and coturn
+fuzz/                                                    libFuzzer targets for network parsers
 bench/                                                   benchmarks
 examples/                                                usage example
 testbench/                                               call test bench, scenarios, baseline
@@ -228,8 +257,14 @@ docs/                                                    research, design, algor
   against libwebrtc M157 in CI, except FEC, which still uses its own
   simple format ([#29](https://github.com/aray4702/streaming_media/issues/29)). H.264 is the only video format so far, and
   loss notification stays off for it, as in libwebrtc ([#47](https://github.com/aray4702/streaming_media/issues/47)).
-  Connecting to a browser (ICE, DTLS-SRTP, SDP) is left to the stack that
-  hosts the library.
+  Connecting to a browser (ICE, DTLS-SRTP, SDP) is part of the library
+  now (milestone 3, [#944](https://github.com/aray4702/streaming_media/issues/944)), also standard WebRTC on the wire;
+  SDP offer/answer is in progress (#1063, #1064).
+- **Build and runtime switches:** `SM_WITH_TLS` and `SM_TLS_BACKEND`
+  (`boringssl` or `mbedtls`) select the TLS library, `SM_WITH_DATACHANNEL`
+  adds data channels, `SM_ENABLE_STATS`, `SM_ENABLE_METRICS` and
+  `SM_ENABLE_EVENTS` compile the stats, metrics and event log in or out,
+  and `SM_LOG_MIN_LEVEL` sets the lowest log level compiled in.
 - **RTP/RTCP in the library:** the library provides the RTP/RTCP session
   layer (sender, receiver, the codecs' standard RTP payload formats, RTCP
   scheduling and feedback dispatch), so an app passes encoded frames and
@@ -247,10 +282,10 @@ docs/                                                    research, design, algor
   pause per captured frame (the encoder loop is in
   [architecture.md](docs/design/architecture.md)); the quality scaler and
   resolution adaptation exist as building blocks but aren't wired in yet.
-- **Call topology:** one-to-one calls only. The SFU and multiparty pieces
-  (layer selection, active speaker detection, the audio mixer) have been
-  removed ([#27](https://github.com/aray4702/streaming_media/issues/27)). BUNDLE demultiplexing stays, because one-to-one WebRTC
-  calls bundle too.
+- **Call topology:** one-to-one calls, plus small-group mesh (milestone 3,
+  C9). No SFU: the SFU and multiparty pieces (layer selection, active
+  speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)).
+  BUNDLE demultiplexing stays, because WebRTC calls bundle.
 
 ## Open questions
 
