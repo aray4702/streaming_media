@@ -118,4 +118,6 @@ std::string Network::ToString() const {
   return s + ":id=" + std::to_string(id_) + "]";
 }
 
+std::string Network::key() const { return name_ + "%" + prefix_.ToString() + "/" + std::to_string(prefix_length_); }
+
 }  // namespace sm::p2p

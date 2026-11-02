@@ -55,6 +55,9 @@ each NAT type and through loss, with `StunRequestManager`'s retransmissions.
 ICE's `UDPPort` and `StunPort` (#999) gather over the same sockets; the
 `P2pStunPort` suite checks each NAT type's server-reflexive candidate, two
 servers behind a symmetric NAT, a server that never answers, and keepalives.
+`BasicPortAllocator` (#1001) gathers through them on `StaticNetworkManager`'s
+networks; the `P2pBasicPortAllocator` suite runs libwebrtc's UDP and STUN
+allocator cases there, public and behind a NAT.
 
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,

@@ -204,6 +204,9 @@ class Port {
     sent_packet_.Add(tag, std::move(cb));
   }
   void EnablePortPackets() { enable_port_packets_ = true; }
+  // Raises the candidate-ready signal again for a candidate the port has
+  // (the allocator's SetCandidateFilter resurfaces candidates with it).
+  void NotifyCandidateReady(const Candidate& c) { candidate_ready_.Send(this, c); }
 
   // Answers a binding request (or GOOG-PING) with an error.
   void SendBindingErrorResponse(Timestamp now, StunMessage* message, const SocketAddress& addr, int error_code,
