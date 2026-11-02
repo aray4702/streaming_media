@@ -217,6 +217,10 @@ bool DtlsTransport::SetupDtls(Timestamp now) {
   config.srtp_crypto_suites = srtp_ciphers_;
   config.max_version = ssl_max_version_;
   dtls_ = std::make_unique<tls::DtlsTransport>(local_certificate_->Clone(), *dtls_role_, config);
+  if (fake_ice_lite_) {
+    // An ICE-lite agent sends no checks, so ICE has no RTT estimate: start from the default estimate (400 ms).
+    dtls_->SetInitialRetransmissionTimeout(ComputeRetransmissionTimeout(kDefaultHandshakeEstimateRttMs));
+  }
   if (!remote_fingerprint_value_.empty()) {
     const auto md = tls::CreateMessageDigest(remote_fingerprint_algorithm_);
     if (!md || md->Size() != remote_fingerprint_value_.size()) return false;

@@ -132,6 +132,11 @@ class DtlsTransport : public PacketTransportInternal {
 
   std::string ToString() const;
 
+  // Over an ICE-lite agent (sm/p2p/ice_lite_agent.h), which has no RTT estimate: the handshake's first
+  // retransmission timeout comes from kDefaultHandshakeEstimateRttMs (libwebrtc's SetFakeIceLite, set by
+  // p2p/dtls/dtls_ice_integration_fixture.h on the lite side). Call it before the handshake is set up.
+  void SetFakeIceLite() { fake_ice_lite_ = true; }
+
  private:
   void ConnectToIceTransport();
   void OnWritableState(Timestamp now);
@@ -165,6 +170,7 @@ class DtlsTransport : public PacketTransportInternal {
   bool receiving_ = false;
   bool writable_ = false;
   bool ice_has_been_writable_ = false;
+  bool fake_ice_lite_ = false;
   TaggedCallbackList<DtlsTransport*, DtlsTransportState> dtls_state_cbs_;
   RoleCallback role_change_cb_;
 };

@@ -714,7 +714,7 @@ Differences:
 |---|---|---|---|
 | Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
 | `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
-| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | #1002's remaining part |
+| `IceConfig(RTCConfiguration)` | A constructor from `PeerConnectionInterface::RTCConfiguration` | `IceConfigFromRtcConfiguration(RtcIceConfiguration)` (`ice_transport_internal.h`): the same fields with `RTCConfiguration`'s defaults (`kUndefined` and unset mean the channel's constants; presume-writable off) | The library has no `PeerConnectionInterface`; `RtcIceConfiguration` holds the fields the constructor reads |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
 ### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
@@ -790,7 +790,14 @@ NOMINATION with renomination on both sides), the controlled side switching on no
 continual gathering clearing) the sessions on a strongly connected pair, the regathering timer, `SendPacket`'s
 ENOTCONN/EINVAL rules, and the prflx sanitizing of the selected pair and the stats. The two-endpoint cases of
 `p2p_transport_channel_unittest.cc` without TURN, TCP, mDNS or field trials are in
-`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server.
+`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server. The
+single-channel `P2PTransportChannelPingTest` cases (triggered checks, ping intervals, peer-reflexive pairs and
+resurrection, the controlled side's selection by priority, data and nomination, the estimated disconnected time,
+pruning, `GetState`, the ICE role on pruned and older ports, the port's destruction once pruned, and the
+`send_ping_on_*` and `max_outstanding_pings` field trials) are in
+`tests/unit/p2p/p2p_transport_channel_ping_test.cc` (#1002 part 3), with libwebrtc's assertions: a host port on the
+emulated network in place of `FakePortAllocator`, made ready with no time passing as that allocator's session does,
+and a waiter that polls every millisecond of emulated time.
 Differences:
 
 | Item | libwebrtc M157 | This library | Why |
@@ -862,7 +869,32 @@ presets turn it on so its tests run. Every `*_test.cc` under `packet/` and `comm
 | Tests | gtest and gmock | `sm_test.h` with `tests/unit/dcsctp/gmock_lite.h` (`EXPECT_THAT` with `ElementsAre`, `SizeIs`, `IsEmpty`, `Not`, or a value) | No gtest in the library |
 | Fuzzer | `dcsctp_fuzzers.cc`'s `FuzzSocket`, through the socket | A packet-layer target: `SctpPacket::Parse` with and without checksum checks, every chunk's parser, SACK cleaning, parameter lists, a build/parse round trip | The socket is part 2; its fuzzer comes with it |
 
-### 10.12 TLS client socket over TCP (`src/tls/{boringssl,mbedtls}_tls.cc`, `src/p2p/ssl_adapter_tls.cc`, C4 part 3, #1035)
+### 10.12 ICE-lite for the AI server (`src/p2p/ice_lite_agent.cc`, C3 part 7, #1003)
+
+libwebrtc has no ICE-lite agent outside its tests: its DTLS-over-ICE fixture (`p2p/dtls/dtls_ice_integration_fixture.h`)
+runs a `P2PTransportChannel` as one by passing `p2p/test/fake_ice_lite_agent.h`'s `FakeIceLiteAgent` as the
+active ICE controller, and `DtlsTransportInternalImpl::SetFakeIceLite` on top of it. That is what is ported:
+`sm::p2p::IceLiteAgent` (and `IceLiteAgentFactory`, for `P2PTransportChannel::Options::active_ice_controller_factory`)
+and `DtlsTransport::SetFakeIceLite`. The lite agent pings nothing (no pingable connection; a reported ping is a bug),
+never sets USE-CANDIDATE, makes a connection writable once a check from the peer arrived on it and it is receiving
+(`Connection::set_writable_for_fake_ice_lite`), switches only on the full agent's nomination or on data, and never
+sorts, switches or prunes otherwise. The rest is the owner's setup, as the fixture: the controlled role, host
+candidates only (no STUN or TURN server), and `SetRemoteIceMode(ICEMODE_LITE)` on the full agent, whose
+`BasicIceController` then nominates a writable pair (`GetUseCandidateAttr`, already ported in 10.6). Over an ICE-lite
+agent DTLS has no RTT estimate, so `SetFakeIceLite` starts the handshake's retransmissions at 2 x 200 ms. Tests:
+`tests/unit/p2p/ice_lite_test.cc` (a full agent through each NAT type of #985 and from a public address, the lite side
+never checking and selecting the nominated pair, and a client network change: a new interface appears and the old one
+goes away, after which the full agent nominates a pair on the new one and the lite server switches to it) and
+`P2pDtlsTransport.FakeIceLiteHandshakeTimeout`.
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Deferred update | `OnConnectionUpdated` posts a task to the network thread | Queued with the time of the last call that carried one (the channel's sort or switch request made just before), run in `Process(now)` at `NextProcessTime()` | The library's time model, as 10.9 |
+| A reported ping | `RTC_CHECK` fails | A debug `assert`; `pings_reported()` counts them | No CHECKs in release builds of the library |
+| Use | Test-only (`p2p/test/`) | In the library, for the AI server | The AI server is the lite agent milestone 3 asks for (#944); its behaviour is libwebrtc's test agent's, unchanged |
+| Lite state | The lite side prunes nothing, so with several pairs it stays CONNECTING (standard state connected) | The same | As libwebrtc |
+
+### 10.13 TLS client socket over TCP (`src/tls/{boringssl,mbedtls}_tls.cc`, `src/p2p/ssl_adapter_tls.cc`, C4 part 3, #1035)
 
 Ported from `rtc_base/openssl_adapter.{h,cc}` and `rtc_base/ssl_adapter.h`, with the TLS half of
 `p2p/base/basic_packet_socket_factory.cc`'s `CreateClientTcpSocket` and `SSLCertificateVerifier`. The TLS engine is

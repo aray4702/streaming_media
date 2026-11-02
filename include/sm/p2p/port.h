@@ -223,6 +223,11 @@ class Port {
   using UnknownAddressFn =
       std::function<void(Timestamp, Port*, const SocketAddress&, ProtocolType, IceMessage*, const std::string&, bool)>;
   void SubscribeUnknownAddress(const void* tag, UnknownAddressFn cb) { unknown_address_.Add(tag, std::move(cb)); }
+  // Port::NotifyUnknownAddress (public in libwebrtc, used by P2PTransportChannelPingTest): raises the signal.
+  void NotifyUnknownAddress(Timestamp now, const SocketAddress& addr, ProtocolType proto, IceMessage* msg,
+                            const std::string& remote_username, bool port_muxed) {
+    unknown_address_.Send(now, this, addr, proto, msg, remote_username, port_muxed);
+  }
   // With EnablePortPackets(), every datagram from an unknown address.
   void SubscribeReadPacket(const void* tag,
                            std::function<void(Port*, std::span<const uint8_t>, const SocketAddress&)> cb) {
