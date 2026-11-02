@@ -5,6 +5,11 @@ row gives the problem and the mechanism that solves it. The tables double as a
 feature checklist for this library: when building on a lightweight stack such
 as libdatachannel, sections 3–8 are mostly ours to implement or borrow.
 
+> **Note.** This library implements sections 3–8 and, in milestone 3
+> ([#944](https://github.com/aray4702/streaming_media/issues/944)), also ports sections 1, 2, 9 and 10 from libwebrtc: ICE, STUN and TURN, TLS/DTLS
+> and SRTP, data channels, SDP and observability switches. Status: [README](../README.md#status);
+> details: [libwebrtc parity, section 10](design/libwebrtc-parity.md#10-connectivity-milestone-3-944).
+
 ## 1. Connectivity and session setup
 
 | Problem | WebRTC mechanism |
