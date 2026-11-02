@@ -24,8 +24,8 @@
 // MAC-based VPN detection, no network preference or slice, and the network
 // thread is the caller's: the networks-changed signal runs inside the call
 // that changed them (StartUpdating, MergeNetworkList).
-// rtc_base/fake_network.h (FakeNetworkManager) is not in reference/; the
-// interface prefix lengths StaticNetworkManager uses (/24, /64) are its.
+// StaticNetworkManager follows rtc_base/fake_network.h's FakeNetworkManager
+// (prefix lengths /24 and /64, "test<N>" names, the first-update rule).
 #pragma once
 
 #include <cstdint>
@@ -114,10 +114,12 @@ class NetworkManagerBase : public NetworkManager {
 // removes.
 class StaticNetworkManager final : public NetworkManagerBase {
  public:
-  // An interface with one address. A second address of the same name and
-  // prefix joins that network.
-  void AddInterface(const IpAddress& ip, std::string name = "test", AdapterType type = ADAPTER_TYPE_UNKNOWN,
+  // An interface with one address, named "test<N>" if no name is given. A
+  // second address of the same name and prefix joins that network.
+  void AddInterface(const IpAddress& ip) { AddInterface(ip, "test" + std::to_string(next_index_++)); }
+  void AddInterface(const IpAddress& ip, std::string name, AdapterType type = ADAPTER_TYPE_UNKNOWN,
                     AdapterType underlying_vpn_type = ADAPTER_TYPE_UNKNOWN);
+  // Removes the first interface with this address.
   void RemoveInterface(const IpAddress& ip);
   void ChangeInterfaceType(const IpAddress& ip, AdapterType type);
 
@@ -135,6 +137,7 @@ class StaticNetworkManager final : public NetworkManagerBase {
   void DoUpdateNetworks();
 
   std::vector<Interface> ifaces_;
+  int next_index_ = 0;
   int start_count_ = 0;
   bool sent_first_update_ = false;
 };
