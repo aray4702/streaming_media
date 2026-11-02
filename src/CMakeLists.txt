@@ -183,6 +183,13 @@ if(SM_WITH_DATACHANNEL)
   if(NOT MSVC)
     target_compile_options(sm_dcsctp PRIVATE -Wno-shadow -Wno-comment)
   endif()
+  if(SM_WITH_TLS)
+    # SCTP over DTLS (C7 part 3, #1069): libwebrtc's media/sctp/dcsctp_transport and pc/sctp_transport, the dcsctp
+    # socket over the DTLS transport (sm::p2p_dtls).
+    sm_add_library(sctp DEPS sm::dcsctp sm::p2p_dtls SOURCES
+      sctp/dcsctp_transport.cc
+      sctp/sctp_transport.cc)
+  endif()
 endif()
 
 if(SM_WITH_LOSS)
