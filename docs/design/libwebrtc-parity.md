@@ -1068,6 +1068,41 @@ without DTLS. Differences:
 | `SctpTransport` | Ref-counted, hops to the network thread, `dtls_transport()` is the api `DtlsTransport` | Owned, one thread, `dtls_transport()` is the `p2p::DtlsTransport`; the destructors also unsubscribe from the DTLS transport | No ref counting or threads in the library |
 | Interface files | `media/sctp/sctp_transport_internal.h`, `api/transport/data_channel_transport_interface.h`, `api/sctp_transport_interface.h`, `api/rtc_error.h`, `api/priority.h`, and the unit tests `media/sctp/dcsctp_transport_unittest.cc`, `pc/sctp_transport_unittest.cc` | `include/sm/sctp/sctp_transport_internal.h` and `sctp_transport.h` with the names and values `dcsctp_transport.cc` and `sctp_transport.cc` use; `kMaxSctpStreams` (65535) and the port (5000) checked against `api/webrtc_sdp_unittest.cc`, 256 KiB against `media_session.cc`; the 16 MiB queue (`MaxSendQueueSize`) is from libwebrtc, not checked here | Not in `reference/` yet (asked for on #1069); the tests above cover the transport's behaviour until the unit tests can be ported |
 
+### 10.18 Data channels: DCEP and the data channel API (`src/pc/{sctp_utils,sctp_data_channel,data_channel_controller}.cc`, C7 part 4, #1070)
+
+Ported from `pc/sctp_utils.{h,cc}`, `pc/sctp_data_channel.{h,cc}`, `pc/data_channel_controller.{h,cc}`,
+`pc/data_channel_utils.h` and `api/data_channel_interface.{h,cc}` at M157 as `sm::pc` (`include/sm/pc/`, library
+`sm::pc_datachannel`, built with `SM_WITH_DATACHANNEL=ON` and TLS), on the SCTP transport of 10.17. DCEP as libwebrtc:
+DATA_CHANNEL_OPEN (channel type, priority, reliability parameter, label, protocol) and DATA_CHANNEL_ACK, written and
+parsed byte for byte; the OPEN is sent ordered and reliably, unordered data goes ordered until the ACK (or the first
+data message) arrives. Channels in-band (opener / acker) and negotiated (pre-agreed id, no handshake); stream ids
+allocated even for the DTLS client and odd for the server, up to the association's `MaxChannels - 1`, a closing
+channel's id taken over by a new channel ("Closed due to stream reuse"); ordered and unordered, `maxRetransmits` and
+`maxPacketLifeTime` (negative values dropped, above 65535 clamped, both together rejected); label and protocol (1 MiB
+together at most); the states connecting -> open -> closing -> closed with the closing procedure (stream reset once the
+send buffer is empty, remote resets answered); `bufferedAmount`, `OnBufferedAmountChange` every 100 KiB or when empty,
+and the low threshold; received messages queued until an observer is registered (16 MiB, then the channel closes with
+`kResourceExhausted`); a failed send closes the channel with a network error; the max message size (256 KiB by
+default) reported to observers and enforced by the transport. **The runtime switch per connection** is
+`DataChannelSession::Config::enable_data_channels`: off, the connection has no SCTP transport (no association, no
+SCTP packets) and creating a channel fails with `kInvalidState`; on (the default, as libwebrtc, which always offers
+data channels) it owns the SCTP transport and the controller. With `SM_WITH_DATACHANNEL=OFF` none of this is built.
+Events (module `dc`): `state`, `remote_open`, `send_error`. Tests: `tests/unit/pc_datachannel/` (every case of
+`pc/sctp_utils_unittest.cc`, the channel against a fake controller, and two endpoints over ICE + DTLS + SCTP on the
+emulated network: in-band channels both ways, negotiated channels, partial reliability under 30% loss and an outage,
+closing from one side, buffered amount and the max message size, the switch off on one side, transport teardown).
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Threads | Signaling and network threads, `DataChannelProxy`, `ObserverAdapter`, `SendAsync`, posted tasks | One thread; calls that can send take `now`; the tasks libwebrtc posts to the network thread (a new channel's `OnTransportReady`) run from `Process(now)`, those to the signaling thread (`OnDataChannel`, observer callbacks) are called directly; no `SendAsync` | The library's time and thread model |
+| Ownership | `scoped_refptr`, `WeakPtr<SctpDataChannelControllerInterface>` | `std::shared_ptr` channels holding a `std::weak_ptr` to the controller's handle | No ref counting in the library |
+| PeerConnection | `pc_->OnSctpDataChannelStateChanged`, `PeerConnectionObserver::OnDataChannel`, `DataChannelEventObserverInterface`, the tracer | A new-channel callback; an `EventSink`; no event observer or tracer | No PeerConnection in the library yet |
+| Runtime switch | None (data channels are always available) | `enable_data_channels` per connection, on by default | C7's acceptance (Owner) |
+| m=application | Offered and answered by `pc/media_session` | Not yet: comes with offer/answer generation (C6 part 2, #1063) | #1063 is not merged |
+| `DataChannelInit::reliable` | Deprecated field | Left out | Deprecated, unused by the port |
+| Not in `reference/` | `pc/data_channel_unittest.cc`, `pc/data_channel_controller_unittest.cc` | The cases above cover the behaviour | Asked for on #1070 |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).
