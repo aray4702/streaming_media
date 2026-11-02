@@ -382,3 +382,4 @@ rtc_base/ssl_identity_unittest.cc
 rtc_base/ssl_stream_adapter.cc
 rtc_base/ssl_stream_adapter.h
 rtc_base/ssl_stream_adapter_unittest.cc
+api/transport/stun_unittest.cc
