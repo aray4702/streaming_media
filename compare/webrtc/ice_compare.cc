@@ -10,7 +10,11 @@
 // role AsyncUDPSocket over a VirtualSocketServer plays in libwebrtc's p2p_transport_channel_unittest.cc, so both
 // stacks bind the same ports and cross the same NATs and links. Its NetworkManager is rtc_base/fake_network.h's
 // FakeNetworkManager on a TaskQueueBase (the prebuilt library leaves test code out).
+#include <execinfo.h>
+#include <unistd.h>
+
 #include <cerrno>
+#include <csignal>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -353,6 +357,17 @@ struct Summary {
 };
 
 // The metrics differ by more than the parity band (sm_compare's tie tolerance: 5% relative, with an absolute floor).
+// A crash prints its stack (the binary is linked with -rdynamic), so the compare job's log shows where it failed.
+void OnCrash(int sig) {
+  void* frames[64];
+  const int n = backtrace(frames, 64);
+  const char msg[] = "sm_ice_compare: crashed, stack:\n";
+  (void)!write(2, msg, sizeof msg - 1);
+  backtrace_symbols_fd(frames, n, 2);
+  std::signal(sig, SIG_DFL);
+  std::raise(sig);
+}
+
 bool Differs(double a, double b, double floor) { return std::fabs(a - b) > std::max(floor, 0.05 * std::max(a, b)); }
 
 }  // namespace
@@ -368,6 +383,11 @@ int main(int argc, char** argv) {
       return 2;
     }
   }
+  std::signal(SIGSEGV, OnCrash);
+  std::signal(SIGABRT, OnCrash);
+  std::signal(SIGILL, OnCrash);
+  std::signal(SIGTRAP, OnCrash);
+  std::setvbuf(stdout, nullptr, _IONBF, 0);
   sm::p2p::testing::InstallTestCrypto();
 
   std::printf("ICE against libwebrtc M157 (#1004): P2PTransportChannel set up as PeerConnection, UDP and STUN, "
@@ -380,7 +400,9 @@ int main(int argc, char** argv) {
   for (const Scenario& s : Scenarios()) {
     Summary ours, theirs;
     for (int seed = 1; seed <= seeds; ++seed) {
+      if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
       const Result a = RunSm(s, seed);
+      if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
       const Result b = RunWebrtc(s, seed);
       ours.Add(a);
       theirs.Add(b);
