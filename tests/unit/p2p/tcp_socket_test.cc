@@ -181,7 +181,7 @@ SM_TEST(AsyncTcpSocket, FramesPacketsBothWaysThroughTheFactory) {
   SM_EXPECT_EQ(client->GetOption(p2p::SocketOption::kNoDelay, &no_delay), 0);
   SM_EXPECT_EQ(no_delay, 1);  // TCP_NODELAY before Connect.
   bool connected = false;
-  client->SubscribeConnect(nullptr, [&](AsyncPacketSocket*) { connected = true; });
+  client->SubscribeConnect(nullptr, [&](AsyncPacketSocket*, Timestamp) { connected = true; });
   client->RegisterReceivedPacketCallback(
       [&](AsyncPacketSocket*, const ReceivedPacket& p) { at_a.emplace_back(p.payload.begin(), p.payload.end()); });
   std::vector<p2p::SentPacketInfo> sent;
