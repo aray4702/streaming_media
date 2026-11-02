@@ -32,8 +32,8 @@
 //
 // Not here: the DTLS-in-STUN piggyback (M157 has it behind a field trial that is off; see dtls_transport.h), the RTC
 // event log (ice_logger), and the Unix-epoch conversion of the stats' timestamps (they stay in the caller's time
-// base). The RTT estimate (EventBasedExponentialMovingAverage) and the rate trackers (BitrateTracker as RateStatistics
-// with scale 8000) are libwebrtc's, but their files are not in compare/webrtc/reference/ yet (asked for on #1000).
+// base). The RTT estimate is libwebrtc's EventBasedExponentialMovingAverage (rtc_base/numerics/), and the rate
+// trackers are BitrateTracker's RateStatistics (rtc_base/bitrate_tracker.cc: a 1 s window, kBpsScale 8000) used directly.
 #pragma once
 
 #include <cstdint>

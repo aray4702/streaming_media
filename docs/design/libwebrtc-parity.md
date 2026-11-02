@@ -665,7 +665,7 @@ loss, 10 % loss on 5 seeds, an outage). Differences:
 | RTC event log | `IceEventLog` candidate-pair events | Not ported | No event log in the library |
 | Stats timestamps | `last_data_received`/`last_data_sent` converted to the Unix epoch | In the caller's time base | No wall clock in the library |
 | `GOOG-DELTA-ACK` consumer | `RTCErrorOr<const StunUInt64Attribute*>` | The attribute and a `GoogDeltaAckError` (unsupported, internal) | No `RTCError` type |
-| RTT estimate and rate trackers | `EventBasedExponentialMovingAverage`, `BitrateTracker` | The same algorithms; `BitrateTracker` as `RateStatistics` with scale 8000 | Their files are not in `reference/` yet (asked on #1000) |
+| RTT estimate and rate trackers | `EventBasedExponentialMovingAverage` (`rtc_base/numerics/event_based_exponential_moving_average.cc`), `BitrateTracker` (`rtc_base/bitrate_tracker.cc`: a `RateStatistics(max_window_size.ms(), kBpsScale)`) | The same EMA, checked line for line against `reference/` (#1024) with its unittest ported; the trackers are `RateStatistics(1000, 8000)` used directly | No wrapper type; the same code and window |
 
 ## Open questions for the Owner
 

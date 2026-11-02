@@ -3,12 +3,13 @@
 // sample variance and a 95 % confidence interval. The connection's RTT estimate uses it (#1000).
 //
 // Checked line by line against compare/webrtc/reference/rtc_base/numerics/event_based_exponential_moving_average.cc
-// (window, #1000): the same arithmetic; std::log(2.0) for std::numbers::ln2.
+// (window, #1000): the same arithmetic. Its unittest is ported in tests/unit/core/event_based_exponential_moving_average_test.cc.
 #pragma once
 
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numbers>
 #include <optional>
 
 namespace sm {
@@ -54,7 +55,7 @@ class EventBasedExponentialMovingAverage {
 
   // Changes the half time; also resets the average.
   void SetHalfTime(int half_time) {
-    tau_ = static_cast<double>(half_time) / std::log(2.0);
+    tau_ = static_cast<double>(half_time) / std::numbers::ln2;
     Reset();
   }
 

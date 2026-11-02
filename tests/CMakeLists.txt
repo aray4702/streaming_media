@@ -89,11 +89,13 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc
     unit/core/core_test.cc
+    unit/core/event_based_exponential_moving_average_test.cc
     unit/core/logging_test.cc
     unit/core/network_test.cc
   SUITES
     AudioFrameOperations
     Dsp
+    EventBasedExponentialMovingAverage
     EventLog
     Fft
     Histogram
