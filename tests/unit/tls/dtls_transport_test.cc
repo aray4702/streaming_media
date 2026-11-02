@@ -14,6 +14,15 @@ using namespace sm::tls;
 
 namespace {
 
+#if SM_TLS_BACKEND_MBEDTLS
+// Mbed TLS 3.6 has DTLS 1.2 only, and no AEAD-GCM SRTP profiles (mbedtls_dtls.cc, #998).
+constexpr int kNegotiatedVersion = kDtls12;
+constexpr int kNonDefaultProfile = kSrtpAes128CmSha1_32;
+#else
+constexpr int kNegotiatedVersion = kDtls13;  // Both on BoringSSL: DTLS 1.3, as libwebrtc M157 offers.
+constexpr int kNonDefaultProfile = kSrtpAeadAes128Gcm;
+#endif
+
 struct Pair {
   std::unique_ptr<DtlsTransport> client, server;
   std::unique_ptr<SslFingerprint> client_fp, server_fp;
@@ -71,7 +80,7 @@ SM_TEST(TlsDtlsTransport, HandshakeVerifiesFingerprintsAndAgreesOnSrtp) {
   p.Run(500);
   SM_ASSERT_TRUE(p.client->state() == DtlsState::kConnected);
   SM_ASSERT_TRUE(p.server->state() == DtlsState::kConnected);
-  SM_EXPECT_EQ(p.client->version(), kDtls13);  // Both on BoringSSL: DTLS 1.3, as libwebrtc M157 offers.
+  SM_EXPECT_EQ(p.client->version(), kNegotiatedVersion);
   SM_EXPECT_EQ(p.client->srtp_crypto_suite(), kSrtpAes128CmSha1_80);  // The first of M157's defaults.
   SM_EXPECT_EQ(p.server->srtp_crypto_suite(), kSrtpAes128CmSha1_80);
   int key = 0, salt = 0;
@@ -126,8 +135,13 @@ SM_TEST(TlsDtlsTransport, FingerprintAfterTheHandshake) {
   q.server->SetPeerFingerprint(*q.client_fp, q.now);
   q.StartBoth();
   q.Run(300);
+  SM_EXPECT_TRUE(q.server->state() == DtlsState::kConnected);
   SM_EXPECT_FALSE(q.client->SetPeerFingerprint(*other, q.now));
   SM_EXPECT_TRUE(q.client->state() == DtlsState::kFailed);
+  // The client tells the server with a fatal alert (SetPeerCertificateDigest's Error(SSL_AD_BAD_CERTIFICATE), #1006),
+  // so it fails too instead of staying connected to a peer that rejected it.
+  q.Run(100);
+  SM_EXPECT_TRUE(q.server->state() == DtlsState::kFailed);
 }
 
 SM_TEST(TlsDtlsTransport, RetransmitsALostFlight) {
@@ -143,12 +157,33 @@ SM_TEST(TlsDtlsTransport, RetransmitsALostFlight) {
   SM_EXPECT_EQ(p.dropped, 1);
 }
 
+#if !SM_TLS_BACKEND_MBEDTLS  // DTLS 1.3 only; Mbed TLS 3.6 has DTLS 1.2 (#998).
+SM_TEST(TlsDtlsTransport, Dtls13ClientResendsItsLastFlightAfterConnecting) {
+  // In DTLS 1.3 the client is connected once it sends its Finished, and keeps the flight until the server ACKs it.
+  // If it is lost the client's timer resends it: the timer runs after the handshake too (#1006).
+  Pair p;
+  p.client->SetPeerFingerprint(*p.server_fp, p.now);
+  p.server->SetPeerFingerprint(*p.client_fp, p.now);
+  p.StartBoth();
+  bool dropped_final = false;
+  p.Run(3000, [&](bool to_server, int) {
+    if (!to_server || dropped_final || p.client->state() != DtlsState::kConnected) return false;
+    dropped_final = true;
+    return true;
+  });
+  SM_ASSERT_TRUE(dropped_final);
+  SM_EXPECT_EQ(p.client->version(), kDtls13);
+  SM_EXPECT_TRUE(p.server->state() == DtlsState::kConnected);
+  SM_EXPECT_TRUE(p.client->retransmissions() >= 1);
+}
+#endif
+
 SM_TEST(TlsDtlsTransport, CapsAtDtls12AndPicksACommonProfile) {
   DtlsConfig c12;
   c12.max_version = kDtls12;
-  c12.srtp_crypto_suites = {kSrtpAeadAes128Gcm};
+  c12.srtp_crypto_suites = {kNonDefaultProfile};
   DtlsConfig s;
-  s.srtp_crypto_suites = {kSrtpAes128CmSha1_80, kSrtpAeadAes128Gcm};
+  s.srtp_crypto_suites = {kSrtpAes128CmSha1_80, kNonDefaultProfile};
   Pair p(c12, s);
   p.client->SetPeerFingerprint(*p.server_fp, p.now);
   p.server->SetPeerFingerprint(*p.client_fp, p.now);
@@ -157,5 +192,23 @@ SM_TEST(TlsDtlsTransport, CapsAtDtls12AndPicksACommonProfile) {
   SM_ASSERT_TRUE(p.client->state() == DtlsState::kConnected);
   SM_EXPECT_EQ(p.client->version(), kDtls12);  // An endpoint without DTLS 1.3 (mbedTLS, C1) gets 1.2.
   SM_EXPECT_EQ(p.server->version(), kDtls12);
-  SM_EXPECT_EQ(p.client->srtp_crypto_suite(), kSrtpAeadAes128Gcm);
+  SM_EXPECT_EQ(p.client->srtp_crypto_suite(), kNonDefaultProfile);
 }
+
+#if SM_TLS_BACKEND_MBEDTLS
+SM_TEST(TlsDtlsTransport, MbedTlsSkipsGcmProfilesAndRefusesOnlyGcm) {
+  // libwebrtc's default list offers AES-CM first, then GCM: Mbed TLS offers the AES-CM entry.
+  Pair p;
+  p.client->SetPeerFingerprint(*p.server_fp, p.now);
+  p.server->SetPeerFingerprint(*p.client_fp, p.now);
+  p.StartBoth();
+  p.Run(500);
+  SM_ASSERT_TRUE(p.client->state() == DtlsState::kConnected);
+  SM_EXPECT_EQ(p.server->srtp_crypto_suite(), kSrtpAes128CmSha1_80);
+  // A list of GCM profiles only can't be offered: Start fails, as BoringSSL's does for a profile it can't set.
+  DtlsConfig gcm;
+  gcm.srtp_crypto_suites = {kSrtpAeadAes128Gcm, kSrtpAeadAes256Gcm};
+  DtlsTransport t(SslIdentity::Create("gcm"), DtlsRole::kClient, gcm);
+  SM_EXPECT_FALSE(t.Start(Timestamp::Seconds(1)));
+}
+#endif

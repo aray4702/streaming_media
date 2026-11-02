@@ -588,7 +588,29 @@ vectors unchanged. Differences:
 | Typed getters on an attribute of another value type | `static_cast` to the wrong class | nullptr | Avoids reading an attribute as the wrong class (an unknown designated-range attribute is a byte string) |
 | `WebRTC.Stun.Integrity.*` histograms | Recorded | Not kept | Observability belongs to #988 |
 
-### 10.2 Ports and candidates (`src/p2p/{candidate,network,port,stun_port}.cc`, C3 part 3, #999)
+### 10.2 TLS backend: Mbed TLS (`src/tls/mbedtls_*.cc`, C1 part 3, #998)
+
+libwebrtc builds only BoringSSL. As decided on #944, `sm::tls` also runs on Mbed TLS 3.6 LTS (v3.6.7,
+`cmake/SmMbedTLS.cmake`) for microcontrollers, chosen at build time with `SM_TLS_BACKEND=boringssl|mbedtls`
+(default `boringssl`, so the default build is unchanged). The mbedTLS backend implements the same interfaces
+(`MessageDigest`, `CryptoRandom`, `SslIdentity`/`SslCertificate`, `SslFingerprint`, `DtlsTransport`; `SrtpSession`
+on libsrtp's Mbed TLS engine) and passes the same unit tests. Each backend's API is in its own inline namespace
+(`sm::tls::boringssl_backend`, `sm::tls::mbedtls_backend`, `include/sm/tls/backend.h`), so both link into one
+binary: `unit.TlsCrossBackend` runs DTLS-SRTP handshakes between a BoringSSL and an mbedTLS `DtlsTransport`, both
+ways, and checks that they agree on the SRTP profile and keys. Differences of the mbedTLS backend from libwebrtc's
+BoringSSL:
+
+| Item | libwebrtc M157 (BoringSSL) | mbedTLS backend | Why |
+|---|---|---|---|
+| DTLS version | 1.2 and 1.3 offered | 1.2 only; a BoringSSL peer negotiates 1.2 | Mbed TLS 3.6 has no DTLS 1.3 |
+| SRTP profiles | AES128_CM_SHA1_80, AEAD_AES_256_GCM, AEAD_AES_128_GCM | The AES-CM entries of the list; a GCM-only list fails `Start` | Mbed TLS's use_srtp has no RFC 7714 profiles. `SrtpSession` still protects with GCM keys given to it |
+| Cipher suites | BoringSSL's `DEFAULT` less libwebrtc's exclusions | The ECDHE suites of that list (AES-128-GCM, ChaCha20-Poly1305, AES-128/256-CBC-SHA) | The static-RSA suites need an RSA certificate; libwebrtc's are ECDSA |
+| SRTP key export | `SSL_export_keying_material` | RFC 5705 from the master secret of Mbed TLS's key-export callback, with the handshake's PRF | `mbedtls_ssl_export_keying_material` (3.6) reads `ssl->transform`, unset on the end that sent the last flight until the peer's first record (a crash), and takes the PRF hash from the suite's MAC (SHA-1 for CBC-SHA, where TLS 1.2 uses SHA-256) |
+| Peer certificate | `SSL_VERIFY_PEER \| SSL_VERIFY_FAIL_IF_NO_PEER_CERT`, custom verify | `MBEDTLS_SSL_VERIFY_OPTIONAL` with a verify callback that checks the fingerprint, and a handshake without a peer certificate fails | `VERIFY_REQUIRED` needs a CA chain, which a fingerprint-checked self-signed certificate has none of |
+| Private key PEM | PKCS#8 (`EVP_marshal_private_key`) | PKCS#8, wrapped around Mbed TLS's SEC1 / PKCS#1 output | Mbed TLS 3.6 writes no PKCS#8 |
+| HelloVerifyRequest | Not sent by BoringSSL's server | Not sent (cookies off) | Same behaviour |
+
+### 10.3 Ports and candidates (`src/p2p/{candidate,network,port,stun_port}.cc`, C3 part 3, #999)
 
 Ported as a unit from `api/candidate.{h,cc}`, `p2p/base/p2p_constants.{h,cc}`, `p2p/base/port.{h,cc}`,
 `port_interface.h` and `p2p/base/stun_port.{h,cc}`, plus what a port reads of `rtc_base/network.*` and

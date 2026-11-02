@@ -1,7 +1,10 @@
 // Message digests and HMAC: libwebrtc's rtc_base/message_digest.h (M157), ported for the connectivity layer
 // (milestone 3, #984). STUN's MESSAGE-INTEGRITY (HMAC-SHA1), TURN's long-term key (MD5) and the certificate
-// fingerprints in SDP (SHA-256) use it. The digests come from the TLS backend (BoringSSL; mbedTLS later, #944).
+// fingerprints in SDP (SHA-256) use it. The digests come from the TLS backend (BoringSSL, or mbedTLS with
+// SM_TLS_BACKEND=mbedtls, #998).
 #pragma once
+
+#include "sm/tls/backend.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,6 +14,7 @@
 #include <string_view>
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 // The algorithm names, as RFC 4572 / SDP a=fingerprint spells them (message_digest.cc).
 inline constexpr char kDigestMd5[] = "md5";
@@ -50,4 +54,5 @@ size_t ComputeHmac(std::string_view alg, std::span<const uint8_t> key, std::span
 // The HMAC of `input` with `key`, hex-encoded; empty for an unknown or unsupported algorithm.
 std::string ComputeHmac(std::string_view alg, std::string_view key, std::string_view input);
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

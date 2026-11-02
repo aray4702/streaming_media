@@ -2,6 +2,8 @@
 // ported for milestone 3 (#984 part 1b).
 #pragma once
 
+#include "sm/tls/backend.h"
+
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -13,6 +15,7 @@
 #include "sm/tls/ssl_identity.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 struct SslFingerprint {
   SslFingerprint(std::string_view alg, std::span<const uint8_t> d) : algorithm(alg), digest(d.begin(), d.end()) {}
@@ -35,4 +38,5 @@ struct SslFingerprint {
   std::vector<uint8_t> digest;
 };
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

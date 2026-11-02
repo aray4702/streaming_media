@@ -2,16 +2,17 @@
 // libwebrtc's line for line; the comments name the libwebrtc function each part ports.
 #include "sm/tls/srtp_session.h"
 
-#include <openssl/mem.h>
 #include <srtp.h>
 
 #include <cstring>
 #include <mutex>
 #include <optional>
 
+#include "backend_random.h"
 #include "sm/tls/dtls_transport.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 namespace {
 
@@ -284,8 +285,8 @@ bool SrtpSession::UpdateKey(int type, int crypto_suite, std::span<const uint8_t>
 }
 
 SrtpKeys::~SrtpKeys() {
-  OPENSSL_cleanse(send_key.data(), send_key.size());
-  OPENSSL_cleanse(recv_key.data(), recv_key.size());
+  BackendCleanse(send_key.data(), send_key.size());
+  BackendCleanse(recv_key.data(), recv_key.size());
 }
 
 bool ExtractSrtpKeys(const DtlsTransport& dtls, SrtpKeys& keys) {
@@ -296,7 +297,7 @@ bool ExtractSrtpKeys(const DtlsTransport& dtls, SrtpKeys& keys) {
   // RFC 5705 exporter with RFC 5764's label: client_write_key | server_write_key | client_salt | server_salt.
   std::vector<uint8_t> material(static_cast<size_t>(2 * key_len + 2 * salt_len));
   if (!dtls.ExportSrtpKeyingMaterial(material)) {
-    OPENSSL_cleanse(material.data(), material.size());
+    BackendCleanse(material.data(), material.size());
     return false;
   }
   const auto k = static_cast<size_t>(key_len), s = static_cast<size_t>(salt_len);
@@ -305,10 +306,10 @@ bool ExtractSrtpKeys(const DtlsTransport& dtls, SrtpKeys& keys) {
                 material.begin() + static_cast<long>(2 * k + s));
   std::vector<uint8_t> server(material.begin() + static_cast<long>(k), material.begin() + static_cast<long>(2 * k));
   server.insert(server.end(), material.begin() + static_cast<long>(2 * k + s), material.end());
-  OPENSSL_cleanse(material.data(), material.size());
+  BackendCleanse(material.data(), material.size());
 
-  OPENSSL_cleanse(keys.send_key.data(), keys.send_key.size());
-  OPENSSL_cleanse(keys.recv_key.data(), keys.recv_key.size());
+  BackendCleanse(keys.send_key.data(), keys.send_key.size());
+  BackendCleanse(keys.recv_key.data(), keys.recv_key.size());
   keys.crypto_suite = suite;
   if (dtls.role() == DtlsRole::kServer) {
     keys.send_key = std::move(server);
@@ -320,4 +321,5 @@ bool ExtractSrtpKeys(const DtlsTransport& dtls, SrtpKeys& keys) {
   return true;
 }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

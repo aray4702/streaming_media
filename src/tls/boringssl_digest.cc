@@ -1,9 +1,14 @@
 // libwebrtc's rtc_base/openssl_digest.cc (M157): MessageDigest on BoringSSL's EVP digests (#984).
 #include <openssl/digest.h>
+#include <openssl/mem.h>
+#include <openssl/rand.h>
+
+#include "backend_random.h"
 
 #include "sm/tls/message_digest.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 namespace {
 
 const EVP_MD* MdFor(std::string_view alg) {
@@ -47,4 +52,8 @@ std::unique_ptr<MessageDigest> CreateMessageDigest(std::string_view alg) {
   return std::make_unique<BoringSslDigest>(md);
 }
 
+bool BackendRandomBytes(uint8_t* buf, size_t len) { return RAND_bytes(buf, len) > 0; }
+void BackendCleanse(void* p, size_t len) { OPENSSL_cleanse(p, len); }
+
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

@@ -6,6 +6,7 @@
 #include "sm/tls/message_digest.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 
 std::unique_ptr<SslFingerprint> SslFingerprint::Create(std::string_view algorithm, const SslCertificate& cert) {
   std::vector<uint8_t> digest;
@@ -61,4 +62,5 @@ std::string SslFingerprint::GetRfc4572Fingerprint() const {
 
 std::string SslFingerprint::ToString() const { return algorithm + " " + GetRfc4572Fingerprint(); }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls
