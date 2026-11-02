@@ -18,8 +18,9 @@ if(SM_WITH_TLS)
     tls/boringssl_digest.cc
     tls/crypto_random.cc
     tls/boringssl_identity.cc
-    tls/ssl_fingerprint.cc)
-  target_link_libraries(sm_tls PRIVATE sm_boringssl_crypto)
+    tls/ssl_fingerprint.cc
+    tls/boringssl_dtls.cc)
+  target_link_libraries(sm_tls PRIVATE sm_boringssl_ssl)
   target_compile_definitions(sm_tls PUBLIC SM_WITH_TLS=1)
   # Not in the sm::sm umbrella or the install export yet: it links BoringSSL's targets, which the export
   # set doesn't carry. Connectivity code links sm::tls itself until the package exports BoringSSL (#984).

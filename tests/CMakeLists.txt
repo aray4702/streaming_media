@@ -7,7 +7,8 @@ if(SM_WITH_TLS)
   sm_add_test_exe(sm_unit_tls LABEL unit DEPS sm::tls
     SOURCES unit/tls/message_digest_test.cc
             unit/tls/ssl_identity_test.cc
-    SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint)
+            unit/tls/dtls_transport_test.cc
+    SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport)
 endif()
 
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
