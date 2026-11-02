@@ -874,4 +874,75 @@ inline void EmulatedTcpSocket::Closed(int error) {
   NotifyCloseEvent(error);
 }
 
+// A host with several interfaces (#1002 part 4), as libwebrtc's ICE tests
+// give an endpoint several addresses on one VirtualSocketServer (Wi-Fi and
+// cellular, `AddAddress` in p2p_transport_channel_unittest.cc). Each address
+// is its own `sim::Network` host with its own access links, so one interface
+// can fail (`Network::BlockAddress`, a link outage) while the others carry
+// on. The factory binds a socket on the interface whose address it asks for,
+// as the virtual server binds any address it is given; the any address
+// takes the first interface (the default route). An address the host does
+// not have fails with EADDRNOTAVAIL, as for one interface.
+class EmulatedMultiHomedHost final : public p2p::PacketSocketFactory {
+ public:
+  explicit EmulatedMultiHomedHost(ByteNetwork& net) : net_(net) {}
+
+  // Adds an interface with address `ip` in `realm`; its socket server.
+  EmulatedSocketServer& AddInterface(const p2p::IpAddress& ip, int realm = ByteNetwork::kPublicRealm,
+                                     const LinkConfig& up = {}, const LinkConfig& down = {}) {
+    const ByteNetwork::HostId id = net_.AddHost(ip.v4(), realm, up, down);
+    servers_.push_back(std::make_unique<EmulatedSocketServer>(net_, id));
+    return *servers_.back();
+  }
+  // The interface with this address, or nullptr.
+  EmulatedSocketServer* server(const p2p::IpAddress& ip) {
+    for (auto& s : servers_) {
+      if (s->ip() == ip.Normalized()) return s.get();
+    }
+    return nullptr;
+  }
+  size_t interface_count() const { return servers_.size(); }
+
+  std::unique_ptr<p2p::AsyncPacketSocket> CreateUdpSocket(const p2p::SocketAddress& address, uint16_t min_port,
+                                                          uint16_t max_port) override {
+    EmulatedSocketServer* s = For(address.ipaddr());
+    if (!s) return nullptr;
+    return s->CreateUdpSocket(address, min_port, max_port);
+  }
+  std::unique_ptr<p2p::AsyncListenSocket> CreateServerTcpSocket(const p2p::SocketAddress& address, uint16_t min_port,
+                                                                uint16_t max_port, int opts) override {
+    EmulatedSocketServer* s = For(address.ipaddr());
+    if (!s) return nullptr;
+    return s->CreateServerTcpSocket(address, min_port, max_port, opts);
+  }
+  std::unique_ptr<p2p::AsyncPacketSocket> CreateClientTcpSocket(Timestamp now,
+                                                                const p2p::SocketAddress& local_address,
+                                                                const p2p::SocketAddress& remote_address,
+                                                                const p2p::PacketSocketTcpOptions& options) override {
+    EmulatedSocketServer* s = For(local_address.ipaddr());
+    if (!s) return nullptr;
+    return s->CreateClientTcpSocket(now, local_address, remote_address, options);
+  }
+
+  // Delivers what has reached any of the interfaces by `now`.
+  void Deliver(Timestamp now) {
+    for (auto& s : servers_) s->Deliver(now);
+  }
+  Timestamp NextEvent() const {
+    Timestamp t = net_.NextEvent();
+    for (const auto& s : servers_) t = std::min(t, s->NextEvent());
+    return t;
+  }
+
+ private:
+  EmulatedSocketServer* For(const p2p::IpAddress& ip) {
+    if (servers_.empty()) return nullptr;
+    if (p2p::IpIsAny(ip)) return servers_.front().get();
+    return server(ip);
+  }
+
+  ByteNetwork& net_;
+  std::vector<std::unique_ptr<EmulatedSocketServer>> servers_;
+};
+
 }  // namespace sm::sim
