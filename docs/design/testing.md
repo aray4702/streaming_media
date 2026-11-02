@@ -41,6 +41,15 @@ symmetric mapping and filtering), plus binding timeouts and hairpinning
 (a home NAT behind a carrier-grade NAT). The test bench call does not use
 it yet. Its tests are the `Nat` and `SimNetwork` suites.
 
+`include/sm/sim/emulated_sockets.h` (#996) gives each host a socket layer
+on that network: `EmulatedSocketServer` is a `p2p::PacketSocketFactory`
+(libwebrtc's `api/packet_socket_factory.h`) whose UDP sockets bind ports
+with libwebrtc's VirtualSocketServer rules and send and receive through
+the host's access links and NATs. The ICE ports run on it in the bench;
+OS sockets implement the same interface on devices. Its tests are the
+`EmulatedSockets` suite, with the address types in `P2pIpAddress` and
+`P2pSocketAddress`.
+
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,
 tones and room impulse responses. Simulations step a virtual clock in
