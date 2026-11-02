@@ -3,6 +3,12 @@ target_include_directories(sm_test_framework PUBLIC framework)
 sm_configure_target(sm_test_framework)
 
 # One executable per section; one CTest entry per suite (= per algorithm).
+if(SM_WITH_TLS)
+  sm_add_test_exe(sm_unit_tls LABEL unit DEPS sm::tls
+    SOURCES unit/tls/message_digest_test.cc
+    SUITES TlsMessageDigest TlsCryptoRandom)
+endif()
+
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc

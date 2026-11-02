@@ -9,6 +9,20 @@ sm_add_library(core SOURCES
 
 set(SM_SECTIONS core)
 
+if(SM_WITH_TLS)
+  # Connectivity (milestone 3): crypto and TLS through BoringSSL, libwebrtc's rtc_base/ interfaces (#984).
+  include(${PROJECT_SOURCE_DIR}/cmake/SmBoringSSL.cmake)
+  sm_add_boringssl()
+  sm_add_library(tls DEPS sm::core SOURCES
+    tls/message_digest.cc
+    tls/boringssl_digest.cc
+    tls/crypto_random.cc)
+  target_link_libraries(sm_tls PRIVATE sm_boringssl_crypto)
+  target_compile_definitions(sm_tls PUBLIC SM_WITH_TLS=1)
+  # Not in the sm::sm umbrella or the install export yet: it links BoringSSL's targets, which the export
+  # set doesn't carry. Connectivity code links sm::tls itself until the package exports BoringSSL (#984).
+endif()
+
 if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES
     loss/nack_tracker.cc
