@@ -19,7 +19,17 @@ if(EMSCRIPTEN)
 else()
   set(_sm_tls_default ON)
 endif()
-option(SM_WITH_TLS      "Connectivity: TLS, DTLS and crypto through BoringSSL (sm::tls)" ${_sm_tls_default})
+option(SM_WITH_TLS      "Connectivity: TLS, DTLS and crypto through BoringSSL or Mbed TLS (sm::tls)" ${_sm_tls_default})
+# The TLS library under sm::tls (#998, as decided on #944): BoringSSL, as libwebrtc M157 builds, or Mbed TLS (3.6
+# LTS) for microcontrollers such as the ESP32.
+set(SM_TLS_BACKEND boringssl CACHE STRING "TLS library for sm::tls: boringssl or mbedtls")
+set_property(CACHE SM_TLS_BACKEND PROPERTY STRINGS boringssl mbedtls)
+if(NOT SM_TLS_BACKEND MATCHES "^(boringssl|mbedtls)$")
+  message(FATAL_ERROR "SM_TLS_BACKEND must be boringssl or mbedtls, not '${SM_TLS_BACKEND}'")
+endif()
+# With the tests: build the other backend too, run the TLS unit tests on it, and run a BoringSSL <-> mbedTLS DTLS-SRTP
+# handshake in one test binary (tests/unit/tls/cross_test.cc).
+option(SM_TLS_CROSS_TEST "Test both TLS backends and a BoringSSL <-> mbedTLS handshake" ON)
 option(SM_ENABLE_METRICS "Compile metrics export (off = no-op)"    ON)
 option(SM_ENABLE_EVENTS  "Compile the structured event log"        ON)
 # Issue #988 (C8): the getStats-style snapshot (rtp::Session::GetStats), and the text log's

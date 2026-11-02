@@ -19,6 +19,7 @@
 #include "sm/tls/ssl_identity.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 namespace {
 
 // The signature algorithm OIDs libwebrtc accepts (boringssl_certificate.cc).
@@ -316,4 +317,5 @@ std::string DerToPem(std::string_view type, std::span<const uint8_t> der) {
   return pem;
 }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

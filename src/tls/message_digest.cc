@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 namespace {
 
 constexpr size_t kBlockSize = 64;  // Valid for SHA-256 and below (message_digest.cc).
@@ -78,4 +79,5 @@ std::string ComputeHmac(std::string_view alg, std::string_view key, std::string_
   return n ? HexEncode(std::span<const uint8_t>(out.data(), n)) : std::string();
 }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls

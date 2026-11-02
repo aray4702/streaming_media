@@ -1,12 +1,13 @@
-// libwebrtc's rtc_base/crypto_random.cc (M157), on BoringSSL's RAND_bytes (#984).
+// libwebrtc's rtc_base/crypto_random.cc (M157), on the backend's generator (#984; mbedTLS, #998).
 #include "sm/tls/crypto_random.h"
 
 #include <mutex>
 #include <vector>
 
-#include <openssl/rand.h>
+#include "backend_random.h"
 
 namespace sm::tls {
+inline namespace SM_TLS_BACKEND_NS {
 namespace {
 
 // TestRandomGenerator: libwebrtc's fixed linear congruential sequence, seed 7.
@@ -28,7 +29,7 @@ bool Generate(uint8_t* buf, size_t len) {
     for (size_t i = 0; i < len; ++i) buf[i] = static_cast<uint8_t>(g_test.Next());
     return true;
   }
-  return len == 0 || RAND_bytes(buf, len) > 0;
+  return len == 0 || BackendRandomBytes(buf, len);
 }
 
 constexpr char kBase64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -91,4 +92,5 @@ void SetRandomTestMode(bool test) {
   g_test = TestGenerator{};
 }
 
+}  // namespace SM_TLS_BACKEND_NS
 }  // namespace sm::tls
