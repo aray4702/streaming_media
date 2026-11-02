@@ -468,3 +468,7 @@ pc/sdp_payload_type_suggester.h
 pc/simulcast_sdp_serializer.cc
 pc/simulcast_sdp_serializer.h
 pc/jsep_transport_collection.h
+pc/rtc_stats_collector.cc
+pc/rtc_stats_collector.h
+api/stats/rtcstats_objects.h
+api/stats/rtc_stats.h
