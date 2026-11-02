@@ -12,6 +12,7 @@
 
 #include "sm/core/units.h"
 #include "sm/p2p/packet_transport_internal.h"
+#include "sm/p2p/transport_description.h"
 
 namespace sm::p2p {
 
@@ -19,14 +20,6 @@ namespace sm::p2p {
 enum class IceTransportStateInternal { kInit, kConnecting, kCompleted, kFailed };
 // api/transport/enums.h's IceTransportState: the standard RTCIceTransportState.
 enum class IceTransportState { kNew, kChecking, kConnected, kCompleted, kFailed, kDisconnected, kClosed };
-// p2p/base/transport_description.h.
-enum class IceRole { kControlling, kControlled, kUnknown };
-enum class IceMode { kFull, kLite };
-struct IceParameters {
-  std::string ufrag;
-  std::string pwd;
-  bool renomination = false;
-};
 enum class ContinualGatheringPolicy { kGatherOnce, kGatherContinually };
 
 // IceConfig: unset fields take P2PTransportChannel's defaults (#1002 ports the *_or_default accessors).

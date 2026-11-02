@@ -97,6 +97,14 @@ class TestPort final : public Port {
   }
   bool SupportsProtocol(std::string_view protocol) const override { return protocol == UDP_PROTOCOL_NAME; }
   ProtocolType GetProtocol() const override { return PROTO_UDP; }
+  Connection* CreateConnection(Timestamp now, const Candidate& remote_candidate, CandidateOrigin) override {
+    auto conn = std::make_unique<ProxyConnection>(now, this, 0, remote_candidate);
+    Connection* raw = conn.get();
+    AddOrReplaceConnection(std::move(conn));
+    // Set use-candidate attribute flag as this will add USE-CANDIDATE attribute in STUN binding requests.
+    raw->set_use_candidate_attr(true);
+    return raw;
+  }
   void PrepareAddress(Timestamp) override {
     AddAddress(SocketAddress(network()->GetBestIP(), 5000), SocketAddress(network()->GetBestIP(), 5000),
                SocketAddress(), "udp", "", "", IceCandidateType::kHost, ICE_TYPE_PREFERENCE_HOST, 0, "", true);

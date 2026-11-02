@@ -627,13 +627,45 @@ error's `number()` (401 gives 1, a x00 code 0 and no candidate error). Differenc
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | Network thread, posted tasks, `delete this` on timeout | `now` passed in, `Process(now)` at `NextProcessTime()`; a dead port sets `dead()` and signals, the owner deletes it | The library's time model (#996, #997) |
-| Connections | `Connection`, `CreateConnection`, `GetConnection`, `DestroyConnection` | Not yet | #1000 |
+| Connections | `Connection`, `CreateConnection`, `GetConnection`, `DestroyConnection` | Ported (10.4) | #1000 |
 | Hostnames | STUN servers by name (DNS resolver), mDNS host candidates, `ToSanitizedCopy` | IP addresses only; no mDNS | The library's addresses carry no hostname; name resolution is the host stack's (C11, C12) |
 | Local network access permission | Chromium's factory; none means granted | Always granted | No permission factory in the library |
 | Candidate SDP parsing, fingerprint, network slice | `ParseCandidateString`, the TLS `fingerprint` extension, `NetworkSlice` | Not ported (writing the attribute is) | SDP stays with the host stack; TLS candidates are C4; slices are behind `WebRTC-UnifiedCommunications`, off by default |
 | Field trials | `WebRTC-IncreaseIceCandidatePriorityHostSrflx`, `-UseDifferentiatedCellularCosts`, `-AddNetworkCostToVpn` | The first is `Port::Parameters::increase_host_srflx_priority` (off); the others at their default (off) | Defaults as libwebrtc |
 | Foundation HMAC-SHA256 and random bytes | BoringSSL | The STUN crypto hooks (`StunCrypto::hmac_sha256`, installed by `InstallStunCryptoFromTls`); without them a CRC-32 of the same input, tests only | No dependencies in the library, as 10.1 |
 | Network enumeration | `NetworkManager` builds `Network`s and their preferences | The caller builds a `Network` | Comes with `BasicPortAllocator` (#1001) |
+
+### 10.4 Connections: candidate pairs and their checks (`src/p2p/connection.cc`, C3 part 4, #1000)
+
+Ported as a unit from `p2p/base/connection.{h,cc}` and `connection_info.{h,cc}`, with the connection parts of
+`port.{h,cc}` (`CreateConnection`, `AddOrReplaceConnection`, `GetConnection`, `DestroyConnection[Async]`, the
+packets of a known address going to its connection, `SetIceParameters` and the network cost reaching the
+connections, the port timeout restarting when the last connection goes) and `stun_port.cc`'s
+`UDPPort::CreateConnection`, plus `p2p_transport_channel_ice_field_trials.h` (`IceFieldTrials`, defaults) and
+`transport_description.h`'s `IceRole`, `IceMode` and `IceParameters` (one definition for the port and the ICE
+transport). Same constants and defaults: `p2p_constants` (`kConnectionWriteConnectFailures` 5,
+`kConnectionWriteConnectTimeout` 5 s, `kConnectionWriteTimeout` 15 s, `kWeakConnectionReceiveTimeout` 2.5 s,
+`kDeadConnectionReceiveTimeout` 30 s, `kMinConnectionLifetime` 10 s, `kConnectionResponseTimeout` 60 s), the RTT
+(3 s default, 3:1 average, 2 x RTT clamped to [100 ms, 60 s] for the failure window), the check's attributes
+(USERNAME, GOOG-NETWORK-INFO, ICE-CONTROLLING/CONTROLLED, USE-CANDIDATE, NOMINATION, PRIORITY with the prflx type
+preference, RETRANSMIT-COUNT, GOOG-MISC-INFO), the response (XOR-MAPPED-ADDRESS, the retransmit count echoed,
+GOOG-PING announce), error handling (401/420/500 retry, 487 role conflict, others fail the pair), local
+peer-reflexive candidates from XOR-MAPPED-ADDRESS, GOOG-PING (announced, used with `enable_goog_ping`, off) and
+GOOG-DELTA. Consent freshness is libwebrtc's write-state machine (writable, unreliable, timed out); RFC 7675's own
+30 s consent timer is not in M157 either. The `connection_unittest.cc` cases and the connection cases of
+`port_unittest.cc` are in `tests/unit/p2p/connection_test.cc`, with two UDP ports over the emulated network (no
+loss, 10 % loss on 5 seeds, an outage). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Clock reads, `DestroyConnectionAsync` posts the delete | `now` passed in (a packet's arrival time); the port deletes it at its next `Process` | The library's time model, as 10.3 |
+| Port and connection lifetime | `WeakPtr<PortInterface>` | A plain pointer cleared by `Shutdown()`; the port shuts its connections down before it goes | Same observable behaviour without weak pointers |
+| STUN transactions | Each `Connection` has a `StunRequestManager` on the network thread | The same; the port's `Process` runs them | Time model |
+| DTLS-in-STUN piggyback | `RegisterDtlsPiggyback`, behind a field trial that is off | Not ported | Off by default; not in #1006 either |
+| RTC event log | `IceEventLog` candidate-pair events | Not ported | No event log in the library |
+| Stats timestamps | `last_data_received`/`last_data_sent` converted to the Unix epoch | In the caller's time base | No wall clock in the library |
+| `GOOG-DELTA-ACK` consumer | `RTCErrorOr<const StunUInt64Attribute*>` | The attribute and a `GoogDeltaAckError` (unsupported, internal) | No `RTCError` type |
+| RTT estimate and rate trackers | `EventBasedExponentialMovingAverage`, `BitrateTracker` | The same algorithms; `BitrateTracker` as `RateStatistics` with scale 8000 | Their files are not in `reference/` yet (asked on #1000) |
 
 ## Open questions for the Owner
 
