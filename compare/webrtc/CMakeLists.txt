@@ -45,6 +45,7 @@ file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
 # The connectivity layer's TLS module (sm::tls, #984) links BoringSSL, which this build (against libwebrtc's own
 # BoringSSL symbols) doesn't take; the comparison doesn't use it.
 list(FILTER SM_SOURCES EXCLUDE REGEX "/src/tls/")
+list(FILTER SM_SOURCES EXCLUDE REGEX "/src/p2p/stun_crypto_tls\\.cc$")
 # Same test bench sources as sm_testbench_lib (testbench/CMakeLists.txt).
 add_library(sm_all STATIC ${SM_SOURCES} ${SM_ROOT}/testbench/scenario.cc ${SM_ROOT}/testbench/call.cc
             ${SM_ROOT}/testbench/turn_detector.cc ${SM_ROOT}/testbench/ai_source.cc)
