@@ -341,6 +341,13 @@ pc/srtp_session.h
 pc/srtp_session_unittest.cc
 pc/srtp_transport.cc
 pc/srtp_transport.h
+pc/srtp_transport_unittest.cc
+pc/dtls_srtp_transport_unittest.cc
+pc/test/srtp_test_util.h
+pc/test/rtp_transport_test_util.h
+pc/rtp_transport.h
+pc/rtp_transport.cc
+pc/rtp_transport_internal.h
 pc/webrtc_sdp.h
 rtc_base/base64.cc
 rtc_base/base64.h
