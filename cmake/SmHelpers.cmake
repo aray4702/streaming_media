@@ -14,6 +14,10 @@ function(sm_configure_target target)
                              -fno-omit-frame-pointer -fno-sanitize-recover=all)
       target_link_options(${target} PRIVATE -fsanitize=address,undefined)
     endif()
+    if(SM_BUILD_FUZZERS)
+      # Coverage feedback for libFuzzer in the library code too (fuzz/).
+      target_compile_options(${target} PRIVATE -fsanitize=fuzzer-no-link)
+    endif()
   endif()
   if(EMSCRIPTEN)
     # Test and benchmark executables hold seconds of audio/video in memory;

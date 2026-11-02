@@ -8,6 +8,8 @@
 //   sm_testbench --check a.scn                        parse only
 //   sm_testbench --link-trace=DIR a.scn               write DIR/<scenario>.<seed>.sm.trace.csv: every packet offered to the forward link
 //                                                     (and .sm.reverse.csv: the reverse link)
+//   sm_testbench --packet-dump=DIR a.scn              write DIR/<scenario>.<seed>.<fwd|rev>.<kind>.<n>.bin: the first 64 datagrams
+//                                                     of each kind offered to each link (seeds for fuzz/, #989)
 //   sm_testbench --metrics                            list metric names
 //   echo "at 0s loss=5%" | sm_testbench -             scenario from stdin
 #include <chrono>
@@ -15,6 +17,8 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <map>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -41,7 +45,7 @@ bool ReadFile(const std::string& path, std::string* out) {
 int Usage() {
   std::fprintf(stderr,
                "usage: sm_testbench [--json=<file|->] [--timeseries] [--library] [--check] [--quiet]\n"
-               "                    [--link-trace=<dir>] <scenario.scn|->...\n"
+               "                    [--link-trace=<dir>] [--packet-dump=<dir>] <scenario.scn|->...\n"
                "       sm_testbench --metrics\n");
   return 2;
 }
@@ -49,13 +53,14 @@ int Usage() {
 }  // namespace
 
 int main(int argc, char** argv) {
-  std::string json_path, trace_dir;
+  std::string json_path, trace_dir, dump_dir;
   bool timeseries = false, library = false, check_only = false, quiet = false;
   std::vector<std::string> files;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a.rfind("--json=", 0) == 0) json_path = a.substr(7);
     else if (a.rfind("--link-trace=", 0) == 0) trace_dir = a.substr(13);
+    else if (a.rfind("--packet-dump=", 0) == 0) dump_dir = a.substr(14);
     else if (a == "--timeseries") timeseries = true;
     else if (a == "--library") library = true;
     else if (a == "--check") check_only = true;
@@ -99,6 +104,17 @@ int main(int argc, char** argv) {
     opt.video_trace = opt.link_trace;
     opt.bwe_trace = opt.link_trace;
     opt.audio_trace = opt.link_trace;
+    std::map<std::string, int> dumped;
+    if (!dump_dir.empty()) {
+      const std::string base = dump_dir + "/" + parsed.scenario->name + "." + std::to_string(parsed.scenario->seed);
+      opt.packet_sink = [&dumped, base](const char* kind, bool forward, std::span<const uint8_t> bytes) {
+        const std::string key = std::string(forward ? "fwd." : "rev.") + kind;
+        int& n = dumped[key];
+        if (n >= 64) return;
+        std::ofstream(base + "." + key + "." + std::to_string(n++) + ".bin", std::ios::binary)
+            .write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
+      };
+    }
     auto t0 = std::chrono::steady_clock::now();
     auto report = sm::testbench::RunCall(*parsed.scenario, opt);
     double wall_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();

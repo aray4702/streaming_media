@@ -2372,6 +2372,10 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
           }
         }
       }
+      if (opt.packet_sink) {
+        static const char* const kNames[] = {"audio", "video", "rtx", "fec", "padding", "rtcp", "cross"};
+        opt.packet_sink(kNames[static_cast<int>(kind)], is_forward, p.bytes);
+      }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
       link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
     }
