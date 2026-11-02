@@ -13,23 +13,35 @@ set(SM_FUZZ_TARGETS
   red
   rtcp
   rtp_packet
+  stun
   transport_feedback
   ulpfec
 )
+# The library each target links: sm::rtp (which brings the RTP, RTCP, loss
+# and timing parsers) unless set here.
+set(SM_FUZZ_DEPS_stun sm::p2p)
+# Extra sources: the STUN tests' HMAC-SHA1 and MD5 for the crypto hooks.
+set(SM_FUZZ_SOURCES_stun ${PROJECT_SOURCE_DIR}/tests/unit/p2p/test_crypto.cc)
+set(SM_FUZZ_INCLUDES_stun ${PROJECT_SOURCE_DIR}/tests/unit/p2p)
 
 foreach(t ${SM_FUZZ_TARGETS})
+  if(DEFINED SM_FUZZ_DEPS_${t})
+    set(deps ${SM_FUZZ_DEPS_${t}})
+  else()
+    set(deps sm::rtp)
+  endif()
   if(SM_BUILD_TESTS AND NOT EMSCRIPTEN)
-    add_executable(sm_fuzz_replay_${t} ${t}_fuzzer.cc replay_main.cc)
-    target_include_directories(sm_fuzz_replay_${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(sm_fuzz_replay_${t} PRIVATE sm::rtp)
+    add_executable(sm_fuzz_replay_${t} ${t}_fuzzer.cc replay_main.cc ${SM_FUZZ_SOURCES_${t}})
+    target_include_directories(sm_fuzz_replay_${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${SM_FUZZ_INCLUDES_${t}})
+    target_link_libraries(sm_fuzz_replay_${t} PRIVATE ${deps})
     sm_configure_target(sm_fuzz_replay_${t})
     add_test(NAME fuzz.${t} COMMAND sm_fuzz_replay_${t} ${CMAKE_CURRENT_SOURCE_DIR}/corpus/${t})
     set_tests_properties(fuzz.${t} PROPERTIES LABELS fuzz)
   endif()
   if(SM_BUILD_FUZZERS)
-    add_executable(${t}_fuzzer ${t}_fuzzer.cc)
-    target_include_directories(${t}_fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-    target_link_libraries(${t}_fuzzer PRIVATE sm::rtp)
+    add_executable(${t}_fuzzer ${t}_fuzzer.cc ${SM_FUZZ_SOURCES_${t}})
+    target_include_directories(${t}_fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${SM_FUZZ_INCLUDES_${t}})
+    target_link_libraries(${t}_fuzzer PRIVATE ${deps})
     sm_configure_target(${t}_fuzzer)
     target_compile_options(${t}_fuzzer PRIVATE -fsanitize=fuzzer)
     target_link_options(${t}_fuzzer PRIVATE -fsanitize=fuzzer)

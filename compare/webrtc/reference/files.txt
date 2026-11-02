@@ -416,3 +416,9 @@ rtc_base/virtual_socket_server.h
 # STUN fuzzers (#1017)
 test/fuzzers/stun_parser_fuzzer.cc
 test/fuzzers/stun_validator_fuzzer.cc
+# Connection's RTT EMA and bitrate tracker (#1000)
+rtc_base/numerics/event_based_exponential_moving_average.h
+rtc_base/numerics/event_based_exponential_moving_average.cc
+rtc_base/numerics/event_based_exponential_moving_average_unittest.cc
+rtc_base/bitrate_tracker.h
+rtc_base/bitrate_tracker.cc
