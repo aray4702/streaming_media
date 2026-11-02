@@ -37,7 +37,13 @@ endif()
 sm_add_library(p2p DEPS sm::core SOURCES
   p2p/socket_address.cc
   p2p/async_packet_socket.cc
+  p2p/dtls_utils.cc
   p2p/stun.cc)
+if(SM_WITH_TLS)
+  # DTLS over an ICE transport (C5 part 2, #1006): libwebrtc's p2p/dtls/dtls_transport on sm::tls.
+  sm_add_library(p2p_dtls DEPS sm::p2p sm::tls SOURCES
+    p2p/dtls_transport.cc)
+endif()
 
 if(SM_WITH_LOSS)
   sm_add_library(loss DEPS sm::core SOURCES

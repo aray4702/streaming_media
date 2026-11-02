@@ -28,6 +28,11 @@ inline constexpr int kSrtpAeadAes256Gcm = 0x0008;
 inline constexpr int kDtls12 = 0xfefd;
 inline constexpr int kDtls13 = 0xfefc;
 
+// TLS named groups (IANA; BoringSSL's SSL_GROUP_*).
+inline constexpr uint16_t kSslGroupSecp256r1 = 23;
+inline constexpr uint16_t kSslGroupSecp384r1 = 24;
+inline constexpr uint16_t kSslGroupX25519 = 29;
+
 enum class DtlsRole { kClient, kServer };
 enum class DtlsState { kNew, kConnecting, kConnected, kFailed, kClosed };
 
@@ -38,6 +43,11 @@ struct DtlsConfig {
   // The highest version offered: DTLS 1.3 when the backend has it (GetMaxVersion with SSL_PROTOCOL_NOT_GIVEN),
   // DTLS 1.2 to cap it. The lowest is always DTLS 1.2.
   int max_version = kDtls13;
+  // The ephemeral key-exchange groups (CryptoOptions::ephemeral_key_exchange_cipher_groups, set with
+  // SSL_set1_group_ids): GetDefaultEphemeralKeyExchangeCipherGroups without the WebRTC-EnableDtlsPqc trial, X25519,
+  // P-256, P-384 (TLS group ids). Without it BoringSSL's own default answers a DTLS 1.3 ClientHello with a
+  // HelloRetryRequest, an extra round trip libwebrtc doesn't have (#1006).
+  std::vector<uint16_t> ssl_group_ids = {kSslGroupX25519, kSslGroupSecp256r1, kSslGroupSecp384r1};
   int mtu = 1200;                     // dtls_mtu_
   int initial_timeout_ms = 50;        // dtls_handshake_timeout_ms_
 };
@@ -57,7 +67,11 @@ class DtlsTransport {
   bool Start(Timestamp now);
   // A datagram from the peer (handshake or application data).
   void OnPacket(std::span<const uint8_t> datagram, Timestamp now);
-  // When the handshake's retransmission timer fires, if one is running, and its handler.
+  // The first handshake retransmission timeout (SetInitialRetransmissionTimeout): the DTLS transport sets it from
+  // the ICE RTT before Start (#1006). Later calls change the next handshake's.
+  void SetInitialRetransmissionTimeout(int timeout_ms);
+  // When the retransmission timer fires, if one is running, and its handler. It runs while connecting, and after the
+  // handshake while the last flight waits for an ACK (DTLS 1.3).
   std::optional<Timestamp> NextTimeout() const;
   void OnTimeout(Timestamp now);
 
@@ -68,6 +82,8 @@ class DtlsTransport {
   std::vector<std::vector<uint8_t>> TakeReceived();
 
   DtlsState state() const { return state_; }
+  // The handshake finished (IsTlsConnected), even if the peer's certificate waits for its fingerprint.
+  bool handshake_complete() const;
   DtlsRole role() const { return role_; }
   // The negotiated version (kDtls12 or kDtls13), or 0 before the handshake completes.
   int version() const;

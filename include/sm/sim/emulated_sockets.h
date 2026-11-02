@@ -139,7 +139,8 @@ class EmulatedSocketServer final : public p2p::PacketSocketFactory {
         ++dropped_no_socket_;
         continue;
       }
-      it->second->Receive(p2p::ReceivedPacket{std::span<const uint8_t>(d.payload), ToP2p(d.src), now});
+      it->second->Receive(p2p::ReceivedPacket{std::span<const uint8_t>(d.payload), ToP2p(d.src), now,
+                                                  p2p::ReceivedPacket::kNotDecrypted});
     }
   }
   // When the network next moves anything (any host's links).
