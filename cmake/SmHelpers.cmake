@@ -25,7 +25,9 @@ function(sm_configure_target target)
   endif()
   target_compile_definitions(${target} PUBLIC
     SM_ENABLE_METRICS=$<BOOL:${SM_ENABLE_METRICS}>
-    SM_ENABLE_EVENTS=$<BOOL:${SM_ENABLE_EVENTS}>)
+    SM_ENABLE_EVENTS=$<BOOL:${SM_ENABLE_EVENTS}>
+    SM_ENABLE_STATS=$<BOOL:${SM_ENABLE_STATS}>
+    SM_LOG_MIN_LEVEL=${SM_LOG_MIN_LEVEL_INDEX})
 endfunction()
 
 # sm_add_library(<section> SOURCES ... DEPS ...)

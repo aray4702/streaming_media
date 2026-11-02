@@ -427,6 +427,7 @@ class RtpReceiver : public MetricsSource {
 
   // Report block source for rtp::RtcpEngine::AddReceiveStatistics.
   timing::ReceiveStatistics* receive_statistics() { return &stats_rtp_; }
+  const timing::ReceiveStatistics& receive_statistics() const { return stats_rtp_; }
   // The RTX SSRC's own statistics (RtxReceiveStream counts every packet on it, padding included,
   // in the receive statistics, video_receive_stream2.cc:313-316); null without RTX.
   timing::ReceiveStatistics* rtx_receive_statistics() { return stats_rtx_ ? &*stats_rtx_ : nullptr; }

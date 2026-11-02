@@ -96,6 +96,28 @@ lightweight counterpart of the RTC event log. Building with
 `SM_ENABLE_METRICS=0` turns histogram updates and export into no-ops for
 the smallest targets.
 
+Two more observability outputs follow the same pattern (issue #988,
+requirement C8; `include/sm/core/observability.h` has the table):
+
+- **Stats snapshot:** `rtp::Session::GetStats(now, &report)` fills a
+  getStats-style `StatsReport` (`include/sm/rtp/stats_report.h`): per
+  stream packets, bytes, loss, jitter, RTT, NACK, PLI and FIR counts, the
+  audio jitter buffer's lifetime stats, and freeze stats from the app's
+  `video::FreezeDetector` (`SetFreezeDetector`). It is computed only when
+  asked. `SM_ENABLE_STATS=OFF` compiles it out, and `GetStats` returns
+  `ObsStatus::kNotSupported`.
+- **Text log:** `SM_LOG(kWarning, "...", ...)` (`include/sm/core/logging.h`),
+  with libwebrtc's severities. `SM_LOG_MIN_LEVEL` (CMake: `VERBOSE`, `INFO`,
+  `WARNING`, `ERROR` or `NONE`) compiles out the levels below it;
+  `SetLogSeverity` picks the runtime level (warnings by default) and returns
+  `kNotSupported` for a level that is compiled out. Output goes to stderr
+  unless the app sets a sink.
+
+A runtime switch never turns on something compiled out. None of these
+outputs changes the media: `tools/check_observability_off.py` builds the
+test bench with all of them off and checks that every scenario's media
+metrics and checks are bit-identical to the default build's.
+
 ## How the pieces form a call
 
 ```
