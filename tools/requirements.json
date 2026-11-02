@@ -908,6 +908,186 @@
    "end": "",
    "depends_on": [],
    "cost": ""
+  },
+  {
+   "id": "C1",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "TLS backend interface with BoringSSL and mbedTLS",
+   "acceptance": "(1) libwebrtc's SSLStreamAdapter, SSLIdentity, SSLCertificate, SSLFingerprint, MessageDigest and CryptoRandom interfaces ported (rtc_base/); (2) a BoringSSL backend for Linux, macOS, Android and iOS, and an mbedTLS backend (DTLS 1.2 only); (3) each backend reports the DTLS versions it supports and the handshake agrees on the highest both sides have; (4) CI runs BoringSSL <-> mbedTLS handshakes; (5) not built for wasm.",
+   "status": "open",
+   "depends_on": [],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C2",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "STUN messages",
+   "acceptance": "api/transport/stun.{h,cc} ported: parse and build every attribute WebRTC uses, MESSAGE-INTEGRITY (HMAC-SHA1) and FINGERPRINT (CRC-32) through C1; libwebrtc's stun_unittest cases pass; a fuzzer for the parser (C10).",
+   "status": "open",
+   "depends_on": [
+    "C1"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C3",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "ICE agent",
+   "acceptance": "p2p/ ported: host, server-reflexive and relay candidates; connectivity checks, nomination and consent freshness (RFC 7675); continual gathering for network changes; the ICE controller; ICE-lite for the AI server. In the test bench's emulated network with NATs, ours matches libwebrtc's ICE on connection time, the pair chosen and recovery after a network change.",
+   "status": "open",
+   "depends_on": [
+    "C2"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C4",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "TURN client over UDP, TCP and TLS",
+   "acceptance": "p2p/client TURN port ported: allocations, permissions, channel binding, refresh; long-term and short-lived (REST) credentials; TURN over TLS on 443 through C1. Tested against an emulated TURN server in the bench and against coturn (docs/deploy/turn-server.md).",
+   "status": "open",
+   "depends_on": [
+    "C3",
+    "C1"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C5",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "DTLS-SRTP",
+   "acceptance": "DTLS over ICE (p2p/dtls), the role from SDP a=setup, the peer's certificate checked against the SDP fingerprint, SRTP keys exported; SRTP/SRTCP with AES-CM-128-HMAC-SHA1-80 and AES-GCM, replay protection (pc/srtp_*, libsrtp); unencrypted media only inside the test bench.",
+   "status": "open",
+   "depends_on": [
+    "C1",
+    "C3"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C6",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "SDP offer/answer and browser interop",
+   "acceptance": "A JSEP subset (pc/media_session, jsep_transport, session_description): offer and answer with Unified Plan, BUNDLE, rtcp-mux, Opus, H.264 Constrained Baseline, transport-cc, the data channel section. CI runs a call between our endpoint and headless Chrome; Firefox and Safari later.",
+   "status": "open",
+   "depends_on": [
+    "C5"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C7",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Data channels",
+   "acceptance": "net/dcsctp ported: SCTP over DTLS, reliable and partial-reliable, ordered and unordered channels, DCEP. Behind a build switch (SM_WITH_DATACHANNEL) and a runtime switch per connection; off means no SCTP code and no m=application.",
+   "status": "open",
+   "depends_on": [
+    "C5"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C8",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Observability switches",
+   "acceptance": "Connection stats (getStats-style: candidate pairs, the selected path, RTT, bytes, ICE and DTLS state) behind SM_ENABLE_STATS, text logging behind SM_LOG_MIN_LEVEL, with SM_ENABLE_METRICS and SM_ENABLE_EVENTS, each with a runtime switch. CI builds everything off and checks that every scenario's media results are bit-identical to the default build.",
+   "status": "open",
+   "depends_on": [],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C9",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Small group calls (mesh)",
+   "acceptance": "Several peer connections per endpoint, each with its own ICE, DTLS and congestion control, for 1:1 and small groups of up to about 4 (Owner, 2026-11-01: no SFU). A 3-4 party test bench scenario reports each peer's metrics and the upload cost.",
+   "status": "open",
+   "depends_on": [
+    "C3",
+    "C5"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C10",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Fuzzing of network parsers",
+   "acceptance": "libFuzzer targets for every parser that reads network input (RTP, RTCP, STUN, TURN, DTLS records, SDP, SCTP), run in CI; a crash is a release blocker.",
+   "status": "open",
+   "depends_on": [
+    "C2"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C11",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Android and iOS",
+   "acceptance": "CI builds and unit-tests the library for Android (arm64, API 24+) and iOS (device and simulator); platform media: audio I/O (AAudio/Oboe, AudioUnit), camera capture, hardware H.264 (MediaCodec, VideoToolbox).",
+   "status": "open",
+   "depends_on": [],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
+  },
+  {
+   "id": "C12",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "End-to-end calls on real networks",
+   "acceptance": "Calls between web, Android and iOS, and from each to the AI server, over real networks with the self-hosted TURN server (coturn on Lightsail), with the conversation metrics of milestone 2 reported.",
+   "status": "open",
+   "depends_on": [
+    "C6",
+    "C9",
+    "C11",
+    "C4"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-01",
+   "end": ""
   }
  ]
 }
