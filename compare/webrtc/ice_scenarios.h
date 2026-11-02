@@ -26,8 +26,22 @@
 // - pair: the candidate types of the controlling side's selected connection (local/remote) when it connected;
 // - checks: STUN binding requests on the connections of both channels (ConnectionInfo::sent_ping_requests_total
 //   summed over IceTransportStats::connection_infos), when connected and at the end of the run.
-// Recovery after a network change (an interface goes away and another appears) needs the multi-interface fixture
-// of #1002 part 3; it is the next part of this item.
+//
+// Network change (part 2): one endpoint's interface goes away and another appears, as in libwebrtc's
+// P2PTransportChannelMultihomedTest (TestFailoverControllingSide, TestFailoverControlledSide,
+// TestContinualGatheringOnNewInterface, TestNetworkBecomesInactive): `kChangeAt` after gathering starts, the
+// endpoint's second interface (kAlternateIp, or kAlternatePrivateIp behind the same NAT) is added to its network
+// manager, the first removed, and the first interface's links go down. Its sockets on the new interface live on a
+// second emulated host (a multihomed machine). Candidates the endpoint removes are not signaled to the other side, on
+// either stack (the fixture signals only new candidates as well). Metrics:
+// - recovered: both endpoints connected again, the changed endpoint's selected connection on the new interface and the
+//   other's selected connection to a new remote address;
+// - recover_ms: time from the change to that;
+// - pair_after: the controlling side's selected candidate types then;
+// - checks: as above, at the end of the run, so only on the connections both stacks still keep then.
+// With PeerConnection's default gathering (gather once), neither stack gathers on the new interface, so the call
+// does not recover without an ICE restart; with continual gathering (RTCConfiguration::continual_gathering_policy =
+// GATHER_CONTINUALLY, IceConfig::continual_gathering_policy) both should.
 #pragma once
 
 #include <algorithm>
@@ -68,6 +82,8 @@ struct Scenario {
   Nat nat[2] = {Nat::kOpen, Nat::kOpen};
   double loss = 0;    // Random loss on every access link, each direction.
   int delay_ms = 10;  // One-way delay of each endpoint's access links (the STUN server's are 5 ms).
+  int change = -1;            // The endpoint whose network changes at kChangeAt, or -1 for none.
+  bool continual = false;     // IceConfig::continual_gathering_policy = kGatherContinually on both endpoints.
 };
 
 // Each pair of NAT types (libwebrtc's P2PTransportChannelTest matrix without the relay and TCP columns), then loss
@@ -100,23 +116,64 @@ inline std::vector<Scenario> Scenarios() {
   return out;
 }
 
+// Network changes: on the controlling side (0) and on the controlled side (1), for a direct pair, a cone-to-port-
+// restricted pair and a port-restricted pair, with continual gathering; and the direct pair with PeerConnection's
+// default gathering (once).
+inline std::vector<Scenario> ChangeScenarios() {
+  std::vector<Scenario> out;
+  const std::pair<Nat, Nat> kPairs[] = {{Nat::kOpen, Nat::kOpen},
+                                        {Nat::kFullCone, Nat::kPortRestricted},
+                                        {Nat::kPortRestricted, Nat::kPortRestricted}};
+  for (auto [a, b] : kPairs) {
+    for (int change : {0, 1}) {
+      Scenario s;
+      s.name = std::string(NatName(a)) + "-" + NatName(b) + "-change" + std::to_string(change) + "-continual";
+      s.nat[0] = a;
+      s.nat[1] = b;
+      s.change = change;
+      s.continual = true;
+      out.push_back(s);
+    }
+  }
+  Scenario once;
+  once.name = "open-open-change0-once";
+  once.change = 0;
+  out.push_back(once);
+  return out;
+}
+
 struct Result {
   bool connected = false;
   double connect_ms = -1;
   std::string pair;  // "host/srflx": local/remote candidate types of the controlling side's selected connection.
   int checks_at_connect = 0;
   int checks_total = 0;
+  // Network-change scenarios only.
+  bool recovered = false;
+  double recover_ms = -1;
+  std::string pair_after;
 };
 
 // The run: until `kRunTime` after gathering starts. libwebrtc's unit tests wait up to 10 s (kDefaultTimeout) for a
 // connection.
 inline constexpr TimeDelta kRunTime = TimeDelta::Seconds(10);
+// A network change comes `kChangeAt` after gathering starts, and the run then lasts `kRecoveryTime` more (the 30 s the
+// libwebrtc fixture's multihomed tests and ours wait for a failover).
+inline constexpr TimeDelta kChangeAt = TimeDelta::Seconds(5);
+inline constexpr TimeDelta kRecoveryTime = TimeDelta::Seconds(30);
+inline TimeDelta RunTime(const Scenario& s) { return s.change < 0 ? kRunTime : kChangeAt + kRecoveryTime; }
 
 // Addresses of the libwebrtc fixture (p2p_transport_channel_unittest.cc kPublicAddrs, kPrivateAddrs, kNatAddrs,
 // kStunAddr with STUN_SERVER_PORT).
 inline constexpr uint32_t kPublicIp[2] = {sim::SocketAddress::Ip(11, 11, 11, 11), sim::SocketAddress::Ip(22, 22, 22, 22)};
 inline constexpr uint32_t kPrivateIp[2] = {sim::SocketAddress::Ip(192, 168, 1, 11),
                                            sim::SocketAddress::Ip(192, 168, 2, 22)};
+// The second interface of a network change: libwebrtc's kAlternateAddrs, or the next private address behind the same
+// NAT.
+inline constexpr uint32_t kAlternateIp[2] = {sim::SocketAddress::Ip(101, 101, 101, 101),
+                                             sim::SocketAddress::Ip(202, 202, 202, 202)};
+inline constexpr uint32_t kAlternatePrivateIp[2] = {sim::SocketAddress::Ip(192, 168, 1, 12),
+                                                    sim::SocketAddress::Ip(192, 168, 2, 23)};
 inline constexpr uint32_t kNatIp[2] = {sim::SocketAddress::Ip(77, 77, 77, 77), sim::SocketAddress::Ip(88, 88, 88, 88)};
 inline constexpr uint32_t kStunIp = sim::SocketAddress::Ip(99, 99, 99, 1);
 inline constexpr uint16_t kStunPort = 3478;
@@ -132,6 +189,11 @@ struct Topology {
   std::unique_ptr<sim::StunServer> stun;
   std::unique_ptr<sim::EmulatedSocketServer> host[2];
   uint32_t ip[2] = {0, 0};
+  // The second interface of a network change (ChangeNetwork).
+  std::unique_ptr<sim::EmulatedSocketServer> alt_host[2];
+  uint32_t alt_ip[2] = {0, 0};
+  int realm_of[2] = {sim::ByteNetwork::kPublicRealm, sim::ByteNetwork::kPublicRealm};
+  sim::LinkConfig link;
 
   Topology(const Scenario& s, uint64_t seed) : net(seed) {
     sim::LinkConfig stun_link;
@@ -152,11 +214,29 @@ struct Topology {
         realm = net.NatRealm(net.AddNat(cfg));
         ip[i] = kPrivateIp[i];
       }
-      sim::LinkConfig link;
       link.base_delay = TimeDelta::Millis(s.delay_ms);
       link.loss_rate = s.loss;
+      realm_of[i] = realm;
+      alt_ip[i] = s.nat[i] == Nat::kOpen ? kAlternateIp[i] : kAlternatePrivateIp[i];
       host[i] = std::make_unique<sim::EmulatedSocketServer>(net, net.AddHost(ip[i], realm, link, link));
     }
+  }
+
+  // Endpoint i's second interface appears (a new host in the same realm, behind the same NAT if any) and the first
+  // one's links go down. The caller adds and removes the interfaces in its network manager.
+  void ChangeNetwork(int i) {
+    alt_host[i] = std::make_unique<sim::EmulatedSocketServer>(net, net.AddHost(alt_ip[i], realm_of[i], link, link));
+    sim::LinkConfig down = link;
+    down.down = true;
+    net.uplink(host[i]->host()).SetConfig(down);
+    net.downlink(host[i]->host()).SetConfig(down);
+  }
+
+  // The host that owns endpoint i's address `ip_addr` (a multihomed machine; any other address, such as the any
+  // address, takes the first interface's).
+  sim::EmulatedSocketServer* HostFor(int i, uint32_t ip_addr) const {
+    if (alt_host[i] && ip_addr == alt_ip[i]) return alt_host[i].get();
+    return host[i].get();
   }
 
   static p2p::SocketAddress StunAddress() { return p2p::SocketAddress(p2p::IpAddress(kStunIp), kStunPort); }
@@ -166,7 +246,24 @@ struct Topology {
     host[0]->Deliver(now);
     host[1]->Deliver(now);
     stun_host->Deliver(now);
+    for (auto& h : alt_host) {
+      if (h) h->Deliver(now);
+    }
   }
+};
+
+// This library's socket factory for endpoint i: its sockets live on the host of the interface they bind to.
+class EndpointSocketFactory final : public p2p::PacketSocketFactory {
+ public:
+  EndpointSocketFactory(const Topology* topo, int i) : topo_(topo), i_(i) {}
+  std::unique_ptr<p2p::AsyncPacketSocket> CreateUdpSocket(const p2p::SocketAddress& address, uint16_t min_port,
+                                                          uint16_t max_port) override {
+    return topo_->HostFor(i_, address.ipaddr().v4())->CreateUdpSocket(address, min_port, max_port);
+  }
+
+ private:
+  const Topology* topo_;
+  int i_;
 };
 
 // This library's side of one run.
@@ -178,6 +275,7 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
 
   struct Endpoint {
     StaticNetworkManager network_manager;
+    std::unique_ptr<EndpointSocketFactory> socket_factory;
     std::unique_ptr<BasicPortAllocator> allocator;
     std::unique_ptr<P2PTransportChannel> ch;
   };
@@ -187,13 +285,16 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   pc_config.tcp_candidates_enabled = false;  // See the file comment.
   for (int i = 0; i < 2; ++i) {
     ep[i].network_manager.AddInterface(IpAddress(topo.ip[i]));
-    ep[i].allocator = std::make_unique<BasicPortAllocator>(&ep[i].network_manager, topo.host[i].get());
+    ep[i].socket_factory = std::make_unique<EndpointSocketFactory>(&topo, i);
+    ep[i].allocator = std::make_unique<BasicPortAllocator>(&ep[i].network_manager, ep[i].socket_factory.get());
     ConfigureAsPeerConnection(now, ep[i].allocator.get(), ServerAddresses{Topology::StunAddress()}, {}, pc_config);
     ep[i].ch = std::make_unique<P2PTransportChannel>(now, "audio", ICE_CANDIDATE_COMPONENT_RTP, ep[i].allocator.get());
     ep[i].ch->SubscribeCandidateGathered(&ep[i], [&signaling, i](IceTransportInternal*, const Candidate& c) {
       signaling[1 - i].push_back(c);
     });
-    ep[i].ch->SetIceConfig(IceConfig{});
+    IceConfig config;
+    if (s.continual) config.continual_gathering_policy = ContinualGatheringPolicy::kGatherContinually;
+    ep[i].ch->SetIceConfig(config);
     ep[i].ch->SetIceRole(i == 0 ? ICEROLE_CONTROLLING : ICEROLE_CONTROLLED);
     ep[i].ch->SetIceParameters(IceParameters{kUfrag[i], kPwd[i], false});
     ep[i].ch->SetRemoteIceParameters(IceParameters{kUfrag[1 - i], kPwd[1 - i], false});
@@ -215,18 +316,36 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
     }
     return true;
   };
+  auto pair = [&] {
+    const Connection* sel = ep[0].ch->selected_connection();
+    return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
+  };
 
   Result r;
-  const Timestamp until = start + kRunTime;
+  const Timestamp until = start + RunTime(s);
+  const Timestamp change_at = s.change < 0 ? Timestamp::PlusInfinity() : start + kChangeAt;
+  bool changed = false;
+  std::optional<SocketAddress> old_remote;  // The other endpoint's selected remote address before the change.
+  auto recovered = [&] {
+    if (!connected()) return false;
+    const Connection* own = ep[s.change].ch->selected_connection();
+    const Connection* other = ep[1 - s.change].ch->selected_connection();
+    return own->network()->GetBestIP() == IpAddress(topo.alt_ip[s.change]) &&
+           (!old_remote || other->remote_candidate().address() != *old_remote);
+  };
   for (int guard = 0; guard < 5000000; ++guard) {
     if (!r.connected && connected()) {
       r.connected = true;
       r.connect_ms = (now - start).us() / 1000.0;
-      const Connection* sel = ep[0].ch->selected_connection();
-      r.pair = std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
+      r.pair = pair();
       r.checks_at_connect = checks();
     }
-    Timestamp t = topo.net.NextEvent();
+    if (changed && !r.recovered && recovered()) {
+      r.recovered = true;
+      r.recover_ms = (now - change_at).us() / 1000.0;
+      r.pair_after = pair();
+    }
+    Timestamp t = std::min(topo.net.NextEvent(), changed ? Timestamp::PlusInfinity() : change_at);
     for (Endpoint& e : ep) {
       t = std::min(t, e.ch->NextProcessTime());
       t = std::min(t, e.allocator->NextPooledSessionsProcessTime());
@@ -234,6 +353,16 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
     if (!signaling[0].empty() || !signaling[1].empty()) t = std::min(t, now);
     if (t > until) break;
     now = std::max(now, t);
+    if (!changed && now >= change_at) {
+      // The network change, as P2PTransportChannelMultihomedTest's AddAddress and RemoveAddress.
+      changed = true;
+      if (const Connection* other = ep[1 - s.change].ch->selected_connection()) {
+        old_remote = other->remote_candidate().address();
+      }
+      topo.ChangeNetwork(s.change);
+      ep[s.change].network_manager.AddInterface(IpAddress(topo.alt_ip[s.change]));
+      ep[s.change].network_manager.RemoveInterface(IpAddress(topo.ip[s.change]));
+    }
     for (Endpoint& e : ep) {
       e.ch->Process(now);
       e.allocator->ProcessPooledSessions(now);
