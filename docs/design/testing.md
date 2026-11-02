@@ -30,6 +30,17 @@ reports pass or fail on its own line.
 - outages;
 - all of it changeable mid-run (capacity steps, route changes).
 
+`include/sm/sim/network.h` (#985) puts addresses on top of it for the
+connectivity work (#944): IPv4 hosts in realms, each with an access link
+in each direction (a `NetworkLink`, so every impairment above applies),
+datagrams with source and destination addresses, and NATs that rewrite
+them. The NAT is libwebrtc's test NAT (`p2p/test/nat_types.cc`,
+`nat_server.cc`: open cone, address-restricted, port-restricted and
+symmetric mapping and filtering), plus binding timeouts and hairpinning
+(RFC 4787), both defaulting to what libwebrtc's test NAT does. NATs nest
+(a home NAT behind a carrier-grade NAT). The test bench call does not use
+it yet. Its tests are the `Nat` and `SimNetwork` suites.
+
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,
 tones and room impulse responses. Simulations step a virtual clock in
