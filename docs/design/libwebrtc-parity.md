@@ -633,57 +633,7 @@ error's `number()` (401 gives 1, a x00 code 0 and no candidate error). Differenc
 | Candidate SDP parsing, fingerprint, network slice | `ParseCandidateString`, the TLS `fingerprint` extension, `NetworkSlice` | Not ported (writing the attribute is) | SDP stays with the host stack; TLS candidates are C4; slices are behind `WebRTC-UnifiedCommunications`, off by default |
 | Field trials | `WebRTC-IncreaseIceCandidatePriorityHostSrflx`, `-UseDifferentiatedCellularCosts`, `-AddNetworkCostToVpn` | The first is `Port::Parameters::increase_host_srflx_priority` (off); the others at their default (off) | Defaults as libwebrtc |
 | Foundation HMAC-SHA256 and random bytes | BoringSSL | The STUN crypto hooks (`StunCrypto::hmac_sha256`, installed by `InstallStunCryptoFromTls`); without them a CRC-32 of the same input, tests only | No dependencies in the library, as 10.1 |
-| Network enumeration | `NetworkManager` builds `Network`s and their preferences | The caller builds a `Network`, or `NetworkManagerBase` does (10.4) | `BasicPortAllocator` (#1001) |
-
-### 10.5 Port allocation (`src/p2p/{network_manager,port_allocator,basic_port_allocator}.cc`, C3 part 5, #1001)
-
-Ported as a unit from `p2p/base/port_allocator.{h,cc}` and `p2p/client/basic_port_allocator.{h,cc}`, with
-`NetworkManager` and `NetworkManagerBase` from `rtc_base/network.{h,cc}` (`MergeNetworkList`, `SortNetworks`,
-the preferences 127 down, ids from 1, the any-address networks, `GetDefaultLocalAddress`) and `TruncateIP`.
-Same constants and defaults: flags 0, `kDefaultStepDelay` 1 s (`kMinimumStepDelay` 50 ms), at most 5 IPv6
-networks, `CF_ALL`, the loopback ignore mask, the phases (UDP + STUN, relay, TCP) a step delay apart, the
-network filters (ignore mask and VPN preference, link-local, costly within `kNetworkCostLow`, the IPv6 pick by
-adapter type), `DisableEquivalentPhases`, the candidate filter (a public host address passes as reflexive),
-`CandidatePairable`, `SanitizeCandidate`'s related-address rules, pooled sessions and continual gathering
-(networks that go away are pruned with their candidates removed; new ones are gathered on). The UDP and STUN
-cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are in
-`tests/unit/p2p/port_allocator_test.cc`, their counts less libwebrtc's TCP ports. Differences:
-
-| Item | libwebrtc M157 | This library | Why |
-|---|---|---|---|
-| Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
-| TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
-| TURN ports | `TurnPortFactory` by default | Only through a `RelayPortFactoryInterface` the caller gives; none by default. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
-| mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
-| Field trials | `WebRTC-UseTurnServerAsStunServer` | At its default (enabled) | Defaults as libwebrtc |
-| PeerConnection's allocator settings | `pc/peer_connection.cc` sets flags and the step delay | The allocator's own defaults | `pc/peer_connection.cc` is not in `reference/`; the session layer (#1002 onwards) sets them once it is |
-| `FakeNetworkManager` | `rtc_base/fake_network.h` (tests) | `StaticNetworkManager`, the emulated network's (interfaces added and removed, /24 and /64 prefixes) | Not in `reference/` |
-| `ProtocolType`/`IceParameters` | One `IceRole`, `IceParameters` | `IceCredentials` (ufrag, pwd) for the pool, since `ice_transport_internal.h`'s `IceRole` clashes with `port.h`'s | #1002 joins them |
-
-### 10.6 The ICE controller (`src/p2p/{basic_ice_controller,wrapping_active_ice_controller}.cc`, C3 part 6, #1002)
-
-Ported as a unit from `p2p/base/basic_ice_controller.{h,cc}`, `wrapping_active_ice_controller.{h,cc}`,
-`ice_controller_interface.{h,cc}`, `ice_controller_factory_interface.h`, `active_ice_controller_interface.h`,
-`active_ice_controller_factory_interface.h`, `ice_agent_interface.h`, `ice_switch_reason.{h,cc}` and
-`ice_credentials_iterator.{h,cc}`, with `IceConfig`, `NominationMode` and `IceGatheringState` of
-`ice_transport_internal.{h,cc}` (the `*_or_default` values and `IsValid`) and `api/transport/enums.h`
-(`PortPrunePolicy`, the five `VpnPreference` values). Same constants and defaults: the weak and strong ping
-intervals (48 ms, 480 ms), 3 pings at the weak interval per pair, 900 ms for a writable pair while weak or not
-stable and 2.5 s once stable, backup pairs every 25 s, the receiving timeout (2.5 s; recheck delay at most a
-tenth of it, at least 50 ms), the receiving switching delay (1 s), `kMinImprovement` (10 ms RTT), the sort order,
-the pruning rule, semi-aggressive nomination by default, and the initial-select dampening field trials (off). The
-`ice_credentials_iterator_unittest.cc` and `wrapping_active_ice_controller_unittest.cc` cases and the controller's
-rules on real candidate pairs are in `tests/unit/p2p/ice_controller_test.cc`. `BasicPortAllocatorSession::
-GetFailedNetworks` now reads the ports' connections as libwebrtc does (a network interface with no connection on
-any of its ports has failed). P2PTransportChannel, the agent the controller drives, is the next part of #1002.
-Differences:
-
-| Item | libwebrtc M157 | This library | Why |
-|---|---|---|---|
-| Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
-| `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
-| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
-| Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
+| Network enumeration | `NetworkManager` builds `Network`s and their preferences | The caller builds a `Network`, or `NetworkManagerBase` does (10.5) | `BasicPortAllocator` (#1001) |
 
 ### 10.4 Connections: candidate pairs and their checks (`src/p2p/connection.cc`, C3 part 4, #1000)
 
@@ -716,6 +666,56 @@ loss, 10 % loss on 5 seeds, an outage). Differences:
 | Stats timestamps | `last_data_received`/`last_data_sent` converted to the Unix epoch | In the caller's time base | No wall clock in the library |
 | `GOOG-DELTA-ACK` consumer | `RTCErrorOr<const StunUInt64Attribute*>` | The attribute and a `GoogDeltaAckError` (unsupported, internal) | No `RTCError` type |
 | RTT estimate and rate trackers | `EventBasedExponentialMovingAverage` (`rtc_base/numerics/event_based_exponential_moving_average.cc`), `BitrateTracker` (`rtc_base/bitrate_tracker.cc`: a `RateStatistics(max_window_size.ms(), kBpsScale)`) | The same EMA, checked line for line against `reference/` (#1024) with its unittest ported; the trackers are `RateStatistics(1000, 8000)` used directly | No wrapper type; the same code and window |
+
+### 10.5 Port allocation (`src/p2p/{network_manager,port_allocator,basic_port_allocator}.cc`, C3 part 5, #1001)
+
+Ported as a unit from `p2p/base/port_allocator.{h,cc}`, `p2p/client/basic_port_allocator.{h,cc}` and
+`api/transport/enums.h` (`PortPrunePolicy`, `VpnPreference`), with
+`NetworkManager` and `NetworkManagerBase` from `rtc_base/network.{h,cc}` (`MergeNetworkList`, `SortNetworks`,
+the preferences 127 down, ids from 1, the any-address networks, `GetDefaultLocalAddress`) and `TruncateIP`.
+`PeerConnection::InitializePortAllocator_n` is `ConfigureAsPeerConnection`. Same constants and defaults: flags 0, `kDefaultStepDelay` 1 s (`kMinimumStepDelay` 50 ms), at most 5 IPv6
+networks, `CF_ALL`, the loopback ignore mask, the phases (UDP + STUN, relay, TCP) a step delay apart, the
+network filters (ignore mask and VPN preference, link-local, costly within `kNetworkCostLow`, the IPv6 pick by
+adapter type), `DisableEquivalentPhases`, the candidate filter (a public host address passes as reflexive),
+`CandidatePairable`, `SanitizeCandidate`'s related-address rules, pooled sessions and continual gathering
+(networks that go away are pruned with their candidates removed; new ones are gathered on). The UDP and STUN
+cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are in
+`tests/unit/p2p/port_allocator_test.cc`, their counts less libwebrtc's TCP ports. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
+| TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
+| TURN ports | `TurnPortFactory` by default | Only through a `RelayPortFactoryInterface` the caller gives; none by default. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
+| mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
+| Field trials | `WebRTC-UseTurnServerAsStunServer`, `WebRTC-IPv6Default` | At their defaults (enabled); the second is `PeerConnectionAllocatorConfig::ipv6_default` | Defaults as libwebrtc |
+| PeerConnection's allocator settings | `PeerConnection::InitializePortAllocator_n` (`pc/peer_connection.cc`) | `ConfigureAsPeerConnection` (`port_allocator.h`) with `RTCConfiguration`'s defaults: shared socket, IPv6 and IPv6 on Wi-Fi, step delay 50 ms, `CF_ALL`, 5 IPv6 networks, `SetConfiguration` last | Same; the session layer (#1002 onwards) calls it |
+| `FakeNetworkManager` | `rtc_base/fake_network.h` (tests) | `StaticNetworkManager`, the emulated network's: the same /24 and /64 prefixes, `test<N>` names and first-update rule, with the networks-changed signal in the call (the session queues its handler) | No network thread |
+
+### 10.6 The ICE controller (`src/p2p/{basic_ice_controller,wrapping_active_ice_controller}.cc`, C3 part 6, #1002)
+
+Ported as a unit from `p2p/base/basic_ice_controller.{h,cc}`, `wrapping_active_ice_controller.{h,cc}`,
+`ice_controller_interface.{h,cc}`, `ice_controller_factory_interface.h`, `active_ice_controller_interface.h`,
+`active_ice_controller_factory_interface.h`, `ice_agent_interface.h`, `ice_switch_reason.{h,cc}` and
+`ice_credentials_iterator.{h,cc}`, with `IceConfig`, `NominationMode` and `IceGatheringState` of
+`ice_transport_internal.{h,cc}` (the `*_or_default` values and `IsValid`) and `api/transport/enums.h`
+(`PortPrunePolicy`, the five `VpnPreference` values). Same constants and defaults: the weak and strong ping
+intervals (48 ms, 480 ms), 3 pings at the weak interval per pair, 900 ms for a writable pair while weak or not
+stable and 2.5 s once stable, backup pairs every 25 s, the receiving timeout (2.5 s; recheck delay at most a
+tenth of it, at least 50 ms), the receiving switching delay (1 s), `kMinImprovement` (10 ms RTT), the sort order,
+the pruning rule, semi-aggressive nomination by default, and the initial-select dampening field trials (off). The
+`ice_credentials_iterator_unittest.cc` and `wrapping_active_ice_controller_unittest.cc` cases and the controller's
+rules on real candidate pairs are in `tests/unit/p2p/ice_controller_test.cc`. `BasicPortAllocatorSession::
+GetFailedNetworks` now reads the ports' connections as libwebrtc does (a network interface with no connection on
+any of its ports has failed). P2PTransportChannel, the agent the controller drives, is the next part of #1002.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
+| `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
+| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
+| Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
 ## Open questions for the Owner
 

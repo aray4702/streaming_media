@@ -24,8 +24,7 @@ class IceCredentialsIterator {
   }
 
   static IceParameters CreateRandomIceCredentials() {
-    const IceCredentials c = p2p::CreateRandomIceCredentials();  // ICE_UFRAG_LENGTH, ICE_PWD_LENGTH
-    return IceParameters{c.ufrag, c.pwd, false};
+    return p2p::CreateRandomIceCredentials();  // ICE_UFRAG_LENGTH, ICE_PWD_LENGTH
   }
 
  private:

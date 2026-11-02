@@ -12,8 +12,8 @@
 
 namespace sm::p2p {
 
-IceCredentials CreateRandomIceCredentials() {
-  return IceCredentials{CreateRandomString(ICE_UFRAG_LENGTH), CreateRandomString(ICE_PWD_LENGTH)};
+IceParameters CreateRandomIceCredentials() {
+  return IceParameters{CreateRandomString(ICE_UFRAG_LENGTH), CreateRandomString(ICE_PWD_LENGTH), false};
 }
 
 uint64_t CreateRandomId64() {
@@ -72,7 +72,7 @@ bool PortAllocator::SetConfiguration(Timestamp now, const ServerAddresses& stun_
     session->SetStunKeepaliveIntervalForReadyPorts(stun_candidate_keepalive_interval_);
   }
   while (static_cast<int>(pooled_sessions_.size()) < candidate_pool_size_) {
-    const IceCredentials credentials = CreateRandomIceCredentials();
+    const IceParameters credentials = CreateRandomIceCredentials();
     std::unique_ptr<PortAllocatorSession> pooled = CreateSessionInternal("", 0, credentials.ufrag, credentials.pwd);
     pooled->set_pooled(true);
     pooled->StartGettingPorts(now);
@@ -93,7 +93,7 @@ std::unique_ptr<PortAllocatorSession> PortAllocator::TakePooledSession(std::stri
                                                                        int component, std::string_view ice_ufrag,
                                                                        std::string_view ice_pwd) {
   if (pooled_sessions_.empty() || ice_ufrag.empty() || ice_pwd.empty()) return nullptr;
-  const IceCredentials credentials{std::string(ice_ufrag), std::string(ice_pwd)};
+  const IceParameters credentials{std::string(ice_ufrag), std::string(ice_pwd), false};
   auto cit = FindPooledSession(restrict_ice_credentials_change_ ? &credentials : nullptr);
   if (cit == pooled_sessions_.end()) return nullptr;
   auto it = pooled_sessions_.begin() + std::distance(pooled_sessions_.cbegin(), cit);
@@ -107,13 +107,13 @@ std::unique_ptr<PortAllocatorSession> PortAllocator::TakePooledSession(std::stri
   return ret;
 }
 
-const PortAllocatorSession* PortAllocator::GetPooledSession(const IceCredentials* ice_credentials) const {
+const PortAllocatorSession* PortAllocator::GetPooledSession(const IceParameters* ice_credentials) const {
   auto it = FindPooledSession(ice_credentials);
   return it == pooled_sessions_.end() ? nullptr : it->get();
 }
 
 std::vector<std::unique_ptr<PortAllocatorSession>>::const_iterator PortAllocator::FindPooledSession(
-    const IceCredentials* ice_credentials) const {
+    const IceParameters* ice_credentials) const {
   for (auto it = pooled_sessions_.begin(); it != pooled_sessions_.end(); ++it) {
     if (ice_credentials == nullptr ||
         ((*it)->ice_ufrag() == ice_credentials->ufrag && (*it)->ice_pwd() == ice_credentials->pwd)) {
@@ -123,9 +123,9 @@ std::vector<std::unique_ptr<PortAllocatorSession>>::const_iterator PortAllocator
   return pooled_sessions_.end();
 }
 
-std::vector<IceCredentials> PortAllocator::GetPooledIceCredentials() const {
-  std::vector<IceCredentials> list;
-  for (const auto& session : pooled_sessions_) list.push_back({session->ice_ufrag(), session->ice_pwd()});
+std::vector<IceParameters> PortAllocator::GetPooledIceCredentials() const {
+  std::vector<IceParameters> list;
+  for (const auto& session : pooled_sessions_) list.push_back({session->ice_ufrag(), session->ice_pwd(), false});
   return list;
 }
 
@@ -166,6 +166,26 @@ Candidate PortAllocator::SanitizeCandidate(const Candidate& c) const {
     copy.set_related_address(family == IpFamily::kUnspec ? SocketAddress() : SocketAddress(GetAnyIp(family), 0));
   }
   return copy;
+}
+
+void ConfigureAsPeerConnection(Timestamp now, PortAllocator* allocator, const ServerAddresses& stun_servers,
+                               const std::vector<RelayServerConfig>& turn_servers,
+                               const PeerConnectionAllocatorConfig& config) {
+  uint32_t flags = allocator->flags();
+  flags |= PORTALLOCATOR_ENABLE_SHARED_SOCKET | PORTALLOCATOR_ENABLE_IPV6 | PORTALLOCATOR_ENABLE_IPV6_ON_WIFI;
+  if (!config.ipv6_default) flags &= ~uint32_t{PORTALLOCATOR_ENABLE_IPV6};
+  if (config.disable_ipv6_on_wifi) flags &= ~uint32_t{PORTALLOCATOR_ENABLE_IPV6_ON_WIFI};
+  if (!config.tcp_candidates_enabled) flags |= PORTALLOCATOR_DISABLE_TCP;
+  if (config.low_cost_networks_only) flags |= PORTALLOCATOR_DISABLE_COSTLY_NETWORKS;
+  if (config.disable_link_local_networks) flags |= PORTALLOCATOR_DISABLE_LINK_LOCAL_NETWORKS;
+  allocator->set_flags(flags);
+  allocator->set_step_delay(kMinimumStepDelay);
+  allocator->SetCandidateFilter(config.candidate_filter);
+  allocator->set_max_ipv6_networks(config.max_ipv6_networks);
+  // Last: it may create pooled sessions with the settings above.
+  allocator->SetConfiguration(now, stun_servers, turn_servers, config.ice_candidate_pool_size,
+                              config.prune_turn_ports ? PRUNE_BASED_ON_PRIORITY : config.turn_port_prune_policy,
+                              config.stun_candidate_keepalive_interval_ms);
 }
 
 }  // namespace sm::p2p
