@@ -48,6 +48,9 @@ struct StunCrypto {
   bool (*md5)(std::span<const uint8_t> data, uint8_t out[16]) = nullptr;
   // Fills `out` with cryptographically random bytes. Returns false on failure.
   bool (*random_bytes)(std::span<uint8_t> out) = nullptr;
+  // HMAC-SHA256(key, data) into out[0..32). Returns false on failure. ICE's
+  // candidate foundations use it (Candidate::ComputeFoundation, #999).
+  bool (*hmac_sha256)(std::span<const uint8_t> key, std::span<const uint8_t> data, uint8_t out[32]) = nullptr;
 };
 // Installs the functions; call once before any STUN use (not thread-safe).
 void SetStunCrypto(const StunCrypto& crypto);
@@ -56,6 +59,11 @@ const StunCrypto& GetStunCrypto();
 // CRC-32 (ISO-HDLC, as zlib and rtc_base/crc32: reflected 0xEDB88320, initial
 // and final XOR 0xFFFFFFFF), the checksum of STUN's FINGERPRINT.
 uint32_t ComputeCrc32(std::span<const uint8_t> data);
+
+// rtc_base/crypto_random's CreateRandomString(len): each random byte from
+// GetStunCrypto().random_bytes picks one of 64 characters. Without that hook,
+// a fixed-seed generator (tests only, as for transaction ids).
+std::string CreateRandomString(size_t len);
 
 // ---------------------------------------------------------------- constants
 // These are the types of STUN messages defined in RFC 5389.

@@ -85,6 +85,18 @@ SM_TEST(StunTls, InstallStunCryptoFromTls) {
   SM_EXPECT_TRUE(GetStunCrypto().hmac_sha1 != nullptr);
   SM_EXPECT_TRUE(GetStunCrypto().md5 != nullptr);
   SM_EXPECT_TRUE(GetStunCrypto().random_bytes != nullptr);
+  // HMAC-SHA256 for candidate foundations (#999): RFC 4231 test case 2.
+  SM_ASSERT_TRUE(GetStunCrypto().hmac_sha256 != nullptr);
+  {
+    const std::string key = "Jefe", data = "what do ya want for nothing?";
+    uint8_t out[32];
+    SM_EXPECT_TRUE(GetStunCrypto().hmac_sha256(
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(key.data()), key.size()),
+        std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size()), out));
+    SM_EXPECT_EQ(out[0], 0x5b);
+    SM_EXPECT_EQ(out[1], 0xdc);
+    SM_EXPECT_EQ(out[31], 0x43);
+  }
   SM_EXPECT_TRUE(StunMessage::ValidateMessageIntegrityForTesting("VOkJxbRl1RmTxUk/WvJxBt", kRequest));
   // Ids differ from one message to the next.
   SM_EXPECT_NE(StunMessage::GenerateTransactionId(), StunMessage::GenerateTransactionId());
