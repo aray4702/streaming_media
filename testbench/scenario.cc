@@ -331,6 +331,10 @@ ParseResult ParseScenario(const std::string& text) {
       bool b;
       if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: up_audio_nack on|off");
       s.up_audio_nack = b;
+    } else if (key == "down_audio_nack") {
+      bool b;
+      if (!need(2) || !ParseBool(tok[1], &b)) return fail("usage: down_audio_nack on|off");
+      s.down_audio_nack = b;
     } else if (key == "audio_rate") {
       DataRate r;
       if (!need(2) || !ParseRate(tok[1], &r) || !r.IsFinite() || r.bps() < 6000) return fail("usage: audio_rate <rate >= 6kbps>");
@@ -462,10 +466,11 @@ ParseResult ParseScenario(const std::string& text) {
       if (!ParseAiSource(tok, &c, &err)) return fail(err);
       s.ai_source = c;
     } else if (key == "ai_send_ahead") {
-      if (!need(2) || !ParseTime(tok[1], &s.ai_send_ahead) || s.ai_send_ahead < TimeDelta::Zero() ||
-          s.ai_send_ahead > TimeDelta::Seconds(30)) {
-        return fail("usage: ai_send_ahead <time> (0-30 s)");
+      if (tok.size() < 2 || tok.size() > 3 || (tok.size() == 3 && tok[2] != "adaptive") || !ParseTime(tok[1], &s.ai_send_ahead) ||
+          s.ai_send_ahead < TimeDelta::Zero() || s.ai_send_ahead > TimeDelta::Seconds(30)) {
+        return fail("usage: ai_send_ahead <time> [adaptive] (0-30 s)");
       }
+      s.ai_send_ahead_adaptive = tok.size() == 3;
     } else if (key == "turn") {
       Scenario::Turn tr;
       if (need(3) && tok[1] == "user") {
@@ -574,6 +579,7 @@ std::string FormatScenario(const Scenario& s) {
   onoff("nack", s.nack, d.nack);
   onoff("fec", s.fec, d.fec);
   onoff("up_audio_nack", s.up_audio_nack, d.up_audio_nack);
+  onoff("down_audio_nack", s.down_audio_nack, d.down_audio_nack);
   auto rate = [&](const char* k, DataRate v, DataRate def) {
     if (v != def) o += std::string(k) + " " + FormatRate(v) + "\n";
   };
@@ -619,7 +625,9 @@ std::string FormatScenario(const Scenario& s) {
   if (s.av_sync != d.av_sync) o += std::string("av_sync ") + (s.av_sync ? "on" : "off") + "\n";
   if (s.audio_receive_rtcp != d.audio_receive_rtcp) o += std::string("audio_receive_rtcp ") + (s.audio_receive_rtcp ? "on" : "off") + "\n";
   if (s.ai_source) o += FormatAiSource(*s.ai_source) + "\n";
-  if (s.ai_send_ahead > TimeDelta::Zero()) o += "ai_send_ahead " + FormatTime(s.ai_send_ahead) + "\n";
+  if (s.ai_send_ahead > TimeDelta::Zero()) {
+    o += "ai_send_ahead " + FormatTime(s.ai_send_ahead) + (s.ai_send_ahead_adaptive ? " adaptive" : "") + "\n";
+  }
   for (const Scenario::Turn& tr : s.turns) {
     switch (tr.who) {
       case Scenario::Turn::Who::kUser: o += "turn user " + FormatTime(tr.start) + "-" + FormatTime(tr.end) + "\n"; break;
@@ -638,6 +646,8 @@ std::string FormatScenario(const Scenario& s) {
 std::string UnsupportedReason(const Scenario& s) {
   if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
   if (!s.two_way && s.up_audio_nack) return "up_audio_nack needs call two-way: it sets the user-to-AI direction";
+  if (!s.two_way && s.down_audio_nack) return "down_audio_nack needs call two-way: it sets the AI-to-user direction";
+  if (s.ai_send_ahead_adaptive && s.ai_send_ahead <= TimeDelta::Zero()) return "ai_send_ahead adaptive needs a lead above 0";
   if (!s.two_way && !s.turns.empty()) return "turn and barge-in need call two-way";
   if (!s.two_way && s.ai_source) return "ai_source needs call two-way: it is the AI endpoint's source";
   if (s.ai_source && s.ai_source->frame != TimeDelta::Millis(20)) return "ai_source: frame must be 20ms, the bench's audio frame";

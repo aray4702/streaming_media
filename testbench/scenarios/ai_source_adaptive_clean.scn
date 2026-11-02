@@ -1,0 +1,34 @@
+name ai_source_adaptive_clean
+describe Two-way audio call (user <-> AI), the AI's replies from #4's example source sent with adaptive send-ahead (at most 500 ms, sized by the user's RTCP reports) and audio NACK on the AI-to-user stream, on a clean 100 ms RTT link (#763)
+duration 30s
+call two-way
+video off
+ai_source speed=3x burst=1s gap=300ms first_chunk=400ms
+turn user 1s-4s
+turn ai after=800ms len=4s
+turn user 10s-13s
+turn ai after=700ms len=5s
+turn user 20s-22s
+turn ai after=600ms len=5s
+ai_send_ahead 500ms adaptive
+down_audio_nack on
+at 0s capacity=2500kbps delay=50ms queue=300ms
+reverse at 0s capacity=2500kbps delay=50ms queue=300ms
+# #763 acceptance: the cushion follows the impairment. On a clean link the user reports no loss and little jitter,
+# so the lead stays near zero and the call is paced as at real time (ai_source_clean: jitter buffer p95 30 ms,
+# time-stretch 0.3%), not with #762's fixed 500 ms cushion (jitter buffer p95 510-520 ms, time-stretch 3.6%, seeds 1-5).
+expect ai.ahead_lead_max_ms < 10
+expect down.audio.jb_delay_p95_ms < 60
+expect down.audio.stretch_pct < 1
+# program.md 6.3 sev:2, for each direction, and the conversation rows, as ai_source_clean.
+expect up.audio.interruptions == 0
+expect down.audio.interruptions == 0
+expect up.audio.mouth_to_ear_p95_ms < 400
+expect down.audio.mouth_to_ear_p95_ms < 400
+expect up.cc.queue_over_200ms_pct == 0
+expect down.cc.queue_over_200ms_pct == 0
+expect ai.turns == 3
+expect ai.underruns == 0
+expect conv.responses == 3
+expect conv.user_speech_lost_pct <= 2
+expect conv.response_delay_p95_ms < 500

@@ -7,6 +7,7 @@
 #include "sm/core/random.h"
 #include "sm/loss/rtcp_feedback.h"
 #include "sm/rtp/session.h"
+#include "sm/timing/rtcp_stats.h"
 #include "sm_test.h"
 
 using namespace sm;
@@ -1823,6 +1824,88 @@ SM_TEST(Session, AudioAheadOfRealTimeIsSentWithinItsLead) {
   SM_EXPECT_TRUE(metrics.at("audio_ahead_max_lead_ms") <= 500);
   // Without send-ahead the export has no new names.
   SM_EXPECT_TRUE(run(TimeDelta::Zero(), true).second.count("audio_ahead_frames") == 0);
+}
+
+// #763: adaptive send-ahead sizes the lead from the receiver's report blocks for the stream: zero (real time) until
+// the first one, twice the interarrival jitter, plus a round trip and a frame while loss is reported and audio NACK
+// is on, and never more than `send_ahead`.
+SM_TEST(Session, AdaptiveSendAheadFollowsTheReportedJitterAndLoss) {
+  struct Step {
+    uint32_t jitter = 0;  // RTP units (48 kHz).
+    uint8_t fraction_lost = 0;
+  };
+  auto run = [](bool nack, TimeDelta send_ahead, std::vector<Step> steps) {
+    Session s(Cfg(1));
+    AudioStreamConfig acfg;
+    acfg.ssrc = 0x100;
+    acfg.nominal_rate = DataRate::KilobitsPerSec(40);
+    acfg.send_ahead = send_ahead;
+    acfg.adaptive_send_ahead = true;
+    acfg.nack = nack;
+    const AudioSendId au = s.AddAudioSend(acfg);
+    s.SetRtt(TimeDelta::Millis(100));
+    const Bytes opus(80, 1);
+    Timestamp now = Timestamp::Seconds(100);
+    std::vector<std::pair<double, int>> out;  // (lead ms, frames out ahead of real time) after each step.
+    uint32_t k = 0;
+    for (const Step& st : steps) {
+      if (st.jitter != ~0u) {
+        timing::ReceiverReport rr;
+        rr.ssrc = 0x999;
+        timing::ReportBlock b;
+        b.ssrc = 0x100;
+        b.jitter = st.jitter;
+        b.fraction_lost = st.fraction_lost;
+        rr.blocks.push_back(b);
+        const std::vector<Bytes> one = {timing::SerializeReceiverReport(rr)};
+        s.OnPacket(loss::BuildCompoundRtcp(one), now);
+      }
+      // One second of a reply generated far ahead: 50 frames, all handed over now.
+      int sent = 0;
+      const Timestamp t0 = now;
+      for (int i = 0; i < 50; ++i, ++k) {
+        EncodedAudioFrame f;
+        f.rtp_timestamp = 960 * k;
+        f.data = opus;
+        f.due_time = t0 + TimeDelta::Millis(20 * i);
+        s.SendAudio(au, f, now);
+      }
+      int max_ahead = 0;
+      for (int ms = 0; ms < 1000; ++ms) {
+        now = t0 + TimeDelta::Millis(ms);
+        s.Process(now);
+        for (const auto& p : s.TakeOutgoing()) sent += p.kind == OutgoingKind::kAudio ? 1 : 0;
+        max_ahead = std::max(max_ahead, sent - (ms / 20 + 1));
+      }
+      now = t0 + TimeDelta::Seconds(1);
+      out.emplace_back(CollectMetrics(s).at("audio_ahead_lead_ms"), max_ahead);
+    }
+    return out;
+  };
+  constexpr uint32_t kNone = ~0u;
+  // No report yet: real-time pacing, nothing goes early.
+  auto r = run(true, TimeDelta::Millis(500), {{kNone, 0}});
+  SM_EXPECT_NEAR(r[0].first, 0.0, 1e-9);
+  SM_EXPECT_EQ(r[0].second, 0);
+  // Jitter of 20 ms (960 units): a 40 ms lead, two frames ahead at most. Loss with NACK adds 100 ms RTT and 20 ms.
+  r = run(true, TimeDelta::Millis(500), {{960, 0}, {960, 13}});
+  SM_EXPECT_NEAR(r[0].first, 40.0, 1e-9);
+  SM_EXPECT_TRUE(r[0].second >= 1 && r[0].second <= 2);
+  SM_EXPECT_NEAR(r[1].first, 160.0, 1e-9);
+  SM_EXPECT_TRUE(r[1].second >= 6 && r[1].second <= 8);
+  // The loss term stays for 10 s after the last report with loss, then goes.
+  std::vector<Step> hold = {{960, 13}};
+  for (int i = 0; i < 12; ++i) hold.push_back({kNone, 0});
+  r = run(true, TimeDelta::Millis(500), hold);
+  SM_EXPECT_NEAR(r[8].first, 160.0, 1e-9);
+  SM_EXPECT_NEAR(r.back().first, 40.0, 1e-9);
+  // Without audio NACK, loss adds nothing: a cushion can't bring a lost frame back.
+  r = run(false, TimeDelta::Millis(500), {{960, 13}});
+  SM_EXPECT_NEAR(r[0].first, 40.0, 1e-9);
+  // Never more than send_ahead.
+  r = run(true, TimeDelta::Millis(100), {{9600, 13}});
+  SM_EXPECT_NEAR(r[0].first, 100.0, 1e-9);
+  SM_EXPECT_TRUE(r[0].second <= 5);
 }
 
 // #764 with #762: CancelAudio also drops the frames still held for send-ahead.
