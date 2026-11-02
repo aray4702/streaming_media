@@ -150,9 +150,10 @@ SM_TEST(PcSrtpTransport, TestSetParamsKeyTooShort) {
 
 SM_TEST(PcSrtpTransport, RemoveSrtpReceiveStream) {
   // With WebRTC-SrtpRemoveReceiveStream (off by default in M157).
+  // The packet transport outlives the SRTP transport that uses it.
+  auto rtp_packet_transport = std::make_unique<FakePacketTransport>("fake_packet_transport_loopback");
   auto srtp_transport = std::make_unique<SrtpTransport>(/*rtcp_mux_enabled=*/true,
                                                         SrtpTransportOptions{.remove_receive_stream = true});
-  auto rtp_packet_transport = std::make_unique<FakePacketTransport>("fake_packet_transport_loopback");
   rtp_packet_transport->SetDestination(rtp_packet_transport.get());
   srtp_transport->SetRtpPacketTransport(rtp_packet_transport.get());
   TransportObserver rtp_sink;
@@ -185,8 +186,8 @@ SM_TEST(PcSrtpTransport, RemoveSrtpReceiveStream) {
 
 // Without the field trial (M157's default), the receive session keeps the SSRC: the replay is still refused.
 SM_TEST(PcSrtpTransport, ReceiveStreamKeptByDefault) {
-  auto srtp_transport = std::make_unique<SrtpTransport>(/*rtcp_mux_enabled=*/true);
   auto rtp_packet_transport = std::make_unique<FakePacketTransport>("loopback");
+  auto srtp_transport = std::make_unique<SrtpTransport>(/*rtcp_mux_enabled=*/true);
   rtp_packet_transport->SetDestination(rtp_packet_transport.get());
   srtp_transport->SetRtpPacketTransport(rtp_packet_transport.get());
   TransportObserver rtp_sink;

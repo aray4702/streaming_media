@@ -156,6 +156,8 @@ class RtpTransport : public RtpTransportInternal {
   int SetRtpOption(p2p::SocketOption opt, int value) override;
   int SetRtcpOption(p2p::SocketOption opt, int value) override;
 
+  // The packet transports must outlive this transport, or be replaced first: it unsubscribes from them when it
+  // goes (libwebrtc leaves that to the owners' destruction order).
   p2p::PacketTransportInternal* rtp_packet_transport() const { return rtp_packet_transport_; }
   void SetRtpPacketTransport(p2p::PacketTransportInternal* rtp);
   void SetRtpPacketTransportOwned(std::unique_ptr<p2p::PacketTransportInternal> rtp);
