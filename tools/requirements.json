@@ -945,14 +945,15 @@
    "area": "Connectivity",
    "title": "ICE agent",
    "acceptance": "p2p/ ported: host, server-reflexive and relay candidates; connectivity checks, nomination and consent freshness (RFC 7675); continual gathering for network changes; the ICE controller; ICE-lite for the AI server. In the test bench's emulated network with NATs, ours matches libwebrtc's ICE on connection time, the pair chosen and recovery after a network change.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C2"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1010 (packet sockets, emulated network), #1015 (STUN transactions), #1020 (ports, host and server-reflexive candidates), #1021 (connections, checks, consent freshness), #1025 and #1030 (BasicPortAllocator, PeerConnection allocator setup), #1028, #1039, #1043, #1047 (ICE controller, P2PTransportChannel, IceConfig, ping tests, multihomed failover), #1045 (ICE-lite), #1041 and #1049 (relay candidates: TURN over UDP, TCP, TLS), #1044, #1050, #1051 (comparison against libwebrtc)",
+   "verification": "libwebrtc M157's p2p/ ported in sm::p2p: host, server-reflexive and relay (TURN over UDP, TCP and TLS) candidates; connectivity checks, nomination and consent freshness; continual gathering; BasicIceController and WrappingActiveIceController; P2PTransportChannel set up as PeerConnection sets it up; ICE-lite (FakeIceLiteAgent). libwebrtc's unit tests ported (p2p_transport_channel ping and multihomed cases: 21 of 23, the other two need IPv6 or the unported STUN dictionary; parity doc 10.9). sm_ice_compare runs ours and libwebrtc M157's side by side on the same emulated network: on 25 NAT pairs and with 5%/20% loss, whether each side connects, connect time, the pair chosen and the checks match (P2pIceCompare.ChecksMatchLibwebrtc, e.g. port-port 20% loss 501/501 ms); after a network change, recovery, recovery time and the pair afterwards match in all 15 cases. CI on main passed (run 41500412007 on 14380735, including #1051). Owner approved marking done, 2026-11-02 11:45 AM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C4",
@@ -976,15 +977,16 @@
    "area": "Connectivity",
    "title": "DTLS-SRTP",
    "acceptance": "DTLS over ICE (p2p/dtls), the role from SDP a=setup, the peer's certificate checked against the SDP fingerprint, SRTP keys exported; SRTP/SRTCP with AES-CM-128-HMAC-SHA1-80 and AES-GCM, replay protection (pc/srtp_*, libsrtp); unencrypted media only inside the test bench.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C1",
     "C3"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #994 (DTLS transport on BoringSSL), #1018 (DTLS over ICE: role from a=setup, fingerprint check, key export), #1016 (mbedTLS backend for DTLS 1.2), #1011 (SrtpSession on libsrtp 2.8.0, DTLS-SRTP key export), #1038 (pc/srtp_transport and pc/dtls_srtp_transport)",
+   "verification": "p2p/dtls DtlsTransport over an ICE transport with the role from SDP a=setup and the peer certificate checked against the SDP fingerprint, on both TLS backends (SM_TLS_CROSS_TEST). SRTP keys exported per RFC 5764 and split by DTLS role; SRTP/SRTCP with AES-CM-128-HMAC-SHA1-80 and AES-GCM on libsrtp 2.8.0 with replay protection; re-keying after a DTLS restart. The cases of pc/srtp_transport_unittest.cc and dtls_srtp_transport_unittest.cc pass, plus a media path over the emulated link. The test bench keeps unencrypted media. A full call negotiated by SDP offer/answer is C6. CI on main passed (run 41500412007 on 14380735). Owner approved marking done, 2026-11-02 11:45 AM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C6",
