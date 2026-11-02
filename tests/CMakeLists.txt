@@ -43,6 +43,7 @@ endif()
 
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SOURCES
+    unit/p2p/connection_test.cc
     unit/p2p/dtls_utils_test.cc
     unit/p2p/packet_socket_test.cc
     unit/p2p/port_test.cc
@@ -53,6 +54,8 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     DtlsUtils
     EmulatedSockets
     P2pCandidate
+    P2pConnection
+    P2pConnectionCall
     P2pIpAddress
     P2pNetwork
     P2pPort

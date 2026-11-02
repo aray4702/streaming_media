@@ -59,6 +59,7 @@ class UDPPort : public Port {
   void set_server_addresses(const ServerAddresses& addresses) { server_addresses_ = addresses; }
 
   void PrepareAddress(Timestamp now) override;
+  Connection* CreateConnection(Timestamp now, const Candidate& address, CandidateOrigin origin) override;
   int SendTo(Timestamp now, std::span<const uint8_t> data, const SocketAddress& addr, const PacketOptions& options,
              bool payload) override;
   int SetOption(SocketOption opt, int value) override;

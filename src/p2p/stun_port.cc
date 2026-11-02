@@ -107,7 +107,7 @@ bool UDPPort::Init(Timestamp /*now*/) {
         [this](AsyncPacketSocket*, const ReceivedPacket& packet) { OnReadPacket(packet); });
   }
   socket_->SubscribeSentPacket(this, [this](AsyncPacketSocket*, const SentPacketInfo& info) { NotifySentPacket(info); });
-  // OnReadyToSend goes to the connections (#1000).
+  socket_->SubscribeReadyToSend(this, [this](AsyncPacketSocket*) { OnReadyToSend(); });
   socket_->SubscribeCloseEvent(this, [this](AsyncPacketSocket*, int error) { OnSocketClose(error); });
   return true;
 }
@@ -115,6 +115,7 @@ bool UDPPort::Init(Timestamp /*now*/) {
 UDPPort::~UDPPort() {
   if (socket_ == nullptr) return;
   socket_->UnsubscribeSentPacket(this);
+  socket_->UnsubscribeReadyToSend(this);
   socket_->UnsubscribeCloseEvent(this);
   if (owned_socket_) owned_socket_->DeregisterReceivedPacketCallback();
 }
@@ -187,6 +188,20 @@ void UDPPort::OnLocalAddressReady(Timestamp now, const SocketAddress& address) {
   MaybePrepareStunCandidate(now);
 }
 
+Connection* UDPPort::CreateConnection(Timestamp now, const Candidate& address, CandidateOrigin /*origin*/) {
+  if (!SupportsProtocol(address.protocol())) return nullptr;
+  if (!IsCompatibleAddress(address.address())) return nullptr;
+  // In addition to DCHECK-ing the non-emptiness of local candidates, we also skip this Port with null if there are
+  // latent bugs to violate it; otherwise it would lead to a crash when accessing the local candidate of the
+  // connection that would be created below. When the socket is shared, the srflx candidate is gathered by the
+  // UDPPort; the host candidate (synchronous, no mDNS here) always comes first.
+  if (Candidates().empty()) return nullptr;
+  auto conn = std::make_unique<ProxyConnection>(now, this, 0, address);
+  Connection* raw = conn.get();
+  AddOrReplaceConnection(std::move(conn));
+  return raw;
+}
+
 void UDPPort::PostAddAddress(bool /*is_final*/) { MaybeSetPortCompleteOrError(); }
 
 void UDPPort::OnReadPacket(const ReceivedPacket& packet) {
@@ -196,8 +211,11 @@ void UDPPort::OnReadPacket(const ReceivedPacket& packet) {
     request_manager_.CheckResponse(packet.arrival_time, packet.payload);
     return;
   }
-  // Packets for a connection go to it (#1000).
-  Port::OnReadPacket(packet, PROTO_UDP);
+  if (Connection* conn = GetConnection(packet.source_address)) {
+    conn->OnReadPacket(packet);
+  } else {
+    Port::OnReadPacket(packet, PROTO_UDP);
+  }
 }
 
 void UDPPort::OnSocketClose(int error) {

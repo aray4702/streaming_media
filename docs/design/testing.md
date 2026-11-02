@@ -55,6 +55,9 @@ each NAT type and through loss, with `StunRequestManager`'s retransmissions.
 ICE's `UDPPort` and `StunPort` (#999) gather over the same sockets; the
 `P2pStunPort` suite checks each NAT type's server-reflexive candidate, two
 servers behind a symmetric NAT, a server that never answers, and keepalives.
+ICE's connections (#1000) run their checks between two `UDPPort`s on it:
+the `P2pConnectionCall` suite checks that both sides become writable and
+nominated, stay writable under 10 % loss, and lose consent through an outage.
 
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,

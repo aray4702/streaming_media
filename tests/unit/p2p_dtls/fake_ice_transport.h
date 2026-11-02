@@ -144,7 +144,7 @@ class FakeIceTransport : public IceTransportInternal {
   FakeIceTransport* dest_ = nullptr;
   bool writable_ = false;
   bool receiving_ = false;
-  IceRole role_ = IceRole::kUnknown;
+  IceRole role_ = ICEROLE_UNKNOWN;
   IceConfig config_;
   std::optional<int> rtt_estimate_;
   SendFilter send_filter_;

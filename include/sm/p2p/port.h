@@ -9,6 +9,9 @@
 //   network preference, RFC 3484 address precedence, component) and
 //   foundation, and signals it (candidate ready, then port complete when
 //   final).
+// - CreateConnection makes a Connection (#1000, sm/p2p/connection.h) to a remote candidate; the port owns its
+//   connections, one per remote address, hands them the packets from their address, and deletes them on
+//   DestroyConnection (now) or DestroyConnectionAsync (at the next Process, where libwebrtc posts the delete).
 // - Incoming STUN is checked as Port::GetStunMessage does: a binding request
 //   without USERNAME or MESSAGE-INTEGRITY gets 400, a wrong local ufrag or a
 //   bad MESSAGE-INTEGRITY 401, unknown comprehension-required attributes 420
@@ -18,8 +21,9 @@
 //   487 or raises the role-conflict signal, by tie-breaker (RFC 5245 7.2.1.1).
 //   A GOOG-PING to an address without a connection gets 400.
 // - A port no ICE agent keeps (KeepAliveUntilPruned) is destroyed
-//   kPortTimeoutDelay (STUN_TOTAL_TIMEOUT + 5 s) after it was made, or as
-//   soon as it is pruned, once it has no connections.
+//   kPortTimeoutDelay (STUN_TOTAL_TIMEOUT + 5 s) after it was made or after
+//   its last connection went, or as soon as it is pruned, once it has no
+//   connections.
 //
 // The library's time model replaces libwebrtc's network thread: nothing
 // reads a clock or posts a task. Calls that may send take `now`; the owner
@@ -27,14 +31,14 @@
 // when it dies; here it marks itself dead (dead()) and raises the destroyed
 // signal, and the owner (the allocator, #1001) deletes it.
 //
-// Not here yet: Connection and the calls that make and destroy connections
-// (CreateConnection, GetConnection, DestroyConnection; #1000), TCP and TURN
-// ports (C4), mDNS name registration and the local network access
+// The owner also runs the connections' STUN transactions through
+// Process(now). Not here yet: TCP and TURN ports (C4), mDNS name registration and the local network access
 // permission (Chromium's; with no permission factory libwebrtc grants
 // every address, as here).
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -48,16 +52,15 @@
 #include "sm/core/units.h"
 #include "sm/p2p/async_packet_socket.h"
 #include "sm/p2p/candidate.h"
+#include "sm/p2p/connection.h"
 #include "sm/p2p/network.h"
 #include "sm/p2p/p2p_constants.h"
 #include "sm/p2p/socket_address.h"
 #include "sm/p2p/stun.h"
 #include "sm/p2p/stun_request.h"
+#include "sm/p2p/transport_description.h"
 
 namespace sm::p2p {
-
-// p2p/base/transport_description.h.
-enum IceRole { ICEROLE_CONTROLLING = 0, ICEROLE_CONTROLLED, ICEROLE_UNKNOWN };
 
 // p2p/base/port_interface.h.
 enum ProtocolType { PROTO_UDP, PROTO_TCP, PROTO_SSLTCP, PROTO_TLS, PROTO_LAST = PROTO_TLS };
@@ -103,6 +106,10 @@ class PortCallbacks {
 
 class Port {
  public:
+  // PortInterface::CandidateOrigin: where the remote candidate came from.
+  enum CandidateOrigin { ORIGIN_THIS_PORT, ORIGIN_OTHER_PORT, ORIGIN_MESSAGE };
+  using AddressMap = std::map<SocketAddress, std::unique_ptr<Connection>>;
+
   // PortParametersRef. `network` and `socket_factory` must outlive the port.
   struct Parameters {
     const Network* network = nullptr;
@@ -132,6 +139,25 @@ class Port {
   // Starts gathering. Candidates are signalled as they are found.
   virtual void PrepareAddress(Timestamp now) = 0;
 
+  // Creates a connection to `remote_candidate` (replacing one to the same
+  // address), owned by the port; nullptr if the port can't reach it.
+  virtual Connection* CreateConnection(Timestamp now, const Candidate& remote_candidate, CandidateOrigin origin) = 0;
+  // The connections, keyed by remote address.
+  const AddressMap& connections() const { return connections_; }
+  // The connection to `remote_addr`, or nullptr.
+  Connection* GetConnection(const SocketAddress& remote_addr);
+  // Removes a connection and deletes it now (DestroyConnection) or at the
+  // next Process (DestroyConnectionAsync, for a caller inside one of its
+  // callbacks). Either way it is shut down (destroyed signal) at once.
+  void DestroyConnection(Timestamp now, Connection* conn) { DestroyConnectionInternal(now, conn, false); }
+  void DestroyConnectionAsync(Timestamp now, Connection* conn) { DestroyConnectionInternal(now, conn, true); }
+  // The role conflict signal (a connection got a 487).
+  void NotifyRoleConflict() {
+    if (role_conflict_) role_conflict_();
+  }
+  // The socket can send again: tells every connection.
+  void OnReadyToSend();
+
   // Sends to `addr`. Returns the bytes sent, or -1 (GetError()).
   virtual int SendTo(Timestamp now, std::span<const uint8_t> data, const SocketAddress& addr,
                      const PacketOptions& options, bool payload) = 0;
@@ -147,7 +173,8 @@ class Port {
   void Prune(Timestamp now);
   // Drops pending work (the destroy checks; a subclass's STUN requests).
   virtual void CancelPendingTasks();
-  // Runs what is due by `now`.
+  // Runs what is due by `now`: deletes the connections destroyed
+  // asynchronously, runs their STUN transactions and the destroy checks.
   virtual void Process(Timestamp now);
   // When Process next has something to do; PlusInfinity when idle.
   virtual Timestamp NextProcessTime() const;
@@ -229,6 +256,7 @@ class Port {
   std::string ToString() const;
 
  protected:
+  friend class Connection;
   Port(const Parameters& args, IceCandidateType type, Timestamp now);
   Port(const Parameters& args, IceCandidateType type, uint16_t min_port, uint16_t max_port, bool shared_socket,
        Timestamp now);
@@ -253,11 +281,19 @@ class Port {
   bool IsCompatibleAddress(const SocketAddress& addr) const;
   virtual Dscp StunDscpValue() const { return Dscp::kNoChange; }
 
+  // Adds `conn` (owned from now on) under its remote address; one already
+  // there is shut down and deleted.
+  void AddOrReplaceConnection(std::unique_ptr<Connection> conn);
+  // Extra work in subclasses when a connection is destroyed.
+  virtual void HandleConnectionDestroyed(Connection* /*conn*/) {}
+  void DestroyAllConnections();
+
  private:
   void FinishAddingAddress(const Candidate& c, bool is_final);
   void PostDestroyIfDead(Timestamp now, bool delayed);
   void DestroyIfDead(Timestamp now);
   void Destroy();
+  void DestroyConnectionInternal(Timestamp now, Connection* conn, bool async);
 
   PacketSocketFactory* const factory_;
   const IceCandidateType type_;
@@ -281,6 +317,10 @@ class Port {
   enum class State { kInit, kKeepAliveUntilPruned, kPruned };
   State state_ = State::kInit;
   Timestamp last_time_all_connections_removed_ = Timestamp::MinusInfinity();
+  AddressMap connections_;
+  // Connections destroyed asynchronously, deleted at the next Process.
+  std::vector<std::unique_ptr<Connection>> pending_delete_;
+  Timestamp pending_delete_since_ = Timestamp::PlusInfinity();
   std::multiset<Timestamp> destroy_checks_;  // The posted DestroyIfDead tasks.
   bool dead_ = false;
 
