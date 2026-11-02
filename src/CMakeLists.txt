@@ -214,6 +214,16 @@ if(SM_WITH_SYNC)
   list(APPEND SM_SECTIONS sync)
 endif()
 
+if(SM_WITH_TLS AND SM_WITH_SYNC)
+  # SRTP and DTLS-SRTP transports (C5 part 3, #1007): libwebrtc's pc/rtp_transport, pc/srtp_transport and
+  # pc/dtls_srtp_transport on the DTLS transport (sm::p2p_dtls), SrtpSession (sm::tls) and the RtpDemuxer (sm::sync).
+  # Not in the sm::sm umbrella yet, like sm::tls and sm::p2p (#944).
+  sm_add_library(pc DEPS sm::p2p_dtls sm::sync SOURCES
+    pc/dtls_srtp_transport.cc
+    pc/rtp_transport.cc
+    pc/srtp_transport.cc)
+endif()
+
 if(SM_WITH_RTP)
   sm_add_library(rtp DEPS sm::loss sm::timing sm::cc sm::sync sm::video SOURCES
     rtp/rtcp_engine.cc

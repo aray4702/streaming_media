@@ -61,6 +61,12 @@ nominated, stay writable under 10 % loss, and lose consent through an outage.
 `BasicPortAllocator` (#1001) gathers through them on `StaticNetworkManager`'s
 networks; the `P2pBasicPortAllocator` suite runs libwebrtc's UDP and STUN
 allocator cases there, public and behind a NAT.
+DTLS-SRTP (#1006, #1007) runs over the fake ICE transport
+(`tests/unit/p2p_dtls/fake_ice_transport.h`, a delayed, lossy link on a
+simulated clock): the `PcDtlsSrtpTransport` suite runs libwebrtc's
+`dtls_srtp_transport_unittest.cc` cases with real DTLS handshakes, a media
+path of RTP and RTCP both ways over a 10 ms link, and a DTLS restart that
+re-keys SRTP. The test bench call keeps unencrypted media.
 
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,
