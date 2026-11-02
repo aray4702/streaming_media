@@ -24,10 +24,10 @@ if(SM_WITH_TLS)
     set(srcs tls/message_digest.cc tls/crypto_random.cc tls/ssl_fingerprint.cc)
     if(backend STREQUAL "boringssl")
       sm_add_boringssl()
-      list(APPEND srcs tls/boringssl_digest.cc tls/boringssl_identity.cc tls/boringssl_dtls.cc)
+      list(APPEND srcs tls/boringssl_digest.cc tls/boringssl_identity.cc tls/boringssl_dtls.cc tls/boringssl_tls.cc)
     else()
       sm_add_mbedtls()
-      list(APPEND srcs tls/mbedtls_digest.cc tls/mbedtls_identity.cc tls/mbedtls_dtls.cc)
+      list(APPEND srcs tls/mbedtls_digest.cc tls/mbedtls_identity.cc tls/mbedtls_dtls.cc tls/mbedtls_tls.cc)
     endif()
     if(ARG_SRTP)
       if(backend STREQUAL "boringssl")
@@ -89,10 +89,14 @@ sm_add_library(p2p DEPS sm::core SOURCES
   p2p/ice_switch_reason.cc
   p2p/basic_ice_controller.cc
   p2p/wrapping_active_ice_controller.cc
+  p2p/ice_lite_agent.cc
   p2p/p2p_transport_channel.cc)
 if(SM_WITH_TLS)
   # STUN's crypto hooks on BoringSSL (#997): InstallStunCryptoFromTls().
-  sm_add_library(p2p_tls DEPS sm::p2p sm::tls SOURCES p2p/stun_crypto_tls.cc)
+  # The TLS client socket under TURN over TLS (C4 part 3, #1035): InstallSslAdapterFromTls().
+  sm_add_library(p2p_tls DEPS sm::p2p sm::tls SOURCES
+    p2p/ssl_adapter_tls.cc
+    p2p/stun_crypto_tls.cc)
   # DTLS over an ICE transport (C5 part 2, #1006): libwebrtc's p2p/dtls/dtls_transport on sm::tls.
   sm_add_library(p2p_dtls DEPS sm::p2p sm::tls SOURCES
     p2p/dtls_transport.cc)

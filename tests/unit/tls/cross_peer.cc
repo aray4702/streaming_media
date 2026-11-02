@@ -4,6 +4,7 @@
 #include "sm/tls/dtls_transport.h"
 #include "sm/tls/ssl_fingerprint.h"
 #include "sm/tls/ssl_identity.h"
+#include "sm/tls/tls_stream.h"
 
 namespace tls_cross {
 namespace SM_TLS_BACKEND_NS {
@@ -53,7 +54,54 @@ class PeerImpl final : public Peer {
   std::unique_ptr<sm::tls::DtlsTransport> t_;
 };
 
+class TlsPeerImpl final : public TlsPeer {
+ public:
+  explicit TlsPeerImpl(const TlsPeerOptions& o) {
+    sm::tls::TlsConfig cfg;
+    cfg.load_system_roots = false;
+    cfg.alpn_protocols = o.alpn_protocols;
+    cfg.max_version = o.max_version;
+    std::unique_ptr<sm::tls::SslIdentity> id;
+    if (o.server) {
+      cfg.role = sm::tls::TlsRole::kServer;
+      cfg.ignore_bad_cert = true;  // As libwebrtc's adapter tests run the server end.
+      id = sm::tls::SslIdentity::Create(o.name);
+      const auto der = id->certificate().der();
+      cert_.assign(der.begin(), der.end());
+    } else {
+      cfg.server_name = o.name;
+      cfg.trusted_roots = o.trusted_roots;
+    }
+    t_ = std::make_unique<sm::tls::TlsStream>(std::move(cfg), std::move(id));
+  }
+  std::vector<uint8_t> certificate() const override { return cert_; }
+  bool Start() override { return t_->Start(); }
+  void Feed(const std::vector<uint8_t>& data) override { t_->Feed(data); }
+  std::vector<uint8_t> TakeOutgoing() override { return t_->TakeOutgoing(); }
+  int Write(const std::string& data) override {
+    return t_->Write(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(data.data()), data.size()));
+  }
+  std::string ReadAll() override {
+    std::string out;
+    uint8_t buf[256];
+    int n;
+    while ((n = t_->Read(buf)) > 0) out.append(reinterpret_cast<char*>(buf), static_cast<size_t>(n));
+    return out;
+  }
+  bool connected() const override { return t_->state() == sm::tls::TlsState::kConnected; }
+  bool failed() const override { return t_->state() == sm::tls::TlsState::kFailed; }
+  int version() const override { return t_->version(); }
+  std::string alpn_protocol() const override { return t_->alpn_protocol(); }
+  std::string received_server_name() const override { return t_->received_server_name(); }
+
+ private:
+  std::vector<uint8_t> cert_;
+  std::unique_ptr<sm::tls::TlsStream> t_;
+};
+
 }  // namespace
+
+std::unique_ptr<TlsPeer> MakeTlsPeer(const TlsPeerOptions& options) { return std::make_unique<TlsPeerImpl>(options); }
 
 std::unique_ptr<Peer> MakePeer(bool server, std::optional<std::vector<int>> srtp_crypto_suites) {
   return std::make_unique<PeerImpl>(server, std::move(srtp_crypto_suites));

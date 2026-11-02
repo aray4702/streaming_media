@@ -768,7 +768,7 @@ connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_
 | Connect timing | The virtual server completes the client's connect one transit delay after `Connect` | One round trip: the SYN-ACK's arrival completes it | Segments cross the hosts' links and NATs both ways |
 | TCP through NATs | `NATSocketServer` proxies outbound TCP connections through the NAT server | Segments cross the emulated NATs with their UDP mapping and filtering rules; inbound connections find no binding | One NAT model for both protocols; the outcome (outbound only) is the same |
 | `AsyncListenSocket` | New socket as a raw pointer the subscriber takes | The subscriber moves a `std::unique_ptr` out; an untaken socket is closed | Ownership in the type |
-| TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `CreateClientTcpSocket` returns nullptr | C4 part 3 (#1035) |
+| TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `OPT_TLS` and `OPT_TLS_INSECURE` wrap the socket in an `SslAdapter` (10.12, #1035); `OPT_TLS_FAKE` returns nullptr | Fake TLS is not used in a call (10.12) |
 | Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
 | `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
 
@@ -875,6 +875,66 @@ presets turn it on so its tests run. Every `*_test.cc` under `packet/` and `comm
 | `SeqNumUnwrapper` (`common/sequence_numbers.h`) | `rtc_base/numerics/sequence_number_unwrapper.h` | `sm::SeqNumUnwrapper` (`sm/core/seq_num.h`) | The library's unwrapper; `sequence_numbers_test.cc` passes unchanged |
 | Tests | gtest and gmock | `sm_test.h` with `tests/unit/dcsctp/gmock_lite.h` (`EXPECT_THAT` with `ElementsAre`, `SizeIs`, `IsEmpty`, `Not`, or a value) | No gtest in the library |
 | Fuzzer | `dcsctp_fuzzers.cc`'s `FuzzSocket`, through the socket | A packet-layer target: `SctpPacket::Parse` with and without checksum checks, every chunk's parser, SACK cleaning, parameter lists, a build/parse round trip | The socket is part 2; its fuzzer comes with it |
+
+### 10.12 ICE-lite for the AI server (`src/p2p/ice_lite_agent.cc`, C3 part 7, #1003)
+
+libwebrtc has no ICE-lite agent outside its tests: its DTLS-over-ICE fixture (`p2p/dtls/dtls_ice_integration_fixture.h`)
+runs a `P2PTransportChannel` as one by passing `p2p/test/fake_ice_lite_agent.h`'s `FakeIceLiteAgent` as the
+active ICE controller, and `DtlsTransportInternalImpl::SetFakeIceLite` on top of it. That is what is ported:
+`sm::p2p::IceLiteAgent` (and `IceLiteAgentFactory`, for `P2PTransportChannel::Options::active_ice_controller_factory`)
+and `DtlsTransport::SetFakeIceLite`. The lite agent pings nothing (no pingable connection; a reported ping is a bug),
+never sets USE-CANDIDATE, makes a connection writable once a check from the peer arrived on it and it is receiving
+(`Connection::set_writable_for_fake_ice_lite`), switches only on the full agent's nomination or on data, and never
+sorts, switches or prunes otherwise. The rest is the owner's setup, as the fixture: the controlled role, host
+candidates only (no STUN or TURN server), and `SetRemoteIceMode(ICEMODE_LITE)` on the full agent, whose
+`BasicIceController` then nominates a writable pair (`GetUseCandidateAttr`, already ported in 10.6). Over an ICE-lite
+agent DTLS has no RTT estimate, so `SetFakeIceLite` starts the handshake's retransmissions at 2 x 200 ms. Tests:
+`tests/unit/p2p/ice_lite_test.cc` (a full agent through each NAT type of #985 and from a public address, the lite side
+never checking and selecting the nominated pair, and a client network change: a new interface appears and the old one
+goes away, after which the full agent nominates a pair on the new one and the lite server switches to it) and
+`P2pDtlsTransport.FakeIceLiteHandshakeTimeout`.
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Deferred update | `OnConnectionUpdated` posts a task to the network thread | Queued with the time of the last call that carried one (the channel's sort or switch request made just before), run in `Process(now)` at `NextProcessTime()` | The library's time model, as 10.9 |
+| A reported ping | `RTC_CHECK` fails | A debug `assert`; `pings_reported()` counts them | No CHECKs in release builds of the library |
+| Use | Test-only (`p2p/test/`) | In the library, for the AI server | The AI server is the lite agent milestone 3 asks for (#944); its behaviour is libwebrtc's test agent's, unchanged |
+| Lite state | The lite side prunes nothing, so with several pairs it stays CONNECTING (standard state connected) | The same | As libwebrtc |
+
+### 10.13 TLS client socket over TCP (`src/tls/{boringssl,mbedtls}_tls.cc`, `src/p2p/ssl_adapter_tls.cc`, C4 part 3, #1035)
+
+Ported from `rtc_base/openssl_adapter.{h,cc}` and `rtc_base/ssl_adapter.h`, with the TLS half of
+`p2p/base/basic_packet_socket_factory.cc`'s `CreateClientTcpSocket` and `SSLCertificateVerifier`. The TLS engine is
+`sm::tls::TlsStream` (`sm/tls/tls_stream.h`) on both backends; the adapter (`sm::p2p::TlsSslAdapter`, installed for
+`SslAdapter::Create` with `InstallSslAdapterFromTls()`) runs OpenSSLAdapter's state machine over a stream socket.
+Same behaviour and defaults: `TLS_method` from TLS 1.2 to 1.3, the cipher list
+`ALL:!SHA256:!SHA384:!aPSK:!ECDSA+SHA1:!ADH:!LOW:!EXP:!MD5:!3DES`, `SSL_VERIFY_PEER` with depth 4, OCSP stapling and
+SCT requested, extensions permuted, `SSL_MODE_ENABLE_PARTIAL_WRITE | SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER`; SNI set to
+the hostname when there is one; ALPN (`TransformAlpnProtocols`) and the curves list passed through; the verify
+callback with the custom verifier asked only for a failing chain and `SetIgnoreBadCert` accepting anything; the
+post-connection check (`X509_check_host` against the hostname, so an empty one never matches, and the chain
+verified), overridden by `SetIgnoreBadCert`; `StartSSL` before the connection waits for the connect event
+(`SSL_WAIT`); `Send` and `Recv` give ENOTCONN while connecting, `Send` takes the whole buffer once connected and gives
+EWOULDBLOCK while an earlier record waits for the socket, `Recv` gives EWOULDBLOCK for an incomplete record and for
+close_notify; a failed handshake or check raises the close event; `GetState` reports connecting until the handshake
+is done. In the factory: `SSLAdapter::Create`, `SetIgnoreBadCert` for `OPT_TLS_INSECURE`, ALPN, curves and the
+verifier from `PacketSocketTcpOptions`, `StartSSL(remote_address.hostname())` before `Connect`; a server socket with
+TLS is refused. `openssl_adapter_unittest.cc` and `ssl_adapter_unittest.cc` are not in `reference/`; the client
+cases of those code paths are in `tests/unit/tls/tls_stream_test.cc` (each backend), `tests/unit/tls/cross_test.cc`
+(BoringSSL against Mbed TLS both ways, TLS 1.3 and 1.2) and `tests/unit/p2p/ssl_adapter_test.cc` (a TLS echo server
+in the emulated network). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Trusted roots | Built in (`rtc_base/ssl_roots.h`, loaded in `CreateContext`); the context fails if none loads | The caller's (`PacketSocketTcpOptions::tls_trusted_roots`, `SslAdapter::AddTrustedRoot`) plus the system's store where found (BoringSSL's default verify paths; on Mbed TLS the usual CA bundle files); a context without roots still connects under the insecure policy or a custom verifier | `ssl_roots.h` is not in `reference/`, and a library shouldn't ship a root list of its own |
+| BIO | A BIO over the socket: `SSL_read` takes one record from it at a time | The adapter drains the socket into the engine and writes the engine's output to the socket, keeping what it doesn't take for the write event; while it holds decrypted data the reader left, it signals a read again, as a socket does while bytes are buffered (`VirtualSocket`'s `PostSignalReadEvent`) | The engine takes bytes from the caller, as `DtlsTransport` does; the interface behaves the same |
+| `StartSSL` on a connected socket | Handshake at once | The same, at the time of the adapter's last call | `StartSSL` takes no time; the factory always calls it before `Connect` |
+| Session cache | `OpenSSLAdapterFactory` / `OpenSSLSessionCache` | Not ported; `IsResumedSession` is false | `SSLAdapter::Create`, which the TURN client's sockets use, runs without one too |
+| Fake TLS | `AsyncSSLSocket` for `OPT_TLS_FAKE` | `CreateClientTcpSocket` returns nullptr | Nothing in a call uses the dummy handshake |
+| DTLS mode | `SSLAdapter::Create(socket, dtls = true)` for `CreateClientUdpSocket` with `OPT_DTLS` | Not ported | No `PROTO_DTLS` TURN servers (10.5); DTLS-SRTP is `DtlsTransport` |
+| Hostname on addresses | `SocketAddress::hostname()`, also in comparisons for an unresolved address | `SocketAddress::hostname()` / `SetHostname`; comparisons use the IP and port only | The library resolves nothing (10.3); the name is carried for TLS |
+| Mbed TLS backend | (BoringSSL only) | Its ECDHE suites of the list and its TLS 1.3 suites (no static RSA), no OCSP or SCT request, no extension permutation; the host name from its CN/SAN mismatch flag after the handshake | What Mbed TLS 3.6 has (as 10.2) |
+| Logging, `SSLInfoCallback` | `RTC_LOG` | `TlsStream::error()` names the step that failed | No logging in the library |
 
 ## Open questions for the Owner
 

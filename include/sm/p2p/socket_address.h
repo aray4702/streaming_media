@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace sm::p2p {
 
@@ -102,6 +103,10 @@ class SocketAddress {
   uint16_t port() const { return port_; }
   void SetIp(const IpAddress& ip) { ip_ = ip; }
   void SetPort(uint16_t port) { port_ = port; }
+  // The name the address was given by, if any (SocketAddress::hostname): TLS's SNI and the name the server's
+  // certificate must match (#1035). Kept beside the IP; comparisons and ordering use only the IP and the port.
+  const std::string& hostname() const { return hostname_; }
+  void SetHostname(std::string hostname) { hostname_ = std::move(hostname); }
 
   // No IP and no port.
   bool IsNil() const { return IpIsUnspec(ip_) && port_ == 0; }
@@ -130,6 +135,7 @@ class SocketAddress {
  private:
   IpAddress ip_;
   uint16_t port_ = 0;
+  std::string hostname_;
 };
 
 }  // namespace sm::p2p

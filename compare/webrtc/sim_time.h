@@ -45,6 +45,9 @@ class SimTime final : public webrtc::TaskQueueFactory, public webrtc::YieldInter
   void RunUntil(webrtc::Timestamp until);
   // Runs every task due now, without advancing the clock.
   void RunReady();
+  // When the next task is due (PlusInfinity if none), so a caller can interleave other events (the ICE comparison's
+  // network arrivals) with libwebrtc's tasks.
+  webrtc::Timestamp NextRunTime() const;
 
   // YieldInterface: rtc::Event::Wait calls this before blocking, so a task
   // that waits for another queue lets that queue run first.
@@ -65,7 +68,6 @@ class SimTime final : public webrtc::TaskQueueFactory, public webrtc::YieldInter
 
   void Register(SimQueue* q);
   void Unregister(SimQueue* q);
-  webrtc::Timestamp NextRunTime() const;
 
   mutable webrtc::SimulatedClock clock_;
   GlobalClock global_clock_;

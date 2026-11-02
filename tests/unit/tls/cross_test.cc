@@ -152,3 +152,80 @@ SM_TEST(TlsCrossBackend, GcmOnlyOnBoringSslSideFallsBackToACommonProfile) {
   SM_EXPECT_TRUE(!p.client->SrtpKeyingMaterial().empty() &&
                  p.client->SrtpKeyingMaterial() == p.server->SrtpKeyingMaterial());
 }
+
+// TLS (#1035): a TlsStream client on one backend against a server on the other. Both offer TLS 1.3 and agree on
+// it (Mbed TLS 3.6 has TLS 1.3, unlike DTLS 1.3); SNI and ALPN cross; an untrusted certificate is refused.
+namespace {
+
+using tls_cross::TlsPeer;
+using tls_cross::TlsPeerOptions;
+using TlsMaker = std::unique_ptr<TlsPeer> (*)(const TlsPeerOptions&);
+
+constexpr int kTls12 = 0x0303;
+constexpr int kTls13 = 0x0304;
+
+void PumpTls(TlsPeer& a, TlsPeer& b) {
+  for (int i = 0; i < 100; ++i) {
+    auto x = a.TakeOutgoing();
+    auto y = b.TakeOutgoing();
+    if (x.empty() && y.empty()) return;
+    if (!x.empty()) b.Feed(x);
+    if (!y.empty()) a.Feed(y);
+  }
+}
+
+// Client from `make_client`, server from `make_server`; the client trusts the server's certificate.
+void CheckTlsAcross(TlsMaker make_client, TlsMaker make_server, int max_version, int expected_version) {
+  TlsPeerOptions so;
+  so.server = true;
+  so.alpn_protocols = {"stun.turn"};
+  auto server = make_server(so);
+  TlsPeerOptions co;
+  co.trusted_roots = {server->certificate()};
+  co.alpn_protocols = {"stun.turn"};
+  co.max_version = max_version;
+  auto client = make_client(co);
+  SM_ASSERT_TRUE(server->Start());
+  SM_ASSERT_TRUE(client->Start());
+  PumpTls(*client, *server);
+  SM_ASSERT_TRUE(client->connected());
+  SM_ASSERT_TRUE(server->connected());
+  SM_EXPECT_EQ(client->version(), expected_version);
+  SM_EXPECT_EQ(server->version(), expected_version);
+  SM_EXPECT_EQ(server->received_server_name(), std::string("turn.example.org"));
+  SM_EXPECT_EQ(client->alpn_protocol(), std::string("stun.turn"));
+  SM_EXPECT_EQ(client->Write("ping"), 4);
+  PumpTls(*client, *server);
+  SM_EXPECT_EQ(server->ReadAll(), std::string("ping"));
+  SM_EXPECT_EQ(server->Write("pong"), 4);
+  PumpTls(*client, *server);
+  SM_EXPECT_EQ(client->ReadAll(), std::string("pong"));
+}
+
+}  // namespace
+
+SM_TEST(TlsCrossBackend, TlsBoringSslClientMbedTlsServer) {
+  CheckTlsAcross(&tls_cross::boringssl_backend::MakeTlsPeer, &tls_cross::mbedtls_backend::MakeTlsPeer, kTls13, kTls13);
+  CheckTlsAcross(&tls_cross::boringssl_backend::MakeTlsPeer, &tls_cross::mbedtls_backend::MakeTlsPeer, kTls12, kTls12);
+}
+
+SM_TEST(TlsCrossBackend, TlsMbedTlsClientBoringSslServer) {
+  CheckTlsAcross(&tls_cross::mbedtls_backend::MakeTlsPeer, &tls_cross::boringssl_backend::MakeTlsPeer, kTls13, kTls13);
+  CheckTlsAcross(&tls_cross::mbedtls_backend::MakeTlsPeer, &tls_cross::boringssl_backend::MakeTlsPeer, kTls12, kTls12);
+}
+
+SM_TEST(TlsCrossBackend, TlsUntrustedCertificateRefusedEitherWay) {
+  for (bool boring_client : {true, false}) {
+    TlsMaker c = boring_client ? &tls_cross::boringssl_backend::MakeTlsPeer : &tls_cross::mbedtls_backend::MakeTlsPeer;
+    TlsMaker s = boring_client ? &tls_cross::mbedtls_backend::MakeTlsPeer : &tls_cross::boringssl_backend::MakeTlsPeer;
+    TlsPeerOptions so;
+    so.server = true;
+    auto server = s(so);
+    auto client = c(TlsPeerOptions{});  // No roots.
+    SM_ASSERT_TRUE(server->Start());
+    SM_ASSERT_TRUE(client->Start());
+    PumpTls(*client, *server);
+    SM_EXPECT_TRUE(client->failed());
+    SM_EXPECT_FALSE(server->connected() && client->connected());
+  }
+}

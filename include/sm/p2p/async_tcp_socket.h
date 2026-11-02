@@ -22,9 +22,10 @@
 // takes `now`, which stamps SentPacketInfo, and packets are stamped with the
 // time of the read event that delivered them.
 //
-// Not here: TLS (OPT_TLS, OPT_TLS_INSECURE, OPT_TLS_FAKE), which comes with
-// C4 part 3 (#1035); the factory returns nullptr for it, as libwebrtc's does
-// for a server socket.
+// TLS (C4 part 3, #1035): CreateClientTcpSocket wraps the stream socket in an
+// SslAdapter (sm/p2p/ssl_adapter.h) for OPT_TLS and OPT_TLS_INSECURE, as
+// libwebrtc's factory does; OPT_TLS_FAKE (AsyncSSLSocket) is not ported and
+// returns nullptr, and a server socket with TLS is refused, as libwebrtc's.
 #pragma once
 
 #include <cstddef>
