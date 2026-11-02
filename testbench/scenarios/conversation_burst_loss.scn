@@ -14,3 +14,7 @@ turn ai after=800ms len=4s
 # program.md 6.3, conversation rows (5% loss, here in bursts): every reply heard (sev:1), at most 500 ms added (sev:2).
 expect conv.responses == 3
 expect conv.response_delay_p95_ms < 500
+# No line on conv.user_speech_lost_pct here (program.md 6.3: at most 2%). Owner decision (2026-11-01, #965): 5% loss in
+# bursts of 5 packets is outside where 2% holds. Measured on 20 seeds: 3.05% mean at the AI's playout; deeper RED (#965)
+# reached a 2.0% mean (worst 3.7%); audio NACK (#971, `up_audio_nack on`, off by default) brings the speech the AI
+# receives within 500 ms to a 1.1% mean (worst 4.4%), which is the option for native clients.
