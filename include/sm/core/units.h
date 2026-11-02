@@ -5,6 +5,7 @@
 // testable with a simulated clock and free of platform clock APIs.
 #pragma once
 
+#include <compare>
 #include <cstddef>
 #include <compare>
 #include <cstdint>

@@ -295,6 +295,20 @@ int DtlsTransport::srtp_crypto_suite() const {
   return p ? static_cast<int>(p->id) : 0;
 }
 
+// OpenSSLStreamAdapter::GetSslCipherSuite and GetTlsCipherSuiteName.
+int DtlsTransport::ssl_cipher_suite() const {
+  if (state_ != DtlsState::kConnected) return 0;
+  const SSL_CIPHER* c = SSL_get_current_cipher(impl_->ssl);
+  return c ? static_cast<uint16_t>(SSL_CIPHER_get_id(c)) : 0;
+}
+
+std::string DtlsTransport::ssl_cipher_suite_name() const {
+  if (state_ != DtlsState::kConnected) return {};
+  const SSL_CIPHER* c = SSL_get_current_cipher(impl_->ssl);
+  const char* name = c ? SSL_CIPHER_standard_name(c) : nullptr;
+  return name ? std::string(name) : std::string();
+}
+
 bool DtlsTransport::ExportSrtpKeyingMaterial(std::span<uint8_t> out) const {
   if (state_ != DtlsState::kConnected) return false;
   return SSL_export_keying_material(impl_->ssl, out.data(), out.size(), kDtlsSrtpExporterLabel,

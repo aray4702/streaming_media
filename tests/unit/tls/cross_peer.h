@@ -31,6 +31,9 @@ class Peer {
   virtual bool failed() const = 0;
   virtual int version() const = 0;
   virtual int srtp_crypto_suite() const = 0;
+  // The TLS cipher suite: IANA id and standard name (#1059).
+  virtual int ssl_cipher_suite() const = 0;
+  virtual std::string ssl_cipher_suite_name() const = 0;
   // The RFC 5764 keying material for the negotiated profile (empty before the handshake completes).
   virtual std::vector<uint8_t> SrtpKeyingMaterial() const = 0;
   virtual int retransmissions() const = 0;
