@@ -73,6 +73,12 @@ struct Scenario {
   // `two_way_video both|up|down` (issue #747): in a two-way call with video, which directions send it: both (the
   // default), up (user to AI) or down (AI to user). Only for `call two-way`.
   bool video_up = true, video_down = true;
+  // `call mesh <N>` (issue #1072, part 1 of C9): a mesh call of N = 3 or 4 participants (0: not a mesh). Each
+  // participant is an endpoint with one session per other participant, as a browser mesh has one RTCPeerConnection
+  // per peer, and its own access link: the uplink follows the `at` lines, the downlink the `reverse at` lines, each
+  // overridden per participant by `participant <i> [reverse] at ...`. RunCall also runs N = 2 internally, as the 1:1
+  // reference for mesh.upload_cost_ratio.
+  int mesh = 0;
 
   // Media.
   bool audio = true;
@@ -215,6 +221,14 @@ struct Scenario {
 
   std::vector<LinkChange> forward;
   std::vector<LinkChange> reverse;
+  // `participant <i> at ...` and `participant <i> reverse at ...` (issue #1072): changes to participant i's (1-based)
+  // uplink or downlink in a mesh call, applied after the scenario's own at the same time, in file order.
+  struct ParticipantChange {
+    int participant = 1;
+    bool reverse = false;  // The downlink.
+    LinkChange change;
+  };
+  std::vector<ParticipantChange> participant_links;
   std::vector<Expectation> expectations;
 };
 
