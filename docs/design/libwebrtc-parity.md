@@ -707,14 +707,14 @@ the pruning rule, semi-aggressive nomination by default, and the initial-select 
 `ice_credentials_iterator_unittest.cc` and `wrapping_active_ice_controller_unittest.cc` cases and the controller's
 rules on real candidate pairs are in `tests/unit/p2p/ice_controller_test.cc`. `BasicPortAllocatorSession::
 GetFailedNetworks` now reads the ports' connections as libwebrtc does (a network interface with no connection on
-any of its ports has failed). P2PTransportChannel, the agent the controller drives, is the next part of #1002.
+any of its ports has failed). P2PTransportChannel, the agent the controller drives, is 10.7.
 Differences:
 
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
 | `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
-| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
+| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | #1002's remaining part |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
 ### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
@@ -771,6 +771,42 @@ connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_
 | TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `CreateClientTcpSocket` returns nullptr | C4 part 3 (#1035) |
 | Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
 | `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
+
+### 10.9 The ICE agent (`src/p2p/p2p_transport_channel.cc`, C3 part 6, #1002)
+
+Ported as a unit from `p2p/base/p2p_transport_channel.{h,cc}`, with the candidate methods and signals of
+`ice_transport_internal.h` (`AddRemoteCandidate`, the gathering state, `GetSelectedCandidatePair`, `GetStats` and
+`IceTransportStats`, the candidate gathered / removed / error and candidate-pair-change callbacks) and the network
+route of `packet_transport_internal.h`. Same behaviour and defaults: the channel's `IceConfig` (receiving timeout
+2.5 s, backup ping interval 25 s, stable writable ping interval 2.5 s, regather interval 5 min, receiving switching
+delay 1 s, presume writable when fully relayed, gather once), pooled sessions taken with the local credentials, an
+ICE restart on a change of either credential (old sessions stopped, their ports pruned), remote candidates by
+generation (an older ufrag dropped, an unknown one held for the next generation), peer-reflexive candidates from
+checks (priority and GOOG-NETWORK-INFO from the request, the foundation, a password once the credentials are known),
+the connection rules (one per remote address per port, a newer generation replaces an unselected one,
+`incoming_only`, `skip_relay_to_non_relay_connections`), nomination (the controller's USE-CANDIDATE rule, or
+NOMINATION with renomination on both sides), the controlled side switching on nomination and on data, the state rules
+(`ComputeState`, `ComputeIceTransportState`), destroying every connection when all have timed out, stopping (or with
+continual gathering clearing) the sessions on a strongly connected pair, the regathering timer, `SendPacket`'s
+ENOTCONN/EINVAL rules, and the prflx sanitizing of the selected pair and the stats. The two-endpoint cases of
+`p2p_transport_channel_unittest.cc` without TURN, TCP, mDNS or field trials are in
+`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, `Environment` clock, `RepeatingTaskHandle` for regathering | `now` on the calls that read the clock; `Process(now)` at `NextProcessTime()` runs the allocator sessions (their ports and connections), the controller's tasks and the regathering timer. Calls without `now` (`SetRemoteIceParameters`, `SetIceConfig`, socket and connection signals) use the time of the last call that had one (a connection's signal: the later of that and its last receive), so the owner calls `Process(now)` before the sockets deliver at `now` | The library's time model, as 10.3 |
+| Hostname candidates | Resolved with the `AsyncDnsResolverFactory` (or dropped without one; not for relay-only policies) | Not ported | The library's addresses carry no hostname (10.3); mDNS is the host stack's (C11) |
+| Local network access | `LocalNetworkAccessPermissionFactory` queries | Always granted | As libwebrtc with no factory (10.3) |
+| STUN dictionary | `StunDictionaryView`/`Writer`, GOOG-DELTA on pings (`enable_goog_delta` on) | Not ported: pings carry no GOOG-DELTA, a received one is not applied | No library API writes the dictionary, so the writer never has a delta to send |
+| DTLS-in-STUN | Piggyback callbacks | Not ported | Off by default in M157 (`dtls_handshake_in_stun`), as 10.4 |
+| Field trials | `WebRTC-IceFieldTrials` parsed; `-DscpFieldTrial`, `-SetSocketReceiveBuffer`, `-RFC8888CongestionControlFeedback`, `-PiggybackIceCheckAcknowledgement`, `-ExtraICEPing` read | Defaults, or an `IceFieldTrials` the caller passes (`Options::field_trials`; the 30 s dead-connection floor and the DSCP override applied) | No field trial strings in the library |
+| Stats | `candidate_stats_list` from the session's ready ports | Not filled | `GetCandidateStatsFromReadyPorts` is not ported |
+| RTC event log, histograms | `IceEventLog` candidate-pair events, UMA | None | No event log in the library |
+| `NetworkRoute`, `GetProtocolOverhead` | `rtc_base/network_route.h`, `rtc_base/net_helper.cc` | `sm/p2p/network_route.h` with the fields the channel fills; 8 bytes for UDP, 20 for TCP | Not in `reference/` (asked on #57) |
+| Packet type | `info_signaled_after_sent.packet_type = kData` on sends | Not set | `PacketOptions` carries no packet info |
+| `RemoveConnection` | DCHECKs the connection is there | Returns if it is not | No DCHECKs in the library |
+| `SetIceConfig` with a STUN keepalive interval before gathering | Dereferences the (null) session | Applied to the session once there is one | Avoids a null dereference |
 
 ## Open questions for the Owner
 

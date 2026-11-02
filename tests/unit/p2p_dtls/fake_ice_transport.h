@@ -136,6 +136,12 @@ class FakeIceTransport : public IceTransportInternal {
   const IceConfig& config() const override { return config_; }
   void MaybeStartGathering(Timestamp) override {}
   std::optional<int> GetRttEstimate() override { return rtt_estimate_; }
+  void AddRemoteCandidate(Timestamp, const Candidate&) override {}
+  void RemoveRemoteCandidate(const Candidate&) override {}
+  void RemoveAllRemoteCandidates() override {}
+  IceGatheringState gathering_state() const override { return kIceGatheringComplete; }
+  bool GetStats(Timestamp, IceTransportStats*) override { return false; }
+  std::optional<const CandidatePair> GetSelectedCandidatePair() const override { return std::nullopt; }
 
  private:
   std::string name_;

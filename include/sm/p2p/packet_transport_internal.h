@@ -5,14 +5,15 @@
 //
 // Differences from libwebrtc, none of them on the wire:
 // - Callback lists are std::function lists removed by tag (CallbackList), as in sm/p2p/async_packet_socket.h.
-// - The network route (network_route(), SignalNetworkRouteChanged) is left out until ICE has candidate pairs to
-//   report (#1002).
+// - The network route (network_route(), the route-changed signal) came with P2PTransportChannel (#1002); NetworkRoute
+//   is in sm/p2p/network_route.h.
 // - No SequenceChecker: like every module in the library, a transport is used from one thread at a time.
 #pragma once
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <utility>
@@ -20,6 +21,7 @@
 
 #include "sm/core/units.h"
 #include "sm/p2p/async_packet_socket.h"
+#include "sm/p2p/network_route.h"
 
 namespace sm::p2p {
 
@@ -103,6 +105,12 @@ class PacketTransportInternal {
   void NotifySentPacket(PacketTransportInternal* t, const SentPacketInfo& info) { sent_.Send(t, info); }
   // The transport closed (one receiver, called once).
   void SetOnCloseCallback(std::function<void()> cb) { on_close_ = std::move(cb); }
+  // The route the transport sends on, if any (PacketTransportInternal::network_route).
+  virtual std::optional<NetworkRoute> network_route() const { return std::nullopt; }
+  using NetworkRouteCallback = std::function<void(std::optional<NetworkRoute>)>;
+  void SubscribeNetworkRouteChanged(const void* tag, NetworkRouteCallback cb) { route_changed_.Add(tag, std::move(cb)); }
+  void UnsubscribeNetworkRouteChanged(const void* tag) { route_changed_.Remove(tag); }
+  void NotifyNetworkRouteChanged(std::optional<NetworkRoute> route) { route_changed_.Send(route); }
 
  protected:
   PacketTransportInternal() = default;
@@ -115,6 +123,7 @@ class PacketTransportInternal {
   TaggedCallbackList<PacketTransportInternal*, Timestamp> writable_state_, ready_to_send_, receiving_state_;
   TaggedCallbackList<PacketTransportInternal*, const ReceivedPacket&> received_;
   TaggedCallbackList<PacketTransportInternal*, const SentPacketInfo&> sent_;
+  TaggedCallbackList<std::optional<NetworkRoute>> route_changed_;
   std::function<void()> on_close_;
 };
 
