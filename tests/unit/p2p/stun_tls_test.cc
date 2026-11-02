@@ -72,3 +72,30 @@ SM_TEST(StunTls, Rfc5769IntegrityWithBoringSsl) {
 
   SetStunCrypto(saved);
 }
+
+// InstallStunCryptoFromTls (#997): BoringSSL's hooks in one call; ids are
+// random, and the transaction manager sends.
+#include "sm/p2p/stun_crypto_tls.h"
+#include "sm/p2p/stun_request.h"
+
+SM_TEST(StunTls, InstallStunCryptoFromTls) {
+  const StunCrypto saved = GetStunCrypto();
+  SetStunCrypto(StunCrypto{});
+  InstallStunCryptoFromTls();
+  SM_EXPECT_TRUE(GetStunCrypto().hmac_sha1 != nullptr);
+  SM_EXPECT_TRUE(GetStunCrypto().md5 != nullptr);
+  SM_EXPECT_TRUE(GetStunCrypto().random_bytes != nullptr);
+  SM_EXPECT_TRUE(StunMessage::ValidateMessageIntegrityForTesting("VOkJxbRl1RmTxUk/WvJxBt", kRequest));
+  // Ids differ from one message to the next.
+  SM_EXPECT_NE(StunMessage::GenerateTransactionId(), StunMessage::GenerateTransactionId());
+  int sent = 0;
+  StunRequestManager manager([&sent](sm::Timestamp, std::span<const uint8_t>, StunRequest*) { ++sent; });
+  struct Plain : public StunRequest {
+    explicit Plain(StunRequestManager& m) : StunRequest(m, std::make_unique<StunMessage>(STUN_BINDING_REQUEST)) {
+      SetAuthenticationRequired(false);
+    }
+  };
+  SM_EXPECT_TRUE(manager.Send(sm::Timestamp::Seconds(1), std::make_unique<Plain>(manager)));
+  SM_EXPECT_EQ(sent, 1);
+  SetStunCrypto(saved);
+}

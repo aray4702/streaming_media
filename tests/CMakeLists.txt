@@ -16,6 +16,7 @@ endif()
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SOURCES
     unit/p2p/packet_socket_test.cc
+    unit/p2p/stun_request_test.cc
     unit/p2p/stun_test.cc
     unit/p2p/test_crypto.cc
   SUITES
@@ -23,12 +24,15 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     P2pIpAddress
     P2pSocketAddress
     Stun
+    StunRequest
+    StunRequestReentrance
+    StunServer
     StunTestCrypto
 )
 if(SM_WITH_TLS)
   # The STUN crypto hooks on BoringSSL's crypto (sm::tls, #984).
   target_sources(sm_unit_p2p PRIVATE unit/p2p/stun_tls_test.cc)
-  target_link_libraries(sm_unit_p2p PRIVATE sm::tls)
+  target_link_libraries(sm_unit_p2p PRIVATE sm::p2p_tls)
   add_test(NAME unit.StunTls COMMAND sm_unit_p2p --filter=StunTls.)
   set_tests_properties(unit.StunTls PROPERTIES LABELS unit)
 endif()
