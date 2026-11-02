@@ -47,7 +47,7 @@ enum class NominationMode {
 };
 
 // IceConfig (#1002): unset fields take the *_or_default values, libwebrtc's constants in sm/p2p/p2p_constants.h.
-// The RTCConfiguration constructor comes with PeerConnection's allocator setup.
+// IceConfigFromRtcConfiguration (below) is the RTCConfiguration constructor (#1002 part 3).
 struct IceConfig {
   // The ICE connection receiving timeout value.
   std::optional<TimeDelta> receiving_timeout;
@@ -123,6 +123,35 @@ struct IceConfig {
     return stun_keepalive_interval.value_or(kStunKeepaliveInterval);
   }
 };
+
+// The fields of PeerConnectionInterface::RTCConfiguration (api/peer_connection_interface.h) that
+// IceConfig(const RTCConfiguration&) reads, with RTCConfiguration's defaults: kUndefined (-1) and nullopt mean
+// unset, so the channel uses libwebrtc's constants. (The allocator's fields are PeerConnectionAllocatorConfig.)
+struct RtcIceConfiguration {
+  static constexpr int kUndefined = -1;
+  int ice_connection_receiving_timeout = kUndefined;
+  int ice_backup_candidate_pair_ping_interval = kUndefined;
+  ContinualGatheringPolicy continual_gathering_policy = ContinualGatheringPolicy::kGatherOnce;
+  bool prioritize_most_likely_ice_candidate_pairs = false;
+  bool presume_writable_when_fully_relayed = false;
+  bool surface_ice_candidates_on_ice_transport_type_changed = false;
+  std::optional<int> ice_check_interval_strong_connectivity;
+  std::optional<int> ice_check_interval_weak_connectivity;
+  std::optional<int> ice_check_min_interval;
+  std::optional<int> ice_unwritable_timeout;
+  std::optional<int> ice_unwritable_min_checks;
+  std::optional<int> ice_inactive_timeout;
+  std::optional<int> stun_candidate_keepalive_interval;
+  std::optional<AdapterType> network_preference;
+  std::optional<int> stable_writable_connection_ping_interval_ms;
+};
+
+// IceConfig::IceConfig(const RTCConfiguration&) (p2p/base/ice_transport_internal.cc), the IceConfig PeerConnection
+// hands every transport (PeerConnection::InitializeTransportController_n). The fields RTCConfiguration does not
+// carry (regather interval, receiving switching delay, nomination mode, VPN preference) stay unset or default;
+// dtls_handshake_in_stun stays off (CanAttemptDtlsStunPiggybacking is off by default in M157). Note that this
+// turns presume_writable_when_fully_relayed off, where P2PTransportChannel's own default has it on.
+IceConfig IceConfigFromRtcConfiguration(const RtcIceConfiguration& config);
 
 // p2p/base/ice_transport_internal.h's IceTransportStats, less candidate_stats_list (see the file comment).
 struct IceTransportStats {

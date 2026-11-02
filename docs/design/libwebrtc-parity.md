@@ -714,7 +714,7 @@ Differences:
 |---|---|---|---|
 | Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
 | `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
-| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | #1002's remaining part |
+| `IceConfig(RTCConfiguration)` | A constructor from `PeerConnectionInterface::RTCConfiguration` | `IceConfigFromRtcConfiguration(RtcIceConfiguration)` (`ice_transport_internal.h`): the same fields with `RTCConfiguration`'s defaults (`kUndefined` and unset mean the channel's constants; presume-writable off) | The library has no `PeerConnectionInterface`; `RtcIceConfiguration` holds the fields the constructor reads |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
 ### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
@@ -790,7 +790,14 @@ NOMINATION with renomination on both sides), the controlled side switching on no
 continual gathering clearing) the sessions on a strongly connected pair, the regathering timer, `SendPacket`'s
 ENOTCONN/EINVAL rules, and the prflx sanitizing of the selected pair and the stats. The two-endpoint cases of
 `p2p_transport_channel_unittest.cc` without TURN, TCP, mDNS or field trials are in
-`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server.
+`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server. The
+single-channel `P2PTransportChannelPingTest` cases (triggered checks, ping intervals, peer-reflexive pairs and
+resurrection, the controlled side's selection by priority, data and nomination, the estimated disconnected time,
+pruning, `GetState`, the ICE role on pruned and older ports, the port's destruction once pruned, and the
+`send_ping_on_*` and `max_outstanding_pings` field trials) are in
+`tests/unit/p2p/p2p_transport_channel_ping_test.cc` (#1002 part 3), with libwebrtc's assertions: a host port on the
+emulated network in place of `FakePortAllocator`, made ready with no time passing as that allocator's session does,
+and a waiter that polls every millisecond of emulated time.
 Differences:
 
 | Item | libwebrtc M157 | This library | Why |

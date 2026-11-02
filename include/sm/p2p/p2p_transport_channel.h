@@ -261,7 +261,7 @@ class P2PTransportChannel : public IceTransportInternal, public IceAgentInterfac
   bool writable_ = false;
   bool receiving_ = false;
   uint32_t nomination_ = 0;
-  Timestamp last_ping_sent_ = Timestamp::MinusInfinity();
+  Timestamp last_ping_sent_ = Timestamp::Millis(0);  // Timestamp::Zero() in libwebrtc
   IceFieldTrials ice_field_trials_;
   // The time of the last call that carried one (see the file comment).
   Timestamp now_;
