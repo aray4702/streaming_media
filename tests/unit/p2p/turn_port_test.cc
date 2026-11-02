@@ -470,6 +470,9 @@ SM_TEST(P2pTurnPort, ChannelBindGetErrorResponse) {
 // 403 to CreatePermission fails and prunes the connection, which is not
 // deleted.
 SM_TEST(P2pTurnPort, ConnectionFailedAndPrunedOnCreatePermissionFailure) {
+  // Declared before the fixture: the fixture's destructor destroys the connection,
+  // whose destroyed callback writes this.
+  bool destroyed = false;
   TurnFixture f;
   f.server.set_reject_private_addresses(true);
   f.CreateTurnPort(kTurnUsername, kTurnPassword, ProtocolAddress(kTurnUdpIntAddr, PROTO_UDP));
@@ -478,7 +481,6 @@ SM_TEST(P2pTurnPort, ConnectionFailedAndPrunedOnCreatePermissionFailure) {
   Candidate remote = f.turn_port->Candidates()[0];
   remote.set_type(IceCandidateType::kHost);
   remote.set_address(*SocketAddress::FromString("10.0.0.10:5000"));
-  bool destroyed = false;
   Connection* conn = f.turn_port->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE);
   SM_ASSERT_TRUE(conn != nullptr);
   conn->SubscribeDestroyed(nullptr, [&](Connection*) { destroyed = true; });
