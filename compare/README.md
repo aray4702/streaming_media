@@ -25,7 +25,7 @@ out/compare/sm_compare --trace=NAME --trace-dir=tr/ a.scn          # per-packet 
 python3 tools/parity_report.py r.json --owners tools/parity_owners.json   # gaps with libwebrtc, in both directions
 out/compare/sm_apm_compare                                         # audio processing vs libwebrtc's APM (docs/results/apm-webrtc.md)
 out/compare/sm_video_compare                                       # freeze detection, quality scaler, frame timing vs libwebrtc (docs/results/video-webrtc.md)
-out/compare/sm_ice_compare [--seeds=N] [--verbose]                # ICE (P2PTransportChannel) vs libwebrtc's on emulated NATs, and recovery after a network change (#1004, compare/webrtc/ice_scenarios.h)
+out/compare/sm_ice_compare [--seeds=N] [--verbose]                # ICE (P2PTransportChannel) vs libwebrtc's on emulated NATs, recovery after a network change (#1004) and relay through an emulated TURN server (#1055; compare/webrtc/ice_scenarios.h)
 ```
 
 The build needs clang 21 or newer (Apple clang 21 works): the libc++ the

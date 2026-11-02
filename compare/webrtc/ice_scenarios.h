@@ -20,8 +20,23 @@
 //
 // One setting differs from RTCConfiguration's defaults on both sides: TCP candidates are off
 // (kTcpCandidatePolicyDisabled), because this library has no TCPPort yet (C4); libwebrtc would add TCP host
-// candidates and pairs. Relay (TURN) is left out until C4, as the issue says, so the symmetric-to-symmetric pair fails
-// on both sides.
+// candidates and pairs. The NAT matrix and the network changes run without a TURN server, so the pairs that need a
+// relay fail there on both sides.
+//
+// Relay (#1055, C4): RelayScenarios() add one emulated TURN server (sim::TurnServer, libwebrtc's p2p/test/
+// turn_server, which serves both stacks) on its own hosts, at the addresses of libwebrtc's P2PTransportChannelTest
+// (kTurnUdpIntAddr 99.99.99.3:3478 inside, kTurnUdpExtAddr 99.99.99.5 for the relayed sockets) with TestTurnServer's
+// realm and auth (test_turn_server.h: realm "example.org", the password is the username). Each endpoint gets it as
+// RTCConfiguration.servers gives it (one RelayServerConfig, kRelayCredentials "test"/"test", PROTO_UDP), next to the
+// STUN server, through the same PeerConnection setup. The scenarios: the NAT pairs that cannot connect without a relay
+// (port-sym, sym-port, sym-sym; kMatrix's RUPU and PURU), an open pair with IceTransportsType relay only (CF_RELAY, as
+// P2PTransportChannelTest's relay-only tests), and sym-sym at 5% loss. Extra metrics:
+// - relay: the relay protocol of each endpoint's selected local candidate ("udp/-": endpoint 0 relays over UDP,
+//   endpoint 1 does not), when both connected;
+// - turn: the TURN requests both endpoints sent in the run (Allocate/CreatePermission/ChannelBind/Refresh, with
+//   retransmissions), counted on the emulated network as each host sends them (sim::Network::SetSendObserver), so the
+//   same code counts both stacks.
+// TURN over TCP and TLS come in a later part of #1055.
 //
 // Metrics per run (both endpoints together unless named):
 // - connected: both endpoints writable and receiving with a selected connection (the unit test's CheckConnected);
@@ -59,6 +74,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sm/core/units.h"
@@ -70,6 +86,7 @@
 #include "sm/p2p/port_allocator.h"
 #include "sm/sim/emulated_sockets.h"
 #include "sm/sim/stun_server.h"
+#include "sm/sim/turn_server.h"
 
 namespace sm::ice_compare {
 
@@ -86,6 +103,9 @@ inline const char* NatName(Nat n) {
   return "?";
 }
 
+// The TURN server an endpoint is given (RTCConfiguration.servers), if any.
+enum class Turn { kNone, kUdp };
+
 struct Scenario {
   std::string name;
   Nat nat[2] = {Nat::kOpen, Nat::kOpen};
@@ -95,6 +115,8 @@ struct Scenario {
   bool continual = false;     // IceConfig::continual_gathering_policy = kGatherContinually on both endpoints.
   bool wifi_to_cellular = false;  // The changing endpoint's first interface is Wi-Fi, its second cellular.
   bool dead = false;  // The changing endpoint has both interfaces from the start, and the first one's links die.
+  Turn turn = Turn::kNone;  // A TURN server on the network, given to both endpoints.
+  bool relay_only = false;  // IceTransportsType kRelay (candidate filter CF_RELAY) on both endpoints.
 };
 
 // Each pair of NAT types (libwebrtc's P2PTransportChannelTest matrix without the relay and TCP columns), then loss
@@ -179,10 +201,38 @@ inline std::vector<Scenario> ChangeScenarios() {
   return out;
 }
 
+// The TURN requests counted per run (Result::turn).
+enum TurnRequest { kAllocate, kCreatePermission, kChannelBind, kRefresh, kNumTurnRequests };
+
+// Relay (#1055): the NAT pairs that need a relay, an open pair with relay only, and sym-sym at 5% loss, with TURN over
+// UDP.
+inline std::vector<Scenario> RelayScenarios() {
+  std::vector<Scenario> out;
+  auto add = [&](Nat a, Nat b, double loss, bool relay_only) {
+    Scenario s;
+    s.nat[0] = a;
+    s.nat[1] = b;
+    s.loss = loss;
+    s.turn = Turn::kUdp;
+    s.relay_only = relay_only;
+    s.name = std::string(NatName(a)) + "-" + NatName(b) + "-turnudp" + (relay_only ? "-relayonly" : "") +
+             (loss > 0 ? "-loss" + std::to_string(static_cast<int>(loss * 100)) : "");
+    out.push_back(s);
+  };
+  add(Nat::kPortRestricted, Nat::kSymmetric, 0, false);
+  add(Nat::kSymmetric, Nat::kPortRestricted, 0, false);
+  add(Nat::kSymmetric, Nat::kSymmetric, 0, false);
+  add(Nat::kOpen, Nat::kOpen, 0, true);
+  add(Nat::kSymmetric, Nat::kSymmetric, 0.05, false);
+  return out;
+}
+
 struct Result {
   bool connected = false;
   double connect_ms = -1;
   std::string pair;  // "host/srflx": local/remote candidate types of the controlling side's selected connection.
+  std::string relay;  // "udp/-": relay protocol of each endpoint's selected local candidate when connected.
+  int turn[kNumTurnRequests] = {0, 0, 0, 0};  // TURN requests both endpoints sent in the run.
   int checks_at_connect = 0;
   int checks_total = 0;
   // Network-change scenarios only.
@@ -214,6 +264,34 @@ inline constexpr uint32_t kAlternatePrivateIp[2] = {sim::SocketAddress::Ip(192, 
 inline constexpr uint32_t kNatIp[2] = {sim::SocketAddress::Ip(77, 77, 77, 77), sim::SocketAddress::Ip(88, 88, 88, 88)};
 inline constexpr uint32_t kStunIp = sim::SocketAddress::Ip(99, 99, 99, 1);
 inline constexpr uint16_t kStunPort = 3478;
+// The TURN server (#1055): kTurnUdpIntAddr and kTurnUdpExtAddr, kRelayCredentials, TestTurnServer's realm.
+inline constexpr uint32_t kTurnIntIp = sim::SocketAddress::Ip(99, 99, 99, 3);
+inline constexpr uint32_t kTurnExtIp = sim::SocketAddress::Ip(99, 99, 99, 5);
+inline constexpr uint16_t kTurnPort = 3478;
+inline const char kTurnUsername[] = "test";
+inline const char kTurnPassword[] = "test";
+inline const char kTurnRealm[] = "example.org";
+
+// test_turn_server.h's auth: the password is the username.
+class TurnAuth final : public sim::TurnAuthInterface {
+ public:
+  bool GetKey(std::string_view username, std::string_view realm, std::string* key) override {
+    return p2p::ComputeStunCredentialHash(std::string(username), std::string(realm), std::string(username), key);
+  }
+};
+
+// The TURN request a datagram carries, if any: a STUN request (RFC 5389 header with the magic cookie) of a TURN
+// method.
+inline std::optional<TurnRequest> TurnRequestOf(const std::vector<uint8_t>& d) {
+  if (d.size() < 20 || d[4] != 0x21 || d[5] != 0x12 || d[6] != 0xA4 || d[7] != 0x42) return std::nullopt;
+  switch ((d[0] << 8) | d[1]) {
+    case 0x0003: return kAllocate;
+    case 0x0004: return kRefresh;
+    case 0x0008: return kCreatePermission;
+    case 0x0009: return kChannelBind;
+  }
+  return std::nullopt;
+}
 
 // ICE credentials of endpoints 0 and 1 (the fixture's kIceUfrag / kIcePwd).
 inline const char* const kUfrag[2] = {"UF00", "UF01"};
@@ -231,6 +309,12 @@ struct Topology {
   uint32_t alt_ip[2] = {0, 0};
   int realm_of[2] = {sim::ByteNetwork::kPublicRealm, sim::ByteNetwork::kPublicRealm};
   sim::LinkConfig link;
+  // The TURN server (Scenario::turn): its inside host, the host of its relayed sockets, and the requests sent to it.
+  TurnAuth turn_auth;
+  std::unique_ptr<sim::EmulatedSocketServer> turn_int_host;
+  std::unique_ptr<sim::EmulatedSocketServer> turn_ext_host;
+  std::unique_ptr<sim::TurnServer> turn;
+  int turn_requests[kNumTurnRequests] = {0, 0, 0, 0};
 
   Topology(const Scenario& s, uint64_t seed) : net(seed) {
     sim::LinkConfig stun_link;
@@ -238,6 +322,22 @@ struct Topology {
     stun_host = std::make_unique<sim::EmulatedSocketServer>(
         net, net.AddHost(kStunIp, sim::ByteNetwork::kPublicRealm, stun_link, stun_link));
     stun = std::make_unique<sim::StunServer>(stun_host->CreateUdpSocket(StunAddress(), 0, 0));
+    if (s.turn != Turn::kNone) {
+      // The TURN server's links are the STUN server's.
+      turn_int_host = std::make_unique<sim::EmulatedSocketServer>(
+          net, net.AddHost(kTurnIntIp, sim::ByteNetwork::kPublicRealm, stun_link, stun_link));
+      turn_ext_host = std::make_unique<sim::EmulatedSocketServer>(
+          net, net.AddHost(kTurnExtIp, sim::ByteNetwork::kPublicRealm, stun_link, stun_link));
+      turn = std::make_unique<sim::TurnServer>();
+      turn->set_realm(kTurnRealm);
+      turn->set_auth_hook(&turn_auth);
+      turn->AddInternalSocket(turn_int_host->CreateUdpSocket(TurnAddress(), 0, 0), p2p::PROTO_UDP);
+      turn->SetExternalSocketFactory(turn_ext_host.get(), p2p::SocketAddress(p2p::IpAddress(kTurnExtIp), 0));
+      net.SetSendObserver([this](const sim::Datagram<sim::Wire>& d) {
+        if (d.dst.ip != kTurnIntIp || d.dst.port != kTurnPort || d.payload.proto != sim::Wire::Proto::kUdp) return;
+        if (std::optional<TurnRequest> r = TurnRequestOf(d.payload.data)) ++turn_requests[*r];
+      });
+    }
     for (int i = 0; i < 2; ++i) {
       int realm = sim::ByteNetwork::kPublicRealm;
       ip[i] = kPublicIp[i];
@@ -285,14 +385,27 @@ struct Topology {
   }
 
   static p2p::SocketAddress StunAddress() { return p2p::SocketAddress(p2p::IpAddress(kStunIp), kStunPort); }
+  static p2p::SocketAddress TurnAddress() { return p2p::SocketAddress(p2p::IpAddress(kTurnIntIp), kTurnPort); }
 
-  // Hands every datagram that has arrived by `now` to its socket.
+  // The earliest time anything on the network moves or the TURN server has a timer.
+  Timestamp NextEvent() const {
+    Timestamp t = net.NextEvent();
+    if (turn) t = std::min(t, turn->NextProcessTime());
+    return t;
+  }
+
+  // Hands every datagram that has arrived by `now` to its socket, and runs the TURN server's timers.
   void Deliver(Timestamp now) {
     host[0]->Deliver(now);
     host[1]->Deliver(now);
     stun_host->Deliver(now);
     for (auto& h : alt_host) {
       if (h) h->Deliver(now);
+    }
+    if (turn) {
+      turn_int_host->Deliver(now);
+      turn_ext_host->Deliver(now);
+      turn->Process(now);
     }
   }
 };
@@ -328,6 +441,9 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   std::deque<Candidate> signaling[2];  // Candidates for endpoint i.
   PeerConnectionAllocatorConfig pc_config;
   pc_config.tcp_candidates_enabled = false;  // See the file comment.
+  if (s.relay_only) pc_config.candidate_filter = CF_RELAY;
+  std::vector<RelayServerConfig> turn_servers;
+  if (s.turn == Turn::kUdp) turn_servers.emplace_back(Topology::TurnAddress(), kTurnUsername, kTurnPassword, PROTO_UDP);
   // The interfaces' names and types (see the file comment).
   const bool typed = s.wifi_to_cellular;
   auto add_primary = [&](int i) {
@@ -352,7 +468,8 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
     }
     ep[i].socket_factory = std::make_unique<EndpointSocketFactory>(&topo, i);
     ep[i].allocator = std::make_unique<BasicPortAllocator>(&ep[i].network_manager, ep[i].socket_factory.get());
-    ConfigureAsPeerConnection(now, ep[i].allocator.get(), ServerAddresses{Topology::StunAddress()}, {}, pc_config);
+    ConfigureAsPeerConnection(now, ep[i].allocator.get(), ServerAddresses{Topology::StunAddress()}, turn_servers,
+                              pc_config);
     ep[i].ch = std::make_unique<P2PTransportChannel>(now, "audio", ICE_CANDIDATE_COMPONENT_RTP, ep[i].allocator.get());
     ep[i].ch->SubscribeCandidateGathered(&ep[i], [&signaling, i](IceTransportInternal*, const Candidate& c) {
       signaling[1 - i].push_back(c);
@@ -385,6 +502,14 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
     const Connection* sel = ep[0].ch->selected_connection();
     return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
   };
+  auto relay = [&] {
+    std::string out;
+    for (int i = 0; i < 2; ++i) {
+      const std::string& p = ep[i].ch->selected_connection()->local_candidate().relay_protocol();
+      out += (i ? "/" : "") + (p.empty() ? std::string("-") : p);
+    }
+    return out;
+  };
 
   Result r;
   const Timestamp until = start + RunTime(s);
@@ -403,6 +528,7 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
       r.connected = true;
       r.connect_ms = (now - start).us() / 1000.0;
       r.pair = pair();
+      r.relay = relay();
       r.checks_at_connect = checks();
     }
     if (changed && !r.recovered && recovered()) {
@@ -410,7 +536,7 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
       r.recover_ms = (now - change_at).us() / 1000.0;
       r.pair_after = pair();
     }
-    Timestamp t = std::min(topo.net.NextEvent(), changed ? Timestamp::PlusInfinity() : change_at);
+    Timestamp t = std::min(topo.NextEvent(), changed ? Timestamp::PlusInfinity() : change_at);
     for (Endpoint& e : ep) {
       t = std::min(t, e.ch->NextProcessTime());
       t = std::min(t, e.allocator->NextPooledSessionsProcessTime());
@@ -447,6 +573,7 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   }
   now = until;
   r.checks_total = checks();
+  std::copy(std::begin(topo.turn_requests), std::end(topo.turn_requests), r.turn);
   return r;
 }
 
