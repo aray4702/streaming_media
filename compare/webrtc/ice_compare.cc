@@ -29,6 +29,7 @@
 #include "api/candidate.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/ice_transport_interface.h"
 #include "api/packet_socket_factory.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/timestamp.h"
@@ -257,7 +258,10 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       Stage("configure");
       ConfigureAsPeerConnection(e.allocator.get(), stun_servers);
       Stage("channel");
-      e.ch = std::make_unique<w::P2PTransportChannel>(env, "audio", w::ICE_CANDIDATE_COMPONENT_RTP, e.allocator.get());
+      // Create allocates the channel inside libwebrtc.a, at the library's own sizeof.
+      w::IceTransportInit init(env);
+      init.set_port_allocator(e.allocator.get());
+      e.ch = w::P2PTransportChannel::Create("audio", w::ICE_CANDIDATE_COMPONENT_RTP, std::move(init));
       e.ch->SubscribeCandidateGathered(&e, [&signaling, i](w::IceTransportInternal*, const w::Candidate& c) {
         signaling[1 - i].push_back(c);
       });
@@ -265,8 +269,11 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       // IceConfig(RTCConfiguration()) leaves every optional unset and gathers once (p2p/base/ice_transport_internal.cc):
       // the default IceConfig.
       e.ch->SetIceConfig(w::IceConfig());
+      Stage("ice role");
       e.ch->SetIceRole(i == 0 ? w::ICEROLE_CONTROLLING : w::ICEROLE_CONTROLLED);
+      Stage("ice parameters");
       e.ch->SetIceParameters(w::IceParameters(kUfrag[i], kPwd[i], false));
+      Stage("remote ice parameters");
       e.ch->SetRemoteIceParameters(w::IceParameters(kUfrag[1 - i], kPwd[1 - i], false));
     }
     Stage("gathering");
@@ -405,6 +412,12 @@ int main(int argc, char** argv) {
   std::signal(SIGTRAP, OnCrash);
   std::setvbuf(stdout, nullptr, _IONBF, 0);
   sm::p2p::testing::InstallTestCrypto();
+  if (g_trace) {
+    // libwebrtc.a's own sizes (operator new in P2PTransportChannel::Create, the stores of IceConfig::IceConfig()), to
+    // check this build lays the classes out the same way.
+    std::fprintf(stderr, "sizeof P2PTransportChannel %zu (libwebrtc.a 1616), IceConfig %zu (224), BasicPortAllocator %zu (512)\n",
+                 sizeof(w::P2PTransportChannel), sizeof(w::IceConfig), sizeof(w::BasicPortAllocator));
+  }
 
   std::printf("ICE against libwebrtc M157 (#1004): P2PTransportChannel set up as PeerConnection, UDP and STUN, "
               "%d seeds, ours / libwebrtc\n\n",
