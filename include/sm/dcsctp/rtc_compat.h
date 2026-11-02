@@ -19,10 +19,26 @@
 //   both take `<< message`. SM_DCSCTP_DLOG is RTC_DLOG: a debug-build log
 //   line, compiled out in release builds as libwebrtc's is (NDEBUG). Here the
 //   debug build writes it to the library's text log at WARNING.
+//
+// Part 2 (#1060, the socket, rx, tx and timer) adds:
+// - DelayPrecision: webrtc::TaskQueueBase::DelayPrecision
+//   (api/task_queue/task_queue_base.h), the hint DcSctpSocketCallbacks::
+//   CreateTimeout takes. The library starts no task queues; the hint is
+//   passed through to the host's timeouts.
+// - AnyInvocable<R(Args...)>: absl::AnyInvocable, a move-only callable.
+// - WrapUnique (absl/memory/memory.h), ToString of numbers
+//   (rtc_base/string_encode.h), and the absl/algorithm/container.h helpers
+//   c_accumulate, c_any_of, c_count_if and c_lower_bound.
+// - SM_DCSCTP_LOG(kSeverity): RTC_LOG, to the library's text log at that
+//   severity; SM_DCSCTP_DLOG_IS_ON: RTC_DLOG_IS_ON; the RTC_CHECK_NE,
+//   RTC_CHECK_NOTREACHED, RTC_DCHECK_EQ and RTC_DCHECK_GT forms.
 #ifndef SM_DCSCTP_RTC_COMPAT_H_
 #define SM_DCSCTP_RTC_COMPAT_H_
 
+#include <algorithm>
 #include <cstdarg>
+#include <memory>
+#include <numeric>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -32,6 +48,7 @@
 #include <utility>
 
 #include "sm/core/logging.h"
+#include "sm/core/units.h"
 
 namespace sm::dcsctp {
 
@@ -93,6 +110,19 @@ class StringBuilder {
   StringBuilder& operator<<(float f) { return Append(std::to_string(f)); }
   StringBuilder& operator<<(double f) { return Append(std::to_string(f)); }
 
+#if defined(__GNUC__) || defined(__clang__)
+  __attribute__((format(printf, 2, 3)))
+#endif
+  StringBuilder& AppendFormat(const char* fmt, ...) {
+    char buf[1024];
+    va_list args;
+    va_start(args, fmt);
+    const int n = std::vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    if (n > 0) str_.append(buf, static_cast<size_t>(n) < sizeof(buf) ? static_cast<size_t>(n) : sizeof(buf) - 1);
+    return *this;
+  }
+
   const std::string& str() const { return str_; }
   std::string Release() {
     std::string ret = std::move(str_);
@@ -145,6 +175,91 @@ inline std::string StringFormat(const char* fmt, ...) {
   return std::string(buf, static_cast<size_t>(n) < sizeof(buf) ? static_cast<size_t>(n) : sizeof(buf) - 1);
 }
 
+enum class DelayPrecision { kLow, kHigh };
+
+template <typename Signature>
+class AnyInvocable;
+
+template <typename R, typename... Args>
+class AnyInvocable<R(Args...)> {
+ public:
+  AnyInvocable() = default;
+  template <typename F>
+    requires(!std::is_same_v<std::decay_t<F>, AnyInvocable>)
+  AnyInvocable(F&& f) : impl_(new Impl<std::decay_t<F>>(std::forward<F>(f))) {}
+  AnyInvocable(AnyInvocable&&) noexcept = default;
+  AnyInvocable& operator=(AnyInvocable&&) noexcept = default;
+
+  R operator()(Args... args) { return impl_->Call(std::forward<Args>(args)...); }
+  explicit operator bool() const { return impl_ != nullptr; }
+
+ private:
+  struct Base {
+    virtual ~Base() = default;
+    virtual R Call(Args... args) = 0;
+  };
+  template <typename F>
+  struct Impl final : Base {
+    explicit Impl(F&& f) : f_(std::move(f)) {}
+    explicit Impl(const F& f) : f_(f) {}
+    R Call(Args... args) override { return f_(std::forward<Args>(args)...); }
+    F f_;
+  };
+  std::unique_ptr<Base> impl_;
+};
+
+template <typename T>
+std::unique_ptr<T> WrapUnique(T* ptr) {
+  return std::unique_ptr<T>(ptr);
+}
+
+template <typename T>
+  requires std::is_arithmetic_v<T>
+std::string ToString(T v) {
+  return std::to_string(v);
+}
+
+// ToString of TimeDelta and Timestamp (api/units/time_delta.cc, timestamp.cc).
+inline std::string ToString(::sm::TimeDelta v) {
+  if (v.IsPlusInfinity()) return "+inf ms";
+  if (v.IsMinusInfinity()) return "-inf ms";
+  if (v.us() == 0 || v.us() % 1000 != 0) return std::to_string(v.us()) + " us";
+  if (v.us() % 1000000 != 0) return std::to_string(v.us() / 1000) + " ms";
+  return std::to_string(v.us() / 1000000) + " s";
+}
+inline std::string ToString(::sm::Timestamp v) {
+  if (v.IsPlusInfinity()) return "+inf ms";
+  if (v.IsMinusInfinity()) return "-inf ms";
+  if (v.us() == 0 || v.us() % 1000 != 0) return std::to_string(v.us()) + " us";
+  if (v.us() % 1000000 != 0) return std::to_string(v.us() / 1000) + " ms";
+  return std::to_string(v.us() / 1000000) + " s";
+}
+
+template <typename C, typename T>
+T c_accumulate(const C& c, T init) {
+  return std::accumulate(std::begin(c), std::end(c), std::move(init));
+}
+template <typename C, typename T, typename Op>
+T c_accumulate(const C& c, T init, Op op) {
+  return std::accumulate(std::begin(c), std::end(c), std::move(init), std::move(op));
+}
+template <typename C, typename P>
+bool c_any_of(const C& c, P p) {
+  return std::any_of(std::begin(c), std::end(c), std::move(p));
+}
+template <typename C, typename P>
+auto c_count_if(const C& c, P p) {
+  return std::count_if(std::begin(c), std::end(c), std::move(p));
+}
+template <typename C, typename T>
+auto c_lower_bound(C& c, const T& v) {
+  return std::lower_bound(std::begin(c), std::end(c), v);
+}
+template <typename C, typename T, typename Cmp>
+auto c_lower_bound(C& c, const T& v, Cmp cmp) {
+  return std::lower_bound(std::begin(c), std::end(c), v, std::move(cmp));
+}
+
 namespace compat_impl {
 
 // The message of a failed check: printed with the condition, then abort().
@@ -184,6 +299,24 @@ class DebugLogMessage {
   StringBuilder sb_;
 };
 
+// A log line at a given severity (RTC_LOG), written when it goes out of scope.
+class LogMessage {
+ public:
+  LogMessage(::sm::LogSeverity severity, const char* file, int line) : severity_(severity), file_(file), line_(line) {}
+  ~LogMessage() { ::sm::LogPrintf(severity_, file_, line_, "%s", sb_.str().c_str()); }
+  template <typename T>
+  LogMessage& operator<<(const T& v) {
+    sb_ << v;
+    return *this;
+  }
+
+ private:
+  ::sm::LogSeverity severity_;
+  const char* file_;
+  int line_;
+  StringBuilder sb_;
+};
+
 // Swallows the message of a check or log that is compiled out.
 class NullStream {
  public:
@@ -218,5 +351,17 @@ struct Voidify {
   ::sm::dcsctp::compat_impl::Voidify() & ::sm::dcsctp::compat_impl::DebugLogMessage(__FILE__, __LINE__)
 #endif
 #define SM_DCSCTP_DCHECK_NOTREACHED() SM_DCSCTP_DCHECK(false)
+#define SM_DCSCTP_CHECK_NOTREACHED() SM_DCSCTP_CHECK(false)
+#define SM_DCSCTP_CHECK_NE(a, b) SM_DCSCTP_CHECK((a) != (b))
+#define SM_DCSCTP_DCHECK_EQ(a, b) SM_DCSCTP_DCHECK((a) == (b))
+#define SM_DCSCTP_DCHECK_GT(a, b) SM_DCSCTP_DCHECK((a) > (b))
+#if defined(NDEBUG)
+#define SM_DCSCTP_DLOG_IS_ON 0
+#else
+#define SM_DCSCTP_DLOG_IS_ON 1
+#endif
+#define SM_DCSCTP_LOG(severity)                 \
+  ::sm::dcsctp::compat_impl::Voidify() &        \
+      ::sm::dcsctp::compat_impl::LogMessage(::sm::LogSeverity::severity, __FILE__, __LINE__)
 
 #endif  // SM_DCSCTP_RTC_COMPAT_H_

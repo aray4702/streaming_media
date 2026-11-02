@@ -267,6 +267,59 @@ if(SM_WITH_DATACHANNEL)
       DcsctpZeroChecksumAcceptableChunkParameterTest
   )
   target_include_directories(sm_unit_dcsctp PRIVATE unit/dcsctp)
+  # dcsctp's socket, rx, tx and timer (C7 part 2, #1060): every *_test.cc under net/dcsctp/{public,socket,rx,tx,timer}/
+  # at M157 except task_queue_timeout_test.cc (replaced by process_timeout_test.cc) and the network-emulation test, on
+  # sm_test.h with gmock_lite.h's mocks.
+  sm_add_test_exe(sm_unit_dcsctp_socket LABEL unit DEPS sm::dcsctp
+    SOURCES
+      unit/dcsctp/common/handover_testing.cc
+      unit/dcsctp/public/types_test.cc
+      unit/dcsctp/rx/data_tracker_test.cc
+      unit/dcsctp/rx/interleaved_reassembly_streams_test.cc
+      unit/dcsctp/rx/reassembly_queue_test.cc
+      unit/dcsctp/rx/traditional_reassembly_streams_test.cc
+      unit/dcsctp/socket/dcsctp_socket_test.cc
+      unit/dcsctp/socket/heartbeat_handler_test.cc
+      unit/dcsctp/socket/packet_sender_test.cc
+      unit/dcsctp/socket/state_cookie_test.cc
+      unit/dcsctp/socket/stream_reset_handler_test.cc
+      unit/dcsctp/socket/transmission_control_block_test.cc
+      unit/dcsctp/testing/data_generator.cc
+      unit/dcsctp/timer/process_timeout_test.cc
+      unit/dcsctp/timer/timer_test.cc
+      unit/dcsctp/tx/outstanding_data_test.cc
+      unit/dcsctp/tx/retransmission_error_counter_test.cc
+      unit/dcsctp/tx/retransmission_queue_test.cc
+      unit/dcsctp/tx/retransmission_timeout_test.cc
+      unit/dcsctp/tx/rr_send_queue_test.cc
+      unit/dcsctp/tx/stream_scheduler_test.cc
+    SUITES
+      DcsctpDataTrackerTest
+      DcsctpDcSctpSocketParametrizedTest
+      DcsctpDcSctpSocketTest
+      DcsctpDisabledHeartbeatHandlerTest
+      DcsctpHeartbeatHandlerTest
+      DcsctpInterleavedReassemblyStreamsTest
+      DcsctpOutstandingDataTest
+      DcsctpPacketSenderTest
+      DcsctpProcessTimeoutTest
+      DcsctpRRSendQueueTest
+      DcsctpReassemblyQueueTest
+      DcsctpRetransmissionErrorCounterTest
+      DcsctpRetransmissionQueueTest
+      DcsctpRetransmissionTimeoutTest
+      DcsctpStateCookieTest
+      DcsctpStreamResetHandlerTest
+      DcsctpStreamSchedulerTest
+      DcsctpTimerManagerTest
+      DcsctpTimerTest
+      DcsctpTraditionalReassemblyStreamsTest
+      DcsctpTransmissionControlBlockTest
+      DcsctpTypesTest)
+  target_include_directories(sm_unit_dcsctp_socket PRIVATE unit/dcsctp)
+  if(NOT MSVC)
+    target_compile_options(sm_unit_dcsctp_socket PRIVATE -Wno-shadow -Wno-comment)
+  endif()
   if(NOT MSVC)
     target_compile_options(sm_unit_dcsctp PRIVATE -Wno-shadow)
   endif()

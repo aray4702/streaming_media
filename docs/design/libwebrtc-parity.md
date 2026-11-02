@@ -973,7 +973,43 @@ Differences:
 | `P2PTransportChannelMultihomedTest.TestFailoverWithManyConnections` | Run with a TCP TURN server and IPv6 interfaces | Not run; the TCP TURN server it needs is here now | The emulated network is IPv4 only (10.9) |
 | UDP blocked | `FirewallSocketServer::AddRule(false, FP_UDP, ...)` | `ByteNetwork::SetFirewallRule` with a rule on the datagram's protocol | The emulated network's firewall (10.9) |
 
-### 10.15 Session description model and SDP parse/write (`src/pc/{webrtc_sdp,session_description,jsep,codec,stream_params,simulcast_description,media_protocol_names}.cc`, C6 part 1, #1062)
+### 10.15 Data channels: the dcSCTP socket (`src/dcsctp/{public,socket,rx,tx,timer}/`, C7 part 2, #1060)
+
+Ported as a unit from `net/dcsctp/{public,socket,rx,tx,timer}/` at M157 (`compare/webrtc/reference/net/dcsctp/`),
+file for file under `include/sm/dcsctp/` and `src/dcsctp/`, namespace `sm::dcsctp`, on the packet layer of 10.11:
+`DcSctpSocketInterface`, `DcSctpSocketCallbacks`, `DcSctpMessage`, `Timeout`, `PacketObserver`, the handover state
+and `DcSctpSocketFactory` (`public/`); `DcSctpSocket` with the association states, the INIT / INIT-ACK /
+COOKIE-ECHO / COOKIE-ACK handshake and its `StateCookie`, restarts and tie-tags, `HeartbeatHandler`,
+`StreamResetHandler` (RFC 6525), `TransmissionControlBlock`, `PacketSender`, `CallbackDeferrer` and the
+capabilities (partial reliability, message interleaving, stream reset, zero checksum) (`socket/`); `DataTracker`,
+`ReassemblyQueue` and the traditional and interleaved reassembly streams (`rx/`); `RetransmissionQueue`,
+`OutstandingData`, `RetransmissionTimeout`, `RetransmissionErrorCounter`, `RRSendQueue` and `StreamScheduler`
+(`tx/`); and `Timer` / `TimerManager` with their backoff (`timer/`). Same constants and defaults: `DcSctpOptions`
+is 10.11's header, unchanged (MTU 1191, RTO initial / min / max 500 / 400 / 60000 ms, T1-init and T1-cookie
+1000 ms, heartbeat interval 30 s, delayed ack 200 ms, max burst 4, 65535 streams, ...). It builds only with
+`SM_WITH_DATACHANNEL=ON`, like part 1. Tests: every `*_test.cc` under `public/`, `socket/`, `rx/`, `tx/` and
+`timer/` (396 cases, `TEST_P` cases run for both handover modes), among them `dcsctp_socket_test.cc`'s two-socket
+cases (connect, ordered, unordered and partially reliable messages, loss and retransmission, stream reset,
+handover, abort, shutdown), in `tests/unit/dcsctp/` with their mocks (`mock_context.h`,
+`mock_dcsctp_socket_callbacks.h`, `mock_send_queue.h`), `testing/data_generator` and `common/handover_testing`;
+`timer/process_timeout_test.cc` (6 cases) for the timeout source below. `fuzz/dcsctp_socket_fuzzer.cc` is
+`test/fuzzers/dcsctp_socket_fuzzer.cc` over `fuzzers/dcsctp_fuzzers.cc`'s `FuzzSocket` (ported as
+`fuzz/dcsctp_fuzzers.{h,cc}`), with a corpus that starts from each of the fuzzer's 10 socket states. Not here:
+`media/sctp/dcsctp_transport` over DTLS (part 3) and DCEP with the data channel API (part 4). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Timeouts | `timer/task_queue_timeout.{h,cc}`: a delayed task per started `Timeout` on a `TaskQueueBase`, `on_expired(id)` when it runs and the timeout is still due | `timer/process_timeout.h`: `ProcessTimeoutFactory` creates the `Timeout`s, `NextProcessTime()` is the earliest expiry, `Process(now)` calls `on_expired(id)` for each due timeout, earliest first (ties in creation order); `now()` is the time the host passes in | The library's time model: no threads, no clock reads. Expiry (start time + duration, a stopped or restarted timeout not firing) is the task queue version's; `task_queue_timeout_test.cc` is replaced by `process_timeout_test.cc` |
+| `DelayPrecision` | `webrtc::TaskQueueBase::DelayPrecision` | `sm::dcsctp::DelayPrecision` (`kLow`, `kHigh`), passed to `CreateTimeout` as before | No task queue in the library |
+| Units | `webrtc::TimeDelta`, `webrtc::Timestamp` | `sm::TimeDelta`, `sm::Timestamp` (`sm/core/units.h`); `Timestamp::Zero()` is `Timestamp::Micros(0)`, `TimeDelta::Abs()` and `ms<int32_t>()` written out | The library's units; same values |
+| rtc_base and absl pieces | `absl::AnyInvocable`, `absl::bind_front`, `absl::c_*`, `absl::WrapUnique`, `webrtc::flat_set`, `RTC_LOG`, `StringBuilder::AppendFormat`, `ToString` | `sm/dcsctp/rtc_compat.h`: `AnyInvocable` (move-only callable), `std::bind_front`, `c_accumulate` / `c_any_of` / `c_count_if` / `c_lower_bound`, `WrapUnique`, `std::set`, `SM_DCSCTP_LOG` to the library's text log, `AppendFormat`, `ToString` of numbers and units | No absl or rtc_base; same behaviour |
+| `TextPcapPacketObserver` | `public/text_pcap_packet_observer.*` over `rtc_base/text2pcap` | Not ported; `PacketObserver` is | `rtc_base/text2pcap` isn't in `reference/`; a debug aid, off by default in the tests too |
+| `dcsctp_socket_network_test.cc` | Two sockets over `NetworkEmulationManager` with a simulated time controller | Not ported | It needs libwebrtc's network emulation and task queues; the two-socket cases of `dcsctp_socket_test.cc` and `process_timeout_test.cc` cover the socket |
+| `mock_dcsctp_socket.h`, `mock_dcsctp_socket_factory.h` | gmock mocks of the public interface | Not ported | Only their own trivial test uses them here; part 3 brings what `dcsctp_transport` needs |
+| Tests | gtest and gmock | `sm_test.h` with `tests/unit/dcsctp/gmock_lite.h`, which now also has `MOCK_METHOD` (expanded by the port into a `FunctionMocker` member), `EXPECT_CALL` / `ON_CALL` with gmock's matching and cardinality rules, `NiceMock`, `StrictMock`, `InSequence`, `MockFunction`, fixtures, `TEST_P` and the matchers the tests use | No gtest in the library. A mismatched argument, a missing call and a call beyond `Times` fail, as in gmock (checked by mutating cases) |
+| `MockDcSctpSocketCallbacks::GetRandomInt` (tests) | `webrtc::Random` seeded per mock | `sm::Random` seeded the same way | `rtc_base/random` isn't in `reference/`; only the tests' verification tags and initial TSNs differ |
+
+### 10.16 Session description model and SDP parse/write (`src/pc/{webrtc_sdp,session_description,jsep,codec,stream_params,simulcast_description,media_protocol_names}.cc`, C6 part 1, #1062)
 
 `api/webrtc_sdp.cc` with the model it reads and writes: `pc/session_description` (contents, groups, transports,
 msid signalling, extmap-allow-mixed and cryptex at both levels), `media/base/codec` (codecs, rtcp-fb params, fmtp),
