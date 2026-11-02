@@ -4,6 +4,7 @@
 #include <cmath>
 #include <limits>
 
+#include "sm/core/logging.h"
 #include "sm/core/random.h"
 #include "sm/rtp/h264.h"
 #include "sm/rtp/sps_vui_rewriter.h"
@@ -646,6 +647,7 @@ void Session::HandleRtp(std::span<const uint8_t> bytes, Timestamp now) {
   auto p = RtpPacket::Parse(bytes);
   if (!p) {
     ++stats_.malformed;
+    SM_LOG(kVerbose, "rtp_session: malformed RTP datagram (%zu bytes)", bytes.size());
     return;
   }
   ++stats_.rtp_in;
@@ -658,6 +660,8 @@ void Session::HandleRtp(std::span<const uint8_t> bytes, Timestamp now) {
   auto sink = demux_.Demux(*p);
   if (!sink || *sink < 0 || static_cast<size_t>(*sink) >= sinks_.size()) {
     ++stats_.unroutable;
+    SM_LOG(kInfo, "rtp_session: unroutable RTP packet, ssrc %u, payload type %d", static_cast<unsigned>(p->ssrc),
+           static_cast<int>(p->payload_type));
     SM_EVENT(cfg_.events, now, "rtp_session", "unroutable", p->ssrc, p->payload_type);
     return;
   }
@@ -710,6 +714,7 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
   RtcpIncoming in = rtcp_.OnRtcp(bytes, now);
   if (!in.valid) {
     ++stats_.malformed;
+    SM_LOG(kVerbose, "rtp_session: malformed RTCP datagram (%zu bytes)", bytes.size());
     return;
   }
   // Resends (NACK and early loss) wait until the whole packet is handled; see FlushResends.
@@ -805,6 +810,8 @@ void Session::HandleRtcp(std::span<const uint8_t> bytes, Timestamp now) {
         }
         it->second.extended_highest_seq = rb.extended_highest_seq;
         it->second.cumulative_lost = rb.cumulative_lost;
+        it->second.fraction_lost = rb.fraction_lost;  // GetStats only.
+        it->second.jitter = rb.jitter;                // GetStats only.
       }
       // No previous blocks to compare to, so nothing to report.
       if (!any || !total_packets_delta) return;
@@ -1163,5 +1170,122 @@ void Session::ExportMetrics(MetricsWriter& w) const {
 
 const sync::Syncable* Session::sync_audio() const { return sync_audio_.get(); }
 const sync::Syncable* Session::sync_video() const { return sync_video_.get(); }
+
+}  // namespace sm::rtp
+
+namespace sm::rtp {
+
+// --- Stats snapshot (issue #988) ---------------------------------------------------
+
+void Session::SetFreezeDetector(VideoRecvId id, const video::FreezeDetector* detector) {
+  if (id.index < 0 || static_cast<size_t>(id.index) >= video_recv_.size()) return;
+  video_recv_[static_cast<size_t>(id.index)].freeze_detector = detector;
+}
+
+ObsStatus Session::GetStats(Timestamp now, StatsReport* out) const {
+#if SM_ENABLE_STATS
+  if (out == nullptr) return ObsStatus::kOk;
+  StatsReport r;
+  r.timestamp = now;
+
+  TransportStats& t = r.transport;
+  t.datagrams_sent = stats_.datagrams_out;
+  t.datagrams_received = stats_.datagrams_in;
+  t.rtp_received = stats_.rtp_in;
+  t.rtcp_received = stats_.rtcp_in;
+  t.malformed = stats_.malformed;
+  t.unroutable = stats_.unroutable;
+  t.round_trip_time = rtt_;
+  t.target_bitrate = send_.target();
+  for (const RtcpEngine* e : std::initializer_list<const RtcpEngine*>{&rtcp_, audio_recv_rtcp_.get()}) {
+    if (e == nullptr) continue;
+    const RtcpStats& rs = e->stats();
+    t.nack_sent += rs.nack_sent;
+    t.pli_sent += rs.pli_sent;
+    t.fir_sent += rs.fir_sent;
+    t.nack_received += rs.nack_received;
+    t.pli_received += rs.pli_received;
+    t.fir_received += rs.fir_received;
+  }
+
+  auto add_outbound = [&](const SendStream& st, bool video) {
+    const RtpSender& s = *st.sender;
+    const RtpSenderStats& ss = s.stats();
+    OutboundRtpStats o;
+    o.ssrc = s.config().ssrc;
+    o.rtx_ssrc = s.config().rtx_ssrc;
+    o.video = video;
+    o.mid = s.config().mid;
+    o.packets_sent = ss.media_packets;
+    o.payload_bytes_sent = static_cast<uint64_t>(std::max<int64_t>(0, ss.media_payload_bytes));
+    o.frames_sent = ss.frames;
+    o.retransmitted_packets_sent = ss.rtx_packets;
+    o.fec_packets_sent = ss.fec_packets;
+    o.padding_packets_sent = ss.padding_packets;
+    if (auto it = last_report_blocks_.find(o.ssrc); it != last_report_blocks_.end()) {
+      o.remote_packets_lost = it->second.cumulative_lost;
+      o.remote_fraction_lost = it->second.fraction_lost / 256.0;
+      o.remote_jitter_ms = static_cast<double>(it->second.jitter) * 1000.0 / s.config().clock_rate;
+    }
+    if (st.rtt_ms > 0) o.round_trip_time = TimeDelta::Millis(st.rtt_ms);
+    else if (st.num_rtts > 0) o.round_trip_time = st.last_rtt;
+    r.outbound.push_back(std::move(o));
+  };
+  for (const SendStream& st : audio_send_) add_outbound(st, false);
+  for (const SendStream& st : video_send_) add_outbound(st, true);
+
+  auto add_inbound = [&](const RecvStream& st, bool video) {
+    const RtpReceiver& rx = *st.receiver;
+    const RtpReceiverStats& rs = rx.stats();
+    const timing::ReceiveStatsSnapshot snap = rx.receive_statistics().Snapshot();
+    InboundRtpStats in;
+    in.ssrc = st.ssrc;
+    in.video = video;
+    in.packets_received = snap.packets_received;
+    in.packets_lost = snap.cumulative_lost;
+    in.fraction_lost = snap.fraction_lost;
+    in.jitter_ms = snap.jitter_ms;
+    in.rtx_packets_received = rs.rtx;
+    in.fec_packets_received = rs.fec;
+    in.nack_count = rx.nack().stats().nack_requests;
+    if (video) {
+      const auto& ks = rx.keyframes().stats();
+      in.pli_count = ks.pli_sent;
+      in.fir_count = ks.fir_sent;
+      in.frames_received = rs.frames_received;
+      in.frames_decodable = rs.frames_scheduled;
+      in.frames_rendered = rx.render_frames().stats().rendered;
+      in.frames_dropped = rx.render_frames().stats().dropped();
+      if (st.freeze_detector != nullptr) {
+        const video::FreezeStats& fs = st.freeze_detector->stats();
+        in.freeze_count = fs.freeze_count;
+        in.total_freezes_duration_ms = fs.total_freezes_ms;
+        in.pause_count = fs.pause_count;
+        in.total_pauses_duration_ms = fs.total_pauses_ms;
+      }
+    } else {
+      const timing::AudioJitterBufferStats& js = rx.jitter_buffer().stats();
+      in.total_samples_received = js.total_samples_received;
+      in.concealed_samples = js.concealed_samples;
+      in.concealment_events = js.concealment_events;
+      in.inserted_samples_for_deceleration = js.inserted_samples_for_deceleration;
+      in.removed_samples_for_acceleration = js.removed_samples_for_acceleration;
+      in.jitter_buffer_delay_ms = static_cast<double>(js.jitter_buffer_delay_ms_samples);
+      in.jitter_buffer_emitted_count = js.jitter_buffer_emitted_count;
+      in.packets_discarded = js.packets_discarded_late + js.packets_duplicate;
+    }
+    r.inbound.push_back(std::move(in));
+  };
+  for (const RecvStream& st : audio_recv_) add_inbound(st, false);
+  for (const RecvStream& st : video_recv_) add_inbound(st, true);
+
+  *out = std::move(r);
+  return ObsStatus::kOk;
+#else
+  (void)now;
+  (void)out;
+  return ObsStatus::kNotSupported;
+#endif
+}
 
 }  // namespace sm::rtp

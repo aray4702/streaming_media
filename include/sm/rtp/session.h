@@ -47,6 +47,7 @@
 #include "sm/core/event_log.h"
 #include "sm/core/rate_tracker.h"
 #include "sm/core/metrics.h"
+#include "sm/core/observability.h"
 #include "sm/core/units.h"
 #include "sm/loss/fec_controller.h"
 #include "sm/rtp/call_stats.h"
@@ -56,7 +57,9 @@
 #include "sm/rtp/rtp_sender.h"
 #include "sm/rtp/send_side_controller.h"
 #include "sm/rtp/sps_vui_rewriter.h"
+#include "sm/rtp/stats_report.h"
 #include "sm/sync/header_extensions.h"
+#include "sm/video/freeze_detector.h"
 
 namespace sm::rtp {
 
@@ -462,6 +465,13 @@ class Session : public MetricsSource {
   const sync::Syncable* sync_video() const;
   const cc::TransportFeedbackBuilder& transport_feedback() const { return tcc_; }
   void ExportMetrics(MetricsWriter& w) const override;
+  // A getStats-style snapshot of every stream (stats_report.h, issue #988), computed now: it reads
+  // the streams' counters and changes nothing. `kNotSupported` (and `out` untouched) in a build with
+  // SM_ENABLE_STATS=OFF.
+  ObsStatus GetStats(Timestamp now, StatsReport* out) const;
+  // The app's freeze detector for a video receive stream, read by GetStats for its freeze stats
+  // (not owned; null detaches). The app feeds it the frames it renders.
+  void SetFreezeDetector(VideoRecvId id, const video::FreezeDetector* detector);
 
  private:
   // Starts the session before the first encode decision, and starts the sent frame rate at the
@@ -526,6 +536,7 @@ class Session : public MetricsSource {
     // list is always sent in full; minus infinity does that on a clock that starts at 0.
     Timestamp nack_last_time_sent_full = Timestamp::MinusInfinity();
     uint16_t nack_last_seq_number_sent = 0;
+    const video::FreezeDetector* freeze_detector = nullptr;  // GetStats only (SetFreezeDetector).
   };
   // ChannelReceive::OnRtpPacket's rtp_rtcp_->SendNACK for an audio receive stream.
   void SendAudioNack(RecvStream& r, const std::vector<uint16_t>& nack_list, Timestamp now);
@@ -608,6 +619,8 @@ class Session : public MetricsSource {
   struct LastReportBlock {
     uint32_t extended_highest_seq = 0;
     int32_t cumulative_lost = 0;
+    uint8_t fraction_lost = 0;  // Q8; for GetStats only.
+    uint32_t jitter = 0;        // RTP units; for GetStats only.
   };
   std::map<uint32_t, LastReportBlock> last_report_blocks_;
   bool have_rtt_ = false;  // Whether any RTT sample has arrived (rtt_ is a default until then).

@@ -37,6 +37,7 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
   SOURCES
     unit/core/audio_frame_operations_test.cc
     unit/core/core_test.cc
+    unit/core/logging_test.cc
     unit/core/network_test.cc
   SUITES
     AudioFrameOperations
@@ -44,9 +45,11 @@ sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
     EventLog
     Fft
     Histogram
+    Logging
     Metrics
     Nat
     NetworkLink
+    Observability
     RateStatistics
     RateTracker
     RtpPacket

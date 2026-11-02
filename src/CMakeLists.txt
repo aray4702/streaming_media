@@ -1,6 +1,7 @@
 sm_add_library(core SOURCES
   core/metrics.cc
   core/event_log.cc
+  core/logging.cc
   core/fft.cc
   core/rms_level.cc
   core/audio_frame_operations.cc
