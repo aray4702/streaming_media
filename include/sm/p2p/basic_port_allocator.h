@@ -40,8 +40,9 @@
 // - No mDNS (host candidates are never obfuscated), no local network access
 //   permission, no VPN list, no field trials (WebRTC-UseTurnServerAsStunServer
 //   is at its default, enabled).
-// - pc/peer_connection.cc (the flags and step delay PeerConnection sets) is
-//   not in reference/; the allocator's own defaults apply.
+// - PeerConnection's settings (shared socket, IPv6, IPv6 on Wi-Fi, the
+//   minimum step delay) are applied by ConfigureAsPeerConnection
+//   (port_allocator.h), not by the allocator itself, as in libwebrtc.
 #pragma once
 
 #include <cstdint>

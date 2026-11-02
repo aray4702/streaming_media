@@ -188,7 +188,8 @@ void StaticNetworkManager::AddInterface(const IpAddress& ip, std::string name, A
 }
 
 void StaticNetworkManager::RemoveInterface(const IpAddress& ip) {
-  std::erase_if(ifaces_, [&](const Interface& i) { return i.ip == ip; });
+  auto it = std::find_if(ifaces_.begin(), ifaces_.end(), [&](const Interface& i) { return i.ip == ip; });
+  if (it != ifaces_.end()) ifaces_.erase(it);
   DoUpdateNetworks();
 }
 
