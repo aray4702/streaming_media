@@ -32,9 +32,10 @@
 // call that destroyed it.
 //
 // Differences from libwebrtc:
-// - No TCP ports and no TURN ports yet (C4): the TCP phase makes nothing, and
-//   relay ports come from a RelayPortFactoryInterface the caller may give
-//   (none by default, where libwebrtc defaults to its TurnPortFactory).
+// - No TCP ports yet (C4 part 2): the TCP phase makes nothing. Relay ports
+//   come from the RelayPortFactoryInterface the caller gives, or by default a
+//   TurnPortFactory (sm/p2p/turn_port.h, #1031), as libwebrtc; TURN to the
+//   server is UDP only until C4 part 4.
 //   PortConfiguration does not add DTLS TURN servers as STUN servers
 //   (ProtocolType has no PROTO_DTLS until C4).
 // - No mDNS (host candidates are never obfuscated), no local network access
@@ -108,6 +109,8 @@ class BasicPortAllocator final : public PortAllocator {
  private:
   NetworkManager* const network_manager_;
   PacketSocketFactory* const socket_factory_;
+  // The caller's factory, or a TurnPortFactory of its own (AlwaysValidPointer).
+  std::unique_ptr<RelayPortFactoryInterface> default_relay_port_factory_;
   RelayPortFactoryInterface* const relay_port_factory_;
   int network_ignore_mask_ = kDefaultNetworkIgnoreMask;
 };

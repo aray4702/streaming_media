@@ -304,6 +304,8 @@ class EmulatedSocketServer final : public p2p::PacketSocketFactory, public p2p::
     }
     return nullptr;
   }
+  // The next ephemeral port to try (VirtualSocketServer::SetNextPortForTesting).
+  void SetNextPortForTesting(uint16_t port) { next_port_ = port; }
   // Why the last bind failed (EADDRINUSE, EADDRNOTAVAIL).
   int last_error() const { return last_error_; }
 

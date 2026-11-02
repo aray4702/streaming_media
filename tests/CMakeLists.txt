@@ -55,6 +55,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     unit/p2p/tcp_socket_test.cc
     unit/p2p/test_crypto.cc
     unit/p2p/test_crypto_test.cc
+    unit/p2p/turn_port_test.cc
   SUITES
     AsyncStunTcpSocket
     AsyncTcpSocket
@@ -76,6 +77,8 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     P2pSocketAddress
     P2pTransportChannel
     P2pStunPort
+    P2pTurnPort
+    P2pTurnServer
     P2pUdpPort
     P2pWrappingActiveIceController
     Stun
