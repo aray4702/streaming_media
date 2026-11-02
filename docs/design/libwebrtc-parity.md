@@ -610,6 +610,31 @@ BoringSSL:
 | Private key PEM | PKCS#8 (`EVP_marshal_private_key`) | PKCS#8, wrapped around Mbed TLS's SEC1 / PKCS#1 output | Mbed TLS 3.6 writes no PKCS#8 |
 | HelloVerifyRequest | Not sent by BoringSSL's server | Not sent (cookies off) | Same behaviour |
 
+### 10.3 Ports and candidates (`src/p2p/{candidate,network,port,stun_port}.cc`, C3 part 3, #999)
+
+Ported as a unit from `api/candidate.{h,cc}`, `p2p/base/p2p_constants.{h,cc}`, `p2p/base/port.{h,cc}`,
+`port_interface.h` and `p2p/base/stun_port.{h,cc}`, plus what a port reads of `rtc_base/network.*` and
+`network_constants.h` (adapter types, `ComputeNetworkCostByType`, `GetBestIP`) and `IPAddressPrecedence`.
+Same constants and defaults: the type preferences (host 126, srflx 100, prflx 110, relay 0-3), the local
+preference (network preference << 8 | RFC 3484 precedence, + relay preference), the keyed-HMAC foundation and
+the prflx CRC-32 foundation, `kPortTimeoutDelay` (STUN_TOTAL_TIMEOUT + 5 s), `kStunKeepaliveInterval` 10 s,
+`kHighCostPortKeepaliveLifetime` 2 min at cost >= `kNetworkCostHigh`, `kRetryTimeout` 50 s after an error
+response, and `GetStunMessage`'s 400/401/420/487 answers. The applicable `port_unittest.cc` and
+`stun_port_unittest.cc` cases are in `tests/unit/p2p/port_test.cc` (the priority vectors unchanged), with
+each NAT type of the emulated network. Kept from libwebrtc as it is: a binding error response reports the
+error's `number()` (401 gives 1, a x00 code 0 and no candidate error). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, posted tasks, `delete this` on timeout | `now` passed in, `Process(now)` at `NextProcessTime()`; a dead port sets `dead()` and signals, the owner deletes it | The library's time model (#996, #997) |
+| Connections | `Connection`, `CreateConnection`, `GetConnection`, `DestroyConnection` | Not yet | #1000 |
+| Hostnames | STUN servers by name (DNS resolver), mDNS host candidates, `ToSanitizedCopy` | IP addresses only; no mDNS | The library's addresses carry no hostname; name resolution is the host stack's (C11, C12) |
+| Local network access permission | Chromium's factory; none means granted | Always granted | No permission factory in the library |
+| Candidate SDP parsing, fingerprint, network slice | `ParseCandidateString`, the TLS `fingerprint` extension, `NetworkSlice` | Not ported (writing the attribute is) | SDP stays with the host stack; TLS candidates are C4; slices are behind `WebRTC-UnifiedCommunications`, off by default |
+| Field trials | `WebRTC-IncreaseIceCandidatePriorityHostSrflx`, `-UseDifferentiatedCellularCosts`, `-AddNetworkCostToVpn` | The first is `Port::Parameters::increase_host_srflx_priority` (off); the others at their default (off) | Defaults as libwebrtc |
+| Foundation HMAC-SHA256 and random bytes | BoringSSL | The STUN crypto hooks (`StunCrypto::hmac_sha256`, installed by `InstallStunCryptoFromTls`); without them a CRC-32 of the same input, tests only | No dependencies in the library, as 10.1 |
+| Network enumeration | `NetworkManager` builds `Network`s and their preferences | The caller builds a `Network` | Comes with `BasicPortAllocator` (#1001) |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

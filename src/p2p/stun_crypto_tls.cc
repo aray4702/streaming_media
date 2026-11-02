@@ -15,6 +15,10 @@ bool TlsHmacSha1(std::span<const uint8_t> key, std::span<const uint8_t> data, ui
   return tls::ComputeHmac(tls::kDigestSha1, key, data, std::span<uint8_t>(out, 20)) == 20;
 }
 
+bool TlsHmacSha256(std::span<const uint8_t> key, std::span<const uint8_t> data, uint8_t out[32]) {
+  return tls::ComputeHmac(tls::kDigestSha256, key, data, std::span<uint8_t>(out, 32)) == 32;
+}
+
 bool TlsMd5(std::span<const uint8_t> data, uint8_t out[16]) {
   return tls::ComputeDigest(tls::kDigestMd5, data, std::span<uint8_t>(out, 16)) == 16;
 }
@@ -28,6 +32,7 @@ void InstallStunCryptoFromTls() {
   c.hmac_sha1 = &TlsHmacSha1;
   c.md5 = &TlsMd5;
   c.random_bytes = &TlsRandom;
+  c.hmac_sha256 = &TlsHmacSha256;
   SetStunCrypto(c);
 }
 

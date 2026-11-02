@@ -52,6 +52,9 @@ OS sockets implement the same interface on devices. Its tests are the
 `include/sm/sim/stun_server.h` (#997) is libwebrtc's test STUN server on
 one of those sockets; the `StunServer` suite sends binding requests through
 each NAT type and through loss, with `StunRequestManager`'s retransmissions.
+ICE's `UDPPort` and `StunPort` (#999) gather over the same sockets; the
+`P2pStunPort` suite checks each NAT type's server-reflexive candidate, two
+servers behind a symmetric NAT, a server that never answers, and keepalives.
 
 `include/sm/sim/signals.h` generates license-free test signals: voiced
 speech-like audio (gliding pitch, formants, syllables, pauses), noise,

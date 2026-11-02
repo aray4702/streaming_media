@@ -73,22 +73,6 @@ const char kBase64[64] = {'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K',
                           'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
                           'w', 'x', 'y', 'z', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '+', '/'};
 
-// rtc_base/crypto_random.cc CreateRandomString(len): each random byte picks
-// one of 64 characters.
-std::string CreateRandomString(size_t len) {
-  std::vector<uint8_t> bytes(len);
-  bool ok = g_crypto.random_bytes != nullptr && g_crypto.random_bytes(bytes);
-  if (!ok) {
-    // No secure source installed: deterministic, for tests only (see stun.h).
-    static Random fallback(0x57u);
-    for (auto& b : bytes) b = static_cast<uint8_t>(fallback.Next());
-  }
-  std::string str;
-  str.reserve(len);
-  for (uint8_t b : bytes) str.push_back(kBase64[b % 64]);
-  return str;
-}
-
 uint32_t Crc32Table(uint32_t i) {
   uint32_t c = i;
   for (int k = 0; k < 8; ++k) c = (c & 1) ? 0xEDB88320u ^ (c >> 1) : c >> 1;
@@ -107,6 +91,22 @@ std::vector<uint8_t> AddressBytes(const IpAddress& ip) {
 }
 
 }  // namespace
+
+// rtc_base/crypto_random.cc CreateRandomString(len): each random byte picks
+// one of 64 characters.
+std::string CreateRandomString(size_t len) {
+  std::vector<uint8_t> bytes(len);
+  bool ok = g_crypto.random_bytes != nullptr && g_crypto.random_bytes(bytes);
+  if (!ok) {
+    // No secure source installed: deterministic, for tests only (see stun.h).
+    static Random fallback(0x57u);
+    for (auto& b : bytes) b = static_cast<uint8_t>(fallback.Next());
+  }
+  std::string str;
+  str.reserve(len);
+  for (uint8_t b : bytes) str.push_back(kBase64[b % 64]);
+  return str;
+}
 
 void SetStunCrypto(const StunCrypto& crypto) { g_crypto = crypto; }
 const StunCrypto& GetStunCrypto() { return g_crypto; }
