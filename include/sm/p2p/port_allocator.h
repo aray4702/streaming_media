@@ -18,8 +18,8 @@
 //   SanitizeCandidate only removes related addresses, as libwebrtc without an
 //   mDNS responder; no TurnCustomizer, TLS certificate verifier or TURN
 //   logging id (C4).
-// PortPrunePolicy and VpnPreference are api/transport/enums.h's
-// (sm/p2p/transport_enums.h, shared with the ICE controller).
+// - PortPrunePolicy and VpnPreference are api/transport/enums.h's
+//   (sm/p2p/transport_enums.h, shared with the ICE controller).
 #pragma once
 
 #include <cstdint>
@@ -35,8 +35,8 @@
 #include "sm/p2p/candidate.h"
 #include "sm/p2p/port.h"
 #include "sm/p2p/socket_address.h"
-#include "sm/p2p/transport_enums.h"
 #include "sm/p2p/transport_description.h"
+#include "sm/p2p/transport_enums.h"
 
 namespace sm::p2p {
 
