@@ -29,6 +29,7 @@ struct TlsStream::Impl {
   std::vector<uint8_t> in;
   size_t in_pos = 0;
   std::vector<uint8_t> out;
+  std::string alpn_wire;  // TransformAlpnProtocols of the config; the server's selection points into it.
 
   ~Impl() {
     if (ssl) SSL_free(ssl);
@@ -199,12 +200,13 @@ bool TlsStream::Start() {
     // libwebrtc's adapter is a client (SetRole(SSL_SERVER) exists for tests) and sets no ALPN selection. A server
     // here picks its first protocol the client also offers (SSL_select_next_proto), so tests can check what the
     // client sent.
-    if (!config_.alpn_protocols.empty()) {
+    im.alpn_wire = TransformAlpnProtocols(config_.alpn_protocols);
+    if (!im.alpn_wire.empty()) {
       SSL_CTX_set_alpn_select_cb(
           im.ctx,
           [](SSL* ssl, const uint8_t** out, uint8_t* out_len, const uint8_t* in, unsigned in_len, void*) -> int {
             auto* i = static_cast<Impl*>(SSL_get_app_data(ssl));
-            const std::string ours = TransformAlpnProtocols(i->owner->config_.alpn_protocols);
+            const std::string& ours = i->alpn_wire;  // Outlives the callback: *out may point into it.
             uint8_t* sel = nullptr;
             if (SSL_select_next_proto(&sel, out_len, reinterpret_cast<const uint8_t*>(ours.data()),
                                       static_cast<unsigned>(ours.size()), in, in_len) != OPENSSL_NPN_NEGOTIATED) {
