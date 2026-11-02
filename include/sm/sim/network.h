@@ -57,6 +57,14 @@
 //   NAT's own external IP lands on the matching external socket the same
 //   way. With hairpinning off, the NAT drops it.
 //
+// **Firewall** (#1002 part 4): `BlockAddress(ip)` blackholes every datagram
+// from or to an address, as the ICE tests' `fw()->AddRule(false, FP_ANY,
+// FD_ANY, addr)` on libwebrtc's FirewallSocketServer does to fail an
+// interface over; `ClearBlockedAddresses()` is its `ClearRules()`. The check
+// runs when a host sends (FirewallSocket::SendTo) and when a datagram
+// reaches a host (FirewallSocket::RecvFrom drops what fails the rules), so
+// datagrams already in flight are dropped too. No rules by default.
+//
 // Like every module, it takes `now`, reads no clock and starts no thread.
 // It is a test bench building block: `testbench/call.cc` does not use it, so
 // every scenario is unchanged.
@@ -67,6 +75,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -150,6 +159,7 @@ struct NetworkStats {
   uint64_t hairpin_dropped = 0; // Dropped by a NAT with hairpinning off.
   uint64_t bindings_created = 0;
   uint64_t bindings_expired = 0;
+  uint64_t firewall_dropped = 0;  // From or to a blocked address.
 };
 
 template <class T>
@@ -202,6 +212,10 @@ class Network {
     Process(now);
     ++stats_.sent;
     Host& h = hosts_[host];
+    if (Blocked(h.ip) || Blocked(dst.ip)) {
+      ++stats_.firewall_dropped;
+      return;
+    }
     h.up.Send(now, Packet{Datagram<T>{{h.ip, src_port}, dst, std::move(payload)}, size, kind}, size, kind);
   }
 
@@ -228,9 +242,21 @@ class Network {
   std::vector<Datagram<T>> Receive(Timestamp now, HostId host) {
     Process(now);
     std::vector<Datagram<T>> out;
-    for (Packet& p : hosts_[host].down.Receive(now)) out.push_back(std::move(p.d));
+    for (Packet& p : hosts_[host].down.Receive(now)) {
+      if (Blocked(p.d.src.ip) || Blocked(p.d.dst.ip)) {
+        ++stats_.firewall_dropped;
+        continue;
+      }
+      out.push_back(std::move(p.d));
+    }
     return out;
   }
+
+  // The firewall: drop everything from or to `ip`, until cleared.
+  void BlockAddress(uint32_t ip) { blocked_.insert(ip); }
+  void UnblockAddress(uint32_t ip) { blocked_.erase(ip); }
+  void ClearBlockedAddresses() { blocked_.clear(); }
+  bool Blocked(uint32_t ip) const { return !blocked_.empty() && blocked_.count(ip) != 0; }
 
   // The earliest time anything moves: a datagram leaving an uplink or
   // reaching a host.
@@ -391,6 +417,7 @@ class Network {
   }
 
   uint64_t seed_;
+  std::set<uint32_t> blocked_;
   std::vector<Host> hosts_;
   std::vector<Nat> nats_;
   NetworkStats stats_;

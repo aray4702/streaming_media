@@ -45,6 +45,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SOURCES
     unit/p2p/connection_test.cc
     unit/p2p/ice_controller_test.cc
+    unit/p2p/p2p_transport_channel_multihomed_test.cc
     unit/p2p/p2p_transport_channel_ping_test.cc
     unit/p2p/p2p_transport_channel_test.cc
     unit/p2p/dtls_utils_test.cc
@@ -77,6 +78,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     P2pPortAllocator
     P2pSocketAddress
     P2pTransportChannel
+    P2pTransportChannelMultihomed
     P2pTransportChannelPing
     P2pStunPort
     P2pTurnPort

@@ -797,7 +797,14 @@ pruning, `GetState`, the ICE role on pruned and older ports, the port's destruct
 `send_ping_on_*` and `max_outstanding_pings` field trials) are in
 `tests/unit/p2p/p2p_transport_channel_ping_test.cc` (#1002 part 3), with libwebrtc's assertions: a host port on the
 emulated network in place of `FakePortAllocator`, made ready with no time passing as that allocator's session does,
-and a waiter that polls every millisecond of emulated time.
+and a waiter that polls every millisecond of emulated time. The `P2PTransportChannelMultihomedTest` cases (failover
+on either side, renomination, switch dampening, remote failover, Wi-Fi and cellular preference, the backup and
+stable ping rates, interfaces added and removed with continual gathering, restoring a backup connection, and the VPN
+preferences) are in `tests/unit/p2p/p2p_transport_channel_multihomed_test.cc` (#1002 part 4), with libwebrtc's
+assertions, on `sim::EmulatedMultiHomedHost` (one emulated host per interface) with zero-delay links as the virtual
+server's, and `sim::Network::BlockAddress` for the tests' firewall rule (`rtc_base/firewall_socket_server.cc` is not
+in `reference/`; the rule the tests use blackholes an address both ways). Not ported: TestFailoverWithManyConnections
+(IPv6 and TCP TURN; the emulated network is IPv4 only) and StunDictionaryPerformsSync (below).
 Differences:
 
 | Item | libwebrtc M157 | This library | Why |
