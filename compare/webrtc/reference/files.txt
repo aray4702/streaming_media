@@ -436,3 +436,8 @@ rtc_base/test_echo_server.h
 rtc_base/test_echo_server.cc
 p2p/base/basic_packet_socket_factory.h
 p2p/base/basic_packet_socket_factory.cc
+test/fuzzers/turn_unwrap_fuzzer.cc
+test/fuzzers/sdp_parser_fuzzer.cc
+test/fuzzers/sdp_integration_fuzzer.cc
+test/fuzzers/dcsctp_socket_fuzzer.cc
+test/fuzzers/sctp_utils_fuzzer.cc
