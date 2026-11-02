@@ -20,6 +20,7 @@ struct IceParameters {
   std::string ufrag;
   std::string pwd;
   bool renomination = false;
+  friend bool operator==(const IceParameters&, const IceParameters&) = default;
 };
 
 }  // namespace sm::p2p

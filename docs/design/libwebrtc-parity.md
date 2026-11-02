@@ -654,12 +654,36 @@ cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are
 | Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
 | TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
 | TURN ports | `TurnPortFactory` by default | Only through a `RelayPortFactoryInterface` the caller gives; none by default. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
-| `RegatherOnFailedNetworks` | A network without connections has failed | Every network has failed (ports have no connections yet) | #1000 |
 | mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
 | Field trials | `WebRTC-UseTurnServerAsStunServer` | At its default (enabled) | Defaults as libwebrtc |
 | PeerConnection's allocator settings | `pc/peer_connection.cc` sets flags and the step delay | The allocator's own defaults | `pc/peer_connection.cc` is not in `reference/`; the session layer (#1002 onwards) sets them once it is |
 | `FakeNetworkManager` | `rtc_base/fake_network.h` (tests) | `StaticNetworkManager`, the emulated network's (interfaces added and removed, /24 and /64 prefixes) | Not in `reference/` |
 | `ProtocolType`/`IceParameters` | One `IceRole`, `IceParameters` | `IceCredentials` (ufrag, pwd) for the pool, since `ice_transport_internal.h`'s `IceRole` clashes with `port.h`'s | #1002 joins them |
+
+### 10.6 The ICE controller (`src/p2p/{basic_ice_controller,wrapping_active_ice_controller}.cc`, C3 part 6, #1002)
+
+Ported as a unit from `p2p/base/basic_ice_controller.{h,cc}`, `wrapping_active_ice_controller.{h,cc}`,
+`ice_controller_interface.{h,cc}`, `ice_controller_factory_interface.h`, `active_ice_controller_interface.h`,
+`active_ice_controller_factory_interface.h`, `ice_agent_interface.h`, `ice_switch_reason.{h,cc}` and
+`ice_credentials_iterator.{h,cc}`, with `IceConfig`, `NominationMode` and `IceGatheringState` of
+`ice_transport_internal.{h,cc}` (the `*_or_default` values and `IsValid`) and `api/transport/enums.h`
+(`PortPrunePolicy`, the five `VpnPreference` values). Same constants and defaults: the weak and strong ping
+intervals (48 ms, 480 ms), 3 pings at the weak interval per pair, 900 ms for a writable pair while weak or not
+stable and 2.5 s once stable, backup pairs every 25 s, the receiving timeout (2.5 s; recheck delay at most a
+tenth of it, at least 50 ms), the receiving switching delay (1 s), `kMinImprovement` (10 ms RTT), the sort order,
+the pruning rule, semi-aggressive nomination by default, and the initial-select dampening field trials (off). The
+`ice_credentials_iterator_unittest.cc` and `wrapping_active_ice_controller_unittest.cc` cases and the controller's
+rules on real candidate pairs are in `tests/unit/p2p/ice_controller_test.cc`. `BasicPortAllocatorSession::
+GetFailedNetworks` now reads the ports' connections as libwebrtc does (a network interface with no connection on
+any of its ports has failed). P2PTransportChannel, the agent the controller drives, is the next part of #1002.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
+| `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
+| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
+| Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
 ### 10.4 Connections: candidate pairs and their checks (`src/p2p/connection.cc`, C3 part 4, #1000)
 

@@ -234,9 +234,14 @@ void BasicPortAllocatorSession::ClearGettingPorts(Timestamp now) {
 
 std::vector<const Network*> BasicPortAllocatorSession::GetFailedNetworks() {
   std::vector<const Network*> networks = GetNetworks();
-  // An interface (IPv4 and IPv6 networks by name) has failed when none of
-  // its ports has a connection. Ports have no connections until #1000.
+  // A network interface may have both IPv4 and IPv6 networks. Only if
+  // neither of the networks has any connections, the network interface
+  // is considered failed and need to be regathered on.
   std::set<std::string> networks_with_connection;
+  for (const PortData& data : ports_) {
+    Port* port = data.port();
+    if (!port->connections().empty()) networks_with_connection.insert(port->network()->name());
+  }
   std::erase_if(networks,
                 [&](const Network* network) { return networks_with_connection.contains(network->name()); });
   return networks;
