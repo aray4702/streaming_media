@@ -1067,6 +1067,41 @@ offer/answer round trip through `SdpSerialize` / `SdpDeserialize`). Differences:
 | Not ported | Codec preferences, raw packetization, RED fmtp matching, VP9 / AV1 / H.265 profile matching, cryptex (`CryptoOptions`), SCTP SNAP, Plan B streams | Left out | Outside C6's subset; the defaults are libwebrtc's (cryptex and SNAP off) |
 | Data channel switch | The application adds the data section | Same: the factory writes m=application when the options ask; `SM_WITH_DATACHANNEL` is checked by the caller (C7) | |
 
+### 10.18 The endpoint that sets up a call from SDP (`src/pc/{jsep_transport_controller,peer_endpoint}.cc`, C6 part 3, #1064)
+
+`pc/jsep_transport_controller.cc` and `pc/jsep_transport.cc` at M157 (`compare/webrtc/reference/`), and the transport
+half of `pc/sdp_offer_answer.cc` / `pc/peer_connection.cc`, for C6's subset. Applying a description creates, per BUNDLE
+group (or per section outside one), a `P2PTransportChannel`, a `DtlsTransport` with the local certificate and a
+`DtlsSrtpTransport` (rtcp-mux required, `kRtcpMuxPolicyRequire`). BUNDLE follows `BundleManager`: with the balanced
+policy (libwebrtc's default) an offer keeps one transport per section until the answer establishes the group, then
+the other mids move onto the first one's transport and the unused transports are destroyed; max-bundle uses the
+offer's group at once. The `ValidateAndMaybeUpdateBundleGroups` and `ValidateContent` checks, the ICE role (first local
+description, with the ICE-lite cases of `DetermineIceRole`), `NegotiateAndSetDtlsParameters` (role from a=setup,
+remote fingerprint, local fingerprint checked against the certificate) and trickled candidates (need the remote
+description; by mid, else m-line index; added to the remote description; a refused one is only logged, as
+`PeerConnection::AddRemoteCandidate`) are ported. `PeerEndpoint` creates the offer and answer with part 2's factory
+(random 16-character CNAME, random 64-bit session id, version 2), checks the signaling state, records payload types,
+starts gathering after a local description, applies the candidates in a remote description, and on the answer sets
+up the RTP session (`sm::rtp::Session`) as the voice and video channels would: send streams from the local sections'
+SSRCs (RTX from the FID group), receive streams from the remote ones, the answer's Opus and H.264 payload types and
+RTX, NACK as negotiated, the negotiated header extensions and MIDs, and a demuxer sink (MID plus remote SSRCs) and
+header extension map per section on the BUNDLE transport. Tests: `tests/unit/pc_endpoint/peer_endpoint_test.cc`
+(`jsep_transport_controller_unittest.cc`'s ICE role, DTLS role, BUNDLE, max-bundle, rtcp-mux and candidate cases for
+this subset; a call between two endpoints behind port-restricted NATs with a STUN server, SDP and candidates as text,
+connecting on server-reflexive candidates and carrying Opus and H.264 both ways over SRTP; data-section rejection and
+signaling states). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Threads | Signaling and network threads, posted tasks | One thread; callbacks inside the call; `Process(now)` at `NextProcessTime` | The library's time model |
+| Media channels | `VoiceChannel` / `VideoChannel` per transceiver, created at the first description | One `rtp::Session` for both sections, created when the answer is applied | The library's session layer is one object per call; no media flows before DTLS-SRTP in either |
+| Transceivers | `AddTrack` / `AddTransceiver`, renegotiation, rollback, pranswer | One audio and one video transceiver from the config; one offer/answer; no rollback or pranswer | Outside part 3; C9 and part 4 need one negotiation per peer |
+| Unsignaled streams | A default receive stream for an SSRC the SDP didn't name | Receive streams need a=ssrc | Chrome signals its SSRCs |
+| RTCP mux policy, DTLS-in-STUN, cryptex, aggregate states | `kRtcpMuxPolicyNegotiate`, SPED, `CryptoOptions` cryptex, `PeerConnectionState` | Require only; left out; the transports' own states are read | libwebrtc's defaults (require, SPED and cryptex off) |
+| Data channel | `SctpTransport` on the DTLS transport | The data section is rejected in an answer and not offered | C7 (#1069, #1070) is not merged yet |
+| Not in `reference/` | `pc/jsep_transport_collection.cc` (`BundleManager::Update`, `CommitTransports`) | Ported from the header and M157's behaviour | Missing reference file (noted on #1064) |
+| STUN crypto | Built in | The app calls `p2p::InstallStunCryptoFromTls()` once at startup, as for the ICE agent | The library sets no globals itself |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

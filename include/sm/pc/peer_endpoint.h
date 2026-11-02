@@ -1,0 +1,168 @@
+// An endpoint that sets up a call from SDP (C6 part 3, #1064): the transport half of libwebrtc M157's
+// pc/sdp_offer_answer.cc and pc/peer_connection.cc (compare/webrtc/reference/pc/) over JsepTransportController
+// (sm/pc/jsep_transport_controller.h), with the library's RTP session (sm/rtp/session.h) as the media channels.
+//
+// What it does, as libwebrtc does for C6's subset (one audio and one video transceiver, Unified Plan):
+// - CreateOffer / CreateAnswer through MediaSessionDescriptionFactory (#1063) with the engines' default codecs
+//   (Opus; H.264 constrained baseline with RTX) and header extensions, BUNDLE and rtcp-mux, a fresh 64-bit session
+//   id and version 2 (WebRtcSessionDescriptionFactory). The answer follows the offer's m= sections: audio and video
+//   are answered (sendrecv while this end sends), any other section (the data channel, C7) is rejected.
+// - SetLocalDescription / SetRemoteDescription check the signaling state (stable -> have-local-offer or
+//   have-remote-offer -> stable), apply the description to the transports, record the payload types
+//   (SdpPayloadTypeSuggester) and, after a local description, start ICE gathering. Candidates in a remote
+//   description are added (UseCandidatesInRemoteDescription).
+// - AddIceCandidate adds a trickled candidate to the transport of its mid (or of its m-line index); a candidate for
+//   a rejected section is ignored. Gathered candidates come out through the ice candidate callback with their mid
+//   and m-line index (OnIceCandidate).
+// - When an answer is applied, the RTP session is configured from the negotiated sections, as the voice and video
+//   channels are by SetLocalContent / SetRemoteContent: the send streams take the local section's SSRCs (video with
+//   its RTX SSRC from the FID group), the receive streams the remote section's, both the answer's payload types
+//   (Opus; the first H.264 and its RTX), the negotiated header extensions (one id map: BUNDLE requires the same
+//   ids), the MIDs when the MID extension is negotiated, NACK as negotiated for H.264, and the CNAME of the local
+//   stream. Each section's demuxer sink (its MID and the remote SSRCs) and header extension map are registered on
+//   the BUNDLE transport, as BaseChannel does; RTP and RTCP it receives go to the session, and the session's
+//   packets go out through it, protected with the DTLS-SRTP keys (PF_SRTP_BYPASS).
+//
+// The library's time model: nothing reads a clock or starts a thread. The owner runs Process(now) at
+// NextProcessTime(now) and delivers the sockets' packets (the port allocator's socket factory) itself.
+//
+// Differences from libwebrtc, none of them on the wire:
+// - One audio and one video transceiver, added at construction; no tracks, streams or transceiver API, no
+//   renegotiation after the first offer/answer (a second offer is refused), no rollback or pranswer, and no
+//   unsignaled (SSRC-less) receive streams.
+// - The RTP session is created when the answer is applied, not per channel at the first description; until then
+//   nothing is sent (no early media), which libwebrtc can't send either before DTLS-SRTP is up.
+// - The data channel (C7) is not merged yet: its section is rejected in an answer and left out of an offer.
+// - STUN needs its crypto hooks: call p2p::InstallStunCryptoFromTls() once at startup (sm::p2p_tls).
+#pragma once
+
+#include <cstdint>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include "sm/core/units.h"
+#include "sm/p2p/port_allocator.h"
+#include "sm/pc/codec_vendor.h"
+#include "sm/pc/jsep.h"
+#include "sm/pc/jsep_transport_controller.h"
+#include "sm/pc/media_session.h"
+#include "sm/pc/sdp_payload_type_suggester.h"
+#include "sm/pc/transport_description_factory.h"
+#include "sm/pc/unique_id_generator.h"
+#include "sm/rtp/h264.h"
+#include "sm/rtp/session.h"
+#include "sm/tls/ssl_identity.h"
+
+namespace sm::pc {
+
+struct PeerEndpointConfig {
+  // Not owned; must outlive the endpoint. Its socket factory carries the ICE traffic.
+  p2p::PortAllocator* allocator = nullptr;
+  // The DTLS certificate; null: one is made (RTCCertificateGenerator) with this name.
+  std::shared_ptr<const tls::SslIdentity> certificate;
+  std::string certificate_name = "WebRTC";
+  JsepTransportController::Config transport;
+  bool audio = true;  // An audio transceiver (sendrecv).
+  bool video = true;  // A video transceiver (sendrecv).
+  // The track and stream ids of the senders (a=msid).
+  std::string stream_id = "stream";
+  std::string audio_track_id = "audio";
+  std::string video_track_id = "video";
+  // The RTP session's settings; SSRCs, CNAME, MIDs, extensions and payload types are filled in from the SDP.
+  rtp::SessionConfig session;
+  rtp::AudioStreamConfig audio_stream;
+  rtp::VideoStreamConfig video_stream;
+  // Decodes the received Opus frames; not owned. Null: no audio receive stream.
+  rtp::AudioDecoder* audio_decoder = nullptr;
+};
+
+// PeerConnectionInterface::SignalingState, for C6's subset.
+enum class SignalingState { kStable, kHaveLocalOffer, kHaveRemoteOffer, kClosed };
+
+class PeerEndpoint {
+ public:
+  using IceCandidateCallback = std::function<void(std::unique_ptr<IceCandidate>)>;
+
+  PeerEndpoint(PeerEndpointConfig config, Timestamp now);
+  ~PeerEndpoint();
+  PeerEndpoint(const PeerEndpoint&) = delete;
+  PeerEndpoint& operator=(const PeerEndpoint&) = delete;
+
+  std::unique_ptr<SessionDescriptionInterface> CreateOffer(std::string* error = nullptr);
+  // Needs a remote offer.
+  std::unique_ptr<SessionDescriptionInterface> CreateAnswer(std::string* error = nullptr);
+  bool SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc, Timestamp now,
+                           std::string* error = nullptr);
+  bool SetRemoteDescription(std::unique_ptr<SessionDescriptionInterface> desc, Timestamp now,
+                            std::string* error = nullptr);
+  bool AddIceCandidate(const IceCandidate& candidate, Timestamp now, std::string* error = nullptr);
+  void SetOnIceCandidate(IceCandidateCallback cb) { on_ice_candidate_ = std::move(cb); }
+
+  SignalingState signaling_state() const { return signaling_state_; }
+  const SessionDescriptionInterface* local_description() const { return local_description_.get(); }
+  const SessionDescriptionInterface* remote_description() const { return remote_description_.get(); }
+  JsepTransportController& transport_controller() { return transport_controller_; }
+  // The transport of the first audio or video section (the BUNDLE transport); null before a description.
+  JsepTransport* media_transport() const;
+  // Both ends' ICE is writable, DTLS connected and SRTP keyed.
+  bool IsConnected() const;
+
+  // The RTP session, once an answer is applied; null before.
+  rtp::Session* session() { return session_.get(); }
+  std::optional<rtp::AudioSendId> audio_send() const { return audio_send_; }
+  std::optional<rtp::VideoSendId> video_send() const { return video_send_; }
+  std::optional<rtp::AudioRecvId> audio_receive() const { return audio_recv_; }
+  std::optional<rtp::VideoRecvId> video_receive() const { return video_recv_; }
+
+  // ICE checks, DTLS retransmissions and the RTP session's timers due by `now`; the session's packets go out.
+  void Process(Timestamp now);
+  Timestamp NextProcessTime(Timestamp now) const;
+  // Sends the session's queued packets (after SendAudio / SendVideo on session()).
+  void FlushOutgoing(Timestamp now);
+
+  // Packets the session produced that the transport could not send (not writable yet, or SRTP not active).
+  int send_failures() const { return send_failures_; }
+
+ private:
+  class ChannelSink;
+  MediaSessionOptions OfferOptions() const;
+  MediaSessionOptions AnswerOptions(const SessionDescription& offer) const;
+  std::unique_ptr<SessionDescriptionInterface> Wrap(SdpType type, std::unique_ptr<SessionDescription> desc);
+  bool ApplyRemoteCandidates(const SessionDescriptionInterface& desc, Timestamp now);
+  void OnCandidateGathered(const std::string& transport_name, const p2p::Candidate& candidate);
+  bool CreateMediaSession(std::string* error);
+  void OnRtcp(const std::vector<uint8_t>& packet, std::optional<Timestamp> arrival);
+  void Deliver(std::span<const uint8_t> packet, Timestamp arrival);
+
+  PeerEndpointConfig config_;
+  std::shared_ptr<const tls::SslIdentity> certificate_;
+  TransportDescriptionFactory transport_desc_factory_;
+  UniqueRandomIdGenerator ssrc_generator_;
+  SdpPayloadTypeSuggester suggester_;
+  std::unique_ptr<CodecVendor> codec_vendor_;
+  std::unique_ptr<MediaSessionDescriptionFactory> session_desc_factory_;
+  JsepTransportController transport_controller_;
+  std::string session_id_;
+  uint64_t session_version_ = 2;
+
+  SignalingState signaling_state_ = SignalingState::kStable;
+  std::unique_ptr<SessionDescriptionInterface> local_description_;
+  std::unique_ptr<SessionDescriptionInterface> remote_description_;
+  IceCandidateCallback on_ice_candidate_;
+
+  rtp::H264PayloadParser h264_parser_;
+  std::unique_ptr<rtp::Session> session_;
+  DtlsSrtpTransport* media_rtp_transport_ = nullptr;
+  std::vector<std::unique_ptr<ChannelSink>> sinks_;
+  std::optional<rtp::AudioSendId> audio_send_;
+  std::optional<rtp::VideoSendId> video_send_;
+  std::optional<rtp::AudioRecvId> audio_recv_;
+  std::optional<rtp::VideoRecvId> video_recv_;
+  Timestamp last_now_ = Timestamp::MinusInfinity();
+  int send_failures_ = 0;
+};
+
+}  // namespace sm::pc

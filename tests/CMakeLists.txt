@@ -162,6 +162,16 @@ if(SM_WITH_TLS)
         PcRtpUtils
         PcSrtpTransport
     )
+    if(SM_WITH_RTP)
+      # The endpoint that sets up a call from SDP: ICE, DTLS-SRTP and the RTP session (C6 part 3, #1064).
+      sm_add_test_exe(sm_unit_pc_endpoint LABEL unit DEPS sm::pc_endpoint sm::p2p_tls
+        SOURCES
+          unit/pc_endpoint/peer_endpoint_test.cc
+        SUITES
+          PcJsepTransportController
+          PcPeerEndpoint
+      )
+    endif()
   endif()
 endif()
 
