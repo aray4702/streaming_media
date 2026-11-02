@@ -14,7 +14,9 @@ set(SM_FUZZ_TARGETS
   rtcp
   rtp_packet
   stun
+  tcp_framing
   transport_feedback
+  turn
   ulpfec
 )
 # dcsctp's packet layer (#1032) and socket (#1060), only when data channels are compiled in.
@@ -25,12 +27,33 @@ if(SM_WITH_DATACHANNEL)
   set(SM_FUZZ_DEPS_dcsctp_socket sm::dcsctp)
   set(SM_FUZZ_SOURCES_dcsctp_socket ${CMAKE_CURRENT_SOURCE_DIR}/dcsctp_fuzzers.cc)
 endif()
+# DTLS (#1058), only with sm::tls: dtls_record on sm::tls's backend, and on the
+# other one too where both are built (SM_TLS_CROSS_TEST), and dtls_transport
+# (p2p::DtlsTransport over the fake ICE transport). All three replay
+# corpus/dtls_record/.
+if(SM_WITH_TLS)
+  list(APPEND SM_FUZZ_TARGETS dtls_record dtls_transport)
+  set(SM_FUZZ_DEPS_dtls_record sm::tls)
+  set(SM_FUZZ_DEPS_dtls_transport sm::p2p_dtls)
+  set(SM_FUZZ_INCLUDES_dtls_transport ${PROJECT_SOURCE_DIR}/tests/unit/p2p_dtls)
+  set(SM_FUZZ_CORPUS_dtls_transport dtls_record)
+  if(SM_BUILD_TESTS AND SM_TLS_CROSS_TEST AND SM_TLS_OTHER_BACKEND)
+    set(t dtls_record_${SM_TLS_OTHER_BACKEND})
+    list(APPEND SM_FUZZ_TARGETS ${t})
+    set(SM_FUZZ_SOURCE_${t} dtls_record_fuzzer.cc)
+    set(SM_FUZZ_DEPS_${t} sm::tls_${SM_TLS_OTHER_BACKEND})
+    set(SM_FUZZ_CORPUS_${t} dtls_record)
+  endif()
+endif()
 # The library each target links: sm::rtp (which brings the RTP, RTCP, loss
 # and timing parsers) unless set here.
-set(SM_FUZZ_DEPS_stun sm::p2p)
-# Extra sources: the STUN tests' HMAC-SHA1 and MD5 for the crypto hooks.
-set(SM_FUZZ_SOURCES_stun ${PROJECT_SOURCE_DIR}/tests/unit/p2p/test_crypto.cc)
-set(SM_FUZZ_INCLUDES_stun ${PROJECT_SOURCE_DIR}/tests/unit/p2p)
+# Extra sources: the STUN tests' HMAC-SHA1 and MD5 for the crypto hooks (the
+# TURN and TCP framing targets use them for TURN's credentials).
+foreach(t stun turn tcp_framing)
+  set(SM_FUZZ_DEPS_${t} sm::p2p)
+  set(SM_FUZZ_SOURCES_${t} ${PROJECT_SOURCE_DIR}/tests/unit/p2p/test_crypto.cc)
+  set(SM_FUZZ_INCLUDES_${t} ${PROJECT_SOURCE_DIR}/tests/unit/p2p)
+endforeach()
 
 foreach(t ${SM_FUZZ_TARGETS})
   if(DEFINED SM_FUZZ_DEPS_${t})
@@ -38,16 +61,25 @@ foreach(t ${SM_FUZZ_TARGETS})
   else()
     set(deps sm::rtp)
   endif()
+  # The source and the corpus: <name>_fuzzer.cc and corpus/<name>/ unless set.
+  set(src ${t}_fuzzer.cc)
+  if(DEFINED SM_FUZZ_SOURCE_${t})
+    set(src ${SM_FUZZ_SOURCE_${t}})
+  endif()
+  set(corpus ${t})
+  if(DEFINED SM_FUZZ_CORPUS_${t})
+    set(corpus ${SM_FUZZ_CORPUS_${t}})
+  endif()
   if(SM_BUILD_TESTS AND NOT EMSCRIPTEN)
-    add_executable(sm_fuzz_replay_${t} ${t}_fuzzer.cc replay_main.cc ${SM_FUZZ_SOURCES_${t}})
+    add_executable(sm_fuzz_replay_${t} ${src} replay_main.cc ${SM_FUZZ_SOURCES_${t}})
     target_include_directories(sm_fuzz_replay_${t} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${SM_FUZZ_INCLUDES_${t}})
     target_link_libraries(sm_fuzz_replay_${t} PRIVATE ${deps})
     sm_configure_target(sm_fuzz_replay_${t})
-    add_test(NAME fuzz.${t} COMMAND sm_fuzz_replay_${t} ${CMAKE_CURRENT_SOURCE_DIR}/corpus/${t})
+    add_test(NAME fuzz.${t} COMMAND sm_fuzz_replay_${t} ${CMAKE_CURRENT_SOURCE_DIR}/corpus/${corpus})
     set_tests_properties(fuzz.${t} PROPERTIES LABELS fuzz)
   endif()
   if(SM_BUILD_FUZZERS)
-    add_executable(${t}_fuzzer ${t}_fuzzer.cc ${SM_FUZZ_SOURCES_${t}})
+    add_executable(${t}_fuzzer ${src} ${SM_FUZZ_SOURCES_${t}})
     target_include_directories(${t}_fuzzer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${SM_FUZZ_INCLUDES_${t}})
     target_link_libraries(${t}_fuzzer PRIVATE ${deps})
     sm_configure_target(${t}_fuzzer)
