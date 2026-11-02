@@ -1,0 +1,11 @@
+v=0
+o=- 18446744069414584320 18446462598732840960 IN IP4 127.0.0.1
+s=-
+t=0 0
+m=application 9 UDP/DTLS/SCTP webrtc-datachannel
+a=sctp-port:5000
+c=IN IP4 0.0.0.0
+a=ice-ufrag:ufrag_data
+a=ice-pwd:pwd_data
+a=fingerprint:sha-1 4A:AD:B9:B1:3F:82:18:3B:54:02:12:DF:3E:5D:49:6B:19:E5:7C:AB
+a=mid:data_content_name

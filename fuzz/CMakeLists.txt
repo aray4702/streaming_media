@@ -42,6 +42,11 @@ if(SM_WITH_TLS)
     set(SM_FUZZ_CORPUS_${t} dtls_record)
   endif()
 endif()
+# SDP (#1062), only with the connectivity TLS library (sm::pc_sdp is on sm::tls).
+if(SM_WITH_TLS)
+  list(APPEND SM_FUZZ_TARGETS sdp_parser)
+  set(SM_FUZZ_DEPS_sdp_parser sm::pc_sdp)
+endif()
 # The library each target links: sm::rtp (which brings the RTP, RTCP, loss
 # and timing parsers) unless set here.
 # Extra sources: the STUN tests' HMAC-SHA1 and MD5 for the crypto hooks (the

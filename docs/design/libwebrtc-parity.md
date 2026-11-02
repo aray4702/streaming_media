@@ -973,6 +973,34 @@ Differences:
 | `P2PTransportChannelMultihomedTest.TestFailoverWithManyConnections` | Run with a TCP TURN server and IPv6 interfaces | Not run; the TCP TURN server it needs is here now | The emulated network is IPv4 only (10.9) |
 | UDP blocked | `FirewallSocketServer::AddRule(false, FP_UDP, ...)` | `ByteNetwork::SetFirewallRule` with a rule on the datagram's protocol | The emulated network's firewall (10.9) |
 
+### 10.15 Session description model and SDP parse/write (`src/pc/{webrtc_sdp,session_description,jsep,codec,stream_params,simulcast_description,media_protocol_names}.cc`, C6 part 1, #1062)
+
+`api/webrtc_sdp.cc` with the model it reads and writes: `pc/session_description` (contents, groups, transports,
+msid signalling, extmap-allow-mixed and cryptex at both levels), `media/base/codec` (codecs, rtcp-fb params, fmtp),
+`media/base/stream_params` and `rid_description`, `pc/simulcast_description` and `simulcast_sdp_serializer`,
+`pc/media_protocol_names`, `p2p/base/transport_description` and `transport_info` (grown in
+`sm/p2p/transport_description.h`), `api/jsep_ice_candidate` and `SessionDescriptionInterface` (offer, pranswer,
+answer, rollback; candidates per m= section and the default address they set), and `Candidate::ParseCandidateString`
+(`api/candidate.cc`). `SdpSerialize` writes what libwebrtc writes, line for line (libwebrtc's `kSdpFullString` and
+a Chrome-style offer and answer are read and written back byte for byte); `SdpDeserialize` accepts and rejects what
+libwebrtc does, keeps and ignores the same lines, fills in the same defaults (static audio payload types, VP9
+profile-id, H.264 packetization-mode, AV1 and H.265 defaults, a=ptime/maxptime on every codec, rtcp-fb wildcards,
+CCFB when every codec has it) and reports the same `SdpParseError` line and text. Tests: `tests/unit/pc_sdp/`
+(every case of `pc/session_description_unittest.cc` and `jsep_session_description_unittest.cc` but the two hostname
+ones, and the cases of `api/webrtc_sdp_unittest.cc` for this subset with its SDP strings); fuzz target `sdp_parser`
+after `test/fuzzers/sdp_parser_fuzzer.cc`, with a write/parse/write stability check. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Hostname (mDNS) candidates | Kept, with the hostname as the address | Dropped when parsing an SDP; `ParseCandidateString` fails with `kUnsupportedHostnameCandidate` | `p2p::SocketAddress` has no hostname (10.3); the host stack resolves mDNS (C11) |
+| A candidate's TLS `fingerprint` extension | Parsed into `Candidate::fingerprint()` | Checked as libwebrtc checks it (a TLS candidate without one fails), not kept | `p2p::Candidate` has no fingerprint (10.3) |
+| A `c=` line or `raddr` with a hostname | Kept as a hostname | The address is left unspecified | As above |
+| RID codec match when writing `a=rid` | `IsSameRtpCodecIgnoringLevel` | Name, clock rate, channels and fmtp with the SDP defaults filled in and the level parameters left out | `codec_comparators` comes with offer/answer generation (C6 part 2) |
+| Payload type | `PayloadType` class | `int` (-1 = not set) | No `api/payload_type.h` in the library |
+| UMA histogram `WebRTC.PeerConnection.SdpBandwidth`, logging of ignored lines | Recorded | None | No histograms in the library |
+| `Codec` matching, H.264 profile helpers, `AddDefaultFeedbackParams`, `UniqueRandomIdGenerator` | Present | Left for C6 part 2 (`GenerateSsrcs` takes an id function) | Offer/answer generation uses them, the parser doesn't |
+| Not in `compare/webrtc/reference/` | `api/rtp_parameters.h`, `rtp_transceiver_direction.h`, `media/base/media_constants.h`, `pc/simulcast_description.h`, `rtc_base/string_encode.cc`, `api/jsep_session_description.cc`, the fmtp helpers (`WriteFmtpParameters`, `ParseFmtpParameterSet`) | Ported from their M157 declarations and behaviour, as the tests pin it | Missing reference files (noted on #1062) |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

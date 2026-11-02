@@ -132,6 +132,19 @@ if(SM_WITH_TLS)
       P2pDtlsRole
       P2pDtlsTransport
   )
+  # The session description model and SDP parse/write (C6 part 1, #1062).
+  sm_add_test_exe(sm_unit_pc_sdp LABEL unit DEPS sm::pc_sdp
+    SOURCES
+      unit/pc_sdp/session_description_test.cc
+      unit/pc_sdp/webrtc_sdp_test.cc
+    SUITES
+      PcCandidateParse
+      PcJsepSessionDescription
+      PcMediaContentDescription
+      PcSessionDescription
+      PcSimulcastSdp
+      PcWebRtcSdp
+  )
   if(SM_WITH_SYNC)
     # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007).
     sm_add_test_exe(sm_unit_pc LABEL unit DEPS sm::pc

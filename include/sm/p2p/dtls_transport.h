@@ -39,6 +39,7 @@
 #include "sm/p2p/dtls_utils.h"
 #include "sm/p2p/ice_transport_internal.h"
 #include "sm/p2p/packet_transport_internal.h"
+#include "sm/p2p/transport_description.h"
 #include "sm/tls/dtls_transport.h"
 #include "sm/tls/ssl_identity.h"
 
@@ -48,9 +49,7 @@ namespace sm::p2p {
 enum class DtlsTransportState { kNew, kConnecting, kConnected, kClosed, kFailed };
 using SslRole = tls::DtlsRole;
 
-// p2p/base/transport_description.h's ConnectionRole: SDP's a=setup (RFC 4145).
-enum class ConnectionRole { kNone, kActive, kPassive, kActpass, kHoldconn };
-enum class SdpType { kOffer, kPrAnswer, kAnswer };
+// ConnectionRole (SDP's a=setup, RFC 4145) and SdpType are in sm/p2p/transport_description.h (#1062).
 
 // JsepTransport::NegotiateDtlsRole: this end's DTLS role from the local description's type and both a=setup values
 // (RFC 5763 section 5, RFC 8842 section 5.3). `current_role` is the role already negotiated, if any. Returns false

@@ -13,9 +13,10 @@
 // Differences from libwebrtc:
 // - No hostname addresses (the library's SocketAddress has none), so no mDNS
 //   names and no ToSanitizedCopy; the host stack signals candidates (C11).
-// - No DTLS fingerprint extension (TLS candidates come with C4), no network
-//   slice, and no ParseCandidateString: the SDP parser is with the host stack
-//   until the session layer needs it (#1002 onwards).
+// - No DTLS fingerprint on the candidate and no network slice. The parser
+//   (ParseCandidateString, #1062) checks a TLS candidate's fingerprint
+//   extension as libwebrtc does but doesn't keep it, and fails a hostname
+//   address with kUnsupportedHostnameCandidate (the SDP parser drops those).
 // - The foundation's HMAC-SHA256 and the random bytes for ids and the key
 //   come from the STUN crypto hooks (sm/p2p/stun.h, SetStunCrypto). Without
 //   them the foundation is a CRC-32 of the same input under a fixed key and
@@ -41,10 +42,16 @@ inline constexpr char TCPTYPE_ACTIVE_STR[] = "active";
 inline constexpr char TCPTYPE_PASSIVE_STR[] = "passive";
 inline constexpr char TCPTYPE_SIMOPEN_STR[] = "so";
 inline constexpr uint32_t kMaxTurnServers = 32;
+// ParseCandidateString's error for a candidate whose address is a hostname (an mDNS name): SocketAddress has none.
+inline constexpr char kUnsupportedHostnameCandidate[] = "Hostname candidates are not supported";
 
 class Candidate {
  public:
   Candidate();
+  // api/candidate.cc's ParseCandidate: RFC 5245 15.1's candidate-attribute ("candidate:..."; "a=candidate:..." is
+  // accepted too), one line, as SDP and trickled candidates carry it. nullopt, with libwebrtc's reason in `error`,
+  // if it is malformed.
+  static std::optional<Candidate> ParseCandidateString(std::string_view message, std::string* error = nullptr);
   Candidate(int component, std::string_view protocol, const SocketAddress& address, uint32_t priority,
             std::string_view username, std::string_view password, IceCandidateType type, uint32_t generation,
             std::string_view foundation, uint16_t network_id = 0, uint16_t network_cost = 0);
