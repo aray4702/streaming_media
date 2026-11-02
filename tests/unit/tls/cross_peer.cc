@@ -39,6 +39,8 @@ class PeerImpl final : public Peer {
   bool failed() const override { return t_->state() == sm::tls::DtlsState::kFailed; }
   int version() const override { return t_->version(); }
   int srtp_crypto_suite() const override { return t_->srtp_crypto_suite(); }
+  int ssl_cipher_suite() const override { return t_->ssl_cipher_suite(); }
+  std::string ssl_cipher_suite_name() const override { return t_->ssl_cipher_suite_name(); }
   std::vector<uint8_t> SrtpKeyingMaterial() const override {
     int key = 0, salt = 0;
     if (!sm::tls::SrtpKeyAndSaltLength(t_->srtp_crypto_suite(), key, salt)) return {};

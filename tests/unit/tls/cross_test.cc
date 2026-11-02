@@ -76,6 +76,11 @@ void ExpectDtlsSrtpAgreement(CrossPair& p) {
   SM_EXPECT_EQ(p.server->version(), kDtls12);
   SM_EXPECT_EQ(p.client->srtp_crypto_suite(), kSrtpAes128CmSha1_80);
   SM_EXPECT_EQ(p.server->srtp_crypto_suite(), kSrtpAes128CmSha1_80);
+  // Both backends report the same cipher suite, by IANA id and by standard name (the connection stats, #1059).
+  SM_EXPECT_NE(p.client->ssl_cipher_suite(), 0);
+  SM_EXPECT_EQ(p.client->ssl_cipher_suite(), p.server->ssl_cipher_suite());
+  SM_EXPECT_EQ(p.client->ssl_cipher_suite_name(), p.server->ssl_cipher_suite_name());
+  SM_EXPECT_EQ(p.client->ssl_cipher_suite_name().rfind("TLS_ECDHE_ECDSA_WITH_", 0), size_t{0});
   const std::vector<uint8_t> a = p.client->SrtpKeyingMaterial(), b = p.server->SrtpKeyingMaterial();
   SM_EXPECT_EQ(a.size(), 60u);  // 2 x (16-byte key + 14-byte salt).
   SM_EXPECT_TRUE(!a.empty() && a == b);  // RFC 5764 4.2: both ends derive the same keys.

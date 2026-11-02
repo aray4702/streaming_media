@@ -7,7 +7,7 @@
 // |---|---|---|
 // | Metrics (`MetricsSource`, `MetricsRegistry`) | `SM_ENABLE_METRICS` (ON) | Computed only when the app exports them (`MetricsRegistry::Export`). Compiled out, `Histogram::Add` and `MetricsRegistry::Export` do nothing. |
 // | Decision events (`SM_EVENT`, `EventLog`) | `SM_ENABLE_EVENTS` (ON) | The component's `EventSink*` (null: off). Compiled out, `SM_EVENT` expands to nothing, so a sink gets no events. |
-// | Stats snapshot (`rtp::Session::GetStats`) | `SM_ENABLE_STATS` (ON) | Computed only when the app asks. Compiled out, `GetStats` returns `ObsStatus::kNotSupported`. |
+// | Stats snapshot (`rtp::Session::GetStats`, `pc::GetConnectionStats`) | `SM_ENABLE_STATS` (ON) | Computed only when the app asks. Compiled out, both return `ObsStatus::kNotSupported`. |
 // | Text log (`SM_LOG`, sm/core/logging.h) | `SM_LOG_MIN_LEVEL` (`VERBOSE`) | `SetLogSeverity`, default warnings. Levels below the compiled minimum are compiled out, and asking for them returns `ObsStatus::kNotSupported`. |
 //
 // The rule: a runtime switch can't turn on something compiled out. The calls
