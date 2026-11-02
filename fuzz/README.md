@@ -13,11 +13,13 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 | `packet_buffer` | `timing::PacketBuffer` with fuzzed sequence numbers, timestamps and bits | `packet_buffer_fuzzer.cc` |
 | `red` | `loss::ParseRed`, `loss::SplitRed` | `neteq_rtp_fuzzer.cc` (RED through NetEq) |
 | `ulpfec` | `loss::ulpfec::UlpfecReceiver`, `ForwardErrorCorrection::DecodeFec` | `ulpfec_receiver_fuzzer.cc`, `ulpfec_decoder_fuzzer.cc` |
+| `stun` | `p2p::StunMessage::Read` as STUN, TURN and ICE messages, integrity and FINGERPRINT checks, a write/read round trip, `StunRequestManager::CheckResponse` | `stun_parser_fuzzer.cc`, `stun_validator_fuzzer.cc` |
 
-libwebrtc's `test/fuzzers/` is not in `compare/webrtc/reference/` (only
-`net/dcsctp/fuzzers/` is), so the targets follow its file names and what each
-one feeds, not its code; the multi-packet input formats are this library's
-own and are documented at the top of each target.
+Of libwebrtc's `test/fuzzers/`, only the STUN fuzzers are in
+`compare/webrtc/reference/` (#1019; `net/dcsctp/fuzzers/` is too). `stun`
+follows their code; the other targets follow libwebrtc's file names and what
+each one feeds, not its code. The multi-packet input formats are this
+library's own and are documented at the top of each target.
 
 ## The corpus replay test (every build)
 
@@ -56,5 +58,18 @@ them in the multi-packet targets' formats. Regenerate it, don't edit it:
 python3 tools/fuzz_corpus.py --testbench out/native/testbench/sm_testbench
 ```
 
-Parts 2 and later (#989) add STUN (after #986), DTLS records, SDP and SCTP as
-those parsers land.
+`corpus/stun/` comes from `tools/stun_fuzz_corpus.py` instead (#1017): the
+sample packets of `tests/unit/p2p/stun_test.cc` (libwebrtc's
+`stun_unittest.cc` packets and the RFC 5769 vectors), the binding exchanges
+of the test STUN server (`sim/stun_server.h`), signed ICE connectivity checks
+and their responses, and a TURN Allocate with its 401:
+
+```sh
+python3 tools/stun_fuzz_corpus.py
+```
+
+The `stun` target links the STUN tests' HMAC-SHA1 and MD5
+(`tests/unit/p2p/test_crypto.cc`) for STUN's crypto hooks, so integrity checks
+run to the comparison and the RFC 5769 vectors check OK.
+
+Later parts (#989) add DTLS records, SDP and SCTP as those parsers land.
