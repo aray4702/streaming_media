@@ -1,0 +1,6 @@
+t_s,encoder_target_bps,alloc_target_bps,captured,encoded,dropped_capturer,dropped_encoder_queue,dropped_rate_limiter,dropped_congestion_window,dropped_encoder,paused,encoded_bytes,pacer_queue_ms,qp_mean,encode_ms_mean,encode_width,encode_height,keyframes,keyframe_bytes,rendered,max_render_gap_ms,height_mean,qs_checks,qs_qp_high,qs_qp_low,qs_drop_pct,qs_signal,rx_complete,rx_decoded,rx_dropped,av_offset_ms,av_offset_abs_max_ms,video_delay_ms
+1,1485833,1783701,30,26,0,4,0,0,0,0,141186,0.0,17.3,0.62,320,180,1,3333,24,79.0,180.0,0,-1,-1,-1,0,24,24,0,-23.4,41.2,79.9
+2,1650995,1906083,30,30,0,0,0,0,0,0,191769,0.0,14.3,0.62,320,180,0,0,30,34.0,180.0,0,-1,-1,-1,0,30,30,0,-36.6,38.2,76.6
+3,1845053,2094819,30,30,0,0,0,0,0,0,218724,0.0,13.3,0.62,320,180,0,0,30,34.0,180.0,0,-1,-1,-1,0,30,30,0,-33.3,35.2,79.9
+4,1499471,1558006,30,30,0,0,0,0,0,0,239878,0.0,12.4,0.62,320,180,0,0,28,43.8,180.0,0,-1,-1,-1,0,29,28,0,-10.9,31.6,120.6
+5,1502853,1566152,30,30,0,0,0,0,0,0,184744,0.0,14.7,0.62,320,180,0,0,31,35.0,180.0,1,16,26,-1,0,32,31,0,-34.5,45.9,129.2
