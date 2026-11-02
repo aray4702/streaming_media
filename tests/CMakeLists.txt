@@ -9,16 +9,17 @@ if(SM_WITH_TLS)
             unit/tls/ssl_identity_test.cc
             unit/tls/dtls_transport_test.cc
             unit/tls/srtp_session_test.cc
+            unit/tls/tls_stream_test.cc
     SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport TlsSrtpSession
-           TlsDtlsSrtp)
+           TlsDtlsSrtp TlsTlsStream)
   if(SM_TLS_CROSS_TEST)
     # The same unit tests on the other backend (sm::tls_mbedtls, or sm::tls_boringssl when sm::tls is on mbedTLS;
     # without SrtpSession), and the BoringSSL <-> mbedTLS cross test (#998).
     add_executable(sm_unit_tls_${SM_TLS_OTHER_BACKEND} unit/tls/message_digest_test.cc unit/tls/ssl_identity_test.cc
-                   unit/tls/dtls_transport_test.cc)
+                   unit/tls/dtls_transport_test.cc unit/tls/tls_stream_test.cc)
     target_link_libraries(sm_unit_tls_${SM_TLS_OTHER_BACKEND} PRIVATE sm_test_framework sm::tls_${SM_TLS_OTHER_BACKEND})
     sm_configure_target(sm_unit_tls_${SM_TLS_OTHER_BACKEND})
-    foreach(suite TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport)
+    foreach(suite TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint TlsDtlsTransport TlsTlsStream)
       add_test(NAME unit.${suite}.${SM_TLS_OTHER_BACKEND}
                COMMAND sm_unit_tls_${SM_TLS_OTHER_BACKEND} --filter=${suite}.)
       set_tests_properties(unit.${suite}.${SM_TLS_OTHER_BACKEND} PROPERTIES LABELS unit)
@@ -95,10 +96,13 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
 )
 if(SM_WITH_TLS)
   # The STUN crypto hooks on BoringSSL's crypto (sm::tls, #984).
-  target_sources(sm_unit_p2p PRIVATE unit/p2p/stun_tls_test.cc)
+  target_sources(sm_unit_p2p PRIVATE unit/p2p/stun_tls_test.cc unit/p2p/ssl_adapter_test.cc)
   target_link_libraries(sm_unit_p2p PRIVATE sm::p2p_tls)
   add_test(NAME unit.StunTls COMMAND sm_unit_p2p --filter=StunTls.)
   set_tests_properties(unit.StunTls PROPERTIES LABELS unit)
+  # The TLS client socket over the emulated TCP (C4 part 3, #1035).
+  add_test(NAME unit.P2pSslAdapter COMMAND sm_unit_p2p --filter=P2pSslAdapter.)
+  set_tests_properties(unit.P2pSslAdapter PROPERTIES LABELS unit)
   # DTLS over a fake ICE transport (C5 part 2, #1006).
   sm_add_test_exe(sm_unit_p2p_dtls LABEL unit DEPS sm::p2p_dtls
     SOURCES

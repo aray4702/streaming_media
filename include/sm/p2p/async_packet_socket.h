@@ -209,12 +209,16 @@ class AsyncListenSocket {
   std::vector<std::pair<const void*, NewConnectionCallback>> new_connection_;
 };
 
-// api/packet_socket_factory.h's PacketSocketTcpOptions, without the
-// certificate verifier hook (TLS comes with C4 part 3, #1035).
+class SslCertificateVerifier;  // sm/p2p/ssl_adapter.h
+
+// api/packet_socket_factory.h's PacketSocketTcpOptions. `tls_trusted_roots`
+// (DER) stands in for libwebrtc's built-in roots (#1035).
 struct PacketSocketTcpOptions {
   int opts = 0;
   std::vector<std::string> tls_alpn_protocols;
   std::vector<std::string> tls_elliptic_curves;
+  SslCertificateVerifier* tls_cert_verifier = nullptr;  // Not owned.
+  std::vector<std::vector<uint8_t>> tls_trusted_roots;
 };
 
 // api/packet_socket_factory.h: where the ports get their sockets.
