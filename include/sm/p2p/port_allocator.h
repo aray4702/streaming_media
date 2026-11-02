@@ -119,6 +119,7 @@ struct RelayServerConfig {
   TlsCertPolicy tls_cert_policy = TlsCertPolicy::TLS_CERT_POLICY_SECURE;
   std::vector<std::string> tls_alpn_protocols;
   std::vector<std::string> tls_elliptic_curves;
+  std::string turn_logging_id;
 };
 
 // IceCredentialsIterator::CreateRandomIceCredentials: a 4-character ufrag

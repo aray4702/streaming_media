@@ -5,17 +5,25 @@
 //
 // IceConfig carries libwebrtc's defaults (*_or_default) and IsValid since #1002's ICE controller part.
 //
-// Left out until P2PTransportChannel (#1002) brings their types: the candidate methods and signals (AddRemoteCandidate, gathering,
-// candidate pairs, GetStats), the STUN dictionary, and the DTLS-in-STUN piggyback callbacks, which M157 has behind a
-// field trial that is off by default (IceConfig::dtls_handshake_in_stun is kept, false).
+// The candidate methods and signals (AddRemoteCandidate, gathering, the selected candidate pair, GetStats) came with
+// P2PTransportChannel (#1002 part 2). Left out: the STUN dictionary (GetDictionaryWriter and its callbacks; no
+// library API writes the dictionary) and the DTLS-in-STUN piggyback callbacks, which M157 has behind a field trial
+// that is off by default (IceConfig::dtls_handshake_in_stun is kept, false). IceTransportStats has no
+// candidate_stats_list (the allocator session's GetCandidateStatsFromReadyPorts is not ported).
 #pragma once
+#include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "sm/core/units.h"
+#include "sm/p2p/candidate.h"
+#include "sm/p2p/connection_info.h"
 #include "sm/p2p/network.h"
 #include "sm/p2p/p2p_constants.h"
 #include "sm/p2p/packet_transport_internal.h"
+#include "sm/p2p/port.h"
 #include "sm/p2p/transport_description.h"
 #include "sm/p2p/transport_enums.h"
 
@@ -116,6 +124,42 @@ struct IceConfig {
   }
 };
 
+// p2p/base/ice_transport_internal.h's IceTransportStats, less candidate_stats_list (see the file comment).
+struct IceTransportStats {
+  ConnectionInfos connection_infos;
+  // Number of times the selected candidate pair has changed: 0 at first, 1 once the first pair is selected; also
+  // counts "unselecting" a connection.
+  uint32_t selected_candidate_pair_changes = 0;
+  // Not the sum of connection_infos' counters: connections come and go while the transport lives.
+  uint64_t bytes_sent = 0;
+  uint64_t bytes_received = 0;
+  uint64_t packets_sent = 0;
+  uint64_t packets_received = 0;
+  IceRole ice_role = ICEROLE_UNKNOWN;
+  std::string ice_local_username_fragment;
+  IceTransportState ice_state = IceTransportState::kNew;
+};
+
+using Candidates = std::vector<Candidate>;
+
+// p2p/base/candidate_pair_interface.h's CandidatePair.
+struct CandidatePair {
+  Candidate local;
+  Candidate remote;
+  const Candidate& local_candidate() const { return local; }
+  const Candidate& remote_candidate() const { return remote; }
+};
+
+// p2p/base/port.h's CandidatePairChangeEvent.
+struct CandidatePairChangeEvent {
+  std::string transport_name;
+  CandidatePair selected_candidate_pair;
+  int64_t last_data_received_ms = 0;
+  std::string reason;
+  // How long we estimate that we've been disconnected.
+  int64_t estimated_disconnected_time_ms = 0;
+};
+
 class IceTransportInternal : public PacketTransportInternal {
  public:
   using IceCallback = std::function<void(IceTransportInternal*)>;
@@ -134,8 +178,32 @@ class IceTransportInternal : public PacketTransportInternal {
   virtual const IceConfig& config() const = 0;
   // Starts gathering candidates if not yet started, or after an ICE restart.
   virtual void MaybeStartGathering(Timestamp now) = 0;
+  virtual void AddRemoteCandidate(Timestamp now, const Candidate& candidate) = 0;
+  virtual void RemoveRemoteCandidate(const Candidate& candidate) = 0;
+  virtual void RemoveAllRemoteCandidates() = 0;
+  virtual IceGatheringState gathering_state() const = 0;
+  // The current stats of this transport, with the connections' rates at `now`.
+  virtual bool GetStats(Timestamp now, IceTransportStats* ice_transport_stats) = 0;
   // The RTT of the selected connection, in milliseconds, if known.
   virtual std::optional<int> GetRttEstimate() = 0;
+  // The selected candidate pair, if any.
+  virtual std::optional<const CandidatePair> GetSelectedCandidatePair() const = 0;
+
+  void AddGatheringStateCallback(const void* tag, IceCallback cb) { gathering_state_.Add(tag, std::move(cb)); }
+  void RemoveGatheringStateCallback(const void* tag) { gathering_state_.Remove(tag); }
+  void NotifyCandidateGathered(IceTransportInternal* t, const Candidate& c) { candidate_gathered_.Send(t, c); }
+  void SubscribeCandidateGathered(const void* tag, std::function<void(IceTransportInternal*, const Candidate&)> cb) {
+    candidate_gathered_.Add(tag, std::move(cb));
+  }
+  void SetCandidateErrorCallback(std::function<void(IceTransportInternal*, const IceCandidateErrorEvent&)> cb) {
+    candidate_error_callback_ = std::move(cb);
+  }
+  void SetCandidatesRemovedCallback(std::function<void(IceTransportInternal*, const Candidates&)> cb) {
+    candidates_removed_callback_ = std::move(cb);
+  }
+  void SetCandidatePairChangeCallback(std::function<void(const CandidatePairChangeEvent&)> cb) {
+    candidate_pair_change_callback_ = std::move(cb);
+  }
 
   void SubscribeIceTransportStateChanged(const void* tag, IceCallback cb) { state_changed_.Add(tag, std::move(cb)); }
   void UnsubscribeIceTransportStateChanged(const void* tag) { state_changed_.Remove(tag); }
@@ -143,8 +211,15 @@ class IceTransportInternal : public PacketTransportInternal {
   void SubscribeRoleConflict(const void* tag, IceCallback cb) { role_conflict_.Add(tag, std::move(cb)); }
   void NotifyRoleConflict(IceTransportInternal* t) { role_conflict_.Send(t); }
 
+ protected:
+  void SendGatheringStateEvent() { gathering_state_.Send(this); }
+  std::function<void(IceTransportInternal*, const IceCandidateErrorEvent&)> candidate_error_callback_;
+  std::function<void(IceTransportInternal*, const Candidates&)> candidates_removed_callback_;
+  std::function<void(const CandidatePairChangeEvent&)> candidate_pair_change_callback_;
+
  private:
-  TaggedCallbackList<IceTransportInternal*> state_changed_, role_conflict_;
+  TaggedCallbackList<IceTransportInternal*> state_changed_, role_conflict_, gathering_state_;
+  TaggedCallbackList<IceTransportInternal*, const Candidate&> candidate_gathered_;
 };
 
 }  // namespace sm::p2p

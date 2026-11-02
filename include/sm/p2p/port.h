@@ -32,7 +32,8 @@
 // signal, and the owner (the allocator, #1001) deletes it.
 //
 // The owner also runs the connections' STUN transactions through
-// Process(now). Not here yet: TCP and TURN ports (C4), mDNS name registration and the local network access
+// Process(now). TURN ports are in sm/p2p/turn_port.h (#1031). Not here
+// yet: TCP ports (C4), mDNS name registration and the local network access
 // permission (Chromium's; with no permission factory libwebrtc grants
 // every address, as here).
 #pragma once
@@ -236,8 +237,8 @@ class Port {
   void NotifyCandidateReady(const Candidate& c) { candidate_ready_.Send(this, c); }
 
   // Answers a binding request (or GOOG-PING) with an error.
-  void SendBindingErrorResponse(Timestamp now, StunMessage* message, const SocketAddress& addr, int error_code,
-                                std::string_view reason);
+  virtual void SendBindingErrorResponse(Timestamp now, StunMessage* message, const SocketAddress& addr,
+                                        int error_code, std::string_view reason);
   void SendUnknownAttributesErrorResponse(Timestamp now, StunMessage* message, const SocketAddress& addr,
                                           const std::vector<uint16_t>& unknown_types);
 

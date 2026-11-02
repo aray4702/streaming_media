@@ -686,7 +686,7 @@ cases of `basic_port_allocator_unittest.cc` and `port_allocator_unittest.cc` are
 |---|---|---|---|
 | Time | Network thread, posted and delayed tasks, `SafeTask` | The session queues what libwebrtc posts and runs it, and its ports, in `Process(now)` at `NextProcessTime()`; it owns its ports and deletes a destroyed one at the end of that call | The library's time model, as 10.3 |
 | TCP ports | `TCPPort` in the last phase | The phase runs and makes nothing | C4 |
-| TURN ports | `TurnPortFactory` by default | Only through a `RelayPortFactoryInterface` the caller gives; none by default. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
+| TURN ports | `TurnPortFactory` by default | `TurnPortFactory` by default too (10.7, #1031), or the `RelayPortFactoryInterface` the caller gives. DTLS TURN servers are not added as STUN servers (no `PROTO_DTLS`) | C4 |
 | mDNS, local network access, VPN list, `TurnCustomizer` | mDNS obfuscation when the network manager has a responder; permission factory; `set_vpn_list` | None (`MdnsObfuscationEnabled` false, as with no responder; access granted) | Host-stack features (C11, C12) |
 | Field trials | `WebRTC-UseTurnServerAsStunServer`, `WebRTC-IPv6Default` | At their defaults (enabled); the second is `PeerConnectionAllocatorConfig::ipv6_default` | Defaults as libwebrtc |
 | PeerConnection's allocator settings | `PeerConnection::InitializePortAllocator_n` (`pc/peer_connection.cc`) | `ConfigureAsPeerConnection` (`port_allocator.h`) with `RTCConfiguration`'s defaults: shared socket, IPv6 and IPv6 on Wi-Fi, step delay 50 ms, `CF_ALL`, 5 IPv6 networks, `SetConfiguration` last | Same; the session layer (#1002 onwards) calls it |
@@ -707,17 +707,139 @@ the pruning rule, semi-aggressive nomination by default, and the initial-select 
 `ice_credentials_iterator_unittest.cc` and `wrapping_active_ice_controller_unittest.cc` cases and the controller's
 rules on real candidate pairs are in `tests/unit/p2p/ice_controller_test.cc`. `BasicPortAllocatorSession::
 GetFailedNetworks` now reads the ports' connections as libwebrtc does (a network interface with no connection on
-any of its ports has failed). P2PTransportChannel, the agent the controller drives, is the next part of #1002.
+any of its ports has failed). P2PTransportChannel, the agent the controller drives, is 10.7.
 Differences:
 
 | Item | libwebrtc M157 | This library | Why |
 |---|---|---|---|
 | Time | `Environment` clock reads; `PostTask`/`PostDelayedTask` on the network thread with `ScopedTaskSafety` | `now` passed to the calls that read the clock (`HasPingableConnection`, `GetConnectionToPing`, `FindNextPingableConnection`, `ShouldSwitchConnection`, `SortAndSwitchConnection`) and to the agent calls that send or switch; the wrapping controller queues its tasks and runs the due ones in `Process(now)` at `NextProcessTime()`, dropped with it | The library's time model, as 10.3 |
 | `IceConfig::IsValid` | `RTCError` | The reason as `std::optional<std::string>` | No `RTCError` type |
-| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
+| `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | #1002's remaining part |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
-### 10.8 Data channels: the SCTP packet layer (`src/dcsctp/`, C7 part 1, #1032)
+### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
+
+Ported as a unit from `pc/rtp_transport.{h,cc}`, `pc/rtp_transport_internal.h`, `pc/srtp_transport.{h,cc}` and
+`pc/dtls_srtp_transport.{h,cc}`, on the DTLS transport (`src/p2p/dtls_transport.cc`, #1006), `SrtpSession` (#995) and the RtpDemuxer
+(8.4), in a new `sm::pc` library. Same behaviour: RTP and RTCP over one packet transport with rtcp-mux or two
+without; RFC 5761 classification and the 12/4/2048-byte size checks of `media/base/rtp_utils.cc`; the header
+extension map merged by MID, newest first; SRTP active once the send and receive sessions exist, separate RTCP
+sessions for non-muxed RTCP, keys updated in place (`srtp_update`) on a second `SetRtpParams`, everything reset on
+a failure; DTLS-SRTP set up when every DTLS transport in use is writable and connected, keys split from the RFC
+5764 export by the DTLS role, reset on any DTLS state but connected (restart, failure, transport change) and set up
+again on the next connect, kept when rtcp-mux removes the RTCP transport (bugs.webrtc.org/8996); encrypted header
+extension ids empty unless set, cryptex off; libwebrtc's default suite order (the DTLS transport's). The cases of
+`srtp_transport_unittest.cc` and `dtls_srtp_transport_unittest.cc` are in `tests/unit/pc/`, the DTLS ones with
+the real DTLS transport over the fake ICE transport (libwebrtc uses a `FakeDtlsTransport`), plus a media path over
+a 10 ms link past a sequence-number wrap and a DTLS restart that re-keys. The test bench keeps unencrypted media.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Buffers | `CopyOnWriteBuffer`; a received RTP packet as `RtpPacketReceived` | `std::vector<uint8_t>`, protected in place; the sink gets the bytes and the parsed `sm::RtpPacket` | Library types |
+| Network route | `SubscribeNetworkRouteChanged`; SRTP overhead added to it behind `WebRTC-UpdateNetworkRouteOnSrtpActivation` (off) | Left out, with the two network-route cases of `srtp_transport_unittest.cc` | The packet transports have no route until ICE reports candidate pairs (#1002) |
+| ECN | RTCP sent as ECT(1) after RTP arrived with ECT(1) or CE | Not sent: the packet transports don't report ECN | Comes with the transports' ECN |
+| Field trials | `WebRTC-SrtpRemoveReceiveStream` (off) | `SrtpTransportOptions::remove_receive_stream`, off | Defaults as libwebrtc |
+| Ready-to-send re-entry | A change during the signal is posted as a task | Re-checked when the signal returns | The library's time model (no task queue) |
+| `RTCError`, `RTC_CHECK` | Errors and checks | `bool` results; `assert` for the BUNDLE-without-rtcp-mux case | No `RTCError` type, no exceptions |
+| Test data | `media/base/fake_rtp.h`, `media/base/rtp_utils.cc`, `modules/rtp_rtcp/source/rtp_util.cc` | Equivalent packets in `tests/unit/pc/pc_test_util.h`; the classification from those files' M157 behaviour | Not in `reference/` (asked on #1007) |
+
+### 10.8 TCP packet sockets (`src/p2p/async_tcp_socket.cc`, `sm/sim/emulated_sockets.h`, C4 part 2, #1034)
+
+Ported from `rtc_base/async_tcp_socket.{h,cc}` (`AsyncTCPSocketBase`, `AsyncTCPSocket`, `AsyncTcpListenSocket`),
+`p2p/base/async_stun_tcp_socket.{h,cc}`, the TCP half of `p2p/base/basic_packet_socket_factory.cc`
+(`CreateServerTcpSocket`, `CreateClientTcpSocket`), `AsyncListenSocket` and `PacketSocketTcpOptions` of
+`rtc_base/async_packet_socket.h` and `api/packet_socket_factory.h`, and the stream sockets of
+`rtc_base/socket.h`. Same constants and behaviour: the input buffer grows from 128 bytes to the largest packet
+(64 KiB + 2 for the length framing, 64 KiB + 20 for STUN framing), the 2-byte length prefix, STUN and ChannelData
+framing with ChannelData padded to 4 bytes, whole messages only for STUN, a send while the output buffer is not
+empty reported as sent and dropped, a partial write finished on write events, TCP_NODELAY before connect,
+backlog 5, and `OPT_STUN` refused on a listener. TCP in the emulated network follows
+`rtc_base/virtual_socket_server.cc`: one port table for TCP and UDP, 32 KiB send and receive buffers, segments
+of `TCP_MSS - TCP_HEADER_SIZE` = 1360 bytes charged 40 header bytes, the window as the receiver's free space,
+connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_socket_unittest.cc` and
+`async_stun_tcp_socket_unittest.cc` is in `tests/unit/p2p/tcp_socket_test.cc`, with a TCP echo
+(`test_echo_server.h`) from behind each test NAT type. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | `Environment` clock reads; read, write, connect and close events posted on the socket server's thread | `now` passed to `Connect`, `Send`, `Recv`, `Accept` and `CreateClientTcpSocket`, and carried by the read, write and connect events; `Close` sends its FIN at the latest time the socket server has seen | The library's time model, as 10.3 |
+| Lost segments | The virtual server's TCP never loses a segment | The emulated links do, so the stream retransmits: cumulative ACKs, RFC 6298's timer (1 s initial and minimum, 60 s maximum, doubled per retry), go-back-N on a timeout or the third duplicate ACK, window probes, 6 SYN and 15 data retries (Linux's defaults) before ETIMEDOUT | Needed for TURN over TCP on lossy links; nothing of it runs on a lossless link |
+| Connect timing | The virtual server completes the client's connect one transit delay after `Connect` | One round trip: the SYN-ACK's arrival completes it | Segments cross the hosts' links and NATs both ways |
+| TCP through NATs | `NATSocketServer` proxies outbound TCP connections through the NAT server | Segments cross the emulated NATs with their UDP mapping and filtering rules; inbound connections find no binding | One NAT model for both protocols; the outcome (outbound only) is the same |
+| `AsyncListenSocket` | New socket as a raw pointer the subscriber takes | The subscriber moves a `std::unique_ptr` out; an untaken socket is closed | Ownership in the type |
+| TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `CreateClientTcpSocket` returns nullptr | C4 part 3 (#1035) |
+| Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
+| `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
+
+### 10.9 The ICE agent (`src/p2p/p2p_transport_channel.cc`, C3 part 6, #1002)
+
+Ported as a unit from `p2p/base/p2p_transport_channel.{h,cc}`, with the candidate methods and signals of
+`ice_transport_internal.h` (`AddRemoteCandidate`, the gathering state, `GetSelectedCandidatePair`, `GetStats` and
+`IceTransportStats`, the candidate gathered / removed / error and candidate-pair-change callbacks) and the network
+route of `packet_transport_internal.h`. Same behaviour and defaults: the channel's `IceConfig` (receiving timeout
+2.5 s, backup ping interval 25 s, stable writable ping interval 2.5 s, regather interval 5 min, receiving switching
+delay 1 s, presume writable when fully relayed, gather once), pooled sessions taken with the local credentials, an
+ICE restart on a change of either credential (old sessions stopped, their ports pruned), remote candidates by
+generation (an older ufrag dropped, an unknown one held for the next generation), peer-reflexive candidates from
+checks (priority and GOOG-NETWORK-INFO from the request, the foundation, a password once the credentials are known),
+the connection rules (one per remote address per port, a newer generation replaces an unselected one,
+`incoming_only`, `skip_relay_to_non_relay_connections`), nomination (the controller's USE-CANDIDATE rule, or
+NOMINATION with renomination on both sides), the controlled side switching on nomination and on data, the state rules
+(`ComputeState`, `ComputeIceTransportState`), destroying every connection when all have timed out, stopping (or with
+continual gathering clearing) the sessions on a strongly connected pair, the regathering timer, `SendPacket`'s
+ENOTCONN/EINVAL rules, and the prflx sanitizing of the selected pair and the stats. The two-endpoint cases of
+`p2p_transport_channel_unittest.cc` without TURN, TCP, mDNS or field trials are in
+`tests/unit/p2p/p2p_transport_channel_test.cc`, over the emulated network's NATs (#985) with a STUN server.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, `Environment` clock, `RepeatingTaskHandle` for regathering | `now` on the calls that read the clock; `Process(now)` at `NextProcessTime()` runs the allocator sessions (their ports and connections), the controller's tasks and the regathering timer. Calls without `now` (`SetRemoteIceParameters`, `SetIceConfig`, socket and connection signals) use the time of the last call that had one (a connection's signal: the later of that and its last receive), so the owner calls `Process(now)` before the sockets deliver at `now` | The library's time model, as 10.3 |
+| Hostname candidates | Resolved with the `AsyncDnsResolverFactory` (or dropped without one; not for relay-only policies) | Not ported | The library's addresses carry no hostname (10.3); mDNS is the host stack's (C11) |
+| Local network access | `LocalNetworkAccessPermissionFactory` queries | Always granted | As libwebrtc with no factory (10.3) |
+| STUN dictionary | `StunDictionaryView`/`Writer`, GOOG-DELTA on pings (`enable_goog_delta` on) | Not ported: pings carry no GOOG-DELTA, a received one is not applied | No library API writes the dictionary, so the writer never has a delta to send |
+| DTLS-in-STUN | Piggyback callbacks | Not ported | Off by default in M157 (`dtls_handshake_in_stun`), as 10.4 |
+| Field trials | `WebRTC-IceFieldTrials` parsed; `-DscpFieldTrial`, `-SetSocketReceiveBuffer`, `-RFC8888CongestionControlFeedback`, `-PiggybackIceCheckAcknowledgement`, `-ExtraICEPing` read | Defaults, or an `IceFieldTrials` the caller passes (`Options::field_trials`; the 30 s dead-connection floor and the DSCP override applied) | No field trial strings in the library |
+| Stats | `candidate_stats_list` from the session's ready ports | Not filled | `GetCandidateStatsFromReadyPorts` is not ported |
+| RTC event log, histograms | `IceEventLog` candidate-pair events, UMA | None | No event log in the library |
+| `NetworkRoute`, `GetProtocolOverhead` | `rtc_base/network_route.h`, `rtc_base/net_helper.cc` | `sm/p2p/network_route.h` with the fields the channel fills; 8 bytes for UDP, 20 for TCP | Not in `reference/` (asked on #57) |
+| Packet type | `info_signaled_after_sent.packet_type = kData` on sends | Not set | `PacketOptions` carries no packet info |
+| `RemoveConnection` | DCHECKs the connection is there | Returns if it is not | No DCHECKs in the library |
+| `SetIceConfig` with a STUN keepalive interval before gathering | Dereferences the (null) session | Applied to the session once there is one | Avoids a null dereference |
+
+### 10.10 TURN client over UDP (`src/p2p/turn_port.cc`, `include/sm/sim/turn_server.h`, C4 part 1, #1031)
+
+Ported as a unit from `p2p/base/turn_port.{h,cc}` and `p2p/client/turn_port_factory.{h,cc}`, with the test
+server from `p2p/test/turn_server.{h,cc}` (and `test_turn_server.h`'s auth: password = username) as
+`sim::TurnServer` on `sim::EmulatedSocketServer`, the way #1015 did `sim::StunServer`. Same constants and
+defaults: `TURN_DEFAULT_PORT` 3478, channels from 0x4000, `kTurnPermissionTimeout` 5 min (permissions and
+channel binds refreshed 1 min before), `MAX_ALLOCATE_MISMATCH_RETRIES` 2, the refresh 1 min before the
+lifetime (half the lifetime below 2 min, at most 59 min ahead), the allowed server ports (53, 80, 443,
+1024 and up), `kMaxTurnUsernameLength` 509, the 401/438 handling with the long-term key MD5(username:realm:
+password) through `StunCrypto`'s MD5 hook, the 300 redirect checks (seen before, family, loopback, the any
+address, port), 437 moving to a new socket, Send indications until the channel is bound, the entry deleted 5
+min after its last connection, the relay candidate (type preference `ICE_TYPE_PREFERENCE_RELAY_UDP`, the
+server's relative priority as relay preference, related address the server-reflexive one, URL
+`turn:<ip>:<port>?transport=udp`), and the server's 10 min allocation, 5 min permission, 10 min channel and
+60 min nonce lifetimes. `BasicPortAllocator` now makes TURN ports with a `TurnPortFactory` when the caller
+gives no factory, as libwebrtc. The UDP cases of `turn_port_unittest.cc` (allocate, logging id, bad and
+missing credentials, family mismatch, allocate mismatch with the nonce reset and on a shared socket, the
+alternate server and the refused redirects, dangerous ports, overlong username, connections with and without
+one-time nonces, destroying a connection, send data, the refresh and permission errors, channel bind error,
+release and graceful release, closing, the forged unauthenticated success) and a relay candidate gathered by
+`BasicPortAllocator` behind a symmetric NAT are in `tests/unit/p2p/turn_port_test.cc`. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread; `PostTask` for the port error, refresh error, allocate mismatch, alternate server and close; `PostDelayedTask` for an entry's delete | The port queues them and runs them in `Process(now)` at `NextProcessTime()`; it keeps the latest `now`, which its destructor uses to send the release | The library's time model, as 10.3 |
+| TCP, TLS and DTLS to the server | `CreateClientTcpSocket`, `OnSocketConnect`, `PROTO_DTLS` | Not yet: a TCP or TLS server fails to create its socket | C4 parts 2-4 (10.x rows to come, #1034-#1036) |
+| DNS | `ResolveTurnAddress` for a server given by name | None: the library's addresses are IP literals; the URL host is the IP | As 10.3 |
+| `TurnCustomizer`, local network access, mDNS candidates, ECN, `CopyPortInformationToPacketInfo`, `turn_overhead_bytes` | Present | None (no customizer; access granted; addresses carry no hostnames; no ECN or packet info in `PacketOptions`) | Host-stack features (C11, C12) and the library's socket types |
+| REST credentials | Beyond a username and password pair | Username and password only | C4 part 4 (#1036) |
+| `TurnServer` | `TaskQueueBase` timers, TCP listeners, `StunMessageObserver` | Timers in `Process(now)`, UDP only, an observer callback; external socket factory not owned | Test server on the emulated network |
+
+### 10.11 Data channels: the SCTP packet layer (`src/dcsctp/`, C7 part 1, #1032)
 
 Ported as a unit from `net/dcsctp/packet/` and `net/dcsctp/common/` at M157 (`compare/webrtc/reference/net/dcsctp/`),
 file for file under `include/sm/dcsctp/` and `src/dcsctp/`, namespace `sm::dcsctp`: `SctpPacket` (its `Builder`,

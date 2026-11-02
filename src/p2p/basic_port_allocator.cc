@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <set>
 
+#include "sm/p2p/turn_port.h"
+
 namespace sm::p2p {
 namespace {
 
@@ -79,7 +81,10 @@ bool IsAllowedByCandidateFilter(const Candidate& c, uint32_t filter) {
 
 BasicPortAllocator::BasicPortAllocator(NetworkManager* network_manager, PacketSocketFactory* socket_factory,
                                        RelayPortFactoryInterface* relay_port_factory)
-    : network_manager_(network_manager), socket_factory_(socket_factory), relay_port_factory_(relay_port_factory) {
+    : network_manager_(network_manager),
+      socket_factory_(socket_factory),
+      default_relay_port_factory_(relay_port_factory ? nullptr : std::make_unique<TurnPortFactory>()),
+      relay_port_factory_(relay_port_factory ? relay_port_factory : default_relay_port_factory_.get()) {
   SetConfiguration(Timestamp::MinusInfinity(), ServerAddresses(), {}, 0, NO_PRUNE);
 }
 
@@ -901,7 +906,6 @@ void AllocationSequence::CreateRelayPorts() {
 
 void AllocationSequence::CreateTurnPort(const RelayServerConfig& config, int relative_priority) {
   RelayPortFactoryInterface* factory = session_->allocator()->relay_port_factory();
-  if (factory == nullptr) return;  // No TURN ports until C4.
   for (const ProtocolAddress& relay_port : config.ports) {
     if (IsFlagSet(PORTALLOCATOR_DISABLE_UDP_RELAY) && relay_port.proto == PROTO_UDP) continue;
     // A server of a known, other address family can't be reached.
