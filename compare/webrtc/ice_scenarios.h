@@ -11,6 +11,9 @@
 // - the channel with IceConfig(RTCConfiguration()) (p2p/base/ice_transport_internal.cc), which for the default
 //   RTCConfiguration leaves every optional unset and gathers once: IceConfig{} on our side;
 // - the endpoints' interfaces as rtc_base/fake_network.h's FakeNetworkManager names them ("test0", /24).
+// Our side's STUN crypto is the tests' (tests/unit/p2p/test_crypto.h) with transaction ids that don't repeat
+// (InstallTestCryptoWithUniqueIds), as libwebrtc's real random source gives: with the 8-bit counter, ids repeated after
+// 64 and StunRequestManager::Send dropped the checks that reused a pending id (#1048).
 // Endpoint 0 is controlling and endpoint 1 controlled, with the ICE credentials set before gathering, as after an
 // offer/answer; candidates go to the other side through a signaling queue with no delay (each side delivers them on
 // its next step).

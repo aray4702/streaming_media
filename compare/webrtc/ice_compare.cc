@@ -429,7 +429,7 @@ int main(int argc, char** argv) {
   std::signal(SIGILL, OnCrash);
   std::signal(SIGTRAP, OnCrash);
   std::setvbuf(stdout, nullptr, _IONBF, 0);
-  sm::p2p::testing::InstallTestCrypto();
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
   if (g_trace) {
     // libwebrtc.a's own sizes (operator new in P2PTransportChannel::Create, the stores of IceConfig::IceConfig()), to
     // check this build lays the classes out the same way.
