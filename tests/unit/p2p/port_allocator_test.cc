@@ -1045,7 +1045,7 @@ SM_TEST(P2pBasicPortAllocator, PortsTakeSessionSettings) {
   SM_EXPECT_EQ(f.ports[0]->content_name(), std::string("test content"));
 }
 
-// RegatherOnFailedNetworks: without connections (#1000) every network has
+// RegatherOnFailedNetworks: a network whose ports have no connection has
 // failed: its ports are pruned and it is gathered on again.
 SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworks) {
   Fixture f(Fixture::kFake, /*with_stun_server=*/false);
@@ -1062,6 +1062,44 @@ SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworks) {
   SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
   SM_ASSERT_EQ(f.ports.size(), size_t{1});
   SM_EXPECT_TRUE(f.ports[0] != first);
+}
+
+// RegatherOnFailedNetworks as BasicPortAllocatorSession::GetFailedNetworks: a
+// network interface with a connection on any of its ports has not failed, so
+// nothing is regathered; the network without one is.
+SM_TEST(P2pBasicPortAllocator, RegatherOnFailedNetworksKeepsNetworksWithConnections) {
+  Fixture f(Fixture::kFake, /*with_stun_server=*/false);
+  f.AddInterface(IpAddress(0x12345600u), "test_eth0", ADAPTER_TYPE_ETHERNET);
+  f.AddInterface(IpAddress(0x12345601u), "test_wlan0", ADAPTER_TYPE_WIFI);
+  f.CreateSession();
+  f.session->StartGettingPorts(f.now);
+  SM_ASSERT_TRUE(f.RunUntilDone());
+  SM_ASSERT_EQ(f.ports.size(), size_t{2});
+  Port* with_connection = f.ports[0];
+  Candidate remote;
+  remote.set_address(*SocketAddress::FromString("1.2.3.4:5000"));
+  remote.set_username("rfrag");
+  remote.set_password("rpassword_rpassword_");
+  remote.set_component(ICE_CANDIDATE_COMPONENT_RTP);
+  remote.set_protocol(UDP_PROTOCOL_NAME);
+  SM_ASSERT_TRUE(with_connection->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE) != nullptr);
+  f.candidates.clear();
+  f.session->RegatherOnFailedNetworks(f.now);
+  SM_EXPECT_EQ(f.regathering, 1);
+  // Only the other network's candidate is removed.
+  SM_ASSERT_EQ(f.removed.size(), size_t{1});
+  SM_EXPECT_TRUE(f.removed[0].network_name() != with_connection->network()->name());
+
+  // With a connection on every network, nothing has failed.
+  f.regathering = 0;
+  f.removed.clear();
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.candidates.size() == 1; }));
+  for (Port* port : f.session->ReadyPorts()) {
+    if (port->connections().empty()) port->CreateConnection(f.now, remote, Port::ORIGIN_MESSAGE);
+  }
+  f.session->RegatherOnFailedNetworks(f.now);
+  SM_EXPECT_EQ(f.regathering, 0);
+  SM_EXPECT_EQ(f.removed.size(), size_t{0});
 }
 
 // A pruned port with no connections is destroyed and deleted (Port's

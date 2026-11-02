@@ -82,7 +82,11 @@ sm_add_library(p2p DEPS sm::core SOURCES
   p2p/connection.cc
   p2p/network_manager.cc
   p2p/port_allocator.cc
-  p2p/basic_port_allocator.cc)
+  p2p/basic_port_allocator.cc
+  p2p/ice_transport_internal.cc
+  p2p/ice_switch_reason.cc
+  p2p/basic_ice_controller.cc
+  p2p/wrapping_active_ice_controller.cc)
 if(SM_WITH_TLS)
   # STUN's crypto hooks on BoringSSL (#997): InstallStunCryptoFromTls().
   sm_add_library(p2p_tls DEPS sm::p2p sm::tls SOURCES p2p/stun_crypto_tls.cc)

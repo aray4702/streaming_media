@@ -40,8 +40,6 @@
 // - No mDNS (host candidates are never obfuscated), no local network access
 //   permission, no VPN list, no field trials (WebRTC-UseTurnServerAsStunServer
 //   is at its default, enabled).
-// - Ports have no connections until #1000, so RegatherOnFailedNetworks
-//   treats every network as failed.
 // - pc/peer_connection.cc (the flags and step delay PeerConnection sets) is
 //   not in reference/; the allocator's own defaults apply.
 #pragma once

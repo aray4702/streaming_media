@@ -18,9 +18,8 @@
 //   SanitizeCandidate only removes related addresses, as libwebrtc without an
 //   mDNS responder; no TurnCustomizer, TLS certificate verifier or TURN
 //   logging id (C4).
-// - api/transport/enums.h (PortPrunePolicy, VpnPreference) is not in
-//   reference/; the values are the ones port_allocator.h and
-//   basic_port_allocator.cc use.
+// PortPrunePolicy and VpnPreference are api/transport/enums.h's
+// (sm/p2p/transport_enums.h, shared with the ICE controller).
 #pragma once
 
 #include <cstdint>
@@ -36,6 +35,7 @@
 #include "sm/p2p/candidate.h"
 #include "sm/p2p/port.h"
 #include "sm/p2p/socket_address.h"
+#include "sm/p2p/transport_enums.h"
 
 namespace sm::p2p {
 
@@ -76,12 +76,6 @@ enum : uint32_t {
   CF_RELAY = 0x4,
   CF_ALL = 0x7,
 };
-
-// How TURN ports on one network are pruned (api/transport/enums.h).
-enum PortPrunePolicy { NO_PRUNE, PRUNE_BASED_ON_PRIORITY, KEEP_FIRST_READY };
-// Which networks a VPN preference keeps (api/transport/enums.h; the values
-// the allocator reads).
-enum class VpnPreference { kDefault, kOnlyUseVpn, kNeverUseVpn };
 
 enum class TlsCertPolicy { TLS_CERT_POLICY_SECURE, TLS_CERT_POLICY_INSECURE_NO_CHECK };
 

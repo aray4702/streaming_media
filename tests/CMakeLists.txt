@@ -44,6 +44,7 @@ endif()
 sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SOURCES
     unit/p2p/connection_test.cc
+    unit/p2p/ice_controller_test.cc
     unit/p2p/dtls_utils_test.cc
     unit/p2p/packet_socket_test.cc
     unit/p2p/port_allocator_test.cc
@@ -55,10 +56,13 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
   SUITES
     DtlsUtils
     EmulatedSockets
+    P2pBasicIceController
     P2pBasicPortAllocator
     P2pCandidate
     P2pConnection
     P2pConnectionCall
+    P2pIceConfig
+    P2pIceCredentialsIterator
     P2pIpAddress
     P2pNetwork
     P2pNetworkManager
@@ -67,6 +71,7 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     P2pSocketAddress
     P2pStunPort
     P2pUdpPort
+    P2pWrappingActiveIceController
     Stun
     StunRequest
     StunRequestReentrance
