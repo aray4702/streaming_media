@@ -8,6 +8,7 @@
 #include <cstring>
 #include <utility>
 
+#include "sm/p2p/ssl_adapter.h"
 #include "sm/p2p/stun.h"
 
 namespace sm::p2p {
@@ -23,7 +24,16 @@ uint16_t GetBe16(std::span<const uint8_t> d) { return static_cast<uint16_t>((d[0
 // The first two bits of a ChannelData message are 0b01.
 bool IsStunMessage(uint16_t msg_type) { return (msg_type & 0xC000) == 0; }
 
+SslAdapterFactoryFn g_ssl_adapter_factory = nullptr;
+
 }  // namespace
+
+void SetSslAdapterFactory(SslAdapterFactoryFn factory) { g_ssl_adapter_factory = factory; }
+
+std::unique_ptr<SslAdapter> SslAdapter::Create(std::unique_ptr<Socket> socket) {
+  if (!g_ssl_adapter_factory || !socket) return nullptr;
+  return g_ssl_adapter_factory(std::move(socket));
+}
 
 AsyncTcpSocketBase::AsyncTcpSocketBase(std::unique_ptr<Socket> socket, size_t max_packet_size)
     : socket_(std::move(socket)), max_insize_(max_packet_size), max_outsize_(max_packet_size) {
@@ -271,7 +281,21 @@ std::unique_ptr<AsyncPacketSocket> CreateClientTcpSocket(StreamSocketFactory& so
   const int tls = options.opts & (PacketSocketFactory::kOptTls | PacketSocketFactory::kOptTlsFake |
                                   PacketSocketFactory::kOptTlsInsecure);
   assert((tls & (tls - 1)) == 0 && "at most one TLS option");
-  if (tls) return nullptr;  // TLS: C4 part 3 (#1035).
+  if (tls & (PacketSocketFactory::kOptTls | PacketSocketFactory::kOptTlsInsecure)) {
+    // Using TLS, wrap the socket in an SSL adapter.
+    std::unique_ptr<SslAdapter> ssl_adapter = SslAdapter::Create(std::move(socket));
+    if (!ssl_adapter) return nullptr;
+    if (tls & PacketSocketFactory::kOptTlsInsecure) ssl_adapter->SetIgnoreBadCert(true);
+    ssl_adapter->SetAlpnProtocols(options.tls_alpn_protocols);
+    ssl_adapter->SetEllipticCurves(options.tls_elliptic_curves);
+    ssl_adapter->SetCertVerifier(options.tls_cert_verifier);
+    for (const auto& root : options.tls_trusted_roots) ssl_adapter->AddTrustedRoot(root);
+    if (ssl_adapter->StartSSL(remote_address.hostname()) != 0) return nullptr;
+    socket = std::move(ssl_adapter);
+  } else if (tls & PacketSocketFactory::kOptTlsFake) {
+    // Fake TLS (AsyncSSLSocket's dummy handshake) is not ported: nothing in a call uses it.
+    return nullptr;
+  }
   if (socket->Connect(now, remote_address) < 0) return nullptr;
   if (options.opts & PacketSocketFactory::kOptStun) return std::make_unique<AsyncStunTcpSocket>(std::move(socket));
   return std::make_unique<AsyncTcpSocket>(std::move(socket));
