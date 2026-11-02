@@ -136,3 +136,40 @@ SM_TEST(P2pIceCompare, ChecksMatchLibwebrtc) {
     SM_EXPECT_NEAR(total / 5, row.checks_total, 0.05);
   }
 }
+
+// Relay (#1055): with a TURN server over UDP, the NAT pairs that need a relay (kMatrix's RUPU and PURU cells), an open
+// pair with relay only and sym-sym at 5% loss all connect, through a relay: the selected pair has a relay candidate and
+// an endpoint's selected local candidate relays over UDP (relay to relay with relay only). Both endpoints allocate (a
+// 401, then the allocation, 4 Allocates at least) and the relayed pair needs a permission; no ChannelBind or Refresh
+// in 10 s (TurnEntry binds a channel only for media, and refreshes come minutes later). A run is the same for the same
+// seed.
+SM_TEST(P2pIceCompare, RelayScenariosConnectThroughTurn) {
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  const char* const kNames[] = {"port-sym-turnudp", "sym-port-turnudp", "sym-sym-turnudp",
+                                "open-open-turnudp-relayonly", "sym-sym-turnudp-loss5"};
+  const std::vector<Scenario> scenarios = RelayScenarios();
+  SM_ASSERT_EQ(scenarios.size(), std::size(kNames));
+  for (size_t k = 0; k < scenarios.size(); ++k) {
+    const Scenario& s = scenarios[k];
+    SM_EXPECT_EQ(s.name, std::string(kNames[k]));
+    for (int seed = 1; seed <= 3; ++seed) {
+      const Result a = RunSm(s, seed);
+      const Result b = RunSm(s, seed);
+      SM_EXPECT_TRUE(a.connected);
+      SM_EXPECT_TRUE(a.pair.find("relay") != std::string::npos);
+      SM_EXPECT_TRUE(a.relay.find("udp") != std::string::npos);
+      if (s.relay_only) {
+        SM_EXPECT_EQ(a.pair, std::string("relay/relay"));
+        SM_EXPECT_EQ(a.relay, std::string("udp/udp"));
+      }
+      SM_EXPECT_TRUE(a.turn[kAllocate] >= 4);
+      SM_EXPECT_TRUE(a.turn[kCreatePermission] >= 1);
+      SM_EXPECT_EQ(a.turn[kChannelBind], 0);
+      SM_EXPECT_EQ(a.turn[kRefresh], 0);
+      SM_EXPECT_EQ(a.connect_ms, b.connect_ms);
+      SM_EXPECT_EQ(a.pair, b.pair);
+      SM_EXPECT_EQ(a.checks_total, b.checks_total);
+      for (int t = 0; t < kNumTurnRequests; ++t) SM_EXPECT_EQ(a.turn[t], b.turn[t]);
+    }
+  }
+}

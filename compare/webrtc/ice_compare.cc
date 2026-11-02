@@ -116,7 +116,7 @@ class UdpSocket final : public w::AsyncPacketSocket {
   int error_ = 0;
 };
 
-// UDP only, as the comparison runs with TCP candidates off (ice_scenarios.h).
+// UDP only, as the comparison runs with TCP candidates off and TURN over UDP (ice_scenarios.h).
 class SocketFactory final : public w::PacketSocketFactory {
  public:
   // Endpoint i's sockets live on the host of the interface they bind to (Topology::HostFor), as ours.
@@ -235,7 +235,10 @@ void Stage(const char* what) {
 // disable_link_local_networks = false, type = kAll (CF_ALL), max_ipv6_networks = kDefaultMaxIPv6Networks,
 // ice_candidate_pool_size = 0, prune_turn_ports = false and turn_port_prune_policy = NO_PRUNE (GetTurnPortPrunePolicy),
 // turn_customizer = nullptr, stun_candidate_keepalive_interval unset.
-void ConfigureAsPeerConnection(w::PortAllocator* allocator, const w::ServerAddresses& stun_servers) {
+// The relay scenarios (#1055) give the TURN server as RTCConfiguration.servers does (`turn_servers`), and relay only
+// as IceTransportsType kRelay (CF_RELAY).
+void ConfigureAsPeerConnection(w::PortAllocator* allocator, const w::ServerAddresses& stun_servers,
+                               const std::vector<w::RelayServerConfig>& turn_servers, uint32_t candidate_filter) {
   Stage("initialize");
   allocator->Initialize();
   uint32_t flags = allocator->flags();
@@ -244,10 +247,11 @@ void ConfigureAsPeerConnection(w::PortAllocator* allocator, const w::ServerAddre
   flags |= w::PORTALLOCATOR_DISABLE_TCP;  // kTcpCandidatePolicyDisabled; RTCConfiguration's default enables TCP.
   allocator->set_flags(flags);
   allocator->set_step_delay(w::kMinimumStepDelay);
-  allocator->SetCandidateFilter(w::CF_ALL);  // ConvertIceTransportTypeToCandidateFilter(kAll).
+  allocator->SetCandidateFilter(candidate_filter);  // ConvertIceTransportTypeToCandidateFilter(kAll or kRelay).
   allocator->set_max_ipv6_networks(w::kDefaultMaxIPv6Networks);
   Stage("set configuration");
-  allocator->SetConfiguration(stun_servers, {}, /*candidate_pool_size=*/0, w::NO_PRUNE, /*turn_customizer=*/nullptr,
+  allocator->SetConfiguration(stun_servers, turn_servers, /*candidate_pool_size=*/0, w::NO_PRUNE,
+                              /*turn_customizer=*/nullptr,
                               /*stun_candidate_keepalive_interval=*/std::nullopt);
 }
 
@@ -279,6 +283,11 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
 
   run_on_network([&] {
     w::ServerAddresses stun_servers = {ToW(Topology::StunAddress())};
+    // As RunSm: kRelayCredentials over UDP.
+    std::vector<w::RelayServerConfig> turn_servers;
+    if (s.turn == Turn::kUdp) {
+      turn_servers.emplace_back(ToW(Topology::TurnAddress()), kTurnUsername, kTurnPassword, w::PROTO_UDP);
+    }
     for (int i = 0; i < 2; ++i) {
       Endpoint& e = ep[i];
       Stage("network manager");
@@ -297,7 +306,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       Stage("allocator");
       e.allocator = std::make_unique<w::BasicPortAllocator>(env, e.network_manager.get(), e.socket_factory.get());
       Stage("configure");
-      ConfigureAsPeerConnection(e.allocator.get(), stun_servers);
+      ConfigureAsPeerConnection(e.allocator.get(), stun_servers, turn_servers, s.relay_only ? w::CF_RELAY : w::CF_ALL);
       Stage("channel");
       // Create allocates the channel inside libwebrtc.a, at the library's own sizeof.
       w::IceTransportInit init(env);
@@ -345,6 +354,14 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
     const w::Connection* sel = ep[0].ch->selected_connection();
     return std::string(sel->local_candidate().type_name()) + "/" + std::string(sel->remote_candidate().type_name());
   };
+  auto relay = [&] {  // As RunSm.
+    std::string out;
+    for (int i = 0; i < 2; ++i) {
+      const std::string& p = ep[i].ch->selected_connection()->local_candidate().relay_protocol();
+      out += (i ? "/" : "") + (p.empty() ? std::string("-") : p);
+    }
+    return out;
+  };
 
   Result r;
   const w::Timestamp until = start + w::TimeDelta::Micros(RunTime(s).us());
@@ -365,6 +382,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
         r.connected = true;
         r.connect_ms = (sim.Now() - start).us() / 1000.0;
         r.pair = pair();
+        r.relay = relay();
         r.checks_at_connect = checks();
       }
       if (changed && !r.recovered && recovered()) {
@@ -373,7 +391,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
         r.pair_after = pair();
       }
     });
-    w::Timestamp t = std::min(sim.NextRunTime(), ToW(topo.net.NextEvent()));
+    w::Timestamp t = std::min(sim.NextRunTime(), ToW(topo.NextEvent()));
     if (!changed) t = std::min(t, change_at);
     if (!signaling[0].empty() || !signaling[1].empty()) t = std::min(t, sim.Now());
     if (t > until) break;
@@ -410,6 +428,7 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
   sim.RunUntil(until);
   run_on_network([&] {
     r.checks_total = checks();
+    std::copy(std::begin(topo.turn_requests), std::end(topo.turn_requests), r.turn);
     for (Endpoint& e : ep) {
       e.ch.reset();
       e.allocator.reset();
@@ -425,6 +444,8 @@ struct Summary {
   double checks_at_connect = 0;
   double checks_total = 0;  // Mean over all runs.
   std::map<std::string, int> pairs;
+  std::map<std::string, int> relays;
+  double turn[kNumTurnRequests] = {0, 0, 0, 0};  // Mean over all runs.
   int recovered = 0;
   double recover_ms = 0;  // Mean over the recovered runs.
   std::map<std::string, int> pairs_after;
@@ -432,6 +453,7 @@ struct Summary {
   void Add(const Result& r) {
     ++runs;
     checks_total += r.checks_total;
+    for (int t = 0; t < kNumTurnRequests; ++t) turn[t] += r.turn[t];
     if (r.recovered) {
       ++recovered;
       recover_ms += r.recover_ms;
@@ -442,6 +464,7 @@ struct Summary {
     connect_ms += r.connect_ms;
     checks_at_connect += r.checks_at_connect;
     ++pairs[r.pair];
+    ++relays[r.relay];
   }
   void Finish() {
     if (connected) {
@@ -450,6 +473,9 @@ struct Summary {
     }
     if (recovered) recover_ms /= recovered;
     if (runs) checks_total /= runs;
+    for (double& t : turn) {
+      if (runs) t /= runs;
+    }
   }
   static std::string PairList(const std::map<std::string, int>& m, int count) {
     if (m.empty()) return "-";
@@ -468,6 +494,13 @@ struct Summary {
     return buf;
   }
   std::string Pairs() const { return PairList(pairs, connected); }
+  std::string Relays() const { return PairList(relays, connected); }
+  std::string TurnCounts() const {
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "%.1f/%.1f/%.1f/%.1f", turn[kAllocate], turn[kCreatePermission],
+                  turn[kChannelBind], turn[kRefresh]);
+    return buf;
+  }
   std::string PairsAfter() const { return PairList(pairs_after, recovered); }
   std::string Ms() const { return MsOf(connected, connect_ms); }
   std::string RecoverMs() const { return MsOf(recovered, recover_ms); }
@@ -591,7 +624,60 @@ int main(int argc, char** argv) {
                 theirs.runs, ours.RecoverMs().c_str(), theirs.RecoverMs().c_str(), ours.PairsAfter().c_str(),
                 theirs.PairsAfter().c_str(), ours.checks_total, theirs.checks_total, gap.empty() ? "" : gap.c_str() + 1);
   }
-  std::printf("\n%d of %zu network-change scenarios differ. Not run yet: TCP and relay candidates (C4).\n",
-              change_gaps, ChangeScenarios().size());
+  std::printf("\n%d of %zu network-change scenarios differ.\n", change_gaps, ChangeScenarios().size());
+
+  // Relay (#1055).
+  std::printf("\nRelay through the emulated TURN server (TURN over UDP), %d s runs. turn: TURN requests both endpoints "
+              "sent, Allocate/CreatePermission/ChannelBind/Refresh. Ours / libwebrtc\n\n",
+              static_cast<int>(kRunTime.us() / 1000000));
+  std::printf("| scenario | connected | connect ms | pair (local/remote) | relay (ep0/ep1) | checks at connect | "
+              "checks in %d s | turn | gap |\n",
+              static_cast<int>(kRunTime.us() / 1000000));
+  std::printf("|---|---|---|---|---|---|---|---|---|\n");
+  int relay_gaps = 0;
+  for (const Scenario& s : RelayScenarios()) {
+    Summary ours, theirs;
+    for (int seed = 1; seed <= seeds; ++seed) {
+      if (verbose) std::fprintf(stderr, "%s seed %d: ours...\n", s.name.c_str(), seed);
+      const Result a = RunSm(s, seed);
+      if (verbose) std::fprintf(stderr, "%s seed %d: libwebrtc...\n", s.name.c_str(), seed);
+      const Result b = RunWebrtc(s, seed);
+      ours.Add(a);
+      theirs.Add(b);
+      if (verbose) {
+        std::fprintf(stderr, "%s seed %d: ours %d %.1f ms %s %s %d/%d turn %d/%d/%d/%d; libwebrtc %d %.1f ms %s %s "
+                     "%d/%d turn %d/%d/%d/%d\n",
+                     s.name.c_str(), seed, a.connected, a.connect_ms, a.pair.c_str(), a.relay.c_str(),
+                     a.checks_at_connect, a.checks_total, a.turn[0], a.turn[1], a.turn[2], a.turn[3], b.connected,
+                     b.connect_ms, b.pair.c_str(), b.relay.c_str(), b.checks_at_connect, b.checks_total, b.turn[0],
+                     b.turn[1], b.turn[2], b.turn[3]);
+      }
+    }
+    ours.Finish();
+    theirs.Finish();
+    std::string gap;
+    if (ours.connected != theirs.connected) gap += " connected";
+    if (ours.connected && theirs.connected && Differs(ours.connect_ms, theirs.connect_ms, 10)) gap += " connect_ms";
+    if (ours.Pairs() != theirs.Pairs()) gap += " pair";
+    if (ours.Relays() != theirs.Relays()) gap += " relay";
+    if (ours.connected && theirs.connected && Differs(ours.checks_at_connect, theirs.checks_at_connect, 1)) {
+      gap += " checks_at_connect";
+    }
+    if (Differs(ours.checks_total, theirs.checks_total, 1)) gap += " checks_total";
+    for (int t = 0; t < kNumTurnRequests; ++t) {
+      if (Differs(ours.turn[t], theirs.turn[t], 1)) {
+        gap += " turn";
+        break;
+      }
+    }
+    if (!gap.empty()) ++relay_gaps;
+    std::printf("| %s | %d/%d / %d/%d | %s / %s | %s / %s | %s / %s | %.1f / %.1f | %.1f / %.1f | %s / %s | %s |\n",
+                s.name.c_str(), ours.connected, ours.runs, theirs.connected, theirs.runs, ours.Ms().c_str(),
+                theirs.Ms().c_str(), ours.Pairs().c_str(), theirs.Pairs().c_str(), ours.Relays().c_str(),
+                theirs.Relays().c_str(), ours.checks_at_connect, theirs.checks_at_connect, ours.checks_total,
+                theirs.checks_total, ours.TurnCounts().c_str(), theirs.TurnCounts().c_str(), gap.empty() ? "" : gap.c_str() + 1);
+  }
+  std::printf("\n%d of %zu relay scenarios differ. Not run yet: TURN over TCP and TLS (#1055), TCP candidates.\n",
+              relay_gaps, RelayScenarios().size());
   return 0;
 }

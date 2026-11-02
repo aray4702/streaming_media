@@ -216,11 +216,12 @@ class Network {
     Process(now);
     ++stats_.sent;
     Host& h = hosts_[host];
+    Datagram<T> d{{h.ip, src_port}, dst, std::move(payload)};
+    if (send_observer_) send_observer_(d);
     if (Blocked(h.ip) || Blocked(dst.ip)) {
       ++stats_.firewall_dropped;
       return;
     }
-    Datagram<T> d{{h.ip, src_port}, dst, std::move(payload)};
     if (rule_ && rule_(d)) {
       ++stats_.firewall_dropped;
       return;
@@ -269,6 +270,9 @@ class Network {
   // clears it.
   void SetFirewallRule(std::function<bool(const Datagram<T>&)> drop) { rule_ = std::move(drop); }
   bool Blocked(uint32_t ip) const { return !blocked_.empty() && blocked_.count(ip) != 0; }
+  // Sees every datagram a host offers, as the host sent it (before the firewall, the links and any NAT): for
+  // counting what each side of a comparison sends (compare/webrtc/ice_scenarios.h). nullptr clears it.
+  void SetSendObserver(std::function<void(const Datagram<T>&)> observer) { send_observer_ = std::move(observer); }
 
   // The earliest time anything moves: a datagram leaving an uplink or
   // reaching a host.
@@ -431,6 +435,7 @@ class Network {
   uint64_t seed_;
   std::set<uint32_t> blocked_;
   std::function<bool(const Datagram<T>&)> rule_;
+  std::function<void(const Datagram<T>&)> send_observer_;
   std::vector<Host> hosts_;
   std::vector<Nat> nats_;
   NetworkStats stats_;
