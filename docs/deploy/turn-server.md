@@ -129,6 +129,36 @@ static IP for both. If no relay candidate appears:
 - Check that `external-ip` and `relay-ip` are right.
 - Read `/var/log/turnserver/turn.log`.
 
+### Check it with the library's TURN client
+
+The interop test `interop.Coturn` (`tests/interop/coturn_test.cc`, #1037) runs the library's own
+TURN client (`TurnPort`) against coturn over real sockets. By default it starts a local coturn on
+127.0.0.1 (`sudo apt install coturn` or `brew install coturn`; it is skipped when `turnserver` is
+not installed). Pointed at your server, it checks over UDP, TCP and TLS that two allocations get
+relay candidates, create permissions, bind channels, relay data to each other both ways, and
+release:
+
+```sh
+cmake --preset native && cmake --build --preset native --target sm_interop_coturn
+SM_COTURN_SERVER=<public-ip> SM_COTURN_PORT=3478 SM_COTURN_TLS_PORT=443 \
+SM_COTURN_SECRET=<shared-secret> \
+  out/native/tests/sm_interop_coturn --filter=Coturn.
+```
+
+- `SM_COTURN_SECRET` runs the `*RestCredentials` cases (step 4's `use-auth-secret`);
+  `SM_COTURN_USER` and `SM_COTURN_PASSWORD` run the `*LongTermCredentials` cases against a server
+  with `lt-cred-mech` users. Cases without credentials are skipped.
+- `SM_COTURN_LOCAL_IP` sets the local address to bind; the default is the one the computer routes
+  to the server from.
+- The two allocations relay to each other through the server's public address, so the server must
+  allow that peer (it is not in step 4's `denied-peer-ip` list) and Lightsail must route traffic
+  from the instance back to its own static IP. If permissions or data fail while allocations
+  succeed, check that first.
+- TLS is checked without verifying the certificate (the client takes
+  `TLS_CERT_POLICY_INSECURE_NO_CHECK`, as for the local self-signed one); check the certificate
+  with Trickle ICE above.
+- The refresh check needs a short allocation lifetime, so it runs only against the local server.
+
 ## 6. Issuing credentials (your backend)
 
 Each user gets a username and password valid for a short time, made from the shared secret. The
