@@ -929,14 +929,15 @@
    "area": "Connectivity",
    "title": "STUN messages",
    "acceptance": "api/transport/stun.{h,cc} ported: parse and build every attribute WebRTC uses, MESSAGE-INTEGRITY (HMAC-SHA1) and FINGERPRINT (CRC-32) through C1; libwebrtc's stun_unittest cases pass; a fuzzer for the parser (C10).",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C1"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1014 (api/transport/stun port), #1022 (STUN fuzzer), #1015 (unpredictable transaction ids: InstallStunCryptoFromTls)",
+   "verification": "api/transport/stun.{h,cc} ported in sm::p2p: every attribute class and message type of M157, MESSAGE-INTEGRITY (HMAC-SHA1) and GOOG-MESSAGE-INTEGRITY-32 and FINGERPRINT (CRC-32), with BoringSSL's HMAC through C1 (InstallStunCryptoFromTls; unit.StunTls checks RFC 5769 with it). Every TEST_F of stun_unittest.cc has a case (unit.Stun), RFC 5769 vectors unchanged. Fuzzer fuzz/stun_fuzzer.cc after libwebrtc's stun_parser and stun_validator fuzzers: 811k executions in 90 s, no crashes; corpus replay runs in ctest (fuzz.stun). CI on main passed (run 41389425659 on 4edfb505, including #1022). Owner approved marking done, 2026-11-01 8:45 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-01",
+   "verified": "pass"
   },
   {
    "id": "C3",
