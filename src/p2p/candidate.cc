@@ -2,16 +2,23 @@
 // p2p/base/p2p_constants.cc's IsMdnsHostname.
 #include "sm/p2p/candidate.h"
 
+#include <algorithm>
 #include <array>
 #include <cctype>
+#include <iterator>
+#include <optional>
 #include <span>
 #include <vector>
 
 #include "sm/p2p/p2p_constants.h"
+#include "sm/p2p/string_encode.h"
 #include "sm/p2p/stun.h"
 
 namespace sm::p2p {
 namespace {
+
+// port_interface.h's ProtocolType, without including the port.
+enum class ProtocolKind { kUdp, kTcp, kSsltcp, kTls };
 
 constexpr char kCandidateHost[] = "host";
 constexpr char kCandidateSrflx[] = "srflx";
@@ -37,6 +44,53 @@ std::span<const uint8_t> FoundationKey() {
 }
 
 std::string PortString(const SocketAddress& a) { return std::to_string(a.port()); }
+
+bool IsValidPort(int port) { return port >= 0 && port <= 65535; }
+
+// port_interface.h's StringToProto: case-insensitive.
+std::optional<ProtocolKind> StringToProtoKind(std::string_view name) {
+  static constexpr std::string_view kNames[] = {UDP_PROTOCOL_NAME, TCP_PROTOCOL_NAME, SSLTCP_PROTOCOL_NAME,
+                                                TLS_PROTOCOL_NAME};
+  for (size_t i = 0; i < std::size(kNames); ++i) {
+    if (name.size() != kNames[i].size()) continue;
+    bool equal = true;
+    for (size_t j = 0; j < name.size() && equal; ++j) {
+      equal = std::tolower(static_cast<unsigned char>(name[j])) == kNames[i][j];
+    }
+    if (equal) return static_cast<ProtocolKind>(i);
+  }
+  return std::nullopt;
+}
+
+// SSLFingerprint::CreateOptionalFromRfc4572 as the candidate parser uses it: a FIPS 180 algorithm (lower case) and
+// one or more colon-separated hex bytes. Checked only: the candidate keeps no fingerprint (see the header).
+bool IsValidRfc4572Fingerprint(std::string_view algorithm, std::string_view digest) {
+  static constexpr std::string_view kFips180[] = {"sha-1", "sha-224", "sha-256", "sha-384", "sha-512"};
+  std::string lower(algorithm);
+  for (char& c : lower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  bool known = false;
+  for (std::string_view a : kFips180) known = known || lower == a;
+  if (!known || digest.empty()) return false;
+  size_t bytes = 0;
+  for (size_t i = 0; i < digest.size();) {
+    if (i + 1 >= digest.size() || !std::isxdigit(static_cast<unsigned char>(digest[i])) ||
+        !std::isxdigit(static_cast<unsigned char>(digest[i + 1]))) {
+      return false;
+    }
+    ++bytes;
+    i += 2;
+    if (i < digest.size()) {
+      if (digest[i] != ':' || i + 1 >= digest.size()) return false;
+      ++i;
+    }
+  }
+  return bytes > 0 && bytes <= 64;  // MessageDigest::kMaxSize.
+}
+
+bool Fail(std::string* error, std::string_view reason) {
+  if (error) *error = std::string(reason);
+  return false;
+}
 
 }  // namespace
 
@@ -170,6 +224,171 @@ void Candidate::ComputeFoundation(const SocketAddress& base_address, uint64_t ti
 void Candidate::ComputePrflxFoundation() {
   foundation_ = std::to_string(
       ComputeCrc32(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(id_.data()), id_.size())));
+}
+
+std::optional<Candidate> Candidate::ParseCandidateString(std::string_view message, std::string* error) {
+  // Makes sure `message` contains only one line.
+  std::string_view first_line;
+  const size_t line_end = message.find('\n');
+  if (line_end == std::string_view::npos) {
+    first_line = message;
+  } else if (line_end + 1 == message.size()) {
+    first_line = message.substr(0, line_end);
+  } else {
+    Fail(error, "Expect one line only");
+    return std::nullopt;
+  }
+  // For backwards compatibility, accept "a=candidate...".
+  if (first_line.length() > 2 && first_line[0] == 'a' && first_line[1] == '=') first_line = first_line.substr(2);
+  if (!first_line.empty() && first_line.back() == '\r') first_line.remove_suffix(1);
+
+  std::string attribute_candidate;
+  std::string candidate_value;
+  if (!tokenize_first(first_line, ':', &attribute_candidate, &candidate_value) ||
+      attribute_candidate != "candidate") {
+    Fail(error, "Expected candidate got " + attribute_candidate);
+    return std::nullopt;
+  }
+  const std::vector<std::string_view> fields = split(candidate_value, ' ');
+  // a=candidate:<foundation> <component-id> <transport> <priority> <connection-address> <port> typ
+  // <candidate-types> [raddr <connection-address>] [rport <port>] *(SP extension-att-name SP extension-att-value)
+  const size_t expected_min_fields = 8;
+  if (fields.size() < expected_min_fields || fields[6] != "typ") {
+    Fail(error, "Expect at least " + std::to_string(expected_min_fields) + " fields.");
+    return std::nullopt;
+  }
+  const std::string_view foundation = fields[0];
+  int component_id = 0;
+  if (!FromString(fields[1], &component_id)) {
+    Fail(error, "Invalid component id");
+    return std::nullopt;
+  }
+  const std::string_view transport = fields[2];
+  uint32_t priority = 0;
+  if (!FromString(fields[3], &priority)) {
+    Fail(error, "Invalid priority");
+    return std::nullopt;
+  }
+  int port = 0;
+  if (!FromString(fields[5], &port) || !IsValidPort(port)) {
+    Fail(error, "Invalid port");
+    return std::nullopt;
+  }
+  const std::optional<ProtocolKind> protocol = StringToProtoKind(transport);
+  if (!protocol) {
+    Fail(error, "Unsupported transport type");
+    return std::nullopt;
+  }
+  const bool tcp_protocol = *protocol != ProtocolKind::kUdp;
+  IceCandidateType candidate_type;
+  const std::string_view type = fields[7];
+  if (type == "host") {
+    candidate_type = IceCandidateType::kHost;
+  } else if (type == "srflx") {
+    candidate_type = IceCandidateType::kSrflx;
+  } else if (type == "relay") {
+    candidate_type = IceCandidateType::kRelay;
+  } else if (type == "prflx") {
+    candidate_type = IceCandidateType::kPrflx;
+  } else {
+    Fail(error, "Unsupported candidate type");
+    return std::nullopt;
+  }
+
+  size_t current_position = expected_min_fields;
+  SocketAddress related_address;
+  if (fields.size() >= current_position + 2 && fields[current_position] == "raddr") {
+    if (std::optional<IpAddress> ip = IpAddress::FromString(fields[++current_position])) {
+      related_address = SocketAddress(*ip, 0);
+    }
+    ++current_position;
+  }
+  if (fields.size() >= current_position + 2 && fields[current_position] == "rport") {
+    int related_port = 0;
+    if (!FromString(fields[++current_position], &related_port) || !IsValidPort(related_port)) {
+      Fail(error, "Invalid port");
+      return std::nullopt;
+    }
+    related_address.SetPort(static_cast<uint16_t>(related_port));
+    ++current_position;
+  }
+  // RFC 6544's tcptype for a TCP candidate; a missing one means passive, for backwards compatibility.
+  std::string_view tcptype;
+  if (fields.size() >= current_position + 2 && fields[current_position] == "tcptype") {
+    tcptype = fields[++current_position];
+    ++current_position;
+    if (tcptype != TCPTYPE_ACTIVE_STR && tcptype != TCPTYPE_PASSIVE_STR && tcptype != TCPTYPE_SIMOPEN_STR) {
+      Fail(error, "Invalid TCP candidate type");
+      return std::nullopt;
+    }
+    if (!tcp_protocol) {
+      Fail(error, "Invalid non-TCP candidate");
+      return std::nullopt;
+    }
+  } else if (tcp_protocol) {
+    tcptype = TCPTYPE_PASSIVE_STR;
+  }
+
+  // Extensions. The ufrag and password are non-standard but accepted, for trickling several generations at once.
+  std::string_view username;
+  std::string_view password;
+  uint32_t generation = 0;
+  uint16_t network_id = 0;
+  uint16_t network_cost = 0;
+  bool has_fingerprint = false;
+  for (size_t i = current_position; i + 1 < fields.size(); ++i) {
+    if (fields[i] == "generation") {
+      if (!FromString(fields[++i], &generation)) {
+        Fail(error, "Invalid generation");
+        return std::nullopt;
+      }
+    } else if (fields[i] == "ufrag") {
+      username = fields[++i];
+    } else if (fields[i] == "pwd") {
+      password = fields[++i];
+    } else if (fields[i] == "network-id") {
+      if (!FromString(fields[++i], &network_id)) {
+        Fail(error, "Invalid network-id");
+        return std::nullopt;
+      }
+    } else if (fields[i] == "network-cost") {
+      if (!FromString(fields[++i], &network_cost)) {
+        Fail(error, "Invalid network-cost");
+        return std::nullopt;
+      }
+      network_cost = std::min(network_cost, kNetworkCostMax);
+    } else if (fields[i] == "fingerprint") {
+      const std::vector<std::string_view> fp_fields = split(fields[++i], ';');
+      if (fp_fields.size() != 2) {
+        Fail(error, "Invalid fingerprint");
+        return std::nullopt;
+      }
+      if (!IsValidRfc4572Fingerprint(fp_fields[0], fp_fields[1])) {
+        Fail(error, "Failed to create fingerprint from the digest.");
+        return std::nullopt;
+      }
+      has_fingerprint = true;
+    } else {
+      ++i;  // Skip the unknown extension.
+    }
+  }
+  if (*protocol == ProtocolKind::kTls && !has_fingerprint) {
+    Fail(error, "Missing fingerprint extension for TLS candidate");
+    return std::nullopt;
+  }
+  const std::optional<IpAddress> ip = IpAddress::FromString(fields[4]);
+  if (!ip) {
+    Fail(error, kUnsupportedHostnameCandidate);
+    return std::nullopt;
+  }
+  static constexpr std::string_view kProtoNames[] = {UDP_PROTOCOL_NAME, TCP_PROTOCOL_NAME, SSLTCP_PROTOCOL_NAME,
+                                                     TLS_PROTOCOL_NAME};
+  Candidate candidate(component_id, kProtoNames[static_cast<int>(*protocol)],
+                      SocketAddress(*ip, static_cast<uint16_t>(port)), priority, username, password, candidate_type,
+                      generation, foundation, network_id, network_cost);
+  candidate.set_related_address(related_address);
+  candidate.set_tcptype(tcptype);
+  return candidate;
 }
 
 }  // namespace sm::p2p
