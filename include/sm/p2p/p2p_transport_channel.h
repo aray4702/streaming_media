@@ -33,7 +33,7 @@
 // the time of the last call that had one (a connection's signal: the later of that and its last receive), so the
 // owner calls Process(now) before handing the sockets their packets at `now`, as the test bench's loops do.
 //
-// Not here (see docs/design/libwebrtc-parity.md 10.7): hostname (mDNS) candidates and their DNS resolution (the
+// Not here (see docs/design/libwebrtc-parity.md 10.9): hostname (mDNS) candidates and their DNS resolution (the
 // library's addresses carry no hostname, as 10.3), the local network access permission (always granted), the STUN
 // dictionary (GOOG-DELTA; no library API writes it), the DTLS-in-STUN piggyback (off by default in M157), the RTC
 // event log, the field trial strings (WebRTC-IceFieldTrials and the others are at their defaults; a caller may pass

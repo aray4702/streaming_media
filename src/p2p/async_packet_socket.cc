@@ -22,6 +22,11 @@ void AsyncPacketSocket::NotifyReadyToSend() {
   for (auto& [tag, cb] : subscribers) cb(this);
 }
 
+void AsyncPacketSocket::NotifyConnect() {
+  auto subscribers = connect_;
+  for (auto& [tag, cb] : subscribers) cb(this);
+}
+
 void AsyncPacketSocket::NotifyClosed(int err) {
   auto subscribers = closed_;
   for (auto& [tag, cb] : subscribers) cb(this, err);

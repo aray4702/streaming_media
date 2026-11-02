@@ -52,11 +52,15 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     unit/p2p/port_test.cc
     unit/p2p/stun_request_test.cc
     unit/p2p/stun_test.cc
+    unit/p2p/tcp_socket_test.cc
     unit/p2p/test_crypto.cc
     unit/p2p/test_crypto_test.cc
   SUITES
+    AsyncStunTcpSocket
+    AsyncTcpSocket
     DtlsUtils
     EmulatedSockets
+    EmulatedTcp
     P2pBasicIceController
     P2pBasicPortAllocator
     P2pCandidate
@@ -94,6 +98,20 @@ if(SM_WITH_TLS)
       P2pDtlsRole
       P2pDtlsTransport
   )
+  if(SM_WITH_SYNC)
+    # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007).
+    sm_add_test_exe(sm_unit_pc LABEL unit DEPS sm::pc
+      SOURCES
+        unit/pc/dtls_srtp_transport_test.cc
+        unit/pc/rtp_transport_test.cc
+        unit/pc/srtp_transport_test.cc
+      SUITES
+        PcDtlsSrtpTransport
+        PcRtpTransport
+        PcRtpUtils
+        PcSrtpTransport
+    )
+  endif()
 endif()
 
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core

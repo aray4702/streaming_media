@@ -717,7 +717,62 @@ Differences:
 | `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | #1002's remaining part |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
-### 10.7 The ICE agent (`src/p2p/p2p_transport_channel.cc`, C3 part 6, #1002)
+### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
+
+Ported as a unit from `pc/rtp_transport.{h,cc}`, `pc/rtp_transport_internal.h`, `pc/srtp_transport.{h,cc}` and
+`pc/dtls_srtp_transport.{h,cc}`, on the DTLS transport (`src/p2p/dtls_transport.cc`, #1006), `SrtpSession` (#995) and the RtpDemuxer
+(8.4), in a new `sm::pc` library. Same behaviour: RTP and RTCP over one packet transport with rtcp-mux or two
+without; RFC 5761 classification and the 12/4/2048-byte size checks of `media/base/rtp_utils.cc`; the header
+extension map merged by MID, newest first; SRTP active once the send and receive sessions exist, separate RTCP
+sessions for non-muxed RTCP, keys updated in place (`srtp_update`) on a second `SetRtpParams`, everything reset on
+a failure; DTLS-SRTP set up when every DTLS transport in use is writable and connected, keys split from the RFC
+5764 export by the DTLS role, reset on any DTLS state but connected (restart, failure, transport change) and set up
+again on the next connect, kept when rtcp-mux removes the RTCP transport (bugs.webrtc.org/8996); encrypted header
+extension ids empty unless set, cryptex off; libwebrtc's default suite order (the DTLS transport's). The cases of
+`srtp_transport_unittest.cc` and `dtls_srtp_transport_unittest.cc` are in `tests/unit/pc/`, the DTLS ones with
+the real DTLS transport over the fake ICE transport (libwebrtc uses a `FakeDtlsTransport`), plus a media path over
+a 10 ms link past a sequence-number wrap and a DTLS restart that re-keys. The test bench keeps unencrypted media.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Buffers | `CopyOnWriteBuffer`; a received RTP packet as `RtpPacketReceived` | `std::vector<uint8_t>`, protected in place; the sink gets the bytes and the parsed `sm::RtpPacket` | Library types |
+| Network route | `SubscribeNetworkRouteChanged`; SRTP overhead added to it behind `WebRTC-UpdateNetworkRouteOnSrtpActivation` (off) | Left out, with the two network-route cases of `srtp_transport_unittest.cc` | The packet transports have no route until ICE reports candidate pairs (#1002) |
+| ECN | RTCP sent as ECT(1) after RTP arrived with ECT(1) or CE | Not sent: the packet transports don't report ECN | Comes with the transports' ECN |
+| Field trials | `WebRTC-SrtpRemoveReceiveStream` (off) | `SrtpTransportOptions::remove_receive_stream`, off | Defaults as libwebrtc |
+| Ready-to-send re-entry | A change during the signal is posted as a task | Re-checked when the signal returns | The library's time model (no task queue) |
+| `RTCError`, `RTC_CHECK` | Errors and checks | `bool` results; `assert` for the BUNDLE-without-rtcp-mux case | No `RTCError` type, no exceptions |
+| Test data | `media/base/fake_rtp.h`, `media/base/rtp_utils.cc`, `modules/rtp_rtcp/source/rtp_util.cc` | Equivalent packets in `tests/unit/pc/pc_test_util.h`; the classification from those files' M157 behaviour | Not in `reference/` (asked on #1007) |
+
+### 10.8 TCP packet sockets (`src/p2p/async_tcp_socket.cc`, `sm/sim/emulated_sockets.h`, C4 part 2, #1034)
+
+Ported from `rtc_base/async_tcp_socket.{h,cc}` (`AsyncTCPSocketBase`, `AsyncTCPSocket`, `AsyncTcpListenSocket`),
+`p2p/base/async_stun_tcp_socket.{h,cc}`, the TCP half of `p2p/base/basic_packet_socket_factory.cc`
+(`CreateServerTcpSocket`, `CreateClientTcpSocket`), `AsyncListenSocket` and `PacketSocketTcpOptions` of
+`rtc_base/async_packet_socket.h` and `api/packet_socket_factory.h`, and the stream sockets of
+`rtc_base/socket.h`. Same constants and behaviour: the input buffer grows from 128 bytes to the largest packet
+(64 KiB + 2 for the length framing, 64 KiB + 20 for STUN framing), the 2-byte length prefix, STUN and ChannelData
+framing with ChannelData padded to 4 bytes, whole messages only for STUN, a send while the output buffer is not
+empty reported as sent and dropped, a partial write finished on write events, TCP_NODELAY before connect,
+backlog 5, and `OPT_STUN` refused on a listener. TCP in the emulated network follows
+`rtc_base/virtual_socket_server.cc`: one port table for TCP and UDP, 32 KiB send and receive buffers, segments
+of `TCP_MSS - TCP_HEADER_SIZE` = 1360 bytes charged 40 header bytes, the window as the receiver's free space,
+connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_socket_unittest.cc` and
+`async_stun_tcp_socket_unittest.cc` is in `tests/unit/p2p/tcp_socket_test.cc`, with a TCP echo
+(`test_echo_server.h`) from behind each test NAT type. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | `Environment` clock reads; read, write, connect and close events posted on the socket server's thread | `now` passed to `Connect`, `Send`, `Recv`, `Accept` and `CreateClientTcpSocket`, and carried by the read, write and connect events; `Close` sends its FIN at the latest time the socket server has seen | The library's time model, as 10.3 |
+| Lost segments | The virtual server's TCP never loses a segment | The emulated links do, so the stream retransmits: cumulative ACKs, RFC 6298's timer (1 s initial and minimum, 60 s maximum, doubled per retry), go-back-N on a timeout or the third duplicate ACK, window probes, 6 SYN and 15 data retries (Linux's defaults) before ETIMEDOUT | Needed for TURN over TCP on lossy links; nothing of it runs on a lossless link |
+| Connect timing | The virtual server completes the client's connect one transit delay after `Connect` | One round trip: the SYN-ACK's arrival completes it | Segments cross the hosts' links and NATs both ways |
+| TCP through NATs | `NATSocketServer` proxies outbound TCP connections through the NAT server | Segments cross the emulated NATs with their UDP mapping and filtering rules; inbound connections find no binding | One NAT model for both protocols; the outcome (outbound only) is the same |
+| `AsyncListenSocket` | New socket as a raw pointer the subscriber takes | The subscriber moves a `std::unique_ptr` out; an untaken socket is closed | Ownership in the type |
+| TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `CreateClientTcpSocket` returns nullptr | C4 part 3 (#1035) |
+| Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
+| `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
+
+### 10.9 The ICE agent (`src/p2p/p2p_transport_channel.cc`, C3 part 6, #1002)
 
 Ported as a unit from `p2p/base/p2p_transport_channel.{h,cc}`, with the candidate methods and signals of
 `ice_transport_internal.h` (`AddRemoteCandidate`, the gathering state, `GetSelectedCandidatePair`, `GetStats` and
