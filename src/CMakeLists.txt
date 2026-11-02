@@ -72,6 +72,7 @@ endif()
 sm_add_library(p2p DEPS sm::core SOURCES
   p2p/socket_address.cc
   p2p/async_packet_socket.cc
+  p2p/async_tcp_socket.cc
   p2p/dtls_utils.cc
   p2p/stun.cc
   p2p/stun_request.cc
