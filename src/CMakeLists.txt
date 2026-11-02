@@ -104,8 +104,9 @@ endif()
 
 if(SM_WITH_DATACHANNEL)
   # Data channels (C7): libwebrtc M157's dcsctp, net/dcsctp/ (compare/webrtc/reference/net/dcsctp/). Part 1 (#1032):
-  # the packet layer (SCTP packets, chunks, parameters, error causes, CRC-32C) and common/. Plain C++ that reads and
-  # writes bytes; it needs nothing from ICE or DTLS. Not in the sm::sm umbrella yet, like sm::p2p (#944).
+  # the packet layer (SCTP packets, chunks, parameters, error causes, CRC-32C) and common/. Part 2 (#1060): the socket
+  # (public/, socket/, rx/, tx/, timer/), with timeouts driven by Process(now) (timer/process_timeout.h) in place of
+  # task_queue_timeout. Plain C++ that reads and writes bytes; it needs nothing from ICE or DTLS. Not in the sm::sm umbrella yet, like sm::p2p (#944).
   sm_add_library(dcsctp DEPS sm::core SOURCES
     dcsctp/packet/chunk/abort_chunk.cc
     dcsctp/packet/chunk/chunk.cc
@@ -154,7 +155,28 @@ if(SM_WITH_DATACHANNEL)
     dcsctp/packet/parameter/supported_extensions_parameter.cc
     dcsctp/packet/parameter/zero_checksum_acceptable_chunk_parameter.cc
     dcsctp/packet/sctp_packet.cc
-    dcsctp/packet/tlv_trait.cc)
+    dcsctp/packet/tlv_trait.cc
+    dcsctp/public/dcsctp_handover_state.cc
+    dcsctp/public/dcsctp_socket_factory.cc
+    dcsctp/rx/data_tracker.cc
+    dcsctp/rx/interleaved_reassembly_streams.cc
+    dcsctp/rx/reassembly_queue.cc
+    dcsctp/rx/traditional_reassembly_streams.cc
+    dcsctp/socket/callback_deferrer.cc
+    dcsctp/socket/dcsctp_socket.cc
+    dcsctp/socket/heartbeat_handler.cc
+    dcsctp/socket/packet_sender.cc
+    dcsctp/socket/state_cookie.cc
+    dcsctp/socket/stream_reset_handler.cc
+    dcsctp/socket/transmission_control_block.cc
+    dcsctp/timer/process_timeout.cc
+    dcsctp/timer/timer.cc
+    dcsctp/tx/outstanding_data.cc
+    dcsctp/tx/retransmission_error_counter.cc
+    dcsctp/tx/retransmission_queue.cc
+    dcsctp/tx/retransmission_timeout.cc
+    dcsctp/tx/rr_send_queue.cc
+    dcsctp/tx/stream_scheduler.cc)
   target_compile_definitions(sm_dcsctp PUBLIC SM_WITH_DATACHANNEL=1)
   # libwebrtc names constructor parameters after the members they set, and its RFC diagrams end lines with a
   # backslash: dcsctp builds without -Wshadow and -Wcomment.

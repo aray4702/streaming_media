@@ -13,7 +13,8 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 | `packet_buffer` | `timing::PacketBuffer` with fuzzed sequence numbers, timestamps and bits | `packet_buffer_fuzzer.cc` |
 | `red` | `loss::ParseRed`, `loss::SplitRed` | `neteq_rtp_fuzzer.cc` (RED through NetEq) |
 | `ulpfec` | `loss::ulpfec::UlpfecReceiver`, `ForwardErrorCorrection::DecodeFec` | `ulpfec_receiver_fuzzer.cc`, `ulpfec_decoder_fuzzer.cc` |
-| `dcsctp_packet` | `dcsctp::SctpPacket::Parse` with and without the CRC-32C check, every chunk parser (`DebugConvertChunkToString`), SACK cleaning, parameter lists, a build/parse round trip; only with `SM_WITH_DATACHANNEL` (#1032) | `net/dcsctp/fuzzers/dcsctp_fuzzers.cc` (through the socket, C7 part 2) |
+| `dcsctp_packet` | `dcsctp::SctpPacket::Parse` with and without the CRC-32C check, every chunk parser (`DebugConvertChunkToString`), SACK cleaning, parameter lists, a build/parse round trip; only with `SM_WITH_DATACHANNEL` (#1032) | `net/dcsctp/fuzzers/dcsctp_fuzzers.cc` (through the socket: `dcsctp_socket` below) |
+| `dcsctp_socket` | `dcsctp::DcSctpSocket` from each of 10 starting states, driven by `FuzzSocket`'s actions (received chunks, sends, stream resets, expired timeouts, close); only with `SM_WITH_DATACHANNEL` (#1060) | `dcsctp_socket_fuzzer.cc` over `net/dcsctp/fuzzers/dcsctp_fuzzers.cc`, ported as `dcsctp_fuzzers.{h,cc}` |
 | `stun` | `p2p::StunMessage::Read` as STUN, TURN and ICE messages, integrity and FINGERPRINT checks, a write/read round trip, `StunRequestManager::CheckResponse` | `stun_parser_fuzzer.cc`, `stun_validator_fuzzer.cc` |
 | `turn` | A live TURN allocation (`TurnPort` on `sim::TurnServer` over the emulated network, a permission and channel 0x4000 bound): datagrams to `TurnPort::HandleIncomingPacket` (ChannelData with its framing and padding, Data indications, responses), to the server from the allocation's 5-tuple and from a new address (Allocate, Refresh, CreatePermission, ChannelBind, Send indications, ChannelData), and to the relayed address from the peer (#1058) | `turn_unwrap_fuzzer.cc` (its `UnwrapTurnPacket`, `media/base/turn_utils.cc`, is not ported; TURN's framing is unwrapped by the port and the server here) |
 | `tcp_framing` | `AsyncTcpSocket` and `AsyncStunTcpSocket` (`ProcessInput`, `GetExpectedLength`) on the whole stream, then the stream over an emulated TCP connection in pieces into either socket or into a TURN server listening on TCP; the packets must tile the stream and match (#1058) | none (`rtc_base/async_tcp_socket.cc`, `p2p/base/async_stun_tcp_socket.cc`) |
@@ -22,9 +23,9 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 
 Of libwebrtc's `test/fuzzers/`, the STUN fuzzers (#1019) and the TURN, SDP
 and SCTP ones (#1057) are in `compare/webrtc/reference/`
-(`net/dcsctp/fuzzers/` is too). `stun` follows their code; the other targets
-follow libwebrtc's file names and what each one feeds, not its code.
-libwebrtc M157 has no fuzzer for TCP framing or DTLS records, so
+(`net/dcsctp/fuzzers/` is too). `stun` and `dcsctp_socket` follow their code;
+the other targets follow libwebrtc's file names and what each one feeds, not
+its code. libwebrtc M157 has no fuzzer for TCP framing or DTLS records, so
 `tcp_framing`, `dtls_record` and `dtls_transport` name the functions they
 feed instead. The multi-packet input formats are this
 library's own and are documented at the top of each target.
