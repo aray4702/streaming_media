@@ -323,6 +323,17 @@ if(SM_WITH_DATACHANNEL)
   if(NOT MSVC)
     target_compile_options(sm_unit_dcsctp PRIVATE -Wno-shadow)
   endif()
+  if(SM_WITH_TLS)
+    # SCTP over DTLS (C7 part 3, #1069): DcSctpTransport and SctpTransport, two endpoints over ICE + DTLS on the
+    # emulated network.
+    sm_add_test_exe(sm_unit_sctp LABEL unit DEPS sm::sctp sm::p2p_tls
+      SOURCES
+        unit/sctp/dcsctp_transport_test.cc
+      SUITES
+        SctpDcSctpTransport
+        SctpOverDtls
+    )
+  endif()
 endif()
 
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core

@@ -1037,6 +1037,37 @@ after `test/fuzzers/sdp_parser_fuzzer.cc`, with a write/parse/write stability ch
 | `Codec` matching, H.264 profile helpers, `AddDefaultFeedbackParams`, `UniqueRandomIdGenerator` | Present | Left for C6 part 2 (`GenerateSsrcs` takes an id function) | Offer/answer generation uses them, the parser doesn't |
 | Not in `compare/webrtc/reference/` | `api/rtp_parameters.h`, `rtp_transceiver_direction.h`, `media/base/media_constants.h`, `pc/simulcast_description.h`, `rtc_base/string_encode.cc`, `api/jsep_session_description.cc`, the fmtp helpers (`WriteFmtpParameters`, `ParseFmtpParameterSet`) | Ported from their M157 declarations and behaviour, as the tests pin it | Missing reference files (noted on #1062) |
 
+### 10.17 Data channels: SCTP over DTLS (`src/sctp/`, C7 part 3, #1069)
+
+Ported from `media/sctp/dcsctp_transport.{h,cc}` and `pc/sctp_transport.{h,cc}` at M157 as `sm::sctp::DcSctpTransport`
+and `sm::sctp::SctpTransport` (`include/sm/sctp/`, library `sm::sctp`, built with `SM_WITH_DATACHANNEL=ON` and TLS).
+The dcSCTP socket of 10.15 runs over the DTLS transport of `sm/p2p/dtls_transport.h`: decrypted DTLS application
+data in, `SendPacket` out; the association starts once DTLS is writable and `Start()` has created the socket (SNAP:
+`ConnectWithConnectionToken`, replaying up to 32 early packets); a DTLS restart (state back to `kNew`) drops the
+socket. Same settings as `CreateDcSctpOptions`: ports from the description (5000 by default), the max message size
+(256 KiB by default), streams announced from `max_sctp_streams` (65535), timer backoff capped at 3000 ms, no
+association close on too many retransmissions (data or INIT), a 16 MiB per-stream send queue and no total limit,
+message interleaving off. Same PPIDs (50 DCEP, 51 / 53 string / binary, 56 / 57 empty, sent as one zero byte; 52 / 54
+accepted), the same errors (`kInvalidState` for a SID not open or closing, `kInvalidRange` over the max message size,
+`kResourceExhausted` and ready-to-send cleared on a full queue), the same two-way stream reset bookkeeping
+(`OnChannelClosing` for a remote close, `OnChannelClosed` when both directions are reset) and the same
+`SctpTransport` states (`kConnecting`, `kConnected` with `MaxChannels`, `kClosed` on DTLS closed or failed, a failed
+`Start()` or `Clear()`). Tests: `tests/unit/sctp/dcsctp_transport_test.cc` (13 cases), two endpoints over ICE and
+DTLS on the emulated network (association up, messages by type, ordered and unordered, reliable under 10% loss, max
+retransmits 0 under 30% loss, max lifetime across an outage, stream reset from one end and from both, a full send
+buffer draining, max message size and a second `Start()`, SNAP with early packets, DTLS failure), and the transport
+without DTLS. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, `TaskQueueTimeoutFactory`, `env.clock()` | Calls that can send take `now`; received packets carry their arrival time; the socket's timers are `NextProcessTime()` / `Process(now)` over `ProcessTimeoutFactory` (10.15) | The library's time model |
+| Random | `webrtc::Random` seeded from the clock in microseconds | `sm::Random` seeded from the creation time in microseconds | `rtc_base/random` isn't in `reference/`; only verification tags and initial TSNs differ |
+| Field trial | `WebRTC-DataChannelMessageInterleaving` | `DcSctpTransportConfig::enable_message_interleaving`, off | No field trials in the library; same default |
+| Packet observer | `TextPcapPacketObserver` at verbose logging | None | Not ported (10.15); a debug aid |
+| Payloads, errors | `CopyOnWriteBuffer`, `RTCError` | `std::span<const uint8_t>`, `sm::sctp::RtcError` (type, message, SCTP failure detail, cause code) | No rtc_base or api/ |
+| `SctpTransport` | Ref-counted, hops to the network thread, `dtls_transport()` is the api `DtlsTransport` | Owned, one thread, `dtls_transport()` is the `p2p::DtlsTransport`; the destructors also unsubscribe from the DTLS transport | No ref counting or threads in the library |
+| Interface files | `media/sctp/sctp_transport_internal.h`, `api/transport/data_channel_transport_interface.h`, `api/sctp_transport_interface.h`, `api/rtc_error.h`, `api/priority.h`, and the unit tests `media/sctp/dcsctp_transport_unittest.cc`, `pc/sctp_transport_unittest.cc` | `include/sm/sctp/sctp_transport_internal.h` and `sctp_transport.h` with the names and values `dcsctp_transport.cc` and `sctp_transport.cc` use; `kMaxSctpStreams` (65535) and the port (5000) checked against `api/webrtc_sdp_unittest.cc`, 256 KiB against `media_session.cc`; the 16 MiB queue (`MaxSendQueueSize`) is from libwebrtc, not checked here | Not in `reference/` yet (asked for on #1069); the tests above cover the transport's behaviour until the unit tests can be ported |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).
