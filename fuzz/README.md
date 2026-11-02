@@ -13,12 +13,13 @@ C10 of milestone 3, #944). Each `<name>_fuzzer.cc` is one
 | `packet_buffer` | `timing::PacketBuffer` with fuzzed sequence numbers, timestamps and bits | `packet_buffer_fuzzer.cc` |
 | `red` | `loss::ParseRed`, `loss::SplitRed` | `neteq_rtp_fuzzer.cc` (RED through NetEq) |
 | `ulpfec` | `loss::ulpfec::UlpfecReceiver`, `ForwardErrorCorrection::DecodeFec` | `ulpfec_receiver_fuzzer.cc`, `ulpfec_decoder_fuzzer.cc` |
-| `dcsctp_packet` | `dcsctp::SctpPacket::Parse` with and without the CRC-32C check, every chunk parser (`DebugConvertChunkToString`), SACK cleaning, parameter lists, a build/parse round trip; only with `SM_WITH_DATACHANNEL` (#1032) | `net/dcsctp/fuzzers/dcsctp_fuzzers.cc` (through the socket, C7 part 2) |
+| `dcsctp_packet` | `dcsctp::SctpPacket::Parse` with and without the CRC-32C check, every chunk parser (`DebugConvertChunkToString`), SACK cleaning, parameter lists, a build/parse round trip; only with `SM_WITH_DATACHANNEL` (#1032) | `net/dcsctp/fuzzers/dcsctp_fuzzers.cc` (through the socket: `dcsctp_socket` below) |
+| `dcsctp_socket` | `dcsctp::DcSctpSocket` from each of 10 starting states, driven by `FuzzSocket`'s actions (received chunks, sends, stream resets, expired timeouts, close); only with `SM_WITH_DATACHANNEL` (#1060) | `dcsctp_socket_fuzzer.cc` over `net/dcsctp/fuzzers/dcsctp_fuzzers.cc`, ported as `dcsctp_fuzzers.{h,cc}` |
 | `stun` | `p2p::StunMessage::Read` as STUN, TURN and ICE messages, integrity and FINGERPRINT checks, a write/read round trip, `StunRequestManager::CheckResponse` | `stun_parser_fuzzer.cc`, `stun_validator_fuzzer.cc` |
 
-Of libwebrtc's `test/fuzzers/`, only the STUN fuzzers are in
+Of libwebrtc's `test/fuzzers/`, the STUN and dcSCTP fuzzers are in
 `compare/webrtc/reference/` (#1019; `net/dcsctp/fuzzers/` is too). `stun`
-follows their code; the other targets follow libwebrtc's file names and what
+and `dcsctp_socket` follow their code; the other targets follow libwebrtc's file names and what
 each one feeds, not its code. The multi-packet input formats are this
 library's own and are documented at the top of each target.
 

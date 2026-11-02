@@ -17,10 +17,13 @@ set(SM_FUZZ_TARGETS
   transport_feedback
   ulpfec
 )
-# dcsctp's packet layer (#1032), only when data channels are compiled in.
+# dcsctp's packet layer (#1032) and socket (#1060), only when data channels are compiled in.
 if(SM_WITH_DATACHANNEL)
-  list(APPEND SM_FUZZ_TARGETS dcsctp_packet)
+  list(APPEND SM_FUZZ_TARGETS dcsctp_packet dcsctp_socket)
   set(SM_FUZZ_DEPS_dcsctp_packet sm::dcsctp)
+  # The socket (#1060): net/dcsctp/fuzzers/dcsctp_fuzzers.cc's FuzzSocket, ported as dcsctp_fuzzers.cc.
+  set(SM_FUZZ_DEPS_dcsctp_socket sm::dcsctp)
+  set(SM_FUZZ_SOURCES_dcsctp_socket ${CMAKE_CURRENT_SOURCE_DIR}/dcsctp_fuzzers.cc)
 endif()
 # The library each target links: sm::rtp (which brings the RTP, RTCP, loss
 # and timing parsers) unless set here.
