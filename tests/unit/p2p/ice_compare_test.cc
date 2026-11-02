@@ -173,3 +173,58 @@ SM_TEST(P2pIceCompare, RelayScenariosConnectThroughTurn) {
     }
   }
 }
+
+// Relay (#1055): libwebrtc M157's column of the relay table (CI compare-webrtc on #1056, means of seeds 1-5; our side
+// gave the same values on every seed). The pair and relay columns are the controlling side's selected local/remote
+// candidate types and each endpoint's relay protocol; at 5% loss sym-sym picks either side's relay by seed (3 of 5
+// prflx/relay, 2 of 5 relay/prflx on both stacks).
+SM_TEST(P2pIceCompare, RelayMatchesLibwebrtc) {
+  sm::p2p::testing::InstallTestCryptoWithUniqueIds();
+  struct Row {
+    const char* name;
+    double connect_ms;
+    double checks_at_connect;
+    double checks_total;
+    double turn[kNumTurnRequests];  // Allocate, CreatePermission, ChannelBind, Refresh.
+    const char* pair;               // On every seed, or "" when it varies by seed.
+    const char* relay;
+  };
+  const Row kLibwebrtc[] = {
+      {"port-sym-turnudp", 252, 12.0, 70.0, {4.0, 8.0, 0, 0}, "srflx/relay", "-/udp"},
+      {"sym-port-turnudp", 252, 12.0, 65.0, {4.0, 8.0, 0, 0}, "prflx/relay", "-/udp"},
+      {"sym-sym-turnudp", 252, 12.0, 67.0, {4.0, 10.0, 0, 0}, "prflx/relay", "-/udp"},
+      {"open-open-turnudp-relayonly", 190, 4.0, 16.0, {4.0, 2.0, 0, 0}, "relay/relay", "udp/udp"},
+      {"sym-sym-turnudp-loss5", 310, 14.4, 70.8, {4.8, 7.6, 0, 0}, "", ""},
+  };
+  const std::vector<Scenario> scenarios = RelayScenarios();
+  for (const Row& row : kLibwebrtc) {
+    const Scenario* s = nullptr;
+    for (const Scenario& c : scenarios) {
+      if (c.name == row.name) s = &c;
+    }
+    SM_ASSERT_TRUE(s != nullptr);
+    int connected = 0, relay_on_ep1 = 0;
+    double ms = 0, at_connect = 0, total = 0, turn[kNumTurnRequests] = {0, 0, 0, 0};
+    for (int seed = 1; seed <= 5; ++seed) {
+      const Result r = RunSm(*s, seed);
+      if (r.connected) {
+        ++connected;
+        ms += r.connect_ms;
+        at_connect += r.checks_at_connect;
+        if (*row.pair) {
+          SM_EXPECT_EQ(r.pair, std::string(row.pair));
+          SM_EXPECT_EQ(r.relay, std::string(row.relay));
+        }
+        if (r.relay == "-/udp") ++relay_on_ep1;
+      }
+      total += r.checks_total;
+      for (int t = 0; t < kNumTurnRequests; ++t) turn[t] += r.turn[t];
+    }
+    SM_EXPECT_EQ(connected, 5);
+    SM_EXPECT_NEAR(ms / 5, row.connect_ms, 1.0);
+    SM_EXPECT_NEAR(at_connect / 5, row.checks_at_connect, 0.05);
+    SM_EXPECT_NEAR(total / 5, row.checks_total, 0.05);
+    for (int t = 0; t < kNumTurnRequests; ++t) SM_EXPECT_NEAR(turn[t] / 5, row.turn[t], 0.05);
+    if (!*row.pair) SM_EXPECT_EQ(relay_on_ep1, 3);
+  }
+}
