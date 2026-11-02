@@ -13,14 +13,18 @@ if(SM_WITH_TLS)
   # Connectivity (milestone 3): crypto and TLS through BoringSSL, libwebrtc's rtc_base/ interfaces (#984).
   include(${PROJECT_SOURCE_DIR}/cmake/SmBoringSSL.cmake)
   sm_add_boringssl()
+  # SRTP (C5 part 1, #995): libsrtp 2.8.0 on BoringSSL, as libwebrtc M157 builds it.
+  include(${PROJECT_SOURCE_DIR}/cmake/SmLibsrtp.cmake)
+  sm_add_libsrtp()
   sm_add_library(tls DEPS sm::core SOURCES
     tls/message_digest.cc
     tls/boringssl_digest.cc
     tls/crypto_random.cc
     tls/boringssl_identity.cc
     tls/ssl_fingerprint.cc
-    tls/boringssl_dtls.cc)
-  target_link_libraries(sm_tls PRIVATE sm_boringssl_ssl)
+    tls/boringssl_dtls.cc
+    tls/srtp_session.cc)
+  target_link_libraries(sm_tls PRIVATE sm_boringssl_ssl sm_libsrtp)
   target_compile_definitions(sm_tls PUBLIC SM_WITH_TLS=1)
   # Not in the sm::sm umbrella or the install export yet: it links BoringSSL's targets, which the export
   # set doesn't carry. Connectivity code links sm::tls itself until the package exports BoringSSL (#984).
