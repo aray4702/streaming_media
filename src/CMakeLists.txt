@@ -16,7 +16,9 @@ if(SM_WITH_TLS)
   sm_add_library(tls DEPS sm::core SOURCES
     tls/message_digest.cc
     tls/boringssl_digest.cc
-    tls/crypto_random.cc)
+    tls/crypto_random.cc
+    tls/boringssl_identity.cc
+    tls/ssl_fingerprint.cc)
   target_link_libraries(sm_tls PRIVATE sm_boringssl_crypto)
   target_compile_definitions(sm_tls PUBLIC SM_WITH_TLS=1)
   # Not in the sm::sm umbrella or the install export yet: it links BoringSSL's targets, which the export

@@ -6,7 +6,8 @@ sm_configure_target(sm_test_framework)
 if(SM_WITH_TLS)
   sm_add_test_exe(sm_unit_tls LABEL unit DEPS sm::tls
     SOURCES unit/tls/message_digest_test.cc
-    SUITES TlsMessageDigest TlsCryptoRandom)
+            unit/tls/ssl_identity_test.cc
+    SUITES TlsMessageDigest TlsCryptoRandom TlsSslIdentity TlsSslFingerprint)
 endif()
 
 sm_add_test_exe(sm_unit_core LABEL unit DEPS sm::core
