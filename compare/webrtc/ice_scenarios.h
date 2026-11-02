@@ -42,6 +42,12 @@
 // With PeerConnection's default gathering (gather once), neither stack gathers on the new interface, so the call
 // does not recover without an ICE restart; with continual gathering (RTCConfiguration::continual_gathering_policy =
 // GATHER_CONTINUALLY, IceConfig::continual_gathering_policy) both should.
+// Two variants, as the multihomed tests name their interfaces:
+// - Wi-Fi to cellular: the first interface is Wi-Fi ("eth0", ADAPTER_TYPE_WIFI), the one that appears cellular
+//   ("wlan0", ADAPTER_TYPE_CELLULAR);
+// - a link going dead (TestFailoverControllingSide, TestFailoverControlledSide): the endpoint has both of those
+//   interfaces from the start, and at kChangeAt only the Wi-Fi one's links go down, with no change in the network
+//   manager; the backup connection on cellular takes over. PeerConnection's default gathering (once), as those tests.
 #pragma once
 
 #include <algorithm>
@@ -84,6 +90,8 @@ struct Scenario {
   int delay_ms = 10;  // One-way delay of each endpoint's access links (the STUN server's are 5 ms).
   int change = -1;            // The endpoint whose network changes at kChangeAt, or -1 for none.
   bool continual = false;     // IceConfig::continual_gathering_policy = kGatherContinually on both endpoints.
+  bool wifi_to_cellular = false;  // The changing endpoint's first interface is Wi-Fi, its second cellular.
+  bool dead = false;  // The changing endpoint has both interfaces from the start, and the first one's links die.
 };
 
 // Each pair of NAT types (libwebrtc's P2PTransportChannelTest matrix without the relay and TCP columns), then loss
@@ -139,6 +147,32 @@ inline std::vector<Scenario> ChangeScenarios() {
   once.name = "open-open-change0-once";
   once.change = 0;
   out.push_back(once);
+  // Wi-Fi to cellular, with continual gathering.
+  for (auto [a, b] : {kPairs[0], kPairs[2]}) {
+    for (int change : {0, 1}) {
+      Scenario s;
+      s.name = std::string(NatName(a)) + "-" + NatName(b) + "-wifi2cell" + std::to_string(change) + "-continual";
+      s.nat[0] = a;
+      s.nat[1] = b;
+      s.change = change;
+      s.continual = true;
+      s.wifi_to_cellular = true;
+      out.push_back(s);
+    }
+  }
+  // The Wi-Fi link going dead with cellular up, gathering once.
+  for (auto [a, b] : {kPairs[0], kPairs[2]}) {
+    for (int change : {0, 1}) {
+      Scenario s;
+      s.name = std::string(NatName(a)) + "-" + NatName(b) + "-dead" + std::to_string(change) + "-once";
+      s.nat[0] = a;
+      s.nat[1] = b;
+      s.change = change;
+      s.wifi_to_cellular = true;
+      s.dead = true;
+      out.push_back(s);
+    }
+  }
   return out;
 }
 
@@ -225,7 +259,15 @@ struct Topology {
   // Endpoint i's second interface appears (a new host in the same realm, behind the same NAT if any) and the first
   // one's links go down. The caller adds and removes the interfaces in its network manager.
   void ChangeNetwork(int i) {
+    AddAlternate(i);
+    KillPrimary(i);
+  }
+  // Endpoint i's second interface (a new host in the same realm, behind the same NAT if any).
+  void AddAlternate(int i) {
     alt_host[i] = std::make_unique<sim::EmulatedSocketServer>(net, net.AddHost(alt_ip[i], realm_of[i], link, link));
+  }
+  // Endpoint i's first interface's links go down.
+  void KillPrimary(int i) {
     sim::LinkConfig down = link;
     down.down = true;
     net.uplink(host[i]->host()).SetConfig(down);
@@ -283,8 +325,28 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
   std::deque<Candidate> signaling[2];  // Candidates for endpoint i.
   PeerConnectionAllocatorConfig pc_config;
   pc_config.tcp_candidates_enabled = false;  // See the file comment.
+  // The interfaces' names and types (see the file comment).
+  const bool typed = s.wifi_to_cellular;
+  auto add_primary = [&](int i) {
+    if (typed && i == s.change) {
+      ep[i].network_manager.AddInterface(IpAddress(topo.ip[i]), "eth0", ADAPTER_TYPE_WIFI);
+    } else {
+      ep[i].network_manager.AddInterface(IpAddress(topo.ip[i]));
+    }
+  };
+  auto add_alternate = [&](int i) {
+    if (typed) {
+      ep[i].network_manager.AddInterface(IpAddress(topo.alt_ip[i]), "wlan0", ADAPTER_TYPE_CELLULAR);
+    } else {
+      ep[i].network_manager.AddInterface(IpAddress(topo.alt_ip[i]));
+    }
+  };
   for (int i = 0; i < 2; ++i) {
-    ep[i].network_manager.AddInterface(IpAddress(topo.ip[i]));
+    add_primary(i);
+    if (s.dead && i == s.change) {
+      topo.AddAlternate(i);
+      add_alternate(i);
+    }
     ep[i].socket_factory = std::make_unique<EndpointSocketFactory>(&topo, i);
     ep[i].allocator = std::make_unique<BasicPortAllocator>(&ep[i].network_manager, ep[i].socket_factory.get());
     ConfigureAsPeerConnection(now, ep[i].allocator.get(), ServerAddresses{Topology::StunAddress()}, {}, pc_config);
@@ -359,9 +421,13 @@ inline Result RunSm(const Scenario& s, uint64_t seed) {
       if (const Connection* other = ep[1 - s.change].ch->selected_connection()) {
         old_remote = other->remote_candidate().address();
       }
-      topo.ChangeNetwork(s.change);
-      ep[s.change].network_manager.AddInterface(IpAddress(topo.alt_ip[s.change]));
-      ep[s.change].network_manager.RemoveInterface(IpAddress(topo.ip[s.change]));
+      if (s.dead) {
+        topo.KillPrimary(s.change);
+      } else {
+        topo.ChangeNetwork(s.change);
+        add_alternate(s.change);
+        ep[s.change].network_manager.RemoveInterface(IpAddress(topo.ip[s.change]));
+      }
     }
     for (Endpoint& e : ep) {
       e.ch->Process(now);

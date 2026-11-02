@@ -151,8 +151,9 @@ class NetworkManager final : public w::NetworkManagerBase {
  public:
   explicit NetworkManager(w::TaskQueueBase* network_thread) : network_thread_(network_thread) {}
 
-  void AddInterface(uint32_t ip) {
-    ifaces_.push_back({w::IPAddress(ip), "test" + std::to_string(next_index_++)});
+  void AddInterface(uint32_t ip) { AddInterface(ip, "test" + std::to_string(next_index_++)); }
+  void AddInterface(uint32_t ip, std::string name, w::AdapterType type = w::ADAPTER_TYPE_UNKNOWN) {
+    ifaces_.push_back({w::IPAddress(ip), std::move(name), type});
     DoUpdateNetworks();
   }
   void RemoveInterface(uint32_t ip) {
@@ -179,6 +180,7 @@ class NetworkManager final : public w::NetworkManagerBase {
   struct Iface {
     w::IPAddress ip;
     std::string name;
+    w::AdapterType type;
   };
   void DoUpdateNetworks() {
     if (start_count_ == 0) return;
@@ -186,7 +188,7 @@ class NetworkManager final : public w::NetworkManagerBase {
     std::vector<std::unique_ptr<w::Network>> networks;
     for (const Iface& it : ifaces_) {
       auto net = std::make_unique<w::Network>(it.name, it.name, w::TruncateIP(it.ip, kFakeIPv4NetworkPrefixLength),
-                                              kFakeIPv4NetworkPrefixLength, w::ADAPTER_TYPE_UNKNOWN);
+                                              kFakeIPv4NetworkPrefixLength, it.type);
       net->set_default_local_address_provider(this);
       net->AddIP(it.ip);
       networks.push_back(std::move(net));
@@ -281,7 +283,16 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
       Endpoint& e = ep[i];
       Stage("network manager");
       e.network_manager = std::make_unique<NetworkManager>(queue.get());
-      e.network_manager->AddInterface(topo.ip[i]);
+      // As RunSm: the interfaces' names and types.
+      if (s.wifi_to_cellular && i == s.change) {
+        e.network_manager->AddInterface(topo.ip[i], "eth0", w::ADAPTER_TYPE_WIFI);
+      } else {
+        e.network_manager->AddInterface(topo.ip[i]);
+      }
+      if (s.dead && i == s.change) {
+        topo.AddAlternate(i);
+        e.network_manager->AddInterface(topo.alt_ip[i], "wlan0", w::ADAPTER_TYPE_CELLULAR);
+      }
       e.socket_factory = std::make_unique<SocketFactory>(&sim, &topo, i);
       Stage("allocator");
       e.allocator = std::make_unique<w::BasicPortAllocator>(env, e.network_manager.get(), e.socket_factory.get());
@@ -374,9 +385,17 @@ Result RunWebrtc(const Scenario& s, uint64_t seed) {
         if (const w::Connection* other = ep[1 - s.change].ch->selected_connection()) {
           old_remote = other->remote_candidate().address();
         }
-        topo.ChangeNetwork(s.change);
-        ep[s.change].network_manager->AddInterface(topo.alt_ip[s.change]);
-        ep[s.change].network_manager->RemoveInterface(topo.ip[s.change]);
+        if (s.dead) {
+          topo.KillPrimary(s.change);
+        } else {
+          topo.ChangeNetwork(s.change);
+          if (s.wifi_to_cellular) {
+            ep[s.change].network_manager->AddInterface(topo.alt_ip[s.change], "wlan0", w::ADAPTER_TYPE_CELLULAR);
+          } else {
+            ep[s.change].network_manager->AddInterface(topo.alt_ip[s.change]);
+          }
+          ep[s.change].network_manager->RemoveInterface(topo.ip[s.change]);
+        }
       }
       topo.Deliver(ToSm(sim.Now()));
       for (int i = 0; i < 2; ++i) {

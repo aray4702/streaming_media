@@ -62,17 +62,20 @@ SM_TEST(P2pIceCompare, ScenariosRunAndAreDeterministic) {
 }
 
 // Recovery after a network change (#1004 part 2): with continual gathering the call moves to the new interface on
-// either side, as libwebrtc's P2PTransportChannelMultihomedTest failover tests do, within their 30 s; with
-// PeerConnection's default gathering (once) there is no candidate on the new interface, so it does not recover
-// without an ICE restart. A run is the same for the same seed.
+// either side (also from Wi-Fi to cellular), within the 30 s libwebrtc's P2PTransportChannelMultihomedTest failover
+// tests wait; when the Wi-Fi link dies with cellular up from the start, it fails over to cellular even when gathering
+// once, as TestFailoverControllingSide and TestFailoverControlledSide; when an interface is replaced with
+// PeerConnection's default gathering (once) there is no candidate on the new interface, so it does not recover without
+// an ICE restart. A run is the same for the same seed.
 SM_TEST(P2pIceCompare, RecoversAfterNetworkChange) {
   sm::p2p::testing::InstallTestCrypto();
   for (const Scenario& s : ChangeScenarios()) {
     const Result a = RunSm(s, 1);
     const Result b = RunSm(s, 1);
     SM_EXPECT_TRUE(a.connected);
-    SM_EXPECT_EQ(a.recovered, s.continual);
-    if (s.continual) {
+    const bool recovers = s.continual || s.dead;
+    SM_EXPECT_EQ(a.recovered, recovers);
+    if (recovers) {
       SM_EXPECT_TRUE(a.recover_ms > 0 && a.recover_ms < kRecoveryTime.us() / 1000.0);
       SM_EXPECT_EQ(a.pair_after, a.pair);  // The same NATs, so the same candidate types.
     }
