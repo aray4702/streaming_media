@@ -161,6 +161,10 @@ bool DtlsTransport::Start(Timestamp now) {
   SSL_set_options(im.ssl, SSL_OP_NO_QUERY_MTU);
   SSL_set_mtu(im.ssl, static_cast<unsigned>(config_.mtu));
   DTLSv1_set_initial_timeout_duration(im.ssl, static_cast<unsigned>(config_.initial_timeout_ms));
+  if (!config_.ssl_group_ids.empty() &&
+      !SSL_set1_group_ids(im.ssl, config_.ssl_group_ids.data(), config_.ssl_group_ids.size())) {
+    return false;
+  }
   if (role_ == DtlsRole::kServer) SSL_set_accept_state(im.ssl);
   else SSL_set_connect_state(im.ssl);
   state_ = DtlsState::kConnecting;
@@ -203,6 +207,13 @@ void DtlsTransport::Continue(Timestamp now) {
 bool DtlsTransport::SetPeerFingerprint(const SslFingerprint& fingerprint, Timestamp now) {
   peer_fingerprint_ = fingerprint;
   if (peer_cert_ && !VerifyPeerCertificate()) {
+    // Error("SetPeerCertificateDigest", -1, SSL_AD_BAD_CERTIFICATE): Cleanup sends the peer a fatal alert, so it
+    // fails too instead of waiting (#1006).
+    if (impl_->ssl && (state_ == DtlsState::kConnecting || state_ == DtlsState::kConnected)) {
+      impl_->now = now;
+      ClockScope clock(&impl_->now);
+      SSL_send_fatal_alert(impl_->ssl, SSL_AD_BAD_CERTIFICATE);
+    }
     state_ = DtlsState::kFailed;
     return false;
   }
@@ -227,8 +238,17 @@ void DtlsTransport::OnPacket(std::span<const uint8_t> datagram, Timestamp now) {
   Continue(now);
 }
 
+void DtlsTransport::SetInitialRetransmissionTimeout(int timeout_ms) {
+  config_.initial_timeout_ms = timeout_ms;
+  if (impl_->ssl) DTLSv1_set_initial_timeout_duration(impl_->ssl, static_cast<unsigned>(timeout_ms));
+}
+
+bool DtlsTransport::handshake_complete() const { return impl_->ssl && SSL_is_init_finished(impl_->ssl); }
+
 std::optional<Timestamp> DtlsTransport::NextTimeout() const {
-  if (!impl_->ssl || state_ != DtlsState::kConnecting) return std::nullopt;
+  // The timer runs after the handshake too (MaybeSetTimeout after SSL_CONNECTED): a DTLS 1.3 client retransmits its
+  // last flight until the server ACKs it (#1006).
+  if (!impl_->ssl || (state_ != DtlsState::kConnecting && state_ != DtlsState::kConnected)) return std::nullopt;
   ClockScope clock(&impl_->now);
   timeval tv{};
   if (DTLSv1_get_timeout(impl_->ssl, &tv) != 1) return std::nullopt;
@@ -236,7 +256,7 @@ std::optional<Timestamp> DtlsTransport::NextTimeout() const {
 }
 
 void DtlsTransport::OnTimeout(Timestamp now) {
-  if (!impl_->ssl || state_ != DtlsState::kConnecting) return;
+  if (!impl_->ssl || (state_ != DtlsState::kConnecting && state_ != DtlsState::kConnected)) return;
   impl_->now = now;
   ClockScope clock(&impl_->now);
   const int r = DTLSv1_handle_timeout(impl_->ssl);

@@ -126,8 +126,13 @@ SM_TEST(TlsDtlsTransport, FingerprintAfterTheHandshake) {
   q.server->SetPeerFingerprint(*q.client_fp, q.now);
   q.StartBoth();
   q.Run(300);
+  SM_EXPECT_TRUE(q.server->state() == DtlsState::kConnected);
   SM_EXPECT_FALSE(q.client->SetPeerFingerprint(*other, q.now));
   SM_EXPECT_TRUE(q.client->state() == DtlsState::kFailed);
+  // The client tells the server with a fatal alert (SetPeerCertificateDigest's Error(SSL_AD_BAD_CERTIFICATE), #1006),
+  // so it fails too instead of staying connected to a peer that rejected it.
+  q.Run(100);
+  SM_EXPECT_TRUE(q.server->state() == DtlsState::kFailed);
 }
 
 SM_TEST(TlsDtlsTransport, RetransmitsALostFlight) {
@@ -141,6 +146,25 @@ SM_TEST(TlsDtlsTransport, RetransmitsALostFlight) {
   SM_EXPECT_TRUE(p.server->state() == DtlsState::kConnected);
   SM_EXPECT_TRUE(p.client->retransmissions() >= 1);
   SM_EXPECT_EQ(p.dropped, 1);
+}
+
+SM_TEST(TlsDtlsTransport, Dtls13ClientResendsItsLastFlightAfterConnecting) {
+  // In DTLS 1.3 the client is connected once it sends its Finished, and keeps the flight until the server ACKs it.
+  // If it is lost the client's timer resends it: the timer runs after the handshake too (#1006).
+  Pair p;
+  p.client->SetPeerFingerprint(*p.server_fp, p.now);
+  p.server->SetPeerFingerprint(*p.client_fp, p.now);
+  p.StartBoth();
+  bool dropped_final = false;
+  p.Run(3000, [&](bool to_server, int) {
+    if (!to_server || dropped_final || p.client->state() != DtlsState::kConnected) return false;
+    dropped_final = true;
+    return true;
+  });
+  SM_ASSERT_TRUE(dropped_final);
+  SM_EXPECT_EQ(p.client->version(), kDtls13);
+  SM_EXPECT_TRUE(p.server->state() == DtlsState::kConnected);
+  SM_EXPECT_TRUE(p.client->retransmissions() >= 1);
 }
 
 SM_TEST(TlsDtlsTransport, CapsAtDtls12AndPicksACommonProfile) {
