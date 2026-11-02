@@ -41,6 +41,9 @@ DIRS=(
   modules/third_party/fft
   modules/audio_processing/capture_levels_adjuster
   common_audio/third_party/spl_sqrt_floor
+  # Milestone 3, connectivity (#944): ICE, STUN, TURN and DTLS (p2p), and data channels (dcSCTP).
+  p2p
+  net/dcsctp
 )
 
 for d in "${DIRS[@]}"; do
