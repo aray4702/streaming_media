@@ -717,6 +717,33 @@ Differences:
 | `IceConfig(RTCConfiguration)` | Built from PeerConnection's configuration | Not yet | Comes with PeerConnection's allocator setup (next part of #1002) |
 | Tests | gmock mocks, `GlobalSimulatedTimeController` | Recording fakes, `Process(now)` | No gmock in the library |
 
+### 10.7 SRTP and DTLS-SRTP transports (`src/pc/{rtp_transport,srtp_transport,dtls_srtp_transport}.cc`, C5 part 3, #1007)
+
+Ported as a unit from `pc/rtp_transport.{h,cc}`, `pc/rtp_transport_internal.h`, `pc/srtp_transport.{h,cc}` and
+`pc/dtls_srtp_transport.{h,cc}`, on the DTLS transport (`src/p2p/dtls_transport.cc`, #1006), `SrtpSession` (#995) and the RtpDemuxer
+(8.4), in a new `sm::pc` library. Same behaviour: RTP and RTCP over one packet transport with rtcp-mux or two
+without; RFC 5761 classification and the 12/4/2048-byte size checks of `media/base/rtp_utils.cc`; the header
+extension map merged by MID, newest first; SRTP active once the send and receive sessions exist, separate RTCP
+sessions for non-muxed RTCP, keys updated in place (`srtp_update`) on a second `SetRtpParams`, everything reset on
+a failure; DTLS-SRTP set up when every DTLS transport in use is writable and connected, keys split from the RFC
+5764 export by the DTLS role, reset on any DTLS state but connected (restart, failure, transport change) and set up
+again on the next connect, kept when rtcp-mux removes the RTCP transport (bugs.webrtc.org/8996); encrypted header
+extension ids empty unless set, cryptex off; libwebrtc's default suite order (the DTLS transport's). The cases of
+`srtp_transport_unittest.cc` and `dtls_srtp_transport_unittest.cc` are in `tests/unit/pc/`, the DTLS ones with
+the real DTLS transport over the fake ICE transport (libwebrtc uses a `FakeDtlsTransport`), plus a media path over
+a 10 ms link past a sequence-number wrap and a DTLS restart that re-keys. The test bench keeps unencrypted media.
+Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Buffers | `CopyOnWriteBuffer`; a received RTP packet as `RtpPacketReceived` | `std::vector<uint8_t>`, protected in place; the sink gets the bytes and the parsed `sm::RtpPacket` | Library types |
+| Network route | `SubscribeNetworkRouteChanged`; SRTP overhead added to it behind `WebRTC-UpdateNetworkRouteOnSrtpActivation` (off) | Left out, with the two network-route cases of `srtp_transport_unittest.cc` | The packet transports have no route until ICE reports candidate pairs (#1002) |
+| ECN | RTCP sent as ECT(1) after RTP arrived with ECT(1) or CE | Not sent: the packet transports don't report ECN | Comes with the transports' ECN |
+| Field trials | `WebRTC-SrtpRemoveReceiveStream` (off) | `SrtpTransportOptions::remove_receive_stream`, off | Defaults as libwebrtc |
+| Ready-to-send re-entry | A change during the signal is posted as a task | Re-checked when the signal returns | The library's time model (no task queue) |
+| `RTCError`, `RTC_CHECK` | Errors and checks | `bool` results; `assert` for the BUNDLE-without-rtcp-mux case | No `RTCError` type, no exceptions |
+| Test data | `media/base/fake_rtp.h`, `media/base/rtp_utils.cc`, `modules/rtp_rtcp/source/rtp_util.cc` | Equivalent packets in `tests/unit/pc/pc_test_util.h`; the classification from those files' M157 behaviour | Not in `reference/` (asked on #1007) |
+
 ### 10.8 TCP packet sockets (`src/p2p/async_tcp_socket.cc`, `sm/sim/emulated_sockets.h`, C4 part 2, #1034)
 
 Ported from `rtc_base/async_tcp_socket.{h,cc}` (`AsyncTCPSocketBase`, `AsyncTCPSocket`, `AsyncTcpListenSocket`),
