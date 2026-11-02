@@ -346,6 +346,30 @@ SM_TEST(P2pDtlsTransport, HandshakeTimeoutFromIceRtt) {
   }
 }
 
+// Over an ICE-lite agent (no RTT estimate), SetFakeIceLite starts the schedule from the default estimate: 2 x 200 ms
+// (libwebrtc's SetupDtls with fake_ice_lite_; #1003). Without it the DTLS stack's 50 ms stays.
+SM_TEST(P2pDtlsTransport, FakeIceLiteHandshakeTimeout) {
+  for (bool lite : {false, true}) {
+    Harness h;
+    h.net.delay = TimeDelta::Zero();
+    h.PrepareDtls();
+    h.c1.SetupTransports();
+    h.c2.SetupTransports();
+    if (lite) h.c2.dtls->SetFakeIceLite();
+    h.c1.dtls->SetDtlsRole(SslRole::kServer);
+    h.c2.dtls->SetDtlsRole(SslRole::kClient);
+    h.SetRemoteFingerprintFromCert(h.c2.dtls.get(), *h.c1.cert);
+    h.c2.ice->SetDestination(h.c1.ice.get(), /*asymmetric=*/true);
+    h.net.DeliverDue();
+    SM_EXPECT_EQ(h.c1.ice->received_client_hellos, 1);
+    const int first = lite ? 2 * DtlsTransport::kDefaultHandshakeEstimateRttMs : 50;
+    h.Advance(first - 1);
+    SM_EXPECT_EQ(h.c1.ice->received_client_hellos, 1);
+    h.Advance(1);
+    SM_EXPECT_EQ(h.c1.ice->received_client_hellos, 2);
+  }
+}
+
 // A wrong fingerprint fails both ends, and a new fingerprint later restarts DTLS.
 SM_TEST(P2pDtlsTransport, FingerprintMismatchAndRestart) {
   Harness h;
