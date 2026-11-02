@@ -429,3 +429,10 @@ rtc_base/fake_network.h
 api/transport/enums.h
 api/peer_connection_interface.h
 api/peer_connection_interface.cc
+rtc_base/async_tcp_socket.h
+rtc_base/async_tcp_socket.cc
+rtc_base/async_tcp_socket_unittest.cc
+rtc_base/test_echo_server.h
+rtc_base/test_echo_server.cc
+p2p/base/basic_packet_socket_factory.h
+p2p/base/basic_packet_socket_factory.cc
