@@ -744,6 +744,34 @@ Differences:
 | `RTCError`, `RTC_CHECK` | Errors and checks | `bool` results; `assert` for the BUNDLE-without-rtcp-mux case | No `RTCError` type, no exceptions |
 | Test data | `media/base/fake_rtp.h`, `media/base/rtp_utils.cc`, `modules/rtp_rtcp/source/rtp_util.cc` | Equivalent packets in `tests/unit/pc/pc_test_util.h`; the classification from those files' M157 behaviour | Not in `reference/` (asked on #1007) |
 
+### 10.8 TCP packet sockets (`src/p2p/async_tcp_socket.cc`, `sm/sim/emulated_sockets.h`, C4 part 2, #1034)
+
+Ported from `rtc_base/async_tcp_socket.{h,cc}` (`AsyncTCPSocketBase`, `AsyncTCPSocket`, `AsyncTcpListenSocket`),
+`p2p/base/async_stun_tcp_socket.{h,cc}`, the TCP half of `p2p/base/basic_packet_socket_factory.cc`
+(`CreateServerTcpSocket`, `CreateClientTcpSocket`), `AsyncListenSocket` and `PacketSocketTcpOptions` of
+`rtc_base/async_packet_socket.h` and `api/packet_socket_factory.h`, and the stream sockets of
+`rtc_base/socket.h`. Same constants and behaviour: the input buffer grows from 128 bytes to the largest packet
+(64 KiB + 2 for the length framing, 64 KiB + 20 for STUN framing), the 2-byte length prefix, STUN and ChannelData
+framing with ChannelData padded to 4 bytes, whole messages only for STUN, a send while the output buffer is not
+empty reported as sent and dropped, a partial write finished on write events, TCP_NODELAY before connect,
+backlog 5, and `OPT_STUN` refused on a listener. TCP in the emulated network follows
+`rtc_base/virtual_socket_server.cc`: one port table for TCP and UDP, 32 KiB send and receive buffers, segments
+of `TCP_MSS - TCP_HEADER_SIZE` = 1360 bytes charged 40 header bytes, the window as the receiver's free space,
+connect, accept, refusal and close (FIN with error 0). Every case of `async_tcp_socket_unittest.cc` and
+`async_stun_tcp_socket_unittest.cc` is in `tests/unit/p2p/tcp_socket_test.cc`, with a TCP echo
+(`test_echo_server.h`) from behind each test NAT type. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | `Environment` clock reads; read, write, connect and close events posted on the socket server's thread | `now` passed to `Connect`, `Send`, `Recv`, `Accept` and `CreateClientTcpSocket`, and carried by the read, write and connect events; `Close` sends its FIN at the latest time the socket server has seen | The library's time model, as 10.3 |
+| Lost segments | The virtual server's TCP never loses a segment | The emulated links do, so the stream retransmits: cumulative ACKs, RFC 6298's timer (1 s initial and minimum, 60 s maximum, doubled per retry), go-back-N on a timeout or the third duplicate ACK, window probes, 6 SYN and 15 data retries (Linux's defaults) before ETIMEDOUT | Needed for TURN over TCP on lossy links; nothing of it runs on a lossless link |
+| Connect timing | The virtual server completes the client's connect one transit delay after `Connect` | One round trip: the SYN-ACK's arrival completes it | Segments cross the hosts' links and NATs both ways |
+| TCP through NATs | `NATSocketServer` proxies outbound TCP connections through the NAT server | Segments cross the emulated NATs with their UDP mapping and filtering rules; inbound connections find no binding | One NAT model for both protocols; the outcome (outbound only) is the same |
+| `AsyncListenSocket` | New socket as a raw pointer the subscriber takes | The subscriber moves a `std::unique_ptr` out; an untaken socket is closed | Ownership in the type |
+| TLS (`OPT_TLS`, `OPT_TLS_INSECURE`, `OPT_TLS_FAKE`) | `SSLAdapter`, `AsyncSSLSocket` | `CreateClientTcpSocket` returns nullptr | C4 part 3 (#1035) |
+| Factory methods | Pure virtual | Default to nullptr | Test fakes without TCP keep compiling |
+| `TCPPort` (ICE-TCP candidates) | `p2p/base/tcp_port.*` | Not ported | Not part of C4 (#1034) |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

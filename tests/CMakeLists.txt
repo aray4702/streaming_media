@@ -51,11 +51,15 @@ sm_add_test_exe(sm_unit_p2p LABEL unit DEPS sm::p2p
     unit/p2p/port_test.cc
     unit/p2p/stun_request_test.cc
     unit/p2p/stun_test.cc
+    unit/p2p/tcp_socket_test.cc
     unit/p2p/test_crypto.cc
     unit/p2p/test_crypto_test.cc
   SUITES
+    AsyncStunTcpSocket
+    AsyncTcpSocket
     DtlsUtils
     EmulatedSockets
+    EmulatedTcp
     P2pBasicIceController
     P2pBasicPortAllocator
     P2pCandidate
