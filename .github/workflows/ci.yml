@@ -118,6 +118,13 @@ jobs:
             "-DCMAKE_CROSSCOMPILING_EMULATOR=xcrun;simctl;spawn;$SIM_UDID" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
           cmake --build out/ios-simulator --config Release -j 4 -- CODE_SIGNING_ALLOWED=NO
+      - name: Diagnose
+        continue-on-error: true
+        run: |
+          ls out/ios-simulator/tests | head; ls out/ios-simulator/tests/Release* | head
+          ctest --test-dir out/ios-simulator -C Release -R unit.Dsp -V 2>&1 | grep -E 'Test command|spawn|rror' | head
+          f=$(find out/ios-simulator -name sm_unit_core -type f | head -1); echo "f=$f"; file "$f"; codesign -dv "$f" 2>&1 | head -3
+          xcrun simctl spawn "$SIM_UDID" "$PWD/$f" --list 2>&1 | head -5
       - name: Run the unit tests on the simulator
         run: ctest --test-dir out/ios-simulator -C Release -L unit -j 2 --output-on-failure
   sanitizers:
