@@ -355,6 +355,15 @@ if(SM_WITH_RTP)
   list(APPEND SM_SECTIONS rtp)
 endif()
 
+if(SM_WITH_TLS AND SM_WITH_SYNC AND SM_WITH_RTP)
+  # The endpoint that sets up a call from SDP (C6 part 3, #1064): libwebrtc's pc/jsep_transport_controller and
+  # pc/jsep_transport (ICE, DTLS and DTLS-SRTP per BUNDLE group) and the transport half of pc/sdp_offer_answer, with
+  # the RTP session (sm::rtp) as the media channels. Not in the sm::sm umbrella yet, like sm::pc (#944).
+  sm_add_library(pc_endpoint DEPS sm::pc sm::pc_sdp sm::rtp SOURCES
+    pc/jsep_transport_controller.cc
+    pc/peer_endpoint.cc)
+endif()
+
 # Umbrella target: link sm::sm to get every enabled section.
 add_library(sm_all INTERFACE)
 add_library(sm::sm ALIAS sm_all)
