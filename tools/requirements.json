@@ -1039,15 +1039,16 @@
    "area": "Connectivity",
    "title": "Small group calls (mesh)",
    "acceptance": "Several peer connections per endpoint, each with its own ICE, DTLS and congestion control, for 1:1 and small groups of up to about 4 (Owner, 2026-11-01: no SFU). A 3-4 party test bench scenario reports each peer's metrics and the upload cost.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C3",
     "C5"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1081 (call mesh 3|4 in the test bench, per-pair metrics and the upload cost), #1094 (transport ice: every pair of a mesh, and one-way/two-way calls, set up from SDP between two endpoints with their own ICE, DTLS-SRTP and congestion control), built on #1089 (the endpoint) and #1073/#1084 (SDP, offer/answer)",
+   "verification": "Several peer connections per endpoint, each with its own ICE, DTLS-SRTP and congestion control: in the test bench's `call mesh 3|4` with `transport ice`, every participant runs one session per peer, and each pair is a call set up through SDP offer/answer, trickle ICE (NAT, STUN, TURN), DTLS-SRTP and its own GoogCC, all sharing the participant's access link (#1094 on #1081). Scenarios of 3 and 4 parties on 10/2 Mbit/s home broadband and one with a weak participant report each pair's audio/video/timing metrics (p<i>_to_p<j>.*), each participant's upload and download, and mesh.upload_cost_ratio (1.91-1.96 for 3 parties, 2.03-2.06 for 4); a weak participant degrades only its own streams. ICE scenarios' media stay within the seed variation of their direct twins; transport overhead 1.1-1.6% with video. No SFU (Owner, 2026-11-01). Owner approved marking done, 2026-11-02 5:20 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C10",
