@@ -8,7 +8,7 @@ out/native/apps/ai_server/sm_ai_server --signaling=ws://HOST:8080/ws --metrics=c
 #   [--turn=http://HOST:8080/turn|none] [--ip=A.B.C.D]... [--reply-seconds=3] [--first-chunk-ms=0] [--quiet]
 ```
 
-- **Signaling** (#1102's protocol): it connects to `/ws`, sends `{"type":"register","role":"ai"}`, and for each
+- **Signaling** (#1102's protocol, `apps/signaling/server.py`): it connects to `/ws`, sends `{"type":"register-ai"}`, and for each
   `{"type":"ai-call","room":R}` opens one more WebSocket, joins `R` as `ai-server-<n>` and offers or answers by the
   protocol's rule (the later joiner offers). It reads the sender of relayed messages from a `from` field when it
   needs it. Plain `ws://`; put a TLS proxy in front for `wss://`.
@@ -19,4 +19,5 @@ out/native/apps/ai_server/sm_ai_server --signaling=ws://HOST:8080/ws --metrics=c
   AI source and sent as Opus (libopus). A barge-in cuts the reply.
 - **Metrics:** one JSON line per call (`ai-call-metrics`): connection time, turns, replies, barge-ins,
   `conv.response_delay_ms` and `conv.barge_in_stop_ms` as the server sees them, and the user's speech concealed.
-- **Test:** `e2e.AiServer` calls it with a native endpoint through an in-test stub of the signaling protocol.
+- **Test:** `e2e.AiServer` calls it with a native endpoint through an in-test stub of the signaling protocol and
+  through `apps/signaling/server.py` (skipped without python3).

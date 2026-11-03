@@ -1,8 +1,9 @@
 // The AI server (C12 part 1, #1103): a native process that answers the signaling service's `ai-` rooms with the
 // library, as the AI side of the two-way call.
 //
-// - Connection: it connects to the signaling service (#1102's protocol: WebSocket at /ws, JSON text messages) and
-//   registers as the AI with {"type":"register","role":"ai"}. For each {"type":"ai-call","room":R} it opens a
+// - Connection: it connects to the signaling service (#1102's protocol, apps/signaling/server.py from #1110:
+//   WebSocket at /ws, JSON text messages, relayed ones with "from") and registers as the AI with
+//   {"type":"register-ai"}. For each {"type":"ai-call","room":R} it opens a
 //   WebSocket of its own for that call, joins R as "ai-server-<n>" and sets the call up with a pc::PeerEndpoint
 //   (#1089) over OS sockets (apps/net/os_sockets.h): the one that joins later sends the offer, as the protocol says,
 //   so it usually offers. STUN and TURN come from the service's GET /turn (coturn REST credentials).

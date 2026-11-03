@@ -1,12 +1,14 @@
 // The AI server (C12 part 1, #1103). AiServerNet: the WebSocket, JSON and /turn helpers. AiServer: the issue's
 // acceptance test. A native caller (pc::PeerEndpoint over OS sockets, Opus through libopus) calls the server through
 // a signaling stub of #1102's protocol (WebSocket /ws, JSON, rooms, `ai-` rooms routed to the registered AI, GET
-// /turn), on loopback in real time: it connects, the user speaks and stops, a scripted reply comes back after the
+// /turn), and through the real one (apps/signaling/server.py, #1110; skipped without python3), on loopback in real
+// time: it connects, the user speaks and stops, a scripted reply comes back after the
 // turn, and when the user talks over the reply (barge-in) the reply stops long before its scripted end.
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <atomic>
@@ -104,9 +106,8 @@ class SignalingStub {
     auto m = net::JsonParseFlat(text);
     const std::string type = m["type"];
     Conn& c = conns_[from];
-    if (type == "register" && m["role"] == "ai") {
+    if (type == "register-ai") {
       c.ai = true;
-      SendWs(c, "{\"type\":\"registered\"}");
     } else if (type == "join") {
       std::vector<size_t> members;
       for (size_t i = 0; i < conns_.size(); ++i) {
@@ -430,10 +431,59 @@ SM_TEST(AiServerNet, JsonAndTurnResponse) {
 
 // --- AiServer -------------------------------------------------------------------------------------------------------
 
-SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
-  SignalingStub stub;
+namespace {
+
+// The service as a separate process: apps/signaling/server.py (#1110) on a free loopback port, without TURN or STUN.
+struct PythonService {
+  pid_t pid = -1;
+  uint16_t port = 0;
+  // False if python3 or the script is missing, or it doesn't come up within 10 s.
+  bool Start() {
+    const char* python = SM_PYTHON;
+    const char* script = SM_SIGNALING_SERVER_PY;
+    if (python[0] == '\0' || access(script, R_OK) != 0) return false;
+    int fds[2];
+    if (pipe(fds) != 0) return false;
+    pid = fork();
+    if (pid == 0) {
+      dup2(fds[1], 1);
+      close(fds[0]);
+      setenv("PORT", "0", 1);
+      setenv("HOST", "127.0.0.1", 1);
+      setenv("STUN_URLS", "", 1);
+      unsetenv("TURN_URLS");
+      unsetenv("TURN_SECRET");
+      execlp(python, python, script, static_cast<char*>(nullptr));
+      _exit(127);
+    }
+    close(fds[1]);
+    std::string line;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (line.find('\n') == std::string::npos && std::chrono::steady_clock::now() < deadline) {
+      pollfd p{fds[0], POLLIN, 0};
+      if (poll(&p, 1, 100) <= 0) continue;
+      char buf[256];
+      const ssize_t n = read(fds[0], buf, sizeof buf);
+      if (n <= 0) break;
+      line.append(buf, static_cast<size_t>(n));
+    }
+    close(fds[0]);
+    const size_t at = line.find("port ");
+    if (at != std::string::npos) port = static_cast<uint16_t>(std::atoi(line.c_str() + at + 5));
+    return port != 0;
+  }
+  ~PythonService() {
+    if (pid > 0) {
+      kill(pid, SIGTERM);
+      waitpid(pid, nullptr, 0);
+    }
+  }
+};
+
+// The acceptance call through the signaling service on `port`: the caller joins `room`.
+void CallTheAiServer(uint16_t port, const std::string& room) {
   apps::AiServerConfig cfg;
-  cfg.signaling_url = "ws://127.0.0.1:" + std::to_string(stub.port()) + "/ws";
+  cfg.signaling_url = "ws://127.0.0.1:" + std::to_string(port) + "/ws";
   cfg.interfaces = {*p2p::IpAddress::FromString("127.0.0.1")};
   cfg.verbose = true;
   cfg.ai_source.first_chunk = TimeDelta::Millis(200);  // The model's thinking time before its first audio.
@@ -445,13 +495,18 @@ SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
   Timestamp now = Now();
   SM_ASSERT_TRUE(server.Start(now));
   // Wait for the registration before the call, as a deployed server is up before callers.
-  for (Timestamp until = now + TimeDelta::Seconds(5); now < until && stub.ai_calls == 0 && !server.registered();) {
+  for (Timestamp until = now + TimeDelta::Seconds(5); now < until && !server.registered();) {
     server.Wait(now, server.Step(now) - now);
     now = Now();
   }
   SM_ASSERT_TRUE(server.registered());
+  // The service reads the registration before the caller's join (another connection).
+  for (Timestamp until = now + TimeDelta::Millis(300); now < until;) {
+    server.Wait(now, server.Step(now) - now);
+    now = Now();
+  }
 
-  Caller caller(stub.port(), "ai-test-room", now);
+  Caller caller(port, room, now);
   const Timestamp start = now;
   bool said = false, barged = false;
   std::optional<Timestamp> reply_start, barge_at, reply_stop;
@@ -486,8 +541,6 @@ SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
   }
   server.Shutdown(now);
 
-  SM_EXPECT_EQ(stub.ai_calls.load(), 1);
-  SM_EXPECT_TRUE(stub.turn_requests.load() >= 1);  // STUN/TURN asked of the service.
   SM_EXPECT_TRUE(caller.signaling_ok);
   SM_ASSERT_TRUE(!caller.connected_at.IsPlusInfinity());
   std::printf("connected after %.0f ms\n", (caller.connected_at - start).ms_f());
@@ -506,7 +559,7 @@ SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
   SM_ASSERT_EQ(server.finished_calls().size(), size_t{1});
   const apps::AiCallMetrics& mt = server.finished_calls()[0];
   std::printf("%s\n", mt.ToJson().c_str());
-  SM_EXPECT_EQ(mt.room, std::string("ai-test-room"));
+  SM_EXPECT_EQ(mt.room, room);
   SM_EXPECT_EQ(mt.peer, std::string("caller"));
   SM_EXPECT_TRUE(mt.connected);
   SM_EXPECT_EQ(mt.barge_ins, 1);
@@ -521,4 +574,24 @@ SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
   SM_EXPECT_TRUE(mt.user_speech_ms > 1500);
   SM_EXPECT_TRUE(mt.user_speech_lost_ms <= 0.02 * mt.user_speech_ms);  // Loopback: nothing lost.
   SM_EXPECT_TRUE(mt.reply_frames_sent > 0);
+}
+
+}  // namespace
+
+SM_TEST(AiServer, AnswersAnAiRoomRepliesAfterTheTurnAndStopsOnBargeIn) {
+  SignalingStub stub;
+  CallTheAiServer(stub.port(), "ai-test-room");
+  SM_EXPECT_EQ(stub.ai_calls.load(), 1);
+  SM_EXPECT_TRUE(stub.turn_requests.load() >= 1);  // STUN/TURN asked of the service.
+  SM_EXPECT_TRUE(stub.relayed.load() > 0);
+}
+
+// The same call through the real service, apps/signaling/server.py (#1110).
+SM_TEST(AiServer, ThroughTheSignalingService) {
+  PythonService service;
+  if (!service.Start()) {
+    std::printf("SKIPPED: apps/signaling/server.py or python3 not available\n");
+    return;
+  }
+  CallTheAiServer(service.port, "ai-service-room");
 }

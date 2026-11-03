@@ -411,9 +411,7 @@ bool AiServer::Start(Timestamp now) {
 
 void AiServer::HandleControl(const std::string& message, Timestamp now) {
   auto m = net::JsonParseFlat(message);
-  if (m["type"] == "registered") {
-    registered_ = true;
-  } else if (m["type"] == "ai-call") {
+  if (m["type"] == "ai-call") {
     const std::string& room = m["room"];
     if (room.empty()) return;
     for (const auto& c : calls_) {
@@ -430,12 +428,12 @@ Timestamp AiServer::Step(Timestamp now) {
     control_ = std::make_unique<net::WebSocketClient>();
     registered_ = false;
     if (control_->Connect(signaling_)) {
-      control_->Send("{\"type\":\"register\",\"role\":\"ai\"}");
+      control_->Send("{\"type\":\"register-ai\"}");
     }
   }
   if (control_) {
     control_->Poll();
-    // The service of #1102 may not acknowledge; an open, registered socket counts.
+    // The service doesn't acknowledge the registration (#1110): an open socket that sent it is registered.
     if (control_->open()) registered_ = true;
     for (const std::string& msg : control_->TakeMessages()) HandleControl(msg, now);
     if (control_->closed() && next_reconnect_.IsPlusInfinity()) {
