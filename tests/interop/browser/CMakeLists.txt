@@ -17,9 +17,8 @@ endif()
 
 # The call with our endpoint (pc::PeerEndpoint, C6 part 3) over OS sockets.
 if(Python3_FOUND AND TARGET sm::pc_endpoint)
-  add_executable(sm_interop_browser_peer browser_peer.cc ../os_sockets.cc)
-  target_link_libraries(sm_interop_browser_peer PRIVATE sm::pc_endpoint sm::p2p_tls)
-  target_include_directories(sm_interop_browser_peer PRIVATE ..)
+  add_executable(sm_interop_browser_peer browser_peer.cc)
+  target_link_libraries(sm_interop_browser_peer PRIVATE sm::pc_endpoint sm_os_sockets)
   sm_configure_target(sm_interop_browser_peer)
   # With data channels built (C7 part 5, #1091), the call carries one each way; without, no data checks.
   set(SM_BROWSER_DC)

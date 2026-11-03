@@ -1,4 +1,5 @@
-// POSIX sockets for the interop tests (issue #1037, C4 part 5): the library's
+// POSIX sockets for the interop tests and the apps (issue #1037, C4 part 5; a library
+// of its own since #1103, for the AI server): the library's
 // packet and stream socket interfaces (sm/p2p/async_packet_socket.h,
 // sm/p2p/socket.h) over non-blocking OS sockets, so a TurnPort can talk to a
 // real TURN server (coturn) on loopback or on a real host.
@@ -11,7 +12,8 @@
 // adds the STUN framing and, for TLS, the SSL adapter, as
 // BasicPacketSocketFactory does over PhysicalSocket.
 //
-// Test code only: IPv4, no DSCP or ECN, and no listening UDP ports for peers.
+// IPv4 only, no DSCP or ECN, and no listening TCP sockets (a TCP candidate's
+// passive side).
 #pragma once
 
 #include <cstdint>
