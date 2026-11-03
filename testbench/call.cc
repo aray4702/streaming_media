@@ -17,6 +17,7 @@
 
 #include "ai_source.h"
 #include "encoder_model.h"
+#include "ice_transport.h"
 #include "opus_decoder.h"
 #include "turn_detector.h"
 #include "opus_encoder.h"
@@ -50,10 +51,124 @@ enum class Kind : uint8_t { kAudio, kVideo, kRtx, kFec, kPadding, kRtcp, kCross 
 struct Fwd {
   Kind kind = Kind::kCross;
   std::vector<uint8_t> bytes;
+  IceLink::DatagramPtr ice = nullptr;  // `transport ice` (#1087): the datagram on the link instead of `bytes`.
 };
 struct Rev {
   std::vector<uint8_t> bytes;
+  IceLink::DatagramPtr ice = nullptr;
 };
+
+// `transport ice` (issue #1087): one connection's IceLink and what the call needs around it. Side 0 is the
+// one-way call's sender (the two-way call's user, a mesh pair's lower-numbered participant), side 1 the other.
+// The call hands each session packet to Send instead of its link; the datagrams come back through the link's
+// Emit (set by the call), and what arrives over a link goes to Arrive, which gives back the RTP and RTCP packets
+// in it, each with the kind it was sent as.
+struct IceCall {
+  std::unique_ptr<IceLink> link;
+  // The kind of each RTP packet sent toward a side, by SSRC and sequence number (the newest wins).
+  std::unordered_map<uint64_t, Kind> kinds[2];
+  // The packet being sent, for the link's per-kind counters and trace; control traffic between packets.
+  Kind cur_kind = Kind::kRtcp;
+  int32_t cur_seq = -1;
+  int emitted = 0;
+  Timestamp now = Timestamp::Millis(0);
+  std::vector<std::pair<std::vector<uint8_t>, bool>> arrived[2];
+  int64_t send_failures = 0;
+  double first_media_ms = -1;  // Call time of the first media packet to arrive.
+
+  static uint64_t Key(std::span<const uint8_t> b) {
+    if (b.size() < 12) return 0;
+    const uint64_t ssrc = (uint64_t{b[8]} << 24) | (uint64_t{b[9]} << 16) | (uint64_t{b[10]} << 8) | b[11];
+    return (ssrc << 16) | (uint64_t{b[2]} << 8) | b[3];
+  }
+
+  // `toward[i]`: the scenario's link toward side i at call start. `ssrcs[i]`: what side i's session sends on.
+  void Start(const Scenario& s, const IceOptions::Ssrcs ssrcs[2], const sim::LinkConfig toward[2], uint64_t seed,
+             bool audio, bool video) {
+    IceOptions o;
+    o.nat[0] = s.ice_nat[0];
+    o.nat[1] = s.ice_nat[1];
+    o.turn = s.ice_turn;
+    o.stun = s.ice_stun;
+    o.two_interfaces = s.ice_fail.has_value();
+    o.audio = audio;
+    o.video = video;
+    o.ssrcs[0] = ssrcs[0];
+    o.ssrcs[1] = ssrcs[1];
+    o.seed = seed;
+    link = std::make_unique<IceLink>(o);
+    link->Connect(toward);
+    link->SetOnMedia([this](int side, std::vector<uint8_t> packet, bool rtcp, Timestamp at) {
+      if (!rtcp && first_media_ms < 0) first_media_ms = static_cast<double>(at.us()) / 1000;
+      arrived[side].emplace_back(std::move(packet), rtcp);
+    });
+  }
+  void Send(int side, std::span<const uint8_t> bytes, Kind kind, int32_t seq, Timestamp at) {
+    if (kind != Kind::kRtcp) kinds[1 - side][Key(bytes)] = kind;
+    now = at;
+    cur_kind = kind;
+    cur_seq = seq;
+    emitted = 0;
+    if (!link->Send(side, bytes, kind == Kind::kRtcp, at)) ++send_failures;
+    cur_kind = Kind::kRtcp;
+    cur_seq = -1;
+  }
+  void Process(Timestamp at) {
+    now = at;
+    link->Process(at);
+  }
+  // The packets that `d` delivers to `side`, to `f(Kind, bytes)`.
+  template <class F>
+  void Arrive(int side, const IceLink::DatagramPtr& d, Timestamp at, F&& f) {
+    now = at;
+    link->Arrive(side, d, at);
+    auto got = std::move(arrived[side]);
+    arrived[side].clear();
+    for (auto& [bytes, rtcp] : got) {
+      Kind k = Kind::kRtcp;
+      if (!rtcp) {
+        auto it = kinds[side].find(Key(bytes));
+        k = it != kinds[side].end() ? it->second : Kind::kVideo;
+      }
+      f(k, std::move(bytes));
+    }
+  }
+  void FailInterface(const Scenario& s, Timestamp at) {
+    if (s.ice_fail && at == Timestamp::Millis(0) + s.ice_fail->second) link->FailInterface(s.ice_fail->first, at);
+  }
+};
+
+void AddIceMetrics(const std::vector<IceCall*>& calls, Report& rep) {
+  auto& m = rep.metrics;
+  double connected = 1, ice_ms = 0, dtls_ms = 0, first_ms = 0;
+  int64_t wire = 0, media = 0, failures = 0;
+  for (IceCall* c : calls) {
+    c->link->UpdateSelectedPair();
+    const IceSetupStats& st = c->link->stats();
+    connected = std::min(connected, st.connected ? 1.0 : 0.0);
+    ice_ms = std::max(ice_ms, st.ice_connected_ms);
+    dtls_ms = std::max(dtls_ms, st.dtls_connected_ms);
+    const double setup_ms = static_cast<double>(c->link->setup_duration().us()) / 1000;
+    first_ms = std::max(first_ms, c->first_media_ms < 0 ? -1 : setup_ms + c->first_media_ms);
+    wire += c->link->wire_bytes();
+    media += c->link->media_bytes();
+    failures += c->send_failures;
+  }
+  m["setup.connected"] = connected;
+  m["setup.ice_connected_ms"] = ice_ms;
+  m["setup.dtls_connected_ms"] = dtls_ms;
+  m["setup.first_media_ms"] = first_ms;
+  m["transport.overhead_pct"] = media > 0 ? 100.0 * static_cast<double>(wire - media) / static_cast<double>(media) : 0;
+  m["transport.send_failures"] = static_cast<double>(failures);
+  if (calls.empty()) return;
+  // The first connection's selected pair (side 0's view).
+  const IceSetupStats& st = calls.front()->link->stats();
+  auto type = [](const std::string& t) { return t == "host" ? 0.0 : t == "srflx" ? 1.0 : t == "prflx" ? 2.0 : t == "relay" ? 3.0 : -1.0; };
+  m["transport.local_candidate_type"] = type(st.local_type);
+  m["transport.remote_candidate_type"] = type(st.remote_type);
+  const std::string& rp = st.relay_protocol;
+  m["transport.relay_protocol"] = rp == "udp" ? 1 : rp == "tcp" ? 2 : rp == "tls" ? 3 : 0;
+}
 
 // One gauge of a session's exported metrics (-1 if it has none), so the bench reads library state
 // without a test-only accessor.
@@ -282,6 +397,19 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
          "Mesh call: mean p<i>.upload_kbps of the participants on the scenario's uplink over mesh.upload_1to1_kbps"},
     };
     for (const auto& [name, meaning] : mesh) all.emplace_back(name, meaning);
+    const std::pair<const char*, const char*> ice[] = {
+        {"setup.connected", "transport ice: 1 if every connection's ICE and DTLS-SRTP came up before the call, else 0"},
+        {"setup.ice_connected_ms", "transport ice: offer to both ends' ICE writable (slowest connection)"},
+        {"setup.dtls_connected_ms", "transport ice: offer to both ends' DTLS connected and SRTP keyed (slowest connection)"},
+        {"setup.first_media_ms", "transport ice: offer to the first media packet received (slowest connection)"},
+        {"transport.overhead_pct",
+         "transport ice: bytes the endpoints sent (SRTP, STUN, DTLS, TURN) over the call's RTP/RTCP bytes with UDP/IP headers, minus 100%"},
+        {"transport.send_failures", "transport ice: session packets the endpoint could not send (not writable)"},
+        {"transport.local_candidate_type", "transport ice: side a's selected local candidate: 0 host, 1 srflx, 2 prflx, 3 relay"},
+        {"transport.remote_candidate_type", "transport ice: side a's selected remote candidate: 0 host, 1 srflx, 2 prflx, 3 relay"},
+        {"transport.relay_protocol", "transport ice: TURN protocol of side a's selected local candidate: 0 none, 1 udp, 2 tcp, 3 tls"},
+    };
+    for (const auto& [name, meaning] : ice) all.emplace_back(name, meaning);
     return all;
   }();
   return k;
@@ -1810,6 +1938,23 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   Endpoint ep[2] = {{user, up_tx, down_rx, forward, up_m, up_streams, rep, down},
                     {ai, down_tx, up_rx, reverse, down_m, down_streams, down, rep}};
 
+  // `transport ice` (#1087): the user is side 0, the AI side 1; the forward link is toward the AI.
+  IceCall ice_call;
+  IceCall* const ice = s.transport_ice && IceLink::Available() ? &ice_call : nullptr;
+  if (ice) {
+    auto ssrcs_of = [&](const StreamConfigs& st) {
+      return IceOptions::Ssrcs{st.audio_ssrc, st.video_ssrc, s.nack ? std::optional<uint32_t>(st.rtx_ssrc) : std::nullopt};
+    };
+    const IceOptions::Ssrcs ssrcs[2] = {ssrcs_of(up_streams), ssrcs_of(down_streams)};
+    const sim::LinkConfig toward[2] = {rev_state.cfg, fwd_state.cfg};
+    ice->Start(s, ssrcs, toward, s.seed, s.audio, s.video);
+    ice->link->SetEmit([&](int to, IceLink::DatagramPtr d, DataSize wire) {
+      ++ice->emitted;
+      (to == 1 ? forward : reverse)
+          .Send(ice->now, Fwd{ice->cur_kind, {}, std::move(d)}, wire, LinkKindOf(ice->cur_kind), ice->cur_seq);
+    });
+  }
+
   // Each direction's modules (#749): up.sender.* is the user's session and send side, up.receiver.* the AI's receive
   // streams; down.sender.* the AI's session and send side, down.receiver.* the user's receive streams.
   for (int i = 0; i < 2; ++i) {
@@ -1873,6 +2018,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
       if (opt.link_trace && kind == Kind::kAudio) TraceAudioRtp(p.bytes, now.us(), st.audio_ssrc, e.tx_trace.audio_send_trace);
+      if (ice) {
+        ice->Send(&e == &ep[0] ? 0 : 1, p.bytes, kind, seq, now);
+        continue;
+      }
       e.out.Send(now, Fwd{kind, std::move(p.bytes)}, p.wire_size, LinkKindOf(kind), seq);
     }
   };
@@ -1935,6 +2084,19 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
           run(e, at);
         } else if (due[i][1] == at) {
           const Fwd& w = in[i][next[i]++].second;
+          if (ice) {
+            bool any = false;
+            ice->Arrive(i, w.ice, at, [&](Kind k, std::vector<uint8_t> b) {
+              if (k == Kind::kRtcp) {
+                e.tx.OnFeedback(b, at, e.tx_trace);
+              } else {
+                e.rx.OnPacket(Fwd{k, std::move(b)}, at);
+              }
+              any = true;
+            });
+            if (any) run(e, at);
+            break;
+          }
           // RTCP goes to the send side (report blocks, the RTX phase), media to the receive side.
           if (w.kind == Kind::kRtcp) {
             e.tx.OnFeedback(w.bytes, at, e.tx_trace);
@@ -1954,6 +2116,10 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
 
     advance_links(now);
     for (Endpoint& e : ep) e.tx.OnEvents(now);
+    if (ice) {
+      ice->FailInterface(s, now);
+      ice->Process(now);
+    }
 
     // An AI turn starts: its source begins generating the reply (#758).
     while (next_ai_turn < ai_turns.size() && ai_turns[next_ai_turn].start <= now) {
@@ -2225,6 +2391,7 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
   }
 
   if (user_speech_loss) rep.metrics["conv.user_speech_lost_pct"] = user_speech_loss->lost_pct();
+  if (ice) AddIceMetrics({ice}, rep);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {
@@ -2356,6 +2523,46 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
     e.rx = std::make_unique<ReceiveSide>(s, opt, *e.session, from.out_streams, *from.out_m, events, sr, clock0,
                                          from.tx->audio_ts_offset());
   }
+
+  // `transport ice` (#1087, C9 part 2's acceptance): each pair of participants has its own connection, as each
+  // RTCPeerConnection of a browser mesh has its own ICE, DTLS and congestion control. Of pair (i, j), i < j, i is
+  // side 0. A datagram toward a participant crosses the other's uplink, then its own downlink, as the media does.
+  std::vector<std::unique_ptr<IceCall>> ice_calls;
+  std::vector<IceCall*> ice_of(static_cast<size_t>(n * n), nullptr);
+  auto ice_index = [n](int i, int j) { return static_cast<size_t>(std::min(i, j) * n + std::max(i, j)); };
+  if (s.transport_ice && IceLink::Available()) {
+    auto ssrcs_of = [&](const StreamConfigs& st) {
+      return IceOptions::Ssrcs{st.audio_ssrc, st.video_ssrc, s.nack ? std::optional<uint32_t>(st.rtx_ssrc) : std::nullopt};
+    };
+    // The setup's link toward participant `to`: the sender's uplink and `to`'s downlink as one.
+    auto path = [&](int from, int to) {
+      sim::LinkConfig c = timelines[static_cast<size_t>(to)].reverse().cfg;
+      const sim::LinkConfig& up = timelines[static_cast<size_t>(from)].forward().cfg;
+      c.base_delay = c.base_delay + up.base_delay;
+      c.capacity = std::min(c.capacity, up.capacity);
+      c.loss_rate = 1 - (1 - c.loss_rate) * (1 - up.loss_rate);
+      return c;
+    };
+    for (int i = 0; i < n; ++i) {
+      for (int j = i + 1; j < n; ++j) {
+        auto call = std::make_unique<IceCall>();
+        IceCall* c = call.get();
+        const IceOptions::Ssrcs ssrcs[2] = {ssrcs_of(ep[static_cast<size_t>(idx(i, j))].out_streams),
+                                            ssrcs_of(ep[static_cast<size_t>(idx(j, i))].out_streams)};
+        const sim::LinkConfig toward[2] = {path(j, i), path(i, j)};
+        c->Start(s, ssrcs, toward, s.seed + 7919ULL * ice_index(i, j), s.audio, s.video);
+        c->link->SetEmit([&, c, i, j](int to, IceLink::DatagramPtr d, DataSize wire) {
+          ++c->emitted;
+          const int from_p = to == 1 ? i : j, to_p = to == 1 ? j : i;
+          uplink[static_cast<size_t>(from_p)]->Send(
+              c->now, MeshPacket{Fwd{c->cur_kind, {}, std::move(d)}, from_p, to_p, wire, c->cur_seq}, wire,
+              LinkKindOf(c->cur_kind), c->cur_seq);
+        });
+        ice_of[ice_index(i, j)] = c;
+        ice_calls.push_back(std::move(call));
+      }
+    }
+  }
   auto pair_name = [](int i, int j) { return "p" + std::to_string(i + 1) + "_to_p" + std::to_string(j + 1) + "."; };
   for (const Endpoint& e : ep) {
     // The direction self -> peer: its sender is this session, its receiver the peer's session with self.
@@ -2394,6 +2601,10 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
         if (ft != dm.frame_times.end()) ft->second.last_sent = now;
       }
       const int32_t seq = kind == Kind::kRtcp || p.bytes.size() < 4 ? -1 : RtpSeq(p.bytes);
+      if (IceCall* c = ice_of.empty() ? nullptr : ice_of[ice_index(e.self, e.peer)]) {
+        c->Send(e.self < e.peer ? 0 : 1, p.bytes, kind, seq, now);
+        continue;
+      }
       uplink[static_cast<size_t>(e.self)]->Send(now, MeshPacket{Fwd{kind, std::move(p.bytes)}, e.self, e.peer, p.wire_size, seq},
                                                 p.wire_size, LinkKindOf(kind), seq);
     }
@@ -2463,6 +2674,19 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
           run(e, at);
         } else if (due[k][1] == at) {
           const Fwd& w = in[k][next[k]++].second;
+          if (w.ice) {
+            bool any = false;
+            ice_of[ice_index(e.self, e.peer)]->Arrive(e.self < e.peer ? 0 : 1, w.ice, at, [&](Kind kd, std::vector<uint8_t> b) {
+              if (kd == Kind::kRtcp) {
+                e.tx->OnFeedback(b, at, scratch);
+              } else {
+                e.rx->OnPacket(Fwd{kd, std::move(b)}, at);
+              }
+              any = true;
+            });
+            if (any) run(e, at);
+            break;
+          }
           // RTCP goes to the send side (report blocks), media to the receive side.
           if (w.kind == Kind::kRtcp) {
             e.tx->OnFeedback(w.bytes, at, scratch);
@@ -2507,6 +2731,12 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
         up_queue[q].push_back(QueueDelayMs(*uplink[q], timelines[q].forward(), now));
         down_queue[q].push_back(QueueDelayMs(*downlink[q], timelines[q].reverse(), now));
       }
+    }
+
+    // The connections' ICE and DTLS timers, and a network change.
+    for (auto& c : ice_calls) {
+      c->FailInterface(s, now);
+      c->Process(now);
     }
 
     // --- Each session: its timers, render, the audio device's 10 ms pull, then its packets go out ---
@@ -2628,6 +2858,11 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
     rep.metrics["mesh.upload_1to1_kbps"] = one_kbps;
     rep.metrics["mesh.upload_cost_ratio"] = one_kbps > 0 && count > 0 ? sum / count / one_kbps : 0;
   }
+  if (!ice_calls.empty()) {
+    std::vector<IceCall*> calls;
+    for (auto& c : ice_calls) calls.push_back(c.get());
+    AddIceMetrics(calls, rep);
+  }
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {
@@ -2710,6 +2945,25 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   const rtp::VideoSendId video_send = tx.video_send();
   const rtp::AudioRecvId audio_recv = rx.audio_recv();
   const rtp::VideoRecvId video_recv = rx.video_recv();
+
+  // `transport ice` (#1087): the sender is side 0, the receiver side 1; the forward link is toward side 1.
+  IceCall ice_call;
+  IceCall* const ice = s.transport_ice && IceLink::Available() ? &ice_call : nullptr;
+  if (ice) {
+    const IceOptions::Ssrcs ssrcs[2] = {
+        {streams.audio_ssrc, streams.video_ssrc, s.nack ? std::optional<uint32_t>(streams.rtx_ssrc) : std::nullopt},
+        {kAudioSsrc + 10, kVideoSsrc + 10, std::nullopt}};
+    const sim::LinkConfig toward[2] = {links.reverse().cfg, fwd_state.cfg};
+    ice->Start(s, ssrcs, toward, s.seed, s.audio, s.video);
+    ice->link->SetEmit([&](int to, IceLink::DatagramPtr d, DataSize wire) {
+      ++ice->emitted;
+      if (to == 1) {
+        forward.Send(ice->now, Fwd{ice->cur_kind, {}, std::move(d)}, wire, LinkKindOf(ice->cur_kind), ice->cur_seq);
+      } else {
+        reverse.Send(ice->now, Rev{{}, std::move(d)}, wire);
+      }
+    });
+  }
 
   registry.Register("sender.session", &sender);
   registry.Register("sender.send_side", &sender.send_side());
@@ -2817,6 +3071,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         static const char* const kNames[] = {"audio", "video", "rtx", "fec", "padding", "rtcp", "cross"};
         opt.packet_sink(kNames[static_cast<int>(kind)], is_forward, p.bytes);
       }
+      if (ice) {
+        ice->Send(is_forward ? 0 : 1, p.bytes, kind, seq, now);
+        if (ice->emitted > 0) link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
+        continue;
+      }
       link.Send(now, make(kind, std::move(p.bytes)), p.wire_size, LinkKindOf(kind), seq);
       link.AnnotateLastTrace(rtp_ts, marker, osn, key, header, rtx_room);
     }
@@ -2887,6 +3146,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       if (ts == at) {
         run_sender(at);
       } else if (tr == at) {
+        if (ice) {
+          bool any = false;
+          ice->Arrive(0, rev_in[ri++].second.ice, at, [&](Kind, std::vector<uint8_t> b) {
+            tx.OnFeedback(b, at, rep);
+            any = true;
+          });
+          if (any) run_sender(at);
+          continue;
+        }
         tx.OnFeedback(rev_in[ri++].second.bytes, at, rep);
         run_sender(at);
       } else if (te == at) {
@@ -2895,6 +3163,15 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
       } else if (tx_due == at) {
         run_receiver(at);
       } else {
+        if (ice) {
+          bool any = false;
+          ice->Arrive(1, fwd_in[fi++].second.ice, at, [&](Kind k, std::vector<uint8_t> b) {
+            rx.OnPacket(Fwd{k, std::move(b)}, at);
+            any = true;
+          });
+          if (any) run_receiver(at);
+          continue;
+        }
         rx.OnPacket(fwd_in[fi++].second, at);
         run_receiver(at);
       }
@@ -2903,6 +3180,11 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
     // --- Link timeline ------------------------------------------------------
     advance_links(now);
     tx.OnEvents(now);
+    // The endpoints' ICE and DTLS timers (consent checks, keepalives), and a network change.
+    if (ice) {
+      ice->FailInterface(s, now);
+      ice->Process(now);
+    }
 
     // --- Sender: audio, then video --------------------------------------------
     tx.CaptureAudio(t, now);
@@ -3055,6 +3337,7 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
   rep.audio_send_trace.insert(rep.audio_send_trace.end(), tx.opus_encode_rows().begin(), tx.opus_encode_rows().end());
   dm.repair.AddMetrics(m, s.video, end_ms);
   if (s.apm_rate) ProbeApm(*s.apm_rate, m);
+  if (ice) AddIceMetrics({ice}, rep);
 
   EvaluateExpectations(rep);
   if (opt.library_metrics) {

@@ -7,6 +7,7 @@
 // encrypted on the wire and whole at the other end.
 #include <algorithm>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -131,7 +132,7 @@ struct Call {
   bool signaling_ok = true;
   int candidates_sent[2] = {0, 0};
 
-  explicit Call(bool nat = true) : network(nat) {
+  explicit Call(bool nat = true, std::function<void(PeerEndpointConfig&, int)> customize = nullptr) : network(nat) {
     for (int i = 0; i < 2; ++i) {
       PeerEndpointConfig c;
       c.allocator = network.host[i].allocator.get();
@@ -139,6 +140,7 @@ struct Call {
       c.audio_decoder = &decoder[i];
       c.audio_stream.nominal_rate = DataRate::KilobitsPerSec(40);
       c.session.send_side.gcc.start_rate = DataRate::KilobitsPerSec(800);
+      if (customize) customize(c, i);
       ep[i] = std::make_unique<PeerEndpoint>(std::move(c), network.now);
       ep[i]->SetOnIceCandidate([this, i](std::unique_ptr<IceCandidate> cand) {
         ++candidates_sent[i];
@@ -568,4 +570,61 @@ SM_TEST(PcPeerEndpoint, AnswerRejectsDataAndChecksSignalingState) {
   SM_EXPECT_TRUE(ep.AddIceCandidate(IceCandidate("2", 2, c), network.now, &error));
   // No renegotiation yet.
   SM_EXPECT_TRUE(ep.CreateOffer(&error) == nullptr);
+}
+
+// External media (#1087, the test bench's `transport ice`): the host runs its own RTP sessions. The endpoint makes
+// none, announces the host's SSRCs in its descriptions (SSRC munging, with the FID group for RTX), and carries the
+// host's RTP and RTCP as SRTP over the BUNDLE transport, unchanged end to end; a packet on an SSRC no section has
+// is not delivered (the demuxer).
+SM_TEST(PcPeerEndpoint, ExternalMediaCarriesTheHostsPackets) {
+  std::vector<std::pair<std::vector<uint8_t>, bool>> got[2];
+  Call call(/*nat=*/true, [&got](PeerEndpointConfig& c, int i) {
+    c.external_media = true;
+    c.audio_ssrc = 1 + 10 * i;
+    c.video_ssrc = 2 + 10 * i;
+    c.video_rtx_ssrc = 3 + 10 * i;
+    c.on_media_packet = [&got, i](std::span<const uint8_t> p, bool rtcp, Timestamp) {
+      got[i].emplace_back(std::vector<uint8_t>(p.begin(), p.end()), rtcp);
+    };
+  });
+  call.Negotiate();
+  SM_ASSERT_TRUE(call.RunUntil([&] { return call.Connected(); }, TimeDelta::Seconds(10)));
+  SM_EXPECT_TRUE(call.signaling_ok);
+  SM_EXPECT_TRUE(call.offer_sdp.find("a=ssrc:1 cname:") != std::string::npos);
+  SM_EXPECT_TRUE(Contains(call.offer_sdp, "a=ssrc-group:FID 2 3"));
+  SM_EXPECT_TRUE(call.answer_sdp.find("a=ssrc:11 cname:") != std::string::npos);
+  SM_EXPECT_TRUE(Contains(call.answer_sdp, "a=ssrc-group:FID 12 13"));
+  for (int i = 0; i < 2; ++i) SM_EXPECT_TRUE(call.ep[i]->session() == nullptr);
+
+  auto rtp = [](uint32_t ssrc, uint16_t seq, uint8_t pt) {
+    std::vector<uint8_t> p = {0x80, pt, static_cast<uint8_t>(seq >> 8), static_cast<uint8_t>(seq), 0, 0, 0x10, 0,
+                              static_cast<uint8_t>(ssrc >> 24), static_cast<uint8_t>(ssrc >> 16),
+                              static_cast<uint8_t>(ssrc >> 8), static_cast<uint8_t>(ssrc)};
+    for (int k = 0; k < 100; ++k) p.push_back(static_cast<uint8_t>(seq + k));
+    return p;
+  };
+  // A receiver report with no blocks, from SSRC 200.
+  const std::vector<uint8_t> rr = {0x80, 201, 0x00, 0x01, 0x00, 0x00, 0x00, 200};
+  std::vector<std::vector<uint8_t>> sent;
+  for (uint16_t k = 0; k < 10; ++k) {
+    for (uint32_t ssrc : {1u, 2u, 3u}) {
+      sent.push_back(rtp(ssrc, static_cast<uint16_t>(100 + k), ssrc == 1 ? 111 : ssrc == 2 ? 96 : 97));
+      SM_EXPECT_TRUE(call.ep[0]->SendMediaPacket(sent.back(), /*rtcp=*/false, call.network.now));
+    }
+  }
+  SM_EXPECT_TRUE(call.ep[0]->SendMediaPacket(rtp(99, 1, 111), /*rtcp=*/false, call.network.now));  // No section's.
+  SM_EXPECT_TRUE(call.ep[1]->SendMediaPacket(rr, /*rtcp=*/true, call.network.now));
+  call.Run(TimeDelta::Millis(300));
+
+  SM_ASSERT_EQ(got[1].size(), sent.size());
+  for (size_t k = 0; k < sent.size(); ++k) {
+    SM_EXPECT_TRUE(got[1][k].first == sent[k]);
+    SM_EXPECT_TRUE(!got[1][k].second);
+  }
+  SM_ASSERT_EQ(got[0].size(), 1u);
+  SM_EXPECT_TRUE(got[0][0].first == rr && got[0][0].second);
+  for (int i = 0; i < 2; ++i) {
+    SM_EXPECT_EQ(call.ep[i]->media_transport()->rtp_transport()->rtp_decryption_failures(), 0);
+    SM_EXPECT_EQ(call.ep[i]->send_failures(), 0);
+  }
 }

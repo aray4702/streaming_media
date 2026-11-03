@@ -352,6 +352,17 @@ if(SM_WITH_DATACHANNEL)
         SctpDcSctpTransport
         SctpOverDtls
     )
+    # DCEP and data channels (C7 part 4, #1070): pc/sctp_utils_unittest, the channel against a fake controller,
+    # and two endpoints opening channels both ways over ICE + DTLS + SCTP on the emulated network.
+    sm_add_test_exe(sm_unit_pc_datachannel LABEL unit DEPS sm::pc_datachannel sm::p2p_tls
+      SOURCES
+        unit/pc_datachannel/sctp_utils_test.cc
+        unit/pc_datachannel/data_channel_test.cc
+      SUITES
+        PcSctpUtils
+        PcSctpDataChannel
+        PcDataChannels
+    )
   endif()
 endif()
 

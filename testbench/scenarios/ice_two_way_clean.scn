@@ -1,0 +1,21 @@
+# Issue #1087 (milestone 3, C6/C9 end-to-end): the two_way_clean scenario with `transport ice`: the call is set up through
+# the full stack (offer/answer, trickled candidates, ICE, DTLS) and its media goes as SRTP over the bundled transport
+# on the same links. Its expect lines are two_way_clean's; the setup.* and transport.* lines check the connection.
+# sm_compare runs the direct twin; this copy is not compared (`compare off`).
+
+name ice_two_way_clean
+describe Two-way audio call (user <-> AI) on a clean 2.5 Mbps link each way, 25 ms one-way: both directions flawless (#746) -- through ICE, DTLS-SRTP and SDP (transport ice, #1087)
+transport ice
+compare off
+duration 30s
+call two-way
+video off
+at 0s capacity=2500kbps delay=25ms queue=300ms
+reverse at 0s capacity=2500kbps delay=25ms queue=300ms
+# The audio lines of clean_link, for each direction.
+expect up.audio.concealed_pct < 1
+expect up.audio.interruptions == 0
+expect down.audio.concealed_pct < 1
+expect down.audio.interruptions == 0
+expect setup.connected == 1
+expect transport.send_failures == 0
