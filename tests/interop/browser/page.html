@@ -168,8 +168,10 @@ async function main() {
   const connected = await Promise.race([chrome.connectedPromise.then(() => true),
                                         new Promise(res => setTimeout(() => res(false), left()))]);
   if (connected && useDc) {
-    await Promise.race([chrome.dcOpen ? chrome.dcOpen : new Promise(() => {}),
-                        new Promise(res => setTimeout(res, left()))]);
+    // Both ends' channels must be open before either sends: in the self-test the answering
+    // side's channel (from ondatachannel) can open a little after the offerer's.
+    await waitFor(() => chrome.dc && chrome.dc.readyState === 'open' &&
+                        (!other || (other.dc && other.dc.readyState === 'open')), left());
     if (chrome.dc && chrome.dc.readyState === 'open') chrome.dc.send(kChromeMessage);
     if (other && other.dc && other.dc.readyState === 'open') other.dc.send(kPeerMessage);
   }
