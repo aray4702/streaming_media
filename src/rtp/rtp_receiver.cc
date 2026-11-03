@@ -176,7 +176,7 @@ ReceivedKind RtpReceiver::OnPacket(std::span<const uint8_t> datagram, Timestamp 
   CommitReceiveStatistics();
   const RtpPacket& p = *parsed;
   if (cfg_.extensions && cfg_.feedback) {
-    if (auto tseq = sync::ExtensionAccessor(*cfg_.extensions).GetTransportSeq(p)) cfg_.feedback->OnPacket(*tseq, now);
+    if (auto tseq = sync::ExtensionAccessor(*cfg_.extensions).GetTransportSeq(p)) cfg_.feedback->OnPacket(*tseq, now, p.ssrc);
   }
 
   if (cfg_.video) {
