@@ -137,5 +137,7 @@ class AiServer {
 
 // STUN and TURN servers from a /turn response ({"urls":[...],"username":...,"credential":...}).
 void ParseTurnResponse(const std::string& json, p2p::ServerAddresses* stun, std::vector<p2p::RelayServerConfig>* turn);
+// Every IPv4 interface that is up and not loopback (getifaddrs); the calling app (apps/call, #1116) gathers on them too.
+std::vector<p2p::IpAddress> LocalIpv4Interfaces();
 
 }  // namespace sm::apps
