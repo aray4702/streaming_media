@@ -113,7 +113,7 @@ burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50 ms one-way
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms            99         98.7  =
+  audio.longest_interruption_ms          98.9         98.7  =
   audio.mouth_to_ear_p95_ms               305          298  =
   audio.jb_delay_p95_ms                   195          188  =
   video.freeze_count                      1.5          1.6  =
@@ -895,7 +895,7 @@ issue_12_lossbwe_burst_loss - 3% loss in bursts of ~6 packets (fading radio), 50
   metric                                   sm       webrtc  better
   audio.concealed_pct                     1.4          1.4  =
   audio.interruptions                       0            0  =
-  audio.longest_interruption_ms          98.9         98.7  =
+  audio.longest_interruption_ms            99         98.7  =
   audio.mouth_to_ear_p95_ms               305          298  =
   audio.jb_delay_p95_ms                   195          188  =
   video.freeze_count                      1.5          1.6  =
@@ -3920,8 +3920,8 @@ issue_410_queue_sample_phase - Audio-only call on an idle 200 kbps link: the bot
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          64.2         64.2  =
-  audio.mouth_to_ear_p95_ms               179          179  =
-  audio.jb_delay_p95_ms                   130          130  =
+  audio.mouth_to_ear_p95_ms               180          180  =
+  audio.jb_delay_p95_ms                   131          131  =
   cc.utilization_pct                     85.3         85.3  =
   cc.queue_p95_ms                           0            0  =
   cc.max_settle_ms                       4400         4400  =
@@ -5585,7 +5585,7 @@ issue_536_reverse_outage_45s - forward link healthy, feedback path down for 45 s
   video.time_to_first_frame_ms            206          206  =
   video.avg_kbps                          520          520  =
   video.keyframe_requests                   0            0  =
-  sync.av_offset_p95_ms                  1593         1596  =
+  sync.av_offset_p95_ms                  1594         1595  =
   cc.utilization_pct                     61.3         61.3  =
   cc.queue_p95_ms                        41.2         40.6  =
   cc.max_settle_ms                        300          300  =
@@ -5884,11 +5884,11 @@ issue_5_adjuster_default - EncoderBitrateAdjuster on by default as in libwebrtc 
   audio.concealed_pct                     0.5          0.5  =
   audio.interruptions                       0            0  =
   audio.longest_interruption_ms          51.1         51.1  =
-  audio.mouth_to_ear_p95_ms               495          495  =
-  audio.jb_delay_p95_ms                   296          296  =
+  audio.mouth_to_ear_p95_ms               494          494  =
+  audio.jb_delay_p95_ms                   295          295  =
   video.freeze_count                        0            0  =
   video.freeze_total_ms                     0            0  =
-  video.longest_freeze_ms                15.7         15.7  =
+  video.longest_freeze_ms                13.4         13.4  =
   video.pause_count                         0            0  =
   video.pause_total_ms                      0            0  =
   video.render_fps                       29.8         29.8  =
@@ -6816,7 +6816,7 @@ issue_76_session_layer_v2 - Jittery lossy link with the RTP session layer as lib
   video.time_to_first_frame_ms            271          271  =
   video.avg_kbps                         1305         1305  =
   video.keyframe_requests                 0.4          0.4  =
-  sync.av_offset_p95_ms                  59.1         59.4  =
+  sync.av_offset_p95_ms                  59.0         59.4  =
   cc.utilization_pct                     55.1         55.0  =
   cc.queue_p95_ms                        20.4         20.3  =
   cc.max_settle_ms                       4360         4360  =
@@ -7600,7 +7600,7 @@ issue_893_overshoot_seed9 - issue_466_overshoot_very_low_capacity with seed 9: t
   video.time_to_first_frame_ms           1080         1080  =
   video.avg_kbps                         34.5         34.9  =
   video.keyframe_requests                 5.9          5.9  =
-  sync.av_offset_p95_ms                  6713         6340  webrtc
+  sync.av_offset_p95_ms                  6713         6339  webrtc
   cc.utilization_pct                     98.3         98.3  =
   cc.queue_p95_ms                         284          284  =
   cc.max_settle_ms                      40000        40000  =
@@ -7750,8 +7750,8 @@ issue_911_host_rtt_10s - issue_451_host_rtt_near_limit's call with a large but d
   audio.concealed_pct                     1.3          1.3  =
   audio.interruptions                     0.3          0.3  =
   audio.longest_interruption_ms           114          114  =
-  audio.mouth_to_ear_p95_ms               732          749  =
-  audio.jb_delay_p95_ms                   440          441  =
+  audio.mouth_to_ear_p95_ms               731          749  =
+  audio.jb_delay_p95_ms                   439          441  =
   video.freeze_count                      2.6          2.3  =
   video.freeze_total_ms                  1061          983  =
   video.longest_freeze_ms                 572          595  =
