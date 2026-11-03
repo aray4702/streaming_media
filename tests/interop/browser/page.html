@@ -1,0 +1,214 @@
+<!doctype html>
+<!--
+  The browser side of the browser interop call (C6 part 4, #1088).
+
+  run_browser_call.py serves this page from its signaling server on
+  127.0.0.1 and opens it in headless Chrome with fake media devices.
+  Query parameters:
+    role=offer   Chrome offers, the native peer answers (default);
+    role=answer  the native peer offers, Chrome answers;
+    self=1       the harness self-test: the peer is a second
+                 RTCPeerConnection in this page, signaled through the same
+                 server, so the server, the page and the checks can be
+                 tested without the native endpoint.
+  Signaling: POST /send?to=<party> with a JSON message; GET /poll?me=<party>
+  returns the queued messages as a JSON array. Chrome is party "browser",
+  the native peer (or the self-test peer) is party "native". Messages:
+  {type:"offer"|"answer", sdp}, {type:"candidate", candidate, sdpMid,
+  sdpMLineIndex} and {type:"bye"}. The verdict goes to POST /result.
+-->
+<html>
+<head><meta charset="utf-8"><title>sm browser interop</title></head>
+<body>
+<pre id="log"></pre>
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+const role = params.get('role') || 'offer';
+const selfTest = params.get('self') === '1';
+const timeoutMs = Number(params.get('timeout_ms') || 20000);
+const kChromeMessage = 'hello from chrome';
+const kPeerMessage = 'hello from sm';
+
+const lines = [];
+function log(s) {
+  lines.push(s);
+  document.getElementById('log').textContent += s + '\n';
+}
+
+async function send(to, msg) {
+  await fetch('/send?to=' + to, {method: 'POST', body: JSON.stringify(msg)});
+}
+
+// Polls the party's queue and hands each message to `handler`, until stopped.
+function pump(me, handler) {
+  let running = true;
+  (async () => {
+    while (running) {
+      try {
+        const r = await fetch('/poll?me=' + me);
+        for (const m of await r.json()) await handler(m);
+      } catch (e) {
+        log(me + ' poll error: ' + e);
+      }
+      await new Promise(res => setTimeout(res, 20));
+    }
+  })();
+  return () => { running = false; };
+}
+
+// One side of the call. `party` is this side's signaling name, `peer` the other's.
+function makeSide(party, peer, stream, offers) {
+  const pc = new RTCPeerConnection({bundlePolicy: 'max-bundle', rtcpMuxPolicy: 'require'});
+  const side = {pc, party, received: [], connected: false};
+  side.connectedPromise = new Promise(res => {
+    pc.onconnectionstatechange = () => {
+      log(party + ' connectionState ' + pc.connectionState);
+      if (pc.connectionState === 'connected') { side.connected = true; res(); }
+    };
+  });
+  pc.onicecandidate = e => {
+    if (e.candidate) send(peer, {type: 'candidate', candidate: e.candidate.candidate,
+                                 sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex});
+  };
+  side.ontrack = [];
+  pc.ontrack = e => log(party + ' ontrack ' + e.track.kind);
+  const wireChannel = dc => {
+    side.dc = dc;
+    dc.onmessage = e => { log(party + ' dc message: ' + e.data); side.received.push(String(e.data)); };
+    side.dcOpen = new Promise(res => { if (dc.readyState === 'open') res(); else dc.onopen = res; });
+  };
+  if (stream) for (const t of stream.getTracks()) pc.addTrack(t, stream);
+  if (offers) wireChannel(pc.createDataChannel('sm-interop'));
+  else pc.ondatachannel = e => wireChannel(e.channel);
+  side.handle = async m => {
+    if (m.type === 'offer') {
+      await pc.setRemoteDescription({type: 'offer', sdp: m.sdp});
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await send(peer, {type: 'answer', sdp: pc.localDescription.sdp});
+    } else if (m.type === 'answer') {
+      await pc.setRemoteDescription({type: 'answer', sdp: m.sdp});
+    } else if (m.type === 'candidate') {
+      try {
+        await pc.addIceCandidate({candidate: m.candidate, sdpMid: m.sdpMid, sdpMLineIndex: m.sdpMLineIndex});
+      } catch (e) { log(party + ' addIceCandidate failed: ' + e); }
+    }
+  };
+  side.start = async () => {
+    if (!offers) return;
+    // The native peer has no device: ask for media both ways even without one.
+    if (!stream) {
+      pc.addTransceiver('audio', {direction: 'recvonly'});
+      pc.addTransceiver('video', {direction: 'recvonly'});
+    }
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    await send(peer, {type: 'offer', sdp: pc.localDescription.sdp});
+  };
+  return side;
+}
+
+// Sums the stats this test checks, per media kind.
+async function collectStats(pc) {
+  const out = {audio: {}, video: {}};
+  const report = await pc.getStats();
+  report.forEach(s => {
+    const kind = s.kind || s.mediaType;
+    if (!out[kind]) return;
+    const add = (k, v) => { out[kind][k] = (out[kind][k] || 0) + (v || 0); };
+    if (s.type === 'inbound-rtp') {
+      add('inPackets', s.packetsReceived);
+      add('inBytes', s.bytesReceived);
+      if (kind === 'video') add('framesDecoded', s.framesDecoded);
+      if (s.codecId && report.get(s.codecId)) out[kind].inCodec = report.get(s.codecId).mimeType;
+    } else if (s.type === 'outbound-rtp') {
+      add('outPackets', s.packetsSent);
+      if (s.codecId && report.get(s.codecId)) out[kind].outCodec = report.get(s.codecId).mimeType;
+    } else if (s.type === 'remote-inbound-rtp') {
+      // The peer's receiver reports: Chrome's outbound reaching the peer.
+      add('remoteReports', 1);
+      add('remotePacketsLost', s.packetsLost);
+    }
+  });
+  return out;
+}
+
+async function sideStats(side) {
+  return {connected: side.connected, received: side.received, stats: await collectStats(side.pc)};
+}
+
+function waitFor(cond, ms) {
+  return new Promise(res => {
+    const t0 = performance.now();
+    const tick = () => {
+      if (cond() || performance.now() - t0 > ms) res(cond()); else setTimeout(tick, 100);
+    };
+    tick();
+  });
+}
+
+async function main() {
+  const t0 = performance.now();
+  const left = () => Math.max(0, timeoutMs - (performance.now() - t0));
+  const stream = await navigator.mediaDevices.getUserMedia({audio: true, video: {width: 640, height: 480}});
+  const chrome = makeSide('browser', 'native', stream, role === 'offer');
+  const stops = [pump('browser', chrome.handle)];
+  let other = null;
+  if (selfTest) {
+    const peerStream = await navigator.mediaDevices.getUserMedia({audio: true, video: {width: 320, height: 240}});
+    other = makeSide('native', 'browser', peerStream, role !== 'offer');
+    stops.push(pump('native', other.handle));
+    await other.start();
+  }
+  await chrome.start();
+  const result = {role, self: selfTest, browser: null, peer: null, ok: false, log: lines};
+  const connected = await Promise.race([chrome.connectedPromise.then(() => true),
+                                        new Promise(res => setTimeout(() => res(false), left()))]);
+  if (connected) {
+    await Promise.race([chrome.dcOpen ? chrome.dcOpen : new Promise(() => {}),
+                        new Promise(res => setTimeout(res, left()))]);
+    if (chrome.dc && chrome.dc.readyState === 'open') chrome.dc.send(kChromeMessage);
+    if (other && other.dc && other.dc.readyState === 'open') other.dc.send(kPeerMessage);
+    // Media for a few seconds, until the checks hold or time runs out.
+    const want = async () => {
+      const s = await collectStats(chrome.pc);
+      return s.audio.inPackets > 0 && s.video.inPackets > 0 && s.video.framesDecoded > 0 &&
+             s.audio.outPackets > 0 && s.video.outPackets > 0 && s.audio.remoteReports > 0 &&
+             s.video.remoteReports > 0 && chrome.received.includes(kPeerMessage);
+    };
+    let good = false;
+    const deadline = performance.now() + Math.min(left(), 15000);
+    await new Promise(r => setTimeout(r, Math.min(left(), 2000)));
+    while (!(good = await want()) && performance.now() < deadline) await new Promise(r => setTimeout(r, 250));
+  }
+  result.browser = await sideStats(chrome);
+  if (other) result.peer = await sideStats(other);
+  const b = result.browser.stats;
+  const checks = {
+    connected: result.browser.connected,
+    inAudioPackets: b.audio.inPackets > 0,
+    inVideoPackets: b.video.inPackets > 0,
+    videoFramesDecoded: b.video.framesDecoded > 0,
+    outAudioPackets: b.audio.outPackets > 0,
+    outVideoPackets: b.video.outPackets > 0,
+    peerReportsAudio: b.audio.remoteReports > 0,
+    peerReportsVideo: b.video.remoteReports > 0,
+    dataFromPeer: result.browser.received.includes(kPeerMessage),
+  };
+  if (other) checks.dataFromChrome = other.received.includes(kChromeMessage);
+  result.checks = checks;
+  result.ok = Object.values(checks).every(Boolean);
+  log('checks ' + JSON.stringify(checks));
+  await send('native', {type: 'bye'});
+  for (const s of stops) s();
+  await fetch('/result', {method: 'POST', body: JSON.stringify(result)});
+}
+
+main().catch(async e => {
+  log('error: ' + (e && e.stack || e));
+  await fetch('/result', {method: 'POST', body: JSON.stringify({ok: false, error: String(e), log: lines})});
+});
+</script>
+</body>
+</html>
