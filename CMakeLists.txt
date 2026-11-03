@@ -85,6 +85,10 @@ if(SM_WITH_RTP AND NOT (SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WI
 endif()
 
 add_subdirectory(src)
+# OS sockets, WebSocket and JSON for the interop tests and the apps (#1037, #1103).
+if(TARGET sm::p2p_tls AND NOT WIN32 AND NOT EMSCRIPTEN)
+  add_subdirectory(apps/net)
+endif()
 
 if(SM_BUILD_TESTS)
   enable_testing()
@@ -101,4 +105,9 @@ if(SM_WITH_RTP AND (SM_BUILD_TESTS OR SM_BUILD_FUZZERS))
 endif()
 if(SM_BUILD_TESTBENCH AND SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WITH_AUDIO AND SM_WITH_VIDEO AND SM_WITH_RTP)
   add_subdirectory(testbench)
+endif()
+# The AI server (C12 part 1, #1103): answers `ai-` rooms with the library; uses the bench's Opus, turn detector and
+# AI source.
+if(TARGET sm_testbench_lib AND TARGET sm_os_sockets AND TARGET sm::pc_endpoint)
+  add_subdirectory(apps/ai_server)
 endif()

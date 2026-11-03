@@ -1,5 +1,5 @@
 // The native side of the browser interop call (C6 part 4, #1088): our C6 part 3 endpoint (pc::PeerEndpoint, #1064)
-// over real OS sockets (tests/interop/os_sockets.h, #1052), driven by run_browser_call.py.
+// over real OS sockets (apps/net/os_sockets.h, #1052), driven by run_browser_call.py.
 //
 //   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel]
 //
