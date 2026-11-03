@@ -75,19 +75,25 @@ SFU. What is ported and how it differs:
 
 ## The library
 
-The library implements, in portable C++20, the
-resilience algorithms from sections 3-8 of
-[Problems WebRTC solves](docs/02-webrtc-problems-solved.md): 46 algorithms
-covering packet loss, jitter and timing, congestion control, audio
-processing, video adaptation and synchronization. Each one has unit tests,
-an end-to-end test over a simulated network, speed and quality benchmarks,
-metrics and structured events, and a design and results document.
+The library implements, in portable C++20, the resilience algorithms from
+sections 3-8 of [Problems WebRTC solves](docs/02-webrtc-problems-solved.md)
+and the connection around them. `docs/algorithms/` has 72 algorithm
+documents in sections 1-10: connectivity (STUN, ICE, TURN, SDP, the
+endpoint), security (TLS/DTLS, SRTP), packet loss, jitter and timing,
+congestion control, audio processing, video adaptation, synchronization,
+the RTP/RTCP session layer, data channels and observability. Each one has
+unit tests, an end-to-end test over a simulated network where it has one,
+speed and quality benchmarks where they exist, metrics and structured
+events, and a design and results document.
 
-Sections 1-8 have no dependencies. The connectivity layer (milestone 3)
-needs two libraries, both fetched by CMake at configure time (see
-`cmake/`): a TLS library behind one interface, BoringSSL (default) or
-mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and libsrtp 2.8.0. Build with
-`-DSM_WITH_TLS=OFF` to leave both out.
+Sections 3-8 have no dependencies. Connectivity (section 1) and security
+(section 2), the milestone 3 ports, need two libraries, both fetched by
+CMake at configure time (see `cmake/`): a TLS library behind one interface,
+BoringSSL (default) or mbedTLS 3.6, chosen with `SM_TLS_BACKEND`, and
+libsrtp 2.8.0. Build with `-DSM_WITH_TLS=OFF` to leave both out. Data
+channels (sections 9.6-9.9) are optional and off by default: `SM_WITH_DATACHANNEL` switches
+them on and off, and they also need the TLS library. The observability
+outputs (section 10) have build switches too.
 
 ## Documents
 
@@ -125,9 +131,9 @@ The library:
   verified and how, performance across hardware, footprint.
 - [Testing and benchmarking](docs/design/testing.md): test framework,
   network emulator, pass criteria, how to regenerate the results.
-- [Algorithms](docs/algorithms/README.md): one document per algorithm
-  (design, API skeleton, metrics, test methods, benchmarks, results,
-  verification notes).
+- [Algorithms](docs/algorithms/README.md): one document per algorithm,
+  sections 1-10 (design, API skeleton, metrics, test methods, benchmarks,
+  results, verification notes).
 - [Verification results](docs/results/README.md): pass/fail and benchmark
   numbers per platform.
 - [Comparison with libwebrtc](docs/results/compare-webrtc.md): every test

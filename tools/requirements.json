@@ -1160,6 +1160,256 @@
    "end": "",
    "milestone": "unplanned",
    "note": "Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Split from C11 (and the Android part of C12). Owner, 2026-11-02 6:20 PM PT: out of milestone 4, unplanned."
+  },
+  {
+   "id": "F1.1",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.1",
+   "title": "STUN messages",
+   "acceptance": "Documented in docs/algorithms/ (1.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.1 item. Whether it behaves as libwebrtc is judged with C2 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C2."
+  },
+  {
+   "id": "F1.2",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.2",
+   "title": "Ports and candidates",
+   "acceptance": "Documented in docs/algorithms/ (1.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.2 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.3",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.3",
+   "title": "Connections: candidate-pair checks",
+   "acceptance": "Documented in docs/algorithms/ (1.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.3 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.4",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.4",
+   "title": "Port allocation",
+   "acceptance": "Documented in docs/algorithms/ (1.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.4 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.5",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.5",
+   "title": "The ICE controller",
+   "acceptance": "Documented in docs/algorithms/ (1.5) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.5 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.6",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.6",
+   "title": "The ICE agent (P2PTransportChannel)",
+   "acceptance": "Documented in docs/algorithms/ (1.6) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.6 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.7",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.7",
+   "title": "ICE-lite for the AI server",
+   "acceptance": "Documented in docs/algorithms/ (1.7) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.7 item. Whether it behaves as libwebrtc is judged with C3 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C3."
+  },
+  {
+   "id": "F1.8",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.8",
+   "title": "TURN client (UDP, TCP, TLS)",
+   "acceptance": "Documented in docs/algorithms/ (1.8) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.8 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+  },
+  {
+   "id": "F1.9",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.9",
+   "title": "TCP packet sockets",
+   "acceptance": "Documented in docs/algorithms/ (1.9) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.9 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+  },
+  {
+   "id": "F1.10",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.10",
+   "title": "SDP model and parse/write",
+   "acceptance": "Documented in docs/algorithms/ (1.10) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.10 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+  },
+  {
+   "id": "F1.11",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.11",
+   "title": "Offer/answer generation",
+   "acceptance": "Documented in docs/algorithms/ (1.11) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.11 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+  },
+  {
+   "id": "F1.12",
+   "kind": "library",
+   "area": "Connectivity",
+   "catalog": "1.12",
+   "title": "The endpoint (PeerEndpoint)",
+   "acceptance": "Documented in docs/algorithms/ (1.12) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F1.12 item. Whether it behaves as libwebrtc is judged with C6 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C6."
+  },
+  {
+   "id": "F2.1",
+   "kind": "library",
+   "area": "Security",
+   "catalog": "2.1",
+   "title": "TLS/DTLS interface and its BoringSSL and mbedTLS backends",
+   "acceptance": "Documented in docs/algorithms/ (2.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.1 item. Whether it behaves as libwebrtc is judged with C1 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C1."
+  },
+  {
+   "id": "F2.2",
+   "kind": "library",
+   "area": "Security",
+   "catalog": "2.2",
+   "title": "DTLS transport",
+   "acceptance": "Documented in docs/algorithms/ (2.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.2 item. Whether it behaves as libwebrtc is judged with C1, C5 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C1, C5."
+  },
+  {
+   "id": "F2.3",
+   "kind": "library",
+   "area": "Security",
+   "catalog": "2.3",
+   "title": "DTLS-SRTP key export",
+   "acceptance": "Documented in docs/algorithms/ (2.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.3 item. Whether it behaves as libwebrtc is judged with C5 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C5."
+  },
+  {
+   "id": "F2.4",
+   "kind": "library",
+   "area": "Security",
+   "catalog": "2.4",
+   "title": "SRTP and SRTCP (libsrtp)",
+   "acceptance": "Documented in docs/algorithms/ (2.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.4 item. Whether it behaves as libwebrtc is judged with C5 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C5."
+  },
+  {
+   "id": "F2.5",
+   "kind": "library",
+   "area": "Security",
+   "catalog": "2.5",
+   "title": "TLS client socket over TCP",
+   "acceptance": "Documented in docs/algorithms/ (2.5) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F2.5 item. Whether it behaves as libwebrtc is judged with C4 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C4."
+  },
+  {
+   "id": "F9.6",
+   "kind": "library",
+   "area": "Data channels",
+   "catalog": "9.6",
+   "title": "dcSCTP packet layer",
+   "acceptance": "Documented in docs/algorithms/ (9.6) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.6 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+  },
+  {
+   "id": "F9.7",
+   "kind": "library",
+   "area": "Data channels",
+   "catalog": "9.7",
+   "title": "dcSCTP socket",
+   "acceptance": "Documented in docs/algorithms/ (9.7) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.7 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+  },
+  {
+   "id": "F9.8",
+   "kind": "library",
+   "area": "Data channels",
+   "catalog": "9.8",
+   "title": "SCTP over DTLS",
+   "acceptance": "Documented in docs/algorithms/ (9.8) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.8 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+  },
+  {
+   "id": "F9.9",
+   "kind": "library",
+   "area": "Data channels",
+   "catalog": "9.9",
+   "title": "DCEP and the data channel API",
+   "acceptance": "Documented in docs/algorithms/ (9.9) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F9.9 item. Whether it behaves as libwebrtc is judged with C7 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C7."
+  },
+  {
+   "id": "F10.1",
+   "kind": "library",
+   "area": "Observability",
+   "catalog": "10.1",
+   "title": "Build and runtime switches",
+   "acceptance": "Documented in docs/algorithms/ (10.1) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.1 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+  },
+  {
+   "id": "F10.2",
+   "kind": "library",
+   "area": "Observability",
+   "catalog": "10.2",
+   "title": "ICE and DTLS connection stats",
+   "acceptance": "Documented in docs/algorithms/ (10.2) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.2 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+  },
+  {
+   "id": "F10.3",
+   "kind": "library",
+   "area": "Observability",
+   "catalog": "10.3",
+   "title": "The observability-off check",
+   "acceptance": "Documented in docs/algorithms/ (10.3) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.3 item. Whether it behaves as libwebrtc is judged with C8 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C8."
+  },
+  {
+   "id": "F10.4",
+   "kind": "library",
+   "area": "Observability",
+   "catalog": "10.4",
+   "title": "Fuzzing of the network parsers",
+   "acceptance": "Documented in docs/algorithms/ (10.4) with its files, libwebrtc M157 counterpart and tests; its parity rows are same or ported; no open req:F10.4 item. Whether it behaves as libwebrtc is judged with C10 (milestone 3, #944).",
+   "status": "unassessed",
+   "evidence": "Added with the milestone 3 algorithm pages (#1139); the work was done under C10."
   }
  ]
 }

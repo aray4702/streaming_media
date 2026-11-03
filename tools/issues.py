@@ -408,4 +408,58 @@ payload format decides how an access unit is split and how the receiver finds wh
 (RFC 6184) defines single NAL unit packets, aggregation of small NAL units (STAP-A, typically SPS and PPS) and
 fragmentation of large ones (FU-A). A packetizer or depacketizer that disagrees with libwebrtc's makes the call fail
 to decode, so the format is checked against libwebrtc's own parser.""",
+    "1.1": """\
+Two peers behind NATs know nothing about each other's addresses. STUN is the small request/response protocol that tells a host its address as a server sees it and that carries every connectivity check. Messages must be parsed exactly, because a mistaken attribute length or a wrong integrity check makes a working path look dead, and because STUN is read from the open network, a parser bug is an attack surface.
+
+MESSAGE-INTEGRITY and FINGERPRINT need HMAC-SHA1 and CRC-32, and a request needs a transaction id nobody can guess, so the protocol depends on the TLS library's cryptography.""",
+    "1.2": """\
+A peer must tell the other where it can be reached, and the answer depends on the network: its own interface addresses (host), the address a NAT shows to the outside (server-reflexive) and an address on a relay server. Each address is a candidate with a priority, foundation and type that the other side uses to order its attempts.
+
+Getting the details wrong, such as the priority formula, the address family or which network an address belongs to, makes two correct peers pick bad pairs or none.""",
+    "1.3": """\
+Candidates only describe addresses; whether a pair works is learned by trying it. Each local and remote candidate pair is a connection that pings with STUN, tracks whether it can send and receive, estimates its RTT and may be nominated. A connection that stops answering must be noticed within seconds, or the call stays on a dead path; ping too often and the checks flood the network.""",
+    "1.4": """\
+A machine can have a Wi-Fi interface, a cellular one, a VPN and several addresses on each, and they change during a call. Something has to enumerate the networks, open ports on them, gather candidates in the right order and start again when a network appears or goes, while honouring the application's filters and TURN servers.""",
+    "1.5": """\
+With many candidate pairs the agent must decide which to ping next, which to use for media, when switching to another pair is worth it and which to prune. The choice weighs priority, network cost, the pair's state and recent RTT; choosing differently from libwebrtc makes calls pick a relay when a direct path exists, or flap between pairs.""",
+    "1.6": """\
+ICE is the whole procedure: gather candidates, exchange them (possibly while gathering goes on), check pairs, nominate one, keep it alive with consent checks and recover when it fails. One object per transport has to run it with the roles, role conflicts, timers and trickle handling that browsers' ICE implementations do, or interoperability with a browser breaks.""",
+    "1.7": """\
+A server with a public address does not need to gather candidates or run checks of its own; it only answers. ICE-lite is that reduced role, defined for servers such as the AI end of a call, which avoids the cost and the state of a full agent while still being nominated by the full one on the other side.""",
+    "1.8": """\
+Some NATs (symmetric ones) and firewalls allow no direct path. A TURN server relays the media. The client must allocate, authenticate with long-term or short-lived credentials, keep permissions and channel bindings alive and wrap the data. Where UDP is blocked the allocation runs over TCP, and where only port 443 is open over TLS.""",
+    "1.9": """\
+TCP is a byte stream, but ICE and TURN speak in packets. Over TCP each packet needs a length (RFC 4571) or, for STUN and ChannelData, self-describing framing, and the receiver must cut the stream into packets however the bytes arrive in pieces. A framing bug splits or joins packets and corrupts everything after it.""",
+    "1.10": """\
+Before a call, the peers describe it to each other in SDP: media sections, codecs, extensions, candidates, fingerprints and BUNDLE. Browsers speak this text format. We need the structure and exact parse and write rules, or a browser's offer is rejected or misread.""",
+    "1.11": """\
+An offer lists what one side can do; the answer must pick from it: the codecs both support, in the offerer's order, with the offerer's payload types, with the right extensions and transport. Getting it wrong yields a call without audio or video, or a mismatch that only shows once media flows.""",
+    "1.12": """\
+Gathering ICE, running DTLS, keying SRTP, creating the RTP session and the data channel transport are separate pieces; a call needs them joined and driven by the SDP: apply an offer, produce an answer, add trickled candidates and tear down. One endpoint that owns that wiring keeps application code to a few calls.""",
+    "2.1": """\
+Media must be encrypted and the peer's identity checked. WebRTC does it with DTLS and certificates whose fingerprint travels in SDP. A library for small devices and for browsers cannot depend on one TLS implementation, so the code is behind one interface with two backends (BoringSSL and mbedTLS) that have to interoperate and agree on the DTLS version.""",
+    "2.2": """\
+ICE delivers unreliable datagrams, and DTLS needs a handshake of several flights, retransmission, and record handling over them. It must also decide client or server from SDP, check the peer's certificate against the fingerprint from signalling and tell DTLS packets from STUN and RTP on one port.""",
+    "2.3": """\
+The SRTP keys must come from the DTLS handshake, so that nobody who only sees signalling can decrypt the media. RFC 5764 defines how to export them from the handshake and how the client and server halves are split; getting the roles wrong yields keys that do not match the peer's.""",
+    "2.4": """\
+Media packets must be encrypted and authenticated, and a replayed packet must be dropped. SRTP does this per packet with a rolling counter, a tag and a replay window; RTCP has its own variant. The transports have to apply it at the right layer (after packetization, before the network) and re-key after a DTLS restart.""",
+    "2.5": """\
+TURN on port 443 and other TLS-wrapped streams require a TLS client on a TCP connection, with certificate or fingerprint checks and a stream interface that ICE code can use like a socket. The state machine has to cope with partial reads, handshake in progress and closing.""",
+    "9.6": """\
+Data channels run on SCTP, which has its own packet format of chunks and parameters, a CRC-32C checksum and many ways to be malformed. The packet layer must parse everything that can arrive, reject what is invalid without crashing and write packets other implementations accept.""",
+    "9.7": """\
+SCTP gives several independent streams, per-stream ordering, partial reliability and congestion control, and nothing in a mobile or browser stack lets a library use the operating system's. A user-space association (handshake, retransmission, reassembly, timers, stream reset) must be complete enough for browsers and robust against hostile input.""",
+    "9.8": """\
+A data channel association must go over the call's existing secure transport so that it needs no second port: SCTP packets are carried as DTLS application data (RFC 8261). The glue must start when the transport is ready, deliver packets both ways and end with the transport.""",
+    "9.9": """\
+On the association, channels are opened with DCEP (DATA_CHANNEL_OPEN and ACK), have a label, an ordering, a reliability mode and a stream id whose parity follows the DTLS role. The API must follow what browsers do, so a message from a browser's `RTCDataChannel` arrives as sent, and the whole feature must be absent when switched off.""",
+    "10.1": """\
+On a small device or in a library used inside a larger app, logs, counters, events and stats cost code size, CPU and memory, and an app may not want them at all. Switches at build time remove the code and switches at run time turn the outputs off, with a guarantee that neither changes what the call does.""",
+    "10.2": """\
+When a call goes wrong, the first questions are which path it uses, how long its round trip is, how many bytes have flowed and whether DTLS is up. getStats-style reports answer them with the names browsers use, so the same dashboards and tools work.""",
+    "10.3": """\
+Observability code sits next to the code that makes decisions. A switch that is supposed to remove it must not change a single decision. The only proof is to run the same scenarios in both builds and compare the media results exactly.""",
+    "10.4": """\
+Parsers read bytes from strangers. A crash or a hang in one of them is a denial of service, and memory errors may be worse. Fuzzing finds such inputs; keeping a seed corpus in the tests turns every one found into a regression test that runs on every build.""",
 }
