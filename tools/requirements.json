@@ -1090,19 +1090,20 @@
    "area": "Connectivity",
    "title": "End-to-end calls on real networks",
    "acceptance": "Calls between web and iOS, and from each to the AI server, over real networks with the self-hosted TURN server (coturn on Lightsail), with the conversation metrics of milestone 2 reported.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C6",
     "C9",
     "C11",
     "C4"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1111 (AI server, #1103) and #1123 (real-network calls, #1121: wss/https in apps/net, a relay-only switch on every client, caller-side metrics, tools/real_calls.py, docs/results/real-network-calls.md); the self-hosted coturn, signaling service and AI server on Amazon Lightsail (Oregon, #1054)",
+   "verification": "docs/results/real-network-calls.md: calls over the real network through the Lightsail host, direct and relay-only (TURN), for the iOS app's controller (sm_call_smoke on macOS and in the iOS simulator) to the AI server, headless Chrome (the web app) to the AI server, the web app to the iOS controller in one room, and the SmCall app in the simulator to the AI server; every pair connected, with milestone 2's conversation metrics (response delay, barge-in stop, user speech lost) and the call stats (candidate types, RTT, loss, concealment, jitter buffer, bitrate target, video fps and freezes) measured at the caller. Gaps the runs found, open: #1124 (the capture chain hides barge-ins and turns; Chrome's does not), #1125 (Chrome's bandwidth estimate toward our endpoint stays at 84 kbps), #1126 (the AI server's audio builds a 200-550 ms jitter buffer at the caller). Not yet done: a real iPhone run (Owner). Owner approved marking done, 2026-11-03 12:25 AM PT.",
    "start": "2026-11-01",
-   "end": "",
+   "end": "2026-11-03",
    "milestone": 4,
-   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android calls are in the backlog with C13."
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android calls are in the backlog with C13.",
+   "verified": "pass"
   },
   {
    "id": "C14",
