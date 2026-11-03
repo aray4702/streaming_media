@@ -124,6 +124,8 @@ if(SM_WITH_TLS)
     add_test(NAME interop.Coturn COMMAND sm_interop_coturn --filter=Coturn.)
     set_tests_properties(interop.Coturn PROPERTIES LABELS interop SKIP_REGULAR_EXPRESSION "SKIPPED: coturn not installed")
     add_subdirectory(interop/browser)
+    # The web app and signaling service (C15, #1102).
+    add_subdirectory(${PROJECT_SOURCE_DIR}/apps ${CMAKE_CURRENT_BINARY_DIR}/apps)
   endif()
   # DTLS over a fake ICE transport (C5 part 2, #1006).
   sm_add_test_exe(sm_unit_p2p_dtls LABEL unit DEPS sm::p2p_dtls
