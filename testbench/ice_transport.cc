@@ -127,7 +127,7 @@ struct IceLink::Impl {
   Timestamp now = Timestamp::Seconds(10);  // The endpoints' clock.
   Timestamp offer_time = Timestamp::Seconds(10);
   TimeDelta offset = TimeDelta::Zero();  // Endpoint clock = call time + offset, in the media phase.
-  int64_t wire = 0, media = 0;
+  int64_t wire = 0, media = 0, setup_wire = 0;
 
   bool IsEndpointIp(uint32_t ip) const {
     for (const Side& s : side) {
@@ -367,6 +367,7 @@ bool IceLink::Connect(const sim::LinkConfig toward[2], TimeDelta limit) {
     m.now = t;
   }
   m.emit = nullptr;
+  m.setup_wire = m.wire;
   // The media phase starts on the next millisecond of the endpoints' clock.
   m.now = m.now + TimeDelta::Millis(1);
   m.offset = m.now - Timestamp::Millis(0);
@@ -435,6 +436,7 @@ void IceLink::UpdateSelectedPair() {
 bool IceLink::connected() const { return impl_->ep[0]->IsConnected() && impl_->ep[1]->IsConnected(); }
 int64_t IceLink::wire_bytes() const { return impl_->wire; }
 int64_t IceLink::media_bytes() const { return impl_->media; }
+int64_t IceLink::setup_wire_bytes() const { return impl_->setup_wire; }
 
 }  // namespace sm::testbench
 
@@ -463,6 +465,7 @@ void IceLink::UpdateSelectedPair() {}
 bool IceLink::connected() const { return false; }
 int64_t IceLink::wire_bytes() const { return 0; }
 int64_t IceLink::media_bytes() const { return 0; }
+int64_t IceLink::setup_wire_bytes() const { return 0; }
 
 }  // namespace sm::testbench
 

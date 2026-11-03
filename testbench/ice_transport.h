@@ -108,6 +108,11 @@ class IceLink {
   // bytes of the session packets they were given, with UDP/IP headers: the direct call's wire bytes.
   int64_t wire_bytes() const;
   int64_t media_bytes() const;
+  // The part of wire_bytes() sent during Connect() (signaling-driven ICE checks, TURN allocations, the DTLS
+  // handshake). Its size changes from run to run (issue #1109): the DTLS handshake carries ECDSA signatures
+  // (certificate, ServerKeyExchange, CertificateVerify) and a random certificate serial, whose DER encodings are
+  // 1-2 bytes shorter or longer depending on the random values. The media phase's bytes are repeatable.
+  int64_t setup_wire_bytes() const;
 
  private:
   struct Impl;

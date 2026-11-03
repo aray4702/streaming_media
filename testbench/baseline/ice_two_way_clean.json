@@ -58,7 +58,7 @@
   "setup.first_media_ms": 158.4,
   "setup.ice_connected_ms": 42,
   "transport.local_candidate_type": 0,
-  "transport.overhead_pct": 8.824,
+  "transport.overhead_pct": 8.302,
   "transport.relay_protocol": 0,
   "transport.remote_candidate_type": 0,
   "transport.send_failures": 0,

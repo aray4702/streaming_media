@@ -69,7 +69,7 @@
   "sync.av_offset_p50_ms": 57.31,
   "sync.av_offset_p95_ms": 75.7,
   "transport.local_candidate_type": 0,
-  "transport.overhead_pct": 1.395,
+  "transport.overhead_pct": 1.343,
   "transport.relay_protocol": 0,
   "transport.remote_candidate_type": 0,
   "transport.send_failures": 0,
