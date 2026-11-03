@@ -198,3 +198,9 @@ Hand this to the app with the call's signaling, behind the user's login. A brows
 - **Updates:** `sudo apt upgrade` regularly, or turn on unattended upgrades.
 - **Watch:** the instance's network metrics in Lightsail, and the log for authentication failures.
 - **Later:** relays in more regions, or a hosted TURN service charged per GB, if relayed traffic grows.
+
+## 8. The signaling service hands out the credentials
+
+`apps/signaling/server.py` implements section 6's credential function behind `GET /turn`, from the same shared secret
+(`TURN_SECRET`) and `TURN_URLS`, and serves the web app. Setup, protocol and the systemd unit:
+[signaling.md](signaling.md).

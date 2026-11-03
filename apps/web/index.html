@@ -1,0 +1,187 @@
+<!doctype html>
+<!--
+  Web app for calls through the signaling service (#1102, C15): one page, no build step,
+  the browser's own RTCPeerConnection. Protocol: docs/deploy/signaling.md.
+  Query parameters (used by the tests): room=<code>&auto=1 joins at load; report=1 posts
+  the call's state to POST /report once a second.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>streaming_media call</title>
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 1em; }
+  video { width: 320px; background: #222; margin: 2px; }
+  #stats { white-space: pre; font: 12px monospace; }
+</style>
+</head>
+<body>
+<h3>streaming_media call</h3>
+<div>
+  <input id="room" placeholder="room code" size="12">
+  <button id="join">Join</button>
+  <button id="ai">Call the AI</button>
+  <button id="mute" disabled>Mute</button>
+  <button id="hangup" disabled>Hang up</button>
+  <span id="state">idle</span>
+</div>
+<div><video id="local" autoplay muted playsinline></video><span id="remotes"></span></div>
+<div id="stats"></div>
+<script>
+'use strict';
+const params = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const myId = 'web-' + Math.random().toString(36).slice(2, 8);
+let ws = null, room = null, stream = null, iceServers = [{urls: 'stun:stun.l.google.com:19302'}];
+const calls = new Map();  // remote peer id -> {pc, video, pending: [candidates], prev: {t, bytes}}
+const t0 = Date.now();
+
+function setState(s) { $('state').textContent = s; }
+
+async function loadTurn() {
+  try {
+    const r = await (await fetch('/turn?peer=' + myId)).json();
+    const server = {urls: r.urls};
+    if (r.username) { server.username = r.username; server.credential = r.credential; }
+    iceServers = [server];
+  } catch (e) { console.warn('no /turn', e); }
+}
+
+function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+function makeCall(remote) {
+  const pc = new RTCPeerConnection({iceServers});
+  const video = document.createElement('video');
+  video.autoplay = true; video.playsInline = true;
+  $('remotes').appendChild(video);
+  const call = {pc, video, pending: [], prev: null, stats: {}};
+  calls.set(remote, call);
+  for (const track of stream.getTracks()) pc.addTrack(track, stream);
+  pc.ontrack = e => { video.srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.onicecandidate = e => {
+    if (e.candidate) send({type: 'candidate', to: remote, candidate: e.candidate.candidate,
+                           sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex});
+  };
+  pc.onconnectionstatechange = () => setState(pc.connectionState);
+  return call;
+}
+
+async function flush(call) {
+  for (const c of call.pending.splice(0)) await call.pc.addIceCandidate(c).catch(() => {});
+}
+
+async function onMessage(m) {
+  if (m.type === 'joined') {
+    // The one that joins later sends the offer, to each peer already there.
+    for (const peer of m.peers) {
+      const call = makeCall(peer);
+      await call.pc.setLocalDescription(await call.pc.createOffer());
+      send({type: 'offer', to: peer, sdp: call.pc.localDescription.sdp});
+    }
+    setState(m.peers.length ? 'calling' : 'waiting for a peer');
+  } else if (m.type === 'offer') {
+    const call = calls.get(m.from) || makeCall(m.from);
+    await call.pc.setRemoteDescription({type: 'offer', sdp: m.sdp});
+    await flush(call);
+    await call.pc.setLocalDescription(await call.pc.createAnswer());
+    send({type: 'answer', to: m.from, sdp: call.pc.localDescription.sdp});
+  } else if (m.type === 'answer') {
+    const call = calls.get(m.from);
+    if (call) { await call.pc.setRemoteDescription({type: 'answer', sdp: m.sdp}); await flush(call); }
+  } else if (m.type === 'candidate') {
+    const call = calls.get(m.from);
+    const c = {candidate: m.candidate, sdpMid: m.sdpMid, sdpMLineIndex: m.sdpMLineIndex};
+    if (!call) return;
+    if (call.pc.remoteDescription) await call.pc.addIceCandidate(c).catch(() => {}); else call.pending.push(c);
+  } else if (m.type === 'peer-left' || m.type === 'bye') {
+    drop(m.peer || m.from);
+  } else if (m.type === 'error') {
+    setState('error: ' + m.reason);
+  }
+}
+
+function drop(remote) {
+  const call = calls.get(remote);
+  if (!call) return;
+  call.pc.close(); call.video.remove(); calls.delete(remote);
+  if (!calls.size) setState('waiting for a peer');
+}
+
+async function join(code) {
+  if (ws || !code) return;
+  room = code;
+  setState('starting');
+  await loadTurn();
+  stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+  $('local').srcObject = stream;
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.onopen = () => send({type: 'join', room: code, peer: myId});
+  ws.onmessage = e => onMessage(JSON.parse(e.data)).catch(err => console.error(err));
+  ws.onclose = () => setState('disconnected');
+  $('mute').disabled = $('hangup').disabled = false;
+}
+
+function hangup() {
+  for (const peer of [...calls.keys()]) { send({type: 'bye', to: peer}); drop(peer); }
+  if (ws) { ws.close(); ws = null; }
+  if (stream) { for (const t of stream.getTracks()) t.stop(); stream = null; }
+  $('mute').disabled = $('hangup').disabled = true;
+  setState('idle');
+}
+
+$('join').onclick = () => join($('room').value.trim());
+$('ai').onclick = () => { $('room').value = 'ai-' + Math.random().toString(36).slice(2, 8); join($('room').value); };
+$('mute').onclick = () => {
+  const audio = stream && stream.getAudioTracks()[0];
+  if (audio) { audio.enabled = !audio.enabled; $('mute').textContent = audio.enabled ? 'Mute' : 'Unmute'; }
+};
+$('hangup').onclick = hangup;
+
+// getStats panel: RTT, bitrate, packet loss and the selected candidate type, once a second.
+async function readStats(call) {
+  const rows = await call.pc.getStats();
+  const s = {bytesIn: 0, bytesOut: 0, packetsIn: 0, lost: 0, rtt: null, candidate: '-', videoFrames: 0, audioBytesIn: 0};
+  let pair = null; const byId = {};
+  rows.forEach(r => { byId[r.id] = r; });
+  rows.forEach(r => {
+    if (r.type === 'inbound-rtp') {
+      s.bytesIn += r.bytesReceived || 0; s.packetsIn += r.packetsReceived || 0; s.lost += r.packetsLost || 0;
+      if (r.kind === 'video') s.videoFrames = r.framesDecoded || 0;
+      if (r.kind === 'audio') s.audioBytesIn = r.bytesReceived || 0;
+    } else if (r.type === 'outbound-rtp') s.bytesOut += r.bytesSent || 0;
+    else if (r.type === 'candidate-pair' && (r.selected || (r.nominated && r.state === 'succeeded'))) pair = pair || r;
+  });
+  if (pair) {
+    s.rtt = pair.currentRoundTripTime == null ? null : Math.round(pair.currentRoundTripTime * 1000);
+    const lc = byId[pair.localCandidateId];
+    s.candidate = lc ? lc.candidateType : '-';
+  }
+  return s;
+}
+
+async function tick() {
+  const lines = []; const report = {peer: myId, room, state: $('state').textContent, calls: {}};
+  for (const [peer, call] of calls) {
+    const s = await readStats(call);
+    const now = Date.now();
+    const kbps = call.prev ? Math.round((s.bytesIn - call.prev.bytes) * 8 / (now - call.prev.t)) : 0;
+    call.prev = {t: now, bytes: s.bytesIn};
+    const total = s.packetsIn + s.lost;
+    const loss = total ? (100 * s.lost / total).toFixed(1) : '0.0';
+    lines.push(`${peer}: ${call.pc.connectionState}  rtt ${s.rtt == null ? '-' : s.rtt + ' ms'}  in ${kbps} kbps  loss ${loss}%  candidate ${s.candidate}`);
+    report.calls[peer] = {connection: call.pc.connectionState, ice: call.pc.iceConnectionState, bytesIn: s.bytesIn,
+                          audioBytesIn: s.audioBytesIn, videoFrames: s.videoFrames, bytesOut: s.bytesOut, candidate: s.candidate};
+  }
+  $('stats').textContent = lines.join('\n');
+  if (params.get('report') === '1' && room) {
+    fetch('/report', {method: 'POST', body: JSON.stringify(report)}).catch(() => {});
+  }
+}
+setInterval(() => tick().catch(() => {}), 1000);
+
+if (params.get('room')) $('room').value = params.get('room');
+if (params.get('auto') === '1' && params.get('room')) join(params.get('room')).catch(e => setState('error: ' + e));
+</script>
+</body>
+</html>
