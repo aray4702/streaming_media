@@ -481,6 +481,7 @@ bool IceLink::connected() const { return false; }
 int64_t IceLink::wire_bytes() const { return 0; }
 int64_t IceLink::media_bytes() const { return 0; }
 int64_t IceLink::setup_wire_bytes() const { return 0; }
+sync::ExtensionMap IceLink::NegotiatedExtensions() const { return {}; }
 
 }  // namespace sm::testbench
 
