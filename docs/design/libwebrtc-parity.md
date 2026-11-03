@@ -1068,6 +1068,36 @@ without DTLS. Differences:
 | `SctpTransport` | Ref-counted, hops to the network thread, `dtls_transport()` is the api `DtlsTransport` | Owned, one thread, `dtls_transport()` is the `p2p::DtlsTransport`; the destructors also unsubscribe from the DTLS transport | No ref counting or threads in the library |
 | Interface files | `media/sctp/sctp_transport_internal.h`, `api/transport/data_channel_transport_interface.h`, `api/sctp_transport_interface.h`, `api/rtc_error.h`, `api/priority.h`, and the unit tests `media/sctp/dcsctp_transport_unittest.cc`, `pc/sctp_transport_unittest.cc` | `include/sm/sctp/sctp_transport_internal.h` and `sctp_transport.h` with the names and values `dcsctp_transport.cc` and `sctp_transport.cc` use; `kMaxSctpStreams` (65535) and the port (5000) checked against `api/webrtc_sdp_unittest.cc`, 256 KiB against `media_session.cc`; the 16 MiB queue (`MaxSendQueueSize`) is from libwebrtc, not checked here | Not in `reference/` yet (asked for on #1069); the tests above cover the transport's behaviour until the unit tests can be ported |
 
+### 10.18 Offer/answer generation (`src/pc/{media_session,codec_vendor,sdp_payload_type_suggester,transport_description_factory}.cc`, C6 part 2, #1063)
+
+`pc/media_session.cc` (`MediaSessionDescriptionFactory`, `CreateOfferOrError` / `CreateAnswerOrError`) and
+`p2p/base/transport_description_factory.cc` at M157 (`compare/webrtc/reference/`), with `pc/sdp_payload_type_suggester`
+and the pieces they call that are not in `reference/` (`pc/media_options.h`, `pc/codec_vendor`,
+`media/base/codec_comparators`, `api/video_codecs/h264_profile_level_id`, `call/payload_type_picker`,
+`rtc_base/unique_id_generator`), for C6's subset: Unified Plan, BUNDLE (the first section's ICE credentials and DTLS
+role shared; an empty group answered for a rejected bundle, RFC 5888), rtcp-mux and rtcp-rsize, Opus and H.264
+Constrained Baseline (42e01f, packetization-mode 1) with RTX (FID SSRCs, apt mapped to the offer's payload type),
+transport-cc and abs-send-time with libwebrtc's header extension ids (unique across the bundle; Chrome's offer ids are
+reproduced), the SCTP m=application section (UDP/DTLS/SCTP, max-message-size 262144, sctpmap as offered), directions
+per RFC 3264, ICE restart, renomination and SPED options, and the DTLS role (actpass in offers; active, or passive
+when preferred, in answers to actpass; the opposite of an active or passive offer). Codecs are negotiated as
+`CodecVendor` does: our codecs that the offer has, with the offer's payload types and names, in the offer's order,
+rtcp-fb intersected, the H.264 level from `H264GenerateProfileLevelIdForAnswer`; re-offers keep the current section's
+codecs and payload types first. Tests: `tests/unit/pc_sdp/transport_description_factory_test.cc` (every case of
+`transport_description_factory_unittest.cc` but the four goog-sped-v1 ones) and `media_session_test.cc` (the cases of
+`media_session_unittest.cc` for this subset, on the unittest's codec lists, plus the default offer's ids and an
+offer/answer round trip through `SdpSerialize` / `SdpDeserialize`). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Errors | `RTCErrorOr<std::unique_ptr<SessionDescription>>` | `std::unique_ptr` (null on failure) and an optional `std::string* error` | No `RTCError` in the library |
+| Codec source | `CodecLookupHelper` over the media engine | `CodecVendor(audio_send, audio_recv, video_send, video_recv)`; `DefaultAudioCodecs()` / `DefaultVideoCodecs()` give the engines' Opus 111 (minptime=10;useinbandfec=1, transport-cc) and H.264 CB 96 with RTX 97 (goog-remb, transport-cc, ccm fir, nack, nack pli) | No media engine here; the subset's codecs only |
+| Payload type picker | `call/payload_type_picker.cc` (a table of default assignments, then the dynamic ranges) | The codec's own payload type if free in the bundle, else the first free in 96..127 then 35..63; recorders per BUNDLE group as `SdpPayloadTypeSuggester` | The file is not in `reference/`; same values for this library's codecs |
+| Header extension picker | `RtpHeaderExtensionPicker` | The preferred id if no other URI has it, else the highest free id from 14 down, then 15..255 with two-byte ids | Not in `reference/`; reproduces libwebrtc's offers (toffset 14, video-orientation 13) |
+| Field trials | RFC 8888 ack ccfb, `WebRTC-RtcpXrReceiverReferenceTime`, FlexFEC-03, `WebRTC-PayloadTypesInTransport`, goog-sped-v1 | Each at libwebrtc's default (off; receive-non-sender-RTT on) | No field trials in the library |
+| Not ported | Codec preferences, raw packetization, RED fmtp matching, VP9 / AV1 / H.265 profile matching, cryptex (`CryptoOptions`), SCTP SNAP, Plan B streams | Left out | Outside C6's subset; the defaults are libwebrtc's (cryptex and SNAP off) |
+| Data channel switch | The application adds the data section | Same: the factory writes m=application when the options ask; `SM_WITH_DATACHANNEL` is checked by the caller (C7) | |
+
 ## Open questions for the Owner
 
 **Audit #891:** all settled. 1 and 2 as marked. 3-6: the files are in `reference/` (`bitrate_allocator.cc`, `transport_feedback_adapter.*`, `rtp_sender.cc`, `red/`, `neteq/`, `api/neteq/neteq.h`, the section 8 files, `frame_decode_timing.*`, `video_receive_stream2.cc`, `api/video_codecs/`), except those on #900; `relative_arrival_delay_tracker.*` is not needed: the 4.4 rows read the relative delay from `packet_arrival_history.cc` and `delay_manager.cc`, which are. 7 and 8: the Owner's A on #566 (removed or kept as the library's audio processing).

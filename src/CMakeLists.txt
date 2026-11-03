@@ -99,15 +99,21 @@ if(SM_WITH_TLS)
     p2p/ssl_adapter_tls.cc
     p2p/stun_crypto_tls.cc)
   # The session description model and SDP parse/write (C6 part 1, #1062): libwebrtc's pc/session_description,
-  # media/base/{codec,stream_params,rid_description}, pc/simulcast_*, api/jsep and api/webrtc_sdp. On sm::tls for the
+  # media/base/{codec,stream_params,rid_description}, pc/simulcast_*, api/jsep and api/webrtc_sdp. Offer/answer
+  # generation (C6 part 2, #1063): pc/media_session, pc/codec_vendor, pc/sdp_payload_type_suggester and
+  # p2p/base/transport_description_factory. On sm::tls for the
   # DTLS fingerprint (SslFingerprint) and CreateRandomString. Not in the sm::sm umbrella yet, like sm::p2p (#944).
   sm_add_library(pc_sdp DEPS sm::p2p sm::tls SOURCES
     pc/codec.cc
+    pc/codec_vendor.cc
     pc/jsep.cc
     pc/media_protocol_names.cc
+    pc/media_session.cc
+    pc/sdp_payload_type_suggester.cc
     pc/session_description.cc
     pc/simulcast_description.cc
     pc/stream_params.cc
+    pc/transport_description_factory.cc
     pc/webrtc_sdp.cc)
   # DTLS over an ICE transport (C5 part 2, #1006): libwebrtc's p2p/dtls/dtls_transport on sm::tls.
   sm_add_library(p2p_dtls DEPS sm::p2p sm::tls SOURCES
