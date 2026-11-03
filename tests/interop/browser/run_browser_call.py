@@ -215,6 +215,8 @@ def main():
     ap.add_argument('--peer', help='the native peer program')
     ap.add_argument('--role', choices=('offer', 'answer'), default='offer', help="Chrome's role")
     ap.add_argument('--timeout', type=float, default=40.0, help='seconds for the whole call')
+    ap.add_argument('--no-data-channel', action='store_true',
+                    help='no data channel and no data checks (our endpoint has none until C7 is wired in)')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
@@ -240,7 +242,7 @@ def main():
 
     page_timeout_ms = int((args.timeout - 10) * 1000)
     url = 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
-        port, args.role, page_timeout_ms, '&self=1' if args.self_test else '')
+        port, args.role, page_timeout_ms, ('&self=1' if args.self_test else '') + ('&dc=0' if args.no_data_channel else ''))
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
     print('chrome: %s' % chrome)
     print('page:   %s' % url)
@@ -277,6 +279,13 @@ def main():
             print('chrome stats:  %s' % json.dumps(page['browser'].get('stats', {}), sort_keys=True))
         if page.get('error'):
             print('page error: %s' % page['error'])
+    if peer and page and page.get('browser'):
+        # What Chrome received from our endpoint: Opus and H.264 (Constrained Baseline is all it offers).
+        stats = page['browser'].get('stats', {})
+        codecs = (stats.get('audio', {}).get('inCodec'), stats.get('video', {}).get('inCodec'))
+        if codecs != ('audio/opus', 'video/H264'):
+            print('FAIL: Chrome received %s, not Opus and H.264' % (codecs,))
+            ok = False
     if peer:
         if native is None:
             print('FAIL: the native peer gave no result')

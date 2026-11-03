@@ -14,3 +14,18 @@ if(Python3_FOUND)
       LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
   endforeach()
 endif()
+
+# The call with our endpoint (pc::PeerEndpoint, C6 part 3) over OS sockets.
+if(Python3_FOUND AND TARGET sm::pc_endpoint)
+  add_executable(sm_interop_browser_peer browser_peer.cc ../os_sockets.cc)
+  target_link_libraries(sm_interop_browser_peer PRIVATE sm::pc_endpoint sm::p2p_tls)
+  target_include_directories(sm_interop_browser_peer PRIVATE ..)
+  sm_configure_target(sm_interop_browser_peer)
+  foreach(role offer answer)
+    add_test(NAME interop.Browser.chrome_${role}s
+             COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --peer=$<TARGET_FILE:sm_interop_browser_peer>
+                     --role=${role} --no-data-channel)
+    set_tests_properties(interop.Browser.chrome_${role}s PROPERTIES
+      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+  endforeach()
+endif()

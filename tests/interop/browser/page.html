@@ -7,6 +7,7 @@
   Query parameters:
     role=offer   Chrome offers, the native peer answers (default);
     role=answer  the native peer offers, Chrome answers;
+    dc=0         no data channel (the endpoint has none until C7 is wired in);
     self=1       the harness self-test: the peer is a second
                  RTCPeerConnection in this page, signaled through the same
                  server, so the server, the page and the checks can be
@@ -26,6 +27,7 @@
 const params = new URLSearchParams(location.search);
 const role = params.get('role') || 'offer';
 const selfTest = params.get('self') === '1';
+const useDc = params.get('dc') !== '0';
 const timeoutMs = Number(params.get('timeout_ms') || 20000);
 const kChromeMessage = 'hello from chrome';
 const kPeerMessage = 'hello from sm';
@@ -79,8 +81,8 @@ function makeSide(party, peer, stream, offers) {
     side.dcOpen = new Promise(res => { if (dc.readyState === 'open') res(); else dc.onopen = res; });
   };
   if (stream) for (const t of stream.getTracks()) pc.addTrack(t, stream);
-  if (offers) wireChannel(pc.createDataChannel('sm-interop'));
-  else pc.ondatachannel = e => wireChannel(e.channel);
+  if (offers && useDc) wireChannel(pc.createDataChannel('sm-interop'));
+  else if (useDc) pc.ondatachannel = e => wireChannel(e.channel);
   side.handle = async m => {
     if (m.type === 'offer') {
       await pc.setRemoteDescription({type: 'offer', sdp: m.sdp});
@@ -165,17 +167,19 @@ async function main() {
   const result = {role, self: selfTest, browser: null, peer: null, ok: false, log: lines};
   const connected = await Promise.race([chrome.connectedPromise.then(() => true),
                                         new Promise(res => setTimeout(() => res(false), left()))]);
-  if (connected) {
+  if (connected && useDc) {
     await Promise.race([chrome.dcOpen ? chrome.dcOpen : new Promise(() => {}),
                         new Promise(res => setTimeout(res, left()))]);
     if (chrome.dc && chrome.dc.readyState === 'open') chrome.dc.send(kChromeMessage);
     if (other && other.dc && other.dc.readyState === 'open') other.dc.send(kPeerMessage);
+  }
+  if (connected) {
     // Media for a few seconds, until the checks hold or time runs out.
     const want = async () => {
       const s = await collectStats(chrome.pc);
       return s.audio.inPackets > 0 && s.video.inPackets > 0 && s.video.framesDecoded > 0 &&
              s.audio.outPackets > 0 && s.video.outPackets > 0 && s.audio.remoteReports > 0 &&
-             s.video.remoteReports > 0 && chrome.received.includes(kPeerMessage);
+             s.video.remoteReports > 0 && (!useDc || chrome.received.includes(kPeerMessage));
     };
     let good = false;
     const deadline = performance.now() + Math.min(left(), 15000);
@@ -194,9 +198,9 @@ async function main() {
     outVideoPackets: b.video.outPackets > 0,
     peerReportsAudio: b.audio.remoteReports > 0,
     peerReportsVideo: b.video.remoteReports > 0,
-    dataFromPeer: result.browser.received.includes(kPeerMessage),
   };
-  if (other) checks.dataFromChrome = other.received.includes(kChromeMessage);
+  if (useDc) checks.dataFromPeer = result.browser.received.includes(kPeerMessage);
+  if (other && useDc) checks.dataFromChrome = other.received.includes(kChromeMessage);
   result.checks = checks;
   result.ok = Object.values(checks).every(Boolean);
   log('checks ' + JSON.stringify(checks));
