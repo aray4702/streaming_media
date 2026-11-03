@@ -1,8 +1,10 @@
 // The Objective-C++ bridge from the SwiftUI screens to the C++ call controller (#1116); see CallBridge.h.
 #import "CallBridge.h"
+#import "RemoteVideoView.h"
 
 #include <algorithm>
 #include <atomic>
+#include <cstdio>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -42,35 +44,6 @@ class AudioAdapter final : public sm::device::AudioTransport {
   sm::apps::CallClient* client_;
 };
 
-UIImage* ToImage(const sm::video::I420Frame& f) {
-  const int w = f.width, h = f.height;
-  if (w <= 0 || h <= 0) return nil;
-  std::vector<uint8_t> rgba(static_cast<size_t>(w) * h * 4);
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
-      // BT.601 full range: the decoder's NV12 output is full range (videotoolbox_h264.h).
-      const int Y = f.y[static_cast<size_t>(y) * w + x];
-      const size_t ci = static_cast<size_t>(y / 2) * f.chroma_width() + x / 2;
-      const int U = f.u[ci] - 128, V = f.v[ci] - 128;
-      auto c = [](int v) { return static_cast<uint8_t>(std::clamp(v >> 8, 0, 255)); };
-      uint8_t* p = &rgba[(static_cast<size_t>(y) * w + x) * 4];
-      p[0] = c(256 * Y + 359 * V + 128);
-      p[1] = c(256 * Y - 88 * U - 183 * V + 128);
-      p[2] = c(256 * Y + 454 * U + 128);
-      p[3] = 255;
-    }
-  }
-  CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-  CGContextRef ctx = CGBitmapContextCreate(rgba.data(), w, h, 8, static_cast<size_t>(w) * 4, cs,
-                                           kCGImageAlphaNoneSkipLast | kCGBitmapByteOrder32Big);
-  CGImageRef img = ctx ? CGBitmapContextCreateImage(ctx) : nullptr;
-  UIImage* out = img ? [UIImage imageWithCGImage:img] : nil;
-  if (img) CGImageRelease(img);
-  if (ctx) CGContextRelease(ctx);
-  CGColorSpaceRelease(cs);
-  return out;
-}
-
 }  // namespace
 
 @implementation SMCallBridge {
@@ -89,6 +62,11 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   NSString* _status;
   int _generation;
   BOOL _muted, _videoEnabled;
+  SMRemoteVideoView* _remoteView;
+  // Rendered and decoded frame rates (#1133): the last second's, and the call's from its first decoded frame.
+  CFTimeInterval _rateTime, _firstTime;
+  uint64_t _rateDrawn, _rateDecoded, _firstDrawn, _firstDecoded, _callDrawnBase;
+  double _renderFps, _decodedFps;
 }
 
 + (NSString*)newAiRoom {
@@ -101,6 +79,16 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
     _status = @"idle";
     _videoEnabled = YES;
     _session = [NSURLSession sessionWithConfiguration:NSURLSessionConfiguration.defaultSessionConfiguration];
+    _remoteView = [[SMRemoteVideoView alloc] initWithFrame:CGRectMake(0, 0, 320, 240)];
+    __weak SMCallBridge* weakSelf = self;
+    // Called by the view at each display refresh: the latest frame the controller rendered, already turned upright
+    // by its CVO rotation (call_client.cc), so the view draws it with no further turn.
+    [_remoteView setFrameSource:[weakSelf](sm::video::I420Frame* frame, sm::video::Rotation* rotation) {
+      SMCallBridge* s = weakSelf;
+      if (!s || !s->_client || !s->_client->TakeRemoteVideo(frame)) return false;
+      *rotation = sm::video::Rotation::k0;
+      return true;
+    }];
   }
   return self;
 }
@@ -118,15 +106,49 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   return [NSString stringWithUTF8String:sm::apps::CallStateName(_client->state())];
 }
 
-- (NSString*)statsText {
-  if (!_client) return @"";
-  return [NSString stringWithUTF8String:_client->stats().Text().c_str()];
+- (UIView*)remoteView {
+  return _remoteView;
 }
 
-- (UIImage*)takeRemoteFrame {
-  sm::video::I420Frame f;
-  if (!_client || !_client->TakeRemoteVideo(&f)) return nil;
-  return ToImage(f);
+- (NSString*)statsText {
+  if (!_client) return @"";
+  const sm::apps::CallStats stats = _client->stats();
+  [self updateRates:stats];
+  char line[160];
+  std::snprintf(line, sizeof line, "\nrender: %.1f fps  decoded %.1f fps  drawn %llu", _renderFps, _decodedFps,
+                static_cast<unsigned long long>(_remoteView.framesDrawn - _callDrawnBase));
+  return [NSString stringWithUTF8String:(stats.Text() + line).c_str()];
+}
+
+// Called with each stats poll (10 Hz): the frame rates over the last second, and the call's start point.
+- (void)updateRates:(const sm::apps::CallStats&)stats {
+  const CFTimeInterval now = CACurrentMediaTime();
+  const uint64_t drawn = _remoteView.framesDrawn - _callDrawnBase, decoded = stats.video_frames_decoded;
+  if (_firstTime == 0) {
+    if (decoded == 0) return;
+    _firstTime = _rateTime = now;
+    _firstDrawn = _rateDrawn = drawn;
+    _firstDecoded = _rateDecoded = decoded;
+    return;
+  }
+  if (now - _rateTime < 1.0) return;
+  _renderFps = (drawn - _rateDrawn) / (now - _rateTime);
+  _decodedFps = (decoded - _rateDecoded) / (now - _rateTime);
+  _rateTime = now;
+  _rateDrawn = drawn;
+  _rateDecoded = decoded;
+}
+
+// The call's mean rendered and decoded frame rates since its first decoded frame, for the JSON line.
+- (std::string)renderJson:(const sm::apps::CallStats&)stats {
+  [self updateRates:stats];
+  const double span = _firstTime > 0 ? _rateTime - _firstTime : 0;
+  char buf[200];
+  std::snprintf(buf, sizeof buf, "\"app_frames_drawn\":%llu,\"app_render_fps\":%.1f,\"app_decoded_fps\":%.1f",
+                static_cast<unsigned long long>(_remoteView.framesDrawn - _callDrawnBase),
+                span > 0 ? (_rateDrawn - _firstDrawn) / span : 0.0,
+                span > 0 ? (_rateDecoded - _firstDecoded) / span : 0.0);
+  return buf;
 }
 
 - (BOOL)muted {
@@ -201,6 +223,9 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   _client->SetVideoEnabled(_videoEnabled);
   _wsClosed = false;
   _hangupRequested = false;
+  _callDrawnBase = _remoteView.framesDrawn;
+  _firstTime = _rateTime = 0;
+  _renderFps = _decodedFps = 0;
   {
     std::lock_guard<std::mutex> lock(_inboxMu);
     _inbox.clear();
@@ -296,7 +321,13 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   [_ws cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
   _ws = nil;
   // One JSON line per call (#1121), as sm_call_smoke and the web app write it: the call's last stats, in the log.
-  if (_client) NSLog(@"SmCall: call-result %s", _client->stats().ToJson().c_str());
+  // With the app's rendered frames and rates (#1133) before the closing brace.
+  if (_client) {
+    const sm::apps::CallStats stats = _client->stats();
+    std::string json = stats.ToJson();
+    if (!json.empty() && json.back() == '}') json.insert(json.size() - 1, "," + [self renderJson:stats]);
+    NSLog(@"SmCall: call-result %s", json.c_str());
+  }
   _camera.reset();
   _audio.reset();
   _client.reset();

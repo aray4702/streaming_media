@@ -2,6 +2,13 @@
 // state, the remote video and the live stats.
 import SwiftUI
 
+// The bridge's Metal view (RemoteVideoView.h), which draws every received frame itself; SwiftUI only places it.
+struct RemoteVideo: UIViewRepresentable {
+    let view: UIView
+    func makeUIView(context: Context) -> UIView { view }
+    func updateUIView(_ uiView: UIView, context: Context) {}
+}
+
 struct ContentView: View {
     @StateObject private var model = CallModel()
 
@@ -38,12 +45,10 @@ struct ContentView: View {
                     Toggle("Relay only", isOn: $model.relay).disabled(model.active)
                 }
                 Text("State: \(model.state)").font(.headline)
-                if let frame = model.remote {
-                    Image(uiImage: frame)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
+                if model.active {
+                    RemoteVideo(view: model.bridge.remoteView)
+                        .aspectRatio(4.0 / 3.0, contentMode: .fit)
                         .frame(maxWidth: .infinity)
-                        .background(Color.black)
                 }
                 Text(model.stats)
                     .font(.system(.caption, design: .monospaced))

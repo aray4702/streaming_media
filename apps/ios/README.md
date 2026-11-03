@@ -3,9 +3,14 @@
 A small SwiftUI app on the library. One screen: server URL (default `https://35.165.158.249.sslip.io:8443`), room
 code, **Call AI** (a fresh `ai-` room, answered by the AI server) / **Join room** (the web app's room code), video and
 mute switches, hang-up, the call's state, the remote video and the live stats (path, RTT, congestion-control target,
-rates, audio loss/jitter/concealment, video frames, DTLS and SRTP ciphers).
+rates, audio loss/jitter/concealment, video frames, DTLS and SRTP ciphers, and the rendered and decoded frame rates).
 
-- `SmCallApp.swift`, `ContentView.swift`: the screens; `CallModel` polls the bridge 10 times a second.
+- `SmCallApp.swift`, `ContentView.swift`: the screens; `CallModel` polls the bridge's state and stats 10 times a
+  second.
+- `RemoteVideoView.h/.mm`: the remote video on the GPU (#1133), as libwebrtc's `RTCMTLVideoView` with its I420
+  renderer: an `MTKView` whose display-driven loop takes each new decoded frame, uploads its Y, U and V planes as
+  textures and converts to RGB in a Metal shader, drawing at the received frame rate. The call-result JSON line adds
+  `app_frames_drawn`, `app_render_fps` and `app_decoded_fps`.
 - `CallBridge.h/.mm`: Objective-C++ bridge. GET `/turn` (TURN REST credentials, so the app holds no secret), the
   signaling WebSocket `/ws` through `URLSessionWebSocketTask` (wss:// for an https:// server), the call thread, and the
   devices: `sm::device` Audio Units (microphone, speaker) and the AVFoundation camera.
@@ -28,6 +33,10 @@ The app is `out/ios[-simulator]/apps/ios/Release-iphone{simulator,os}/SmCall.app
 `sm_call_smoke` (the controller as a plain simulator executable, through `xcrun simctl spawn`) and the app (launched
 with `-SMServer http://127.0.0.1:8093 -SMAutoCall ai-sim-app -SMAutoHangup 10 -SMVideo NO`) each call an `ai-` room.
 The script checks the AI server's metrics line for each call.
+
+`apps/ios/simulator_video.sh <simulator UDID>` checks the remote video's frame rate (#1133): the web app in headless
+Chrome (a fake 30 fps camera) and the app join one room on a local signaling service, and the script passes when the
+app drew at least 90% of the frames it decoded (its call-result line, from the simulator's log), at 20 fps or more.
 
 ## On an iPhone
 

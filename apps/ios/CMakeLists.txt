@@ -2,9 +2,11 @@
 # call controller (apps/call). Built by the `ios` / `ios-simulator` presets (Xcode generator) as an app bundle without
 # signing; the Owner signs it with an Apple ID for a real iPhone (README.md).
 enable_language(Swift)
-add_executable(SmCall MACOSX_BUNDLE SmCallApp.swift ContentView.swift CallBridge.h CallBridge.mm)
-set_source_files_properties(CallBridge.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-target_link_libraries(SmCall PRIVATE sm_call_client sm::device "-framework UIKit" "-framework CoreGraphics")
+add_executable(SmCall MACOSX_BUNDLE SmCallApp.swift ContentView.swift CallBridge.h CallBridge.mm RemoteVideoView.h
+               RemoteVideoView.mm)
+set_source_files_properties(CallBridge.mm RemoteVideoView.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+target_link_libraries(SmCall PRIVATE sm_call_client sm::device "-framework UIKit" "-framework CoreGraphics"
+                      "-framework Metal" "-framework MetalKit" "-framework QuartzCore")
 set_target_properties(SmCall PROPERTIES
   MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in
   MACOSX_BUNDLE_GUI_IDENTIFIER io.github.aray4702.smcall
