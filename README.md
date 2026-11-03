@@ -273,6 +273,49 @@ random loss), and their numbers are expected:
   (`apps/call`, #1117) are tested end to end over local sockets; calls over
   the Lightsail relay, with these metrics measured at the caller, are C12.
 
+## Next steps
+
+**Milestone 4** ([#1076](https://github.com/aray4702/streaming_media/issues/1076)):
+an iOS app, a web app, and calls over real networks. In order:
+
+1. **iOS app (C14, [#1116](https://github.com/aray4702/streaming_media/issues/1116)).**
+   A SwiftUI calling app on the library, in review as #1117. It runs on
+   the iOS simulator, calls the AI server and another copy of the app, and
+   shows mute, hang-up, call state and live stats. AGC, camera rotation
+   and the congestion controller's audio allocation are wired as in
+   libwebrtc's iOS client. Still to do: a run on a real iPhone and Apple ID
+   signing, which the Owner does.
+2. **Calls on real networks (C12).** Calls between the web app and the iOS
+   app, and from each to the AI server, through the self-hosted signaling
+   service and coturn on Amazon Lightsail (both running since 2026-11-02;
+   the library's TURN client already passes against that server). This
+   includes the AI server on Lightsail, a call forced through the TURN relay,
+   and the conversation metrics in [Benchmarks](#benchmarks) measured at
+   the caller on real links.
+3. **Web app (C15).** Built and deployed with the signaling service
+   ([#1102](https://github.com/aray4702/streaming_media/issues/1102)); its
+   call with the iOS app is checked in step 2. It works in Chrome; Safari
+   and Firefox come later.
+4. **iOS library (C11).** Its parts are merged: Audio Units and camera
+   capture (#1115), VideoToolbox H.264 (#1112), and the library and its unit
+   tests on the iOS simulator in CI (#1107, #1108). It is recorded as done
+   when the Owner approves.
+
+**After milestone 4:**
+
+- **Android (C13):** unplanned. The Owner moved it to the backlog so the
+  iOS and web apps come first.
+- **The AI's replies:** the AI server answers with scripted speech-like
+  audio behind `AiReplySource`. A real model plugs in there, once one is
+  chosen.
+- **Before wider use of the Lightsail server:** its `/turn` endpoint, which
+  hands out short-lived TURN credentials, needs an access token.
+- **Known items:** ICE calls in the test bench should send the negotiated
+  header extension IDs
+  ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
+  Issues labelled `stage:later` cover behaviour libwebrtc shares, such as
+  late audio at 20% loss ([#795](https://github.com/aray4702/streaming_media/issues/795)).
+
 ## Building
 
 ```sh
