@@ -41,6 +41,7 @@
 #include "sm/core/rtp_packet.h"
 #include "sm/core/units.h"
 #include "sm/p2p/packet_transport_internal.h"
+#include "sm/pc/rtp_parameters.h"
 #include "sm/sync/header_extensions.h"
 
 namespace sm::pc {
@@ -55,12 +56,8 @@ bool IsRtcpPacket(std::span<const uint8_t> packet);
 RtpPacketType InferRtpPacketType(std::span<const uint8_t> packet);
 bool IsValidRtpPacketSize(RtpPacketType packet_type, size_t size);
 
-// api/rtp_parameters.h's RtpExtension: an a=extmap line.
-struct RtpExtension {
-  std::string uri;
-  int id = 0;
-  bool operator==(const RtpExtension&) const = default;
-};
+// api/rtp_parameters.h's RtpExtension (an a=extmap line) is sm/pc/rtp_parameters.h's, shared with the session
+// description model (#1064).
 using RtpHeaderExtensions = std::vector<RtpExtension>;
 // RtpHeaderExtensionId's range (api/rtp_header_extension_id.h).
 inline constexpr int kMinRtpExtensionId = 1;
