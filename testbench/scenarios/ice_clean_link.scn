@@ -1,0 +1,37 @@
+# Issue #1087 (milestone 3, C6/C9 end-to-end): the clean_link scenario with `transport ice`: the call is set up through
+# the full stack (offer/answer, trickled candidates, ICE, DTLS) and its media goes as SRTP over the bundled transport
+# on the same links. Its expect lines are clean_link's; the setup.* and transport.* lines check the connection.
+# sm_compare runs the direct twin; this copy is not compared (`compare off`).
+# Finding (#1087): cc.queue_p95_ms is higher than the twin's (seeds 1-5 mean 68.9 ms against 61.3; sd 12.7), and the
+# twin's `< 86` line fails on seeds 2 and 5 (93.2, 91.8 ms; the twin 79.3, 73.4). Each packet carries the 10-byte SRTP
+# tag, which the send side's per-packet overhead doesn't count, as libwebrtc's doesn't by default: SrtpTransport adds
+# it to the network route only when SRTP is already active as the route changes (srtp_transport.cc:143-155), and ICE
+# selects the route before DTLS finishes. Seed 1, the one CI runs, passes.
+
+name ice_clean_link
+describe 2.5 Mbps link, 25 ms one-way, no impairments: the call must be flawless -- through ICE, DTLS-SRTP and SDP (transport ice, #1087)
+transport ice
+compare off
+duration 30s
+at 0s capacity=2500kbps delay=25ms queue=300ms
+expect audio.concealed_pct < 1
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect video.render_fps >= 29
+# PR #378 (#360, first RTCP report at half the nominal interval on both sides): was < 150. Ours 157 on seed 1;
+# libwebrtc 129 on seed 1, worst 142.45 on seeds 1-10 (169 on seeds 1-40, so libwebrtc misses < 150 too).
+# seed-1 outlier; mean in band (ours 141.5 / libwebrtc 132.9)
+expect video.e2e_delay_p95_ms < 175
+expect cc.utilization_pct >= 75
+# Issue #355 (rate_utilization_tracker on by default, as libwebrtc; program.md 0.2, needs-human): was < 60. Ours 67.8
+# on seed 1; libwebrtc per seed 44/86/52/53/67/138/94/47/80/89 (mean 74.9) on main's compare-webrtc, ours with the
+# tracker 68/89/58/57/75/144/93/49/81/89 (mean 80.4; 82.3 without).
+# PR #381 (#365, 1 ms feedback receive times and nearest-tick transport-cc deltas, as libwebrtc; program.md 0.2, Owner sign-off
+# 2026-10-25 8:49 AM PT, tight rule; not a gap on the means): was < 70. Ours 76.5 on seed 1 (seeds 1-10 mean 80.5);
+# libwebrtc seed 1 44.5, worst of seeds 1-10 90.5 (mean 71.2; fails < 70 on 6 of 10). About 12 % above ours, below libwebrtc's worst.
+expect cc.queue_p95_ms < 86
+expect cc.unsettled == 0
+expect setup.connected == 1
+expect transport.send_failures == 0
+expect transport.local_candidate_type == 0
+expect transport.remote_candidate_type == 0

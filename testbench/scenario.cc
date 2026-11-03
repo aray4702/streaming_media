@@ -485,6 +485,30 @@ ParseResult ParseScenario(const std::string& text) {
         return fail("usage: ai_send_ahead <time> [adaptive] (0-30 s)");
       }
       s.ai_send_ahead_adaptive = tok.size() == 3;
+    } else if (key == "transport") {
+      if (!need(2) || (tok[1] != "direct" && tok[1] != "ice")) return fail("usage: transport direct|ice");
+      s.transport_ice = tok[1] == "ice";
+    } else if (key == "nat") {
+      static const char* const kTypes[] = {"open_cone", "addr_restricted", "port_restricted", "symmetric"};
+      const bool sided = tok.size() == 3 && (tok[1] == "a" || tok[1] == "b");
+      if (!(need(2) || sided)) return fail("usage: nat [a|b] none|open_cone|addr_restricted|port_restricted|symmetric");
+      const std::string& type = tok[sided ? 2 : 1];
+      int v = type == "none" ? -1 : -2;
+      for (int i = 0; i < 4; ++i) {
+        if (type == kTypes[i]) v = i;
+      }
+      if (v == -2) return fail("usage: nat [a|b] none|open_cone|addr_restricted|port_restricted|symmetric");
+      if (!sided || tok[1] == "a") s.ice_nat[0] = v;
+      if (!sided || tok[1] == "b") s.ice_nat[1] = v;
+    } else if (key == "turn" && tok.size() == 2 &&
+               (tok[1] == "udp" || tok[1] == "tcp" || tok[1] == "tls" || tok[1] == "off")) {
+      s.ice_turn = tok[1] == "udp" ? 1 : tok[1] == "tcp" ? 2 : tok[1] == "tls" ? 3 : 0;
+    } else if (key == "stun") {
+      if (!need(2) || !ParseBool(tok[1], &s.ice_stun)) return fail("usage: stun on|off");
+    } else if (key == "ice_fail") {
+      TimeDelta t;
+      if (!need(3) || (tok[1] != "a" && tok[1] != "b") || !ParseTime(tok[2], &t)) return fail("usage: ice_fail a|b <time>");
+      s.ice_fail = std::make_pair(tok[1] == "a" ? 0 : 1, t);
     } else if (key == "turn") {
       Scenario::Turn tr;
       if (need(3) && tok[1] == "user") {
@@ -674,6 +698,9 @@ std::string UnsupportedReason(const Scenario& s) {
     }
   } else if (!s.participant_links.empty()) {
     return "participant links need call mesh 3|4";
+  }
+  if (!s.transport_ice && (s.ice_nat[0] >= 0 || s.ice_nat[1] >= 0 || s.ice_turn > 0 || !s.ice_stun || s.ice_fail)) {
+    return "nat, turn udp|tcp|tls, stun and ice_fail need transport ice";
   }
   if (!s.two_way && !(s.video_up && s.video_down)) return "two_way_video needs call two-way: a one-way call sends video one way only";
   if (!s.two_way && s.up_audio_nack) return "up_audio_nack needs call two-way: it sets the user-to-AI direction";

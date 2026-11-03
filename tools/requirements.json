@@ -1025,12 +1025,13 @@
    "area": "Connectivity",
    "title": "Observability switches",
    "acceptance": "Connection stats (getStats-style: candidate pairs, the selected path, RTT, bytes, ICE and DTLS state) behind SM_ENABLE_STATS, text logging behind SM_LOG_MIN_LEVEL, with SM_ENABLE_METRICS and SM_ENABLE_EVENTS, each with a runtime switch. CI builds everything off and checks that every scenario's media results are bit-identical to the default build.",
-   "status": "open",
+   "status": "done",
    "depends_on": [],
-   "evidence": "",
-   "verification": "",
+   "evidence": "Switches: SM_ENABLE_STATS/METRICS/EVENTS and SM_LOG_MIN_LEVEL with runtime switches (#988); CI check tools/check_observability_off.py on main (#1065); connection stats for ICE and DTLS (#1059, PR #1078)",
+   "verification": "Connection stats behind SM_ENABLE_STATS (off: not compiled, the call returns not supported) and a runtime switch: pc::GetConnectionStats adds transport (bytes, packets, ICE role/state, gathering state, DTLS state/role, TLS version, cipher suite, SRTP profile, selected pair), candidate-pair (state, nominated, bytes, packets, current/total RTT, requests/responses/consent), candidate and certificate stats to the stats report; names follow libwebrtc M157's rtcstats_objects.h (59 of 65 fields; the rest are deprecated or unused here). Tested on ICE+DTLS over the emulated network (bytes counted exactly, RTT 40-42 ms on a 40 ms link, cipher suite and SRTP profile, fingerprints matching SDP) and on both TLS backends. Text logging behind SM_LOG_MIN_LEVEL, metrics and events behind SM_ENABLE_METRICS/SM_ENABLE_EVENTS. CI builds everything off on main and checks that every scenario's media results are bit-identical (#1065; 184/184 identical locally). Owner approved marking done, 2026-11-02 3:50 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C9",

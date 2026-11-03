@@ -6,7 +6,7 @@
 // - CreateOffer / CreateAnswer through MediaSessionDescriptionFactory (#1063) with the engines' default codecs
 //   (Opus; H.264 constrained baseline with RTX) and header extensions, BUNDLE and rtcp-mux, a fresh 64-bit session
 //   id and version 2 (WebRtcSessionDescriptionFactory). The answer follows the offer's m= sections: audio and video
-//   are answered (sendrecv while this end sends), any other section (the data channel, C7) is rejected.
+//   are answered (sendrecv while this end sends), the data section as below, and any other section is rejected.
 // - SetLocalDescription / SetRemoteDescription check the signaling state (stable -> have-local-offer or
 //   have-remote-offer -> stable), apply the description to the transports, record the payload types
 //   (SdpPayloadTypeSuggester) and, after a local description, start ICE gathering. Candidates in a remote
@@ -57,6 +57,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -106,6 +107,15 @@ struct PeerEndpointConfig {
   // Data channels for this connection (C7's runtime switch). Off: no SCTP object and no m=application. Has no
   // effect when the library is built without SM_WITH_DATACHANNEL.
   bool enable_data_channels = true;
+
+  // The host runs its own media sessions (the test bench, #1087): the endpoint makes no rtp::Session. It
+  // demuxes what the BUNDLE transport receives for the negotiated sections to `on_media_packet` (RTP and RTCP,
+  // after SRTP), and sends the host's packets with SendMediaPacket. Off: the endpoint's own session, as above.
+  bool external_media = false;
+  std::function<void(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival)> on_media_packet;
+  // The SSRCs the local description announces (a=ssrc, the FID group), for a host whose sessions send on fixed
+  // SSRCs, as an app that munges the SDP before SetLocalDescription. Unset: the generated ones.
+  std::optional<uint32_t> audio_ssrc, video_ssrc, video_rtx_ssrc;
 };
 
 // PeerConnectionInterface::SignalingState, for C6's subset.
@@ -166,6 +176,12 @@ class PeerEndpoint {
   // Sends the session's queued packets (after SendAudio / SendVideo on session()).
   void FlushOutgoing(Timestamp now);
 
+  // external_media: sends one RTP or RTCP packet of the host's sessions over the BUNDLE transport (SRTP); false if
+  // it can't (not connected, no transport).
+  bool SendMediaPacket(std::span<const uint8_t> packet, bool rtcp, Timestamp now);
+  // The ICE and DTLS timers only (external_media, whose host runs the sessions).
+  void ProcessTransport(Timestamp now);
+
   // Packets the session produced that the transport could not send (not writable yet, or SRTP not active).
   int send_failures() const { return send_failures_; }
 
@@ -175,11 +191,12 @@ class PeerEndpoint {
   MediaSessionOptions OfferOptions() const;
   MediaSessionOptions AnswerOptions(const SessionDescription& offer) const;
   std::unique_ptr<SessionDescriptionInterface> Wrap(SdpType type, std::unique_ptr<SessionDescription> desc);
+  void ApplyFixedSsrcs(SessionDescription* desc) const;
   bool ApplyRemoteCandidates(const SessionDescriptionInterface& desc, Timestamp now);
   void OnCandidateGathered(const std::string& transport_name, const p2p::Candidate& candidate);
   bool CreateMediaSession(std::string* error);
   void OnRtcp(const std::vector<uint8_t>& packet, std::optional<Timestamp> arrival);
-  void Deliver(std::span<const uint8_t> packet, Timestamp arrival);
+  void Deliver(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival);
   bool UpdateDataChannelTransport(const SessionDescription& desc, std::string* error);
   bool MaybeStartSctp(Timestamp now, std::string* error);
   void DestroyDataChannelTransport(const char* reason);
