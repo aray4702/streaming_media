@@ -27,6 +27,17 @@ if(SM_IOS_DEVELOPMENT_TEAM)
     XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "Apple Development"
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED YES
     XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED YES)
+  # The project's other iOS executables (command-line tools, built as bundles on iOS) sign with the same team and get
+  # a bundle id, so Xcode lists no signing issues for them.
+  foreach(tool sm_ai_server sm_testbench sm_call_smoke)
+    if(TARGET ${tool})
+      string(REPLACE "_" "-" tool_id ${tool})  # a bundle id allows letters, digits, '-' and '.'
+      set_target_properties(${tool} PROPERTIES
+        XCODE_ATTRIBUTE_CODE_SIGN_STYLE Automatic
+        XCODE_ATTRIBUTE_DEVELOPMENT_TEAM "${SM_IOS_DEVELOPMENT_TEAM}"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER io.github.aray4702.${tool_id})
+    endif()
+  endforeach()
 else()
   set_target_properties(SmCall PROPERTIES
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED NO
