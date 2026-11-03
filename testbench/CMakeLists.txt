@@ -5,9 +5,14 @@
 enable_language(C)
 include(${PROJECT_SOURCE_DIR}/cmake/SmOpus.cmake)
 sm_add_opus()
-add_library(sm_testbench_lib STATIC scenario.cc call.cc turn_detector.cc ai_source.cc)
+add_library(sm_testbench_lib STATIC scenario.cc call.cc turn_detector.cc ai_source.cc ice_transport.cc ice_turn_tls.cc)
 target_include_directories(sm_testbench_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(sm_testbench_lib PUBLIC sm::loss sm::timing sm::cc sm::audio sm::video sm::rtp sm_opus)
+# `transport ice` (#1087): calls set up through the C6 part 3 endpoint (ICE, DTLS-SRTP, SDP); needs TLS (not wasm).
+if(TARGET sm::pc_endpoint AND TARGET sm::p2p_tls)
+  target_link_libraries(sm_testbench_lib PUBLIC sm::pc_endpoint sm::p2p_tls)
+  target_compile_definitions(sm_testbench_lib PRIVATE SM_TESTBENCH_ICE=1)
+endif()
 sm_configure_target(sm_testbench_lib)
 
 add_executable(sm_testbench sm_testbench_main.cc)
@@ -40,9 +45,19 @@ if(SM_BUILD_TESTS)
   set_tests_properties(unit.testbench.two_way_rejected PROPERTIES LABELS unit
     PASS_REGULAR_EXPRESSION "two_way_video needs call two-way")
   # One CTest entry per scenario; a failed expectation fails the test.
+  file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/ice_knob_rejected.scn "name ice_knob_rejected\nnat symmetric\nduration 2s\n")
+  add_test(NAME unit.testbench.ice_knob_rejected
+    COMMAND sm_testbench --quiet ${CMAKE_CURRENT_BINARY_DIR}/ice_knob_rejected.scn)
+  set_tests_properties(unit.testbench.ice_knob_rejected PROPERTIES LABELS unit
+    PASS_REGULAR_EXPRESSION "need transport ice")
   file(GLOB SM_SCENARIOS CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scenarios/*.scn)
   foreach(scn ${SM_SCENARIOS})
     get_filename_component(scn_name ${scn} NAME_WE)
+    # `transport ice` scenarios need the connectivity stack (#1087), which a build without TLS (wasm) doesn't have.
+    file(STRINGS ${scn} scn_ice REGEX "^transport[ \t]+ice")
+    if(scn_ice AND NOT (TARGET sm::pc_endpoint AND TARGET sm::p2p_tls))
+      continue()
+    endif()
     add_test(NAME scenario.${scn_name} COMMAND sm_testbench --quiet ${scn})
     set_tests_properties(scenario.${scn_name} PROPERTIES LABELS scenario)
   endforeach()

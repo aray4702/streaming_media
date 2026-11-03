@@ -78,6 +78,7 @@
 #include <cstdint>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -345,17 +346,8 @@ class EmulatedSocketServer final : public p2p::PacketSocketFactory, public p2p::
   void Deliver(Timestamp now) {
     Advance(now);
     for (Datagram<Wire>& d : net_.Receive(now, host_)) {
-      if (d.payload.proto == Wire::Proto::kTcp) {
-        OnTcpSegment(now, d);
-        continue;
-      }
-      auto it = bound_.find(d.dst.port);
-      if (it == bound_.end() || !it->second.udp) {
-        ++dropped_no_socket_;
-        continue;
-      }
-      it->second.udp->Receive(p2p::ReceivedPacket{std::span<const uint8_t>(d.payload.data), ToP2p(d.src), now,
-                                                  p2p::ReceivedPacket::kNotDecrypted});
+      if (inbound_tap_ && inbound_tap_(now, d)) continue;
+      Handle(now, d);
     }
     std::vector<EmulatedTcpSocket*> due;
     for (EmulatedTcpSocket* s : tcp_sockets_) {
@@ -372,6 +364,14 @@ class EmulatedSocketServer final : public p2p::PacketSocketFactory, public p2p::
     for (const EmulatedTcpSocket* s : tcp_sockets_) t = std::min(t, s->rto_at_);
     return t;
   }
+  // A host whose last hop is another link (the test bench's scenario links, #1087): every datagram that reaches
+  // this host goes to `tap` first, which takes it (returns true) or lets it through. The tap hands it back later
+  // with Inject, at the time it arrives over the other link.
+  void SetInboundTap(std::function<bool(Timestamp, Datagram<Wire>&)> tap) { inbound_tap_ = std::move(tap); }
+  void Inject(Timestamp now, Datagram<Wire>& d) {
+    Advance(now);
+    Handle(now, d);
+  }
   uint64_t dropped_no_socket() const { return dropped_no_socket_; }
   uint64_t tcp_resets_sent() const { return tcp_resets_sent_; }
   size_t bound_count() const { return bound_.size(); }
@@ -379,6 +379,20 @@ class EmulatedSocketServer final : public p2p::PacketSocketFactory, public p2p::
  private:
   friend class EmulatedUdpSocket;
   friend class EmulatedTcpSocket;
+  void Handle(Timestamp now, Datagram<Wire>& d) {
+    if (d.payload.proto == Wire::Proto::kTcp) {
+      OnTcpSegment(now, d);
+      return;
+    }
+    auto it = bound_.find(d.dst.port);
+    if (it == bound_.end() || !it->second.udp) {
+      ++dropped_no_socket_;
+      return;
+    }
+    it->second.udp->Receive(p2p::ReceivedPacket{std::span<const uint8_t>(d.payload.data), ToP2p(d.src), now,
+                                                p2p::ReceivedPacket::kNotDecrypted});
+  }
+  std::function<bool(Timestamp, Datagram<Wire>&)> inbound_tap_;
 
   struct Binding {
     EmulatedUdpSocket* udp = nullptr;
