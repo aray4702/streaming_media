@@ -7,7 +7,7 @@
   Query parameters:
     role=offer   Chrome offers, the native peer answers (default);
     role=answer  the native peer offers, Chrome answers;
-    dc=0         no data channel (the endpoint has none until C7 is wired in);
+    dc=0         no data channel (an endpoint built without SM_WITH_DATACHANNEL);
     self=1       the harness self-test: the peer is a second
                  RTCPeerConnection in this page, signaled through the same
                  server, so the server, the page and the checks can be

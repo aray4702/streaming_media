@@ -216,7 +216,7 @@ def main():
     ap.add_argument('--role', choices=('offer', 'answer'), default='offer', help="Chrome's role")
     ap.add_argument('--timeout', type=float, default=40.0, help='seconds for the whole call')
     ap.add_argument('--no-data-channel', action='store_true',
-                    help='no data channel and no data checks (our endpoint has none until C7 is wired in)')
+                    help='no data channel and no data checks (for an endpoint built without SM_WITH_DATACHANNEL)')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
@@ -238,7 +238,8 @@ def main():
     peer = None
     if args.peer:
         peer_role = 'answer' if args.role == 'offer' else 'offer'
-        peer = NativePeer([args.peer, '--role=' + peer_role, '--ip=' + host_address()], relay, args.verbose)
+        peer = NativePeer([args.peer, '--role=' + peer_role, '--ip=' + host_address()] +
+                          (['--no-data-channel'] if args.no_data_channel else []), relay, args.verbose)
 
     page_timeout_ms = int((args.timeout - 10) * 1000)
     url = 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
