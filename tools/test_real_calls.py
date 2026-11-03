@@ -20,7 +20,7 @@ SMOKE_LINE = ('{"type":"call-result","client":"sm_call_smoke","label":"a-relay-1
               '"video_render_fps":0.0,"video_freezes":0,"video_freeze_ms":0,"stats":{"state":"connected",'
               '"connect_ms":1444.2,"rtt_ms":53.5,"target_kbps":86.3,"audio_packets_lost":2,"audio_concealed_pct":0.4,'
               '"jitter_buffer_ms":254.0,"audio_played_s":20.1,"local_type":"prflx","remote_type":"srflx",'
-              '"protocol":"udp","relay_protocol":"udp"}}')
+              '"protocol":"udp","relay_protocol":"udp","capture_chain":"hpf,ns,aec3,agc"}}')
 
 
 class Offline(unittest.TestCase):
@@ -45,7 +45,8 @@ class Offline(unittest.TestCase):
         row = dict(zip(real_calls.COLUMNS, real_calls.row(r)))
         self.assertEqual(row['selected pair'], 'prflx/srflx udp, relayed (TURN over udp)')
         self.assertEqual(row['response ms (transport)'], '1310 (710), 1 missed')
-        self.assertEqual(row['barge-in stop ms'], '820')
+        self.assertEqual(row['barge-in stop ms'], '1 of 1: 820')
+        self.assertEqual(row['capture'], 'hpf, ns, aec3, agc')
         self.assertEqual(row['connect ms'], '1444')
         self.assertEqual(row['RTT ms'], '53.5')
         self.assertEqual(row['jitter buffer ms'], '254')
@@ -62,6 +63,33 @@ class Offline(unittest.TestCase):
         failed = {'client': 'chrome', 'error': 'no result from Chrome', 'case': 'b', 'path': 'direct'}
         self.assertFalse(real_calls.ok(failed))
         self.assertIn('FAILED: no result from Chrome', real_calls.table([web, failed]))
+
+    def test_chrome_with_apm(self):
+        # The web app's sched= mode (#1124): Chrome's microphone with its audio processing on.
+        web = {'type': 'call-result', 'client': 'chrome', 'connection': 'connected', 'audio_packets_received': 900,
+               'capture': 'getUserMedia, APM on', 'turns': 6, 'replies': 5, 'missed_replies': 1,
+               'response_ms_p50': 1580, 'response_transport_ms_p50': 980, 'barge_ins': 2, 'barge_ins_not_stopped': 1,
+               'barge_ins_skipped': 1, 'barge_in_stop_ms_p50': 894}
+        row = dict(zip(real_calls.COLUMNS, real_calls.row(web)))
+        self.assertEqual(row['capture'], 'APM on')
+        self.assertEqual(row['barge-in stop ms'], '1 of 2: 894, 1 not stopped, 1 not in a reply')
+
+    def test_capture_file_follows_the_schedule(self):
+        import tempfile
+        import wave
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'mic.wav')
+            sched = real_calls.capture_file(path, 12, True)
+            self.assertEqual(sched, '4,7.8b')  # A turn at 4 s, a barge-in 2.3 s after its end.
+            with wave.open(path) as w:
+                self.assertEqual((w.getframerate(), w.getnchannels(), w.getsampwidth()), (48000, 1, 2))
+                frames = w.readframes(w.getnframes())
+            pcm = [int.from_bytes(frames[i:i + 2], 'little', signed=True) for i in range(0, len(frames), 2)]
+            self.assertEqual(len(pcm), 17 * 48000)
+            self.assertTrue(all(v == 0 for v in pcm[:4 * 48000]))  # Silent until the first turn.
+            self.assertAlmostEqual(max(abs(v) for v in pcm[4 * 48000:int(5.5 * 48000)]) / 32767, 0.3, places=2)
+            self.assertTrue(all(v == 0 for v in pcm[int(5.5 * 48000) + 1:int(7.8 * 48000)]))
+            self.assertEqual(real_calls.capture_file(path, 12, False), '4,11')  # No barge-in: 5.5 s after each.
 
 
 @unittest.skipUnless(os.environ.get('SM_SIGNALING_URL'), 'SM_SIGNALING_URL is not set')

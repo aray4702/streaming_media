@@ -16,6 +16,14 @@ tools/real_calls.py --cases=d --sim=<UDID> --ios-smoke=out/ios-simulator/apps/ca
 tools/real_calls.py --table=calls.jsonl                        # the table below
 ```
 
+Case b's scripted user is Chrome's microphone with its audio processing on (#1124, `--chrome-mic=apm`, the default):
+a getUserMedia track with echoCancellation, noiseSuppression and autoGainControl, fed a WAV of the same turns through
+`--use-file-for-fake-audio-capture` (on macOS with `--disable-features=AudioServiceSandbox`, or the audio service
+can't read the file). The turns follow a fixed schedule: the barge-in comes 2.3 s after the turn's end, about 1 s
+into the reply. A barge-in turn that comes before the reply starts counts as "not in a reply". The reply plays out,
+so Chrome's echo canceller has it as its render signal, as our client's AEC3 has its playout. The calls before
+#1124 used a WebAudio track with no capture processing (`--chrome-mic=webaudio`).
+
 | case | caller | callee |
 |---|---|---|
 | a | `sm_call_smoke`, the iOS app's C++ call controller (`apps/call`), on macOS | the AI server |
@@ -98,7 +106,7 @@ so there is no scripted conversation. On hang-up it logs its `call-result` line 
     missed reply and 1 barge-in not stopped in each call;
   - `--no-apm` (raw microphone): 6 replies to 6 turns and 3 of 3 barge-ins stopped, in both calls.
 
-  The capture chain removes part of the user's speech while the AI's audio plays, which looks like AEC3
+  (Superseded by the rerun below, "Barge-in with the capture chain on both sides".) The capture chain removes part of the user's speech while the AI's audio plays, which looks like AEC3
   suppressing double talk, so the AI server's VAD doesn't hear the barge-in. Chrome's synthetic track has no
   capture processing. #1124 measured it against libwebrtc's APM on the same audio
   (`docs/results/apm-webrtc.md`, "barge-in, no echo path"), and libwebrtc does the same. With no echo path, AEC3
@@ -117,6 +125,41 @@ so there is no scripted conversation. On hang-up it logs its `call-result` line 
   - Packets lost (16 each way relayed) and concealment (2.4 % and 2.7 %) agree in size.
   - `connect ms` for `sm_call_smoke` in case c counts from its own start, so it includes the 2 s it waited for
     Chrome to join.
+
+## Barge-in with the capture chain on both sides (#1124)
+
+Rerun on 2026-11-03 after the Owner's decision on #1124. Chrome's audio processing is on, so the barge-in scoring
+compares APM with APM. The SmCall iOS app now uses VoiceProcessingIO's echo canceller and AGC, with the software
+AEC3 and AGC off in its chain, as libwebrtc's iOS client does (`ApplyIosAudioOptions`). `sm_call_smoke` built for
+the simulator (case d) runs that chain (high-pass filter and NS). It has no audio device, so nothing takes the place
+of AEC3. On macOS (case a) the chain keeps AEC3 and AGC, the library's default. The calls ran 40 s each, with 3 or 4
+barge-ins per call, from the same MacBook against the AI server on `<host>`. The "barge-in stop ms" column reads
+"stopped of attempted: p50".
+
+| date | case | client | capture | path | selected pair | connect ms | RTT ms | response ms (transport) | barge-in stop ms | concealed % | jitter buffer ms | lost | target kbps | video fps / freezes |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2026-11-03 18:52 UTC | a | sm_call_smoke | hpf, ns, aec3, agc | direct | srflx/srflx udp | 666 | 36.4 | 1400 (800) | 4 of 4: 830 | 1 | 246 | 0 | 114 | - |
+| 2026-11-03 18:52 UTC | a | sm_call_smoke | hpf, ns, aec3, agc | relay | prflx/prflx udp, relayed (TURN over udp) | 1473 | 27.7 | 1300 (700) | 4 of 4: 605 | 0.4 | 130 | 4 | 114 | - |
+| 2026-11-03 18:52 UTC | b | chrome | APM on | direct | prflx/prflx udp, relayed (TURN over udp) | 455 | 35 | 1581 (981), 1 missed | 2 of 3: 894, 1 not stopped | 1 | 236 | 0 | 100 | - |
+| 2026-11-03 18:52 UTC | b | chrome | APM on | relay | prflx/prflx udp, relayed (TURN over udp) | 321 | 48 | 1588 (988) | 3 of 3: 948 | 1.2 | 292 | 0 | 95.6 | - |
+| 2026-11-03 18:56 UTC | d | sm_call_smoke (iOS simulator) | hpf, ns | direct | srflx/srflx udp | 609 | 26.9 | 1265 (665) | 4 of 4: 540 | 0.3 | 158 | 8 | 99.6 | - |
+| 2026-11-03 18:56 UTC | d | sm_call_smoke (iOS simulator) | hpf, ns | relay | prflx/prflx udp, relayed (TURN over udp) | 1400 | 89.2 | 1410 (810) | 4 of 4: 600 | 0.8 | 166 | 2 | 63.2 | - |
+| 2026-11-03 19:57 UTC | a | sm_call_smoke | hpf, ns, aec3, agc | direct | prflx/prflx udp, relayed (TURN over udp) | 1276 | 84.2 | 1235 (635) | 4 of 4: 590 | 0.3 | 100 | 1 | 117 | - |
+| 2026-11-03 19:57 UTC | a | sm_call_smoke | hpf, ns, aec3, agc | relay | prflx/prflx udp, relayed (TURN over udp) | 1394 | 21.9 | 1235 (635) | 4 of 4: 575 | 0.3 | 102 | 2 | 117 | - |
+| 2026-11-03 19:57 UTC | b | chrome | APM on | direct | prflx/prflx udp, relayed (TURN over udp) | 420 | 28 | 1168 (568) | 3 of 3: 468 | 1.3 | 117 | 20 | 112 | - |
+| 2026-11-03 19:57 UTC | b | chrome | APM on | relay | prflx/prflx udp, relayed (TURN over udp) | 328 | 26 | 1188 (588) | 3 of 3: 516 | 0.2 | 127 | 0 | 99.1 | - |
+
+- **AEC3 against Chrome's APM: we are not behind.** Over these rounds, AEC3 (case a) stopped 16 of 16 barge-ins
+  and answered every turn. Chrome with APM (case b) stopped 11 of 12 and missed 1 reply. The iOS chain (case d)
+  stopped 8 of 8. Barge-in stop p50: 575-830 ms for case a, 468-948 ms for Chrome, 540-600 ms for case d.
+- The one-barge-in-per-call loss of the 08:07 rounds (case a and d, AEC3 in both then) did not come back. Those
+  calls ran before #1126 and #1131 changed the AI server's audio clock.
+- Two more rounds (18:57 and 19:01 UTC) ran while the path was degraded: RTT 244-991 ms, connects of 2-5.5 s, and
+  case a direct failed to connect in both rounds. Both clients then lost most barge-ins (case a 0 of 3, Chrome 0 of
+  2, with 9 barge-in turns "not in a reply" because the replies came late) and missed 1-3 replies per call. They are
+  left out of the table because they measure the path, not the capture chain.
+- The on-device check of VoiceProcessingIO's echo canceller (a real speaker and microphone) is the Owner's. The
+  simulator has no echo path.
 
 ## The jitter buffer on the same path (#1126)
 

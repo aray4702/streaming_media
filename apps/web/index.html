@@ -12,6 +12,13 @@
                 endpointer's 600 ms: response_transport_ms), as sm_call_smoke and the test bench measure it;
                 barge=1 also talks over every other reply 1 s into it (barge_in_stop_ms: the barge-in's start to
                 the reply's audio stopping here); turns=<n> caps the turns;
+    sched=<list> with converse=1 (#1124): the user is the browser's microphone with its audio processing on
+                (getUserMedia echoCancellation, noiseSuppression and autoGainControl), fed a file whose turns
+                follow this schedule (tools/real_calls.py writes both and starts Chrome with
+                --use-file-for-fake-audio-capture): seconds from the file's start of each 1.5 s turn, "b" marking a
+                barge-in, e.g. "4,7.8b,14.8". The page finds the first turn's end on its processed microphone and
+                scores the turns at their scheduled times; the AI's audio plays out, so Chrome's echo canceller
+                has it as its render signal, as our client's AEC3 has its playout;
     seconds=<s> hangs up after s seconds and, with result=1, POSTs one JSON line of the call's metrics to /result
                 (getStats: candidate pair, RTT, loss, concealment, jitter buffer, available bitrate, video fps
                 and freezes, plus the conversation timings).
@@ -131,8 +138,12 @@ async function join(code) {
   room = code;
   setState('starting');
   await loadTurn();
-  stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
-  if (params.get('converse') === '1') {
+  const sched = params.get('converse') === '1' && params.get('sched');
+  stream = await navigator.mediaDevices.getUserMedia(
+      {audio: sched ? {echoCancellation: true, noiseSuppression: true, autoGainControl: true} : true, video: true});
+  if (sched) {
+    talk = new FileTalk(sched, stream.getAudioTracks()[0]);
+  } else if (params.get('converse') === '1') {
     talk = new Talk();
     for (const t of stream.getAudioTracks()) { stream.removeTrack(t); t.stop(); }
     stream.addTrack(talk.track);
@@ -252,6 +263,93 @@ class Talk {
             response_ms_p50: med(this.response), response_transport_ms_p50: this.response.length ? med(this.response) - 600 : -1,
             barge_ins: this.barges, barge_ins_not_stopped: this.bargeMissed, barge_in_stop_ms_p50: med(this.bargeStop),
             response_ms: this.response, barge_in_stop_ms: this.bargeStop};
+  }
+}
+
+// The scripted user through the microphone (sched=, #1124): the turns are in the fake capture file, at known offsets
+// from its first turn, so the browser's audio processing (APM) handles them as it handles a person's voice. The
+// scoring follows Talk's: response from the end of a turn's speech to the next reply start before the following
+// turn (missed if none within 6 s); a barge-in is a scheduled barge turn that starts while a reply plays, stopped
+// if that reply's audio ends within 1.5 s and before its full length (the AI's replies are 3 s; 2.8 s allows for
+// the jitter buffer); a barge turn with no reply playing is not a barge-in (barge_ins_skipped).
+class FileTalk {
+  constructor(sched, mic) {
+    this.ctx = new AudioContext({sampleRate: 48000});
+    this.turnsAt = sched.split(',').map(v => ({at: parseFloat(v), barge: v.endsWith('b')}));
+    this.mic = mic; this.t0 = null; this.segments = []; this.playing = false; this.quiet = 0; this.firstQuiet = 0;
+    this.end = null;
+    const an = this.ctx.createAnalyser(); an.fftSize = 512;
+    this.ctx.createMediaStreamSource(new MediaStream([mic])).connect(an);
+    const buf = new Float32Array(480);
+    // The first turn's end on the processed microphone (no reply plays yet): its first quiet frame of 200 ms. The
+    // end, not the onset, because the processing may take a moment to pass the first syllables.
+    this.onset = null; this.micEnd = null; let quiet = 0, firstQuiet = 0;
+    this.micTimer = setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let e = 0; for (const v of buf) e += v * v;
+      const t = this.ctx.currentTime;
+      if (Math.sqrt(e / buf.length) > 0.01) {
+        quiet = 0; if (this.onset === null) this.onset = t;
+      } else if (this.onset !== null && ++quiet === 1) {
+        firstQuiet = t;
+      } else if (this.onset !== null && quiet >= 20) {
+        this.micEnd = firstQuiet; this.t0 = firstQuiet - this.turnsAt[0].at - 1.5; clearInterval(this.micTimer);
+      }
+    }, 10);
+  }
+  listen(remote) {
+    const el = new Audio(); el.srcObject = remote; el.play().catch(() => {});  // Played out: APM's render signal.
+    const an = this.ctx.createAnalyser(); an.fftSize = 512;
+    this.ctx.createMediaStreamSource(remote).connect(an);
+    const buf = new Float32Array(480);
+    setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let e = 0; for (const v of buf) e += v * v;
+      this.frame(this.ctx.currentTime, Math.sqrt(e / buf.length) > 0.01);
+    }, 10);
+  }
+  frame(t, active) {
+    this.end = t;
+    if (active) {
+      this.quiet = 0;
+      if (!this.playing) { this.playing = true; this.segments.push({start: t, stop: null}); }
+    } else if (this.playing && ++this.quiet === 1) {
+      this.firstQuiet = t;
+    } else if (this.playing && this.quiet >= 20) {
+      this.playing = false; this.segments[this.segments.length - 1].stop = this.firstQuiet;
+    }
+  }
+  json() {
+    const med = v => { if (!v.length) return -1; const s = [...v].sort((a, b) => a - b), n = s.length;
+                       return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+    const r = {turns: 0, missed: 0, barges: 0, bargeMissed: 0, bargeSkipped: 0, response: [], bargeStop: [],
+               bargeOffset: []};
+    if (this.t0 !== null && this.end !== null) {
+      const at = this.turnsAt.map(x => ({t: this.t0 + x.at, barge: x.barge}));
+      for (let i = 0; i < at.length; i++) {
+        const e = at[i].t + 1.5, until = Math.min(e + 6, i + 1 < at.length ? at[i + 1].t : Infinity);
+        if (until > this.end) break;
+        r.turns++;
+        if (at[i].barge) {
+          const seg = this.segments.find(g => g.start < at[i].t && (g.stop === null || g.stop > at[i].t));
+          if (!seg) r.bargeSkipped++;
+          else {
+            r.barges++; r.bargeOffset.push(Math.round((at[i].t - seg.start) * 1000));
+            const stop = seg.stop === null ? this.end : seg.stop, ms = Math.round((stop - at[i].t) * 1000);
+            if (ms < 1500 && stop - seg.start < 2.8) r.bargeStop.push(ms); else r.bargeMissed++;
+          }
+        }
+        const reply = this.segments.find(g => g.start > e && g.start < until);
+        if (reply) r.response.push(Math.round((reply.start - e) * 1000)); else r.missed++;
+      }
+    }
+    return {turns: r.turns, replies: r.response.length, missed_replies: r.missed,
+            response_ms_p50: med(r.response), response_transport_ms_p50: r.response.length ? med(r.response) - 600 : -1,
+            barge_ins: r.barges, barge_ins_not_stopped: r.bargeMissed, barge_ins_skipped: r.bargeSkipped,
+            barge_in_stop_ms_p50: med(r.bargeStop), response_ms: r.response, barge_in_stop_ms: r.bargeStop,
+            barge_in_offset_ms: r.bargeOffset, capture: 'getUserMedia, APM on', mic_settings: this.mic.getSettings(),
+            mic_onset_s: this.onset === null ? -1 : this.onset, mic_end_s: this.micEnd === null ? -1 : this.micEnd,
+            reply_segments: this.segments.map(g => [g.start - (this.t0 || 0), g.stop === null ? -1 : g.stop - (this.t0 || 0)])};
   }
 }
 

@@ -64,16 +64,21 @@ std::optional<int> OpusRateFromAllocation(const rtp::Session& session, int max_b
   return static_cast<int>(std::clamp<int64_t>(target.bps() - overhead_bps, 6000, 510000));
 }
 
+void ApplyIosAudioOptions(CallClientConfig* config) {
+  config->echo_cancellation = false;  // "Always disable AEC on iOS. Use built-in instead."
+  config->agc = false;                // "Always disable AGC on iOS. Use built-in instead."
+}
+
 // --- The capture chain, in APM's order (AudioProcessingImpl::ProcessCaptureStreamLocked) ----------------------------
 
 class CallClient::AudioProcessor {
  public:
-  explicit AudioProcessor(bool agc)
+  AudioProcessor(bool echo_cancellation, bool agc)
       : hpf_(kRate, 1),
         capture_split_(kRate),
         render_split_(kRate),
-        ns_(audio::ns::NoiseSuppressorConfig{kRate, audio::ns::SuppressionLevel::k18dB, 1}),
-        aec_(audio::aec3::Aec3Config{}, kRate, 1, 1) {
+        ns_(audio::ns::NoiseSuppressorConfig{kRate, audio::ns::SuppressionLevel::k18dB, 1}) {
+    if (echo_cancellation) aec_ = std::make_unique<audio::aec3::EchoCanceller3>(audio::aec3::Aec3Config{}, kRate, 1, 1);
     if (agc) {
       // APM's GainController1 defaults in kFixedDigital (api/audio/audio_processing.h:257-271).
       audio::agc1::GainControlConfig g;
@@ -85,14 +90,18 @@ class CallClient::AudioProcessor {
     }
   }
   double agc_gain_db() const { return agc_ ? agc_->stats().gain_db : 0; }
+  std::string chain() const { return std::string("hpf,ns") + (aec_ ? ",aec3" : "") + (agc_ ? ",agc" : ""); }
 
   // 10 ms played out, in [-1, 1]: AEC3's render signal (AnalyzeReverseStream, split into bands).
   void Render(std::span<const float> pcm) {
+    if (!aec_ && !agc_) return;  // Nothing in the chain reads the render signal.
     std::array<float, k10ms> x{}, bands{};
     for (size_t i = 0; i < k10ms && i < pcm.size(); ++i) x[i] = pcm[i] * 32768.f;
     render_split_.Analysis(x, bands);
-    ToFrame(bands, &render_frame_);
-    aec_.AnalyzeRender(render_frame_);
+    if (aec_) {
+      ToFrame(bands, &render_frame_);
+      aec_->AnalyzeRender(render_frame_);
+    }
     if (agc_) {
       // GainControlImpl::PackRenderAudioBuffer: the lowest band in S16, queued for ProcessRenderAudio.
       std::array<int16_t, kBandSamples> band0{};
@@ -103,23 +112,25 @@ class CallClient::AudioProcessor {
     }
   }
 
-  // 10 ms of microphone, processed in place: HPF, NS analysis, AEC3, NS, AGC.
+  // 10 ms of microphone, processed in place: HPF, NS analysis, AEC3 (when on), NS, AGC (when on).
   void Capture(std::span<int16_t> pcm, int delay_ms) {
     std::array<float, k10ms> x{}, bands{};
     for (size_t i = 0; i < k10ms; ++i) x[i] = pcm[i];
     hpf_.Process(x);
     const std::span<const float> channels[1] = {x};
-    aec_.AnalyzeCapture(channels);
+    if (aec_) aec_->AnalyzeCapture(channels);
     capture_split_.Analysis(x, bands);
     // The noise suppressor's API takes [-1, 1] floats; AEC3 the S16 range.
     std::array<float, k10ms> unit{};
     for (size_t i = 0; i < k10ms; ++i) unit[i] = bands[i] / 32768.f;
     ns_.Analyze(unit);
-    aec_.SetAudioBufferDelay(delay_ms);
-    ToFrame(bands, &capture_frame_);
-    aec_.ProcessCapture(&capture_frame_, false);
-    for (size_t b = 0; b < kBands; ++b) {
-      for (size_t i = 0; i < kBandSamples; ++i) unit[b * kBandSamples + i] = capture_frame_[b][0][i] / 32768.f;
+    if (aec_) {
+      aec_->SetAudioBufferDelay(delay_ms);
+      ToFrame(bands, &capture_frame_);
+      aec_->ProcessCapture(&capture_frame_, false);
+      for (size_t b = 0; b < kBands; ++b) {
+        for (size_t i = 0; i < kBandSamples; ++i) unit[b * kBandSamples + i] = capture_frame_[b][0][i] / 32768.f;
+      }
     }
     ns_.Process(unit);
     for (size_t i = 0; i < k10ms; ++i) bands[i] = unit[i] * 32768.f;
@@ -141,7 +152,7 @@ class CallClient::AudioProcessor {
   audio::hpf::HighPassFilter hpf_;
   audio::SplittingFilter capture_split_, render_split_;
   audio::ns::NoiseSuppressor ns_;
-  audio::aec3::EchoCanceller3 aec_;
+  std::unique_ptr<audio::aec3::EchoCanceller3> aec_;
   audio::aec3::Frame capture_frame_, render_frame_;
   std::unique_ptr<audio::agc1::GainControl> agc_;
 };
@@ -263,7 +274,7 @@ std::string CallStats::Text() const {
                 "send: %.0f kbps  recv: %.0f kbps\n"
                 "audio: sent %llu  recv %llu  lost %lld  jitter %.0f ms\n"
                 "audio: concealed %.1f%%  buffer %.0f ms  mic %.2f\n"
-                "audio: opus %.1f kbps  allocation %.1f kbps  agc %.1f dB\n"
+                "audio: opus %.1f kbps  allocation %.1f kbps  agc %.1f dB  chain %s\n"
                 "video: sent %llu (%dx%d)  decoded %llu  shown %llu (%dx%d)  rotation %d/%d\n"
                 "dtls: %s  srtp: %s",
                 CallStateName(state), ended_reason.empty() ? "" : " - ", ended_reason.c_str(), connect_ms, duration_s,
@@ -271,7 +282,7 @@ std::string CallStats::Text() const {
                 remote_candidate.empty() ? "-" : remote_candidate.c_str(), rtt_ms, target_kbps, send_kbps, recv_kbps,
                 static_cast<unsigned long long>(audio_packets_sent), static_cast<unsigned long long>(audio_packets_received),
                 static_cast<long long>(audio_packets_lost), audio_jitter_ms, audio_concealed_pct, jitter_buffer_ms,
-                capture_level, opus_kbps, audio_allocation_kbps, agc_gain_db,
+                capture_level, opus_kbps, audio_allocation_kbps, agc_gain_db, capture_chain.empty() ? "-" : capture_chain.c_str(),
                 static_cast<unsigned long long>(video_frames_sent), video_send_width, video_send_height,
                 static_cast<unsigned long long>(video_frames_decoded),
                 static_cast<unsigned long long>(video_frames_rendered), video_recv_width, video_recv_height,
@@ -302,7 +313,8 @@ std::string CallStats::ToJson() const {
          ",\"protocol\":" + net::JsonEscape(protocol) + ",\"relay_protocol\":" + net::JsonEscape(relay_protocol) +
          ",\"local_candidate\":" + net::JsonEscape(local_candidate) +
          ",\"remote_candidate\":" + net::JsonEscape(remote_candidate) + ",\"dtls_cipher\":" + net::JsonEscape(dtls_cipher) +
-         ",\"srtp_cipher\":" + net::JsonEscape(srtp_cipher) + ",\"ended_reason\":" + net::JsonEscape(ended_reason) + "}";
+         ",\"srtp_cipher\":" + net::JsonEscape(srtp_cipher) + ",\"capture_chain\":" + net::JsonEscape(capture_chain) +
+         ",\"ended_reason\":" + net::JsonEscape(ended_reason) + "}";
 }
 
 // --- CallClient ------------------------------------------------------------------------------------------------------
@@ -323,7 +335,7 @@ CallClient::CallClient(CallClientConfig config, std::function<void(const std::st
   encoder_ = std::make_unique<testbench::OpusSendEncoder>(
       std::clamp(32000, config_.opus_min_bitrate_bps, std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps)),
       true);
-  if (config_.audio_processing) apm_ = std::make_unique<AudioProcessor>(config_.agc);
+  if (config_.audio_processing) apm_ = std::make_unique<AudioProcessor>(config_.echo_cancellation, config_.agc);
 }
 
 CallClient::~CallClient() {
@@ -661,6 +673,7 @@ void CallClient::UpdateStats(Timestamp now) {
   }
   c.capture_level = capture_level_;
   c.agc_gain_db = apm_ ? apm_->agc_gain_db() : 0;
+  c.capture_chain = apm_ ? apm_->chain() : "off";
   c.opus_kbps = encoder_->target_bitrate_bps() / 1000.0;
   c.audio_allocation_kbps = audio_allocation_kbps_;
   std::lock_guard<std::mutex> lock(stats_mu_);

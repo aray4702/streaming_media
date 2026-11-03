@@ -192,6 +192,8 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   cfg.room = room;
   cfg.verbose = true;
   cfg.relay_only = self.relayOnly;
+  // libwebrtc's iOS client (#1124): VoiceProcessingIO's echo canceller and AGC, the software AEC3 and AGC off.
+  sm::apps::ApplyIosAudioOptions(&cfg);
   _client = std::make_unique<sm::apps::CallClient>(cfg, [ws](const std::string& m) {
     NSString* text = [[NSString alloc] initWithBytes:m.data() length:m.size() encoding:NSUTF8StringEncoding];
     [ws sendMessage:[[NSURLSessionWebSocketMessage alloc] initWithString:text] completionHandler:^(NSError*) {}];
@@ -209,7 +211,9 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   [self receiveOn:ws];
 
   _audioAdapter = std::make_unique<AudioAdapter>(_client.get());
-  _audio = sm::device::CreatePlatformAudioDevice(sm::device::AudioDeviceConfig{});
+  sm::device::AudioDeviceConfig audioConfig;
+  audioConfig.echo_canceller = sm::device::EchoCanceller::kSystem;  // VoiceProcessingIO's processing on (#1124).
+  _audio = sm::device::CreatePlatformAudioDevice(audioConfig);
   if (_audio) {
     _audio->RegisterAudioCallback(_audioAdapter.get());
     if (_audio->InitPlayout()) _audio->StartPlayout();

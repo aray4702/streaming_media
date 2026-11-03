@@ -24,9 +24,13 @@
 //   render signal), noise suppression, AGC, then the mute fade (Session::ProcessAudioCapture). The AGC is AGC1's
 //   GainControl in kFixedDigital with APM's GainController1 defaults (3 dBFS target, 9 dB compression gain, limiter
 //   on): the mode WebRtcVoiceEngine::ApplyOptions picks on iOS and Android (webrtc_voice_engine.cc:740-749), fed the
-//   render's lowest band as APM does without AgcManagerDirect. libwebrtc's iOS client itself turns the software AGC
-//   (and AEC) off for VoiceProcessingIO's built-in ones (:633-656); this app bypasses VoiceProcessingIO for AEC3
-//   (sm::device EchoCanceller::kLibrary), so the software AGC takes the built-in one's place.
+//   render's lowest band as APM does without AgcManagerDirect. That is the library's default (AEC3, as libwebrtc's
+//   desktop APM), used on macOS, by the AI server and by sm_call_smoke on macOS. On iOS the app does what
+//   libwebrtc's iOS client does (#1124): WebRtcVoiceEngine::ApplyOptions turns the software AEC and AGC off under
+//   WEBRTC_IOS for VoiceProcessingIO's built-in ones (webrtc_voice_engine.cc:633-656), and keeps the high-pass filter
+//   and the noise suppressor (the iOS ADM has no built-in NS, :714-725). ApplyIosAudioOptions sets that chain; the
+//   device then runs VoiceProcessingIO's processing (sm::device EchoCanceller::kSystem, its AGC on as
+//   voice_processing_audio_unit.mm checks it).
 // - Live stats (C8): Session::GetStats and pc::GetConnectionStats once a second, summarized (CallStats).
 //
 // Threads: the call runs on the host's call thread (Start, OnSignal, Step, Wait, Hangup, SetTurnResponse). The device
@@ -90,6 +94,7 @@ struct CallClientConfig {
   int opus_min_bitrate_bps = 32000;
   int opus_max_bitrate_bps = 32000;
   bool audio_processing = true;  // The library's capture chain (above); off: the raw microphone.
+  bool echo_cancellation = true;  // AEC3 in that chain (APM's echo_canceller.enabled).
   bool agc = true;               // The AGC in that chain (APM's gain_controller1.enabled).
   int video_fps = 30;
   // Relay only (#1121): gather and use TURN candidates only, as RTCConfiguration's iceTransportPolicy "relay"
@@ -97,6 +102,11 @@ struct CallClientConfig {
   bool relay_only = false;
   bool verbose = false;          // Log to stderr.
 };
+
+// The capture chain of libwebrtc's iOS client (#1124): WebRtcVoiceEngine::ApplyOptions under WEBRTC_IOS sets
+// echo_cancellation and auto_gain_control false (VoiceProcessingIO provides both), and the high-pass filter and the
+// noise suppressor stay on. The host pairs it with sm::device EchoCanceller::kSystem.
+void ApplyIosAudioOptions(CallClientConfig* config);
 
 // The UI's summary of the call, refreshed once a second.
 struct CallStats {
@@ -123,6 +133,7 @@ struct CallStats {
   int video_send_width = 0, video_send_height = 0, video_recv_width = 0, video_recv_height = 0;
   double capture_level = 0;  // RMS of the processed microphone, 0 to 1.
   double agc_gain_db = 0;    // The AGC's digital gain at the end of the last frame.
+  std::string capture_chain;  // The capture chain's stages: "hpf,ns,aec3,agc" (default), "hpf,ns" (iOS), "off".
   double opus_kbps = 0;      // The rate the Opus encoder is set to.
   double audio_allocation_kbps = 0;  // The congestion controller's audio allocation (with overhead).
   int video_send_rotation = 0, video_recv_rotation = 0;  // Degrees clockwise: sent and received in CVO.
