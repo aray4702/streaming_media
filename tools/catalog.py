@@ -1,5 +1,7 @@
 """Catalog of the algorithms implemented for sections 3-8 of
-docs/02-webrtc-problems-solved.md. Used by tools/gen_docs.py.
+docs/02-webrtc-problems-solved.md, the RTP layer (9.1-9.5) and the milestone 3
+ports (1 connectivity, 2 security, 9.6-9.9 data channels, 10 observability).
+Used by tools/gen_docs.py.
 
 Each entry maps an algorithm to the problem rows it addresses, its code,
 its test suites and benchmarks, plus hand-written notes: the end-to-end
@@ -8,6 +10,8 @@ verification found (defects fixed, limitations, deviations from libwebrtc).
 """
 
 SECTIONS = {
+    "1": ("Connectivity", "connectivity"),
+    "2": ("Security", "security"),
     "3": ("Packet loss", "loss"),
     "4": ("Jitter, reordering and timing", "timing"),
     "5": ("Bandwidth, congestion and unstable links", "cc"),
@@ -15,6 +19,8 @@ SECTIONS = {
     "7": ("Video quality and processing", "video"),
     "8": ("Synchronization", "sync"),
     "9": ("RTP/RTCP session layer", "rtp"),
+    "9d": ("Data channels", "data-channels"),  # ids 9.6-9.9, `group="9d"`
+    "10": ("Observability", "observability"),
 }
 
 ALGORITHMS = [
@@ -1974,3 +1980,380 @@ NOT_IMPLEMENTED = [
     ("7", "Error resilience inside the decoder", "Codec internal; 7.2 handles the fallback decision."),
     ("7", "Screen-content coding tools (palette, intra-BC)", "Encoder features; 7.4 flags when to enable them."),
 ]
+
+# ---------------------------------------------------------------------------
+# Milestone 3 (#944): sections 1, 2, 9.6-9.9 and 10. The test counts on these
+# pages are counted from the source (`counted=True`): tools/run_all.sh does not
+# run these suites, so a results column says "not recorded".
+
+def _parity_anchor(n):
+    """GitHub's anchor of the `### <n> ...` heading in docs/design/libwebrtc-parity.md."""
+    import os
+    import re
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "design", "libwebrtc-parity.md")
+    for line in open(path, encoding="utf-8"):
+        if line.startswith(f"### {n} "):
+            return re.sub(r"[^\w\- ]", "", line[4:].strip().lower()).replace(" ", "-")
+    raise KeyError(n)
+
+
+def _m3(id, slug, title, problem, headers, unit, scenario, ref, parity, text, verification,
+        e2e=(), bench=(), group=None, extra_files=(), other_tests=""):
+    """One milestone 3 entry. `ref` is the libwebrtc M157 counterpart; `parity` the parity section(s) 10.x."""
+    links = ", ".join(f"[10.{p.split('.')[1]}](../../design/libwebrtc-parity.md#{_parity_anchor(p)})" for p in parity)
+    notes = (f"libwebrtc M157 counterpart: {ref}. Differences from libwebrtc: [libwebrtc parity inventory](../../design/libwebrtc-parity.md), "
+             f"section {links}. {text}")
+    if other_tests:
+        notes += f" Other tests: {other_tests}"
+    d = dict(id=id, slug=slug, title=title, problems=[problem], headers=headers, unit=unit, e2e=list(e2e), bench=list(bench),
+             scenario=scenario, notes=notes, verification=verification, counted=True)
+    if group:
+        d["group"] = group
+    if extra_files:
+        d["extra_files"] = list(extra_files)
+    return d
+
+
+_NAT = ("Two `sim::` hosts, each behind its own NAT or on one subnet, on the test bench's emulated network "
+        "(`sim/emulated_sockets.h`), with a `sim::StunServer` (and a `sim::TurnServer` where relays are involved); "
+        "the unit tests run the libwebrtc test's scenario on it and check the same outcome.")
+
+MILESTONE3 = [
+    _m3("1.1", "stun", "STUN messages",
+        "Finding a path between two peers -> STUN: binding requests and responses, MESSAGE-INTEGRITY and FINGERPRINT",
+        ["p2p/stun.h", "p2p/stun_request.h", "p2p/stun_crypto_tls.h", "sim/stun_server.h"],
+        ["Stun", "StunRequest", "StunRequestReentrance", "StunServer", "StunTestCrypto", "StunTls"],
+        "Every message type and attribute of the unit tests is built, written and read back. RFC 5769's sample "
+        "requests and responses are checked with the integrity and fingerprint code of the TLS backend. "
+        "`StunRequestManager` retransmits a request on libwebrtc's schedule and drops late responses.",
+        "`api/transport/stun.{h,cc}`, `p2p/base/stun_request.{h,cc}`, `p2p/test/stun_server.{h,cc}`",
+        ["10.1"],
+        "Requirement C2. HMAC-SHA1 and CRC-32 come from sm::tls through `InstallStunCryptoFromTls` (C1).",
+        "Every `TEST_F` of `stun_unittest.cc` has a case (`unit.Stun`), the RFC 5769 vectors unchanged; `unit.StunTls` checks "
+        "them with BoringSSL's HMAC. Fuzz target `fuzz/stun_fuzzer.cc` (C10): 811k executions in 90 s without a crash; "
+        "its corpus is replayed by ctest (`fuzz.stun`). Benchmarks: `p2p/Stun_ParseIceRequest`, `p2p/Stun_BuildBindingResponse`.",
+        bench=["p2p/Stun_ParseIceRequest", "p2p/Stun_BuildBindingResponse"]),
+    _m3("1.2", "ports-candidates", "Ports and candidates",
+        "Describing where a peer can be reached -> host, server-reflexive and relay candidates on UDP ports",
+        ["p2p/candidate.h", "p2p/socket_address.h", "p2p/network.h", "p2p/port.h", "p2p/stun_port.h"],
+        ["P2pCandidate", "P2pIpAddress", "P2pSocketAddress", "P2pNetwork", "P2pPort", "P2pUdpPort", "P2pStunPort"],
+        _NAT,
+        "`api/candidate.{h,cc}`, `rtc_base/{socket_address,ip_address,network}.{h,cc}`, `p2p/base/{port,stun_port}.{h,cc}`, "
+        "`p2p/client/basic_port_allocator` (the port classes only)",
+        ["10.3"],
+        "Requirement C3 part 3. A `UDPPort` gathers a host candidate; a `StunPort` also asks the STUN server for its "
+        "server-reflexive address and checks the answer against libwebrtc's address-family and priority rules.",
+        "Cases ported from `port_unittest.cc`, `stun_port_unittest.cc`, `candidate_unittest.cc`, `socket_address_unittest.cc` and "
+        "`network_unittest.cc` (parity 10.3 lists those not ported); counts are in the Test methods section. PRs #1020, #1010."),
+    _m3("1.3", "connections", "Connections: candidate-pair checks",
+        "Choosing a working path -> a connection per candidate pair, with STUN pings, nomination and consent freshness (RFC 7675)",
+        ["p2p/connection.h", "p2p/connection_info.h", "p2p/stun_request.h"],
+        ["P2pConnection", "P2pConnectionCall"],
+        "Two ports ping each other through the emulated network: the pair goes from unreachable to writable, receiving "
+        "and then nominated; it loses writability when pings stop and is pruned when consent expires.",
+        "`p2p/base/connection.{h,cc}`, `connection_info.h`",
+        ["10.4"],
+        "Requirement C3 part 4. Ping intervals, RTT estimation, the writable/receiving timeouts and the consent "
+        "checks follow `connection.cc` and `p2p_constants.h`.",
+        "The cases of `connection_unittest` and the connection tests of `port_unittest.cc` pass (`unit.P2pConnection`, "
+        "`unit.P2pConnectionCall`); PR #1021."),
+    _m3("1.4", "port-allocation", "Port allocation",
+        "Gathering candidates on every interface -> network enumeration and a port allocator that opens ports as networks appear",
+        ["p2p/network_manager.h", "p2p/port_allocator.h", "p2p/basic_port_allocator.h", "p2p/ice_credentials_iterator.h"],
+        ["P2pNetworkManager", "P2pPortAllocator", "P2pBasicPortAllocator", "P2pIceCredentialsIterator"],
+        "An allocator session on a multi-homed emulated host opens a port per network and per protocol, reports "
+        "candidates as they are gathered and gathers again when a network is added or removed (continual gathering).",
+        "`rtc_base/network.{h,cc}` (the manager part), `p2p/base/{port_allocator,basic_port_allocator}.{h,cc}`, "
+        "`p2p/base/ice_credentials_iterator.{h,cc}`",
+        ["10.5"],
+        "Requirement C3 part 5. The allocator is set up as `PeerConnection` sets it up (flags, candidate filter, "
+        "pool size, TURN servers).",
+        "The cases of `basic_port_allocator_unittest.cc` that need no real sockets, on the emulated network; PRs #1025 and #1030."),
+    _m3("1.5", "ice-controller", "The ICE controller",
+        "Deciding which pair to ping, use and switch to -> libwebrtc's `BasicIceController` and the wrapping active controller",
+        ["p2p/ice_controller_interface.h", "p2p/basic_ice_controller.h", "p2p/active_ice_controller_interface.h",
+         "p2p/wrapping_active_ice_controller.h", "p2p/ice_switch_reason.h"],
+        ["P2pBasicIceController", "P2pWrappingActiveIceController", "P2pIceCompare"],
+        "A controller is fed connections with chosen states, RTTs and priorities and must pick the same pair to ping, "
+        "the same pair to switch to and the same pairs to prune as libwebrtc's"
+        ". `P2pIceCompare` runs both stacks through `sm_ice_compare`.",
+        "`p2p/base/{ice_controller_interface,basic_ice_controller,active_ice_controller_interface,wrapping_active_ice_controller,ice_switch_reason}.{h,cc}`",
+        ["10.6"],
+        "Requirement C3 part 6.",
+        "`ice_controller_test.cc` is `basic_ice_controller_unittest`'s cases on the emulated clock; PR #1028. "
+        "`unit.P2pIceCompare` and `unit.P2pIceCompareTls` compare connection time, the pair chosen and recovery after a network change "
+        "with libwebrtc's ICE where the compare build is present."),
+    _m3("1.6", "ice-agent", "The ICE agent (P2PTransportChannel)",
+        "One transport per media bundle that finds, checks and keeps a path -> `P2PTransportChannel`",
+        ["p2p/p2p_transport_channel.h", "p2p/ice_agent_interface.h", "p2p/ice_transport_internal.h", "p2p/transport_description.h",
+         "p2p/packet_transport_internal.h"],
+        ["P2pTransportChannel", "P2pTransportChannelPing", "P2pTransportChannelMultihomed", "P2pIceConfig"],
+        "Two channels behind NATs gather, exchange candidates (also trickled), connect, nominate and carry packets; the "
+        "multihomed cases fail over from one interface to another and the ping cases check nomination order.",
+        "`p2p/base/{p2p_transport_channel,ice_agent_interface,ice_transport_internal,transport_description,packet_transport_internal}.{h,cc}`",
+        ["10.9"],
+        "Requirement C3 part 6. Gathering, role conflicts, nomination, consent, continual gathering and IceConfig as "
+        "`PeerConnection` sets them.",
+        "`p2p_transport_channel_unittest.cc` cases and 21 of the 23 ping and multihomed cases of libwebrtc's tests pass; the "
+        "other two need IPv6 or the unported STUN dictionary (parity 10.9). PRs #1039, #1043, #1047."),
+    _m3("1.7", "ice-lite", "ICE-lite for the AI server",
+        "A server with a public address needs no gathering -> ICE-lite: answer checks only, never start them",
+        ["p2p/ice_lite_agent.h"],
+        ["P2pIceLite"],
+        "A full ICE agent in the controlling role connects to an ICE-lite agent and nominates a pair; the lite side "
+        "sends no check of its own.",
+        "`p2p/base/ice_lite_agent.{h,cc}`, `p2p/test/fake_ice_lite_agent`",
+        ["10.12"],
+        "Requirement C3 part 7.",
+        "The cases of `ice_lite_agent_unittest` and a full-versus-lite call over the emulated network pass; PR #1045."),
+    _m3("1.8", "turn-client", "TURN client (UDP, TCP, TLS)",
+        "Peers behind symmetric NATs or firewalls -> relay candidates through a TURN server on UDP, TCP or TLS (port 443)",
+        ["p2p/turn_port.h", "sim/turn_server.h"],
+        ["P2pTurnPort", "P2pTurnPortTcp", "P2pTurnPortTls", "P2pTurnRestCredentials", "P2pTurnServer"],
+        "A `TurnPort` allocates on `sim::TurnServer` (long-term and REST credentials), creates permissions, binds a "
+        "channel, relays data through Send/Data indications and ChannelData, refreshes and deallocates, over UDP, "
+        "TCP and TLS.",
+        "`p2p/base/turn_port.{h,cc}`, `p2p/client/turn_port_factory`, `p2p/test/turn_server`",
+        ["10.10", "10.14"],
+        "Requirement C4. Allocate with 401/438 retries, ALTERNATE-SERVER, TLS through sm::tls (both backends).",
+        "`turn_port_unittest.cc` and `turn_server_unittest.cc` cases on the emulated network, over all three transports. "
+        "`interop.Coturn` runs the client against coturn 4.6.1 (UDP, TCP and TLS, each with long-term and REST credentials: "
+        "6 cases; skipped where coturn is not installed). `fuzz.turn` replays the TURN fuzz corpus. PRs #1041, #1049, #1052.",
+        other_tests="`interop.Coturn` (6 cases, `tests/interop/coturn_test.cc`); `sm_ice_compare` through the emulated TURN server (PRs #1056, #1066)."),
+    _m3("1.9", "tcp-sockets", "TCP packet sockets",
+        "Networks that block UDP -> ICE and TURN over TCP: RFC 4571 framing of packets on a stream",
+        ["p2p/async_packet_socket.h", "p2p/async_tcp_socket.h", "sim/emulated_sockets.h"],
+        ["AsyncTcpSocket", "AsyncStunTcpSocket", "EmulatedSockets", "EmulatedTcp"],
+        "Packets cross an emulated TCP connection (handshake, ordering, closing): the stream "
+        "is cut into packets by a 2-byte length (`AsyncTcpSocket`) or by STUN and ChannelData framing "
+        "(`AsyncStunTcpSocket`).",
+        "`rtc_base/async_tcp_socket.{h,cc}`, `p2p/base/async_stun_tcp_socket.{h,cc}`, `rtc_base/async_packet_socket.h`",
+        ["10.8"],
+        "Requirement C4 part 2. The emulated sockets are ours (libwebrtc's `EmulatedNetwork` is a different design); "
+        "the framing classes are ports.",
+        "`async_tcp_socket_unittest.cc` and `async_stun_tcp_socket_unittest.cc` cases; the stream-in-pieces fuzz target "
+        "`tcp_framing` (corpus replayed as `fuzz.tcp_framing`). PR #1034.",
+        extra_files=[]),
+    _m3("1.10", "sdp", "SDP model and parse/write",
+        "Describing a call to a peer, a browser included -> the session description model and SDP text in both directions",
+        ["pc/session_description.h", "pc/webrtc_sdp.h", "pc/jsep.h", "pc/codec.h", "pc/stream_params.h",
+         "pc/simulcast_description.h", "pc/media_protocol_names.h", "pc/rtp_parameters.h"],
+        ["PcWebRtcSdp", "PcSessionDescription", "PcJsepSessionDescription", "PcMediaContentDescription", "PcCandidateParse",
+         "PcSimulcastSdp"],
+        "libwebrtc's own SDP strings (Unified Plan, BUNDLE, data section, simulcast, candidates) are parsed and written "
+        "back byte for byte; malformed input is rejected with the same errors.",
+        "`api/jsep.h`, `api/jsep_session_description`, `pc/session_description.{h,cc}`, `pc/webrtc_sdp.{h,cc}`, `media/base/codec.{h,cc}`, "
+        "`media/base/stream_params.{h,cc}`, `api/rtp_parameters.h`, `pc/media_protocol_names.{h,cc}`",
+        ["10.16"],
+        "Requirement C6 part 1.",
+        "The cases of `webrtc_sdp_unittest.cc` and `session_description_unittest.cc` run; `fuzz/sdp_parser_fuzzer.cc` (after "
+        "libwebrtc's `sdp_parser_fuzzer.cc`) checks that a write/parse/write round trip is stable (`fuzz.sdp_parser`). "
+        "PR #1073.",
+        extra_files=[]),
+    _m3("1.11", "offer-answer", "Offer/answer generation",
+        "Agreeing on codecs, extensions and transports -> JSEP offers and answers for Opus, H.264, RTX, transport-cc and the data section",
+        ["pc/media_session.h", "pc/codec_vendor.h", "pc/sdp_payload_type_suggester.h", "pc/transport_description_factory.h",
+         "pc/media_options.h", "pc/unique_id_generator.h"],
+        ["PcMediaSession", "PcTransportDescriptionFactory"],
+        "An offerer and an answerer with different codec sets exchange descriptions; the answer keeps the payload types "
+        "of the offer, picks the common codecs in the offer's order and rejects what it cannot do.",
+        "`pc/media_session.{h,cc}`, `pc/codec_vendor.{h,cc}`, `pc/payload_type_suggester`, `p2p/base/transport_description_factory.{h,cc}`",
+        ["10.18"],
+        "Requirement C6 part 2.",
+        "The cases of `media_session_unittest.cc` and `transport_description_factory_unittest.cc` that apply to the subset. PR #1084."),
+    _m3("1.12", "endpoint", "The endpoint (PeerEndpoint)",
+        "Setting up a whole call from SDP -> one object that applies descriptions and wires ICE, DTLS-SRTP, RTP and data channels",
+        ["pc/peer_endpoint.h", "pc/jsep_transport_controller.h"],
+        ["PcJsepTransportController", "PcPeerEndpoint"],
+        "Two `PeerEndpoint`s behind NATs exchange an offer, an answer and trickled candidates, connect over ICE and DTLS "
+        "and carry every Opus and H.264 frame intact both ways under SRTP; the same endpoint has also been called "
+        "from headless Chrome.",
+        "`pc/jsep_transport_controller.{h,cc}`, `pc/peer_connection` (the signalling part), `pc/jsep_transport`",
+        ["10.19", "10.21"],
+        "Requirement C6 part 3 and C7 part 5.",
+        "`peer_endpoint_test.cc`; the Chrome call is `tests/interop/browser` (a call with headless Chrome). PRs #1089, #1093.",
+        other_tests="`tests/interop/browser` (a call with headless Chrome, a data channel message each way)."),
+
+    # ------------------------------------------------------------------ 2
+    _m3("2.1", "tls-interface", "TLS/DTLS interface and its BoringSSL and mbedTLS backends",
+        "Encrypting and authenticating a connection -> libwebrtc's `SSLIdentity`, `SSLFingerprint`, `MessageDigest` and `CryptoRandom` interfaces, two backends",
+        ["tls/backend.h", "tls/ssl_identity.h", "tls/ssl_fingerprint.h", "tls/message_digest.h", "tls/crypto_random.h"],
+        ["TlsMessageDigest", "TlsCryptoRandom", "TlsSslIdentity", "TlsSslFingerprint", "TlsCrossBackend"],
+        "The same unit tests run on BoringSSL (the default) and Mbed TLS 3.6 (`SM_TLS_BACKEND=mbedtls`, DTLS 1.2); "
+        "`TlsCrossBackend` handshakes BoringSSL against mbedTLS both ways in every ctest run.",
+        "`rtc_base/{ssl_identity,ssl_certificate,ssl_fingerprint,message_digest,crypto_random}.{h,cc}`, `rtc_base/openssl_*`",
+        ["10.2"],
+        "Requirement C1. Each backend reports the DTLS versions it supports and a handshake agrees on the highest "
+        "both have (BoringSSL 1.3, mbedTLS 1.2). Not built for wasm (`SM_WITH_TLS` is off there).",
+        "`unit.Tls*` and `unit.Tls*.mbedtls` (the second set when `SM_TLS_CROSS_TEST` is on) pass; the cross test agrees "
+        "on DTLS 1.2. PRs #992-#994, #1016, #1018."),
+    _m3("2.2", "dtls-transport", "DTLS transport",
+        "A secure channel over unreliable ICE packets -> DTLS handshake, role from SDP `a=setup`, the peer's certificate checked against the SDP fingerprint",
+        ["tls/dtls_transport.h", "p2p/dtls_transport.h", "p2p/dtls_utils.h"],
+        ["TlsDtlsTransport", "P2pDtlsRole", "P2pDtlsTransport", "DtlsUtils"],
+        "Two DTLS transports over a fake ICE transport (or the emulated one) handshake as client and server, "
+        "reject a wrong fingerprint, and carry application data.",
+        "`rtc_base/openssl_stream_adapter.{h,cc}` (the DTLS part), `p2p/dtls/dtls_transport.{h,cc}`, `p2p/dtls/dtls_utils.{h,cc}`",
+        ["10.2", "10.7"],
+        "Requirements C1 and C5. `p2p::DtlsTransport` sits over an ICE transport; `tls::DtlsTransport` is the "
+        "backend's record layer.",
+        "`dtls_transport_unittest.cc`'s cases on both backends; `fuzz.dtls_record` (both backends) and `fuzz.dtls_transport` "
+        "replay their corpora (C10). PRs #994, #1018."),
+    _m3("2.3", "dtls-srtp", "DTLS-SRTP key export",
+        "Keying media from the same handshake -> RFC 5764 key export split by DTLS role",
+        ["pc/dtls_srtp_transport.h"],
+        ["TlsDtlsSrtp", "PcDtlsSrtpTransport"],
+        "After a handshake each side exports the SRTP keys for its role; the client's send key is the server's "
+        "receive key. A DTLS restart re-keys the SRTP session.",
+        "`pc/dtls_srtp_transport.{h,cc}`, `rtc_base/openssl_stream_adapter.cc` (`ExportSrtpKeyingMaterial`)",
+        ["10.7"],
+        "Requirement C5.",
+        "The cases of `dtls_srtp_transport_unittest.cc` pass plus a media path over the emulated link. PR #1038."),
+    _m3("2.4", "srtp", "SRTP and SRTCP (libsrtp)",
+        "Protecting media from eavesdropping and replay -> AES-CM-128-HMAC-SHA1-80 and AES-GCM with replay protection",
+        ["tls/srtp_session.h", "pc/srtp_transport.h", "pc/rtp_transport.h"],
+        ["TlsSrtpSession", "PcSrtpTransport", "PcRtpTransport", "PcRtpUtils"],
+        "RTP and RTCP packets are protected and unprotected through libsrtp 2.8.0; a replayed packet and one with a "
+        "wrong tag are dropped; each cipher suite is tried.",
+        "`pc/srtp_session.{h,cc}`, `pc/srtp_transport.{h,cc}`, `pc/rtp_transport.{h,cc}`, `pc/rtp_utils.{h,cc}`",
+        ["10.7"],
+        "Requirement C5. The test bench keeps unencrypted media.",
+        "`srtp_transport_unittest.cc` and `rtp_transport_unittest.cc` cases pass. PRs #1011, #1038."),
+    _m3("2.5", "tls-client-socket", "TLS client socket over TCP",
+        "TURN on port 443 and other TLS-wrapped streams -> a TLS client over a TCP packet socket",
+        ["tls/tls_stream.h", "p2p/ssl_adapter.h", "p2p/ssl_adapter_tls.h"],
+        ["TlsTlsStream", "P2pSslAdapter"],
+        "A TLS client over an emulated TCP connection to a TLS server checks the certificate (or, as ICE does, "
+        "its fingerprint) and carries a stream.",
+        "`rtc_base/{ssl_adapter,openssl_adapter,ssl_stream_adapter}.{h,cc}`",
+        ["10.13"],
+        "Requirement C4 part 3, on both backends.",
+        "`ssl_adapter_test.cc` and `tls_stream_test.cc`; TURN over TLS (1.8) and `P2pIceCompareTls` use it. PR #1046."),
+
+    # ------------------------------------------------------------------ 9.6-9.9
+    _m3("9.6", "dcsctp-packet", "dcSCTP packet layer",
+        "Messages with several streams and optional reliability -> SCTP packets: common header, CRC-32C, chunks, parameters, error causes",
+        ["dcsctp/packet/sctp_packet.h", "dcsctp/packet/data.h", "dcsctp/packet/crc32c.h"],
+        ["DcsctpAbortChunkTest", "DcsctpAddIncomingStreamsRequestParameterTest", "DcsctpAddOutgoingStreamsRequestParameterTest",
+         "DcsctpBoundedByteReaderTest", "DcsctpBoundedByteWriterTest", "DcsctpChunkValidatorsTest",
+         "DcsctpCookieAckChunkTest", "DcsctpCookieEchoChunkTest", "DcsctpCookieReceivedWhileShuttingDownCauseTest",
+         "DcsctpCrc32Test", "DcsctpDataChunkTest", "DcsctpErrorChunkTest",
+         "DcsctpForwardTsnChunkTest", "DcsctpForwardTsnSupportedParameterTest", "DcsctpHeartbeatAckChunkTest",
+         "DcsctpHeartbeatRequestChunkTest", "DcsctpIDataChunkTest", "DcsctpIForwardTsnChunkTest",
+         "DcsctpIncomingSSNResetRequestParameterTest", "DcsctpInitAckChunkTest", "DcsctpInitChunkTest",
+         "DcsctpInvalidMandatoryParameterCauseTest", "DcsctpInvalidStreamIdentifierCauseTest", "DcsctpMathUtilTest",
+         "DcsctpMissingMandatoryParameterCauseTest", "DcsctpNoUserDataCauseTest", "DcsctpOutOfResourceErrorCauseTest",
+         "DcsctpOutgoingSSNResetRequestParameterTest", "DcsctpParameterTest", "DcsctpProtocolViolationCauseTest",
+         "DcsctpReConfigChunkTest", "DcsctpReconfigurationResponseParameterTest", "DcsctpRestartOfAnAssociationWithNewAddressesCauseTest",
+         "DcsctpSSNTSNResetRequestParameterTest", "DcsctpSackChunkTest", "DcsctpSctpPacketTest",
+         "DcsctpSequenceNumbersTest", "DcsctpShutdownAckChunkTest", "DcsctpShutdownChunkTest",
+         "DcsctpShutdownCompleteChunkTest", "DcsctpStaleCookieErrorCauseTest", "DcsctpStateCookieParameterTest",
+         "DcsctpSupportedExtensionsParameterTest", "DcsctpTlvDataTest", "DcsctpUnrecognizedChunkTypeCauseTest",
+         "DcsctpUnrecognizedParametersCauseTest", "DcsctpUnresolvableAddressCauseTest", "DcsctpUserInitiatedAbortCauseTest",
+         "DcsctpZeroChecksumAcceptableChunkParameterTest"],
+        "Each chunk, parameter and error cause is built, parsed and printed; a packet round-trips; bad lengths, "
+        "padding and checksums are rejected.",
+        "`net/dcsctp/packet/`, `net/dcsctp/common/`",
+        ["10.11"],
+        "Requirement C7 part 1. Behind `SM_WITH_DATACHANNEL`.",
+        "libwebrtc's packet tests are ported as the `Dcsctp*ChunkTest`, `*ParameterTest`, `*CauseTest`, `SctpPacketTest`, `Crc32Test`, "
+        "`TlvDataTest`, `BoundedByteReader/WriterTest` and `SequenceNumbersTest` suites (`sm_unit_dcsctp`). "
+        "`fuzz.dcsctp_packet` replays the SCTP packet fuzz corpus. PR #1042.",
+        group="9d"),
+    _m3("9.7", "dcsctp-socket", "dcSCTP socket",
+        "An SCTP association in user space -> `DcSctpSocket` with its send and receive queues, congestion control, timers and stream reset",
+        ["dcsctp/public/dcsctp_socket.h", "dcsctp/socket/dcsctp_socket.h", "dcsctp/tx/retransmission_queue.h",
+         "dcsctp/rx/reassembly_queue.h", "dcsctp/timer/timer.h"],
+        ["DcsctpDataTrackerTest", "DcsctpDcSctpSocketParametrizedTest", "DcsctpDcSctpSocketTest",
+         "DcsctpDisabledHeartbeatHandlerTest", "DcsctpHeartbeatHandlerTest", "DcsctpInterleavedReassemblyStreamsTest",
+         "DcsctpOutstandingDataTest", "DcsctpPacketSenderTest", "DcsctpProcessTimeoutTest",
+         "DcsctpRRSendQueueTest", "DcsctpReassemblyQueueTest", "DcsctpRetransmissionErrorCounterTest",
+         "DcsctpRetransmissionQueueTest", "DcsctpRetransmissionTimeoutTest", "DcsctpStateCookieTest",
+         "DcsctpStreamResetHandlerTest", "DcsctpStreamSchedulerTest", "DcsctpTimerManagerTest",
+         "DcsctpTimerTest", "DcsctpTraditionalReassemblyStreamsTest", "DcsctpTransmissionControlBlockTest",
+         "DcsctpTypesTest"],
+        "Two sockets are connected through a lossy simulated path, exchange messages on several streams "
+        "(ordered, unordered, partially reliable), reset streams and shut down.",
+        "`net/dcsctp/{public,socket,rx,tx,timer}/`",
+        ["10.15"],
+        "Requirement C7 part 2.",
+        "libwebrtc's socket, rx, tx and timer test cases are ported (`sm_unit_dcsctp_socket`: `DcSctpSocketTest`, "
+        "`RetransmissionQueueTest`, `ReassemblyQueueTest`, `RRSendQueueTest`, `StreamResetHandlerTest`, ...). Fuzz target "
+        "`dcsctp_socket` from 10 starting states (`fuzz.dcsctp_socket`). PR #1067.",
+        group="9d"),
+    _m3("9.8", "sctp-over-dtls", "SCTP over DTLS",
+        "Carrying SCTP on the call's secure transport -> `DcSctpTransport` on a DTLS transport (RFC 8261)",
+        ["sctp/sctp_transport_internal.h", "sctp/sctp_transport.h", "sctp/dcsctp_transport.h"],
+        ["SctpDcSctpTransport", "SctpOverDtls"],
+        "Two endpoints connect an SCTP association over ICE and DTLS through emulated NATs and exchange messages "
+        "in both directions; the association closes with the transport.",
+        "`media/sctp/dcsctp_transport.{h,cc}`, `pc/sctp_transport.{h,cc}`, `media/sctp/sctp_transport_internal.h`",
+        ["10.17"],
+        "Requirement C7 part 3. Needs `SM_WITH_TLS` as well as `SM_WITH_DATACHANNEL`.",
+        "`dcsctp_transport_test.cc` passes (`unit.SctpDcSctpTransport`, `unit.SctpOverDtls`). PR #1082.",
+        group="9d"),
+    _m3("9.9", "data-channel-api", "DCEP and the data channel API",
+        "Application messages between browsers and servers -> DATA_CHANNEL_OPEN/ACK, reliable and partially reliable channels, in-band and negotiated",
+        ["pc/data_channel_interface.h", "pc/sctp_utils.h", "pc/sctp_data_channel.h", "pc/data_channel_controller.h"],
+        ["PcSctpUtils", "PcSctpDataChannel", "PcDataChannels"],
+        "Two endpoints open channels (reliable, `maxRetransmits`, `maxPacketLifeTime`, ordered and unordered), exchange "
+        "messages, close them, and the build switch off means no SCTP code and no `m=application`.",
+        "`api/data_channel_interface.h`, `pc/sctp_utils.{h,cc}`, `pc/sctp_data_channel.{h,cc}`, `pc/data_channel_controller.{h,cc}`",
+        ["10.20", "10.21"],
+        "Requirement C7 parts 4 and 5. The runtime switch is per connection: off means no association, and a remote "
+        "data section is rejected. Even and odd stream ids follow the DTLS role.",
+        "`sctp_utils_test.cc`, `data_channel_test.cc` (cases of `sctp_data_channel_unittest.cc` and the DCEP bytes), and the "
+        "data channels in `PcPeerEndpoint` (three channels beside audio and video on one BUNDLE transport). A message each way "
+        "with headless Chrome in `tests/interop/browser`. PRs #1086, #1097.",
+        group="9d"),
+
+    # ------------------------------------------------------------------ 10
+    _m3("10.1", "switches", "Build and runtime switches",
+        "Observability costs bytes and time on small devices -> each output is compiled out by a switch and also gated at run time",
+        ["core/observability.h", "core/metrics.h", "core/event_log.h", "core/logging.h"],
+        ["Observability", "Metrics", "Histogram", "EventLog", "Logging"],
+        "The tests exercise `SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS` and `SM_LOG_MIN_LEVEL` "
+        "(compiled in) and their runtime switches (on and off).",
+        "none: libwebrtc has `RTC_LOG` and `RTC_HISTOGRAM`, always compiled in, with no switch to build them out",
+        ["10.1"],
+        "Requirement C8. Beyond libwebrtc by design; parity 10.1 lists the histograms libwebrtc records that we do not.",
+        "`unit.Observability`, `Metrics`, `Histogram`, `EventLog` and `Logging` pass in the default build; the off build is "
+        "checked in 10.3. PR #988."),
+    _m3("10.2", "connection-stats", "ICE and DTLS connection stats",
+        "Seeing what a call is doing -> `getStats`-style transport, candidate-pair, candidate and certificate stats",
+        ["pc/connection_stats.h"],
+        ["PcConnectionStats"],
+        "On ICE and DTLS over the emulated network bytes are counted exactly, the RTT reads 40-42 ms on a 40 ms link, "
+        "and the cipher suite, SRTP profile and fingerprints match the SDP.",
+        "`api/stats/rtcstats_objects.h` (RTCTransportStats, RTCIceCandidatePairStats, RTCIceCandidateStats, RTCCertificateStats), `pc/rtc_stats_collector.cc`",
+        ["10.9"],
+        "Requirement C8. Names follow M157's `rtcstats_objects.h`: 59 of its 65 fields are kept; the rest are "
+        "deprecated or unused here. Behind `SM_ENABLE_STATS`; off, the call returns not supported.",
+        "`unit.PcConnectionStats` passes on both TLS backends. PRs #1059 and #1078."),
+    _m3("10.3", "observability-off", "The observability-off check",
+        "Observability must never change what a call does -> an all-off build produces the same media results, bit for bit",
+        [],
+        [],
+        "`tools/check_observability_off.py` builds the test bench with metrics, events and stats compiled out and "
+        "`SM_LOG_MIN_LEVEL` NONE, runs every scenario in it and in the default build, and fails unless the metrics, "
+        "checks and verdicts are identical.",
+        "none (ours)",
+        ["10.1"],
+        "Requirement C8. The `events` counts and the `--library` metrics exist only in the default build and are not compared.",
+        "Passes on main since PR #1065 (the script's own run on every `testbench/scenarios/*.scn`). `tools/check_observability_off.py` "
+        "is run by CI's test bench job.",
+        extra_files=["tools/check_observability_off.py"]),
+    _m3("10.4", "fuzzing", "Fuzzing of the network parsers",
+        "A parser that reads network input is an attack surface -> a libFuzzer target for each, with a seed corpus replayed in every CI run",
+        [],
+        [],
+        "Each target in `fuzz/` feeds arbitrary bytes to one parser (RTP, RTCP, transport feedback, H.264, packet buffer, RED, "
+        "ULPFEC, STUN, TURN, TCP framing, DTLS records, DTLS over ICE, SDP, SCTP packet and socket); ctest replays the "
+        "committed corpus as `fuzz.<target>` so a regression is a test failure. `SM_BUILD_FUZZERS=ON` builds the real libFuzzer targets.",
+        "`test/fuzzers/` (each target's counterpart is listed in `fuzz/README.md`)",
+        ["10.1"],
+        "Requirement C10. 15 targets, listed with their libwebrtc counterparts in `fuzz/README.md`.",
+        "Local fuzzing runs found no crash (STUN: 811k executions in 90 s). The libFuzzer build itself (`SM_BUILD_FUZZERS=ON`) is not built in CI, as accepted for C2. PRs #989, #1019, #1042, #1058, #1067, #1073.",
+        extra_files=["fuzz/README.md", "fuzz/CMakeLists.txt"]),
+]
+ALGORITHMS += MILESTONE3
