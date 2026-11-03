@@ -344,6 +344,25 @@ int DtlsTransport::srtp_crypto_suite() const {
   return 0;
 }
 
+int DtlsTransport::ssl_cipher_suite() const {
+  if (state_ != DtlsState::kConnected) return 0;
+  const int id = mbedtls_ssl_get_ciphersuite_id_from_ssl(&impl_->ssl);
+  return id > 0 ? id : 0;
+}
+
+// Mbed TLS names the TLS 1.2 suites as the IANA registry does with '-' for '_' ("TLS-ECDHE-ECDSA-WITH-AES-128-GCM-
+// SHA256"), and DTLS here is 1.2 only, so the standard name (SSL_CIPHER_standard_name) is that with '_'.
+std::string DtlsTransport::ssl_cipher_suite_name() const {
+  if (state_ != DtlsState::kConnected) return {};
+  const char* name = mbedtls_ssl_get_ciphersuite(&impl_->ssl);
+  if (name == nullptr) return {};
+  std::string s(name);
+  for (char& ch : s) {
+    if (ch == '-') ch = '_';
+  }
+  return s;
+}
+
 bool DtlsTransport::ExportSrtpKeyingMaterial(std::span<uint8_t> out) const {
   if (state_ != DtlsState::kConnected || impl_->master_secret.empty()) return false;
   // RFC 5705 without a context: PRF(master_secret, label, client_random || server_random).

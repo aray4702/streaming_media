@@ -150,13 +150,17 @@ if(SM_WITH_TLS)
       PcWebRtcSdp
   )
   if(SM_WITH_SYNC)
-    # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007).
+    # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007), and the connection stats over
+    # the emulated network (C8, #1059).
     sm_add_test_exe(sm_unit_pc LABEL unit DEPS sm::pc
       SOURCES
+        unit/p2p/test_crypto.cc
+        unit/pc/connection_stats_test.cc
         unit/pc/dtls_srtp_transport_test.cc
         unit/pc/rtp_transport_test.cc
         unit/pc/srtp_transport_test.cc
       SUITES
+        PcConnectionStats
         PcDtlsSrtpTransport
         PcRtpTransport
         PcRtpUtils
@@ -336,6 +340,17 @@ if(SM_WITH_DATACHANNEL)
   endif()
   if(NOT MSVC)
     target_compile_options(sm_unit_dcsctp PRIVATE -Wno-shadow)
+  endif()
+  if(SM_WITH_TLS)
+    # SCTP over DTLS (C7 part 3, #1069): DcSctpTransport and SctpTransport, two endpoints over ICE + DTLS on the
+    # emulated network.
+    sm_add_test_exe(sm_unit_sctp LABEL unit DEPS sm::sctp sm::p2p_tls
+      SOURCES
+        unit/sctp/dcsctp_transport_test.cc
+      SUITES
+        SctpDcSctpTransport
+        SctpOverDtls
+    )
   endif()
 endif()
 

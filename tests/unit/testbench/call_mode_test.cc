@@ -378,3 +378,96 @@ SM_TEST(TestbenchCallMode, UpAudioNackResendsTheUsersLostAudio) {
   SM_EXPECT_TRUE(on.metrics.at("down.net.rtx_kbps") == 0);
   SM_EXPECT_TRUE(on.metrics.at("up.repair.overhead_pct") > 0);
 }
+
+// Issue #1072: `call mesh 3|4` and `participant <i> [reverse] at ...` parse, round-trip and are refused where they
+// don't apply.
+SM_TEST(TestbenchCallMode, MeshParsesAndRoundTrips) {
+  auto p = ParseScenario("call mesh 3\nduration 2s\nat 0s capacity=2Mbps\nparticipant 3 at 0s capacity=700kbps loss=2%\n"
+                         "participant 2 reverse at 1s delay=40ms\n");
+  SM_ASSERT_TRUE(p.scenario.has_value());
+  SM_EXPECT_EQ(p.scenario->mesh, 3);
+  SM_EXPECT_FALSE(p.scenario->two_way);
+  SM_ASSERT_EQ(p.scenario->participant_links.size(), size_t{2});
+  SM_EXPECT_EQ(p.scenario->participant_links[0].participant, 3);
+  SM_EXPECT_FALSE(p.scenario->participant_links[0].reverse);
+  SM_EXPECT_TRUE(p.scenario->participant_links[1].reverse);
+  SM_EXPECT_TRUE(UnsupportedReason(*p.scenario).empty());
+  const std::string text = FormatScenario(*p.scenario);
+  SM_EXPECT_TRUE(text.find("call mesh 3\n") != std::string::npos);
+  auto again = ParseScenario(text);
+  SM_ASSERT_TRUE(again.scenario.has_value());
+  SM_EXPECT_EQ(FormatScenario(*again.scenario), text);
+  for (const char* bad : {"call mesh\n", "call mesh 2\n", "call mesh 5\n", "call mesh three\n", "participant 0 at 0s loss=1%\n",
+                          "participant 5 at 0s loss=1%\n", "participant 2 sideways at 0s\n", "participant 2 at\n"}) {
+    SM_EXPECT_FALSE(ParseScenario(bad).scenario.has_value());
+  }
+  // A participant link needs a mesh with that participant; the AI side's features need a two-way call.
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("participant 2 at 0s loss=1%\n").scenario).empty());
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("call mesh 3\nparticipant 4 at 0s loss=1%\n").scenario).empty());
+  SM_EXPECT_TRUE(UnsupportedReason(*ParseScenario("call mesh 4\nparticipant 4 at 0s loss=1%\n").scenario).empty());
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("call mesh 3\nturn user 1s-2s\n").scenario).empty());
+  SM_EXPECT_FALSE(UnsupportedReason(*ParseScenario("call mesh 3\ntwo_way_video up\n").scenario).empty());
+}
+
+namespace {
+Report RunMesh(const std::string& extra, uint64_t seed = 1) {
+  auto parsed = ParseScenario("name mesh\ncall mesh 3\nvideo off\nduration 8s\nseed " + std::to_string(seed) +
+                              "\nat 0s capacity=2Mbps delay=15ms\nreverse at 0s capacity=10Mbps delay=15ms\n" + extra);
+  RunOptions opt;
+  opt.timeseries = false;
+  opt.library_metrics = false;
+  return RunCall(*parsed.scenario, opt);
+}
+}  // namespace
+
+// Issue #1072: every participant's audio reaches every other over its own session, each directed pair is measured as
+// a one-way call, and each participant sends its peers' streams on its one uplink.
+SM_TEST(TestbenchCallMode, MeshEveryPairFlows) {
+  const Report r = RunMesh("");
+  for (int i = 1; i <= 3; ++i) {
+    for (int j = 1; j <= 3; ++j) {
+      if (i == j) continue;
+      const std::string d = "p" + std::to_string(i) + "_to_p" + std::to_string(j) + ".";
+      SM_ASSERT_TRUE(r.metrics.count(d + "audio.concealed_pct") == 1);
+      SM_EXPECT_TRUE(r.metrics.at(d + "audio.time_to_first_ms") < 500);
+      SM_EXPECT_TRUE(r.metrics.at(d + "audio.concealed_pct") < 2);
+      SM_EXPECT_TRUE(r.metrics.at(d + "cc.target_avg_kbps") > 0);
+      SM_EXPECT_TRUE(r.metrics.at(d + "rtcp.audio_report_blocks") > 0);
+      // RTT: i's uplink and j's downlink one way, j's uplink and i's downlink back, 15 ms each.
+      SM_EXPECT_TRUE(r.metrics.at(d + "cc.rtt_p50_ms") >= 60 && r.metrics.at(d + "cc.rtt_p50_ms") < 90);
+    }
+    const std::string p = "p" + std::to_string(i) + ".";
+    SM_EXPECT_TRUE(r.metrics.at(p + "upload_kbps") > 0);
+    SM_EXPECT_TRUE(r.metrics.at(p + "download_kbps") > 0);
+  }
+  // Audio only, nothing limits the uplink: two peers cost about twice a 1:1 call's upload.
+  SM_EXPECT_TRUE(r.metrics.at("mesh.upload_cost_ratio") > 1.8 && r.metrics.at("mesh.upload_cost_ratio") < 2.2);
+  SM_EXPECT_EQ(r.metrics.at("mesh.participants"), 3.0);
+  // Neither one-way nor two-way names are reported.
+  SM_EXPECT_TRUE(r.metrics.count("audio.concealed_pct") == 0);
+  SM_EXPECT_TRUE(r.metrics.count("up.audio.concealed_pct") == 0);
+  // Deterministic for a seed.
+  SM_EXPECT_TRUE(RunMesh("").metrics == r.metrics);
+  SM_EXPECT_FALSE(RunMesh("", 2).metrics == r.metrics);
+}
+
+// Issue #1072: a participant's own link carries its streams only: a lossy uplink for participant 3 loses its outgoing
+// pairs' packets, not the others'.
+SM_TEST(TestbenchCallMode, MeshParticipantLinkOverride) {
+  const Report r = RunMesh("participant 3 at 0s loss=10%\n");
+  SM_EXPECT_TRUE(r.metrics.at("p3.uplink_loss_pct") > 5);
+  SM_EXPECT_TRUE(r.metrics.at("p1.uplink_loss_pct") == 0);
+  SM_EXPECT_TRUE(r.metrics.at("p3_to_p1.audio.concealed_pct") > r.metrics.at("p1_to_p2.audio.concealed_pct"));
+  SM_EXPECT_TRUE(r.metrics.at("p3_to_p2.audio.concealed_pct") > r.metrics.at("p2_to_p1.audio.concealed_pct"));
+}
+
+// Issue #1072: --metrics documents the mesh names.
+SM_TEST(TestbenchCallMode, CatalogListsMeshNames) {
+  bool pair = false, upload = false, ratio = false;
+  for (const auto& [name, meaning] : MetricCatalog()) {
+    pair = pair || name == "p<i>_to_p<j>.audio.concealed_pct";
+    upload = upload || name == "p<i>.upload_kbps";
+    ratio = ratio || name == "mesh.upload_cost_ratio";
+  }
+  SM_EXPECT_TRUE(pair && upload && ratio);
+}

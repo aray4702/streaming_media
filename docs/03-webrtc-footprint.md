@@ -103,6 +103,8 @@ If libwebrtc must be used:
 
 ## Implications for this library
 
+> **Note (milestone 3, [#944](https://github.com/aray4702/streaming_media/issues/944)).** The sizes below were measured before the connectivity layer (ICE, TURN, DTLS-SRTP, data channels). It adds a TLS library, BoringSSL (default) or mbedTLS 3.6 (`SM_TLS_BACKEND`), and libsrtp 2.8.0, both fetched by CMake. `SM_WITH_TLS=OFF` leaves them out. The footprint with each backend is not measured yet.
+
 The size comes from **generality** (every codec, platform and legacy path),
 not from the core resilience algorithms. The parts that actually handle
 unstable links are relatively compact: NACK, FEC, transport-cc with a

@@ -1037,7 +1037,38 @@ after `test/fuzzers/sdp_parser_fuzzer.cc`, with a write/parse/write stability ch
 | `Codec` matching, H.264 profile helpers, `AddDefaultFeedbackParams`, `UniqueRandomIdGenerator` | Present | Left for C6 part 2 (`GenerateSsrcs` takes an id function) | Offer/answer generation uses them, the parser doesn't |
 | Not in `compare/webrtc/reference/` | `api/rtp_parameters.h`, `rtp_transceiver_direction.h`, `media/base/media_constants.h`, `pc/simulcast_description.h`, `rtc_base/string_encode.cc`, `api/jsep_session_description.cc`, the fmtp helpers (`WriteFmtpParameters`, `ParseFmtpParameterSet`) | Ported from their M157 declarations and behaviour, as the tests pin it | Missing reference files (noted on #1062) |
 
-### 10.17 Offer/answer generation (`src/pc/{media_session,codec_vendor,sdp_payload_type_suggester,transport_description_factory}.cc`, C6 part 2, #1063)
+### 10.17 Data channels: SCTP over DTLS (`src/sctp/`, C7 part 3, #1069)
+
+Ported from `media/sctp/dcsctp_transport.{h,cc}` and `pc/sctp_transport.{h,cc}` at M157 as `sm::sctp::DcSctpTransport`
+and `sm::sctp::SctpTransport` (`include/sm/sctp/`, library `sm::sctp`, built with `SM_WITH_DATACHANNEL=ON` and TLS).
+The dcSCTP socket of 10.15 runs over the DTLS transport of `sm/p2p/dtls_transport.h`: decrypted DTLS application
+data in, `SendPacket` out; the association starts once DTLS is writable and `Start()` has created the socket (SNAP:
+`ConnectWithConnectionToken`, replaying up to 32 early packets); a DTLS restart (state back to `kNew`) drops the
+socket. Same settings as `CreateDcSctpOptions`: ports from the description (5000 by default), the max message size
+(256 KiB by default), streams announced from `max_sctp_streams` (65535), timer backoff capped at 3000 ms, no
+association close on too many retransmissions (data or INIT), a 16 MiB per-stream send queue and no total limit,
+message interleaving off. Same PPIDs (50 DCEP, 51 / 53 string / binary, 56 / 57 empty, sent as one zero byte; 52 / 54
+accepted), the same errors (`kInvalidState` for a SID not open or closing, `kInvalidRange` over the max message size,
+`kResourceExhausted` and ready-to-send cleared on a full queue), the same two-way stream reset bookkeeping
+(`OnChannelClosing` for a remote close, `OnChannelClosed` when both directions are reset) and the same
+`SctpTransport` states (`kConnecting`, `kConnected` with `MaxChannels`, `kClosed` on DTLS closed or failed, a failed
+`Start()` or `Clear()`). Tests: `tests/unit/sctp/dcsctp_transport_test.cc` (13 cases), two endpoints over ICE and
+DTLS on the emulated network (association up, messages by type, ordered and unordered, reliable under 10% loss, max
+retransmits 0 under 30% loss, max lifetime across an outage, stream reset from one end and from both, a full send
+buffer draining, max message size and a second `Start()`, SNAP with early packets, DTLS failure), and the transport
+without DTLS. Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| Time | Network thread, `TaskQueueTimeoutFactory`, `env.clock()` | Calls that can send take `now`; received packets carry their arrival time; the socket's timers are `NextProcessTime()` / `Process(now)` over `ProcessTimeoutFactory` (10.15) | The library's time model |
+| Random | `webrtc::Random` seeded from the clock in microseconds | `sm::Random` seeded from the creation time in microseconds | `rtc_base/random` isn't in `reference/`; only verification tags and initial TSNs differ |
+| Field trial | `WebRTC-DataChannelMessageInterleaving` | `DcSctpTransportConfig::enable_message_interleaving`, off | No field trials in the library; same default |
+| Packet observer | `TextPcapPacketObserver` at verbose logging | None | Not ported (10.15); a debug aid |
+| Payloads, errors | `CopyOnWriteBuffer`, `RTCError` | `std::span<const uint8_t>`, `sm::sctp::RtcError` (type, message, SCTP failure detail, cause code) | No rtc_base or api/ |
+| `SctpTransport` | Ref-counted, hops to the network thread, `dtls_transport()` is the api `DtlsTransport` | Owned, one thread, `dtls_transport()` is the `p2p::DtlsTransport`; the destructors also unsubscribe from the DTLS transport | No ref counting or threads in the library |
+| Interface files | `media/sctp/sctp_transport_internal.h`, `api/transport/data_channel_transport_interface.h`, `api/sctp_transport_interface.h`, `api/rtc_error.h`, `api/priority.h`, and the unit tests `media/sctp/dcsctp_transport_unittest.cc`, `pc/sctp_transport_unittest.cc` | `include/sm/sctp/sctp_transport_internal.h` and `sctp_transport.h` with the names and values `dcsctp_transport.cc` and `sctp_transport.cc` use; `kMaxSctpStreams` (65535) and the port (5000) checked against `api/webrtc_sdp_unittest.cc`, 256 KiB against `media_session.cc`; the 16 MiB queue (`MaxSendQueueSize`) is from libwebrtc, not checked here | Not in `reference/` yet (asked for on #1069); the tests above cover the transport's behaviour until the unit tests can be ported |
+
+### 10.18 Offer/answer generation (`src/pc/{media_session,codec_vendor,sdp_payload_type_suggester,transport_description_factory}.cc`, C6 part 2, #1063)
 
 `pc/media_session.cc` (`MediaSessionDescriptionFactory`, `CreateOfferOrError` / `CreateAnswerOrError`) and
 `p2p/base/transport_description_factory.cc` at M157 (`compare/webrtc/reference/`), with `pc/sdp_payload_type_suggester`
@@ -1067,7 +1098,7 @@ offer/answer round trip through `SdpSerialize` / `SdpDeserialize`). Differences:
 | Not ported | Codec preferences, raw packetization, RED fmtp matching, VP9 / AV1 / H.265 profile matching, cryptex (`CryptoOptions`), SCTP SNAP, Plan B streams | Left out | Outside C6's subset; the defaults are libwebrtc's (cryptex and SNAP off) |
 | Data channel switch | The application adds the data section | Same: the factory writes m=application when the options ask; `SM_WITH_DATACHANNEL` is checked by the caller (C7) | |
 
-### 10.18 The endpoint that sets up a call from SDP (`src/pc/{jsep_transport_controller,peer_endpoint}.cc`, C6 part 3, #1064)
+### 10.19 The endpoint that sets up a call from SDP (`src/pc/{jsep_transport_controller,peer_endpoint}.cc`, C6 part 3, #1064)
 
 `pc/jsep_transport_controller.cc` and `pc/jsep_transport.cc` at M157 (`compare/webrtc/reference/`), and the transport
 half of `pc/sdp_offer_answer.cc` / `pc/peer_connection.cc`, for C6's subset. Applying a description creates, per BUNDLE
@@ -1098,7 +1129,7 @@ signaling states). Differences:
 | Transceivers | `AddTrack` / `AddTransceiver`, renegotiation, rollback, pranswer | One audio and one video transceiver from the config; one offer/answer; no rollback or pranswer | Outside part 3; C9 and part 4 need one negotiation per peer |
 | Unsignaled streams | A default receive stream for an SSRC the SDP didn't name | Receive streams need a=ssrc | Chrome signals its SSRCs |
 | RTCP mux policy, DTLS-in-STUN, cryptex, aggregate states | `kRtcpMuxPolicyNegotiate`, SPED, `CryptoOptions` cryptex, `PeerConnectionState` | Require only; left out; the transports' own states are read | libwebrtc's defaults (require, SPED and cryptex off) |
-| Data channel | `SctpTransport` on the DTLS transport | The data section is rejected in an answer and not offered | C7 (#1069, #1070) is not merged yet |
+| Data channel | `SctpTransport` on the DTLS transport | The data section is rejected in an answer and not offered | The data channel API (C7 part 4, #1070) is not merged yet; part 3's `SctpTransport` (#1082) is |
 | Not in `reference/` | `pc/jsep_transport_collection.cc` (`BundleManager::Update`, `CommitTransports`) | Ported from the header and M157's behaviour | Missing reference file (noted on #1064) |
 | STUN crypto | Built in | The app calls `p2p::InstallStunCryptoFromTls()` once at startup, as for the ICE agent | The library sets no globals itself |
 

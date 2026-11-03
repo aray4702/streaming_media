@@ -1,0 +1,34 @@
+name mesh_3_weak_participant
+describe A 3-party mesh call where participant 3 is on a weak link (700 kbit/s up, 3 Mbit/s down, 40 ms, 10 ms jitter, 2% loss each way) and the other two on home broadband: the weak participant's streams suffer, the other pair's must not (#1072)
+duration 30s
+call mesh 3
+video_size 640x360
+video_max 800kbps
+at 0s capacity=2Mbps delay=15ms queue=300ms
+reverse at 0s capacity=10Mbps delay=15ms queue=300ms
+participant 3 at 0s capacity=700kbps delay=40ms jitter=10ms loss=2%
+participant 3 reverse at 0s capacity=3Mbps delay=40ms jitter=10ms loss=2%
+# The pair on good links is untouched by the weak participant.
+expect p1_to_p2.audio.interruptions == 0
+expect p1_to_p2.video.freeze_count == 0
+expect p1_to_p2.audio.mouth_to_ear_p95_ms < 400
+expect p2_to_p1.audio.interruptions == 0
+expect p2_to_p1.video.freeze_count == 0
+expect p2_to_p1.audio.mouth_to_ear_p95_ms < 400
+# The weak participant's pairs (about 155 ms RTT with 2% loss): program.md 6.3's sev:2 rows, mouth-to-ear scaled
+# from 400 ms at 100 ms RTT by the extra 55 ms.
+expect p1_to_p3.audio.concealed_pct < 2
+expect p1_to_p3.video.longest_freeze_ms < 1000
+expect p1_to_p3.audio.mouth_to_ear_p95_ms < 450
+expect p2_to_p3.audio.concealed_pct < 2
+expect p2_to_p3.video.longest_freeze_ms < 1000
+expect p2_to_p3.audio.mouth_to_ear_p95_ms < 450
+expect p3_to_p1.audio.concealed_pct < 2
+expect p3_to_p1.video.longest_freeze_ms < 1000
+expect p3_to_p1.audio.mouth_to_ear_p95_ms < 450
+expect p3_to_p2.audio.concealed_pct < 2
+expect p3_to_p2.video.longest_freeze_ms < 1000
+expect p3_to_p2.audio.mouth_to_ear_p95_ms < 450
+# It sends to two peers within its 700 kbit/s uplink, and the others' upload cost is unchanged.
+expect p3.upload_kbps < 700
+expect mesh.upload_cost_ratio > 1.8
