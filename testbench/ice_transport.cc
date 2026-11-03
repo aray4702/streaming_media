@@ -302,6 +302,21 @@ IceLink::IceLink(const IceOptions& options) : impl_(std::make_unique<Impl>(optio
   }
 }
 
+sync::ExtensionMap IceLink::NegotiatedExtensions() const {
+  sync::ExtensionMap map;
+  const pc::SessionDescriptionInterface* l = impl_->ep[0]->local_description();
+  const pc::SessionDescriptionInterface* r = impl_->ep[0]->remote_description();
+  if (!l || !r) return map;
+  const pc::SessionDescriptionInterface* answer = l->GetType() == pc::SdpType::kAnswer ? l : r;
+  for (const pc::ContentInfo& content : answer->description()->contents()) {
+    if (content.rejected || !content.media_description()) continue;
+    for (const pc::RtpExtension& e : content.media_description()->rtp_header_extensions()) {
+      if (e.id >= 1 && e.id <= 255) map.Register(static_cast<uint8_t>(e.id), e.uri);
+    }
+  }
+  return map;
+}
+
 IceLink::~IceLink() {
   // The endpoints close their ports (a TURN allocation sends its last refresh) before the network goes.
   Impl& m = *impl_;
@@ -466,6 +481,7 @@ bool IceLink::connected() const { return false; }
 int64_t IceLink::wire_bytes() const { return 0; }
 int64_t IceLink::media_bytes() const { return 0; }
 int64_t IceLink::setup_wire_bytes() const { return 0; }
+sync::ExtensionMap IceLink::NegotiatedExtensions() const { return {}; }
 
 }  // namespace sm::testbench
 
