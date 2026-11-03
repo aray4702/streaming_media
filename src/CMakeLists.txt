@@ -207,6 +207,12 @@ if(SM_WITH_DATACHANNEL)
     sm_add_library(sctp DEPS sm::dcsctp sm::p2p_dtls SOURCES
       sctp/dcsctp_transport.cc
       sctp/sctp_transport.cc)
+    # DCEP, the data channel API and the per-connection runtime switch (C7 part 4, #1070): libwebrtc's
+    # pc/sctp_utils, pc/sctp_data_channel and pc/data_channel_controller.
+    sm_add_library(pc_datachannel DEPS sm::sctp SOURCES
+      pc/data_channel_controller.cc
+      pc/sctp_data_channel.cc
+      pc/sctp_utils.cc)
   endif()
 endif()
 
