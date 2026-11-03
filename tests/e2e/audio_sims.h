@@ -227,4 +227,63 @@ inline double SegmentDb(const std::vector<float>& x, double a, double b, int fs 
   return dsp::RmsDbfs(std::span<const float>(x.data() + i0, i1 - i0));
 }
 
+// A barge-in with no echo path (#1124): the AI's reply is the render signal
+// from 0.5 s, the first render of the call, and the user talks over it for
+// 1.5 s once it has played `reply_before_s`; the reply goes on 1 s past the
+// talker. The capture is the talker and a little noise only, as with a
+// headset or sm_call_smoke's scripted microphone. The talker and the reply
+// are the speech the call apps use (sim::SpeechLike(.., false),
+// apps/call/call_smoke.cc and apps/ai_server; the scripted user's turn N
+// uses seed 100 + N).
+inline double BargeInStartS(double reply_before_s) { return 0.5 + reply_before_s; }
+inline CallSignals MakeBargeInWithoutEcho(int fs = 16000, uint64_t talker_seed = 101, double reply_before_s = 1.0) {
+  CallSignals c;
+  const double start = BargeInStartS(reply_before_s);
+  const double seconds = start + 2.5;
+  const size_t n = static_cast<size_t>(seconds * fs);
+  c.far.assign(n, 0.0f);
+  c.echo.assign(n, 0.0f);
+  c.talker.assign(n, 0.0f);
+  c.clicks.assign(n, 0.0f);
+  auto reply = sim::SpeechLike(fs, reply_before_s + 2.5, 1000, false);
+  std::copy(reply.begin(), reply.end(), c.far.begin() + fs / 2);
+  auto talk = sim::SpeechLike(fs, 1.5, talker_seed, false);
+  std::copy(talk.begin(), talk.end(), c.talker.begin() + static_cast<size_t>(start * fs));
+  c.noise = sim::WhiteNoise(fs, seconds, 0.0005f, 7);
+  c.capture.resize(n);
+  for (size_t i = 0; i < n; ++i) c.capture[i] = c.talker[i] + c.noise[i];
+  return c;
+}
+
+// When a voice agent's turn detector (testbench/turn_detector.h, with its
+// defaults) would call the barge-in on `out`: ms from `start_s` to the end
+// of the frame where an utterance (10 consecutive active frames of
+// libwebrtc's VAD, kVadNormal) has 200 ms of active frames. -1: never.
+inline double BargeInDetectMs(const std::vector<float>& out, double start_s, int fs = 16000) {
+  audio::Vad vad(audio::Vad::kVadNormal);
+  const size_t frame = static_cast<size_t>(fs / 100);
+  const size_t first = static_cast<size_t>(std::lround(start_s * 100));
+  int run = 0, utterance = 0, passive = 0;
+  bool in_utterance = false;
+  for (size_t f = 0; (f + 1) * frame <= out.size(); ++f) {
+    const bool active =
+        vad.VoiceActivity(std::span<const float>(out.data() + f * frame, frame), fs) == audio::Vad::kActive;
+    if (f < first) continue;
+    if (active) {
+      ++run;
+      passive = 0;
+      if (in_utterance) ++utterance;
+      if (!in_utterance && run >= 10) {
+        in_utterance = true;
+        utterance = run;
+      }
+    } else {
+      run = 0;
+      if (in_utterance && ++passive >= 60) in_utterance = false;
+    }
+    if (in_utterance && utterance >= 20) return static_cast<double>(f + 1 - first) * 10;
+  }
+  return -1;
+}
+
 }  // namespace sm::e2e

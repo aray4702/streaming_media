@@ -100,7 +100,11 @@ so there is no scripted conversation. On hang-up it logs its `call-result` line 
 
   The capture chain removes part of the user's speech while the AI's audio plays, which looks like AEC3
   suppressing double talk, so the AI server's VAD doesn't hear the barge-in. Chrome's synthetic track has no
-  capture processing. This needs its own item (see the PR).
+  capture processing. #1124 measured it against libwebrtc's APM on the same audio
+  (`docs/results/apm-webrtc.md`, "barge-in, no echo path"), and libwebrtc does the same. With no echo path, AEC3
+  suppresses the user as echo until M157's legacy transparent mode turns on after 6 s of strong render. The barge-ins
+  in the first replies of a call fall in that time (4 of 5 talkers detected on each side, worst 1.5 s). A missed
+  barge-in likely also costs the next reply: the reply plays on without a gap, so the script sees no new reply start.
 - **Video, case c:** Chrome renders `sm_call_smoke`'s 30 fps with no freeze direct, and 13 freezes in 25 s relayed.
   `sm_call_smoke` renders Chrome's camera at 13 fps. Chrome's `availableOutgoingBitrate` toward our endpoint stays
   at 84.4 kbps for the whole call, even host to host, so Chrome sends its video at a very low rate. In case b,

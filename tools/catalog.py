@@ -1252,7 +1252,12 @@ ALGORITHMS = [
                       "M157's APM on the same signals (docs/results/apm-webrtc.md) within 1 dB. #240 step 6 moved Aec3Fft from "
                       "fft4g's rdft to the ported `OouraFft` (fft_size_128): Aec3Filter.OouraFft128MatchesDft checks it "
                       "against a double-precision DFT, the aec3_fft unit tests still pass, and the e2e ERLE and double-talk "
-                      "numbers stay at libwebrtc's."),
+                      "numbers stay at libwebrtc's. #1124: with no echo path (a headset, or sm_call_smoke's scripted "
+                      "microphone), a barge-in 1 s into the call's first reply is suppressed as echo (AEC3's initial "
+                      "state; M157's legacy transparent mode needs 6 s of strong render), on our side and on "
+                      "libwebrtc's APM alike: E2E_EchoCanceller.BargeInEarlyWithoutEchoPathAsLibwebrtc and "
+                      "BargeInAfterTransparentModeWithoutEchoPathAsLibwebrtc pin sm_apm_compare's numbers "
+                      "(4 of 5 talkers detected early, 5 of 5 at 210 ms after 7 s of reply)."),
     dict(id="6.2", slug="echo-delay", title="Echo-path delay estimation",
          problems=["Delay between the speaker and mic paths -> echo-path delay estimation in AEC3"],
          headers=["audio/aec3_delay.h"], unit=["Aec3Delay"], e2e=["E2E_EchoDelay"],
