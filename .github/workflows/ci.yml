@@ -114,6 +114,22 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         with:
           path: out/wasm/web
+  # A call between our endpoint and headless Chrome (C6 part 4, #1088). The
+  # tests skip without Chrome elsewhere; here SM_BROWSER_REQUIRED=1 makes a
+  # missing Chrome fail, so the call always runs on Linux.
+  browser-interop:
+    needs: scope
+    if: needs.scope.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: browser-actions/setup-chrome@v1
+        id: chrome
+        with: {chrome-version: stable}
+      - run: cmake --preset native -DSM_BUILD_BENCH=OFF && cmake --build --preset native -j 4
+      - run: ctest --preset native -L interop -R Browser --no-tests=error --output-on-failure
+        env: {SM_CHROME: "${{ steps.chrome.outputs.chrome-path }}", SM_BROWSER_REQUIRED: "1"}
   testbench:
     needs: scope
     if: needs.scope.outputs.build == 'true'
@@ -352,7 +368,7 @@ jobs:
     # Single required status check: succeeds only if every job that `scope`
     # called for succeeded (a job it left out is skipped, not failed).
     if: always()
-    needs: [scope, host, sanitizers, wasm, testbench, compare-webrtc, fix-record]
+    needs: [scope, host, sanitizers, wasm, testbench, browser-interop, compare-webrtc, fix-record]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions: {pull-requests: write}
@@ -364,7 +380,7 @@ jobs:
           if needs['scope']['result'] != 'success':
               print('scope failed'); sys.exit(1)
           o = needs['scope']['outputs']
-          want = {'host': 'build', 'testbench': 'build', 'compare-webrtc': 'compare', 'fix-record': None}
+          want = {'host': 'build', 'testbench': 'build', 'browser-interop': 'build', 'compare-webrtc': 'compare', 'fix-record': None}
           bad = {}
           for k, v in needs.items():
               if k == 'scope':
