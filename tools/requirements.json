@@ -1074,14 +1074,15 @@
    "area": "Connectivity",
    "title": "iOS",
    "acceptance": "CI builds and unit-tests the library for iOS (device and simulator); platform media: audio I/O (AudioUnit), camera capture, hardware H.264 (VideoToolbox).",
-   "status": "open",
+   "status": "done",
    "depends_on": [],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1112 (VideoToolbox hardware H.264, macOS and iOS), #1115 (sm::device: Audio Units I/O and AVFoundation camera capture), #1107 (CI `ios` job) and #1108 (library builds with the iOS SDK); closed #1104, #1105, #1106",
+   "verification": "Main CI on a78f737a passed the `ios` job: the library for the iOS device and simulator SDKs, with sm::device and VideoToolbox, and its unit tests on a booted simulator. Locally (Xcode 27.2): device and simulator builds, 238/238 unit tests on the iOS 27.2 simulator. On macOS hardware: sm_device_check captured the camera at 15 fps 640x480 and looped audio through the Audio Units in both echo-canceller modes. Owner approved marking done, 2026-11-03 12:25 AM PT.",
    "start": "2026-11-01",
-   "end": "",
+   "end": "2026-11-03",
    "milestone": 4,
-   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android is now C13 (backlog)."
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android is now C13 (backlog).",
+   "verified": "pass"
   },
   {
    "id": "C12",
@@ -1109,17 +1110,18 @@
    "area": "Connectivity",
    "title": "iOS app",
    "acceptance": "A simple iOS calling app (SwiftUI) on the library (C11): it calls the AI server (audio, and video when on) and calls the web app (C15) by a room code, through the signaling service, with ICE over STUN and the Lightsail TURN server, DTLS-SRTP, and the library's audio processing and congestion control. Shows connection state, mute and hang-up, and the call's live stats (C8). Builds in CI; runs on a real iPhone and the simulator.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C11",
     "C12"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PR #1117 (apps/call C++ call controller and apps/ios SmCall, SwiftUI with an Objective-C++ bridge; AGC, capture rotation via CVO and the congestion controller's audio allocation wired as libwebrtc's iOS client); issue #1116",
+   "verification": "e2e.CallClient: calls the AI server (connects, the AI hears the turn and replies) and app to app (audio and video both ways, mute, hang-up, AGC +10.3 dB on a quiet talker, rotation 90 degrees received, Opus allocation 6 kbps under a 40 kbps cap with a 6-32 kbps range). The app builds for the iOS simulator and device (unsigned) and in CI's ios job, and its simulator smoke run calls the AI server. Real-network calls with its controller through Lightsail: C12 (#1121). Not yet done: a run on a real iPhone with Apple ID signing (Owner). Owner approved marking done, 2026-11-03 12:25 AM PT.",
    "start": "2026-11-02",
-   "end": "",
+   "end": "2026-11-03",
    "milestone": 4,
-   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them."
+   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them.",
+   "verified": "pass"
   },
   {
    "id": "C15",
@@ -1127,17 +1129,18 @@
    "area": "Connectivity",
    "title": "Web app and signaling",
    "acceptance": "A web app (one page, the browser's own WebRTC) that calls the AI server and the iOS app (C14) by a room code, plus the small signaling service both apps and the AI server use (WebSocket; offer/answer and trickled candidates; TURN credentials from the REST secret, never the secret itself). Shows connection state, mute and hang-up, and getStats. Works in Chrome; Safari and Firefox later. Deployable next to the TURN server.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C6",
     "C12"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PR #1110 (apps/signaling/server.py and apps/web/index.html, the shared signaling protocol; issue #1102); deployed on Amazon Lightsail (Oregon) next to coturn, with TLS on 8443 (#1054)",
+   "verification": "interop.WebApp.two_tabs (two headless Chrome processes call each other through the service) and interop.WebApp.native (the library's endpoint answers the web app) pass. On the Lightsail host: the web app over HTTPS, wss /ws and GET /turn (REST credentials; the secret stays on the server). Calls between the web app and the AI server and the iOS controller over real networks: C12 (#1121). Chrome only; Safari and Firefox later, as the acceptance says. Owner approved marking done, 2026-11-03 12:25 AM PT.",
    "start": "2026-11-02",
-   "end": "",
+   "end": "2026-11-03",
    "milestone": 4,
-   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them."
+   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them.",
+   "verified": "pass"
   },
   {
    "id": "C13",
