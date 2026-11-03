@@ -225,6 +225,8 @@ async function main() {
     peerReportsVideo: b.video.remoteReports > 0,
   };
   if (bweKbps > 0) checks.bweRampsUp = bweTrace.some(([, kbps]) => kbps >= bweKbps);
+  // The driver judges a call that did not reach bwe_kbps against Chrome <-> Chrome on the same host (#1132).
+  result.bweTrace = bweTrace;
   if (useDc) checks.dataFromPeer = result.browser.received.includes(kPeerMessage);
   if (other && useDc) checks.dataFromChrome = other.received.includes(kChromeMessage);
   result.checks = checks;

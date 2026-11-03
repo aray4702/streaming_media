@@ -209,6 +209,62 @@ def chrome_command(chrome, profile, url):
     return cmd
 
 
+BWE_SHARE = 0.8         # a call that did not ramp must end at >= this share of Chrome <-> Chrome's estimate
+BWE_REFERENCE_AGE = 900  # seconds: a reference from an earlier ctest run is not used
+
+
+def bwe_check(args, trace):
+    """Chrome's send-side estimate ramps up (#1125), judged against Chrome <-> Chrome (#1132).
+
+    The estimate must reach --bwe-kbps within --bwe-seconds. On a loaded CI Mac,
+    Chrome's own ramp is sometimes slower than that: the self-test's estimate stayed
+    flat at its 304 kbps start for 11 s, with none of our code in the call. So when
+    a call does not reach --bwe-kbps:
+      * the self-test (Chrome <-> Chrome, the host's reference) passes if Chrome's
+        estimate did not fall below BWE_SHARE of where it started;
+      * a call with our endpoint passes only if the self-test in the same ctest run
+        did not reach --bwe-kbps either, and our call's last estimate is at least
+        BWE_SHARE of the self-test's last one. #1125 (feedback Chrome ignored) fell
+        from 300 to 84 kbps, so it still fails.
+    """
+    kbps = [k for _, k in trace]
+    ramped = any(k >= args.bwe_kbps for k in kbps)
+    last = kbps[-1] if kbps else 0
+    if args.self_test:
+        if args.bwe_reference:
+            with open(args.bwe_reference, 'w') as f:
+                json.dump({'time': time.time(), 'role': args.role, 'ramped': ramped, 'last': last,
+                           'trace': trace}, f)
+        if ramped:
+            return True
+        held = bool(kbps) and min(kbps) >= BWE_SHARE * kbps[0]
+        print('NOTE: Chrome <-> Chrome did not reach %d kbps on this host (last %d kbps); %s' %
+              (args.bwe_kbps, last, 'held its start, the reference for our calls' if held
+               else 'FAIL: it fell below %d%% of its start' % (BWE_SHARE * 100)))
+        return held
+    if ramped:
+        return True
+    ref = None
+    if args.bwe_reference and os.path.exists(args.bwe_reference):
+        with open(args.bwe_reference) as f:
+            ref = json.load(f)
+        if time.time() - ref.get('time', 0) > BWE_REFERENCE_AGE:
+            ref = None
+    if ref is None:
+        print('FAIL: the estimate did not reach %d kbps (last %d kbps), and no Chrome <-> Chrome reference '
+              'from this run' % (args.bwe_kbps, last))
+        return False
+    if ref['ramped']:
+        print('FAIL: the estimate did not reach %d kbps (last %d kbps); Chrome <-> Chrome did on this host' %
+              (args.bwe_kbps, last))
+        return False
+    ok = last >= BWE_SHARE * ref['last']
+    print('%s: the estimate did not reach %d kbps, nor did Chrome <-> Chrome on this host; last %d kbps vs '
+          'its %d kbps (need >= %d%%)' % ('PASS' if ok else 'FAIL', args.bwe_kbps, last, ref['last'],
+                                          BWE_SHARE * 100))
+    return ok
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--self', dest='self_test', action='store_true', help='harness self-test, no native peer')
@@ -220,6 +276,8 @@ def main():
     ap.add_argument('--bwe-kbps', type=int, default=0,
                     help="also check that Chrome's send-side bandwidth estimate reaches this (#1125)")
     ap.add_argument('--bwe-seconds', type=float, default=10.0, help='seconds of media for --bwe-kbps')
+    ap.add_argument('--bwe-reference',
+                    help='file for the Chrome <-> Chrome estimate: --self writes it, a --peer call reads it')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
@@ -276,6 +334,10 @@ def main():
     server.shutdown()
 
     ok = bool(page and page.get('ok'))
+    if page and args.bwe_kbps:
+        checks = page.get('checks', {})
+        others_ok = bool(checks) and all(v for k, v in checks.items() if k != 'bweRampsUp')
+        ok = others_ok and bwe_check(args, page.get('bweTrace') or [])
     if page:
         for line in page.get('log', []):
             print('[page] ' + line)
