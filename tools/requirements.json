@@ -995,14 +995,15 @@
    "area": "Connectivity",
    "title": "SDP offer/answer and browser interop",
    "acceptance": "A JSEP subset (pc/media_session, jsep_transport, session_description): offer and answer with Unified Plan, BUNDLE, rtcp-mux, Opus, H.264 Constrained Baseline, transport-cc, the data channel section. CI runs a call between our endpoint and headless Chrome; Firefox and Safari later.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C5"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1073 (session description model, api/webrtc_sdp parse/write, SDP fuzz target), #1084 (offer/answer: pc/media_session, transport_description_factory), #1089 (PeerEndpoint: ICE, DTLS-SRTP and RTP set up from SDP, BUNDLE, trickle ICE), #1093 (a call with headless Chrome), #1097 (the data channel section and a data channel in the Chrome call)",
+   "verification": "A JSEP subset ported from M157: the session description model and SdpSerialize/SdpDeserialize (api/webrtc_sdp), with libwebrtc's own SDP strings round-tripping byte for byte; offer and answer with Unified Plan, BUNDLE (max-bundle), rtcp-mux, Opus, H.264 Constrained Baseline with RTX, transport-cc and the data channel section (m=application, by the per-connection switch); PeerEndpoint applies descriptions and sets up ICE, DTLS-SRTP and the RTP session on one BUNDLE transport. Two endpoints behind NATs exchange SDP and trickled candidates and carry every Opus and H.264 frame intact both ways under SRTP. A call between our endpoint and headless Chrome, with Chrome offering and with Chrome answering, connects, carries Opus and H.264 both ways (Chrome decodes our video) and a data channel message each way; it runs in CI on the macOS host job (Chrome preinstalled); a Linux job is #1090. Firefox and Safari later, as the requirement says. Owner approved marking done, 2026-11-02 5:45 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C7",
@@ -1010,14 +1011,15 @@
    "area": "Connectivity",
    "title": "Data channels",
    "acceptance": "net/dcsctp ported: SCTP over DTLS, reliable and partial-reliable, ordered and unordered channels, DCEP. Behind a build switch (SM_WITH_DATACHANNEL) and a runtime switch per connection; off means no SCTP code and no m=application.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C5"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1042 (net/dcsctp/packet), #1067 (dcSCTP socket, rx/tx queues, timers), #1082 (SCTP over DTLS: dcsctp_transport, pc/sctp_transport), #1086 (DCEP and the data channel API), #1097 (data channels on the endpoint, m=application by the per-connection switch)",
+   "verification": "net/dcsctp ported from M157 (packet layer and socket, with libwebrtc's 396 socket/rx/tx/timer test cases ported) and run over DTLS (DcSctpTransport): reliable and partially reliable (maxRetransmits, maxPacketLifeTime), ordered and unordered channels, DCEP (DATA_CHANNEL_OPEN/ACK byte for byte), in-band and negotiated channels, even/odd stream ids by DTLS role, stream reset on close. Behind the build switch SM_WITH_DATACHANNEL (off: no SCTP code compiled, the API reports not supported) and a runtime switch per connection (off: no SCTP association and no m=application; a remote data section is rejected). Tested with two endpoints through NATs (audio, video and three channels on one BUNDLE transport, messages both ways, close) and in the call with headless Chrome (a message each way). Fuzz targets for SCTP packets and the socket (C10). Owner approved marking done, 2026-11-02 5:45 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C8",
