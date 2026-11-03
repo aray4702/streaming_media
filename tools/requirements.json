@@ -1102,6 +1102,42 @@
    "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android calls are in the backlog with C13."
   },
   {
+   "id": "C14",
+   "kind": "app",
+   "area": "Connectivity",
+   "title": "iOS app",
+   "acceptance": "A simple iOS calling app (SwiftUI) on the library (C11): it calls the AI server (audio, and video when on) and calls the web app (C15) by a room code, through the signaling service, with ICE over STUN and the Lightsail TURN server, DTLS-SRTP, and the library's audio processing and congestion control. Shows connection state, mute and hang-up, and the call's live stats (C8). Builds in CI; runs on a real iPhone and the simulator.",
+   "status": "open",
+   "depends_on": [
+    "C11",
+    "C12"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-02",
+   "end": "",
+   "milestone": 4,
+   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them."
+  },
+  {
+   "id": "C15",
+   "kind": "app",
+   "area": "Connectivity",
+   "title": "Web app and signaling",
+   "acceptance": "A web app (one page, the browser's own WebRTC) that calls the AI server and the iOS app (C14) by a room code, plus the small signaling service both apps and the AI server use (WebSocket; offer/answer and trickled candidates; TURN credentials from the REST secret, never the secret itself). Shows connection state, mute and hang-up, and getStats. Works in Chrome; Safari and Firefox later. Deployable next to the TURN server.",
+   "status": "open",
+   "depends_on": [
+    "C6",
+    "C12"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-02",
+   "end": "",
+   "milestone": 4,
+   "note": "Owner, 2026-11-02 6:15 PM PT: add an iOS app and a web app to milestone 4 (iOS and web first). Scope as proposed: call the AI, and call each other; no sign-in or contacts unless the Owner adds them."
+  },
+  {
    "id": "C13",
    "kind": "library",
    "area": "Connectivity",
