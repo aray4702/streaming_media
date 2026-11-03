@@ -1069,8 +1069,8 @@
    "id": "C11",
    "kind": "library",
    "area": "Connectivity",
-   "title": "Android and iOS",
-   "acceptance": "CI builds and unit-tests the library for Android (arm64, API 24+) and iOS (device and simulator); platform media: audio I/O (AAudio/Oboe, AudioUnit), camera capture, hardware H.264 (MediaCodec, VideoToolbox).",
+   "title": "iOS",
+   "acceptance": "CI builds and unit-tests the library for iOS (device and simulator); platform media: audio I/O (AudioUnit), camera capture, hardware H.264 (VideoToolbox).",
    "status": "open",
    "depends_on": [],
    "evidence": "",
@@ -1078,14 +1078,14 @@
    "start": "2026-11-01",
    "end": "",
    "milestone": 4,
-   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android is now C13 (backlog)."
   },
   {
    "id": "C12",
    "kind": "library",
    "area": "Connectivity",
    "title": "End-to-end calls on real networks",
-   "acceptance": "Calls between web, Android and iOS, and from each to the AI server, over real networks with the self-hosted TURN server (coturn on Lightsail), with the conversation metrics of milestone 2 reported.",
+   "acceptance": "Calls between web and iOS, and from each to the AI server, over real networks with the self-hosted TURN server (coturn on Lightsail), with the conversation metrics of milestone 2 reported.",
    "status": "open",
    "depends_on": [
     "C6",
@@ -1098,7 +1098,25 @@
    "start": "2026-11-01",
    "end": "",
    "milestone": 4,
-   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10. Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Android calls are in the backlog with C13."
+  },
+  {
+   "id": "C13",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Android",
+   "acceptance": "CI builds and unit-tests the library for Android (arm64, API 24+); platform media: audio I/O (AAudio/Oboe), camera capture, hardware H.264 (MediaCodec); calls between Android, web and iOS, and to the AI server, over real networks.",
+   "status": "open",
+   "depends_on": [
+    "C11",
+    "C12"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-02",
+   "end": "",
+   "milestone": "backlog",
+   "note": "Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Split from C11 (and the Android part of C12)."
   }
  ]
 }
