@@ -1,0 +1,13 @@
+name issue_795_loss20_mouth_to_ear
+describe 20% random loss on a clean 2 Mbps / 50 ms link: audio reaches the listener within 400 ms (A/V sync no longer drags it behind video queued in the pacer)
+# #795 (Owner 2026-11-03: beyond libwebrtc M157, which is 0.6-2.1 s late here too). Same link as
+# issue_536_loss20_av_sync. Before the fix (main), seeds 1-10: m2e p95 985 274 1063 175 264 1051 325 147 1473 914
+# (mean 667), video e2e p95 mean 1567, pacer p95 mean 1315; libwebrtc M157 m2e mean 728 (#792).
+# After: m2e 303 254 272 195 243 192 205 147 333 254 (mean 240), video e2e mean 512, pacer mean 171.
+seed 1
+duration 30s
+at 0s capacity=2000kbps delay=50ms loss=20% queue=300ms
+# The Tester's targets (#536): m2e < 400, video e2e < 1000, pacer < 500.
+expect audio.mouth_to_ear_p95_ms < 400
+expect video.e2e_delay_p95_ms < 1000
+expect video.delay_pacer_p95_ms < 500

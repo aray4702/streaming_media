@@ -870,7 +870,11 @@ ALGORITHMS = [
                "debt every call and sends queued packets between the audio packets instead of with them. The rates reach "
                "the pacer as `PacerConfig` carries them, whole bytes per 40 ms window (#813), and after the pushback "
                "target of the same GoogCC update (`GetPacingRates` in `MaybeTriggerOnNetworkChanged`).",
-         verification="The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
+         verification="Deviation (Owner, 2026-11-03, #795; docs/fixes/795-uncongested-pacer-drain.md): on a path that "
+                      "shows no queueing (no overuse, delay-based limit >= 1.5x the target, feedback RTT within 100 ms of "
+                      "the minimum, for 5 s) the queue drains within 150 ms at up to 1.25x the pacing rate instead of "
+                      "libwebrtc's 2 s (`uncongested_queue_time_limit`, zero restores libwebrtc). "
+                      "The unit tests port the intent of libwebrtc's pacing_controller_unittest.cc (burst "
                       "interval, debt cap, priorities, long-queue drain on the average queue time, padding, "
                       "congestion keep-alives). `PrioritizedPacketQueue` (#166) ports prioritized_packet_queue_unittest.cc: "
                       "12 of its 19 cases are ported and pass; the other 7 cover options that are off by default "

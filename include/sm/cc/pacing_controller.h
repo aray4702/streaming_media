@@ -47,6 +47,14 @@ struct PacingControllerConfig {
   // PacingController::Configuration defaults.
   TimeDelta queue_time_limit = TimeDelta::Millis(2000);  // kMaxExpectedQueueLength
   bool drain_large_queues = true;
+  // Beyond libwebrtc M157 (Owner, 2026-11-03, issue #795): while the sender sees no
+  // queueing on the path (SetPathUncongested: the target was cut by loss or a feedback
+  // outage, not by the delay detector), a queue drains within this limit instead of
+  // `queue_time_limit`, at most `uncongested_max_boost` times the pacing rate. Video then
+  // doesn't wait seconds in the pacer and A/V sync doesn't hold audio back with it.
+  // Zero turns it off (libwebrtc's behaviour).
+  TimeDelta uncongested_queue_time_limit = TimeDelta::Millis(150);
+  double uncongested_max_boost = 1.25;
   TimeDelta send_burst_interval = TimeDelta::Millis(40);  // PacerConfig::kDefaultTimeInterval
   // Audio waits for the budget only with WebRTC-Pacer-BlockAudio (off by default).
   bool pace_audio = false;
@@ -179,6 +187,9 @@ class PacingController : public MetricsSource {
   // keep-alive padding packet every 500 ms.
   void SetCongested(bool congested);
   bool congested() const { return congested_; }
+  // Issue #795: whether the path shows no queueing (see uncongested_queue_time_limit).
+  void SetPathUncongested(bool uncongested) { path_uncongested_ = uncongested; }
+  bool path_uncongested() const { return path_uncongested_; }
 
   // The queued packets' wire sizes.
   DataSize QueueSize() const { return queue_.SizeInBytes(); }
@@ -240,6 +251,8 @@ class PacingController : public MetricsSource {
   Timestamp last_timestamp_ = Timestamp::MinusInfinity();
   bool paused_ = false;
   bool congested_ = false;
+  bool path_uncongested_ = false;
+  bool fast_drain_ = false;
 
   DataSize media_debt_, padding_debt_;
   DataRate pacing_rate_ = DataRate::KilobitsPerSec(750);

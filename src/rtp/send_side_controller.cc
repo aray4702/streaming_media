@@ -7,6 +7,12 @@ namespace sm::rtp {
 namespace {
 // video_send_stream_impl.cc:84: the encoder activity check interval.
 constexpr TimeDelta kEncoderTimeOut = TimeDelta::Seconds(2);
+// Issue #795: the delay-based limit must be this far above the target for the path to count as uncongested.
+constexpr double kUncongestedDelayLimitRatio = 1.5;
+// Issue #795: how far above the smallest feedback RTT the last one may be for the path to count as uncongested.
+constexpr TimeDelta kUncongestedRttMargin = TimeDelta::Millis(100);
+// Issue #795: how long the path must look uncongested before the pacer drains quickly.
+constexpr TimeDelta kUncongestedHold = TimeDelta::Seconds(5);
 
 cc::GccConfig WithEvents(cc::GccConfig c, EventSink* e) {
   if (!c.events) c.events = e;
@@ -62,6 +68,23 @@ void SendSideController::ApplyTarget(const cc::NetworkControlUpdate& u, Timestam
 // end of MaybeTriggerOnNetworkChanged, after the pushback target of the same update, and the padding rate never
 // exceeds that pushback target (goog_cc_network_control.cc:596-650, 675-679; issue #813).
 void SendSideController::ApplyPacer(const cc::NetworkControlUpdate& u, Timestamp now) {
+  // Issue #795 (beyond libwebrtc): the path shows no queueing when the delay detector
+  // isn't overusing and the delay-based limit sits well above the target (the target was
+  // cut by the loss-based estimate or the RTT backoff of a feedback outage). The pacer
+  // then drains its queue quickly instead of holding video for up to 2 s.
+  // The last feedback's RTT must also be near the smallest one seen (no standing queue).
+  if (const auto rtt = gcc_.last_feedback_max_rtt()) {
+    last_feedback_rtt_ = *rtt;
+    min_feedback_rtt_ = std::min(min_feedback_rtt_, *rtt);
+  }
+  const DataRate delay_limit = gcc_.send_side_bwe().delay_based_limit();
+  const bool uncongested = gcc_.delay_bwe().usage() != cc::BandwidthUsage::kOverusing && delay_limit.IsFinite() &&
+                           delay_limit >= gcc_.target() * kUncongestedDelayLimitRatio &&
+                           last_feedback_rtt_.IsFinite() && last_feedback_rtt_ <= min_feedback_rtt_ + kUncongestedRttMargin;
+  // It must hold for a while: right after a capacity drop the delay-based limit is stale.
+  if (!uncongested) uncongested_since_ = Timestamp::PlusInfinity();
+  else if (uncongested_since_.IsPlusInfinity()) uncongested_since_ = now;
+  pacer_.SetPathUncongested(uncongested && now - uncongested_since_ >= kUncongestedHold);
   pacer_.SetPacingRates(gcc_.PacingRate(), std::min(gcc_.PaddingRate(), pushback_target_), now);
   for (const auto& c : u.probes) pacer_.AddProbeCluster(c);
 }
