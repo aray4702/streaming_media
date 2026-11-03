@@ -40,6 +40,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -77,6 +78,15 @@ struct PeerEndpointConfig {
   rtp::VideoStreamConfig video_stream;
   // Decodes the received Opus frames; not owned. Null: no audio receive stream.
   rtp::AudioDecoder* audio_decoder = nullptr;
+
+  // The host runs its own media sessions (the test bench, #1087): the endpoint makes no rtp::Session. It
+  // demuxes what the BUNDLE transport receives for the negotiated sections to `on_media_packet` (RTP and RTCP,
+  // after SRTP), and sends the host's packets with SendMediaPacket. Off: the endpoint's own session, as above.
+  bool external_media = false;
+  std::function<void(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival)> on_media_packet;
+  // The SSRCs the local description announces (a=ssrc, the FID group), for a host whose sessions send on fixed
+  // SSRCs, as an app that munges the SDP before SetLocalDescription. Unset: the generated ones.
+  std::optional<uint32_t> audio_ssrc, video_ssrc, video_rtx_ssrc;
 };
 
 // PeerConnectionInterface::SignalingState, for C6's subset.
@@ -123,6 +133,12 @@ class PeerEndpoint {
   // Sends the session's queued packets (after SendAudio / SendVideo on session()).
   void FlushOutgoing(Timestamp now);
 
+  // external_media: sends one RTP or RTCP packet of the host's sessions over the BUNDLE transport (SRTP); false if
+  // it can't (not connected, no transport).
+  bool SendMediaPacket(std::span<const uint8_t> packet, bool rtcp, Timestamp now);
+  // The ICE and DTLS timers only (external_media, whose host runs the sessions).
+  void ProcessTransport(Timestamp now);
+
   // Packets the session produced that the transport could not send (not writable yet, or SRTP not active).
   int send_failures() const { return send_failures_; }
 
@@ -131,11 +147,12 @@ class PeerEndpoint {
   MediaSessionOptions OfferOptions() const;
   MediaSessionOptions AnswerOptions(const SessionDescription& offer) const;
   std::unique_ptr<SessionDescriptionInterface> Wrap(SdpType type, std::unique_ptr<SessionDescription> desc);
+  void ApplyFixedSsrcs(SessionDescription* desc) const;
   bool ApplyRemoteCandidates(const SessionDescriptionInterface& desc, Timestamp now);
   void OnCandidateGathered(const std::string& transport_name, const p2p::Candidate& candidate);
   bool CreateMediaSession(std::string* error);
   void OnRtcp(const std::vector<uint8_t>& packet, std::optional<Timestamp> arrival);
-  void Deliver(std::span<const uint8_t> packet, Timestamp arrival);
+  void Deliver(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival);
 
   PeerEndpointConfig config_;
   std::shared_ptr<const tls::SslIdentity> certificate_;

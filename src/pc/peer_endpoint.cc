@@ -66,7 +66,7 @@ class PeerEndpoint::ChannelSink : public RtpPacketSinkInterface {
  public:
   explicit ChannelSink(PeerEndpoint* endpoint) : endpoint_(endpoint) {}
   void OnRtpPacket(const RtpPacketReceived& packet) override {
-    endpoint_->Deliver(packet.buffer, packet.arrival_time);
+    endpoint_->Deliver(packet.buffer, /*rtcp=*/false, packet.arrival_time);
   }
 
  private:
@@ -163,8 +163,10 @@ std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::CreateOffer(std::stri
   }
   MediaSessionOptions opts = OfferOptions();
   opts.rtcp_cname = tls::CreateRandomString(kRtcpCnameLength);
-  return Wrap(SdpType::kOffer, session_desc_factory_->CreateOfferOrError(
-                                   opts, local_description_ ? local_description_->description() : nullptr, error));
+  std::unique_ptr<SessionDescription> d = session_desc_factory_->CreateOfferOrError(
+      opts, local_description_ ? local_description_->description() : nullptr, error);
+  ApplyFixedSsrcs(d.get());
+  return Wrap(SdpType::kOffer, std::move(d));
 }
 
 std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::CreateAnswer(std::string* error) {
@@ -174,8 +176,29 @@ std::unique_ptr<SessionDescriptionInterface> PeerEndpoint::CreateAnswer(std::str
   }
   MediaSessionOptions opts = AnswerOptions(*remote_description_->description());
   opts.rtcp_cname = tls::CreateRandomString(kRtcpCnameLength);
-  return Wrap(SdpType::kAnswer,
-              session_desc_factory_->CreateAnswerOrError(remote_description_->description(), opts, nullptr, error));
+  std::unique_ptr<SessionDescription> d =
+      session_desc_factory_->CreateAnswerOrError(remote_description_->description(), opts, nullptr, error);
+  ApplyFixedSsrcs(d.get());
+  return Wrap(SdpType::kAnswer, std::move(d));
+}
+
+// The host's fixed SSRCs replace the generated ones in the local sender's stream (SSRC munging before
+// SetLocalDescription, which libwebrtc accepts), with the FID group for video RTX.
+void PeerEndpoint::ApplyFixedSsrcs(SessionDescription* desc) const {
+  if (!desc) return;
+  for (ContentInfo& content : desc->contents()) {
+    MediaContentDescription* d = content.media_description();
+    if (content.rejected || !d || d->streams().empty()) continue;
+    StreamParams& sp = d->mutable_streams()[0];
+    if (d->type() == MediaType::AUDIO && config_.audio_ssrc) {
+      sp.ssrcs = {*config_.audio_ssrc};
+      sp.ssrc_groups.clear();
+    } else if (d->type() == MediaType::VIDEO && config_.video_ssrc) {
+      sp.ssrcs = {*config_.video_ssrc};
+      sp.ssrc_groups.clear();
+      if (config_.video_rtx_ssrc) sp.AddFidSsrc(*config_.video_ssrc, *config_.video_rtx_ssrc);
+    }
+  }
 }
 
 bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterface> desc, Timestamp now,
@@ -343,10 +366,16 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
   else if (send_video) cfg.local_ssrc = local_video->first_ssrc();
   else cfg.local_ssrc = ssrc_generator_.GenerateId();
   if (send_audio || send_video) cfg.cname = (send_audio ? local_audio : local_video)->cname;
-  session_ = std::make_unique<rtp::Session>(cfg);
+  if (!config_.external_media) session_ = std::make_unique<rtp::Session>(cfg);
 
   std::vector<uint8_t> audio_pts, video_pts;
-  if (audio.content) {
+  if (config_.external_media) {
+    // The host's sessions: only the demuxer's payload types (used when the remote section has no SSRCs).
+    for (Section* s : {&audio, &video}) {
+      if (!s->content) continue;
+      for (const Codec& c : s->answer->codecs()) (s == &audio ? audio_pts : video_pts).push_back(static_cast<uint8_t>(c.id));
+    }
+  } else if (audio.content) {
     const Codec* opus = FindCodec(audio.answer->codecs(), kOpusCodecName);
     if (!opus) return Fail(error, "The audio section has no Opus.");
     rtp::AudioStreamConfig a = config_.audio_stream;
@@ -362,7 +391,7 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
       audio_recv_ = session_->AddAudioReceive(a, config_.audio_decoder);
     }
   }
-  if (video.content) {
+  if (video.content && !config_.external_media) {
     const Codec* h264 = FindCodec(video.answer->codecs(), kH264CodecName);
     if (!h264) return Fail(error, "The video section has no H.264.");
     rtp::VideoStreamConfig v = config_.video_stream;
@@ -410,15 +439,34 @@ bool PeerEndpoint::CreateMediaSession(std::string* error) {
   return true;
 }
 
-void PeerEndpoint::Deliver(std::span<const uint8_t> packet, Timestamp arrival) {
-  if (!session_) return;
+void PeerEndpoint::Deliver(std::span<const uint8_t> packet, bool rtcp, Timestamp arrival) {
   // The session's clock never goes back.
   last_now_ = std::max(last_now_, arrival);
+  if (config_.external_media) {
+    if (config_.on_media_packet) config_.on_media_packet(packet, rtcp, arrival);
+    return;
+  }
+  if (!session_) return;
   session_->OnPacket(packet, last_now_);
 }
 
 void PeerEndpoint::OnRtcp(const std::vector<uint8_t>& packet, std::optional<Timestamp> arrival) {
-  Deliver(packet, arrival.value_or(last_now_));
+  Deliver(packet, /*rtcp=*/true, arrival.value_or(last_now_));
+}
+
+bool PeerEndpoint::SendMediaPacket(std::span<const uint8_t> packet, bool rtcp, Timestamp now) {
+  last_now_ = std::max(last_now_, now);
+  if (!media_rtp_transport_) return false;
+  std::vector<uint8_t> bytes(packet.begin(), packet.end());
+  const bool sent = rtcp ? media_rtp_transport_->SendRtcpPacket(bytes, p2p::PacketOptions{}, p2p::kPfSrtpBypass, last_now_)
+                         : media_rtp_transport_->SendRtpPacket(bytes, p2p::PacketOptions{}, p2p::kPfSrtpBypass, last_now_);
+  if (!sent) ++send_failures_;
+  return sent;
+}
+
+void PeerEndpoint::ProcessTransport(Timestamp now) {
+  last_now_ = std::max(last_now_, now);
+  transport_controller_.Process(last_now_);
 }
 
 void PeerEndpoint::FlushOutgoing(Timestamp now) {

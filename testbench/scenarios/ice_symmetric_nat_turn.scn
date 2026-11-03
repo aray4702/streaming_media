@@ -1,0 +1,20 @@
+# Issue #1087: both ends behind symmetric NATs (libwebrtc's test NAT rules, #985), where no direct pair can work,
+# so the call relays through the emulated TURN server (TURN over UDP, iceTransportPolicy relay). The media crosses
+# the same links as clean_link's, with the ChannelData header added to each packet.
+name ice_symmetric_nat_turn
+describe Both ends behind symmetric NATs, relayed through TURN over UDP, on clean_link's link (transport ice, #1087)
+transport ice
+compare off
+nat symmetric
+turn udp
+duration 30s
+at 0s capacity=2500kbps delay=25ms queue=300ms
+expect setup.connected == 1
+expect transport.send_failures == 0
+expect transport.local_candidate_type == 3
+expect transport.remote_candidate_type == 3
+expect transport.relay_protocol == 1
+expect audio.concealed_pct < 1
+expect audio.interruptions == 0
+expect video.freeze_count == 0
+expect video.render_fps >= 29

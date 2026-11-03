@@ -79,6 +79,24 @@ struct Scenario {
   // overridden per participant by `participant <i> [reverse] at ...`. RunCall also runs N = 2 internally, as the 1:1
   // reference for mesh.upload_cost_ratio.
   int mesh = 0;
+  // `transport direct|ice` (issue #1087): with `ice`, each connection (the one-way and two-way call's, each pair of
+  // a mesh's) is set up through the full stack, between two C6 part 3 endpoints: offer/answer and trickled
+  // candidates, ICE on an emulated network with NATs, STUN and TURN, DTLS, and the call's media as SRTP over the
+  // bundled transport, on the scenario's links (testbench/ice_transport.h). Direct (the default) sends the media
+  // straight over the links. A build without TLS (wasm, sm_compare) runs `ice` as direct; such a build doesn't
+  // register the `transport ice` scenarios as tests, and they say `compare off`.
+  bool transport_ice = false;
+  // `nat [a|b] none|open_cone|addr_restricted|port_restricted|symmetric`: the NAT in front of side a (the sender,
+  // the user, the lower-numbered participant) or b; both without a side. -1: none (a public address), else a
+  // sim::NatType.
+  int ice_nat[2] = {-1, -1};
+  // `turn udp|tcp|tls|off`: relay through the emulated TURN server over that protocol (both sides, relay only).
+  int ice_turn = 0;  // 0 off, 1 udp, 2 tcp, 3 tls.
+  // `stun on|off`: the STUN server for server-reflexive candidates (on by default).
+  bool ice_stun = true;
+  // `ice_fail a|b <time>`: a network change. Each side then has two interfaces, and side a's (or b's) first one
+  // stops passing traffic at <time>; ICE moves the call to the other while media flows.
+  std::optional<std::pair<int, TimeDelta>> ice_fail;
 
   // Media.
   bool audio = true;
