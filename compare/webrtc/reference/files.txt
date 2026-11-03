@@ -484,3 +484,12 @@ pc/sctp_utils_unittest.cc
 pc/data_channel_controller.cc
 pc/data_channel_controller.h
 pc/data_channel_utils.h
+sdk/objc/components/video_codec/RTCVideoEncoderH264.mm
+sdk/objc/components/video_codec/RTCVideoDecoderH264.mm
+sdk/objc/components/video_codec/nalu_rewriter.cc
+sdk/objc/components/video_codec/nalu_rewriter.h
+common_video/include/bitrate_adjuster.h
+common_video/bitrate_adjuster.cc
+sdk/objc/native/src/audio/audio_device_ios.mm
+sdk/objc/native/src/audio/voice_processing_audio_unit.mm
+sdk/objc/components/capturer/RTCCameraVideoCapturer.m
