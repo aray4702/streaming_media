@@ -18,12 +18,19 @@ The AI server: --ai=remote uses the one deployed on the host (it answers `ai-` r
 out/native/apps/ai_server/sm_ai_server here, connected to the same host over wss, so the call still goes through
 the real signaling and TURN server; --ai=auto (the default) tries the host's first and falls back to a local one.
 
+Chrome's scripted user (case b, #1124): by default it is Chrome's microphone with its audio processing on
+(getUserMedia echoCancellation, noiseSuppression and autoGainControl), fed a WAV of the same speech-like turns through
+--use-file-for-fake-audio-capture, so a barge-in goes through Chrome's APM as ours goes through our capture chain.
+The turns follow a fixed schedule (the web app's sched=: a turn at 4 s, a barge-in 2.3 s after its end, about 1 s
+into the reply, the next turn 5.5 s after the barge-in's end), and the AI's audio plays out so Chrome's echo canceller
+has it as its render signal. --chrome-mic=webaudio is the earlier reactive WebAudio track, with no capture processing.
+
 The web app is served from 127.0.0.1 (a secure context for getUserMedia) with this checkout's apps/web/index.html;
 its /turn is fetched from SM_SIGNALING_URL through this script, and its WebSocket goes to the host directly.
 
 Usage:
   SM_SIGNALING_URL=https://<host>:8443 tools/real_calls.py [--cases=a,b,c] [--paths=direct,relay] [--seconds=25]
-      [--ai=auto|remote|local] [--out=calls.jsonl] [--sim=UDID --ios-smoke=PATH]
+      [--ai=auto|remote|local] [--chrome-mic=apm|webaudio] [--out=calls.jsonl] [--sim=UDID --ios-smoke=PATH]
   tools/real_calls.py --table=calls.jsonl       # the Markdown table of calls already run
 Exit status: 0 when every call connected and played received audio, 1 otherwise, 77 when SM_SIGNALING_URL is unset.
 """
@@ -32,6 +39,7 @@ import argparse
 import datetime
 import http.server
 import json
+import math
 import os
 import queue
 import secrets
@@ -43,6 +51,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
+import wave
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tests', 'interop', 'browser'))
@@ -102,15 +111,15 @@ def fmt(v, unit=''):
     return '%s%s' % (v, unit)
 
 
-COLUMNS = ['date', 'case', 'client', 'path', 'selected pair', 'connect ms', 'RTT ms', 'response ms (transport)',
+COLUMNS = ['date', 'case', 'client', 'capture', 'path', 'selected pair', 'connect ms', 'RTT ms', 'response ms (transport)',
            'barge-in stop ms', 'concealed %', 'jitter buffer ms', 'lost', 'target kbps', 'video fps / freezes']
 
 
 def row(r):
     f = flatten(r)
     if f.get('error'):
-        return [f.get('date', ''), f.get('case', ''), f.get('client', ''), f.get('path', ''),
-                'FAILED: ' + f['error']] + [''] * (len(COLUMNS) - 5)
+        return [f.get('date', ''), f.get('case', ''), f.get('client', ''), '', f.get('path', ''),
+                'FAILED: ' + f['error']] + [''] * (len(COLUMNS) - 6)
     pair = '%s/%s %s' % (f.get('local_type') or '?', f.get('remote_type') or '?', f.get('protocol') or '')
     # A prflx candidate learned on a TURN allocation keeps its relay protocol (RTCIceCandidateStats.relayProtocol).
     if f.get('relay_protocol'):
@@ -123,9 +132,17 @@ def row(r):
     barge = fmt(f.get('barge_in_stop_ms_p50'))
     if f.get('barge_ins_not_stopped'):
         barge += ', %d not stopped' % f['barge_ins_not_stopped']
+    if f.get('barge_ins_skipped'):
+        barge += ', %d not in a reply' % f['barge_ins_skipped']
+    if f.get('barge_ins') is not None and (f.get('replies') or f.get('barge_ins')):
+        barge = '%s of %s: %s' % (f['barge_ins'] - f.get('barge_ins_not_stopped', 0), f['barge_ins'], barge)
+    if f.get('client') == 'chrome':
+        capture = 'APM on' if f.get('capture') else ('-' if f.get('turns') is None else 'none (WebAudio)')
+    else:
+        capture = f.get('capture_chain', '-').replace(',', ', ')
     fps = f.get('video_fps', f.get('video_render_fps'))
     video = '-' if not fps else '%s / %s' % (fmt(float(fps)), fmt(f.get('video_freezes', 0)))
-    return [f.get('date', ''), f.get('case', ''), f.get('client', ''), f.get('path', ''), pair,
+    return [f.get('date', ''), f.get('case', ''), f.get('client', ''), capture, f.get('path', ''), pair,
             fmt(f.get('connect_ms')),
             fmt(f.get('rtt_ms')), resp, barge, fmt(f.get('audio_concealed_pct')), fmt(f.get('jitter_buffer_ms')),
             fmt(f.get('audio_packets_lost')), fmt(f.get('target_kbps')), video]
@@ -218,8 +235,68 @@ class LocalPage:
         self.server.shutdown()
 
 
-def run_chrome(chrome, page, ws, room_name, seconds, relay, converse, barge, label):
+def speech(seed):
+    """The web app's Talk.speech (sim::SpeechLike's recipe): 1.5 s at 48 kHz, peak 0.3, as floats."""
+    rate = 48000
+    n = round(1.5 * rate)
+    r = seed * 9301 + 49297
+
+    def rnd():
+        nonlocal r
+        r = (r * 9301 + 49297) % 233280
+        return r / 233280
+    f0, target, ph, syl_rate, syl_ph, left, peak = 140.0, 160.0, 0.0, 4.0, rnd() * 6.28, 0, 0.0
+    x = [0.0] * n
+    for i in range(n):
+        left -= 1
+        if left + 1 <= 0:
+            target = 90 + rnd() * 150
+            syl_rate = 3 + rnd() * 2.5
+            left = (0.25 + rnd() * 0.35) * rate
+        f0 += (target - f0) * (20 / rate)
+        ph += 2 * math.pi * f0 / rate
+        syl_ph += 2 * math.pi * syl_rate / rate
+        v = 0.0
+        h = 1
+        while h <= 20 and h * f0 < rate * 0.45:
+            fh = h * f0
+            v += (1 + 2 * math.exp(-(((fh - 500) / 200) ** 2)) + 1.2 * math.exp(-(((fh - 1500) / 300) ** 2))) / h * \
+                math.sin(h * ph)
+            h += 1
+        x[i] = v * (0.35 + 0.65 * max(0.0, math.sin(syl_ph)))
+        peak = max(peak, abs(x[i]))
+    return [v * 0.3 / peak for v in x]
+
+
+def capture_file(path, seconds, barge):
+    """Chrome's fake microphone (#1124): the scripted turns at fixed times, and the web app's sched= for them."""
+    rate, first, barge_gap, next_gap = 48000, 4.0, 2.3, 5.5
+    turns, t = [], first
+    while t < seconds:
+        turns.append((t, False))
+        if barge:
+            turns.append((t + 1.5 + barge_gap, True))
+            t += 1.5 + barge_gap + 1.5 + next_gap
+        else:
+            t += 1.5 + next_gap
+    pcm = [0.0] * int((seconds + 5) * rate)
+    for i, (at, _) in enumerate(turns):
+        start = int(at * rate)
+        for j, v in enumerate(speech(100 + i)):
+            if start + j < len(pcm):
+                pcm[start + j] = v
+    with wave.open(path, 'wb') as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(b''.join(int(max(-1.0, min(1.0, v)) * 32767).to_bytes(2, 'little', signed=True) for v in pcm))
+    return ','.join('%g%s' % (at, 'b' if b else '') for at, b in turns)
+
+
+def run_chrome(chrome, page, ws, room_name, seconds, relay, converse, barge, label, mic_file=None, sched=None):
     q = {'room': room_name, 'auto': '1', 'ws': ws, 'seconds': '%g' % seconds, 'result': '1', 'label': label}
+    if sched:
+        q['sched'] = sched
     if relay:
         q['relay'] = '1'
     if converse:
@@ -228,7 +305,12 @@ def run_chrome(chrome, page, ws, room_name, seconds, relay, converse, barge, lab
         q['barge'] = '1'
     url = page.url + '/?' + urllib.parse.urlencode(q)
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
-    proc = subprocess.Popen(chrome_command(chrome, profile, url), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cmd = chrome_command(chrome, profile, url)
+    if mic_file:
+        cmd.insert(1, '--use-file-for-fake-audio-capture=%s%%noloop' % mic_file)
+        # On macOS the sandboxed audio service can't read the file and captures silence.
+        cmd.insert(1, '--disable-features=AudioServiceSandbox')
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         deadline = time.time() + seconds + 40
         while time.time() < deadline:
@@ -257,6 +339,9 @@ def main():
     ap.add_argument('--seconds', type=float, default=25)
     ap.add_argument('--ai', choices=('auto', 'remote', 'local'), default='auto')
     ap.add_argument('--no-barge', action='store_true', help='no scripted barge-in')
+    ap.add_argument('--chrome-mic', choices=('apm', 'webaudio'), default='apm',
+                    help="case b's scripted user: a fake microphone file with Chrome's APM on (default), or the "
+                         "WebAudio track with no capture processing")
     ap.add_argument('--build', default=os.path.join(ROOT, 'out', 'native'))
     ap.add_argument('--out', help='append the JSON lines to this file')
     ap.add_argument('--sim', help='iOS simulator UDID (case d)')
@@ -318,8 +403,12 @@ def main():
                     if not chrome:
                         record(case, path, {'client': 'chrome', 'error': 'no Chrome found'})
                         continue
+                    mic_file = sched = None
+                    if args.chrome_mic == 'apm':
+                        mic_file = os.path.join(tmp, 'mic-%s.wav' % label)
+                        sched = capture_file(mic_file, args.seconds, barge)
                     record(case, path, run_chrome(chrome, page, ws, room('ai-rc-'), args.seconds, relay, True, barge,
-                                                  label))
+                                                  label, mic_file, sched))
                 elif case == 'c':
                     if not chrome:
                         record(case, path, {'client': 'chrome', 'error': 'no Chrome found'})

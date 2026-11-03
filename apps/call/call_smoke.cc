@@ -4,7 +4,7 @@
 // client of the real-network calls (#1121, tools/real_calls.py).
 //
 //   sm_call_smoke --signaling=ws[s]://HOST:PORT/ws [--room=ai-smoke] [--seconds=10] [--turn=URL|none] [--ip=A.B.C.D]
-//                 [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--video] [--label=TEXT]
+//                 [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--ios-audio|--aec3] [--video] [--label=TEXT]
 //
 // - `--relay`: TURN candidates only (iceTransportPolicy "relay").
 // - The conversation, measured at this end as the test bench's two-way call does (testbench/call.cc, #753, #754):
@@ -17,6 +17,10 @@
 //   out by itself). Up to `--turns` turns (default: as many as fit) within `--seconds`; `--no-talk`: none (a silent
 //   microphone, for a call with a person).
 // - `--no-apm`: the raw microphone, without the capture chain (CallClientConfig::audio_processing).
+// - `--ios-audio`: the SmCall iOS app's chain (#1124, ApplyIosAudioOptions): high-pass filter and NS, the software
+//   AEC3 and AGC off, as libwebrtc's iOS client leaves them to VoiceProcessingIO. This program has no audio device, so
+//   nothing takes their place. It is the default when built for iOS (the simulator run). `--aec3` is the library's
+//   chain (high-pass filter, NS, AEC3, AGC), the default elsewhere.
 // - `--video`: sends a synthetic 640x360 camera at 30 fps (H.264 when built with VideoToolbox). Received video gives
 //   the render rate and freezes (WebRTC's definition: a frame interval above max(3 x mean, mean + 150 ms) of the
 //   preceding frames, as RTCInboundRtpStreamStats.freezeCount).
@@ -30,6 +34,10 @@
 #include <deque>
 #include <string>
 #include <vector>
+
+#if defined(__APPLE__)
+#include <TargetConditionals.h>
+#endif
 
 #include "call_driver.h"
 #include "sm/sim/signals.h"
@@ -216,9 +224,13 @@ int main(int argc, char** argv) {
   int max_turns = 0;
   bool barge = false, video = false;
   apps::CallClientConfig cfg;
+#if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+  apps::ApplyIosAudioOptions(&cfg);  // As the SmCall app on iOS (#1124).
+#endif
   const char* usage =
       "usage: sm_call_smoke --signaling=ws[s]://HOST:PORT/ws [--room=R] [--seconds=S] [--turn=URL|none] "
-      "[--ip=A.B.C.D] [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--video] [--label=TEXT]\n";
+      "[--ip=A.B.C.D] [--relay] [--turns=N] [--barge] [--no-talk] [--no-apm] [--ios-audio|--aec3] [--video] "
+      "[--label=TEXT]\n";
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     auto val = [&](const char* k) { return a.rfind(k, 0) == 0 ? a.substr(std::strlen(k)) : std::string(); };
@@ -234,6 +246,8 @@ int main(int argc, char** argv) {
     else if (a == "--video") video = true;
     else if (a == "--no-talk") max_turns = -1;
     else if (a == "--no-apm") cfg.audio_processing = false;
+    else if (a == "--ios-audio") apps::ApplyIosAudioOptions(&cfg);
+    else if (a == "--aec3") cfg.echo_cancellation = cfg.agc = true;
     else {
       std::fprintf(stderr, "%s", usage);
       return 2;
