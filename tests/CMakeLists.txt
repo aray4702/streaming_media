@@ -116,7 +116,8 @@ if(SM_WITH_TLS)
   add_test(NAME unit.P2pIceCompareTls COMMAND sm_unit_p2p --filter=P2pIceCompareTls.)
   set_tests_properties(unit.P2pIceCompareTls PROPERTIES LABELS unit)
   # The TURN client against a real coturn over OS sockets (C4 part 5, #1037); skipped without `turnserver`.
-  if(NOT WIN32 AND NOT EMSCRIPTEN)
+  # Not on iOS: the test starts `turnserver` with system(), which the iOS SDK marks unavailable.
+  if(NOT WIN32 AND NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_executable(sm_interop_coturn interop/coturn_test.cc)
     target_link_libraries(sm_interop_coturn PRIVATE sm_test_framework sm_os_sockets)
     sm_configure_target(sm_interop_coturn)
