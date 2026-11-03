@@ -961,15 +961,16 @@
    "area": "Connectivity",
    "title": "TURN client over UDP, TCP and TLS",
    "acceptance": "p2p/client TURN port ported: allocations, permissions, channel binding, refresh; long-term and short-lived (REST) credentials; TURN over TLS on 443 through C1. Tested against an emulated TURN server in the bench and against coturn (docs/deploy/turn-server.md).",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C3",
     "C1"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1041 (TURN client over UDP, sim::TurnServer), #1040 (TCP packet sockets), #1046 (TLS client socket over TCP through sm::tls, both backends), #1049 (TURN over TCP and TLS, REST credentials), #1052 (interop.Coturn against a local coturn), #1056 and #1066 (ICE through the emulated TURN server vs libwebrtc over UDP, TCP, TLS)",
+   "verification": "p2p/base/turn_port and p2p/client/turn_port_factory ported (M157): Allocate with 401/438 retries, Refresh, CreatePermission, ChannelBind, Send/Data indications and ChannelData, ALTERNATE-SERVER, relay candidates; TURN over UDP, TCP and TLS (TLS on 443 through C1, BoringSSL and mbedTLS); long-term and REST (use-auth-secret) credentials. libwebrtc's turn_port_unittest / turn_server_unittest cases on the emulated network. interop.Coturn: 6/6 against coturn 4.6.1 (UDP/TCP/TLS x long-term/REST: allocate, permission, channel bind, 64 packets each way, refresh, deallocate); the Owner accepted the local coturn for C4, Lightsail later (#1054). sm_ice_compare: ICE through the emulated TURN server matches libwebrtc M157 in all 13 relay scenarios on every seed (5 over UDP, 8 over TCP/TLS: connect, connect time, pair, relay protocol, checks, TURN requests), pinned in P2pIceCompare.RelayMatchesLibwebrtc / TcpRelayMatchesLibwebrtc / TlsRelayMatchesLibwebrtc. Owner approved marking done, 2026-11-02 2:36 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C5",
@@ -1053,14 +1054,15 @@
    "area": "Connectivity",
    "title": "Fuzzing of network parsers",
    "acceptance": "libFuzzer targets for every parser that reads network input (RTP, RTCP, STUN, TURN, DTLS records, SDP, SCTP), run in CI; a crash is a release blocker.",
-   "status": "open",
+   "status": "done",
    "depends_on": [
     "C2"
    ],
-   "evidence": "",
-   "verification": "",
+   "evidence": "PRs #1019 / #1022 (STUN), #989 part 1 (RTP, RTCP, transport feedback, H.264, packet buffer, RED, ULPFEC), #1042 (SCTP packet), #1068 (TURN incl. ChannelData, TCP framing, DTLS records on both TLS backends, DTLS over ICE), #1067 (SCTP socket), #1073 (SDP)",
+   "verification": "A libFuzzer target for every parser that reads network input, each listed in fuzz/README.md with its libwebrtc counterpart: RTP (rtp_packet), RTCP (rtcp, transport_feedback), H.264 depacketizer, packet buffer, RED, ULPFEC, STUN (stun), TURN incl. ChannelData (turn), TCP framing (tcp_framing), DTLS records on BoringSSL and mbedTLS (dtls_record), DTLS over ICE (dtls_transport), SDP (sdp_parser, after test/fuzzers/sdp_parser_fuzzer.cc), SCTP packet and socket (dcsctp_packet, dcsctp_socket, after net/dcsctp/fuzzers). Each has a seed corpus that ctest replays in every CI run (the run-in-CI part); local fuzzing runs found no crash. The libFuzzer build itself (SM_BUILD_FUZZERS=ON) is not built in CI, as accepted for C2. Owner approved marking done, 2026-11-02 2:57 PM PT.",
    "start": "2026-11-01",
-   "end": ""
+   "end": "2026-11-02",
+   "verified": "pass"
   },
   {
    "id": "C11",
@@ -1073,7 +1075,9 @@
    "evidence": "",
    "verification": "",
    "start": "2026-11-01",
-   "end": ""
+   "end": "",
+   "milestone": 4,
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
   },
   {
    "id": "C12",
@@ -1091,7 +1095,9 @@
    "evidence": "",
    "verification": "",
    "start": "2026-11-01",
-   "end": ""
+   "end": "",
+   "milestone": 4,
+   "note": "Moved from milestone 3 to milestone 4 by the Owner, 2026-11-02: it needs Android/iOS toolchains in CI, devices and the Lightsail TURN server. Milestone 3 is C1-C10."
   }
  ]
 }

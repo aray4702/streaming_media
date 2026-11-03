@@ -12,6 +12,7 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 #include "sm/core/units.h"
@@ -92,6 +93,10 @@ class DtlsTransport {
   int version() const;
   // The negotiated SRTP profile, or 0.
   int srtp_crypto_suite() const;
+  // The negotiated TLS cipher suite: its IANA id (GetSslCipherSuite) and standard name, such as
+  // "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256" (GetTlsCipherSuiteName); 0 and empty before the handshake completes.
+  int ssl_cipher_suite() const;
+  std::string ssl_cipher_suite_name() const;
   // RFC 5764 4.2: the "EXTRACTOR-dtls_srtp" keying material (client key, server key, client salt, server salt).
   bool ExportSrtpKeyingMaterial(std::span<uint8_t> out) const;
   // The peer's certificate, once received.
