@@ -49,6 +49,8 @@ function(sm_add_boringssl)
   # BoringSSL's own tests and tools are not built; its targets are built only when linked.
   set(BUILD_TESTING OFF)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  # On iOS executables default to app bundles, and BoringSSL's `install(TARGETS bssl)` has no BUNDLE destination.
+  set(CMAKE_MACOSX_BUNDLE OFF)
   # Our sanitizer and warning flags are per target (sm_configure_target), so they don't reach BoringSSL.
   add_subdirectory(${dir} ${CMAKE_BINARY_DIR}/_deps/boringssl-build EXCLUDE_FROM_ALL SYSTEM)
   add_library(sm_boringssl_crypto INTERFACE)
