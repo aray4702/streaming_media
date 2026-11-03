@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <deque>
+#include <chrono>
 #include <fstream>
+#include <future>
 #include <optional>
 
 #include "json.h"
@@ -77,15 +79,17 @@ std::string AiCallMetrics::ToJson() const {
                 ",\"connected\":%s,\"connect_ms\":%.1f,\"duration_s\":%.2f,\"user_turns\":%d,\"replies\":%d,"
                 "\"barge_ins\":%d,\"conv.response_delay_ms_mean\":%.1f,\"conv.barge_in_stop_ms_mean\":%.1f,"
                 "\"conv.user_speech_ms\":%.0f,\"conv.user_speech_lost_ms\":%.0f,\"conv.user_speech_lost_pct\":%.2f,"
-                "\"audio_frames_sent\":%lld,\"reply_frames_sent\":%lld,\"audio_packets_received\":%lld",
+                "\"audio_frames_sent\":%lld,\"reply_frames_sent\":%lld,\"audio_packets_received\":%lld,"
+                "\"send_late_max_ms\":%.1f,\"rtp_ahead_max_ms\":%.1f",
                 connected ? "true" : "false", connect_ms, duration_s, user_turns, replies, barge_ins,
                 Mean(response_delay_ms), Mean(barge_in_stop_ms), user_speech_ms, user_speech_lost_ms,
                 user_speech_ms > 0 ? 100.0 * user_speech_lost_ms / user_speech_ms : 0.0,
                 static_cast<long long>(audio_frames_sent), static_cast<long long>(reply_frames_sent),
-                static_cast<long long>(audio_packets_received));
+                static_cast<long long>(audio_packets_received), send_late_max_ms, rtp_ahead_max_ms);
   return "{\"type\":\"ai-call-metrics\",\"room\":" + net::JsonEscape(room) + ",\"peer\":" + net::JsonEscape(peer) +
          buf + ",\"conv.response_delay_ms\":" + JsonNumbers(response_delay_ms) +
-         ",\"conv.barge_in_stop_ms\":" + JsonNumbers(barge_in_stop_ms) + "}";
+         ",\"conv.barge_in_stop_ms\":" + JsonNumbers(barge_in_stop_ms) +
+         ",\"reply_generation_ms\":" + JsonNumbers(reply_generation_ms) + "}";
 }
 
 void ParseTurnResponse(const std::string& json, p2p::ServerAddresses* stun, std::vector<p2p::RelayServerConfig>* turn) {
@@ -290,29 +294,70 @@ class AiCall {
       OnPlayout(pcm, op, next_pull_);
       next_pull_ += TimeDelta::Millis(10);
     }
-    // Send 20 ms: the reply's frames due by now, or silence.
+    CollectReply(now);
+    // Send 20 ms per slot: the reply's frame due by the slot (not by `now`), or silence. Exactly one frame per slot
+    // keeps the RTP timestamps on the send clock (#1126): polling by `now` after a late wake-up took the next slot's
+    // frame too, then sent silence in that slot, cutting a hole in the reply and moving the timestamps 20 ms ahead
+    // for the rest of the call. A loop that wakes late catches up slot by slot, as libwebrtc's audio thread does.
     while (now >= next_send_) {
-      std::vector<testbench::AiFrame> frames = source_.Poll(now);
-      if (frames.empty()) {
+      metrics_.send_late_max_ms = std::max(metrics_.send_late_max_ms, (now - next_send_).ms_f());
+      for (const auto& f : source_.Poll(next_send_)) held_.push_back(f);
+      if (held_.empty()) {
         SendFrame({}, now);
       } else {
-        for (const auto& f : frames) {
-          const size_t begin = static_cast<size_t>(f.media_offset.us() * kRate / 1'000'000);
-          std::span<const float> pcm;
-          if (begin < reply_audio_.size()) {
-            pcm = std::span<const float>(reply_audio_).subspan(begin, std::min(k20ms, reply_audio_.size() - begin));
-          }
-          if (awaiting_first_frame_) {
-            awaiting_first_frame_ = false;
-            metrics_.response_delay_ms.push_back((now - turn_end_speech_).ms_f());
-          }
-          ++metrics_.reply_frames_sent;
-          SendFrame(pcm, now);
+        const testbench::AiFrame f = held_.front();
+        held_.pop_front();
+        const size_t begin = static_cast<size_t>(f.media_offset.us() * kRate / 1'000'000);
+        std::span<const float> pcm;
+        if (begin < reply_audio_.size()) {
+          pcm = std::span<const float>(reply_audio_).subspan(begin, std::min(k20ms, reply_audio_.size() - begin));
         }
+        if (awaiting_first_frame_) {
+          awaiting_first_frame_ = false;
+          metrics_.response_delay_ms.push_back((now - turn_end_speech_).ms_f());
+        }
+        ++metrics_.reply_frames_sent;
+        SendFrame(pcm, now);
       }
+      ++slots_;
+      metrics_.rtp_ahead_max_ms = std::max(metrics_.rtp_ahead_max_ms, 20.0 * static_cast<double>(frames_out_ - slots_));
       next_send_ += TimeDelta::Millis(20);
     }
     ep_->FlushOutgoing(now);
+  }
+
+  // The reply source runs on a worker thread (#1126): a model's time no longer holds up the 20 ms slots.
+  void StartGeneration(std::vector<float> user_audio, Timestamp at, Timestamp last_speech) {
+    gen_at_ = at;
+    gen_last_speech_ = last_speech;
+    generating_ = std::async(std::launch::async, [src = reply_.get(), audio = std::move(user_audio), at] {
+      return src->OnUserTurn(audio, at);
+    });
+  }
+
+  // A reply that is ready starts at the first slot not yet sent.
+  void CollectReply(Timestamp now) {
+    if (!generating_.valid() || generating_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
+    std::vector<float> reply = generating_.get();
+    metrics_.reply_generation_ms.push_back((now - gen_at_).ms_f());
+    if (barge_in_deferred_) {
+      barge_in_deferred_ = false;
+      reply_->OnBargeIn(barge_in_at_);
+    }
+    if (next_turn_) {  // The user ended another turn meanwhile: its reply replaces this one.
+      PendingTurn t = std::move(*next_turn_);
+      next_turn_.reset();
+      StartGeneration(std::move(t.audio), t.at, t.last_speech);
+      return;
+    }
+    if (reply.empty()) return;
+    reply_audio_ = std::move(reply);
+    held_.clear();
+    source_.StartTurn(next_send_, TimeDelta::Micros(static_cast<int64_t>(reply_audio_.size()) * 1'000'000 / kRate));
+    ++metrics_.replies;
+    turn_end_speech_ = gen_last_speech_;
+    awaiting_first_frame_ = true;
+    server_.Log("call " + room() + ": end of turn, replying");
   }
 
   void SendFrame(std::span<const float> pcm, Timestamp now) {
@@ -325,6 +370,7 @@ class AiCall {
       ++metrics_.audio_frames_sent;
     }
     rtp_ts_ += static_cast<uint32_t>(k20ms);
+    ++frames_out_;
   }
 
   void OnPlayout(std::span<const float> pcm, timing::AudioOperation op, Timestamp at) {
@@ -345,23 +391,27 @@ class AiCall {
       case testbench::TurnEventType::kBargeIn:
         if (source_.active()) {
           source_.Cancel(at);
+          held_.clear();
           awaiting_first_frame_ = false;
           ++metrics_.barge_ins;
           metrics_.barge_in_stop_ms.push_back((ev->at - ev->speech_start).ms_f());
-          reply_->OnBargeIn(at);
+          if (generating_.valid()) {  // Never call the source while OnUserTurn runs.
+            barge_in_deferred_ = true;
+            barge_in_at_ = at;
+          } else {
+            reply_->OnBargeIn(at);
+          }
           server_.Log("call " + room() + ": barge-in, reply cut");
         }
         break;
       case testbench::TurnEventType::kEndOfTurn: {
         ++metrics_.user_turns;
-        reply_audio_ = reply_->OnUserTurn(user_audio_, at);
+        if (generating_.valid()) {
+          next_turn_ = PendingTurn{std::move(user_audio_), at, ev->last_speech};
+        } else {
+          StartGeneration(std::move(user_audio_), at, ev->last_speech);
+        }
         user_audio_.clear();
-        if (reply_audio_.empty()) break;
-        source_.StartTurn(at, TimeDelta::Micros(static_cast<int64_t>(reply_audio_.size()) * 1'000'000 / kRate));
-        ++metrics_.replies;
-        turn_end_speech_ = ev->last_speech;
-        awaiting_first_frame_ = true;
-        server_.Log("call " + room() + ": end of turn, replying");
         break;
       }
     }
@@ -379,6 +429,21 @@ class AiCall {
   bool detector_config_ok_ = true;
   testbench::AiMediaSource source_;
   std::unique_ptr<AiReplySource> reply_;
+  // The reply being generated (declared after reply_, so it is waited for before the source goes away).
+  struct PendingTurn {
+    std::vector<float> audio;
+    Timestamp at;
+    Timestamp last_speech;
+  };
+  std::future<std::vector<float>> generating_;
+  Timestamp gen_at_ = Timestamp::Micros(0);
+  Timestamp gen_last_speech_ = Timestamp::Micros(0);
+  std::optional<PendingTurn> next_turn_;
+  bool barge_in_deferred_ = false;
+  Timestamp barge_in_at_ = Timestamp::Micros(0);
+  std::deque<testbench::AiFrame> held_;  // Frames due but not yet sent (one per slot).
+  int64_t slots_ = 0;
+  int64_t frames_out_ = 0;
   std::vector<float> reply_audio_;
   std::vector<float> user_audio_;
   std::vector<std::map<std::string, std::string>> pending_candidates_;

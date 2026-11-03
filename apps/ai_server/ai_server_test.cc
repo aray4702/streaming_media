@@ -735,3 +735,74 @@ SM_TEST(AiServer, ThroughTheSignalingService) {
   }
   CallTheAiServer(service.port, "ai-service-room");
 }
+
+// #1126: a reply source as slow as a model (150 ms per reply). It ran on the loop thread and held up the 20 ms send
+// slots; the slots then caught up with `Poll(now)`, which sent the frames due by the late `now` in one slot and
+// silence in the slots after it: a burst, a hole in the reply, and RTP timestamps ahead of the send clock for the rest
+// of the call, which the caller's jitter buffer held as extra delay. Now the source runs on a worker thread and each
+// slot sends one frame.
+SM_TEST(AiServer, SlowReplySourceKeepsTheAudioClock) {
+  class SlowReplySource final : public apps::AiReplySource {
+   public:
+    std::vector<float> OnUserTurn(std::span<const float> user_audio, Timestamp now) override {
+      std::this_thread::sleep_for(std::chrono::milliseconds(150));
+      return inner_.OnUserTurn(user_audio, now);
+    }
+
+   private:
+    apps::ScriptedReplySource inner_{{TimeDelta::Seconds(2)}};
+  };
+  SignalingStub stub;
+  apps::AiServerConfig cfg;
+  cfg.signaling_url = "ws://127.0.0.1:" + std::to_string(stub.port()) + "/ws";
+  cfg.interfaces = {*p2p::IpAddress::FromString("127.0.0.1")};
+  cfg.reply_factory = [] { return std::make_unique<SlowReplySource>(); };
+  apps::AiServer server(cfg);
+  Timestamp now = Now();
+  SM_ASSERT_TRUE(server.Start(now));
+  for (Timestamp until = now + TimeDelta::Seconds(5); now < until && !server.registered();) {
+    server.Wait(now, server.Step(now) - now);
+    now = Now();
+  }
+  SM_ASSERT_TRUE(server.registered());
+  for (Timestamp until = now + TimeDelta::Millis(300); now < until;) {
+    server.Wait(now, server.Step(now) - now);
+    now = Now();
+  }
+  Caller caller(stub.port(), "ai-slow-room", now);
+  const Timestamp start = now;
+  bool said = false;
+  std::optional<Timestamp> reply_start;
+  while (now - start < TimeDelta::Seconds(15)) {
+    server.Step(now);
+    caller.Step(now);
+    if (!said && !caller.connected_at.IsPlusInfinity()) {
+      said = true;
+      caller.Say(caller.connected_at + TimeDelta::Millis(500), 1.2, 1);
+    }
+    if (said && !reply_start) reply_start = caller.FirstRun(caller.connected_at + TimeDelta::Millis(1800), true, 3);
+    if (reply_start && now - *reply_start > TimeDelta::Millis(2500)) break;  // The whole 2 s reply has played.
+    caller.sockets.Poll(now, TimeDelta::Millis(1));
+    server.Wait(now, TimeDelta::Millis(1));
+    now = Now();
+  }
+  caller.ws.Send("{\"type\":\"bye\",\"to\":" + net::JsonEscape(caller.remote) + "}");
+  caller.ws.Poll();
+  for (Timestamp until = now + TimeDelta::Seconds(3); now < until && server.finished_calls().empty();) {
+    caller.ws.Poll();
+    server.Wait(now, server.Step(now) - now);
+    now = Now();
+  }
+  server.Shutdown(now);
+  SM_ASSERT_TRUE(reply_start.has_value());
+  SM_ASSERT_EQ(server.finished_calls().size(), size_t{1});
+  const apps::AiCallMetrics& mt = server.finished_calls()[0];
+  std::printf("%s\n", mt.ToJson().c_str());
+  SM_ASSERT_TRUE(mt.replies >= 1);
+  SM_ASSERT_TRUE(!mt.reply_generation_ms.empty());
+  SM_EXPECT_TRUE(mt.reply_generation_ms[0] >= 140);  // The model's time is still in the response.
+  // The slots kept time while the source worked (before the fix: >= 150 ms late), and every slot sent one frame.
+  SM_EXPECT_TRUE(mt.send_late_max_ms < 60 * kSlowBuild);
+  SM_EXPECT_EQ(mt.rtp_ahead_max_ms, 0.0);
+  SM_EXPECT_TRUE(mt.reply_frames_sent >= 95);  // The 2 s reply (100 frames), not cut.
+}

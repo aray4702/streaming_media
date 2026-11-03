@@ -84,9 +84,11 @@ so there is no scripted conversation. On hang-up it logs its `call-result` line 
   (`conversation_clean` 290, `conversation_barge_in` 270, `conversation_loss_5pct` 320, `conversation_jitter_50ms`
   380, at 100 ms RTT). The largest difference is the receiver's jitter buffer: 200 to 550 ms here (both our client
   and Chrome receiving from the AI server), against 30 to 90 ms in the test bench. Chrome receiving from
-  `sm_call_smoke` (case c, direct) holds 42 ms. So the AI server's send pattern (its replies paced from the test
-  bench's AI source), not the network, fills the buffers. The rest comes from the RTT, the VAD's hangover before
-  the endpointer starts counting, and our 10 ms polling of the played-out audio.
+  `sm_call_smoke` (case c, direct) holds 42 ms, but that call ran host to host on the LAN. On the same relayed path,
+  every sender builds a buffer of this size (#1126, below): the path's jitter, not the AI server, fills most of it.
+  The AI server's send loop added a smaller share, which #1126 removed. The rest of the response comes from the
+  RTT, the AI side's own jitter buffer, the reply source's time, the VAD's hangover before the endpointer starts
+  counting, and our 10 ms polling of the played-out audio.
 - **Barge-in stop: 540 to 1160 ms** (the test bench's `conversation_barge_in`: 190 ms). The same jitter buffers sit
   on the AI-to-user path, on top of up to 300 ms in the turn detector (100 ms onset and 200 ms of speech before it calls a
   barge-in).
@@ -111,3 +113,32 @@ so there is no scripted conversation. On hang-up it logs its `call-result` line 
   - Packets lost (16 each way relayed) and concealment (2.4 % and 2.7 %) agree in size.
   - `connect ms` for `sm_call_smoke` in case c counts from its own start, so it includes the 2 s it waited for
     Chrome to join.
+
+## The jitter buffer on the same path (#1126)
+
+Measured on 2026-11-03 from the same MacBook, audio only, 25 s calls, relayed through the TURN server in Oregon
+(Mac -> TURN -> Mac). The AI server ran locally, behind a local signaling service that hands out credentials for
+the same TURN server. The caller's `jitter_buffer_ms` is `jitterBufferDelay / jitterBufferEmittedCount`.
+
+- **Every sender builds a similar buffer on this path.** Chrome to Chrome held 132-448 ms across rounds. In each
+  call between Chrome and `sm_call_smoke`, the two directions matched within 20 ms (183/190, 202/186, 311/309,
+  332/332, 159/182, 362/377). `sm_call_smoke` to `sm_call_smoke` held 105-200 ms. From one call to the next, the
+  path moved the buffer more than the endpoints did.
+- **The AI server added 35-65 ms on top** (loopback: 51-77 ms against 32-42 ms from `sm_call_smoke`). Its reply
+  source ran on the loop thread and stalled the 20 ms send slots at every reply start, and the late slots caught
+  up by sending the frames of later slots early. #1126 moved the source to a worker thread and made each slot send
+  one frame.
+
+Same rounds, before and after #1126 (jitter buffer ms at the caller):
+
+| sender -> receiver | before | after |
+|---|---|---|
+| AI server -> `sm_call_smoke` | 173, 229, 181 | 156, 142, 140 |
+| `sm_call_smoke` -> `sm_call_smoke` (path reference) | 128, 195, 117 | 107, 133, 126 |
+| AI server -> Chrome | 194, 288, 315 | 209, 166, 194 |
+
+At the caller, the response's transport part (p50) stays at 585-720 ms for `sm_call_smoke` and 730-1060 ms for
+Chrome, and the barge-in stop at 430-900 ms. Against the test bench's 270-380 ms and 190 ms, the difference is the
+path: each leg's jitter buffer holds 100-200 ms here (the test bench's conversation scenarios: 30-90 ms), and both
+legs count, the user's audio to the AI and the reply back. The reply source's synthesis (30-90 ms per reply,
+`reply_generation_ms` in the AI server's metrics) is in the response now, where a model's time belongs.
