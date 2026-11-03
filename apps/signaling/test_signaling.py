@@ -213,6 +213,24 @@ class TurnTest(unittest.TestCase):
             await svc.stop()
         run(go())
 
+    def test_turn_with_no_stun_has_no_empty_server(self):
+        # #1135: with STUN_URLS empty and no TURN, /turn must not describe an ICE server
+        # with no URLs; it returns {"urls": []} and the web app then passes no ICE server.
+        self.assertEqual(server.turn_response('', [], []), {'urls': [], 'ttl': server.TTL})
+        self.assertEqual(server.turn_response('', ['turn:t.example:3478'], ['']), {'urls': [], 'ttl': server.TTL})
+        self.assertEqual(server.turn_response('k', [''], []), {'urls': [], 'ttl': server.TTL})
+        async def go():
+            svc = server.Service([], '', [])
+            await svc.start()
+            loop = asyncio.get_running_loop()
+            body = await loop.run_in_executor(None, lambda: urllib.request.urlopen(
+                'http://127.0.0.1:%d/turn?peer=bob' % svc.port).read())
+            self.assertEqual(json.loads(body), {'urls': [], 'ttl': server.TTL})
+            await svc.stop()
+        run(go())
+        html = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'web', 'index.html')).read()
+        self.assertIn('if (!urls.length) { iceServers = []; return; }', html)
+
 
 if __name__ == '__main__':
     unittest.main()

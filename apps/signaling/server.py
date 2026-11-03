@@ -33,8 +33,9 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 
 
 def turn_response(secret, urls, stun_urls, peer_id='web', now=None):
     """What GET /turn returns. The credential is CreateTurnRestCredentials(secret, peer_id, expiry)."""
-    ice = list(stun_urls)
-    if not secret or not urls:
+    ice = [u for u in stun_urls if u]
+    urls = [u for u in urls if u]
+    if not secret or not urls:  # STUN only; {'urls': []} when no STUN is set either (#1135)
         return {'urls': ice, 'ttl': TTL}
     expiry = int(now if now is not None else time.time()) + TTL
     username = '%d:%s' % (expiry, peer_id)
