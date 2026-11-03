@@ -1,6 +1,10 @@
 # A call between headless Chrome and a peer (C6 part 4, #1088). Each test exits
 # 77 (skipped, not failed) when no Chrome is found, so the local gate passes
 # without one. run_browser_call.py documents the harness.
+# Every call also checks that Chrome's send-side bandwidth estimate ramps up on
+# loopback (#1125: Chrome -> Chrome reaches about 3.5 Mbps within 3 s; with
+# feedback Chrome ignored, toward our endpoint it fell from 300 to 84 kbps).
+set(SM_BROWSER_BWE --bwe-kbps=1500 --bwe-seconds=10)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
   set(SM_BROWSER_CALL ${CMAKE_CURRENT_SOURCE_DIR}/run_browser_call.py)
@@ -9,7 +13,7 @@ if(Python3_FOUND)
   # on their own.
   foreach(role offer answer)
     add_test(NAME interop.BrowserSelf.chrome_${role}s
-             COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --self --role=${role})
+             COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --self --role=${role} ${SM_BROWSER_BWE})
     set_tests_properties(interop.BrowserSelf.chrome_${role}s PROPERTIES
       LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
   endforeach()
@@ -28,7 +32,7 @@ if(Python3_FOUND AND TARGET sm::pc_endpoint)
   foreach(role offer answer)
     add_test(NAME interop.Browser.chrome_${role}s
              COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --peer=$<TARGET_FILE:sm_interop_browser_peer>
-                     --role=${role} ${SM_BROWSER_DC})
+                     --role=${role} ${SM_BROWSER_DC} ${SM_BROWSER_BWE})
     set_tests_properties(interop.Browser.chrome_${role}s PROPERTIES
       LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
   endforeach()

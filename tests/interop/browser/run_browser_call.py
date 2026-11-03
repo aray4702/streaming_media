@@ -217,6 +217,9 @@ def main():
     ap.add_argument('--timeout', type=float, default=40.0, help='seconds for the whole call')
     ap.add_argument('--no-data-channel', action='store_true',
                     help='no data channel and no data checks (for an endpoint built without SM_WITH_DATACHANNEL)')
+    ap.add_argument('--bwe-kbps', type=int, default=0,
+                    help="also check that Chrome's send-side bandwidth estimate reaches this (#1125)")
+    ap.add_argument('--bwe-seconds', type=float, default=10.0, help='seconds of media for --bwe-kbps')
     ap.add_argument('-v', '--verbose', action='store_true')
     args = ap.parse_args()
     if not args.self_test and not args.peer:
@@ -243,7 +246,8 @@ def main():
 
     page_timeout_ms = int((args.timeout - 10) * 1000)
     url = 'http://127.0.0.1:%d/page.html?role=%s&timeout_ms=%d%s' % (
-        port, args.role, page_timeout_ms, ('&self=1' if args.self_test else '') + ('&dc=0' if args.no_data_channel else ''))
+        port, args.role, page_timeout_ms, ('&self=1' if args.self_test else '') + ('&dc=0' if args.no_data_channel else '') +
+        ('&bwe_kbps=%d&bwe_ms=%d' % (args.bwe_kbps, args.bwe_seconds * 1000) if args.bwe_kbps else ''))
     profile = tempfile.mkdtemp(prefix='sm-chrome-')
     print('chrome: %s' % chrome)
     print('page:   %s' % url)

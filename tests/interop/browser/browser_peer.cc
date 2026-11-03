@@ -562,7 +562,9 @@ int main(int argc, char** argv) {
        ",\"audioFramesSent\":" + std::to_string(audio_sent) + ",\"videoFramesSent\":" + std::to_string(video_sent) +
        ",\"keyframesSent\":" + std::to_string(keyframes_sent) + ",\"keyframeRequests\":" +
        std::to_string(keyframe_requests) + ",\"rtpIn\":" + std::to_string(st ? st->rtp_in : 0) + ",\"rtcpIn\":" +
-       std::to_string(st ? st->rtcp_in : 0) + ",\"sendFailures\":" + std::to_string(ep.send_failures()) +
+       std::to_string(st ? st->rtcp_in : 0) + ",\"transportCcSent\":" +
+       std::to_string(ep.session() ? ep.session()->rtcp().stats().transport_cc_sent : 0) + ",\"transportCcPackets\":" +
+       std::to_string(ep.session() ? ep.session()->transport_feedback().stats().packets : 0) + ",\"sendFailures\":" + std::to_string(ep.send_failures()) +
        "},\"errors\":" + errs + "}");
   return ok ? 0 : 1;
 }
