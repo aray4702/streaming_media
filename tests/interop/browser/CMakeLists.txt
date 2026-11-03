@@ -4,7 +4,13 @@
 # Every call also checks that Chrome's send-side bandwidth estimate ramps up on
 # loopback (#1125: Chrome -> Chrome reaches about 3.5 Mbps within 3 s; with
 # feedback Chrome ignored, toward our endpoint it fell from 300 to 84 kbps).
-set(SM_BROWSER_BWE --bwe-kbps=1500 --bwe-seconds=10)
+# On a loaded CI Mac, Chrome's own ramp is sometimes slow (#1132), so the
+# self-test records Chrome <-> Chrome's estimate and a call with our endpoint
+# that did not reach 1500 kbps is judged against it (bwe_check in
+# run_browser_call.py). The browser tests run serially (nothing else loads the
+# host) and give the estimate 20 s.
+set(SM_BROWSER_BWE --bwe-kbps=1500 --bwe-seconds=20 --timeout=60
+    --bwe-reference=${CMAKE_CURRENT_BINARY_DIR}/chrome_bwe_reference.json)
 find_package(Python3 COMPONENTS Interpreter)
 if(Python3_FOUND)
   set(SM_BROWSER_CALL ${CMAKE_CURRENT_SOURCE_DIR}/run_browser_call.py)
@@ -15,7 +21,7 @@ if(Python3_FOUND)
     add_test(NAME interop.BrowserSelf.chrome_${role}s
              COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --self --role=${role} ${SM_BROWSER_BWE})
     set_tests_properties(interop.BrowserSelf.chrome_${role}s PROPERTIES
-      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE)
   endforeach()
 endif()
 
@@ -33,7 +39,9 @@ if(Python3_FOUND AND TARGET sm::pc_endpoint)
     add_test(NAME interop.Browser.chrome_${role}s
              COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --peer=$<TARGET_FILE:sm_interop_browser_peer>
                      --role=${role} ${SM_BROWSER_DC} ${SM_BROWSER_BWE})
+    # After the self-tests, whose Chrome <-> Chrome estimate is the reference.
     set_tests_properties(interop.Browser.chrome_${role}s PROPERTIES
-      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE
+      DEPENDS "interop.BrowserSelf.chrome_offers;interop.BrowserSelf.chrome_answers")
   endforeach()
 endif()
