@@ -268,6 +268,11 @@ SM_TEST(CallClient, TwoAppsByRoomCode) {
   SM_EXPECT_TRUE(sa.capture_level < 0.001);  // Muted: the session's fade left silence.
   SM_EXPECT_TRUE(sb.capture_level > 0.001);
   SM_EXPECT_TRUE(sa.target_kbps > 0);
+  // The selected pair's types and protocol (#1121): two hosts on this machine, over UDP.
+  SM_EXPECT_EQ(sa.local_type, std::string("host"));
+  SM_EXPECT_EQ(sa.remote_type, std::string("host"));
+  SM_EXPECT_EQ(sa.protocol, std::string("udp"));
+  SM_EXPECT_FALSE(sa.relay_only);
   // libwebrtc's default Opus registration (32 kbps min and max): the allocation leaves it at 32 kbps.
   SM_EXPECT_TRUE(sa.opus_kbps == 32.0);
   SM_EXPECT_TRUE(sa.audio_allocation_kbps > 32.0);
@@ -373,4 +378,43 @@ SM_TEST(CallClient, OpusFollowsTheAudioAllocation) {
   SM_EXPECT_EQ(opus_bps(1000, 6000, 32000), 32000);
   const int capped = opus_bps(40, 6000, 32000);
   SM_EXPECT_TRUE(capped >= 6000 && capped < 32000);
+}
+
+// Relay only (#1121), as iceTransportPolicy "relay": with no TURN server there is no candidate to use, so two apps
+// that would connect host to host in a moment (TwoAppsByRoomCode) never connect.
+SM_TEST(CallClient, RelayOnlyUsesNoHostCandidate) {
+  PythonService service;
+  if (!service.Start()) {
+    std::printf("SKIPPED: apps/signaling/server.py or python3 not available\n");
+    return;
+  }
+  Timestamp now = apps::WallNow();
+  apps::CallClientConfig ca = AppConfig("room-relay", "app-a"), cb = AppConfig("room-relay", "app-b");
+  ca.relay_only = cb.relay_only = true;
+  ca.audio_processing = cb.audio_processing = false;
+  apps::CallDriver a(service.ws(), ca);
+  apps::CallDriver b(service.ws(), cb);
+  SM_ASSERT_TRUE(a.Start(now));
+  for (Timestamp until = now + TimeDelta::Millis(300); now < until;) {
+    a.Step(now);
+    a.Wait(now, TimeDelta::Millis(5));
+    now = apps::WallNow();
+  }
+  SM_ASSERT_TRUE(b.Start(now));
+  bool connected = false, offered = false;
+  for (const Timestamp start = now; now - start < TimeDelta::Seconds(4);) {
+    a.Step(now);
+    b.Step(now);
+    connected = connected || a.client().state() == apps::CallState::kConnected ||
+                b.client().state() == apps::CallState::kConnected;
+    offered = offered || a.client().state() == apps::CallState::kConnecting;
+    a.Wait(now, TimeDelta::Millis(1));
+    b.Wait(now, TimeDelta::Millis(1));
+    now = apps::WallNow();
+  }
+  SM_EXPECT_TRUE(offered);  // The offer and answer went through; only the candidates were held back.
+  SM_EXPECT_FALSE(connected);
+  SM_EXPECT_TRUE(a.client().stats().relay_only);
+  a.Hangup(now);
+  b.Hangup(now);
 }

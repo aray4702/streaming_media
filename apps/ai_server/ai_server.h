@@ -85,6 +85,8 @@ struct AiServerConfig {
   std::string turn_url;
   // Interfaces to gather on; empty: every IPv4 interface that is up and not loopback.
   std::vector<p2p::IpAddress> interfaces;
+  // Relay only (#1121): TURN candidates only, as iceTransportPolicy "relay" (the allocator's CF_RELAY filter).
+  bool relay_only = false;
   std::string metrics_path;  // JSON lines appended per call; empty: not written.
   testbench::AiSourceConfig ai_source;
   testbench::TurnDetectorConfig turn_detector;

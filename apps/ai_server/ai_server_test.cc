@@ -32,6 +32,8 @@
 #include "sm/pc/peer_endpoint.h"
 #include "sm/pc/webrtc_sdp.h"
 #include "sm/sim/signals.h"
+#include "sm/tls/ssl_identity.h"
+#include "sm/tls/tls_stream.h"
 #include "sm_test.h"
 #include "websocket.h"
 
@@ -381,6 +383,108 @@ struct Caller {
   }
 };
 
+// A TLS server on loopback (#1121), one blocking connection at a time on its own thread, with a self-signed
+// certificate for "localhost": GET /turn gets a chunked body (as nginx sends it), /ws a WebSocket that echoes.
+class TlsTestServer {
+ public:
+  TlsTestServer() : identity_(tls::SslIdentity::Create("localhost")) {
+    listen_fd_ = socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in a{};
+    a.sin_family = AF_INET;
+    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t len = sizeof a;
+    if (!identity_ || bind(listen_fd_, reinterpret_cast<sockaddr*>(&a), len) != 0 || listen(listen_fd_, 4) != 0) return;
+    getsockname(listen_fd_, reinterpret_cast<sockaddr*>(&a), &len);
+    port_ = ntohs(a.sin_port);
+    thread_ = std::thread([this] { Run(); });
+  }
+  ~TlsTestServer() {
+    stop_ = true;
+    if (thread_.joinable()) thread_.join();
+    close(listen_fd_);
+  }
+  uint16_t port() const { return port_; }
+  std::vector<uint8_t> root() const {
+    const auto d = identity_->certificate().der();
+    return {d.begin(), d.end()};
+  }
+
+ private:
+  void Run() {
+    while (!stop_) {
+      pollfd p{listen_fd_, POLLIN, 0};
+      if (poll(&p, 1, 20) <= 0) continue;
+      const int fd = accept(listen_fd_, nullptr, nullptr);
+      if (fd < 0) continue;
+      Serve(fd);
+      close(fd);
+    }
+  }
+  void Serve(int fd) {
+    tls::TlsConfig c;
+    c.role = tls::TlsRole::kServer;
+    c.ignore_bad_cert = true;  // The client presents no certificate.
+    tls::TlsStream t(c, identity_->Clone());
+    if (!t.Start()) return;
+    std::string plain;
+    bool ws = false;
+    auto flush = [&] {
+      const auto out = t.TakeOutgoing();
+      for (size_t sent = 0; sent < out.size();) {
+        const ssize_t n = send(fd, out.data() + sent, out.size() - sent, 0);
+        if (n <= 0) return;
+        sent += static_cast<size_t>(n);
+      }
+    };
+    auto write = [&](const std::string& text) {
+      t.Write(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size()));
+      flush();
+    };
+    for (int idle = 0; !stop_ && idle < 250;) {
+      flush();
+      pollfd p{fd, POLLIN, 0};
+      if (poll(&p, 1, 20) <= 0) {
+        ++idle;
+        continue;
+      }
+      uint8_t buf[4096];
+      const ssize_t n = recv(fd, buf, sizeof buf, 0);
+      if (n <= 0) return;
+      t.Feed(std::span<const uint8_t>(buf, static_cast<size_t>(n)));
+      for (int r; (r = t.Read(std::span<uint8_t>(buf, sizeof buf))) > 0;) plain.append(reinterpret_cast<char*>(buf), r);
+      if (t.state() == tls::TlsState::kFailed) return;
+      if (!ws) {
+        const size_t end = plain.find("\r\n\r\n");
+        if (end == std::string::npos) continue;
+        const std::string req = plain.substr(0, end + 4);
+        plain.erase(0, end + 4);
+        if (req.rfind("GET /turn", 0) == 0) {
+          write("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n"
+                "Connection: close\r\n\r\n8\r\n{\"urls\":\r\nf\r\n[],\"ttl\":86400}\r\n0\r\n\r\n");
+          return;
+        }
+        write(net::WsServerHandshakeResponse(req));
+        ws = true;
+      }
+      net::WsFrame f;
+      for (long used; (used = net::WsDecodeFrame(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(plain.data()),
+                                                                          plain.size()),
+                                                 &f)) > 0;) {
+        plain.erase(0, static_cast<size_t>(used));
+        if (f.opcode == net::kWsClose) return;
+        const auto echo = net::WsEncodeFrame(net::kWsText, "echo:" + f.payload, false);
+        write(std::string(echo.begin(), echo.end()));
+      }
+    }
+  }
+
+  std::unique_ptr<tls::SslIdentity> identity_;
+  int listen_fd_ = -1;
+  uint16_t port_ = 0;
+  std::atomic<bool> stop_{false};
+  std::thread thread_;
+};
+
 }  // namespace
 
 // --- AiServerNet ----------------------------------------------------------------------------------------------------
@@ -405,6 +509,42 @@ SM_TEST(AiServerNet, FramesRoundTripMaskedAndLong) {
       SM_EXPECT_EQ(static_cast<int>(f.opcode), static_cast<int>(net::kWsText));
     }
   }
+}
+
+// wss:// and https:// (#1121): the signaling and /turn of a real host, here a loopback TLS server with a self-signed
+// certificate that the client is given as a trusted root. Without it the certificate check fails.
+SM_TEST(AiServerNet, WssAndHttpsThroughTls) {
+  const auto def = net::ParseUrl("wss://example.org/ws");
+  SM_ASSERT_TRUE(def.has_value());
+  SM_EXPECT_TRUE(def->tls);
+  SM_EXPECT_EQ(static_cast<int>(def->port), 443);
+  TlsTestServer srv;
+  SM_ASSERT_GT(static_cast<int>(srv.port()), 0);
+  const std::string hostport = "localhost:" + std::to_string(srv.port());
+  net::Url turn = *net::ParseUrl("https://" + hostport + "/turn");
+  SM_EXPECT_FALSE(net::HttpGet(turn, 5000).has_value());  // Not signed by a trusted root.
+  turn.trusted_roots = {srv.root()};
+  const auto body = net::HttpGet(turn, 5000);
+  SM_ASSERT_TRUE(body.has_value());
+  SM_EXPECT_EQ(*body, std::string("{\"urls\":[],\"ttl\":86400}"));  // The chunks joined.
+
+  net::Url url = *net::ParseUrl("wss://" + hostport + "/ws");
+  url.trusted_roots = {srv.root()};
+  net::WebSocketClient ws;
+  SM_ASSERT_TRUE(ws.Connect(url));
+  ws.Send("{\"type\":\"join\"}");  // Queued until the TLS and WebSocket handshakes are done.
+  std::vector<std::string> got;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+  while (got.empty() && !ws.closed() && std::chrono::steady_clock::now() < deadline) {
+    pollfd p{ws.fd(), static_cast<short>(POLLIN | (ws.wants_write() ? POLLOUT : 0)), 0};
+    poll(&p, 1, 20);
+    ws.Poll();
+    got = ws.TakeMessages();
+  }
+  SM_ASSERT_EQ(got.size(), size_t{1});
+  SM_EXPECT_EQ(got[0], std::string("echo:{\"type\":\"join\"}"));
+  SM_EXPECT_TRUE(ws.open());
+  ws.Close();
 }
 
 SM_TEST(AiServerNet, JsonAndTurnResponse) {

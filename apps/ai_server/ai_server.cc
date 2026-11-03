@@ -190,7 +190,7 @@ class AiCall {
     std::vector<p2p::RelayServerConfig> turn;
     if (cfg.turn_url != "none") {
       std::optional<net::Url> url = cfg.turn_url.empty()
-                                        ? std::optional<net::Url>(net::Url{server_.signaling_.host, server_.signaling_.port, "/turn"})
+                                        ? std::optional<net::Url>(net::Url{server_.signaling_.host, server_.signaling_.port, "/turn", server_.signaling_.tls})
                                         : net::ParseUrl(cfg.turn_url);
       if (url) {
         if (auto body = net::HttpGet(*url, 2000)) ParseTurnResponse(*body, &stun, &turn);
@@ -200,6 +200,7 @@ class AiCall {
     allocator_ = std::make_unique<p2p::BasicPortAllocator>(&network_, &server_.sockets_);
     allocator_->SetConfiguration(now, stun, turn, 0, p2p::NO_PRUNE);
     allocator_->set_flags(p2p::PORTALLOCATOR_DISABLE_TCP);
+    if (cfg.relay_only) allocator_->SetCandidateFilter(p2p::CF_RELAY);
     pc::PeerEndpointConfig c;
     c.allocator = allocator_.get();
     c.certificate_name = "sm-ai-server";
