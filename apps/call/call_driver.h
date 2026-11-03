@@ -24,7 +24,7 @@ class CallDriver {
     url_ = net::ParseUrl(signaling).value_or(net::Url{});
     client_ = std::make_unique<CallClient>(std::move(config), [this](const std::string& m) { ws_.Send(m); });
     if (turn_url != "none") {
-      net::Url t = turn_url.empty() ? net::Url{url_.host, url_.port, "/turn"} : net::ParseUrl(turn_url).value_or(net::Url{});
+      net::Url t = turn_url.empty() ? net::Url{url_.host, url_.port, "/turn", url_.tls} : net::ParseUrl(turn_url).value_or(net::Url{});
       if (auto body = net::HttpGet(t, 2000)) client_->SetTurnResponse(*body);
     }
   }

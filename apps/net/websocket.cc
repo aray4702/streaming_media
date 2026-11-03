@@ -17,6 +17,7 @@
 
 #include "sm/tls/crypto_random.h"
 #include "sm/tls/message_digest.h"
+#include "sm/tls/tls_stream.h"
 
 namespace sm::net {
 
@@ -71,6 +72,26 @@ constexpr int kSendFlags = MSG_NOSIGNAL;
 #else
 constexpr int kSendFlags = 0;
 #endif
+
+// A TLS client for wss:// and https://: the server's name for SNI and the certificate check, the system's roots.
+std::unique_ptr<tls::TlsStream> MakeTlsClient(const Url& url) {
+  tls::TlsConfig c;
+  c.role = tls::TlsRole::kClient;
+  c.server_name = url.host;
+  c.trusted_roots = url.trusted_roots;
+  c.alpn_protocols = {"http/1.1"};
+  return std::make_unique<tls::TlsStream>(c);
+}
+
+// Hands every record the engine has decrypted to `in`; false when the connection is over (failed or close_notify).
+bool DrainTls(tls::TlsStream& t, std::vector<uint8_t>& in) {
+  uint8_t buf[16384];
+  for (;;) {
+    const int n = t.Read(buf);
+    if (n > 0) in.insert(in.end(), buf, buf + n);
+    else return n == tls::kTlsWouldBlock && t.state() != tls::TlsState::kFailed;
+  }
+}
 
 }  // namespace
 
@@ -173,7 +194,12 @@ std::optional<Url> ParseUrl(std::string_view url) {
   size_t p = url.find("://");
   if (p == std::string_view::npos) return std::nullopt;
   const std::string_view scheme = url.substr(0, p);
-  if (scheme != "ws" && scheme != "http") return std::nullopt;
+  if (scheme == "wss" || scheme == "https") {
+    u.tls = true;
+    u.port = 443;
+  } else if (scheme != "ws" && scheme != "http") {
+    return std::nullopt;
+  }
   url.remove_prefix(p + 3);
   const size_t slash = url.find('/');
   std::string_view hostport = url.substr(0, slash);
@@ -203,6 +229,12 @@ std::optional<p2p::IpAddress> ResolveIpv4(const std::string& host) {
   return ip;
 }
 
+struct WebSocketClient::Tls {
+  std::unique_ptr<tls::TlsStream> stream;
+};
+
+WebSocketClient::WebSocketClient() = default;
+
 WebSocketClient::~WebSocketClient() {
   if (fd_ >= 0) close(fd_);
 }
@@ -218,6 +250,7 @@ bool WebSocketClient::Connect(const Url& url) {
   }
   host_header_ = url.host + ":" + std::to_string(url.port);
   path_ = url.path;
+  if (url.tls) tls_ = std::make_unique<Tls>(Tls{MakeTlsClient(url)});
   uint8_t nonce[16];
   tls::CreateRandomBytes(nonce);
   key_ = Base64Encode(nonce);
@@ -252,10 +285,25 @@ void WebSocketClient::Close() {
 }
 
 void WebSocketClient::Flush() {
-  while (!out_.empty() && fd_ >= 0) {
-    const ssize_t n = send(fd_, out_.data(), out_.size(), kSendFlags);
+  if (!tls_) {
+    wire_.insert(wire_.end(), out_.begin(), out_.end());
+    out_.clear();
+  } else if (fd_ >= 0) {
+    tls::TlsStream& t = *tls_->stream;
+    if (t.state() == tls::TlsState::kConnected && !out_.empty()) {
+      if (t.Write(out_) == tls::kTlsError) {
+        Fail();
+        return;
+      }
+      out_.clear();  // Once connected, Write takes the whole buffer.
+    }
+    const std::vector<uint8_t> records = t.TakeOutgoing();
+    wire_.insert(wire_.end(), records.begin(), records.end());
+  }
+  while (!wire_.empty() && fd_ >= 0) {
+    const ssize_t n = send(fd_, wire_.data(), wire_.size(), kSendFlags);
     if (n > 0) {
-      out_.erase(out_.begin(), out_.begin() + n);
+      wire_.erase(wire_.begin(), wire_.begin() + n);
     } else {
       if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) return;
       Fail();
@@ -269,7 +317,15 @@ void WebSocketClient::ReadAvailable() {
   while (fd_ >= 0) {
     const ssize_t n = recv(fd_, buf, sizeof buf, 0);
     if (n > 0) {
-      in_.insert(in_.end(), buf, buf + n);
+      if (!tls_) {
+        in_.insert(in_.end(), buf, buf + n);
+      } else {
+        tls_->stream->Feed(std::span<const uint8_t>(buf, static_cast<size_t>(n)));
+        if (!DrainTls(*tls_->stream, in_)) {
+          Fail();
+          return;
+        }
+      }
     } else if (n == 0) {
       Fail();  // Closed by the server.
       return;
@@ -329,7 +385,11 @@ void WebSocketClient::Poll() {
     const std::string req = "GET " + path_ + " HTTP/1.1\r\nHost: " + host_header_ +
                             "\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: " + key_ +
                             "\r\nSec-WebSocket-Version: 13\r\n\r\n";
-    out_.assign(req.begin(), req.end());
+    out_.assign(req.begin(), req.end());  // With TLS, written once the TLS handshake is done.
+    if (tls_ && !tls_->stream->Start()) {
+      Fail();
+      return;
+    }
     state_ = State::kHandshake;
   }
   Flush();
@@ -375,37 +435,83 @@ std::optional<std::string> HttpGet(const Url& url, int timeout_ms) {
     pollfd p{fd, events, 0};
     return poll(&p, 1, static_cast<int>(left.count())) > 0;
   };
-  std::optional<std::string> result;
   const std::string req = "GET " + url.path + " HTTP/1.1\r\nHost: " + url.host + ":" + std::to_string(url.port) +
                           "\r\nConnection: close\r\n\r\n";
-  size_t sent = 0;
-  std::string resp;
   bool ok = true;
   if (in_progress) {
     int err = 0;
     socklen_t len = sizeof err;
     ok = wait(POLLOUT) && getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len) == 0 && err == 0;
   }
-  while (ok && sent < req.size()) {
-    const ssize_t n = send(fd, req.data() + sent, req.size() - sent, kSendFlags);
-    if (n > 0) sent += static_cast<size_t>(n);
-    else if (n < 0 && (errno == EAGAIN || errno == EINTR)) ok = wait(POLLOUT);
-    else ok = false;
+  // With TLS the request waits in the engine until the handshake is done; `wire` is what goes to the socket.
+  std::unique_ptr<tls::TlsStream> t = url.tls ? MakeTlsClient(url) : nullptr;
+  std::vector<uint8_t> wire, body;
+  bool request_written = false;
+  if (!t) {
+    wire.assign(req.begin(), req.end());
+    request_written = true;
+  } else if (ok) {
+    ok = t->Start();
   }
-  char buf[4096];
-  while (ok) {
+  bool eof = false;
+  while (ok && !eof) {
+    if (t) {
+      if (!request_written && t->state() == tls::TlsState::kConnected) {
+        ok = t->Write(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(req.data()), req.size())) > 0;
+        request_written = true;
+      }
+      const std::vector<uint8_t> records = t->TakeOutgoing();
+      wire.insert(wire.end(), records.begin(), records.end());
+    }
+    while (ok && !wire.empty()) {
+      const ssize_t n = send(fd, wire.data(), wire.size(), kSendFlags);
+      if (n > 0) wire.erase(wire.begin(), wire.begin() + n);
+      else if (n < 0 && (errno == EAGAIN || errno == EINTR)) ok = wait(POLLOUT);
+      else ok = false;
+    }
+    if (!ok) break;
+    uint8_t buf[4096];
     const ssize_t n = recv(fd, buf, sizeof buf, 0);
-    if (n > 0) resp.append(buf, static_cast<size_t>(n));
-    else if (n == 0) break;
-    else if (errno == EAGAIN || errno == EINTR) ok = wait(POLLIN);
-    else ok = false;
+    if (n > 0) {
+      if (!t) {
+        body.insert(body.end(), buf, buf + n);
+      } else {
+        t->Feed(std::span<const uint8_t>(buf, static_cast<size_t>(n)));
+        eof = !DrainTls(*t, body);  // close_notify ends the body as the TCP close does.
+        ok = t->state() != tls::TlsState::kFailed;
+      }
+    } else if (n == 0) {
+      eof = true;
+    } else if (errno == EAGAIN || errno == EINTR) {
+      ok = wait(POLLIN);
+    } else {
+      ok = false;
+    }
   }
   close(fd);
+  const std::string resp(body.begin(), body.end());
   const size_t end = resp.find("\r\n\r\n");
-  if (ok && end != std::string::npos && resp.compare(0, 7, "HTTP/1.") == 0 && resp.compare(9, 3, "200") == 0) {
-    result = resp.substr(end + 4);  // Connection: close, so the body runs to the end (no chunked support needed).
+  if (!ok || end == std::string::npos || resp.compare(0, 7, "HTTP/1.") != 0 || resp.compare(9, 3, "200") != 0) {
+    return std::nullopt;
   }
-  return result;
+  std::string out = resp.substr(end + 4);  // Connection: close, so the body runs to the end.
+  std::string te = HeaderValue(resp.substr(0, end + 2), "transfer-encoding");
+  std::transform(te.begin(), te.end(), te.begin(), [](unsigned char c) { return std::tolower(c); });
+  if (te == "chunked") {  // A proxy (nginx) may chunk it: join the chunks.
+    std::string joined;
+    size_t pos = 0;
+    for (;;) {
+      const size_t eol = out.find("\r\n", pos);
+      if (eol == std::string::npos) return std::nullopt;
+      const unsigned long size = std::strtoul(out.substr(pos, eol - pos).c_str(), nullptr, 16);
+      if (size == 0) break;
+      if (eol + 2 + size > out.size()) return std::nullopt;
+      joined.append(out, eol + 2, size);
+      pos = eol + 2 + size + 2;
+    }
+    out = std::move(joined);
+  }
+  return out;
 }
 
 }  // namespace sm::net

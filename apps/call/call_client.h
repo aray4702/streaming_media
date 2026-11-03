@@ -92,6 +92,9 @@ struct CallClientConfig {
   bool audio_processing = true;  // The library's capture chain (above); off: the raw microphone.
   bool agc = true;               // The AGC in that chain (APM's gain_controller1.enabled).
   int video_fps = 30;
+  // Relay only (#1121): gather and use TURN candidates only, as RTCConfiguration's iceTransportPolicy "relay"
+  // (PeerConnection sets the allocator's candidate filter to CF_RELAY).
+  bool relay_only = false;
   bool verbose = false;          // Log to stderr.
 };
 
@@ -100,8 +103,12 @@ struct CallStats {
   CallState state = CallState::kIdle;
   double connect_ms = -1;          // Start to ICE + DTLS-SRTP up.
   double duration_s = 0;
-  std::string local_candidate;     // Selected pair: "relay (udp)", "srflx", "host", ...
+  std::string local_candidate;     // Selected pair: "relay udp via udp 1.2.3.4:5", "srflx udp ...", "host udp ...".
   std::string remote_candidate;
+  // The selected pair's candidate types (host, srflx, prflx, relay), its protocol (udp, tcp) and, for a local relay
+  // candidate, the protocol to the TURN server (udp, tcp, tls), as RTCIceCandidateStats reports them.
+  std::string local_type, remote_type, protocol, relay_protocol;
+  bool relay_only = false;
   double rtt_ms = -1;
   double target_kbps = 0;          // The congestion controller's target.
   double send_kbps = 0, recv_kbps = 0;  // On the selected pair, over the last second.

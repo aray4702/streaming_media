@@ -297,7 +297,10 @@ std::string CallStats::ToJson() const {
                 static_cast<unsigned long long>(video_frames_decoded),
                 static_cast<unsigned long long>(video_frames_rendered), capture_level, agc_gain_db, opus_kbps,
                 audio_allocation_kbps, video_send_rotation, video_recv_rotation);
-  return buf + std::string("\"local_candidate\":") + net::JsonEscape(local_candidate) +
+  return buf + std::string("\"relay_only\":") + (relay_only ? "true" : "false") +
+         ",\"local_type\":" + net::JsonEscape(local_type) + ",\"remote_type\":" + net::JsonEscape(remote_type) +
+         ",\"protocol\":" + net::JsonEscape(protocol) + ",\"relay_protocol\":" + net::JsonEscape(relay_protocol) +
+         ",\"local_candidate\":" + net::JsonEscape(local_candidate) +
          ",\"remote_candidate\":" + net::JsonEscape(remote_candidate) + ",\"dtls_cipher\":" + net::JsonEscape(dtls_cipher) +
          ",\"srtp_cipher\":" + net::JsonEscape(srtp_cipher) + ",\"ended_reason\":" + net::JsonEscape(ended_reason) + "}";
 }
@@ -385,6 +388,7 @@ void CallClient::MakeEndpoint(Timestamp now) {
   allocator_ = std::make_unique<p2p::BasicPortAllocator>(network_.get(), &sockets_);
   allocator_->SetConfiguration(now, stun_, turn_, 0, p2p::NO_PRUNE);
   allocator_->set_flags(p2p::PORTALLOCATOR_DISABLE_TCP);
+  if (config_.relay_only) allocator_->SetCandidateFilter(p2p::CF_RELAY);
   pc::PeerEndpointConfig c;
   c.allocator = allocator_.get();
   c.certificate_name = "sm-call";
@@ -579,6 +583,7 @@ CallStats CallClient::stats() const {
   std::lock_guard<std::mutex> lock(stats_mu_);
   CallStats s = stats_;
   s.state = state_;
+  s.relay_only = config_.relay_only;
   if (s.ended_reason.empty()) s.ended_reason = state_ == CallState::kEnded ? ended_reason_ : "";
   return s;
 }
@@ -625,6 +630,15 @@ void CallClient::UpdateStats(Timestamp now) {
       if (p.id != t.selected_candidate_pair_id) continue;
       c.local_candidate = describe(p.local_candidate_id);
       c.remote_candidate = describe(p.remote_candidate_id);
+      for (const auto& cand : r.candidates) {
+        if (cand.id == p.local_candidate_id) {
+          c.local_type = cand.candidate_type;
+          c.protocol = cand.protocol;
+          c.relay_protocol = cand.relay_protocol;
+        } else if (cand.id == p.remote_candidate_id) {
+          c.remote_type = cand.candidate_type;
+        }
+      }
       if (p.current_round_trip_time && c.rtt_ms < 0) c.rtt_ms = *p.current_round_trip_time * 1000;
       c.send_kbps = (p.bytes_sent - std::min(p.bytes_sent, last_pair_bytes_sent_)) * 8 / 1000.0;
       c.recv_kbps = (p.bytes_received - std::min(p.bytes_received, last_pair_bytes_received_)) * 8 / 1000.0;

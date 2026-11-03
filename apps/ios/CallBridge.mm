@@ -157,7 +157,9 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
                      : [base hasPrefix:@"http://"] ? [@"ws://" stringByAppendingString:[base substringFromIndex:7]]
                                                    : base;
   NSURL* wsURL = [NSURL URLWithString:[wsBase stringByAppendingString:@"/ws"]];
-  if (!turnURL || !wsURL || room.length == 0) {
+  // NSURLSession throws for a WebSocket task on any other scheme (a server typed without https://).
+  const BOOL wsScheme = [wsURL.scheme isEqualToString:@"wss"] || [wsURL.scheme isEqualToString:@"ws"];
+  if (!turnURL || !wsURL || !wsScheme || room.length == 0) {
     _status = @"bad server URL or room";
     return;
   }
@@ -189,6 +191,7 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   sm::apps::CallClientConfig cfg;
   cfg.room = room;
   cfg.verbose = true;
+  cfg.relay_only = self.relayOnly;
   _client = std::make_unique<sm::apps::CallClient>(cfg, [ws](const std::string& m) {
     NSString* text = [[NSString alloc] initWithBytes:m.data() length:m.size() encoding:NSUTF8StringEncoding];
     [ws sendMessage:[[NSURLSessionWebSocketMessage alloc] initWithString:text] completionHandler:^(NSError*) {}];
@@ -292,6 +295,8 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   if (_thread.joinable()) _thread.join();
   [_ws cancelWithCloseCode:NSURLSessionWebSocketCloseCodeNormalClosure reason:nil];
   _ws = nil;
+  // One JSON line per call (#1121), as sm_call_smoke and the web app write it: the call's last stats, in the log.
+  if (_client) NSLog(@"SmCall: call-result %s", _client->stats().ToJson().c_str());
   _camera.reset();
   _audio.reset();
   _client.reset();

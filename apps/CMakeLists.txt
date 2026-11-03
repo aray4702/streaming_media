@@ -10,6 +10,10 @@ if(Python3_FOUND)
   set_tests_properties(unit.SignalingService PROPERTIES LABELS unit TIMEOUT 60
     ENVIRONMENT "SM_TURN_TOOL=$<TARGET_FILE:sm_turn_credentials>")
 
+  # The real-network calls' runner (#1121): its table and parsing; the live calls only with SM_SIGNALING_URL set.
+  add_test(NAME unit.RealCalls COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/test_real_calls.py)
+  set_tests_properties(unit.RealCalls PROPERTIES LABELS unit TIMEOUT 400)
+
   set(SM_WEB_CALL ${CMAKE_CURRENT_SOURCE_DIR}/web/test_web_call.py)
   add_test(NAME interop.WebApp.two_tabs COMMAND ${Python3_EXECUTABLE} ${SM_WEB_CALL})
   set_tests_properties(interop.WebApp.two_tabs PROPERTIES

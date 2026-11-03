@@ -21,15 +21,18 @@ final class CallModel: ObservableObject {
     @Published var remote: UIImage?
     @Published var muted = false { didSet { bridge.muted = muted } }
     @Published var video = true { didSet { bridge.videoEnabled = video } }
+    @Published var relay = false { didSet { bridge.relayOnly = relay } }  // TURN only (#1121).
     private var timer: Timer?
     private var autoHangupAt: Date?
 
     init() {
         // Launch arguments for the simulator smoke run: -SMServer URL -SMAutoCall ROOM [-SMAutoHangup SECONDS]
-        // [-SMVideo NO].
+        // [-SMVideo NO] [-SMRelay YES].
         let defaults = UserDefaults.standard
         server = defaults.string(forKey: "SMServer") ?? CallModel.defaultServer
         if defaults.object(forKey: "SMVideo") != nil { video = defaults.bool(forKey: "SMVideo") }
+        relay = defaults.bool(forKey: "SMRelay")
+        bridge.relayOnly = relay
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in self?.poll() }
         if let auto = defaults.string(forKey: "SMAutoCall") {
             room = auto

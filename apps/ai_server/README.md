@@ -5,15 +5,17 @@ call. See `ai_server.h` for the design.
 
 ```sh
 out/native/apps/ai_server/sm_ai_server --signaling=ws://HOST:8080/ws --metrics=calls.jsonl
-#   [--turn=http://HOST:8080/turn|none] [--ip=A.B.C.D]... [--reply-seconds=3] [--first-chunk-ms=0] [--quiet]
+#   [--turn=http://HOST:8080/turn|none] [--ip=A.B.C.D]... [--relay] [--reply-seconds=3] [--first-chunk-ms=0] [--quiet]
+# or against a TLS host: --signaling=wss://<host>:8443/ws (then /turn is https://<host>:8443/turn)
 ```
 
 - **Signaling** (#1102's protocol, `apps/signaling/server.py`): it connects to `/ws`, sends `{"type":"register-ai"}`, and for each
   `{"type":"ai-call","room":R}` opens one more WebSocket, joins `R` as `ai-server-<n>` and offers or answers by the
   protocol's rule (the later joiner offers). It reads the sender of relayed messages from a `from` field when it
-  needs it. Plain `ws://`; put a TLS proxy in front for `wss://`.
+  needs it. `ws://` or `wss://` (TLS through sm::tls, checked against the system's roots; #1121).
 - **STUN/TURN:** `GET /turn` on the signaling host (or `--turn`) at each call; `stun:`, `turn:` (UDP/TCP) and
-  `turns:` URLs with the REST username and credential.
+  `turns:` URLs with the REST username and credential. `--relay` gathers TURN candidates only (iceTransportPolicy
+  "relay").
 - **Audio:** the caller's Opus through the library, the turn detector (#752) on the played-out audio, and the reply
   from an `AiReplySource` (scripted speech-like audio by default; a model plugs in there), paced by the test bench's
   AI source and sent as Opus (libopus). A barge-in cuts the reply.

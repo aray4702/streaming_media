@@ -4,6 +4,17 @@
   the browser's own RTCPeerConnection. Protocol: docs/deploy/signaling.md.
   Query parameters (used by the tests): room=<code>&auto=1 joins at load; report=1 posts
   the call's state to POST /report once a second.
+  Real-network calls (#1121, tools/real_calls.py):
+    relay=1     iceTransportPolicy 'relay': TURN candidates only;
+    ws=<url>    the signaling WebSocket (default: this page's host, /ws); /turn is still fetched from this page's host;
+    converse=1  a scripted user instead of the microphone: 1.5 s of speech-like audio per turn, and the AI's reply
+                timed from the end of that speech to its first audio played here (response_ms; less the AI
+                endpointer's 600 ms: response_transport_ms), as sm_call_smoke and the test bench measure it;
+                barge=1 also talks over every other reply 1 s into it (barge_in_stop_ms: the barge-in's start to
+                the reply's audio stopping here); turns=<n> caps the turns;
+    seconds=<s> hangs up after s seconds and, with result=1, POSTs one JSON line of the call's metrics to /result
+                (getStats: candidate pair, RTT, loss, concealment, jitter buffer, available bitrate, video fps
+                and freezes, plus the conversation timings).
 -->
 <html>
 <head>
@@ -51,19 +62,26 @@ async function loadTurn() {
 function send(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
 function makeCall(remote) {
-  const pc = new RTCPeerConnection({iceServers});
+  const pc = new RTCPeerConnection({iceServers, iceTransportPolicy: params.get('relay') === '1' ? 'relay' : 'all'});
   const video = document.createElement('video');
   video.autoplay = true; video.playsInline = true;
   $('remotes').appendChild(video);
   const call = {pc, video, pending: [], prev: null, stats: {}};
   calls.set(remote, call);
   for (const track of stream.getTracks()) pc.addTrack(track, stream);
-  pc.ontrack = e => { video.srcObject = e.streams[0] || new MediaStream([e.track]); };
+  pc.ontrack = e => {
+    video.srcObject = e.streams[0] || new MediaStream([e.track]);
+    if (e.track.kind === 'audio' && talk) talk.listen(new MediaStream([e.track]));
+  };
   pc.onicecandidate = e => {
     if (e.candidate) send({type: 'candidate', to: remote, candidate: e.candidate.candidate,
                            sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex});
   };
-  pc.onconnectionstatechange = () => setState(pc.connectionState);
+  pc.onconnectionstatechange = () => {
+    setState(pc.connectionState);
+    if (pc.connectionState === 'connected' && call.connectMs == null) call.connectMs = Date.now() - call.created;
+  };
+  call.created = Date.now();
   return call;
 }
 
@@ -114,8 +132,13 @@ async function join(code) {
   setState('starting');
   await loadTurn();
   stream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+  if (params.get('converse') === '1') {
+    talk = new Talk();
+    for (const t of stream.getAudioTracks()) { stream.removeTrack(t); t.stop(); }
+    stream.addTrack(talk.track);
+  }
   $('local').srcObject = stream;
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws = new WebSocket(params.get('ws') || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.onopen = () => send({type: 'join', room: code, peer: myId});
   ws.onmessage = e => onMessage(JSON.parse(e.data)).catch(err => console.error(err));
   ws.onclose = () => setState('disconnected');
@@ -137,6 +160,143 @@ $('mute').onclick = () => {
   if (audio) { audio.enabled = !audio.enabled; $('mute').textContent = audio.enabled ? 'Mute' : 'Unmute'; }
 };
 $('hangup').onclick = hangup;
+
+// --- The scripted user (converse=1) ---------------------------------------------------------------------------------
+// Speech-like audio (sim::SpeechLike's recipe: a gliding 90-240 Hz pitch with 20 harmonics, formants near 500 and
+// 1500 Hz, a 3-5.5 Hz syllable envelope), sent through a WebAudio track; the remote audio is read back through an
+// analyser every 10 ms. The AI's audio is "playing" in a 10 ms frame above -40 dBFS, and has stopped after 200 ms
+// below it (its first silent frame is the stop time).
+let talk = null;
+class Talk {
+  constructor() {
+    this.ctx = new AudioContext({sampleRate: 48000});
+    this.dest = this.ctx.createMediaStreamDestination();
+    this.track = this.dest.stream.getAudioTracks()[0];
+    this.turns = 0; this.missed = 0; this.barges = 0; this.bargeMissed = 0;
+    this.response = []; this.bargeStop = []; this.phase = 'pause'; this.nextTurn = null;
+    this.playing = false; this.quiet = 0; this.firstQuiet = 0; this.bargeStart = null;
+    this.maxTurns = +(params.get('turns') || 0); this.barge = params.get('barge') === '1';
+  }
+  speech(seed) {
+    const rate = 48000, n = Math.round(1.5 * rate), buf = this.ctx.createBuffer(1, n, rate), x = buf.getChannelData(0);
+    let r = seed * 9301 + 49297; const rnd = () => (r = (r * 9301 + 49297) % 233280) / 233280;
+    let f0 = 140, target = 160, ph = 0, sylRate = 4, sylPh = rnd() * 6.28, left = 0, peak = 0;
+    for (let i = 0; i < n; i++) {
+      if (left-- <= 0) { target = 90 + rnd() * 150; sylRate = 3 + rnd() * 2.5; left = (0.25 + rnd() * 0.35) * rate; }
+      f0 += (target - f0) * (20 / rate); ph += 2 * Math.PI * f0 / rate; sylPh += 2 * Math.PI * sylRate / rate;
+      let v = 0;
+      for (let h = 1; h <= 20 && h * f0 < rate * 0.45; h++) {
+        const fh = h * f0;
+        v += (1 + 2 * Math.exp(-(((fh - 500) / 200) ** 2)) + 1.2 * Math.exp(-(((fh - 1500) / 300) ** 2))) / h * Math.sin(h * ph);
+      }
+      x[i] = v * (0.35 + 0.65 * Math.max(0, Math.sin(sylPh)));
+      peak = Math.max(peak, Math.abs(x[i]));
+    }
+    for (let i = 0; i < n; i++) x[i] *= 0.3 / peak;
+    return buf;
+  }
+  speak() {
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.speech(100 + this.turns);
+    src.connect(this.dest);
+    const t = this.ctx.currentTime + 0.01;
+    src.start(t);
+    this.turns++; this.phase = 'speak'; this.speechEnd = t + src.buffer.duration;
+    return t;
+  }
+  listen(remote) {
+    const el = new Audio(); el.srcObject = remote; el.muted = true; el.play().catch(() => {});  // Chrome needs a sink.
+    const an = this.ctx.createAnalyser(); an.fftSize = 512;
+    this.ctx.createMediaStreamSource(remote).connect(an);
+    const buf = new Float32Array(480);
+    setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let e = 0; for (const v of buf) e += v * v;
+      this.frame(this.ctx.currentTime, Math.sqrt(e / buf.length) > 0.01);
+    }, 10);
+  }
+  frame(t, active) {
+    if (this.nextTurn === null) this.nextTurn = t + 1;
+    if (active) {
+      this.quiet = 0;
+      if (!this.playing) { this.playing = true; this.replyStart(t); }
+    } else if (this.playing && ++this.quiet === 1) {
+      this.firstQuiet = t;
+    } else if (this.playing && this.quiet >= 20) {
+      this.playing = false; this.replyStop(this.firstQuiet);
+    }
+    if (this.phase === 'pause' && t >= this.nextTurn && (!this.maxTurns || this.turns < this.maxTurns)) this.speak();
+    if (this.phase === 'speak' && t >= this.speechEnd) this.phase = 'wait';
+    if (this.phase === 'wait' && t - this.speechEnd > 6) { this.missed++; this.pause(t, 0.5); }
+    if (this.phase === 'barge-wait' && t >= this.bargeAt) this.bargeStart = this.speak();
+  }
+  pause(t, s) { this.phase = 'pause'; this.nextTurn = t + s; }
+  replyStart(t) {
+    if (this.phase !== 'wait') return;
+    this.response.push(Math.round((t - this.speechEnd) * 1000));
+    if (this.barge && this.turns % 2 === 1) { this.bargeAt = t + 1; this.phase = 'barge-wait'; this.barges++; }
+    else this.phase = 'listen';
+  }
+  replyStop(t) {
+    if (this.bargeStart !== null && t >= this.bargeStart) {
+      const ms = Math.round((t - this.bargeStart) * 1000);
+      if (ms < 1500) this.bargeStop.push(ms); else this.bargeMissed++;
+      this.bargeStart = null;
+    }
+    if (this.phase === 'listen') this.pause(t, 0.7);
+  }
+  json() {
+    const med = v => { if (!v.length) return -1; const s = [...v].sort((a, b) => a - b), n = s.length;
+                       return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };
+    return {turns: this.turns, replies: this.response.length, missed_replies: this.missed,
+            response_ms_p50: med(this.response), response_transport_ms_p50: this.response.length ? med(this.response) - 600 : -1,
+            barge_ins: this.barges, barge_ins_not_stopped: this.bargeMissed, barge_in_stop_ms_p50: med(this.bargeStop),
+            response_ms: this.response, barge_in_stop_ms: this.bargeStop};
+  }
+}
+
+// The call's metrics from getStats, as one object (result=1).
+async function callMetrics(call) {
+  const rows = await call.pc.getStats(); const byId = {}; const m = {};
+  rows.forEach(r => { byId[r.id] = r; });
+  let pair = null;
+  rows.forEach(r => {
+    if (r.type === 'transport' && r.selectedCandidatePairId) pair = byId[r.selectedCandidatePairId];
+    if (r.type === 'inbound-rtp' && r.kind === 'audio') {
+      m.audio_packets_received = r.packetsReceived; m.audio_packets_lost = r.packetsLost;
+      m.audio_jitter_ms = Math.round((r.jitter || 0) * 1000 * 10) / 10;
+      m.audio_concealed_pct = r.totalSamplesReceived ? Math.round(10000 * r.concealedSamples / r.totalSamplesReceived) / 100 : 0;
+      m.jitter_buffer_ms = r.jitterBufferEmittedCount ? Math.round(10000 * r.jitterBufferDelay / r.jitterBufferEmittedCount) / 10 : 0;
+    }
+    if (r.type === 'inbound-rtp' && r.kind === 'video') {
+      m.video_frames_decoded = r.framesDecoded; m.video_fps = r.framesPerSecond || 0;
+      m.video_freezes = r.freezeCount || 0; m.video_freeze_ms = Math.round((r.totalFreezesDuration || 0) * 1000);
+      m.video_recv_width = r.frameWidth || 0; m.video_recv_height = r.frameHeight || 0;
+    }
+    if (r.type === 'outbound-rtp' && r.kind === 'video') m.video_frames_sent = r.framesSent;
+  });
+  if (pair) {
+    const lc = byId[pair.localCandidateId] || {}, rc = byId[pair.remoteCandidateId] || {};
+    m.rtt_ms = pair.currentRoundTripTime == null ? -1 : Math.round(pair.currentRoundTripTime * 1000);
+    m.target_kbps = pair.availableOutgoingBitrate == null ? -1 : Math.round(pair.availableOutgoingBitrate / 100) / 10;
+    m.local_type = lc.candidateType; m.remote_type = rc.candidateType; m.protocol = lc.protocol;
+    m.relay_protocol = lc.relayProtocol || '';
+  }
+  return m;
+}
+
+async function finish() {
+  const out = {type: 'call-result', client: 'chrome', label: params.get('label') || '', room,
+               relay_only: params.get('relay') === '1', user_agent: navigator.userAgent};
+  for (const [peer, call] of calls) {
+    out.peer = peer; out.connection = call.pc.connectionState; out.connect_ms = call.connectMs == null ? -1 : call.connectMs;
+    Object.assign(out, await callMetrics(call));
+  }
+  if (talk) Object.assign(out, talk.json());
+  if (params.get('result') === '1') await fetch('/result', {method: 'POST', body: JSON.stringify(out)}).catch(() => {});
+  hangup();
+  setState('done');
+}
 
 // getStats panel: RTT, bitrate, packet loss and the selected candidate type, once a second.
 async function readStats(call) {
@@ -182,6 +342,7 @@ setInterval(() => tick().catch(() => {}), 1000);
 
 if (params.get('room')) $('room').value = params.get('room');
 if (params.get('auto') === '1' && params.get('room')) join(params.get('room')).catch(e => setState('error: ' + e));
+if (params.get('seconds')) setTimeout(() => finish().catch(e => setState('error: ' + e)), 1000 * +params.get('seconds'));
 </script>
 </body>
 </html>

@@ -15,6 +15,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)hangup;
 @property(nonatomic) BOOL muted;
 @property(nonatomic) BOOL videoEnabled;
+// TURN candidates only (iceTransportPolicy "relay", #1121); read when a call starts.
+@property(nonatomic) BOOL relayOnly;
 @property(nonatomic, readonly) BOOL active;          // A call is set up or running.
 @property(nonatomic, readonly) NSString *stateText;  // "idle", "waiting for peer", "connecting", "connected", ...
 @property(nonatomic, readonly) NSString *statsText;  // The live stats, several lines.

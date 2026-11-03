@@ -1,6 +1,6 @@
 // sm_ai_server (C12 part 1, #1103): answers the signaling service's `ai-` rooms; see ai_server.h.
 //
-//   sm_ai_server [--signaling=ws://HOST:PORT/ws] [--turn=http://HOST:PORT/turn|none] [--ip=A.B.C.D]...
+//   sm_ai_server [--signaling=ws://HOST:PORT/ws] [--turn=http://HOST:PORT/turn|none] [--ip=A.B.C.D]... [--relay]
 //                [--metrics=FILE] [--reply-seconds=S] [--first-chunk-ms=MS] [--max-seconds=S] [--quiet]
 //
 // Runs until SIGINT or SIGTERM (or --max-seconds), then logs the open calls' metrics.
@@ -54,11 +54,13 @@ int main(int argc, char** argv) {
         return 2;
       }
       config.interfaces.push_back(*ip);
+    } else if (a == "--relay") {
+      config.relay_only = true;
     } else if (a == "--quiet") {
       config.verbose = false;
     } else {
       std::fprintf(stderr,
-                   "usage: sm_ai_server [--signaling=ws://HOST:PORT/ws] [--turn=URL|none] [--ip=A.B.C.D]... "
+                   "usage: sm_ai_server [--signaling=ws[s]://HOST:PORT/ws] [--turn=URL|none] [--ip=A.B.C.D]... [--relay] "
                    "[--metrics=FILE] [--reply-seconds=S] [--first-chunk-ms=MS] [--max-seconds=S] [--quiet]\n");
       return a == "--help" ? 0 : 2;
     }

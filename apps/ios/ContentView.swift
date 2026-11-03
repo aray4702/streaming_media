@@ -35,6 +35,7 @@ struct ContentView: View {
                 HStack {
                     Toggle("Video", isOn: $model.video)
                     Toggle("Mute", isOn: $model.muted)
+                    Toggle("Relay only", isOn: $model.relay).disabled(model.active)
                 }
                 Text("State: \(model.state)").font(.headline)
                 if let frame = model.remote {

@@ -155,7 +155,9 @@ std::string AddCandidate(const p2p::Candidate& cand, bool is_remote, const std::
   c.tcp_type = cand.tcptype();
   if (!is_remote) {
     c.network_type = p2p::AdapterTypeToString(cand.network_type());
-    if (cand.is_relay()) c.relay_protocol = cand.relay_protocol();
+    // A relay candidate, or a peer-reflexive one learned on a relay connection (Connection::MaybeUpdateLocalCandidate
+    // keeps its relay protocol), as RTCStatsCollector reports it (rtc_stats_collector.cc:1036-1043).
+    if (cand.is_relay() || (cand.is_prflx() && !cand.relay_protocol().empty())) c.relay_protocol = cand.relay_protocol();
     c.url = cand.url();
   }
   r.candidates.push_back(std::move(c));
