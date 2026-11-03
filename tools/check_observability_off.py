@@ -69,8 +69,10 @@ def build_off(default_build, off_build, jobs):
                    check=True, stdout=subprocess.DEVNULL)
 
 
-def run_one(exe, scn, tmp):
-    out = os.path.join(tmp, os.path.basename(exe + "." + os.path.basename(scn)) + ".json")
+def run_one(exe, scn, tmp, tag):
+    # One file per build and scenario: both builds' executables are named sm_testbench, so a
+    # name made from the executable alone made the two runs of a scenario write one file.
+    out = os.path.join(tmp, tag + "." + os.path.basename(scn) + ".json")
     proc = subprocess.run([exe, "--quiet", "--json=" + out, scn],
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
@@ -122,7 +124,7 @@ def main():
 
     failures = 0
     with tempfile.TemporaryDirectory() as tmp, concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-        jobs = {scn: (pool.submit(run_one, on_exe, scn, tmp), pool.submit(run_one, off_exe, scn, tmp))
+        jobs = {scn: (pool.submit(run_one, on_exe, scn, tmp, "default"), pool.submit(run_one, off_exe, scn, tmp, "off"))
                 for scn in scenarios}
         for scn, (fa, fb) in jobs.items():
             ra, rb = fa.result(), fb.result()
