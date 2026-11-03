@@ -22,6 +22,21 @@
 //   stream. Each section's demuxer sink (its MID and the remote SSRCs) and header extension map are registered on
 //   the BUNDLE transport, as BaseChannel does; RTP and RTCP it receives go to the session, and the session's
 //   packets go out through it, protected with the DTLS-SRTP keys (PF_SRTP_BYPASS).
+// - Data channels (C7 part 5, #1091), as pc/data_channel_controller.cc and the SCTP half of pc/sdp_offer_answer.cc,
+//   with the per-connection switch `enable_data_channels` on (the default, as libwebrtc):
+//   - CreateDataChannel before or after the offer; the offer carries the m=application section (UDP/DTLS/SCTP,
+//     a=sctp-port 5000, a=max-message-size 262144) once a channel exists (GetOptionsForOffer adds it last, when
+//     HasDataChannels(), with the next mid), on the BUNDLE transport;
+//   - an answer accepts the first data section of a remote offer (GetOptionsForAnswer) and rejects the others;
+//   - when both descriptions have the section (PushdownMediaDescription: "complete offer/answer with an SCTP m=
+//     section before starting SCTP"), the SCTP transport (sm/sctp/, #1082) starts over the section's DTLS
+//     transport with the local and remote ports and the smaller max message size (the local one if the remote's
+//     is 0); stream ids follow the DTLS role (DataChannelController);
+//   - in-band (DCEP) and negotiated channels open, and the remote side's in-band channels are announced through
+//     the data channel callback; a rejected data section closes the channels (DestroyDataChannelTransport).
+//   With the switch off: no m=application in an offer, a data section in a remote offer is rejected (port 0), no
+//   SCTP object is created, and CreateDataChannel fails (kInvalidState). Built without SM_WITH_DATACHANNEL, none of
+//   this is compiled in and CreateDataChannel fails with kUnsupportedOperation.
 //
 // The library's time model: nothing reads a clock or starts a thread. The owner runs Process(now) at
 // NextProcessTime(now) and delivers the sockets' packets (the port allocator's socket factory) itself.
@@ -32,7 +47,9 @@
 //   unsignaled (SSRC-less) receive streams.
 // - The RTP session is created when the answer is applied, not per channel at the first description; until then
 //   nothing is sent (no early media), which libwebrtc can't send either before DTLS-SRTP is up.
-// - The data channel (C7) is not merged yet: its section is rejected in an answer and left out of an offer.
+// - The SCTP transport is created by the endpoint when SCTP starts, on the DTLS transport the data section ended
+//   up on, rather than one per JsepTransport at its creation (JsepTransportController's sctp factory); the same
+//   association on the wire. No always_negotiate_data_channels, no SCTP SNAP (sctp-init), no renegotiation.
 // - STUN needs its crypto hooks: call p2p::InstallStunCryptoFromTls() once at startup (sm::p2p_tls).
 #pragma once
 
@@ -41,11 +58,13 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
 #include "sm/pc/codec_vendor.h"
+#include "sm/pc/data_channel_interface.h"
 #include "sm/pc/jsep.h"
 #include "sm/pc/jsep_transport_controller.h"
 #include "sm/pc/media_session.h"
@@ -56,7 +75,14 @@
 #include "sm/rtp/session.h"
 #include "sm/tls/ssl_identity.h"
 
+namespace sm::sctp {
+class SctpTransport;
+}  // namespace sm::sctp
+
 namespace sm::pc {
+
+class DataChannelController;
+class SctpDataChannel;
 
 struct PeerEndpointConfig {
   // Not owned; must outlive the endpoint. Its socket factory carries the ICE traffic.
@@ -77,6 +103,9 @@ struct PeerEndpointConfig {
   rtp::VideoStreamConfig video_stream;
   // Decodes the received Opus frames; not owned. Null: no audio receive stream.
   rtp::AudioDecoder* audio_decoder = nullptr;
+  // Data channels for this connection (C7's runtime switch). Off: no SCTP object and no m=application. Has no
+  // effect when the library is built without SM_WITH_DATACHANNEL.
+  bool enable_data_channels = true;
 };
 
 // PeerConnectionInterface::SignalingState, for C6's subset.
@@ -117,6 +146,20 @@ class PeerEndpoint {
   std::optional<rtp::AudioRecvId> audio_receive() const { return audio_recv_; }
   std::optional<rtp::VideoRecvId> video_receive() const { return video_recv_; }
 
+  // RTCPeerConnection.createDataChannel(), before or after the offer. Null, with `error` set, when data channels are
+  // off for this connection (kInvalidState), not built (kUnsupportedOperation), or the config is invalid.
+  std::shared_ptr<SctpDataChannel> CreateDataChannel(std::string_view label, const DataChannelInit& init,
+                                                     Timestamp now, RtcError* error = nullptr);
+  // The remote side opened a channel in-band (PeerConnectionObserver::OnDataChannel).
+  void SetOnDataChannel(std::function<void(std::shared_ptr<SctpDataChannel>)> callback);
+  bool data_channels_enabled() const { return data_channels_ != nullptr; }
+  // Null when data channels are off or not built.
+  DataChannelController* data_channel_controller();
+  // The SCTP transport; null until SCTP starts, and always with data channels off.
+  sctp::SctpTransport* sctp_transport();
+  // The negotiated data section's mid, once a description with one is applied.
+  const std::optional<std::string>& sctp_mid() const { return sctp_mid_; }
+
   // ICE checks, DTLS retransmissions and the RTP session's timers due by `now`; the session's packets go out.
   void Process(Timestamp now);
   Timestamp NextProcessTime(Timestamp now) const;
@@ -128,6 +171,7 @@ class PeerEndpoint {
 
  private:
   class ChannelSink;
+  struct DataChannels;
   MediaSessionOptions OfferOptions() const;
   MediaSessionOptions AnswerOptions(const SessionDescription& offer) const;
   std::unique_ptr<SessionDescriptionInterface> Wrap(SdpType type, std::unique_ptr<SessionDescription> desc);
@@ -136,6 +180,9 @@ class PeerEndpoint {
   bool CreateMediaSession(std::string* error);
   void OnRtcp(const std::vector<uint8_t>& packet, std::optional<Timestamp> arrival);
   void Deliver(std::span<const uint8_t> packet, Timestamp arrival);
+  bool UpdateDataChannelTransport(const SessionDescription& desc, std::string* error);
+  bool MaybeStartSctp(Timestamp now, std::string* error);
+  void DestroyDataChannelTransport(const char* reason);
 
   PeerEndpointConfig config_;
   std::shared_ptr<const tls::SslIdentity> certificate_;
@@ -163,6 +210,11 @@ class PeerEndpoint {
   std::optional<rtp::VideoRecvId> video_recv_;
   Timestamp last_now_ = Timestamp::MinusInfinity();
   int send_failures_ = 0;
+
+  // Data channels (the controller and the SCTP transport); after transport_controller_, so they go before the DTLS
+  // transport they use. Null with the switch off or without SM_WITH_DATACHANNEL.
+  std::unique_ptr<DataChannels> data_channels_;
+  std::optional<std::string> sctp_mid_;
 };
 
 }  // namespace sm::pc

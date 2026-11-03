@@ -368,6 +368,11 @@ if(SM_WITH_TLS AND SM_WITH_SYNC AND SM_WITH_RTP)
   sm_add_library(pc_endpoint DEPS sm::pc sm::pc_sdp sm::rtp SOURCES
     pc/jsep_transport_controller.cc
     pc/peer_endpoint.cc)
+  # Data channels on the endpoint (C7 part 5, #1091): with SM_WITH_DATACHANNEL, the endpoint negotiates m=application
+  # and runs DCEP over SCTP (sm::pc_datachannel); without it, none of that is compiled in.
+  if(TARGET sm_pc_datachannel)
+    target_link_libraries(sm_pc_endpoint PUBLIC sm::pc_datachannel)
+  endif()
 endif()
 
 # Umbrella target: link sm::sm to get every enabled section.

@@ -1129,7 +1129,7 @@ signaling states). Differences:
 | Transceivers | `AddTrack` / `AddTransceiver`, renegotiation, rollback, pranswer | One audio and one video transceiver from the config; one offer/answer; no rollback or pranswer | Outside part 3; C9 and part 4 need one negotiation per peer |
 | Unsignaled streams | A default receive stream for an SSRC the SDP didn't name | Receive streams need a=ssrc | Chrome signals its SSRCs |
 | RTCP mux policy, DTLS-in-STUN, cryptex, aggregate states | `kRtcpMuxPolicyNegotiate`, SPED, `CryptoOptions` cryptex, `PeerConnectionState` | Require only; left out; the transports' own states are read | libwebrtc's defaults (require, SPED and cryptex off) |
-| Data channel | `SctpTransport` on the DTLS transport | The data section is rejected in an answer and not offered | The data channel API (C7 part 4, #1070) is not merged yet; part 3's `SctpTransport` (#1082) is |
+| Data channel | `SctpTransport` on the DTLS transport | Since C7 part 5 (#1091, 10.21): negotiated and started on the BUNDLE transport | |
 | Not in `reference/` | `pc/jsep_transport_collection.cc` (`BundleManager::Update`, `CommitTransports`) | Ported from the header and M157's behaviour | Missing reference file (noted on #1064) |
 | STUN crypto | Built in | The app calls `p2p::InstallStunCryptoFromTls()` once at startup, as for the ICE agent | The library sets no globals itself |
 
@@ -1164,9 +1164,34 @@ Differences:
 | Ownership | `scoped_refptr`, `WeakPtr<SctpDataChannelControllerInterface>` | `std::shared_ptr` channels holding a `std::weak_ptr` to the controller's handle | No ref counting in the library |
 | PeerConnection | `pc_->OnSctpDataChannelStateChanged`, `PeerConnectionObserver::OnDataChannel`, `DataChannelEventObserverInterface`, the tracer | A new-channel callback; an `EventSink`; no event observer or tracer | No PeerConnection in the library yet |
 | Runtime switch | None (data channels are always available) | `enable_data_channels` per connection, on by default | C7's acceptance (Owner) |
-| m=application | Offered and answered by `pc/media_session` | Not yet: comes with offer/answer generation (C6 part 2, #1063) | #1063 is not merged |
+| m=application | Offered and answered by `pc/media_session` | Same, through the endpoint (10.21, #1091) | |
 | `DataChannelInit::reliable` | Deprecated field | Left out | Deprecated, unused by the port |
 | Not in `reference/` | `pc/data_channel_unittest.cc`, `pc/data_channel_controller_unittest.cc` | The cases above cover the behaviour | Asked for on #1070 |
+
+### 10.21 Data channels on the endpoint (`src/pc/peer_endpoint.cc`, C7 part 5, #1091)
+
+The SCTP half of `pc/sdp_offer_answer.cc` and `pc/peer_connection.cc` at M157, on 10.19's endpoint and 10.20's
+controller. `PeerEndpointConfig::enable_data_channels` is the per-connection switch (on by default, as libwebrtc).
+On: `CreateDataChannel` works before or after the offer; `GetOptionsForUnifiedPlanOffer` adds the m=application
+section last, with the mid generator's next mid, once a channel exists (`MaybeNegotiateSctp`, `HasDataChannels`), and
+keeps it once negotiated; `GetOptionsForUnifiedPlanAnswer` answers the first data section and rejects the others;
+`UpdateDataChannelTransport` takes the section's mid (`CreateDataChannelTransport`) or, when it is rejected, closes
+the channels (`DestroyDataChannelTransport`); `PushdownMediaDescription` starts SCTP once both descriptions have the
+section, with the local and remote a=sctp-port and the smaller a=max-message-size (the local one when the remote's is
+0). The section is in the BUNDLE group (UDP/DTLS/SCTP, a=sctp-port:5000, a=max-message-size:262144 from #1084's
+factory), so SCTP runs over the same DTLS transport as SRTP; stream ids follow the DTLS role. Off: no m=application in
+an offer, a remote data section is rejected (port 0), no SCTP object, and `CreateDataChannel` fails with
+`kInvalidState`. Built without `SM_WITH_DATACHANNEL`, none of it is compiled and `CreateDataChannel` fails with
+`kUnsupportedOperation`. Tests: `tests/unit/pc_endpoint/peer_endpoint_test.cc` (two endpoints behind NATs with audio,
+video, an in-band reliable ordered channel opened before the offer, an in-band unordered `maxRetransmits` 0 channel
+opened after the answer and a negotiated one, messages both ways and close; the switch off in the offer and in the
+answer; the build without data channels). Differences:
+
+| Item | libwebrtc M157 | This library | Why |
+|---|---|---|---|
+| SCTP transport owner | One `SctpTransport` per `JsepTransport`, from the transport controller's SCTP factory | The endpoint creates one when SCTP starts, on the DTLS transport the data mid ended up on after BUNDLE | Same association on the wire; one negotiation per call (no renegotiation), so the transport can't move later |
+| Options | `always_negotiate_data_channels`, SCTP SNAP (`sctp-init`), `max_sctp_streams_` from the config | Left out; 65535 streams (`kMaxSctpStreams`) | libwebrtc's defaults (off, off, the default) |
+| Error detail | `DATA_CHANNEL_FAILURE` on a rejected section's error | `kOperationErrorWithData` without the detail | The library's `RtcErrorDetailType` has no data channel value |
 
 ## Open questions for the Owner
 
