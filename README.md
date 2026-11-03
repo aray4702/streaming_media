@@ -279,48 +279,53 @@ random loss), and their numbers are expected:
   (`apps/call`, #1117) are tested end to end over local sockets; calls over
   the Lightsail relay, with these metrics measured at the caller, are C12.
 
-## Next steps
+## Next steps and open questions
 
-**Milestone 4** ([#1076](https://github.com/aray4702/streaming_media/issues/1076)):
-an iOS app, a web app, and calls over real networks. In order:
+**Milestone 4 is done** ([#1076](https://github.com/aray4702/streaming_media/issues/1076), closed 2026-11-03):
 
-1. **iOS app (C14, [#1116](https://github.com/aray4702/streaming_media/issues/1116)).**
-   A SwiftUI calling app on the library, in review as #1117. It runs on
-   the iOS simulator, calls the AI server and another copy of the app, and
-   shows mute, hang-up, call state and live stats. AGC, camera rotation
-   and the congestion controller's audio allocation are wired as in
-   libwebrtc's iOS client. Still to do: a run on a real iPhone and Apple ID
-   signing, which the Owner does.
-2. **Calls on real networks (C12).** Calls between the web app and the iOS
-   app, and from each to the AI server, through the self-hosted signaling
-   service and coturn on Amazon Lightsail (both running since 2026-11-02;
-   the library's TURN client already passes against that server). This
-   includes the AI server on Lightsail, a call forced through the TURN relay,
-   and the conversation metrics in [Benchmarks](#benchmarks) measured at
-   the caller on real links.
-3. **Web app (C15).** Built and deployed with the signaling service
-   ([#1102](https://github.com/aray4702/streaming_media/issues/1102)); its
-   call with the iOS app is checked in step 2. It works in Chrome; Safari
-   and Firefox come later.
-4. **iOS library (C11).** Its parts are merged: Audio Units and camera
-   capture (#1115), VideoToolbox H.264 (#1112), and the library and its unit
-   tests on the iOS simulator in CI (#1107, #1108). It is recorded as done
-   when the Owner approves.
+| Requirement | What landed |
+|---|---|
+| C11 iOS library | VideoToolbox H.264, Audio Units and camera capture, and the library's unit tests on the iOS simulator in CI |
+| C12 calls on real networks | Web ↔ AI server, iOS ↔ AI server and web ↔ iOS, through the self-hosted signaling service, AI server and coturn on Amazon Lightsail, direct and relay-only, with caller-side metrics ([results](docs/results/real-network-calls.md)) |
+| C14 iOS app | SmCall (SwiftUI), run by the Owner on a real iPhone. Since then: GPU video at the received frame rate, and iOS voice processing as libwebrtc's iOS client, checked in the simulator; the Owner's on-device check of both is the last open point |
+| C15 web app + signaling | One page on the browser's WebRTC, plus the signaling service |
 
-**After milestone 4:**
+The real calls also found and fixed three gaps:
 
-- **Android (C13):** unplanned. The Owner moved it to the backlog so the
-  iOS and web apps come first.
-- **The AI's replies:** the AI server answers with scripted speech-like
-  audio behind `AiReplySource`. A real model plugs in there, once one is
-  chosen.
-- **Before wider use of the Lightsail server:** its `/turn` endpoint, which
-  hands out short-lived TURN credentials, needs an access token.
-- **Known items:** ICE calls in the test bench should send the negotiated
-  header extension IDs
-  ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
-  Issues labelled `stage:later` cover behaviour libwebrtc shares, such as
-  late audio at 20% loss ([#795](https://github.com/aray4702/streaming_media/issues/795)).
+- [#1125](https://github.com/aray4702/streaming_media/issues/1125): Chrome ignored our congestion feedback, which held its video to about 84 kbps.
+- [#1126](https://github.com/aray4702/streaming_media/issues/1126): the AI server's audio clock slipped while it generated a reply.
+- [#1133](https://github.com/aray4702/streaming_media/issues/1133): the iOS app showed at most 10 fps.
+
+**Next, for the Owner to choose:**
+
+- **A real AI model.** The AI server answers with scripted speech-like
+  audio behind `AiReplySource`; a model (speech in, speech out) plugs in
+  there.
+- **Android (C13).** Unplanned: the Owner moved it to the backlog so the
+  iOS and web apps came first.
+- **Protecting the Lightsail server.** Its `/turn` endpoint hands short-lived
+  TURN credentials to anyone who asks. The options are a shared app key,
+  credentials only inside a joined call with a short lifetime and a rate
+  limit, or user sign-in.
+- **Assessing the new requirements.** F1.1–F1.12, F2.1–F2.5, F9.6–F9.9 and
+  F10.1–F10.4 cover the connectivity, security, data channel and
+  observability components documented in [Algorithms](docs/algorithms/README.md),
+  and are not assessed yet.
+- **Known items:**
+  - ICE calls in the test bench should send the negotiated header extension
+    IDs ([#1095](https://github.com/aray4702/streaming_media/issues/1095)).
+  - Issues labelled `stage:later` cover behaviour libwebrtc shares, such as
+    late audio at 20% loss ([#795](https://github.com/aray4702/streaming_media/issues/795)).
+
+**Open questions:**
+
+- **Target hardware:** MCU or embedded Linux, and how much RAM and CPU? The
+  algorithms need an FPU; the packet-level sections could also run on
+  Cortex-M4F/M7-class MCUs.
+- **Which AI model and where it runs:** on the Lightsail host, on a GPU
+  server, or as a hosted API. This decides the AI server's deployment and
+  its share of the response delay.
+- **Safari and Firefox** for the web app: when, and in which milestone.
 
 ## Building
 
@@ -436,12 +441,6 @@ docs/                                                    research, design, algor
   C9). No SFU: the SFU and multiparty pieces (layer selection, active
   speaker detection, the audio mixer) have been removed ([#27](https://github.com/aray4702/streaming_media/issues/27)).
   BUNDLE demultiplexing stays, because WebRTC calls bundle.
-
-## Open questions
-
-- Target hardware: MCU or embedded Linux, and how much RAM and CPU? The
-  algorithms need an FPU; the packet-level sections could also run on
-  Cortex-M4F/M7-class MCUs.
 
 # License
 Apache
