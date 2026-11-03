@@ -436,3 +436,6 @@ docs/                                                    research, design, algor
 - Target hardware: MCU or embedded Linux, and how much RAM and CPU? The
   algorithms need an FPU; the packet-level sections could also run on
   Cortex-M4F/M7-class MCUs.
+
+# License
+Apache
