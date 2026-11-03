@@ -132,27 +132,35 @@ if(SM_WITH_TLS)
       P2pDtlsRole
       P2pDtlsTransport
   )
-  # The session description model and SDP parse/write (C6 part 1, #1062).
+  # The session description model and SDP parse/write (C6 part 1, #1062), offer/answer generation (C6 part 2, #1063).
   sm_add_test_exe(sm_unit_pc_sdp LABEL unit DEPS sm::pc_sdp
     SOURCES
+      unit/pc_sdp/media_session_test.cc
       unit/pc_sdp/session_description_test.cc
+      unit/pc_sdp/transport_description_factory_test.cc
       unit/pc_sdp/webrtc_sdp_test.cc
     SUITES
       PcCandidateParse
       PcJsepSessionDescription
       PcMediaContentDescription
+      PcMediaSession
       PcSessionDescription
       PcSimulcastSdp
+      PcTransportDescriptionFactory
       PcWebRtcSdp
   )
   if(SM_WITH_SYNC)
-    # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007).
+    # SRTP and DTLS-SRTP transports over the fake ICE transport (C5 part 3, #1007), and the connection stats over
+    # the emulated network (C8, #1059).
     sm_add_test_exe(sm_unit_pc LABEL unit DEPS sm::pc
       SOURCES
+        unit/p2p/test_crypto.cc
+        unit/pc/connection_stats_test.cc
         unit/pc/dtls_srtp_transport_test.cc
         unit/pc/rtp_transport_test.cc
         unit/pc/srtp_transport_test.cc
       SUITES
+        PcConnectionStats
         PcDtlsSrtpTransport
         PcRtpTransport
         PcRtpUtils

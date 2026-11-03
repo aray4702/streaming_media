@@ -75,8 +75,8 @@ struct InboundRtpStats {
   uint64_t packets_discarded = 0;         // Arrived too late or duplicate.
 };
 
-// RTCTransportStats with the session's counters. The ICE candidate pair and
-// the DTLS state join it when the connectivity layer lands (#990, #991).
+// RTCTransportStats with the session's counters. The ICE and DTLS transport's
+// own stats are IceDtlsTransportStats below (pc::GetConnectionStats, #1059).
 struct TransportStats {
   uint64_t datagrams_sent = 0;
   uint64_t datagrams_received = 0;
@@ -90,11 +90,96 @@ struct TransportStats {
   uint64_t nack_received = 0, pli_received = 0, fir_received = 0;
 };
 
+// Connection stats (issue #1059, C8): what libwebrtc's RTCStatsCollector reports for the ICE and DTLS
+// transports (ProduceTransportStats, ProduceIceCandidateAndPairStats, ProduceCertificateStats) from
+// P2PTransportChannel::GetStats and the DTLS transport. Filled by pc::GetConnectionStats (sm/pc/connection_stats.h);
+// enum values are the W3C strings, times in seconds as the W3C fields are, ids as RTCStatsCollector builds them.
+
+// RTCIceCandidateStats ("local-candidate" or "remote-candidate").
+struct IceCandidateStats {
+  std::string id;                // "I" + the candidate's id.
+  std::string transport_id;
+  bool is_remote = false;
+  std::string address;           // Empty if sanitized (a remote prflx candidate).
+  uint16_t port = 0;
+  std::string protocol;          // "udp" or "tcp".
+  std::string relay_protocol;    // Local relay candidates: "udp", "tcp" or "tls".
+  std::string candidate_type;    // "host", "srflx", "prflx" or "relay".
+  uint32_t priority = 0;
+  std::string url;               // Local srflx and relay candidates: the server's.
+  std::string foundation;
+  std::string related_address;
+  uint16_t related_port = 0;
+  std::string username_fragment;
+  std::string tcp_type;          // TCP candidates: "active", "passive" or "so".
+  std::string network_type;      // Local candidates: AdapterTypeToString.
+};
+
+// RTCIceCandidatePairStats.
+struct IceCandidatePairStats {
+  std::string id;                // "CP" + local candidate id + "_" + remote candidate id.
+  std::string transport_id;
+  std::string local_candidate_id;
+  std::string remote_candidate_id;
+  std::string state;             // "waiting", "in-progress", "succeeded" or "failed".
+  uint64_t priority = 0;
+  bool nominated = false;
+  bool writable = false;
+  bool selected = false;         // The transport's selected pair (its selected_candidate_pair_id).
+  uint64_t packets_sent = 0;
+  uint64_t packets_received = 0;
+  uint64_t bytes_sent = 0;
+  uint64_t bytes_received = 0;
+  double total_round_trip_time = 0;                  // Seconds, over responses_received.
+  std::optional<double> current_round_trip_time;     // Seconds.
+  uint64_t requests_received = 0;
+  uint64_t requests_sent = 0;                        // Connectivity checks before the first response.
+  uint64_t responses_received = 0;
+  uint64_t responses_sent = 0;
+  uint64_t consent_requests_sent = 0;                // Checks after the first response.
+  uint64_t packets_discarded_on_send = 0;
+  uint64_t bytes_discarded_on_send = 0;
+  std::optional<Timestamp> last_packet_received_timestamp;  // The caller's time base.
+  std::optional<Timestamp> last_packet_sent_timestamp;
+};
+
+// RTCCertificateStats.
+struct CertificateStats {
+  std::string id;                     // "CF" + fingerprint.
+  std::string fingerprint;            // "AB:CD:...".
+  std::string fingerprint_algorithm;  // "sha-256".
+  std::string base64_certificate;     // The DER.
+};
+
+// RTCTransportStats of one ICE + DTLS transport.
+struct IceDtlsTransportStats {
+  std::string id;                     // "T" + transport name + component.
+  uint64_t bytes_sent = 0, packets_sent = 0, bytes_received = 0, packets_received = 0;
+  std::string dtls_state;             // "new", "connecting", "connected", "closed" or "failed".
+  std::string dtls_role;              // "client", "server" or "unknown".
+  std::optional<std::string> tls_version;  // Connected: the version bytes in hex, "FEFD" (DTLS 1.2) or "FEFC".
+  std::optional<std::string> dtls_cipher;  // Connected: the TLS cipher suite's standard name.
+  std::optional<std::string> srtp_cipher;  // Connected with DTLS-SRTP: "SRTP_AES128_CM_HMAC_SHA1_80", ...
+  std::string selected_candidate_pair_id;  // Empty without a selected pair.
+  uint32_t selected_candidate_pair_changes = 0;
+  std::string ice_role;               // "controlling", "controlled" or "unknown".
+  std::string ice_local_username_fragment;
+  std::string ice_state;              // RTCIceTransportState: "new", "checking", "connected", ...
+  std::string ice_gathering_state;    // RTCIceGathererState: "new", "gathering" or "complete" (RTCIceTransport's).
+  std::string local_certificate_id;   // Empty without DTLS.
+  std::string remote_certificate_id;  // Empty until the peer's certificate arrives.
+};
+
 struct StatsReport {
   Timestamp timestamp = Timestamp::MinusInfinity();  // The `now` of GetStats.
   TransportStats transport;
   std::vector<OutboundRtpStats> outbound;  // Audio streams first, then video, in the order added.
   std::vector<InboundRtpStats> inbound;    // Audio streams first, then video, in the order added.
+  // Connection stats (pc::GetConnectionStats appends them; Session::GetStats leaves them empty).
+  std::vector<IceDtlsTransportStats> ice_transports;
+  std::vector<IceCandidatePairStats> candidate_pairs;
+  std::vector<IceCandidateStats> candidates;  // Local and remote, each once.
+  std::vector<CertificateStats> certificates;
 };
 
 }  // namespace sm::rtp

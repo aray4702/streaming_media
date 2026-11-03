@@ -117,7 +117,14 @@ requirement C8; `include/sm/core/observability.h` has the table):
   audio jitter buffer's lifetime stats, and freeze stats from the app's
   `video::FreezeDetector` (`SetFreezeDetector`). It is computed only when
   asked. `SM_ENABLE_STATS=OFF` compiles it out, and `GetStats` returns
-  `ObsStatus::kNotSupported`.
+  `ObsStatus::kNotSupported`. The connection stats join the same report:
+  `pc::GetConnectionStats(now, dtls_transport, &report)`
+  (`include/sm/pc/connection_stats.h`, #1059) appends the ICE + DTLS
+  transport (ICE role and state, DTLS state and role, TLS version, cipher
+  suite, SRTP profile), its candidate pairs (state, nominated, bytes,
+  packets, RTT, checks and consent), their candidates and both
+  certificates, as libwebrtc's RTCStatsCollector reports them; compiled
+  out the same way.
 - **Text log:** `SM_LOG(kWarning, "...", ...)` (`include/sm/core/logging.h`),
   with libwebrtc's severities. `SM_LOG_MIN_LEVEL` (CMake: `VERBOSE`, `INFO`,
   `WARNING`, `ERROR` or `NONE`) compiles out the levels below it;

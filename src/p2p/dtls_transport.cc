@@ -314,6 +314,21 @@ bool DtlsTransport::GetSrtpCryptoSuite(int* cipher) const {
   return true;
 }
 
+bool DtlsTransport::GetSslCipherSuite(int* cipher_suite) const {
+  if (dtls_state_ != DtlsTransportState::kConnected) return false;
+  const int suite = dtls_->ssl_cipher_suite();
+  if (suite == 0) return false;
+  *cipher_suite = suite;
+  return true;
+}
+
+std::optional<std::string> DtlsTransport::GetTlsCipherSuiteName() const {
+  if (dtls_state_ != DtlsTransportState::kConnected) return std::nullopt;
+  std::string name = dtls_->ssl_cipher_suite_name();
+  if (name.empty()) return std::nullopt;
+  return name;
+}
+
 const tls::SslCertificate* DtlsTransport::GetRemoteCertificate() const {
   return dtls_ ? dtls_->peer_certificate() : nullptr;
 }

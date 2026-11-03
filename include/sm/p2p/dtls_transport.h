@@ -21,9 +21,9 @@
 // Differences from libwebrtc, none of them on the wire:
 // - DTLS-in-STUN (dtls_stun_piggyback_controller, SPED) is not ported: M157 has it behind a field trial that is off
 //   by default (#1006).
-// - The negotiated TLS cipher suite, key-exchange group and peer signature algorithm (GetSslCipherSuite,
-//   GetSslGroupId, GetSslPeerSignatureAlgorithm, for getStats) are not exposed yet: sm::tls::DtlsTransport doesn't
-//   report them (C8 stats).
+// - The negotiated key-exchange group and peer signature algorithm (GetSslGroupId, GetSslPeerSignatureAlgorithm)
+//   are not exposed: sm::tls::DtlsTransport doesn't report them. The cipher suite is (GetSslCipherSuite and
+//   GetTlsCipherSuiteName, for the connection stats, #1059).
 // - No UMA histograms, RTC event log entries or network route (PacketTransportInternal's comment).
 #pragma once
 #include <cstddef>
@@ -110,6 +110,9 @@ class DtlsTransport : public PacketTransportInternal {
   // The negotiated DTLS version (tls::kDtls12 or kDtls13) and DTLS-SRTP profile; false unless connected.
   bool GetSslVersionBytes(int* version) const;
   bool GetSrtpCryptoSuite(int* cipher) const;
+  // The negotiated TLS cipher suite's IANA id and standard name; false (nullopt) unless connected.
+  bool GetSslCipherSuite(int* cipher_suite) const;
+  std::optional<std::string> GetTlsCipherSuiteName() const;
   // The peer's certificate, once the handshake received it (GetRemoteSSLCertChain).
   const tls::SslCertificate* GetRemoteCertificate() const;
   // Appends the RFC 5764 keying material for the negotiated profile (AppendSrtpKeyingMaterial): client key, server
