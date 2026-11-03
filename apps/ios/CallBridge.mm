@@ -264,7 +264,7 @@ UIImage* ToImage(const sm::video::I420Frame& f) {
   cfg.position = sm::device::CameraPosition::kFront;
   sm::apps::CallClient* client = _client.get();
   _camera->Start(cfg, [client](const sm::device::CapturedFrame& f) {
-    if (f.format == sm::device::CapturePixelFormat::kI420) client->PushCameraFrame(f.i420);
+    if (f.format == sm::device::CapturePixelFormat::kI420) client->PushCameraFrame(f.i420, f.rotation);
   });
 }
 

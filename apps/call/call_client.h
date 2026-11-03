@@ -10,12 +10,23 @@
 //   (coturn REST credentials). No secret is ever in the app.
 // - Transport and media: pc::PeerEndpoint (ICE, DTLS-SRTP, the RTP session with its congestion control, pacer, NACK
 //   and NetEq-style jitter buffer) over OS sockets (apps/net/os_sockets.h), as the AI server sets it up. Audio is Opus
-//   (libopus, testbench/opus_*.h), 20 ms frames. Video (when built with SM_WITH_VIDEOTOOLBOX) is H.264 through
-//   VideoToolbox (sm/video/videotoolbox_h264.h) at the congestion controller's video target; received frames are
-//   decoded the same way and the latest rendered one is kept for the UI.
-// - Audio processing: the library's capture chain at 48 kHz, in libwebrtc APM's order: high-pass filter, noise
-//   suppressor analysis, AEC3 (with the played-out audio as its render signal), noise suppression, then the mute fade
-//   (Session::ProcessAudioCapture). Not in it yet: AGC (AGC1/AGC2), which libwebrtc's default APM config enables.
+//   (libopus, testbench/opus_*.h), 20 ms frames, at the rate the congestion controller allocates to audio: the stream
+//   registers [opus_min, opus_max] with the bitrate allocator (32 kbps both by default, as WebRtcAudioSendStream::
+//   UpdateAllowedBitrateRange, webrtc_voice_engine.cc:1195-1216), and each allocation is clamped to that range plus
+//   the packet overhead and handed to Opus less the overhead (AudioSendStream::OnBitrateUpdated, audio_send_stream.cc:
+//   502-523; AudioEncoderOpusImpl::OnReceivedUplinkAllocation and SetTargetBitrate, audio_encoder_opus.cc:505-528,
+//   716-737: 6 to 510 kbps). Video (when built with SM_WITH_VIDEOTOOLBOX) is H.264 through VideoToolbox
+//   (sm/video/videotoolbox_h264.h) at the congestion controller's video target, with the camera frame's rotation in
+//   the video-orientation extension (CVO); received frames are decoded the same way, turned upright by the rotation
+//   they arrived with (as libwebrtc's renderers apply VideoFrame::rotation), and the latest one is kept for the UI.
+// - Audio processing: the library's capture chain at 48 kHz, in libwebrtc APM's order (AudioProcessingImpl::
+//   ProcessCaptureStreamLocked): high-pass filter, noise suppressor analysis, AEC3 (with the played-out audio as its
+//   render signal), noise suppression, AGC, then the mute fade (Session::ProcessAudioCapture). The AGC is AGC1's
+//   GainControl in kFixedDigital with APM's GainController1 defaults (3 dBFS target, 9 dB compression gain, limiter
+//   on): the mode WebRtcVoiceEngine::ApplyOptions picks on iOS and Android (webrtc_voice_engine.cc:740-749), fed the
+//   render's lowest band as APM does without AgcManagerDirect. libwebrtc's iOS client itself turns the software AGC
+//   (and AEC) off for VoiceProcessingIO's built-in ones (:633-656); this app bypasses VoiceProcessingIO for AEC3
+//   (sm::device EchoCanceller::kLibrary), so the software AGC takes the built-in one's place.
 // - Live stats (C8): Session::GetStats and pc::GetConnectionStats once a second, summarized (CallStats).
 //
 // Threads: the call runs on the host's call thread (Start, OnSignal, Step, Wait, Hangup, SetTurnResponse). The device
@@ -40,6 +51,7 @@
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
 #include "sm/video/frame.h"
+#include "sm/video/orientation.h"
 
 namespace sm::pc {
 class PeerEndpoint;
@@ -47,6 +59,9 @@ class PeerEndpoint;
 namespace sm::p2p {
 class StaticNetworkManager;
 class BasicPortAllocator;
+}
+namespace sm::rtp {
+class Session;
 }
 namespace sm::testbench {
 class OpusAudioDecoder;
@@ -58,13 +73,24 @@ namespace sm::apps {
 enum class CallState { kIdle, kWaitingForPeer, kConnecting, kConnected, kEnded };
 const char* CallStateName(CallState s);
 
+// The Opus rate for the session's current audio allocation, as AudioSendStream::OnBitrateUpdated clamps it to the
+// stream's registered [min, max] (with the packet overhead) and AudioEncoderOpusImpl::OnReceivedUplinkAllocation
+// takes the overhead off and clamps it to [6, 510] kbps. `max_bitrate_bps` is the registered payload maximum, which
+// gives the overhead. Empty before the stream has an allocation.
+std::optional<int> OpusRateFromAllocation(const rtp::Session& session, int max_bitrate_bps);
+
 struct CallClientConfig {
   std::string room;
   std::string peer_id;  // Empty: "ios-<random>".
   // Interfaces to gather on; empty: every IPv4 interface that is up and not loopback.
   std::vector<p2p::IpAddress> interfaces;
-  int opus_bitrate_bps = 32000;
+  // The Opus payload range the stream registers with the bitrate allocator (AudioSendStream::Config::min_bitrate_bps,
+  // max_bitrate_bps): libwebrtc's default is 32 kbps for both, so the allocation never moves it; a wider range (as
+  // the WebRTC-Audio-Allocation field trial's min_bitrate / max_bitrate set it) lets the allocation move the encoder.
+  int opus_min_bitrate_bps = 32000;
+  int opus_max_bitrate_bps = 32000;
   bool audio_processing = true;  // The library's capture chain (above); off: the raw microphone.
+  bool agc = true;               // The AGC in that chain (APM's gain_controller1.enabled).
   int video_fps = 30;
   bool verbose = false;          // Log to stderr.
 };
@@ -89,6 +115,10 @@ struct CallStats {
   uint64_t video_frames_sent = 0, video_frames_received = 0, video_frames_decoded = 0, video_frames_rendered = 0;
   int video_send_width = 0, video_send_height = 0, video_recv_width = 0, video_recv_height = 0;
   double capture_level = 0;  // RMS of the processed microphone, 0 to 1.
+  double agc_gain_db = 0;    // The AGC's digital gain at the end of the last frame.
+  double opus_kbps = 0;      // The rate the Opus encoder is set to.
+  double audio_allocation_kbps = 0;  // The congestion controller's audio allocation (with overhead).
+  int video_send_rotation = 0, video_recv_rotation = 0;  // Degrees clockwise: sent and received in CVO.
   std::string ended_reason;
   std::string Text() const;  // Multi-line, for the UI.
   std::string ToJson() const;
@@ -121,8 +151,9 @@ class CallClient {
   void PushCapturedAudio(std::span<const int16_t> samples, int total_delay_ms = 0);
   // Fills `out` with played-out audio at 48 kHz mono; returns the samples written (the rest is silence).
   size_t PullPlayout(std::span<int16_t> out);
-  void PushCameraFrame(video::I420Frame frame);
-  // The latest rendered remote frame since the last call, if any.
+  // A camera frame and the clockwise turn that shows it upright (CapturedFrame::rotation), sent in CVO.
+  void PushCameraFrame(video::I420Frame frame, video::Rotation rotation = video::Rotation::k0);
+  // The latest rendered remote frame since the last call, if any, already turned upright.
   bool TakeRemoteVideo(video::I420Frame* out);
   void SetMuted(bool muted) { muted_ = muted; }
   void SetVideoEnabled(bool on) { video_enabled_ = on; }
@@ -172,6 +203,7 @@ class CallClient {
   uint32_t rtp_ts_ = 0;
   uint64_t audio_frames_sent_ = 0;
   double capture_level_ = 0;
+  double audio_allocation_kbps_ = 0;
   uint64_t last_pair_bytes_sent_ = 0, last_pair_bytes_received_ = 0;
 
   // Device side.

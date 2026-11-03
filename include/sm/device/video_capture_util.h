@@ -8,6 +8,9 @@
 //  - Nv12ToI420 and ScaleI420: the camera's NV12 (kCVPixelFormatType_420YpCbCr8BiPlanar*)
 //    to the library's I420, and to the exact requested size when no camera
 //    format has it.
+//  - CaptureRotation: the rotation a camera frame carries, from the device's
+//    orientation and the camera's position, as RTCCameraVideoCapturer sets it
+//    (sdk/objc/components/capturer/RTCCameraVideoCapturer.m:269-309).
 #pragma once
 
 #include <cstddef>
@@ -16,6 +19,7 @@
 #include <vector>
 
 #include "sm/video/frame.h"
+#include "sm/video/orientation.h"
 
 namespace sm::device {
 
@@ -64,5 +68,20 @@ void CopyNv12(const uint8_t* src_y, int stride_y, const uint8_t* src_uv, int str
 // `width` x `height` (libyuv's I420Scale with kFilterBilinear in libwebrtc's
 // adapted frames; a plain bilinear filter here).
 video::I420Frame CropAndScaleI420(const video::I420Frame& in, int width, int height);
+
+// UIDeviceOrientation's values (UIKit), so the mapping is plain C++.
+enum class DeviceOrientation {
+  kUnknown = 0,
+  kPortrait = 1,
+  kPortraitUpsideDown = 2,
+  kLandscapeLeft = 3,
+  kLandscapeRight = 4,
+  kFaceUp = 5,
+  kFaceDown = 6,
+};
+// RTCCameraVideoCapturer's captureOutput: portrait 90, upside down 270, landscape left 180 on the front camera and 0
+// on the back, landscape right the other way round; face up, face down and unknown keep `previous` (the capturer
+// starts at portrait, 90). The rotation is the clockwise turn the receiver applies to show the frame upright.
+video::Rotation CaptureRotation(DeviceOrientation orientation, bool front_camera, video::Rotation previous);
 
 }  // namespace sm::device

@@ -8,6 +8,7 @@ sm_add_test_exe(sm_unit_device LABEL unit DEPS sm::device
   SUITES
     DeviceAppleAudio
     DeviceCaptureFormat
+    DeviceCaptureRotation
     DeviceFineAudioBuffer
     DeviceFramerateController
     DeviceNv12

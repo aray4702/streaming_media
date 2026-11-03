@@ -12,6 +12,7 @@
 #include "opus_decoder.h"
 #include "opus_encoder.h"
 #include "sm/audio/aec3.h"
+#include "sm/audio/agc1.h"
 #include "sm/audio/hpf.h"
 #include "sm/audio/ns.h"
 #include "sm/audio/splitting_filter.h"
@@ -21,6 +22,7 @@
 #include "sm/pc/connection_stats.h"
 #include "sm/pc/peer_endpoint.h"
 #include "sm/pc/webrtc_sdp.h"
+#include "sm/rtp/session.h"
 #if defined(SM_WITH_VIDEOTOOLBOX) && SM_WITH_VIDEOTOOLBOX
 #include "sm/video/videotoolbox_h264.h"
 #define SM_CALL_VIDEO 1
@@ -51,16 +53,38 @@ const char* CallStateName(CallState s) {
   return "?";
 }
 
+std::optional<int> OpusRateFromAllocation(const rtp::Session& session, int max_bitrate_bps) {
+  const auto registered = session.send_side().allocator().config("audio");
+  const DataRate allocation = session.rates().audio_rate;
+  if (!registered || allocation <= DataRate::Zero()) return std::nullopt;
+  // AudioSendStream::OnBitrateUpdated: between the registered constraints.
+  const DataRate target = std::clamp(allocation, registered->min, std::max(registered->min, registered->max));
+  // OnReceivedUplinkAllocation: less the overhead at the packet's frame length (the max's overhead at 20 ms).
+  const int64_t overhead_bps = std::max<int64_t>(0, registered->max.bps() - max_bitrate_bps);
+  return static_cast<int>(std::clamp<int64_t>(target.bps() - overhead_bps, 6000, 510000));
+}
+
 // --- The capture chain, in APM's order (AudioProcessingImpl::ProcessCaptureStreamLocked) ----------------------------
 
 class CallClient::AudioProcessor {
  public:
-  AudioProcessor()
+  explicit AudioProcessor(bool agc)
       : hpf_(kRate, 1),
         capture_split_(kRate),
         render_split_(kRate),
         ns_(audio::ns::NoiseSuppressorConfig{kRate, audio::ns::SuppressionLevel::k18dB, 1}),
-        aec_(audio::aec3::Aec3Config{}, kRate, 1, 1) {}
+        aec_(audio::aec3::Aec3Config{}, kRate, 1, 1) {
+    if (agc) {
+      // APM's GainController1 defaults in kFixedDigital (api/audio/audio_processing.h:257-271).
+      audio::agc1::GainControlConfig g;
+      g.sample_rate = kRate;
+      g.target_level_dbfs = 3;
+      g.compression_gain_db = 9;
+      g.enable_limiter = true;
+      agc_ = std::make_unique<audio::agc1::GainControl>(g);
+    }
+  }
+  double agc_gain_db() const { return agc_ ? agc_->stats().gain_db : 0; }
 
   // 10 ms played out, in [-1, 1]: AEC3's render signal (AnalyzeReverseStream, split into bands).
   void Render(std::span<const float> pcm) {
@@ -69,9 +93,17 @@ class CallClient::AudioProcessor {
     render_split_.Analysis(x, bands);
     ToFrame(bands, &render_frame_);
     aec_.AnalyzeRender(render_frame_);
+    if (agc_) {
+      // GainControlImpl::PackRenderAudioBuffer: the lowest band in S16, queued for ProcessRenderAudio.
+      std::array<int16_t, kBandSamples> band0{};
+      for (size_t i = 0; i < kBandSamples; ++i) {
+        band0[i] = static_cast<int16_t>(std::clamp(std::lround(bands[i]), -32768L, 32767L));
+      }
+      agc_->ProcessRenderAudio(band0);
+    }
   }
 
-  // 10 ms of microphone, processed in place: HPF, NS analysis, AEC3, NS.
+  // 10 ms of microphone, processed in place: HPF, NS analysis, AEC3, NS, AGC.
   void Capture(std::span<int16_t> pcm, int delay_ms) {
     std::array<float, k10ms> x{}, bands{};
     for (size_t i = 0; i < k10ms; ++i) x[i] = pcm[i];
@@ -91,6 +123,12 @@ class CallClient::AudioProcessor {
     }
     ns_.Process(unit);
     for (size_t i = 0; i < k10ms; ++i) bands[i] = unit[i] * 32768.f;
+    if (agc_) {
+      // GainControlImpl::ProcessCaptureAudio on the split bands (kFixedDigital: AnalyzeCaptureAudio does nothing).
+      std::span<float> split[kBands];
+      for (size_t b = 0; b < kBands; ++b) split[b] = std::span<float>(bands.data() + b * kBandSamples, kBandSamples);
+      agc_->ProcessBands(split);
+    }
     capture_split_.Synthesis(bands, x);
     for (size_t i = 0; i < k10ms; ++i) pcm[i] = static_cast<int16_t>(std::clamp(std::lround(x[i]), -32768L, 32767L));
   }
@@ -105,6 +143,7 @@ class CallClient::AudioProcessor {
   audio::ns::NoiseSuppressor ns_;
   audio::aec3::EchoCanceller3 aec_;
   audio::aec3::Frame capture_frame_, render_frame_;
+  std::unique_ptr<audio::agc1::GainControl> agc_;
 };
 
 // --- Video: the camera and remote frames, and VideoToolbox H.264 -----------------------------------------------------
@@ -113,6 +152,8 @@ class CallClient::Video {
  public:
   std::mutex mu;
   std::optional<video::I420Frame> camera;  // The latest camera frame not yet encoded.
+  video::Rotation camera_rotation = video::Rotation::k0;
+  video::Rotation send_rotation = video::Rotation::k0, recv_rotation = video::Rotation::k0;
   std::optional<video::I420Frame> remote;  // The latest rendered remote frame not yet taken.
   uint64_t sent = 0, received = 0, decoded = 0, rendered = 0;
   int send_w = 0, send_h = 0, recv_w = 0, recv_h = 0;
@@ -130,9 +171,11 @@ class CallClient::Video {
     rtp::Session* s = ep.session();
     if (!ep.video_send() || now < next_frame) return;
     std::optional<video::I420Frame> f;
+    video::Rotation rotation;
     {
       std::lock_guard<std::mutex> lock(mu);
       f.swap(camera);
+      rotation = camera_rotation;
     }
     if (!f || f->width <= 0 || f->height <= 0) return;
     next_frame = now + TimeDelta::Micros(1'000'000 / std::max(fps, 1)) - TimeDelta::Millis(3);
@@ -164,8 +207,10 @@ class CallClient::Video {
     frame.rtp_timestamp = ts;
     frame.data = out->annexb;
     frame.keyframe = out->keyframe;
+    frame.rotation = rotation;  // RtpSenderVideo puts it in CVO.
     s->SendVideo(*ep.video_send(), frame, now);
     ++sent;
+    send_rotation = rotation;
 #else
     (void)s;
 #endif
@@ -191,7 +236,10 @@ class CallClient::Video {
       ++decoded;
       if (!f.render) continue;
       ++rendered;
+      // The renderer shows the frame turned by the rotation it arrived with (RTCMTLRenderer's rotation).
+      if (f.rotation != video::Rotation::k0) out = video::ApplyOrientation(out, video::VideoOrientation{f.rotation});
       std::lock_guard<std::mutex> lock(mu);
+      recv_rotation = f.rotation;
       recv_w = out.width;
       recv_h = out.height;
       remote = std::move(out);
@@ -215,17 +263,19 @@ std::string CallStats::Text() const {
                 "send: %.0f kbps  recv: %.0f kbps\n"
                 "audio: sent %llu  recv %llu  lost %lld  jitter %.0f ms\n"
                 "audio: concealed %.1f%%  buffer %.0f ms  mic %.2f\n"
-                "video: sent %llu (%dx%d)  decoded %llu  shown %llu (%dx%d)\n"
+                "audio: opus %.1f kbps  allocation %.1f kbps  agc %.1f dB\n"
+                "video: sent %llu (%dx%d)  decoded %llu  shown %llu (%dx%d)  rotation %d/%d\n"
                 "dtls: %s  srtp: %s",
                 CallStateName(state), ended_reason.empty() ? "" : " - ", ended_reason.c_str(), connect_ms, duration_s,
                 local_candidate.empty() ? "-" : local_candidate.c_str(),
                 remote_candidate.empty() ? "-" : remote_candidate.c_str(), rtt_ms, target_kbps, send_kbps, recv_kbps,
                 static_cast<unsigned long long>(audio_packets_sent), static_cast<unsigned long long>(audio_packets_received),
                 static_cast<long long>(audio_packets_lost), audio_jitter_ms, audio_concealed_pct, jitter_buffer_ms,
-                capture_level, static_cast<unsigned long long>(video_frames_sent), video_send_width, video_send_height,
+                capture_level, opus_kbps, audio_allocation_kbps, agc_gain_db,
+                static_cast<unsigned long long>(video_frames_sent), video_send_width, video_send_height,
                 static_cast<unsigned long long>(video_frames_decoded),
                 static_cast<unsigned long long>(video_frames_rendered), video_recv_width, video_recv_height,
-                dtls_cipher.empty() ? "-" : dtls_cipher.c_str(), srtp_cipher.empty() ? "-" : srtp_cipher.c_str());
+                video_send_rotation, video_recv_rotation, dtls_cipher.empty() ? "-" : dtls_cipher.c_str(), srtp_cipher.empty() ? "-" : srtp_cipher.c_str());
   return buf;
 }
 
@@ -237,14 +287,16 @@ std::string CallStats::ToJson() const {
                 "\"audio_packets_lost\":%lld,\"audio_jitter_ms\":%.1f,\"audio_concealed_pct\":%.2f,"
                 "\"jitter_buffer_ms\":%.1f,\"audio_played_s\":%.2f,\"video_frames_sent\":%llu,"
                 "\"video_frames_received\":%llu,\"video_frames_decoded\":%llu,\"video_frames_rendered\":%llu,"
-                "\"capture_level\":%.3f,",
+                "\"capture_level\":%.3f,\"agc_gain_db\":%.2f,\"opus_kbps\":%.1f,\"audio_allocation_kbps\":%.1f,"
+                "\"video_send_rotation\":%d,\"video_recv_rotation\":%d,",
                 CallStateName(state), connect_ms, duration_s, rtt_ms, target_kbps, send_kbps, recv_kbps,
                 static_cast<unsigned long long>(audio_packets_sent), static_cast<unsigned long long>(audio_packets_received),
                 static_cast<long long>(audio_packets_lost), audio_jitter_ms, audio_concealed_pct, jitter_buffer_ms,
                 audio_played_s, static_cast<unsigned long long>(video_frames_sent),
                 static_cast<unsigned long long>(video_frames_received),
                 static_cast<unsigned long long>(video_frames_decoded),
-                static_cast<unsigned long long>(video_frames_rendered), capture_level);
+                static_cast<unsigned long long>(video_frames_rendered), capture_level, agc_gain_db, opus_kbps,
+                audio_allocation_kbps, video_send_rotation, video_recv_rotation);
   return buf + std::string("\"local_candidate\":") + net::JsonEscape(local_candidate) +
          ",\"remote_candidate\":" + net::JsonEscape(remote_candidate) + ",\"dtls_cipher\":" + net::JsonEscape(dtls_cipher) +
          ",\"srtp_cipher\":" + net::JsonEscape(srtp_cipher) + ",\"ended_reason\":" + net::JsonEscape(ended_reason) + "}";
@@ -264,8 +316,11 @@ CallClient::CallClient(CallClientConfig config, std::function<void(const std::st
     config_.peer_id = "ios-" + std::to_string(rd() % 1000000);
   }
   decoder_ = std::make_unique<testbench::OpusAudioDecoder>(kRate);
-  encoder_ = std::make_unique<testbench::OpusSendEncoder>(config_.opus_bitrate_bps, true);
-  if (config_.audio_processing) apm_ = std::make_unique<AudioProcessor>();
+  // AudioEncoderOpusConfig::bitrate_bps: 32 kbps until the first allocation, within the configured range.
+  encoder_ = std::make_unique<testbench::OpusSendEncoder>(
+      std::clamp(32000, config_.opus_min_bitrate_bps, std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps)),
+      true);
+  if (config_.audio_processing) apm_ = std::make_unique<AudioProcessor>(config_.agc);
 }
 
 CallClient::~CallClient() {
@@ -337,6 +392,9 @@ void CallClient::MakeEndpoint(Timestamp now) {
   c.video = true;  // Received from the web app even with our camera off; the AI server offers audio only.
   c.enable_data_channels = false;
   c.audio_decoder = decoder_.get();
+  // The allocator registration: the Opus range plus the overhead at 20 ms frames (issue #569's path).
+  c.audio_stream.min_bitrate = DataRate::BitsPerSec(config_.opus_min_bitrate_bps);
+  c.audio_stream.max_bitrate = DataRate::BitsPerSec(std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps));
   ep_ = std::make_unique<pc::PeerEndpoint>(std::move(c), now);
   ep_->SetOnIceCandidate([this](std::unique_ptr<pc::IceCandidate> cand) {
     SendSignal("{\"type\":\"candidate\"," + To() + ",\"candidate\":" + net::JsonEscape(cand->ToString()) +
@@ -472,6 +530,11 @@ void CallClient::Audio(Timestamp now) {
     capture_level_ = std::sqrt(sum / k10ms) / 32768.0;
     send_buf_.insert(send_buf_.end(), frame.begin(), frame.end());
     if (send_buf_.size() < k20ms) continue;
+    // The latest allocation reaches the encoder before its next frame (ChannelSend::OnBitrateAllocation).
+    if (auto bps = OpusRateFromAllocation(*s, std::max(config_.opus_min_bitrate_bps, config_.opus_max_bitrate_bps))) {
+      encoder_->SetTargetBitrate(*bps);
+    }
+    audio_allocation_kbps_ = s->rates().audio_rate.kbps();
     const std::vector<uint8_t> payload = encoder_->Encode(std::span<const int16_t>(send_buf_.data(), k20ms));
     send_buf_.erase(send_buf_.begin(), send_buf_.begin() + k20ms);
     if (!payload.empty() && ep_->audio_send()) {
@@ -498,9 +561,10 @@ size_t CallClient::PullPlayout(std::span<int16_t> out) {
   return n;
 }
 
-void CallClient::PushCameraFrame(video::I420Frame frame) {
+void CallClient::PushCameraFrame(video::I420Frame frame, video::Rotation rotation) {
   std::lock_guard<std::mutex> lock(video_->mu);
   video_->camera = std::move(frame);
+  video_->camera_rotation = rotation;
 }
 
 bool CallClient::TakeRemoteVideo(video::I420Frame* out) {
@@ -578,8 +642,13 @@ void CallClient::UpdateStats(Timestamp now) {
     c.video_send_height = video_->send_h;
     c.video_recv_width = video_->recv_w;
     c.video_recv_height = video_->recv_h;
+    c.video_send_rotation = static_cast<int>(video_->send_rotation) * 90;
+    c.video_recv_rotation = static_cast<int>(video_->recv_rotation) * 90;
   }
   c.capture_level = capture_level_;
+  c.agc_gain_db = apm_ ? apm_->agc_gain_db() : 0;
+  c.opus_kbps = encoder_->target_bitrate_bps() / 1000.0;
+  c.audio_allocation_kbps = audio_allocation_kbps_;
   std::lock_guard<std::mutex> lock(stats_mu_);
   stats_ = std::move(c);
 }

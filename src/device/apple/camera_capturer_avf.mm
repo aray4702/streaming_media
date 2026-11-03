@@ -1,7 +1,9 @@
 // Camera capture through AVCaptureSession (#1105), after libwebrtc's
 // RTCCameraVideoCapturer (M157): NV12 full-range output, late frames kept
 // (alwaysDiscardsLateVideoFrames = NO), the format closest to the requested
-// size, and the frame duration set from the requested rate.
+// size, and the frame duration set from the requested rate. On iOS each frame
+// carries the rotation the capturer derives from UIDevice's orientation and the
+// camera's position (RTCCameraVideoCapturer.m:84-88, 176-198, 243-309, 567-572).
 #import <AVFoundation/AVCaptureDevice.h>
 #import <AVFoundation/AVCaptureInput.h>
 #import <AVFoundation/AVCaptureSession.h>
@@ -9,6 +11,9 @@
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #include <TargetConditionals.h>
+#if TARGET_OS_IPHONE
+#import <UIKit/UIKit.h>
+#endif
 
 #include <atomic>
 #include <mutex>
@@ -142,6 +147,25 @@ class AvfCameraCapturer : public CameraCapturer {
       active_ = formats[static_cast<size_t>(index)];
       pacer_ = FramerateController(config.fps);
     }
+#if TARGET_OS_IPHONE
+    // The capturer starts at portrait (90), follows UIDeviceOrientationDidChangeNotification, and reads the
+    // orientation once at start (updateOrientation).
+    front_ = device.position == AVCaptureDevicePositionFront;
+    rotation_ = video::Rotation::k90;
+    orientation_ = static_cast<int>(DeviceOrientation::kPortrait);
+    std::atomic<int>* orientation = &orientation_;
+    observer_ = [[NSNotificationCenter defaultCenter]
+        addObserverForName:UIDeviceOrientationDidChangeNotification
+                    object:nil
+                     queue:[NSOperationQueue mainQueue]
+                usingBlock:^(NSNotification*) {
+                  *orientation = static_cast<int>([UIDevice currentDevice].orientation);
+                }];
+    dispatch_async(dispatch_get_main_queue(), ^{
+      [[UIDevice currentDevice] beginGeneratingDeviceOrientationNotifications];
+      *orientation = static_cast<int>([UIDevice currentDevice].orientation);
+    });
+#endif
     session_ = session;
     [session_ startRunning];
     running_ = session_.isRunning;
@@ -153,6 +177,15 @@ class AvfCameraCapturer : public CameraCapturer {
       [session_ stopRunning];
       session_ = nil;
     }
+#if TARGET_OS_IPHONE
+    if (observer_ != nil) {
+      [[NSNotificationCenter defaultCenter] removeObserver:observer_];
+      observer_ = nil;
+      dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIDevice currentDevice] endGeneratingDeviceOrientationNotifications];
+      });
+    }
+#endif
     // Wait for a callback in flight on the capture queue.
     dispatch_sync(queue_, ^{
                   });
@@ -180,6 +213,12 @@ class AvfCameraCapturer : public CameraCapturer {
     const int w = static_cast<int>(CVPixelBufferGetWidth(pixels));
     const int h = static_cast<int>(CVPixelBufferGetHeight(pixels));
     frame_.timestamp_us = ts_ns / 1000;
+#if TARGET_OS_IPHONE
+    rotation_ = CaptureRotation(static_cast<DeviceOrientation>(orientation_.load()), front_, rotation_);
+    frame_.rotation = rotation_;
+#else
+    frame_.rotation = video::Rotation::k0;  // No rotation on Mac.
+#endif
     frame_.format = config_.pixel_format;
     if (config_.pixel_format == CapturePixelFormat::kNV12) {
       CopyNv12(y, stride_y, uv, stride_uv, w, h, &frame_.nv12);
@@ -204,6 +243,12 @@ class AvfCameraCapturer : public CameraCapturer {
   CaptureFormat active_;
   FramerateController pacer_;
   CapturedFrame frame_;
+#if TARGET_OS_IPHONE
+  id observer_ = nil;
+  std::atomic<int> orientation_{static_cast<int>(DeviceOrientation::kPortrait)};
+  bool front_ = false;
+  video::Rotation rotation_ = video::Rotation::k90;  // Capture queue.
+#endif
 };
 
 std::vector<CameraInfo> ListCameras() {

@@ -49,6 +49,10 @@ struct CapturedFrame {
   video::I420Frame i420;  // when format == kI420
   Nv12Frame nv12;         // when format == kNV12
   int64_t timestamp_us = 0;  // the sample buffer's presentation time
+  // The clockwise turn that shows the frame upright (VideoFrame::rotation): on iOS from the device's orientation
+  // and the camera's position (CaptureRotation, as RTCCameraVideoCapturer); 0 on macOS. The pixels are not rotated:
+  // the sender puts it in the video-orientation extension (CVO) and the receiver applies it.
+  video::Rotation rotation = video::Rotation::k0;
 };
 
 class CameraCapturer {
