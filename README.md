@@ -151,26 +151,127 @@ The library:
 | 6. Audio (APM) | echo canceller, echo delay estimation, noise suppression, AGC + limiter, high-pass filter, transient suppression, VAD, audio level (RFC 6464), resampler |
 | 7. Video | freeze detection, HW->SW codec fallback, orientation (CVO), content hints + screen VFR, render scheduling, quality scaler |
 | 8. Synchronization | RTP->NTP mapping, A/V lip sync with CNAME groups, absolute capture time / latency, header extensions + BUNDLE demux |
-| 1. Connectivity (milestone 3) | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS. SDP in progress: model and parser merged (#1062), offer/answer in progress (#1063, #1064) |
+| 1. Connectivity (milestone 3) | STUN, ICE agent with controller and ICE-lite, TURN over UDP, TCP and TLS, SDP offer/answer and an endpoint that sets up ICE, DTLS-SRTP and RTP from SDP (#1062-#1064); small-group mesh of 3-4 (#1072) |
 | 2. Security (milestone 3) | TLS and DTLS 1.2/1.3 on both backends (BoringSSL, mbedTLS), DTLS-SRTP, SRTP (libsrtp) |
-| 9. Data channels (milestone 3) | dcSCTP packet and socket layer merged; transport and DCEP in progress (#1069, #1070) |
-| 10. Observability (milestone 3) | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); connection stats in progress (#1059) |
+| 9. Data channels (milestone 3) | dcSCTP over DTLS, DCEP and the data channel API, behind `SM_WITH_DATACHANNEL` (#1069, #1070) |
+| 10. Observability (milestone 3) | build and runtime switches (`SM_ENABLE_STATS`, `SM_ENABLE_METRICS`, `SM_ENABLE_EVENTS`, `SM_LOG_MIN_LEVEL`); ICE and DTLS connection stats (#1059) |
+| Apple devices (milestone 4) | Audio Units I/O and AVFoundation camera capture (`sm::device`, #1115), VideoToolbox H.264 (#1112); the library and its unit tests run on the iOS simulator in CI (#1107, #1108) |
 
-The native build registers 551 ctest tests (`ctest --preset native -N`,
-2026-11-02, default options including both TLS backends' tests; this count
-was not run to completion for this update). The last recorded full runs on
-macOS arm64 (native), WebAssembly (Node), ASan+UBSan and
-`-fno-exceptions -fno-rtti` are older and cover sections 3-8 only
-([details](docs/results/README.md)). iOS, Android and embedded Linux
-ARM are cross-built in CI. All six sections plus core compile to about
-350 KiB of code.
+The native build passes 590 of 590 ctest tests on macOS arm64 (main 8677716f
+plus #1112, 2026-11-02; `interop.Coturn` skips without a local coturn), and
+the iOS simulator build passes its 238 unit tests (Xcode 27.2, the CI job's
+flags). The older full runs on WebAssembly (Node), ASan+UBSan and
+`-fno-exceptions -fno-rtti` cover sections 3-8 only
+([details](docs/results/README.md)). Android and embedded Linux ARM are
+cross-built in CI.
 
-**Stage 1 (parity with libwebrtc) is in progress.** In the first
-[comparison](docs/results/compare-webrtc.md) (2026-10-14), libwebrtc was
-better on 88 metric/scenario pairs, this library on 51, with 100 ties.
-The largest gaps are needless keyframe requests, repair traffic beyond
-the target bitrate, utilization under random loss, high jitter, and
-recovery after outages. Each one is a `stage:baseline` issue.
+**Stage 1 (parity with libwebrtc) has no open gaps** on main: see
+[Benchmarks](#benchmarks).
+
+## Benchmarks
+
+All numbers below come from the [test bench](testbench/README.md): a whole
+call through the library over a scripted emulated link, in simulated
+time, so a run is repeatable.
+
+### Classic WebRTC features vs libwebrtc
+
+The `compare-webrtc` CI job runs every one-way scenario through this
+library and through libwebrtc M157 over the same emulated links, 10 seeds
+each, and publishes the [parity report](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/parity.md)
+and the [side-by-side table](https://raw.githubusercontent.com/aray4702/streaming_media/parity-data/compare-webrtc.txt).
+On main a78f737a (2026-11-02):
+
+- **163 scenarios, 0 gaps:** no metric is behind libwebrtc, or ahead of
+  it, by more than the parity band (the larger of the tie floor, 5% and
+  one standard deviation of libwebrtc's seeds).
+- Of the 3,540 metric/scenario pairs, 3,453 tie within the tie floor;
+  42 lean towards this library and 45 towards libwebrtc, all inside the
+  band. In the first comparison (2026-10-14), libwebrtc was better on 88
+  pairs and this library on 51.
+- Not compared: the 20 two-way (user and AI) scenarios, the 3 mesh
+  scenarios and 7 that libwebrtc can't run the same way (`sm_compare`
+  runs one-way calls).
+
+A sample of the table (mean of 10 seeds, this library / libwebrtc):
+
+| Scenario | Audio concealed | Audio mouth-to-ear p95 | Video freezes (total) | Video end-to-end p95 | Link utilization | Queue p95 |
+|---|---|---|---|---|---|---|
+| clean_link: 2.5 Mbps, 25 ms one way | 0.3% / 0.3% | 245 / 245 ms | 0 / 0 ms | 137 / 137 ms | 88.6% / 88.6% | 75.8 / 75.8 ms |
+| random_loss_5pct: 2 Mbps, 40 ms | 0.3% / 0.3% | 236 / 228 ms | 415 / 479 ms | 253 / 253 ms | 72.2% / 72.2% | 29.9 / 30.2 ms |
+| burst_loss: 3% in bursts of ~6 | 1.4% / 1.4% | 299 / 288 ms | 413 / 419 ms | 284 / 276 ms | 75.9% / 76.1% | 46.0 / 46.6 ms |
+| high_jitter: 40 ms jitter, reordering | 0.2% / 0.2% | 247 / 249 ms | 0 / 0 ms | 181 / 181 ms | 22.9% / 22.9% | 4.7 / 4.7 ms |
+| capacity_drop: 2.5 Mbps to 500 kbps and back | 0.9% / 0.9% | 824 / 824 ms | 3,076 / 3,076 ms | 543 / 540 ms | 54.8% / 54.8% | 287 / 287 ms |
+| bufferbloat: 1 Mbps, 2 s router buffer | 0.1% / 0.1% | 191 / 191 ms | 0 / 0 ms | 115 / 113 ms | 90.1% / 90.1% | 44.1 / 44.2 ms |
+| cross_traffic: 1.5 Mbps flow joins a 3 Mbps link | 0.5% / 0.5% | 494 / 494 ms | 0 / 0 ms | 226 / 226 ms | 72.9% / 72.9% | 164 / 164 ms |
+| issue_23_outage_3s: 3 s outage | 10.1% / 10.1% | 199 / 199 ms | 3,184 / 3,185 ms | 113 / 113 ms | 85.8% / 85.8% | 39.1 / 39.1 ms |
+| audio_only_lossy: 10% loss with jitter | 0.5% / 0.5% | 155 / 152 ms | | | 77.0% / 77.1% | 4.1 / 3.6 ms |
+
+### Human-AI conversation features
+
+libwebrtc has no counterpart for these (stage 2, milestone 2: #2, #3, #4),
+so they are measured against the targets in
+[program.md section 6.3](agents/program.md) instead. The values are the
+test bench baseline on main (Linux x86_64, the CI `testbench` job). Each
+call is two-way audio on a 100 ms RTT link with three scripted user turns:
+
+- **Response delay** is what the transport adds between the end of the
+  user's turn and the first AI sample heard, not counting the AI's own
+  time (thinking, the 600 ms its endpointer waits, and generating the first
+  chunk). Target: p95 under 500 ms.
+- **User speech lost** is the share of the user's speech that the AI
+  side concealed or never played. Target: at most 2%.
+- **Barge-in stop** is the time from the user starting to talk over the
+  AI to the AI's voice stopping at the user's ear. The user's device mutes
+  the AI locally as soon as it hears its user, then the AI cancels the
+  rest of its reply.
+
+| Scenario | Response delay p50 / p95 | User speech lost | Barge-in stop | Turn-detection errors |
+|---|---|---|---|---|
+| conversation_clean | 290 / 308 ms | 0% | | 0 |
+| conversation_loss_5pct | 320 / 338 ms | 0.37% | | 0 |
+| conversation_jitter_50ms | 380 / 416 ms | 0.22% | | 0 |
+| conversation_burst_loss (5% in bursts) | 310 / 310 ms | 5.7% | | 0 |
+| conversation_barge_in | 270 / 306 ms | 0% | 190 ms | 0 |
+| conversation_barge_in_capacity_drop | 360 / 360 ms | 0.96% | 210 ms | 0 |
+| conversation_outage_user_turn (2 s outage in the user's turn) | 270 / 306 ms | 22% | 3,390 ms | 2 |
+
+AI-generated media (#4): the AI side's source produces speech at 3x real
+time in 1 s bursts, and the library sends it at real time or, with
+`ai_send_ahead`, slightly early so the user's jitter buffer holds a
+cushion.
+
+| Scenario | Response delay p50 / p95 | Source ahead of real time | Underruns | User speech lost | Barge-in |
+|---|---|---|---|---|---|
+| ai_source_clean | 280 / 298 ms | up to 2.1 s | 0 | 0% | |
+| ai_source_loss_5pct | 320 / 329 ms | up to 2.1 s | 0 | 0% | |
+| ai_source_capacity_drop | 305 / 307 ms | up to 2.1 s | 0 | 0% | |
+| ai_source_adaptive_loss_5pct (adaptive send-ahead) | 450 / 470 ms | up to 1.9 s | 0 | 0.27% | |
+| ai_source_barge_in | 260 / 314 ms | up to 1.8 s | 0 | 0% | stopped in 210 ms; 5.7 s of queued reply dropped; 0 ms of AI audio heard after the stop |
+
+Two scenarios are outside the conditions the targets cover (up to 5%
+random loss), and their numbers are expected:
+
+- `conversation_burst_loss` (5% loss in bursts of about 5 packets each way)
+  loses 5.7% of the user's speech on the baseline seed (3.05% mean over 20
+  seeds). The Owner decided the 2% target doesn't apply to it (#965).
+  Audio NACK (`up_audio_nack on`, #971, off by default) brings it to a 1.1%
+  mean, the option for native clients.
+- `conversation_outage_user_turn` (the user-to-AI link down for 2 s in the
+  middle of the user's turn) loses 22% of the user's speech, and the AI's
+  turn detector sees a false end of turn and a false barge-in. Only the
+  severity-1 target applies: the AI still hears the user and answers
+  every turn.
+
+### On real networks (milestone 4)
+
+- The library's TURN client against the self-hosted coturn on Amazon
+  Lightsail (Oregon), from a home network: allocations, permissions,
+  channel binds and relayed data both ways pass over UDP, TCP and TLS
+  (`interop.Coturn`, #1054).
+- The AI server (`apps/ai_server`, #1103) and the calling app's controller
+  (`apps/call`, #1117) are tested end to end over local sockets; calls over
+  the Lightsail relay, with these metrics measured at the caller, are C12.
 
 ## Building
 
