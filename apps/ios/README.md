@@ -31,5 +31,22 @@ The script checks the AI server's metrics line for each call.
 
 ## On an iPhone
 
-Open `out/ios/streaming_media.xcodeproj` in Xcode and select the `SmCall` target. Set a team under Signing & Capabilities
-(an Apple ID is enough for a personal device), then run. The bundle id is `io.github.aray4702.smcall`.
+Find your team ID: Xcode creates an "Apple Development" certificate when you add your Apple ID (Xcode > Settings >
+Accounts); its OU is the team ID:
+
+```sh
+security find-certificate -c "Apple Development" -p | openssl x509 -noout -subject   # ... OU=<team ID> ...
+```
+
+Then configure with it, open the project and run on the connected iPhone:
+
+```sh
+cmake --preset ios -DSM_IOS_DEVELOPMENT_TEAM=<team ID>
+open out/ios/streaming_media.xcodeproj    # scheme SmCall, destination: your iPhone, then Run
+```
+
+Xcode signs automatically with that team (an Apple ID's free Personal Team is enough; the app then expires after 7
+days). Without `SM_IOS_DEVELOPMENT_TEAM` the app is built unsigned, as in CI. If the bundle id
+`io.github.aray4702.smcall` is taken, change it under Signing & Capabilities. On the iPhone, turn on Developer Mode
+(Settings > Privacy & Security) and, at the first launch, trust the developer under Settings > General > VPN & Device
+Management.
