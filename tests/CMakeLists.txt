@@ -123,6 +123,7 @@ if(SM_WITH_TLS)
     sm_configure_target(sm_interop_coturn)
     add_test(NAME interop.Coturn COMMAND sm_interop_coturn --filter=Coturn.)
     set_tests_properties(interop.Coturn PROPERTIES LABELS interop SKIP_REGULAR_EXPRESSION "SKIPPED: coturn not installed")
+    add_subdirectory(interop/browser)
   endif()
   # DTLS over a fake ICE transport (C5 part 2, #1006).
   sm_add_test_exe(sm_unit_p2p_dtls LABEL unit DEPS sm::p2p_dtls
