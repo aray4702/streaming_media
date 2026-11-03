@@ -117,13 +117,14 @@ if(SM_WITH_TLS)
   set_tests_properties(unit.P2pIceCompareTls PROPERTIES LABELS unit)
   # The TURN client against a real coturn over OS sockets (C4 part 5, #1037); skipped without `turnserver`.
   if(NOT WIN32 AND NOT EMSCRIPTEN)
-    add_executable(sm_interop_coturn interop/coturn_test.cc interop/os_sockets.cc)
-    target_link_libraries(sm_interop_coturn PRIVATE sm_test_framework sm::p2p_tls)
-    target_include_directories(sm_interop_coturn PRIVATE interop)
+    add_executable(sm_interop_coturn interop/coturn_test.cc)
+    target_link_libraries(sm_interop_coturn PRIVATE sm_test_framework sm_os_sockets)
     sm_configure_target(sm_interop_coturn)
     add_test(NAME interop.Coturn COMMAND sm_interop_coturn --filter=Coturn.)
     set_tests_properties(interop.Coturn PROPERTIES LABELS interop SKIP_REGULAR_EXPRESSION "SKIPPED: coturn not installed")
     add_subdirectory(interop/browser)
+    # The web app and signaling service (C15, #1102).
+    add_subdirectory(${PROJECT_SOURCE_DIR}/apps ${CMAKE_CURRENT_BINARY_DIR}/apps)
   endif()
   # DTLS over a fake ICE transport (C5 part 2, #1006).
   sm_add_test_exe(sm_unit_p2p_dtls LABEL unit DEPS sm::p2p_dtls
@@ -439,6 +440,9 @@ if(SM_WITH_VIDEO)
 endif()
 if(SM_WITH_SYNC)
   include(${CMAKE_CURRENT_SOURCE_DIR}/sync.cmake)
+endif()
+if(TARGET sm_device)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/device.cmake)
 endif()
 # The browser binding's native code (web/), without Emscripten.
 if(SM_WITH_TIMING AND SM_WITH_AUDIO)

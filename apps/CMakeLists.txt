@@ -1,0 +1,23 @@
+# Web app and signaling service (C15, #1102). The service's unit tests check /turn against
+# CreateTurnRestCredentials; the browser tests exit 77 (skipped) when no Chrome is found.
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_FOUND)
+  add_executable(sm_turn_credentials signaling/turn_credentials_tool.cc)
+  target_link_libraries(sm_turn_credentials PRIVATE sm::p2p_tls)
+  sm_configure_target(sm_turn_credentials)
+  add_test(NAME unit.SignalingService
+           COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/signaling/test_signaling.py)
+  set_tests_properties(unit.SignalingService PROPERTIES LABELS unit TIMEOUT 60
+    ENVIRONMENT "SM_TURN_TOOL=$<TARGET_FILE:sm_turn_credentials>")
+
+  set(SM_WEB_CALL ${CMAKE_CURRENT_SOURCE_DIR}/web/test_web_call.py)
+  add_test(NAME interop.WebApp.two_tabs COMMAND ${Python3_EXECUTABLE} ${SM_WEB_CALL})
+  set_tests_properties(interop.WebApp.two_tabs PROPERTIES
+    LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+  if(TARGET sm_interop_browser_peer)
+    add_test(NAME interop.WebApp.native COMMAND ${Python3_EXECUTABLE} ${SM_WEB_CALL}
+             --peer=$<TARGET_FILE:sm_interop_browser_peer>)
+    set_tests_properties(interop.WebApp.native PROPERTIES
+      LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome)
+  endif()
+endif()

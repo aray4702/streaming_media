@@ -1,0 +1,18 @@
+# systemd unit for the signaling service, next to coturn (docs/deploy/signaling.md).
+# Copy this repository's apps/ to /opt/streaming_media/apps and put the settings in
+# /etc/streaming-media-signaling.env (mode 600); the doc has the install steps.
+[Unit]
+Description=streaming_media signaling service and web app
+After=network.target
+
+[Service]
+EnvironmentFile=/etc/streaming-media-signaling.env
+ExecStart=/usr/bin/python3 /opt/streaming_media/apps/signaling/server.py
+DynamicUser=yes
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

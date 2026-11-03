@@ -12,6 +12,7 @@ option(SM_WITH_AUDIO    "Section 6: audio processing"              ON)
 option(SM_WITH_VIDEO    "Section 7: video quality and processing"  ON)
 option(SM_WITH_SYNC     "Section 8: synchronization"               ON)
 option(SM_WITH_RTP      "RTP/RTCP session layer (needs loss, timing, cc, sync, video)" ON)
+option(SM_WITH_VIDEOTOOLBOX "Hardware H.264 through VideoToolbox, Apple platforms only (sm::videotoolbox, #1104)" ${APPLE})
 # Milestone 3 (#944, #984): TLS/DTLS for the connectivity layer, through BoringSSL (cmake/SmBoringSSL.cmake).
 # Not for wasm: in a browser the browser's own WebRTC does TLS and DTLS.
 if(EMSCRIPTEN)
@@ -32,6 +33,20 @@ endif()
 # Data channels (C7, #944): libwebrtc's dcsctp (net/dcsctp/), from its packet layer up (#1032). Off by default:
 # with it off, no SCTP code is compiled. The native and native-asan presets turn it on, so its tests run there.
 option(SM_WITH_DATACHANNEL "Connectivity: data channels over SCTP, libwebrtc's dcsctp (sm::dcsctp)" OFF)
+# Audio and camera devices on Apple platforms (C11 part 2, #1105): Audio Units (VoiceProcessingIO), the iOS
+# AVAudioSession and AVCaptureSession, in sm::device (src/device/). On for macOS and iOS.
+if(APPLE)
+  set(_sm_apple_media_default ON)
+else()
+  set(_sm_apple_media_default OFF)
+endif()
+option(SM_WITH_APPLE_MEDIA "Audio Units and AVFoundation devices in sm::device (Apple platforms)" ${_sm_apple_media_default})
+if(SM_WITH_APPLE_MEDIA)
+  if(NOT APPLE)
+    message(FATAL_ERROR "SM_WITH_APPLE_MEDIA needs an Apple platform")
+  endif()
+  enable_language(OBJCXX)
+endif()
 option(SM_TLS_CROSS_TEST "Test both TLS backends and a BoringSSL <-> mbedTLS handshake" ON)
 option(SM_ENABLE_METRICS "Compile metrics export (off = no-op)"    ON)
 option(SM_ENABLE_EVENTS  "Compile the structured event log"        ON)
@@ -85,6 +100,10 @@ if(SM_WITH_RTP AND NOT (SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WI
 endif()
 
 add_subdirectory(src)
+# OS sockets, WebSocket and JSON for the interop tests and the apps (#1037, #1103).
+if(TARGET sm::p2p_tls AND NOT WIN32 AND NOT EMSCRIPTEN)
+  add_subdirectory(apps/net)
+endif()
 
 if(SM_BUILD_TESTS)
   enable_testing()
@@ -101,4 +120,9 @@ if(SM_WITH_RTP AND (SM_BUILD_TESTS OR SM_BUILD_FUZZERS))
 endif()
 if(SM_BUILD_TESTBENCH AND SM_WITH_LOSS AND SM_WITH_TIMING AND SM_WITH_CC AND SM_WITH_AUDIO AND SM_WITH_VIDEO AND SM_WITH_RTP)
   add_subdirectory(testbench)
+endif()
+# The AI server (C12 part 1, #1103): answers `ai-` rooms with the library; uses the bench's Opus, turn detector and
+# AI source.
+if(TARGET sm_testbench_lib AND TARGET sm_os_sockets AND TARGET sm::pc_endpoint)
+  add_subdirectory(apps/ai_server)
 endif()

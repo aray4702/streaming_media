@@ -150,7 +150,9 @@ void AddIceMetrics(const std::vector<IceCall*>& calls, Report& rep) {
     dtls_ms = std::max(dtls_ms, st.dtls_connected_ms);
     const double setup_ms = static_cast<double>(c->link->setup_duration().us()) / 1000;
     first_ms = std::max(first_ms, c->first_media_ms < 0 ? -1 : setup_ms + c->first_media_ms);
-    wire += c->link->wire_bytes();
+    // The media phase's bytes only: the setup's DTLS handshake has a random size (#1109), and the setup is
+    // measured by the setup.* lines.
+    wire += c->link->wire_bytes() - c->link->setup_wire_bytes();
     media += c->link->media_bytes();
     failures += c->send_failures;
   }
@@ -403,7 +405,7 @@ const std::vector<std::pair<std::string, std::string>>& MetricCatalog() {
         {"setup.dtls_connected_ms", "transport ice: offer to both ends' DTLS connected and SRTP keyed (slowest connection)"},
         {"setup.first_media_ms", "transport ice: offer to the first media packet received (slowest connection)"},
         {"transport.overhead_pct",
-         "transport ice: bytes the endpoints sent (SRTP, STUN, DTLS, TURN) over the call's RTP/RTCP bytes with UDP/IP headers, minus 100%"},
+         "transport ice: bytes the endpoints sent in the call (SRTP, STUN, DTLS, TURN; not the setup, whose DTLS handshake size is random, #1109) over the call's RTP/RTCP bytes with UDP/IP headers, minus 100%"},
         {"transport.send_failures", "transport ice: session packets the endpoint could not send (not writable)"},
         {"transport.local_candidate_type", "transport ice: side a's selected local candidate: 0 host, 1 srflx, 2 prflx, 3 relay"},
         {"transport.remote_candidate_type", "transport ice: side a's selected remote candidate: 0 host, 1 srflx, 2 prflx, 3 relay"},

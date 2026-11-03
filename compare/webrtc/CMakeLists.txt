@@ -48,6 +48,8 @@ file(GLOB SM_SOURCES ${SM_ROOT}/src/*/*.cc)
 # against libwebrtc's BoringSSL headers and links its symbols. DTLS, SRTP and Mbed TLS are left out.
 list(FILTER SM_SOURCES EXCLUDE REGEX "/src/tls/")
 list(FILTER SM_SOURCES EXCLUDE REGEX "/src/p2p/(stun_crypto_tls|dtls_transport)\\.cc$")
+# Apple-only (VideoToolbox, #1104): the comparison builds on Linux.
+list(FILTER SM_SOURCES EXCLUDE REGEX "/src/video/videotoolbox_[^/]*\\.cc$")
 set(SM_COMPARE_TLS_SOURCES message_digest.cc crypto_random.cc ssl_fingerprint.cc boringssl_digest.cc
     boringssl_identity.cc boringssl_tls.cc)
 list(TRANSFORM SM_COMPARE_TLS_SOURCES PREPEND ${SM_ROOT}/src/tls/)
