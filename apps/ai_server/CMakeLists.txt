@@ -1,8 +1,10 @@
 # The AI server (C12 part 1, #1103): answers the signaling service's `ai-` rooms with the library. It reuses the test
 # bench's libopus encoder and decoder, turn detector and AI source (testbench/), and the OS sockets (apps/net).
+# The reply source runs on a worker thread (#1126).
+find_package(Threads REQUIRED)
 add_library(sm_ai_server_lib STATIC ai_server.cc)
 target_include_directories(sm_ai_server_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(sm_ai_server_lib PUBLIC sm_testbench_lib sm_os_sockets sm::pc_endpoint sm::p2p_tls)
+target_link_libraries(sm_ai_server_lib PUBLIC sm_testbench_lib sm_os_sockets sm::pc_endpoint sm::p2p_tls Threads::Threads)
 sm_configure_target(sm_ai_server_lib)
 
 add_executable(sm_ai_server main.cc)
