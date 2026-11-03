@@ -52,18 +52,17 @@ function(sm_add_boringssl)
   # On iOS executables default to app bundles, and BoringSSL's `install(TARGETS bssl)` has no BUNDLE destination.
   set(CMAKE_MACOSX_BUNDLE OFF)
   # Our sanitizer and warning flags are per target (sm_configure_target), so they don't reach BoringSSL.
-  add_subdirectory(${dir} ${CMAKE_BINARY_DIR}/_deps/boringssl-build EXCLUDE_FROM_ALL SYSTEM)
   if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    # BoringSSL's -Werror meets Xcode's -Wshorten-64-to-32 on the iOS SDK: take both off its own targets.
-    foreach(t crypto ssl)
-      get_target_property(opts ${t} COMPILE_OPTIONS)
-      if(opts)
-        list(FILTER opts EXCLUDE REGEX "Werror|shorten-64-to-32")
-        set_target_properties(${t} PROPERTIES COMPILE_OPTIONS "${opts}")
-      endif()
-      target_compile_options(${t} PRIVATE -Wno-error -Wno-shorten-64-to-32)
-    endforeach()
+    # BoringSSL puts -Werror and -Wshorten-64-to-32 in its directory's CMAKE_C(XX)_FLAGS, and the iOS SDK's clang
+    # warns where the others don't. Take both out at the end of its directory, whatever else it sets there.
+    macro(sm_boringssl_relax_warnings)
+      foreach(v CMAKE_C_FLAGS CMAKE_CXX_FLAGS)
+        string(REGEX REPLACE "-Werror|-Wshorten-64-to-32" "" ${v} "${${v}}")
+      endforeach()
+    endmacro()
+    cmake_language(DEFER DIRECTORY ${dir} CALL sm_boringssl_relax_warnings)
   endif()
+  add_subdirectory(${dir} ${CMAKE_BINARY_DIR}/_deps/boringssl-build EXCLUDE_FROM_ALL SYSTEM)
   add_library(sm_boringssl_crypto INTERFACE)
   target_link_libraries(sm_boringssl_crypto INTERFACE crypto)
   target_include_directories(sm_boringssl_crypto SYSTEM INTERFACE ${dir}/include)
