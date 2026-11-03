@@ -349,6 +349,66 @@ SM_TEST(CallClient, AgcRaisesAQuietTalker) {
   SM_EXPECT_TRUE(b_heard_db > a_heard_db + 4.0);
 }
 
+// #1124: SmCall on iOS runs libwebrtc's iOS chain (ApplyIosAudioOptions: no software AEC3 or AGC, VoiceProcessingIO
+// does both), the library's default keeps AEC3. In double talk with no echo path, AEC3 takes the far end's audio as
+// render and suppresses part of the near end's speech early in the call (as libwebrtc M157's APM does on the same
+// audio, docs/results/apm-webrtc.md); the iOS chain passes the speech through.
+SM_TEST(CallClient, IosChainLeavesEchoCancellationToTheDevice) {
+  apps::CallClientConfig ios;
+  apps::ApplyIosAudioOptions(&ios);
+  SM_EXPECT_TRUE(ios.audio_processing);
+  SM_EXPECT_TRUE(!ios.echo_cancellation);
+  SM_EXPECT_TRUE(!ios.agc);
+  apps::CallClientConfig def;
+  SM_EXPECT_TRUE(def.audio_processing && def.echo_cancellation && def.agc);  // The library's default: AEC3.
+  if (SM_SLOW_BUILD) {
+    std::printf("SKIPPED: the capture chain falls behind real time in this build (see SM_SLOW_BUILD)\n");
+    return;
+  }
+  PythonService service;
+  if (!service.Start()) {
+    std::printf("SKIPPED: apps/signaling/server.py or python3 not available\n");
+    return;
+  }
+  Timestamp now = apps::WallNow();
+  apps::CallClientConfig ca = AppConfig("room-ios-chain", "app-a"), cb = AppConfig("room-ios-chain", "app-b");
+  ca.agc = false;  // AEC3 is the only difference between the two chains.
+  apps::ApplyIosAudioOptions(&cb);
+  apps::CallDriver a(service.ws(), ca);
+  apps::CallDriver b(service.ws(), cb);
+  FakeDevices da, db;
+  da.speech = db.speech = sim::SpeechLike(48000, 20, 2, false);  // The same talker on both ends.
+  da.speak_at = db.speak_at = now;
+  SM_ASSERT_TRUE(a.Start(now));
+  for (Timestamp until = now + TimeDelta::Millis(300); now < until;) {
+    a.Step(now);
+    a.Wait(now, TimeDelta::Millis(5));
+    now = apps::WallNow();
+  }
+  SM_ASSERT_TRUE(b.Start(now));
+  const Timestamp start = now;
+  while (now - start < TimeDelta::Seconds(5)) {
+    a.Step(now);
+    b.Step(now);
+    if (a.client().state() == apps::CallState::kConnected) da.Step(a.client(), now, false);
+    if (b.client().state() == apps::CallState::kConnected) db.Step(b.client(), now, false);
+    a.Wait(now, TimeDelta::Millis(1));
+    b.Wait(now, TimeDelta::Millis(1));
+    now = apps::WallNow();
+  }
+  const apps::CallStats sa = a.client().stats(), sb = b.client().stats();
+  std::printf("A: %s\nB: %s\n", sa.ToJson().c_str(), sb.ToJson().c_str());
+  a.Hangup(now);
+  const double a_heard_db = 10 * std::log10(da.heard_energy / std::max<size_t>(da.heard_samples, 1) + 1e-9);
+  const double b_heard_db = 10 * std::log10(db.heard_energy / std::max<size_t>(db.heard_samples, 1) + 1e-9);
+  std::printf("B hears A (AEC3): %.1f dB; A hears B (iOS chain): %.1f dB\n", b_heard_db, a_heard_db);
+  SM_EXPECT_TRUE(sa.state == apps::CallState::kConnected && sb.state == apps::CallState::kConnected);
+  SM_EXPECT_EQ(sa.capture_chain, std::string("hpf,ns,aec3"));
+  SM_EXPECT_EQ(sb.capture_chain, std::string("hpf,ns"));
+  SM_EXPECT_EQ(sb.agc_gain_db, 0.0);
+  SM_EXPECT_TRUE(a_heard_db > b_heard_db + 1.0);  // 2.0 to 4.6 dB in 5 runs on an M-series Mac.
+}
+
 SM_TEST(CallClient, OpusFollowsTheAudioAllocation) {
   // One session as PeerEndpoint sets it up for the app: Opus (20 ms) and video, at a GCC start rate.
   auto opus_bps = [](int start_kbps, int min_bps, int max_bps) {
