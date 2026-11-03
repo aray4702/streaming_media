@@ -311,6 +311,7 @@ endif()
 
 if(SM_WITH_VIDEO)
   sm_add_library(video DEPS sm::core SOURCES
+    video/bitrate_adjuster.cc
     video/frame.cc
     video/freeze_detector.cc
     video/codec_fallback.cc
@@ -324,6 +325,18 @@ if(SM_WITH_VIDEO)
     video/video_stream_adapter.cc
     video/resource_adaptation_processor.cc)
   list(APPEND SM_SECTIONS video)
+  if(SM_WITH_VIDEOTOOLBOX)
+    # Hardware H.264 through VideoToolbox on macOS and iOS (C11 part 1, #1104): libwebrtc's RTCVideoEncoderH264 and
+    # RTCVideoDecoderH264 on the frameworks' C API. Not in the sm::sm umbrella, like sm::pc.
+    if(NOT APPLE)
+      message(FATAL_ERROR "SM_WITH_VIDEOTOOLBOX needs an Apple platform")
+    endif()
+    sm_add_library(videotoolbox DEPS sm::video SOURCES
+      video/videotoolbox_h264.cc)
+    target_link_libraries(sm_videotoolbox PUBLIC "-framework VideoToolbox" "-framework CoreMedia" "-framework CoreVideo"
+                          "-framework CoreFoundation")
+    target_compile_definitions(sm_videotoolbox PUBLIC SM_WITH_VIDEOTOOLBOX=1)
+  endif()
 endif()
 
 if(SM_WITH_SYNC)

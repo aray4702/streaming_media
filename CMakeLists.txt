@@ -12,6 +12,7 @@ option(SM_WITH_AUDIO    "Section 6: audio processing"              ON)
 option(SM_WITH_VIDEO    "Section 7: video quality and processing"  ON)
 option(SM_WITH_SYNC     "Section 8: synchronization"               ON)
 option(SM_WITH_RTP      "RTP/RTCP session layer (needs loss, timing, cc, sync, video)" ON)
+option(SM_WITH_VIDEOTOOLBOX "Hardware H.264 through VideoToolbox, Apple platforms only (sm::videotoolbox, #1104)" ${APPLE})
 # Milestone 3 (#944, #984): TLS/DTLS for the connectivity layer, through BoringSSL (cmake/SmBoringSSL.cmake).
 # Not for wasm: in a browser the browser's own WebRTC does TLS and DTLS.
 if(EMSCRIPTEN)
