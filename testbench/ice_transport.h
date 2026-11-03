@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "sm/core/units.h"
+#include "sm/sync/header_extensions.h"
 #include "sm/sim/network_link.h"
 
 namespace sm::testbench {
@@ -103,6 +104,9 @@ class IceLink {
   // Side 0's selected pair now (updates stats()).
   void UpdateSelectedPair();
   bool connected() const;
+  // The header extension ids the SDP negotiated for the media sections (the answer's extmap lines), the map both
+  // ends' sessions must put on the wire (#1095). Empty before the exchange.
+  sync::ExtensionMap NegotiatedExtensions() const;
 
   // Bytes both sides' hosts offered to the network (each datagram with its UDP/IP or TCP/IP headers), and the
   // bytes of the session packets they were given, with UDP/IP headers: the direct call's wire bytes.

@@ -75,6 +75,8 @@ struct IceCall {
   std::vector<std::pair<std::vector<uint8_t>, bool>> arrived[2];
   int64_t send_failures = 0;
   double first_media_ms = -1;  // Call time of the first media packet to arrive.
+  // The header extension ids the SDP negotiated (#1095): the sessions' map (transport-cc only).
+  sync::ExtensionMap negotiated;
 
   static uint64_t Key(std::span<const uint8_t> b) {
     if (b.size() < 12) return 0;
@@ -98,6 +100,10 @@ struct IceCall {
     o.seed = seed;
     link = std::make_unique<IceLink>(o);
     link->Connect(toward);
+    // The bench's sessions send the extension they always sent (transport-cc), now at the id the SDP gave it; the
+    // other negotiated ones (audio level, abs-send-time, MID, ...) stay off, so packet sizes do not change.
+    const sync::ExtensionMap all = link->NegotiatedExtensions();
+    if (const auto id = all.IdOf(sync::uri::kTransportCc)) negotiated.Register(*id, sync::uri::kTransportCc);
     link->SetOnMedia([this](int side, std::vector<uint8_t> packet, bool rtcp, Timestamp at) {
       if (!rtcp && first_media_ms < 0) first_media_ms = static_cast<double>(at.us()) / 1000;
       arrived[side].emplace_back(std::move(packet), rtcp);
@@ -1950,6 +1956,8 @@ Report RunTwoWayCall(const Scenario& s, const RunOptions& opt) {
     const IceOptions::Ssrcs ssrcs[2] = {ssrcs_of(up_streams), ssrcs_of(down_streams)};
     const sim::LinkConfig toward[2] = {rev_state.cfg, fwd_state.cfg};
     ice->Start(s, ssrcs, toward, s.seed, s.audio, s.video);
+    user.SetExtensions(ice->negotiated);
+    ai.SetExtensions(ice->negotiated);
     ice->link->SetEmit([&](int to, IceLink::DatagramPtr d, DataSize wire) {
       ++ice->emitted;
       (to == 1 ? forward : reverse)
@@ -2553,6 +2561,8 @@ Report RunMeshCall(const Scenario& s, const RunOptions& opt_in) {
                                             ssrcs_of(ep[static_cast<size_t>(idx(j, i))].out_streams)};
         const sim::LinkConfig toward[2] = {path(j, i), path(i, j)};
         c->Start(s, ssrcs, toward, s.seed + 7919ULL * ice_index(i, j), s.audio, s.video);
+        ep[static_cast<size_t>(idx(i, j))].session->SetExtensions(c->negotiated);
+        ep[static_cast<size_t>(idx(j, i))].session->SetExtensions(c->negotiated);
         c->link->SetEmit([&, c, i, j](int to, IceLink::DatagramPtr d, DataSize wire) {
           ++c->emitted;
           const int from_p = to == 1 ? i : j, to_p = to == 1 ? j : i;
@@ -2957,6 +2967,8 @@ Report RunCall(const Scenario& s, const RunOptions& opt) {
         {kAudioSsrc + 10, kVideoSsrc + 10, std::nullopt}};
     const sim::LinkConfig toward[2] = {links.reverse().cfg, fwd_state.cfg};
     ice->Start(s, ssrcs, toward, s.seed, s.audio, s.video);
+    sender.SetExtensions(ice->negotiated);
+    receiver.SetExtensions(ice->negotiated);
     ice->link->SetEmit([&](int to, IceLink::DatagramPtr d, DataSize wire) {
       ++ice->emitted;
       if (to == 1) {
