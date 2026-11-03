@@ -153,6 +153,23 @@ SM_TEST(TransportFeedbackV2, SinglePacketAndDuplicate) {
   SM_EXPECT_EQ(TimesMs(f[0])[0], 123);
 }
 
+// TransportSequenceNumberFeedbackGenenerator::OnReceivedPacket: media_ssrc_ = packet.Ssrc(), so a report
+// names the stream of the last packet before it (issue #1125: libwebrtc's RTCPReceiver drops transport
+// feedback whose media SSRC is not one of its own).
+SM_TEST(TransportFeedbackV2, MediaSsrcIsTheLastReceivedPacketsSsrc) {
+  auto b = V2();
+  b.OnPacket(kBaseSeq, kBaseTime, 0x1111);
+  b.OnPacket(kBaseSeq + 1, kBaseTime + TimeDelta::Millis(1), 0x2222);
+  auto f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].media_ssrc, 0x2222u);
+  b.OnPacket(kBaseSeq + 2, kBaseTime + TimeDelta::Millis(2), 0x1111);
+  f = b.Build();
+  SM_ASSERT_EQ(f.size(), 1u);
+  SM_EXPECT_EQ(f[0].media_ssrc, 0x1111u);
+  SM_EXPECT_EQ(cc::ParseTransportFeedback(cc::SerializeTransportFeedback(f[0]))->media_ssrc, 0x1111u);
+}
+
 SM_TEST(TransportFeedbackV2, MissingStartAndNothingNewIsNotReported) {
   auto b = V2();
   b.OnPacket(kBaseSeq, kBaseTime);

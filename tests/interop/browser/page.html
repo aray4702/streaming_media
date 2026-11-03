@@ -29,6 +29,11 @@ const role = params.get('role') || 'offer';
 const selfTest = params.get('self') === '1';
 const useDc = params.get('dc') !== '0';
 const timeoutMs = Number(params.get('timeout_ms') || 20000);
+// With bwe_kbps (#1125), the call also runs until Chrome's send-side bandwidth estimate
+// (availableOutgoingBitrate of the selected candidate pair) reaches this many kbps, for at most
+// bwe_ms of media; the check fails if it never does.
+const bweKbps = Number(params.get('bwe_kbps') || 0);
+const bweMs = Number(params.get('bwe_ms') || 10000);
 const kChromeMessage = 'hello from chrome';
 const kPeerMessage = 'hello from sm';
 
@@ -116,6 +121,10 @@ async function collectStats(pc) {
   const out = {audio: {}, video: {}};
   const report = await pc.getStats();
   report.forEach(s => {
+    if (s.type === 'transport' && s.selectedCandidatePairId && report.get(s.selectedCandidatePairId)) {
+      const pair = report.get(s.selectedCandidatePairId);
+      if (pair.availableOutgoingBitrate !== undefined) out.bweKbps = Math.round(pair.availableOutgoingBitrate / 1000);
+    }
     const kind = s.kind || s.mediaType;
     if (!out[kind]) return;
     const add = (k, v) => { out[kind][k] = (out[kind][k] || 0) + (v || 0); };
@@ -175,6 +184,8 @@ async function main() {
     if (chrome.dc && chrome.dc.readyState === 'open') chrome.dc.send(kChromeMessage);
     if (other && other.dc && other.dc.readyState === 'open') other.dc.send(kPeerMessage);
   }
+  const mediaStart = performance.now();
+  const bweTrace = [];
   if (connected) {
     // Media for a few seconds, until the checks hold or time runs out.
     const want = async () => {
@@ -187,6 +198,18 @@ async function main() {
     const deadline = performance.now() + Math.min(left(), 15000);
     await new Promise(r => setTimeout(r, Math.min(left(), 2000)));
     while (!(good = await want()) && performance.now() < deadline) await new Promise(r => setTimeout(r, 250));
+    if (bweKbps > 0) {
+      // Chrome's estimate, once a second from the start of media, until it reaches bwe_kbps.
+      const bweDeadline = mediaStart + Math.min(bweMs, left());
+      for (;;) {
+        const s = await collectStats(chrome.pc);
+        const at = Math.round((performance.now() - mediaStart) / 1000);
+        if (s.bweKbps !== undefined) bweTrace.push([at, s.bweKbps]);
+        if ((s.bweKbps || 0) >= bweKbps || performance.now() >= bweDeadline) break;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      log('bwe kbps by second ' + JSON.stringify(bweTrace));
+    }
   }
   result.browser = await sideStats(chrome);
   if (other) result.peer = await sideStats(other);
@@ -201,6 +224,7 @@ async function main() {
     peerReportsAudio: b.audio.remoteReports > 0,
     peerReportsVideo: b.video.remoteReports > 0,
   };
+  if (bweKbps > 0) checks.bweRampsUp = bweTrace.some(([, kbps]) => kbps >= bweKbps);
   if (useDc) checks.dataFromPeer = result.browser.received.includes(kPeerMessage);
   if (other && useDc) checks.dataFromChrome = other.received.includes(kChromeMessage);
   result.checks = checks;

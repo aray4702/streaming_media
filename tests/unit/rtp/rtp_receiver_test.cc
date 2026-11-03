@@ -452,6 +452,11 @@ SM_TEST(RtpReceiver, TransportSequenceNumbersOfEveryPacketReachTheFeedbackBuilde
   for (const auto& p : reports[0].packets) received += p.received;
   SM_EXPECT_EQ(received, static_cast<size_t>(tseq - 100));
   SM_EXPECT_EQ(reports[0].base_seq, 100);
+  // The media source SSRC is the received stream's, as TransportSequenceNumberFeedbackGenenerator sets
+  // media_ssrc_ = packet.Ssrc(): Chrome's RTCPReceiver::HandleTransportFeedback drops feedback for an SSRC
+  // it does not send, which left its estimate at about 84 kbps (issue #1125). The last packet is the padding
+  // on the RTX SSRC, which the sender's RTCPReceiver also registers.
+  SM_EXPECT_EQ(reports[0].media_ssrc, kRtxSsrc);
 }
 
 // RED + ULPFEC on the media SSRC (RtpVideoStreamReceiver2::ParseAndHandleEncapsulatingHeader):
