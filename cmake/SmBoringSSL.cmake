@@ -51,6 +51,8 @@ function(sm_add_boringssl)
   set(CMAKE_POSITION_INDEPENDENT_CODE ON)
   # On iOS executables default to app bundles, and BoringSSL's `install(TARGETS bssl)` has no BUNDLE destination.
   set(CMAKE_MACOSX_BUNDLE OFF)
+  # Xcode's default -Wshorten-64-to-32 meets BoringSSL's -Werror; it builds clean with the flags it is developed with.
+  set(CMAKE_XCODE_ATTRIBUTE_CLANG_WARN_64_TO_32_BIT_CONVERSION NO)
   # Our sanitizer and warning flags are per target (sm_configure_target), so they don't reach BoringSSL.
   add_subdirectory(${dir} ${CMAKE_BINARY_DIR}/_deps/boringssl-build EXCLUDE_FROM_ALL SYSTEM)
   add_library(sm_boringssl_crypto INTERFACE)
