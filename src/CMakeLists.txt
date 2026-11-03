@@ -375,6 +375,10 @@ if(SM_WITH_TLS AND SM_WITH_SYNC AND SM_WITH_RTP)
   endif()
 endif()
 
+if(SM_WITH_VIDEO)
+  include(${CMAKE_CURRENT_SOURCE_DIR}/device/device.cmake)  # audio and camera devices (#1105)
+endif()
+
 # Umbrella target: link sm::sm to get every enabled section.
 add_library(sm_all INTERFACE)
 add_library(sm::sm ALIAS sm_all)

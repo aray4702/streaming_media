@@ -32,6 +32,20 @@ endif()
 # Data channels (C7, #944): libwebrtc's dcsctp (net/dcsctp/), from its packet layer up (#1032). Off by default:
 # with it off, no SCTP code is compiled. The native and native-asan presets turn it on, so its tests run there.
 option(SM_WITH_DATACHANNEL "Connectivity: data channels over SCTP, libwebrtc's dcsctp (sm::dcsctp)" OFF)
+# Audio and camera devices on Apple platforms (C11 part 2, #1105): Audio Units (VoiceProcessingIO), the iOS
+# AVAudioSession and AVCaptureSession, in sm::device (src/device/). On for macOS and iOS.
+if(APPLE)
+  set(_sm_apple_media_default ON)
+else()
+  set(_sm_apple_media_default OFF)
+endif()
+option(SM_WITH_APPLE_MEDIA "Audio Units and AVFoundation devices in sm::device (Apple platforms)" ${_sm_apple_media_default})
+if(SM_WITH_APPLE_MEDIA)
+  if(NOT APPLE)
+    message(FATAL_ERROR "SM_WITH_APPLE_MEDIA needs an Apple platform")
+  endif()
+  enable_language(OBJCXX)
+endif()
 option(SM_TLS_CROSS_TEST "Test both TLS backends and a BoringSSL <-> mbedTLS handshake" ON)
 option(SM_ENABLE_METRICS "Compile metrics export (off = no-op)"    ON)
 option(SM_ENABLE_EVENTS  "Compile the structured event log"        ON)
