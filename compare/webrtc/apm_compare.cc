@@ -47,8 +47,8 @@ struct Output {
   size_t latency = 0;  // Samples of algorithmic delay.
 };
 
-Output RunOurs(const CallSignals& c, const ChainConfig& cc) {
-  auto r = RunChain(c, cc, kFs);
+Output RunOurs(const CallSignals& c, const ChainConfig& cc, int fs = kFs) {
+  auto r = RunChain(c, cc, fs);
   return {std::move(r.out), r.latency};
 }
 
@@ -56,21 +56,22 @@ Output RunOurs(const CallSignals& c, const ChainConfig& cc) {
 // drives it: render first, then capture with the stream delay (0: the test
 // signals carry the echo path delay themselves) and, for AGC1, the analog
 // level fed back from the previous frame.
-Output RunWebrtc(const CallSignals& c, const ApmConfig& cfg) {
+Output RunWebrtc(const CallSignals& c, const ApmConfig& cfg, int fs = kFs) {
   auto apm = webrtc::BuiltinAudioProcessingBuilder(cfg).Build(webrtc::CreateEnvironment());
-  const webrtc::StreamConfig sc(kFs, 1);
+  const webrtc::StreamConfig sc(fs, 1);
+  const size_t frame = static_cast<size_t>(fs / 100);
   Output o;
   o.out = c.capture;
-  std::vector<float> render(kFrame), render_out(kFrame), cap(kFrame);
+  std::vector<float> render(frame), render_out(frame), cap(frame);
   int analog_level = 255;
-  for (size_t i = 0; i + kFrame <= o.out.size(); i += kFrame) {
-    std::copy_n(c.far.data() + i, kFrame, render.data());
+  for (size_t i = 0; i + frame <= o.out.size(); i += frame) {
+    std::copy_n(c.far.data() + i, frame, render.data());
     const float* rin = render.data();
     float* rout = render_out.data();
     apm->ProcessReverseStream(&rin, sc, sc, &rout);
     apm->set_stream_delay_ms(0);
     if (cfg.gain_controller1.enabled) apm->set_stream_analog_level(analog_level);
-    std::copy_n(o.out.data() + i, kFrame, cap.data());
+    std::copy_n(o.out.data() + i, frame, cap.data());
     const float* cin = cap.data();
     float* cout = o.out.data() + i;
     apm->ProcessStream(&cin, sc, sc, &cout);
@@ -266,6 +267,48 @@ void EchoDoubleTalk() {
   Add(module, "full duplex", "near-end SNR in double talk (dB)", so, sw);
 }
 
+// E2E_EchoCanceller.BargeIn*WithoutEchoPath (#1124): the AI's reply plays
+// (the render signal) and the user talks over it, with no echo path (a
+// headset, or sm_call_smoke's scripted microphone): the capture is the
+// talker and a little noise. 1 s into the call's first reply, AEC3 is in its
+// initial state and its transparent mode (legacy, M157's default) is off, so
+// it suppresses the talker as echo; after 7 s of reply the transparent mode
+// is on. A turn detector needs 200 ms of the talker through the output to
+// call a barge-in.
+void BargeInWithoutEchoPath(double reply_before_s) {
+  const std::string module = "echo canceller + NS";
+  char scenario[64];
+  std::snprintf(scenario, sizeof scenario, "barge-in, no echo path, %.0f s into the reply", reply_before_s);
+  ChainConfig cc{true, true, true, false, false};
+  const double a = sm::e2e::BargeInStartS(reply_before_s);
+  constexpr int kSeeds = 5;  // The scripted user's turns 1-5.
+  double level[2][2] = {}, detect[2] = {}, worst[2] = {};
+  int detected[2] = {};
+  for (int seed = 0; seed < kSeeds; ++seed) {
+    auto c = sm::e2e::MakeBargeInWithoutEcho(kFs, 101 + seed, reply_before_s);
+    const Output out[2] = {RunOurs(c, cc), RunWebrtc(c, WebrtcConfig(cc))};
+    for (int k = 0; k < 2; ++k) {
+      auto db = [&](double from, double to) {
+        return SegmentDb(out[k].out, from, to, kFs, out[k].latency) - SegmentDb(c.talker, from, to);
+      };
+      level[k][0] += db(a, a + 0.5) / kSeeds;
+      level[k][1] += db(a + 0.5, a + 1.5) / kSeeds;
+      const double ms = sm::e2e::BargeInDetectMs(out[k].out, a);
+      if (ms < 0) continue;
+      ++detected[k];
+      detect[k] += ms;
+      worst[k] = std::max(worst[k], ms);
+    }
+  }
+  Add(module, scenario, "near-end level change, first 0.5 s (dB)", level[0][0], level[1][0], "mean of 5 talkers");
+  Add(module, scenario, "near-end level change, 0.5-1.5 s (dB)", level[0][1], level[1][1]);
+  Add(module, scenario, "barge-ins detected (of 5)", detected[0], detected[1],
+      "kVadNormal on the output, 200 ms of speech");
+  Add(module, scenario, "barge-in detected after, mean (ms)", detect[0] / std::max(1, detected[0]),
+      detect[1] / std::max(1, detected[1]));
+  Add(module, scenario, "barge-in detected after, worst (ms)", worst[0], worst[1]);
+}
+
 // E2E_NoiseSuppressor: talker in white noise at about 7 dB SNR. Our side is
 // the port of libwebrtc's NS (#241).
 void Noise() {
@@ -388,6 +431,8 @@ int main() {
   HighPass();
   EchoRouteChange();
   EchoDoubleTalk();
+  BargeInWithoutEchoPath(1);
+  BargeInWithoutEchoPath(7);
   Noise();
   Gain();
   VoiceActivity();
