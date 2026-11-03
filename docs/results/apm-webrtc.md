@@ -63,6 +63,15 @@ SNR. "Pauses" are frames more than 250 ms after the talker stopped.
 | echo canceller + NS | full duplex | ERLE far end alone 6-15 s (dB) | 67.0 | 67.0 |  |
 | echo canceller + NS | full duplex | near-end level change in double talk (dB) | -5.4 | -5.3 |  |
 | echo canceller + NS | full duplex | near-end SNR in double talk (dB) | -0.2 | -0.2 |  |
+| echo canceller + NS | barge-in, no echo path, 1 s into the reply | near-end level change, first 0.5 s (dB) | -41.7 | -40.6 | mean of 5 talkers (#1124) |
+| echo canceller + NS | barge-in, no echo path, 1 s into the reply | near-end level change, 0.5-1.5 s (dB) | -17.3 | -17.6 |  |
+| echo canceller + NS | barge-in, no echo path, 1 s into the reply | barge-ins detected (of 5) | 4 | 4 | kVadNormal on the output, 200 ms of speech |
+| echo canceller + NS | barge-in, no echo path, 1 s into the reply | barge-in detected after, mean (ms) | 895 | 853 |  |
+| echo canceller + NS | barge-in, no echo path, 1 s into the reply | barge-in detected after, worst (ms) | 1540 | 1550 |  |
+| echo canceller + NS | barge-in, no echo path, 7 s into the reply | near-end level change, first 0.5 s (dB) | -0.9 | -1.0 |  |
+| echo canceller + NS | barge-in, no echo path, 7 s into the reply | near-end level change, 0.5-1.5 s (dB) | -0.9 | -1.1 |  |
+| echo canceller + NS | barge-in, no echo path, 7 s into the reply | barge-ins detected (of 5) | 5 | 5 |  |
+| echo canceller + NS | barge-in, no echo path, 7 s into the reply | barge-in detected after, mean / worst (ms) | 210 | 210 |  |
 | noise suppressor | white noise, ~7 dB SNR | SNR improvement (dB) | -0.1 | -0.1 | both kHigh (18 dB) |
 | noise suppressor | white noise, ~7 dB SNR | noise attenuation in pauses (dB) | 17.9 | 17.9 |  |
 | noise suppressor | white noise, ~7 dB SNR | level change in speech (dB) | -2.9 | -2.9 |  |
@@ -91,6 +100,22 @@ and AGC) are gone (#565).
   `webrtc::Vad` (6.8, kVadNormal) over the bit-exact `WebRtcVad` port
   (`agc1_vad.h`), so the next `compare-webrtc` log should show the same
   decisions on both sides; the v1 energy/flatness detector is retired.
+- **Barge-in with no echo path: no gap, and libwebrtc misses it too**
+  (#1124, the `barge-in, no echo path` rows, measured on macOS arm64 with
+  the prebuilt M157 on 2026-11-03). The AI's reply is the render signal
+  and the user talks over it, but nothing of the reply reaches the
+  microphone (a headset, or `sm_call_smoke`'s scripted microphone). 1 s
+  into the call's first reply AEC3 is in its initial state and M157's
+  transparent mode, the legacy classifier (`transparent_mode.cc`; the HMM
+  one needs the `WebRTC-Aec3TransparentModeHmm` trial), turns on only after
+  6 s of strong render, so both APMs suppress the talker as echo. A turn
+  detector then calls the barge-in late, or misses it (1 of 5 talkers on
+  each side). After 7 s of reply the transparent mode is on, and both
+  pass the talker. The app's 48 kHz chain (`apps/call/call_client.cc`,
+  three bands) does the same against libwebrtc's APM at 48 kHz: 4 of 5
+  detected on each side. This is the "one barge-in and one reply missed
+  per call" in `docs/results/real-network-calls.md`. Chrome's track there
+  was synthetic with no capture processing, so it is not APM against APM.
 - **Transient suppressor: off by default, as libwebrtc** (#243). libwebrtc
   M157 has none in APM; ours stays as an explicit opt-in
   (`TransientSuppressorConfig::enabled`).

@@ -311,6 +311,68 @@ SM_TEST(E2E_EchoCanceller, Aec3FullDuplexCallAsLibwebrtc) {
   SM_EXPECT_NEAR(snr, -0.2, 1.0);
 }
 
+// #1124: the user talks over the AI with no echo path (a headset, or
+// sm_call_smoke's scripted microphone), five talkers. 1 s into the call's
+// first reply AEC3 is in its initial state and M157's legacy transparent
+// mode is still off (it needs 6 s of strong render), so AEC3 suppresses the
+// talker as echo and a turn detector calls the barge-in late or not at all.
+// libwebrtc's APM does the same on this audio (sm_apm_compare, "barge-in, no
+// echo path"): -40.6 dB and -17.6 dB, 4 of 5 detected, 853 ms mean, 1550 ms
+// worst. After 7 s of reply the transparent mode is on: -1.0 dB, 5 of 5 at
+// 210 ms, as libwebrtc.
+namespace {
+struct BargeInResult {
+  double level_first = 0, level_rest = 0, mean_ms = 0, worst_ms = 0;
+  int detected = 0;
+};
+BargeInResult BargeInWithoutEcho(double reply_before_s) {
+  BargeInResult b;
+  const double a = sm::e2e::BargeInStartS(reply_before_s);
+  constexpr int kSeeds = 5;
+  for (int seed = 0; seed < kSeeds; ++seed) {
+    auto c = sm::e2e::MakeBargeInWithoutEcho(16000, 101 + seed, reply_before_s);
+    auto r = RunChain(c, {true, true, true, false, false});
+    auto db = [&](double from, double to) {
+      return SegmentDb(r.out, from, to, 16000, r.latency) - SegmentDb(c.talker, from, to);
+    };
+    b.level_first += db(a, a + 0.5) / kSeeds;
+    b.level_rest += db(a + 0.5, a + 1.5) / kSeeds;
+    const double ms = sm::e2e::BargeInDetectMs(r.out, a);
+    if (ms < 0) continue;
+    ++b.detected;
+    b.mean_ms += ms;
+    b.worst_ms = std::max(b.worst_ms, ms);
+  }
+  b.mean_ms /= std::max(1, b.detected);
+  return b;
+}
+}  // namespace
+
+SM_TEST(E2E_EchoCanceller, BargeInEarlyWithoutEchoPathAsLibwebrtc) {
+  const auto b = BargeInWithoutEcho(1);
+  SM_RECORD("barge_in_early_level_first_db", b.level_first);
+  SM_RECORD("barge_in_early_level_rest_db", b.level_rest);
+  SM_RECORD("barge_in_early_detected", b.detected);
+  SM_RECORD("barge_in_early_mean_ms", b.mean_ms);
+  SM_RECORD("barge_in_early_worst_ms", b.worst_ms);
+  SM_EXPECT_NEAR(b.level_first, -40.6, 3.0);
+  SM_EXPECT_NEAR(b.level_rest, -17.6, 3.0);
+  SM_EXPECT_EQ(b.detected, 4);
+  SM_EXPECT_NEAR(b.mean_ms, 853, 100);
+  SM_EXPECT_NEAR(b.worst_ms, 1550, 100);
+}
+
+SM_TEST(E2E_EchoCanceller, BargeInAfterTransparentModeWithoutEchoPathAsLibwebrtc) {
+  const auto b = BargeInWithoutEcho(7);
+  SM_RECORD("barge_in_late_level_first_db", b.level_first);
+  SM_RECORD("barge_in_late_detected", b.detected);
+  SM_RECORD("barge_in_late_worst_ms", b.worst_ms);
+  SM_EXPECT_NEAR(b.level_first, -1.0, 1.0);
+  SM_EXPECT_NEAR(b.level_rest, -1.1, 1.0);
+  SM_EXPECT_EQ(b.detected, 5);
+  SM_EXPECT_LE(b.worst_ms, 250);
+}
+
 SM_TEST(E2E_TransientSuppressor, KeyboardDuringCall) {
   CallScenario s;
   s.far_talk = false;
