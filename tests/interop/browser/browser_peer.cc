@@ -1,7 +1,7 @@
 // The native side of the browser interop call (C6 part 4, #1088): our C6 part 3 endpoint (pc::PeerEndpoint, #1064)
 // over real OS sockets (tests/interop/os_sockets.h, #1052), driven by run_browser_call.py.
 //
-//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D
+//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel]
 //
 // Signaling is line-based JSON on stdin (messages from Chrome) and stdout (messages to Chrome):
 // {"type":"offer"|"answer","sdp":...}, {"type":"candidate","candidate":...,"sdpMid":...,"sdpMLineIndex":N} and
@@ -12,6 +12,10 @@
 // (CELT fullband 20 ms; decoders play silence), and at 15 fps a 160x96 H.264 Constrained Baseline stream whose IDR
 // frames carry an I_PCM test pattern (uncompressed macroblocks, a moving bar) once a second or on a keyframe
 // request, and whose P frames skip every macroblock.
+//
+// Data channels (C7 part 5, #1091; built with SM_WITH_DATACHANNEL, unless --no-data-channel): as the page's peer, the
+// offerer creates the channel "sm-interop" before its offer and the answerer takes Chrome's from the data channel
+// callback; once it is open the peer sends "hello from sm" and checks that "hello from chrome" arrives.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -33,6 +37,9 @@
 #include "sm/p2p/stun_crypto_tls.h"
 #include "sm/pc/peer_endpoint.h"
 #include "sm/pc/webrtc_sdp.h"
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+#include "sm/pc/sctp_data_channel.h"
+#endif
 
 using namespace sm;
 using namespace sm::pc;
@@ -330,9 +337,15 @@ int main(int argc, char** argv) {
   std::string role = "answer";
   std::string ip_text = "127.0.0.1";
   int max_seconds = 60;
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+  bool use_dc = true;
+#else
+  bool use_dc = false;
+#endif
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
-    if (a.rfind("--role=", 0) == 0) role = a.substr(7);
+    if (a == "--no-data-channel") use_dc = false;
+    else if (a.rfind("--role=", 0) == 0) role = a.substr(7);
     else if (a.rfind("--ip=", 0) == 0) ip_text = a.substr(5);
     else if (a.rfind("--max-seconds=", 0) == 0) max_seconds = std::stoi(a.substr(14));
   }
@@ -358,9 +371,38 @@ int main(int argc, char** argv) {
   config.audio_decoder = &decoder;
   config.audio_stream.nominal_rate = DataRate::KilobitsPerSec(32);
   config.session.send_side.gcc.start_rate = DataRate::KilobitsPerSec(800);
+  config.enable_data_channels = use_dc;
   PeerEndpoint ep(std::move(config), now);
 
   std::vector<std::string> errors;
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+  // The data channel: ours if we offer, Chrome's if it does.
+  struct DcLog : DataChannelObserver {
+    std::shared_ptr<SctpDataChannel> channel;
+    std::vector<std::string> received;
+    void OnStateChange() override {
+      std::fprintf(stderr, "data channel %s: state %d\n", channel->label().c_str(), static_cast<int>(channel->state()));
+    }
+    void OnMessage(const DataBuffer& b) override {
+      received.emplace_back(b.data.begin(), b.data.end());
+      std::fprintf(stderr, "data channel message: %s\n", received.back().c_str());
+    }
+  } dc;
+  bool dc_sent = false;
+  if (use_dc) {
+    ep.SetOnDataChannel([&dc](std::shared_ptr<SctpDataChannel> c) {
+      if (dc.channel) return;
+      dc.channel = std::move(c);
+      dc.channel->RegisterObserver(&dc);
+    });
+    if (role == "offer") {
+      RtcError err;
+      dc.channel = ep.CreateDataChannel("sm-interop", DataChannelInit{}, now, &err);
+      if (!dc.channel) errors.push_back("CreateDataChannel: " + err.message());
+      else dc.channel->RegisterObserver(&dc);
+    }
+  }
+#endif
   ep.SetOnIceCandidate([](std::unique_ptr<IceCandidate> cand) {
     Emit("{\"type\":\"candidate\",\"candidate\":" + JsonEscape(cand->ToString()) +
          ",\"sdpMid\":" + JsonEscape(cand->sdp_mid()) + ",\"sdpMLineIndex\":" + std::to_string(cand->sdp_mline_index()) +
@@ -436,6 +478,12 @@ int main(int argc, char** argv) {
 
     now = Now();
     ep.Process(now);
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+    if (dc.channel && !dc_sent && dc.channel->state() == DataState::kOpen) {
+      dc_sent = dc.channel->Send(now, DataBuffer("hello from sm"));
+      if (!dc_sent) errors.push_back("data channel Send failed");
+    }
+#endif
     if (!connected && ep.IsConnected() && ep.session()) {
       connected = true;
       std::fprintf(stderr, "connected after %.1f s\n", (now - start).seconds());
@@ -493,14 +541,23 @@ int main(int argc, char** argv) {
   const bool ok_media_out = audio_sent > 0 && video_sent > 0 && ep.send_failures() == 0;
   const bool ok_signaling = errors.empty();
   for (const auto& e : errors) std::fprintf(stderr, "error: %s\n", e.c_str());
-  const bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling;
+  bool ok_data = true;
+  std::string data_check;
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+  if (use_dc) {
+    ok_data = dc_sent && std::find(dc.received.begin(), dc.received.end(), "hello from chrome") != dc.received.end();
+    data_check = std::string(",\"dataFromChrome\":") + (ok_data ? "true" : "false");
+    if (dc.channel) dc.channel->UnregisterObserver();
+  }
+#endif
+  const bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling && ok_data;
   auto b = [](bool v) { return v ? "true" : "false"; };
   std::string errs = "[";
   for (size_t i = 0; i < errors.size(); ++i) errs += (i ? "," : "") + JsonEscape(errors[i]);
   errs += "]";
   Emit(std::string("{\"type\":\"result\",\"ok\":") + b(ok) + ",\"checks\":{\"connected\":" + b(ok_connected) +
        ",\"audioFramesDecoded\":" + b(ok_audio_in) + ",\"videoFramesReceived\":" + b(ok_video_in) +
-       ",\"mediaSent\":" + b(ok_media_out) + ",\"signaling\":" + b(ok_signaling) + "},\"stats\":{\"audioFramesDecoded\":" +
+       ",\"mediaSent\":" + b(ok_media_out) + ",\"signaling\":" + b(ok_signaling) + data_check + "},\"stats\":{\"audioFramesDecoded\":" +
        std::to_string(decoder.frames) + ",\"videoFramesReceived\":" + std::to_string(video_frames_received) +
        ",\"audioFramesSent\":" + std::to_string(audio_sent) + ",\"videoFramesSent\":" + std::to_string(video_sent) +
        ",\"keyframesSent\":" + std::to_string(keyframes_sent) + ",\"keyframeRequests\":" +

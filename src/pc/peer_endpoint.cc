@@ -1,5 +1,8 @@
 // The transport half of libwebrtc M157's pc/sdp_offer_answer.cc and pc/peer_connection.cc for C6's subset (#1064);
-// see sm/pc/peer_endpoint.h.
+// see sm/pc/peer_endpoint.h. The data channels (C7 part 5, #1091) follow pc/data_channel_controller.cc and the SCTP
+// half of pc/sdp_offer_answer.cc (GetOptionsForOffer / MaybeNegotiateSctp, GetOptionsForAnswer,
+// UpdateDataChannelTransport, PushdownMediaDescription) and pc/peer_connection.cc (StartSctpTransport,
+// DestroyDataChannelTransport).
 #include "sm/pc/peer_endpoint.h"
 
 #include <algorithm>
@@ -11,6 +14,16 @@
 #include "sm/pc/rtp_parameters.h"
 #include "sm/sync/header_extensions.h"
 #include "sm/tls/crypto_random.h"
+
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+#define SM_ENDPOINT_DATA_CHANNELS 1
+#include "sm/pc/data_channel_controller.h"
+#include "sm/pc/sctp_data_channel.h"
+#include "sm/sctp/dcsctp_transport.h"
+#include "sm/sctp/sctp_transport.h"
+#else
+#define SM_ENDPOINT_DATA_CHANNELS 0
+#endif
 
 namespace sm::pc {
 
@@ -59,7 +72,28 @@ const StreamParams* FirstStream(const MediaContentDescription* d) {
   return d && !d->streams().empty() && d->streams()[0].has_ssrcs() ? &d->streams()[0] : nullptr;
 }
 
+// The first data (m=application) section of `desc`, or null.
+const ContentInfo* FirstDataContent(const SessionDescription& desc) {
+  for (const ContentInfo& c : desc.contents()) {
+    if (c.media_description() && c.media_description()->type() == MediaType::DATA) return &c;
+  }
+  return nullptr;
+}
+
 }  // namespace
+
+#if SM_ENDPOINT_DATA_CHANNELS
+struct PeerEndpoint::DataChannels {
+  DataChannelController controller;
+  std::unique_ptr<sctp::SctpTransport> sctp;
+  ~DataChannels() {
+    if (sctp) controller.TeardownDataChannelTransport_n(RtcError(RtcErrorType::kOperationErrorWithData, "Transport closed"));
+    sctp.reset();
+  }
+};
+#else
+struct PeerEndpoint::DataChannels {};
+#endif
 
 // BaseChannel's demuxer sink: what the transport demuxes to one section goes to the RTP session.
 class PeerEndpoint::ChannelSink : public RtpPacketSinkInterface {
@@ -92,12 +126,20 @@ PeerEndpoint::PeerEndpoint(PeerEndpointConfig config, Timestamp now)
   const uint64_t id = (uint64_t{tls::CreateRandomNonZeroId()} << 32) | tls::CreateRandomNonZeroId();
   session_id_ = std::to_string(id & 0x7FFFFFFFFFFFFFFFull);
   last_now_ = now;
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (config_.enable_data_channels) {
+    data_channels_ = std::make_unique<DataChannels>();
+    data_channels_->controller.SetNow(now);
+  }
+#endif
 }
 
 PeerEndpoint::~PeerEndpoint() {
   if (media_rtp_transport_) {
     for (auto& s : sinks_) media_rtp_transport_->UnregisterRtpDemuxerSink(s.get());
   }
+  // The SCTP transport goes before the DTLS transport under it.
+  data_channels_.reset();
 }
 
 MediaSessionOptions PeerEndpoint::OfferOptions() const {
@@ -116,11 +158,20 @@ MediaSessionOptions PeerEndpoint::OfferOptions() const {
     o.AddVideoSender(config_.video_track_id, {config_.stream_id}, {}, SimulcastLayerList(), 1);
     opts.media_description_options.push_back(std::move(o));
   }
+#if SM_ENDPOINT_DATA_CHANNELS
+  // GetOptionsForUnifiedPlanOffer: lastly, an m=application section if local data channels were requested
+  // (MaybeNegotiateSctp, with the mid generator's next mid), or the one already negotiated.
+  if (data_channels_ && (sctp_mid_ || data_channels_->controller.HasDataChannels())) {
+    const std::string mid = sctp_mid_ ? *sctp_mid_ : std::to_string(opts.media_description_options.size());
+    opts.media_description_options.emplace_back(MediaType::DATA, mid, RtpTransceiverDirection::kSendRecv, false);
+  }
+#endif
   return opts;
 }
 
 // The transceivers follow the offer's sections in order (Unified Plan): the first audio and the first video section
-// get this end's transceivers; the rest (and the data channel) are rejected.
+// get this end's transceivers; the rest are rejected. The data section that UpdateDataChannelTransport took (the first
+// one, with data channels on) is answered; any other is rejected (GetOptionsForUnifiedPlanAnswer).
 MediaSessionOptions PeerEndpoint::AnswerOptions(const SessionDescription& offer) const {
   MediaSessionOptions opts;
   opts.bundle_enabled = true;
@@ -131,7 +182,10 @@ MediaSessionOptions PeerEndpoint::AnswerOptions(const SessionDescription& offer)
     const MediaType type = d ? d->type() : MediaType::UNSUPPORTED;
     const bool audio = type == MediaType::AUDIO && config_.audio && !audio_used && !content.rejected;
     const bool video = type == MediaType::VIDEO && config_.video && !video_used && !content.rejected;
-    if (audio || video) {
+    if (type == MediaType::DATA && data_channels_ && !content.rejected && sctp_mid_ && content.mid() == *sctp_mid_) {
+      opts.media_description_options.emplace_back(MediaType::DATA, content.mid(), RtpTransceiverDirection::kSendRecv,
+                                                  /*stopped=*/false);
+    } else if (audio || video) {
       MediaDescriptionOptions o(type, content.mid(), RtpTransceiverDirection::kSendRecv, false);
       o.header_extensions = audio ? DefaultAudioRtpHeaderExtensions() : DefaultVideoRtpHeaderExtensions();
       if (audio) {
@@ -217,11 +271,13 @@ bool PeerEndpoint::SetLocalDescription(std::unique_ptr<SessionDescriptionInterfa
   }
   suggester_.Update(desc->description(), /*local=*/true, type);
   local_description_ = std::move(desc);
+  if (!UpdateDataChannelTransport(*local_description_->description(), error)) return false;
   if (type == SdpType::kOffer) {
     signaling_state_ = SignalingState::kHaveLocalOffer;
   } else {
     signaling_state_ = SignalingState::kStable;
     if (!CreateMediaSession(error)) return false;
+    if (!MaybeStartSctp(last_now_, error)) return false;
   }
   transport_controller_.MaybeStartGathering(now);
   return true;
@@ -243,11 +299,13 @@ bool PeerEndpoint::SetRemoteDescription(std::unique_ptr<SessionDescriptionInterf
   }
   suggester_.Update(desc->description(), /*local=*/false, type);
   remote_description_ = std::move(desc);
+  if (!UpdateDataChannelTransport(*remote_description_->description(), error)) return false;
   if (type == SdpType::kOffer) {
     signaling_state_ = SignalingState::kHaveRemoteOffer;
   } else {
     signaling_state_ = SignalingState::kStable;
     if (!CreateMediaSession(error)) return false;
+    if (!MaybeStartSctp(last_now_, error)) return false;
   }
   ApplyRemoteCandidates(*remote_description_, now);
   return true;
@@ -479,9 +537,121 @@ void PeerEndpoint::FlushOutgoing(Timestamp now) {
   }
 }
 
+// SdpOfferAnswerHandler::UpdateDataChannelTransport, for the first data section (the one sctp_mid names once set):
+// a rejected one destroys the data channel transport, an accepted one becomes the SCTP mid
+// (PeerConnection::CreateDataChannelTransport). A section that isn't SCTP can't carry data channels.
+bool PeerEndpoint::UpdateDataChannelTransport(const SessionDescription& desc, std::string* error) {
+  if (!data_channels_) return true;
+  const ContentInfo* content = sctp_mid_ ? desc.GetContentByName(*sctp_mid_) : FirstDataContent(desc);
+  if (!content) return true;
+  if (content->rejected) {
+    DestroyDataChannelTransport("Rejected data channel transport");
+    return true;
+  }
+  if (content->type != MediaProtocolType::kSctp) return Fail(error, "Failed to create data channel.");
+  sctp_mid_ = content->mid();
+  return true;
+}
+
+// PushdownMediaDescription: with a complete offer/answer that has the SCTP section, start SCTP (StartSctpTransport)
+// with the local and remote ports and the smaller max message size; a remote max message size of 0 means any size,
+// so the local one is used.
+bool PeerEndpoint::MaybeStartSctp(Timestamp now, std::string* error) {
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (!data_channels_ || !sctp_mid_ || !local_description_ || !remote_description_ || data_channels_->sctp) {
+    return true;
+  }
+  const ContentInfo* local = local_description_->description()->GetContentByName(*sctp_mid_);
+  const ContentInfo* remote = remote_description_->description()->GetContentByName(*sctp_mid_);
+  const SctpDataContentDescription* local_sctp = local ? local->media_description()->as_sctp() : nullptr;
+  const SctpDataContentDescription* remote_sctp = remote ? remote->media_description()->as_sctp() : nullptr;
+  if (!local_sctp || !remote_sctp || local->rejected || remote->rejected) return true;
+  JsepTransport* transport = transport_controller_.GetJsepTransportForMid(*sctp_mid_);
+  if (!transport || !transport->rtp_dtls_transport()) return Fail(error, "No DTLS transport for the data section.");
+  sctp::SctpOptions options;
+  options.local_port = local_sctp->port();
+  options.remote_port = remote_sctp->port();
+  options.max_message_size = remote_sctp->max_message_size() == 0
+                                 ? local_sctp->max_message_size()
+                                 : std::min(local_sctp->max_message_size(), remote_sctp->max_message_size());
+  p2p::DtlsTransport* dtls = transport->rtp_dtls_transport();
+  data_channels_->sctp =
+      std::make_unique<sctp::SctpTransport>(std::make_unique<sctp::DcSctpTransport>(now, dtls), dtls);
+  data_channels_->controller.SetNow(now);
+  data_channels_->controller.SetupDataChannelTransport_n(data_channels_->sctp.get());
+  if (!data_channels_->sctp->Start(now, options)) return Fail(error, "Failed to start the SCTP transport.");
+  return true;
+#else
+  (void)now;
+  (void)error;
+  return true;
+#endif
+}
+
+// PeerConnection::DestroyDataChannelTransport: the channels close with the error, and the SCTP transport goes.
+void PeerEndpoint::DestroyDataChannelTransport(const char* reason) {
+#if SM_ENDPOINT_DATA_CHANNELS
+  RtcError error(RtcErrorType::kOperationErrorWithData, reason);
+  data_channels_->controller.TeardownDataChannelTransport_n(error);
+  data_channels_->sctp.reset();
+#else
+  (void)reason;
+#endif
+  sctp_mid_.reset();
+}
+
+std::shared_ptr<SctpDataChannel> PeerEndpoint::CreateDataChannel(std::string_view label, const DataChannelInit& init,
+                                                                 Timestamp now, RtcError* error) {
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (!data_channels_) {
+    if (error) *error = RtcError(RtcErrorType::kInvalidState, "Data channels are off for this connection");
+    return nullptr;
+  }
+  last_now_ = std::max(last_now_, now);
+  return data_channels_->controller.CreateDataChannel(last_now_, label, init, error);
+#else
+  (void)label;
+  (void)init;
+  (void)now;
+  if (error) *error = RtcError(RtcErrorType::kUnsupportedOperation, "Data channels are not supported");
+  return nullptr;
+#endif
+}
+
+void PeerEndpoint::SetOnDataChannel(std::function<void(std::shared_ptr<SctpDataChannel>)> callback) {
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (data_channels_) data_channels_->controller.SetOnDataChannel(std::move(callback));
+#else
+  (void)callback;
+#endif
+}
+
+DataChannelController* PeerEndpoint::data_channel_controller() {
+#if SM_ENDPOINT_DATA_CHANNELS
+  return data_channels_ ? &data_channels_->controller : nullptr;
+#else
+  return nullptr;
+#endif
+}
+
+sctp::SctpTransport* PeerEndpoint::sctp_transport() {
+#if SM_ENDPOINT_DATA_CHANNELS
+  return data_channels_ ? data_channels_->sctp.get() : nullptr;
+#else
+  return nullptr;
+#endif
+}
+
 void PeerEndpoint::Process(Timestamp now) {
   last_now_ = std::max(last_now_, now);
   transport_controller_.Process(last_now_);
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (data_channels_) {
+    data_channels_->controller.SetNow(last_now_);
+    if (data_channels_->sctp) data_channels_->sctp->internal()->Process(last_now_);
+    data_channels_->controller.Process(last_now_);
+  }
+#endif
   if (session_) {
     session_->Process(last_now_);
     FlushOutgoing(last_now_);
@@ -491,6 +661,12 @@ void PeerEndpoint::Process(Timestamp now) {
 Timestamp PeerEndpoint::NextProcessTime(Timestamp now) const {
   Timestamp next = transport_controller_.NextProcessTime();
   if (session_) next = std::min(next, session_->NextProcessTime(std::max(now, last_now_)));
+#if SM_ENDPOINT_DATA_CHANNELS
+  if (data_channels_) {
+    next = std::min(next, data_channels_->controller.NextProcessTime());
+    if (data_channels_->sctp) next = std::min(next, data_channels_->sctp->internal()->NextProcessTime());
+  }
+#endif
   return next;
 }
 

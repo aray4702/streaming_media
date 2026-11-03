@@ -4,7 +4,9 @@
 // exchange offer and answer as SDP text and trickle candidates as a=candidate strings over a test signaling channel,
 // on the emulated network (#985) with both ends behind NATs and a STUN server; ICE connects on server-reflexive
 // candidates, DTLS-SRTP completes over the one BUNDLE transport, and Opus audio and H.264 video go both ways,
-// encrypted on the wire and whole at the other end.
+// encrypted on the wire and whole at the other end. With SM_WITH_DATACHANNEL, the data channel cases (C7 part 5,
+// #1091): audio, video and data channels on one BUNDLE transport, and the per-connection switch off in the offer and
+// in the answer; without it, the API reports "not supported" and a data section is rejected.
 #include <algorithm>
 #include <deque>
 #include <functional>
@@ -19,6 +21,10 @@
 #include "sm/p2p/stun_crypto_tls.h"
 #include "sm/pc/jsep_transport_controller.h"
 #include "sm/pc/peer_endpoint.h"
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+#include "sm/pc/sctp_data_channel.h"
+#include "sm/sctp/sctp_transport.h"
+#endif
 #include "sm/pc/webrtc_sdp.h"
 #include "sm/rtp/fake_h264.h"
 #include "sm/sim/emulated_sockets.h"
@@ -522,8 +528,8 @@ SM_TEST(PcPeerEndpoint, MediaIsEncryptedOnTheWire) {
   }
 }
 
-// The answer follows the offer's sections: a data channel section (C7, not merged) is rejected, audio and video
-// accepted; signaling states and calls in the wrong state.
+// The answer follows the offer's sections: with data channels off for the connection a data section is rejected,
+// audio and video accepted; signaling states and calls in the wrong state.
 SM_TEST(PcPeerEndpoint, AnswerRejectsDataAndChecksSignalingState) {
   Network network{false};
   Factories factories;
@@ -531,6 +537,7 @@ SM_TEST(PcPeerEndpoint, AnswerRejectsDataAndChecksSignalingState) {
   PeerEndpointConfig cfg;
   cfg.allocator = network.host[1].allocator.get();
   cfg.audio_decoder = &dec;
+  cfg.enable_data_channels = false;
   PeerEndpoint ep(std::move(cfg), network.now);
   std::string error;
   SM_EXPECT_TRUE(ep.CreateAnswer(&error) == nullptr);
@@ -570,6 +577,9 @@ SM_TEST(PcPeerEndpoint, AnswerRejectsDataAndChecksSignalingState) {
   SM_EXPECT_TRUE(ep.AddIceCandidate(IceCandidate("2", 2, c), network.now, &error));
   // No renegotiation yet.
   SM_EXPECT_TRUE(ep.CreateOffer(&error) == nullptr);
+  // No SCTP object with the switch off.
+  SM_EXPECT_FALSE(ep.data_channels_enabled());
+  SM_EXPECT_TRUE(ep.sctp_transport() == nullptr);
 }
 
 // External media (#1087, the test bench's `transport ice`): the host runs its own RTP sessions. The endpoint makes
@@ -628,3 +638,207 @@ SM_TEST(PcPeerEndpoint, ExternalMediaCarriesTheHostsPackets) {
     SM_EXPECT_EQ(call.ep[i]->send_failures(), 0);
   }
 }
+
+#if defined(SM_WITH_DATACHANNEL) && SM_WITH_DATACHANNEL
+
+namespace {
+
+// Records a channel's states and messages.
+struct ChannelLog : DataChannelObserver {
+  std::shared_ptr<SctpDataChannel> channel;
+  std::vector<DataState> states;
+  std::vector<std::string> messages;
+  void Attach(std::shared_ptr<SctpDataChannel> c) {
+    channel = std::move(c);
+    channel->RegisterObserver(this);
+  }
+  void OnStateChange() override { states.push_back(channel->state()); }
+  void OnMessage(const DataBuffer& b) override { messages.emplace_back(b.data.begin(), b.data.end()); }
+  bool Open() const { return channel && channel->state() == DataState::kOpen; }
+  bool Closed() const { return channel && channel->state() == DataState::kClosed; }
+};
+
+std::vector<std::string> Messages(const char* tag, int n) {
+  std::vector<std::string> m;
+  for (int k = 0; k < n; ++k) m.push_back(std::string(tag) + "-" + std::to_string(k));
+  return m;
+}
+
+}  // namespace
+
+// The issue's acceptance test (#1091): two endpoints behind NATs with audio, video and data channels on one BUNDLE
+// transport. A creates a reliable ordered channel before the offer (so the offer carries m=application); B creates an
+// unordered one with maxRetransmits 0 after the answer; both add a negotiated channel. The remote side's in-band
+// channels are announced; messages go both ways on each; then the channels close, and media keeps flowing.
+SM_TEST(PcPeerEndpoint, AudioVideoAndDataChannelsOnOneBundleTransport) {
+  std::deque<ChannelLog> logs;  // Outlives the call: the channels report to it until they go.
+  ChannelLog* remote_of[2] = {nullptr, nullptr};
+  Call call;
+  for (int i = 0; i < 2; ++i) {
+    call.ep[i]->SetOnDataChannel([&logs, &remote_of, i](std::shared_ptr<SctpDataChannel> c) {
+      logs.emplace_back().Attach(std::move(c));
+      remote_of[i] = &logs.back();
+    });
+  }
+  RtcError err;
+  ChannelLog& reliable = logs.emplace_back();
+  reliable.Attach(call.ep[0]->CreateDataChannel("reliable", DataChannelInit{}, call.network.now, &err));
+  SM_ASSERT_TRUE(reliable.channel != nullptr);
+  DataChannelInit neg;
+  neg.negotiated = true;
+  neg.id = 100;
+  ChannelLog* negotiated[2];
+  for (int i = 0; i < 2; ++i) {
+    negotiated[i] = &logs.emplace_back();
+    negotiated[i]->Attach(call.ep[i]->CreateDataChannel("negotiated", neg, call.network.now, &err));
+    SM_ASSERT_TRUE(negotiated[i]->channel != nullptr);
+  }
+  call.Negotiate();
+  SM_ASSERT_TRUE(call.RunUntil([&] { return call.Connected() && reliable.Open() && remote_of[1]; },
+                               TimeDelta::Seconds(10)));
+  SM_EXPECT_TRUE(call.signaling_ok);
+  // The data section on the wire, in the BUNDLE group (pc/media_session's defaults).
+  for (const std::string* sdp : {&call.offer_sdp, &call.answer_sdp}) {
+    for (const char* line : {"a=group:BUNDLE 0 1 2", "m=application 9 UDP/DTLS/SCTP webrtc-datachannel", "a=mid:2",
+                             "a=sctp-port:5000", "a=max-message-size:262144"}) {
+      SM_EXPECT_TRUE(Contains(*sdp, line));
+    }
+  }
+  for (int i = 0; i < 2; ++i) {
+    SM_EXPECT_EQ(call.ep[i]->transport_controller().transport_count(), 1u);
+    SM_EXPECT_TRUE(call.ep[i]->sctp_mid() == std::optional<std::string>("2"));
+    SM_ASSERT_TRUE(call.ep[i]->sctp_transport() != nullptr);
+    SM_EXPECT_TRUE(call.ep[i]->sctp_transport()->dtls_transport() ==
+                   call.ep[i]->media_transport()->rtp_dtls_transport());
+  }
+
+  // B's unordered channel, opened after the answer.
+  DataChannelInit unordered_init;
+  unordered_init.ordered = false;
+  unordered_init.maxRetransmits = 0;
+  ChannelLog& unordered = logs.emplace_back();
+  unordered.Attach(call.ep[1]->CreateDataChannel("unordered", unordered_init, call.network.now, &err));
+  SM_ASSERT_TRUE(unordered.channel != nullptr);
+  call.StartMedia();
+  SM_ASSERT_TRUE(call.RunUntil([&] { return unordered.Open() && remote_of[0] && remote_of[0]->Open(); },
+                               TimeDelta::Seconds(5)));
+  SM_ASSERT_TRUE(negotiated[0]->Open() && negotiated[1]->Open());
+  ChannelLog& reliable_at_b = *remote_of[1];
+  ChannelLog& unordered_at_a = *remote_of[0];
+  SM_EXPECT_EQ(reliable_at_b.channel->label(), std::string("reliable"));
+  SM_EXPECT_EQ(unordered_at_a.channel->label(), std::string("unordered"));
+  SM_EXPECT_FALSE(unordered_at_a.channel->ordered());
+  SM_EXPECT_TRUE(unordered_at_a.channel->maxRetransmitsOpt() == std::optional<int>(0));
+  // Stream ids by DTLS role: A offered actpass and B answered active, so B is the DTLS client (even ids).
+  SM_EXPECT_EQ(reliable.channel->id() % 2, 1);
+  SM_EXPECT_EQ(unordered.channel->id() % 2, 0);
+  SM_EXPECT_EQ(reliable.channel->id(), reliable_at_b.channel->id());
+
+  // Messages both ways on every channel.
+  struct Pair {
+    ChannelLog* a;
+    ChannelLog* b;
+    const char* tag;
+  } pairs[] = {{&reliable, &reliable_at_b, "rel"},
+               {&unordered_at_a, &unordered, "unord"},
+               {negotiated[0], negotiated[1], "neg"}};
+  for (const Pair& p : pairs) {
+    for (const std::string& m : Messages(p.tag, 20)) {
+      SM_EXPECT_TRUE(p.a->channel->Send(call.network.now, DataBuffer("a:" + m)));
+      SM_EXPECT_TRUE(p.b->channel->Send(call.network.now, DataBuffer("b:" + m)));
+    }
+  }
+  call.Run(TimeDelta::Seconds(2));
+  for (const Pair& p : pairs) {
+    std::vector<std::string> want_at_b, want_at_a;
+    for (const std::string& m : Messages(p.tag, 20)) {
+      want_at_b.push_back("a:" + m);
+      want_at_a.push_back("b:" + m);
+    }
+    std::vector<std::string> got_a = p.a->messages, got_b = p.b->messages;
+    if (p.tag == std::string("unord")) {  // Unordered: every message, in any order (the link loses nothing).
+      std::sort(got_a.begin(), got_a.end());
+      std::sort(got_b.begin(), got_b.end());
+      std::sort(want_at_a.begin(), want_at_a.end());
+      std::sort(want_at_b.begin(), want_at_b.end());
+    }
+    SM_EXPECT_TRUE(got_b == want_at_b);
+    SM_EXPECT_TRUE(got_a == want_at_a);
+  }
+
+  // Close from each side: both ends of every channel reach closed (stream reset).
+  reliable.channel->Close(call.network.now);
+  unordered.channel->Close(call.network.now);
+  negotiated[1]->channel->Close(call.network.now);
+  SM_EXPECT_TRUE(call.RunUntil(
+      [&] {
+        return reliable.Closed() && reliable_at_b.Closed() && unordered.Closed() && unordered_at_a.Closed() &&
+               negotiated[0]->Closed() && negotiated[1]->Closed();
+      },
+      TimeDelta::Seconds(5)));
+  // Media went on over the same transport.
+  for (int i = 0; i < 2; ++i) {
+    SM_EXPECT_TRUE(call.decoder[i].frames.size() > 50);
+    SM_EXPECT_TRUE(call.video_frames_received[i].size() > 30);
+    SM_EXPECT_EQ(call.ep[i]->media_transport()->rtp_transport()->rtp_decryption_failures(), 0);
+  }
+}
+
+// The per-connection switch: off at the offerer (no m=application, createDataChannel fails, no SCTP), then off at the
+// answerer (the offered data section is rejected with port 0 and the offerer's channel closes); media is unaffected.
+SM_TEST(PcPeerEndpoint, DataChannelSwitchOffInTheOfferAndInTheAnswer) {
+  {
+    Call call(/*nat=*/false, [](PeerEndpointConfig& c, int i) { c.enable_data_channels = i != 0; });
+    RtcError err;
+    SM_EXPECT_TRUE(call.ep[0]->CreateDataChannel("x", DataChannelInit{}, call.network.now, &err) == nullptr);
+    SM_EXPECT_TRUE(err.type() == RtcErrorType::kInvalidState);
+    call.Negotiate();
+    SM_ASSERT_TRUE(call.RunUntil([&] { return call.Connected(); }, TimeDelta::Seconds(10)));
+    SM_EXPECT_TRUE(call.offer_sdp.find("m=application") == std::string::npos);
+    SM_EXPECT_TRUE(call.answer_sdp.find("m=application") == std::string::npos);
+    for (int i = 0; i < 2; ++i) {
+      SM_EXPECT_TRUE(call.ep[i]->sctp_transport() == nullptr);
+      SM_EXPECT_FALSE(call.ep[i]->sctp_mid().has_value());
+    }
+    SM_EXPECT_FALSE(call.ep[0]->data_channels_enabled());
+  }
+  {
+    ChannelLog log;
+    Call call(/*nat=*/false, [](PeerEndpointConfig& c, int i) { c.enable_data_channels = i == 0; });
+    RtcError err;
+    log.Attach(call.ep[0]->CreateDataChannel("x", DataChannelInit{}, call.network.now, &err));
+    SM_ASSERT_TRUE(log.channel != nullptr);
+    call.Negotiate();
+    SM_ASSERT_TRUE(call.RunUntil([&] { return call.Connected(); }, TimeDelta::Seconds(10)));
+    SM_EXPECT_TRUE(call.signaling_ok);
+    SM_EXPECT_TRUE(Contains(call.offer_sdp, "m=application 9 UDP/DTLS/SCTP webrtc-datachannel"));
+    SM_EXPECT_TRUE(Contains(call.answer_sdp, "m=application 0 UDP/DTLS/SCTP webrtc-datachannel"));
+    SM_EXPECT_TRUE(log.Closed());
+    for (int i = 0; i < 2; ++i) {
+      SM_EXPECT_TRUE(call.ep[i]->sctp_transport() == nullptr);
+      SM_EXPECT_FALSE(call.ep[i]->sctp_mid().has_value());
+    }
+    call.StartMedia();
+    call.Run(TimeDelta::Seconds(1));
+    for (int i = 0; i < 2; ++i) SM_EXPECT_TRUE(call.decoder[i].frames.size() > 30);
+    log.channel->UnregisterObserver();
+  }
+}
+
+#else  // !SM_WITH_DATACHANNEL
+
+// Built without SM_WITH_DATACHANNEL: the data channel API reports "not supported", and a data section in a remote
+// offer is rejected as with the switch off.
+SM_TEST(PcPeerEndpoint, DataChannelsNotBuilt) {
+  Call call(/*nat=*/false);
+  RtcError err;
+  SM_EXPECT_TRUE(call.ep[0]->CreateDataChannel("x", DataChannelInit{}, call.network.now, &err) == nullptr);
+  SM_EXPECT_TRUE(err.type() == RtcErrorType::kUnsupportedOperation);
+  SM_EXPECT_FALSE(call.ep[0]->data_channels_enabled());
+  SM_EXPECT_TRUE(call.ep[0]->sctp_transport() == nullptr);
+  call.Negotiate();
+  SM_ASSERT_TRUE(call.RunUntil([&] { return call.Connected(); }, TimeDelta::Seconds(10)));
+  SM_EXPECT_TRUE(call.offer_sdp.find("m=application") == std::string::npos);
+}
+
+#endif  // SM_WITH_DATACHANNEL

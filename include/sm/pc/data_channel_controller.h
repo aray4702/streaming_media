@@ -112,8 +112,8 @@ class DataChannelController : public sctp::DataChannelSink, public SctpDataChann
 // The runtime switch per connection (C7): with data channels off, a connection has no SCTP transport, so no
 // association, and creating a channel fails. On, it owns the SCTP transport over the connection's DTLS
 // transport (sm/sctp/) and the controller. libwebrtc has no such switch (a PeerConnection always offers data
-// channels when asked); the default is on, as libwebrtc. The m=application section that goes with it comes
-// with offer/answer generation (C6 part 2, #1063).
+// channels when asked); the default is on, as libwebrtc. On the endpoint (sm/pc/peer_endpoint.h, #1091) the same
+// switch is PeerEndpointConfig::enable_data_channels, which also decides the m=application section.
 class DataChannelSession {
  public:
   struct Config {

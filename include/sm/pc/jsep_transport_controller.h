@@ -29,8 +29,8 @@
 //   message.
 // - Left out until a part needs them: kRtcpMuxPolicyNegotiate (non-muxed RTCP), rollback and pranswer commits,
 //   ICE restarts' role re-evaluation (redetermine_role_on_ice_restart), DTLS-in-STUN (SPED), cryptex, the
-//   aggregate ICE/DTLS/connection states (the transports' own states are read instead), and the SCTP transport
-//   (C7; the data channel is not merged yet).
+//   aggregate ICE/DTLS/connection states (the transports' own states are read instead), and the SCTP transport per
+//   JsepTransport (PeerEndpoint creates the one it uses on the data section's DTLS transport when SCTP starts, #1091).
 // - pc/jsep_transport_collection.cc is not in compare/webrtc/reference/; BundleManager::Update and the commit are
 //   ported from M157's behaviour as its header describes it.
 #pragma once
