@@ -60,7 +60,11 @@ function setState(s) { $('state').textContent = s; }
 async function loadTurn() {
   try {
     const r = await (await fetch('/turn?peer=' + myId)).json();
-    const server = {urls: r.urls};
+    // No STUN or TURN configured: /turn returns {"urls": []}. Chrome rejects an ICE server with no URLs,
+    // so leave the list empty (host candidates only) instead of passing one (#1135).
+    const urls = Array.isArray(r.urls) ? r.urls.filter(u => u) : [];
+    if (!urls.length) { iceServers = []; return; }
+    const server = {urls};
     if (r.username) { server.username = r.username; server.credential = r.credential; }
     iceServers = [server];
   } catch (e) { console.warn('no /turn', e); }
