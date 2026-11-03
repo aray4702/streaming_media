@@ -1152,8 +1152,8 @@
    "verification": "",
    "start": "2026-11-02",
    "end": "",
-   "milestone": "backlog",
-   "note": "Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Split from C11 (and the Android part of C12)."
+   "milestone": "unplanned",
+   "note": "Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Split from C11 (and the Android part of C12). Owner, 2026-11-02 6:20 PM PT: out of milestone 4, unplanned."
   }
  ]
 }
