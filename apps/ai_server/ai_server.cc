@@ -48,6 +48,8 @@ double Mean(const std::vector<double>& v) {
   return s / static_cast<double>(v.size());
 }
 
+}  // namespace
+
 std::vector<p2p::IpAddress> LocalIpv4Interfaces() {
   std::vector<p2p::IpAddress> out;
   ifaddrs* list = nullptr;
@@ -61,8 +63,6 @@ std::vector<p2p::IpAddress> LocalIpv4Interfaces() {
   freeifaddrs(list);
   return out;
 }
-
-}  // namespace
 
 std::vector<float> ScriptedReplySource::OnUserTurn(std::span<const float>, Timestamp) {
   if (lengths_.empty()) return {};

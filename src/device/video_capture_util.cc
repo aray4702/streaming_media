@@ -136,4 +136,18 @@ video::I420Frame CropAndScaleI420(const video::I420Frame& in, int width, int hei
   return out;
 }
 
+video::Rotation CaptureRotation(DeviceOrientation orientation, bool front_camera, video::Rotation previous) {
+  using video::Rotation;
+  switch (orientation) {
+    case DeviceOrientation::kPortrait: return Rotation::k90;
+    case DeviceOrientation::kPortraitUpsideDown: return Rotation::k270;
+    case DeviceOrientation::kLandscapeLeft: return front_camera ? Rotation::k180 : Rotation::k0;
+    case DeviceOrientation::kLandscapeRight: return front_camera ? Rotation::k0 : Rotation::k180;
+    case DeviceOrientation::kFaceUp:
+    case DeviceOrientation::kFaceDown:
+    case DeviceOrientation::kUnknown: break;
+  }
+  return previous;
+}
+
 }  // namespace sm::device

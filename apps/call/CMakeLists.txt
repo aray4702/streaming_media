@@ -1,0 +1,33 @@
+# The calling app's C++ call controller (C14, #1116), shared by the iOS app (apps/ios/) and the tests: the AI server's
+# endpoint wiring (apps/ai_server) and OS sockets (apps/net), the library's audio processing, and VideoToolbox H.264
+# on Apple platforms.
+add_library(sm_call_client STATIC call_client.cc)
+target_include_directories(sm_call_client PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(sm_call_client PUBLIC sm_ai_server_lib sm::audio)
+if(TARGET sm::videotoolbox)
+  target_link_libraries(sm_call_client PUBLIC sm::videotoolbox)
+endif()
+sm_configure_target(sm_call_client)
+
+# The controller from the command line; the simulator smoke run (see call_smoke.cc).
+add_executable(sm_call_smoke call_smoke.cc)
+target_link_libraries(sm_call_smoke PRIVATE sm_call_client)
+sm_configure_target(sm_call_smoke)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+  set_target_properties(sm_call_smoke PROPERTIES MACOSX_BUNDLE OFF)
+else()
+  add_test(NAME unit.call_smoke.usage COMMAND sm_call_smoke)
+  set_tests_properties(unit.call_smoke.usage PROPERTIES LABELS unit WILL_FAIL TRUE)
+endif()
+
+if(SM_BUILD_TESTS)
+  # Two calls through apps/signaling/server.py on loopback: the app calls the AI server, and two apps join one room.
+  sm_add_test_exe(sm_call_client_test LABEL e2e DEPS sm_call_client
+    SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/call_client_test.cc
+    SUITES CallClient)
+  set_tests_properties(e2e.CallClient PROPERTIES TIMEOUT 120 RUN_SERIAL TRUE)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  target_compile_definitions(sm_call_client_test PRIVATE
+    SM_SIGNALING_SERVER_PY="${PROJECT_SOURCE_DIR}/apps/signaling/server.py"
+    SM_PYTHON="$<$<BOOL:${Python3_Interpreter_FOUND}>:${Python3_EXECUTABLE}>")
+endif()

@@ -111,6 +111,18 @@ class OpusSendEncoder {
     return bps;
   }
 
+  // AudioEncoderOpusImpl::SetTargetBitrate (audio_encoder_opus.cc:716-737): clamped to
+  // [kMinBitrateBps, kMaxBitrateBps] = [6000, 510000], handed to libopus when it changed; the output
+  // buffer follows the new rate (config_.bitrate_bps). Returns the rate set.
+  int SetTargetBitrate(int bps) {
+    bps = std::clamp(bps, 6000, 510000);
+    if (bps == bitrate_bps_ || enc_ == nullptr) return bitrate_bps_;
+    bitrate_bps_ = bps;
+    Ctl(opus_encoder_ctl(enc_, OPUS_SET_BITRATE(bps)));
+    return bitrate_bps_;
+  }
+  int target_bitrate_bps() const { return bitrate_bps_; }
+
   // SetProjectedPacketLossRate, given the whole percent it hands libopus.
   void SetPacketLossPercent(int percent) {
     if (percent == loss_percent_) return;

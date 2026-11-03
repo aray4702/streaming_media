@@ -143,3 +143,20 @@ SM_TEST(DeviceScale, DownAndUpKeepsThePicture) {
   SM_RECORD("psnr_db", psnr);
   SM_EXPECT_GT(psnr, 25.0);
 }
+
+// RTCCameraVideoCapturer's rotation (#1116): what the CVO extension carries for each device orientation.
+SM_TEST(DeviceCaptureRotation, FollowsRtcCameraVideoCapturer) {
+  using sm::video::Rotation;
+  for (bool front : {true, false}) {
+    SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kPortrait, front, Rotation::k0) == Rotation::k90);
+    SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kPortraitUpsideDown, front, Rotation::k0) == Rotation::k270);
+    // Face up, face down and unknown keep the last rotation.
+    SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kFaceUp, front, Rotation::k270) == Rotation::k270);
+    SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kFaceDown, front, Rotation::k90) == Rotation::k90);
+    SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kUnknown, front, Rotation::k180) == Rotation::k180);
+  }
+  SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kLandscapeLeft, true, Rotation::k90) == Rotation::k180);
+  SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kLandscapeLeft, false, Rotation::k90) == Rotation::k0);
+  SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kLandscapeRight, true, Rotation::k90) == Rotation::k0);
+  SM_EXPECT_TRUE(CaptureRotation(DeviceOrientation::kLandscapeRight, false, Rotation::k90) == Rotation::k180);
+}

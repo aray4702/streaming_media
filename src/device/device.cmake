@@ -24,7 +24,7 @@ if(SM_WITH_APPLE_MEDIA)
   target_link_libraries(sm_device PUBLIC "-framework AudioToolbox" "-framework AVFoundation" "-framework CoreMedia"
                         "-framework CoreVideo" "-framework Foundation")
   if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    target_link_libraries(sm_device PUBLIC "-framework AVFAudio")
+    target_link_libraries(sm_device PUBLIC "-framework AVFAudio" "-framework UIKit")
   endif()
   target_compile_definitions(sm_device PUBLIC SM_WITH_APPLE_MEDIA=1)
 endif()
