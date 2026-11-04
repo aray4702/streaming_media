@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "sm/p2p/p2p_constants.h"
 #include "sm/pc/jsep.h"
 #include "sm/pc/webrtc_sdp.h"
 #include "sm_test.h"
@@ -1032,6 +1033,53 @@ SM_TEST(PcWebRtcSdp, ParseConnectionData) {
   }
 }
 
+// ParseConnectionDataWithHostnameConnectionAddress (#1152): a c= line with a hostname is kept as the name; it is
+// written back as the dummy address.
+SM_TEST(PcWebRtcSdp, ParseConnectionDataWithHostnameConnectionAddress) {
+  std::string sdp = kSdpString;
+  Replace("c=IN IP4 0.0.0.0\r\n", "c=IN IP4 example.local\r\n", &sdp);
+  Replace("c=IN IP4 0.0.0.0\r\n", "c=IN IP4 example.local\r\n", &sdp);
+  auto jdesc = Parse(sdp);
+  SM_ASSERT_TRUE(jdesc != nullptr);
+  SM_EXPECT_EQ(Media(*jdesc, 0)->connection_address().ToString(), std::string("example.local:9"));
+  SM_EXPECT_EQ(Media(*jdesc, 1)->connection_address().ToString(), std::string("example.local:9"));
+  SM_EXPECT_TRUE(Media(*jdesc, 0)->connection_address().IsUnresolvedIP());
+  // BuildMediaDescription: no IPv4 or IPv6 address, so the dummy one.
+  SM_EXPECT_EQ(SdpSerialize(*jdesc).find("example.local"), std::string::npos);
+}
+
+// The hostname (mDNS) candidates of an SDP are kept (#1152), as libwebrtc keeps them (ParseCandidate's
+// SocketAddress(connection_address, port)), and written back with their name.
+SM_TEST(PcWebRtcSdp, HostnameCandidatesInSdp) {
+  std::string sdp = kSdpString;
+  InjectAfter("a=rtcp:9 IN IP4 0.0.0.0\r\n",
+              "a=candidate:a0+B/3 1 udp 2130706432 74.125.127.126 2345 typ srflx raddr 192.168.1.5 rport 2346 "
+              "generation 2\r\n"
+              "a=candidate:a0+B/6 1 udp 2130706432 1f2e3d4c-5b6a-7980-1a2b-3c4d5e6f7a8b.local 54321 typ host "
+              "generation 0\r\n",
+              &sdp);
+  auto jdesc = Parse(sdp);
+  SM_ASSERT_TRUE(jdesc != nullptr);
+  SM_ASSERT_EQ(jdesc->candidates(0)->count(), 2u);
+  const Candidate& mdns = jdesc->candidates(0)->at(1)->candidate();
+  SM_EXPECT_TRUE(mdns.is_local());
+  SM_EXPECT_TRUE(mdns.address().IsUnresolvedIP());
+  SM_EXPECT_EQ(mdns.address().hostname(), std::string("1f2e3d4c-5b6a-7980-1a2b-3c4d5e6f7a8b.local"));
+  SM_EXPECT_EQ(mdns.address().port(), 54321);
+  SM_EXPECT_EQ(mdns.username(), std::string("ufrag_voice"));
+  // UpdateConnectionAddress: the host candidate (of no IP family) is preferred over the srflx one, and a hostname as
+  // the default destination gives the dummy address.
+  SM_EXPECT_EQ(Media(*jdesc, 0)->connection_address().ToString(), std::string("0.0.0.0:9"));
+  const std::string out = SdpSerialize(*jdesc);
+  SM_EXPECT_NE(out.find("a=candidate:a0+B/6 1 udp 2130706432 1f2e3d4c-5b6a-7980-1a2b-3c4d5e6f7a8b.local 54321 typ "
+                        "host generation 0\r\n"),
+               std::string::npos);
+  SM_EXPECT_NE(out.find("m=audio 9 RTP/SAVPF"), std::string::npos);
+  auto again = Parse(out);
+  SM_ASSERT_TRUE(again != nullptr);
+  SM_EXPECT_EQ(SdpSerialize(*again), out);
+}
+
 SM_TEST(PcWebRtcSdp, CandidatesInSdp) {
   // DeserializeCandidateWithDifferentTransport / IceCredentialsInCandidateStringIgnored /
   // DeserializeInvalidPortInCandidateAttribute / ParseTcpCandidateWithoutTcptype / ParseSslTcpCandidate.
@@ -1040,13 +1088,10 @@ SM_TEST(PcWebRtcSdp, CandidatesInSdp) {
               "a=candidate:a0+B/3 1 udp 2130706432 74.125.127.126 2345 typ srflx raddr 192.168.1.5 rport 2346 "
               "generation 2 ufrag fake_ufrag pwd fake_pwd\r\n"
               "a=candidate:a0+B/4 1 tcp 2130706432 192.168.1.5 9 typ host\r\n"
-              "a=candidate:a0+B/5 1 ssltcp 2130706432 192.168.1.5 443 typ host tcptype passive\r\n"
-              "a=candidate:a0+B/6 1 udp 2130706432 1f2e3d4c-5b6a-7980-1a2b-3c4d5e6f7a8b.local 54321 typ host "
-              "generation 0\r\n",
+              "a=candidate:a0+B/5 1 ssltcp 2130706432 192.168.1.5 443 typ host tcptype passive\r\n",
               &sdp);
   auto jdesc = Parse(sdp);
   SM_ASSERT_TRUE(jdesc != nullptr);
-  // The hostname (mDNS) candidate is dropped (see sm/pc/webrtc_sdp.h).
   SM_ASSERT_EQ(jdesc->candidates(0)->count(), 3u);
   const Candidate& srflx = jdesc->candidates(0)->at(0)->candidate();
   // The a=candidate ufrag and pwd are replaced by the m= section's.
@@ -1107,8 +1152,43 @@ SM_TEST(PcCandidateParse, CandidateStrings) {
   SM_EXPECT_FALSE(Candidate::ParseCandidateString("candidatex 1 udp 1 192.168.1.5 9 typ host", &error));
   SM_EXPECT_FALSE(Candidate::ParseCandidateString("candidate:x 1 udp 1 192.168.1.5 9 typ host\r\na=x", &error));
   SM_EXPECT_EQ(error, std::string("Expect one line only"));
-  SM_EXPECT_FALSE(Candidate::ParseCandidateString("candidate:x 1 udp 1 host.local 9 typ host", &error));
-  SM_EXPECT_EQ(error, std::string(p2p::kUnsupportedHostnameCandidate));
+}
+
+// Hostname candidates (#1152): ParseCandidate keeps the name with no IP (and a related address's name), and
+// BuildCandidate writes the name when there is no IP (SerializeHostnameCandidate's kRawHostnameCandidate).
+SM_TEST(PcCandidateParse, HostnameCandidates) {
+  std::string error;
+  auto c = Candidate::ParseCandidateString("candidate:x 1 udp 1 Host.Local. 9 typ host", &error);
+  SM_ASSERT_TRUE(c.has_value());
+  SM_EXPECT_TRUE(c->address().IsUnresolvedIP());
+  SM_EXPECT_EQ(c->address().hostname(), std::string("Host.Local."));
+  SM_EXPECT_EQ(c->address().ToString(), std::string("Host.Local.:9"));
+  SM_EXPECT_TRUE(p2p::IsMdnsHostname(c->address().hostname()));
+  // A literal address is still an IP.
+  c = Candidate::ParseCandidateString("candidate:x 1 udp 1 192.168.1.5 9 typ host", &error);
+  SM_ASSERT_TRUE(c.has_value());
+  SM_EXPECT_FALSE(c->address().IsUnresolvedIP());
+  SM_EXPECT_EQ(c->address().ToString(), std::string("192.168.1.5:9"));
+  // Chrome's srflx candidate behind an mDNS host candidate: its related address is hidden as 0.0.0.0.
+  c = Candidate::ParseCandidateString(
+      "candidate:x 1 udp 1 74.125.127.126 2345 typ srflx raddr 0.0.0.0 rport 0 generation 0", &error);
+  SM_ASSERT_TRUE(c.has_value());
+  SM_EXPECT_TRUE(c->related_address().IsAnyIp());
+  // A related address may be a name too (kept, as SetIP keeps it).
+  c = Candidate::ParseCandidateString("candidate:x 1 udp 1 74.125.127.126 2345 typ srflx raddr r.local rport 7",
+                                      &error);
+  SM_ASSERT_TRUE(c.has_value());
+  SM_EXPECT_EQ(c->related_address().ToString(), std::string("r.local:7"));
+
+  // SerializeHostnameCandidate.
+  const Candidate hostname_candidate(p2p::ICE_CANDIDATE_COMPONENT_RTP, "udp", p2p::SocketAddress("a.test", 1234),
+                                     2130706432, "", "", p2p::IceCandidateType::kHost, 2, "a0+B/1");
+  SM_EXPECT_EQ(hostname_candidate.ToCandidateAttribute(true),
+               std::string("candidate:a0+B/1 1 udp 2130706432 a.test 1234 typ host generation 2"));
+  // DeserializeRawCandidateAttribute's "Candidate line with hostname address".
+  c = Candidate::ParseCandidateString("candidate:a0+B/1 1 udp 2130706432 a.test 1234 typ host generation 2", &error);
+  SM_ASSERT_TRUE(c.has_value());
+  SM_EXPECT_TRUE(c->IsEquivalent(hostname_candidate));
 }
 
 // a=msid (RFC 8830) and Plan B a=ssrc msid: the DeserializeMsidAttribute* and *MsidSignaling cases.

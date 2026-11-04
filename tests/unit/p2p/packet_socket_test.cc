@@ -136,6 +136,44 @@ SM_TEST(P2pSocketAddress, ParsePrintCompare) {
   SM_EXPECT_FALSE(a.EqualPorts(p2p::SocketAddress(Ip("1.2.3.4"), 1)));
 }
 
+// Hostnames (#1152), as rtc_base/socket_address.cc: SetIP with a name, SetResolvedIP, IsUnresolvedIP, the name in
+// ToString, and the name in comparisons when there is no usable IP (EqualIPs, operator<).
+SM_TEST(P2pSocketAddress, Hostnames) {
+  const p2p::SocketAddress name("example.local", 1234);
+  SM_EXPECT_TRUE(name.IsUnresolvedIP());
+  SM_EXPECT_FALSE(name.IsNil());
+  SM_EXPECT_TRUE(name.family() == IpFamily::kUnspec);
+  SM_EXPECT_EQ(name.ToString(), std::string("example.local:1234"));
+  SM_EXPECT_EQ(name.ToSensitiveString(), std::string("example.local:1234"));
+  // Names are compared when there is no IP.
+  SM_EXPECT_TRUE(name == p2p::SocketAddress("example.local", 1234));
+  SM_EXPECT_FALSE(name == p2p::SocketAddress("other.local", 1234));
+  SM_EXPECT_TRUE(p2p::SocketAddress("a.local", 9) < p2p::SocketAddress("b.local", 1));
+  SM_EXPECT_FALSE(name == p2p::SocketAddress(p2p::IpAddress(), 1234));
+  // An IP literal is an IP, kept as the name, printed with brackets for IPv6.
+  const p2p::SocketAddress literal("::1", 80);
+  SM_EXPECT_FALSE(literal.IsUnresolvedIP());
+  SM_EXPECT_TRUE(literal.family() == IpFamily::kV6);
+  SM_EXPECT_EQ(literal.ToString(), std::string("[::1]:80"));
+  SM_EXPECT_TRUE(literal == p2p::SocketAddress(Ip("::1"), 80));
+  // Resolved: the IP is set and the name kept; comparisons then use the IP only.
+  p2p::SocketAddress resolved = name;
+  resolved.SetResolvedIP(Ip("192.168.1.5"));
+  SM_EXPECT_FALSE(resolved.IsUnresolvedIP());
+  SM_EXPECT_EQ(resolved.hostname(), std::string("example.local"));
+  SM_EXPECT_EQ(resolved.ToString(), std::string("example.local:1234"));
+  SM_EXPECT_TRUE(resolved == p2p::SocketAddress(Ip("192.168.1.5"), 1234));
+  SM_EXPECT_TRUE(resolved.ipaddr() == Ip("192.168.1.5"));
+  // SetHostname (the TLS server's name beside its IP) is not an unresolved address.
+  p2p::SocketAddress tls(Ip("1.2.3.4"), 443);
+  tls.SetHostname("turn.example.org");
+  SM_EXPECT_FALSE(tls.IsUnresolvedIP());
+  SM_EXPECT_TRUE(tls == p2p::SocketAddress(Ip("1.2.3.4"), 443));
+  p2p::SocketAddress tls_literal(Ip("1.2.3.4"), 443);
+  tls_literal.SetHostname("1.2.3.4");
+  SM_EXPECT_EQ(tls_literal.ToString(), std::string("1.2.3.4:443"));
+}
+
 namespace {
 
 constexpr uint32_t kHostA = sim::SocketAddress::Ip(1, 1, 1, 1);

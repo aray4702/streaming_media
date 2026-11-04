@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "ai_source.h"
+#include "os_dns_resolver.h"
 #include "os_sockets.h"
 #include "sm/core/units.h"
 #include "sm/p2p/port_allocator.h"
@@ -141,6 +142,8 @@ class AiServer {
   AiServerConfig config_;
   net::Url signaling_;
   interop::OsSocketServer sockets_;
+  // Resolves the remote mDNS (.local) candidates a browser signals (#1152); outlives the calls.
+  interop::OsDnsResolverFactory resolver_;
   std::unique_ptr<net::WebSocketClient> control_;
   Timestamp next_reconnect_ = Timestamp::PlusInfinity();
   bool registered_ = false;

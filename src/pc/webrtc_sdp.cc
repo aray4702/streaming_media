@@ -1321,10 +1321,8 @@ bool ParseConnectionData(std::string_view line, SocketAddress* addr, SdpParseErr
                        "currently supported.",
                        error);
   }
-  // A hostname (not an IP address) leaves the address unspecified, as libwebrtc's SetIP with a hostname leaves its
-  // IP unspecified.
-  const std::optional<p2p::IpAddress> ip = p2p::IpAddress::FromString(rightpart);
-  *addr = SocketAddress(ip ? *ip : p2p::IpAddress(), 0);
+  // SetIP: a hostname (not an IP address) is kept as the address's name, with its IP unspecified.
+  addr->SetIP(rightpart);
 
   // Verify that the addrtype matches the type of the parsed address.
   if ((addr->family() == IpFamily::kV4 && token != "IP4") || (addr->family() == IpFamily::kV6 && token != "IP6")) {
@@ -2113,11 +2111,7 @@ bool ParseContent(std::string_view message, const MediaType media_type, int mlin
     } else if (HasAttribute(*line, kAttributeCandidate)) {
       std::string reason;
       std::optional<Candidate> candidate = Candidate::ParseCandidateString(*line, &reason);
-      if (!candidate) {
-        // A hostname (mDNS) candidate is dropped: see the header.
-        if (reason == p2p::kUnsupportedHostnameCandidate) continue;
-        return ParseFailed(*line, reason, error);
-      }
+      if (!candidate) return ParseFailed(*line, reason, error);
       // ParseCandidateString will parse non-standard ufrag and password
       // attributes, since it's used for candidate trickling, but we only want
       // to process the "a=ice-ufrag"/"a=ice-pwd" values in a session

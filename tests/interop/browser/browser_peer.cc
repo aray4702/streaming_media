@@ -1,7 +1,7 @@
 // The native side of the browser interop call (C6 part 4, #1088): our C6 part 3 endpoint (pc::PeerEndpoint, #1064)
 // over real OS sockets (apps/net/os_sockets.h, #1052), driven by run_browser_call.py.
 //
-//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel]
+//   sm_interop_browser_peer --role=offer|answer --ip=A.B.C.D [--no-data-channel] [--mdns]
 //
 // Signaling is line-based JSON on stdin (messages from Chrome) and stdout (messages to Chrome):
 // {"type":"offer"|"answer","sdp":...}, {"type":"candidate","candidate":...,"sdpMid":...,"sdpMLineIndex":N} and
@@ -16,6 +16,14 @@
 // Data channels (C7 part 5, #1091; built with SM_WITH_DATACHANNEL, unless --no-data-channel): as the page's peer, the
 // offerer creates the channel "sm-interop" before its offer and the answerer takes Chrome's from the data channel
 // callback; once it is open the peer sends "hello from sm" and checks that "hello from chrome" arrives.
+//
+// Remote mDNS candidates (#1152): the endpoint resolves Chrome's `.local` host candidates with the apps' resolver
+// (apps/net/os_dns_resolver.h, getaddrinfo on host-owned workers, polled by this loop). With --mdns (Chrome hides its
+// host IPs behind mDNS names, run_browser_call.py --mdns), the verdict also checks that Chrome signaled `.local`
+// candidates, that one resolved, and that the selected pair's remote candidate is that host candidate, not a
+// peer-reflexive one learned from Chrome's checks. It reports "mdns": "unresolvable" when the names did not resolve
+// on this host and "not-obfuscated" when Chrome signaled IPs (the driver then skips), "dropped" when the endpoint
+// never resolved them (a failure).
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -30,10 +38,12 @@
 #include <thread>
 #include <vector>
 
+#include "os_dns_resolver.h"
 #include "os_sockets.h"
 #include "sm/core/units.h"
 #include "sm/p2p/basic_port_allocator.h"
 #include "sm/p2p/network_manager.h"
+#include "sm/p2p/p2p_constants.h"
 #include "sm/p2p/stun_crypto_tls.h"
 #include "sm/pc/peer_endpoint.h"
 #include "sm/pc/webrtc_sdp.h"
@@ -342,9 +352,11 @@ int main(int argc, char** argv) {
 #else
   bool use_dc = false;
 #endif
+  bool expect_mdns = false;
   for (int i = 1; i < argc; ++i) {
     const std::string a = argv[i];
     if (a == "--no-data-channel") use_dc = false;
+    else if (a == "--mdns") expect_mdns = true;
     else if (a.rfind("--role=", 0) == 0) role = a.substr(7);
     else if (a.rfind("--ip=", 0) == 0) ip_text = a.substr(5);
     else if (a.rfind("--max-seconds=", 0) == 0) max_seconds = std::stoi(a.substr(14));
@@ -357,6 +369,7 @@ int main(int argc, char** argv) {
   p2p::InstallStunCryptoFromTls();
 
   interop::OsSocketServer sockets;
+  interop::OsDnsResolverFactory resolver;
   p2p::StaticNetworkManager network_manager;
   network_manager.AddInterface(*ip);
   Timestamp now = Now();
@@ -372,6 +385,7 @@ int main(int argc, char** argv) {
   config.audio_stream.nominal_rate = DataRate::KilobitsPerSec(32);
   config.session.send_side.gcc.start_rate = DataRate::KilobitsPerSec(800);
   config.enable_data_channels = use_dc;
+  config.transport.async_dns_resolver_factory = &resolver;
   PeerEndpoint ep(std::move(config), now);
 
   std::vector<std::string> errors;
@@ -434,6 +448,7 @@ int main(int argc, char** argv) {
   bool want_keyframe = true;
   Timestamp last_keyframe = Timestamp::MinusInfinity();
   std::vector<float> pcm(480);
+  int mdns_candidates = 0, ip_host_candidates = 0;
 
   while (!bye && !eof && now - start < TimeDelta::Seconds(max_seconds)) {
     for (const std::string& line : input.Take(&eof)) {
@@ -467,6 +482,22 @@ int main(int argc, char** argv) {
         SdpParseError perr;
         const int index = m["sdpMLineIndex"].empty() || m["sdpMLineIndex"] == "null" ? 0 : std::stoi(m["sdpMLineIndex"]);
         const std::string mid = m["sdpMid"] == "null" ? "" : m["sdpMid"];
+        // Counted from the text (address and type fields), whether or not the endpoint parses it.
+        {
+          std::vector<std::string> f;
+          size_t pos = 0;
+          const std::string& text = m["candidate"];
+          while (pos <= text.size() && f.size() < 8) {
+            const size_t sp = text.find(' ', pos);
+            f.push_back(text.substr(pos, sp == std::string::npos ? std::string::npos : sp - pos));
+            if (sp == std::string::npos) break;
+            pos = sp + 1;
+          }
+          if (f.size() >= 8 && f[7] == "host") {
+            if (p2p::IsMdnsHostname(f[4])) ++mdns_candidates;
+            else ++ip_host_candidates;
+          }
+        }
         auto cand = IceCandidate::Create(mid, index, m["candidate"], &perr);
         if (!cand) {
           std::fprintf(stderr, "candidate not parsed: %s\n", m["candidate"].c_str());
@@ -532,6 +563,7 @@ int main(int argc, char** argv) {
     next = std::min({next, next_audio, next_video, next_pull, now + TimeDelta::Millis(10)});
     sockets.Poll(now, std::clamp(next - now, TimeDelta::Zero(), TimeDelta::Millis(10)));
     now = Now();
+    resolver.Poll(now);
   }
 
   const rtp::SessionStats* st = ep.session() ? &ep.session()->stats() : nullptr;
@@ -550,14 +582,40 @@ int main(int argc, char** argv) {
     if (dc.channel) dc.channel->UnregisterObserver();
   }
 #endif
-  const bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling && ok_data;
+  // The remote mDNS candidates (#1152): resolved, and the selected pair's remote candidate.
+  p2p::P2PTransportChannel::HostnameCandidateStats hs;
+  std::string selected_remote = "none";
+  if (JsepTransport* t = ep.media_transport(); t && t->ice_transport()) {
+    hs = t->ice_transport()->hostname_candidate_stats();
+    if (const p2p::Connection* c = t->ice_transport()->selected_connection()) {
+      const p2p::Candidate& r = c->remote_candidate();
+      selected_remote = std::string(r.type_name()) + (p2p::IsMdnsHostname(r.address().hostname()) ? "-mdns" : "");
+    }
+  }
+  std::fprintf(stderr, "remote host candidates: %d mDNS, %d IP; resolved %d, failed %d, dropped %d; selected remote %s\n",
+               mdns_candidates, ip_host_candidates, hs.resolved, hs.failed, hs.dropped, selected_remote.c_str());
+  std::string mdns_check = "}";
+  bool ok_mdns = true;
+  if (expect_mdns) {
+    // "unresolvable": the resolver tried and this host could not resolve the names (a skip); "dropped": they were
+    // never resolved (a failure: what the endpoint did before #1152).
+    const char* state = mdns_candidates == 0             ? "not-obfuscated"
+                        : hs.resolved > 0                ? "resolved"
+                        : hs.failed > 0 && !hs.dropped   ? "unresolvable"
+                                                         : "dropped";
+    ok_mdns = mdns_candidates > 0 && hs.resolved > 0 && selected_remote == "host-mdns";
+    mdns_check = std::string(",\"mdnsResolved\":") + (ok_mdns ? "true" : "false") + "},\"mdns\":\"" + state +
+                 "\",\"selectedRemote\":\"" + selected_remote + "\"";
+  }
+  const bool ok = ok_connected && ok_audio_in && ok_video_in && ok_media_out && ok_signaling && ok_data && ok_mdns;
   auto b = [](bool v) { return v ? "true" : "false"; };
   std::string errs = "[";
   for (size_t i = 0; i < errors.size(); ++i) errs += (i ? "," : "") + JsonEscape(errors[i]);
   errs += "]";
   Emit(std::string("{\"type\":\"result\",\"ok\":") + b(ok) + ",\"checks\":{\"connected\":" + b(ok_connected) +
        ",\"audioFramesDecoded\":" + b(ok_audio_in) + ",\"videoFramesReceived\":" + b(ok_video_in) +
-       ",\"mediaSent\":" + b(ok_media_out) + ",\"signaling\":" + b(ok_signaling) + data_check + "},\"stats\":{\"audioFramesDecoded\":" +
+       ",\"mediaSent\":" + b(ok_media_out) + ",\"signaling\":" + b(ok_signaling) + data_check + mdns_check +
+       ",\"stats\":{\"audioFramesDecoded\":" +
        std::to_string(decoder.frames) + ",\"videoFramesReceived\":" + std::to_string(video_frames_received) +
        ",\"audioFramesSent\":" + std::to_string(audio_sent) + ",\"videoFramesSent\":" + std::to_string(video_sent) +
        ",\"keyframesSent\":" + std::to_string(keyframes_sent) + ",\"keyframeRequests\":" +

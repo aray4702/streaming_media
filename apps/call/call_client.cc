@@ -404,6 +404,7 @@ void CallClient::MakeEndpoint(Timestamp now) {
   pc::PeerEndpointConfig c;
   c.allocator = allocator_.get();
   c.certificate_name = "sm-call";
+  c.transport.async_dns_resolver_factory = &resolver_;
   c.audio = true;
   c.video = true;  // Received from the web app even with our camera off; the AI server offers audio only.
   c.enable_data_channels = false;
@@ -512,6 +513,7 @@ Timestamp CallClient::Step(Timestamp now) {
 
 void CallClient::Wait(Timestamp now, TimeDelta wait) {
   sockets_.Poll(now, std::clamp(wait, TimeDelta::Zero(), TimeDelta::Millis(5)));
+  resolver_.Poll(now);
 }
 
 void CallClient::Audio(Timestamp now) {

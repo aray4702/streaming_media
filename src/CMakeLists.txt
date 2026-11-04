@@ -71,6 +71,7 @@ endif()
 # Not in the sm::sm umbrella yet, like sm::tls: it joins when the connectivity API settles (#944).
 sm_add_library(p2p DEPS sm::core SOURCES
   p2p/socket_address.cc
+  p2p/async_dns_resolver.cc
   p2p/async_packet_socket.cc
   p2p/async_tcp_socket.cc
   p2p/dtls_utils.cc

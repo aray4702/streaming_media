@@ -26,6 +26,7 @@ void UpdateConnectionAddress(const IceCandidateCollection& candidate_collection,
                              MediaContentDescription* media_desc) {
   int port = kDummyPort;
   p2p::IpAddress ip = *p2p::IpAddress::FromString(kDummyAddress);
+  std::string hostname;
   int current_preference = 0;  // Start with lowest preference.
   p2p::IpFamily current_family = p2p::IpFamily::kUnspec;
   for (size_t i = 0; i < candidate_collection.count(); ++i) {
@@ -43,10 +44,19 @@ void UpdateConnectionAddress(const IceCandidateCollection& candidate_collection,
     }
     current_preference = preference;
     current_family = family;
-    port = jsep_candidate->candidate().address().port();
-    ip = jsep_candidate->candidate().address().ipaddr();
+    const p2p::SocketAddress& candidate_addr = jsep_candidate->candidate().address();
+    port = candidate_addr.port();
+    ip = candidate_addr.ipaddr();
+    hostname = candidate_addr.hostname();
   }
-  media_desc->set_connection_address(p2p::SocketAddress(ip, static_cast<uint16_t>(port)));
+  p2p::SocketAddress connection_addr(ip, static_cast<uint16_t>(port));
+  if (p2p::IpIsUnspec(connection_addr.ipaddr()) && !hostname.empty()) {
+    // When a hostname candidate becomes the (default) connection address, we use the dummy address 0.0.0.0 and port 9
+    // in the c= and the m= lines: with a FQDN in a c= line, SDP parsing could fail in other JSEP implementations, and
+    // 0.0.0.0 with port 9 is the widely deployed wildcard for trickle ICE (draft-ietf-mmusic-trickle-ice-sip).
+    connection_addr = p2p::SocketAddress(*p2p::IpAddress::FromString(kDummyAddress), kDummyPort);
+  }
+  media_desc->set_connection_address(connection_addr);
 }
 
 }  // namespace

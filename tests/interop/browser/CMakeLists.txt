@@ -44,4 +44,12 @@ if(Python3_FOUND AND TARGET sm::pc_endpoint)
       LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE
       DEPENDS "interop.BrowserSelf.chrome_offers;interop.BrowserSelf.chrome_answers")
   endforeach()
+  # Remote mDNS candidates (#1152): Chrome without a media permission hides its host IPs behind .local names (its
+  # default); our endpoint resolves them (getaddrinfo) and connects host to host. Skipped (77) where .local names
+  # don't resolve. No bandwidth check: the media are a canvas and a tone.
+  add_test(NAME interop.Browser.mdns_chrome_offers
+           COMMAND ${Python3_EXECUTABLE} ${SM_BROWSER_CALL} --peer=$<TARGET_FILE:sm_interop_browser_peer>
+                   --role=offer --mdns ${SM_BROWSER_DC} --timeout=60)
+  set_tests_properties(interop.Browser.mdns_chrome_offers PROPERTIES
+    LABELS interop SKIP_RETURN_CODE 77 TIMEOUT 120 RESOURCE_LOCK sm_chrome RUN_SERIAL TRUE)
 endif()

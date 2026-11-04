@@ -8,8 +8,9 @@
 // draft-ietf-mmusic-sctp-sdp (sctp-port, max-message-size).
 //
 // Differences from libwebrtc (also in docs/design/libwebrtc-parity.md, section 10.x):
-// - A candidate with a hostname (mDNS) address is dropped rather than kept: sm::p2p::SocketAddress has no hostname,
-//   and the host stack resolves mDNS (C11). A candidate's TLS fingerprint extension is checked but not kept.
+// - A candidate's TLS fingerprint extension is checked but not kept.
+// A candidate with a hostname (mDNS) address, and a c= line with a hostname, are kept with the name as their address
+// (SetIP), as libwebrtc keeps them (#1152); the ICE agent resolves the name (sm/p2p/p2p_transport_channel.h).
 // - No UMA histograms (WebRTC.PeerConnection.SdpBandwidth) and no logging of ignored lines.
 // - A track id or a track without one gets 8 random characters from sm::tls::CreateRandomString, as libwebrtc's
 //   CreateRandomString.

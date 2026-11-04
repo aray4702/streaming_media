@@ -109,10 +109,9 @@ std::string Base64(std::span<const uint8_t> in) {
   return out;
 }
 
-std::string IpString(const p2p::SocketAddress& a) {
-  if (p2p::IpIsUnspec(a.ipaddr())) return a.hostname();
-  return a.ipaddr().ToString();
-}
+// candidate.address().ipaddr().ToString() (rtc_stats_collector.cc:1068-1069): empty for an address with no IP, such
+// as a sanitized prflx or mDNS candidate, whose name is not shown (#1152).
+std::string IpString(const p2p::SocketAddress& a) { return a.ipaddr().ToString(); }
 
 // ProduceCertificateStats for one certificate: its id, or empty if its fingerprint can't be computed.
 std::string AddCertificate(const tls::SslCertificate& cert, rtp::StatsReport& r) {

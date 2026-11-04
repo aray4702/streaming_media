@@ -2,7 +2,9 @@
 // (P2PTransportChannelTest, the two-endpoint tests) without TURN or TCP, over the emulated network (#985) with its
 // NATs and a STUN server, with the library's time model in place of the simulated clock. Each test names the
 // libwebrtc case it follows. Candidates go to the other side through the test's signaling queue, delivered on the
-// next step (libwebrtc posts them).
+// next step (libwebrtc posts them). The hostname (mDNS) cases (#1152) give an endpoint the deterministic resolver
+// (FakeAsyncDnsResolverFactory, answered on the next step as libwebrtc's resolver answers later) and stand in for
+// the gathering side's mDNS responder by signaling its host candidates under a `.local` name.
 #include <algorithm>
 #include <cerrno>
 #include <deque>
@@ -12,9 +14,11 @@
 #include <vector>
 
 #include "sm/core/units.h"
+#include "sm/p2p/async_dns_resolver.h"
 #include "sm/p2p/basic_port_allocator.h"
 #include "sm/p2p/candidate.h"
 #include "sm/p2p/network_manager.h"
+#include "sm/p2p/p2p_constants.h"
 #include "sm/p2p/p2p_transport_channel.h"
 #include "sm/p2p/port_allocator.h"
 #include "sm/sim/emulated_sockets.h"
@@ -74,6 +78,11 @@ struct Endpoint {
   std::vector<std::optional<NetworkRoute>> routes;
   std::vector<IceGatheringState> gathering;
   std::vector<CandidatePairChangeEvent> pair_changes;
+  // set_async_dns_resolver_factory: the channel resolves remote hostname candidates with it.
+  AsyncDnsResolverFactoryInterface* resolver_factory = nullptr;
+  // The FakeMdnsResponder's part: host candidates are signaled under a .local name (the IP it stands for kept here).
+  bool mdns_names = false;
+  std::vector<std::pair<std::string, IpAddress>> mdns_hosts;
 };
 
 struct Fixture {
@@ -84,6 +93,8 @@ struct Fixture {
   RemoteIceParameterSource remote_ice_parameter_source = FROM_CANDIDATE;
   // The signaling channel: candidates for endpoint i.
   std::deque<Candidate> signaling[2];
+  // ResolverFactoryFixture: the resolver of the tests that resolve hostname candidates.
+  FakeAsyncDnsResolverFactory resolver;
   Timestamp now = Timestamp::Seconds(10);
 
   Fixture() {
@@ -128,11 +139,21 @@ struct Fixture {
 
   std::unique_ptr<P2PTransportChannel> CreateChannel(int i, const IceParameters& local_ice,
                                                      const IceParameters& remote_ice) {
+    P2PTransportChannel::Options options;
+    options.async_dns_resolver_factory = ep[i].resolver_factory;
     auto channel = std::make_unique<P2PTransportChannel>(now, "test content name", ICE_CANDIDATE_COMPONENT_RTP,
-                                                         ep[i].allocator.get());
+                                                         ep[i].allocator.get(), options);
     Endpoint& e = ep[i];
     channel->SubscribeReadyToSend(this, [&e](PacketTransportInternal*, Timestamp) { e.ready_to_send = true; });
-    channel->SubscribeCandidateGathered(this, [this, i](IceTransportInternal*, const Candidate& c) {
+    channel->SubscribeCandidateGathered(this, [this, i](IceTransportInternal*, const Candidate& gathered) {
+      Candidate c = gathered;
+      if (ep[i].mdns_names && c.is_local()) {
+        // MaybeObfuscateAddress: the address becomes a random name in .local; the port is kept.
+        const std::string name = "ep" + std::to_string(i) + "-" + std::to_string(ep[i].mdns_hosts.size()) +
+                                 "-1f2e3d4c-5b6a-7980.local";
+        ep[i].mdns_hosts.emplace_back(name, c.address().ipaddr());
+        c.set_address(SocketAddress(name, c.address().port()));
+      }
       if (ep[i].save_candidates) {
         ep[i].saved_candidates.push_back(c);
       } else {
@@ -199,6 +220,7 @@ struct Fixture {
       if (e.allocator) t = std::min(t, e.allocator->NextPooledSessionsProcessTime());
     }
     if (!signaling[0].empty() || !signaling[1].empty()) t = std::min(t, now);
+    t = std::min(t, resolver.NextProcessTime(now));
     return t;
   }
   void Step(Timestamp t) {
@@ -212,6 +234,7 @@ struct Fixture {
     }
     stun_host->Deliver(now);
     DeliverCandidates();
+    resolver.Process(now);
   }
   // Runs until `stop` holds, at most `limit` of emulated time.
   template <class F>
@@ -728,4 +751,299 @@ SM_TEST(P2pTransportChannel, TestStopPortAllocatorSessions) {
   SM_ASSERT_TRUE(f.RunUntil([&] { return f.Connected(); }, kDefaultTimeout));
   SM_EXPECT_TRUE(f.RunUntil([&] { return f.ch(0)->allocator_session()->IsStopped(); }, kDefaultTimeout));
   SM_EXPECT_FALSE(f.ch(0)->allocator_session()->IsGettingPorts());
+}
+
+// --- Remote hostname (mDNS) candidates (#1152): P2PTransportChannelResolverTest and the mDNS cases of
+// P2PTransportChannelTest (p2p_transport_channel_unittest.cc:5437-5990). -------------------------------------------
+
+namespace {
+
+Candidate HostnameCandidate(std::string_view name, uint16_t port, IceCandidateType type = IceCandidateType::kHost,
+                            uint32_t priority = 0) {
+  return Candidate(ICE_CANDIDATE_COMPONENT_RTP, UDP_PROTOCOL_NAME, SocketAddress(name, port), priority, "", "", type,
+                   0, "foundation");
+}
+
+// One gathering channel of endpoint 0 (host ports only), for the cases that add remote candidates by hand.
+std::unique_ptr<P2PTransportChannel> GatheredChannel(Fixture& f, AsyncDnsResolverFactoryInterface* factory,
+                                                     uint32_t flags = kOnlyLocalPorts) {
+  f.ConfigureEndpoints(OPEN, OPEN, flags, flags);
+  f.ep[0].resolver_factory = factory;
+  f.ep[0].ch = f.CreateChannel(0, kIceParams[0], kIceParams[1]);
+  f.ch(0)->MaybeStartGathering(f.now);
+  f.RunUntil([&] { return f.ch(0)->gathering_state() == kIceGatheringComplete; }, kMediumTimeout);
+  return std::move(f.ep[0].ch);
+}
+
+}  // namespace
+
+// HostnameCandidateIsResolved: a resolver is created, asked for a result, and destroyed when the address is a
+// hostname; the candidate is added with the resolved address (and keeps its name).
+SM_TEST(P2pTransportChannel, HostnameCandidateIsResolved) {
+  Fixture f;
+  auto channel = GatheredChannel(f, &f.resolver);
+  f.resolver.SetAddresses("fake.test", {Ip("1.1.1.1")});
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("fake.test", 1000));
+  // Not added until the resolver answers (libwebrtc's resolver answers asynchronously).
+  SM_EXPECT_EQ(channel->remote_candidates().size(), 0u);
+  SM_EXPECT_EQ(f.resolver.started(), 1);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().resolving, 1);
+  f.resolver.Process(f.now);
+  SM_ASSERT_EQ(channel->remote_candidates().size(), 1u);
+  const RemoteCandidate& candidate = channel->remote_candidates()[0];
+  SM_EXPECT_FALSE(candidate.address().IsUnresolvedIP());
+  SM_EXPECT_TRUE(candidate.address().ipaddr() == Ip("1.1.1.1"));
+  SM_EXPECT_EQ(candidate.address().hostname(), std::string("fake.test"));
+  SM_EXPECT_EQ(candidate.address().port(), 1000);
+  // The candidate is paired with the channel's port.
+  SM_EXPECT_EQ(channel->connections().size(), 1u);
+  SM_EXPECT_EQ(f.resolver.pending(), 0u);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().resolving, 0);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().resolved, 1);
+}
+
+// AddRemoteCandidateWithResult: an error, or a result with neither an IPv6 nor an IPv4 address, drops the candidate;
+// IPv6 is preferred to IPv4 (RFC 5245 15.1).
+SM_TEST(P2pTransportChannel, HostnameCandidateResolutionResults) {
+  Fixture f;
+  auto channel = GatheredChannel(f, &f.resolver);
+  f.resolver.SetAddresses("empty.local", {});
+  f.resolver.SetAddresses("both.local", {Ip("1.1.1.1"), Ip("2001:db8::1")});
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("unknown.local", 1001));
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("empty.local", 1002));
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("BOTH.local.", 1003));
+  SM_EXPECT_EQ(f.resolver.started(), 3);
+  f.resolver.Process(f.now);
+  SM_ASSERT_EQ(channel->remote_candidates().size(), 1u);
+  SM_EXPECT_TRUE(channel->remote_candidates()[0].address().ipaddr() == Ip("2001:db8::1"));
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().failed, 2);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().resolved, 1);
+  // The host's only port is IPv4: no pair with an IPv6 candidate (libwebrtc's TODO on an AAAA-only answer).
+  SM_EXPECT_EQ(channel->connections().size(), 0u);
+}
+
+// ResolveHostnameCandidate without an AsyncResolverFactory: "Dropping ICE candidate with hostname address".
+SM_TEST(P2pTransportChannel, HostnameCandidateDroppedWithoutResolverFactory) {
+  Fixture f;
+  auto channel = GatheredChannel(f, nullptr);
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("a.local", 1000));
+  SM_EXPECT_EQ(channel->remote_candidates().size(), 0u);
+  SM_EXPECT_EQ(channel->connections().size(), 0u);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().dropped, 1);
+  // An IP candidate is added as before.
+  Candidate ip = HostnameCandidate("1.1.1.1", 1000);
+  SM_EXPECT_FALSE(ip.address().IsUnresolvedIP());
+  channel->AddRemoteCandidate(f.now, ip);
+  SM_EXPECT_EQ(channel->remote_candidates().size(), 1u);
+}
+
+// "Don't do DNS lookups if the IceTransportPolicy is "none" or "relay"": the candidate filter shares neither host
+// nor reflexive candidates, so no resolver is created.
+SM_TEST(P2pTransportChannel, HostnameCandidateNotResolvedWhenRelayOnly) {
+  Fixture f;
+  auto channel = GatheredChannel(f, &f.resolver);
+  f.ep[0].allocator->SetCandidateFilter(CF_RELAY);
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("a.local", 1000));
+  SM_EXPECT_EQ(f.resolver.created(), 0);
+  SM_EXPECT_EQ(channel->hostname_candidate_stats().dropped, 1);
+  // CF_REFLEXIVE alone still resolves.
+  f.ep[0].allocator->SetCandidateFilter(CF_REFLEXIVE | CF_RELAY);
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("a.local", 1000));
+  SM_EXPECT_EQ(f.resolver.started(), 1);
+}
+
+// Destroying the channel destroys its resolvers, which cancels their callbacks.
+SM_TEST(P2pTransportChannel, ChannelDestroyedWhileResolving) {
+  Fixture f;
+  auto channel = GatheredChannel(f, &f.resolver);
+  f.resolver.SetAddresses("a.local", {Ip("1.1.1.1")});
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("a.local", 1000));
+  SM_EXPECT_EQ(f.resolver.pending(), 1u);
+  channel.reset();
+  SM_EXPECT_EQ(f.resolver.pending(), 0u);
+  f.resolver.Process(f.now);
+  SM_EXPECT_EQ(f.resolver.answered(), 0);
+}
+
+// The candidate becomes usable once resolved, and is paired as a signaled one: with an IP candidate of lower
+// priority already there, the resolved one (higher priority) is pinged first.
+SM_TEST(P2pTransportChannel, ResolvedHostnameCandidateIsPairedByPriority) {
+  Fixture f;
+  auto channel = GatheredChannel(f, &f.resolver);
+  channel->SetIceRole(ICEROLE_CONTROLLING);
+  f.resolver.SetAddresses("high.local", {Ip("2.2.2.2")});
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("1.1.1.1", 1000, IceCandidateType::kHost, 100));
+  channel->AddRemoteCandidate(f.now, HostnameCandidate("high.local", 2000, IceCandidateType::kHost, 200));
+  SM_ASSERT_EQ(channel->connections().size(), 1u);
+  f.resolver.Process(f.now);
+  SM_ASSERT_EQ(channel->connections().size(), 2u);
+  SM_EXPECT_EQ(channel->remote_candidates()[1].address().ToString(), std::string("high.local:2000"));
+  Connection* first = channel->FindNextPingableConnection(f.now);
+  SM_ASSERT_TRUE(first != nullptr);
+  SM_EXPECT_TRUE(first->remote_candidate().address().ipaddr() == Ip("2.2.2.2"));
+  SM_EXPECT_EQ(first->remote_candidate().priority(), 200u);
+}
+
+// CanConnectWithHostCandidateWithMdnsName: endpoint 0 signals only a host candidate under an mDNS name; endpoint 1
+// resolves it and pings, and endpoint 0 answers through a peer-reflexive candidate.
+SM_TEST(P2pTransportChannel, CanConnectWithHostCandidateWithMdnsName) {
+  Fixture f;
+  f.ConfigureEndpoints(OPEN, OPEN, kOnlyLocalPorts, kOnlyLocalPorts);
+  f.ep[0].mdns_names = true;
+  f.ep[1].resolver_factory = &f.resolver;
+  f.CreateChannels();
+  f.PauseCandidates(0);
+  f.PauseCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ep[0].saved_candidates.size() == 1u; }, kMediumTimeout));
+  // The IP address of ep1's host candidate should be obfuscated.
+  SM_EXPECT_TRUE(f.ep[0].saved_candidates[0].address().IsUnresolvedIP());
+  f.resolver.SetAddresses(f.ep[0].mdns_hosts[0].first, {kPublicIp[0]});
+  f.ResumeCandidates(0);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(0)->selected_connection() != nullptr; }, kMediumTimeout));
+  SM_EXPECT_TRUE(f.LocalCandidate(f.ch(0))->is_local());
+  SM_EXPECT_TRUE(f.RemoteCandidate(f.ch(0))->is_prflx());
+  // Endpoint 1 reached it through the resolved host candidate, which kept its name.
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(1)->selected_connection() != nullptr; }, kMediumTimeout));
+  SM_EXPECT_TRUE(f.RemoteCandidate(f.ch(1))->is_local());
+  SM_EXPECT_TRUE(f.RemoteCandidate(f.ch(1))->address().ipaddr() == kPublicIp[0]);
+  SM_EXPECT_EQ(f.RemoteCandidate(f.ch(1))->address().hostname(), f.ep[0].mdns_hosts[0].first);
+  SM_EXPECT_EQ(f.ch(1)->hostname_candidate_stats().resolved, 1);
+}
+
+// Without a resolver the mDNS host candidate is dropped, so endpoint 1 never pings first: with endpoint 1's own
+// candidates withheld as above, nothing connects (what the parser and the agent did before #1152).
+SM_TEST(P2pTransportChannel, CannotConnectToMdnsHostCandidateWithoutResolver) {
+  Fixture f;
+  f.ConfigureEndpoints(OPEN, OPEN, kOnlyLocalPorts, kOnlyLocalPorts);
+  f.ep[0].mdns_names = true;
+  f.CreateChannels();
+  f.PauseCandidates(1);
+  SM_EXPECT_FALSE(f.RunUntil([&] { return f.ch(0)->selected_connection() || f.ch(1)->selected_connection(); },
+                             kMediumTimeout));
+  SM_EXPECT_EQ(f.ch(1)->hostname_candidate_stats().dropped, 1);
+}
+
+// PeerReflexiveCandidateBeforeSignalingWithMdnsName: endpoint 1 first learns endpoint 0 as a prflx candidate; when
+// the mDNS candidate arrives and resolves to the same address, the prflx candidate becomes the host candidate on
+// the same selected connection.
+SM_TEST(P2pTransportChannel, PeerReflexiveCandidateBeforeSignalingWithMdnsName) {
+  Fixture f;
+  f.ConfigureEndpoints(OPEN, OPEN, kOnlyLocalPorts, kOnlyLocalPorts);
+  f.ep[0].mdns_names = true;
+  f.ep[1].resolver_factory = &f.resolver;
+  f.CreateChannels();
+  f.PauseCandidates(0);
+  f.PauseCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ep[0].saved_candidates.size() == 1u; }, kMediumTimeout));
+  SM_EXPECT_TRUE(f.ep[0].saved_candidates[0].address().IsUnresolvedIP());
+  // Let ep2 signal its candidate to ep1. ep1 should form a candidate pair and start to ping. After receiving the
+  // ping, ep2 discovers a prflx remote candidate and form a candidate pair as well.
+  f.ResumeCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(0)->selected_connection() != nullptr; }, kMediumTimeout));
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(1)->selected_connection() != nullptr; }, kMediumTimeout));
+  const Connection* selected_connection = f.ch(1)->selected_connection();
+  SM_EXPECT_TRUE(selected_connection->remote_candidate().is_prflx());
+  SM_EXPECT_EQ(selected_connection->remote_candidate().username(), std::string(kIceUfrag[0]));
+  SM_EXPECT_EQ(selected_connection->remote_candidate().password(), std::string(kIcePwd[0]));
+  // Set expectation before ep1 signals a hostname candidate.
+  f.resolver.SetAddresses(f.ep[0].mdns_hosts[0].first, {kPublicIp[0]});
+  f.ResumeCandidates(0);
+  // Verify ep2's selected connection is updated to use the 'local' candidate.
+  SM_EXPECT_TRUE(
+      f.RunUntil([&] { return f.ch(1)->selected_connection()->remote_candidate().is_local(); }, kMediumTimeout));
+  SM_EXPECT_TRUE(selected_connection == f.ch(1)->selected_connection());
+}
+
+// PeerReflexiveCandidateDuringResolvingHostCandidateWithMdnsName: a prflx candidate found while the hostname is
+// being resolved is merged with the resolved host candidate.
+SM_TEST(P2pTransportChannel, PeerReflexiveCandidateDuringResolvingHostCandidateWithMdnsName) {
+  Fixture f;
+  // Prevent resolution until triggered by FireDelayedResolution.
+  f.resolver.set_hold(true);
+  f.ConfigureEndpoints(OPEN, OPEN, kOnlyLocalPorts, kOnlyLocalPorts);
+  f.ep[0].mdns_names = true;
+  f.ep[1].resolver_factory = &f.resolver;
+  f.CreateChannels();
+  f.PauseCandidates(0);
+  f.PauseCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ep[0].saved_candidates.size() == 1u; }, kMediumTimeout));
+  SM_ASSERT_TRUE(f.ep[0].saved_candidates[0].address().IsUnresolvedIP());
+  // Let ep1 signal its hostname candidate to ep2; ep2 starts resolving it. Then ep2 signals its host candidate, so
+  // ep1 can form a pair, select it and ping ep2.
+  f.ResumeCandidates(0);
+  f.ResumeCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(0)->selected_connection() != nullptr; }, kMediumTimeout));
+  f.resolver.SetAddresses(f.ep[0].mdns_hosts[0].first, {kPublicIp[0]});
+  // Upon receiving a ping from ep1, ep2 adds a prflx candidate from the unknown address and establishes a
+  // connection.
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(1)->selected_connection() != nullptr; }, kMediumTimeout));
+  SM_EXPECT_TRUE(f.ch(1)->selected_connection()->remote_candidate().is_prflx());
+  SM_EXPECT_EQ(f.ch(1)->hostname_candidate_stats().resolving, 1);
+  // ep2 should also be able resolve the hostname candidate. The resolved remote host candidate should be merged
+  // with the prflx remote candidate.
+  f.resolver.set_hold(false);
+  SM_EXPECT_TRUE(
+      f.RunUntil([&] { return f.ch(1)->selected_connection()->remote_candidate().is_local(); }, kMediumTimeout));
+  SM_EXPECT_EQ(f.ch(1)->remote_candidates().size(), 1u);
+}
+
+// SelectedCandidatePairSanitizedWhenMdnsObfuscationEnabled and the remote half of
+// CandidatesSanitizedInStatsWhenMdnsObfuscationEnabled: the endpoint that resolved the mDNS candidate shows only
+// its name in GetSelectedCandidatePair and in its stats.
+SM_TEST(P2pTransportChannel, ResolvedMdnsCandidateSanitizedInSelectedPairAndStats) {
+  Fixture f;
+  f.ConfigureEndpoints(OPEN, OPEN, kOnlyLocalPorts, kOnlyLocalPorts);
+  f.ep[0].mdns_names = true;
+  f.ep[1].resolver_factory = &f.resolver;
+  f.CreateChannels();
+  f.PauseCandidates(0);
+  f.PauseCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ep[0].saved_candidates.size() == 1u; }, kMediumTimeout));
+  f.resolver.SetAddresses(f.ep[0].mdns_hosts[0].first, {kPublicIp[0]});
+  f.ResumeCandidates(0);
+  f.ResumeCandidates(1);
+  SM_ASSERT_TRUE(f.RunUntil([&] { return f.ch(0)->selected_connection() && f.ch(1)->selected_connection(); },
+                            kMediumTimeout));
+  const auto pair_ep2 = f.ch(1)->GetSelectedCandidatePair();
+  SM_ASSERT_TRUE(pair_ep2.has_value());
+  SM_EXPECT_TRUE(pair_ep2->remote.is_local());
+  SM_EXPECT_TRUE(pair_ep2->remote.address().IsUnresolvedIP());
+  SM_EXPECT_EQ(pair_ep2->remote.address().ToString(),
+               f.ep[0].mdns_hosts[0].first + ":" + std::to_string(f.RemoteCandidate(f.ch(1))->address().port()));
+  IceTransportStats stats;
+  SM_ASSERT_TRUE(f.ch(1)->GetStats(f.now, &stats));
+  SM_ASSERT_FALSE(stats.connection_infos.empty());
+  for (const auto& info : stats.connection_infos) {
+    if (info.remote_candidate.is_local()) SM_EXPECT_TRUE(info.remote_candidate.address().IsUnresolvedIP());
+  }
+  // The connection itself has the resolved address.
+  SM_EXPECT_TRUE(f.RemoteCandidate(f.ch(1))->address().ipaddr() == kPublicIp[0]);
+}
+
+// RemoteMdnsCandidatesSanitizedInStats: also when the name is fully qualified (a trailing dot) or in another case.
+// A name outside .local is not hidden.
+SM_TEST(P2pTransportChannel, RemoteMdnsCandidatesSanitizedInStats) {
+  Fixture f;
+  auto channel = GatheredChannel(f, nullptr);
+  uint16_t port = 1;
+  for (const char* name : {"example.local", "example.local.", "EXAMPLE.LOCAL", "Example.Local.", "example.test"}) {
+    Candidate candidate = HostnameCandidate(name, port++);
+    // Resolve the hostname to 1.1.1.1 and add the candidate with this address directly.
+    SocketAddress resolved_address(candidate.address());
+    resolved_address.SetResolvedIP(Ip("1.1.1.1"));
+    candidate.set_address(resolved_address);
+    channel->AddRemoteCandidate(f.now, candidate);
+  }
+  IceTransportStats stats;
+  SM_ASSERT_TRUE(channel->GetStats(f.now, &stats));
+  SM_ASSERT_EQ(stats.connection_infos.size(), 5u);
+  for (const auto& info : stats.connection_infos) {
+    const SocketAddress& a = info.remote_candidate.address();
+    if (a.hostname() == "example.test") {
+      SM_EXPECT_FALSE(a.IsUnresolvedIP());
+    } else {
+      SM_EXPECT_TRUE(a.IsUnresolvedIP());
+      SM_EXPECT_TRUE(IsMdnsHostname(a.hostname()));
+    }
+  }
 }

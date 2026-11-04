@@ -166,7 +166,9 @@ std::string Candidate::ToStringInternal(bool sensitive) const {
 std::string Candidate::ToCandidateAttribute(bool include_ufrag) const {
   // BuildCandidate.
   std::string os = "candidate:" + foundation_ + " " + std::to_string(component_) + " " + protocol_ + " " +
-                   std::to_string(priority_) + " " + address_.ipaddr().ToString() + " " + PortString(address_) +
+                   std::to_string(priority_) + " " +
+                   (IpIsUnspec(address_.ipaddr()) ? address_.hostname() : address_.ipaddr().ToString()) + " " +
+                   PortString(address_) +
                    " typ " + std::string(type_name()) + " ";
   if (!related_address_.IsNil()) {
     os += "raddr " + related_address_.ipaddr().ToString() + " rport " + PortString(related_address_) + " ";
@@ -179,6 +181,29 @@ std::string Candidate::ToCandidateAttribute(bool include_ufrag) const {
   if (network_id_ > 0) os += " network-id " + std::to_string(network_id_);
   if (network_cost_ > 0) os += " network-cost " + std::to_string(network_cost_);
   return os;
+}
+
+Candidate Candidate::ToSanitizedCopy(bool use_hostname_address, bool filter_related_address,
+                                     bool filter_ufrag) const {
+  Candidate copy(*this);
+  if (use_hostname_address) {
+    if (address().hostname().empty()) {
+      // IP needs to be redacted, but no hostname available.
+      copy.set_address(SocketAddress("redacted-ip.invalid", address().port()));
+    } else if (IpAddress::FromString(address().hostname())) {
+      // The hostname is an IP literal, and needs to be redacted too.
+      copy.set_address(SocketAddress("redacted-literal.invalid", address().port()));
+    } else {
+      copy.set_address(SocketAddress(address().hostname(), address().port()));
+    }
+  }
+  if (filter_related_address) {
+    // EmptySocketAddressWithFamily.
+    const IpFamily family = copy.address().family();
+    copy.set_related_address(family == IpFamily::kUnspec ? SocketAddress() : SocketAddress(GetAnyIp(family), 0));
+  }
+  if (filter_ufrag) copy.set_username("");
+  return copy;
 }
 
 uint32_t Candidate::GetPriority(uint32_t type_preference, int network_adapter_preference, int relay_preference,
@@ -298,9 +323,7 @@ std::optional<Candidate> Candidate::ParseCandidateString(std::string_view messag
   size_t current_position = expected_min_fields;
   SocketAddress related_address;
   if (fields.size() >= current_position + 2 && fields[current_position] == "raddr") {
-    if (std::optional<IpAddress> ip = IpAddress::FromString(fields[++current_position])) {
-      related_address = SocketAddress(*ip, 0);
-    }
+    related_address.SetIP(fields[++current_position]);
     ++current_position;
   }
   if (fields.size() >= current_position + 2 && fields[current_position] == "rport") {
@@ -376,16 +399,12 @@ std::optional<Candidate> Candidate::ParseCandidateString(std::string_view messag
     Fail(error, "Missing fingerprint extension for TLS candidate");
     return std::nullopt;
   }
-  const std::optional<IpAddress> ip = IpAddress::FromString(fields[4]);
-  if (!ip) {
-    Fail(error, kUnsupportedHostnameCandidate);
-    return std::nullopt;
-  }
+  // SocketAddress(connection_address, port): a hostname (an mDNS name) is kept, with no IP until it is resolved.
+  const SocketAddress address(fields[4], static_cast<uint16_t>(port));
   static constexpr std::string_view kProtoNames[] = {UDP_PROTOCOL_NAME, TCP_PROTOCOL_NAME, SSLTCP_PROTOCOL_NAME,
                                                      TLS_PROTOCOL_NAME};
-  Candidate candidate(component_id, kProtoNames[static_cast<int>(*protocol)],
-                      SocketAddress(*ip, static_cast<uint16_t>(port)), priority, username, password, candidate_type,
-                      generation, foundation, network_id, network_cost);
+  Candidate candidate(component_id, kProtoNames[static_cast<int>(*protocol)], address, priority, username, password,
+                      candidate_type, generation, foundation, network_id, network_cost);
   candidate.set_related_address(related_address);
   candidate.set_tcptype(tcptype);
   return candidate;

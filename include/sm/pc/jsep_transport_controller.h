@@ -110,6 +110,11 @@ class JsepTransportController {
     // CryptoOptions::Srtp::enable_encrypted_rtp_header_extensions: off by default.
     bool enable_encrypted_rtp_header_extensions = false;
     std::optional<p2p::IceConfig> ice_config;
+    // Config::async_dns_resolver_factory, given to every ICE transport: resolves remote hostname (mDNS) candidates
+    // (#1152). Not owned; must outlive the controller. libwebrtc's PeerConnection always has one; the library starts
+    // no threads, so the host passes one (the apps: OsDnsResolverFactory in apps/net). Null: hostname candidates are
+    // dropped, as libwebrtc's channel does without one.
+    p2p::AsyncDnsResolverFactoryInterface* async_dns_resolver_factory = nullptr;
   };
   // (transport name, candidate): a candidate the transport gathered.
   using CandidateCallback = std::function<void(const std::string& transport_name, const p2p::Candidate&)>;

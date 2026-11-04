@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "sm/p2p/byte_buffer.h"
+#include "sm/p2p/p2p_constants.h"
 
 namespace sm::p2p {
 namespace {
@@ -431,7 +432,9 @@ Connection* TurnPort::CreateConnection(Timestamp now, const Candidate& remote_ca
   // TURN-UDP connects only to UDP candidates.
   if (!SupportsProtocol(remote_candidate.protocol())) return nullptr;
   if (state_ == STATE_DISCONNECTED || state_ == STATE_RECEIVEONLY) return nullptr;
-  // (No mDNS candidates here: addresses carry no hostnames.)
+  // If the remote endpoint signaled us an mDNS candidate, we do not form a pair with the relay candidate to avoid IP
+  // leakage in the CreatePermission request (#1152).
+  if (IsMdnsHostname(remote_candidate.address().hostname())) return nullptr;
   // The relay candidate of the remote candidate's family.
   for (size_t index = 0; index < Candidates().size(); ++index) {
     const Candidate& local_candidate = Candidates()[index];

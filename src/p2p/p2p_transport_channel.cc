@@ -115,7 +115,8 @@ P2PTransportChannel::P2PTransportChannel(Timestamp now, std::string_view transpo
       allocator_(allocator),
       config_(DefaultChannelConfig()),
       ice_field_trials_(options.field_trials),
-      now_(now) {
+      now_(now),
+      async_dns_resolver_factory_(options.async_dns_resolver_factory) {
   // We populate the change in the candidate filter to the session taken by the transport.
   allocator_->SubscribeCandidateFilterChanged(
       this, [this](uint32_t prev_filter, uint32_t cur_filter) { OnCandidateFilterChanged(prev_filter, cur_filter); });
@@ -141,6 +142,8 @@ P2PTransportChannel::P2PTransportChannel(Timestamp now, std::string_view transpo
 }
 
 P2PTransportChannel::~P2PTransportChannel() {
+  // Destroying the resolvers cancels their callbacks.
+  resolvers_.clear();
   next_regather_ = Timestamp::PlusInfinity();
   std::vector<Connection*> copy(connections_.begin(), connections_.end());
   for (Connection* connection : copy) {
@@ -695,9 +698,69 @@ void P2PTransportChannel::AddRemoteCandidate(Timestamp now, const Candidate& can
     // arrive.
   }
 
-  // libwebrtc resolves a hostname candidate here (IsUnresolvedIP); the library's addresses carry no hostname. With no
-  // local network access permission factory, CheckLocalNetworkAccessPermission finishes adding at once.
+  if (new_remote_candidate.address().IsUnresolvedIP()) {
+    // Don't do DNS lookups if the IceTransportPolicy is "none" or "relay".
+    const bool sharing_host = (allocator_->candidate_filter() & CF_HOST) != 0;
+    const bool sharing_stun = (allocator_->candidate_filter() & CF_REFLEXIVE) != 0;
+    if (sharing_host || sharing_stun) {
+      ResolveHostnameCandidate(new_remote_candidate);
+    } else {
+      ++hostname_stats_.dropped;
+    }
+    return;
+  }
+
+  // With no local network access permission factory, CheckLocalNetworkAccessPermission finishes adding at once.
   FinishAddingRemoteCandidate(now_, new_remote_candidate);
+}
+
+void P2PTransportChannel::ResolveHostnameCandidate(const Candidate& candidate) {
+  if (!async_dns_resolver_factory_) {
+    // "Dropping ICE candidate with hostname address (no AsyncResolverFactory)".
+    ++hostname_stats_.dropped;
+    return;
+  }
+  std::unique_ptr<AsyncDnsResolverInterface> resolver = async_dns_resolver_factory_->Create();
+  AsyncDnsResolverInterface* resptr = resolver.get();
+  resolvers_.push_back(CandidateAndResolver{candidate, std::move(resolver)});
+  ++hostname_stats_.resolving;
+  resptr->Start(candidate.address(), [this, resptr](Timestamp now) { OnCandidateResolved(now, resptr); });
+}
+
+void P2PTransportChannel::OnCandidateResolved(Timestamp now, AsyncDnsResolverInterface* resolver) {
+  now_ = std::max(now_, now);
+  auto p = std::find_if(resolvers_.begin(), resolvers_.end(),
+                        [resolver](const CandidateAndResolver& cr) { return cr.resolver.get() == resolver; });
+  if (p == resolvers_.end()) return;  // "Unexpected AsyncDnsResolver return".
+  --hostname_stats_.resolving;
+  Candidate candidate = p->candidate;
+  // Keep the resolver (and so its result) alive while the candidate is added; then delete it.
+  std::unique_ptr<AsyncDnsResolverInterface> owned = std::move(p->resolver);
+  resolvers_.erase(p);
+  AddRemoteCandidateWithResult(now_, candidate, owned->result());
+}
+
+void P2PTransportChannel::AddRemoteCandidateWithResult(Timestamp now, Candidate candidate,
+                                                       const AsyncDnsResolverResult& result) {
+  if (result.GetError()) {
+    // "Failed to resolve ICE candidate hostname ... with error ...".
+    ++hostname_stats_.failed;
+    return;
+  }
+  SocketAddress resolved_address;
+  // Prefer IPv6 to IPv4 if we have it (see RFC 5245 Section 15.1).
+  // TODO(zstein): This won't work if we only have IPv4 locally but receive an AAAA DNS record.
+  const bool have_address = result.GetResolvedAddress(IpFamily::kV6, &resolved_address) ||
+                            result.GetResolvedAddress(IpFamily::kV4, &resolved_address);
+  if (!have_address) {
+    // "ICE candidate hostname ... could not be resolved".
+    ++hostname_stats_.failed;
+    return;
+  }
+  ++hostname_stats_.resolved;
+  candidate.set_address(resolved_address);
+  // CheckLocalNetworkAccessPermission: no permission factory, so the candidate is added at once.
+  FinishAddingRemoteCandidate(now, candidate);
 }
 
 void P2PTransportChannel::FinishAddingRemoteCandidate(Timestamp now, const Candidate& new_remote_candidate) {
@@ -1376,17 +1439,14 @@ Candidate P2PTransportChannel::SanitizeLocalCandidate(const Candidate& c) const 
 }
 
 Candidate P2PTransportChannel::SanitizeRemoteCandidate(const Candidate& c) const {
-  // libwebrtc also sanitizes an mDNS candidate the remote signaled; the library has none. Remove the address for
-  // prflx remote candidates. See https://w3c.github.io/webrtc-stats/#dom-rtcicecandidatestats. (ToSanitizedCopy with
-  // use_hostname_address and an empty hostname: the address keeps only its port.)
-  Candidate copy = c;
-  if (c.is_prflx()) {
-    copy.set_address(SocketAddress(IpAddress(), c.address().port()));
-    // Filter remote ufrag of peer-reflexive candidates before any ICE parameters are known.
-    uint32_t remote_generation = 0;
-    if (FindRemoteIceFromUfrag(c.username(), &remote_generation) == nullptr) copy.set_username("");
-  }
-  return copy;
+  // If the remote endpoint signaled us an mDNS candidate, we assume it is supposed to be sanitized.
+  bool use_hostname_address = IsMdnsHostname(c.address().hostname());
+  // Remove the address for prflx remote candidates. See https://w3c.github.io/webrtc-stats/#dom-rtcicecandidatestats.
+  use_hostname_address |= c.is_prflx();
+  // Filter remote ufrag of peer-reflexive candidates before any ICE parameters are known.
+  uint32_t remote_generation = 0;
+  const bool filter_ufrag = c.is_prflx() && FindRemoteIceFromUfrag(c.username(), &remote_generation) == nullptr;
+  return c.ToSanitizedCopy(use_hostname_address, /*filter_related_address=*/false, filter_ufrag);
 }
 
 Connection* P2PTransportChannel::FromIceController(const Connection* conn) const {

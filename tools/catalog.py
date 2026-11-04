@@ -2109,16 +2109,29 @@ MILESTONE3 = [
     _m3("1.6", "ice-agent", "The ICE agent (P2PTransportChannel)",
         "One transport per media bundle that finds, checks and keeps a path -> `P2PTransportChannel`",
         ["p2p/p2p_transport_channel.h", "p2p/ice_agent_interface.h", "p2p/ice_transport_internal.h", "p2p/transport_description.h",
-         "p2p/packet_transport_internal.h"],
-        ["P2pTransportChannel", "P2pTransportChannelPing", "P2pTransportChannelMultihomed", "P2pIceConfig"],
+         "p2p/packet_transport_internal.h", "p2p/async_dns_resolver.h"],
+        ["P2pTransportChannel", "P2pTransportChannelPing", "P2pTransportChannelMultihomed", "P2pIceConfig", "OsDnsResolver"],
         "Two channels behind NATs gather, exchange candidates (also trickled), connect, nominate and carry packets; the "
-        "multihomed cases fail over from one interface to another and the ping cases check nomination order.",
-        "`p2p/base/{p2p_transport_channel,ice_agent_interface,ice_transport_internal,transport_description,packet_transport_internal}.{h,cc}`",
+        "multihomed cases fail over from one interface to another and the ping cases check nomination order. One side "
+        "signals its host candidates under mDNS (`.local`) names and the other resolves them and connects host to host.",
+        "`p2p/base/{p2p_transport_channel,ice_agent_interface,ice_transport_internal,transport_description,packet_transport_internal}.{h,cc}`, "
+        "`api/async_dns_resolver.h`",
         ["10.9"],
         "Requirement C3 part 6. Gathering, role conflicts, nomination, consent, continual gathering and IceConfig as "
-        "`PeerConnection` sets them.",
+        "`PeerConnection` sets them. A remote hostname (mDNS) candidate is resolved as `ResolveHostnameCandidate` "
+        "and `OnCandidateResolved` do (#1152), through the `AsyncDnsResolverFactoryInterface` the host passes "
+        "(`JsepTransportController::Config::async_dns_resolver_factory`): the apps use `OsDnsResolverFactory` "
+        "(`apps/net/os_dns_resolver.h`, `getaddrinfo` on worker threads the host owns, polled with `now` by its loop), "
+        "tests `FakeAsyncDnsResolverFactory`. Without one, as libwebrtc without a factory, the candidate is dropped.",
         "`p2p_transport_channel_unittest.cc` cases and 21 of the 23 ping and multihomed cases of libwebrtc's tests pass; the "
-        "other two need IPv6 or the unported STUN dictionary (parity 10.9). PRs #1039, #1043, #1047."),
+        "other two need IPv6 or the unported STUN dictionary (parity 10.9). PRs #1039, #1043, #1047. Remote mDNS "
+        "candidates (#1152): libwebrtc's resolver and mDNS cases (`HostnameCandidateIsResolved`, "
+        "`CanConnectWithHostCandidateWithMdnsName`, the two prflx merges, the sanitized pair and stats, and "
+        "`NoPairOfLocalRelayCandidateWithRemoteMdnsCandidate` at the TURN port) pass on the emulated network, and "
+        "`interop.Browser.mdns_chrome_offers` connects headless Chrome, with its mDNS obfuscation on, host to host to "
+        "our endpoint (skipped where `.local` names don't resolve).",
+        other_tests="`interop.Browser.mdns_chrome_offers` (`tests/interop/browser`, `--mdns`); `unit.OsDnsResolver` "
+        "(`tests/unit/net/os_dns_resolver_test.cc`)."),
     _m3("1.7", "ice-lite", "ICE-lite for the AI server",
         "A server with a public address needs no gathering -> ICE-lite: answer checks only, never start them",
         ["p2p/ice_lite_agent.h"],
@@ -2163,13 +2176,16 @@ MILESTONE3 = [
          "pc/simulcast_description.h", "pc/media_protocol_names.h", "pc/rtp_parameters.h"],
         ["PcWebRtcSdp", "PcSessionDescription", "PcJsepSessionDescription", "PcMediaContentDescription", "PcCandidateParse",
          "PcSimulcastSdp"],
-        "libwebrtc's own SDP strings (Unified Plan, BUNDLE, data section, simulcast, candidates) are parsed and written "
-        "back byte for byte; malformed input is rejected with the same errors.",
+        "libwebrtc's own SDP strings (Unified Plan, BUNDLE, data section, simulcast, candidates, mDNS hostname "
+        "candidates) are parsed and written back byte for byte; malformed input is rejected with the same errors.",
         "`api/jsep.h`, `api/jsep_session_description`, `pc/session_description.{h,cc}`, `pc/webrtc_sdp.{h,cc}`, `media/base/codec.{h,cc}`, "
         "`media/base/stream_params.{h,cc}`, `api/rtp_parameters.h`, `pc/media_protocol_names.{h,cc}`",
         ["10.16"],
-        "Requirement C6 part 1.",
-        "The cases of `webrtc_sdp_unittest.cc` and `session_description_unittest.cc` run; `fuzz/sdp_parser_fuzzer.cc` (after "
+        "Requirement C6 part 1. A hostname (mDNS) candidate, and a `c=` line or `raddr` with a hostname, are kept "
+        "with the name as the address, as libwebrtc's `SetIP` keeps it (#1152); the ICE agent resolves the name (1.6).",
+        "The cases of `webrtc_sdp_unittest.cc` and `session_description_unittest.cc` run, the hostname ones included "
+        "(`SerializeHostnameCandidate`, `ParseConnectionDataWithHostnameConnectionAddress`, `AddHostnameCandidate`, "
+        "`SerializeDeserializeWithHostnameCandidate`; #1152); `fuzz/sdp_parser_fuzzer.cc` (after "
         "libwebrtc's `sdp_parser_fuzzer.cc`) checks that a write/parse/write round trip is stable (`fuzz.sdp_parser`). "
         "PR #1073.",
         extra_files=[]),

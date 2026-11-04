@@ -270,6 +270,29 @@ SM_TEST(P2pTurnPort, Connection) {
   }
 }
 
+// NoPairOfLocalRelayCandidateWithRemoteMdnsCandidate (p2p_transport_channel_unittest.cc, #1152), at the port: a
+// TURN port does not pair its relay candidate with a remote candidate whose name is in .local (written in any case
+// or fully qualified), resolved or not, to avoid leaking the address in the CreatePermission request; a candidate
+// with another name, or an IP only, is paired.
+SM_TEST(P2pTurnPort, NoConnectionToRemoteMdnsCandidate) {
+  TurnFixture f;
+  f.PrepareTurnAndUdpPorts();
+  uint16_t port = 1;
+  for (const char* name : {"example.local", "example.local.", "EXAMPLE.LOCAL", "Example.Local."}) {
+    Candidate c = f.udp_port->Candidates()[0];
+    SocketAddress a(name, port++);
+    a.SetResolvedIP(c.address().ipaddr());
+    c.set_address(a);
+    SM_EXPECT_TRUE(f.turn_port->CreateConnection(f.now, c, Port::ORIGIN_MESSAGE) == nullptr);
+  }
+  Candidate named = f.udp_port->Candidates()[0];
+  SocketAddress a("example.test", port++);
+  a.SetResolvedIP(named.address().ipaddr());
+  named.set_address(a);
+  SM_EXPECT_TRUE(f.turn_port->CreateConnection(f.now, named, Port::ORIGIN_MESSAGE) != nullptr);
+  SM_EXPECT_TRUE(f.turn_port->CreateConnection(f.now, f.udp_port->Candidates()[0], Port::ORIGIN_MESSAGE) != nullptr);
+}
+
 // TestDestroyTurnConnection: the entry outlives its connection by the
 // permission timeout; a new connection takes it again.
 SM_TEST(P2pTurnPort, DestroyConnection) {
