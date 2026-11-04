@@ -1050,7 +1050,8 @@
    "verification": "Several peer connections per endpoint, each with its own ICE, DTLS-SRTP and congestion control: in the test bench's `call mesh 3|4` with `transport ice`, every participant runs one session per peer, and each pair is a call set up through SDP offer/answer, trickle ICE (NAT, STUN, TURN), DTLS-SRTP and its own GoogCC, all sharing the participant's access link (#1094 on #1081). Scenarios of 3 and 4 parties on 10/2 Mbit/s home broadband and one with a weak participant report each pair's audio/video/timing metrics (p<i>_to_p<j>.*), each participant's upload and download, and mesh.upload_cost_ratio (1.91-1.96 for 3 parties, 2.03-2.06 for 4); a weak participant degrades only its own streams. ICE scenarios' media stay within the seed variation of their direct twins; transport overhead 1.1-1.6% with video. No SFU (Owner, 2026-11-01). Owner approved marking done, 2026-11-02 5:20 PM PT.",
    "start": "2026-11-01",
    "end": "2026-11-02",
-   "verified": "pass"
+   "verified": "pass",
+   "note": "Owner, 2026-11-04 (#1160): the mesh of 3-4 is dropped in favour of an SFU for groups (C16)."
   },
   {
    "id": "C10",
@@ -1160,6 +1161,115 @@
    "end": "",
    "milestone": "unplanned",
    "note": "Owner, 2026-11-02 6:00 PM PT: Android moves to the backlog; iOS and web first. Split from C11 (and the Android part of C12). Owner, 2026-11-02 6:20 PM PT: out of milestone 4, unplanned."
+  },
+  {
+   "id": "C16",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Topology decision: SFU for group calls",
+   "acceptance": "The Owner's choice is recorded (#1160): 1:1 calls stay peer-to-peer; group calls of up to 6 go through an SFU, LiveKit; the mesh of 3-4 is dropped (its test bench mode and scenarios removed, C9 kept as history). The README Decisions section says so.",
+   "status": "open",
+   "depends_on": [],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+  },
+  {
+   "id": "C17",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Simulcast send",
+   "acceptance": "Up to 3 spatial layers per video track as libwebrtc M157: SimulcastEncoderAdapter behaviour, SimulcastRateAllocator layer bitrates, RID on the wire, a=simulcast/a=rid offer/answer; layers switched off under congestion as libwebrtc does. Compared with libwebrtc in new test bench scenarios with 0 behind cells.",
+   "status": "open",
+   "depends_on": [
+    "C6",
+    "C16"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+  },
+  {
+   "id": "C18",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Multi-stream receive",
+   "acceptance": "One connection receives up to 5 remote video and 5 audio streams (unified-plan transceivers), demultiplexed by MID/SSRC, each with its own jitter buffer, A/V sync and stats; tested in the test bench and against Chrome.",
+   "status": "open",
+   "depends_on": [
+    "C6",
+    "C16"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+  },
+  {
+   "id": "C19",
+   "kind": "app",
+   "area": "Connectivity",
+   "title": "SFU deployment (LiveKit)",
+   "acceptance": "LiveKit runs next to coturn (TURN from coturn, TLS); a LiveKit signaling client lets the web app (LiveKit JS SDK or our page), apps/call (so the iOS app) and the AI server join a room; credentials (LiveKit tokens) are issued by a service, never shipped in the apps.",
+   "status": "open",
+   "depends_on": [
+    "C16",
+    "C15"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+  },
+  {
+   "id": "C20",
+   "kind": "app",
+   "area": "Connectivity",
+   "title": "Group call in the apps",
+   "acceptance": "The web and iOS apps show a grid of up to 6 with join/leave, mute, an active-speaker highlight (from audio levels) and per-participant stats; the AI server can join as a participant.",
+   "status": "open",
+   "depends_on": [
+    "C17",
+    "C18",
+    "C19",
+    "C14",
+    "C15"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
+  },
+  {
+   "id": "C21",
+   "kind": "library",
+   "area": "Connectivity",
+   "title": "Group-call test bench and real-network check",
+   "acceptance": "A simulated SFU in the test bench (forwarding plus layer selection, deterministic) with per-receiver metrics (freezes, delay, layer switches, uplink use); a real 6-way call through the deployed SFU with metrics measured at the callers.",
+   "status": "open",
+   "depends_on": [
+    "C17",
+    "C18",
+    "C19"
+   ],
+   "evidence": "",
+   "verification": "",
+   "start": "2026-11-04",
+   "end": "",
+   "milestone": 5,
+   "note": "Owner, 2026-11-04 (#1160): group video calls of up to 6 through an SFU (LiveKit); the mesh of 3-4 is dropped; C16-C21 accepted as the next milestone."
   },
   {
    "id": "F1.1",
